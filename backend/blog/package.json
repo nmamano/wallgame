@@ -1,0 +1,16 @@
+{
+  "name": "blog",
+  "module": "index.ts",
+  "type": "module",
+  "devDependencies": {
+    "@11ty/eleventy": "^3.0.0",
+    "@types/bun": "latest"
+  },
+  "peerDependencies": {
+    "typescript": "^5.0.0"
+  },
+  "scripts": {
+    "build": "eleventy",
+    "dev": "eleventy --serve"
+  }
+}
