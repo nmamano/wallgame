@@ -8,7 +8,10 @@ FROM oven/bun:${BUN_VERSION}-slim AS base
 
 LABEL fly_launch_runtime="Bun"
 
-# Bun app lives here
+# Bun app lives here.
+# 1. If the /app directory doesn't exist in the container, Docker will create it
+# 2. All following commands will be executed relative to this /app directory
+# 3. When you eventually run the container, /app will be the default working directory
 WORKDIR /app
 
 # Set production environment
@@ -23,11 +26,11 @@ RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential pkg-config python-is-python3
 
 # Install node modules
-COPY bun.lock package-lock.json package.json ./
+COPY --link bun.lock package-lock.json package.json ./
 RUN bun install --ci
 
 # Copy application code
-COPY . .
+COPY --link . .
 
 # Back to the original dockerfile.
 
