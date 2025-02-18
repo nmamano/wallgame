@@ -2,18 +2,11 @@
 
 Build walls and outsmart your opponents.
 
-# Server
+## Docker
 
-To install dependencies:
-
-```sh
-bun install
-```
-
-To run:
+To build the docker image:
 
 ```sh
-bun run dev
+docker build -t bunapp .
+docker run -p 3000:3000 bunapp
 ```
-
-open http://localhost:3000
