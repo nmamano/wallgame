@@ -27,6 +27,11 @@ export const puzzlesRoute = new Hono()
       puzzles: fakePuzzles,
     });
   })
+  .get("/count", (c) => {
+    return c.json({
+      count: fakePuzzles.length,
+    });
+  })
   .post("/", async (c) => {
     const data = await c.req.json();
     const puzzle = createPostSchema.parse(data);
