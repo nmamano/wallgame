@@ -2,6 +2,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { puzzlesRoute } from "./routes/puzzles";
+
 const app = new Hono();
 app.use(logger());
 

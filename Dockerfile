@@ -26,11 +26,21 @@ RUN apt-get update -qq && \
     apt-get install --no-install-recommends -y build-essential pkg-config python-is-python3
 
 # Install node modules
-COPY --link bun.lock package-lock.json package.json ./
+COPY --link bun.lock package.json ./
 RUN bun install --ci
+
+# Install frontend node modules
+COPY --link frontend/bun.lock frontend/package.json ./frontend/
+RUN cd frontend && bun install --ci
 
 # Copy application code
 COPY --link . .
+
+# Change to frontend and build the frontend app
+WORKDIR /app/frontend
+RUN bun run build
+# Remove files in the frontend except the dist folder
+RUN find . -mindepth 1 ! -regex '^./dist\(/.*\)?' -delete
 
 # Back to the original dockerfile.
 
