@@ -1,1 +1,6 @@
 tmp/
+
+# deps
+node_modules/
+
+dist/

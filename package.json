@@ -1,10 +1,10 @@
 {
-  "name": "backend",
-  "module": "index.ts",
+  "name": "server",
+  "module": "server/index.ts",
   "type": "module",
   "scripts": {
-    "start": "bun run index.ts",
-    "dev": "bun run --hot index.ts"
+    "start": "bun run server/index.ts",
+    "dev": "bun run --hot server/index.ts"
   },
   "dependencies": {
     "hono": "^4.6.20",
