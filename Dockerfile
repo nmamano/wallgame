@@ -33,6 +33,10 @@ RUN bun install --ci
 COPY --link frontend/bun.lock frontend/package.json ./frontend/
 RUN cd frontend && bun install --ci
 
+# Install blog node modules
+COPY --link blog/bun.lock blog/package.json ./blog/
+RUN cd blog && bun install --ci
+
 # Copy application code
 COPY --link . .
 
@@ -42,7 +46,11 @@ RUN bun run build
 # Remove files in the frontend except the dist folder
 RUN find . -mindepth 1 ! -regex '^./dist\(/.*\)?' -delete
 
-# Back to the original dockerfile.
+# Change to blog and build the blog
+WORKDIR /app/blog
+RUN bun run build
+# Remove files in the blog except the dist folder
+RUN find . -mindepth 1 ! -regex '^./_site\(/.*\)?' -delete
 
 # Final stage for app image
 FROM base
