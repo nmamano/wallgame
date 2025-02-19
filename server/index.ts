@@ -14,7 +14,7 @@ app.get("/blog/", serveStatic({ path: "./blog/_site" }));
 app.use("/posts/*", serveStatic({ root: "./blog/_site" }));
 app.get("/posts/*", serveStatic({ path: "./blog/_site" }));
 
-app.route("/api/puzzles", puzzlesRoute);
+const apiRoutes = app.basePath("/api").route("/puzzles", puzzlesRoute);
 
 // When users go to the main website (or any route that doesn't match an API
 // route), serve the frontend.
@@ -22,4 +22,6 @@ app.get("*", serveStatic({ root: "./frontend/dist" }));
 app.get("*", serveStatic({ path: "./frontend/dist/index.html" }));
 
 console.log("Server is running");
+
 export default app;
+export type ApiRoutes = typeof apiRoutes;
