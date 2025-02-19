@@ -25,7 +25,8 @@
     /* Path Aliases, per https://ui.shadcn.com/docs/tailwind-v4 */
     "baseUrl": ".",
     "paths": {
-      "@/*": ["./src/*"]
+      "@/*": ["./src/*"],
+      "@server/*": ["../server/*"] // See comment in tsconfig.json
     }
   },
   "include": ["src"]
