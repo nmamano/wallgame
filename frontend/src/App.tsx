@@ -1,12 +1,17 @@
 import { useEffect, useState } from "react";
 import "./App.css";
 
+import { hc } from "hono/client";
+import { type ApiRoutes } from "../../server/index";
+
+const client = hc<ApiRoutes>("/");
+
 function App() {
   const [numPuzzles, setNumPuzzles] = useState(0);
 
   useEffect(() => {
     async function fetchNumPuzzles() {
-      const res = await fetch("/api/puzzles/count");
+      const res = await client.api.puzzles["count"].$get();
       const data = await res.json();
       setNumPuzzles(data.count);
     }
