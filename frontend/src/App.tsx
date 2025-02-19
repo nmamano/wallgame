@@ -1,18 +1,23 @@
-import { useEffect, useState } from "react";
 import "./App.css";
 import { api } from "@/lib/api";
+import { useQuery } from "@tanstack/react-query";
+
+async function getNumPuzzles() {
+  const res = await api.puzzles["count"].$get();
+  if (!res.ok) {
+    throw new Error("Server error: Failed to fetch number of puzzles");
+  }
+  const data = await res.json();
+  return data;
+}
 
 function App() {
-  const [numPuzzles, setNumPuzzles] = useState(0);
+  const { isPending, error, data } = useQuery({
+    queryKey: ["puzzles-count"],
+    queryFn: getNumPuzzles,
+  });
 
-  useEffect(() => {
-    async function fetchNumPuzzles() {
-      const res = await api.puzzles["count"].$get();
-      const data = await res.json();
-      setNumPuzzles(data.count);
-    }
-    fetchNumPuzzles();
-  }, []);
+  if (error) return "Server error: " + error.message;
 
   return (
     <>
@@ -28,7 +33,9 @@ function App() {
         </p>
       </div>
       <div className="card">
-        <p>API test: Number of puzzles: {numPuzzles}</p>
+        <p>
+          API test: Number of puzzles: {isPending ? "Loading..." : data?.count}
+        </p>
       </div>
     </>
   );
