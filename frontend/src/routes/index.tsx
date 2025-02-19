@@ -1,6 +1,11 @@
-import "./App.css";
+import { createFileRoute } from "@tanstack/react-router";
+
 import { api } from "@/lib/api";
 import { useQuery } from "@tanstack/react-query";
+
+export const Route = createFileRoute("/")({
+  component: Index,
+});
 
 async function getNumPuzzles() {
   const res = await api.puzzles["count"].$get();
@@ -11,7 +16,7 @@ async function getNumPuzzles() {
   return data;
 }
 
-function App() {
+function Index() {
   const { isPending, error, data } = useQuery({
     queryKey: ["puzzles-count"],
     queryFn: getNumPuzzles,
@@ -40,5 +45,3 @@ function App() {
     </>
   );
 }
-
-export default App;
