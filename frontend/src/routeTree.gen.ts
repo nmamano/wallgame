@@ -12,9 +12,10 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as PuzzlesImport } from './routes/puzzles'
-import { Route as ProfileImport } from './routes/profile'
 import { Route as AboutImport } from './routes/about'
+import { Route as AuthenticatedImport } from './routes/_authenticated'
 import { Route as IndexImport } from './routes/index'
+import { Route as AuthenticatedProfileImport } from './routes/_authenticated/profile'
 
 // Create/Update Routes
 
@@ -24,15 +25,14 @@ const PuzzlesRoute = PuzzlesImport.update({
   getParentRoute: () => rootRoute,
 } as any)
 
-const ProfileRoute = ProfileImport.update({
-  id: '/profile',
-  path: '/profile',
-  getParentRoute: () => rootRoute,
-} as any)
-
 const AboutRoute = AboutImport.update({
   id: '/about',
   path: '/about',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const AuthenticatedRoute = AuthenticatedImport.update({
+  id: '/_authenticated',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -40,6 +40,12 @@ const IndexRoute = IndexImport.update({
   id: '/',
   path: '/',
   getParentRoute: () => rootRoute,
+} as any)
+
+const AuthenticatedProfileRoute = AuthenticatedProfileImport.update({
+  id: '/profile',
+  path: '/profile',
+  getParentRoute: () => AuthenticatedRoute,
 } as any)
 
 // Populate the FileRoutesByPath interface
@@ -53,18 +59,18 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof IndexImport
       parentRoute: typeof rootRoute
     }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthenticatedImport
+      parentRoute: typeof rootRoute
+    }
     '/about': {
       id: '/about'
       path: '/about'
       fullPath: '/about'
       preLoaderRoute: typeof AboutImport
-      parentRoute: typeof rootRoute
-    }
-    '/profile': {
-      id: '/profile'
-      path: '/profile'
-      fullPath: '/profile'
-      preLoaderRoute: typeof ProfileImport
       parentRoute: typeof rootRoute
     }
     '/puzzles': {
@@ -74,53 +80,81 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PuzzlesImport
       parentRoute: typeof rootRoute
     }
+    '/_authenticated/profile': {
+      id: '/_authenticated/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof AuthenticatedProfileImport
+      parentRoute: typeof AuthenticatedImport
+    }
   }
 }
 
 // Create and export the route tree
 
+interface AuthenticatedRouteChildren {
+  AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
+}
+
+const AuthenticatedRouteChildren: AuthenticatedRouteChildren = {
+  AuthenticatedProfileRoute: AuthenticatedProfileRoute,
+}
+
+const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
+  AuthenticatedRouteChildren,
+)
+
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
+  '': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
-  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
+  '/profile': typeof AuthenticatedProfileRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
+  '': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
-  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
+  '/profile': typeof AuthenticatedProfileRoute
 }
 
 export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
-  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/profile' | '/puzzles'
+  fullPaths: '/' | '' | '/about' | '/puzzles' | '/profile'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/profile' | '/puzzles'
-  id: '__root__' | '/' | '/about' | '/profile' | '/puzzles'
+  to: '/' | '' | '/about' | '/puzzles' | '/profile'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/about'
+    | '/puzzles'
+    | '/_authenticated/profile'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AboutRoute: typeof AboutRoute
-  ProfileRoute: typeof ProfileRoute
   PuzzlesRoute: typeof PuzzlesRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
+  AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AboutRoute: AboutRoute,
-  ProfileRoute: ProfileRoute,
   PuzzlesRoute: PuzzlesRoute,
 }
 
@@ -135,22 +169,29 @@ export const routeTree = rootRoute
       "filePath": "__root.tsx",
       "children": [
         "/",
+        "/_authenticated",
         "/about",
-        "/profile",
         "/puzzles"
       ]
     },
     "/": {
       "filePath": "index.tsx"
     },
+    "/_authenticated": {
+      "filePath": "_authenticated.tsx",
+      "children": [
+        "/_authenticated/profile"
+      ]
+    },
     "/about": {
       "filePath": "about.tsx"
     },
-    "/profile": {
-      "filePath": "profile.tsx"
-    },
     "/puzzles": {
       "filePath": "puzzles.tsx"
+    },
+    "/_authenticated/profile": {
+      "filePath": "_authenticated/profile.tsx",
+      "parent": "/_authenticated"
     }
   }
 }

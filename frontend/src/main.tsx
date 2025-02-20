@@ -11,7 +11,7 @@ import { routeTree } from "./routeTree.gen";
 const queryClient = new QueryClient();
 
 // From https://tanstack.com/router/latest/docs/framework/react/quick-start
-const router = createRouter({ routeTree });
+const router = createRouter({ routeTree, context: { queryClient } });
 declare module "@tanstack/react-router" {
   interface Register {
     router: typeof router;
