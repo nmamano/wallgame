@@ -1,13 +1,29 @@
 // Largely based on:
 // https://github.com/meech-ward/Bun-Hono-React-Expense-Tracker/blob/main/server/routes/auth.ts
+/* Settings on the Kinde dashboard:
+
+Allowed callback URLs:
+http://localhost:5173/api/callback (the vite proxy)
+
+Allowed logout redirect URLs:
+http://localhost:5173 (the vite proxy)
+
+Setting on .env:
+
+KINDE_SITE_URL=http://localhost:5173
+KINDE_LOGOUT_REDIRECT_URI=http://localhost:5173
+KINDE_REDIRECT_URI=http://localhost:5173/api/callback
+*/
 
 import {
   createKindeServerClient,
   GrantType,
   type SessionManager,
+  type UserType,
 } from "@kinde-oss/kinde-typescript-sdk";
 import { type Context } from "hono";
 import { getCookie, setCookie, deleteCookie } from "hono/cookie";
+import { createMiddleware } from "hono/factory";
 
 // Client for authorization code flow
 export const kindeClient = createKindeServerClient(
@@ -47,17 +63,24 @@ export const sessionManager = (c: Context): SessionManager => ({
   },
 });
 
-/* Settings on the Kinde dashboard:
+type Env = {
+  Variables: {
+    user: UserType;
+  };
+};
 
-Allowed callback URLs:
-http://localhost:5173/api/callback (the vite proxy)
-
-Allowed logout redirect URLs:
-http://localhost:5173 (the vite proxy)
-
-Setting on .env:
-
-KINDE_SITE_URL=http://localhost:5173
-KINDE_LOGOUT_REDIRECT_URI=http://localhost:5173
-KINDE_REDIRECT_URI=http://localhost:5173/api/callback
-*/
+export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
+  try {
+    const manager = sessionManager(c);
+    const isAuthenticated = await kindeClient.isAuthenticated(manager);
+    if (!isAuthenticated) {
+      return c.json({ error: "Unauthorized" }, 401);
+    }
+    const user = await kindeClient.getUserProfile(manager);
+    c.set("user", user);
+    await next();
+  } catch (error) {
+    console.error("getUserMiddleware:", error);
+    return c.json({ error: "Internal Server Error" }, 500);
+  }
+});

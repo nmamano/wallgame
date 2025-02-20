@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { kindeClient, sessionManager } from "../kinde";
+import { kindeClient, sessionManager, getUserMiddleware } from "../kinde";
 
 // Largely based on:
 // https://docs.kinde.com/developer-tools/sdks/backend/typescript-sdk/
@@ -24,12 +24,7 @@ export const authRoute = new Hono()
     const logoutUrl = await kindeClient.logout(sessionManager(c));
     return c.redirect(logoutUrl.toString());
   })
-  .get("/me", async (c) => {
-    const manager = sessionManager(c);
-    const isAuthenticated = await kindeClient.isAuthenticated(manager);
-    if (!isAuthenticated) {
-      return c.json({ error: "Unauthorized" }, 401);
-    }
-    const user = await kindeClient.getUserProfile(manager);
+  .get("/me", getUserMiddleware, async (c) => {
+    const user = c.get("user");
     return c.json({ user });
   });
