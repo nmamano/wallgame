@@ -2,7 +2,7 @@ import { Hono } from "hono";
 import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { puzzlesRoute } from "./routes/puzzles";
-
+import { authRoute } from "./routes/auth";
 const app = new Hono();
 app.use(logger());
 
@@ -14,7 +14,10 @@ app.get("/blog/", serveStatic({ path: "./blog/_site" }));
 app.use("/posts/*", serveStatic({ root: "./blog/_site" }));
 app.get("/posts/*", serveStatic({ path: "./blog/_site" }));
 
-const apiRoutes = app.basePath("/api").route("/puzzles", puzzlesRoute);
+const apiRoutes = app
+  .basePath("/api")
+  .route("/puzzles", puzzlesRoute)
+  .route("/", authRoute); // /api/login, /api/register, etc.
 
 // When users go to the main website (or any route that doesn't match an API
 // route), serve the frontend.
