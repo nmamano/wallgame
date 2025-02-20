@@ -12,6 +12,7 @@
 
 import { Route as rootRoute } from './routes/__root'
 import { Route as PuzzlesImport } from './routes/puzzles'
+import { Route as ProfileImport } from './routes/profile'
 import { Route as AboutImport } from './routes/about'
 import { Route as IndexImport } from './routes/index'
 
@@ -20,6 +21,12 @@ import { Route as IndexImport } from './routes/index'
 const PuzzlesRoute = PuzzlesImport.update({
   id: '/puzzles',
   path: '/puzzles',
+  getParentRoute: () => rootRoute,
+} as any)
+
+const ProfileRoute = ProfileImport.update({
+  id: '/profile',
+  path: '/profile',
   getParentRoute: () => rootRoute,
 } as any)
 
@@ -53,6 +60,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof AboutImport
       parentRoute: typeof rootRoute
     }
+    '/profile': {
+      id: '/profile'
+      path: '/profile'
+      fullPath: '/profile'
+      preLoaderRoute: typeof ProfileImport
+      parentRoute: typeof rootRoute
+    }
     '/puzzles': {
       id: '/puzzles'
       path: '/puzzles'
@@ -68,12 +82,14 @@ declare module '@tanstack/react-router' {
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
 }
 
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
 }
 
@@ -81,27 +97,30 @@ export interface FileRoutesById {
   __root__: typeof rootRoute
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/profile': typeof ProfileRoute
   '/puzzles': typeof PuzzlesRoute
 }
 
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '/about' | '/puzzles'
+  fullPaths: '/' | '/about' | '/profile' | '/puzzles'
   fileRoutesByTo: FileRoutesByTo
-  to: '/' | '/about' | '/puzzles'
-  id: '__root__' | '/' | '/about' | '/puzzles'
+  to: '/' | '/about' | '/profile' | '/puzzles'
+  id: '__root__' | '/' | '/about' | '/profile' | '/puzzles'
   fileRoutesById: FileRoutesById
 }
 
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  ProfileRoute: typeof ProfileRoute
   PuzzlesRoute: typeof PuzzlesRoute
 }
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  ProfileRoute: ProfileRoute,
   PuzzlesRoute: PuzzlesRoute,
 }
 
@@ -117,6 +136,7 @@ export const routeTree = rootRoute
       "children": [
         "/",
         "/about",
+        "/profile",
         "/puzzles"
       ]
     },
@@ -125,6 +145,9 @@ export const routeTree = rootRoute
     },
     "/about": {
       "filePath": "about.tsx"
+    },
+    "/profile": {
+      "filePath": "profile.tsx"
     },
     "/puzzles": {
       "filePath": "puzzles.tsx"

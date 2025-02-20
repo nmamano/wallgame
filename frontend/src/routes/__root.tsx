@@ -17,6 +17,9 @@ function NavBar() {
       <Link to="/puzzles" className="[&.active]:font-bold">
         Puzzles
       </Link>
+      <Link to="/profile" className="[&.active]:font-bold">
+        Profile
+      </Link>
       <a href="/blog" className="[&.active]:font-bold">
         Blog
       </a>
