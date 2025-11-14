@@ -29,7 +29,12 @@ function NavBar() {
       <Link to="/profile" className="[&.active]:font-bold">
         Profile
       </Link>
-      <a href="/blog" className="[&.active]:font-bold">
+      <a
+        href="https://nilmamano.com/blog/category/wallgame"
+        className="[&.active]:font-bold"
+        target="_blank"
+        rel="noopener noreferrer"
+      >
         Blog
       </a>
     </div>
