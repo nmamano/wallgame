@@ -28,14 +28,6 @@ export default defineConfig({
         target: "http://127.0.0.1:3000",
         changeOrigin: true,
       },
-      "/blog": {
-        target: "http://127.0.0.1:3000",
-        changeOrigin: true,
-      },
-      "/posts": {
-        target: "http://127.0.0.1:3000",
-        changeOrigin: true,
-      },
     },
   },
 });
