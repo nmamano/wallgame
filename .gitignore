@@ -7,3 +7,5 @@ dist/
 
 .env
 .env.prod
+
+v0export

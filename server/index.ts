@@ -6,13 +6,13 @@ import { authRoute } from "./routes/auth";
 const app = new Hono();
 app.use(logger());
 
-// The blog is generated with an SSR, so we serve it as static files.
-app.use("/blog", serveStatic({ root: "./blog/_site" }));
-app.get("/blog", serveStatic({ path: "./blog/_site" }));
-app.use("/blog/", serveStatic({ root: "./blog/_site" }));
-app.get("/blog/", serveStatic({ path: "./blog/_site" }));
-app.use("/posts/*", serveStatic({ root: "./blog/_site" }));
-app.get("/posts/*", serveStatic({ path: "./blog/_site" }));
+// Redirect blog to external site
+app.get("/blog", (c) => {
+  return c.redirect("https://nilmamano.com/blog/category/wallgame", 301);
+});
+app.get("/blog/*", (c) => {
+  return c.redirect("https://nilmamano.com/blog/category/wallgame", 301);
+});
 
 const apiRoutes = app
   .basePath("/api")

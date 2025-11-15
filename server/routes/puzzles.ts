@@ -1,6 +1,10 @@
 import { Hono } from "hono";
 import { z } from "zod";
 
+import { db } from "../db";
+import { puzzlesTable } from "../db/schema/puzzles";
+import { count, eq } from "drizzle-orm";
+
 // Mock schema/type.
 const puzzleSchema = z.object({
   //Created by the db.
@@ -10,49 +14,46 @@ const puzzleSchema = z.object({
   author: z.string().min(3).max(100),
   rating: z.number().int().positive().min(1).max(10000),
 });
-type Puzzle = z.infer<typeof puzzleSchema>;
 
 const createPostSchema = puzzleSchema.omit({ id: true });
 
-// Mock data before we set up a db.
-const fakePuzzles: Puzzle[] = [
-  { id: 1, title: "Puzzle 1", author: "Author 1", rating: 5 },
-  { id: 2, title: "Puzzle 2", author: "Author 2", rating: 4 },
-  { id: 3, title: "Puzzle 3", author: "Author 3", rating: 3 },
-];
-
 export const puzzlesRoute = new Hono()
-  .get("/", (c) => {
-    return c.json({
-      puzzles: fakePuzzles,
-    });
+  .get("/", async (c) => {
+    const puzzles = await db.select().from(puzzlesTable);
+    return c.json({ puzzles: puzzles });
   })
-  .get("/count", (c) => {
+  .get("/count", async (c) => {
+    const numPuzzles = await db.select({ count: count() }).from(puzzlesTable);
     return c.json({
-      count: fakePuzzles.length,
+      count: numPuzzles[0].count,
     });
   })
   .post("/", async (c) => {
     const data = await c.req.json();
     const puzzle = createPostSchema.parse(data);
-    fakePuzzles.push({ ...puzzle, id: fakePuzzles.length + 1 });
+    const res = await db.insert(puzzlesTable).values(puzzle).returning();
     c.status(201);
-    return c.json({ puzzle: puzzle });
+    return c.json(res);
   })
-  .get("/:id{[0-9]+}", (c) => {
+  .get("/:id{[0-9]+}", async (c) => {
     const id = Number.parseInt(c.req.param("id"));
-    const puzzle = fakePuzzles.find((p) => p.id === id);
-    if (!puzzle) {
+    const res = await db
+      .select()
+      .from(puzzlesTable)
+      .where(eq(puzzlesTable.id, id));
+    if (res.length === 0) {
       return c.notFound();
     }
-    return c.json(puzzle);
+    return c.json(res[0]);
   })
-  .delete("/:id{[0-9]+}", (c) => {
+  .delete("/:id{[0-9]+}", async (c) => {
     const id = Number.parseInt(c.req.param("id"));
-    const index = fakePuzzles.findIndex((p) => p.id === id);
-    if (index === -1) {
+    const res = await db
+      .delete(puzzlesTable)
+      .where(eq(puzzlesTable.id, id))
+      .returning();
+    if (res.length === 0) {
       return c.notFound();
     }
-    const deletedPuzzle = fakePuzzles.splice(index, 1)[0];
-    return c.json({ puzzle: deletedPuzzle });
+    return c.json({ puzzle: res[0] });
   });

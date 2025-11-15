@@ -4,9 +4,11 @@
 
 Allowed callback URLs:
 http://localhost:5173/api/callback (the vite proxy)
+https://wallgame.fly.dev/api/callback
 
 Allowed logout redirect URLs:
 http://localhost:5173 (the vite proxy)
+https://wallgame.fly.dev
 
 Setting on .env:
 
@@ -69,6 +71,8 @@ type Env = {
   };
 };
 
+// Add this middleware to all routes that need to be authenticated.
+// Example: /api/me in auth.ts.
 export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
   try {
     const manager = sessionManager(c);
