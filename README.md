@@ -17,6 +17,25 @@ cd frontend
 bun run dev
 ```
 
+### Development Architecture
+
+When running locally, you have two servers:
+
+- **Port 5173 (Vite dev server)**: Frontend development server with hot reload
+
+  - Use `http://localhost:5173` for development
+  - Vite proxies `/api/*` requests to port 3000
+  - Changes to frontend code appear instantly
+
+- **Port 3000 (Backend server)**: Serves both API routes and frontend static files
+  - API routes: `/api/puzzles`, `/api/login`, etc.
+  - Frontend static files: Serves from `frontend/dist` (production build)
+  - Visiting `http://localhost:3000` shows the production build, not the dev version
+
+**Important**: During development, use `http://localhost:5173` for the frontend. The backend on port 3000 serves the production build from `frontend/dist`, which may be stale. To update the production build, run `cd frontend && bun run build`.
+
+In production, the backend serves everything from a single port (3000), matching the behavior you see when visiting `localhost:3000` locally (with an updated production build).
+
 ## Docker (Optional - for local testing)
 
 To test the production Docker image locally:
@@ -62,9 +81,13 @@ fly deploy
 
 ## Neon database
 
+For now, dev and prod use the same database.
+
 Database dashboard: https://console.neon.tech/app/projects/delicate-rice-01864210
 
-Verify the database schema:
+### Verify the database schema
+
+You can do:
 
 ```sh
 DATABASE_URL="postgresql://..." bunx drizzle-kit studio
