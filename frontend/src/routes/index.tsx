@@ -32,8 +32,8 @@ function Index() {
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center group-hover:bg-accent/30 transition-colors flex-shrink-0">
-                          <Sparkles className="h-5 w-5 text-accent" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Sparkles className="h-5 w-5 text-primary" />
                         </div>
                         <span className="flex items-center gap-2">
                           Solo Campaign
@@ -71,8 +71,8 @@ function Index() {
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center group-hover:bg-accent/30 transition-colors flex-shrink-0">
-                          <Bot className="h-5 w-5 text-accent" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Bot className="h-5 w-5 text-primary" />
                         </div>
                         Play vs AI
                       </CardTitle>
@@ -114,8 +114,8 @@ function Index() {
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-accent/20 flex items-center justify-center group-hover:bg-accent/30 transition-colors flex-shrink-0">
-                          <Users className="h-5 w-5 text-accent" />
+                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Users className="h-5 w-5 text-primary" />
                         </div>
                         Find Others
                       </CardTitle>
