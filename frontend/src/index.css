@@ -129,35 +129,3 @@
   }
 }
 
-/* Custom baroque texture effects */
-.engraving-texture {
-  position: relative;
-  overflow: hidden;
-}
-
-.engraving-texture::before {
-  content: '';
-  position: absolute;
-  inset: 0;
-  background-image: 
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(0, 0, 0, 0.03) 2px,
-      rgba(0, 0, 0, 0.03) 4px
-    );
-  pointer-events: none;
-  z-index: 1;
-}
-
-.dark .engraving-texture::before {
-  background-image: 
-    repeating-linear-gradient(
-      0deg,
-      transparent,
-      transparent 2px,
-      rgba(255, 255, 255, 0.02) 2px,
-      rgba(255, 255, 255, 0.02) 4px
-    );
-}
