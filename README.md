@@ -112,3 +112,19 @@ lication/json"   -d '{"title":"Test Puzzle 2","author":"You","rating":20
 0}'
 [{"id":2,"title":"Test Puzzle 2","author":"You","rating":200}]
 ```
+
+## Kinde auth
+
+The kinde dashboard is at: https://wallgame.kinde.com/admin/
+
+Domain: https://wallgame.kinde.com
+
+It is configured in .env and .env.prod. The difference is in the URLs.
+
+Allowed callback URLs:
+http://localhost:5173/api/callback
+https://wallgame.fly.dev/api/callback
+
+Allowed logout redirect URLs:
+http://localhost:5173
+https://wallgame.fly.dev
