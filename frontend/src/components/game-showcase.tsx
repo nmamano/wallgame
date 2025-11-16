@@ -11,7 +11,7 @@ export function GameShowcase() {
   const cells = Array.from({ length: boardSize * boardSize });
 
   return (
-    <Card className="relative overflow-hidden bg-card/50 border-2">
+    <Card className="relative overflow-hidden bg-card border-2 border-border transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
       <div className="p-6">
         <div className="flex items-center justify-between mb-4">
           <div className="text-sm font-medium text-muted-foreground">
@@ -23,7 +23,10 @@ export function GameShowcase() {
           <Button
             size="sm"
             variant="outline"
-            onClick={() => setIsPlaying(!isPlaying)}
+            onClick={(e) => {
+              e.stopPropagation();
+              setIsPlaying(!isPlaying);
+            }}
           >
             {isPlaying ? (
               <>
