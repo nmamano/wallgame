@@ -8,89 +8,404 @@
 // You should NOT make any changes in this file as it will be overwritten.
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
-// Import Routes
+import { Route as rootRouteImport } from './routes/__root'
+import { Route as StudyBoardRouteImport } from './routes/study-board'
+import { Route as SoloCampaignRouteImport } from './routes/solo-campaign'
+import { Route as SettingsRouteImport } from './routes/settings'
+import { Route as RankingRouteImport } from './routes/ranking'
+import { Route as PuzzlesRouteImport } from './routes/puzzles'
+import { Route as PlayVsAiRouteImport } from './routes/play-vs-ai'
+import { Route as PastGamesRouteImport } from './routes/past-games'
+import { Route as LiveGamesRouteImport } from './routes/live-games'
+import { Route as LearnRouteImport } from './routes/learn'
+import { Route as InviteFriendRouteImport } from './routes/invite-friend'
+import { Route as GameSetupRouteImport } from './routes/game-setup'
+import { Route as FindOthersRouteImport } from './routes/find-others'
+import { Route as AboutRouteImport } from './routes/about'
+import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
+import { Route as IndexRouteImport } from './routes/index'
+import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
+import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
+import { Route as GameIdRouteImport } from './routes/game.$id'
+import { Route as AuthenticatedProfileRouteImport } from './routes/_authenticated/profile'
 
-import { Route as rootRoute } from './routes/__root'
-import { Route as PuzzlesImport } from './routes/puzzles'
-import { Route as AboutImport } from './routes/about'
-import { Route as AuthenticatedImport } from './routes/_authenticated'
-import { Route as IndexImport } from './routes/index'
-import { Route as AuthenticatedProfileImport } from './routes/_authenticated/profile'
-
-// Create/Update Routes
-
-const PuzzlesRoute = PuzzlesImport.update({
+const StudyBoardRoute = StudyBoardRouteImport.update({
+  id: '/study-board',
+  path: '/study-board',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SoloCampaignRoute = SoloCampaignRouteImport.update({
+  id: '/solo-campaign',
+  path: '/solo-campaign',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const SettingsRoute = SettingsRouteImport.update({
+  id: '/settings',
+  path: '/settings',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const RankingRoute = RankingRouteImport.update({
+  id: '/ranking',
+  path: '/ranking',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PuzzlesRoute = PuzzlesRouteImport.update({
   id: '/puzzles',
   path: '/puzzles',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const AboutRoute = AboutImport.update({
+const PlayVsAiRoute = PlayVsAiRouteImport.update({
+  id: '/play-vs-ai',
+  path: '/play-vs-ai',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PastGamesRoute = PastGamesRouteImport.update({
+  id: '/past-games',
+  path: '/past-games',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LiveGamesRoute = LiveGamesRouteImport.update({
+  id: '/live-games',
+  path: '/live-games',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const LearnRoute = LearnRouteImport.update({
+  id: '/learn',
+  path: '/learn',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const InviteFriendRoute = InviteFriendRouteImport.update({
+  id: '/invite-friend',
+  path: '/invite-friend',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const GameSetupRoute = GameSetupRouteImport.update({
+  id: '/game-setup',
+  path: '/game-setup',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const FindOthersRoute = FindOthersRouteImport.update({
+  id: '/find-others',
+  path: '/find-others',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const AuthenticatedRoute = AuthenticatedImport.update({
+const AuthenticatedRoute = AuthenticatedRouteImport.update({
   id: '/_authenticated',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const IndexRoute = IndexImport.update({
+const IndexRoute = IndexRouteImport.update({
   id: '/',
   path: '/',
-  getParentRoute: () => rootRoute,
+  getParentRoute: () => rootRouteImport,
 } as any)
-
-const AuthenticatedProfileRoute = AuthenticatedProfileImport.update({
+const SoloCampaignIdRoute = SoloCampaignIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => SoloCampaignRoute,
+} as any)
+const PuzzlesIdRoute = PuzzlesIdRouteImport.update({
+  id: '/$id',
+  path: '/$id',
+  getParentRoute: () => PuzzlesRoute,
+} as any)
+const GameIdRoute = GameIdRouteImport.update({
+  id: '/game/$id',
+  path: '/game/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
   getParentRoute: () => AuthenticatedRoute,
 } as any)
 
-// Populate the FileRoutesByPath interface
+export interface FileRoutesByFullPath {
+  '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/find-others': typeof FindOthersRoute
+  '/game-setup': typeof GameSetupRoute
+  '/invite-friend': typeof InviteFriendRoute
+  '/learn': typeof LearnRoute
+  '/live-games': typeof LiveGamesRoute
+  '/past-games': typeof PastGamesRoute
+  '/play-vs-ai': typeof PlayVsAiRoute
+  '/puzzles': typeof PuzzlesRouteWithChildren
+  '/ranking': typeof RankingRoute
+  '/settings': typeof SettingsRoute
+  '/solo-campaign': typeof SoloCampaignRouteWithChildren
+  '/study-board': typeof StudyBoardRoute
+  '/profile': typeof AuthenticatedProfileRoute
+  '/game/$id': typeof GameIdRoute
+  '/puzzles/$id': typeof PuzzlesIdRoute
+  '/solo-campaign/$id': typeof SoloCampaignIdRoute
+}
+export interface FileRoutesByTo {
+  '/': typeof IndexRoute
+  '/about': typeof AboutRoute
+  '/find-others': typeof FindOthersRoute
+  '/game-setup': typeof GameSetupRoute
+  '/invite-friend': typeof InviteFriendRoute
+  '/learn': typeof LearnRoute
+  '/live-games': typeof LiveGamesRoute
+  '/past-games': typeof PastGamesRoute
+  '/play-vs-ai': typeof PlayVsAiRoute
+  '/puzzles': typeof PuzzlesRouteWithChildren
+  '/ranking': typeof RankingRoute
+  '/settings': typeof SettingsRoute
+  '/solo-campaign': typeof SoloCampaignRouteWithChildren
+  '/study-board': typeof StudyBoardRoute
+  '/profile': typeof AuthenticatedProfileRoute
+  '/game/$id': typeof GameIdRoute
+  '/puzzles/$id': typeof PuzzlesIdRoute
+  '/solo-campaign/$id': typeof SoloCampaignIdRoute
+}
+export interface FileRoutesById {
+  __root__: typeof rootRouteImport
+  '/': typeof IndexRoute
+  '/_authenticated': typeof AuthenticatedRouteWithChildren
+  '/about': typeof AboutRoute
+  '/find-others': typeof FindOthersRoute
+  '/game-setup': typeof GameSetupRoute
+  '/invite-friend': typeof InviteFriendRoute
+  '/learn': typeof LearnRoute
+  '/live-games': typeof LiveGamesRoute
+  '/past-games': typeof PastGamesRoute
+  '/play-vs-ai': typeof PlayVsAiRoute
+  '/puzzles': typeof PuzzlesRouteWithChildren
+  '/ranking': typeof RankingRoute
+  '/settings': typeof SettingsRoute
+  '/solo-campaign': typeof SoloCampaignRouteWithChildren
+  '/study-board': typeof StudyBoardRoute
+  '/_authenticated/profile': typeof AuthenticatedProfileRoute
+  '/game/$id': typeof GameIdRoute
+  '/puzzles/$id': typeof PuzzlesIdRoute
+  '/solo-campaign/$id': typeof SoloCampaignIdRoute
+}
+export interface FileRouteTypes {
+  fileRoutesByFullPath: FileRoutesByFullPath
+  fullPaths:
+    | '/'
+    | '/about'
+    | '/find-others'
+    | '/game-setup'
+    | '/invite-friend'
+    | '/learn'
+    | '/live-games'
+    | '/past-games'
+    | '/play-vs-ai'
+    | '/puzzles'
+    | '/ranking'
+    | '/settings'
+    | '/solo-campaign'
+    | '/study-board'
+    | '/profile'
+    | '/game/$id'
+    | '/puzzles/$id'
+    | '/solo-campaign/$id'
+  fileRoutesByTo: FileRoutesByTo
+  to:
+    | '/'
+    | '/about'
+    | '/find-others'
+    | '/game-setup'
+    | '/invite-friend'
+    | '/learn'
+    | '/live-games'
+    | '/past-games'
+    | '/play-vs-ai'
+    | '/puzzles'
+    | '/ranking'
+    | '/settings'
+    | '/solo-campaign'
+    | '/study-board'
+    | '/profile'
+    | '/game/$id'
+    | '/puzzles/$id'
+    | '/solo-campaign/$id'
+  id:
+    | '__root__'
+    | '/'
+    | '/_authenticated'
+    | '/about'
+    | '/find-others'
+    | '/game-setup'
+    | '/invite-friend'
+    | '/learn'
+    | '/live-games'
+    | '/past-games'
+    | '/play-vs-ai'
+    | '/puzzles'
+    | '/ranking'
+    | '/settings'
+    | '/solo-campaign'
+    | '/study-board'
+    | '/_authenticated/profile'
+    | '/game/$id'
+    | '/puzzles/$id'
+    | '/solo-campaign/$id'
+  fileRoutesById: FileRoutesById
+}
+export interface RootRouteChildren {
+  IndexRoute: typeof IndexRoute
+  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
+  AboutRoute: typeof AboutRoute
+  FindOthersRoute: typeof FindOthersRoute
+  GameSetupRoute: typeof GameSetupRoute
+  InviteFriendRoute: typeof InviteFriendRoute
+  LearnRoute: typeof LearnRoute
+  LiveGamesRoute: typeof LiveGamesRoute
+  PastGamesRoute: typeof PastGamesRoute
+  PlayVsAiRoute: typeof PlayVsAiRoute
+  PuzzlesRoute: typeof PuzzlesRouteWithChildren
+  RankingRoute: typeof RankingRoute
+  SettingsRoute: typeof SettingsRoute
+  SoloCampaignRoute: typeof SoloCampaignRouteWithChildren
+  StudyBoardRoute: typeof StudyBoardRoute
+  GameIdRoute: typeof GameIdRoute
+}
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
-    '/': {
-      id: '/'
-      path: '/'
-      fullPath: '/'
-      preLoaderRoute: typeof IndexImport
-      parentRoute: typeof rootRoute
+    '/study-board': {
+      id: '/study-board'
+      path: '/study-board'
+      fullPath: '/study-board'
+      preLoaderRoute: typeof StudyBoardRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/_authenticated': {
-      id: '/_authenticated'
-      path: ''
-      fullPath: ''
-      preLoaderRoute: typeof AuthenticatedImport
-      parentRoute: typeof rootRoute
+    '/solo-campaign': {
+      id: '/solo-campaign'
+      path: '/solo-campaign'
+      fullPath: '/solo-campaign'
+      preLoaderRoute: typeof SoloCampaignRouteImport
+      parentRoute: typeof rootRouteImport
     }
-    '/about': {
-      id: '/about'
-      path: '/about'
-      fullPath: '/about'
-      preLoaderRoute: typeof AboutImport
-      parentRoute: typeof rootRoute
+    '/settings': {
+      id: '/settings'
+      path: '/settings'
+      fullPath: '/settings'
+      preLoaderRoute: typeof SettingsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/ranking': {
+      id: '/ranking'
+      path: '/ranking'
+      fullPath: '/ranking'
+      preLoaderRoute: typeof RankingRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/puzzles': {
       id: '/puzzles'
       path: '/puzzles'
       fullPath: '/puzzles'
-      preLoaderRoute: typeof PuzzlesImport
-      parentRoute: typeof rootRoute
+      preLoaderRoute: typeof PuzzlesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/play-vs-ai': {
+      id: '/play-vs-ai'
+      path: '/play-vs-ai'
+      fullPath: '/play-vs-ai'
+      preLoaderRoute: typeof PlayVsAiRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/past-games': {
+      id: '/past-games'
+      path: '/past-games'
+      fullPath: '/past-games'
+      preLoaderRoute: typeof PastGamesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/live-games': {
+      id: '/live-games'
+      path: '/live-games'
+      fullPath: '/live-games'
+      preLoaderRoute: typeof LiveGamesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/learn': {
+      id: '/learn'
+      path: '/learn'
+      fullPath: '/learn'
+      preLoaderRoute: typeof LearnRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/invite-friend': {
+      id: '/invite-friend'
+      path: '/invite-friend'
+      fullPath: '/invite-friend'
+      preLoaderRoute: typeof InviteFriendRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/game-setup': {
+      id: '/game-setup'
+      path: '/game-setup'
+      fullPath: '/game-setup'
+      preLoaderRoute: typeof GameSetupRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/find-others': {
+      id: '/find-others'
+      path: '/find-others'
+      fullPath: '/find-others'
+      preLoaderRoute: typeof FindOthersRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/about': {
+      id: '/about'
+      path: '/about'
+      fullPath: '/about'
+      preLoaderRoute: typeof AboutRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/_authenticated': {
+      id: '/_authenticated'
+      path: ''
+      fullPath: ''
+      preLoaderRoute: typeof AuthenticatedRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/': {
+      id: '/'
+      path: '/'
+      fullPath: '/'
+      preLoaderRoute: typeof IndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/solo-campaign/$id': {
+      id: '/solo-campaign/$id'
+      path: '/$id'
+      fullPath: '/solo-campaign/$id'
+      preLoaderRoute: typeof SoloCampaignIdRouteImport
+      parentRoute: typeof SoloCampaignRoute
+    }
+    '/puzzles/$id': {
+      id: '/puzzles/$id'
+      path: '/$id'
+      fullPath: '/puzzles/$id'
+      preLoaderRoute: typeof PuzzlesIdRouteImport
+      parentRoute: typeof PuzzlesRoute
+    }
+    '/game/$id': {
+      id: '/game/$id'
+      path: '/game/$id'
+      fullPath: '/game/$id'
+      preLoaderRoute: typeof GameIdRouteImport
+      parentRoute: typeof rootRouteImport
     }
     '/_authenticated/profile': {
       id: '/_authenticated/profile'
       path: '/profile'
       fullPath: '/profile'
-      preLoaderRoute: typeof AuthenticatedProfileImport
-      parentRoute: typeof AuthenticatedImport
+      preLoaderRoute: typeof AuthenticatedProfileRouteImport
+      parentRoute: typeof AuthenticatedRoute
     }
   }
 }
-
-// Create and export the route tree
 
 interface AuthenticatedRouteChildren {
   AuthenticatedProfileRoute: typeof AuthenticatedProfileRoute
@@ -104,95 +419,47 @@ const AuthenticatedRouteWithChildren = AuthenticatedRoute._addFileChildren(
   AuthenticatedRouteChildren,
 )
 
-export interface FileRoutesByFullPath {
-  '/': typeof IndexRoute
-  '': typeof AuthenticatedRouteWithChildren
-  '/about': typeof AboutRoute
-  '/puzzles': typeof PuzzlesRoute
-  '/profile': typeof AuthenticatedProfileRoute
+interface PuzzlesRouteChildren {
+  PuzzlesIdRoute: typeof PuzzlesIdRoute
 }
 
-export interface FileRoutesByTo {
-  '/': typeof IndexRoute
-  '': typeof AuthenticatedRouteWithChildren
-  '/about': typeof AboutRoute
-  '/puzzles': typeof PuzzlesRoute
-  '/profile': typeof AuthenticatedProfileRoute
+const PuzzlesRouteChildren: PuzzlesRouteChildren = {
+  PuzzlesIdRoute: PuzzlesIdRoute,
 }
 
-export interface FileRoutesById {
-  __root__: typeof rootRoute
-  '/': typeof IndexRoute
-  '/_authenticated': typeof AuthenticatedRouteWithChildren
-  '/about': typeof AboutRoute
-  '/puzzles': typeof PuzzlesRoute
-  '/_authenticated/profile': typeof AuthenticatedProfileRoute
+const PuzzlesRouteWithChildren =
+  PuzzlesRoute._addFileChildren(PuzzlesRouteChildren)
+
+interface SoloCampaignRouteChildren {
+  SoloCampaignIdRoute: typeof SoloCampaignIdRoute
 }
 
-export interface FileRouteTypes {
-  fileRoutesByFullPath: FileRoutesByFullPath
-  fullPaths: '/' | '' | '/about' | '/puzzles' | '/profile'
-  fileRoutesByTo: FileRoutesByTo
-  to: '/' | '' | '/about' | '/puzzles' | '/profile'
-  id:
-    | '__root__'
-    | '/'
-    | '/_authenticated'
-    | '/about'
-    | '/puzzles'
-    | '/_authenticated/profile'
-  fileRoutesById: FileRoutesById
+const SoloCampaignRouteChildren: SoloCampaignRouteChildren = {
+  SoloCampaignIdRoute: SoloCampaignIdRoute,
 }
 
-export interface RootRouteChildren {
-  IndexRoute: typeof IndexRoute
-  AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
-  AboutRoute: typeof AboutRoute
-  PuzzlesRoute: typeof PuzzlesRoute
-}
+const SoloCampaignRouteWithChildren = SoloCampaignRoute._addFileChildren(
+  SoloCampaignRouteChildren,
+)
 
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AboutRoute: AboutRoute,
-  PuzzlesRoute: PuzzlesRoute,
+  FindOthersRoute: FindOthersRoute,
+  GameSetupRoute: GameSetupRoute,
+  InviteFriendRoute: InviteFriendRoute,
+  LearnRoute: LearnRoute,
+  LiveGamesRoute: LiveGamesRoute,
+  PastGamesRoute: PastGamesRoute,
+  PlayVsAiRoute: PlayVsAiRoute,
+  PuzzlesRoute: PuzzlesRouteWithChildren,
+  RankingRoute: RankingRoute,
+  SettingsRoute: SettingsRoute,
+  SoloCampaignRoute: SoloCampaignRouteWithChildren,
+  StudyBoardRoute: StudyBoardRoute,
+  GameIdRoute: GameIdRoute,
 }
-
-export const routeTree = rootRoute
+export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)
   ._addFileTypes<FileRouteTypes>()
-
-/* ROUTE_MANIFEST_START
-{
-  "routes": {
-    "__root__": {
-      "filePath": "__root.tsx",
-      "children": [
-        "/",
-        "/_authenticated",
-        "/about",
-        "/puzzles"
-      ]
-    },
-    "/": {
-      "filePath": "index.tsx"
-    },
-    "/_authenticated": {
-      "filePath": "_authenticated.tsx",
-      "children": [
-        "/_authenticated/profile"
-      ]
-    },
-    "/about": {
-      "filePath": "about.tsx"
-    },
-    "/puzzles": {
-      "filePath": "puzzles.tsx"
-    },
-    "/_authenticated/profile": {
-      "filePath": "_authenticated/profile.tsx",
-      "parent": "/_authenticated"
-    }
-  }
-}
-ROUTE_MANIFEST_END */
