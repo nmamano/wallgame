@@ -17,35 +17,6 @@ export const Route = createFileRoute("/")({
 function Index() {
   return (
     <div className="min-h-screen bg-background">
-      {/* Hero Section */}
-      <section className="relative overflow-hidden border-b border-border">
-        <div className="absolute inset-0 engraving-texture" />
-        <div className="absolute inset-0 bg-gradient-to-br from-primary/5 via-transparent to-accent/5" />
-
-        <div className="container relative mx-auto px-4 py-20 md:py-32">
-          <div className="max-w-4xl mx-auto text-center space-y-8">
-            <div className="inline-block">
-              <div className="inline-flex items-center rounded-full border border-border bg-muted px-4 py-1.5 text-sm text-foreground mb-6">
-                <Sparkles className="h-4 w-4 mr-2" />
-                Strategic Board Game
-              </div>
-            </div>
-
-            <h1 className="font-serif text-5xl md:text-7xl font-bold tracking-tight text-balance text-foreground">
-              Master the Art of{" "}
-              <span className="bg-gradient-to-r from-accent to-primary bg-clip-text text-transparent">
-                Strategic Walls
-              </span>
-            </h1>
-
-            <p className="text-xl md:text-2xl text-muted-foreground max-w-2xl mx-auto text-balance leading-relaxed">
-              Outsmart your opponents, build impenetrable barriers, and claim
-              victory in this elegant game of tactics and foresight.
-            </p>
-          </div>
-        </div>
-      </section>
-
       <div className="container mx-auto px-4 py-16 md:py-24 space-y-20">
         {/* Single-player Fun */}
         <section>
