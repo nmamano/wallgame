@@ -617,7 +617,6 @@ function GameSetup() {
                 <Table>
                   <TableHeader>
                     <TableRow>
-                      <TableHead className="text-center">Join</TableHead>
                       <TableHead className="text-center">Variant</TableHead>
                       <TableHead className="text-center">Rated</TableHead>
                       <TableHead className="text-center">
@@ -629,16 +628,11 @@ function GameSetup() {
                   </TableHeader>
                   <TableBody>
                     {filteredAndSortedGames.map((game) => (
-                      <TableRow key={game.gameId}>
-                        <TableCell className="text-center">
-                          <Button
-                            onClick={() => handleJoinGame(game.gameId)}
-                            size="sm"
-                            variant="outline"
-                          >
-                            Join
-                          </Button>
-                        </TableCell>
+                      <TableRow
+                        key={game.gameId}
+                        onClick={() => handleJoinGame(game.gameId)}
+                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                      >
                         <TableCell className="capitalize text-center">
                           <span
                             className={`inline-block px-2 py-1 ${
