@@ -29,6 +29,8 @@ interface GameConfigurationPanelProps {
   onChange: (config: GameConfiguration) => void;
   isLoggedIn?: boolean;
   showRatedInfo?: boolean;
+  ratedDisabled?: boolean; // Disable rated switch (e.g., when playing with bots)
+  showRatedDisabledMessage?: boolean; // Show message explaining why rated is disabled
 }
 
 export function GameConfigurationPanel({
@@ -36,18 +38,20 @@ export function GameConfigurationPanel({
   onChange,
   isLoggedIn = false,
   showRatedInfo = true,
+  ratedDisabled = false,
+  showRatedDisabledMessage = false,
 }: GameConfigurationPanelProps) {
-  // Ensure rated is false when not logged in
+  // Ensure rated is false when not logged in or when rated is disabled
   useEffect(() => {
-    if (!isLoggedIn && config.rated) {
+    if ((!isLoggedIn || ratedDisabled) && config.rated) {
       onChange({ ...config, rated: false });
     }
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [isLoggedIn]);
+  }, [isLoggedIn, ratedDisabled]);
 
   const updateConfig = (updates: Partial<GameConfiguration>) => {
-    // Prevent setting rated to true if not logged in
-    if (!isLoggedIn && updates.rated === true) {
+    // Prevent setting rated to true if not logged in or if rated is disabled
+    if ((!isLoggedIn || ratedDisabled) && updates.rated === true) {
       return;
     }
     onChange({ ...config, ...updates });
@@ -128,17 +132,27 @@ export function GameConfigurationPanel({
             id="rated"
             checked={config.rated}
             onCheckedChange={(checked) => updateConfig({ rated: checked })}
-            disabled={!isLoggedIn}
+            disabled={!isLoggedIn || ratedDisabled}
           />
         </div>
-        {showRatedInfo && !isLoggedIn && (
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
-              You need to be logged in to play rated games.
-            </AlertDescription>
-          </Alert>
-        )}
+        {/* Always render message container to prevent layout shift */}
+        {/* min-h accommodates up to 2 lines of text-sm */}
+        <div className="min-h-[3rem]">
+          {showRatedInfo && !isLoggedIn && (
+            <Alert>
+              <Info className="h-4 w-4" />
+              <AlertDescription>
+                You need to be logged in to play rated games.
+              </AlertDescription>
+            </Alert>
+          )}
+          {showRatedDisabledMessage && ratedDisabled && (
+            <p className="text-sm text-muted-foreground">
+              Rated games are only available when playing against a friend or
+              matched player. Games with bots are always unrated.
+            </p>
+          )}
+        </div>
       </div>
 
       <div className="space-y-2">
