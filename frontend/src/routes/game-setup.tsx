@@ -77,6 +77,17 @@ function formatTimeControl(timeControl: string): string {
   return formats[timeControl] || timeControl;
 }
 
+// Helper function to get time control icon path
+function getTimeControlIcon(timeControl: string): string {
+  const iconMap: Record<string, string> = {
+    bullet: "/time_control_icons/activity.lichess-bullet.webp",
+    blitz: "/time_control_icons/activity.lichess-blitz.webp",
+    rapid: "/time_control_icons/activity.lichess-rapid.webp",
+    classical: "/time_control_icons/activity.lichess-classical.webp",
+  };
+  return iconMap[timeControl] || "";
+}
+
 // Helper function to format board size
 function formatBoardSize(width: number, height: number): string {
   const totalCells = width * height;
@@ -652,12 +663,19 @@ function GameSetup() {
                         </TableCell>
                         <TableCell className="capitalize text-center">
                           <span
-                            className={`inline-block px-2 py-1 ${
+                            className={`inline-flex items-center gap-2 px-2 py-1 ${
                               !game.matchStatus.timeControl
                                 ? "bg-red-100 dark:bg-red-900/50 rounded-md"
                                 : ""
                             }`}
                           >
+                            {getTimeControlIcon(game.timeControl) && (
+                              <img
+                                src={getTimeControlIcon(game.timeControl)}
+                                alt={game.timeControl}
+                                className="w-5 h-5"
+                              />
+                            )}
                             {formatTimeControl(game.timeControl)}
                           </span>
                         </TableCell>
