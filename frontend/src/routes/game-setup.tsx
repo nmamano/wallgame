@@ -15,9 +15,22 @@ import {
   PlayerType,
 } from "@/components/player-configuration";
 import {
-  GameConfigurationPanel,
   GameConfiguration,
+  TimeControl,
+  Variant,
 } from "@/components/game-configuration-panel";
+import { Input } from "@/components/ui/input";
+import { Switch } from "@/components/ui/switch";
+import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
+import { Info } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
@@ -93,6 +106,20 @@ interface MatchingGame {
   creatorRating?: number; // Rating of the game creator
 }
 
+// Type for tracking which fields don't match
+interface GameMatchStatus {
+  variant: boolean;
+  rated: boolean;
+  timeControl: boolean;
+  boardSize: boolean;
+  allMatch: boolean;
+}
+
+// Extended type with match status
+interface GameWithMatchStatus extends MatchingGame {
+  matchStatus: GameMatchStatus;
+}
+
 function GameSetup() {
   // Get mode from sessionStorage (set when navigating from landing page)
   // This avoids showing it in the URL
@@ -131,7 +158,10 @@ function GameSetup() {
       setGameConfig(settings.gameConfig);
       setHasInitialized(true);
     }
-  }, [settings.isLoadingSettings, settings.gameConfig, hasInitialized]);
+    // Only depend on isLoadingSettings and hasInitialized - don't watch settings.gameConfig
+    // to prevent resetting user changes when variant or other settings change
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [settings.isLoadingSettings, hasInitialized]);
 
   // Player configurations state
   const [playerConfigs, setPlayerConfigs] = useState<PlayerType[]>([]);
@@ -187,17 +217,17 @@ function GameSetup() {
     return true;
   }, [playerConfigs]);
 
-  // Update rated status when player configs change
+  // Update rated status when player configs change or when not logged in
   useEffect(() => {
-    if (!canRatedGame && gameConfig.rated) {
+    if ((!canRatedGame || !isLoggedIn) && gameConfig.rated) {
       setGameConfig((prev) => ({ ...prev, rated: false }));
     }
-  }, [canRatedGame, gameConfig.rated]);
+  }, [canRatedGame, isLoggedIn, gameConfig.rated]);
 
   // Update player configs when variant changes
   const handleGameConfigChange = (newConfig: GameConfiguration) => {
     // Prevent setting rated to true if not allowed
-    const finalRated = canRatedGame ? newConfig.rated : false;
+    const finalRated = canRatedGame && isLoggedIn ? newConfig.rated : false;
     setGameConfig({ ...newConfig, rated: finalRated });
 
     // If variant changed, reset player configs (preserving mode-based defaults)
@@ -258,36 +288,47 @@ function GameSetup() {
     []
   );
 
-  // Filter and sort matching games
+  // Check match status and sort games (matching first, then non-matching)
   const filteredAndSortedGames = useMemo(() => {
-    let games = [...mockMatchingGames];
+    // Map games to include match status
+    const gamesWithStatus: GameWithMatchStatus[] = mockMatchingGames.map(
+      (game) => {
+        const variantMatch =
+          !gameConfig.variant || game.variant === gameConfig.variant;
+        const ratedMatch =
+          gameConfig.rated === undefined || game.rated === gameConfig.rated;
+        const timeControlMatch =
+          !gameConfig.timeControl ||
+          game.timeControl === gameConfig.timeControl;
+        const boardSizeMatch =
+          !gameConfig.boardWidth ||
+          !gameConfig.boardHeight ||
+          (game.boardWidth === gameConfig.boardWidth &&
+            game.boardHeight === gameConfig.boardHeight);
 
-    // Filter by variant if set
-    if (gameConfig.variant) {
-      games = games.filter((g) => g.variant === gameConfig.variant);
-    }
+        const allMatch =
+          variantMatch && ratedMatch && timeControlMatch && boardSizeMatch;
 
-    // Filter by rated status if set
-    if (gameConfig.rated !== undefined) {
-      games = games.filter((g) => g.rated === gameConfig.rated);
-    }
+        return {
+          ...game,
+          matchStatus: {
+            variant: variantMatch,
+            rated: ratedMatch,
+            timeControl: timeControlMatch,
+            boardSize: boardSizeMatch,
+            allMatch,
+          },
+        };
+      }
+    );
 
-    // Filter by time control if set
-    if (gameConfig.timeControl) {
-      games = games.filter((g) => g.timeControl === gameConfig.timeControl);
-    }
+    // Sort: matching games first, then by ELO difference, then by time in matching stage
+    gamesWithStatus.sort((a, b) => {
+      // First, prioritize matching games
+      if (a.matchStatus.allMatch !== b.matchStatus.allMatch) {
+        return a.matchStatus.allMatch ? -1 : 1;
+      }
 
-    // Filter by board size if set
-    if (gameConfig.boardWidth && gameConfig.boardHeight) {
-      games = games.filter(
-        (g) =>
-          g.boardWidth === gameConfig.boardWidth &&
-          g.boardHeight === gameConfig.boardHeight
-      );
-    }
-
-    // Sort: prioritize by ELO difference, then by time in matching stage
-    games.sort((a, b) => {
       // Calculate ELO difference
       const eloDiffA = Math.abs((a.creatorRating || 1200) - userRating);
       const eloDiffB = Math.abs((b.creatorRating || 1200) - userRating);
@@ -301,7 +342,7 @@ function GameSetup() {
       return a.createdAt.getTime() - b.createdAt.getTime();
     });
 
-    return games;
+    return gamesWithStatus;
   }, [mockMatchingGames, gameConfig, userRating]);
 
   const formatPlayers = (
@@ -316,114 +357,332 @@ function GameSetup() {
   };
 
   return (
-    <div className="container mx-auto py-12 px-4 max-w-6xl">
-      <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground mb-8 text-balance">
-        Game Setup
-      </h1>
+    <div className="container mx-auto py-8 px-4">
+      <div className="max-w-5xl mx-auto">
+        <div className="space-y-6">
+          {/* Create Game Section */}
+          <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
+              {/* Row 1: Title */}
+              <div>
+                <h2 className="text-2xl font-semibold">Create game</h2>
+              </div>
 
-      <div className="grid grid-cols-1 lg:grid-cols-2 gap-8">
-        {/* Create Game Section */}
-        <Card className="p-6 border-border/50 bg-card/50 backdrop-blur">
-          <h2 className="text-2xl font-semibold mb-6">Create game</h2>
-          <div className="space-y-6">
-            {/* Player Configurations */}
-            <div className="space-y-4">
-              {playerConfigs.map((config, index) => (
-                <PlayerConfiguration
-                  key={index}
-                  label={`Player ${index + 1}`}
-                  value={config}
-                  onChange={(value) => {
-                    const newConfigs = [...playerConfigs];
-                    newConfigs[index] = value;
-                    setPlayerConfigs(newConfigs);
-                  }}
-                />
-              ))}
+              {/* Row 1: Rated Status */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="rated" className="min-w-[120px]">
+                    Rated Status
+                  </Label>
+                  <Switch
+                    id="rated"
+                    checked={gameConfig.rated}
+                    onCheckedChange={(checked) => {
+                      if ((!isLoggedIn || !canRatedGame) && checked) {
+                        return;
+                      }
+                      handleGameConfigChange({ ...gameConfig, rated: checked });
+                    }}
+                    disabled={!isLoggedIn || !canRatedGame}
+                  />
+                </div>
+                {/* Always render text container to prevent layout shift */}
+                <div className="min-h-[3rem]">
+                  {!isLoggedIn && (
+                    <Alert className="mb-2">
+                      <Info className="h-4 w-4" />
+                      <AlertDescription>
+                        You need to be logged in to play rated games.
+                      </AlertDescription>
+                    </Alert>
+                  )}
+                  {!isLoggedIn || !canRatedGame ? (
+                    <p className="text-sm text-muted-foreground">
+                      Rated games are only available vs friends or matched
+                      players.
+                    </p>
+                  ) : (
+                    <p className="text-sm text-muted-foreground">
+                      {gameConfig.rated
+                        ? "The game will affect your rating."
+                        : "The game will not affect your rating."}
+                    </p>
+                  )}
+                </div>
+              </div>
+
+              {/* Row 2: Player 1 */}
+              {playerConfigs.length > 0 && (
+                <div>
+                  <PlayerConfiguration
+                    label="Player 1"
+                    value={playerConfigs[0]}
+                    onChange={(value) => {
+                      const newConfigs = [...playerConfigs];
+                      newConfigs[0] = value;
+                      setPlayerConfigs(newConfigs);
+                    }}
+                    excludeOptions={["friend", "matched-user"]}
+                  />
+                </div>
+              )}
+
+              {/* Row 2: Time Control */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="time-control" className="min-w-[120px]">
+                    Time Control
+                  </Label>
+                  <Select
+                    value={gameConfig.timeControl}
+                    onValueChange={(value: TimeControl) =>
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        timeControl: value,
+                      })
+                    }
+                  >
+                    <SelectTrigger
+                      id="time-control"
+                      className="bg-background w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="bullet">Bullet (1+0)</SelectItem>
+                      <SelectItem value="blitz">Blitz (3+2)</SelectItem>
+                      <SelectItem value="rapid">Rapid (10+2)</SelectItem>
+                      <SelectItem value="classical">
+                        Classical (30+0)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Always render text container to prevent layout shift */}
+                <div className="min-h-[3rem]">
+                  <p className="text-sm text-muted-foreground">
+                    {gameConfig.timeControl === "bullet" &&
+                      "1 minute, no increment."}
+                    {gameConfig.timeControl === "blitz" &&
+                      "3 minutes, 2 second increment."}
+                    {gameConfig.timeControl === "rapid" &&
+                      "10 minutes, 2 second increment."}
+                    {gameConfig.timeControl === "classical" &&
+                      "30 minutes, no increment."}
+                  </p>
+                </div>
+              </div>
+
+              {/* Row 3: Player 2 */}
+              {playerConfigs.length > 1 && (
+                <div>
+                  <PlayerConfiguration
+                    label="Player 2"
+                    value={playerConfigs[1]}
+                    onChange={(value) => {
+                      const newConfigs = [...playerConfigs];
+                      newConfigs[1] = value;
+                      setPlayerConfigs(newConfigs);
+                    }}
+                  />
+                </div>
+              )}
+
+              {/* Row 3: Variant */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="variant" className="min-w-[120px]">
+                    Variant
+                  </Label>
+                  <Select
+                    value={gameConfig.variant}
+                    onValueChange={(value: Variant) =>
+                      handleGameConfigChange({ ...gameConfig, variant: value })
+                    }
+                  >
+                    <SelectTrigger
+                      id="variant"
+                      className="bg-background w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="classic">Classic</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                {/* Always render text container to prevent layout shift */}
+                <div className="min-h-[3rem]">
+                  <p className="text-sm text-muted-foreground">
+                    {gameConfig.variant === "standard" &&
+                      "Catch the mouse first."}
+                    {gameConfig.variant === "classic" &&
+                      "Reach the corner first."}
+                  </p>
+                </div>
+              </div>
             </div>
 
-            {/* Game Configuration Panel */}
-            <div>
-              <GameConfigurationPanel
-                config={gameConfig}
-                onChange={handleGameConfigChange}
-                isLoggedIn={isLoggedIn}
-                showRatedInfo={true}
-                ratedDisabled={!canRatedGame}
-                showRatedDisabledMessage={true}
-              />
-            </div>
+            {/* Variant Settings - Spanning both columns */}
+            {(gameConfig.variant === "standard" ||
+              gameConfig.variant === "classic") && (
+              <div className="mt-3 space-y-3 p-3 border rounded-md bg-muted/30">
+                <div className="grid grid-cols-2 gap-4 max-w-md">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="board-width" className="min-w-[100px]">
+                      Board Width
+                    </Label>
+                    <Input
+                      id="board-width"
+                      type="number"
+                      min="4"
+                      max="20"
+                      value={gameConfig.boardWidth ?? 8}
+                      onChange={(e) =>
+                        handleGameConfigChange({
+                          ...gameConfig,
+                          boardWidth: parseInt(e.target.value) || 8,
+                        })
+                      }
+                      className="bg-background max-w-[100px]"
+                    />
+                  </div>
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="board-height" className="min-w-[100px]">
+                      Board Height
+                    </Label>
+                    <Input
+                      id="board-height"
+                      type="number"
+                      min="4"
+                      max="20"
+                      value={gameConfig.boardHeight ?? 8}
+                      onChange={(e) =>
+                        handleGameConfigChange({
+                          ...gameConfig,
+                          boardHeight: parseInt(e.target.value) || 8,
+                        })
+                      }
+                      className="bg-background max-w-[100px]"
+                    />
+                  </div>
+                </div>
+              </div>
+            )}
 
-            {/* Create Game Button */}
-            <Button
-              onClick={handleCreateGame}
-              className="w-full"
-              size="lg"
-              disabled={!canCreateGame}
-            >
-              Create game
-            </Button>
+            {/* Create Game Button - Centered */}
+            <div className="mt-3 flex justify-center">
+              <Button
+                onClick={handleCreateGame}
+                className="max-w-xs"
+                size="lg"
+                disabled={!canCreateGame}
+              >
+                Create game
+              </Button>
+            </div>
 
             {/* Error message about invalid player configuration */}
             {!canCreateGame && (
-              <p className="text-sm text-destructive">
-                Friend and Matched User can only be selected when "You" is also
-                selected as a player.
-              </p>
+              <div className="mt-1 text-center">
+                <p className="text-sm text-destructive">
+                  Friend and Matched User can only be selected when "You" is
+                  also selected as a player.
+                </p>
+              </div>
             )}
-          </div>
-        </Card>
+          </Card>
 
-        {/* Join Game Section */}
-        <Card className="p-6 border-border/50 bg-card/50 backdrop-blur">
-          <h2 className="text-2xl font-semibold mb-6">Join game</h2>
-          {filteredAndSortedGames.length === 0 ? (
-            <p className="text-muted-foreground">
-              No games available to join matching your preferences.
-            </p>
-          ) : (
-            <div className="overflow-x-auto">
-              <Table>
-                <TableHeader>
-                  <TableRow>
-                    <TableHead>Join</TableHead>
-                    <TableHead>Variant</TableHead>
-                    <TableHead>Rated</TableHead>
-                    <TableHead>Time control</TableHead>
-                    <TableHead>Board size</TableHead>
-                    <TableHead>Player</TableHead>
-                  </TableRow>
-                </TableHeader>
-                <TableBody>
-                  {filteredAndSortedGames.map((game) => (
-                    <TableRow key={game.gameId}>
-                      <TableCell>
-                        <Button
-                          onClick={() => handleJoinGame(game.gameId)}
-                          size="sm"
-                          variant="outline"
-                        >
-                          Join
-                        </Button>
-                      </TableCell>
-                      <TableCell className="capitalize">
-                        {game.variant}
-                      </TableCell>
-                      <TableCell>{game.rated ? "Yes" : "No"}</TableCell>
-                      <TableCell className="capitalize">
-                        {formatTimeControl(game.timeControl)}
-                      </TableCell>
-                      <TableCell>
-                        {formatBoardSize(game.boardWidth, game.boardHeight)}
-                      </TableCell>
-                      <TableCell>{formatPlayers(game.players)}</TableCell>
+          {/* Join Game Section */}
+          <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
+            <h2 className="text-2xl font-semibold mb-4">Join game</h2>
+            {filteredAndSortedGames.length === 0 ? (
+              <p className="text-muted-foreground">
+                No games available to join.
+              </p>
+            ) : (
+              <div className="overflow-x-auto">
+                <Table>
+                  <TableHeader>
+                    <TableRow>
+                      <TableHead className="text-center">Join</TableHead>
+                      <TableHead className="text-center">Variant</TableHead>
+                      <TableHead className="text-center">Rated</TableHead>
+                      <TableHead className="text-center">
+                        Time control
+                      </TableHead>
+                      <TableHead className="text-center">Board size</TableHead>
+                      <TableHead className="text-center">Player</TableHead>
                     </TableRow>
-                  ))}
-                </TableBody>
-              </Table>
-            </div>
-          )}
-        </Card>
+                  </TableHeader>
+                  <TableBody>
+                    {filteredAndSortedGames.map((game) => (
+                      <TableRow key={game.gameId}>
+                        <TableCell className="text-center">
+                          <Button
+                            onClick={() => handleJoinGame(game.gameId)}
+                            size="sm"
+                            variant="outline"
+                          >
+                            Join
+                          </Button>
+                        </TableCell>
+                        <TableCell className="capitalize text-center">
+                          <span
+                            className={`inline-block px-2 py-1 ${
+                              !game.matchStatus.variant
+                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
+                                : ""
+                            }`}
+                          >
+                            {game.variant}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span
+                            className={`inline-block px-2 py-1 ${
+                              !game.matchStatus.rated
+                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
+                                : ""
+                            }`}
+                          >
+                            {game.rated ? "Yes" : "No"}
+                          </span>
+                        </TableCell>
+                        <TableCell className="capitalize text-center">
+                          <span
+                            className={`inline-block px-2 py-1 ${
+                              !game.matchStatus.timeControl
+                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
+                                : ""
+                            }`}
+                          >
+                            {formatTimeControl(game.timeControl)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          <span
+                            className={`inline-block px-2 py-1 ${
+                              !game.matchStatus.boardSize
+                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
+                                : ""
+                            }`}
+                          >
+                            {formatBoardSize(game.boardWidth, game.boardHeight)}
+                          </span>
+                        </TableCell>
+                        <TableCell className="text-center">
+                          {formatPlayers(game.players)}
+                        </TableCell>
+                      </TableRow>
+                    ))}
+                  </TableBody>
+                </Table>
+              </div>
+            )}
+          </Card>
+        </div>
       </div>
     </div>
   );

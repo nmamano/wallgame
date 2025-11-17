@@ -60,10 +60,12 @@ export function GameConfigurationPanel({
   const renderVariantParameters = () => {
     if (config.variant === "standard" || config.variant === "classic") {
       return (
-        <div className="space-y-4 p-4 border rounded-md bg-muted/30">
+        <div className="space-y-3 p-3 border rounded-md bg-muted/30">
           <div className="grid grid-cols-2 gap-4">
-            <div className="space-y-2">
-              <Label htmlFor="board-width">Board Width</Label>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="board-width" className="min-w-[100px]">
+                Board Width
+              </Label>
               <Input
                 id="board-width"
                 type="number"
@@ -73,11 +75,13 @@ export function GameConfigurationPanel({
                 onChange={(e) =>
                   updateConfig({ boardWidth: parseInt(e.target.value) || 8 })
                 }
-                className="bg-background"
+                className="bg-background max-w-[100px]"
               />
             </div>
-            <div className="space-y-2">
-              <Label htmlFor="board-height">Board Height</Label>
+            <div className="flex items-center gap-3">
+              <Label htmlFor="board-height" className="min-w-[100px]">
+                Board Height
+              </Label>
               <Input
                 id="board-height"
                 type="number"
@@ -87,7 +91,7 @@ export function GameConfigurationPanel({
                 onChange={(e) =>
                   updateConfig({ boardHeight: parseInt(e.target.value) || 8 })
                 }
-                className="bg-background"
+                className="bg-background max-w-[100px]"
               />
             </div>
           </div>
@@ -99,28 +103,60 @@ export function GameConfigurationPanel({
   };
 
   return (
-    <div className="space-y-6">
-      <div className="space-y-2">
-        <Label htmlFor="time-control">Time Control</Label>
-        <Select
-          value={config.timeControl}
-          onValueChange={(value: TimeControl) =>
-            updateConfig({ timeControl: value })
-          }
-        >
-          <SelectTrigger id="time-control" className="bg-background">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="bullet">Bullet (1+0)</SelectItem>
-            <SelectItem value="blitz">Blitz (3+2)</SelectItem>
-            <SelectItem value="rapid">Rapid (10+2)</SelectItem>
-            <SelectItem value="classical">Classical (30+0)</SelectItem>
-          </SelectContent>
-        </Select>
+    <div className="space-y-4">
+      {/* Time Control and Variant side by side */}
+      <div className="grid grid-cols-1 md:grid-cols-2 gap-4">
+        <div className="flex items-center gap-3">
+          <Label htmlFor="time-control" className="min-w-[120px]">
+            Time Control
+          </Label>
+          <Select
+            value={config.timeControl}
+            onValueChange={(value: TimeControl) =>
+              updateConfig({ timeControl: value })
+            }
+          >
+            <SelectTrigger
+              id="time-control"
+              className="bg-background w-[200px]"
+            >
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="bullet">Bullet (1+0)</SelectItem>
+              <SelectItem value="blitz">Blitz (3+2)</SelectItem>
+              <SelectItem value="rapid">Rapid (10+2)</SelectItem>
+              <SelectItem value="classical">Classical (30+0)</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
+
+        <div className="flex items-center gap-3">
+          <Label htmlFor="variant" className="min-w-[120px]">
+            Variant
+          </Label>
+          <Select
+            value={config.variant}
+            onValueChange={(value: Variant) => {
+              // Don't reset parameters here - let the parent component handle loading saved parameters
+              onChange({
+                ...config,
+                variant: value,
+              });
+            }}
+          >
+            <SelectTrigger id="variant" className="bg-background w-[200px]">
+              <SelectValue />
+            </SelectTrigger>
+            <SelectContent>
+              <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="classic">Classic</SelectItem>
+            </SelectContent>
+          </Select>
+        </div>
       </div>
 
-      <div className="space-y-4">
+      <div className="space-y-3">
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label htmlFor="rated">Rated Status</Label>
@@ -137,7 +173,7 @@ export function GameConfigurationPanel({
         </div>
         {/* Always render message container to prevent layout shift */}
         {/* min-h accommodates up to 2 lines of text-sm */}
-        <div className="min-h-[3rem]">
+        <div className="min-h-[2.5rem]">
           {showRatedInfo && !isLoggedIn && (
             <Alert>
               <Info className="h-4 w-4" />
@@ -153,28 +189,6 @@ export function GameConfigurationPanel({
             </p>
           )}
         </div>
-      </div>
-
-      <div className="space-y-2">
-        <Label htmlFor="variant">Variant</Label>
-        <Select
-          value={config.variant}
-          onValueChange={(value: Variant) => {
-            // Don't reset parameters here - let the parent component handle loading saved parameters
-            onChange({
-              ...config,
-              variant: value,
-            });
-          }}
-        >
-          <SelectTrigger id="variant" className="bg-background">
-            <SelectValue />
-          </SelectTrigger>
-          <SelectContent>
-            <SelectItem value="standard">Standard</SelectItem>
-            <SelectItem value="classic">Classic</SelectItem>
-          </SelectContent>
-        </Select>
       </div>
 
       {renderVariantParameters()}
