@@ -3,6 +3,7 @@ import { serveStatic } from "hono/bun";
 import { logger } from "hono/logger";
 import { puzzlesRoute } from "./routes/puzzles";
 import { authRoute } from "./routes/auth";
+import { settingsRoute } from "./routes/settings";
 const app = new Hono();
 app.use(logger());
 
@@ -17,6 +18,7 @@ app.get("/blog/*", (c) => {
 const apiRoutes = app
   .basePath("/api")
   .route("/puzzles", puzzlesRoute)
+  .route("/settings", settingsRoute)
   .route("/", authRoute); // /api/login, /api/register, etc.
 
 // When users go to the main website (or any route that doesn't match an API
