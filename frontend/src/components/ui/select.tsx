@@ -4,10 +4,48 @@ import { CheckIcon, ChevronDownIcon, ChevronUpIcon } from "lucide-react";
 
 import { cn } from "@/lib/utils";
 
+const BODY_LOCK_ATTRIBUTE = "data-scroll-locked";
+const BODY_STYLE_OVERRIDES = [
+  { property: "overflow", value: "auto" },
+  { property: "margin-right", value: "0px" },
+  { property: "padding-right", value: "0px" },
+] as const;
+
 function Select({
+  onOpenChange,
+  open,
+  defaultOpen,
   ...props
 }: React.ComponentProps<typeof SelectPrimitive.Root>) {
-  return <SelectPrimitive.Root data-slot="select" {...props} />;
+  const [isOpen, setIsOpen] = React.useState(
+    Boolean(open ?? defaultOpen ?? false)
+  );
+
+  React.useEffect(() => {
+    if (open !== undefined) {
+      setIsOpen(open);
+    }
+  }, [open]);
+
+  const handleOpenChange = React.useCallback(
+    (nextOpen: boolean) => {
+      setIsOpen(nextOpen);
+      onOpenChange?.(nextOpen);
+    },
+    [onOpenChange]
+  );
+
+  usePreventBodyScrollFlicker(isOpen);
+
+  return (
+    <SelectPrimitive.Root
+      data-slot="select"
+      open={open}
+      defaultOpen={defaultOpen}
+      onOpenChange={handleOpenChange}
+      {...props}
+    />
+  );
 }
 
 function SelectGroup({
@@ -181,3 +219,85 @@ export {
   SelectTrigger,
   SelectValue,
 };
+
+function usePreventBodyScrollFlicker(enabled: boolean) {
+  React.useEffect(() => {
+    if (!enabled) {
+      return;
+    }
+
+    if (typeof document === "undefined") {
+      return;
+    }
+
+    const body = document.body;
+    if (!body) {
+      return;
+    }
+
+    const getLockCount = () =>
+      Number.parseInt(body.getAttribute(BODY_LOCK_ATTRIBUTE) ?? "0", 10) || 0;
+
+    let restoreInlineStyles: (() => void) | null = null;
+
+    const applyOverride = () => {
+      if (restoreInlineStyles || getLockCount() > 1) {
+        return;
+      }
+
+      const snapshots = BODY_STYLE_OVERRIDES.map(({ property }) => ({
+        property,
+        value: body.style.getPropertyValue(property),
+        priority: body.style.getPropertyPriority(property),
+      }));
+
+      BODY_STYLE_OVERRIDES.forEach(({ property, value }) => {
+        body.style.setProperty(property, value, "important");
+      });
+
+      restoreInlineStyles = () => {
+        snapshots.forEach(({ property, value, priority }) => {
+          if (value) {
+            body.style.setProperty(property, value, priority || undefined);
+          } else {
+            body.style.removeProperty(property);
+          }
+        });
+        restoreInlineStyles = null;
+      };
+    };
+
+    const removeOverride = () => {
+      if (restoreInlineStyles) {
+        restoreInlineStyles();
+      }
+    };
+
+    const updateOverride = () => {
+      if (getLockCount() <= 1) {
+        applyOverride();
+      } else {
+        removeOverride();
+      }
+    };
+
+    updateOverride();
+
+    if (typeof MutationObserver !== "undefined") {
+      const observer = new MutationObserver(updateOverride);
+      observer.observe(body, {
+        attributes: true,
+        attributeFilter: [BODY_LOCK_ATTRIBUTE],
+      });
+
+      return () => {
+        observer.disconnect();
+        removeOverride();
+      };
+    }
+
+    return () => {
+      removeOverride();
+    };
+  }, [enabled]);
+}

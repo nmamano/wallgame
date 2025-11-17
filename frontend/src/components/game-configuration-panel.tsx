@@ -146,16 +146,11 @@ export function GameConfigurationPanel({
         <Select
           value={config.variant}
           onValueChange={(value: Variant) => {
-            const newConfig: GameConfiguration = {
+            // Don't reset parameters here - let the parent component handle loading saved parameters
+            onChange({
               ...config,
               variant: value,
-            };
-            // Reset variant-specific parameters when variant changes
-            if (value === "standard" || value === "classic") {
-              newConfig.boardWidth = 8;
-              newConfig.boardHeight = 8;
-            }
-            onChange(newConfig);
+            });
           }}
         >
           <SelectTrigger id="variant" className="bg-background">
@@ -172,4 +167,3 @@ export function GameConfigurationPanel({
     </div>
   );
 }
-

@@ -72,7 +72,7 @@ type Env = {
 };
 
 // Add this middleware to all routes that need to be authenticated.
-// Example: /api/me in auth.ts.
+// Note: /api/me does NOT use this middleware - it handles auth directly to allow guests.
 export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
   try {
     const manager = sessionManager(c);
@@ -81,6 +81,10 @@ export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
       return c.json({ error: "Unauthorized" }, 401);
     }
     const user = await kindeClient.getUserProfile(manager);
+    if (!user || !user.id) {
+      console.error("getUserMiddleware: User profile is null or missing ID");
+      return c.json({ error: "Failed to get user profile" }, 500);
+    }
     c.set("user", user);
     await next();
   } catch (error) {
