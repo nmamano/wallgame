@@ -27,6 +27,11 @@ export function Navigation() {
       <div className="container mx-auto px-4">
         <div className="flex h-16 items-center justify-between">
           <Link to="/" className="flex items-center space-x-2">
+            <img
+              src="/logo.png"
+              alt="WallGame Logo"
+              className="h-8 w-auto object-contain mix-blend-multiply dark:mix-blend-screen"
+            />
             <div className="text-2xl font-serif font-bold tracking-tight text-foreground">
               Wall<span className="text-primary">Game</span>
             </div>
