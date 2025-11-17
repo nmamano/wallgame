@@ -14,13 +14,10 @@ import { Route as SoloCampaignRouteImport } from './routes/solo-campaign'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RankingRouteImport } from './routes/ranking'
 import { Route as PuzzlesRouteImport } from './routes/puzzles'
-import { Route as PlayVsAiRouteImport } from './routes/play-vs-ai'
 import { Route as PastGamesRouteImport } from './routes/past-games'
 import { Route as LiveGamesRouteImport } from './routes/live-games'
 import { Route as LearnRouteImport } from './routes/learn'
-import { Route as InviteFriendRouteImport } from './routes/invite-friend'
 import { Route as GameSetupRouteImport } from './routes/game-setup'
-import { Route as FindOthersRouteImport } from './routes/find-others'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as AuthenticatedRouteImport } from './routes/_authenticated'
 import { Route as IndexRouteImport } from './routes/index'
@@ -54,11 +51,6 @@ const PuzzlesRoute = PuzzlesRouteImport.update({
   path: '/puzzles',
   getParentRoute: () => rootRouteImport,
 } as any)
-const PlayVsAiRoute = PlayVsAiRouteImport.update({
-  id: '/play-vs-ai',
-  path: '/play-vs-ai',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const PastGamesRoute = PastGamesRouteImport.update({
   id: '/past-games',
   path: '/past-games',
@@ -74,19 +66,9 @@ const LearnRoute = LearnRouteImport.update({
   path: '/learn',
   getParentRoute: () => rootRouteImport,
 } as any)
-const InviteFriendRoute = InviteFriendRouteImport.update({
-  id: '/invite-friend',
-  path: '/invite-friend',
-  getParentRoute: () => rootRouteImport,
-} as any)
 const GameSetupRoute = GameSetupRouteImport.update({
   id: '/game-setup',
   path: '/game-setup',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const FindOthersRoute = FindOthersRouteImport.update({
-  id: '/find-others',
-  path: '/find-others',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -127,13 +109,10 @@ const AuthenticatedProfileRoute = AuthenticatedProfileRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/find-others': typeof FindOthersRoute
   '/game-setup': typeof GameSetupRoute
-  '/invite-friend': typeof InviteFriendRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
-  '/play-vs-ai': typeof PlayVsAiRoute
   '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -147,13 +126,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/find-others': typeof FindOthersRoute
   '/game-setup': typeof GameSetupRoute
-  '/invite-friend': typeof InviteFriendRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
-  '/play-vs-ai': typeof PlayVsAiRoute
   '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -169,13 +145,10 @@ export interface FileRoutesById {
   '/': typeof IndexRoute
   '/_authenticated': typeof AuthenticatedRouteWithChildren
   '/about': typeof AboutRoute
-  '/find-others': typeof FindOthersRoute
   '/game-setup': typeof GameSetupRoute
-  '/invite-friend': typeof InviteFriendRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
-  '/play-vs-ai': typeof PlayVsAiRoute
   '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -191,13 +164,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/find-others'
     | '/game-setup'
-    | '/invite-friend'
     | '/learn'
     | '/live-games'
     | '/past-games'
-    | '/play-vs-ai'
     | '/puzzles'
     | '/ranking'
     | '/settings'
@@ -211,13 +181,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/find-others'
     | '/game-setup'
-    | '/invite-friend'
     | '/learn'
     | '/live-games'
     | '/past-games'
-    | '/play-vs-ai'
     | '/puzzles'
     | '/ranking'
     | '/settings'
@@ -232,13 +199,10 @@ export interface FileRouteTypes {
     | '/'
     | '/_authenticated'
     | '/about'
-    | '/find-others'
     | '/game-setup'
-    | '/invite-friend'
     | '/learn'
     | '/live-games'
     | '/past-games'
-    | '/play-vs-ai'
     | '/puzzles'
     | '/ranking'
     | '/settings'
@@ -254,13 +218,10 @@ export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AuthenticatedRoute: typeof AuthenticatedRouteWithChildren
   AboutRoute: typeof AboutRoute
-  FindOthersRoute: typeof FindOthersRoute
   GameSetupRoute: typeof GameSetupRoute
-  InviteFriendRoute: typeof InviteFriendRoute
   LearnRoute: typeof LearnRoute
   LiveGamesRoute: typeof LiveGamesRoute
   PastGamesRoute: typeof PastGamesRoute
-  PlayVsAiRoute: typeof PlayVsAiRoute
   PuzzlesRoute: typeof PuzzlesRouteWithChildren
   RankingRoute: typeof RankingRoute
   SettingsRoute: typeof SettingsRoute
@@ -306,13 +267,6 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof PuzzlesRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/play-vs-ai': {
-      id: '/play-vs-ai'
-      path: '/play-vs-ai'
-      fullPath: '/play-vs-ai'
-      preLoaderRoute: typeof PlayVsAiRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/past-games': {
       id: '/past-games'
       path: '/past-games'
@@ -334,25 +288,11 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LearnRouteImport
       parentRoute: typeof rootRouteImport
     }
-    '/invite-friend': {
-      id: '/invite-friend'
-      path: '/invite-friend'
-      fullPath: '/invite-friend'
-      preLoaderRoute: typeof InviteFriendRouteImport
-      parentRoute: typeof rootRouteImport
-    }
     '/game-setup': {
       id: '/game-setup'
       path: '/game-setup'
       fullPath: '/game-setup'
       preLoaderRoute: typeof GameSetupRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/find-others': {
-      id: '/find-others'
-      path: '/find-others'
-      fullPath: '/find-others'
-      preLoaderRoute: typeof FindOthersRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -446,13 +386,10 @@ const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AuthenticatedRoute: AuthenticatedRouteWithChildren,
   AboutRoute: AboutRoute,
-  FindOthersRoute: FindOthersRoute,
   GameSetupRoute: GameSetupRoute,
-  InviteFriendRoute: InviteFriendRoute,
   LearnRoute: LearnRoute,
   LiveGamesRoute: LiveGamesRoute,
   PastGamesRoute: PastGamesRoute,
-  PlayVsAiRoute: PlayVsAiRoute,
   PuzzlesRoute: PuzzlesRouteWithChildren,
   RankingRoute: RankingRoute,
   SettingsRoute: SettingsRoute,

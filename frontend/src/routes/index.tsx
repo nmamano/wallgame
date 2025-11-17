@@ -67,7 +67,15 @@ function Index() {
                   </Card>
                 </Link>
 
-                <Link to="/play-vs-ai" className="group">
+                <Link
+                  to="/game-setup"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      sessionStorage.setItem("game-setup-mode", "vs-ai");
+                    }
+                  }}
+                  className="group"
+                >
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
@@ -110,7 +118,15 @@ function Index() {
               </div>
 
               <div className="grid grid-cols-2 gap-6 max-w-2xl mx-auto">
-                <Link to="/find-others" className="group">
+                <Link
+                  to="/game-setup"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      sessionStorage.setItem("game-setup-mode", "with-others");
+                    }
+                  }}
+                  className="group"
+                >
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
@@ -127,7 +143,18 @@ function Index() {
                   </Card>
                 </Link>
 
-                <Link to="/invite-friend" className="group">
+                <Link
+                  to="/game-setup"
+                  onClick={() => {
+                    if (typeof window !== "undefined") {
+                      sessionStorage.setItem(
+                        "game-setup-mode",
+                        "invite-friend"
+                      );
+                    }
+                  }}
+                  className="group"
+                >
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
                     <CardHeader>
                       <CardTitle className="flex items-center gap-3 text-card-foreground">
