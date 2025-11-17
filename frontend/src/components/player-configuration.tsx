@@ -21,6 +21,7 @@ interface PlayerConfigurationProps {
   onChange: (value: PlayerType) => void;
   customBotBlogUrl?: string;
   label?: string;
+  excludeOptions?: PlayerType[]; // Options to exclude from the dropdown
 }
 
 const PLAYER_TYPE_INFO: Record<
@@ -48,27 +49,44 @@ export function PlayerConfiguration({
   onChange,
   customBotBlogUrl = "#",
   label = "Player Configuration",
+  excludeOptions = [],
 }: PlayerConfigurationProps) {
   const selectedInfo = value ? PLAYER_TYPE_INFO[value] : null;
   const id = `player-type-${label.toLowerCase().replace(/\s+/g, "-")}`;
 
+  const allOptions: Array<{ value: PlayerType; label: string }> = [
+    { value: "you", label: "You" },
+    { value: "friend", label: "Friend" },
+    { value: "matched-user", label: "Matched user" },
+    { value: "easy-bot", label: "Easy Bot" },
+    { value: "medium-bot", label: "Medium Bot" },
+    { value: "hard-bot", label: "Hard Bot" },
+    { value: "custom-bot", label: "Custom bot" },
+  ];
+
+  const availableOptions = allOptions.filter(
+    (option) => !excludeOptions.includes(option.value)
+  );
+
   return (
     <div className="space-y-2">
-      <Label htmlFor={id}>{label}</Label>
-      <Select value={value} onValueChange={onChange}>
-        <SelectTrigger id={id} className="bg-background w-full">
-          <SelectValue placeholder="Select player type" />
-        </SelectTrigger>
-        <SelectContent>
-          <SelectItem value="you">You</SelectItem>
-          <SelectItem value="friend">Friend</SelectItem>
-          <SelectItem value="matched-user">Matched user</SelectItem>
-          <SelectItem value="easy-bot">Easy Bot</SelectItem>
-          <SelectItem value="medium-bot">Medium Bot</SelectItem>
-          <SelectItem value="hard-bot">Hard Bot</SelectItem>
-          <SelectItem value="custom-bot">Custom bot</SelectItem>
-        </SelectContent>
-      </Select>
+      <div className="flex items-center gap-3">
+        <Label htmlFor={id} className="min-w-[100px]">
+          {label}
+        </Label>
+        <Select value={value} onValueChange={onChange}>
+          <SelectTrigger id={id} className="bg-background w-[200px]">
+            <SelectValue placeholder="Select player type" />
+          </SelectTrigger>
+          <SelectContent>
+            {availableOptions.map((option) => (
+              <SelectItem key={option.value} value={option.value}>
+                {option.label}
+              </SelectItem>
+            ))}
+          </SelectContent>
+        </Select>
+      </div>
       {/* Always render text container to prevent layout shift */}
       {/* min-h accommodates up to 2 lines of text-sm (text-sm line-height ~1.5, so 2 lines ≈ 3rem) */}
       <div className="min-h-[3rem]">
