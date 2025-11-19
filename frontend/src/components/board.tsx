@@ -4,9 +4,10 @@ import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
+import { type PlayerColor, colorClassMap, colorFilterMap } from "@/lib/player-colors";
 
-// Types
-export type PlayerColor = "red" | "blue" | "green" | "purple" | string;
+// Re-export for backwards compatibility
+export type { PlayerColor };
 
 export type WallState =
   | "placed"
@@ -23,6 +24,7 @@ export interface Pawn {
   id: string;
   color: PlayerColor;
   type?: PawnType; // Optional, defaults to "cat"
+  pawnStyle?: string; // Optional, stores the specific cat/mouse SVG filename
 }
 
 export interface Wall {
@@ -66,6 +68,9 @@ export interface BoardProps {
   ) => void;
   onPawnRightClick?: (row: number, col: number, pawnId: string) => void;
   onWallRightClick?: (wallIndex: number) => void;
+  catPawnPath?: string;
+  mousePawnPath?: string;
+  className?: string;
 }
 
 const colorMap: Record<string, string> = {
@@ -73,14 +78,11 @@ const colorMap: Record<string, string> = {
   blue: "#2563eb",
   green: "#16a34a",
   purple: "#9333ea",
-};
-
-// Color class mapping for Cat icons
-const colorClassMap: Record<string, string> = {
-  red: "text-red-600",
-  blue: "text-blue-600",
-  green: "text-green-600",
-  purple: "text-purple-600",
+  orange: "#ea580c",
+  pink: "#ec4899",
+  cyan: "#06b6d4",
+  brown: "#b45309",
+  gray: "#6b7280",
 };
 
 type WallMaps = {
@@ -232,6 +234,9 @@ export function Board({
   onWallClick,
   onPawnRightClick,
   onWallRightClick,
+  catPawnPath,
+  mousePawnPath,
+  className = "p-4",
 }: BoardProps) {
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
@@ -242,7 +247,7 @@ export function Board({
   );
 
   // Calculate cell size for positioning walls (dynamic based on grid size)
-  const gapSize = 0.25; // rem
+  const gapSize = 0.5; // rem
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const gapValue = `${gapSize}rem`;
 
@@ -402,7 +407,7 @@ export function Board({
   };
 
   return (
-    <div className="p-8 w-full">
+    <div className={`w-full ${className}`}>
       <div className={`rounded-lg p-4 bg-amber-100 w-full ${maxWidth} mx-auto`}>
         <div className="relative">
           {/* Top row labels (column letters) */}
@@ -478,9 +483,10 @@ export function Board({
           </div>
 
           <div
-            className="grid gap-1 w-full relative"
+            className="grid w-full relative"
             style={{
               gridTemplateColumns: `repeat(${cols}, 1fr)`,
+              gap: gapValue,
             }}
           >
             {/* Wall click areas - horizontal (between rows) */}
@@ -621,6 +627,65 @@ export function Board({
                         {cellPawns.length === 1 ? (
                           (() => {
                             const pawn = cellPawns[0];
+                            
+                            // Custom Cat Pawn Logic - use pawn's own style only
+                            const customCatPath = pawn.type !== "rat" && pawn.pawnStyle 
+                              ? `/pawns/cat/${pawn.pawnStyle}`
+                              : null;
+                            
+                            if (customCatPath) {
+                                return (
+                                  <div 
+                                    className="w-full h-full transform hover:scale-110 transition-transform cursor-pointer relative p-0.5"
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      onPawnRightClick?.(
+                                        rowIndex,
+                                        colIndex,
+                                        pawn.id
+                                      );
+                                    }}
+                                  >
+                                    <img 
+                                      src={customCatPath} 
+                                      alt="pawn" 
+                                      className="w-full h-full object-contain drop-shadow-md"
+                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                    />
+                                  </div>
+                                );
+                            }
+                            
+                            // Custom Mouse Pawn Logic - use pawn's own style only
+                            const customMousePath = pawn.type === "rat" && pawn.pawnStyle
+                              ? `/pawns/mouse/${pawn.pawnStyle}`
+                              : null;
+                            
+                            if (customMousePath) {
+                                return (
+                                  <div 
+                                    className="w-full h-full transform hover:scale-110 transition-transform cursor-pointer relative p-0.5"
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      onPawnRightClick?.(
+                                        rowIndex,
+                                        colIndex,
+                                        pawn.id
+                                      );
+                                    }}
+                                  >
+                                    <img 
+                                      src={customMousePath} 
+                                      alt="pawn" 
+                                      className="w-full h-full object-contain drop-shadow-md"
+                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                    />
+                                  </div>
+                                );
+                            }
+
                             const Icon = pawn.type === "rat" ? Rat : Cat;
                             return (
                               <Icon
@@ -644,6 +709,66 @@ export function Board({
                         ) : (
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) => {
+                              // Check if we should render a custom image for cat
+                              const customCatPath = pawn.type !== "rat" && pawn.pawnStyle
+                                ? `/pawns/cat/${pawn.pawnStyle}`
+                                : null;
+                              
+                              if (customCatPath) {
+                                return (
+                                  <div
+                                    key={pawn.id}
+                                    className="w-6 h-6 transform hover:scale-110 transition-transform cursor-pointer relative"
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      onPawnRightClick?.(
+                                        rowIndex,
+                                        colIndex,
+                                        pawn.id
+                                      );
+                                    }}
+                                  >
+                                    <img 
+                                      src={customCatPath} 
+                                      alt="pawn" 
+                                      className="w-full h-full object-contain"
+                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                    />
+                                  </div>
+                                );
+                              }
+
+                              // Check if we should render a custom image for mouse
+                              const customMousePath = pawn.type === "rat" && pawn.pawnStyle
+                                ? `/pawns/mouse/${pawn.pawnStyle}`
+                                : null;
+                              
+                              if (customMousePath) {
+                                return (
+                                  <div
+                                    key={pawn.id}
+                                    className="w-6 h-6 transform hover:scale-110 transition-transform cursor-pointer relative"
+                                    onContextMenu={(e) => {
+                                      e.preventDefault();
+                                      e.stopPropagation();
+                                      onPawnRightClick?.(
+                                        rowIndex,
+                                        colIndex,
+                                        pawn.id
+                                      );
+                                    }}
+                                  >
+                                    <img 
+                                      src={customMousePath} 
+                                      alt="pawn" 
+                                      className="w-full h-full object-contain"
+                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                    />
+                                  </div>
+                                );
+                              }
+
                               const Icon = pawn.type === "rat" ? Rat : Cat;
                               return (
                                 <Icon
