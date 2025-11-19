@@ -22,12 +22,92 @@ export function GameShowcase() {
   const walls: Wall[] = [
     // Red player walls
     { row1: 1, col1: 2, row2: 1, col2: 3, state: "placed", playerColor: "red" }, // Vertical wall
+    { row1: 0, col1: 2, row2: 0, col2: 3, state: "placed", playerColor: "red" }, // Vertical wall
     { row1: 1, col1: 3, row2: 1, col2: 4, state: "placed", playerColor: "red" }, // Adjacent vertical wall
     { row1: 2, col1: 3, row2: 3, col2: 3, state: "placed", playerColor: "red" }, // Horizontal wall
     { row1: 3, col1: 4, row2: 4, col2: 4, state: "placed", playerColor: "red" }, // Horizontal wall
     { row1: 2, col1: 5, row2: 2, col2: 6, state: "placed", playerColor: "red" }, // Vertical wall
     { row1: 3, col1: 5, row2: 3, col2: 6, state: "placed", playerColor: "red" }, // Adjacent vertical wall
     { row1: 4, col1: 4, row2: 5, col2: 4, state: "placed", playerColor: "red" }, // Horizontal wall
+
+    { row1: 0, col1: 1, row2: 0, col2: 2, state: "placed", playerColor: "red" }, // Vertical wall
+    {
+      row1: 0,
+      col1: 1,
+      row2: 1,
+      col2: 1,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+
+    { row1: 3, col1: 1, row2: 3, col2: 2, state: "placed", playerColor: "red" }, // Vertical wall
+    {
+      row1: 2,
+      col1: 1,
+      row2: 3,
+      col2: 1,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+
+    {
+      row1: 5,
+      col1: 1,
+      row2: 5,
+      col2: 2,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+    {
+      row1: 4,
+      col1: 1,
+      row2: 5,
+      col2: 1,
+      state: "placed",
+      playerColor: "red",
+    }, // Vertical wall
+
+    {
+      row1: 7,
+      col1: 1,
+      row2: 7,
+      col2: 2,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+    {
+      row1: 6,
+      col1: 2,
+      row2: 7,
+      col2: 2,
+      state: "placed",
+      playerColor: "red",
+    }, // Vertical wall
+
+    {
+      row1: 9,
+      col1: 1,
+      row2: 9,
+      col2: 2,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+    {
+      row1: 7,
+      col1: 2,
+      row2: 7,
+      col2: 3,
+      state: "placed",
+      playerColor: "blue",
+    }, // Vertical wall
+    {
+      row1: 7,
+      col1: 2,
+      row2: 8,
+      col2: 2,
+      state: "placed",
+      playerColor: "red",
+    }, // Vertical wall
 
     // Blue player walls
     {
