@@ -1,7 +1,9 @@
 "use client";
 
-import type React from "react";
+import type { CSSProperties, ReactNode } from "react";
+import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
+import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
 
 // Types
 export type PlayerColor = "red" | "blue" | "green" | "purple" | string;
@@ -55,6 +57,15 @@ export interface BoardProps {
   walls?: Wall[];
   arrows?: Arrow[];
   lastMove?: LastMove;
+  maxWidth?: string;
+  onCellClick?: (row: number, col: number) => void;
+  onWallClick?: (
+    row: number,
+    col: number,
+    orientation: "horizontal" | "vertical"
+  ) => void;
+  onPawnRightClick?: (row: number, col: number, pawnId: string) => void;
+  onWallRightClick?: (wallIndex: number) => void;
 }
 
 const colorMap: Record<string, string> = {
@@ -72,6 +83,143 @@ const colorClassMap: Record<string, string> = {
   purple: "text-purple-600",
 };
 
+type WallMaps = {
+  vertical: Map<string, Wall>;
+  horizontal: Map<string, Wall>;
+};
+
+type PillarColors = Record<EdgeColorKey, string | null>;
+
+const wallKey = (row: number, col: number) => `${row}-${col}`;
+
+const buildWallMaps = (walls: Wall[]): WallMaps => {
+  const vertical = new Map<string, Wall>();
+  const horizontal = new Map<string, Wall>();
+
+  walls.forEach((wall) => {
+    if (wall.row1 === wall.row2) {
+      const row = wall.row1;
+      const minCol = Math.min(wall.col1, wall.col2);
+      vertical.set(wallKey(row, minCol), wall);
+      return;
+    }
+
+    if (wall.col1 === wall.col2) {
+      const col = wall.col1;
+      const minRow = Math.min(wall.row1, wall.row2);
+      horizontal.set(wallKey(minRow, col), wall);
+    }
+  });
+
+  return { vertical, horizontal };
+};
+
+const getWallColor = (wall: Wall): string => {
+  if (wall.state === "placed" && wall.playerColor) {
+    return colorMap[wall.playerColor] || "#dc2626";
+  }
+  if (wall.state === "staged") return "#fbbf24";
+  if (wall.state === "premoved") return "#60a5fa";
+  if (wall.state === "calculated") return "#94a3b8";
+  return "transparent";
+};
+
+const getPillarColors = (
+  rowIndex: number,
+  colIndex: number,
+  wallMaps: WallMaps,
+  resolveColor: (wall: Wall) => string
+): PillarColors => {
+  const northWall = wallMaps.vertical.get(wallKey(rowIndex - 1, colIndex - 1));
+  const southWall = wallMaps.vertical.get(wallKey(rowIndex, colIndex - 1));
+  const westWall = wallMaps.horizontal.get(wallKey(rowIndex - 1, colIndex - 1));
+  const eastWall = wallMaps.horizontal.get(wallKey(rowIndex - 1, colIndex));
+
+  return {
+    north: northWall ? resolveColor(northWall) : null,
+    east: eastWall ? resolveColor(eastWall) : null,
+    south: southWall ? resolveColor(southWall) : null,
+    west: westWall ? resolveColor(westWall) : null,
+  };
+};
+
+const computeGapPosition = (
+  index: number,
+  cellSize: string,
+  gapValue: string
+): string => `calc(${index} * (${cellSize} + ${gapValue}) - ${gapValue})`;
+
+const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
+  const size = 100;
+  return {
+    x: colIndex * size,
+    y: rowIndex * size,
+    width: size,
+    height: size,
+  };
+};
+
+type CreatePillarElementsParams = {
+  rows: number;
+  cols: number;
+  cellSize: string;
+  gapValue: string;
+  wallMaps: WallMaps;
+  resolveColor: (wall: Wall) => string;
+};
+
+const createPillarElements = ({
+  rows,
+  cols,
+  cellSize,
+  gapValue,
+  wallMaps,
+  resolveColor,
+}: CreatePillarElementsParams): ReactNode[] => {
+  if (rows < 2 || cols < 2) {
+    return [];
+  }
+
+  const elements: ReactNode[] = [];
+
+  for (let rowIndex = 1; rowIndex < rows; rowIndex += 1) {
+    for (let colIndex = 1; colIndex < cols; colIndex += 1) {
+      const colors = getPillarColors(
+        rowIndex,
+        colIndex,
+        wallMaps,
+        resolveColor
+      );
+      const boundingBox = buildPillarBoundingBox(rowIndex, colIndex);
+      const pillar = new StyledPillar({ boundingBox, colors });
+      const style: CSSProperties = {
+        position: "absolute",
+        width: gapValue,
+        height: gapValue,
+        top: computeGapPosition(rowIndex, cellSize, gapValue),
+        left: computeGapPosition(colIndex, cellSize, gapValue),
+        pointerEvents: "none",
+        zIndex: 12,
+      };
+
+      elements.push(
+        <div key={`pillar-${rowIndex}-${colIndex}`} style={style}>
+          <svg
+            width="100%"
+            height="100%"
+            viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
+            preserveAspectRatio="none"
+          >
+            {pillar.render()}
+          </svg>
+        </div>
+      );
+    }
+  }
+
+  return elements;
+};
+
 export function Board({
   rows = 10,
   cols = 10,
@@ -79,6 +227,11 @@ export function Board({
   walls = [],
   arrows = [],
   lastMove,
+  maxWidth = "max-w-4xl",
+  onCellClick,
+  onWallClick,
+  onPawnRightClick,
+  onWallRightClick,
 }: BoardProps) {
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
@@ -91,6 +244,21 @@ export function Board({
   // Calculate cell size for positioning walls (dynamic based on grid size)
   const gapSize = 0.25; // rem
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
+  const gapValue = `${gapSize}rem`;
+
+  const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
+  const pillars = useMemo(
+    () =>
+      createPillarElements({
+        rows,
+        cols,
+        cellSize,
+        gapValue,
+        wallMaps,
+        resolveColor: getWallColor,
+      }),
+    [rows, cols, cellSize, gapValue, wallMaps]
+  );
 
   // Get pawns for a cell
   const getPawnsForCell = (row: number, col: number): Pawn[] => {
@@ -160,13 +328,6 @@ export function Board({
     );
   };
 
-  // Get arrows for a cell (arrows starting from this cell)
-  const getArrowsFromCell = (row: number, col: number): Arrow[] => {
-    return arrows.filter(
-      (arrow) => arrow.fromRow === row && arrow.fromCol === col
-    );
-  };
-
   // Normalize wall coordinates (always store in consistent order)
   const normalizeWall = (wall: Wall): [number, number, number, number] => {
     if (
@@ -176,17 +337,6 @@ export function Board({
       return [wall.row1, wall.col1, wall.row2, wall.col2];
     }
     return [wall.row2, wall.col2, wall.row1, wall.col1];
-  };
-
-  // Get wall color based on state and player color
-  const getWallColor = (wall: Wall): string => {
-    if (wall.state === "placed" && wall.playerColor) {
-      return colorMap[wall.playerColor] || "#dc2626";
-    }
-    if (wall.state === "staged") return "#fbbf24"; // Yellow/amber for staged
-    if (wall.state === "premoved") return "#60a5fa"; // Light blue for premoved
-    if (wall.state === "calculated") return "#94a3b8"; // Gray for calculated
-    return "transparent";
   };
 
   // Get arrow color based on type
@@ -252,8 +402,8 @@ export function Board({
   };
 
   return (
-    <div className="p-8">
-      <div className="rounded-lg p-4 bg-amber-100 w-full max-w-4xl mx-auto">
+    <div className="p-8 w-full">
+      <div className={`rounded-lg p-4 bg-amber-100 w-full ${maxWidth} mx-auto`}>
         <div className="relative">
           {/* Top row labels (column letters) */}
           <div
@@ -333,6 +483,48 @@ export function Board({
               gridTemplateColumns: `repeat(${cols}, 1fr)`,
             }}
           >
+            {/* Wall click areas - horizontal (between rows) */}
+            {Array.from({ length: rows - 1 }, (_, rowIndex) =>
+              Array.from({ length: cols }, (_, colIndex) => (
+                <div
+                  key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
+                  className="absolute cursor-pointer hover:bg-blue-200/20"
+                  style={{
+                    width: cellSize,
+                    height: gapValue,
+                    top: `calc(${rowIndex + 1} * (${cellSize} + ${gapValue}) - ${gapValue} / 2)`,
+                    left: `calc(${colIndex} * (${cellSize} + ${gapValue}))`,
+                    transform: "translateY(-50%)",
+                    zIndex: 15,
+                  }}
+                  onClick={() =>
+                    onWallClick?.(rowIndex + 1, colIndex, "horizontal")
+                  }
+                />
+              ))
+            )}
+
+            {/* Wall click areas - vertical (between columns) */}
+            {Array.from({ length: rows }, (_, rowIndex) =>
+              Array.from({ length: cols - 1 }, (_, colIndex) => (
+                <div
+                  key={`vertical-wall-click-${rowIndex}-${colIndex}`}
+                  className="absolute cursor-pointer hover:bg-blue-200/20"
+                  style={{
+                    width: gapValue,
+                    height: cellSize,
+                    top: `calc(${rowIndex} * (${cellSize} + ${gapValue}))`,
+                    left: `calc(${colIndex + 1} * (${cellSize} + ${gapValue}) - ${gapValue} / 2)`,
+                    transform: "translateX(-50%)",
+                    zIndex: 15,
+                  }}
+                  onClick={() =>
+                    onWallClick?.(rowIndex, colIndex + 1, "vertical")
+                  }
+                />
+              ))
+            )}
+
             {/* Render arrows */}
             {arrows.map((arrow, index) => renderArrow(arrow, index))}
             {/* Render last move arrow */}
@@ -344,7 +536,7 @@ export function Board({
               const isHorizontal = row1 === row2;
               const wallColor = getWallColor(wall);
 
-              let style: React.CSSProperties = {
+              let style: CSSProperties = {
                 position: "absolute",
                 backgroundColor: wallColor,
                 zIndex:
@@ -360,13 +552,13 @@ export function Board({
                 const minCol = Math.min(col1, col2);
 
                 // 🔴 NEW: true center of the gap between col minCol and minCol + 1
-                const wallCenterX = `calc((${minCol + 1} * (${cellSize} + ${gapSize}rem)) - ${gapSize}rem / 2)`;
+                const wallCenterX = `calc((${minCol + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
 
                 style = {
                   ...style,
                   height: cellSize, // spans one cell vertically
-                  width: "0.5rem",
-                  top: `calc(${row1} * (${cellSize} + ${gapSize}rem))`,
+                  width: gapValue,
+                  top: `calc(${row1} * (${cellSize} + ${gapValue}))`,
                   left: wallCenterX,
                   transform: "translateX(-50%)",
                   opacity: wall.state === "calculated" ? 0.5 : 1,
@@ -376,13 +568,13 @@ export function Board({
                 const minRow = Math.min(row1, row2);
 
                 // 🔴 NEW: true center of the gap between row minRow and minRow + 1
-                const wallCenterY = `calc((${minRow + 1} * (${cellSize} + ${gapSize}rem)) - ${gapSize}rem / 2)`;
+                const wallCenterY = `calc((${minRow + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
 
                 style = {
                   ...style,
                   width: cellSize, // spans one cell horizontally
-                  height: "0.5rem",
-                  left: `calc(${col1} * (${cellSize} + ${gapSize}rem))`,
+                  height: gapValue,
+                  left: `calc(${col1} * (${cellSize} + ${gapValue}))`,
                   top: wallCenterY,
                   transform: "translateY(-50%)",
                   opacity: wall.state === "calculated" ? 0.5 : 1,
@@ -398,10 +590,16 @@ export function Board({
                 <div
                   key={`wall-${index}`}
                   style={style}
-                  className={`shadow-md rounded-full ${borderStyle}`}
+                  className={`shadow-md ${borderStyle}`}
+                  onContextMenu={(e) => {
+                    e.preventDefault();
+                    onWallRightClick?.(index);
+                  }}
                 />
               );
             })}
+            {/* Render pillars */}
+            {pillars}
 
             {/* Render cells */}
             {grid.map((row, rowIndex) =>
@@ -412,9 +610,10 @@ export function Board({
                 return (
                   <div
                     key={`${rowIndex}-${colIndex}`}
-                    className={`aspect-square border border-amber-400 flex items-center justify-center relative ${
+                    className={`aspect-square border border-amber-400 flex items-center justify-center relative cursor-pointer hover:bg-amber-300 ${
                       isLight ? "bg-amber-200" : "bg-amber-100"
                     }`}
+                    onClick={() => onCellClick?.(rowIndex, colIndex)}
                   >
                     {/* Pawns */}
                     {cellPawns.length > 0 && (
@@ -429,7 +628,16 @@ export function Board({
                                 strokeWidth={2.5}
                                 className={`${
                                   colorClassMap[pawn.color] || "text-red-600"
-                                } w-full h-full transform hover:scale-110 transition-transform`}
+                                } w-full h-full transform hover:scale-110 transition-transform cursor-pointer`}
+                                onContextMenu={(e) => {
+                                  e.preventDefault();
+                                  e.stopPropagation();
+                                  onPawnRightClick?.(
+                                    rowIndex,
+                                    colIndex,
+                                    pawn.id
+                                  );
+                                }}
                               />
                             );
                           })()
@@ -444,7 +652,16 @@ export function Board({
                                   strokeWidth={2.5}
                                   className={`${
                                     colorClassMap[pawn.color] || "text-red-600"
-                                  } transform hover:scale-110 transition-transform`}
+                                  } transform hover:scale-110 transition-transform cursor-pointer`}
+                                  onContextMenu={(e) => {
+                                    e.preventDefault();
+                                    e.stopPropagation();
+                                    onPawnRightClick?.(
+                                      rowIndex,
+                                      colIndex,
+                                      pawn.id
+                                    );
+                                  }}
                                 />
                               );
                             })}
