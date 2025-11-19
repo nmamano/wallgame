@@ -18,6 +18,10 @@ import {
   type PawnType,
   type WallState,
 } from "@/components/board";
+import { PawnSelector } from "@/components/pawn-selector";
+import { CAT_PAWNS } from "@/lib/cat-pawns";
+import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
+import { PLAYER_COLORS, colorDisplayNames, colorHexMap } from "@/lib/player-colors";
 
 export const Route = createFileRoute("/study-board")({
   component: StudyBoard,
@@ -40,6 +44,11 @@ function StudyBoard() {
     useState<PlayerColor>("red");
   const [selectedWallState, setSelectedWallState] =
     useState<WallState>("placed");
+  
+  // Cat pawn selection
+  const [catPawn, setCatPawn] = useState<string>("default");
+  // Mouse pawn selection
+  const [mousePawn, setMousePawn] = useState<string>("default");
 
   // Handle cell clicks to add/remove pawns
   const handleCellClick = useCallback(
@@ -63,6 +72,9 @@ function StudyBoard() {
             id: `${row}-${col}-${Date.now()}`,
             color: selectedPawnColor,
             type: selectedPawnType,
+            pawnStyle: selectedPawnType === "cat" 
+              ? (catPawn !== "default" ? catPawn : undefined)
+              : (mousePawn !== "default" ? mousePawn : undefined),
           };
           newPawns.set(key, [newPawn]);
         }
@@ -70,7 +82,7 @@ function StudyBoard() {
         return newPawns;
       });
     },
-    [selectedPawnColor, selectedPawnType]
+    [selectedPawnColor, selectedPawnType, catPawn, mousePawn]
   );
 
   // Handle wall clicks to add/remove walls
@@ -166,173 +178,241 @@ function StudyBoard() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="w-full mx-auto py-8 px-4">
-        <h1 className="text-4xl font-bold mb-8 text-foreground text-balance">
+      <div className="container mx-auto py-8 px-4">
+        <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground mb-8 text-balance">
           Study Board
         </h1>
 
-        <div className="space-y-6">
+        <div className="flex flex-col lg:flex-row gap-6 items-start">
           {/* Controls */}
-          <Card className="p-6">
-            <h2 className="text-xl font-semibold mb-4">Board Configuration</h2>
+          <Card className="p-4 lg:w-72 shrink-0 space-y-4">
+            <h2 className="text-lg font-semibold">Configuration</h2>
 
-            <div className="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-4 gap-4">
+            <div className="space-y-4">
               {/* Board Dimensions */}
               <div className="space-y-2">
-                <Label htmlFor="rows">Rows</Label>
-                <Select
-                  value={rows.toString()}
-                  onValueChange={(value) => setRows(parseInt(value))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
-                      <SelectItem key={num} value={num.toString()}>
-                        {num}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              </div>
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Dimensions
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="rows" className="text-xs">
+                      Rows
+                    </Label>
+                    <Select
+                      value={rows.toString()}
+                      onValueChange={(value) => setRows(parseInt(value))}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
+                          <SelectItem key={num} value={num.toString()}>
+                            {num}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="cols">Columns</Label>
-                <Select
-                  value={cols.toString()}
-                  onValueChange={(value) => setCols(parseInt(value))}
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
-                      <SelectItem key={num} value={num.toString()}>
-                        {num}
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
+                  <div className="space-y-1">
+                    <Label htmlFor="cols" className="text-xs">
+                      Cols
+                    </Label>
+                    <Select
+                      value={cols.toString()}
+                      onValueChange={(value) => setCols(parseInt(value))}
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {[5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15].map((num) => (
+                          <SelectItem key={num} value={num.toString()}>
+                            {num}
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
               {/* Pawn Properties */}
               <div className="space-y-2">
-                <Label htmlFor="pawn-color">Pawn Color</Label>
-                <Select
-                  value={selectedPawnColor}
-                  onValueChange={(value) =>
-                    setSelectedPawnColor(value as PlayerColor)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="red">Red</SelectItem>
-                    <SelectItem value="blue">Blue</SelectItem>
-                    <SelectItem value="green">Green</SelectItem>
-                    <SelectItem value="purple">Purple</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Pawn
+                </Label>
+                <div className="grid grid-cols-2 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="pawn-color" className="text-xs">
+                      Color
+                    </Label>
+                    <Select
+                      value={selectedPawnColor}
+                      onValueChange={(value) =>
+                        setSelectedPawnColor(value as PlayerColor)
+                      }
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {PLAYER_COLORS.map((color) => (
+                          <SelectItem key={color} value={color}>
+                            <div className="flex items-center gap-2">
+                              <div
+                                className="w-4 h-4 rounded-full border border-gray-300"
+                                style={{ backgroundColor: colorHexMap[color] }}
+                              />
+                              <span>{colorDisplayNames[color]}</span>
+                            </div>
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  </div>
+
+                  <div className="space-y-1">
+                    <Label htmlFor="pawn-type" className="text-xs">
+                      Type
+                    </Label>
+                    <Select
+                      value={selectedPawnType}
+                      onValueChange={(value) =>
+                        setSelectedPawnType(value as PawnType)
+                      }
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="cat">Cat</SelectItem>
+                        <SelectItem value="rat">Mouse</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
+              {/* Cat Pawn Selection */}
               <div className="space-y-2">
-                <Label htmlFor="pawn-type">Pawn Type</Label>
-                <Select
-                  value={selectedPawnType}
-                  onValueChange={(value) =>
-                    setSelectedPawnType(value as PawnType)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="cat">Cat</SelectItem>
-                    <SelectItem value="rat">Rat</SelectItem>
-                  </SelectContent>
-                </Select>
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Cat Pawn Style
+                </Label>
+                <PawnSelector
+                  value={catPawn}
+                  onChange={setCatPawn}
+                  pawns={CAT_PAWNS}
+                  basePath="/pawns/cat/"
+                  label="Cat Pawn"
+                  defaultLabel="Default Cat"
+                  color={selectedPawnColor}
+                />
+              </div>
+
+              {/* Mouse Pawn Selection */}
+              <div className="space-y-2">
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Mouse Pawn Style
+                </Label>
+                <PawnSelector
+                  value={mousePawn}
+                  onChange={setMousePawn}
+                  pawns={MOUSE_PAWNS}
+                  basePath="/pawns/mouse/"
+                  label="Mouse Pawn"
+                  defaultLabel="Default Mouse"
+                  color={selectedPawnColor}
+                />
               </div>
 
               {/* Wall Properties */}
               <div className="space-y-2">
-                <Label htmlFor="wall-color">Wall Color</Label>
-                <Select
-                  value={selectedWallColor}
-                  onValueChange={(value) =>
-                    setSelectedWallColor(value as PlayerColor)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="red">Red</SelectItem>
-                    <SelectItem value="blue">Blue</SelectItem>
-                    <SelectItem value="green">Green</SelectItem>
-                    <SelectItem value="purple">Purple</SelectItem>
-                  </SelectContent>
-                </Select>
-              </div>
+                <Label className="text-xs font-medium text-muted-foreground uppercase tracking-wider">
+                  Wall
+                </Label>
+                <div className="grid grid-cols-1 gap-2">
+                  <div className="space-y-1">
+                    <Label htmlFor="wall-color" className="text-xs">
+                      Color
+                    </Label>
+                    <Select
+                      value={selectedWallColor}
+                      onValueChange={(value) =>
+                        setSelectedWallColor(value as PlayerColor)
+                      }
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="red">Red</SelectItem>
+                        <SelectItem value="blue">Blue</SelectItem>
+                        <SelectItem value="green">Green</SelectItem>
+                        <SelectItem value="purple">Purple</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
 
-              <div className="space-y-2">
-                <Label htmlFor="wall-state">Wall State</Label>
-                <Select
-                  value={selectedWallState}
-                  onValueChange={(value) =>
-                    setSelectedWallState(value as WallState)
-                  }
-                >
-                  <SelectTrigger>
-                    <SelectValue />
-                  </SelectTrigger>
-                  <SelectContent>
-                    <SelectItem value="placed">Placed</SelectItem>
-                    <SelectItem value="staged">Staged</SelectItem>
-                    <SelectItem value="premoved">Premoved</SelectItem>
-                    <SelectItem value="calculated">Calculated</SelectItem>
-                    <SelectItem value="missing">Missing</SelectItem>
-                  </SelectContent>
-                </Select>
+                  <div className="space-y-1">
+                    <Label htmlFor="wall-state" className="text-xs">
+                      State
+                    </Label>
+                    <Select
+                      value={selectedWallState}
+                      onValueChange={(value) =>
+                        setSelectedWallState(value as WallState)
+                      }
+                    >
+                      <SelectTrigger className="h-8">
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="placed">Placed</SelectItem>
+                        <SelectItem value="staged">Staged</SelectItem>
+                        <SelectItem value="premoved">Premoved</SelectItem>
+                        <SelectItem value="calculated">Calculated</SelectItem>
+                        <SelectItem value="missing">Missing</SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                </div>
               </div>
 
               {/* Clear Board */}
-              <div className="flex items-end">
-                <Button
-                  onClick={clearBoard}
-                  variant="destructive"
-                  className="w-full"
-                >
-                  Clear Board
-                </Button>
-              </div>
+              <Button
+                onClick={clearBoard}
+                variant="destructive"
+                className="w-full h-8 text-xs"
+              >
+                Clear Board
+              </Button>
             </div>
 
-            <div className="mt-4 text-sm text-muted-foreground">
-              <p>• Click on cells to add/remove pawns</p>
-              <p>• Click between cells to add/remove walls</p>
-              <p>• Right-click on pawns to change their color</p>
-              <p>• Right-click on walls to change their color</p>
+            <div className="pt-4 border-t text-xs text-muted-foreground space-y-1">
+              <p>• Click cells to add/remove pawns</p>
+              <p>• Click between cells for walls</p>
+              <p>• Right-click to change color</p>
             </div>
           </Card>
 
           {/* Board */}
-          <Card className="p-6">
-            <div className="flex justify-center">
-              <Board
-                rows={rows}
-                cols={cols}
-                pawns={pawns}
-                walls={walls}
-                maxWidth="max-w-3xl"
-                onCellClick={handleCellClick}
-                onWallClick={handleWallClick}
-                onPawnRightClick={handlePawnRightClick}
-                onWallRightClick={handleWallRightClick}
-              />
-            </div>
-          </Card>
+            <Board
+              rows={rows}
+              cols={cols}
+              pawns={pawns}
+              walls={walls}
+              maxWidth="max-w-2xl"
+              className="p-2"
+              onCellClick={handleCellClick}
+              onWallClick={handleWallClick}
+              onPawnRightClick={handlePawnRightClick}
+              onWallRightClick={handleWallRightClick}
+              catPawnPath={catPawn !== "default" ? `/pawns/cat/${catPawn}` : undefined}
+              mousePawnPath={mousePawn !== "default" ? `/pawns/mouse/${mousePawn}` : undefined}
+            />
         </div>
       </div>
     </div>

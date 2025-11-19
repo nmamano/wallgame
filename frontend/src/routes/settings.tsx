@@ -16,6 +16,10 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Loader2 } from "lucide-react";
 import { GameConfigurationPanel } from "@/components/game-configuration-panel";
+import { PawnSelector } from "@/components/pawn-selector";
+import { CAT_PAWNS } from "@/lib/cat-pawns";
+import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
+import { PLAYER_COLORS, colorDisplayNames, colorHexMap } from "@/lib/player-colors";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -231,7 +235,7 @@ function Settings() {
                 </div>
 
                 <div className="space-y-2">
-                  <Label htmlFor="pawn-color">Pawn Color</Label>
+                  <Label htmlFor="pawn-color">Player Color</Label>
                   <Select
                     value={pawnColor}
                     onValueChange={setPawnColor}
@@ -241,44 +245,45 @@ function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="default">Default</SelectItem>
-                      {/* Add more pawn colors here */}
+                      {PLAYER_COLORS.map((color) => (
+                        <SelectItem key={color} value={color}>
+                          <div className="flex items-center gap-2">
+                            <div
+                              className="w-4 h-4 rounded-full border border-gray-300"
+                              style={{ backgroundColor: colorHexMap[color] }}
+                            />
+                            <span>{colorDisplayNames[color]}</span>
+                          </div>
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="cat-pawn">Cat Pawn</Label>
-                  <Select
+                  <PawnSelector
                     value={catPawn}
-                    onValueChange={setCatPawn}
-                    disabled={isLoadingSettings && isLoggedIn}
-                  >
-                    <SelectTrigger id="cat-pawn" className="bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Default</SelectItem>
-                      {/* Add more cat pawn options here */}
-                    </SelectContent>
-                  </Select>
+                    onChange={setCatPawn}
+                    pawns={CAT_PAWNS}
+                    basePath="/pawns/cat/"
+                    label="Cat Pawn"
+                    defaultLabel="Default Cat"
+                    color={pawnColor}
+                  />
                 </div>
 
                 <div className="space-y-2">
                   <Label htmlFor="mouse-pawn">Mouse Pawn</Label>
-                  <Select
+                  <PawnSelector
                     value={mousePawn}
-                    onValueChange={setMousePawn}
-                    disabled={isLoadingSettings && isLoggedIn}
-                  >
-                    <SelectTrigger id="mouse-pawn" className="bg-background">
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="default">Default</SelectItem>
-                      {/* Add more mouse pawn options here */}
-                    </SelectContent>
-                  </Select>
+                    onChange={setMousePawn}
+                    pawns={MOUSE_PAWNS}
+                    basePath="/pawns/mouse/"
+                    label="Mouse Pawn"
+                    defaultLabel="Default Mouse"
+                    color={pawnColor}
+                  />
                 </div>
               </div>
             </CardContent>
