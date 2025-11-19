@@ -9,3 +9,6 @@ dist/
 .env.prod
 
 v0export
+geometric-primitive-library/
+testing_lib/
+waste/
