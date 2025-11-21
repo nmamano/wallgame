@@ -253,10 +253,28 @@ function GameSetup() {
     }
   };
 
+  const navigate = Route.useNavigate();
+
   const handleCreateGame = () => {
-    // TODO: Implement backend call to create game
-    console.log("Creating game with config:", gameConfig);
-    console.log("Player configs:", playerConfigs);
+    // Generate a random game ID (mocking backend generation)
+    const gameId = Math.random().toString(36).substring(2, 15);
+    
+    // In a real app, we would send the config to the backend here
+    // For now, we'll pass the config via state or just rely on defaults in the game page
+    // Since we can't easily pass complex state via URL without encoding it, 
+    // and we want the URL to be shareable, we'll simulate fetching the config 
+    // in the game page based on the ID (or just use random defaults for this demo).
+    
+    // However, to make the demo feel real, we can store the config in sessionStorage
+    // keyed by the gameId, so the game page can "fetch" it.
+    if (typeof window !== "undefined") {
+      sessionStorage.setItem(`game-config-${gameId}`, JSON.stringify({
+        config: gameConfig,
+        players: playerConfigs
+      }));
+    }
+
+    navigate({ to: `/game/${gameId}` });
   };
 
   // Mock data for games in matching stage

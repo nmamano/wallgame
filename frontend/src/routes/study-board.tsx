@@ -132,7 +132,7 @@ function StudyBoard() {
 
   // Handle right-click on pawn to change color
   const handlePawnRightClick = useCallback(
-    (row: number, col: number, pawnId: string) => {
+    (_row: number, _col: number, pawnId: string) => {
       setPawns((prev) => {
         return prev.map((pawn) =>
           pawn.id === pawnId ? { ...pawn, color: selectedPawnColor } : pawn
@@ -424,8 +424,6 @@ function StudyBoard() {
               onWallClick={handleWallClick}
               onPawnRightClick={handlePawnRightClick}
               onWallRightClick={handleWallRightClick}
-              catPawnPath={catPawn !== "default" ? `/pawns/cat/${catPawn}` : undefined}
-              mousePawnPath={mousePawn !== "default" ? `/pawns/mouse/${mousePawn}` : undefined}
             />
         </div>
       </div>
