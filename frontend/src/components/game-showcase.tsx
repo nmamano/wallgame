@@ -3,57 +3,57 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
 import { Board, type Arrow } from "@/components/board";
-import { Wall, createCell, createWall, type Pawn } from "@/lib/game";
+import { createCell, createPlayerWall, type Pawn, type PlayerWall } from "@/lib/game";
 
 export function GameShowcase() {
   const [isPlaying, setIsPlaying] = useState(true);
 
   // Mock game position: 2 players (red and blue), each with a cat and a rat
   const pawns: Pawn[] = [
-    // Red player pieces
-    { id: "red-cat", color: "red", type: "cat", cell: createCell("d8", 10) },
-    { id: "red-rat", color: "red", type: "mouse", cell: createCell("f6", 10) },
+    // Red player pieces (Player 1)
+    { id: "red-cat", playerId: 1, type: "cat", cell: createCell("d8", 10) },
+    { id: "red-rat", playerId: 1, type: "mouse", cell: createCell("f6", 10) },
 
-    // Blue player pieces
-    { id: "blue-cat", color: "blue", type: "cat", cell: createCell("g3", 10) },
-    { id: "blue-rat", color: "blue", type: "mouse", cell: createCell("h5", 10) },
+    // Blue player pieces (Player 2)
+    { id: "blue-cat", playerId: 2, type: "cat", cell: createCell("g3", 10) },
+    { id: "blue-rat", playerId: 2, type: "mouse", cell: createCell("h5", 10) },
   ];
 
   // Placed walls from both players (including adjacent walls)
-  const walls: Wall[] = [
-    // Red player walls
-    createWall(">c9", 10, "red"),
-    createWall(">c10", 10, "red"),
-    createWall(">d9", 10, "red"),
-    createWall("^d7", 10, "red"),
-    createWall("^e6", 10, "red"),
-    createWall(">f8", 10, "red"),
-    createWall(">f7", 10, "red"),
-    createWall("^e5", 10, "red"),
+  const walls: PlayerWall[] = [
+    // Red player walls (Player 1)
+    createPlayerWall(">c9", 10, 1),
+    createPlayerWall(">c10", 10, 1),
+    createPlayerWall(">d9", 10, 1),
+    createPlayerWall("^d7", 10, 1),
+    createPlayerWall("^e6", 10, 1),
+    createPlayerWall(">f8", 10, 1),
+    createPlayerWall(">f7", 10, 1),
+    createPlayerWall("^e5", 10, 1),
 
-    createWall(">b10", 10, "red"),
-    createWall("^b9", 10, "blue"),
+    createPlayerWall(">b10", 10, 1),
+    createPlayerWall("^b9", 10, 2),
 
-    createWall(">b7", 10, "red"),
-    createWall("^b7", 10, "blue"),
+    createPlayerWall(">b7", 10, 1),
+    createPlayerWall("^b7", 10, 2),
 
-    createWall(">b5", 10, "blue"),
-    createWall("^b5", 10, "red"),
+    createPlayerWall(">b5", 10, 2),
+    createPlayerWall("^b5", 10, 1),
 
-    createWall(">b3", 10, "blue"),
-    createWall("^c3", 10, "red"),
+    createPlayerWall(">b3", 10, 2),
+    createPlayerWall("^c3", 10, 1),
 
-    createWall(">b1", 10, "blue"),
-    createWall(">c3", 10, "blue"),
-    createWall("^c2", 10, "red"),
+    createPlayerWall(">b1", 10, 2),
+    createPlayerWall(">c3", 10, 2),
+    createPlayerWall("^c2", 10, 1),
 
-    // Blue player walls
-    createWall("^f3", 10, "blue"),
-    createWall("^g3", 10, "blue"),
-    createWall("^g4", 10, "blue"),
-    createWall(">g3", 10, "blue"),
-    createWall(">h3", 10, "blue"),
-    createWall("^h3", 10, "blue"),
+    // Blue player walls (Player 2)
+    createPlayerWall("^f3", 10, 2),
+    createPlayerWall("^g3", 10, 2),
+    createPlayerWall("^g4", 10, 2),
+    createPlayerWall(">g3", 10, 2),
+    createPlayerWall(">h3", 10, 2),
+    createPlayerWall("^h3", 10, 2),
   ];
 
   // No arrows
@@ -109,6 +109,7 @@ export function GameShowcase() {
             walls={walls}
             arrows={arrows}
             lastMove={lastMove}
+            playerColors={{ 1: "red", 2: "blue" }}
           />
         </div>
       </div>

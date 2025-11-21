@@ -5,7 +5,7 @@ import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
 import { type PlayerColor, colorClassMap, colorFilterMap, colorHexMap } from "@/lib/player-colors";
-import { Cell, Wall, type Pawn } from "@/lib/game";
+import { Cell, Wall, type Pawn, type PlayerWall, type PlayerId } from "@/lib/game";
 
 export type ArrowType = "staged" | "premoved" | "calculated";
 
@@ -27,10 +27,11 @@ export interface BoardProps {
   rows?: number;
   cols?: number;
   pawns?: Pawn[];
-  walls?: Wall[];
+  walls?: PlayerWall[];
   arrows?: Arrow[];
   lastMove?: LastMove;
   maxWidth?: string;
+  playerColors?: Record<PlayerId, PlayerColor>;
   onCellClick?: (row: number, col: number) => void;
   onWallClick?: (
     row: number,
@@ -44,46 +45,46 @@ export interface BoardProps {
   className?: string;
 }
 
-
-
 type WallMaps = {
-  vertical: Map<string, Wall>;
-  horizontal: Map<string, Wall>;
+  vertical: Map<string, PlayerWall>;
+  horizontal: Map<string, PlayerWall>;
 };
 
 type PillarColors = Record<EdgeColorKey, string | null>;
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
-const buildWallMaps = (walls: Wall[]): WallMaps => {
-  const vertical = new Map<string, Wall>();
-  const horizontal = new Map<string, Wall>();
+const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
+  const vertical = new Map<string, PlayerWall>();
+  const horizontal = new Map<string, PlayerWall>();
 
-  walls.forEach((wall) => {
+  walls.forEach((pWall) => {
+    const wall = pWall.wall;
     if (wall.row1 === wall.row2) {
       const row = wall.row1;
       const minCol = Math.min(wall.col1, wall.col2);
-      vertical.set(wallKey(row, minCol), wall);
+      vertical.set(wallKey(row, minCol), pWall);
       return;
     }
 
     if (wall.col1 === wall.col2) {
       const col = wall.col1;
       const minRow = Math.min(wall.row1, wall.row2);
-      horizontal.set(wallKey(minRow, col), wall);
+      horizontal.set(wallKey(minRow, col), pWall);
     }
   });
 
   return { vertical, horizontal };
 };
 
-const getWallColor = (wall: Wall): string => {
-  if (wall.state === "placed" && wall.playerColor) {
-    return colorHexMap[wall.playerColor] || "#dc2626";
+const getWallColor = (pWall: PlayerWall, playerColors?: Record<PlayerId, PlayerColor>): string => {
+  if (pWall.state === "placed" && pWall.playerId && playerColors) {
+    const color = playerColors[pWall.playerId];
+    return colorHexMap[color] || "#dc2626";
   }
-  if (wall.state === "staged") return "#fbbf24";
-  if (wall.state === "premoved") return "#60a5fa";
-  if (wall.state === "calculated") return "#94a3b8";
+  if (pWall.state === "staged") return "#fbbf24";
+  if (pWall.state === "premoved") return "#60a5fa";
+  if (pWall.state === "calculated") return "#94a3b8";
   return "transparent";
 };
 
@@ -91,7 +92,7 @@ const getPillarColors = (
   rowIndex: number,
   colIndex: number,
   wallMaps: WallMaps,
-  resolveColor: (wall: Wall) => string
+  resolveColor: (wall: PlayerWall) => string
 ): PillarColors => {
   const northWall = wallMaps.vertical.get(wallKey(rowIndex - 1, colIndex - 1));
   const southWall = wallMaps.vertical.get(wallKey(rowIndex, colIndex - 1));
@@ -128,7 +129,7 @@ type CreatePillarElementsParams = {
   cellSize: string;
   gapValue: string;
   wallMaps: WallMaps;
-  resolveColor: (wall: Wall) => string;
+  resolveColor: (wall: PlayerWall) => string;
 };
 
 const createPillarElements = ({
@@ -191,6 +192,7 @@ export function Board({
   arrows = [],
   lastMove,
   maxWidth = "max-w-4xl",
+  playerColors = { 1: "red", 2: "blue" },
   onCellClick,
   onWallClick,
   onPawnRightClick,
@@ -212,6 +214,8 @@ export function Board({
   const gapValue = `${gapSize}rem`;
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
+  const resolveWallColor = (wall: PlayerWall) => getWallColor(wall, playerColors);
+  
   const pillars = useMemo(
     () =>
       createPillarElements({
@@ -220,9 +224,9 @@ export function Board({
         cellSize,
         gapValue,
         wallMaps,
-        resolveColor: getWallColor,
+        resolveColor: resolveWallColor,
       }),
-    [rows, cols, cellSize, gapValue, wallMaps]
+    [rows, cols, cellSize, gapValue, wallMaps, playerColors]
   );
 
   // Get pawns for a cell
@@ -515,18 +519,19 @@ export function Board({
             {renderLastMoveArrow()}
 
             {/* Render walls */}
-            {walls.map((wall, index) => {
+            {walls.map((pWall, index) => {
+              const wall = pWall.wall;
               const [row1, col1, row2, col2] = normalizeWall(wall);
               const isHorizontal = row1 === row2;
-              const wallColor = getWallColor(wall);
+              const wallColor = resolveWallColor(pWall);
 
               let style: CSSProperties = {
                 position: "absolute",
                 backgroundColor: wallColor,
                 zIndex:
-                  wall.state === "placed"
+                  pWall.state === "placed"
                     ? 10
-                    : wall.state === "staged" || wall.state === "premoved"
+                    : pWall.state === "staged" || pWall.state === "premoved"
                       ? 8
                       : 2,
               };
@@ -545,7 +550,7 @@ export function Board({
                   top: `calc(${row1} * (${cellSize} + ${gapValue}) - 1px)`,
                   left: wallCenterX,
                   transform: "translateX(-50%)",
-                  opacity: wall.state === "calculated" ? 0.5 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
                 // Horizontal wall (between cells in same column, separating rows)
@@ -561,12 +566,12 @@ export function Board({
                   left: `calc(${col1} * (${cellSize} + ${gapValue}) - 1px)`,
                   top: wallCenterY,
                   transform: "translateY(-50%)",
-                  opacity: wall.state === "calculated" ? 0.5 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               }
 
               const borderStyle =
-                wall.state === "staged" || wall.state === "premoved"
+                pWall.state === "staged" || pWall.state === "premoved"
                   ? "border-2 border-dashed border-gray-600"
                   : "";
 
@@ -605,6 +610,7 @@ export function Board({
                         {cellPawns.length === 1 ? (
                           (() => {
                             const pawn = cellPawns[0];
+                            const pawnColor = playerColors[pawn.playerId];
                             
                             // Custom Cat Pawn Logic - use pawn's own style only
                             const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle 
@@ -629,7 +635,7 @@ export function Board({
                                       src={customCatPath} 
                                       alt="pawn" 
                                       className="w-full h-full object-contain drop-shadow-md"
-                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
                                     />
                                   </div>
                                 );
@@ -658,7 +664,7 @@ export function Board({
                                       src={customMousePath} 
                                       alt="pawn" 
                                       className="w-full h-full object-contain drop-shadow-md"
-                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
                                     />
                                   </div>
                                 );
@@ -670,7 +676,7 @@ export function Board({
                                 size={36}
                                 strokeWidth={2.5}
                                 className={`${
-                                  colorClassMap[pawn.color] || "text-red-600"
+                                  colorClassMap[pawnColor] || "text-red-600"
                                 } w-full h-full transform hover:scale-110 transition-transform cursor-pointer`}
                                 onContextMenu={(e) => {
                                   e.preventDefault();
@@ -687,6 +693,7 @@ export function Board({
                         ) : (
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) => {
+                              const pawnColor = playerColors[pawn.playerId];
                               // Check if we should render a custom image for cat
                               const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle
                                 ? `/pawns/cat/${pawn.pawnStyle}`
@@ -711,7 +718,7 @@ export function Board({
                                       src={customCatPath} 
                                       alt="pawn" 
                                       className="w-full h-full object-contain"
-                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
                                     />
                                   </div>
                                 );
@@ -741,7 +748,7 @@ export function Board({
                                       src={customMousePath} 
                                       alt="pawn" 
                                       className="w-full h-full object-contain"
-                                      style={colorFilterMap[pawn.color] ? { filter: colorFilterMap[pawn.color] } : undefined}
+                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
                                     />
                                   </div>
                                 );
@@ -754,7 +761,7 @@ export function Board({
                                   size={24}
                                   strokeWidth={2.5}
                                   className={`${
-                                    colorClassMap[pawn.color] || "text-red-600"
+                                    colorClassMap[pawnColor] || "text-red-600"
                                   } transform hover:scale-110 transition-transform cursor-pointer`}
                                   onContextMenu={(e) => {
                                     e.preventDefault();
