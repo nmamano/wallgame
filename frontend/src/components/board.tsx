@@ -195,8 +195,6 @@ export function Board({
   onWallClick,
   onPawnRightClick,
   onWallRightClick,
-  catPawnPath,
-  mousePawnPath,
   className = "p-4",
 }: BoardProps) {
   // Create grid array
@@ -366,9 +364,16 @@ export function Board({
     );
   };
 
+  const maxCellSize = 3; // rem
+  const paddingX = 2; // rem (p-4 = 1rem on each side)
+  const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
+
   return (
-    <div className={`w-full ${className}`}>
-      <div className={`rounded-lg p-4 bg-amber-100 w-full ${maxWidth} mx-auto`}>
+    <div className={`w-full ${className} ${maxWidth} mx-auto`}>
+      <div 
+        className="rounded-lg p-4 bg-amber-100 w-full mx-auto"
+        style={{ maxWidth: maxBoardWidth }}
+      >
         <div className="relative">
           {/* Top row labels (column letters) */}
           <div
