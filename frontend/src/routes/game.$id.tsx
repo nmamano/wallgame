@@ -18,7 +18,7 @@ import {
   ChevronRight,
   ChevronsLeft,
   ChevronsRight,
-  MoreHorizontal,
+  Timer,
   User,
   Bot,
   Trophy,
@@ -343,12 +343,12 @@ function GamePage() {
       <div className="flex-1 container mx-auto py-4 px-4 grid grid-cols-1 lg:grid-cols-[350px_1fr_300px] gap-6 h-[calc(100vh-2rem)]">
         
         {/* Left Column: Board & Players */}
-        <div className="lg:col-span-2 flex flex-col h-full gap-4">
+        <div className="lg:col-span-2 flex flex-col h-full gap-2">
           {/* Top Player (Opponent) */}
           {players.length > 1 && <PlayerInfo player={players[1]} isActive={turn === players[1].color} isTop />}
 
           {/* Board Area */}
-          <div className="flex-1 flex items-center justify-center bg-card/30 rounded-xl border border-border/30 p-4 relative overflow-hidden">
+          <div className="flex-1 min-h-0 flex items-center justify-center bg-card/30 rounded-xl border border-border/30 p-4 relative">
             {/* Game Over Overlay */}
             {gameStatus === "finished" && winner && (
               <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
@@ -371,7 +371,7 @@ function GamePage() {
               cols={config?.boardWidth || 9}
               pawns={pawns}
               walls={walls}
-              className="h-full max-h-[70vh] aspect-square"
+              className="h-full w-full"
               maxWidth="max-w-full"
             />
           </div>
@@ -408,6 +408,22 @@ function GamePage() {
               </Button>
             </div>
           </Card>
+
+          {/* Action Buttons */}
+          <div className="grid grid-cols-2 gap-2">
+            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+              <Flag className="w-4 h-4" /> Resign
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+              <Handshake className="w-4 h-4" /> Draw
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+              <RotateCcw className="w-4 h-4" /> Takeback
+            </Button>
+            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+              <Timer className="w-4 h-4" /> Give time
+            </Button>
+          </div>
 
           {/* Tabs: Chat / History */}
           <Card className="flex-1 flex flex-col overflow-hidden bg-card/50 backdrop-blur">
@@ -511,22 +527,6 @@ function GamePage() {
               )}
             </div>
           </Card>
-
-          {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <Flag className="w-4 h-4" /> Resign
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <Handshake className="w-4 h-4" /> Draw
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <RotateCcw className="w-4 h-4" /> Takeback
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <MoreHorizontal className="w-4 h-4" /> More
-            </Button>
-          </div>
         </div>
       </div>
     </div>
