@@ -331,6 +331,56 @@ function GamePage() {
     </div>
   );
 
+  // Layout calculations
+  const rows = config?.boardHeight || 9;
+  const cols = config?.boardWidth || 9;
+  
+  // Board sizing constants (matching Board component internals)
+  const maxCellSize = 3; // rem
+  const gapSize = 0.9; // rem (gap between cells)
+  const boardPadding = 2; // rem (p-4 = 1rem on each side)
+  const containerMargin = 1; // rem (small margin for board container)
+  
+  // Calculate board dimensions
+  const boardWidth = cols * maxCellSize + (cols - 1) * gapSize + boardPadding;
+  const boardHeight = rows * maxCellSize + (rows - 1) * gapSize + boardPadding;
+  
+  // Calculate board container dimensions (board + margin)
+  const boardContainerWidth = boardWidth + containerMargin * 2;
+  
+  // Minimum heights for adjustable components
+  const minBoardContainerHeight = boardHeight + containerMargin * 2;
+  const minChatScrollableHeight = 12; // rem - scrollable content area for ~3-4 chat messages
+  
+  // Fixed component heights
+  const timerHeight = 4; // rem (approximate height of PlayerInfo component)
+  const infoCardHeight = 6.5; // rem (approximate)
+  const actionButtonsHeight = 5; // rem (approximate, 2 rows of buttons)
+  const chatTabsHeight = 3; // rem (tabs header)
+  const chatInputHeight = 4; // rem (chat input / move navigation fixed at bottom)
+  const chatChannelsHeight = 2.5; // rem (chat channel selector)
+  
+  // Calculate gap size
+  const gap = 1; // rem (reduced for tighter layout)
+  
+  // Right column max width
+  const rightColumnMaxWidth = 25; // rem
+  
+  // Left column total height = timer + gap + board container + gap + timer
+  const leftColumnHeight = timerHeight + gap + minBoardContainerHeight + gap + timerHeight;
+  
+  // Right column total height = info + gap + buttons + gap + chat card
+  // Chat card total includes: tabs + (channels + scrollable content + input)
+  const minChatCardHeight = chatTabsHeight + chatChannelsHeight + minChatScrollableHeight + chatInputHeight;
+  const rightColumnHeight = infoCardHeight + gap + actionButtonsHeight + gap + minChatCardHeight;
+  
+  // Determine which component needs to grow to match column heights
+  const heightDiff = leftColumnHeight - rightColumnHeight;
+  const adjustedBoardContainerHeight = heightDiff < 0 ? minBoardContainerHeight - heightDiff : minBoardContainerHeight;
+  // When chat card grows, only the scrollable content area grows (not tabs, channels, or input)
+  const adjustedChatScrollableHeight = heightDiff > 0 ? minChatScrollableHeight + heightDiff : minChatScrollableHeight;
+  const adjustedChatCardHeight = chatTabsHeight + chatChannelsHeight + adjustedChatScrollableHeight + chatInputHeight;
+
   return (
     <div className="min-h-screen bg-background flex flex-col">
       <MatchingStagePanel 
@@ -340,18 +390,41 @@ function GamePage() {
         onAbort={handleAbort}
       />
 
-      <div className="flex-1 container mx-auto py-4 px-4 grid grid-cols-1 lg:grid-cols-[350px_1fr_300px] gap-6 h-[calc(100vh-2rem)]">
+      <div 
+        className="flex-1 py-4 px-4"
+        style={{
+          display: 'grid',
+          gridTemplateColumns: `${boardContainerWidth}rem ${rightColumnMaxWidth}rem`,
+          gap: `${gap}rem`,
+          alignItems: 'start',
+          justifyContent: 'center',
+          margin: '0 auto',
+          width: 'fit-content',
+        }}
+      >
         
-        {/* Left Column: Board & Players */}
-        <div className="lg:col-span-2 flex flex-col h-full gap-2">
-          {/* Top Player (Opponent) */}
+        {/* Left Column: Timers & Board */}
+        <div 
+          className="flex flex-col"
+          style={{
+            width: `${boardContainerWidth}rem`,
+            gap: `${gap}rem`,
+          }}
+        >
+          {/* Top Player (Opponent) Timer */}
           {players.length > 1 && <PlayerInfo player={players[1]} isActive={turn === players[1].color} isTop />}
 
-          {/* Board Area */}
-          <div className="flex-1 min-h-0 flex items-center justify-center bg-card/30 rounded-xl border border-border/30 p-4 relative">
+          {/* Board Container */}
+          <div 
+            className="flex items-center justify-center bg-card/30 rounded-xl border border-border/30 p-4 relative"
+            style={{
+              minHeight: `${adjustedBoardContainerHeight}rem`,
+              height: `${adjustedBoardContainerHeight}rem`,
+            }}
+          >
             {/* Game Over Overlay */}
             {gameStatus === "finished" && winner && (
-              <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center">
+              <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
                 <Card className="p-8 max-w-md w-full text-center space-y-6 shadow-2xl border-primary/20">
                   <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
                   <div>
@@ -367,21 +440,27 @@ function GamePage() {
             )}
 
             <Board 
-              rows={config?.boardHeight || 9}
-              cols={config?.boardWidth || 9}
+              rows={rows}
+              cols={cols}
               pawns={pawns}
               walls={walls}
-              className="h-full w-full"
+              className="p-0"
               maxWidth="max-w-full"
             />
           </div>
 
-          {/* Bottom Player (You) */}
+          {/* Bottom Player (You) Timer */}
           {players.length > 0 && <PlayerInfo player={players[0]} isActive={turn === players[0].color} />}
         </div>
 
-        {/* Right Column: Sidebar */}
-        <div className="flex flex-col h-full gap-4">
+        {/* Right Column: Info, Actions & Chat */}
+        <div 
+          className="flex flex-col"
+          style={{
+            gap: `${gap}rem`,
+            maxWidth: `${rightColumnMaxWidth}rem`,
+          }}
+        >
           {/* Game Info Card */}
           <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
             <div className="flex items-center justify-between">
@@ -425,9 +504,15 @@ function GamePage() {
             </Button>
           </div>
 
-          {/* Tabs: Chat / History */}
-          <Card className="flex-1 flex flex-col overflow-hidden bg-card/50 backdrop-blur">
-            <div className="flex border-b">
+          {/* Chat/Moves Panel */}
+          <Card 
+            className="flex flex-col overflow-hidden bg-card/50 backdrop-blur"
+            style={{
+              height: `${adjustedChatCardHeight}rem`,
+              minHeight: `${adjustedChatCardHeight}rem`,
+            }}
+          >
+            <div className="flex border-b flex-shrink-0">
               <button
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${activeTab === "chat" ? "border-b-2 border-primary text-primary" : "text-muted-foreground hover:text-foreground"}`}
                 onClick={() => setActiveTab("chat")}
@@ -448,11 +533,11 @@ function GamePage() {
               </button>
             </div>
 
-            <div className="flex-1 overflow-hidden relative">
+            <div className="flex-1 overflow-hidden relative flex flex-col">
               {activeTab === "chat" ? (
-                <div className="absolute inset-0 flex flex-col">
+                <>
                   {/* Chat Channels */}
-                  <div className="flex p-2 gap-1 bg-muted/30">
+                  <div className="flex p-2 gap-1 bg-muted/30 flex-shrink-0">
                     {(["game", "team", "audience"] as const).map((c) => (
                       <button
                         key={c}
@@ -486,7 +571,7 @@ function GamePage() {
                   </ScrollArea>
 
                   {/* Input */}
-                  <form onSubmit={handleSendMessage} className="p-3 border-t bg-background/50">
+                  <form onSubmit={handleSendMessage} className="p-3 border-t bg-background/50 flex-shrink-0">
                     <Input 
                       value={chatInput}
                       onChange={(e) => setChatInput(e.target.value)}
@@ -494,9 +579,9 @@ function GamePage() {
                       className="bg-background"
                     />
                   </form>
-                </div>
+                </>
               ) : (
-                <div className="absolute inset-0 flex flex-col">
+                <>
                   <ScrollArea className="flex-1 p-0">
                     <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
                       {history.reduce((acc: any[], move, i) => {
@@ -517,13 +602,13 @@ function GamePage() {
                   </ScrollArea>
                   
                   {/* History Controls */}
-                  <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30">
+                  <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
                     <Button variant="ghost" size="icon" className="h-8"><ChevronsLeft className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8"><ChevronLeft className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8"><ChevronRight className="w-4 h-4" /></Button>
                     <Button variant="ghost" size="icon" className="h-8"><ChevronsRight className="w-4 h-4" /></Button>
                   </div>
-                </div>
+                </>
               )}
             </div>
           </Card>
