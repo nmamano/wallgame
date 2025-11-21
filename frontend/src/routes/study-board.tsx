@@ -12,17 +12,12 @@ import {
 import { Label } from "@/components/ui/label";
 import {
   Board,
-  type Pawn,
-  type Wall,
-  type PlayerColor,
-  type PawnType,
-  type WallState,
 } from "@/components/board";
-import { Cell } from "@/lib/game";
+import { Cell, Wall, type Pawn, type PawnType, type WallState } from "@/lib/game";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
-import { PLAYER_COLORS, colorDisplayNames, colorHexMap } from "@/lib/player-colors";
+import { PLAYER_COLORS, colorDisplayNames, colorHexMap, type PlayerColor } from "@/lib/player-colors";
 
 export const Route = createFileRoute("/study-board")({
   component: StudyBoard,
@@ -301,7 +296,7 @@ function StudyBoard() {
                       </SelectTrigger>
                       <SelectContent>
                         <SelectItem value="cat">Cat</SelectItem>
-                        <SelectItem value="rat">Mouse</SelectItem>
+                        <SelectItem value="mouse">Mouse</SelectItem>
                       </SelectContent>
                     </Select>
                   </div>

@@ -20,11 +20,18 @@ export class Cell {
 
 export type WallOrientation = 'vertical' | 'horizontal';
 
+export type WallState =
+  | "placed"
+  | "staged"
+  | "premoved"
+  | "calculated"
+  | "missing";
+
 export class Wall {
   constructor(
     public cell: Cell,
     public orientation: WallOrientation,
-    public state: "placed" | "staged" | "premoved" | "calculated" | "missing" = "placed",
+    public state: WallState = "placed",
     public playerColor?: PlayerColor
   ) {}
 
@@ -62,6 +69,16 @@ export class Wall {
   get col1(): number { return this.toCoordinates().col1; }
   get row2(): number { return this.toCoordinates().row2; }
   get col2(): number { return this.toCoordinates().col2; }
+}
+
+export type PawnType = "cat" | "mouse";
+
+export interface Pawn {
+  id: string;
+  color: PlayerColor;
+  type: PawnType;
+  cell: Cell;
+  pawnStyle?: string;
 }
 
 export function createCell(notation: string, totalRows: number = 10): Cell {

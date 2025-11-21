@@ -4,30 +4,10 @@ import type { CSSProperties, ReactNode } from "react";
 import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
-import { type PlayerColor, colorClassMap, colorFilterMap } from "@/lib/player-colors";
-import { Cell, Wall } from "@/lib/game";
-
-// Re-export for backwards compatibility
-export type { PlayerColor };
-
-export type WallState =
-  | "placed"
-  | "staged"
-  | "premoved"
-  | "calculated"
-  | "missing";
+import { type PlayerColor, colorClassMap, colorFilterMap, colorHexMap } from "@/lib/player-colors";
+import { Cell, Wall, type Pawn } from "@/lib/game";
 
 export type ArrowType = "staged" | "premoved" | "calculated";
-
-export type PawnType = "cat" | "rat";
-
-export interface Pawn {
-  id: string;
-  color: PlayerColor;
-  type: PawnType; // "cat" or "rat"
-  cell: Cell;
-  pawnStyle?: string; // Optional, stores the specific cat/mouse SVG filename
-}
 
 export interface Arrow {
   from: Cell;
@@ -64,17 +44,7 @@ export interface BoardProps {
   className?: string;
 }
 
-const colorMap: Record<string, string> = {
-  red: "#dc2626",
-  blue: "#2563eb",
-  green: "#16a34a",
-  purple: "#9333ea",
-  orange: "#ea580c",
-  pink: "#ec4899",
-  cyan: "#06b6d4",
-  brown: "#b45309",
-  gray: "#6b7280",
-};
+
 
 type WallMaps = {
   vertical: Map<string, Wall>;
@@ -109,7 +79,7 @@ const buildWallMaps = (walls: Wall[]): WallMaps => {
 
 const getWallColor = (wall: Wall): string => {
   if (wall.state === "placed" && wall.playerColor) {
-    return colorMap[wall.playerColor] || "#dc2626";
+    return colorHexMap[wall.playerColor] || "#dc2626";
   }
   if (wall.state === "staged") return "#fbbf24";
   if (wall.state === "premoved") return "#60a5fa";
@@ -287,7 +257,7 @@ export function Board({
 
     // Get arrow color from player color, or use default gray
     const arrowColor = lastMove.playerColor
-      ? colorMap[lastMove.playerColor] || "#94a3b8"
+      ? colorHexMap[lastMove.playerColor] || "#94a3b8"
       : "#94a3b8";
     const strokeWidth = 1.1;
     const opacity = 0.3; // More subtle than calculated arrows
@@ -619,7 +589,7 @@ export function Board({
                             const pawn = cellPawns[0];
                             
                             // Custom Cat Pawn Logic - use pawn's own style only
-                            const customCatPath = pawn.type !== "rat" && pawn.pawnStyle 
+                            const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle 
                               ? `/pawns/cat/${pawn.pawnStyle}`
                               : null;
                             
@@ -648,7 +618,7 @@ export function Board({
                             }
                             
                             // Custom Mouse Pawn Logic - use pawn's own style only
-                            const customMousePath = pawn.type === "rat" && pawn.pawnStyle
+                            const customMousePath = pawn.type === "mouse" && pawn.pawnStyle
                               ? `/pawns/mouse/${pawn.pawnStyle}`
                               : null;
                             
@@ -676,7 +646,7 @@ export function Board({
                                 );
                             }
 
-                            const Icon = pawn.type === "rat" ? Rat : Cat;
+                            const Icon = pawn.type === "mouse" ? Rat : Cat;
                             return (
                               <Icon
                                 size={36}
@@ -700,7 +670,7 @@ export function Board({
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) => {
                               // Check if we should render a custom image for cat
-                              const customCatPath = pawn.type !== "rat" && pawn.pawnStyle
+                              const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle
                                 ? `/pawns/cat/${pawn.pawnStyle}`
                                 : null;
                               
@@ -730,7 +700,7 @@ export function Board({
                               }
 
                               // Check if we should render a custom image for mouse
-                              const customMousePath = pawn.type === "rat" && pawn.pawnStyle
+                              const customMousePath = pawn.type === "mouse" && pawn.pawnStyle
                                 ? `/pawns/mouse/${pawn.pawnStyle}`
                                 : null;
                               
@@ -759,7 +729,7 @@ export function Board({
                                 );
                               }
 
-                              const Icon = pawn.type === "rat" ? Rat : Cat;
+                              const Icon = pawn.type === "mouse" ? Rat : Cat;
                               return (
                                 <Icon
                                   key={pawn.id}
