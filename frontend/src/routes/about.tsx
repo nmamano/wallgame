@@ -1,10 +1,36 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
-import { ExternalLink } from "lucide-react";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
 
 export const Route = createFileRoute("/about")({
   component: About,
 });
+
+const aboutContent = `
+Wall Game is a strategic board game about building walls and outsmarting your opponents.
+
+## How to Navigate
+
+Use the navigation bar at the top to go to different sections:
+
+- **[Learn](/learn):** Game rules and strategic concepts
+- **[Play](/):** Start games, by yourself or with friends
+- **[Ranking](/ranking):** See who is the best player
+- **[Past Games](/past-games):** Study past games from other players
+- **[Live Games](/live-games):** Spectate live games from other players
+- **[Settings](/settings):** Adjust your experience
+- **[Login](/profile):** Manage your account
+
+There is also a [blog](https://nilmamano.com/blog/category/wallgame) about the game's development, with the post '[The Wall Game Project](https://nilmamano.com/blog/wall-game-intro?category=wallgame)' as an introduction.
+
+## Credits
+
+Wall Game was created by [Nil Mamano](https://nilmamano.com).
+
+The game is inspired by classic strategy games like [Quoridor](https://en.wikipedia.org/wiki/Quoridor) and [Blockade](https://en.wikipedia.org/wiki/Blockade_(board_game)).
+`;
 
 function About() {
   return (
@@ -14,121 +40,23 @@ function About() {
       </h1>
 
       <Card className="p-8 border-border/50 bg-card/50 backdrop-blur">
-        <div className="prose prose-amber dark:prose-invert max-w-none">
-          <p className="text-lg leading-relaxed text-foreground mb-6">
-            Wall Game is a strategic board game about building walls and
-            outsmarting your opponents. Navigate the board while strategically
-            placing walls to block your opponent's path to victory.
-          </p>
-
-          <h2 className="text-2xl font-serif font-bold text-foreground mb-4">
-            Inspired By
-          </h2>
-
-          <p className="leading-relaxed text-foreground mb-4">
-            Wall Game draws inspiration from classic strategy games:
-          </p>
-
-          <ul className="space-y-3 mb-6">
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <div>
-                <a
-                  href="https://en.wikipedia.org/wiki/Quoridor"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
-                >
-                  Quoridor
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-                <span className="text-foreground">
-                  {" "}
-                  - The classic maze-building game
-                </span>
-              </div>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <div>
-                <a
-                  href="https://en.wikipedia.org/wiki/Blockade_(board_game)"
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
-                >
-                  Blockade
-                  <ExternalLink className="w-3 h-3" />
-                </a>
-                <span className="text-foreground">
-                  {" "}
-                  - The original barrier-placement game
-                </span>
-              </div>
-            </li>
-          </ul>
-
-          <h2 className="text-2xl font-serif font-bold text-foreground mb-4 mt-8">
-            How to Navigate
-          </h2>
-
-          <p className="leading-relaxed text-foreground mb-4">
-            Use the navigation bar at the top to explore different sections:
-          </p>
-
-          <ul className="space-y-2 mb-6 text-foreground">
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <span>
-                <strong>Play:</strong> Start games, practice solo, or invite
-                friends
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <span>
-                <strong>Learn:</strong> Master the rules and study strategic
-                concepts
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <span>
-                <strong>Ranking:</strong> See where you stand among other
-                players
-              </span>
-            </li>
-            <li className="flex items-start gap-2">
-              <span className="text-muted-foreground">•</span>
-              <span>
-                <strong>Past/Live Games:</strong> Watch and learn from other
-                players
-              </span>
-            </li>
-          </ul>
-
-          <h2 className="text-2xl font-serif font-bold text-foreground mb-4 mt-8">
-            Created By
-          </h2>
-
-          <p className="leading-relaxed text-foreground">
-            Wall Game was created by{" "}
-            <a
-              href="https://nilmamano.com"
-              className="text-blue-600 dark:text-blue-400 hover:underline"
-            >
-              Nil Mamano
-            </a>
-            . For more information and updates, visit the{" "}
-            <a
-              href="https://nilmamano.com/blog/category/wallgame"
-              className="text-blue-600 dark:text-blue-400 hover:underline inline-flex items-center gap-1"
-            >
-              blog
-              <ExternalLink className="w-3 h-3" />
-            </a>
-            .
-          </p>
+        <div className="space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary hover:prose-a:text-primary/80">
+          <ReactMarkdown
+            remarkPlugins={[remarkGfm]}
+            rehypePlugins={[rehypeRaw]}
+            components={{
+              a: ({ node, ...props }) => {
+                if (props.href?.startsWith("http")) {
+                  return (
+                    <a {...props} target="_blank" rel="noopener noreferrer" />
+                  );
+                }
+                return <a {...props} />;
+              },
+            }}
+          >
+            {aboutContent}
+          </ReactMarkdown>
         </div>
       </Card>
     </div>

@@ -3,6 +3,126 @@ import { useState } from "react";
 import { Card } from "@/components/ui/card";
 import { ChevronDown, ChevronRight, ExternalLink } from "lucide-react";
 import { cn } from "@/lib/utils";
+import ReactMarkdown from "react-markdown";
+import remarkGfm from "remark-gfm";
+import rehypeRaw from "rehype-raw";
+
+const rulesContent = `
+The Wall Game is a two-player, turn-based, strategy board game played on a rectangular grid. Each player controls a cat and a mouse, and the goal is to catch the opponent's mouse before they catch yours.
+A capture occurs whenever a cat and the opponent's mouse occupy the same cell, regardless of which piece moved.
+
+Each player is identified by a color. Player 1's cat and mouse start on the left and Player 2's cat and mouse start on the right, like this:
+
+<img src="/starting-position.png" alt="Starting position" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
+
+Player 1 moves first. Each move consists of up to two actions, which can be:
+
+- Move your cat to an adjacent square (diagonals not allowed)
+- Move your mouse to an adjacent square (diagonals not allowed)
+- Place a wall between two adjacent cells _anywhere_ on the board, with the only limitation that the walls must always leave a path from each cat to the opponent's mouse.
+
+It is allowed to make both actions of the same kind.
+
+Notes:
+
+- There is no limit to how many walls you can place.
+- Walls block both players regardless of who placed them, and there is no way to remove them.
+- Pieces (cats and mice) can be stacked in the same square without limitations. This does not prevent movement. For example, Player 1's cat and mice can be in the same square, and so can Player 1's cat and Player 2's cat.
+- One-move rule (starter handicap rule): If Player 1 catches the mouse first, but Player 2's cat is within 1 or 2 steps of Player 1's mouse, the game ends in a draw.
+
+The one-move rule is to counteract the advantage that Player 1 has by moving first.
+`;
+
+const notationContent = `
+### Denoting squares
+
+Wall Game uses a standard notation system similar to chess. Squares are identified by a (lowercase) letter indicating the column (left to right) followed by a number indicating the row (bottom to top).
+
+<img src="/board-coordinates.png" alt="Board coordinates" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
+
+Boards never have more than 26 columns.
+
+### Denoting walls
+
+- Vertical walls (between two cells in the same row) are denoted by **>** followed by the cell to the left: **>e4**
+- Horizontal walls (between two cells in the same column) are denoted by **^** followed by the cell below: **^e4**
+
+It is not allowed to use **<** to refer to a wall to the left of a cell or **v** to refer to the wall below a cell.
+
+### Denoting actions
+
+- A cat-walk action: **C** followed by the destination square (**Ce4**).
+- A mouse-walk action: **M** followed by the destination square (**Me4**).
+- A wall-placing action: the wall symbol (**>e4** or **^e4**).
+
+### Denoting moves
+
+A move consists of up to two actions. If there are two actions, they are connected with a period: **Ce4.Mc5**
+
+When a move contains two actions, they must be listed in the following order to guarantee deterministic notation:
+
+1. Cat-walk actions (**Ce4**)
+2. Mouse-walk actions (**Me4**)
+3. Vertical wall-placing actions (**>e4**)
+4. Horizontal wall-placing actions (**^e4**)
+
+For example, it must be **Ce4.Me4** (not **Me4.Ce4**) and **>e4.^e4** (not **^e4.>e4**).
+
+If both actions are of the same type:
+
+- Two wall actions of the same kind: they must be sorted by column first, and then by row (**>a2** comes before **>b1**).
+- Two cat-walk or two mouse-walk actions: only the final destination is written (**Me4**, not a sequence like **Me3.Me4**).
+
+If a player chooses to do no actions on their turn, their move is written as **---**.
+
+### Denoting games
+
+A complete game record has two parts, separated by a blank line:
+
+1. Header lines describing the starting position, result, and metadata.
+2. The move list.
+
+### Header lines
+
+We use PGN-style tag pairs (one per line). The following tag pairs are mandatory:
+
+- **[Board "12x10"]**: Indicates the board size, as columns x rows.
+- **[Result "1-0"]**: Indicates who won. It can be **"1-0"** (Player 1 win), **"0-1"** (Player 2 win), **"1/2-1/2"** (Draw), or **"*"** (Game still in progress or winner not recorded).
+
+Variants may have additional mandatory tag pairs.
+
+Optional tag pairs can be used to provide metadata:
+
+- **[Variant "Standard"]**: Indicates the variant being played.
+- **[TimeControl "180+2"]**: Indicates the time control, as "starting time + increment", both in seconds.
+- **[Player1 "Name"]**
+- **[Player2 "Name"]**
+- **[Player1Elo "1820"]**
+- **[Player2Elo "1700"]**
+- **[Date "2025-01-23"]**
+- **[Termination "Resignation"]**: Indicates how the game ended. It can be **"MouseCapture"**, **"Timeout"**, **"Resignation"**, **"DrawAgreement"**, **"OneMoveRuleDraw"**, **"Unknown"**. 
+
+### Move list
+
+The moves are listed in a numbered list. Each line begins with the move number, followed by the moves of Player 1 and Player 2 separated by a space:
+
+**1. Cb6.>a6 Mb2**\\
+**2. Md1 >d1.^d1**\\
+**3. ...**`;
+
+const variantsContent = `
+### Standard
+
+The default variant with cat and mouse pawns in the corners.
+
+### Classic
+
+A traditional variant where the mice are called "goals" and are fixed in the bottom corners. The goal is to reach the opposing corner before the opponent.
+
+### Freestyle (coming soon)
+
+A variant where the cat and mice start at random places, and there are some starting walls.
+`;
 
 export const Route = createFileRoute("/learn")({
   component: Learn,
@@ -42,7 +162,7 @@ function Learn() {
             className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
           >
             <h2 className="text-2xl font-serif font-bold text-foreground">
-              Rules (Standard)
+              Rules (Standard variant)
             </h2>
             {openSections.rules ? (
               <ChevronDown className="w-6 h-6 text-muted-foreground" />
@@ -53,47 +173,17 @@ function Learn() {
 
           <div
             className={cn(
-              "transition-all duration-300 overflow-hidden",
+              "grid transition-all duration-300 ease-in-out",
               openSections.rules
-                ? "max-h-[2000px] opacity-100"
-                : "max-h-0 opacity-0"
+                ? "grid-rows-[1fr] opacity-100"
+                : "grid-rows-[0fr] opacity-0"
             )}
           >
-            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed">
-              <p>
-                Wall Game is a two-player strategy board game played on a
-                rectangular grid. Each player controls a pawn that starts on
-                opposite sides of the board. The goal is to reach the opposite
-                side of the board before your opponent.
-              </p>
-
-              <h3 className="text-xl font-semibold mt-6 mb-3">Basic Rules:</h3>
-              <ul className="list-disc list-inside space-y-2 ml-4">
-                <li>
-                  Players alternate turns, moving their pawn one square
-                  orthogonally (up, down, left, or right).
-                </li>
-                <li>
-                  On each turn, a player must perform two actions: moving their
-                  pawn and placing a wall.
-                </li>
-                <li>
-                  Walls are placed between squares to block movement. Both you
-                  and your opponent cannot cross walls.
-                </li>
-                <li>
-                  Each player has a limited number of walls (typically 10 in
-                  standard games).
-                </li>
-                <li>
-                  You cannot place a wall that completely blocks your opponent
-                  from reaching their goal.
-                </li>
-                <li>
-                  The first player to reach any square on the opposite side wins
-                  the game.
-                </li>
-              </ul>
+            <div className="overflow-hidden">
+            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary hover:prose-a:text-primary/80">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {rulesContent}
+              </ReactMarkdown>
 
               <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded border border-blue-200 dark:border-blue-800">
                 <p className="text-blue-900 dark:text-blue-200">
@@ -107,6 +197,7 @@ function Learn() {
                   to learn through practice!
                 </p>
               </div>
+            </div>
             </div>
           </div>
         </Card>
@@ -129,44 +220,18 @@ function Learn() {
 
           <div
             className={cn(
-              "transition-all duration-300 overflow-hidden",
+              "grid transition-all duration-300 ease-in-out",
               openSections.notation
-                ? "max-h-[2000px] opacity-100"
-                : "max-h-0 opacity-0"
+                ? "grid-rows-[1fr] opacity-100"
+                : "grid-rows-[0fr] opacity-0"
             )}
           >
-            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed">
-              <p>
-                Wall Game uses a standard notation system similar to chess.
-                Squares are identified by a letter (column) followed by a number
-                (row). For example, "e4" refers to the square in column E, row
-                4.
-              </p>
-
-              <h3 className="text-xl font-semibold mt-6 mb-3">
-                Move Notation:
-              </h3>
-              <ul className="list-disc list-inside space-y-2 ml-4">
-                <li>
-                  <strong>Pawn moves:</strong> Simply write the destination
-                  square. Example: "e4" means move your pawn to square e4.
-                </li>
-                <li>
-                  <strong>Wall placement:</strong> Use "W" followed by the
-                  position and orientation. Example: "Wh4h" means place a
-                  horizontal wall at position h4.
-                </li>
-                <li>
-                  <strong>Complete turn:</strong> A turn consists of two
-                  actions. Example: "e4 Wh4h" means move to e4, then place a
-                  horizontal wall at h4.
-                </li>
-              </ul>
-
-              <p className="mt-4">
-                You'll see this notation in the move history during games. It
-                helps you review and analyze your games after they're finished.
-              </p>
+            <div className="overflow-hidden">
+            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {notationContent}
+              </ReactMarkdown>
+            </div>
             </div>
           </div>
         </Card>
@@ -178,7 +243,7 @@ function Learn() {
             className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
           >
             <h2 className="text-2xl font-serif font-bold text-foreground">
-              Lessons (Standard)
+              Lessons (coming soon)
             </h2>
             {openSections.lessons ? (
               <ChevronDown className="w-6 h-6 text-muted-foreground" />
@@ -189,12 +254,13 @@ function Learn() {
 
           <div
             className={cn(
-              "transition-all duration-300 overflow-hidden",
+              "grid transition-all duration-300 ease-in-out",
               openSections.lessons
-                ? "max-h-[2000px] opacity-100"
-                : "max-h-0 opacity-0"
+                ? "grid-rows-[1fr] opacity-100"
+                : "grid-rows-[0fr] opacity-0"
             )}
           >
+            <div className="overflow-hidden">
             <div className="px-6 pb-6">
               <p className="text-foreground leading-relaxed mb-4">
                 Improve your game with these strategic and tactical lessons:
@@ -214,6 +280,7 @@ function Learn() {
                 ))}
               </div>
             </div>
+          </div>
           </div>
         </Card>
 
@@ -235,35 +302,18 @@ function Learn() {
 
           <div
             className={cn(
-              "transition-all duration-300 overflow-hidden",
+              "grid transition-all duration-300 ease-in-out",
               openSections.variants
-                ? "max-h-[2000px] opacity-100"
-                : "max-h-0 opacity-0"
+                ? "grid-rows-[1fr] opacity-100"
+                : "grid-rows-[0fr] opacity-0"
             )}
           >
-            <div className="px-6 pb-6 space-y-6">
-              <div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Standard
-                </h3>
-                <p className="text-foreground leading-relaxed">
-                  The default variant with cat and mouse pawns. Features two
-                  actions per turn: move and wall placement. Board dimensions
-                  are customizable from 2x2 to 12x12.
-                </p>
-              </div>
-
-              <div>
-                <h3 className="text-xl font-semibold text-foreground mb-2">
-                  Classic
-                </h3>
-                <p className="text-foreground leading-relaxed">
-                  A traditional variant inspired by Quoridor. Uses cat and goal
-                  pawns instead of cat and mouse. The wall placement mechanics
-                  are slightly different, emphasizing strategic blocking over
-                  aggressive pursuit.
-                </p>
-              </div>
+            <div className="overflow-hidden">
+            <div className="px-6 pb-6 space-y-6 prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
+              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
+                {variantsContent}
+              </ReactMarkdown>
+            </div>
             </div>
           </div>
         </Card>

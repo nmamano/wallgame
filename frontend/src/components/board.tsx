@@ -23,7 +23,7 @@ export type PawnType = "cat" | "rat";
 export interface Pawn {
   id: string;
   color: PlayerColor;
-  type?: PawnType; // Optional, defaults to "cat"
+  type: PawnType; // "cat" or "rat"
   pawnStyle?: string; // Optional, stores the specific cat/mouse SVG filename
 }
 
