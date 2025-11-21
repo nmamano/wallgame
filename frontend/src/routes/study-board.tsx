@@ -18,6 +18,7 @@ import {
   type PawnType,
   type WallState,
 } from "@/components/board";
+import { Cell } from "@/lib/game";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
@@ -33,7 +34,7 @@ function StudyBoard() {
   const [cols, setCols] = useState(10);
 
   // Board state
-  const [pawns, setPawns] = useState<Map<string, Pawn[]>>(new Map());
+  const [pawns, setPawns] = useState<Pawn[]>([]);
   const [walls, setWalls] = useState<Wall[]>([]);
 
   // Selected properties for adding new elements
@@ -53,33 +54,27 @@ function StudyBoard() {
   // Handle cell clicks to add/remove pawns
   const handleCellClick = useCallback(
     (row: number, col: number) => {
-      const key = `${row}-${col}`;
       setPawns((prev) => {
-        const newPawns = new Map(prev);
-        const existingPawns = newPawns.get(key) || [];
+        // Find pawns at this cell
+        const pawnsAtCell = prev.filter(p => p.cell.row === row && p.cell.col === col);
 
-        // If there are pawns in this cell, remove the top one
-        if (existingPawns.length > 0) {
-          const updatedPawns = existingPawns.slice(0, -1);
-          if (updatedPawns.length === 0) {
-            newPawns.delete(key);
-          } else {
-            newPawns.set(key, updatedPawns);
-          }
+        // If there are pawns in this cell, remove the last one added (LIFOish for UI feel)
+        if (pawnsAtCell.length > 0) {
+          const pawnToRemove = pawnsAtCell[pawnsAtCell.length - 1];
+          return prev.filter(p => p.id !== pawnToRemove.id);
         } else {
           // Add a new pawn
           const newPawn: Pawn = {
             id: `${row}-${col}-${Date.now()}`,
             color: selectedPawnColor,
             type: selectedPawnType,
+            cell: new Cell(row, col),
             pawnStyle: selectedPawnType === "cat" 
               ? (catPawn !== "default" ? catPawn : undefined)
               : (mousePawn !== "default" ? mousePawn : undefined),
           };
-          newPawns.set(key, [newPawn]);
+          return [...prev, newPawn];
         }
-
-        return newPawns;
       });
     },
     [selectedPawnColor, selectedPawnType, catPawn, mousePawn]
@@ -92,16 +87,18 @@ function StudyBoard() {
         // Check if wall already exists at this position
         const existingWallIndex = prev.findIndex((wall) => {
           if (orientation === "horizontal") {
+            // Horizontal wall separates rows: (row-1, col) and (row, col)
+            return (
+              wall.col1 === wall.col2 &&
+              wall.col1 === col &&
+              Math.min(wall.row1, wall.row2) === Math.min(row - 1, row)
+            );
+          } else {
+            // Vertical wall separates columns: (row, col) and (row, col+1)
             return (
               wall.row1 === wall.row2 &&
               wall.row1 === row &&
               Math.min(wall.col1, wall.col2) === Math.min(col, col + 1)
-            );
-          } else {
-            return (
-              wall.col1 === wall.col2 &&
-              wall.col1 === col &&
-              Math.min(wall.row1, wall.row2) === Math.min(row, row + 1)
             );
           }
         });
@@ -114,22 +111,22 @@ function StudyBoard() {
           let newWall: Wall;
           if (orientation === "horizontal") {
             newWall = {
+              row1: row - 1,
+              col1: col,
+              row2: row,
+              col2: col,
+              state: selectedWallState,
+              playerColor: selectedWallColor,
+            } as Wall;
+          } else {
+            newWall = {
               row1: row,
               col1: col,
               row2: row,
               col2: col + 1,
               state: selectedWallState,
               playerColor: selectedWallColor,
-            };
-          } else {
-            newWall = {
-              row1: row,
-              col1: col,
-              row2: row + 1,
-              col2: col,
-              state: selectedWallState,
-              playerColor: selectedWallColor,
-            };
+            } as Wall;
           }
           return [...prev, newWall];
         }
@@ -142,16 +139,9 @@ function StudyBoard() {
   const handlePawnRightClick = useCallback(
     (row: number, col: number, pawnId: string) => {
       setPawns((prev) => {
-        const newPawns = new Map(prev);
-        const key = `${row}-${col}`;
-        const existingPawns = newPawns.get(key) || [];
-
-        const updatedPawns = existingPawns.map((pawn) =>
+        return prev.map((pawn) =>
           pawn.id === pawnId ? { ...pawn, color: selectedPawnColor } : pawn
         );
-
-        newPawns.set(key, updatedPawns);
-        return newPawns;
       });
     },
     [selectedPawnColor]
@@ -163,7 +153,7 @@ function StudyBoard() {
       setWalls((prev) =>
         prev.map((wall, index) =>
           index === wallIndex
-            ? { ...wall, playerColor: selectedWallColor }
+            ? { ...wall, playerColor: selectedWallColor } as Wall
             : wall
         )
       );
@@ -172,7 +162,7 @@ function StudyBoard() {
   );
 
   const clearBoard = useCallback(() => {
-    setPawns(new Map());
+    setPawns([]);
     setWalls([]);
   }, []);
 
@@ -201,7 +191,18 @@ function StudyBoard() {
                     </Label>
                     <Select
                       value={rows.toString()}
-                      onValueChange={(value) => setRows(parseInt(value))}
+                      onValueChange={(value) => {
+                        const newRows = parseInt(value);
+                        setRows(newRows);
+                        setPawns((prev) =>
+                          prev.filter((p) => p.cell.row < newRows)
+                        );
+                        setWalls((prev) =>
+                          prev.filter(
+                            (w) => w.row1 < newRows && w.row2 < newRows
+                          )
+                        );
+                      }}
                     >
                       <SelectTrigger className="h-8">
                         <SelectValue />
@@ -222,7 +223,18 @@ function StudyBoard() {
                     </Label>
                     <Select
                       value={cols.toString()}
-                      onValueChange={(value) => setCols(parseInt(value))}
+                      onValueChange={(value) => {
+                        const newCols = parseInt(value);
+                        setCols(newCols);
+                        setPawns((prev) =>
+                          prev.filter((p) => p.cell.col < newCols)
+                        );
+                        setWalls((prev) =>
+                          prev.filter(
+                            (w) => w.col1 < newCols && w.col2 < newCols
+                          )
+                        );
+                      }}
                     >
                       <SelectTrigger className="h-8">
                         <SelectValue />

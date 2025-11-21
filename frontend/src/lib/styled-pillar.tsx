@@ -2147,13 +2147,22 @@ export class StyledPillar {
 
       // Opposite sides -> LinearGradientSquare
       if (this.areOpposite(first.edge, second.edge)) {
-        const orientation: SquareOrientation =
-          first.edge === "north" || first.edge === "south" ? "N-S" : "W-E";
+        const isNS = first.edge === "north" || first.edge === "south";
+        const orientation: SquareOrientation = isNS ? "N-S" : "W-E";
+
+        // Ensure correct direction: North->South or West->East
+        const startColor = isNS
+          ? this.params.colors.north!
+          : this.params.colors.west!;
+        const endColor = isNS
+          ? this.params.colors.south!
+          : this.params.colors.east!;
+
         const linearGradient = new LinearGradientSquare({
           boundingBox: this.params.boundingBox,
           orientation,
-          startColor: first.color,
-          endColor: second.color,
+          startColor,
+          endColor,
         });
         return (
           <g>
@@ -2175,11 +2184,39 @@ export class StyledPillar {
                 (first.edge === "north" && second.edge === "east")
               ? "E-N"
               : "S-E"; // (south + east) or (east + south)
+
+      // Determine start/end colors based on orientation sweep direction
+      // W-S: Sweep West -> South
+      // N-W: Sweep North -> West
+      // E-N: Sweep East -> North
+      // S-E: Sweep South -> East
+      let startColor: string;
+      let endColor: string;
+
+      switch (orientation) {
+        case "W-S":
+          startColor = this.params.colors.west!;
+          endColor = this.params.colors.south!;
+          break;
+        case "N-W":
+          startColor = this.params.colors.north!;
+          endColor = this.params.colors.west!;
+          break;
+        case "E-N":
+          startColor = this.params.colors.east!;
+          endColor = this.params.colors.north!;
+          break;
+        case "S-E":
+          startColor = this.params.colors.south!;
+          endColor = this.params.colors.east!;
+          break;
+      }
+
       const quarterCircle = new QuarterCircle({
         boundingBox: this.params.boundingBox,
         orientation,
-        startColor: first.color,
-        endColor: second.color,
+        startColor: startColor!,
+        endColor: endColor!,
       });
       return quarterCircle.renderWithConicGradient();
     }
@@ -2195,6 +2232,20 @@ export class StyledPillar {
           colors: this.params.colors,
         });
         return threeColored.render();
+      }
+
+      // All same -> Solid square of that color
+      if (uniqueColors.length === 1) {
+        const color = uniqueColors[0];
+        return (
+          <rect
+            x={this.params.boundingBox.x}
+            y={this.params.boundingBox.y}
+            width={this.params.boundingBox.width}
+            height={this.params.boundingBox.height}
+            fill={color}
+          />
+        );
       }
 
       // Two colors (one appears twice)
@@ -2387,8 +2438,8 @@ export class StyledPillar {
             const cornerColorSquare = new CornerColorSquare({
               boundingBox: this.params.boundingBox,
               orientation,
-              mainColor,
-              sideColor,
+              mainColor: sideColor, // Swapped based on user feedback
+              sideColor: mainColor, // Swapped based on user feedback
             });
             return cornerColorSquare.render();
           }

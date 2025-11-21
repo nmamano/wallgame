@@ -5,6 +5,7 @@ import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
 import { type PlayerColor, colorClassMap, colorFilterMap } from "@/lib/player-colors";
+import { Cell, Wall } from "@/lib/game";
 
 // Re-export for backwards compatibility
 export type { PlayerColor };
@@ -24,23 +25,13 @@ export interface Pawn {
   id: string;
   color: PlayerColor;
   type: PawnType; // "cat" or "rat"
+  cell: Cell;
   pawnStyle?: string; // Optional, stores the specific cat/mouse SVG filename
 }
 
-export interface Wall {
-  row1: number;
-  col1: number;
-  row2: number;
-  col2: number;
-  state: WallState;
-  playerColor?: PlayerColor;
-}
-
 export interface Arrow {
-  fromRow: number;
-  fromCol: number;
-  toRow: number;
-  toCol: number;
+  from: Cell;
+  to: Cell;
   type: ArrowType;
 }
 
@@ -55,7 +46,7 @@ export interface LastMove {
 export interface BoardProps {
   rows?: number;
   cols?: number;
-  pawns?: Map<string, Pawn[]>; // Key: "row-col", Value: array of pawns
+  pawns?: Pawn[];
   walls?: Wall[];
   arrows?: Arrow[];
   lastMove?: LastMove;
@@ -225,7 +216,7 @@ const createPillarElements = ({
 export function Board({
   rows = 10,
   cols = 10,
-  pawns = new Map(),
+  pawns = [],
   walls = [],
   arrows = [],
   lastMove,
@@ -247,7 +238,7 @@ export function Board({
   );
 
   // Calculate cell size for positioning walls (dynamic based on grid size)
-  const gapSize = 0.5; // rem
+  const gapSize = 0.9; // rem
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const gapValue = `${gapSize}rem`;
 
@@ -267,8 +258,7 @@ export function Board({
 
   // Get pawns for a cell
   const getPawnsForCell = (row: number, col: number): Pawn[] => {
-    const key = `${row}-${col}`;
-    return pawns.get(key) || [];
+    return pawns.filter(p => p.cell.row === row && p.cell.col === col);
   };
 
   // Render last move arrow (subtle)
@@ -357,10 +347,10 @@ export function Board({
     const cellWidthPercent = 100 / cols;
     const cellHeightPercent = 100 / rows;
 
-    const fromX = (arrow.fromCol + 0.5) * cellWidthPercent;
-    const toX = (arrow.toCol + 0.5) * cellWidthPercent;
-    const fromY = (arrow.fromRow + 0.5) * cellHeightPercent;
-    const toY = (arrow.toRow + 0.5) * cellHeightPercent;
+    const fromX = (arrow.from.col + 0.5) * cellWidthPercent;
+    const toX = (arrow.to.col + 0.5) * cellWidthPercent;
+    const fromY = (arrow.from.row + 0.5) * cellHeightPercent;
+    const toY = (arrow.to.row + 0.5) * cellHeightPercent;
 
     const arrowColor = getArrowColor(arrow);
     const strokeWidth = arrow.type === "calculated" ? 1.5 : 2.5;
@@ -369,7 +359,7 @@ export function Board({
 
     return (
       <svg
-        key={`arrow-${arrow.fromRow}-${arrow.fromCol}-${arrow.toRow}-${arrow.toCol}-${index}`}
+        key={`arrow-${arrow.from.row}-${arrow.from.col}-${arrow.to.row}-${arrow.to.col}-${index}`}
         className="absolute inset-0 pointer-events-none"
         style={{ zIndex: arrow.type === "calculated" ? 1 : 5 }}
         viewBox="0 0 100 100"
@@ -525,7 +515,7 @@ export function Board({
                     zIndex: 15,
                   }}
                   onClick={() =>
-                    onWallClick?.(rowIndex, colIndex + 1, "vertical")
+                    onWallClick?.(rowIndex, colIndex, "vertical")
                   }
                 />
               ))
@@ -557,14 +547,14 @@ export function Board({
                 // Vertical wall (between cells in same row, separating columns)
                 const minCol = Math.min(col1, col2);
 
-                // 🔴 NEW: true center of the gap between col minCol and minCol + 1
+                // center of the gap between col minCol and minCol + 1
                 const wallCenterX = `calc((${minCol + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
 
                 style = {
                   ...style,
-                  height: cellSize, // spans one cell vertically
+                  height: `calc(${cellSize} + 2px)`, // Extend slightly to prevent gaps
                   width: gapValue,
-                  top: `calc(${row1} * (${cellSize} + ${gapValue}))`,
+                  top: `calc(${row1} * (${cellSize} + ${gapValue}) - 1px)`,
                   left: wallCenterX,
                   transform: "translateX(-50%)",
                   opacity: wall.state === "calculated" ? 0.5 : 1,
@@ -573,14 +563,14 @@ export function Board({
                 // Horizontal wall (between cells in same column, separating rows)
                 const minRow = Math.min(row1, row2);
 
-                // 🔴 NEW: true center of the gap between row minRow and minRow + 1
+                // center of the gap between row minRow and minRow + 1
                 const wallCenterY = `calc((${minRow + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
 
                 style = {
                   ...style,
-                  width: cellSize, // spans one cell horizontally
+                  width: `calc(${cellSize} + 2px)`, // Extend slightly to prevent gaps
                   height: gapValue,
-                  left: `calc(${col1} * (${cellSize} + ${gapValue}))`,
+                  left: `calc(${col1} * (${cellSize} + ${gapValue}) - 1px)`,
                   top: wallCenterY,
                   transform: "translateY(-50%)",
                   opacity: wall.state === "calculated" ? 0.5 : 1,

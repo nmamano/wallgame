@@ -2,162 +2,58 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
-import { Board, type Pawn, type Wall, type Arrow } from "@/components/board";
+import { Board, type Pawn, type Arrow } from "@/components/board";
+import { Wall, createCell, createWall } from "@/lib/game";
 
 export function GameShowcase() {
   const [isPlaying, setIsPlaying] = useState(true);
 
   // Mock game position: 2 players (red and blue), each with a cat and a rat
-  const pawns = new Map<string, Pawn[]>([
+  const pawns: Pawn[] = [
     // Red player pieces
-    ["2-3", [{ id: "red-cat", color: "red", type: "cat" }]], // Red cat
-    ["4-5", [{ id: "red-rat", color: "red", type: "rat" }]], // Red rat
+    { id: "red-cat", color: "red", type: "cat", cell: createCell("d8", 10) },
+    { id: "red-rat", color: "red", type: "rat", cell: createCell("f6", 10) },
 
     // Blue player pieces
-    ["7-6", [{ id: "blue-cat", color: "blue", type: "cat" }]], // Blue cat
-    ["5-7", [{ id: "blue-rat", color: "blue", type: "rat" }]], // Blue rat
-  ]);
+    { id: "blue-cat", color: "blue", type: "cat", cell: createCell("g3", 10) },
+    { id: "blue-rat", color: "blue", type: "rat", cell: createCell("h5", 10) },
+  ];
 
   // Placed walls from both players (including adjacent walls)
   const walls: Wall[] = [
     // Red player walls
-    { row1: 1, col1: 2, row2: 1, col2: 3, state: "placed", playerColor: "red" }, // Vertical wall
-    { row1: 0, col1: 2, row2: 0, col2: 3, state: "placed", playerColor: "red" }, // Vertical wall
-    { row1: 1, col1: 3, row2: 1, col2: 4, state: "placed", playerColor: "red" }, // Adjacent vertical wall
-    { row1: 2, col1: 3, row2: 3, col2: 3, state: "placed", playerColor: "red" }, // Horizontal wall
-    { row1: 3, col1: 4, row2: 4, col2: 4, state: "placed", playerColor: "red" }, // Horizontal wall
-    { row1: 2, col1: 5, row2: 2, col2: 6, state: "placed", playerColor: "red" }, // Vertical wall
-    { row1: 3, col1: 5, row2: 3, col2: 6, state: "placed", playerColor: "red" }, // Adjacent vertical wall
-    { row1: 4, col1: 4, row2: 5, col2: 4, state: "placed", playerColor: "red" }, // Horizontal wall
+    createWall(">c9", 10, "red"),
+    createWall(">c10", 10, "red"),
+    createWall(">d9", 10, "red"),
+    createWall("^d7", 10, "red"),
+    createWall("^e6", 10, "red"),
+    createWall(">f8", 10, "red"),
+    createWall(">f7", 10, "red"),
+    createWall("^e5", 10, "red"),
 
-    { row1: 0, col1: 1, row2: 0, col2: 2, state: "placed", playerColor: "red" }, // Vertical wall
-    {
-      row1: 0,
-      col1: 1,
-      row2: 1,
-      col2: 1,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
+    createWall(">b10", 10, "red"),
+    createWall("^b9", 10, "blue"),
 
-    { row1: 3, col1: 1, row2: 3, col2: 2, state: "placed", playerColor: "red" }, // Vertical wall
-    {
-      row1: 2,
-      col1: 1,
-      row2: 3,
-      col2: 1,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
+    createWall(">b7", 10, "red"),
+    createWall("^b7", 10, "blue"),
 
-    {
-      row1: 5,
-      col1: 1,
-      row2: 5,
-      col2: 2,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
-    {
-      row1: 4,
-      col1: 1,
-      row2: 5,
-      col2: 1,
-      state: "placed",
-      playerColor: "red",
-    }, // Vertical wall
+    createWall(">b5", 10, "blue"),
+    createWall("^b5", 10, "red"),
 
-    {
-      row1: 7,
-      col1: 1,
-      row2: 7,
-      col2: 2,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
-    {
-      row1: 6,
-      col1: 2,
-      row2: 7,
-      col2: 2,
-      state: "placed",
-      playerColor: "red",
-    }, // Vertical wall
+    createWall(">b3", 10, "blue"),
+    createWall("^c3", 10, "red"),
 
-    {
-      row1: 9,
-      col1: 1,
-      row2: 9,
-      col2: 2,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
-    {
-      row1: 7,
-      col1: 2,
-      row2: 7,
-      col2: 3,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
-    {
-      row1: 7,
-      col1: 2,
-      row2: 8,
-      col2: 2,
-      state: "placed",
-      playerColor: "red",
-    }, // Vertical wall
+    createWall(">b1", 10, "blue"),
+    createWall(">c3", 10, "blue"),
+    createWall("^c2", 10, "red"),
 
     // Blue player walls
-    {
-      row1: 6,
-      col1: 5,
-      row2: 7,
-      col2: 5,
-      state: "placed",
-      playerColor: "blue",
-    }, // Horizontal wall
-    {
-      row1: 6,
-      col1: 6,
-      row2: 7,
-      col2: 6,
-      state: "placed",
-      playerColor: "blue",
-    }, // Adjacent horizontal wall
-    {
-      row1: 5,
-      col1: 6,
-      row2: 6,
-      col2: 6,
-      state: "placed",
-      playerColor: "blue",
-    }, // Horizontal wall
-    {
-      row1: 7,
-      col1: 6,
-      row2: 7,
-      col2: 7,
-      state: "placed",
-      playerColor: "blue",
-    }, // Vertical wall
-    {
-      row1: 7,
-      col1: 7,
-      row2: 7,
-      col2: 8,
-      state: "placed",
-      playerColor: "blue",
-    }, // Adjacent vertical wall
-    {
-      row1: 6,
-      col1: 7,
-      row2: 7,
-      col2: 7,
-      state: "placed",
-      playerColor: "blue",
-    }, // Horizontal wall
+    createWall("^f3", 10, "blue"),
+    createWall("^g3", 10, "blue"),
+    createWall("^g4", 10, "blue"),
+    createWall(">g3", 10, "blue"),
+    createWall(">h3", 10, "blue"),
+    createWall("^h3", 10, "blue"),
   ];
 
   // No arrows
