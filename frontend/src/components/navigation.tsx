@@ -4,23 +4,27 @@ import { Menu, Moon, Sun } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "./theme-provider";
-
-const navItems = [
-  { label: "Play", href: "/" },
-  { label: "Ranking", href: "/ranking" },
-  { label: "Past Games", href: "/past-games" },
-  { label: "Live Games", href: "/live-games" },
-  { label: "Learn", href: "/learn" },
-  { label: "About", href: "/about" },
-  { label: "Settings", href: "/settings" },
-  { label: "Login", href: "/profile" },
-];
+import { useQuery } from "@tanstack/react-query";
+import { userQueryOptions } from "@/lib/api";
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
   const router = useRouterState();
   const pathname = router.location.pathname;
   const { theme, setTheme } = useTheme();
+  const { data } = useQuery(userQueryOptions);
+  const isLoggedIn = !!data?.user;
+
+  const navItems = [
+    { label: "Play", href: "/" },
+    { label: "Ranking", href: "/ranking" },
+    { label: "Past Games", href: "/past-games" },
+    { label: "Live Games", href: "/live-games" },
+    { label: "Learn", href: "/learn" },
+    { label: "About", href: "/about" },
+    { label: "Settings", href: "/settings" },
+    { label: isLoggedIn ? "Profile" : "Login", href: "/profile" },
+  ];
 
   return (
     <nav className="sticky top-0 z-50 border-b border-border bg-background/95 backdrop-blur supports-[backdrop-filter]:bg-background/60">
