@@ -208,6 +208,7 @@ export function Board({
   // Calculate cell size for positioning walls (dynamic based on grid size)
   const gapSize = 0.9; // rem
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
+  const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
@@ -364,15 +365,27 @@ export function Board({
     );
   };
 
+
   const maxCellSize = 3; // rem
   const paddingX = 2; // rem (p-4 = 1rem on each side)
+  const paddingY = 2; // rem (p-4 = 1rem on each side)
   const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
+  const maxBoardHeight = `${rows * maxCellSize + (rows - 1) * gapSize + paddingY}rem`;
+  
+  // Calculate aspect ratio based on rows and cols
+  const aspectRatio = cols / rows;
 
   return (
-    <div className={`w-full ${className} ${maxWidth} mx-auto`}>
+    <div className={`flex items-center justify-center ${className} ${maxWidth}`}>
       <div 
-        className="rounded-lg p-4 bg-amber-100 w-full mx-auto"
-        style={{ maxWidth: maxBoardWidth }}
+        className="rounded-lg p-4 bg-amber-100 max-w-full max-h-full"
+        style={{ 
+          width: maxBoardWidth,
+          height: maxBoardHeight,
+          maxWidth: '100%',
+          maxHeight: '100%',
+          aspectRatio: aspectRatio.toString()
+        }}
       >
         <div className="relative">
           {/* Top row labels (column letters) */}
@@ -420,7 +433,7 @@ export function Board({
               <div
                 key={`left-${rowIndex}`}
                 className="flex items-center justify-center w-full"
-                style={{ height: cellSize }}
+                style={{ height: cellHeight }}
               >
                 <span className="text-[10px] text-gray-600 font-medium">
                   {rows - rowIndex}
@@ -438,7 +451,7 @@ export function Board({
               <div
                 key={`right-${rowIndex}`}
                 className="flex items-center justify-center w-full"
-                style={{ height: cellSize }}
+                style={{ height: cellHeight }}
               >
                 <span className="text-[10px] text-gray-600 font-medium">
                   {rows - rowIndex}
