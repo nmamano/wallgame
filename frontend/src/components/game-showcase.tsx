@@ -2,8 +2,8 @@ import { useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
-import { Board, type Pawn, type Arrow } from "@/components/board";
-import { Wall, createCell, createWall } from "@/lib/game";
+import { Board, type Arrow } from "@/components/board";
+import { Wall, createCell, createWall, type Pawn } from "@/lib/game";
 
 export function GameShowcase() {
   const [isPlaying, setIsPlaying] = useState(true);
@@ -12,11 +12,11 @@ export function GameShowcase() {
   const pawns: Pawn[] = [
     // Red player pieces
     { id: "red-cat", color: "red", type: "cat", cell: createCell("d8", 10) },
-    { id: "red-rat", color: "red", type: "rat", cell: createCell("f6", 10) },
+    { id: "red-rat", color: "red", type: "mouse", cell: createCell("f6", 10) },
 
     // Blue player pieces
     { id: "blue-cat", color: "blue", type: "cat", cell: createCell("g3", 10) },
-    { id: "blue-rat", color: "blue", type: "rat", cell: createCell("h5", 10) },
+    { id: "blue-rat", color: "blue", type: "mouse", cell: createCell("h5", 10) },
   ];
 
   // Placed walls from both players (including adjacent walls)
