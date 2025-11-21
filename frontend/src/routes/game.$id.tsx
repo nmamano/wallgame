@@ -26,7 +26,7 @@ import {
 } from "lucide-react";
 import { Board } from "@/components/board";
 import { MatchingStagePanel, MatchingPlayer } from "@/components/matching-stage-panel";
-import { Cell, Wall, Pawn } from "@/lib/game";
+import { Cell, Wall, Pawn, PlayerWall, PlayerId } from "@/lib/game";
 import { PlayerColor } from "@/lib/player-colors";
 import { PlayerType } from "@/components/player-configuration";
 
@@ -38,6 +38,7 @@ export const Route = createFileRoute("/game/$id")({
 
 interface GamePlayer {
   id: string;
+  playerId: PlayerId;
   name: string;
   rating: number;
   color: PlayerColor;
@@ -91,7 +92,7 @@ function GamePage() {
 
   // Board State
   const [pawns, setPawns] = useState<Pawn[]>([]);
-  const [walls, setWalls] = useState<Wall[]>([]);
+  const [walls, setWalls] = useState<PlayerWall[]>([]);
   
   // UI State
   const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
@@ -134,6 +135,7 @@ function GamePage() {
     const newPlayers: GamePlayer[] = [
       {
         id: "p1",
+        playerId: 1,
         name: "You",
         rating: 1200,
         color: "red",
@@ -143,6 +145,7 @@ function GamePage() {
       },
       {
         id: "p2",
+        playerId: 2,
         name: loadedPlayerConfigs[1] === "friend" ? "Friend" : 
               loadedPlayerConfigs[1] === "matched-user" ? "Opponent" : 
               "Bot " + loadedPlayerConfigs[1].split("-")[0],
@@ -198,8 +201,8 @@ function GamePage() {
 
     // Initial Board Setup
     setPawns([
-      { id: "pawn1", color: "red", type: "cat", cell: new Cell(loadedConfig.boardHeight - 1, Math.floor(loadedConfig.boardWidth / 2)) },
-      { id: "pawn2", color: "blue", type: "cat", cell: new Cell(0, Math.floor(loadedConfig.boardWidth / 2)) }
+      { id: "pawn1", playerId: 1, type: "cat", cell: new Cell(loadedConfig.boardHeight - 1, Math.floor(loadedConfig.boardWidth / 2)) },
+      { id: "pawn2", playerId: 2, type: "cat", cell: new Cell(0, Math.floor(loadedConfig.boardWidth / 2)) }
     ]);
 
   }, [id]);
@@ -246,8 +249,8 @@ function GamePage() {
     const notation = moveType === "move" ? "e5" : ">e4";
     if (moveType === "wall") {
       // Mock wall addition
-      const newWall = new Wall(new Cell(4, 4), "vertical", "placed", player.color);
-      setWalls(prev => [...prev, newWall]);
+      const newWall = new Wall(new Cell(4, 4), "vertical");
+      setWalls(prev => [...prev, { wall: newWall, playerId: player.playerId, state: "placed" }]);
     }
     
     addHistory(player.color, notation);
@@ -446,6 +449,7 @@ function GamePage() {
               walls={walls}
               className="p-0"
               maxWidth="max-w-full"
+              playerColors={{ 1: "red", 2: "blue" }}
             />
           </div>
 
