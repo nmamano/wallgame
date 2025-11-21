@@ -309,7 +309,7 @@ function GamePage() {
   // --- Render Components ---
 
   const PlayerInfo = ({ player, isActive }: { player: GamePlayer, isActive: boolean, isTop?: boolean }) => (
-    <div className={`flex items-center justify-between p-3 rounded-lg transition-colors ${isActive ? "bg-accent/50 border border-accent" : "bg-card/50 border border-border/50"}`}>
+    <div className={`flex items-center justify-between p-3 rounded-lg transition-colors shadow-sm ${isActive ? "bg-accent/50 border border-accent" : "bg-card/50 backdrop-blur border border-border"}`}>
       <div className="flex items-center gap-3">
         <div className={`w-10 h-10 rounded-full flex items-center justify-center ${player.color === "red" ? "bg-red-100 text-red-700" : "bg-blue-100 text-blue-700"}`}>
           {player.type.includes("bot") ? <Bot size={20} /> : <User size={20} />}
@@ -355,7 +355,7 @@ function GamePage() {
   // Fixed component heights
   const timerHeight = 4; // rem (approximate height of PlayerInfo component)
   const infoCardHeight = 6.5; // rem (approximate)
-  const actionButtonsHeight = 5; // rem (approximate, 2 rows of buttons)
+  const actionButtonsHeight = 6.3; // rem (2 rows of buttons + Card padding)
   const chatTabsHeight = 3; // rem (tabs header)
   const chatInputHeight = 4; // rem (chat input / move navigation fixed at bottom)
   const chatChannelsHeight = 2.5; // rem (chat channel selector)
@@ -416,7 +416,7 @@ function GamePage() {
 
           {/* Board Container */}
           <div 
-            className="flex items-center justify-center bg-card/30 rounded-xl border border-border/30 p-4 relative"
+            className="flex items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
             style={{
               minHeight: `${adjustedBoardContainerHeight}rem`,
               height: `${adjustedBoardContainerHeight}rem`,
@@ -489,20 +489,22 @@ function GamePage() {
           </Card>
 
           {/* Action Buttons */}
-          <div className="grid grid-cols-2 gap-2">
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <Flag className="w-4 h-4" /> Resign
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <Handshake className="w-4 h-4" /> Draw
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <RotateCcw className="w-4 h-4" /> Takeback
-            </Button>
-            <Button variant="outline" className="w-full justify-start gap-2" size="sm">
-              <Timer className="w-4 h-4" /> Give time
-            </Button>
-          </div>
+          <Card className="p-3 bg-card/50 backdrop-blur">
+            <div className="grid grid-cols-2 gap-2">
+              <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+                <Flag className="w-4 h-4" /> Resign
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+                <Handshake className="w-4 h-4" /> Draw
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+                <RotateCcw className="w-4 h-4" /> Takeback
+              </Button>
+              <Button variant="outline" className="w-full justify-start gap-2" size="sm">
+                <Timer className="w-4 h-4" /> Give time
+              </Button>
+            </div>
+          </Card>
 
           {/* Chat/Moves Panel */}
           <Card 
