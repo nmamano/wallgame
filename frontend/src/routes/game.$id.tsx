@@ -982,6 +982,21 @@ function GamePage() {
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== localPlayerId) return;
 
+      // Check if this pawn has staged moves
+      const stagedActionsForPawn = stagedActions.filter(
+        (action) => action.type === pawn.type
+      );
+
+      if (stagedActionsForPawn.length > 0) {
+        // Remove all staged actions for this pawn type
+        setStagedActions((prev) =>
+          prev.filter((action) => action.type !== pawn.type)
+        );
+        setSelectedPawnId(null);
+        setActionError(null);
+        return;
+      }
+
       // If clicking the already selected pawn, unselect it
       if (selectedPawnId === pawnId) {
         setSelectedPawnId(null);
@@ -990,7 +1005,7 @@ function GamePage() {
       }
       setActionError(null);
     },
-    [gameState, boardPawns, localPlayerId, selectedPawnId]
+    [gameState, boardPawns, localPlayerId, selectedPawnId, stagedActions]
   );
 
   const handleCellClick = useCallback(
