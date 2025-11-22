@@ -61,6 +61,7 @@ export interface BoardProps {
   onPawnDragStart?: (pawnId: string) => void;
   onPawnDragEnd?: () => void;
   onCellDrop?: (row: number, col: number) => void;
+  controllablePlayerId?: PlayerId;
   catPawnPath?: string;
   mousePawnPath?: string;
   className?: string;
@@ -279,6 +280,7 @@ export function Board({
   draggingPawnId = null,
   selectedPawnId = null,
   stagedActionsCount = 0,
+  controllablePlayerId,
 }: BoardProps) {
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
@@ -590,28 +592,38 @@ export function Board({
     size: "lg" | "sm"
   ) => {
     const pawnColor = playerColors[pawn.playerId];
+    const isControllable =
+      controllablePlayerId == null || pawn.playerId === controllablePlayerId;
     const dimensionClass = size === "lg" ? "w-full h-full p-0.5" : "w-6 h-6";
+    const hoverClass = isControllable ? "hover:scale-110" : "";
+    const cursorClass = isControllable ? "cursor-pointer" : "cursor-not-allowed";
+    const canDrag = dragEnabled && isControllable;
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      if (!isControllable) return;
       onPawnRightClick?.(rowIndex, colIndex, pawn.id);
     };
 
     const handleClick = (event: MouseEvent<HTMLDivElement>) => {
       event.stopPropagation();
+      if (!isControllable) return;
       onPawnClick?.(pawn.id);
     };
 
     const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
-      if (!dragEnabled) return;
+      if (!canDrag) {
+        event.preventDefault();
+        return;
+      }
       event.dataTransfer.effectAllowed = "move";
       event.dataTransfer.setData("text/plain", pawn.id);
       onPawnDragStart?.(pawn.id);
     };
 
     const handleDragEnd = () => {
-      if (!dragEnabled) return;
+      if (!canDrag) return;
       onPawnDragEnd?.();
     };
 
@@ -665,12 +677,13 @@ export function Board({
     return (
       <div
         key={pawn.id}
-        className={`${dimensionClass} transform hover:scale-110 transition-transform cursor-pointer relative ${previewClasses}`}
+        className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses}`}
         onContextMenu={handleContextMenu}
         onClick={handleClick}
-        draggable={dragEnabled}
+        draggable={canDrag}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        aria-disabled={!isControllable}
       >
         {content}
       </div>
