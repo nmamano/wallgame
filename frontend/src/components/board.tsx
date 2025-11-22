@@ -45,6 +45,7 @@ export interface BoardProps {
   walls?: PlayerWall[];
   arrows?: Arrow[];
   lastMove?: LastMove;
+  lastMoves?: LastMove[];
   maxWidth?: string;
   playerColors?: Record<PlayerId, PlayerColor>;
   onCellClick?: (row: number, col: number) => void;
@@ -213,6 +214,7 @@ export function Board({
   walls = [],
   arrows = [],
   lastMove,
+  lastMoves,
   maxWidth = "max-w-4xl",
   playerColors = { 1: "red", 2: "blue" },
   onCellClick,
@@ -263,66 +265,69 @@ export function Board({
 
   const dragEnabled = Boolean(onCellDrop);
 
-  // Render last move arrow (subtle)
-  const renderLastMoveArrow = () => {
-    if (!lastMove) return null;
+  // Render last move arrows (subtle)
+  const renderLastMoveArrows = () => {
+    const moves = lastMove ? [lastMove] : (lastMoves || []);
+    if (moves.length === 0) return null;
 
-    const cellWidthPercent = 100 / cols;
-    const cellHeightPercent = 100 / rows;
+    return moves.map((move: LastMove, index: number) => {
+      const cellWidthPercent = 100 / cols;
+      const cellHeightPercent = 100 / rows;
 
-    const fromX = (lastMove.fromCol + 0.5) * cellWidthPercent;
-    const toX = (lastMove.toCol + 0.5) * cellWidthPercent;
-    const fromY = (lastMove.fromRow + 0.5) * cellHeightPercent;
-    const toY = (lastMove.toRow + 0.5) * cellHeightPercent;
+      const fromX = (move.fromCol + 0.5) * cellWidthPercent;
+      const toX = (move.toCol + 0.5) * cellWidthPercent;
+      const fromY = (move.fromRow + 0.5) * cellHeightPercent;
+      const toY = (move.toRow + 0.5) * cellHeightPercent;
 
-    // Calculate direction vector
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    const length = Math.sqrt(dx * dx + dy * dy);
+      // Calculate direction vector
+      const dx = toX - fromX;
+      const dy = toY - fromY;
+      const length = Math.sqrt(dx * dx + dy * dy);
 
-    // Shorten the line to prevent shaft showing through arrowhead
-    // Arrowhead is about 0.8% of the viewBox (smaller now), so shorten by that amount
-    const shortenAmount = 3;
-    const shortenRatio = (length - shortenAmount) / length;
-    const adjustedToX = fromX + dx * shortenRatio;
-    const adjustedToY = fromY + dy * shortenRatio;
+      // Shorten the line to prevent shaft showing through arrowhead
+      // Arrowhead is about 0.8% of the viewBox (smaller now), so shorten by that amount
+      const shortenAmount = 3;
+      const shortenRatio = length > shortenAmount ? (length - shortenAmount) / length : 0;
+      const adjustedToX = fromX + dx * shortenRatio;
+      const adjustedToY = fromY + dy * shortenRatio;
 
-    // Get arrow color from player color, or use default gray
-    const arrowColor = lastMove.playerColor
-      ? colorHexMap[lastMove.playerColor] || "#94a3b8"
-      : "#94a3b8";
-    const strokeWidth = 1.1;
-    const opacity = 0.3; // More subtle than calculated arrows
+      // Get arrow color from player color, or use default gray
+      const arrowColor = move.playerColor
+        ? colorHexMap[move.playerColor] || "#94a3b8"
+        : "#94a3b8";
+      const strokeWidth = 1.1;
+      const opacity = 0.3; // More subtle than calculated arrows
 
-    return (
-      <svg
-        key="last-move-arrow"
-        className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: 3, opacity }} // <- only here
-        viewBox="0 0 100 100"
-        preserveAspectRatio="none"
-      >
-        <defs>
-          <marker id="arrowhead-last-move" refX="2" refY="1.5" orient="auto">
-            <polygon
-              points="0 0, 3 1.5, 0 3"
-              fill={arrowColor} // <- opaque color, e.g. "#f97316"
-            />
-          </marker>
-        </defs>
-        <line
-          x1={fromX}
-          y1={fromY}
-          x2={adjustedToX}
-          y2={adjustedToY}
-          stroke={arrowColor} // <- same opaque color
-          strokeWidth={strokeWidth}
-          strokeLinecap="round"
-          strokeLinejoin="round"
-          markerEnd="url(#arrowhead-last-move)"
-        />
-      </svg>
-    );
+      return (
+        <svg
+          key={`last-move-arrow-${index}`}
+          className="absolute inset-0 pointer-events-none"
+          style={{ zIndex: 3, opacity }}
+          viewBox="0 0 100 100"
+          preserveAspectRatio="none"
+        >
+          <defs>
+            <marker id={`arrowhead-last-move-${index}`} refX="2" refY="1.5" orient="auto">
+              <polygon
+                points="0 0, 3 1.5, 0 3"
+                fill={arrowColor}
+              />
+            </marker>
+          </defs>
+          <line
+            x1={fromX}
+            y1={fromY}
+            x2={adjustedToX}
+            y2={adjustedToY}
+            stroke={arrowColor}
+            strokeWidth={strokeWidth}
+            strokeLinecap="round"
+            strokeLinejoin="round"
+            markerEnd={`url(#arrowhead-last-move-${index})`}
+          />
+        </svg>
+      );
+    });
   };
 
   // Normalize wall coordinates (always store in consistent order)
@@ -354,8 +359,21 @@ export function Board({
     const fromY = (arrow.from.row + 0.5) * cellHeightPercent;
     const toY = (arrow.to.row + 0.5) * cellHeightPercent;
 
+    // Calculate direction vector for shortening
+    const dx = toX - fromX;
+    const dy = toY - fromY;
+    const length = Math.sqrt(dx * dx + dy * dy);
+
+    // Shorten the line to prevent shaft showing through arrowhead
+    // Using same shortening as last move arrow
+    const shortenAmount = 3;
+    const shortenRatio = length > shortenAmount ? (length - shortenAmount) / length : 0;
+    const adjustedToX = fromX + dx * shortenRatio;
+    const adjustedToY = fromY + dy * shortenRatio;
+
     const arrowColor = getArrowColor(arrow);
-    const strokeWidth = arrow.type === "calculated" ? 1.5 : 2.5;
+    // Use thinner stroke to match last move style, but keep it visible
+    const strokeWidth = arrow.type === "calculated" ? 1.1 : 1.5;
     const opacity = arrow.type === "calculated" ? 0.5 : 0.8;
     const dashArray = arrow.type === "calculated" ? "4,2" : "none";
 
@@ -370,14 +388,14 @@ export function Board({
         <defs>
           <marker
             id={`arrowhead-${arrow.type}-${index}`}
-            markerWidth="10"
-            markerHeight="10"
-            refX="9"
-            refY="3"
+            markerWidth="4"
+            markerHeight="4"
+            refX="2"
+            refY="1.5"
             orient="auto"
           >
             <polygon
-              points="0 0, 10 3, 0 6"
+              points="0 0, 3 1.5, 0 3"
               fill={arrowColor}
               opacity={opacity}
             />
@@ -386,12 +404,14 @@ export function Board({
         <line
           x1={fromX}
           y1={fromY}
-          x2={toX}
-          y2={toY}
+          x2={adjustedToX}
+          y2={adjustedToY}
           stroke={arrowColor}
           strokeWidth={strokeWidth}
           opacity={opacity}
           strokeDasharray={dashArray}
+          strokeLinecap="round"
+          strokeLinejoin="round"
           markerEnd={`url(#arrowhead-${arrow.type}-${index})`}
         />
       </svg>
@@ -649,7 +669,7 @@ export function Board({
             {/* Render arrows */}
             {arrows.map((arrow, index) => renderArrow(arrow, index))}
             {/* Render last move arrow */}
-            {renderLastMoveArrow()}
+            {renderLastMoveArrows()}
 
             {/* Render walls */}
             {walls.map((pWall, index) => {

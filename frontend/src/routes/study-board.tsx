@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import {
   Board,
 } from "@/components/board";
-import { Cell, Wall, type Pawn, type PawnType, type WallState } from "@/lib/game";
+import { Cell, Wall, type Pawn, type PawnType, type WallState, type PlayerWall } from "@/lib/game";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
@@ -28,9 +28,25 @@ function StudyBoard() {
   const [rows, setRows] = useState(10);
   const [cols, setCols] = useState(10);
 
+  // Map colors to IDs for study board
+  const colorToId: Record<PlayerColor, number> = {
+    red: 1,
+    blue: 2,
+    green: 3,
+    purple: 4,
+    pink: 5,
+    cyan: 6,
+    brown: 7,
+    gray: 8,
+  };
+
+  const idToColor: Record<number, PlayerColor> = Object.fromEntries(
+    Object.entries(colorToId).map(([k, v]) => [v, k as PlayerColor])
+  );
+
   // Board state
   const [pawns, setPawns] = useState<Pawn[]>([]);
-  const [walls, setWalls] = useState<Wall[]>([]);
+  const [walls, setWalls] = useState<PlayerWall[]>([]);
 
   // Selected properties for adding new elements
   const [selectedPawnColor, setSelectedPawnColor] =
@@ -61,7 +77,7 @@ function StudyBoard() {
           // Add a new pawn
           const newPawn: Pawn = {
             id: `${row}-${col}-${Date.now()}`,
-            color: selectedPawnColor,
+            playerId: colorToId[selectedPawnColor] as any,
             type: selectedPawnType,
             cell: new Cell(row, col),
             pawnStyle: selectedPawnType === "cat" 
@@ -80,7 +96,8 @@ function StudyBoard() {
     (row: number, col: number, orientation: "horizontal" | "vertical") => {
       setWalls((prev) => {
         // Check if wall already exists at this position
-        const existingWallIndex = prev.findIndex((wall) => {
+        const existingWallIndex = prev.findIndex((pWall) => {
+          const wall = pWall.wall;
           if (orientation === "horizontal") {
             // Horizontal wall separates rows: (row-1, col) and (row, col)
             return (
@@ -105,25 +122,18 @@ function StudyBoard() {
           // Add new wall
           let newWall: Wall;
           if (orientation === "horizontal") {
-            newWall = {
-              row1: row - 1,
-              col1: col,
-              row2: row,
-              col2: col,
-              state: selectedWallState,
-              playerColor: selectedWallColor,
-            } as Wall;
+            newWall = new Wall(new Cell(row, col), "horizontal");
           } else {
-            newWall = {
-              row1: row,
-              col1: col,
-              row2: row,
-              col2: col + 1,
-              state: selectedWallState,
-              playerColor: selectedWallColor,
-            } as Wall;
+            newWall = new Wall(new Cell(row, col), "vertical");
           }
-          return [...prev, newWall];
+          
+          const playerWall: PlayerWall = {
+            wall: newWall,
+            playerId: colorToId[selectedWallColor] as any,
+            state: selectedWallState,
+          };
+
+          return [...prev, playerWall];
         }
       });
     },
@@ -135,7 +145,7 @@ function StudyBoard() {
     (_row: number, _col: number, pawnId: string) => {
       setPawns((prev) => {
         return prev.map((pawn) =>
-          pawn.id === pawnId ? { ...pawn, color: selectedPawnColor } : pawn
+          pawn.id === pawnId ? { ...pawn, playerId: colorToId[selectedPawnColor] as any } : pawn
         );
       });
     },
@@ -146,10 +156,10 @@ function StudyBoard() {
   const handleWallRightClick = useCallback(
     (wallIndex: number) => {
       setWalls((prev) =>
-        prev.map((wall, index) =>
+        prev.map((pWall, index) =>
           index === wallIndex
-            ? { ...wall, playerColor: selectedWallColor } as Wall
-            : wall
+            ? { ...pWall, playerId: colorToId[selectedWallColor] as any }
+            : pWall
         )
       );
     },
@@ -194,7 +204,7 @@ function StudyBoard() {
                         );
                         setWalls((prev) =>
                           prev.filter(
-                            (w) => w.row1 < newRows && w.row2 < newRows
+                            (w) => w.wall.row1 < newRows && w.wall.row2 < newRows
                           )
                         );
                       }}
@@ -226,7 +236,7 @@ function StudyBoard() {
                         );
                         setWalls((prev) =>
                           prev.filter(
-                            (w) => w.col1 < newCols && w.col2 < newCols
+                            (w) => w.wall.col1 < newCols && w.wall.col2 < newCols
                           )
                         );
                       }}
@@ -420,6 +430,7 @@ function StudyBoard() {
               walls={walls}
               maxWidth="max-w-2xl"
               className="p-2"
+              playerColors={idToColor as any}
               onCellClick={handleCellClick}
               onWallClick={handleWallClick}
               onPawnRightClick={handlePawnRightClick}
