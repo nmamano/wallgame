@@ -824,7 +824,7 @@ function GamePage() {
       const nextActions = [...stagedActions, newAction];
       const simulated = simulateMove(nextActions);
       if (!simulated) {
-        setActionError("That move sequence is not legal.");
+        setActionError("Illegal move.");
         return;
       }
 
@@ -1243,19 +1243,6 @@ function GamePage() {
                   {loadError}
                 </div>
               )}
-              {actionError && (
-                <div className="flex items-center gap-2 text-xs text-red-500">
-                  <AlertCircle className="w-4 h-4" />
-                  {actionError}
-                </div>
-              )}
-              {selectedPawn && (
-                <div className="flex items-center gap-2 text-xs">
-                  <AlertCircle className="w-4 h-4" />
-                  Selected {selectedPawn.type} (
-                  {selectedPawn.cell.toNotation(rows)})
-                </div>
-              )}
               {aiThinking && (
                 <div className="flex items-center gap-2 text-xs">
                   <Bot className="w-4 h-4" />
@@ -1286,28 +1273,50 @@ function GamePage() {
               draggingPawnId={draggingPawnId}
               selectedPawnId={selectedPawnId}
               stagedActionsCount={stagedActions.length}
+              controllablePlayerId={localPlayerId}
             />
 
-            {/* Staged Actions Buttons */}
-            <div className="flex justify-center gap-3 mt-4">
-              <Button
-                size="sm"
-                variant="outline"
-                onClick={clearStagedActions}
-                disabled={stagedActions.length === 0}
-              >
-                Clear staged actions
-              </Button>
-              <Button
-                size="sm"
-                onClick={() => commitStagedActions()}
-                disabled={
-                  gameState?.status !== "playing" ||
-                  gameState?.turn !== localPlayerId
-                }
-              >
-                Finish move
-              </Button>
+            {/* Action messaging + staged action buttons */}
+            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-4 w-full">
+              <div className="flex items-center text-xs text-muted-foreground min-h-[1.25rem] justify-self-start">
+                {(actionError || selectedPawn) && (
+                  <>
+                    <AlertCircle
+                      className={`w-4 h-4 mr-2 ${
+                        actionError ? "text-red-500" : "text-muted-foreground"
+                      }`}
+                    />
+                    <span className={actionError ? "text-red-500" : undefined}>
+                      {actionError
+                        ? actionError
+                        : selectedPawn
+                          ? `Selected ${selectedPawn.type} (${selectedPawn.cell.toNotation(rows)})`
+                          : null}
+                    </span>
+                  </>
+                )}
+              </div>
+              <div className="flex gap-3 justify-center">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearStagedActions}
+                  disabled={stagedActions.length === 0}
+                >
+                  Clear staged actions
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => commitStagedActions()}
+                  disabled={
+                    gameState?.status !== "playing" ||
+                    gameState?.turn !== localPlayerId
+                  }
+                >
+                  Finish move
+                </Button>
+              </div>
+              <div />
             </div>
           </div>
 
