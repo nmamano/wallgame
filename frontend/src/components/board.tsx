@@ -65,6 +65,7 @@ export interface BoardProps {
   mousePawnPath?: string;
   className?: string;
   draggingPawnId?: string | null;
+  selectedPawnId?: string | null;
   stagedActionsCount?: number;
 }
 
@@ -276,6 +277,7 @@ export function Board({
   onCellDrop,
   className = "p-4",
   draggingPawnId = null,
+  selectedPawnId = null,
   stagedActionsCount = 0,
 }: BoardProps) {
   // Create grid array
@@ -341,11 +343,13 @@ export function Board({
     return g;
   }, [walls, cols, rows]);
 
-  // Calculate valid drop cells when dragging
+  // Calculate valid drop cells when dragging or when a pawn is selected
   const validDropCells = useMemo(() => {
-    if (!draggingPawnId || !dragEnabled) return new Set<string>();
+    // Use draggingPawnId if dragging, otherwise use selectedPawnId
+    const activePawnId = draggingPawnId ?? selectedPawnId;
+    if (!activePawnId || !dragEnabled) return new Set<string>();
 
-    const pawn = pawns.find((p) => p.id === draggingPawnId);
+    const pawn = pawns.find((p) => p.id === activePawnId);
     if (!pawn) return new Set<string>();
 
     const validCells = new Set<string>();
@@ -374,6 +378,7 @@ export function Board({
     return validCells;
   }, [
     draggingPawnId,
+    selectedPawnId,
     dragEnabled,
     pawns,
     stagedActionsCount,
