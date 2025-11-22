@@ -16,6 +16,7 @@ import {
   type Pawn,
   type PlayerWall,
   type PlayerId,
+  Grid,
 } from "@/lib/game";
 
 export type ArrowType = "staged" | "premoved" | "calculated";
@@ -63,6 +64,8 @@ export interface BoardProps {
   catPawnPath?: string;
   mousePawnPath?: string;
   className?: string;
+  draggingPawnId?: string | null;
+  stagedActionsCount?: number;
 }
 
 interface WallMaps {
@@ -272,6 +275,8 @@ export function Board({
   onPawnDragEnd,
   onCellDrop,
   className = "p-4",
+  draggingPawnId = null,
+  stagedActionsCount = 0,
 }: BoardProps) {
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
@@ -323,6 +328,59 @@ export function Board({
   };
 
   const dragEnabled = Boolean(onCellDrop);
+
+  // Build gameGrid from walls for distance calculations
+  // Include both placed and staged walls so distance calculations account for staged walls
+  const gameGrid = useMemo(() => {
+    const g = new Grid(cols, rows);
+    walls.forEach((pWall) => {
+      if (pWall.state === "placed" || pWall.state === "staged") {
+        g.addWall(pWall.wall, pWall.playerId);
+      }
+    });
+    return g;
+  }, [walls, cols, rows]);
+
+  // Calculate valid drop cells when dragging
+  const validDropCells = useMemo(() => {
+    if (!draggingPawnId || !dragEnabled) return new Set<string>();
+
+    const pawn = pawns.find((p) => p.id === draggingPawnId);
+    if (!pawn) return new Set<string>();
+
+    const validCells = new Set<string>();
+
+    // Check all cells to see if they're at the target distance
+    for (let row = 0; row < rows; row++) {
+      for (let col = 0; col < cols; col++) {
+        const distance = gameGrid.distance(
+          [pawn.cell.row, pawn.cell.col],
+          [row, col]
+        );
+        if (stagedActionsCount === 0) {
+          // With 0 staged actions: highlight cells at distance 1 OR 2
+          if (distance === 1 || distance === 2) {
+            validCells.add(`${row}-${col}`);
+          }
+        } else {
+          // With 1 staged action: highlight cells at distance 1
+          if (distance === 1) {
+            validCells.add(`${row}-${col}`);
+          }
+        }
+      }
+    }
+
+    return validCells;
+  }, [
+    draggingPawnId,
+    dragEnabled,
+    pawns,
+    stagedActionsCount,
+    gameGrid,
+    rows,
+    cols,
+  ]);
 
   // Render last move arrows (subtle)
   const renderLastMoveArrows = () => {
@@ -830,12 +888,19 @@ export function Board({
               row.map(({ col: colIndex }) => {
                 const cellPawns = getPawnsForCell(rowIndex, colIndex);
                 const isLight = (rowIndex + colIndex) % 2 === 0;
+                const isValidDrop = validDropCells.has(
+                  `${rowIndex}-${colIndex}`
+                );
 
                 return (
                   <div
                     key={`${rowIndex}-${colIndex}`}
                     className={`aspect-square border border-amber-400 flex items-center justify-center relative cursor-pointer hover:bg-amber-300 ${
                       isLight ? "bg-amber-200" : "bg-amber-100"
+                    } ${
+                      isValidDrop
+                        ? "ring-2 ring-amber-400 ring-offset-1 bg-amber-200/60 dark:bg-amber-900/30"
+                        : ""
                     }`}
                     onClick={() => onCellClick?.(rowIndex, colIndex)}
                     onDragOver={(event) => {

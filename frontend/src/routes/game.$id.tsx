@@ -1268,6 +1268,8 @@ function GamePage() {
               onCellDrop={interactionLocked ? undefined : handleCellDrop}
               lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
               lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
+              draggingPawnId={draggingPawnId}
+              stagedActionsCount={stagedActions.length}
             />
           </div>
 
