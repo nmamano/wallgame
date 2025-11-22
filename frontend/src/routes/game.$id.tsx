@@ -1269,6 +1269,7 @@ function GamePage() {
               lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
               lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
               draggingPawnId={draggingPawnId}
+              selectedPawnId={selectedPawnId}
               stagedActionsCount={stagedActions.length}
             />
           </div>
