@@ -83,7 +83,7 @@ function Ranking() {
   ];
 
   const handleRowClick = (player: string) => {
-    navigate({
+    void navigate({
       to: "/past-games",
       search: {
         variant: filters.variant,

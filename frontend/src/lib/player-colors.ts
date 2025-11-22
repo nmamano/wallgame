@@ -9,7 +9,7 @@ export const PLAYER_COLORS = [
   "gray",
 ] as const;
 
-export type PlayerColor = (typeof PLAYER_COLORS)[number] | string;
+export type PlayerColor = (typeof PLAYER_COLORS)[number];
 
 // Color class mappings for Tailwind CSS
 export const colorClassMap: Record<string, string> = {

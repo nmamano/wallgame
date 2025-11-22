@@ -1,5 +1,10 @@
 import { useState } from "react";
-import { Dialog, DialogContent, DialogHeader, DialogTitle } from "@/components/ui/dialog";
+import {
+  Dialog,
+  DialogContent,
+  DialogHeader,
+  DialogTitle,
+} from "@/components/ui/dialog";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Check, Copy, Loader2, User, Bot, Users } from "lucide-react";
@@ -29,7 +34,7 @@ export function MatchingStagePanel({
   const [copied, setCopied] = useState(false);
 
   const handleCopyLink = () => {
-    navigator.clipboard.writeText(gameUrl);
+    void navigator.clipboard.writeText(gameUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -96,7 +101,8 @@ export function MatchingStagePanel({
       return (
         <div className="mt-2">
           <p className="text-sm text-muted-foreground">
-            Access token: <code className="bg-muted px-1 rounded">bot_token_123</code>
+            Access token:{" "}
+            <code className="bg-muted px-1 rounded">bot_token_123</code>
           </p>
         </div>
       );
@@ -115,8 +121,17 @@ export function MatchingStagePanel({
   };
 
   return (
-    <Dialog open={isOpen} onOpenChange={() => {}}>
-      <DialogContent className="sm:max-w-md" onPointerDownOutside={(e) => e.preventDefault()} onEscapeKeyDown={(e) => e.preventDefault()}>
+    <Dialog
+      open={isOpen}
+      onOpenChange={() => {
+        // Dialog should not be closable during matching stage
+      }}
+    >
+      <DialogContent
+        className="sm:max-w-md"
+        onPointerDownOutside={(e) => e.preventDefault()}
+        onEscapeKeyDown={(e) => e.preventDefault()}
+      >
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
@@ -131,7 +146,9 @@ export function MatchingStagePanel({
                 <div className="flex items-center gap-2 font-medium">
                   {getPlayerIcon(player.type)}
                   <span>{getPlayerLabel(player)}</span>
-                  {player.isYou && <span className="text-xs text-muted-foreground">(You)</span>}
+                  {player.isYou && (
+                    <span className="text-xs text-muted-foreground">(You)</span>
+                  )}
                 </div>
                 <div className="flex items-center gap-2">
                   {player.isReady ? (

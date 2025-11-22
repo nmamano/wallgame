@@ -153,9 +153,9 @@ function Settings() {
                     </Button>
                   )}
                 </div>
-                {(displayNameValidationError || displayNameError) && (
+                {(displayNameValidationError ?? displayNameError) && (
                   <p className="text-sm text-destructive">
-                    {displayNameValidationError || displayNameError}
+                    {displayNameValidationError ?? displayNameError}
                   </p>
                 )}
                 {userPending ? (
@@ -174,7 +174,9 @@ function Settings() {
                     </p>
                     <Button
                       variant="outline"
-                      onClick={() => navigate({ to: "/profile" })}
+                      onClick={() => {
+                        void navigate({ to: "/profile" });
+                      }}
                     >
                       Go to Profile
                     </Button>

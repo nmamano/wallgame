@@ -54,7 +54,7 @@ export function PlayerConfiguration({
   const selectedInfo = value ? PLAYER_TYPE_INFO[value] : null;
   const id = `player-type-${label.toLowerCase().replace(/\s+/g, "-")}`;
 
-  const allOptions: Array<{ value: PlayerType; label: string }> = [
+  const allOptions: { value: PlayerType; label: string }[] = [
     { value: "you", label: "You" },
     { value: "friend", label: "Friend" },
     { value: "matched-user", label: "Matched user" },

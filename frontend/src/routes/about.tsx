@@ -45,13 +45,13 @@ function About() {
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw]}
             components={{
-              a: ({ node, ...props }) => {
-                if (props.href?.startsWith("http")) {
+              a: ({ href, ...props }: { href?: string; [key: string]: unknown }) => {
+                if (href?.startsWith("http")) {
                   return (
-                    <a {...props} target="_blank" rel="noopener noreferrer" />
+                    <a {...props} href={href} target="_blank" rel="noopener noreferrer" />
                   );
                 }
-                return <a {...props} />;
+                return <a {...props} href={href} />;
               },
             }}
           >

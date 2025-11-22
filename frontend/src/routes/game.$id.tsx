@@ -250,7 +250,7 @@ const resolvePlayerColor = (value?: string | null): PlayerColor => {
   if (!value || value === "default") {
     return "red";
   }
-  return value as PlayerColor;
+  return value;
 };
 
 function buildStartPositions(
@@ -500,11 +500,11 @@ function GamePage() {
       number: Math.ceil(entry.index / 2),
       notation: entry.move.toNotation(rows),
     }));
-    const paired: Array<{
+    const paired: {
       num: number;
       white?: string;
       black?: string;
-    }> = [];
+    }[] = [];
     for (let i = 0; i < entries.length; i += 2) {
       paired.push({
         num: entries[i].number,
@@ -546,7 +546,8 @@ function GamePage() {
 
       // Calculate last moves by comparing pawn positions
       const moves: BoardProps["lastMoves"] = [];
-      const playerColor = playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
+      const playerColor =
+        playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
 
       // Check Cat
       const catBefore = currentState.pawns[playerId].cat;
@@ -564,7 +565,10 @@ function GamePage() {
       // Check Mouse
       const mouseBefore = currentState.pawns[playerId].mouse;
       const mouseAfter = nextState.pawns[playerId].mouse;
-      if (mouseBefore.row !== mouseAfter.row || mouseBefore.col !== mouseAfter.col) {
+      if (
+        mouseBefore.row !== mouseAfter.row ||
+        mouseBefore.col !== mouseAfter.col
+      ) {
         moves.push({
           fromRow: mouseBefore.row,
           fromCol: mouseBefore.col,
@@ -589,7 +593,7 @@ function GamePage() {
         // I should update the state definition first.
         // But I am in applyMove.
         // Let's assume I will update the state definition to be LastMove | LastMove[] | undefined.
-        setLastMove(moves as any); 
+        setLastMove(moves);
       } else {
         setLastMove(undefined);
       }
@@ -726,7 +730,10 @@ function GamePage() {
       const stored = sessionStorage.getItem(`game-config-${id}`);
       if (stored) {
         try {
-          const parsed = JSON.parse(stored);
+          const parsed = JSON.parse(stored) as {
+            config?: Partial<GameConfiguration>;
+            players?: PlayerType[];
+          };
           resolvedConfig = {
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
@@ -734,7 +741,7 @@ function GamePage() {
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;
-        } catch (error) {
+        } catch {
           setLoadError("We couldn't read the saved game. Using defaults.");
         }
       } else {
@@ -784,11 +791,11 @@ function GamePage() {
   const stagePawnAction = useCallback(
     (pawnId: string, targetRow: number, targetCol: number) => {
       if (interactionLocked) return;
-      if (!gameState || gameState.status !== "playing") return;
+      if (gameState?.status !== "playing") return;
       if (gameState.turn !== localPlayerId) return;
 
       const pawn = boardPawns.find((p) => p.id === pawnId);
-      if (!pawn || pawn.playerId !== localPlayerId) return;
+      if (pawn?.playerId !== localPlayerId) return;
       const pawnType = pawn.type;
       const targetCell = new Cell(targetRow, targetCol);
       const newAction = new Action(pawnType, targetCell);
@@ -865,7 +872,7 @@ function GamePage() {
   const handleWallClick = useCallback(
     (row: number, col: number, orientation: "horizontal" | "vertical") => {
       if (interactionLocked) return;
-      if (!gameState || gameState.status !== "playing") return;
+      if (gameState?.status !== "playing") return;
       if (gameState.turn !== localPlayerId) return;
 
       const newAction = new Action("wall", new Cell(row, col), orientation);
@@ -910,8 +917,7 @@ function GamePage() {
   const triggerAiMove = useCallback(() => {
     if (!aiEnabled || botPlayerId == null) return;
     const state = gameStateRef.current;
-    if (!state || state.status !== "playing" || state.turn !== botPlayerId)
-      return;
+    if (state?.status !== "playing" || state.turn !== botPlayerId) return;
 
     if (aiTimeoutRef.current) {
       clearTimeout(aiTimeoutRef.current);
@@ -919,62 +925,59 @@ function GamePage() {
     }
 
     setAiThinking(true);
-    aiTimeoutRef.current = window.setTimeout(async () => {
-      const current = gameStateRef.current;
-      if (
-        !current ||
-        current.turn !== botPlayerId ||
-        current.status !== "playing"
-      ) {
-        setAiThinking(false);
-        aiTimeoutRef.current = null;
-        return;
-      }
-      try {
-        const opponentId: PlayerId = botPlayerId === 1 ? 2 : 1;
-        const aiCatPos: [number, number] = [
-          current.pawns[botPlayerId].cat.row,
-          current.pawns[botPlayerId].cat.col,
-        ];
-        const opponentMousePos: [number, number] = [
-          current.pawns[opponentId].mouse.row,
-          current.pawns[opponentId].mouse.col,
-        ];
-        const botMove = await getAiMove(
-          current.grid.clone(),
-          aiCatPos,
-          opponentMousePos
-        );
-        applyMove(botPlayerId, botMove);
-        setActionError(null);
-      } catch (error) {
-        console.error(error);
-        setActionError("The bot failed to find a move.");
-      } finally {
-        setAiThinking(false);
-        if (aiTimeoutRef.current) {
-          clearTimeout(aiTimeoutRef.current);
+    aiTimeoutRef.current = window.setTimeout(() => {
+      void (async () => {
+        const current = gameStateRef.current;
+        if (current?.turn !== botPlayerId || current.status !== "playing") {
+          setAiThinking(false);
           aiTimeoutRef.current = null;
+          return;
         }
-      }
+        try {
+          const opponentId: PlayerId = botPlayerId === 1 ? 2 : 1;
+          const aiCatPos: [number, number] = [
+            current.pawns[botPlayerId].cat.row,
+            current.pawns[botPlayerId].cat.col,
+          ];
+          const opponentMousePos: [number, number] = [
+            current.pawns[opponentId].mouse.row,
+            current.pawns[opponentId].mouse.col,
+          ];
+          const botMove = await getAiMove(
+            current.grid.clone(),
+            aiCatPos,
+            opponentMousePos
+          );
+          applyMove(botPlayerId, botMove);
+          setActionError(null);
+        } catch (error) {
+          console.error(error);
+          setActionError("The bot failed to find a move.");
+        } finally {
+          setAiThinking(false);
+          if (aiTimeoutRef.current) {
+            clearTimeout(aiTimeoutRef.current);
+            aiTimeoutRef.current = null;
+          }
+        }
+      })();
     }, 600);
   }, [aiEnabled, botPlayerId, applyMove]);
 
   useEffect(() => {
     if (!aiEnabled || botPlayerId == null) return;
-    if (!gameState || gameState.status !== "playing") return;
+    if (gameState?.status !== "playing") return;
     if (gameState.turn !== botPlayerId) return;
     if (stagedActions.length > 0) return;
     triggerAiMove();
   }, [aiEnabled, botPlayerId, triggerAiMove, gameState, stagedActions.length]);
 
   useEffect(() => {
-    if (!gameState || gameState.status !== "finished" || !gameState.result)
-      return;
+    if (gameState?.status !== "finished" || !gameState.result) return;
     const result = gameState.result;
     if (result.winner) {
       const player =
-        playersRef.current.find((p) => p.playerId === result.winner) || null;
+        playersRef.current.find((p) => p.playerId === result.winner) ?? null;
       addSystemMessage(
         player
           ? `${player.name} won by ${formatWinReason(result.reason)}.`
@@ -987,9 +990,9 @@ function GamePage() {
 
   const handlePawnClick = useCallback(
     (pawnId: string) => {
-      if (!gameState || gameState.status !== "playing") return;
+      if (gameState?.status !== "playing") return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
-      if (!pawn || pawn.playerId !== localPlayerId) return;
+      if (pawn?.playerId !== localPlayerId) return;
       setSelectedPawnId(pawnId);
       setActionError(null);
     },
@@ -1053,7 +1056,7 @@ function GamePage() {
     window.history.back();
   };
 
-  const playSound = (_: "move" | "capture" | "check") => {
+  const playSound = () => {
     // Placeholder for future audio hooks
   };
 
@@ -1138,6 +1141,8 @@ function GamePage() {
       base[state.turn] = Math.max(0, base[state.turn] - elapsed);
     }
     return base;
+    // clockTick is intentionally included to trigger clock updates every second
+    // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, clockTick]);
 
   const winnerPlayer =
