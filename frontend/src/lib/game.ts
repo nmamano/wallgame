@@ -1,11 +1,13 @@
-
 export type PlayerId = 1 | 2;
 
 export class Cell {
-  constructor(public row: number, public col: number) {}
+  constructor(
+    public row: number,
+    public col: number
+  ) {}
 
   toNotation(totalRows: number): string {
-    const colChar = String.fromCharCode('a'.charCodeAt(0) + this.col);
+    const colChar = String.fromCharCode("a".charCodeAt(0) + this.col);
     const rowNum = totalRows - this.row;
     return `${colChar}${rowNum}`;
   }
@@ -19,7 +21,7 @@ export class Cell {
   }
 }
 
-export type WallOrientation = 'vertical' | 'horizontal';
+export type WallOrientation = "vertical" | "horizontal";
 
 export type WallState =
   | "placed"
@@ -37,21 +39,21 @@ export class Wall {
   ) {}
 
   toNotation(totalRows: number): string {
-    const symbol = this.orientation === 'vertical' ? '>' : '^';
+    const symbol = this.orientation === "vertical" ? ">" : "^";
     return `${symbol}${this.cell.toNotation(totalRows)}`;
   }
 
   // Returns coordinates compatible with the Board component
   // row1, col1, row2, col2
   toCoordinates(): { row1: number; col1: number; row2: number; col2: number } {
-    if (this.orientation === 'vertical') {
+    if (this.orientation === "vertical") {
       // >e4 means wall to the right of e4 (between e4 and f4)
       // Between (row, col) and (row, col+1)
       return {
         row1: this.cell.row,
         col1: this.cell.col,
         row2: this.cell.row,
-        col2: this.cell.col + 1
+        col2: this.cell.col + 1,
       };
     } else {
       // ^e4 means wall above e4 (between e4 and e5)
@@ -61,15 +63,23 @@ export class Wall {
         row1: this.cell.row - 1,
         col1: this.cell.col,
         row2: this.cell.row,
-        col2: this.cell.col
+        col2: this.cell.col,
       };
     }
   }
 
-  get row1(): number { return this.toCoordinates().row1; }
-  get col1(): number { return this.toCoordinates().col1; }
-  get row2(): number { return this.toCoordinates().row2; }
-  get col2(): number { return this.toCoordinates().col2; }
+  get row1(): number {
+    return this.toCoordinates().row1;
+  }
+  get col1(): number {
+    return this.toCoordinates().col1;
+  }
+  get row2(): number {
+    return this.toCoordinates().row2;
+  }
+  get col2(): number {
+    return this.toCoordinates().col2;
+  }
 }
 
 export interface PlayerWall {
@@ -91,13 +101,13 @@ export interface Pawn {
 export function createCell(notation: string, totalRows: number): Cell {
   const colChar = notation.charAt(0).toLowerCase();
   const rowStr = notation.slice(1);
-  
-  const col = colChar.charCodeAt(0) - 'a'.charCodeAt(0);
+
+  const col = colChar.charCodeAt(0) - "a".charCodeAt(0);
   const rowNum = parseInt(rowStr, 10);
-  
+
   // Convert 1-based bottom-up row to 0-based top-down row
   const row = totalRows - rowNum;
-  
+
   return new Cell(row, col);
 }
 
@@ -105,12 +115,12 @@ export function createWall(notation: string, totalRows: number): Wall {
   const symbol = notation.charAt(0);
   const cellNotation = notation.slice(1);
   const cell = createCell(cellNotation, totalRows);
-  
+
   let orientation: WallOrientation;
-  if (symbol === '>') {
-    orientation = 'vertical';
-  } else if (symbol === '^') {
-    orientation = 'horizontal';
+  if (symbol === ">") {
+    orientation = "vertical";
+  } else if (symbol === "^") {
+    orientation = "horizontal";
   } else {
     throw new Error(`Invalid wall notation symbol: ${symbol}`);
   }
@@ -118,12 +128,17 @@ export function createWall(notation: string, totalRows: number): Wall {
   return new Wall(cell, orientation);
 }
 
-export function createPlayerWall(notation: string, totalRows: number, playerId: PlayerId, state: WallState = "placed"): PlayerWall {
+export function createPlayerWall(
+  notation: string,
+  totalRows: number,
+  playerId: PlayerId,
+  state: WallState = "placed"
+): PlayerWall {
   const wall = createWall(notation, totalRows);
   return {
     wall,
     playerId,
-    state
+    state,
   };
 }
 
@@ -135,32 +150,36 @@ export function posEq(a: Pos, b: Pos): boolean {
 
 export class Action {
   constructor(
-    public type: 'cat' | 'mouse' | 'wall',
+    public type: "cat" | "mouse" | "wall",
     public target: Cell,
     public wallOrientation?: WallOrientation
   ) {}
 
   static fromNotation(notation: string, totalRows: number): Action {
     const firstChar = notation.charAt(0);
-    if (firstChar === 'C') {
-      return new Action('cat', createCell(notation.slice(1), totalRows));
-    } else if (firstChar === 'M') {
-      return new Action('mouse', createCell(notation.slice(1), totalRows));
-    } else if (firstChar === '>' || firstChar === '^') {
-      const orientation = firstChar === '>' ? 'vertical' : 'horizontal';
-      return new Action('wall', createCell(notation.slice(1), totalRows), orientation);
+    if (firstChar === "C") {
+      return new Action("cat", createCell(notation.slice(1), totalRows));
+    } else if (firstChar === "M") {
+      return new Action("mouse", createCell(notation.slice(1), totalRows));
+    } else if (firstChar === ">" || firstChar === "^") {
+      const orientation = firstChar === ">" ? "vertical" : "horizontal";
+      return new Action(
+        "wall",
+        createCell(notation.slice(1), totalRows),
+        orientation
+      );
     }
     throw new Error(`Invalid action notation: ${notation}`);
   }
 
   toNotation(totalRows: number): string {
-    if (this.type === 'cat') return `C${this.target.toNotation(totalRows)}`;
-    if (this.type === 'mouse') return `M${this.target.toNotation(totalRows)}`;
-    if (this.type === 'wall') {
-      const symbol = this.wallOrientation === 'vertical' ? '>' : '^';
+    if (this.type === "cat") return `C${this.target.toNotation(totalRows)}`;
+    if (this.type === "mouse") return `M${this.target.toNotation(totalRows)}`;
+    if (this.type === "wall") {
+      const symbol = this.wallOrientation === "vertical" ? ">" : "^";
       return `${symbol}${this.target.toNotation(totalRows)}`;
     }
-    return '';
+    return "";
   }
 }
 
@@ -168,42 +187,49 @@ export class Move {
   constructor(public actions: Action[]) {}
 
   static fromNotation(notation: string, totalRows: number): Move {
-    if (notation === '---') return new Move([]);
-    const actionStrs = notation.split('.');
-    const actions = actionStrs.map(s => Action.fromNotation(s, totalRows));
+    if (notation === "---") return new Move([]);
+    const actionStrs = notation.split(".");
+    const actions = actionStrs.map((s) => Action.fromNotation(s, totalRows));
     return new Move(actions);
   }
 
   toNotation(totalRows: number): string {
-    if (this.actions.length === 0) return '---';
+    if (this.actions.length === 0) return "---";
     const sortedActions = [...this.actions].sort((a, b) => {
-      const typeOrder = { 'cat': 1, 'mouse': 2, 'wall': 3 };
+      const typeOrder = { cat: 1, mouse: 2, wall: 3 };
       const ta = typeOrder[a.type];
       const tb = typeOrder[b.type];
       if (ta !== tb) return ta - tb;
-      if (a.type === 'wall' && b.type === 'wall') {
+      if (a.type === "wall" && b.type === "wall") {
         if (a.wallOrientation !== b.wallOrientation) {
-          return a.wallOrientation === 'vertical' ? -1 : 1;
+          return a.wallOrientation === "vertical" ? -1 : 1;
         }
         if (a.target.col !== b.target.col) return a.target.col - b.target.col;
         return a.target.row - b.target.row;
       }
       return 0;
     });
-    return sortedActions.map(a => a.toNotation(totalRows)).join('.');
+    return sortedActions.map((a) => a.toNotation(totalRows)).join(".");
   }
 }
 
 export class Turn {
-  constructor(public move1: Move, public move2?: Move) {}
+  constructor(
+    public move1: Move,
+    public move2?: Move
+  ) {}
 
   static fromNotation(notation: string, totalRows: number): Turn {
     const parts = notation.trim().split(/\s+/);
     if (parts.length === 1) {
       return new Turn(Move.fromNotation(parts[0], totalRows));
     }
-    if (parts.length !== 2) throw new Error(`Invalid turn notation: ${notation}`);
-    return new Turn(Move.fromNotation(parts[0], totalRows), Move.fromNotation(parts[1], totalRows));
+    if (parts.length !== 2)
+      throw new Error(`Invalid turn notation: ${notation}`);
+    return new Turn(
+      Move.fromNotation(parts[0], totalRows),
+      Move.fromNotation(parts[1], totalRows)
+    );
   }
 
   toNotation(totalRows: number): string {
@@ -212,13 +238,42 @@ export class Turn {
   }
 }
 
+// Time control preset options for UI configuration
+export type TimeControlPreset = "bullet" | "blitz" | "rapid" | "classical";
+
+// Game variant options
+export type Variant = "standard" | "classic";
+
+// Time control class for game logic (stores actual seconds)
 export class TimeControl {
-  constructor(public initialSeconds: number, public incrementSeconds: number) {}
-  toString() { return `${this.initialSeconds}+${this.incrementSeconds}`; }
+  constructor(
+    public initialSeconds: number,
+    public incrementSeconds: number
+  ) {}
+  toString() {
+    return `${this.initialSeconds}+${this.incrementSeconds}`;
+  }
+
+  // Convert a preset to a TimeControl instance
+  static fromPreset(preset: TimeControlPreset): TimeControl {
+    switch (preset) {
+      case "bullet":
+        return new TimeControl(60, 0);
+      case "blitz":
+        return new TimeControl(180, 2);
+      case "rapid":
+        return new TimeControl(600, 2);
+      case "classical":
+        return new TimeControl(1800, 0);
+    }
+  }
 }
 
 export class BoardDimensions {
-  constructor(public width: number, public height: number) {}
+  constructor(
+    public width: number,
+    public height: number
+  ) {}
 }
 
 export class Grid {
@@ -227,20 +282,29 @@ export class Grid {
   // 2: horizontal wall (^) above this cell
   // 3: both
   public cells: number[][];
-  
-  // Tracks owner of walls. 
+
+  // Tracks owner of walls.
   // 0: None
   // 1: Player 1
   // 2: Player 2
   public verticalOwners: number[][];
   public horizontalOwners: number[][];
-  
+
   public variant = "Standard";
 
-  constructor(public width: number, public height: number) {
-    this.cells = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
-    this.verticalOwners = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
-    this.horizontalOwners = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
+  constructor(
+    public width: number,
+    public height: number
+  ) {
+    this.cells = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => 0)
+    );
+    this.verticalOwners = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => 0)
+    );
+    this.horizontalOwners = Array.from({ length: height }, () =>
+      Array.from({ length: width }, () => 0)
+    );
   }
 
   dimensions(): BoardDimensions {
@@ -252,16 +316,12 @@ export class Grid {
     return r >= 0 && r < this.height && c >= 0 && c < this.width;
   }
 
-  canBuildWall(
-    cats: [Pos, Pos],
-    mice: [Pos, Pos],
-    wall: Wall
-  ): boolean {
+  canBuildWall(cats: [Pos, Pos], mice: [Pos, Pos], wall: Wall): boolean {
     const pos: Pos = [wall.cell.row, wall.cell.col];
     const current = this.cells[pos[0]][pos[1]];
     // 1 for vertical (>), 2 for horizontal (^)
-    const wallBit = wall.orientation === 'vertical' ? 1 : 2;
-    
+    const wallBit = wall.orientation === "vertical" ? 1 : 2;
+
     if ((current & wallBit) !== 0) return false;
 
     this.cells[pos[0]][pos[1]] = current | wallBit;
@@ -269,11 +329,11 @@ export class Grid {
     this.cells[pos[0]][pos[1]] = current;
     return res;
   }
-  
+
   addWall(wall: Wall, owner?: PlayerId) {
     const r = wall.cell.row;
     const c = wall.cell.col;
-    if (wall.orientation === 'vertical') {
+    if (wall.orientation === "vertical") {
       this.cells[r][c] |= 1;
       if (owner) this.verticalOwners[r][c] = owner;
     } else {
@@ -303,7 +363,7 @@ export class Grid {
     queue.push(start);
     const dist = new Map<number, number>();
     dist.set(posToKey(start), 0);
-    
+
     while (i < queue.length) {
       const pos = queue[i];
       i++;
@@ -324,33 +384,36 @@ export class Grid {
     const [r, c] = cell instanceof Cell ? [cell.row, cell.col] : cell;
     if (!this.inBounds([r, c])) return false;
     const val = this.cells[r][c];
-    const bit = orientation === 'vertical' ? 1 : 2;
+    const bit = orientation === "vertical" ? 1 : 2;
     return (val & bit) !== 0;
   }
 
   accessibleNeighbors(pos: Pos): Pos[] {
     const [r, c] = pos;
     const res: Pos[] = [];
-    
+
     // Right: check wall to the right (bit 1) of current cell
-    if (c + 1 < this.width && !this.hasWall([r, c], 'vertical')) res.push([r, c + 1]);
-    
+    if (c + 1 < this.width && !this.hasWall([r, c], "vertical"))
+      res.push([r, c + 1]);
+
     // Left: check wall to the right (bit 1) of left neighbor
-    if (c - 1 >= 0 && !this.hasWall([r, c - 1], 'vertical')) res.push([r, c - 1]);
-    
+    if (c - 1 >= 0 && !this.hasWall([r, c - 1], "vertical"))
+      res.push([r, c - 1]);
+
     // Down: check wall above (bit 2) bottom neighbor
-    if (r + 1 < this.height && !this.hasWall([r + 1, c], 'horizontal')) res.push([r + 1, c]);
-    
+    if (r + 1 < this.height && !this.hasWall([r + 1, c], "horizontal"))
+      res.push([r + 1, c]);
+
     // Up: check wall above (bit 2) current cell
-    if (r - 1 >= 0 && !this.hasWall([r, c], 'horizontal')) res.push([r - 1, c]);
-    
+    if (r - 1 >= 0 && !this.hasWall([r, c], "horizontal")) res.push([r - 1, c]);
+
     return res;
   }
   clone(): Grid {
     const newGrid = new Grid(this.width, this.height);
-    newGrid.cells = this.cells.map(row => [...row]);
-    newGrid.verticalOwners = this.verticalOwners.map(row => [...row]);
-    newGrid.horizontalOwners = this.horizontalOwners.map(row => [...row]);
+    newGrid.cells = this.cells.map((row) => [...row]);
+    newGrid.verticalOwners = this.verticalOwners.map((row) => [...row]);
+    newGrid.horizontalOwners = this.horizontalOwners.map((row) => [...row]);
     newGrid.variant = this.variant;
     return newGrid;
   }
@@ -415,12 +478,13 @@ function DoubleWalkMove(grid: Grid, aiPos: Pos, aiGoal: Pos): Move {
       grid.distance(aiPos, candidatePos) === 2 &&
       grid.distance(candidatePos, aiGoal) === curDist - 2
     ) {
-      return new Move([new Action('cat', new Cell(candidatePos[0], candidatePos[1]))]);
+      return new Move([
+        new Action("cat", new Cell(candidatePos[0], candidatePos[1])),
+      ]);
     }
   }
   // If there is no cell at distance 2 which is 2 steps closer to the goal,
   // it means that the AI is at distance 1 from its goal. In this case, we simply
   // move to the goal.
-  return new Move([new Action('cat', new Cell(aiGoal[0], aiGoal[1]))]);
+  return new Move([new Action("cat", new Cell(aiGoal[0], aiGoal[1]))]);
 }
-

@@ -1,6 +1,7 @@
 import { hc } from "hono/client";
 import { type ApiRoutes } from "@server/index";
 import { queryOptions } from "@tanstack/react-query";
+import type { TimeControlPreset, Variant } from "@/lib/game";
 
 const client = hc<ApiRoutes>("/");
 
@@ -38,11 +39,11 @@ export interface SettingsResponse {
     pawn_type: string;
     pawn_shape: string;
   }[];
-  defaultVariant: string;
-  defaultTimeControl: string;
+  defaultVariant: Variant;
+  defaultTimeControl: TimeControlPreset;
   defaultRatedStatus: boolean;
   variantSettings: {
-    variant: string;
+    variant: Variant;
     default_parameters: {
       boardWidth?: number;
       boardHeight?: number;
@@ -108,17 +109,17 @@ export const settingsMutations = {
   updatePawn: (pawnType: string, pawnShape: string) =>
     updateSetting("pawn", { pawnType, pawnShape }),
 
-  updateTimeControl: (timeControl: string) =>
+  updateTimeControl: (timeControl: TimeControlPreset) =>
     updateSetting("time-control", { timeControl }),
 
   updateRatedStatus: (rated: boolean) =>
     updateSetting("rated-status", { rated }),
 
-  updateDefaultVariant: (variant: string) =>
+  updateDefaultVariant: (variant: Variant) =>
     updateSetting("default-variant", { variant }),
 
   updateVariantParameters: (
-    variant: string,
+    variant: Variant,
     parameters: { boardWidth: number; boardHeight: number }
   ) => updateSetting("variant-parameters", { variant, parameters }),
 

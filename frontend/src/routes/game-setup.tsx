@@ -14,11 +14,8 @@ import {
   PlayerConfiguration,
   PlayerType,
 } from "@/components/player-configuration";
-import {
-  GameConfiguration,
-  TimeControl,
-  Variant,
-} from "@/components/game-configuration-panel";
+import { GameConfiguration } from "@/components/game-configuration-panel";
+import type { TimeControlPreset, Variant } from "@/lib/game";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -469,7 +466,7 @@ function GameSetup() {
                   </Label>
                   <Select
                     value={gameConfig.timeControl}
-                    onValueChange={(value: TimeControl) =>
+                    onValueChange={(value: TimeControlPreset) =>
                       handleGameConfigChange({
                         ...gameConfig,
                         timeControl: value,

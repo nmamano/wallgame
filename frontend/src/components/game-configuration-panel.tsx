@@ -11,12 +11,10 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
-
-export type TimeControl = "bullet" | "blitz" | "rapid" | "classical";
-export type Variant = "standard" | "classic";
+import type { TimeControlPreset, Variant } from "@/lib/game";
 
 export interface GameConfiguration {
-  timeControl: TimeControl;
+  timeControl: TimeControlPreset;
   rated: boolean;
   variant: Variant;
   boardWidth?: number;
@@ -112,7 +110,7 @@ export function GameConfigurationPanel({
           </Label>
           <Select
             value={config.timeControl}
-            onValueChange={(value: TimeControl) =>
+            onValueChange={(value: TimeControlPreset) =>
               updateConfig({ timeControl: value })
             }
           >
