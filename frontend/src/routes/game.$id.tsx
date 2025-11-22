@@ -26,7 +26,6 @@ import {
   Trophy,
   Swords,
   AlertCircle,
-  X,
 } from "lucide-react";
 import { Board, type BoardProps, type Arrow } from "@/components/board";
 import {
@@ -597,7 +596,6 @@ function GamePage() {
   const commitStagedActions = useCallback(
     (actions?: Action[]) => {
       const moveActions = actions ?? stagedActions;
-      if (!moveActions.length) return;
       if (!gameState) {
         setActionError("Game is still loading");
         return;
@@ -617,12 +615,6 @@ function GamePage() {
     },
     [stagedActions, gameState, applyMove, localPlayerId]
   );
-
-  const undoStagedAction = useCallback(() => {
-    setStagedActions((prev) => prev.slice(0, -1));
-    setActionError(null);
-    setSelectedPawnId(null);
-  }, []);
 
   const clearStagedActions = useCallback(() => {
     setStagedActions([]);
@@ -1083,10 +1075,6 @@ function GamePage() {
   // Calculate board container dimensions (board + margin)
   const boardContainerWidth = boardWidth + containerMargin * 2;
 
-  // Minimum heights for adjustable components
-  const minBoardContainerHeight = boardHeight + containerMargin * 2;
-  const minChatScrollableHeight = 12;
-
   // Fixed component heights
   const timerHeight = 4;
   const infoCardHeight = 6.5;
@@ -1094,6 +1082,12 @@ function GamePage() {
   const chatTabsHeight = 3;
   const chatInputHeight = 4;
   const chatChannelsHeight = 2.5;
+  const stagedActionsButtonsHeight = 3.5; // Space for buttons below board (mt-4 + button height)
+
+  // Minimum heights for adjustable components
+  const minBoardContainerHeight =
+    boardHeight + containerMargin * 2 + stagedActionsButtonsHeight;
+  const minChatScrollableHeight = 12;
 
   // Calculate gap size
   const gap = 1;
@@ -1204,7 +1198,7 @@ function GamePage() {
 
           {/* Board Container */}
           <div
-            className="flex items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
+            className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
             style={{
               minHeight: `${adjustedBoardContainerHeight}rem`,
               height: `${adjustedBoardContainerHeight}rem`,
@@ -1293,54 +1287,29 @@ function GamePage() {
               selectedPawnId={selectedPawnId}
               stagedActionsCount={stagedActions.length}
             />
-          </div>
 
-          {stagedActions.length > 0 && (
-            <div className="bg-card/60 border border-dashed border-amber-300 rounded-xl p-3 flex flex-col gap-3">
-              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
-                Staged actions (click to remove)
-              </div>
-              <div className="flex flex-wrap gap-2">
-                {stagedActions.map((action, index) => (
-                  <button
-                    key={`${action.type}-${index}-${action.target.row}-${action.target.col}`}
-                    onClick={() => removeStagedAction(index)}
-                    className="flex items-center gap-2 px-3 py-1 text-sm rounded-full bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100 border border-amber-300 hover:bg-amber-300/80 transition-colors"
-                  >
-                    <span className="font-mono">
-                      {index + 1}. {action.toNotation(rows)}
-                    </span>
-                    <X className="w-3 h-3" />
-                  </button>
-                ))}
-              </div>
-              <div className="flex flex-wrap gap-2">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={undoStagedAction}
-                  disabled={stagedActions.length === 0}
-                >
-                  Undo last
-                </Button>
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={clearStagedActions}
-                  disabled={stagedActions.length === 0}
-                >
-                  Clear
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => commitStagedActions()}
-                  disabled={stagedActions.length === 0}
-                >
-                  Finish move
-                </Button>
-              </div>
+            {/* Staged Actions Buttons */}
+            <div className="flex justify-center gap-3 mt-4">
+              <Button
+                size="sm"
+                variant="outline"
+                onClick={clearStagedActions}
+                disabled={stagedActions.length === 0}
+              >
+                Clear staged actions
+              </Button>
+              <Button
+                size="sm"
+                onClick={() => commitStagedActions()}
+                disabled={
+                  gameState?.status !== "playing" ||
+                  gameState?.turn !== localPlayerId
+                }
+              >
+                Finish move
+              </Button>
             </div>
-          )}
+          </div>
 
           {/* Bottom Player (You) Timer */}
           {players.length > 0 && (
