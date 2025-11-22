@@ -1,11 +1,22 @@
 "use client";
 
-import type { CSSProperties, ReactNode } from "react";
+import type { CSSProperties, ReactNode, DragEvent, MouseEvent } from "react";
 import { useMemo } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
-import { type PlayerColor, colorClassMap, colorFilterMap, colorHexMap } from "@/lib/player-colors";
-import { Cell, Wall, type Pawn, type PlayerWall, type PlayerId } from "@/lib/game";
+import {
+  type PlayerColor,
+  colorClassMap,
+  colorFilterMap,
+  colorHexMap,
+} from "@/lib/player-colors";
+import {
+  Cell,
+  Wall,
+  type Pawn,
+  type PlayerWall,
+  type PlayerId,
+} from "@/lib/game";
 
 export type ArrowType = "staged" | "premoved" | "calculated";
 
@@ -40,6 +51,10 @@ export interface BoardProps {
   ) => void;
   onPawnRightClick?: (row: number, col: number, pawnId: string) => void;
   onWallRightClick?: (wallIndex: number) => void;
+  onPawnClick?: (pawnId: string) => void;
+  onPawnDragStart?: (pawnId: string) => void;
+  onPawnDragEnd?: () => void;
+  onCellDrop?: (row: number, col: number) => void;
   catPawnPath?: string;
   mousePawnPath?: string;
   className?: string;
@@ -77,7 +92,10 @@ const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
   return { vertical, horizontal };
 };
 
-const getWallColor = (pWall: PlayerWall, playerColors?: Record<PlayerId, PlayerColor>): string => {
+const getWallColor = (
+  pWall: PlayerWall,
+  playerColors?: Record<PlayerId, PlayerColor>
+): string => {
   if (pWall.state === "placed" && pWall.playerId && playerColors) {
     const color = playerColors[pWall.playerId];
     return colorHexMap[color] || "#dc2626";
@@ -197,6 +215,10 @@ export function Board({
   onWallClick,
   onPawnRightClick,
   onWallRightClick,
+  onPawnClick,
+  onPawnDragStart,
+  onPawnDragEnd,
+  onCellDrop,
   className = "p-4",
 }: BoardProps) {
   // Create grid array
@@ -214,8 +236,9 @@ export function Board({
   const gapValue = `${gapSize}rem`;
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
-  const resolveWallColor = (wall: PlayerWall) => getWallColor(wall, playerColors);
-  
+  const resolveWallColor = (wall: PlayerWall) =>
+    getWallColor(wall, playerColors);
+
   const pillars = useMemo(
     () =>
       createPillarElements({
@@ -231,8 +254,10 @@ export function Board({
 
   // Get pawns for a cell
   const getPawnsForCell = (row: number, col: number): Pawn[] => {
-    return pawns.filter(p => p.cell.row === row && p.cell.col === col);
+    return pawns.filter((p) => p.cell.row === row && p.cell.col === col);
   };
+
+  const dragEnabled = Boolean(onCellDrop);
 
   // Render last move arrow (subtle)
   const renderLastMoveArrow = () => {
@@ -369,26 +394,124 @@ export function Board({
     );
   };
 
-
   const maxCellSize = 3; // rem
   const paddingX = 2; // rem (p-4 = 1rem on each side)
   const paddingY = 2; // rem (p-4 = 1rem on each side)
   const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
   const maxBoardHeight = `${rows * maxCellSize + (rows - 1) * gapSize + paddingY}rem`;
-  
+
   // Calculate aspect ratio based on rows and cols
   const aspectRatio = cols / rows;
 
+  const handleCellDrop = (
+    event: DragEvent<HTMLDivElement>,
+    row: number,
+    col: number
+  ) => {
+    if (!onCellDrop) return;
+    event.preventDefault();
+    event.stopPropagation();
+    onCellDrop(row, col);
+  };
+
+  const renderPawnWrapper = (
+    pawn: Pawn,
+    rowIndex: number,
+    colIndex: number,
+    size: "lg" | "sm"
+  ) => {
+    const pawnColor = playerColors[pawn.playerId];
+    const dimensionClass = size === "lg" ? "w-full h-full p-0.5" : "w-6 h-6";
+
+    const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
+      event.preventDefault();
+      event.stopPropagation();
+      onPawnRightClick?.(rowIndex, colIndex, pawn.id);
+    };
+
+    const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+      event.stopPropagation();
+      onPawnClick?.(pawn.id);
+    };
+
+    const handleDragStart = (event: DragEvent<HTMLDivElement>) => {
+      if (!dragEnabled) return;
+      event.dataTransfer.effectAllowed = "move";
+      event.dataTransfer.setData("text/plain", pawn.id);
+      onPawnDragStart?.(pawn.id);
+    };
+
+    const handleDragEnd = () => {
+      if (!dragEnabled) return;
+      onPawnDragEnd?.();
+    };
+
+    const customCatPath =
+      pawn.type !== "mouse" && pawn.pawnStyle
+        ? `/pawns/cat/${pawn.pawnStyle}`
+        : null;
+    const customMousePath =
+      pawn.type === "mouse" && pawn.pawnStyle
+        ? `/pawns/mouse/${pawn.pawnStyle}`
+        : null;
+
+    const content = (() => {
+      if (customCatPath || customMousePath) {
+        const src = (customCatPath ?? customMousePath)!;
+        return (
+          <img
+            src={src}
+            alt="pawn"
+            draggable={false}
+            className="w-full h-full object-contain drop-shadow-md"
+            style={
+              colorFilterMap[pawnColor]
+                ? { filter: colorFilterMap[pawnColor] }
+                : undefined
+            }
+          />
+        );
+      }
+      const Icon = pawn.type === "mouse" ? Rat : Cat;
+      const sizePx = size === "lg" ? 36 : 24;
+      return (
+        <Icon
+          size={sizePx}
+          strokeWidth={2.5}
+          className={`${
+            colorClassMap[pawnColor] || "text-red-600"
+          } w-full h-full`}
+        />
+      );
+    })();
+
+    return (
+      <div
+        key={pawn.id}
+        className={`${dimensionClass} transform hover:scale-110 transition-transform cursor-pointer relative`}
+        onContextMenu={handleContextMenu}
+        onClick={handleClick}
+        draggable={dragEnabled}
+        onDragStart={handleDragStart}
+        onDragEnd={handleDragEnd}
+      >
+        {content}
+      </div>
+    );
+  };
+
   return (
-    <div className={`flex items-center justify-center ${className} ${maxWidth}`}>
-      <div 
+    <div
+      className={`flex items-center justify-center ${className} ${maxWidth}`}
+    >
+      <div
         className="rounded-lg p-4 bg-amber-100 max-w-full max-h-full"
-        style={{ 
+        style={{
           width: maxBoardWidth,
           height: maxBoardHeight,
-          maxWidth: '100%',
-          maxHeight: '100%',
-          aspectRatio: aspectRatio.toString()
+          maxWidth: "100%",
+          maxHeight: "100%",
+          aspectRatio: aspectRatio.toString(),
         }}
       >
         <div className="relative">
@@ -506,9 +629,7 @@ export function Board({
                     transform: "translateX(-50%)",
                     zIndex: 15,
                   }}
-                  onClick={() =>
-                    onWallClick?.(rowIndex, colIndex, "vertical")
-                  }
+                  onClick={() => onWallClick?.(rowIndex, colIndex, "vertical")}
                 />
               ))
             )}
@@ -603,178 +724,29 @@ export function Board({
                       isLight ? "bg-amber-200" : "bg-amber-100"
                     }`}
                     onClick={() => onCellClick?.(rowIndex, colIndex)}
+                    onDragOver={(event) => {
+                      if (!dragEnabled) return;
+                      event.preventDefault();
+                    }}
+                    onDrop={(event) =>
+                      handleCellDrop(event, rowIndex, colIndex)
+                    }
                   >
                     {/* Pawns */}
                     {cellPawns.length > 0 && (
                       <div className="w-full h-full flex items-center justify-center p-1">
                         {cellPawns.length === 1 ? (
-                          (() => {
-                            const pawn = cellPawns[0];
-                            const pawnColor = playerColors[pawn.playerId];
-                            
-                            // Custom Cat Pawn Logic - use pawn's own style only
-                            const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle 
-                              ? `/pawns/cat/${pawn.pawnStyle}`
-                              : null;
-                            
-                            if (customCatPath) {
-                                return (
-                                  <div 
-                                    className="w-full h-full transform hover:scale-110 transition-transform cursor-pointer relative p-0.5"
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onPawnRightClick?.(
-                                        rowIndex,
-                                        colIndex,
-                                        pawn.id
-                                      );
-                                    }}
-                                  >
-                                    <img 
-                                      src={customCatPath} 
-                                      alt="pawn" 
-                                      className="w-full h-full object-contain drop-shadow-md"
-                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
-                                    />
-                                  </div>
-                                );
-                            }
-                            
-                            // Custom Mouse Pawn Logic - use pawn's own style only
-                            const customMousePath = pawn.type === "mouse" && pawn.pawnStyle
-                              ? `/pawns/mouse/${pawn.pawnStyle}`
-                              : null;
-                            
-                            if (customMousePath) {
-                                return (
-                                  <div 
-                                    className="w-full h-full transform hover:scale-110 transition-transform cursor-pointer relative p-0.5"
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onPawnRightClick?.(
-                                        rowIndex,
-                                        colIndex,
-                                        pawn.id
-                                      );
-                                    }}
-                                  >
-                                    <img 
-                                      src={customMousePath} 
-                                      alt="pawn" 
-                                      className="w-full h-full object-contain drop-shadow-md"
-                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
-                                    />
-                                  </div>
-                                );
-                            }
-
-                            const Icon = pawn.type === "mouse" ? Rat : Cat;
-                            return (
-                              <Icon
-                                size={36}
-                                strokeWidth={2.5}
-                                className={`${
-                                  colorClassMap[pawnColor] || "text-red-600"
-                                } w-full h-full transform hover:scale-110 transition-transform cursor-pointer`}
-                                onContextMenu={(e) => {
-                                  e.preventDefault();
-                                  e.stopPropagation();
-                                  onPawnRightClick?.(
-                                    rowIndex,
-                                    colIndex,
-                                    pawn.id
-                                  );
-                                }}
-                              />
-                            );
-                          })()
+                          renderPawnWrapper(
+                            cellPawns[0],
+                            rowIndex,
+                            colIndex,
+                            "lg"
+                          )
                         ) : (
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
-                            {cellPawns.map((pawn) => {
-                              const pawnColor = playerColors[pawn.playerId];
-                              // Check if we should render a custom image for cat
-                              const customCatPath = pawn.type !== "mouse" && pawn.pawnStyle
-                                ? `/pawns/cat/${pawn.pawnStyle}`
-                                : null;
-                              
-                              if (customCatPath) {
-                                return (
-                                  <div
-                                    key={pawn.id}
-                                    className="w-6 h-6 transform hover:scale-110 transition-transform cursor-pointer relative"
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onPawnRightClick?.(
-                                        rowIndex,
-                                        colIndex,
-                                        pawn.id
-                                      );
-                                    }}
-                                  >
-                                    <img 
-                                      src={customCatPath} 
-                                      alt="pawn" 
-                                      className="w-full h-full object-contain"
-                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
-                                    />
-                                  </div>
-                                );
-                              }
-
-                              // Check if we should render a custom image for mouse
-                              const customMousePath = pawn.type === "mouse" && pawn.pawnStyle
-                                ? `/pawns/mouse/${pawn.pawnStyle}`
-                                : null;
-                              
-                              if (customMousePath) {
-                                return (
-                                  <div
-                                    key={pawn.id}
-                                    className="w-6 h-6 transform hover:scale-110 transition-transform cursor-pointer relative"
-                                    onContextMenu={(e) => {
-                                      e.preventDefault();
-                                      e.stopPropagation();
-                                      onPawnRightClick?.(
-                                        rowIndex,
-                                        colIndex,
-                                        pawn.id
-                                      );
-                                    }}
-                                  >
-                                    <img 
-                                      src={customMousePath} 
-                                      alt="pawn" 
-                                      className="w-full h-full object-contain"
-                                      style={colorFilterMap[pawnColor] ? { filter: colorFilterMap[pawnColor] } : undefined}
-                                    />
-                                  </div>
-                                );
-                              }
-
-                              const Icon = pawn.type === "mouse" ? Rat : Cat;
-                              return (
-                                <Icon
-                                  key={pawn.id}
-                                  size={24}
-                                  strokeWidth={2.5}
-                                  className={`${
-                                    colorClassMap[pawnColor] || "text-red-600"
-                                  } transform hover:scale-110 transition-transform cursor-pointer`}
-                                  onContextMenu={(e) => {
-                                    e.preventDefault();
-                                    e.stopPropagation();
-                                    onPawnRightClick?.(
-                                      rowIndex,
-                                      colIndex,
-                                      pawn.id
-                                    );
-                                  }}
-                                />
-                              );
-                            })}
+                            {cellPawns.map((pawn) =>
+                              renderPawnWrapper(pawn, rowIndex, colIndex, "sm")
+                            )}
                           </div>
                         )}
                       </div>
