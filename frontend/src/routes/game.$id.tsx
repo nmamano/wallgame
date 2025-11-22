@@ -273,7 +273,7 @@ function GamePage() {
   const [lastMove, setLastMove] = useState<
     BoardProps["lastMove"] | BoardProps["lastMoves"]
   >(undefined);
-  const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
+  const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
     "game"
   );
@@ -657,7 +657,7 @@ function GamePage() {
       setActionError(null);
       setMessages([]);
       setChatInput("");
-      setActiveTab("chat");
+      setActiveTab("history");
       setChatChannel("game");
       setLastMove(undefined);
       setStagedActions([]);
@@ -1428,19 +1428,6 @@ function GamePage() {
             <div className="flex border-b flex-shrink-0">
               <button
                 className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  activeTab === "chat"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setActiveTab("chat")}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  Chat
-                </div>
-              </button>
-              <button
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
                   activeTab === "history"
                     ? "border-b-2 border-primary text-primary"
                     : "text-muted-foreground hover:text-foreground"
@@ -1450,6 +1437,19 @@ function GamePage() {
                 <div className="flex items-center justify-center gap-2">
                   <History className="w-4 h-4" />
                   Moves
+                </div>
+              </button>
+              <button
+                className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                  activeTab === "chat"
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setActiveTab("chat")}
+              >
+                <div className="flex items-center justify-center gap-2">
+                  <MessageSquare className="w-4 h-4" />
+                  Chat
                 </div>
               </button>
             </div>
