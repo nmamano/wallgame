@@ -112,7 +112,7 @@ interface MatchingGame {
   timeControl: string;
   boardWidth: number;
   boardHeight: number;
-  players: Array<{ name: string; rating: number }>;
+  players: { name: string; rating: number }[];
   createdAt: Date; // When the game entered matching stage
   creatorRating?: number; // Rating of the game creator
 }
@@ -136,7 +136,7 @@ function GameSetup() {
   // This avoids showing it in the URL
   const [mode] = useState<string | undefined>(() => {
     if (typeof window !== "undefined") {
-      return sessionStorage.getItem("game-setup-mode") || undefined;
+      return sessionStorage.getItem("game-setup-mode") ?? undefined;
     }
     return undefined;
   });
@@ -181,8 +181,9 @@ function GameSetup() {
   useEffect(() => {
     const playerCount = getPlayerCountForVariant(gameConfig.variant);
     const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
-    const newConfigs: PlayerType[] = Array(playerCount).fill(
-      defaultOtherPlayerType
+    const newConfigs: PlayerType[] = Array.from(
+      { length: playerCount },
+      () => defaultOtherPlayerType
     );
     newConfigs[0] = "you"; // Player 1 defaults to "You"
     setPlayerConfigs(newConfigs);
@@ -245,8 +246,9 @@ function GameSetup() {
     if (newConfig.variant !== gameConfig.variant) {
       const playerCount = getPlayerCountForVariant(newConfig.variant);
       const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
-      const newConfigs: PlayerType[] = Array(playerCount).fill(
-        defaultOtherPlayerType
+      const newConfigs: PlayerType[] = Array.from(
+        { length: playerCount },
+        () => defaultOtherPlayerType
       );
       newConfigs[0] = "you";
       setPlayerConfigs(newConfigs);
@@ -258,23 +260,26 @@ function GameSetup() {
   const handleCreateGame = () => {
     // Generate a random game ID (mocking backend generation)
     const gameId = Math.random().toString(36).substring(2, 15);
-    
+
     // In a real app, we would send the config to the backend here
     // For now, we'll pass the config via state or just rely on defaults in the game page
-    // Since we can't easily pass complex state via URL without encoding it, 
-    // and we want the URL to be shareable, we'll simulate fetching the config 
+    // Since we can't easily pass complex state via URL without encoding it,
+    // and we want the URL to be shareable, we'll simulate fetching the config
     // in the game page based on the ID (or just use random defaults for this demo).
-    
+
     // However, to make the demo feel real, we can store the config in sessionStorage
     // keyed by the gameId, so the game page can "fetch" it.
     if (typeof window !== "undefined") {
-      sessionStorage.setItem(`game-config-${gameId}`, JSON.stringify({
-        config: gameConfig,
-        players: playerConfigs
-      }));
+      sessionStorage.setItem(
+        `game-config-${gameId}`,
+        JSON.stringify({
+          config: gameConfig,
+          players: playerConfigs,
+        })
+      );
     }
 
-    navigate({ to: `/game/${gameId}` });
+    void navigate({ to: `/game/${gameId}` });
   };
 
   // Mock data for games in matching stage
@@ -359,8 +364,8 @@ function GameSetup() {
       }
 
       // Calculate ELO difference
-      const eloDiffA = Math.abs((a.creatorRating || 1200) - userRating);
-      const eloDiffB = Math.abs((b.creatorRating || 1200) - userRating);
+      const eloDiffA = Math.abs((a.creatorRating ?? 1200) - userRating);
+      const eloDiffB = Math.abs((b.creatorRating ?? 1200) - userRating);
 
       // Prioritize games with closer ELO
       if (eloDiffA !== eloDiffB) {
@@ -375,7 +380,7 @@ function GameSetup() {
   }, [mockMatchingGames, gameConfig, userRating]);
 
   const formatPlayers = (
-    players: Array<{ name: string; rating: number }>
+    players: { name: string; rating: number }[]
   ): string => {
     return players.map((p) => `${p.name} (${p.rating})`).join(" & ");
   };
@@ -616,8 +621,8 @@ function GameSetup() {
             {!canCreateGame && (
               <div className="mt-1 text-center">
                 <p className="text-sm text-destructive">
-                  Friend and Matched User can only be selected when "You" is
-                  also selected as a player.
+                  Friend and Matched User can only be selected when
+                  &quot;You&quot; is also selected as a player.
                 </p>
               </div>
             )}

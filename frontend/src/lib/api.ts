@@ -29,20 +29,49 @@ async function getCurrentUser() {
 // Shared query key constant to prevent coupling issues
 export const SETTINGS_QUERY_KEY = ["settings"] as const;
 
+export interface SettingsResponse {
+  displayName: string;
+  capitalizedDisplayName?: string;
+  boardTheme: string;
+  pawnColor: string;
+  pawnSettings: {
+    pawn_type: string;
+    pawn_shape: string;
+  }[];
+  defaultVariant: string;
+  defaultTimeControl: string;
+  defaultRatedStatus: boolean;
+  variantSettings: {
+    variant: string;
+    default_parameters: {
+      boardWidth?: number;
+      boardHeight?: number;
+    };
+  }[];
+}
+
 export const settingsQueryOptions = queryOptions({
   queryKey: SETTINGS_QUERY_KEY,
-  queryFn: async () => {
-    const res = await (api as any).settings.$get();
+  queryFn: async (): Promise<SettingsResponse> => {
+    const res = await (
+      api as unknown as {
+        settings: { $get: () => Promise<Response> };
+      }
+    ).settings.$get();
+
     if (!res.ok) {
       throw new Error(
         `Server error: Failed to fetch settings: ${res.statusText}`
       );
     }
-    return res.json();
+
+    // Parse JSON and assert type once
+    const data = (await res.json()) as SettingsResponse;
+    return data;
   },
-  staleTime: 5 * 60 * 1000, // Consider data fresh for 5 minutes
-  gcTime: 10 * 60 * 1000, // Keep in cache for 10 minutes
-  enabled: false, // Disable by default - enable when user is logged in
+  staleTime: 5 * 60 * 1000,
+  gcTime: 10 * 60 * 1000,
+  enabled: false,
 });
 
 // Settings mutation functions
@@ -58,13 +87,15 @@ async function updateSetting(
   });
 
   if (!res.ok) {
-    const errorData = await res.json().catch(() => ({}));
+    const errorData = (await res.json().catch(() => ({}))) as {
+      error?: string;
+    };
     throw new Error(
-      errorData.error || `Failed to update setting: ${res.statusText}`
+      errorData.error ?? `Failed to update setting: ${res.statusText}`
     );
   }
 
-  return res.json();
+  return res.json() as Promise<{ success: boolean }>;
 }
 
 export const settingsMutations = {

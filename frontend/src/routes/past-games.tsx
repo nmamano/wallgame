@@ -81,7 +81,7 @@ function PastGames() {
   ];
 
   const handleWatchGame = (gameId: string) => {
-    navigate({ to: `/game/${gameId}` });
+    void navigate({ to: `/game/${gameId}` });
   };
 
   return (

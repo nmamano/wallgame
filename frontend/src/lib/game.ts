@@ -235,12 +235,12 @@ export class Grid {
   public verticalOwners: number[][];
   public horizontalOwners: number[][];
   
-  public variant: string = "Standard";
+  public variant = "Standard";
 
   constructor(public width: number, public height: number) {
-    this.cells = Array(height).fill(0).map(() => Array(width).fill(0));
-    this.verticalOwners = Array(height).fill(0).map(() => Array(width).fill(0));
-    this.horizontalOwners = Array(height).fill(0).map(() => Array(width).fill(0));
+    this.cells = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
+    this.verticalOwners = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
+    this.horizontalOwners = Array.from({ length: height }, () => Array.from({ length: width }, () => 0));
   }
 
   dimensions(): BoardDimensions {
@@ -301,15 +301,14 @@ export class Grid {
     const queue: Pos[] = [];
     let i = 0;
     queue.push(start);
-    const dist: Map<number, number> = new Map();
+    const dist = new Map<number, number>();
     dist.set(posToKey(start), 0);
     
     while (i < queue.length) {
       const pos = queue[i];
       i++;
       const nbrs = this.accessibleNeighbors(pos);
-      for (let k = 0; k < nbrs.length; k++) {
-        let nbr = nbrs[k];
+      for (const nbr of nbrs) {
         const key = posToKey(nbr);
         if (!dist.has(key)) {
           dist.set(key, dist.get(posToKey(pos))! + 1);
@@ -357,7 +356,7 @@ export class Grid {
   }
 }
 
-export type BoardSettings = {
+export interface BoardSettings {
   variant: string;
   dimensions: BoardDimensions;
   startPos: {
@@ -367,9 +366,9 @@ export type BoardSettings = {
     p2Mouse: Pos;
   };
   startingWalls: Grid;
-};
+}
 
-export type MoveInHistory = {
+export interface MoveInHistory {
   index: number;
   move: Move;
   grid: Grid;
@@ -378,21 +377,21 @@ export type MoveInHistory = {
   timeLeftSeconds: [number, number];
   distances: [number, number];
   wallCounts: [number, number];
-};
+}
 
-export type TurnInHistory = {
+export interface TurnInHistory {
   move1: MoveInHistory;
   move2?: MoveInHistory;
-};
+}
 
 export type TurnHistory = TurnInHistory[];
 
-export async function getAiMove(
+export function getAiMove(
   grid: Grid,
   aiCatPos: Pos,
   opponentMousePos: Pos
 ): Promise<Move> {
-  return DoubleWalkMove(grid, aiCatPos, opponentMousePos);
+  return Promise.resolve(DoubleWalkMove(grid, aiCatPos, opponentMousePos));
 }
 
 // Simple AI that walks towards the goal. It does not build any walls.

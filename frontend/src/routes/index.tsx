@@ -185,7 +185,7 @@ function Index() {
               </div>
 
               <div className="max-w-2xl mx-auto xl:max-w-none">
-                <Link to={"/game/showcase" as any} className="group block">
+                <Link to="/game/showcase" className="group block">
                   <GameShowcase />
                 </Link>
               </div>

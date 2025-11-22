@@ -42,7 +42,7 @@ export function PawnSelector({
   // Helper function to get display name from filename
   const getDisplayName = (filename: string) => {
     // Extract number from filename (e.g., "cat1.svg" -> "1", "mouse42.svg" -> "42")
-    const match = filename.match(/\d+/);
+    const match = /\d+/.exec(filename);
     if (match) {
       return `${pawnType} ${match[0]}`;
     }
@@ -60,11 +60,11 @@ export function PawnSelector({
     if (open) {
       const timeoutId = setTimeout(() => {
         // Find the selected button by its data attribute
-        const selectedButton = document.querySelector(`[data-pawn-value="${value}"]`) as HTMLElement;
-        if (selectedButton && scrollAreaRef.current) {
+        const selectedButton = document.querySelector(`[data-pawn-value="${value}"]`);
+        if (selectedButton instanceof HTMLElement && scrollAreaRef.current) {
           // Get the viewport element from Radix ScrollArea
-          const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]') as HTMLElement;
-          if (viewport) {
+          const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+          if (viewport instanceof HTMLElement) {
             // Calculate the position to scroll to (center the selected item)
             const buttonTop = selectedButton.offsetTop;
             const buttonHeight = selectedButton.offsetHeight;

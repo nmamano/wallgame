@@ -25,7 +25,7 @@ function SoloCampaign() {
   ];
 
   const handlePlayPuzzle = (puzzleId: number) => {
-    navigate({ to: `/solo-campaign/${puzzleId}` });
+    void navigate({ to: `/solo-campaign/${puzzleId}` });
   };
 
   return (
@@ -36,7 +36,7 @@ function SoloCampaign() {
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
           Learn the fundamentals of Wall Game through a structured series of
-          challenges. Start here if you're new to the game!
+          challenges. Start here if you&apos;re new to the game!
         </p>
       </div>
 

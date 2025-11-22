@@ -12,13 +12,30 @@ export const Route = createFileRoute("/puzzles")({
   component: Puzzles,
 });
 
-async function getAllPuzzles() {
+interface PuzzleApiResponse {
+  id: number;
+  title: string;
+  author: string;
+  rating: number;
+}
+
+interface PuzzlesApiResponse {
+  puzzles: PuzzleApiResponse[];
+}
+
+interface Puzzle {
+  id: number;
+  name: string;
+  difficulty: number;
+  completed: boolean;
+}
+
+async function getAllPuzzles(): Promise<PuzzlesApiResponse> {
   const res = await api.puzzles.$get();
   if (!res.ok) {
     throw new Error("Server error: Failed to fetch puzzles");
   }
-  const data = await res.json();
-  return data;
+  return res.json() as Promise<PuzzlesApiResponse>;
 }
 
 function Puzzles() {
@@ -29,7 +46,7 @@ function Puzzles() {
   });
 
   const handlePlayPuzzle = (puzzleId: number) => {
-    navigate({ to: `/puzzles/${puzzleId}` });
+    void navigate({ to: `/puzzles/${puzzleId}` });
   };
 
   if (error)
@@ -40,16 +57,16 @@ function Puzzles() {
     );
 
   // Map API data to match the UI structure
-  const puzzles =
-    data?.puzzles?.map((puzzle: any) => ({
+  const puzzles: Puzzle[] =
+    data?.puzzles?.map((puzzle) => ({
       id: puzzle.id,
-      name: puzzle.title || `Puzzle ${puzzle.id}`,
+      name: puzzle.title ?? `Puzzle ${puzzle.id}`,
       difficulty: Math.min(
         5,
-        Math.max(1, Math.floor((puzzle.rating || 1000) / 200))
+        Math.max(1, Math.floor((puzzle.rating ?? 1000) / 200))
       ), // Convert rating to 1-5 difficulty
       completed: false, // TODO: Get from user data
-    })) || [];
+    })) ?? [];
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
@@ -76,7 +93,7 @@ function Puzzles() {
         </div>
       ) : (
         <div className="grid md:grid-cols-2 gap-4">
-          {puzzles.map((puzzle: any) => (
+          {puzzles.map((puzzle) => (
             <Card
               key={puzzle.id}
               className="p-6 hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur"

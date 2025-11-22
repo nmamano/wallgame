@@ -193,10 +193,11 @@ export class GameState {
       case "takeback":
         this.undoLastMove();
         break;
-      case "giveTime":
+      case "giveTime": {
         const opponent = action.playerId === 1 ? 2 : 1;
         this.timeLeft[opponent] += action.seconds;
         break;
+      }
     }
   }
 

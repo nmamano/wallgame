@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useState, useCallback } from "react";
+import { useState, useCallback, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import {
@@ -13,7 +13,7 @@ import { Label } from "@/components/ui/label";
 import {
   Board,
 } from "@/components/board";
-import { Cell, Wall, type Pawn, type PawnType, type WallState, type PlayerWall } from "@/lib/game";
+import { Cell, Wall, type Pawn, type PawnType, type WallState, type PlayerWall, type PlayerId } from "@/lib/game";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
@@ -29,19 +29,25 @@ function StudyBoard() {
   const [cols, setCols] = useState(10);
 
   // Map colors to IDs for study board
-  const colorToId: Record<PlayerColor, number> = {
-    red: 1,
-    blue: 2,
-    green: 3,
-    purple: 4,
-    pink: 5,
-    cyan: 6,
-    brown: 7,
-    gray: 8,
-  };
+  const colorToId = useMemo<Record<PlayerColor, number>>(
+    () => ({
+      red: 1,
+      blue: 2,
+      green: 3,
+      purple: 4,
+      pink: 5,
+      cyan: 6,
+      brown: 7,
+      gray: 8,
+    }),
+    []
+  );
 
-  const idToColor: Record<number, PlayerColor> = Object.fromEntries(
-    Object.entries(colorToId).map(([k, v]) => [v, k as PlayerColor])
+  const idToColor = useMemo<Record<number, PlayerColor>>(
+    () => Object.fromEntries(
+      Object.entries(colorToId).map(([k, v]) => [v, k])
+    ) as Record<number, PlayerColor>,
+    [colorToId]
   );
 
   // Board state
@@ -77,7 +83,7 @@ function StudyBoard() {
           // Add a new pawn
           const newPawn: Pawn = {
             id: `${row}-${col}-${Date.now()}`,
-            playerId: colorToId[selectedPawnColor] as any,
+            playerId: colorToId[selectedPawnColor] as PlayerId,
             type: selectedPawnType,
             cell: new Cell(row, col),
             pawnStyle: selectedPawnType === "cat" 
@@ -88,7 +94,7 @@ function StudyBoard() {
         }
       });
     },
-    [selectedPawnColor, selectedPawnType, catPawn, mousePawn]
+    [selectedPawnColor, selectedPawnType, catPawn, mousePawn, colorToId]
   );
 
   // Handle wall clicks to add/remove walls
@@ -129,7 +135,7 @@ function StudyBoard() {
           
           const playerWall: PlayerWall = {
             wall: newWall,
-            playerId: colorToId[selectedWallColor] as any,
+            playerId: colorToId[selectedWallColor] as PlayerId,
             state: selectedWallState,
           };
 
@@ -137,7 +143,7 @@ function StudyBoard() {
         }
       });
     },
-    [selectedWallColor, selectedWallState]
+    [selectedWallColor, selectedWallState, colorToId]
   );
 
   // Handle right-click on pawn to change color
@@ -145,11 +151,11 @@ function StudyBoard() {
     (_row: number, _col: number, pawnId: string) => {
       setPawns((prev) => {
         return prev.map((pawn) =>
-          pawn.id === pawnId ? { ...pawn, playerId: colorToId[selectedPawnColor] as any } : pawn
+          pawn.id === pawnId ? { ...pawn, playerId: colorToId[selectedPawnColor] as PlayerId } : pawn
         );
       });
     },
-    [selectedPawnColor]
+    [selectedPawnColor, colorToId]
   );
 
   // Handle right-click on wall to change color
@@ -158,12 +164,12 @@ function StudyBoard() {
       setWalls((prev) =>
         prev.map((pWall, index) =>
           index === wallIndex
-            ? { ...pWall, playerId: colorToId[selectedWallColor] as any }
+            ? { ...pWall, playerId: colorToId[selectedWallColor] as PlayerId }
             : pWall
         )
       );
     },
-    [selectedWallColor]
+    [selectedWallColor, colorToId]
   );
 
   const clearBoard = useCallback(() => {
@@ -269,7 +275,7 @@ function StudyBoard() {
                     <Select
                       value={selectedPawnColor}
                       onValueChange={(value) =>
-                        setSelectedPawnColor(value as PlayerColor)
+                        setSelectedPawnColor(value)
                       }
                     >
                       <SelectTrigger className="h-8">
@@ -358,7 +364,7 @@ function StudyBoard() {
                     <Select
                       value={selectedWallColor}
                       onValueChange={(value) =>
-                        setSelectedWallColor(value as PlayerColor)
+                        setSelectedWallColor(value)
                       }
                     >
                       <SelectTrigger className="h-8">
@@ -430,7 +436,7 @@ function StudyBoard() {
               walls={walls}
               maxWidth="max-w-2xl"
               className="p-2"
-              playerColors={idToColor as any}
+              playerColors={idToColor as Record<PlayerId, PlayerColor>}
               onCellClick={handleCellClick}
               onWallClick={handleWallClick}
               onPawnRightClick={handlePawnRightClick}

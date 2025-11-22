@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent } from "react";
-import { useMemo } from "react";
+import { useMemo, useCallback } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
 import {
@@ -65,20 +65,20 @@ export interface BoardProps {
   className?: string;
 }
 
-type WallMaps = {
+interface WallMaps {
   vertical: Map<string, PlayerWall>;
   horizontal: Map<string, PlayerWall>;
-};
+}
 
 type PillarColors = Record<EdgeColorKey, string | null>;
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
-type AxisPercents = {
+interface AxisPercents {
   baseCell: number;
   cellWithGap: number;
   gapPercent: number;
-};
+}
 
 const computeAxisPercents = (
   count: number,
@@ -192,14 +192,14 @@ const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
   };
 };
 
-type CreatePillarElementsParams = {
+interface CreatePillarElementsParams {
   rows: number;
   cols: number;
   cellSize: string;
   gapValue: string;
   wallMaps: WallMaps;
   resolveColor: (wall: PlayerWall) => string;
-};
+}
 
 const createPillarElements = ({
   rows,
@@ -299,8 +299,10 @@ export function Board({
   ) => fromRow === toRow || fromCol === toCol;
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
-  const resolveWallColor = (wall: PlayerWall) =>
-    getWallColor(wall, playerColors);
+  const resolveWallColor = useCallback(
+    (wall: PlayerWall) => getWallColor(wall, playerColors),
+    [playerColors]
+  );
 
   const pillars = useMemo(
     () =>
@@ -312,7 +314,7 @@ export function Board({
         wallMaps,
         resolveColor: resolveWallColor,
       }),
-    [rows, cols, cellSize, gapValue, wallMaps, playerColors]
+    [rows, cols, cellSize, gapValue, wallMaps, resolveWallColor]
   );
 
   // Get pawns for a cell
@@ -324,7 +326,7 @@ export function Board({
 
   // Render last move arrows (subtle)
   const renderLastMoveArrows = () => {
-    const moves = lastMove ? [lastMove] : lastMoves || [];
+    const moves = lastMove ? [lastMove] : (lastMoves ?? []);
     if (moves.length === 0) return null;
 
     return moves.map((move: LastMove, index: number) => {

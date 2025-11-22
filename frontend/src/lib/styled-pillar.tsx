@@ -4,12 +4,12 @@
 
 import React from "react";
 
-export type BoundingBox = {
+export interface BoundingBox {
   x: number;
   y: number;
   width: number;
   height: number;
-};
+}
 
 export type SquareOrientation = "W-E" | "N-S";
 export type QuarterCircleOrientation = "W-S" | "N-W" | "E-N" | "S-E";
@@ -314,10 +314,10 @@ class PillCap {
   }
 }
 
-type Point = { x: number; y: number };
+interface Point { x: number; y: number }
 type CornerKey = "top-left" | "top-right" | "bottom-right" | "bottom-left";
 
-type TriangleConfig = {
+interface TriangleConfig {
   key: string;
   cornerKey: CornerKey;
   corner: Point;
@@ -331,7 +331,7 @@ type TriangleConfig = {
   diagonalAngle: number;
   cwEdgeToDiag: number;
   cwDiagToEdge: number;
-};
+}
 
 const EDGE_TO_CORNERS: Record<EdgeColorKey, [CornerKey, CornerKey]> = {
   north: ["top-left", "top-right"],
@@ -862,7 +862,7 @@ class SideColorSquare {
   }
 }
 
-type CornerTriangleConfig = {
+interface CornerTriangleConfig {
   key: EdgeColorKey;
   points: Point[];
   pivotCornerKey: CornerKey;
@@ -872,7 +872,7 @@ type CornerTriangleConfig = {
   diagonalAngle: number;
   cwEdgeToDiag: number;
   cwDiagToEdge: number;
-};
+}
 
 class CornerColorSquare {
   constructor(public params: CornerColorSquareParams) {}
@@ -1130,14 +1130,14 @@ class CornerColorSquare {
   }
 }
 
-type QuadrantInfo = {
+interface QuadrantInfo {
   key: CornerKey;
   rect: BoundingBox;
   edges: [EdgeColorKey, EdgeColorKey];
   outerCorner: Point;
-};
+}
 
-type TriangleGradientConfig = {
+interface TriangleGradientConfig {
   key: CornerKey;
   pivotCornerKey: CornerKey;
   pivotPoint: Point;
@@ -1147,7 +1147,7 @@ type TriangleGradientConfig = {
   diagonalAngle: number;
   cwEdgeToDiag: number;
   cwDiagToEdge: number;
-};
+}
 
 class ThreeSidedSquare {
   constructor(public params: ThreeSidedSquareParams) {
@@ -1570,7 +1570,7 @@ class ThreeSidedSquare {
   }
 }
 
-type SplitTriangleConfig = {
+interface SplitTriangleConfig {
   key: string;
   pivotCornerKey: CornerKey;
   edge: EdgeColorKey;
@@ -1584,7 +1584,7 @@ type SplitTriangleConfig = {
   diagonalAngle: number;
   cwEdgeToDiag: number;
   cwDiagToEdge: number;
-};
+}
 
 class ThreeColoredSidesSquare {
   constructor(public params: ThreeColoredSidesSquareParams) {
@@ -1905,7 +1905,7 @@ class ThreeColoredSidesSquare {
       if (touchesNull) {
         const nonNullEdge = quadrant.edges.find(
           (edge) => edge !== nullEdge
-        ) as EdgeColorKey;
+        )!;
         const edgeColor = this.getRequiredEdgeColor(nonNullEdge);
         const oppositeColor = this.getRequiredEdgeColor(
           OPPOSITE_EDGE[nonNullEdge]
@@ -2074,9 +2074,9 @@ class ThreeColoredSidesSquare {
 export class StyledPillar {
   constructor(public params: StyledPillarParams) {}
 
-  private getNonNullColors(): Array<{ edge: EdgeColorKey; color: string }> {
+  private getNonNullColors(): { edge: EdgeColorKey; color: string }[] {
     return (
-      Object.entries(this.params.colors) as Array<[EdgeColorKey, string | null]>
+      Object.entries(this.params.colors) as [EdgeColorKey, string | null][]
     )
       .filter(([, color]) => color !== null)
       .map(([edge, color]) => ({ edge, color: color! }));
@@ -2253,7 +2253,7 @@ export class StyledPillar {
         // Find which color appears twice
         const colorCounts = new Map<string, number>();
         nonNull.forEach(({ color }) => {
-          colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+          colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
         });
         const mainColor = Array.from(colorCounts.entries()).find(
           ([, count]) => count === 2
@@ -2333,7 +2333,7 @@ export class StyledPillar {
       if (uniqueColors.length === 2) {
         const colorCounts = new Map<string, number>();
         nonNull.forEach(({ color }) => {
-          colorCounts.set(color, (colorCounts.get(color) || 0) + 1);
+          colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
         });
         const counts = Array.from(colorCounts.values()).sort();
         if (counts[0] === 1 && counts[1] === 3) {
@@ -2450,10 +2450,10 @@ export class StyledPillar {
       const fourColorSquare = new FourColorSquare({
         boundingBox: this.params.boundingBox,
         colors: {
-          north: this.params.colors.north || "#000000",
-          east: this.params.colors.east || "#000000",
-          south: this.params.colors.south || "#000000",
-          west: this.params.colors.west || "#000000",
+          north: this.params.colors.north ?? "#000000",
+          east: this.params.colors.east ?? "#000000",
+          south: this.params.colors.south ?? "#000000",
+          west: this.params.colors.west ?? "#000000",
         },
       });
       return fourColorSquare.render();
