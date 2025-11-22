@@ -26,28 +26,24 @@ import {
   Trophy,
   Swords,
   AlertCircle,
+  X,
 } from "lucide-react";
-import { Board, type BoardProps } from "@/components/board";
+import { Board, type BoardProps, type Arrow } from "@/components/board";
 import {
   MatchingStagePanel,
   type MatchingPlayer,
 } from "@/components/matching-stage-panel";
 import {
   Cell,
-  type Pawn,
-  type PlayerWall,
+  Wall,
   type PlayerId,
   Move,
   Action,
   TimeControl as GameTimeControl,
   getAiMove,
+  type PlayerWall,
 } from "@/lib/game";
-import {
-  GameState,
-  type GameStatus,
-  type GameResult,
-  type GameConfig,
-} from "@/lib/game-state";
+import { GameState, type GameResult, type GameConfig } from "@/lib/game-state";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/components/player-configuration";
 import type {
@@ -78,12 +74,6 @@ interface ChatMessage {
   timestamp: Date;
   channel: "game" | "team" | "audience";
   isSystem?: boolean;
-}
-
-interface HistoryMove {
-  number: number;
-  notation: string;
-  playerColor: PlayerColor;
 }
 
 const DEFAULT_CONFIG: GameConfiguration = {
@@ -131,10 +121,17 @@ function mapTimeControl(control: SetupTimeControl): GameTimeControl {
   }
 }
 
-function buildPlayerName(type: PlayerType, index: number): string {
+function buildPlayerName(
+  type: PlayerType,
+  index: number,
+  username?: string
+): string {
   switch (type) {
     case "you":
-      return index === 0 ? "You" : "Second You";
+      if (username && username !== "Guest") {
+        return index === 0 ? `${username} (You)` : `${username} (Also You)`;
+      }
+      return index === 0 ? "You" : "Also You";
     case "friend":
       return "Friend";
     case "matched-user":
@@ -152,17 +149,62 @@ function buildPlayerName(type: PlayerType, index: number): string {
   }
 }
 
-function convertHistory(state: GameState): HistoryMove[] {
-  const rows = state.config.boardHeight;
-  return state.history.map((entry) => {
-    const playerId: PlayerId = (entry.index % 2 === 1 ? 1 : 2) as PlayerId;
-    return {
-      number: Math.ceil(entry.index / 2),
-      notation: entry.move.toNotation(rows),
-      playerColor: DEFAULT_PLAYER_COLORS[playerId],
-    };
-  });
-}
+const MAX_ACTIONS_PER_MOVE = 2;
+
+const actionsEqual = (a: Action, b: Action): boolean => {
+  if (a.type !== b.type) return false;
+  if (a.target.row !== b.target.row || a.target.col !== b.target.col)
+    return false;
+  if (a.type === "wall") {
+    return a.wallOrientation === b.wallOrientation;
+  }
+  return true;
+};
+
+const buildDoubleStepPaths = (
+  pawnType: "cat" | "mouse",
+  from: Cell,
+  to: Cell
+): Action[][] => {
+  const paths: Action[][] = [];
+  const rowDiff = Math.abs(from.row - to.row);
+  const colDiff = Math.abs(from.col - to.col);
+  const distance = rowDiff + colDiff;
+  if (distance !== 2) {
+    return paths;
+  }
+
+  if (from.row === to.row) {
+    // Horizontal double step
+    const midCol = (from.col + to.col) / 2;
+    paths.push([
+      new Action(pawnType, new Cell(from.row, midCol)),
+      new Action(pawnType, to),
+    ]);
+    return paths;
+  }
+
+  if (from.col === to.col) {
+    // Vertical double step
+    const midRow = (from.row + to.row) / 2;
+    paths.push([
+      new Action(pawnType, new Cell(midRow, from.col)),
+      new Action(pawnType, to),
+    ]);
+    return paths;
+  }
+
+  // L-shaped double step (one row, one column)
+  paths.push([
+    new Action(pawnType, new Cell(from.row, to.col)),
+    new Action(pawnType, to),
+  ]);
+  paths.push([
+    new Action(pawnType, new Cell(to.row, from.col)),
+    new Action(pawnType, to),
+  ]);
+  return paths;
+};
 
 function formatWinReason(reason?: GameResult["reason"]): string {
   switch (reason) {
@@ -199,26 +241,6 @@ function sanitizePlayerList(players: PlayerType[]): PlayerType[] {
   return list;
 }
 
-type GameSnapshot = {
-  pawns: Pawn[];
-  walls: PlayerWall[];
-  status: GameStatus;
-  result?: GameResult;
-  turn: PlayerId;
-  history: HistoryMove[];
-  timeLeft: Record<PlayerId, number>;
-};
-
-const EMPTY_SNAPSHOT: GameSnapshot = {
-  pawns: [],
-  walls: [],
-  status: "playing",
-  result: undefined,
-  turn: 1,
-  history: [],
-  timeLeft: { 1: 0, 2: 0 },
-};
-
 const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
   1: "red",
   2: "blue",
@@ -248,39 +270,6 @@ function buildStartPositions(
   };
 }
 
-function buildSnapshot(
-  state: GameState | null,
-  localPlayerId: PlayerId,
-  catSkin?: string | null,
-  mouseSkin?: string | null
-): GameSnapshot {
-  if (!state) {
-    return EMPTY_SNAPSHOT;
-  }
-
-  const normalizedCat = catSkin && catSkin !== "default" ? catSkin : undefined;
-  const normalizedMouse =
-    mouseSkin && mouseSkin !== "default" ? mouseSkin : undefined;
-
-  const pawns = state.getPawns().map((pawn) => {
-    if (pawn.playerId !== localPlayerId) {
-      return pawn;
-    }
-    const preferred = pawn.type === "mouse" ? normalizedMouse : normalizedCat;
-    return preferred ? { ...pawn, pawnStyle: preferred } : pawn;
-  });
-
-  return {
-    pawns,
-    walls: state.getWalls(),
-    status: state.status,
-    result: state.result ? { ...state.result } : undefined,
-    turn: state.turn,
-    history: convertHistory(state),
-    timeLeft: { ...state.timeLeft },
-  };
-}
-
 function GamePage() {
   const { id } = Route.useParams();
 
@@ -293,8 +282,7 @@ function GamePage() {
   const [players, setPlayers] = useState<GamePlayer[]>([]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [isMatchingOpen, setIsMatchingOpen] = useState(false);
-  const [gameSnapshot, setGameSnapshot] =
-    useState<GameSnapshot>(EMPTY_SNAPSHOT);
+  const [gameState, setGameState] = useState<GameState | null>(null);
   const [lastMove, setLastMove] = useState<BoardProps["lastMove"] | undefined>(
     undefined
   );
@@ -312,6 +300,7 @@ function GamePage() {
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [clockTick, setClockTick] = useState(() => Date.now());
+  const [stagedActions, setStagedActions] = useState<Action[]>([]);
 
   const gameStateRef = useRef<GameState | null>(null);
   const playersRef = useRef<GamePlayer[]>([]);
@@ -351,6 +340,146 @@ function GamePage() {
     return colors;
   }, [localPlayerId, botPlayerId, preferredPawnColor]);
 
+  const simulateMove = useCallback(
+    (actions: Action[]): GameState | null => {
+      if (!gameState) return null;
+      if (actions.length === 0) {
+        return gameState;
+      }
+      try {
+        return gameState.applyGameAction({
+          kind: "move",
+          move: new Move(actions),
+          playerId: localPlayerId,
+          timestamp: Date.now(),
+        });
+      } catch (error) {
+        console.error("Failed to simulate staged actions", error);
+        return null;
+      }
+    },
+    [gameState, localPlayerId]
+  );
+
+  const previewState = useMemo(
+    () => (stagedActions.length ? simulateMove(stagedActions) : null),
+    [stagedActions, simulateMove]
+  );
+
+  const stagedWallOverlays = useMemo<PlayerWall[]>(() => {
+    if (!stagedActions.length) return [];
+    return stagedActions
+      .filter((action) => action.type === "wall")
+      .map((action) => ({
+        wall: new Wall(action.target, action.wallOrientation!),
+        playerId: localPlayerId,
+        state: "staged" as const,
+      }));
+  }, [stagedActions, localPlayerId]);
+
+  const boardWalls = useMemo<PlayerWall[]>(() => {
+    const base = gameState ? gameState.getWalls() : [];
+    if (!stagedWallOverlays.length) {
+      return base;
+    }
+    return [...base, ...stagedWallOverlays];
+  }, [gameState, stagedWallOverlays]);
+
+  const boardPawns = useMemo(() => {
+    const sourceState = previewState ?? gameState;
+    if (!sourceState) return [];
+    const normalizedCat =
+      preferredCatSkin && preferredCatSkin !== "default"
+        ? preferredCatSkin
+        : undefined;
+    const normalizedMouse =
+      preferredMouseSkin && preferredMouseSkin !== "default"
+        ? preferredMouseSkin
+        : undefined;
+    const basePawns = sourceState.getPawns().map((pawn) => {
+      if (pawn.playerId !== localPlayerId) {
+        return pawn;
+      }
+      const preferred = pawn.type === "mouse" ? normalizedMouse : normalizedCat;
+      return preferred ? { ...pawn, pawnStyle: preferred } : pawn;
+    });
+    if (!stagedActions.length) {
+      return basePawns;
+    }
+    const stagedPawnTypes = new Set(
+      stagedActions
+        .filter((action) => action.type === "cat" || action.type === "mouse")
+        .map((action) => action.type)
+    );
+    return basePawns.map((pawn) => {
+      if (pawn.playerId === localPlayerId && stagedPawnTypes.has(pawn.type)) {
+        return { ...pawn, previewState: "staged" as const };
+      }
+      return pawn;
+    });
+  }, [
+    previewState,
+    gameState,
+    stagedActions,
+    localPlayerId,
+    preferredCatSkin,
+    preferredMouseSkin,
+  ]);
+
+  const stagedArrows = useMemo<Arrow[]>(() => {
+    if (!gameState || stagedActions.length === 0) return [];
+    const arrows: Arrow[] = [];
+    stagedActions.forEach((action, index) => {
+      if (action.type === "wall") return;
+      const beforeActions = stagedActions.slice(0, index);
+      const afterActions = stagedActions.slice(0, index + 1);
+      const beforeState =
+        beforeActions.length === 0 ? gameState : simulateMove(beforeActions);
+      const afterState = simulateMove(afterActions);
+      if (!beforeState || !afterState) return;
+      const fromCell =
+        action.type === "cat"
+          ? beforeState.pawns[localPlayerId].cat
+          : beforeState.pawns[localPlayerId].mouse;
+      const toCell =
+        action.type === "cat"
+          ? afterState.pawns[localPlayerId].cat
+          : afterState.pawns[localPlayerId].mouse;
+      arrows.push({
+        from: new Cell(fromCell.row, fromCell.col),
+        to: new Cell(toCell.row, toCell.col),
+        type: "staged",
+      });
+    });
+    return arrows;
+  }, [gameState, stagedActions, localPlayerId, simulateMove]);
+
+  const gameStatus = gameState?.status ?? "playing";
+  const gameTurn = gameState?.turn ?? 1;
+  const gameResult = gameState?.result;
+
+  const formattedHistory = useMemo(() => {
+    if (!gameState) return [];
+    const rows = gameState.config.boardHeight;
+    const entries = gameState.history.map((entry) => ({
+      number: Math.ceil(entry.index / 2),
+      notation: entry.move.toNotation(rows),
+    }));
+    const paired: Array<{
+      num: number;
+      white?: string;
+      black?: string;
+    }> = [];
+    for (let i = 0; i < entries.length; i += 2) {
+      paired.push({
+        num: entries[i].number,
+        white: entries[i]?.notation,
+        black: entries[i + 1]?.notation,
+      });
+    }
+    return paired;
+  }, [gameState]);
+
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
       ...prev,
@@ -365,19 +494,121 @@ function GamePage() {
     ]);
   }, []);
 
-  const syncFromState = useCallback(
-    (state: GameState) => {
-      setGameSnapshot(
-        buildSnapshot(
-          state,
-          localPlayerId,
-          preferredCatSkin,
-          preferredMouseSkin
+  const applyMove = useCallback(
+    (playerId: PlayerId, move: Move) => {
+      const currentState = gameStateRef.current;
+      if (!currentState) {
+        throw new Error("Game is still loading");
+      }
+
+      const nextState = currentState.applyGameAction({
+        kind: "move",
+        move,
+        playerId,
+        timestamp: Date.now(),
+      });
+      gameStateRef.current = nextState;
+
+      const pawnActionIndex = [...move.actions]
+        .map((action, index) => ({ action, index }))
+        .filter(
+          ({ action }) => action.type === "cat" || action.type === "mouse"
         )
-      );
+        .pop();
+
+      if (pawnActionIndex) {
+        const { action, index } = pawnActionIndex;
+        const beforeActions = move.actions.slice(0, index);
+        const afterActions = move.actions.slice(0, index + 1);
+        const beforeState =
+          beforeActions.length === 0
+            ? currentState
+            : currentState.applyGameAction({
+                kind: "move",
+                move: new Move(beforeActions),
+                playerId,
+                timestamp: Date.now(),
+              });
+        const afterState =
+          afterActions.length === move.actions.length
+            ? nextState
+            : currentState.applyGameAction({
+                kind: "move",
+                move: new Move(afterActions),
+                playerId,
+                timestamp: Date.now(),
+              });
+
+        const pieceBefore =
+          action.type === "cat"
+            ? beforeState.pawns[playerId].cat
+            : beforeState.pawns[playerId].mouse;
+        const pieceAfter =
+          action.type === "cat"
+            ? afterState.pawns[playerId].cat
+            : afterState.pawns[playerId].mouse;
+
+        setLastMove({
+          fromRow: pieceBefore.row,
+          fromCol: pieceBefore.col,
+          toRow: pieceAfter.row,
+          toCol: pieceAfter.col,
+          playerColor:
+            playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId],
+        });
+      } else {
+        setLastMove(undefined);
+      }
+
+      setGameState(nextState);
+      if (soundEnabled) {
+        playSound("move");
+      }
     },
-    [localPlayerId, preferredCatSkin, preferredMouseSkin]
+    [playerColorsForBoard, soundEnabled]
   );
+
+  const commitStagedActions = useCallback(
+    (actions?: Action[]) => {
+      const moveActions = actions ?? stagedActions;
+      if (!moveActions.length) return;
+      if (!gameState) {
+        setActionError("Game is still loading");
+        return;
+      }
+      try {
+        applyMove(localPlayerId, new Move(moveActions));
+        setStagedActions([]);
+        setSelectedPawnId(null);
+        setDraggingPawnId(null);
+        setActionError(null);
+      } catch (error) {
+        console.error(error);
+        setActionError(
+          error instanceof Error ? error.message : "Move could not be applied."
+        );
+      }
+    },
+    [stagedActions, gameState, applyMove, localPlayerId]
+  );
+
+  const undoStagedAction = useCallback(() => {
+    setStagedActions((prev) => prev.slice(0, -1));
+    setActionError(null);
+    setSelectedPawnId(null);
+  }, []);
+
+  const clearStagedActions = useCallback(() => {
+    setStagedActions([]);
+    setActionError(null);
+    setSelectedPawnId(null);
+  }, []);
+
+  const removeStagedAction = useCallback((index: number) => {
+    setStagedActions((prev) => prev.filter((_, idx) => idx !== index));
+    setActionError(null);
+    setSelectedPawnId(null);
+  }, []);
 
   const initializeGame = useCallback(
     (incomingConfig: GameConfiguration, incomingPlayers: PlayerType[]) => {
@@ -411,12 +642,13 @@ function GamePage() {
       setActiveTab("chat");
       setChatChannel("game");
       setLastMove(undefined);
+      setStagedActions([]);
 
       const initialPlayers: GamePlayer[] = sanitizedPlayers.map(
         (type, index) => ({
           id: `p${index + 1}`,
           playerId: (index + 1) as PlayerId,
-          name: buildPlayerName(type, index),
+          name: buildPlayerName(type, index, settings.displayName),
           rating: type.includes("bot") ? 1200 : 1250,
           color:
             index + 1 === localPlayerId
@@ -440,20 +672,13 @@ function GamePage() {
       const waiting = matchingList.some((entry) => !entry.isReady);
       setIsMatchingOpen(waiting);
 
-      setGameSnapshot(
-        buildSnapshot(
-          state,
-          localPlayerId,
-          preferredCatSkin,
-          preferredMouseSkin
-        )
-      );
+      setGameState(state);
 
       addSystemMessage(
         waiting ? "Waiting for players..." : "Game created. Good luck!"
       );
     },
-    [addSystemMessage, localPlayerId, preferredCatSkin, preferredMouseSkin]
+    [addSystemMessage, localPlayerId, preferredPawnColor, settings.displayName]
   );
 
   useEffect(() => {
@@ -492,6 +717,7 @@ function GamePage() {
         aiTimeoutRef.current = null;
       }
       gameStateRef.current = null;
+      setGameState(null);
     };
   }, [id, initializeGame]);
 
@@ -515,112 +741,136 @@ function GamePage() {
   }, [localPlayerId, preferredPawnColor]);
 
   useEffect(() => {
-    if (!gameStateRef.current) return;
-    setGameSnapshot(
-      buildSnapshot(
-        gameStateRef.current,
-        localPlayerId,
-        preferredCatSkin,
-        preferredMouseSkin
-      )
-    );
-  }, [localPlayerId, preferredCatSkin, preferredMouseSkin]);
+    if (!gameState) return;
+    if (gameState.turn !== localPlayerId && stagedActions.length > 0) {
+      setStagedActions([]);
+    }
+  }, [gameState, localPlayerId, stagedActions.length]);
 
-  const applyMove = useCallback(
-    (playerId: PlayerId, move: Move) => {
-      const currentState = gameStateRef.current;
-      if (!currentState) {
-        throw new Error("Game is still loading");
-      }
-
-      const nextState = currentState.clone();
-      nextState.applyGameAction({
-        kind: "move",
-        move,
-        playerId,
-        timestamp: Date.now(),
-      });
-      gameStateRef.current = nextState;
-
-      const firstAction = move.actions.find(
-        (action) => action.type === "cat" || action.type === "mouse"
-      );
-      if (firstAction) {
-        const pieceBefore =
-          firstAction.type === "cat"
-            ? currentState.pawns[playerId].cat
-            : currentState.pawns[playerId].mouse;
-        setLastMove({
-          fromRow: pieceBefore.row,
-          fromCol: pieceBefore.col,
-          toRow: firstAction.target.row,
-          toCol: firstAction.target.col,
-          playerColor:
-            playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId],
-        });
-      } else {
-        setLastMove(undefined);
-      }
-
-      syncFromState(nextState);
-      if (soundEnabled) {
-        playSound("move");
-      }
-    },
-    [playerColorsForBoard, soundEnabled, syncFromState]
-  );
-
-  const attemptMove = useCallback(
+  const stagePawnAction = useCallback(
     (pawnId: string, targetRow: number, targetCol: number) => {
       if (interactionLocked) return;
-      if (gameSnapshot.status !== "playing") return;
-      if (gameSnapshot.turn !== localPlayerId) return;
+      if (!gameState || gameState.status !== "playing") return;
+      if (gameState.turn !== localPlayerId) return;
 
-      const pawn = gameSnapshot.pawns.find((p) => p.id === pawnId);
+      const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== localPlayerId) return;
+      const pawnType = pawn.type;
+      const targetCell = new Cell(targetRow, targetCol);
+      const newAction = new Action(pawnType, targetCell);
+      const duplicateIndex = stagedActions.findIndex((existing) =>
+        actionsEqual(existing, newAction)
+      );
+      if (duplicateIndex !== -1) {
+        removeStagedAction(duplicateIndex);
+        setSelectedPawnId(null);
+        setDraggingPawnId(null);
+        return;
+      }
+
       if (pawn.cell.row === targetRow && pawn.cell.col === targetCol) return;
 
-      try {
-        const move = new Move([
-          new Action(pawn.type, new Cell(targetRow, targetCol)),
-        ]);
-        applyMove(localPlayerId, move);
-        setSelectedPawnId(null);
-        setActionError(null);
-      } catch (error) {
-        console.error(error);
-        setActionError(
-          error instanceof Error ? error.message : "Move could not be applied."
+      const distance =
+        Math.abs(pawn.cell.row - targetRow) +
+        Math.abs(pawn.cell.col - targetCol);
+      const isDoubleStep = distance === 2;
+      if (isDoubleStep) {
+        if (stagedActions.length > 0) {
+          setActionError(
+            "You can't make a double move after staging another action."
+          );
+          return;
+        }
+        const candidatePaths = buildDoubleStepPaths(
+          pawnType,
+          pawn.cell,
+          targetCell
         );
-      } finally {
-        setDraggingPawnId(null);
+        const validPath = candidatePaths.find((path) => !!simulateMove(path));
+        if (!validPath) {
+          setActionError("That double move isn't legal.");
+          return;
+        }
+        commitStagedActions(validPath);
+        return;
       }
+
+      if (stagedActions.length >= MAX_ACTIONS_PER_MOVE) {
+        setActionError("You have already staged two actions.");
+        return;
+      }
+
+      const nextActions = [...stagedActions, newAction];
+      const simulated = simulateMove(nextActions);
+      if (!simulated) {
+        setActionError("That move sequence is not legal.");
+        return;
+      }
+
+      if (nextActions.length === MAX_ACTIONS_PER_MOVE) {
+        commitStagedActions(nextActions);
+      } else {
+        setStagedActions(nextActions);
+        setActionError(null);
+      }
+      setSelectedPawnId(null);
+      setDraggingPawnId(null);
     },
-    [interactionLocked, gameSnapshot, localPlayerId, applyMove]
+    [
+      interactionLocked,
+      gameState,
+      stagedActions,
+      boardPawns,
+      simulateMove,
+      commitStagedActions,
+      removeStagedAction,
+      localPlayerId,
+    ]
   );
 
   const handleWallClick = useCallback(
     (row: number, col: number, orientation: "horizontal" | "vertical") => {
       if (interactionLocked) return;
-      if (gameSnapshot.status !== "playing") return;
-      if (gameSnapshot.turn !== localPlayerId) return;
+      if (!gameState || gameState.status !== "playing") return;
+      if (gameState.turn !== localPlayerId) return;
 
-      try {
-        const move = new Move([
-          new Action("wall", new Cell(row, col), orientation),
-        ]);
-        applyMove(localPlayerId, move);
+      const newAction = new Action("wall", new Cell(row, col), orientation);
+      const duplicateIndex = stagedActions.findIndex((existing) =>
+        actionsEqual(existing, newAction)
+      );
+      if (duplicateIndex !== -1) {
+        removeStagedAction(duplicateIndex);
+        return;
+      }
+
+      if (stagedActions.length >= MAX_ACTIONS_PER_MOVE) {
+        setActionError("You have already staged two actions.");
+        return;
+      }
+
+      const nextActions = [...stagedActions, newAction];
+      const simulated = simulateMove(nextActions);
+      if (!simulated) {
+        setActionError("That wall placement is not legal.");
+        return;
+      }
+
+      if (nextActions.length === MAX_ACTIONS_PER_MOVE) {
+        commitStagedActions(nextActions);
+      } else {
+        setStagedActions(nextActions);
         setActionError(null);
-      } catch (error) {
-        console.error(error);
-        setActionError(
-          error instanceof Error
-            ? error.message
-            : "Wall placement was rejected."
-        );
       }
     },
-    [interactionLocked, gameSnapshot, localPlayerId, applyMove]
+    [
+      interactionLocked,
+      gameState,
+      localPlayerId,
+      stagedActions,
+      simulateMove,
+      commitStagedActions,
+      removeStagedAction,
+    ]
   );
 
   const triggerAiMove = useCallback(() => {
@@ -678,20 +928,16 @@ function GamePage() {
 
   useEffect(() => {
     if (!aiEnabled || botPlayerId == null) return;
-    if (gameSnapshot.status !== "playing") return;
-    if (gameSnapshot.turn !== botPlayerId) return;
+    if (!gameState || gameState.status !== "playing") return;
+    if (gameState.turn !== botPlayerId) return;
+    if (stagedActions.length > 0) return;
     triggerAiMove();
-  }, [
-    aiEnabled,
-    botPlayerId,
-    triggerAiMove,
-    gameSnapshot.status,
-    gameSnapshot.turn,
-  ]);
+  }, [aiEnabled, botPlayerId, triggerAiMove, gameState, stagedActions.length]);
 
   useEffect(() => {
-    if (gameSnapshot.status !== "finished" || !gameSnapshot.result) return;
-    const result = gameSnapshot.result;
+    if (!gameState || gameState.status !== "finished" || !gameState.result)
+      return;
+    const result = gameState.result;
     if (result.winner) {
       const player =
         playersRef.current.find((p) => p.playerId === result.winner) || null;
@@ -703,23 +949,23 @@ function GamePage() {
     } else {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
     }
-  }, [gameSnapshot.status, gameSnapshot.result, addSystemMessage]);
+  }, [gameState, addSystemMessage]);
 
   const handlePawnClick = useCallback(
     (pawnId: string) => {
-      if (gameSnapshot.status !== "playing") return;
-      const pawn = gameSnapshot.pawns.find((p) => p.id === pawnId);
+      if (!gameState || gameState.status !== "playing") return;
+      const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== localPlayerId) return;
       setSelectedPawnId(pawnId);
       setActionError(null);
     },
-    [gameSnapshot, localPlayerId]
+    [gameState, boardPawns, localPlayerId]
   );
 
   const handleCellClick = useCallback(
     (row: number, col: number) => {
       if (!selectedPawnId) {
-        const pawn = gameSnapshot.pawns.find(
+        const pawn = boardPawns.find(
           (p) =>
             p.playerId === localPlayerId &&
             p.cell.row === row &&
@@ -730,9 +976,9 @@ function GamePage() {
         }
         return;
       }
-      attemptMove(selectedPawnId, row, col);
+      stagePawnAction(selectedPawnId, row, col);
     },
-    [selectedPawnId, gameSnapshot.pawns, localPlayerId, attemptMove]
+    [selectedPawnId, boardPawns, localPlayerId, stagePawnAction]
   );
 
   const handlePawnDragStart = useCallback((pawnId: string) => {
@@ -747,9 +993,10 @@ function GamePage() {
   const handleCellDrop = useCallback(
     (row: number, col: number) => {
       if (!draggingPawnId) return;
-      attemptMove(draggingPawnId, row, col);
+      stagePawnAction(draggingPawnId, row, col);
+      setDraggingPawnId(null);
     },
-    [draggingPawnId, attemptMove]
+    [draggingPawnId, stagePawnAction]
   );
 
   const handleSendMessage = (event: React.FormEvent) => {
@@ -842,30 +1089,31 @@ function GamePage() {
 
   const displayedTimeLeft = useMemo(() => {
     const base: Record<PlayerId, number> = {
-      1: gameSnapshot.timeLeft[1] ?? 0,
-      2: gameSnapshot.timeLeft[2] ?? 0,
+      1: gameState?.timeLeft?.[1] ?? 0,
+      2: gameState?.timeLeft?.[2] ?? 0,
     };
     const state = gameStateRef.current;
     if (
       state &&
+      gameState &&
       state.status === "playing" &&
-      state.turn === gameSnapshot.turn
+      gameState.status === "playing" &&
+      state.turn === gameState.turn
     ) {
       const elapsed = (Date.now() - state.lastMoveTime) / 1000;
       base[state.turn] = Math.max(0, base[state.turn] - elapsed);
     }
     return base;
-  }, [gameSnapshot, clockTick]);
+  }, [gameState, clockTick]);
 
   const winnerPlayer =
-    gameSnapshot.result?.winner != null
-      ? (players.find((p) => p.playerId === gameSnapshot.result?.winner) ??
-        null)
+    gameResult?.winner != null
+      ? (players.find((p) => p.playerId === gameResult.winner) ?? null)
       : null;
-  const winReason = formatWinReason(gameSnapshot.result?.reason);
+  const winReason = formatWinReason(gameResult?.reason);
 
   const selectedPawn = selectedPawnId
-    ? gameSnapshot.pawns.find((pawn) => pawn.id === selectedPawnId)
+    ? boardPawns.find((pawn) => pawn.id === selectedPawnId)
     : null;
 
   return (
@@ -901,7 +1149,7 @@ function GamePage() {
           {players.length > 1 && (
             <PlayerInfo
               player={players[1]}
-              isActive={gameSnapshot.turn === players[1].playerId}
+              isActive={gameTurn === players[1].playerId}
               timeLeft={displayedTimeLeft[players[1].playerId] ?? 0}
             />
           )}
@@ -915,7 +1163,7 @@ function GamePage() {
             }}
           >
             {/* Game Over Overlay */}
-            {gameSnapshot.status === "finished" && (
+            {gameStatus === "finished" && (
               <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
                 <Card className="p-8 max-w-md w-full text-center space-y-6 shadow-2xl border-primary/20">
                   <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
@@ -977,8 +1225,9 @@ function GamePage() {
             <Board
               rows={rows}
               cols={cols}
-              pawns={gameSnapshot.pawns}
-              walls={gameSnapshot.walls}
+              pawns={boardPawns}
+              walls={boardWalls}
+              arrows={stagedArrows}
               className="p-0"
               maxWidth="max-w-full"
               playerColors={playerColorsForBoard}
@@ -994,11 +1243,58 @@ function GamePage() {
             />
           </div>
 
+          {stagedActions.length > 0 && (
+            <div className="bg-card/60 border border-dashed border-amber-300 rounded-xl p-3 flex flex-col gap-3">
+              <div className="text-sm font-semibold text-amber-800 dark:text-amber-200">
+                Staged actions (click to remove)
+              </div>
+              <div className="flex flex-wrap gap-2">
+                {stagedActions.map((action, index) => (
+                  <button
+                    key={`${action.type}-${index}-${action.target.row}-${action.target.col}`}
+                    onClick={() => removeStagedAction(index)}
+                    className="flex items-center gap-2 px-3 py-1 text-sm rounded-full bg-amber-200/80 text-amber-900 dark:bg-amber-900/50 dark:text-amber-100 border border-amber-300 hover:bg-amber-300/80 transition-colors"
+                  >
+                    <span className="font-mono">
+                      {index + 1}. {action.toNotation(rows)}
+                    </span>
+                    <X className="w-3 h-3" />
+                  </button>
+                ))}
+              </div>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={undoStagedAction}
+                  disabled={stagedActions.length === 0}
+                >
+                  Undo last
+                </Button>
+                <Button
+                  size="sm"
+                  variant="outline"
+                  onClick={clearStagedActions}
+                  disabled={stagedActions.length === 0}
+                >
+                  Clear
+                </Button>
+                <Button
+                  size="sm"
+                  onClick={() => commitStagedActions()}
+                  disabled={stagedActions.length === 0}
+                >
+                  Finish move
+                </Button>
+              </div>
+            </div>
+          )}
+
           {/* Bottom Player (You) Timer */}
           {players.length > 0 && (
             <PlayerInfo
               player={players[0]}
-              isActive={gameSnapshot.turn === players[0].playerId}
+              isActive={gameTurn === players[0].playerId}
               timeLeft={displayedTimeLeft[players[0].playerId] ?? 0}
             />
           )}
@@ -1207,37 +1503,24 @@ function GamePage() {
                 <>
                   <ScrollArea className="flex-1 p-0">
                     <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
-                      {gameSnapshot.history
-                        .reduce((acc: any[], move, index) => {
-                          if (index % 2 === 0) {
-                            acc.push({
-                              num: move.number,
-                              white: move,
-                              black: null,
-                            });
-                          } else {
-                            acc[acc.length - 1].black = move;
-                          }
-                          return acc;
-                        }, [])
-                        .map((row, index) => (
-                          <div
-                            key={index}
-                            className={`contents group ${
-                              index % 2 === 1 ? "bg-muted/30" : ""
-                            }`}
-                          >
-                            <div className="p-2 text-muted-foreground text-center border-r">
-                              {row.num}.
-                            </div>
-                            <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
-                              {row.white?.notation}
-                            </button>
-                            <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
-                              {row.black?.notation}
-                            </button>
+                      {formattedHistory.map((row, index) => (
+                        <div
+                          key={index}
+                          className={`contents group ${
+                            index % 2 === 1 ? "bg-muted/30" : ""
+                          }`}
+                        >
+                          <div className="p-2 text-muted-foreground text-center border-r">
+                            {row.num}.
                           </div>
-                        ))}
+                          <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
+                            {row.white}
+                          </button>
+                          <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
+                            {row.black}
+                          </button>
+                        </div>
+                      ))}
                     </div>
                   </ScrollArea>
                   <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">

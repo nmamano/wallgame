@@ -20,6 +20,10 @@ import {
 
 export type ArrowType = "staged" | "premoved" | "calculated";
 
+export type BoardPawn = Pawn & {
+  previewState?: "staged" | "ghost";
+};
+
 export interface Arrow {
   from: Cell;
   to: Cell;
@@ -37,7 +41,7 @@ export interface LastMove {
 export interface BoardProps {
   rows?: number;
   cols?: number;
-  pawns?: Pawn[];
+  pawns?: BoardPawn[];
   walls?: PlayerWall[];
   arrows?: Arrow[];
   lastMove?: LastMove;
@@ -253,7 +257,7 @@ export function Board({
   );
 
   // Get pawns for a cell
-  const getPawnsForCell = (row: number, col: number): Pawn[] => {
+  const getPawnsForCell = (row: number, col: number): BoardPawn[] => {
     return pawns.filter((p) => p.cell.row === row && p.cell.col === col);
   };
 
@@ -415,7 +419,7 @@ export function Board({
   };
 
   const renderPawnWrapper = (
-    pawn: Pawn,
+    pawn: BoardPawn,
     rowIndex: number,
     colIndex: number,
     size: "lg" | "sm"
@@ -485,10 +489,18 @@ export function Board({
       );
     })();
 
+    const previewState = pawn.previewState;
+    const previewClasses =
+      previewState === "staged"
+        ? "opacity-80 ring-2 ring-amber-400 ring-offset-2"
+        : previewState === "ghost"
+          ? "opacity-70"
+          : "";
+
     return (
       <div
         key={pawn.id}
-        className={`${dimensionClass} transform hover:scale-110 transition-transform cursor-pointer relative`}
+        className={`${dimensionClass} transform hover:scale-110 transition-transform cursor-pointer relative ${previewClasses}`}
         onContextMenu={handleContextMenu}
         onClick={handleClick}
         draggable={dragEnabled}
