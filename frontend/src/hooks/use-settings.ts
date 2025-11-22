@@ -7,11 +7,8 @@ import {
   type SettingsResponse,
 } from "@/lib/api";
 import { useLocalStorageState } from "./use-local-storage";
-import type {
-  GameConfiguration,
-  TimeControl,
-  Variant,
-} from "@/components/game-configuration-panel";
+import type { GameConfiguration } from "@/components/game-configuration-panel";
+import type { TimeControlPreset, Variant } from "@/lib/game";
 
 interface VariantParameters {
   boardWidth?: number;
@@ -89,7 +86,7 @@ const defaultGameConfig: GameConfiguration = {
   boardHeight: 8,
 };
 
-const DEFAULT_TIME_CONTROL: TimeControl = "rapid";
+const DEFAULT_TIME_CONTROL: TimeControlPreset = "rapid";
 const DEFAULT_VARIANT: Variant = "standard";
 
 /**
@@ -470,7 +467,7 @@ function useSettingsInternal(
       variant,
       parameters,
     }: {
-      variant: string;
+      variant: Variant;
       parameters: { boardWidth: number; boardHeight: number };
     }) => settingsMutations.updateVariantParameters(variant, parameters),
     onMutate: async (variables) => {

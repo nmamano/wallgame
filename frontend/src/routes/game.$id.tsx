@@ -46,10 +46,8 @@ import {
 import { GameState, type GameResult, type GameConfig } from "@/lib/game-state";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/components/player-configuration";
-import type {
-  GameConfiguration,
-  TimeControl as SetupTimeControl,
-} from "@/components/game-configuration-panel";
+import type { GameConfiguration } from "@/components/game-configuration-panel";
+import type { TimeControlPreset } from "@/lib/game";
 import { userQueryOptions } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 
@@ -107,18 +105,8 @@ function formatTime(seconds: number): string {
   return `${mins}:${secs.toString().padStart(2, "0")}`;
 }
 
-function mapTimeControl(control: SetupTimeControl): GameTimeControl {
-  switch (control) {
-    case "bullet":
-      return new GameTimeControl(60, 0);
-    case "rapid":
-      return new GameTimeControl(600, 2);
-    case "classical":
-      return new GameTimeControl(1800, 0);
-    case "blitz":
-    default:
-      return new GameTimeControl(180, 2);
-  }
+function mapTimeControl(control: TimeControlPreset): GameTimeControl {
+  return GameTimeControl.fromPreset(control);
 }
 
 function buildPlayerName(
