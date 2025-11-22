@@ -283,9 +283,9 @@ function GamePage() {
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [isMatchingOpen, setIsMatchingOpen] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
-  const [lastMove, setLastMove] = useState<BoardProps["lastMove"] | undefined>(
-    undefined
-  );
+  const [lastMove, setLastMove] = useState<
+    BoardProps["lastMove"] | BoardProps["lastMoves"]
+  >(undefined);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("chat");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
     "game"
@@ -428,6 +428,41 @@ function GamePage() {
 
   const stagedArrows = useMemo<Arrow[]>(() => {
     if (!gameState || stagedActions.length === 0) return [];
+
+    // Check for double move with same pawn
+    if (stagedActions.length === 2) {
+      const [action1, action2] = stagedActions;
+      const isMove1 = action1.type === "cat" || action1.type === "mouse";
+      const isMove2 = action2.type === "cat" || action2.type === "mouse";
+
+      if (isMove1 && isMove2 && action1.type === action2.type) {
+        // It's a double move with the same pawn.
+        // We want one arrow from start to end.
+        const beforeState = gameState;
+        const afterState = simulateMove(stagedActions);
+
+        if (beforeState && afterState) {
+          const pawnType = action1.type;
+          const fromCell =
+            pawnType === "cat"
+              ? beforeState.pawns[localPlayerId].cat
+              : beforeState.pawns[localPlayerId].mouse;
+          const toCell =
+            pawnType === "cat"
+              ? afterState.pawns[localPlayerId].cat
+              : afterState.pawns[localPlayerId].mouse;
+
+          return [
+            {
+              from: new Cell(fromCell.row, fromCell.col),
+              to: new Cell(toCell.row, toCell.col),
+              type: "staged",
+            },
+          ];
+        }
+      }
+    }
+
     const arrows: Arrow[] = [];
     stagedActions.forEach((action, index) => {
       if (action.type === "wall") return;
@@ -509,53 +544,52 @@ function GamePage() {
       });
       gameStateRef.current = nextState;
 
-      const pawnActionIndex = [...move.actions]
-        .map((action, index) => ({ action, index }))
-        .filter(
-          ({ action }) => action.type === "cat" || action.type === "mouse"
-        )
-        .pop();
+      // Calculate last moves by comparing pawn positions
+      const moves: BoardProps["lastMoves"] = [];
+      const playerColor = playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
 
-      if (pawnActionIndex) {
-        const { action, index } = pawnActionIndex;
-        const beforeActions = move.actions.slice(0, index);
-        const afterActions = move.actions.slice(0, index + 1);
-        const beforeState =
-          beforeActions.length === 0
-            ? currentState
-            : currentState.applyGameAction({
-                kind: "move",
-                move: new Move(beforeActions),
-                playerId,
-                timestamp: Date.now(),
-              });
-        const afterState =
-          afterActions.length === move.actions.length
-            ? nextState
-            : currentState.applyGameAction({
-                kind: "move",
-                move: new Move(afterActions),
-                playerId,
-                timestamp: Date.now(),
-              });
-
-        const pieceBefore =
-          action.type === "cat"
-            ? beforeState.pawns[playerId].cat
-            : beforeState.pawns[playerId].mouse;
-        const pieceAfter =
-          action.type === "cat"
-            ? afterState.pawns[playerId].cat
-            : afterState.pawns[playerId].mouse;
-
-        setLastMove({
-          fromRow: pieceBefore.row,
-          fromCol: pieceBefore.col,
-          toRow: pieceAfter.row,
-          toCol: pieceAfter.col,
-          playerColor:
-            playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId],
+      // Check Cat
+      const catBefore = currentState.pawns[playerId].cat;
+      const catAfter = nextState.pawns[playerId].cat;
+      if (catBefore.row !== catAfter.row || catBefore.col !== catAfter.col) {
+        moves.push({
+          fromRow: catBefore.row,
+          fromCol: catBefore.col,
+          toRow: catAfter.row,
+          toCol: catAfter.col,
+          playerColor,
         });
+      }
+
+      // Check Mouse
+      const mouseBefore = currentState.pawns[playerId].mouse;
+      const mouseAfter = nextState.pawns[playerId].mouse;
+      if (mouseBefore.row !== mouseAfter.row || mouseBefore.col !== mouseAfter.col) {
+        moves.push({
+          fromRow: mouseBefore.row,
+          fromCol: mouseBefore.col,
+          toRow: mouseAfter.row,
+          toCol: mouseAfter.col,
+          playerColor,
+        });
+      }
+
+      // If we have moves, set them. Otherwise clear.
+      if (moves.length > 0) {
+        // We use setLastMove for backward compatibility if needed, but we should probably use a new state for lastMoves
+        // Since Board accepts lastMoves, we can pass it.
+        // But wait, I need to store lastMoves in state.
+        // I'll update the state variable name or just store it in lastMove (as an array cast? No, type safety).
+        // I'll update the state definition in the component.
+        // For now, let's assume I'll rename the state or add a new one.
+        // Actually, I can just use the existing setLastMove if I change the type of lastMove state.
+        // But I can't change the type in this replacement block easily without changing the state definition.
+        // So I will cast it for now and update the state definition in a separate step or assume I will do it.
+        // Wait, I can't cast it here if the state type is strict.
+        // I should update the state definition first.
+        // But I am in applyMove.
+        // Let's assume I will update the state definition to be LastMove | LastMove[] | undefined.
+        setLastMove(moves as any); 
       } else {
         setLastMove(undefined);
       }
@@ -1239,7 +1273,8 @@ function GamePage() {
               }
               onPawnDragEnd={handlePawnDragEnd}
               onCellDrop={interactionLocked ? undefined : handleCellDrop}
-              lastMove={lastMove}
+              lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
+              lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
             />
           </div>
 

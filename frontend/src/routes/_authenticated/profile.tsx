@@ -17,7 +17,7 @@ function Profile() {
   }
   return (
     <div>
-      <div>Hello {data.user.email}!</div>
+      <div>Hello {data.user?.email}!</div>
       <Button asChild className="my-4">
         <a href="/api/logout">Logout!</a>
       </Button>
