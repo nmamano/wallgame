@@ -74,6 +74,52 @@ type PillarColors = Record<EdgeColorKey, string | null>;
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
+type AxisPercents = {
+  baseCell: number;
+  cellWithGap: number;
+  gapPercent: number;
+};
+
+const computeAxisPercents = (
+  count: number,
+  maxCellSize: number,
+  gapSize: number
+): AxisPercents => {
+  if (count <= 0) {
+    return { baseCell: 0, cellWithGap: 0, gapPercent: 0 };
+  }
+
+  const totalGap = Math.max(0, count - 1) * gapSize;
+  const totalSpan = count * maxCellSize + totalGap;
+
+  if (totalSpan === 0) {
+    return { baseCell: 100 / count, cellWithGap: 0, gapPercent: 0 };
+  }
+
+  return {
+    baseCell: 100 / count,
+    cellWithGap: (maxCellSize / totalSpan) * 100,
+    gapPercent: count > 1 ? (gapSize / totalSpan) * 100 : 0,
+  };
+};
+
+const getCellCenterPercent = (
+  index: number,
+  axis: AxisPercents,
+  includeGaps: boolean
+) => {
+  if (axis.baseCell === 0) return 0;
+
+  const cellPercent = includeGaps ? axis.cellWithGap : axis.baseCell;
+  const base = (index + 0.5) * cellPercent;
+
+  if (!includeGaps || axis.gapPercent === 0) {
+    return base;
+  }
+
+  return base + index * axis.gapPercent;
+};
+
 const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
   const vertical = new Map<string, PlayerWall>();
   const horizontal = new Map<string, PlayerWall>();
@@ -237,9 +283,20 @@ export function Board({
 
   // Calculate cell size for positioning walls (dynamic based on grid size)
   const gapSize = 0.9; // rem
+  const maxCellSize = 3; // rem
+  const paddingX = 2; // rem (p-4 = 1rem on each side)
+  const paddingY = 2; // rem (p-4 = 1rem on each side)
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
+  const widthPercents = computeAxisPercents(cols, maxCellSize, gapSize);
+  const heightPercents = computeAxisPercents(rows, maxCellSize, gapSize);
+  const isStraightMove = (
+    fromRow: number,
+    fromCol: number,
+    toRow: number,
+    toCol: number
+  ) => fromRow === toRow || fromCol === toCol;
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
   const resolveWallColor = (wall: PlayerWall) =>
@@ -267,17 +324,29 @@ export function Board({
 
   // Render last move arrows (subtle)
   const renderLastMoveArrows = () => {
-    const moves = lastMove ? [lastMove] : (lastMoves || []);
+    const moves = lastMove ? [lastMove] : lastMoves || [];
     if (moves.length === 0) return null;
 
     return moves.map((move: LastMove, index: number) => {
-      const cellWidthPercent = 100 / cols;
-      const cellHeightPercent = 100 / rows;
+      const useGapAware = isStraightMove(
+        move.fromRow,
+        move.fromCol,
+        move.toRow,
+        move.toCol
+      );
 
-      const fromX = (move.fromCol + 0.5) * cellWidthPercent;
-      const toX = (move.toCol + 0.5) * cellWidthPercent;
-      const fromY = (move.fromRow + 0.5) * cellHeightPercent;
-      const toY = (move.toRow + 0.5) * cellHeightPercent;
+      const fromX = getCellCenterPercent(
+        move.fromCol,
+        widthPercents,
+        useGapAware
+      );
+      const toX = getCellCenterPercent(move.toCol, widthPercents, useGapAware);
+      const fromY = getCellCenterPercent(
+        move.fromRow,
+        heightPercents,
+        useGapAware
+      );
+      const toY = getCellCenterPercent(move.toRow, heightPercents, useGapAware);
 
       // Calculate direction vector
       const dx = toX - fromX;
@@ -287,7 +356,8 @@ export function Board({
       // Shorten the line to prevent shaft showing through arrowhead
       // Arrowhead is about 0.8% of the viewBox (smaller now), so shorten by that amount
       const shortenAmount = 3;
-      const shortenRatio = length > shortenAmount ? (length - shortenAmount) / length : 0;
+      const shortenRatio =
+        length > shortenAmount ? (length - shortenAmount) / length : 0;
       const adjustedToX = fromX + dx * shortenRatio;
       const adjustedToY = fromY + dy * shortenRatio;
 
@@ -307,11 +377,13 @@ export function Board({
           preserveAspectRatio="none"
         >
           <defs>
-            <marker id={`arrowhead-last-move-${index}`} refX="2" refY="1.5" orient="auto">
-              <polygon
-                points="0 0, 3 1.5, 0 3"
-                fill={arrowColor}
-              />
+            <marker
+              id={`arrowhead-last-move-${index}`}
+              refX="2"
+              refY="1.5"
+              orient="auto"
+            >
+              <polygon points="0 0, 3 1.5, 0 3" fill={arrowColor} />
             </marker>
           </defs>
           <line
@@ -351,13 +423,24 @@ export function Board({
   // Render arrow SVG
   const renderArrow = (arrow: Arrow, index: number) => {
     // Calculate center positions of cells
-    const cellWidthPercent = 100 / cols;
-    const cellHeightPercent = 100 / rows;
-
-    const fromX = (arrow.from.col + 0.5) * cellWidthPercent;
-    const toX = (arrow.to.col + 0.5) * cellWidthPercent;
-    const fromY = (arrow.from.row + 0.5) * cellHeightPercent;
-    const toY = (arrow.to.row + 0.5) * cellHeightPercent;
+    const useGapAware = isStraightMove(
+      arrow.from.row,
+      arrow.from.col,
+      arrow.to.row,
+      arrow.to.col
+    );
+    const fromX = getCellCenterPercent(
+      arrow.from.col,
+      widthPercents,
+      useGapAware
+    );
+    const toX = getCellCenterPercent(arrow.to.col, widthPercents, useGapAware);
+    const fromY = getCellCenterPercent(
+      arrow.from.row,
+      heightPercents,
+      useGapAware
+    );
+    const toY = getCellCenterPercent(arrow.to.row, heightPercents, useGapAware);
 
     // Calculate direction vector for shortening
     const dx = toX - fromX;
@@ -367,13 +450,13 @@ export function Board({
     // Shorten the line to prevent shaft showing through arrowhead
     // Using same shortening as last move arrow
     const shortenAmount = 3;
-    const shortenRatio = length > shortenAmount ? (length - shortenAmount) / length : 0;
+    const shortenRatio =
+      length > shortenAmount ? (length - shortenAmount) / length : 0;
     const adjustedToX = fromX + dx * shortenRatio;
     const adjustedToY = fromY + dy * shortenRatio;
 
     const arrowColor = getArrowColor(arrow);
-    // Use thinner stroke to match last move style, but keep it visible
-    const strokeWidth = arrow.type === "calculated" ? 1.1 : 1.5;
+    const strokeWidth = 1.1;
     const opacity = arrow.type === "calculated" ? 0.5 : 0.8;
     const dashArray = arrow.type === "calculated" ? "4,2" : "none";
 
@@ -388,8 +471,8 @@ export function Board({
         <defs>
           <marker
             id={`arrowhead-${arrow.type}-${index}`}
-            markerWidth="4"
-            markerHeight="4"
+            markerWidth="3"
+            markerHeight="3"
             refX="2"
             refY="1.5"
             orient="auto"
@@ -418,9 +501,6 @@ export function Board({
     );
   };
 
-  const maxCellSize = 3; // rem
-  const paddingX = 2; // rem (p-4 = 1rem on each side)
-  const paddingY = 2; // rem (p-4 = 1rem on each side)
   const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
   const maxBoardHeight = `${rows * maxCellSize + (rows - 1) * gapSize + paddingY}rem`;
 
