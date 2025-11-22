@@ -981,10 +981,16 @@ function GamePage() {
       if (gameState?.status !== "playing") return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== localPlayerId) return;
-      setSelectedPawnId(pawnId);
+
+      // If clicking the already selected pawn, unselect it
+      if (selectedPawnId === pawnId) {
+        setSelectedPawnId(null);
+      } else {
+        setSelectedPawnId(pawnId);
+      }
       setActionError(null);
     },
-    [gameState, boardPawns, localPlayerId]
+    [gameState, boardPawns, localPlayerId, selectedPawnId]
   );
 
   const handleCellClick = useCallback(
