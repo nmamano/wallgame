@@ -596,7 +596,12 @@ export function Board({
       controllablePlayerId == null || pawn.playerId === controllablePlayerId;
     const dimensionClass = size === "lg" ? "w-full h-full p-0.5" : "w-6 h-6";
     const hoverClass = isControllable ? "hover:scale-110" : "";
-    const cursorClass = isControllable ? "cursor-pointer" : "cursor-not-allowed";
+    const isDraggingThisPawn = draggingPawnId === pawn.id;
+    const cursorClass = isControllable
+      ? isDraggingThisPawn
+        ? "cursor-grabbing"
+        : "cursor-grab"
+      : "cursor-not-allowed";
     const canDrag = dragEnabled && isControllable;
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
