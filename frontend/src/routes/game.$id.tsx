@@ -2328,6 +2328,9 @@ function GamePage() {
                 player={topTimerPlayer}
                 isActive={gameTurn === topTimerPlayer.playerId}
                 timeLeft={displayedTimeLeft[topTimerPlayer.playerId] ?? 0}
+                isThinking={
+                  thinkingPlayer?.playerId === topTimerPlayer.playerId
+                }
               />
             )}
 
@@ -2473,12 +2476,6 @@ function GamePage() {
                     {loadError}
                   </div>
                 )}
-                {thinkingPlayer && (
-                  <div className="flex items-center gap-2 text-xs">
-                    <Bot className="w-4 h-4" />
-                    {`${thinkingPlayer.name} is thinking...`}
-                  </div>
-                )}
               </div>
 
               <Board
@@ -2559,6 +2556,9 @@ function GamePage() {
                 isActive={gameTurn === bottomTimerDisplayPlayer.playerId}
                 timeLeft={
                   displayedTimeLeft[bottomTimerDisplayPlayer.playerId] ?? 0
+                }
+                isThinking={
+                  thinkingPlayer?.playerId === bottomTimerDisplayPlayer.playerId
                 }
               />
             )}
@@ -2858,20 +2858,22 @@ function PlayerInfo({
   player,
   isActive,
   timeLeft,
+  isThinking = false,
 }: {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
+  isThinking?: boolean;
 }) {
   return (
     <div
-      className={`flex items-center justify-between p-3 rounded-lg transition-colors shadow-sm ${
+      className={`flex items-center gap-3 p-3 rounded-lg transition-colors shadow-sm ${
         isActive
           ? "bg-accent/50 border border-accent"
           : "bg-card/50 backdrop-blur border border-border"
       }`}
     >
-      <div className="flex items-center gap-3">
+      <div className="flex items-center gap-3 min-w-0 flex-1">
         <div
           className={`w-10 h-10 rounded-full flex items-center justify-center ${
             player.color === "red"
@@ -2881,10 +2883,10 @@ function PlayerInfo({
         >
           {player.type.includes("bot") ? <Bot size={20} /> : <User size={20} />}
         </div>
-        <div>
+        <div className="min-w-0">
           <div className="flex items-center gap-2">
-            <span className="font-semibold">{player.name}</span>
-            <Badge variant="outline" className="text-xs">
+            <span className="font-semibold truncate">{player.name}</span>
+            <Badge variant="outline" className="text-xs flex-shrink-0">
               {player.rating}
             </Badge>
           </div>
@@ -2898,8 +2900,14 @@ function PlayerInfo({
           </div>
         </div>
       </div>
+      {isThinking && (
+        <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-shrink-0">
+          <Bot className="w-3 h-3" />
+          {`${player.name} is thinking...`}
+        </div>
+      )}
       <div
-        className={`text-2xl font-mono font-bold ${
+        className={`text-2xl font-mono font-bold whitespace-nowrap ${
           isActive ? "text-foreground" : "text-muted-foreground/50"
         } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
       >
