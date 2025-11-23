@@ -63,6 +63,15 @@ function getDefaultOtherPlayerType(mode?: string): PlayerType {
   }
 }
 
+const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
+  "friend",
+  "matched-user",
+  "easy-bot",
+  "medium-bot",
+  "hard-bot",
+  "custom-bot",
+];
+
 // Helper function to format time control
 function formatTimeControl(timeControl: string): string {
   const formats: Record<string, string> = {
@@ -182,9 +191,40 @@ function GameSetup() {
       { length: playerCount },
       () => defaultOtherPlayerType
     );
-    newConfigs[0] = "you"; // Player 1 defaults to "You"
+    newConfigs[0] = "you"; // Player A defaults to "You"
     setPlayerConfigs(newConfigs);
   }, [gameConfig.variant, mode]);
+
+  const playerAType = playerConfigs[0];
+  const playerBType = playerConfigs[1];
+
+  const playerBAllowedOptions = useMemo(() => {
+    if (playerAType === "you") {
+      return (["you", ...PLAYER_B_BASE_OPTIONS] as PlayerType[]).filter(
+        (value, index, array) => array.indexOf(value) === index
+      );
+    }
+    return PLAYER_B_BASE_OPTIONS;
+  }, [playerAType]);
+
+  useEffect(() => {
+    if (playerConfigs.length < 2) return;
+    if (!playerBType) return;
+    if (playerBAllowedOptions.includes(playerBType)) return;
+    const fallback = playerBAllowedOptions[0];
+    if (!fallback) return;
+    setPlayerConfigs((prev) => {
+      if (prev.length < 2) {
+        return prev;
+      }
+      const next = [...prev];
+      next[1] = fallback;
+      return next;
+    });
+  }, [playerBAllowedOptions, playerBType, playerConfigs.length]);
+
+  const playerBLabelOverrides =
+    playerAType === "you" ? ({ you: "Also you" } as const) : undefined;
 
   // Check if rated games are allowed (only if one player is "you" and the other is "friend" or "matched-user")
   const canRatedGame = useMemo(() => {
@@ -442,11 +482,11 @@ function GameSetup() {
                 </div>
               </div>
 
-              {/* Row 2: Player 1 */}
+              {/* Row 2: Player A */}
               {playerConfigs.length > 0 && (
                 <div>
                   <PlayerConfiguration
-                    label="Player 1"
+                    label="Player A"
                     value={playerConfigs[0]}
                     onChange={(value) => {
                       const newConfigs = [...playerConfigs];
@@ -504,17 +544,19 @@ function GameSetup() {
                 </div>
               </div>
 
-              {/* Row 3: Player 2 */}
+              {/* Row 3: Player B */}
               {playerConfigs.length > 1 && (
                 <div>
                   <PlayerConfiguration
-                    label="Player 2"
+                    label="Player B"
                     value={playerConfigs[1]}
                     onChange={(value) => {
                       const newConfigs = [...playerConfigs];
                       newConfigs[1] = value;
                       setPlayerConfigs(newConfigs);
                     }}
+                    allowedOptions={playerBAllowedOptions}
+                    optionLabelOverrides={playerBLabelOverrides}
                   />
                 </div>
               )}
