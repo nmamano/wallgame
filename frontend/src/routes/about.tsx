@@ -45,10 +45,20 @@ function About() {
             remarkPlugins={[remarkGfm]}
             rehypePlugins={[rehypeRaw]}
             components={{
-              a: ({ href, ...props }: { href?: string; [key: string]: unknown }) => {
+              a: ({
+                href,
+                ...props
+              }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+                href?: string;
+              }) => {
                 if (href?.startsWith("http")) {
                   return (
-                    <a {...props} href={href} target="_blank" rel="noopener noreferrer" />
+                    <a
+                      {...props}
+                      href={href}
+                      target="_blank"
+                      rel="noopener noreferrer"
+                    />
                   );
                 }
                 return <a {...props} href={href} />;
