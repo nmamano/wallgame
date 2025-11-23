@@ -10,14 +10,25 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
+import { Board } from "@/components/board";
 import {
-  Board,
-} from "@/components/board";
-import { Cell, Wall, type Pawn, type PawnType, type WallState, type PlayerWall, type PlayerId } from "@/lib/game";
+  Cell,
+  Wall,
+  type Pawn,
+  type PawnType,
+  type WallState,
+  type PlayerWall,
+  type PlayerId,
+} from "@/lib/game";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
-import { PLAYER_COLORS, colorDisplayNames, colorHexMap, type PlayerColor } from "@/lib/player-colors";
+import {
+  PLAYER_COLORS,
+  colorDisplayNames,
+  colorHexMap,
+  type PlayerColor,
+} from "@/lib/player-colors";
 
 export const Route = createFileRoute("/study-board")({
   component: StudyBoard,
@@ -44,9 +55,10 @@ function StudyBoard() {
   );
 
   const idToColor = useMemo<Record<number, PlayerColor>>(
-    () => Object.fromEntries(
-      Object.entries(colorToId).map(([k, v]) => [v, k])
-    ) as Record<number, PlayerColor>,
+    () =>
+      Object.fromEntries(
+        Object.entries(colorToId).map(([k, v]) => [v, k])
+      ) as Record<number, PlayerColor>,
     [colorToId]
   );
 
@@ -62,7 +74,7 @@ function StudyBoard() {
     useState<PlayerColor>("red");
   const [selectedWallState, setSelectedWallState] =
     useState<WallState>("placed");
-  
+
   // Cat pawn selection
   const [catPawn, setCatPawn] = useState<string>("default");
   // Mouse pawn selection
@@ -73,12 +85,14 @@ function StudyBoard() {
     (row: number, col: number) => {
       setPawns((prev) => {
         // Find pawns at this cell
-        const pawnsAtCell = prev.filter(p => p.cell.row === row && p.cell.col === col);
+        const pawnsAtCell = prev.filter(
+          (p) => p.cell.row === row && p.cell.col === col
+        );
 
         // If there are pawns in this cell, remove the last one added (LIFOish for UI feel)
         if (pawnsAtCell.length > 0) {
           const pawnToRemove = pawnsAtCell[pawnsAtCell.length - 1];
-          return prev.filter(p => p.id !== pawnToRemove.id);
+          return prev.filter((p) => p.id !== pawnToRemove.id);
         } else {
           // Add a new pawn
           const newPawn: Pawn = {
@@ -86,9 +100,14 @@ function StudyBoard() {
             playerId: colorToId[selectedPawnColor] as PlayerId,
             type: selectedPawnType,
             cell: new Cell(row, col),
-            pawnStyle: selectedPawnType === "cat" 
-              ? (catPawn !== "default" ? catPawn : undefined)
-              : (mousePawn !== "default" ? mousePawn : undefined),
+            pawnStyle:
+              selectedPawnType === "cat"
+                ? catPawn !== "default"
+                  ? catPawn
+                  : undefined
+                : mousePawn !== "default"
+                  ? mousePawn
+                  : undefined,
           };
           return [...prev, newPawn];
         }
@@ -132,7 +151,7 @@ function StudyBoard() {
           } else {
             newWall = new Wall(new Cell(row, col), "vertical");
           }
-          
+
           const playerWall: PlayerWall = {
             wall: newWall,
             playerId: colorToId[selectedWallColor] as PlayerId,
@@ -151,7 +170,9 @@ function StudyBoard() {
     (_row: number, _col: number, pawnId: string) => {
       setPawns((prev) => {
         return prev.map((pawn) =>
-          pawn.id === pawnId ? { ...pawn, playerId: colorToId[selectedPawnColor] as PlayerId } : pawn
+          pawn.id === pawnId
+            ? { ...pawn, playerId: colorToId[selectedPawnColor] as PlayerId }
+            : pawn
         );
       });
     },
@@ -210,7 +231,8 @@ function StudyBoard() {
                         );
                         setWalls((prev) =>
                           prev.filter(
-                            (w) => w.wall.row1 < newRows && w.wall.row2 < newRows
+                            (w) =>
+                              w.wall.row1 < newRows && w.wall.row2 < newRows
                           )
                         );
                       }}
@@ -242,7 +264,8 @@ function StudyBoard() {
                         );
                         setWalls((prev) =>
                           prev.filter(
-                            (w) => w.wall.col1 < newCols && w.wall.col2 < newCols
+                            (w) =>
+                              w.wall.col1 < newCols && w.wall.col2 < newCols
                           )
                         );
                       }}
@@ -275,7 +298,7 @@ function StudyBoard() {
                     <Select
                       value={selectedPawnColor}
                       onValueChange={(value) =>
-                        setSelectedPawnColor(value)
+                        setSelectedPawnColor(value as PlayerColor)
                       }
                     >
                       <SelectTrigger className="h-8">
@@ -364,7 +387,7 @@ function StudyBoard() {
                     <Select
                       value={selectedWallColor}
                       onValueChange={(value) =>
-                        setSelectedWallColor(value)
+                        setSelectedWallColor(value as PlayerColor)
                       }
                     >
                       <SelectTrigger className="h-8">
@@ -429,19 +452,19 @@ function StudyBoard() {
           </Card>
 
           {/* Board */}
-            <Board
-              rows={rows}
-              cols={cols}
-              pawns={pawns}
-              walls={walls}
-              maxWidth="max-w-2xl"
-              className="p-2"
-              playerColors={idToColor as Record<PlayerId, PlayerColor>}
-              onCellClick={handleCellClick}
-              onWallClick={handleWallClick}
-              onPawnRightClick={handlePawnRightClick}
-              onWallRightClick={handleWallRightClick}
-            />
+          <Board
+            rows={rows}
+            cols={cols}
+            pawns={pawns}
+            walls={walls}
+            maxWidth="max-w-2xl"
+            className="p-2"
+            playerColors={idToColor as Record<PlayerId, PlayerColor>}
+            onCellClick={handleCellClick}
+            onWallClick={handleWallClick}
+            onPawnRightClick={handlePawnRightClick}
+            onWallRightClick={handleWallRightClick}
+          />
         </div>
       </div>
     </div>

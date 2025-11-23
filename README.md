@@ -58,12 +58,6 @@ Deployment dashboard: https://fly.io/apps/wallgame
 
 The app is deployed on fly.io at https://wallgame.fly.dev
 
-The app was initialized with:
-
-```sh
-fly launch
-```
-
 To deploy a new version:
 
 ```sh
@@ -77,6 +71,12 @@ Upload secrets to fly (you need to redeploy after updating the secrets):
 ```sh
 fly secrets import < .env.prod
 fly deploy
+```
+
+The app was initialized with:
+
+```sh
+fly launch
 ```
 
 ## Neon database
