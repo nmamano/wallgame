@@ -127,6 +127,15 @@ interface OutgoingTimeInfo {
   createdAt: number;
 }
 
+type RematchResponse = "pending" | "accepted" | "declined";
+
+interface RematchState {
+  status: "idle" | "pending" | "starting" | "declined";
+  responses: Record<PlayerId, RematchResponse>;
+  requestId: number;
+  decliner?: PlayerId;
+}
+
 const DEFAULT_CONFIG: GameConfiguration = {
   timeControl: "blitz",
   rated: false,
@@ -266,18 +275,24 @@ function formatWinReason(reason?: GameResult["reason"]): string {
   }
 }
 
-function sanitizePlayerList(players: PlayerType[]): PlayerType[] {
+function sanitizePlayerList(
+  players: PlayerType[],
+  options?: { forceYouFirst?: boolean }
+): PlayerType[] {
+  const { forceYouFirst = true } = options ?? {};
   const list = players.slice(0, 2);
-  if (list.includes("you")) {
-    const idx = list.indexOf("you");
-    if (idx === 1) {
-      [list[0], list[1]] = [list[1], list[0]];
+  if (!list.includes("you")) {
+    if (list.length === 0) {
+      list.push("you");
+    } else {
+      list[0] = "you";
     }
-  } else {
-    list[0] = "you";
   }
   while (list.length < 2) {
     list.push("easy-bot");
+  }
+  if (forceYouFirst && list.indexOf("you") === 1) {
+    [list[0], list[1]] = [list[1], list[0]];
   }
   return list;
 }
@@ -363,6 +378,14 @@ function GamePage() {
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [stagedActions, setStagedActions] = useState<Action[]>([]);
+  const [matchParticipants, setMatchParticipants] = useState<PlayerType[]>([]);
+  const [matchScore, setMatchScore] = useState<number[]>([]);
+  const [matchDraws, setMatchDraws] = useState(0);
+  const [rematchState, setRematchState] = useState<RematchState>({
+    status: "idle",
+    responses: { 1: "pending", 2: "pending" },
+    requestId: 0,
+  });
 
   const gameStateRef = useRef<GameState | null>(null);
   const playersRef = useRef<GamePlayer[]>([]);
@@ -374,6 +397,10 @@ function GamePage() {
   const takebackRequestIdRef = useRef(0);
   const lastResignedPlayerRef = useRef<PlayerId | null>(null);
   const noticeCounterRef = useRef(0);
+  const seatOrderIndicesRef = useRef<[number, number]>([0, 1]);
+  const currentGameIdRef = useRef(0);
+  const lastScoredGameIdRef = useRef(0);
+  const rematchRequestIdRef = useRef(0);
 
   const primaryLocalPlayerId = useMemo<PlayerId>(() => {
     const idx = playerTypes.findIndex((type) => type === "you");
@@ -1158,6 +1185,69 @@ function GamePage() {
     setOutgoingTimeInfo(null);
   }, []);
 
+  const openRematchWindow = useCallback(() => {
+    rematchRequestIdRef.current += 1;
+    const requestId = rematchRequestIdRef.current;
+    setRematchState({
+      status: "pending",
+      responses: { 1: "pending", 2: "pending" },
+      requestId,
+    });
+    addSystemMessage("Rematch offer opened. Waiting for responses...");
+  }, [addSystemMessage]);
+
+  const respondToRematch = useCallback(
+    (playerId: PlayerId, response: Exclude<RematchResponse, "pending">) => {
+      setRematchState((prev) => {
+        if (prev.status !== "pending") return prev;
+        if (prev.responses[playerId] === response) return prev;
+        const nextResponses = { ...prev.responses, [playerId]: response };
+        if (response === "declined") {
+          addSystemMessage(`${getPlayerName(playerId)} declined the rematch.`);
+          return {
+            ...prev,
+            status: "declined",
+            responses: nextResponses,
+            decliner: playerId,
+          };
+        }
+
+        addSystemMessage(`${getPlayerName(playerId)} accepted the rematch.`);
+        const bothAccepted =
+          nextResponses[1] === "accepted" && nextResponses[2] === "accepted";
+        if (bothAccepted) {
+          return {
+            ...prev,
+            status: "starting",
+            responses: nextResponses,
+          };
+        }
+        return {
+          ...prev,
+          responses: nextResponses,
+        };
+      });
+    },
+    [addSystemMessage, getPlayerName]
+  );
+
+  const handleAcceptRematch = useCallback(() => {
+    if (!primaryLocalPlayerId) return;
+    respondToRematch(primaryLocalPlayerId, "accepted");
+  }, [primaryLocalPlayerId, respondToRematch]);
+
+  const handleDeclineRematch = useCallback(() => {
+    if (!primaryLocalPlayerId) return;
+    respondToRematch(primaryLocalPlayerId, "declined");
+  }, [primaryLocalPlayerId, respondToRematch]);
+
+  const handleExitAfterMatch = useCallback(() => {
+    if (rematchState.status === "pending" && primaryLocalPlayerId) {
+      respondToRematch(primaryLocalPlayerId, "declined");
+    }
+    window.history.back();
+  }, [primaryLocalPlayerId, rematchState.status, respondToRematch]);
+
   const respondToDrawPrompt = useCallback(
     (decision: DrawDecision) => {
       if (!drawDecisionPrompt) return;
@@ -1195,8 +1285,16 @@ function GamePage() {
   );
 
   const initializeGame = useCallback(
-    (incomingConfig: GameConfiguration, incomingPlayers: PlayerType[]) => {
-      const sanitizedPlayers = sanitizePlayerList(incomingPlayers);
+    (
+      incomingConfig: GameConfiguration,
+      incomingPlayers: PlayerType[],
+      options?: { forceYouFirst?: boolean }
+    ) => {
+      const nextGameId = currentGameIdRef.current + 1;
+      currentGameIdRef.current = nextGameId;
+      const sanitizedPlayers = sanitizePlayerList(incomingPlayers, {
+        forceYouFirst: options?.forceYouFirst ?? true,
+      });
       const nextPrimaryLocalPlayerId = (() => {
         const idx = sanitizedPlayers.findIndex((type) => type === "you");
         return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
@@ -1288,6 +1386,11 @@ function GamePage() {
       addSystemMessage(
         waiting ? "Waiting for players..." : "Game created. Good luck!"
       );
+      setRematchState((prev) => ({
+        status: "idle",
+        responses: { 1: "pending", 2: "pending" },
+        requestId: prev.requestId,
+      }));
     },
     [
       addSystemMessage,
@@ -1296,6 +1399,20 @@ function GamePage() {
       playerControllersRef,
     ]
   );
+
+  const startRematch = useCallback(() => {
+    if (matchParticipants.length < 2) return;
+    const nextSeatOrder: [number, number] = [
+      seatOrderIndicesRef.current[1],
+      seatOrderIndicesRef.current[0],
+    ];
+    seatOrderIndicesRef.current = nextSeatOrder;
+    const playersForGame = nextSeatOrder.map(
+      (participantIndex) => matchParticipants[participantIndex]
+    );
+    const nextConfig = config ?? DEFAULT_CONFIG;
+    initializeGame(nextConfig, playersForGame, { forceYouFirst: false });
+  }, [config, initializeGame, matchParticipants]);
 
   useEffect(() => {
     setIsLoadingConfig(true);
@@ -1327,7 +1444,24 @@ function GamePage() {
       }
     }
 
-    initializeGame(resolvedConfig, resolvedPlayers);
+    const participants = sanitizePlayerList(resolvedPlayers);
+    setMatchParticipants(participants);
+    setMatchScore(Array(participants.length).fill(0));
+    setMatchDraws(0);
+    rematchRequestIdRef.current = 0;
+    lastScoredGameIdRef.current = 0;
+    currentGameIdRef.current = 0;
+
+    const seatOrder = (Math.random() < 0.5 ? [0, 1] : [1, 0]) as [
+      number,
+      number,
+    ];
+    seatOrderIndicesRef.current = seatOrder;
+    const playersForGame = seatOrder.map(
+      (participantIndex) => participants[participantIndex]
+    );
+
+    initializeGame(resolvedConfig, playersForGame, { forceYouFirst: false });
     setIsLoadingConfig(false);
 
     return () => {
@@ -1383,6 +1517,79 @@ function GamePage() {
       lastResignedPlayerRef.current = null;
     }
   }, [gameState?.status]);
+
+  useEffect(() => {
+    if (!matchParticipants.length) return;
+    if (gameState?.status !== "finished" || !gameState.result) return;
+    const activeGameId = currentGameIdRef.current;
+    if (lastScoredGameIdRef.current === activeGameId) return;
+    lastScoredGameIdRef.current = activeGameId;
+
+    const winnerId = gameState.result.winner;
+    if (winnerId) {
+      const participantIndex = seatOrderIndicesRef.current[winnerId - 1];
+      if (participantIndex != null) {
+        setMatchScore((prev) => {
+          const targetLength = prev.length || matchParticipants.length || 2;
+          const next =
+            prev.length === targetLength
+              ? [...prev]
+              : Array(targetLength).fill(0);
+          next[participantIndex] = (next[participantIndex] ?? 0) + 1;
+          return next;
+        });
+      }
+    } else {
+      setMatchDraws((prev) => prev + 1);
+    }
+
+    openRematchWindow();
+  }, [
+    gameState?.result,
+    gameState?.status,
+    matchParticipants.length,
+    openRematchWindow,
+  ]);
+
+  useEffect(() => {
+    if (rematchState.status !== "pending") return;
+    const timers: number[] = [];
+    ([1, 2] as PlayerId[]).forEach((playerId) => {
+      if (rematchState.responses[playerId] !== "pending") return;
+      if (playerId === primaryLocalPlayerId) return;
+      const controller = playerControllersRef.current[playerId];
+      if (!controller) return;
+      if (isAutomatedController(controller)) {
+        const timeoutId = window.setTimeout(
+          () => respondToRematch(playerId, "accepted"),
+          800
+        );
+        timers.push(timeoutId);
+      } else if (
+        isLocalController(controller) &&
+        autoAcceptingLocalIds.includes(playerId)
+      ) {
+        const timeoutId = window.setTimeout(
+          () => respondToRematch(playerId, "accepted"),
+          400
+        );
+        timers.push(timeoutId);
+      }
+    });
+    return () => {
+      timers.forEach((timeoutId) => window.clearTimeout(timeoutId));
+    };
+  }, [
+    autoAcceptingLocalIds,
+    primaryLocalPlayerId,
+    rematchState,
+    respondToRematch,
+  ]);
+
+  useEffect(() => {
+    if (rematchState.status !== "starting") return;
+    startRematch();
+  }, [rematchState.status, startRematch]);
 
   useEffect(() => {
     if (
@@ -1851,6 +2058,82 @@ function GamePage() {
       ? (players.find((p) => p.playerId === automatedPlayerId) ?? null)
       : null;
 
+  const bottomTimerPlayer =
+    (primaryLocalPlayerId &&
+      players.find((player) => player.playerId === primaryLocalPlayerId)) ||
+    players[0] ||
+    null;
+
+  const topTimerPlayer =
+    players.find((player) => player.playerId !== bottomTimerPlayer?.playerId) ||
+    (players.length > 1 ? players[1] : null);
+
+  const bottomTimerDisplayPlayer =
+    bottomTimerPlayer && bottomTimerPlayer.type === "you"
+      ? {
+          ...bottomTimerPlayer,
+          name: bottomTimerPlayer.name.includes("Also You")
+            ? bottomTimerPlayer.name.replace("(Also You)", "(You)")
+            : bottomTimerPlayer.name,
+        }
+      : bottomTimerPlayer;
+
+  const scoreboardEntries = useMemo(
+    () =>
+      matchParticipants.map((type, index) => ({
+        id: index,
+        name: buildPlayerName(type, index, settings.displayName),
+        score: matchScore[index] ?? 0,
+      })),
+    [matchParticipants, matchScore, settings.displayName]
+  );
+
+  const opponentPlayerId =
+    primaryLocalPlayerId === 1
+      ? (2 as PlayerId)
+      : primaryLocalPlayerId === 2
+        ? (1 as PlayerId)
+        : null;
+
+  const userRematchResponse =
+    primaryLocalPlayerId != null
+      ? rematchState.responses[primaryLocalPlayerId]
+      : null;
+  const opponentRematchResponse =
+    opponentPlayerId != null ? rematchState.responses[opponentPlayerId] : null;
+  const opponentName = opponentPlayerId
+    ? getPlayerName(opponentPlayerId)
+    : "Opponent";
+  const youName =
+    bottomTimerDisplayPlayer?.name ??
+    (primaryLocalPlayerId ? getPlayerName(primaryLocalPlayerId) : "You");
+  const rematchResponseSummary = [
+    { label: youName, response: userRematchResponse ?? "pending" },
+    { label: opponentName, response: opponentRematchResponse ?? "pending" },
+  ];
+  const rematchStatusText = (() => {
+    switch (rematchState.status) {
+      case "pending":
+        if (userRematchResponse === "pending") {
+          return "Choose whether to rematch.";
+        }
+        if (opponentRematchResponse === "pending") {
+          return `Waiting for ${opponentName} to respond...`;
+        }
+        return "Waiting for responses...";
+      case "starting":
+        return "Both players accepted. Setting up the next game...";
+      case "declined":
+        return `${
+          rematchState.decliner
+            ? getPlayerName(rematchState.decliner)
+            : opponentName
+        } declined the rematch.`;
+      default:
+        return "";
+    }
+  })();
+
   const incomingSection = (() => {
     if (drawDecisionPrompt) {
       return (
@@ -2040,11 +2323,11 @@ function GamePage() {
             }}
           >
             {/* Top Player (Opponent) Timer */}
-            {players.length > 1 && (
+            {topTimerPlayer && (
               <PlayerInfo
-                player={players[1]}
-                isActive={gameTurn === players[1].playerId}
-                timeLeft={displayedTimeLeft[players[1].playerId] ?? 0}
+                player={topTimerPlayer}
+                isActive={gameTurn === topTimerPlayer.playerId}
+                timeLeft={displayedTimeLeft[topTimerPlayer.playerId] ?? 0}
               />
             )}
 
@@ -2069,14 +2352,107 @@ function GamePage() {
                         {winReason}
                       </p>
                     </div>
-                    <div className="flex justify-center gap-4">
-                      <Button onClick={() => window.location.reload()}>
+                    {scoreboardEntries.length === 2 && (
+                      <div className="space-y-3">
+                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                          <span>Match score</span>
+                          <span>Draws: {matchDraws}</span>
+                        </div>
+                        <div className="grid grid-cols-2 gap-3">
+                          {scoreboardEntries.map((entry) => (
+                            <div
+                              key={entry.id}
+                              className="rounded-lg border border-dashed border-border/60 px-3 py-2"
+                            >
+                              <div className="text-xs text-muted-foreground">
+                                {entry.name}
+                              </div>
+                              <div className="text-2xl font-semibold">
+                                {entry.score}
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    )}
+                    <div className="space-y-3">
+                      <div className="flex items-center justify-center gap-2 text-sm font-semibold">
+                        <RotateCcw className="w-4 h-4" />
                         Rematch
-                      </Button>
-                      <Button
-                        variant="outline"
-                        onClick={() => window.history.back()}
-                      >
+                      </div>
+                      <p className="text-sm text-muted-foreground">
+                        {rematchStatusText}
+                      </p>
+                      <div className="grid grid-cols-2 gap-2">
+                        {rematchResponseSummary.map((entry, idx) => (
+                          <div
+                            key={`${entry.label}-${idx}`}
+                            className="rounded-lg border border-border/60 px-3 py-2 text-left"
+                          >
+                            <div className="text-xs text-muted-foreground">
+                              {entry.label}
+                            </div>
+                            <Badge
+                              variant={
+                                entry.response === "accepted"
+                                  ? "default"
+                                  : entry.response === "declined"
+                                    ? "destructive"
+                                    : "secondary"
+                              }
+                              className="mt-1"
+                            >
+                              {entry.response === "pending"
+                                ? "Pending"
+                                : entry.response.charAt(0).toUpperCase() +
+                                  entry.response.slice(1)}
+                            </Badge>
+                          </div>
+                        ))}
+                      </div>
+                      {rematchState.status === "pending" && (
+                        <div className="flex justify-center gap-3">
+                          <Button
+                            onClick={handleAcceptRematch}
+                            disabled={
+                              !primaryLocalPlayerId ||
+                              userRematchResponse === "accepted"
+                            }
+                          >
+                            {userRematchResponse === "accepted"
+                              ? "Accepted"
+                              : "Accept rematch"}
+                          </Button>
+                          <Button
+                            variant="outline"
+                            onClick={handleDeclineRematch}
+                            disabled={userRematchResponse === "declined"}
+                          >
+                            {userRematchResponse === "declined"
+                              ? "Declined"
+                              : "Decline"}
+                          </Button>
+                        </div>
+                      )}
+                      {rematchState.status === "declined" && (
+                        <div className="flex justify-center">
+                          <Button
+                            variant="ghost"
+                            onClick={openRematchWindow}
+                            className="text-sm"
+                          >
+                            Offer rematch again
+                          </Button>
+                        </div>
+                      )}
+                      {rematchState.status === "starting" && (
+                        <p className="text-sm text-muted-foreground">
+                          Setting up the next game...
+                        </p>
+                      )}
+                    </div>
+                    <div className="flex justify-center gap-3">
+                      <Button variant="outline" onClick={handleExitAfterMatch}>
                         Exit
                       </Button>
                     </div>
@@ -2177,11 +2553,13 @@ function GamePage() {
             </div>
 
             {/* Bottom Player (You) Timer */}
-            {players.length > 0 && (
+            {bottomTimerDisplayPlayer && (
               <PlayerInfo
-                player={players[0]}
-                isActive={gameTurn === players[0].playerId}
-                timeLeft={displayedTimeLeft[players[0].playerId] ?? 0}
+                player={bottomTimerDisplayPlayer}
+                isActive={gameTurn === bottomTimerDisplayPlayer.playerId}
+                timeLeft={
+                  displayedTimeLeft[bottomTimerDisplayPlayer.playerId] ?? 0
+                }
               />
             )}
           </div>
@@ -2227,6 +2605,35 @@ function GamePage() {
                 </Button>
               </div>
             </Card>
+
+            {scoreboardEntries.length === 2 && (
+              <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
+                <div className="flex items-center justify-between">
+                  <div className="flex items-center gap-2">
+                    <Trophy className="w-4 h-4 text-muted-foreground" />
+                    <span className="font-semibold">Match score</span>
+                  </div>
+                  <Badge variant="outline" className="text-xs">
+                    Draws: {matchDraws}
+                  </Badge>
+                </div>
+                <div className="space-y-2">
+                  {scoreboardEntries.map((entry) => (
+                    <div
+                      key={entry.id}
+                      className="flex items-center justify-between rounded-lg border border-dashed border-border/60 px-3 py-2"
+                    >
+                      <span className="text-sm text-muted-foreground">
+                        {entry.name}
+                      </span>
+                      <span className="text-lg font-semibold">
+                        {entry.score}
+                      </span>
+                    </div>
+                  ))}
+                </div>
+              </Card>
+            )}
 
             {interactionLocked && (
               <Alert>
