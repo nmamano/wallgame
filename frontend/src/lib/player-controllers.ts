@@ -4,10 +4,21 @@ import type { GameState } from "./game-state";
 
 export type PlayerControllerKind = "local-human" | "easy-bot" | "unsupported";
 
+export type DrawDecision = "accept" | "reject";
+export type TakebackDecision = "allow" | "decline";
+
 export interface PlayerControllerContext {
   state: GameState;
   playerId: PlayerId;
   opponentId: PlayerId;
+}
+
+export interface DrawOfferContext extends PlayerControllerContext {
+  offeredBy: PlayerId;
+}
+
+export interface TakebackRequestContext extends PlayerControllerContext {
+  requestedBy: PlayerId;
 }
 
 interface BasePlayerController {
@@ -15,6 +26,10 @@ interface BasePlayerController {
   playerType: PlayerType;
   kind: PlayerControllerKind;
   makeMove(context: PlayerControllerContext): Promise<Move>;
+  respondToDrawOffer(context: DrawOfferContext): Promise<DrawDecision>;
+  respondToTakebackRequest(
+    context: TakebackRequestContext
+  ): Promise<TakebackDecision>;
   cancel?(reason?: unknown): void;
 }
 
@@ -22,6 +37,8 @@ export interface LocalPlayerController extends BasePlayerController {
   kind: "local-human";
   submitMove(move: Move): void;
   hasPendingMove(): boolean;
+  submitDrawDecision(decision: DrawDecision): void;
+  submitTakebackDecision(decision: TakebackDecision): void;
 }
 
 export interface AutomatedPlayerController extends BasePlayerController {
@@ -76,6 +93,14 @@ class LocalHumanController implements LocalPlayerController {
     resolve: (move: Move) => void;
     reject: (reason?: unknown) => void;
   } | null = null;
+  private pendingDrawDecision: {
+    resolve: (decision: DrawDecision) => void;
+    reject: (reason?: unknown) => void;
+  } | null = null;
+  private pendingTakebackDecision: {
+    resolve: (decision: TakebackDecision) => void;
+    reject: (reason?: unknown) => void;
+  } | null = null;
 
   constructor(
     public playerId: PlayerId,
@@ -107,12 +132,62 @@ class LocalHumanController implements LocalPlayerController {
     return this.pendingMove !== null;
   }
 
+  respondToDrawOffer(): Promise<DrawDecision> {
+    if (this.pendingDrawDecision) {
+      this.pendingDrawDecision.reject(
+        new Error("Previous draw request was still pending.")
+      );
+    }
+    return new Promise<DrawDecision>((resolve, reject) => {
+      this.pendingDrawDecision = { resolve, reject };
+    });
+  }
+
+  submitDrawDecision(decision: DrawDecision): void {
+    if (!this.pendingDrawDecision) {
+      throw new Error("No pending draw decision for this player.");
+    }
+    this.pendingDrawDecision.resolve(decision);
+    this.pendingDrawDecision = null;
+  }
+
+  respondToTakebackRequest(): Promise<TakebackDecision> {
+    if (this.pendingTakebackDecision) {
+      this.pendingTakebackDecision.reject(
+        new Error("Previous takeback request was still pending.")
+      );
+    }
+    return new Promise<TakebackDecision>((resolve, reject) => {
+      this.pendingTakebackDecision = { resolve, reject };
+    });
+  }
+
+  submitTakebackDecision(decision: TakebackDecision): void {
+    if (!this.pendingTakebackDecision) {
+      throw new Error("No pending takeback decision for this player.");
+    }
+    this.pendingTakebackDecision.resolve(decision);
+    this.pendingTakebackDecision = null;
+  }
+
   cancel(reason?: unknown): void {
     if (this.pendingMove) {
       this.pendingMove.reject(
         reason ?? new Error("Move request cancelled by system.")
       );
       this.pendingMove = null;
+    }
+    if (this.pendingDrawDecision) {
+      this.pendingDrawDecision.reject(
+        reason ?? new Error("Draw request cancelled by system.")
+      );
+      this.pendingDrawDecision = null;
+    }
+    if (this.pendingTakebackDecision) {
+      this.pendingTakebackDecision.reject(
+        reason ?? new Error("Takeback request cancelled by system.")
+      );
+      this.pendingTakebackDecision = null;
     }
   }
 }
@@ -139,8 +214,18 @@ class EasyBotController implements AutomatedPlayerController {
       state.pawns[opponentId].mouse.col,
     ];
 
-    await delay(600);
+    await delay(2000);
     return getAiMove(state.grid.clone(), aiCatPos, opponentMousePos);
+  }
+
+  async respondToDrawOffer(): Promise<DrawDecision> {
+    await delay(4000);
+    return "accept";
+  }
+
+  async respondToTakebackRequest(): Promise<TakebackDecision> {
+    await delay(4000);
+    return "allow";
   }
 
   cancel(): void {
@@ -162,6 +247,20 @@ class UnsupportedController implements UnsupportedPlayerController {
     );
   }
 
+  async respondToDrawOffer(): Promise<DrawDecision> {
+    return Promise.reject(
+      new Error(`Player type "${this.playerType}" cannot answer draw offers.`)
+    );
+  }
+
+  async respondToTakebackRequest(): Promise<TakebackDecision> {
+    return Promise.reject(
+      new Error(
+        `Player type "${this.playerType}" cannot answer takeback requests.`
+      )
+    );
+  }
+
   cancel(): void {
     // Nothing to cancel.
   }
@@ -170,4 +269,3 @@ class UnsupportedController implements UnsupportedPlayerController {
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
 }
-

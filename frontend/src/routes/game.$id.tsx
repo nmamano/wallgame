@@ -41,7 +41,12 @@ import {
   TimeControl as GameTimeControl,
   type PlayerWall,
 } from "@/lib/game";
-import { GameState, type GameResult, type GameConfig } from "@/lib/game-state";
+import {
+  GameState,
+  type GameResult,
+  type GameConfig,
+  type GameAction,
+} from "@/lib/game-state";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/components/player-configuration";
 import type { GameConfiguration } from "@/components/game-configuration-panel";
@@ -54,6 +59,9 @@ import {
   isLocalController,
   isSupportedController,
   type GamePlayerController,
+  type LocalPlayerController,
+  type DrawDecision,
+  type TakebackDecision,
 } from "@/lib/player-controllers";
 
 export const Route = createFileRoute("/game/$id")({
@@ -77,6 +85,46 @@ interface ChatMessage {
   timestamp: Date;
   channel: "game" | "team" | "audience";
   isSystem?: boolean;
+}
+
+interface PendingDrawOfferState {
+  from: PlayerId;
+  to: PlayerId;
+  requestId: number;
+  status: "pending";
+  createdAt: number;
+}
+
+interface PendingTakebackRequestState {
+  requester: PlayerId;
+  responder: PlayerId;
+  requestId: number;
+  status: "pending";
+  createdAt: number;
+}
+
+interface DrawDecisionPromptState {
+  from: PlayerId;
+  to: PlayerId;
+  controller: LocalPlayerController;
+}
+
+interface TakebackDecisionPromptState {
+  requester: PlayerId;
+  responder: PlayerId;
+  controller: LocalPlayerController;
+}
+
+interface PassiveNotice {
+  id: number;
+  type: "opponent-resigned" | "opponent-gave-time";
+  message: string;
+}
+
+interface OutgoingTimeInfo {
+  id: number;
+  message: string;
+  createdAt: number;
 }
 
 const DEFAULT_CONFIG: GameConfiguration = {
@@ -296,6 +344,21 @@ function GamePage() {
   const [automatedPlayerId, setAutomatedPlayerId] = useState<PlayerId | null>(
     null
   );
+  const [pendingDrawOffer, setPendingDrawOffer] =
+    useState<PendingDrawOfferState | null>(null);
+  const [pendingTakebackRequest, setPendingTakebackRequest] =
+    useState<PendingTakebackRequestState | null>(null);
+  const [drawDecisionPrompt, setDrawDecisionPrompt] =
+    useState<DrawDecisionPromptState | null>(null);
+  const [takebackDecisionPrompt, setTakebackDecisionPrompt] =
+    useState<TakebackDecisionPromptState | null>(null);
+  const [resignFlowPlayerId, setResignFlowPlayerId] = useState<PlayerId | null>(
+    null
+  );
+  const [incomingPassiveNotice, setIncomingPassiveNotice] =
+    useState<PassiveNotice | null>(null);
+  const [outgoingTimeInfo, setOutgoingTimeInfo] =
+    useState<OutgoingTimeInfo | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [clockTick, setClockTick] = useState(() => Date.now());
@@ -307,11 +370,33 @@ function GamePage() {
     Partial<Record<PlayerId, GamePlayerController>>
   >({});
   const pendingTurnRequestRef = useRef<PlayerId | null>(null);
+  const drawOfferRequestIdRef = useRef(0);
+  const takebackRequestIdRef = useRef(0);
+  const lastResignedPlayerRef = useRef<PlayerId | null>(null);
+  const noticeCounterRef = useRef(0);
 
   const primaryLocalPlayerId = useMemo<PlayerId>(() => {
     const idx = playerTypes.findIndex((type) => type === "you");
     return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
   }, [playerTypes]);
+
+  const localPlayerIds = useMemo<PlayerId[]>(() => {
+    return playerTypes.reduce((acc, type, index) => {
+      if (type === "you") {
+        acc.push((index + 1) as PlayerId);
+      }
+      return acc;
+    }, [] as PlayerId[]);
+  }, [playerTypes]);
+
+  const defaultLocalPlayerId = localPlayerIds[0] ?? null;
+  const autoAcceptingLocalIds = useMemo(
+    () =>
+      localPlayerIds.filter(
+        (playerId) => playerId !== primaryLocalPlayerId && playerId != null
+      ),
+    [localPlayerIds, primaryLocalPlayerId]
+  );
 
   const unsupportedPlayers = useMemo(
     () => playerTypes.filter((type) => type !== "you" && type !== "easy-bot"),
@@ -331,6 +416,90 @@ function GamePage() {
     colors[primaryLocalPlayerId] = preferredPawnColor;
     return colors;
   }, [primaryLocalPlayerId, preferredPawnColor]);
+
+  const getPlayerName = useCallback(
+    (playerId: PlayerId) =>
+      playersRef.current.find((p) => p.playerId === playerId)?.name ??
+      `Player ${playerId}`,
+    []
+  );
+
+  const resolveBoardControlPlayerId = useCallback(
+    () => activeLocalPlayerId ?? defaultLocalPlayerId ?? null,
+    [activeLocalPlayerId, defaultLocalPlayerId]
+  );
+
+  const resolvePrimaryActionPlayerId = useCallback(
+    () => primaryLocalPlayerId ?? null,
+    [primaryLocalPlayerId]
+  );
+
+  const updateGameState = useCallback(
+    (
+      nextState: GameState,
+      options?: {
+        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+      }
+    ) => {
+      gameStateRef.current = nextState;
+      setGameState(nextState);
+      if (
+        options &&
+        Object.prototype.hasOwnProperty.call(options, "lastMoves")
+      ) {
+        if (options.lastMoves) {
+          setLastMove(options.lastMoves);
+        } else {
+          setLastMove(undefined);
+        }
+      } else {
+        setLastMove(undefined);
+      }
+    },
+    []
+  );
+
+  const performGameAction = useCallback(
+    (
+      action: GameAction,
+      options?: {
+        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+      }
+    ) => {
+      const currentState = gameStateRef.current;
+      if (!currentState) {
+        throw new Error("Game is still loading");
+      }
+      const nextState = currentState.applyGameAction(action);
+      updateGameState(nextState, {
+        lastMoves: options?.lastMoves ?? null,
+      });
+      if (action.kind === "giveTime") {
+        const recipientId: PlayerId = action.playerId === 1 ? 2 : 1;
+        if (action.playerId === primaryLocalPlayerId) {
+          setOutgoingTimeInfo({
+            id: ++noticeCounterRef.current,
+            message: `You gave ${getPlayerName(recipientId)} 1:00.`,
+            createdAt: Date.now(),
+          });
+        } else if (recipientId === primaryLocalPlayerId) {
+          setIncomingPassiveNotice({
+            id: ++noticeCounterRef.current,
+            type: "opponent-gave-time",
+            message: `${getPlayerName(action.playerId)} gave you 1:00.`,
+          });
+        }
+      }
+      return nextState;
+    },
+    [
+      updateGameState,
+      primaryLocalPlayerId,
+      getPlayerName,
+      setOutgoingTimeInfo,
+      setIncomingPassiveNotice,
+    ]
+  );
 
   const simulateMove = useCallback(
     (actions: Action[]): GameState | null => {
@@ -542,8 +711,6 @@ function GamePage() {
         playerId,
         timestamp: Date.now(),
       });
-      gameStateRef.current = nextState;
-
       // Calculate last moves by comparing pawn positions
       const moves: BoardProps["lastMoves"] = [];
       const playerColor =
@@ -579,31 +746,14 @@ function GamePage() {
       }
 
       // If we have moves, set them. Otherwise clear.
-      if (moves.length > 0) {
-        // We use setLastMove for backward compatibility if needed, but we should probably use a new state for lastMoves
-        // Since Board accepts lastMoves, we can pass it.
-        // But wait, I need to store lastMoves in state.
-        // I'll update the state variable name or just store it in lastMove (as an array cast? No, type safety).
-        // I'll update the state definition in the component.
-        // For now, let's assume I'll rename the state or add a new one.
-        // Actually, I can just use the existing setLastMove if I change the type of lastMove state.
-        // But I can't change the type in this replacement block easily without changing the state definition.
-        // So I will cast it for now and update the state definition in a separate step or assume I will do it.
-        // Wait, I can't cast it here if the state type is strict.
-        // I should update the state definition first.
-        // But I am in applyMove.
-        // Let's assume I will update the state definition to be LastMove | LastMove[] | undefined.
-        setLastMove(moves);
-      } else {
-        setLastMove(undefined);
-      }
-
-      setGameState(nextState);
+      updateGameState(nextState, {
+        lastMoves: moves.length > 0 ? moves : null,
+      });
       if (soundEnabled) {
         playSound();
       }
     },
-    [playerColorsForBoard, soundEnabled]
+    [playerColorsForBoard, soundEnabled, updateGameState]
   );
 
   const commitStagedActions = useCallback(
@@ -650,6 +800,400 @@ function GamePage() {
     setSelectedPawnId(null);
   }, []);
 
+  const executeTakeback = useCallback(
+    (requesterId: PlayerId) => {
+      const currentState = gameStateRef.current;
+      if (!currentState) {
+        setActionError("Game is still loading");
+        return false;
+      }
+      if (currentState.history.length === 0) {
+        setActionError("There are no moves to take back yet.");
+        return false;
+      }
+      const stepsNeeded = currentState.turn === requesterId ? 2 : 1;
+      if (currentState.history.length < stepsNeeded) {
+        setActionError("Not enough moves have been played for a takeback.");
+        return false;
+      }
+      let nextState = currentState;
+      for (let i = 0; i < stepsNeeded; i++) {
+        nextState = nextState.applyGameAction({
+          kind: "takeback",
+          playerId: requesterId,
+          timestamp: Date.now(),
+        });
+      }
+      updateGameState(nextState, { lastMoves: null });
+      setStagedActions([]);
+      setSelectedPawnId(null);
+      setDraggingPawnId(null);
+      return true;
+    },
+    [updateGameState]
+  );
+
+  const handleStartResign = useCallback(() => {
+    const actorId = resolvePrimaryActionPlayerId();
+    if (!actorId) {
+      setActionError("You need to control a player to resign.");
+      return;
+    }
+    setResignFlowPlayerId(actorId);
+    setActionError(null);
+  }, [resolvePrimaryActionPlayerId]);
+
+  const handleCancelResign = useCallback(() => {
+    setResignFlowPlayerId(null);
+  }, []);
+
+  const handleConfirmResign = useCallback(() => {
+    const actorId = resignFlowPlayerId ?? resolvePrimaryActionPlayerId();
+    if (!actorId) {
+      setActionError("You need to control a player to resign.");
+      setResignFlowPlayerId(null);
+      return;
+    }
+    try {
+      lastResignedPlayerRef.current = actorId;
+      performGameAction({
+        kind: "resign",
+        playerId: actorId,
+        timestamp: Date.now(),
+      });
+      addSystemMessage(`${getPlayerName(actorId)} resigned.`);
+    } catch (error) {
+      console.error(error);
+      setActionError(
+        error instanceof Error ? error.message : "Unable to resign the game."
+      );
+    } finally {
+      setResignFlowPlayerId(null);
+    }
+  }, [
+    resignFlowPlayerId,
+    resolvePrimaryActionPlayerId,
+    performGameAction,
+    addSystemMessage,
+    getPlayerName,
+  ]);
+
+  const handleOfferDraw = useCallback(() => {
+    const actorId = resolvePrimaryActionPlayerId();
+    if (!actorId) {
+      setActionError("You need to control a player to offer a draw.");
+      return;
+    }
+    const currentState = gameStateRef.current;
+    if (!currentState || currentState.status !== "playing") {
+      setActionError("Draw offers are only available during active games.");
+      return;
+    }
+    if (pendingDrawOffer) {
+      setActionError("You already have a draw offer pending.");
+      return;
+    }
+    const opponentId: PlayerId = actorId === 1 ? 2 : 1;
+    const opponentController = playerControllersRef.current[opponentId];
+    if (!opponentController || !isSupportedController(opponentController)) {
+      setActionError("This opponent cannot respond to draw offers yet.");
+      return;
+    }
+    const requestId = ++drawOfferRequestIdRef.current;
+    setActionError(null);
+    setPendingDrawOffer({
+      from: actorId,
+      to: opponentId,
+      status: "pending",
+      createdAt: Date.now(),
+      requestId,
+    });
+    addSystemMessage(
+      `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
+        opponentId
+      )}.`
+    );
+    const shouldAutoAccept = autoAcceptingLocalIds.includes(opponentId);
+    const responsePromise = shouldAutoAccept
+      ? new Promise<DrawDecision>((resolve) =>
+          window.setTimeout(() => resolve("accept"), 300)
+        )
+      : opponentController.respondToDrawOffer({
+          state: currentState.clone(),
+          playerId: opponentId,
+          opponentId: actorId,
+          offeredBy: actorId,
+        });
+    const shouldShowPrompt =
+      isLocalController(opponentController) &&
+      opponentId === primaryLocalPlayerId &&
+      !shouldAutoAccept;
+    if (shouldShowPrompt) {
+      setDrawDecisionPrompt({
+        from: actorId,
+        to: opponentId,
+        controller: opponentController,
+      });
+    }
+    responsePromise
+      .then((decision) => {
+        if (drawOfferRequestIdRef.current !== requestId) return;
+        if (decision === "accept") {
+          try {
+            performGameAction({
+              kind: "draw",
+              playerId: opponentId,
+              timestamp: Date.now(),
+            });
+            addSystemMessage(
+              `${getPlayerName(opponentId)} accepted the draw offer.`
+            );
+          } catch (error) {
+            console.error(error);
+            setActionError(
+              error instanceof Error
+                ? error.message
+                : "Unable to convert the draw offer into a result."
+            );
+          }
+        } else {
+          addSystemMessage(
+            `${getPlayerName(opponentId)} declined the draw offer.`
+          );
+        }
+      })
+      .catch((error) => {
+        if (drawOfferRequestIdRef.current !== requestId) return;
+        console.error(error);
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "The draw offer could not be processed."
+        );
+      })
+      .finally(() => {
+        if (drawOfferRequestIdRef.current === requestId) {
+          setPendingDrawOffer(null);
+          if (shouldShowPrompt) {
+            setDrawDecisionPrompt(null);
+          }
+        }
+      });
+  }, [
+    resolvePrimaryActionPlayerId,
+    pendingDrawOffer,
+    performGameAction,
+    addSystemMessage,
+    getPlayerName,
+    autoAcceptingLocalIds,
+    primaryLocalPlayerId,
+  ]);
+
+  const handleCancelDrawOffer = useCallback(() => {
+    if (!pendingDrawOffer) return;
+    const canCancel =
+      Date.now() - pendingDrawOffer.createdAt >= 2000 &&
+      pendingDrawOffer.status === "pending";
+    if (!canCancel) return;
+    drawOfferRequestIdRef.current++;
+    setPendingDrawOffer(null);
+    addSystemMessage("You cancelled your draw offer.");
+  }, [pendingDrawOffer, addSystemMessage]);
+
+  const handleRequestTakeback = useCallback(() => {
+    const requesterId = resolvePrimaryActionPlayerId();
+    if (!requesterId) {
+      setActionError("You need to control a player to request a takeback.");
+      return;
+    }
+    const currentState = gameStateRef.current;
+    if (!currentState || currentState.history.length === 0) {
+      setActionError("There are no moves to take back yet.");
+      return;
+    }
+    if (pendingTakebackRequest) {
+      setActionError("A takeback request is already pending.");
+      return;
+    }
+    const responderId: PlayerId = requesterId === 1 ? 2 : 1;
+    const responderController = playerControllersRef.current[responderId];
+    if (!responderController || !isSupportedController(responderController)) {
+      setActionError("This opponent cannot respond to takeback requests yet.");
+      return;
+    }
+    const requestId = ++takebackRequestIdRef.current;
+    setActionError(null);
+    setPendingTakebackRequest({
+      requester: requesterId,
+      responder: responderId,
+      status: "pending",
+      createdAt: Date.now(),
+      requestId,
+    });
+    addSystemMessage(
+      `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
+        responderId
+      )}.`
+    );
+    const shouldAutoAccept = autoAcceptingLocalIds.includes(responderId);
+    const responsePromise = shouldAutoAccept
+      ? new Promise<TakebackDecision>((resolve) =>
+          window.setTimeout(() => resolve("allow"), 300)
+        )
+      : responderController.respondToTakebackRequest({
+          state: currentState.clone(),
+          playerId: responderId,
+          opponentId: requesterId,
+          requestedBy: requesterId,
+        });
+    const shouldShowPrompt =
+      isLocalController(responderController) &&
+      responderId === primaryLocalPlayerId &&
+      !shouldAutoAccept;
+    if (shouldShowPrompt) {
+      setTakebackDecisionPrompt({
+        requester: requesterId,
+        responder: responderId,
+        controller: responderController,
+      });
+    }
+    responsePromise
+      .then((decision) => {
+        if (takebackRequestIdRef.current !== requestId) return;
+        if (decision === "allow") {
+          const success = executeTakeback(requesterId);
+          if (success) {
+            addSystemMessage(
+              `${getPlayerName(responderId)} accepted the takeback request.`
+            );
+          }
+        } else {
+          addSystemMessage(
+            `${getPlayerName(responderId)} declined the takeback request.`
+          );
+        }
+      })
+      .catch((error) => {
+        if (takebackRequestIdRef.current !== requestId) return;
+        console.error(error);
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "The takeback request could not be processed."
+        );
+      })
+      .finally(() => {
+        if (takebackRequestIdRef.current === requestId) {
+          setPendingTakebackRequest(null);
+          if (shouldShowPrompt) {
+            setTakebackDecisionPrompt(null);
+          }
+        }
+      });
+  }, [
+    resolvePrimaryActionPlayerId,
+    pendingTakebackRequest,
+    executeTakeback,
+    addSystemMessage,
+    getPlayerName,
+    autoAcceptingLocalIds,
+    primaryLocalPlayerId,
+  ]);
+
+  const handleCancelTakebackRequest = useCallback(() => {
+    if (!pendingTakebackRequest) return;
+    const canCancel =
+      Date.now() - pendingTakebackRequest.createdAt >= 2000 &&
+      pendingTakebackRequest.status === "pending";
+    if (!canCancel) return;
+    takebackRequestIdRef.current++;
+    setPendingTakebackRequest(null);
+    addSystemMessage("You cancelled your takeback request.");
+  }, [pendingTakebackRequest, addSystemMessage]);
+
+  const handleGiveTime = useCallback(() => {
+    const giverId = resolvePrimaryActionPlayerId();
+    if (!giverId) {
+      setActionError("You need to control a player to give time.");
+      return;
+    }
+    const currentState = gameStateRef.current;
+    if (!currentState || currentState.status !== "playing") {
+      setActionError("You can only adjust clocks during an active game.");
+      return;
+    }
+    const opponentId: PlayerId = giverId === 1 ? 2 : 1;
+    try {
+      performGameAction({
+        kind: "giveTime",
+        playerId: giverId,
+        seconds: 60,
+        timestamp: Date.now(),
+      });
+      addSystemMessage(
+        `${getPlayerName(giverId)} gave ${getPlayerName(
+          opponentId
+        )} one minute.`
+      );
+    } catch (error) {
+      console.error(error);
+      setActionError(
+        error instanceof Error
+          ? error.message
+          : "Unable to adjust the clocks right now."
+      );
+    }
+  }, [
+    resolvePrimaryActionPlayerId,
+    performGameAction,
+    addSystemMessage,
+    getPlayerName,
+  ]);
+
+  const handleDismissIncomingNotice = useCallback(() => {
+    setIncomingPassiveNotice(null);
+  }, []);
+
+  const handleDismissOutgoingInfo = useCallback(() => {
+    setOutgoingTimeInfo(null);
+  }, []);
+
+  const respondToDrawPrompt = useCallback(
+    (decision: DrawDecision) => {
+      if (!drawDecisionPrompt) return;
+      try {
+        drawDecisionPrompt.controller.submitDrawDecision(decision);
+        setDrawDecisionPrompt(null);
+      } catch (error) {
+        console.error(error);
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to respond to the draw offer."
+        );
+      }
+    },
+    [drawDecisionPrompt]
+  );
+
+  const respondToTakebackPrompt = useCallback(
+    (decision: TakebackDecision) => {
+      if (!takebackDecisionPrompt) return;
+      try {
+        takebackDecisionPrompt.controller.submitTakebackDecision(decision);
+        setTakebackDecisionPrompt(null);
+      } catch (error) {
+        console.error(error);
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to respond to the takeback request."
+        );
+      }
+    },
+    [takebackDecisionPrompt]
+  );
+
   const initializeGame = useCallback(
     (incomingConfig: GameConfiguration, incomingPlayers: PlayerType[]) => {
       const sanitizedPlayers = sanitizePlayerList(incomingPlayers);
@@ -689,6 +1233,13 @@ function GamePage() {
       setStagedActions([]);
       setActiveLocalPlayerId(null);
       setAutomatedPlayerId(null);
+      setResignFlowPlayerId(null);
+      setIncomingPassiveNotice(null);
+      setOutgoingTimeInfo(null);
+      setPendingDrawOffer(null);
+      setPendingTakebackRequest(null);
+      setDrawDecisionPrompt(null);
+      setTakebackDecisionPrompt(null);
       pendingTurnRequestRef.current = null;
 
       Object.values(playerControllersRef.current).forEach((controller) =>
@@ -788,6 +1339,10 @@ function GamePage() {
       gameStateRef.current = null;
       setActiveLocalPlayerId(null);
       setAutomatedPlayerId(null);
+      setPendingDrawOffer(null);
+      setPendingTakebackRequest(null);
+      setDrawDecisionPrompt(null);
+      setTakebackDecisionPrompt(null);
       setGameState(null);
     };
   }, [id, initializeGame]);
@@ -817,6 +1372,44 @@ function GamePage() {
       setStagedActions([]);
     }
   }, [gameState, activeLocalPlayerId, stagedActions.length]);
+
+  useEffect(() => {
+    if (gameState?.status === "finished") {
+      setPendingDrawOffer(null);
+      setPendingTakebackRequest(null);
+      setDrawDecisionPrompt(null);
+      setTakebackDecisionPrompt(null);
+      setResignFlowPlayerId(null);
+      lastResignedPlayerRef.current = null;
+    }
+  }, [gameState?.status]);
+
+  useEffect(() => {
+    if (
+      gameState?.status === "finished" &&
+      gameState.result?.reason === "resignation"
+    ) {
+      const winner = gameState.result.winner;
+      const resignedPlayer: PlayerId = winner === 1 ? 2 : 1;
+      if (
+        resignedPlayer &&
+        resignedPlayer !== primaryLocalPlayerId &&
+        resignedPlayer !== lastResignedPlayerRef.current
+      ) {
+        setIncomingPassiveNotice({
+          id: ++noticeCounterRef.current,
+          type: "opponent-resigned",
+          message: `${getPlayerName(resignedPlayer)} resigned.`,
+        });
+      }
+      lastResignedPlayerRef.current = null;
+    }
+  }, [
+    gameState?.status,
+    gameState?.result,
+    primaryLocalPlayerId,
+    getPlayerName,
+  ]);
 
   const stagePawnAction = useCallback(
     (pawnId: string, targetRow: number, targetCol: number) => {
@@ -1222,427 +1815,635 @@ function GamePage() {
     ? boardPawns.find((pawn) => pawn.id === selectedPawnId)
     : null;
 
+  const actionablePlayerId = resolveBoardControlPlayerId();
+  const actionPanelPlayerId = primaryLocalPlayerId ?? null;
+  const actionPanelAvailable =
+    actionPanelPlayerId != null &&
+    !interactionLocked &&
+    gameState?.status === "playing";
+  const pendingDrawForLocal =
+    pendingDrawOffer &&
+    pendingDrawOffer.status === "pending" &&
+    actionPanelPlayerId != null &&
+    pendingDrawOffer.from === actionPanelPlayerId;
+  const takebackPendingForLocal =
+    pendingTakebackRequest &&
+    pendingTakebackRequest.status === "pending" &&
+    actionPanelPlayerId != null &&
+    pendingTakebackRequest.requester === actionPanelPlayerId;
+  const hasTakebackHistory = (gameState?.history.length ?? 0) > 0;
+  const actionPanelLocked =
+    Boolean(resignFlowPlayerId) ||
+    Boolean(drawDecisionPrompt) ||
+    Boolean(takebackDecisionPrompt) ||
+    Boolean(pendingDrawForLocal) ||
+    Boolean(takebackPendingForLocal);
+  const actionButtonsDisabled = !actionPanelAvailable || actionPanelLocked;
+  const canCancelDrawOffer =
+    pendingDrawForLocal &&
+    clockTick - (pendingDrawOffer?.createdAt ?? 0) >= 2000;
+  const canCancelTakebackRequest =
+    takebackPendingForLocal &&
+    clockTick - (pendingTakebackRequest?.createdAt ?? 0) >= 2000;
+
   const thinkingPlayer =
     automatedPlayerId != null
       ? (players.find((p) => p.playerId === automatedPlayerId) ?? null)
       : null;
 
-  return (
-    <div className="min-h-screen bg-background flex flex-col">
-      <MatchingStagePanel
-        isOpen={isMatchingOpen}
-        players={matchingPlayers}
-        gameUrl={typeof window !== "undefined" ? window.location.href : ""}
-        onAbort={handleAbort}
-      />
+  const incomingSection = (() => {
+    if (drawDecisionPrompt) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <Handshake className="w-4 h-4 text-primary" />
+            {`${getPlayerName(drawDecisionPrompt.from)} offered a draw.`}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => respondToDrawPrompt("accept")}>
+              Accept
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => respondToDrawPrompt("reject")}
+            >
+              Decline
+            </Button>
+          </div>
+        </>
+      );
+    }
+    if (takebackDecisionPrompt) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <RotateCcw className="w-4 h-4" />
+            {`${getPlayerName(
+              takebackDecisionPrompt.requester
+            )} requested a takeback.`}
+          </div>
+          <div className="flex gap-2">
+            <Button size="sm" onClick={() => respondToTakebackPrompt("allow")}>
+              Allow
+            </Button>
+            <Button
+              size="sm"
+              variant="outline"
+              onClick={() => respondToTakebackPrompt("decline")}
+            >
+              Decline
+            </Button>
+          </div>
+        </>
+      );
+    }
+    if (incomingPassiveNotice) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            {incomingPassiveNotice.type === "opponent-resigned" ? (
+              <Flag className="w-4 h-4 text-destructive" />
+            ) : (
+              <Timer className="w-4 h-4 text-primary" />
+            )}
+            {incomingPassiveNotice.message}
+          </div>
+          <div>
+            <Button
+              size="sm"
+              variant="ghost"
+              className="text-xs px-2"
+              onClick={handleDismissIncomingNotice}
+            >
+              Dismiss
+            </Button>
+          </div>
+        </>
+      );
+    }
+    return (
+      <p className="text-sm text-muted-foreground">
+        No active incoming offers.
+      </p>
+    );
+  })();
 
-      <div
-        className="flex-1 py-4 px-4"
-        style={{
-          display: "grid",
-          gridTemplateColumns: `${boardContainerWidth}rem ${rightColumnMaxWidth}rem`,
-          gap: `${gap}rem`,
-          alignItems: "start",
-          justifyContent: "center",
-          margin: "0 auto",
-          width: "fit-content",
-        }}
-      >
-        {/* Left Column: Timers & Board */}
+  const outgoingSection = (() => {
+    if (resignFlowPlayerId) {
+      return (
+        <>
+          <div className="flex gap-2">
+            <Button size="sm" variant="outline" onClick={handleCancelResign}>
+              Keep playing
+            </Button>
+            <Button
+              size="sm"
+              variant="destructive"
+              onClick={handleConfirmResign}
+            >
+              Resign
+            </Button>
+          </div>
+        </>
+      );
+    }
+    if (pendingDrawForLocal && pendingDrawOffer) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <Handshake className="w-4 h-4" />
+            {`Waiting for a response to your draw offer.`}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCancelDrawOffer}
+            disabled={!canCancelDrawOffer}
+          >
+            {canCancelDrawOffer ? "Cancel offer" : "Can cancel in 2s"}
+          </Button>
+        </>
+      );
+    }
+    if (takebackPendingForLocal && pendingTakebackRequest) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <RotateCcw className="w-4 h-4" />
+            {`Waiting for a response to your takeback request.`}
+          </div>
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={handleCancelTakebackRequest}
+            disabled={!canCancelTakebackRequest}
+          >
+            {canCancelTakebackRequest ? "Cancel request" : "Can cancel in 2s"}
+          </Button>
+        </>
+      );
+    }
+    if (outgoingTimeInfo) {
+      return (
+        <>
+          <div className="flex items-center gap-2 text-sm">
+            <Timer className="w-4 h-4 text-primary" />
+            {outgoingTimeInfo.message}
+          </div>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="text-xs px-2 self-start"
+            onClick={handleDismissOutgoingInfo}
+          >
+            Dismiss
+          </Button>
+        </>
+      );
+    }
+    return (
+      <p className="text-sm text-muted-foreground">
+        No active outgoing offers.
+      </p>
+    );
+  })();
+
+  return (
+    <>
+      <div className="min-h-screen bg-background flex flex-col">
+        <MatchingStagePanel
+          isOpen={isMatchingOpen}
+          players={matchingPlayers}
+          gameUrl={typeof window !== "undefined" ? window.location.href : ""}
+          onAbort={handleAbort}
+        />
+
         <div
-          className="flex flex-col"
+          className="flex-1 py-4 px-4"
           style={{
-            width: `${boardContainerWidth}rem`,
+            display: "grid",
+            gridTemplateColumns: `${boardContainerWidth}rem ${rightColumnMaxWidth}rem`,
             gap: `${gap}rem`,
+            alignItems: "start",
+            justifyContent: "center",
+            margin: "0 auto",
+            width: "fit-content",
           }}
         >
-          {/* Top Player (Opponent) Timer */}
-          {players.length > 1 && (
-            <PlayerInfo
-              player={players[1]}
-              isActive={gameTurn === players[1].playerId}
-              timeLeft={displayedTimeLeft[players[1].playerId] ?? 0}
-            />
-          )}
-
-          {/* Board Container */}
+          {/* Left Column: Timers & Board */}
           <div
-            className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
+            className="flex flex-col"
             style={{
-              minHeight: `${adjustedBoardContainerHeight}rem`,
-              height: `${adjustedBoardContainerHeight}rem`,
+              width: `${boardContainerWidth}rem`,
+              gap: `${gap}rem`,
             }}
           >
-            {/* Game Over Overlay */}
-            {gameStatus === "finished" && (
-              <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
-                <Card className="p-8 max-w-md w-full text-center space-y-6 shadow-2xl border-primary/20">
-                  <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
-                  <div>
-                    <h2 className="text-3xl font-bold mb-2">
-                      {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
-                    </h2>
-                    <p className="text-muted-foreground text-lg">{winReason}</p>
-                  </div>
-                  <div className="flex justify-center gap-4">
-                    <Button onClick={() => window.location.reload()}>
-                      Rematch
-                    </Button>
-                    <Button
-                      variant="outline"
-                      onClick={() => window.history.back()}
-                    >
-                      Exit
-                    </Button>
-                  </div>
-                </Card>
-              </div>
+            {/* Top Player (Opponent) Timer */}
+            {players.length > 1 && (
+              <PlayerInfo
+                player={players[1]}
+                isActive={gameTurn === players[1].playerId}
+                timeLeft={displayedTimeLeft[players[1].playerId] ?? 0}
+              />
             )}
 
-            <div className="absolute top-2 left-4 right-4 flex flex-col gap-2 text-sm text-muted-foreground">
-              {isLoadingConfig && (
-                <div className="flex items-center gap-2 text-xs">
-                  <AlertCircle className="w-4 h-4" />
-                  Loading game settings...
+            {/* Board Container */}
+            <div
+              className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
+              style={{
+                minHeight: `${adjustedBoardContainerHeight}rem`,
+                height: `${adjustedBoardContainerHeight}rem`,
+              }}
+            >
+              {/* Game Over Overlay */}
+              {gameStatus === "finished" && (
+                <div className="absolute inset-0 z-50 bg-background/80 backdrop-blur-sm flex items-center justify-center rounded-xl">
+                  <Card className="p-8 max-w-md w-full text-center space-y-6 shadow-2xl border-primary/20">
+                    <Trophy className="w-16 h-16 mx-auto text-yellow-500" />
+                    <div>
+                      <h2 className="text-3xl font-bold mb-2">
+                        {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
+                      </h2>
+                      <p className="text-muted-foreground text-lg">
+                        {winReason}
+                      </p>
+                    </div>
+                    <div className="flex justify-center gap-4">
+                      <Button onClick={() => window.location.reload()}>
+                        Rematch
+                      </Button>
+                      <Button
+                        variant="outline"
+                        onClick={() => window.history.back()}
+                      >
+                        Exit
+                      </Button>
+                    </div>
+                  </Card>
                 </div>
               )}
-              {loadError && (
-                <div className="flex items-center gap-2 text-xs text-amber-600">
-                  <AlertCircle className="w-4 h-4" />
-                  {loadError}
+
+              <div className="absolute top-2 left-4 right-4 flex flex-col gap-2 text-sm text-muted-foreground">
+                {isLoadingConfig && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <AlertCircle className="w-4 h-4" />
+                    Loading game settings...
+                  </div>
+                )}
+                {loadError && (
+                  <div className="flex items-center gap-2 text-xs text-amber-600">
+                    <AlertCircle className="w-4 h-4" />
+                    {loadError}
+                  </div>
+                )}
+                {thinkingPlayer && (
+                  <div className="flex items-center gap-2 text-xs">
+                    <Bot className="w-4 h-4" />
+                    {`${thinkingPlayer.name} is thinking...`}
+                  </div>
+                )}
+              </div>
+
+              <Board
+                rows={rows}
+                cols={cols}
+                pawns={boardPawns}
+                walls={boardWalls}
+                arrows={stagedArrows}
+                className="p-0"
+                maxWidth="max-w-full"
+                playerColors={playerColorsForBoard}
+                onCellClick={handleCellClick}
+                onWallClick={handleWallClick}
+                onPawnClick={handlePawnClick}
+                onPawnDragStart={
+                  interactionLocked ? undefined : handlePawnDragStart
+                }
+                onPawnDragEnd={handlePawnDragEnd}
+                onCellDrop={interactionLocked ? undefined : handleCellDrop}
+                lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
+                lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
+                draggingPawnId={draggingPawnId}
+                selectedPawnId={selectedPawnId}
+                stagedActionsCount={stagedActions.length}
+                controllablePlayerId={actionablePlayerId ?? undefined}
+              />
+
+              {/* Action messaging + staged action buttons */}
+              <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-4 w-full">
+                <div className="flex items-center text-xs text-muted-foreground min-h-[1.25rem] justify-self-start">
+                  {(actionError || selectedPawn) && (
+                    <>
+                      <AlertCircle
+                        className={`w-4 h-4 mr-2 ${
+                          actionError ? "text-red-500" : "text-muted-foreground"
+                        }`}
+                      />
+                      <span
+                        className={actionError ? "text-red-500" : undefined}
+                      >
+                        {actionError
+                          ? actionError
+                          : selectedPawn
+                            ? `Selected ${selectedPawn.type} (${selectedPawn.cell.toNotation(rows)})`
+                            : null}
+                      </span>
+                    </>
+                  )}
                 </div>
-              )}
-              {thinkingPlayer && (
-                <div className="flex items-center gap-2 text-xs">
-                  <Bot className="w-4 h-4" />
-                  {`${thinkingPlayer.name} is thinking...`}
+                <div className="flex gap-3 justify-center">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={clearStagedActions}
+                    disabled={stagedActions.length === 0}
+                  >
+                    Clear staged actions
+                  </Button>
+                  <Button
+                    size="sm"
+                    onClick={() => commitStagedActions()}
+                    disabled={
+                      gameState?.status !== "playing" ||
+                      gameState?.turn !== activeLocalPlayerId
+                    }
+                  >
+                    Finish move
+                  </Button>
                 </div>
-              )}
+                <div />
+              </div>
             </div>
 
-            <Board
-              rows={rows}
-              cols={cols}
-              pawns={boardPawns}
-              walls={boardWalls}
-              arrows={stagedArrows}
-              className="p-0"
-              maxWidth="max-w-full"
-              playerColors={playerColorsForBoard}
-              onCellClick={handleCellClick}
-              onWallClick={handleWallClick}
-              onPawnClick={handlePawnClick}
-              onPawnDragStart={
-                interactionLocked ? undefined : handlePawnDragStart
-              }
-              onPawnDragEnd={handlePawnDragEnd}
-              onCellDrop={interactionLocked ? undefined : handleCellDrop}
-              lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
-              lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
-              draggingPawnId={draggingPawnId}
-              selectedPawnId={selectedPawnId}
-              stagedActionsCount={stagedActions.length}
-              controllablePlayerId={activeLocalPlayerId ?? undefined}
-            />
+            {/* Bottom Player (You) Timer */}
+            {players.length > 0 && (
+              <PlayerInfo
+                player={players[0]}
+                isActive={gameTurn === players[0].playerId}
+                timeLeft={displayedTimeLeft[players[0].playerId] ?? 0}
+              />
+            )}
+          </div>
 
-            {/* Action messaging + staged action buttons */}
-            <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-4 w-full">
-              <div className="flex items-center text-xs text-muted-foreground min-h-[1.25rem] justify-self-start">
-                {(actionError || selectedPawn) && (
+          {/* Right Column: Info, Actions & Chat */}
+          <div
+            className="flex flex-col"
+            style={{
+              gap: `${gap}rem`,
+              maxWidth: `${rightColumnMaxWidth}rem`,
+            }}
+          >
+            <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-2">
+                  <Swords className="w-4 h-4 text-muted-foreground" />
+                  <span className="font-medium capitalize">
+                    {config?.variant ?? DEFAULT_CONFIG.variant}
+                  </span>
+                </div>
+                <Badge variant={config?.rated ? "default" : "secondary"}>
+                  {config?.rated ? "Rated" : "Casual"}
+                </Badge>
+              </div>
+              <div className="flex items-center justify-between text-sm text-muted-foreground">
+                <div className="flex items-center gap-2">
+                  <Clock className="w-4 h-4" />
+                  <span className="capitalize">
+                    {config?.timeControl ?? DEFAULT_CONFIG.timeControl}
+                  </span>
+                </div>
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  className="h-6 w-6"
+                  onClick={() => setSoundEnabled((prev) => !prev)}
+                >
+                  {soundEnabled ? (
+                    <Volume2 className="w-4 h-4" />
+                  ) : (
+                    <VolumeX className="w-4 h-4" />
+                  )}
+                </Button>
+              </div>
+            </Card>
+
+            {interactionLocked && (
+              <Alert>
+                <AlertCircle className="h-4 w-4" />
+                <AlertDescription className="space-y-1">
+                  {unsupportedPlayers
+                    .map((type) => PLACEHOLDER_COPY[type])
+                    .filter(Boolean)
+                    .map((text, idx) => (
+                      <div key={`${text}-${idx}`}>{text}</div>
+                    ))}
+                </AlertDescription>
+              </Alert>
+            )}
+
+            <Card className="p-3 bg-card/50 backdrop-blur">
+              <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-2">
+                {incomingSection}
+              </div>
+              <div className="grid grid-cols-2 gap-2">
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  size="sm"
+                  onClick={handleStartResign}
+                  disabled={actionButtonsDisabled}
+                >
+                  <Flag className="w-4 h-4" /> Resign
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  size="sm"
+                  onClick={handleOfferDraw}
+                  disabled={actionButtonsDisabled || Boolean(pendingDrawOffer)}
+                >
+                  <Handshake className="w-4 h-4" /> Draw
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  size="sm"
+                  onClick={handleRequestTakeback}
+                  disabled={
+                    actionButtonsDisabled ||
+                    Boolean(pendingTakebackRequest) ||
+                    !hasTakebackHistory
+                  }
+                >
+                  <RotateCcw className="w-4 h-4" /> Takeback
+                </Button>
+                <Button
+                  variant="outline"
+                  className="w-full justify-start gap-2"
+                  size="sm"
+                  onClick={handleGiveTime}
+                  disabled={actionButtonsDisabled}
+                >
+                  <Timer className="w-4 h-4" /> Give time
+                </Button>
+              </div>
+              <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-1.5">
+                {outgoingSection}
+              </div>
+            </Card>
+
+            <Card
+              className="flex flex-col overflow-hidden bg-card/50 backdrop-blur"
+              style={{
+                height: `${adjustedChatCardHeight}rem`,
+                minHeight: `${adjustedChatCardHeight}rem`,
+              }}
+            >
+              <div className="flex border-b flex-shrink-0">
+                <button
+                  className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                    activeTab === "history"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setActiveTab("history")}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <History className="w-4 h-4" />
+                    Moves
+                  </div>
+                </button>
+                <button
+                  className={`flex-1 py-3 text-sm font-medium transition-colors ${
+                    activeTab === "chat"
+                      ? "border-b-2 border-primary text-primary"
+                      : "text-muted-foreground hover:text-foreground"
+                  }`}
+                  onClick={() => setActiveTab("chat")}
+                >
+                  <div className="flex items-center justify-center gap-2">
+                    <MessageSquare className="w-4 h-4" />
+                    Chat
+                  </div>
+                </button>
+              </div>
+
+              <div className="flex-1 overflow-hidden relative flex flex-col">
+                {activeTab === "chat" ? (
                   <>
-                    <AlertCircle
-                      className={`w-4 h-4 mr-2 ${
-                        actionError ? "text-red-500" : "text-muted-foreground"
-                      }`}
-                    />
-                    <span className={actionError ? "text-red-500" : undefined}>
-                      {actionError
-                        ? actionError
-                        : selectedPawn
-                          ? `Selected ${selectedPawn.type} (${selectedPawn.cell.toNotation(rows)})`
-                          : null}
-                    </span>
+                    <div className="flex p-2 gap-1 bg-muted/30 flex-shrink-0">
+                      {(["game", "team", "audience"] as const).map(
+                        (channel) => (
+                          <button
+                            key={channel}
+                            onClick={() => setChatChannel(channel)}
+                            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
+                              chatChannel === channel
+                                ? "bg-primary text-primary-foreground"
+                                : "hover:bg-muted text-muted-foreground"
+                            }`}
+                          >
+                            {channel.charAt(0).toUpperCase() + channel.slice(1)}
+                          </button>
+                        )
+                      )}
+                    </div>
+                    <ScrollArea className="flex-1 p-4">
+                      <div className="space-y-3">
+                        {messages
+                          .filter(
+                            (message) =>
+                              message.channel === chatChannel ||
+                              message.isSystem
+                          )
+                          .map((message) => (
+                            <div
+                              key={message.id}
+                              className={`flex flex-col ${
+                                message.sender === "You"
+                                  ? "items-end"
+                                  : "items-start"
+                              }`}
+                            >
+                              {!message.isSystem && (
+                                <span className="text-[10px] text-muted-foreground mb-1">
+                                  {message.sender}
+                                </span>
+                              )}
+                              <div
+                                className={`px-3 py-2 rounded-lg text-sm max-w-[85%] ${
+                                  message.isSystem
+                                    ? "bg-muted text-muted-foreground text-center w-full italic"
+                                    : message.sender === "You"
+                                      ? "bg-primary text-primary-foreground"
+                                      : "bg-muted"
+                                }`}
+                              >
+                                {message.text}
+                              </div>
+                            </div>
+                          ))}
+                      </div>
+                    </ScrollArea>
+                    <form
+                      onSubmit={handleSendMessage}
+                      className="p-3 border-t bg-background/50 flex-shrink-0"
+                    >
+                      <Input
+                        value={chatInput}
+                        onChange={(event) => setChatInput(event.target.value)}
+                        placeholder={`Message ${chatChannel}...`}
+                        className="bg-background"
+                      />
+                    </form>
+                  </>
+                ) : (
+                  <>
+                    <ScrollArea className="flex-1 p-0">
+                      <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
+                        {formattedHistory.map((row, index) => (
+                          <div
+                            key={index}
+                            className={`contents group ${
+                              index % 2 === 1 ? "bg-muted/30" : ""
+                            }`}
+                          >
+                            <div className="p-2 text-muted-foreground text-center border-r">
+                              {row.num}.
+                            </div>
+                            <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
+                              {row.white}
+                            </button>
+                            <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
+                              {row.black}
+                            </button>
+                          </div>
+                        ))}
+                      </div>
+                    </ScrollArea>
+                    <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
+                      <Button variant="ghost" size="icon" className="h-8">
+                        <ChevronsLeft className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8">
+                        <ChevronLeft className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8">
+                        <ChevronRight className="w-4 h-4" />
+                      </Button>
+                      <Button variant="ghost" size="icon" className="h-8">
+                        <ChevronsRight className="w-4 h-4" />
+                      </Button>
+                    </div>
                   </>
                 )}
               </div>
-              <div className="flex gap-3 justify-center">
-                <Button
-                  size="sm"
-                  variant="outline"
-                  onClick={clearStagedActions}
-                  disabled={stagedActions.length === 0}
-                >
-                  Clear staged actions
-                </Button>
-                <Button
-                  size="sm"
-                  onClick={() => commitStagedActions()}
-                  disabled={
-                    gameState?.status !== "playing" ||
-                    gameState?.turn !== activeLocalPlayerId
-                  }
-                >
-                  Finish move
-                </Button>
-              </div>
-              <div />
-            </div>
+            </Card>
           </div>
-
-          {/* Bottom Player (You) Timer */}
-          {players.length > 0 && (
-            <PlayerInfo
-              player={players[0]}
-              isActive={gameTurn === players[0].playerId}
-              timeLeft={displayedTimeLeft[players[0].playerId] ?? 0}
-            />
-          )}
-        </div>
-
-        {/* Right Column: Info, Actions & Chat */}
-        <div
-          className="flex flex-col"
-          style={{
-            gap: `${gap}rem`,
-            maxWidth: `${rightColumnMaxWidth}rem`,
-          }}
-        >
-          <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-2">
-                <Swords className="w-4 h-4 text-muted-foreground" />
-                <span className="font-medium capitalize">
-                  {config?.variant ?? DEFAULT_CONFIG.variant}
-                </span>
-              </div>
-              <Badge variant={config?.rated ? "default" : "secondary"}>
-                {config?.rated ? "Rated" : "Casual"}
-              </Badge>
-            </div>
-            <div className="flex items-center justify-between text-sm text-muted-foreground">
-              <div className="flex items-center gap-2">
-                <Clock className="w-4 h-4" />
-                <span className="capitalize">
-                  {config?.timeControl ?? DEFAULT_CONFIG.timeControl}
-                </span>
-              </div>
-              <Button
-                variant="ghost"
-                size="icon"
-                className="h-6 w-6"
-                onClick={() => setSoundEnabled((prev) => !prev)}
-              >
-                {soundEnabled ? (
-                  <Volume2 className="w-4 h-4" />
-                ) : (
-                  <VolumeX className="w-4 h-4" />
-                )}
-              </Button>
-            </div>
-          </Card>
-
-          {interactionLocked && (
-            <Alert>
-              <AlertCircle className="h-4 w-4" />
-              <AlertDescription className="space-y-1">
-                {unsupportedPlayers
-                  .map((type) => PLACEHOLDER_COPY[type])
-                  .filter(Boolean)
-                  .map((text, idx) => (
-                    <div key={`${text}-${idx}`}>{text}</div>
-                  ))}
-              </AlertDescription>
-            </Alert>
-          )}
-
-          <Card className="p-3 bg-card/50 backdrop-blur">
-            <div className="grid grid-cols-2 gap-2">
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                size="sm"
-                onClick={() => setActionError("Resign not wired up yet.")}
-              >
-                <Flag className="w-4 h-4" /> Resign
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                size="sm"
-                onClick={() => setActionError("Draw offer not supported yet.")}
-              >
-                <Handshake className="w-4 h-4" /> Draw
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                size="sm"
-                onClick={() =>
-                  setActionError("Takebacks will be available soon.")
-                }
-              >
-                <RotateCcw className="w-4 h-4" /> Takeback
-              </Button>
-              <Button
-                variant="outline"
-                className="w-full justify-start gap-2"
-                size="sm"
-                onClick={() =>
-                  setActionError("Clock adjustments aren't implemented.")
-                }
-              >
-                <Timer className="w-4 h-4" /> Give time
-              </Button>
-            </div>
-          </Card>
-
-          <Card
-            className="flex flex-col overflow-hidden bg-card/50 backdrop-blur"
-            style={{
-              height: `${adjustedChatCardHeight}rem`,
-              minHeight: `${adjustedChatCardHeight}rem`,
-            }}
-          >
-            <div className="flex border-b flex-shrink-0">
-              <button
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  activeTab === "history"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setActiveTab("history")}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <History className="w-4 h-4" />
-                  Moves
-                </div>
-              </button>
-              <button
-                className={`flex-1 py-3 text-sm font-medium transition-colors ${
-                  activeTab === "chat"
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setActiveTab("chat")}
-              >
-                <div className="flex items-center justify-center gap-2">
-                  <MessageSquare className="w-4 h-4" />
-                  Chat
-                </div>
-              </button>
-            </div>
-
-            <div className="flex-1 overflow-hidden relative flex flex-col">
-              {activeTab === "chat" ? (
-                <>
-                  <div className="flex p-2 gap-1 bg-muted/30 flex-shrink-0">
-                    {(["game", "team", "audience"] as const).map((channel) => (
-                      <button
-                        key={channel}
-                        onClick={() => setChatChannel(channel)}
-                        className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                          chatChannel === channel
-                            ? "bg-primary text-primary-foreground"
-                            : "hover:bg-muted text-muted-foreground"
-                        }`}
-                      >
-                        {channel.charAt(0).toUpperCase() + channel.slice(1)}
-                      </button>
-                    ))}
-                  </div>
-                  <ScrollArea className="flex-1 p-4">
-                    <div className="space-y-3">
-                      {messages
-                        .filter(
-                          (message) =>
-                            message.channel === chatChannel || message.isSystem
-                        )
-                        .map((message) => (
-                          <div
-                            key={message.id}
-                            className={`flex flex-col ${
-                              message.sender === "You"
-                                ? "items-end"
-                                : "items-start"
-                            }`}
-                          >
-                            {!message.isSystem && (
-                              <span className="text-[10px] text-muted-foreground mb-1">
-                                {message.sender}
-                              </span>
-                            )}
-                            <div
-                              className={`px-3 py-2 rounded-lg text-sm max-w-[85%] ${
-                                message.isSystem
-                                  ? "bg-muted text-muted-foreground text-center w-full italic"
-                                  : message.sender === "You"
-                                    ? "bg-primary text-primary-foreground"
-                                    : "bg-muted"
-                              }`}
-                            >
-                              {message.text}
-                            </div>
-                          </div>
-                        ))}
-                    </div>
-                  </ScrollArea>
-                  <form
-                    onSubmit={handleSendMessage}
-                    className="p-3 border-t bg-background/50 flex-shrink-0"
-                  >
-                    <Input
-                      value={chatInput}
-                      onChange={(event) => setChatInput(event.target.value)}
-                      placeholder={`Message ${chatChannel}...`}
-                      className="bg-background"
-                    />
-                  </form>
-                </>
-              ) : (
-                <>
-                  <ScrollArea className="flex-1 p-0">
-                    <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
-                      {formattedHistory.map((row, index) => (
-                        <div
-                          key={index}
-                          className={`contents group ${
-                            index % 2 === 1 ? "bg-muted/30" : ""
-                          }`}
-                        >
-                          <div className="p-2 text-muted-foreground text-center border-r">
-                            {row.num}.
-                          </div>
-                          <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
-                            {row.white}
-                          </button>
-                          <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
-                            {row.black}
-                          </button>
-                        </div>
-                      ))}
-                    </div>
-                  </ScrollArea>
-                  <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
-                    <Button variant="ghost" size="icon" className="h-8">
-                      <ChevronsLeft className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8">
-                      <ChevronLeft className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8">
-                      <ChevronRight className="w-4 h-4" />
-                    </Button>
-                    <Button variant="ghost" size="icon" className="h-8">
-                      <ChevronsRight className="w-4 h-4" />
-                    </Button>
-                  </div>
-                </>
-              )}
-            </div>
-          </Card>
         </div>
       </div>
-    </div>
+    </>
   );
 }
 
