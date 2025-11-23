@@ -1,7 +1,7 @@
 "use client";
 
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent } from "react";
-import { useMemo, useCallback } from "react";
+import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
 import {
@@ -79,52 +79,6 @@ type PillarColors = Record<EdgeColorKey, string | null>;
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
-interface AxisPercents {
-  baseCell: number;
-  cellWithGap: number;
-  gapPercent: number;
-}
-
-const computeAxisPercents = (
-  count: number,
-  maxCellSize: number,
-  gapSize: number
-): AxisPercents => {
-  if (count <= 0) {
-    return { baseCell: 0, cellWithGap: 0, gapPercent: 0 };
-  }
-
-  const totalGap = Math.max(0, count - 1) * gapSize;
-  const totalSpan = count * maxCellSize + totalGap;
-
-  if (totalSpan === 0) {
-    return { baseCell: 100 / count, cellWithGap: 0, gapPercent: 0 };
-  }
-
-  return {
-    baseCell: 100 / count,
-    cellWithGap: (maxCellSize / totalSpan) * 100,
-    gapPercent: count > 1 ? (gapSize / totalSpan) * 100 : 0,
-  };
-};
-
-const getCellCenterPercent = (
-  index: number,
-  axis: AxisPercents,
-  includeGaps: boolean
-) => {
-  if (axis.baseCell === 0) return 0;
-
-  const cellPercent = includeGaps ? axis.cellWithGap : axis.baseCell;
-  const base = (index + 0.5) * cellPercent;
-
-  if (!includeGaps || axis.gapPercent === 0) {
-    return base;
-  }
-
-  return base + index * axis.gapPercent;
-};
-
 const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
   const vertical = new Map<string, PlayerWall>();
   const horizontal = new Map<string, PlayerWall>();
@@ -181,12 +135,6 @@ const getPillarColors = (
   };
 };
 
-const computeGapPosition = (
-  index: number,
-  cellSize: string,
-  gapValue: string
-): string => `calc(${index} * (${cellSize} + ${gapValue}) - ${gapValue})`;
-
 const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
   const size = 100;
   return {
@@ -195,67 +143,6 @@ const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
     width: size,
     height: size,
   };
-};
-
-interface CreatePillarElementsParams {
-  rows: number;
-  cols: number;
-  cellSize: string;
-  gapValue: string;
-  wallMaps: WallMaps;
-  resolveColor: (wall: PlayerWall) => string;
-}
-
-const createPillarElements = ({
-  rows,
-  cols,
-  cellSize,
-  gapValue,
-  wallMaps,
-  resolveColor,
-}: CreatePillarElementsParams): ReactNode[] => {
-  if (rows < 2 || cols < 2) {
-    return [];
-  }
-
-  const elements: ReactNode[] = [];
-
-  for (let rowIndex = 1; rowIndex < rows; rowIndex += 1) {
-    for (let colIndex = 1; colIndex < cols; colIndex += 1) {
-      const colors = getPillarColors(
-        rowIndex,
-        colIndex,
-        wallMaps,
-        resolveColor
-      );
-      const boundingBox = buildPillarBoundingBox(rowIndex, colIndex);
-      const pillar = new StyledPillar({ boundingBox, colors });
-      const style: CSSProperties = {
-        position: "absolute",
-        width: gapValue,
-        height: gapValue,
-        top: computeGapPosition(rowIndex, cellSize, gapValue),
-        left: computeGapPosition(colIndex, cellSize, gapValue),
-        pointerEvents: "none",
-        zIndex: 12,
-      };
-
-      elements.push(
-        <div key={`pillar-${rowIndex}-${colIndex}`} style={style}>
-          <svg
-            width="100%"
-            height="100%"
-            viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
-            preserveAspectRatio="none"
-          >
-            {pillar.render()}
-          </svg>
-        </div>
-      );
-    }
-  }
-
-  return elements;
 };
 
 export function Board({
@@ -298,32 +185,70 @@ export function Board({
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
-  const widthPercents = computeAxisPercents(cols, maxCellSize, gapSize);
-  const heightPercents = computeAxisPercents(rows, maxCellSize, gapSize);
-  const isStraightMove = (
-    fromRow: number,
-    fromCol: number,
-    toRow: number,
-    toCol: number
-  ) => fromRow === toRow || fromCol === toCol;
+  const gridRef = useRef<HTMLDivElement | null>(null);
+  const [gridMetrics, setGridMetrics] = useState({
+    width: 0,
+    height: 0,
+    gapX: 0,
+    gapY: 0,
+  });
+
+  useEffect(() => {
+    const node = gridRef.current;
+    if (!node) {
+      return;
+    }
+
+    const updateMetrics = () => {
+      const rect = node.getBoundingClientRect();
+      const computedStyle = window.getComputedStyle(node);
+      const gapX =
+        parseFloat(computedStyle.columnGap || computedStyle.gap || "0") || 0;
+      const gapY =
+        parseFloat(computedStyle.rowGap || computedStyle.gap || "0") || 0;
+
+      setGridMetrics({
+        width: rect.width,
+        height: rect.height,
+        gapX,
+        gapY,
+      });
+    };
+
+    updateMetrics();
+
+    if (typeof ResizeObserver === "undefined") {
+      window.addEventListener("resize", updateMetrics);
+      return () => {
+        window.removeEventListener("resize", updateMetrics);
+      };
+    }
+
+    const resizeObserver = new ResizeObserver(() => updateMetrics());
+    resizeObserver.observe(node);
+    return () => resizeObserver.disconnect();
+  }, [rows, cols]);
+
+  const cellWidthPx = useMemo(() => {
+    if (cols <= 0) return 0;
+    const widthSansGaps =
+      gridMetrics.width - Math.max(0, cols - 1) * gridMetrics.gapX;
+    if (widthSansGaps <= 0) return 0;
+    return widthSansGaps / cols;
+  }, [cols, gridMetrics.width, gridMetrics.gapX]);
+
+  const cellHeightPx = useMemo(() => {
+    if (rows <= 0) return 0;
+    const heightSansGaps =
+      gridMetrics.height - Math.max(0, rows - 1) * gridMetrics.gapY;
+    if (heightSansGaps <= 0) return 0;
+    return heightSansGaps / rows;
+  }, [rows, gridMetrics.height, gridMetrics.gapY]);
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
   const resolveWallColor = useCallback(
     (wall: PlayerWall) => getWallColor(wall, playerColors),
     [playerColors]
-  );
-
-  const pillars = useMemo(
-    () =>
-      createPillarElements({
-        rows,
-        cols,
-        cellSize,
-        gapValue,
-        wallMaps,
-        resolveColor: resolveWallColor,
-      }),
-    [rows, cols, cellSize, gapValue, wallMaps, resolveWallColor]
   );
 
   // Get pawns for a cell
@@ -389,80 +314,121 @@ export function Board({
     cols,
   ]);
 
+  const getArrowScale = (
+    fromRow: number,
+    fromCol: number,
+    toRow: number,
+    toCol: number
+  ) => {
+    const rowDelta = Math.abs(toRow - fromRow);
+    const colDelta = Math.abs(toCol - fromCol);
+
+    if (
+      (rowDelta === 1 && colDelta === 0) ||
+      (rowDelta === 0 && colDelta === 1)
+    ) {
+      return 0.4;
+    }
+
+    if (
+      (rowDelta === 2 && colDelta === 0) ||
+      (rowDelta === 0 && colDelta === 2)
+    ) {
+      return 0.6;
+    }
+
+    if (rowDelta === colDelta && rowDelta > 0) {
+      return 0.45;
+    }
+
+    return 0.85;
+  };
+
+  const shortenLineBetweenCenters = (
+    start: { x: number; y: number },
+    end: { x: number; y: number },
+    scale: number
+  ) => {
+    const boundedScale = Math.max(0, Math.min(scale, 1));
+    if (boundedScale === 1) {
+      return { start, end };
+    }
+
+    const dx = end.x - start.x;
+    const dy = end.y - start.y;
+    const offsetRatio = (1 - boundedScale) / 2;
+    const offsetX = dx * offsetRatio;
+    const offsetY = dy * offsetRatio;
+
+    return {
+      start: { x: start.x + offsetX / 3, y: start.y + offsetY / 3 },
+      end: { x: end.x - offsetX, y: end.y - offsetY },
+    };
+  };
+
   // Render last move arrows (subtle)
   const renderLastMoveArrows = () => {
     const moves = lastMove ? [lastMove] : (lastMoves ?? []);
-    if (moves.length === 0) return null;
+    if (
+      moves.length === 0 ||
+      gridMetrics.width === 0 ||
+      gridMetrics.height === 0
+    ) {
+      return null;
+    }
 
     return moves.map((move: LastMove, index: number) => {
-      const useGapAware = isStraightMove(
-        move.fromRow,
-        move.fromCol,
-        move.toRow,
-        move.toCol
+      const { strokeWidth, markerSize, markerRef } = arrowVisuals;
+      const fromCenter = getCellCenterPosition(move.fromRow, move.fromCol);
+      const toCenter = getCellCenterPosition(move.toRow, move.toCol);
+      const { start, end } = shortenLineBetweenCenters(
+        { x: fromCenter.x, y: fromCenter.y },
+        { x: toCenter.x, y: toCenter.y },
+        getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol)
       );
 
-      const fromX = getCellCenterPercent(
-        move.fromCol,
-        widthPercents,
-        useGapAware
-      );
-      const toX = getCellCenterPercent(move.toCol, widthPercents, useGapAware);
-      const fromY = getCellCenterPercent(
-        move.fromRow,
-        heightPercents,
-        useGapAware
-      );
-      const toY = getCellCenterPercent(move.toRow, heightPercents, useGapAware);
-
-      // Calculate direction vector
-      const dx = toX - fromX;
-      const dy = toY - fromY;
-      const length = Math.sqrt(dx * dx + dy * dy);
-
-      // Shorten the line to prevent shaft showing through arrowhead
-      // Arrowhead is about 0.8% of the viewBox (smaller now), so shorten by that amount
-      const shortenAmount = 3;
-      const shortenRatio =
-        length > shortenAmount ? (length - shortenAmount) / length : 0;
-      const adjustedToX = fromX + dx * shortenRatio;
-      const adjustedToY = fromY + dy * shortenRatio;
-
-      // Get arrow color from player color, or use default gray
       const arrowColor = move.playerColor
         ? colorHexMap[move.playerColor] || "#94a3b8"
         : "#94a3b8";
-      const strokeWidth = 1.1;
-      const opacity = 0.3; // More subtle than calculated arrows
+      const markerId = `arrowhead-last-move-${index}`;
 
       return (
         <svg
           key={`last-move-arrow-${index}`}
           className="absolute inset-0 pointer-events-none"
-          style={{ zIndex: 3, opacity }}
-          viewBox="0 0 100 100"
+          style={{ zIndex: 3, opacity: 0.3 }}
+          viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
+            gridMetrics.height,
+            1
+          )}`}
           preserveAspectRatio="none"
         >
           <defs>
             <marker
-              id={`arrowhead-last-move-${index}`}
-              refX="2"
-              refY="1.5"
+              id={markerId}
+              markerWidth={markerSize}
+              markerHeight={markerSize}
+              refX={markerRef}
+              refY={markerRef}
               orient="auto"
             >
-              <polygon points="0 0, 3 1.5, 0 3" fill={arrowColor} />
+              <polygon
+                points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
+                fill={arrowColor}
+                opacity={0.8}
+              />
             </marker>
           </defs>
           <line
-            x1={fromX}
-            y1={fromY}
-            x2={adjustedToX}
-            y2={adjustedToY}
+            x1={start.x}
+            y1={start.y}
+            x2={end.x}
+            y2={end.y}
             stroke={arrowColor}
             strokeWidth={strokeWidth}
             strokeLinecap="round"
             strokeLinejoin="round"
-            markerEnd={`url(#arrowhead-last-move-${index})`}
+            markerEnd={`url(#${markerId})`}
           />
         </svg>
       );
@@ -489,84 +455,229 @@ export function Board({
 
   // Render arrow SVG
   const renderArrow = (arrow: Arrow, index: number) => {
-    // Calculate center positions of cells
-    const useGapAware = isStraightMove(
-      arrow.from.row,
-      arrow.from.col,
-      arrow.to.row,
-      arrow.to.col
-    );
-    const fromX = getCellCenterPercent(
-      arrow.from.col,
-      widthPercents,
-      useGapAware
-    );
-    const toX = getCellCenterPercent(arrow.to.col, widthPercents, useGapAware);
-    const fromY = getCellCenterPercent(
-      arrow.from.row,
-      heightPercents,
-      useGapAware
-    );
-    const toY = getCellCenterPercent(arrow.to.row, heightPercents, useGapAware);
+    if (gridMetrics.width === 0 || gridMetrics.height === 0) {
+      return null;
+    }
 
-    // Calculate direction vector for shortening
-    const dx = toX - fromX;
-    const dy = toY - fromY;
-    const length = Math.sqrt(dx * dx + dy * dy);
-
-    // Shorten the line to prevent shaft showing through arrowhead
-    // Using same shortening as last move arrow
-    const shortenAmount = 3;
-    const shortenRatio =
-      length > shortenAmount ? (length - shortenAmount) / length : 0;
-    const adjustedToX = fromX + dx * shortenRatio;
-    const adjustedToY = fromY + dy * shortenRatio;
+    const fromCenter = getCellCenterPosition(arrow.from.row, arrow.from.col);
+    const toCenter = getCellCenterPosition(arrow.to.row, arrow.to.col);
+    const { start, end } = shortenLineBetweenCenters(
+      { x: fromCenter.x, y: fromCenter.y },
+      { x: toCenter.x, y: toCenter.y },
+      getArrowScale(arrow.from.row, arrow.from.col, arrow.to.row, arrow.to.col)
+    );
 
     const arrowColor = getArrowColor(arrow);
-    const strokeWidth = 1.1;
+    const { strokeWidth, markerSize, markerRef } = arrowVisuals;
     const opacity = arrow.type === "calculated" ? 0.5 : 0.8;
     const dashArray = arrow.type === "calculated" ? "4,2" : "none";
+    const markerId = `arrowhead-${arrow.type}-${index}`;
 
     return (
       <svg
         key={`arrow-${arrow.from.row}-${arrow.from.col}-${arrow.to.row}-${arrow.to.col}-${index}`}
         className="absolute inset-0 pointer-events-none"
         style={{ zIndex: arrow.type === "calculated" ? 1 : 5 }}
-        viewBox="0 0 100 100"
+        viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
+          gridMetrics.height,
+          1
+        )}`}
         preserveAspectRatio="none"
       >
         <defs>
           <marker
-            id={`arrowhead-${arrow.type}-${index}`}
-            markerWidth="3"
-            markerHeight="3"
-            refX="2"
-            refY="1.5"
+            id={markerId}
+            markerWidth={markerSize}
+            markerHeight={markerSize}
+            refX={markerRef}
+            refY={markerRef}
             orient="auto"
           >
             <polygon
-              points="0 0, 3 1.5, 0 3"
+              points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
               fill={arrowColor}
               opacity={opacity}
             />
           </marker>
         </defs>
         <line
-          x1={fromX}
-          y1={fromY}
-          x2={adjustedToX}
-          y2={adjustedToY}
+          x1={start.x}
+          y1={start.y}
+          x2={end.x}
+          y2={end.y}
           stroke={arrowColor}
           strokeWidth={strokeWidth}
           opacity={opacity}
           strokeDasharray={dashArray}
           strokeLinecap="round"
           strokeLinejoin="round"
-          markerEnd={`url(#arrowhead-${arrow.type}-${index})`}
+          markerEnd={`url(#${markerId})`}
         />
       </svg>
     );
   };
+
+  const getCellRect = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      if (cellWidthPx === 0 || cellHeightPx === 0) {
+        return null;
+      }
+      const left = colIndex * (cellWidthPx + gridMetrics.gapX);
+      const top = rowIndex * (cellHeightPx + gridMetrics.gapY);
+      return {
+        left,
+        top,
+        right: left + cellWidthPx,
+        bottom: top + cellHeightPx,
+        width: cellWidthPx,
+        height: cellHeightPx,
+      };
+    },
+    [cellWidthPx, cellHeightPx, gridMetrics.gapX, gridMetrics.gapY]
+  );
+
+  const getCellCenterPosition = useCallback(
+    (rowIndex: number, colIndex: number) => {
+      const rect = getCellRect(rowIndex, colIndex);
+      if (!rect) {
+        return { x: 0, y: 0, leftPercent: 0, topPercent: 0 };
+      }
+      const centerX = rect.left + rect.width / 2;
+      const centerY = rect.top + rect.height / 2;
+      const leftPercent =
+        gridMetrics.width > 0 ? (centerX / gridMetrics.width) * 100 : 0;
+      const topPercent =
+        gridMetrics.height > 0 ? (centerY / gridMetrics.height) * 100 : 0;
+
+      return { x: centerX, y: centerY, leftPercent, topPercent };
+    },
+    [getCellRect, gridMetrics.width, gridMetrics.height]
+  );
+
+  const renderMoveHighlights = useCallback(() => {
+    if (
+      validDropCells.size === 0 ||
+      gridMetrics.width === 0 ||
+      gridMetrics.height === 0
+    ) {
+      return null;
+    }
+
+    return Array.from(validDropCells).map((key) => {
+      const [rowIndex, colIndex] = key.split("-").map(Number);
+      if (Number.isNaN(rowIndex) || Number.isNaN(colIndex)) {
+        return null;
+      }
+      const { topPercent, leftPercent } = getCellCenterPosition(
+        rowIndex,
+        colIndex
+      );
+      return (
+        <span
+          key={`move-target-${key}`}
+          className="absolute bg-amber-500/80 rounded-full pointer-events-none shadow-sm"
+          style={{
+            width: "0.45rem",
+            height: "0.45rem",
+            top: `${topPercent}%`,
+            left: `${leftPercent}%`,
+            transform: "translate(-50%, -50%)",
+            zIndex: 6,
+          }}
+        />
+      );
+    });
+  }, [
+    validDropCells,
+    gridMetrics.width,
+    gridMetrics.height,
+    getCellCenterPosition,
+  ]);
+
+  const arrowVisuals = useMemo(() => {
+    const wallThickness = Math.max(
+      Math.max(gridMetrics.gapX, gridMetrics.gapY),
+      2
+    );
+    const strokeWidth = Math.max(2, wallThickness / 2);
+    const markerSize = 3;
+    return {
+      strokeWidth,
+      markerSize,
+      markerRef: markerSize / 2,
+    };
+  }, [gridMetrics.gapX, gridMetrics.gapY]);
+
+  const pillars = useMemo(() => {
+    if (
+      rows < 2 ||
+      cols < 2 ||
+      cellWidthPx === 0 ||
+      cellHeightPx === 0 ||
+      gridMetrics.width === 0 ||
+      gridMetrics.height === 0
+    ) {
+      return [];
+    }
+
+    const elements: ReactNode[] = [];
+    const gapWidth = Math.max(gridMetrics.gapX, 2);
+    const gapHeight = Math.max(gridMetrics.gapY, 2);
+
+    for (let rowIndex = 1; rowIndex < rows; rowIndex += 1) {
+      for (let colIndex = 1; colIndex < cols; colIndex += 1) {
+        const colors = getPillarColors(
+          rowIndex,
+          colIndex,
+          wallMaps,
+          resolveWallColor
+        );
+        const boundingBox = buildPillarBoundingBox(rowIndex, colIndex);
+        const pillar = new StyledPillar({ boundingBox, colors });
+        const anchorRect = getCellRect(rowIndex - 1, colIndex - 1);
+        if (!anchorRect) {
+          continue;
+        }
+
+        const style: CSSProperties = {
+          position: "absolute",
+          width: `${gapWidth}px`,
+          height: `${gapHeight}px`,
+          top: `${anchorRect.bottom}px`,
+          left: `${anchorRect.right}px`,
+          pointerEvents: "none",
+          zIndex: 12,
+        };
+
+        elements.push(
+          <div key={`pillar-${rowIndex}-${colIndex}`} style={style}>
+            <svg
+              width="100%"
+              height="100%"
+              viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
+              preserveAspectRatio="none"
+            >
+              {pillar.render()}
+            </svg>
+          </div>
+        );
+      }
+    }
+
+    return elements;
+  }, [
+    rows,
+    cols,
+    cellWidthPx,
+    cellHeightPx,
+    gridMetrics.width,
+    gridMetrics.height,
+    gridMetrics.gapX,
+    gridMetrics.gapY,
+    wallMaps,
+    resolveWallColor,
+    getCellRect,
+  ]);
 
   const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
   const maxBoardHeight = `${rows * maxCellSize + (rows - 1) * gapSize + paddingY}rem`;
@@ -783,6 +894,7 @@ export function Board({
           </div>
 
           <div
+            ref={gridRef}
             className="grid w-full relative"
             style={{
               gridTemplateColumns: `repeat(${cols}, 1fr)`,
@@ -790,52 +902,71 @@ export function Board({
             }}
           >
             {/* Wall click areas - horizontal (between rows) */}
-            {Array.from({ length: rows - 1 }, (_, rowIndex) =>
-              Array.from({ length: cols }, (_, colIndex) => (
-                <div
-                  key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
-                  className="absolute cursor-pointer hover:bg-blue-200/20"
-                  style={{
-                    width: cellSize,
-                    height: gapValue,
-                    top: `calc(${rowIndex + 1} * (${cellSize} + ${gapValue}) - ${gapValue} / 2)`,
-                    left: `calc(${colIndex} * (${cellSize} + ${gapValue}))`,
-                    transform: "translateY(-50%)",
-                    zIndex: 15,
-                  }}
-                  onClick={() =>
-                    onWallClick?.(rowIndex + 1, colIndex, "horizontal")
-                  }
-                />
-              ))
-            )}
+            {cellWidthPx > 0 &&
+              gridMetrics.gapY > 0 &&
+              Array.from({ length: rows - 1 }, (_, rowIndex) =>
+                Array.from({ length: cols }, (_, colIndex) => {
+                  const rect = getCellRect(rowIndex, colIndex);
+                  if (!rect) return null;
+                  const gapHeight = Math.max(gridMetrics.gapY, 2);
+                  return (
+                    <div
+                      key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
+                      className="absolute cursor-pointer hover:bg-blue-200/20"
+                      style={{
+                        width: `${rect.width}px`,
+                        height: `${gapHeight}px`,
+                        top: `${rect.bottom}px`,
+                        left: `${rect.left}px`,
+                        zIndex: 15,
+                      }}
+                      onClick={() =>
+                        onWallClick?.(rowIndex + 1, colIndex, "horizontal")
+                      }
+                    />
+                  );
+                })
+              )}
 
             {/* Wall click areas - vertical (between columns) */}
-            {Array.from({ length: rows }, (_, rowIndex) =>
-              Array.from({ length: cols - 1 }, (_, colIndex) => (
-                <div
-                  key={`vertical-wall-click-${rowIndex}-${colIndex}`}
-                  className="absolute cursor-pointer hover:bg-blue-200/20"
-                  style={{
-                    width: gapValue,
-                    height: cellSize,
-                    top: `calc(${rowIndex} * (${cellSize} + ${gapValue}))`,
-                    left: `calc(${colIndex + 1} * (${cellSize} + ${gapValue}) - ${gapValue} / 2)`,
-                    transform: "translateX(-50%)",
-                    zIndex: 15,
-                  }}
-                  onClick={() => onWallClick?.(rowIndex, colIndex, "vertical")}
-                />
-              ))
-            )}
+            {cellHeightPx > 0 &&
+              gridMetrics.gapX > 0 &&
+              Array.from({ length: rows }, (_, rowIndex) =>
+                Array.from({ length: cols - 1 }, (_, colIndex) => {
+                  const rect = getCellRect(rowIndex, colIndex);
+                  if (!rect) return null;
+                  const gapWidth = Math.max(gridMetrics.gapX, 2);
+                  return (
+                    <div
+                      key={`vertical-wall-click-${rowIndex}-${colIndex}`}
+                      className="absolute cursor-pointer hover:bg-blue-200/20"
+                      style={{
+                        width: `${gapWidth}px`,
+                        height: `${rect.height}px`,
+                        top: `${rect.top}px`,
+                        left: `${rect.right}px`,
+                        zIndex: 15,
+                      }}
+                      onClick={() =>
+                        onWallClick?.(rowIndex, colIndex, "vertical")
+                      }
+                    />
+                  );
+                })
+              )}
 
             {/* Render arrows */}
             {arrows.map((arrow, index) => renderArrow(arrow, index))}
             {/* Render last move arrow */}
             {renderLastMoveArrows()}
+            {/* Render move targets */}
+            {renderMoveHighlights()}
 
             {/* Render walls */}
             {walls.map((pWall, index) => {
+              if (cellWidthPx === 0 || cellHeightPx === 0) {
+                return null;
+              }
               const wall = pWall.wall;
               const [row1, col1, row2, col2] = normalizeWall(wall);
               const isHorizontal = row1 === row2;
@@ -855,32 +986,38 @@ export function Board({
               if (isHorizontal) {
                 // Vertical wall (between cells in same row, separating columns)
                 const minCol = Math.min(col1, col2);
-
-                // center of the gap between col minCol and minCol + 1
-                const wallCenterX = `calc((${minCol + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
+                const rect = getCellRect(row1, minCol);
+                if (!rect) {
+                  return null;
+                }
+                const wallCenterX =
+                  rect.left + rect.width + gridMetrics.gapX / 2;
+                const thickness = Math.max(gridMetrics.gapX, 2);
 
                 style = {
                   ...style,
-                  height: `calc(${cellSize} + 2px)`, // Extend slightly to prevent gaps
-                  width: gapValue,
-                  top: `calc(${row1} * (${cellSize} + ${gapValue}) - 1px)`,
-                  left: wallCenterX,
+                  height: `${rect.height + 2}px`, // Extend slightly to prevent gaps
+                  width: `${thickness}px`,
+                  top: `${rect.top - 1}px`,
+                  left: `${wallCenterX}px`,
                   transform: "translateX(-50%)",
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
                 // Horizontal wall (between cells in same column, separating rows)
                 const minRow = Math.min(row1, row2);
-
-                // center of the gap between row minRow and minRow + 1
-                const wallCenterY = `calc((${minRow + 1} * (${cellSize} + ${gapValue})) - ${gapValue} / 2)`;
+                const wallCenterY =
+                  (minRow + 1) * (cellHeightPx + gridMetrics.gapY) -
+                  gridMetrics.gapY / 2;
+                const thickness = Math.max(gridMetrics.gapY, 2);
+                const left = col1 * (cellWidthPx + gridMetrics.gapX) - 1;
 
                 style = {
                   ...style,
-                  width: `calc(${cellSize} + 2px)`, // Extend slightly to prevent gaps
-                  height: gapValue,
-                  left: `calc(${col1} * (${cellSize} + ${gapValue}) - 1px)`,
-                  top: wallCenterY,
+                  width: `${cellWidthPx + 2}px`, // Extend slightly to prevent gaps
+                  height: `${thickness}px`,
+                  left: `${left}px`,
+                  top: `${wallCenterY}px`,
                   transform: "translateY(-50%)",
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
@@ -911,19 +1048,11 @@ export function Board({
               row.map(({ col: colIndex }) => {
                 const cellPawns = getPawnsForCell(rowIndex, colIndex);
                 const isLight = (rowIndex + colIndex) % 2 === 0;
-                const isValidDrop = validDropCells.has(
-                  `${rowIndex}-${colIndex}`
-                );
-
                 return (
                   <div
                     key={`${rowIndex}-${colIndex}`}
                     className={`aspect-square border border-amber-400 flex items-center justify-center relative cursor-pointer hover:bg-amber-300 ${
                       isLight ? "bg-amber-200" : "bg-amber-100"
-                    } ${
-                      isValidDrop
-                        ? "ring-2 ring-amber-400 ring-offset-1 bg-amber-200/60 dark:bg-amber-900/30"
-                        : ""
                     }`}
                     onClick={() => onCellClick?.(rowIndex, colIndex)}
                     onDragOver={(event) => {
