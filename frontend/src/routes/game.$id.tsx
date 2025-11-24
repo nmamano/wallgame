@@ -27,6 +27,7 @@ import {
   Swords,
   AlertCircle,
 } from "lucide-react";
+import { colorFilterMap } from "@/lib/player-colors";
 import { Board, type BoardProps, type Arrow } from "@/components/board";
 import {
   MatchingStagePanel,
@@ -380,7 +381,7 @@ function GamePage() {
   const [stagedActions, setStagedActions] = useState<Action[]>([]);
   const [matchParticipants, setMatchParticipants] = useState<PlayerType[]>([]);
   const [matchScore, setMatchScore] = useState<number[]>([]);
-  const [matchDraws, setMatchDraws] = useState(0);
+  const [, setMatchDraws] = useState(0);
   const [rematchState, setRematchState] = useState<RematchState>({
     status: "idle",
     responses: { 1: "pending", 2: "pending" },
@@ -2088,6 +2089,13 @@ function GamePage() {
     [matchParticipants, matchScore, settings.displayName]
   );
 
+  const getPlayerMatchScore = (player: GamePlayer | null) => {
+    if (!player) return null;
+    const participantIndex = seatOrderIndicesRef.current[player.playerId - 1];
+    if (participantIndex == null) return null;
+    return scoreboardEntries[participantIndex]?.score ?? 0;
+  };
+
   const opponentPlayerId =
     primaryLocalPlayerId === 1
       ? (2 as PlayerId)
@@ -2331,6 +2339,9 @@ function GamePage() {
                 isThinking={
                   thinkingPlayer?.playerId === topTimerPlayer.playerId
                 }
+                score={getPlayerMatchScore(topTimerPlayer)}
+                preferredCatSkin={preferredCatSkin}
+                primaryLocalPlayerId={primaryLocalPlayerId}
               />
             )}
 
@@ -2357,9 +2368,9 @@ function GamePage() {
                     </div>
                     {scoreboardEntries.length === 2 && (
                       <div className="space-y-3">
-                        <div className="flex items-center justify-between text-sm text-muted-foreground">
+                        <div className="flex items-center justify-center gap-2 text-sm text-muted-foreground font-semibold">
+                          <Trophy className="w-4 h-4" />
                           <span>Match score</span>
-                          <span>Draws: {matchDraws}</span>
                         </div>
                         <div className="grid grid-cols-2 gap-3">
                           {scoreboardEntries.map((entry) => (
@@ -2560,6 +2571,9 @@ function GamePage() {
                 isThinking={
                   thinkingPlayer?.playerId === bottomTimerDisplayPlayer.playerId
                 }
+                score={getPlayerMatchScore(bottomTimerDisplayPlayer)}
+                preferredCatSkin={preferredCatSkin}
+                primaryLocalPlayerId={primaryLocalPlayerId}
               />
             )}
           </div>
@@ -2605,35 +2619,6 @@ function GamePage() {
                 </Button>
               </div>
             </Card>
-
-            {scoreboardEntries.length === 2 && (
-              <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
-                <div className="flex items-center justify-between">
-                  <div className="flex items-center gap-2">
-                    <Trophy className="w-4 h-4 text-muted-foreground" />
-                    <span className="font-semibold">Match score</span>
-                  </div>
-                  <Badge variant="outline" className="text-xs">
-                    Draws: {matchDraws}
-                  </Badge>
-                </div>
-                <div className="space-y-2">
-                  {scoreboardEntries.map((entry) => (
-                    <div
-                      key={entry.id}
-                      className="flex items-center justify-between rounded-lg border border-dashed border-border/60 px-3 py-2"
-                    >
-                      <span className="text-sm text-muted-foreground">
-                        {entry.name}
-                      </span>
-                      <span className="text-lg font-semibold">
-                        {entry.score}
-                      </span>
-                    </div>
-                  ))}
-                </div>
-              </Card>
-            )}
 
             {interactionLocked && (
               <Alert>
@@ -2859,30 +2844,61 @@ function PlayerInfo({
   isActive,
   timeLeft,
   isThinking = false,
+  score = null,
+  preferredCatSkin,
+  primaryLocalPlayerId,
 }: {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
   isThinking?: boolean;
+  score?: number | null;
+  preferredCatSkin?: string;
+  primaryLocalPlayerId?: PlayerId;
 }) {
+  // Determine if we should show cat SVG for this player
+  const shouldShowCatSvg =
+    player.playerId === primaryLocalPlayerId &&
+    preferredCatSkin &&
+    preferredCatSkin !== "default";
+  const catSvgPath = shouldShowCatSvg ? `/pawns/cat/${preferredCatSkin}` : null;
+  const colorFilter = colorFilterMap[player.color]
+    ? { filter: colorFilterMap[player.color] }
+    : undefined;
+
   return (
     <div
-      className={`flex items-center gap-3 p-3 rounded-lg transition-colors shadow-sm ${
+      className={`flex items-center justify-between gap-3 p-3 rounded-lg transition-colors shadow-sm ${
         isActive
           ? "bg-accent/50 border border-accent"
           : "bg-card/50 backdrop-blur border border-border"
       }`}
     >
+      {/* Left side: Profile pic, Name/Rating/Online, Score card */}
       <div className="flex items-center gap-3 min-w-0 flex-1">
+        {/* Profile pic */}
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center ${
+          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
             player.color === "red"
               ? "bg-red-100 text-red-700"
               : "bg-blue-100 text-blue-700"
           }`}
         >
-          {player.type.includes("bot") ? <Bot size={20} /> : <User size={20} />}
+          {catSvgPath ? (
+            <img
+              src={catSvgPath}
+              alt="player avatar"
+              className="w-full h-full object-contain rounded-full"
+              style={colorFilter}
+            />
+          ) : player.type.includes("bot") ? (
+            <Bot size={20} />
+          ) : (
+            <User size={20} />
+          )}
         </div>
+
+        {/* Name with rating and online indicator */}
         <div className="min-w-0">
           <div className="flex items-center gap-2">
             <span className="font-semibold truncate">{player.name}</span>
@@ -2899,19 +2915,36 @@ function PlayerInfo({
             {player.isOnline ? "Online" : "Offline"}
           </div>
         </div>
+
+        {/* Match score card */}
+        {typeof score === "number" && (
+          <Badge
+            variant="outline"
+            className="text-[12px] px-2 py-0.5 flex-shrink-0 bg-card/50 border-border"
+          >
+            Score {score}
+          </Badge>
+        )}
       </div>
-      {isThinking && (
-        <div className="flex items-center gap-1.5 text-xs text-muted-foreground flex-shrink-0">
-          <Bot className="w-3 h-3" />
-          {`${player.name} is thinking...`}
+
+      {/* Right side: "Bot is thinking" message, Timer */}
+      <div className="flex items-center gap-3 flex-shrink-0">
+        {/* "Bot is thinking" info message */}
+        {isThinking && (
+          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
+            <Bot className="w-3 h-3" />
+            <span>{`Thinking...`}</span>
+          </div>
+        )}
+
+        {/* Timer */}
+        <div
+          className={`text-2xl font-mono font-bold whitespace-nowrap ${
+            isActive ? "text-foreground" : "text-muted-foreground/50"
+          } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
+        >
+          {formatTime(Math.max(0, Math.round(timeLeft)))}
         </div>
-      )}
-      <div
-        className={`text-2xl font-mono font-bold whitespace-nowrap ${
-          isActive ? "text-foreground" : "text-muted-foreground/50"
-        } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
-      >
-        {formatTime(Math.max(0, Math.round(timeLeft)))}
       </div>
     </div>
   );
