@@ -1,4 +1,4 @@
-import type { PlayerId, Cell, WallPosition, Move, Variant } from "./game-types";
+import type { PlayerId, Cell, WallPosition, Variant } from "./game-types";
 import { cellEq } from "./game-utils";
 
 /**

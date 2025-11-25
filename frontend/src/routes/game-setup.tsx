@@ -14,7 +14,7 @@ import {
   PlayerConfiguration,
   PlayerType,
 } from "@/components/player-configuration";
-import { GameConfiguration } from "@/components/game-configuration-panel";
+import type { GameConfiguration } from "../../../shared/game-types";
 import type {
   TimeControlPreset,
   Variant,
@@ -164,7 +164,6 @@ function GameSetup() {
 
   // TODO: Get user rating from API when backend is ready
   // Ratings are variant and time control specific, so we'll need to fetch the appropriate rating
-  const userRating = 1200; // Default rating for now
 
   // Game configuration state - initialize from user settings
   const [gameConfig, setGameConfig] = useState<GameConfiguration>(() => {
@@ -273,7 +272,7 @@ function GameSetup() {
   // Update rated status when player configs change or when not logged in
   useEffect(() => {
     if ((!canRatedGame || !isLoggedIn) && gameConfig.rated) {
-      setGameConfig((prev) => ({ ...prev, rated: false }));
+      setGameConfig((prev: GameConfiguration) => ({ ...prev, rated: false }));
     }
   }, [canRatedGame, isLoggedIn, gameConfig.rated]);
 
@@ -302,7 +301,7 @@ function GameSetup() {
     setCreateGameError(null);
     const isFriendGame = playerConfigs.includes("friend");
     const isMatchmakingGame = playerConfigs.includes("matched-user");
-    
+
     if (isFriendGame || isMatchmakingGame) {
       setIsCreatingGame(true);
       try {
@@ -439,7 +438,8 @@ function GameSetup() {
         const variantMatch =
           !gameConfig.variant || game.config.variant === gameConfig.variant;
         const ratedMatch =
-          gameConfig.rated === undefined || game.config.rated === gameConfig.rated;
+          gameConfig.rated === undefined ||
+          game.config.rated === gameConfig.rated;
         const timeControlMatch = !!(
           game.config.timeControl.preset &&
           gameConfig.timeControl.preset &&
@@ -481,9 +481,7 @@ function GameSetup() {
     return gamesWithStatus;
   }, [matchmakingGames, gameConfig]);
 
-  const formatPlayers = (
-    players: GameSnapshot["players"]
-  ): string => {
+  const formatPlayers = (players: GameSnapshot["players"]): string => {
     return players
       .filter((p) => p.ready || p.role === "host")
       .map((p) => p.displayName)
@@ -494,7 +492,7 @@ function GameSetup() {
     if (isJoiningGame) return;
     setIsJoiningGame(gameId);
     setCreateGameError(null);
-    
+
     try {
       const response = await joinGameSession({
         gameId,
@@ -505,7 +503,7 @@ function GameSetup() {
           mouseSkin: settings.mousePawn,
         },
       });
-      
+
       saveGameHandshake({
         gameId,
         token: response.token,
@@ -516,7 +514,7 @@ function GameSetup() {
         shareUrl: response.shareUrl,
         inviteCode: response.snapshot.inviteCode,
       });
-      
+
       void navigate({ to: `/game/${gameId}` });
     } catch (error) {
       setCreateGameError(
@@ -850,7 +848,9 @@ function GameSetup() {
                           >
                             {getTimeControlIcon(game.config.timeControl) && (
                               <img
-                                src={getTimeControlIcon(game.config.timeControl)}
+                                src={getTimeControlIcon(
+                                  game.config.timeControl
+                                )}
                                 alt={
                                   game.config.timeControl.preset ||
                                   formatTimeControl(game.config.timeControl)
@@ -869,7 +869,10 @@ function GameSetup() {
                                 : ""
                             }`}
                           >
-                            {formatBoardSize(game.config.boardWidth, game.config.boardHeight)}
+                            {formatBoardSize(
+                              game.config.boardWidth,
+                              game.config.boardHeight
+                            )}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">

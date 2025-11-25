@@ -707,12 +707,7 @@ export function Board({
     }
   };
 
-  const renderPawnWrapper = (
-    pawn: BoardPawn,
-    rowIndex: number,
-    colIndex: number,
-    size: "lg" | "sm"
-  ) => {
+  const renderPawnWrapper = (pawn: BoardPawn, size: "lg" | "sm") => {
     const pawnColor = playerColors[pawn.playerId];
     const isControllable =
       controllablePlayerId == null || pawn.playerId === controllablePlayerId;
@@ -986,7 +981,7 @@ export function Board({
               if (cellWidthPx === 0 || cellHeightPx === 0) {
                 return null;
               }
-              const [row1, col1, row2, col2] = wallToRectCoords(pWall);
+              const [row1, col1, row2, _col2] = wallToRectCoords(pWall);
               const isVertical = pWall.orientation === "vertical";
               const wallColor = resolveWallColor(pWall);
 
@@ -1084,16 +1079,11 @@ export function Board({
                     {cellPawns.length > 0 && (
                       <div className="w-full h-full flex items-center justify-center p-1">
                         {cellPawns.length === 1 ? (
-                          renderPawnWrapper(
-                            cellPawns[0],
-                            rowIndex,
-                            colIndex,
-                            "lg"
-                          )
+                          renderPawnWrapper(cellPawns[0], "lg")
                         ) : (
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) =>
-                              renderPawnWrapper(pawn, rowIndex, colIndex, "sm")
+                              renderPawnWrapper(pawn, "sm")
                             )}
                           </div>
                         )}
