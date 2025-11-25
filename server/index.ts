@@ -4,6 +4,8 @@ import { logger } from "hono/logger";
 import { puzzlesRoute } from "./routes/puzzles";
 import { authRoute } from "./routes/auth";
 import { settingsRoute } from "./routes/settings";
+import { gamesRoute } from "./routes/games";
+import { registerGameSocketRoute } from "./routes/game-socket";
 const app = new Hono();
 app.use(logger());
 
@@ -19,7 +21,10 @@ const apiRoutes = app
   .basePath("/api")
   .route("/puzzles", puzzlesRoute)
   .route("/settings", settingsRoute)
+  .route("/games", gamesRoute)
   .route("/", authRoute); // /api/login, /api/register, etc.
+
+const websocket = registerGameSocketRoute(app);
 
 // When users go to the main website (or any route that doesn't match an API
 // route), serve the frontend.
@@ -28,5 +33,8 @@ app.get("*", serveStatic({ path: "./frontend/dist/index.html" }));
 
 console.log("Server is running");
 
-export default app;
+export default {
+  fetch: app.fetch,
+  websocket,
+};
 export type ApiRoutes = typeof apiRoutes;

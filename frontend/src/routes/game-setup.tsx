@@ -1,4 +1,4 @@
-import { useState, useEffect, useMemo } from "react";
+import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -15,7 +15,16 @@ import {
   PlayerType,
 } from "@/components/player-configuration";
 import { GameConfiguration } from "@/components/game-configuration-panel";
-import type { TimeControlPreset, Variant } from "@/lib/game";
+import type {
+  TimeControlPreset,
+  Variant,
+  TimeControlConfig,
+  GameSnapshot,
+} from "../../../shared/game-types";
+import {
+  timeControlConfigFromPreset,
+  formatTimeControl as formatTimeControlUtil,
+} from "../../../shared/game-utils";
 import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -27,17 +36,19 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Info } from "lucide-react";
+import { Info, Loader2, RefreshCw } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
-import { userQueryOptions } from "@/lib/api";
+import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
+import { createGameSession, joinGameSession } from "@/lib/api";
+import { saveGameHandshake } from "@/lib/game-session";
 
 export const Route = createFileRoute("/game-setup")({
   component: GameSetup,
 });
 
 // Helper function to determine number of players based on variant
-function getPlayerCountForVariant(variant: string): number {
+function getPlayerCountForVariant(variant: Variant): number {
   // For now, assume all variants support 2 players
   // This can be extended later for variants with more players
   switch (variant) {
@@ -73,25 +84,29 @@ const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
 ];
 
 // Helper function to format time control
-function formatTimeControl(timeControl: string): string {
-  const formats: Record<string, string> = {
-    bullet: "bullet (1+0)",
-    blitz: "blitz (3+2)",
-    rapid: "rapid (10+2)",
-    classical: "classical (30+0)",
-  };
-  return formats[timeControl] || timeControl;
+function formatTimeControl(timeControl: TimeControlConfig): string {
+  if (timeControl.preset) {
+    const formats: Record<TimeControlPreset, string> = {
+      bullet: "bullet (1+0)",
+      blitz: "blitz (3+2)",
+      rapid: "rapid (10+2)",
+      classical: "classical (30+0)",
+    };
+    return formats[timeControl.preset];
+  }
+  return formatTimeControlUtil(timeControl);
 }
 
 // Helper function to get time control icon path
-function getTimeControlIcon(timeControl: string): string {
-  const iconMap: Record<string, string> = {
+function getTimeControlIcon(timeControl: TimeControlConfig): string {
+  if (!timeControl.preset) return "";
+  const iconMap: Record<TimeControlPreset, string> = {
     bullet: "/time_control_icons/activity.lichess-bullet.webp",
     blitz: "/time_control_icons/activity.lichess-blitz.webp",
     rapid: "/time_control_icons/activity.lichess-rapid.webp",
     classical: "/time_control_icons/activity.lichess-classical.webp",
   };
-  return iconMap[timeControl] || "";
+  return iconMap[timeControl.preset] || "";
 }
 
 // Helper function to format board size
@@ -110,19 +125,6 @@ function formatBoardSize(width: number, height: number): string {
   return `${sizeName} (${width}x${height})`;
 }
 
-// Mock data type for games in matching stage
-interface MatchingGame {
-  gameId: number;
-  variant: string;
-  rated: boolean;
-  timeControl: string;
-  boardWidth: number;
-  boardHeight: number;
-  players: { name: string; rating: number }[];
-  createdAt: Date; // When the game entered matching stage
-  creatorRating?: number; // Rating of the game creator
-}
-
 // Type for tracking which fields don't match
 interface GameMatchStatus {
   variant: boolean;
@@ -133,7 +135,7 @@ interface GameMatchStatus {
 }
 
 // Extended type with match status
-interface GameWithMatchStatus extends MatchingGame {
+interface GameWithMatchStatus extends GameSnapshot {
   matchStatus: GameMatchStatus;
 }
 
@@ -157,6 +159,8 @@ function GameSetup() {
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
+  const [isCreatingGame, setIsCreatingGame] = useState(false);
+  const [createGameError, setCreateGameError] = useState<string | null>(null);
 
   // TODO: Get user rating from API when backend is ready
   // Ratings are variant and time control specific, so we'll need to fetch the appropriate rating
@@ -294,18 +298,49 @@ function GameSetup() {
 
   const navigate = Route.useNavigate();
 
-  const handleCreateGame = () => {
-    // Generate a random game ID (mocking backend generation)
+  const handleCreateGame = async () => {
+    setCreateGameError(null);
+    const isFriendGame = playerConfigs.includes("friend");
+    const isMatchmakingGame = playerConfigs.includes("matched-user");
+    
+    if (isFriendGame || isMatchmakingGame) {
+      setIsCreatingGame(true);
+      try {
+        const matchType = isFriendGame ? "friend" : "matchmaking";
+        const response = await createGameSession({
+          config: gameConfig,
+          matchType,
+          hostDisplayName: settings.displayName,
+          hostAppearance: {
+            pawnColor: settings.pawnColor,
+            catSkin: settings.catPawn,
+            mouseSkin: settings.mousePawn,
+          },
+        });
+        saveGameHandshake({
+          gameId: response.gameId,
+          token: response.hostToken,
+          socketToken: response.socketToken,
+          role: "host",
+          playerId: 1,
+          matchType,
+          shareUrl: response.shareUrl,
+          inviteCode: response.inviteCode,
+        });
+        void navigate({ to: `/game/${response.gameId}` });
+      } catch (error) {
+        setCreateGameError(
+          error instanceof Error
+            ? error.message
+            : "Unable to create game right now."
+        );
+      } finally {
+        setIsCreatingGame(false);
+      }
+      return;
+    }
+
     const gameId = Math.random().toString(36).substring(2, 15);
-
-    // In a real app, we would send the config to the backend here
-    // For now, we'll pass the config via state or just rely on defaults in the game page
-    // Since we can't easily pass complex state via URL without encoding it,
-    // and we want the URL to be shareable, we'll simulate fetching the config
-    // in the game page based on the ID (or just use random defaults for this demo).
-
-    // However, to make the demo feel real, we can store the config in sessionStorage
-    // keyed by the gameId, so the game page can "fetch" it.
     if (typeof window !== "undefined") {
       sessionStorage.setItem(
         `game-config-${gameId}`,
@@ -315,67 +350,106 @@ function GameSetup() {
         })
       );
     }
-
     void navigate({ to: `/game/${gameId}` });
   };
 
-  // Mock data for games in matching stage
-  const mockMatchingGames: MatchingGame[] = useMemo(
-    () => [
-      {
-        gameId: 1,
-        variant: "standard",
-        rated: true,
-        timeControl: "blitz",
-        boardWidth: 8,
-        boardHeight: 8,
-        players: [{ name: "Alice", rating: 1250 }],
-        createdAt: new Date(Date.now() - 5 * 60 * 1000), // 5 minutes ago
-        creatorRating: 1250,
-      },
-      {
-        gameId: 2,
-        variant: "classic",
-        rated: false,
-        timeControl: "rapid",
-        boardWidth: 8,
-        boardHeight: 8,
-        players: [{ name: "Bob", rating: 1180 }],
-        createdAt: new Date(Date.now() - 10 * 60 * 1000), // 10 minutes ago
-        creatorRating: 1180,
-      },
-      {
-        gameId: 3,
-        variant: "standard",
-        rated: true,
-        timeControl: "blitz",
-        boardWidth: 8,
-        boardHeight: 8,
-        players: [{ name: "Charlie", rating: 1320 }],
-        createdAt: new Date(Date.now() - 2 * 60 * 1000), // 2 minutes ago
-        creatorRating: 1320,
-      },
-    ],
-    []
-  );
+  // Matchmaking games state - fetched via WebSocket for real-time updates
+  const [matchmakingGames, setMatchmakingGames] = useState<GameSnapshot[]>([]);
+  const [isLoadingGames, setIsLoadingGames] = useState(true);
+  const lobbySocketRef = useRef<WebSocket | null>(null);
+  const [isJoiningGame, setIsJoiningGame] = useState<string | null>(null);
+
+  // Build WebSocket URL for lobby
+  const buildLobbySocketUrl = useCallback((): string => {
+    const isDev = import.meta.env.DEV;
+    const base = isDev
+      ? new URL("http://localhost:3000")
+      : new URL(window.location.origin);
+    base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
+    base.pathname = "/ws/lobby";
+    return base.toString();
+  }, []);
+
+  // Connect to lobby WebSocket for real-time game list updates
+  useEffect(() => {
+    if (typeof window === "undefined") return;
+
+    const connect = () => {
+      const url = buildLobbySocketUrl();
+      console.debug("[game-setup] connecting to lobby websocket", { url });
+      const socket = new WebSocket(url);
+      lobbySocketRef.current = socket;
+
+      socket.addEventListener("open", () => {
+        console.debug("[game-setup] lobby websocket open");
+        setIsLoadingGames(false);
+      });
+
+      socket.addEventListener("message", (event) => {
+        if (typeof event.data !== "string") return;
+        try {
+          const msg = JSON.parse(event.data);
+          if (msg.type === "games") {
+            setMatchmakingGames(msg.games as GameSnapshot[]);
+          }
+        } catch (error) {
+          console.error("[game-setup] failed to parse lobby message", error);
+        }
+      });
+
+      socket.addEventListener("close", () => {
+        console.debug("[game-setup] lobby websocket closed");
+        lobbySocketRef.current = null;
+        // Reconnect after a short delay
+        setTimeout(connect, 2000);
+      });
+
+      socket.addEventListener("error", (event) => {
+        console.error("[game-setup] lobby websocket error", event);
+        setIsLoadingGames(false);
+      });
+    };
+
+    connect();
+
+    // Also fetch initially via REST in case WebSocket is slow
+    void fetchMatchmakingGames()
+      .then((games) => {
+        setMatchmakingGames(games);
+        setIsLoadingGames(false);
+      })
+      .catch((error) => {
+        console.error("[game-setup] failed to fetch matchmaking games", error);
+        setIsLoadingGames(false);
+      });
+
+    return () => {
+      if (lobbySocketRef.current) {
+        lobbySocketRef.current.close();
+        lobbySocketRef.current = null;
+      }
+    };
+  }, [buildLobbySocketUrl]);
 
   // Check match status and sort games (matching first, then non-matching)
   const filteredAndSortedGames = useMemo(() => {
     // Map games to include match status
-    const gamesWithStatus: GameWithMatchStatus[] = mockMatchingGames.map(
+    const gamesWithStatus: GameWithMatchStatus[] = matchmakingGames.map(
       (game) => {
         const variantMatch =
-          !gameConfig.variant || game.variant === gameConfig.variant;
+          !gameConfig.variant || game.config.variant === gameConfig.variant;
         const ratedMatch =
-          gameConfig.rated === undefined || game.rated === gameConfig.rated;
-        const timeControlMatch =
-          !gameConfig.timeControl ||
-          game.timeControl === gameConfig.timeControl;
+          gameConfig.rated === undefined || game.config.rated === gameConfig.rated;
+        const timeControlMatch = !!(
+          game.config.timeControl.preset &&
+          gameConfig.timeControl.preset &&
+          game.config.timeControl.preset === gameConfig.timeControl.preset
+        );
         const boardSizeMatch =
           !gameConfig.boardWidth ||
           !gameConfig.boardHeight ||
-          (game.boardWidth === gameConfig.boardWidth &&
-            game.boardHeight === gameConfig.boardHeight);
+          (game.config.boardWidth === gameConfig.boardWidth &&
+            game.config.boardHeight === gameConfig.boardHeight);
 
         const allMatch =
           variantMatch && ratedMatch && timeControlMatch && boardSizeMatch;
@@ -393,38 +467,66 @@ function GameSetup() {
       }
     );
 
-    // Sort: matching games first, then by ELO difference, then by time in matching stage
+    // Sort: matching games first, then by time created (older first)
     gamesWithStatus.sort((a, b) => {
       // First, prioritize matching games
       if (a.matchStatus.allMatch !== b.matchStatus.allMatch) {
         return a.matchStatus.allMatch ? -1 : 1;
       }
 
-      // Calculate ELO difference
-      const eloDiffA = Math.abs((a.creatorRating ?? 1200) - userRating);
-      const eloDiffB = Math.abs((b.creatorRating ?? 1200) - userRating);
-
-      // Prioritize games with closer ELO
-      if (eloDiffA !== eloDiffB) {
-        return eloDiffA - eloDiffB;
-      }
-
-      // If ELO difference is the same, prioritize older games (longer in matching stage)
-      return a.createdAt.getTime() - b.createdAt.getTime();
+      // Prioritize older games (longer in matching stage)
+      return a.createdAt - b.createdAt;
     });
 
     return gamesWithStatus;
-  }, [mockMatchingGames, gameConfig, userRating]);
+  }, [matchmakingGames, gameConfig]);
 
   const formatPlayers = (
-    players: { name: string; rating: number }[]
+    players: GameSnapshot["players"]
   ): string => {
-    return players.map((p) => `${p.name} (${p.rating})`).join(" & ");
+    return players
+      .filter((p) => p.ready || p.role === "host")
+      .map((p) => p.displayName)
+      .join(" & ");
   };
 
-  const handleJoinGame = (gameId: number) => {
-    // TODO: Implement backend call to join game
-    console.log("Joining game:", gameId);
+  const handleJoinGame = async (gameId: string) => {
+    if (isJoiningGame) return;
+    setIsJoiningGame(gameId);
+    setCreateGameError(null);
+    
+    try {
+      const response = await joinGameSession({
+        gameId,
+        displayName: settings.displayName,
+        appearance: {
+          pawnColor: settings.pawnColor,
+          catSkin: settings.catPawn,
+          mouseSkin: settings.mousePawn,
+        },
+      });
+      
+      saveGameHandshake({
+        gameId,
+        token: response.token,
+        socketToken: response.socketToken,
+        role: response.role,
+        playerId: response.playerId,
+        matchType: response.snapshot.matchType,
+        shareUrl: response.shareUrl,
+        inviteCode: response.snapshot.inviteCode,
+      });
+      
+      void navigate({ to: `/game/${gameId}` });
+    } catch (error) {
+      setCreateGameError(
+        error instanceof Error
+          ? error.message
+          : "Unable to join game right now."
+      );
+    } finally {
+      setIsJoiningGame(null);
+    }
   };
 
   return (
@@ -505,11 +607,11 @@ function GameSetup() {
                     Time Control
                   </Label>
                   <Select
-                    value={gameConfig.timeControl}
+                    value={gameConfig.timeControl.preset ?? "blitz"}
                     onValueChange={(value: TimeControlPreset) =>
                       handleGameConfigChange({
                         ...gameConfig,
-                        timeControl: value,
+                        timeControl: timeControlConfigFromPreset(value),
                       })
                     }
                   >
@@ -532,13 +634,13 @@ function GameSetup() {
                 {/* Always render text container to prevent layout shift */}
                 <div className="min-h-[3rem]">
                   <p className="text-sm text-muted-foreground">
-                    {gameConfig.timeControl === "bullet" &&
+                    {gameConfig.timeControl.preset === "bullet" &&
                       "1 minute, no increment."}
-                    {gameConfig.timeControl === "blitz" &&
+                    {gameConfig.timeControl.preset === "blitz" &&
                       "3 minutes, 2 second increment."}
-                    {gameConfig.timeControl === "rapid" &&
+                    {gameConfig.timeControl.preset === "rapid" &&
                       "10 minutes, 2 second increment."}
-                    {gameConfig.timeControl === "classical" &&
+                    {gameConfig.timeControl.preset === "classical" &&
                       "30 minutes, no increment."}
                   </p>
                 </div>
@@ -611,7 +713,7 @@ function GameSetup() {
                       type="number"
                       min="4"
                       max="20"
-                      value={gameConfig.boardWidth ?? 8}
+                      value={gameConfig.boardWidth}
                       onChange={(e) =>
                         handleGameConfigChange({
                           ...gameConfig,
@@ -630,7 +732,7 @@ function GameSetup() {
                       type="number"
                       min="4"
                       max="20"
-                      value={gameConfig.boardHeight ?? 8}
+                      value={gameConfig.boardHeight}
                       onChange={(e) =>
                         handleGameConfigChange({
                           ...gameConfig,
@@ -647,12 +749,19 @@ function GameSetup() {
             {/* Create Game Button - Centered */}
             <div className="mt-3 flex justify-center">
               <Button
-                onClick={handleCreateGame}
+                onClick={() => void handleCreateGame()}
                 className="max-w-xs"
                 size="lg"
-                disabled={!canCreateGame}
+                disabled={!canCreateGame || isCreatingGame}
               >
-                Create game
+                {isCreatingGame ? (
+                  <>
+                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                    Creating...
+                  </>
+                ) : (
+                  "Create game"
+                )}
               </Button>
             </div>
 
@@ -665,14 +774,26 @@ function GameSetup() {
                 </p>
               </div>
             )}
+            {createGameError && (
+              <div className="mt-2 text-center">
+                <p className="text-sm text-destructive">{createGameError}</p>
+              </div>
+            )}
           </Card>
 
           {/* Join Game Section */}
           <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
-            <h2 className="text-2xl font-semibold mb-4">Join game</h2>
+            <div className="flex items-center justify-between mb-4">
+              <h2 className="text-2xl font-semibold">Join game</h2>
+              {isLoadingGames && (
+                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
+              )}
+            </div>
             {filteredAndSortedGames.length === 0 ? (
               <p className="text-muted-foreground">
-                No games available to join.
+                {isLoadingGames
+                  ? "Loading available games..."
+                  : "No games available to join. Create one or wait for someone to start matchmaking."}
               </p>
             ) : (
               <div className="overflow-x-auto">
@@ -691,9 +812,11 @@ function GameSetup() {
                   <TableBody>
                     {filteredAndSortedGames.map((game) => (
                       <TableRow
-                        key={game.gameId}
-                        onClick={() => handleJoinGame(game.gameId)}
-                        className="cursor-pointer hover:bg-muted/50 transition-colors"
+                        key={game.id}
+                        onClick={() => void handleJoinGame(game.id)}
+                        className={`cursor-pointer hover:bg-muted/50 transition-colors ${
+                          isJoiningGame === game.id ? "opacity-50" : ""
+                        }`}
                       >
                         <TableCell className="capitalize text-center">
                           <span
@@ -703,7 +826,7 @@ function GameSetup() {
                                 : ""
                             }`}
                           >
-                            {game.variant}
+                            {game.config.variant}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
@@ -714,7 +837,7 @@ function GameSetup() {
                                 : ""
                             }`}
                           >
-                            {game.rated ? "Yes" : "No"}
+                            {game.config.rated ? "Yes" : "No"}
                           </span>
                         </TableCell>
                         <TableCell className="capitalize text-center">
@@ -725,14 +848,17 @@ function GameSetup() {
                                 : ""
                             }`}
                           >
-                            {getTimeControlIcon(game.timeControl) && (
+                            {getTimeControlIcon(game.config.timeControl) && (
                               <img
-                                src={getTimeControlIcon(game.timeControl)}
-                                alt={game.timeControl}
+                                src={getTimeControlIcon(game.config.timeControl)}
+                                alt={
+                                  game.config.timeControl.preset ||
+                                  formatTimeControl(game.config.timeControl)
+                                }
                                 className="w-5 h-5"
                               />
                             )}
-                            {formatTimeControl(game.timeControl)}
+                            {formatTimeControl(game.config.timeControl)}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">
@@ -743,7 +869,7 @@ function GameSetup() {
                                 : ""
                             }`}
                           >
-                            {formatBoardSize(game.boardWidth, game.boardHeight)}
+                            {formatBoardSize(game.config.boardWidth, game.config.boardHeight)}
                           </span>
                         </TableCell>
                         <TableCell className="text-center">

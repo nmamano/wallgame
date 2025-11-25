@@ -7,8 +7,13 @@ import {
   type SettingsResponse,
 } from "@/lib/api";
 import { useLocalStorageState } from "./use-local-storage";
-import type { GameConfiguration } from "@/components/game-configuration-panel";
-import type { TimeControlPreset, Variant } from "@/lib/game";
+import type { GameConfiguration } from "../../../shared/game-types";
+import type {
+  TimeControlPreset,
+  Variant,
+  PawnType,
+} from "../../../shared/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/game-utils";
 
 interface VariantParameters {
   boardWidth?: number;
@@ -79,14 +84,18 @@ const STORAGE_KEYS = {
 } as const;
 
 const defaultGameConfig: GameConfiguration = {
-  timeControl: "rapid",
+  timeControl: {
+    initialSeconds: 600,
+    incrementSeconds: 2,
+    preset: "rapid",
+  },
   rated: false,
   variant: "standard",
   boardWidth: 8,
   boardHeight: 8,
 };
 
-const DEFAULT_TIME_CONTROL: TimeControlPreset = "rapid";
+const DEFAULT_TIME_CONTROL_PRESET: TimeControlPreset = "rapid";
 const DEFAULT_VARIANT: Variant = "standard";
 
 /**
@@ -328,7 +337,9 @@ function useSettingsInternal(
     const currentVariant = dbSettings.defaultVariant ?? DEFAULT_VARIANT;
     const currentVariantParams = variantSettingsFromDb[currentVariant];
     return {
-      timeControl: dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL,
+      timeControl: timeControlConfigFromPreset(
+        dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET
+      ),
       rated: dbSettings.defaultRatedStatus ?? false,
       variant: currentVariant,
       boardWidth: currentVariantParams?.boardWidth ?? 8,
@@ -378,7 +389,7 @@ function useSettingsInternal(
     }: {
       pawnType: string;
       pawnShape: string;
-    }) => settingsMutations.updatePawn(pawnType, pawnShape),
+    }) => settingsMutations.updatePawn(pawnType as PawnType, pawnShape),
     onMutate: async ({ pawnType, pawnShape }) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
       queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
@@ -632,8 +643,17 @@ function useSettingsInternal(
       }
 
       // Handle time control change
-      if (newConfig.timeControl !== gameConfig.timeControl) {
-        updateTimeControlMutation.mutate(newConfig.timeControl);
+      if (
+        newConfig.timeControl.preset !== gameConfig.timeControl.preset ||
+        newConfig.timeControl.initialSeconds !==
+          gameConfig.timeControl.initialSeconds ||
+        newConfig.timeControl.incrementSeconds !==
+          gameConfig.timeControl.incrementSeconds
+      ) {
+        // Only update preset if it changed, API still uses preset
+        if (newConfig.timeControl.preset) {
+          updateTimeControlMutation.mutate(newConfig.timeControl.preset);
+        }
       }
 
       // Handle rated status change
