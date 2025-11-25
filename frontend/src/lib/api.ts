@@ -1,7 +1,19 @@
 import { hc } from "hono/client";
 import { type ApiRoutes } from "@server/index";
 import { queryOptions } from "@tanstack/react-query";
-import type { TimeControlPreset, Variant } from "@/lib/game";
+import type {
+  GameSnapshot,
+  GameConfiguration,
+  PlayerAppearance,
+  TimeControlPreset,
+  TimeControlConfig,
+  Variant,
+  PlayerId,
+  PawnType,
+  MatchType,
+} from "../../../shared/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/game-utils";
+import type { GameRole } from "@/lib/game-session";
 
 const client = hc<ApiRoutes>("/");
 
@@ -106,7 +118,7 @@ export const settingsMutations = {
   updatePawnColor: (pawnColor: string) =>
     updateSetting("pawn-color", { pawnColor }),
 
-  updatePawn: (pawnType: string, pawnShape: string) =>
+  updatePawn: (pawnType: PawnType, pawnShape: string) =>
     updateSetting("pawn", { pawnType, pawnShape }),
 
   updateTimeControl: (timeControl: TimeControlPreset) =>
@@ -125,4 +137,135 @@ export const settingsMutations = {
 
   updateDisplayName: (displayName: string) =>
     updateSetting("display-name", { displayName }),
+};
+
+const parseJsonResponse = async <T>(res: Response): Promise<T> => {
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      data?.error ?? `Request failed: ${res.status} ${res.statusText}`
+    );
+  }
+  return res.json() as Promise<T>;
+};
+
+export interface GameCreateResponse {
+  gameId: string;
+  hostToken: string;
+  socketToken: string;
+  inviteCode?: string; // Only present for friend games
+  shareUrl: string;
+  snapshot: GameSnapshot;
+}
+
+export const createGameSession = async (args: {
+  config: GameConfiguration;
+  matchType: MatchType;
+  hostDisplayName?: string;
+  hostAppearance?: PlayerAppearance;
+}): Promise<GameCreateResponse> => {
+  // Normalize timeControl: handle legacy localStorage format where it was just a string
+  let timeControl: TimeControlConfig;
+  const rawTimeControl = args.config.timeControl as unknown;
+  if (typeof rawTimeControl === "string") {
+    // Legacy format: just a preset string like "rapid"
+    timeControl = timeControlConfigFromPreset(
+      rawTimeControl as TimeControlPreset
+    );
+  } else {
+    timeControl = args.config.timeControl;
+  }
+
+  const payload = {
+    config: {
+      timeControl,
+      rated: args.config.rated,
+      variant: args.config.variant,
+      boardWidth: args.config.boardWidth,
+      boardHeight: args.config.boardHeight,
+    },
+    matchType: args.matchType,
+    hostDisplayName: args.hostDisplayName,
+    hostAppearance: args.hostAppearance,
+  };
+  const res = await fetch("/api/games", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify(payload),
+  });
+  return parseJsonResponse<GameCreateResponse>(res);
+};
+
+export interface GameSessionDetails {
+  snapshot: GameSnapshot;
+  role: GameRole;
+  playerId: PlayerId;
+  token: string;
+  socketToken: string;
+  shareUrl?: string;
+}
+
+export const fetchGameSession = async (args: {
+  gameId: string;
+  token: string;
+}): Promise<GameSessionDetails> => {
+  const res = await fetch(`/api/games/${args.gameId}?token=${args.token}`);
+  return parseJsonResponse<GameSessionDetails>(res);
+};
+
+export const joinGameSession = async (args: {
+  gameId: string;
+  inviteCode?: string; // Optional for matchmaking games
+  displayName?: string;
+  appearance?: PlayerAppearance;
+}): Promise<GameSessionDetails> => {
+  const res = await fetch(`/api/games/${args.gameId}/join`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({
+      inviteCode: args.inviteCode,
+      displayName: args.displayName,
+      appearance: args.appearance,
+    }),
+  });
+  const data = await parseJsonResponse<{
+    gameId: string;
+    token: string;
+    socketToken: string;
+    snapshot: GameSnapshot;
+    shareUrl?: string;
+  }>(res);
+  return {
+    snapshot: data.snapshot,
+    role: "joiner",
+    playerId: 2,
+    token: data.token,
+    socketToken: data.socketToken,
+    shareUrl: data.shareUrl,
+  };
+};
+
+export const markGameReady = async (args: {
+  gameId: string;
+  token: string;
+}): Promise<GameSnapshot> => {
+  const res = await fetch(`/api/games/${args.gameId}/ready`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ token: args.token }),
+  });
+  const data = await parseJsonResponse<{
+    success: boolean;
+    snapshot: GameSnapshot;
+  }>(res);
+  return data.snapshot;
+};
+
+// Fetch list of available matchmaking games
+export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
+  const res = await fetch("/api/games/matchmaking");
+  const data = await parseJsonResponse<{ games: GameSnapshot[] }>(res);
+  return data.games;
 };

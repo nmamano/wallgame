@@ -1,56 +1,28 @@
-import {
-  Grid,
-  Move,
-  Cell,
-  Pawn,
-  TimeControl,
-  MoveInHistory,
-  createCell,
-  Wall,
+import type {
   PlayerId,
-  PlayerWall,
-} from "./game";
+  GameStatus,
+  GameResult,
+  Cell,
+  WallPosition,
+  Move,
+  TimeControlConfig,
+  GameConfiguration,
+  Pawn,
+  GameAction,
+} from "./game-types";
+import { Grid } from "./grid";
+import { cellEq } from "./game-utils";
 
-export type GameStatus = "playing" | "finished" | "aborted";
-
-export type WinReason =
-  | "capture"
-  | "timeout"
-  | "resignation"
-  | "draw-agreement"
-  | "one-move-rule"
-  | "stalemate";
-
-export interface GameResult {
-  winner?: PlayerId; // undefined if draw
-  reason: WinReason;
+export interface MoveInHistory {
+  index: number;
+  move: Move;
+  grid: Grid;
+  catPos: [Cell, Cell];
+  mousePos: [Cell, Cell];
+  timeLeftSeconds: [number, number];
+  distances: [number, number];
+  wallCounts: [number, number];
 }
-
-export interface GameConfig {
-  boardWidth: number;
-  boardHeight: number;
-  variant: "Standard" | "Classic" | "Freestyle";
-  timeControl: TimeControl;
-  startPos?: {
-    p1Cat: string;
-    p1Mouse: string;
-    p2Cat: string;
-    p2Mouse: string;
-  };
-}
-
-export type GameAction =
-  | { kind: "move"; move: Move; playerId: PlayerId; timestamp: number }
-  | { kind: "resign"; playerId: PlayerId; timestamp: number }
-  | { kind: "timeout"; playerId: PlayerId; timestamp: number }
-  | { kind: "draw"; playerId?: PlayerId; timestamp: number }
-  | { kind: "takeback"; playerId?: PlayerId; timestamp: number }
-  | {
-      kind: "giveTime";
-      playerId: PlayerId;
-      seconds: number;
-      timestamp: number;
-    };
 
 export class GameState {
   grid: Grid;
@@ -62,40 +34,33 @@ export class GameState {
   status: GameStatus;
   result?: GameResult;
 
-  timeControl: TimeControl;
+  timeControl: TimeControlConfig;
   timeLeft: Record<PlayerId, number>; // Seconds with 0.1s resolution
   lastMoveTime: number;
 
-  config: GameConfig;
+  config: GameConfiguration;
 
   // Initial state for undoing the first move
   private initialGrid: Grid;
   private initialPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
 
-  constructor(config: GameConfig, startTime: number) {
+  constructor(config: GameConfiguration, startTime: number) {
     this.config = config;
-    this.grid = new Grid(config.boardWidth, config.boardHeight);
-    this.grid.variant = config.variant;
+    this.grid = new Grid(config.boardWidth, config.boardHeight, config.variant);
 
     const rows = config.boardHeight;
     const cols = config.boardWidth;
 
+    // Always use default starting positions
+    // Cats start at top (row 0), mice start at bottom (row rows-1)
     this.pawns = {
       1: {
-        cat: config.startPos
-          ? createCell(config.startPos.p1Cat, rows)
-          : new Cell(rows - 1, 0),
-        mouse: config.startPos
-          ? createCell(config.startPos.p1Mouse, rows)
-          : new Cell(0, 0),
+        cat: [0, 0],
+        mouse: [rows - 1, 0],
       },
       2: {
-        cat: config.startPos
-          ? createCell(config.startPos.p2Cat, rows)
-          : new Cell(rows - 1, cols - 1),
-        mouse: config.startPos
-          ? createCell(config.startPos.p2Mouse, rows)
-          : new Cell(0, cols - 1),
+        cat: [0, cols - 1],
+        mouse: [rows - 1, cols - 1],
       },
     };
 
@@ -208,7 +173,10 @@ export class GameState {
     const opPawns = this.pawns[opponent];
 
     const nextGrid = this.grid.clone();
-    const nextMyPawns = { ...myPawns };
+    const nextMyPawns = {
+      cat: [myPawns.cat[0], myPawns.cat[1]] as Cell,
+      mouse: [myPawns.mouse[0], myPawns.mouse[1]] as Cell,
+    };
 
     for (const action of move.actions) {
       if (action.type === "cat" || action.type === "mouse") {
@@ -217,29 +185,33 @@ export class GameState {
         const targetPos = action.target;
 
         const dist =
-          Math.abs(currentPos.row - targetPos.row) +
-          Math.abs(currentPos.col - targetPos.col);
+          Math.abs(currentPos[0] - targetPos[0]) +
+          Math.abs(currentPos[1] - targetPos[1]);
 
         if (dist === 1) {
           // Single step
           // Check wall blocking
           // Moving from currentPos to targetPos
           // Determine direction
-          if (targetPos.col > currentPos.col) {
+          if (targetPos[1] > currentPos[1]) {
             // Right
-            if (nextGrid.hasWall(currentPos, "vertical"))
+            if (nextGrid.hasWall({ cell: currentPos, orientation: "vertical" }))
               throw new Error("Move blocked by wall");
-          } else if (targetPos.col < currentPos.col) {
+          } else if (targetPos[1] < currentPos[1]) {
             // Left
-            if (nextGrid.hasWall(targetPos, "vertical"))
+            if (nextGrid.hasWall({ cell: targetPos, orientation: "vertical" }))
               throw new Error("Move blocked by wall");
-          } else if (targetPos.row > currentPos.row) {
+          } else if (targetPos[0] > currentPos[0]) {
             // Down (row increases)
-            if (nextGrid.hasWall(targetPos, "horizontal"))
+            if (
+              nextGrid.hasWall({ cell: targetPos, orientation: "horizontal" })
+            )
               throw new Error("Move blocked by wall");
-          } else if (targetPos.row < currentPos.row) {
+          } else if (targetPos[0] < currentPos[0]) {
             // Up (row decreases)
-            if (nextGrid.hasWall(currentPos, "horizontal"))
+            if (
+              nextGrid.hasWall({ cell: currentPos, orientation: "horizontal" })
+            )
               throw new Error("Move blocked by wall");
           }
         } else if (dist === 2) {
@@ -249,33 +221,45 @@ export class GameState {
 
           // Possible intermediate squares
           const candidates: Cell[] = [];
-          if (currentPos.row === targetPos.row) {
+          if (currentPos[0] === targetPos[0]) {
             // Horizontal move (e.g. a1 -> c1, mid is b1)
-            candidates.push(
-              new Cell(currentPos.row, (currentPos.col + targetPos.col) / 2)
-            );
-          } else if (currentPos.col === targetPos.col) {
+            candidates.push([
+              currentPos[0],
+              (currentPos[1] + targetPos[1]) / 2,
+            ]);
+          } else if (currentPos[1] === targetPos[1]) {
             // Vertical move
-            candidates.push(
-              new Cell((currentPos.row + targetPos.row) / 2, currentPos.col)
-            );
+            candidates.push([
+              (currentPos[0] + targetPos[0]) / 2,
+              currentPos[1],
+            ]);
           } else {
             // Diagonal (L-shape)
-            candidates.push(new Cell(currentPos.row, targetPos.col));
-            candidates.push(new Cell(targetPos.row, currentPos.col));
+            candidates.push([currentPos[0], targetPos[1]]);
+            candidates.push([targetPos[0], currentPos[1]]);
           }
 
           for (const mid of candidates) {
             // Check step 1: current -> mid
             let step1Valid = true;
-            if (mid.col > currentPos.col) {
-              if (nextGrid.hasWall(currentPos, "vertical")) step1Valid = false;
-            } else if (mid.col < currentPos.col) {
-              if (nextGrid.hasWall(mid, "vertical")) step1Valid = false;
-            } else if (mid.row > currentPos.row) {
-              if (nextGrid.hasWall(mid, "horizontal")) step1Valid = false;
-            } else if (mid.row < currentPos.row) {
-              if (nextGrid.hasWall(currentPos, "horizontal"))
+            if (mid[1] > currentPos[1]) {
+              if (
+                nextGrid.hasWall({ cell: currentPos, orientation: "vertical" })
+              )
+                step1Valid = false;
+            } else if (mid[1] < currentPos[1]) {
+              if (nextGrid.hasWall({ cell: mid, orientation: "vertical" }))
+                step1Valid = false;
+            } else if (mid[0] > currentPos[0]) {
+              if (nextGrid.hasWall({ cell: mid, orientation: "horizontal" }))
+                step1Valid = false;
+            } else if (mid[0] < currentPos[0]) {
+              if (
+                nextGrid.hasWall({
+                  cell: currentPos,
+                  orientation: "horizontal",
+                })
+              )
                 step1Valid = false;
             }
 
@@ -283,14 +267,22 @@ export class GameState {
 
             // Check step 2: mid -> target
             let step2Valid = true;
-            if (targetPos.col > mid.col) {
-              if (nextGrid.hasWall(mid, "vertical")) step2Valid = false;
-            } else if (targetPos.col < mid.col) {
-              if (nextGrid.hasWall(targetPos, "vertical")) step2Valid = false;
-            } else if (targetPos.row > mid.row) {
-              if (nextGrid.hasWall(targetPos, "horizontal")) step2Valid = false;
-            } else if (targetPos.row < mid.row) {
-              if (nextGrid.hasWall(mid, "horizontal")) step2Valid = false;
+            if (targetPos[1] > mid[1]) {
+              if (nextGrid.hasWall({ cell: mid, orientation: "vertical" }))
+                step2Valid = false;
+            } else if (targetPos[1] < mid[1]) {
+              if (
+                nextGrid.hasWall({ cell: targetPos, orientation: "vertical" })
+              )
+                step2Valid = false;
+            } else if (targetPos[0] > mid[0]) {
+              if (
+                nextGrid.hasWall({ cell: targetPos, orientation: "horizontal" })
+              )
+                step2Valid = false;
+            } else if (targetPos[0] < mid[0]) {
+              if (nextGrid.hasWall({ cell: mid, orientation: "horizontal" }))
+                step2Valid = false;
             }
 
             if (step2Valid) {
@@ -308,26 +300,33 @@ export class GameState {
         if (action.type === "cat") nextMyPawns.cat = targetPos;
         else nextMyPawns.mouse = targetPos;
       } else if (action.type === "wall") {
-        const cats: [[number, number], [number, number]] = [
-          [nextMyPawns.cat.row, nextMyPawns.cat.col],
-          [opPawns.cat.row, opPawns.cat.col],
+        const cats: [Cell, Cell] = [
+          [nextMyPawns.cat[0], nextMyPawns.cat[1]],
+          [opPawns.cat[0], opPawns.cat[1]],
         ];
-        const mice: [[number, number], [number, number]] = [
-          [opPawns.mouse.row, opPawns.mouse.col],
-          [nextMyPawns.mouse.row, nextMyPawns.mouse.col],
+        const mice: [Cell, Cell] = [
+          [opPawns.mouse[0], opPawns.mouse[1]],
+          [nextMyPawns.mouse[0], nextMyPawns.mouse[1]],
         ];
 
-        const wall = new Wall(action.target, action.wallOrientation!);
+        const wall: WallPosition = {
+          cell: action.target,
+          orientation: action.wallOrientation!,
+        };
 
-        if (!nextGrid.canBuildWall(cats, mice, wall)) {
+        const wallWithPlayer: WallPosition = {
+          ...wall,
+          playerId: player,
+        };
+        if (!nextGrid.canBuildWall(cats, mice, wallWithPlayer)) {
           throw new Error("Invalid wall placement: blocks path or overlaps");
         }
-        nextGrid.addWall(wall, player);
+        nextGrid.addWall(wallWithPlayer);
       }
     }
 
-    const myCatCaught = nextMyPawns.cat.equals(opPawns.mouse);
-    const opCatCaught = opPawns.cat.equals(nextMyPawns.mouse);
+    const myCatCaught = cellEq(nextMyPawns.cat, opPawns.mouse);
+    const opCatCaught = cellEq(opPawns.cat, nextMyPawns.mouse);
 
     // Update timeLeft with increment
     const nextTimeLeft = { ...this.timeLeft };
@@ -343,12 +342,12 @@ export class GameState {
       move: move,
       grid: nextGrid.clone(),
       catPos: [
-        [nextPawns[1].cat.row, nextPawns[1].cat.col],
-        [nextPawns[2].cat.row, nextPawns[2].cat.col],
+        [nextPawns[1].cat[0], nextPawns[1].cat[1]],
+        [nextPawns[2].cat[0], nextPawns[2].cat[1]],
       ],
       mousePos: [
-        [nextPawns[1].mouse.row, nextPawns[1].mouse.col],
-        [nextPawns[2].mouse.row, nextPawns[2].mouse.col],
+        [nextPawns[1].mouse[0], nextPawns[1].mouse[1]],
+        [nextPawns[2].mouse[0], nextPawns[2].mouse[1]],
       ],
       timeLeftSeconds: [nextTimeLeft[1], nextTimeLeft[2]],
       distances: [0, 0],
@@ -364,8 +363,8 @@ export class GameState {
     if (myCatCaught) {
       if (player === 1) {
         const dist = this.grid.distance(
-          [opPawns.cat.row, opPawns.cat.col],
-          [nextMyPawns.mouse.row, nextMyPawns.mouse.col]
+          [opPawns.cat[0], opPawns.cat[1]],
+          [nextMyPawns.mouse[0], nextMyPawns.mouse[1]]
         );
         if (dist <= 2 && dist !== -1) {
           this.status = "finished";
@@ -408,12 +407,12 @@ export class GameState {
       prevGrid = last.grid;
       prevPawns = {
         1: {
-          cat: new Cell(last.catPos[0][0], last.catPos[0][1]),
-          mouse: new Cell(last.mousePos[0][0], last.mousePos[0][1]),
+          cat: [last.catPos[0][0], last.catPos[0][1]],
+          mouse: [last.mousePos[0][0], last.mousePos[0][1]],
         },
         2: {
-          cat: new Cell(last.catPos[1][0], last.catPos[1][1]),
-          mouse: new Cell(last.mousePos[1][0], last.mousePos[1][1]),
+          cat: [last.catPos[1][0], last.catPos[1][1]],
+          mouse: [last.mousePos[1][0], last.mousePos[1][1]],
         },
       };
       prevTimeLeft = {
@@ -445,36 +444,10 @@ export class GameState {
 
   getPawns(): Pawn[] {
     return [
-      { id: "p1-cat", playerId: 1, type: "cat", cell: this.pawns[1].cat },
-      { id: "p1-mouse", playerId: 1, type: "mouse", cell: this.pawns[1].mouse },
-      { id: "p2-cat", playerId: 2, type: "cat", cell: this.pawns[2].cat },
-      { id: "p2-mouse", playerId: 2, type: "mouse", cell: this.pawns[2].mouse },
+      { playerId: 1, type: "cat", cell: this.pawns[1].cat },
+      { playerId: 1, type: "mouse", cell: this.pawns[1].mouse },
+      { playerId: 2, type: "cat", cell: this.pawns[2].cat },
+      { playerId: 2, type: "mouse", cell: this.pawns[2].mouse },
     ];
-  }
-
-  getWalls(): PlayerWall[] {
-    const walls: PlayerWall[] = [];
-    for (let r = 0; r < this.grid.height; r++) {
-      for (let c = 0; c < this.grid.width; c++) {
-        const val = this.grid.cells[r][c];
-        if (val & 1) {
-          const owner = this.grid.verticalOwners[r][c] as PlayerId | 0;
-          walls.push({
-            wall: new Wall(new Cell(r, c), "vertical"),
-            playerId: owner !== 0 ? owner : undefined,
-            state: "placed",
-          });
-        }
-        if (val & 2) {
-          const owner = this.grid.horizontalOwners[r][c] as PlayerId | 0;
-          walls.push({
-            wall: new Wall(new Cell(r, c), "horizontal"),
-            playerId: owner !== 0 ? owner : undefined,
-            state: "placed",
-          });
-        }
-      }
-    }
-    return walls;
   }
 }

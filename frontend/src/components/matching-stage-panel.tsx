@@ -16,25 +16,36 @@ export interface MatchingPlayer {
   name: string;
   isReady: boolean;
   isYou: boolean;
+  isConnected?: boolean;
 }
 
 interface MatchingStagePanelProps {
   isOpen: boolean;
   players: MatchingPlayer[];
-  gameUrl: string;
+  shareUrl?: string;
+  inviteCode?: string;
+  statusMessage?: string;
+  canAbort?: boolean;
   onAbort: () => void;
 }
 
 export function MatchingStagePanel({
   isOpen,
   players,
-  gameUrl,
+  shareUrl,
+  inviteCode,
+  statusMessage,
+  canAbort = true,
   onAbort,
 }: MatchingStagePanelProps) {
   const [copied, setCopied] = useState(false);
+  const resolvedShareUrl =
+    shareUrl ??
+    (typeof window !== "undefined" ? window.location.href : undefined);
 
   const handleCopyLink = () => {
-    void navigator.clipboard.writeText(gameUrl);
+    if (!resolvedShareUrl || typeof navigator === "undefined") return;
+    void navigator.clipboard.writeText(resolvedShareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
   };
@@ -78,13 +89,14 @@ export function MatchingStagePanel({
           </p>
           <div className="flex items-center gap-2">
             <code className="flex-1 bg-muted p-2 rounded text-xs truncate">
-              {gameUrl}
+              {resolvedShareUrl ?? "Share link unavailable"}
             </code>
             <Button
               size="icon"
               variant="outline"
               className="h-8 w-8 shrink-0"
               onClick={handleCopyLink}
+              disabled={!resolvedShareUrl}
             >
               {copied ? (
                 <Check className="h-4 w-4 text-green-500" />
@@ -137,6 +149,14 @@ export function MatchingStagePanel({
             <Users className="h-5 w-5" />
             Waiting for players
           </DialogTitle>
+          {statusMessage && (
+            <p className="text-sm text-muted-foreground">{statusMessage}</p>
+          )}
+          {inviteCode && (
+            <p className="text-xs text-muted-foreground font-mono">
+              Invite code: {inviteCode}
+            </p>
+          )}
         </DialogHeader>
 
         <div className="space-y-4 py-4">
@@ -148,6 +168,20 @@ export function MatchingStagePanel({
                   <span>{getPlayerLabel(player)}</span>
                   {player.isYou && (
                     <span className="text-xs text-muted-foreground">(You)</span>
+                  )}
+                  {typeof player.isConnected === "boolean" && (
+                    <span
+                      className={`flex items-center gap-1 text-xs ${
+                        player.isConnected ? "text-green-600" : "text-muted-foreground"
+                      }`}
+                    >
+                      <span
+                        className={`h-2 w-2 rounded-full ${
+                          player.isConnected ? "bg-green-500" : "bg-gray-400"
+                        }`}
+                      />
+                      {player.isConnected ? "Connected" : "Waiting"}
+                    </span>
                   )}
                 </div>
                 <div className="flex items-center gap-2">
@@ -170,7 +204,7 @@ export function MatchingStagePanel({
         </div>
 
         <div className="flex justify-center">
-          <Button variant="destructive" onClick={onAbort}>
+          <Button variant="destructive" onClick={onAbort} disabled={!canAbort}>
             Abort Game
           </Button>
         </div>

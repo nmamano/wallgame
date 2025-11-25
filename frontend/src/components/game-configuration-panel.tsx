@@ -11,16 +11,12 @@ import { Input } from "@/components/ui/input";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
-import type { TimeControlPreset, Variant } from "@/lib/game";
-
-export interface GameConfiguration {
-  timeControl: TimeControlPreset;
-  rated: boolean;
-  variant: Variant;
-  boardWidth?: number;
-  boardHeight?: number;
-  // Add more variant-specific parameters here as needed
-}
+import type {
+  GameConfiguration,
+  TimeControlPreset,
+  Variant,
+} from "../../../shared/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/game-utils";
 
 interface GameConfigurationPanelProps {
   config: GameConfiguration;
@@ -69,7 +65,7 @@ export function GameConfigurationPanel({
                 type="number"
                 min="4"
                 max="20"
-                value={config.boardWidth ?? 8}
+                value={config.boardWidth}
                 onChange={(e) =>
                   updateConfig({ boardWidth: parseInt(e.target.value) || 8 })
                 }
@@ -85,7 +81,7 @@ export function GameConfigurationPanel({
                 type="number"
                 min="4"
                 max="20"
-                value={config.boardHeight ?? 8}
+                value={config.boardHeight}
                 onChange={(e) =>
                   updateConfig({ boardHeight: parseInt(e.target.value) || 8 })
                 }
@@ -109,9 +105,9 @@ export function GameConfigurationPanel({
             Time Control
           </Label>
           <Select
-            value={config.timeControl}
+            value={config.timeControl.preset ?? "blitz"}
             onValueChange={(value: TimeControlPreset) =>
-              updateConfig({ timeControl: value })
+              updateConfig({ timeControl: timeControlConfigFromPreset(value) })
             }
           >
             <SelectTrigger

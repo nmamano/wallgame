@@ -1,6 +1,7 @@
 import type { PlayerType } from "@/components/player-configuration";
-import { getAiMove, Move, type PlayerId } from "./game";
-import type { GameState } from "./game-state";
+import { getAiMove } from "./dumb-ai";
+import type { PlayerId, Move } from "../../../shared/game-types";
+import type { GameState } from "../../../shared/game-state";
 
 export type PlayerControllerKind = "local-human" | "easy-bot" | "unsupported";
 
@@ -206,12 +207,12 @@ class EasyBotController implements AutomatedPlayerController {
     opponentId,
   }: PlayerControllerContext): Promise<Move> {
     const aiCatPos: [number, number] = [
-      state.pawns[playerId].cat.row,
-      state.pawns[playerId].cat.col,
+      state.pawns[playerId].cat[0],
+      state.pawns[playerId].cat[1],
     ];
     const opponentMousePos: [number, number] = [
-      state.pawns[opponentId].mouse.row,
-      state.pawns[opponentId].mouse.col,
+      state.pawns[opponentId].mouse[0],
+      state.pawns[opponentId].mouse[1],
     ];
 
     await delay(2000);

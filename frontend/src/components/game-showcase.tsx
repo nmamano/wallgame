@@ -3,7 +3,15 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
 import { Board, type Arrow } from "@/components/board";
-import { createCell, createPlayerWall, type Pawn, type PlayerWall } from "@/lib/game";
+import type { WallPosition, Pawn } from "../../../shared/game-types";
+
+type WallPositionWithState = WallPosition & {
+  state?: "placed" | "staged" | "premoved" | "calculated" | "missing";
+};
+import {
+  cellFromStandardNotation,
+  playerWallFromStandardNotation,
+} from "../../../shared/standard-notation";
 
 export function GameShowcase() {
   const [isPlaying, setIsPlaying] = useState(true);
@@ -11,50 +19,66 @@ export function GameShowcase() {
   // Mock game position: 2 players (red and blue), each with a cat and a rat
   const pawns: Pawn[] = [
     // Red player pieces (Player 1)
-    { id: "red-cat", playerId: 1, type: "cat", cell: createCell("d8", 10) },
-    { id: "red-rat", playerId: 1, type: "mouse", cell: createCell("f6", 10) },
+    {
+      playerId: 1,
+      type: "cat",
+      cell: cellFromStandardNotation("d8", 10),
+    },
+    {
+      playerId: 1,
+      type: "mouse",
+      cell: cellFromStandardNotation("f6", 10),
+    },
 
     // Blue player pieces (Player 2)
-    { id: "blue-cat", playerId: 2, type: "cat", cell: createCell("g3", 10) },
-    { id: "blue-rat", playerId: 2, type: "mouse", cell: createCell("h5", 10) },
+    {
+      playerId: 2,
+      type: "cat",
+      cell: cellFromStandardNotation("g3", 10),
+    },
+    {
+      playerId: 2,
+      type: "mouse",
+      cell: cellFromStandardNotation("h5", 10),
+    },
   ];
 
   // Placed walls from both players (including adjacent walls)
-  const walls: PlayerWall[] = [
+  const walls: WallPositionWithState[] = [
     // Red player walls (Player 1)
-    createPlayerWall(">c9", 10, 1),
-    createPlayerWall(">c10", 10, 1),
-    createPlayerWall(">d9", 10, 1),
-    createPlayerWall("^d7", 10, 1),
-    createPlayerWall("^e6", 10, 1),
-    createPlayerWall(">f8", 10, 1),
-    createPlayerWall(">f7", 10, 1),
-    createPlayerWall("^e5", 10, 1),
+    playerWallFromStandardNotation(">c9", 10, 1),
+    playerWallFromStandardNotation(">c10", 10, 1),
+    playerWallFromStandardNotation(">d9", 10, 1),
+    playerWallFromStandardNotation("^d7", 10, 1),
+    playerWallFromStandardNotation("^e6", 10, 1),
+    playerWallFromStandardNotation(">f8", 10, 1),
+    playerWallFromStandardNotation(">f7", 10, 1),
+    playerWallFromStandardNotation("^e5", 10, 1),
 
-    createPlayerWall(">b10", 10, 1),
-    createPlayerWall("^b9", 10, 2),
+    playerWallFromStandardNotation(">b10", 10, 1),
+    playerWallFromStandardNotation("^b9", 10, 2),
 
-    createPlayerWall(">b7", 10, 1),
-    createPlayerWall("^b7", 10, 2),
+    playerWallFromStandardNotation(">b7", 10, 1),
+    playerWallFromStandardNotation("^b7", 10, 2),
 
-    createPlayerWall(">b5", 10, 2),
-    createPlayerWall("^b5", 10, 1),
+    playerWallFromStandardNotation(">b5", 10, 2),
+    playerWallFromStandardNotation("^b5", 10, 1),
 
-    createPlayerWall(">b3", 10, 2),
-    createPlayerWall("^c3", 10, 1),
+    playerWallFromStandardNotation(">b3", 10, 2),
+    playerWallFromStandardNotation("^c3", 10, 1),
 
-    createPlayerWall(">b1", 10, 2),
-    createPlayerWall(">c3", 10, 2),
-    createPlayerWall("^c2", 10, 1),
+    playerWallFromStandardNotation(">b1", 10, 2),
+    playerWallFromStandardNotation(">c3", 10, 2),
+    playerWallFromStandardNotation("^c2", 10, 1),
 
     // Blue player walls (Player 2)
-    createPlayerWall("^f3", 10, 2),
-    createPlayerWall("^g3", 10, 2),
-    createPlayerWall("^g4", 10, 2),
-    createPlayerWall(">g3", 10, 2),
-    createPlayerWall(">h3", 10, 2),
-    createPlayerWall("^h3", 10, 2),
-  ];
+    playerWallFromStandardNotation("^f3", 10, 2),
+    playerWallFromStandardNotation("^g3", 10, 2),
+    playerWallFromStandardNotation("^g4", 10, 2),
+    playerWallFromStandardNotation(">g3", 10, 2),
+    playerWallFromStandardNotation(">h3", 10, 2),
+    playerWallFromStandardNotation("^h3", 10, 2),
+  ].map((wall) => ({ ...wall, state: "placed" as const }));
 
   // No arrows
   const arrows: Arrow[] = [];

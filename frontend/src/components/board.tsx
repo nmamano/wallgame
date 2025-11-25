@@ -3,26 +3,32 @@
 import type { CSSProperties, ReactNode, DragEvent, MouseEvent } from "react";
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Cat, Rat } from "lucide-react";
-import { StyledPillar, type EdgeColorKey } from "../lib/styled-pillar";
+import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
 import {
   type PlayerColor,
   colorClassMap,
   colorFilterMap,
   colorHexMap,
 } from "@/lib/player-colors";
-import {
+import { Grid } from "../../../shared/grid";
+import type {
+  PlayerId,
+  WallOrientation,
   Cell,
-  Wall,
-  type Pawn,
-  type PlayerWall,
-  type PlayerId,
-  Grid,
-} from "@/lib/game";
+  WallPosition,
+} from "../../../shared/game-types";
+import type { Pawn } from "../../../shared/game-types";
+import { pawnId } from "../../../shared/game-utils";
+
+type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
+
+type WallPositionWithState = WallPosition & { state?: WallState };
 
 export type ArrowType = "staged" | "premoved" | "calculated";
 
 export type BoardPawn = Pawn & {
-  previewState?: "staged" | "ghost";
+  id: string;
+  previewState?: "staged" | "ghost"; // TODO: rename "ghost" to "premoved"
 };
 
 export interface Arrow {
@@ -42,8 +48,8 @@ export interface LastMove {
 export interface BoardProps {
   rows?: number;
   cols?: number;
-  pawns?: BoardPawn[];
-  walls?: PlayerWall[];
+  pawns?: Pawn[];
+  walls?: WallPositionWithState[];
   arrows?: Arrow[];
   lastMove?: LastMove;
   lastMoves?: LastMove[];
@@ -53,49 +59,39 @@ export interface BoardProps {
   onWallClick?: (
     row: number,
     col: number,
-    orientation: "horizontal" | "vertical"
+    orientation: WallOrientation
   ) => void;
-  onPawnRightClick?: (row: number, col: number, pawnId: string) => void;
+  onPawnRightClick?: (pawnId: string) => void;
   onWallRightClick?: (wallIndex: number) => void;
   onPawnClick?: (pawnId: string) => void;
   onPawnDragStart?: (pawnId: string) => void;
   onPawnDragEnd?: () => void;
-  onCellDrop?: (row: number, col: number) => void;
-  controllablePlayerId?: PlayerId;
-  catPawnPath?: string;
-  mousePawnPath?: string;
+  onCellDrop?: (pawnId: string, targetRow: number, targetCol: number) => void;
   className?: string;
   draggingPawnId?: string | null;
   selectedPawnId?: string | null;
   stagedActionsCount?: number;
+  controllablePlayerId?: PlayerId;
 }
 
 interface WallMaps {
-  vertical: Map<string, PlayerWall>;
-  horizontal: Map<string, PlayerWall>;
+  vertical: Map<string, WallPositionWithState>;
+  horizontal: Map<string, WallPositionWithState>;
 }
 
 type PillarColors = Record<EdgeColorKey, string | null>;
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
-const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
-  const vertical = new Map<string, PlayerWall>();
-  const horizontal = new Map<string, PlayerWall>();
+const buildWallMaps = (walls: WallPositionWithState[]): WallMaps => {
+  const vertical = new Map<string, WallPositionWithState>();
+  const horizontal = new Map<string, WallPositionWithState>();
 
-  walls.forEach((pWall) => {
-    const wall = pWall.wall;
-    if (wall.row1 === wall.row2) {
-      const row = wall.row1;
-      const minCol = Math.min(wall.col1, wall.col2);
-      vertical.set(wallKey(row, minCol), pWall);
-      return;
-    }
-
-    if (wall.col1 === wall.col2) {
-      const col = wall.col1;
-      const minRow = Math.min(wall.row1, wall.row2);
-      horizontal.set(wallKey(minRow, col), pWall);
+  walls.forEach((wall) => {
+    if (wall.orientation === "vertical") {
+      vertical.set(wallKey(wall.cell[0], wall.cell[1]), wall);
+    } else {
+      horizontal.set(wallKey(wall.cell[0], wall.cell[1]), wall);
     }
   });
 
@@ -103,16 +99,16 @@ const buildWallMaps = (walls: PlayerWall[]): WallMaps => {
 };
 
 const getWallColor = (
-  pWall: PlayerWall,
+  wall: WallPositionWithState,
   playerColors?: Record<PlayerId, PlayerColor>
 ): string => {
-  if (pWall.state === "placed" && pWall.playerId && playerColors) {
-    const color = playerColors[pWall.playerId];
+  if (wall.state === "placed" && wall.playerId && playerColors) {
+    const color = playerColors[wall.playerId];
     return colorHexMap[color] || "#dc2626";
   }
-  if (pWall.state === "staged") return "#fbbf24";
-  if (pWall.state === "premoved") return "#60a5fa";
-  if (pWall.state === "calculated") return "#94a3b8";
+  if (wall.state === "staged") return "#fbbf24";
+  if (wall.state === "premoved") return "#60a5fa";
+  if (wall.state === "calculated") return "#94a3b8";
   return "transparent";
 };
 
@@ -120,12 +116,15 @@ const getPillarColors = (
   rowIndex: number,
   colIndex: number,
   wallMaps: WallMaps,
-  resolveColor: (wall: PlayerWall) => string
+  resolveColor: (wall: WallPositionWithState) => string
 ): PillarColors => {
   const northWall = wallMaps.vertical.get(wallKey(rowIndex - 1, colIndex - 1));
   const southWall = wallMaps.vertical.get(wallKey(rowIndex, colIndex - 1));
-  const westWall = wallMaps.horizontal.get(wallKey(rowIndex - 1, colIndex - 1));
-  const eastWall = wallMaps.horizontal.get(wallKey(rowIndex - 1, colIndex));
+  // Horizontal wall at cell [r, c] blocks (r-1, c) ↔ (r, c)
+  // West edge: blocks (rowIndex-1, colIndex-1) ↔ (rowIndex, colIndex-1), so wall is at [rowIndex, colIndex-1]
+  const westWall = wallMaps.horizontal.get(wallKey(rowIndex, colIndex - 1));
+  // East edge: blocks (rowIndex-1, colIndex) ↔ (rowIndex, colIndex), so wall is at [rowIndex, colIndex]
+  const eastWall = wallMaps.horizontal.get(wallKey(rowIndex, colIndex));
 
   return {
     north: northWall ? resolveColor(northWall) : null,
@@ -169,6 +168,12 @@ export function Board({
   stagedActionsCount = 0,
   controllablePlayerId,
 }: BoardProps) {
+  // Generate IDs for pawns internally
+  const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
+    ...pawn,
+    id: pawnId(pawn),
+  }));
+
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
     Array.from({ length: cols }, (_, colIndex) => ({
@@ -247,13 +252,13 @@ export function Board({
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
   const resolveWallColor = useCallback(
-    (wall: PlayerWall) => getWallColor(wall, playerColors),
+    (wall: WallPositionWithState) => getWallColor(wall, playerColors),
     [playerColors]
   );
 
   // Get pawns for a cell
   const getPawnsForCell = (row: number, col: number): BoardPawn[] => {
-    return pawns.filter((p) => p.cell.row === row && p.cell.col === col);
+    return pawnsWithIds.filter((p) => p.cell[0] === row && p.cell[1] === col);
   };
 
   const dragEnabled = Boolean(onCellDrop);
@@ -261,10 +266,10 @@ export function Board({
   // Build gameGrid from walls for distance calculations
   // Include both placed and staged walls so distance calculations account for staged walls
   const gameGrid = useMemo(() => {
-    const g = new Grid(cols, rows);
+    const g = new Grid(cols, rows, "standard");
     walls.forEach((pWall) => {
       if (pWall.state === "placed" || pWall.state === "staged") {
-        g.addWall(pWall.wall, pWall.playerId);
+        g.addWall(pWall);
       }
     });
     return g;
@@ -276,7 +281,7 @@ export function Board({
     const activePawnId = draggingPawnId ?? selectedPawnId;
     if (!activePawnId || !dragEnabled) return new Set<string>();
 
-    const pawn = pawns.find((p) => p.id === activePawnId);
+    const pawn = pawnsWithIds.find((p) => p.id === activePawnId);
     if (!pawn) return new Set<string>();
 
     const validCells = new Set<string>();
@@ -285,7 +290,7 @@ export function Board({
     for (let row = 0; row < rows; row++) {
       for (let col = 0; col < cols; col++) {
         const distance = gameGrid.distance(
-          [pawn.cell.row, pawn.cell.col],
+          [pawn.cell[0], pawn.cell[1]],
           [row, col]
         );
         if (stagedActionsCount === 0) {
@@ -307,7 +312,7 @@ export function Board({
     draggingPawnId,
     selectedPawnId,
     dragEnabled,
-    pawns,
+    pawnsWithIds,
     stagedActionsCount,
     gameGrid,
     rows,
@@ -435,15 +440,18 @@ export function Board({
     });
   };
 
-  // Normalize wall coordinates (always store in consistent order)
-  const normalizeWall = (wall: Wall): [number, number, number, number] => {
-    if (
-      wall.row1 < wall.row2 ||
-      (wall.row1 === wall.row2 && wall.col1 < wall.col2)
-    ) {
-      return [wall.row1, wall.col1, wall.row2, wall.col2];
+  // Convert WallPosition to rectangle coordinates for rendering
+  // Returns [row1, col1, row2, col2] representing the two cells separated by the wall
+  const wallToRectCoords = (
+    wall: WallPosition
+  ): [number, number, number, number] => {
+    if (wall.orientation === "vertical") {
+      // Vertical wall: separates (row, col) and (row, col+1)
+      return [wall.cell[0], wall.cell[1], wall.cell[0], wall.cell[1] + 1];
+    } else {
+      // Horizontal wall: separates (row-1, col) and (row, col)
+      return [wall.cell[0] - 1, wall.cell[1], wall.cell[0], wall.cell[1]];
     }
-    return [wall.row2, wall.col2, wall.row1, wall.col1];
   };
 
   // Get arrow color based on type
@@ -459,12 +467,12 @@ export function Board({
       return null;
     }
 
-    const fromCenter = getCellCenterPosition(arrow.from.row, arrow.from.col);
-    const toCenter = getCellCenterPosition(arrow.to.row, arrow.to.col);
+    const fromCenter = getCellCenterPosition(arrow.from[0], arrow.from[1]);
+    const toCenter = getCellCenterPosition(arrow.to[0], arrow.to[1]);
     const { start, end } = shortenLineBetweenCenters(
       { x: fromCenter.x, y: fromCenter.y },
       { x: toCenter.x, y: toCenter.y },
-      getArrowScale(arrow.from.row, arrow.from.col, arrow.to.row, arrow.to.col)
+      getArrowScale(arrow.from[0], arrow.from[1], arrow.to[0], arrow.to[1])
     );
 
     const arrowColor = getArrowColor(arrow);
@@ -475,7 +483,7 @@ export function Board({
 
     return (
       <svg
-        key={`arrow-${arrow.from.row}-${arrow.from.col}-${arrow.to.row}-${arrow.to.col}-${index}`}
+        key={`arrow-${arrow.from[0]}-${arrow.from[1]}-${arrow.to[0]}-${arrow.to[1]}-${index}`}
         className="absolute inset-0 pointer-events-none"
         style={{ zIndex: arrow.type === "calculated" ? 1 : 5 }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
@@ -693,7 +701,10 @@ export function Board({
     if (!onCellDrop) return;
     event.preventDefault();
     event.stopPropagation();
-    onCellDrop(row, col);
+    const pawnId = event.dataTransfer.getData("text/plain");
+    if (pawnId) {
+      onCellDrop(pawnId, row, col);
+    }
   };
 
   const renderPawnWrapper = (
@@ -719,7 +730,7 @@ export function Board({
       event.preventDefault();
       event.stopPropagation();
       if (!isControllable) return;
-      onPawnRightClick?.(rowIndex, colIndex, pawn.id);
+      onPawnRightClick?.(pawn.id);
     };
 
     const handleClick = (event: MouseEvent<HTMLDivElement>) => {
@@ -921,7 +932,11 @@ export function Board({
                         zIndex: 15,
                       }}
                       onClick={() =>
-                        onWallClick?.(rowIndex + 1, colIndex, "horizontal")
+                        onWallClick?.(
+                          rowIndex + 1,
+                          colIndex,
+                          "horizontal" as WallOrientation
+                        )
                       }
                     />
                   );
@@ -948,7 +963,11 @@ export function Board({
                         zIndex: 15,
                       }}
                       onClick={() =>
-                        onWallClick?.(rowIndex, colIndex, "vertical")
+                        onWallClick?.(
+                          rowIndex,
+                          colIndex,
+                          "vertical" as WallOrientation
+                        )
                       }
                     />
                   );
@@ -967,9 +986,8 @@ export function Board({
               if (cellWidthPx === 0 || cellHeightPx === 0) {
                 return null;
               }
-              const wall = pWall.wall;
-              const [row1, col1, row2, col2] = normalizeWall(wall);
-              const isHorizontal = row1 === row2;
+              const [row1, col1, row2, col2] = wallToRectCoords(pWall);
+              const isVertical = pWall.orientation === "vertical";
               const wallColor = resolveWallColor(pWall);
 
               let style: CSSProperties = {
@@ -983,10 +1001,9 @@ export function Board({
                       : 2,
               };
 
-              if (isHorizontal) {
-                // Vertical wall (between cells in same row, separating columns)
-                const minCol = Math.min(col1, col2);
-                const rect = getCellRect(row1, minCol);
+              if (isVertical) {
+                // Vertical wall: separates cells horizontally (between columns)
+                const rect = getCellRect(row1, col1);
                 if (!rect) {
                   return null;
                 }
@@ -1004,7 +1021,7 @@ export function Board({
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
-                // Horizontal wall (between cells in same column, separating rows)
+                // Horizontal wall: separates cells vertically (between rows)
                 const minRow = Math.min(row1, row2);
                 const wallCenterY =
                   (minRow + 1) * (cellHeightPx + gridMetrics.gapY) -

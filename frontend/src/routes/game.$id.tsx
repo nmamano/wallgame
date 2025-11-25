@@ -28,31 +28,42 @@ import {
   AlertCircle,
 } from "lucide-react";
 import { colorFilterMap } from "@/lib/player-colors";
-import { Board, type BoardProps, type Arrow } from "@/components/board";
+import {
+  Board,
+  type BoardProps,
+  type Arrow,
+  type BoardPawn,
+} from "@/components/board";
 import {
   MatchingStagePanel,
   type MatchingPlayer,
 } from "@/components/matching-stage-panel";
-import {
+import { type GameAction } from "../../../shared/game-types";
+import { GameState } from "../../../shared/game-state";
+import type {
+  PlayerId,
+  GameResult,
   Cell,
-  Wall,
-  type PlayerId,
+  WallOrientation,
+  PawnType,
+  WallPosition,
   Move,
   Action,
-  TimeControl as GameTimeControl,
-  type PlayerWall,
-} from "@/lib/game";
+} from "../../../shared/game-types";
 import {
-  GameState,
-  type GameResult,
-  type GameConfig,
-  type GameAction,
-} from "@/lib/game-state";
+  moveToStandardNotation,
+  cellToStandardNotation,
+} from "../../../shared/standard-notation";
+import { pawnId } from "../../../shared/game-utils";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/components/player-configuration";
-import type { GameConfiguration } from "@/components/game-configuration-panel";
-import type { TimeControlPreset } from "@/lib/game";
-import { userQueryOptions } from "@/lib/api";
+import type { GameConfiguration } from "../../../shared/game-types";
+import {
+  userQueryOptions,
+  fetchGameSession,
+  joinGameSession,
+  markGameReady,
+} from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import {
   createPlayerController,
@@ -64,9 +75,28 @@ import {
   type DrawDecision,
   type TakebackDecision,
 } from "@/lib/player-controllers";
+import { GameClient } from "@/lib/game-client";
+import {
+  getGameHandshake,
+  saveGameHandshake,
+  clearGameHandshake,
+  type StoredGameHandshake,
+} from "@/lib/game-session";
+import {
+  buildGameConfigurationFromSerialized,
+  hydrateGameStateFromSerialized,
+  serializeActions,
+} from "@/lib/game-state-utils";
+import type { GameSnapshot } from "../../../shared/game-types";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
+  validateSearch: (search: Record<string, unknown>) => ({
+    invite:
+      typeof search.invite === "string" && search.invite.length > 0
+        ? search.invite
+        : undefined,
+  }),
 });
 
 interface GamePlayer {
@@ -77,6 +107,8 @@ interface GamePlayer {
   color: PlayerColor;
   type: PlayerType;
   isOnline: boolean;
+  catSkin?: string;
+  mouseSkin?: string;
 }
 
 interface ChatMessage {
@@ -138,7 +170,11 @@ interface RematchState {
 }
 
 const DEFAULT_CONFIG: GameConfiguration = {
-  timeControl: "blitz",
+  timeControl: {
+    initialSeconds: 180,
+    incrementSeconds: 2,
+    preset: "blitz",
+  },
   rated: false,
   variant: "standard",
   boardWidth: 9,
@@ -157,19 +193,10 @@ const PLACEHOLDER_COPY: Partial<Record<PlayerType, string>> = {
     "Uploading your own bot needs an API token from the server (not yet available).",
 };
 
-const VARIANT_LABELS: Record<string, "Standard" | "Classic" | "Freestyle"> = {
-  standard: "Standard",
-  classic: "Classic",
-};
-
 function formatTime(seconds: number): string {
   const mins = Math.floor(seconds / 60);
   const secs = seconds % 60;
   return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
-
-function mapTimeControl(control: TimeControlPreset): GameTimeControl {
-  return GameTimeControl.fromPreset(control);
 }
 
 function buildPlayerName(
@@ -204,8 +231,7 @@ const MAX_ACTIONS_PER_MOVE = 2;
 
 const actionsEqual = (a: Action, b: Action): boolean => {
   if (a.type !== b.type) return false;
-  if (a.target.row !== b.target.row || a.target.col !== b.target.col)
-    return false;
+  if (a.target[0] !== b.target[0] || a.target[1] !== b.target[1]) return false;
   if (a.type === "wall") {
     return a.wallOrientation === b.wallOrientation;
   }
@@ -213,46 +239,46 @@ const actionsEqual = (a: Action, b: Action): boolean => {
 };
 
 const buildDoubleStepPaths = (
-  pawnType: "cat" | "mouse",
+  pawnType: PawnType,
   from: Cell,
   to: Cell
 ): Action[][] => {
   const paths: Action[][] = [];
-  const rowDiff = Math.abs(from.row - to.row);
-  const colDiff = Math.abs(from.col - to.col);
+  const rowDiff = Math.abs(from[0] - to[0]);
+  const colDiff = Math.abs(from[1] - to[1]);
   const distance = rowDiff + colDiff;
   if (distance !== 2) {
     return paths;
   }
 
-  if (from.row === to.row) {
+  if (from[0] === to[0]) {
     // Horizontal double step
-    const midCol = (from.col + to.col) / 2;
+    const midCol = (from[1] + to[1]) / 2;
     paths.push([
-      new Action(pawnType, new Cell(from.row, midCol)),
-      new Action(pawnType, to),
+      { type: pawnType, target: [from[0], midCol] },
+      { type: pawnType, target: to },
     ]);
     return paths;
   }
 
-  if (from.col === to.col) {
+  if (from[1] === to[1]) {
     // Vertical double step
-    const midRow = (from.row + to.row) / 2;
+    const midRow = (from[0] + to[0]) / 2;
     paths.push([
-      new Action(pawnType, new Cell(midRow, from.col)),
-      new Action(pawnType, to),
+      { type: pawnType, target: [midRow, from[1]] },
+      { type: pawnType, target: to },
     ]);
     return paths;
   }
 
   // L-shaped double step (one row, one column)
   paths.push([
-    new Action(pawnType, new Cell(from.row, to.col)),
-    new Action(pawnType, to),
+    { type: pawnType, target: [from[0], to[1]] },
+    { type: pawnType, target: to },
   ]);
   paths.push([
-    new Action(pawnType, new Cell(to.row, from.col)),
-    new Action(pawnType, to),
+    { type: pawnType, target: [to[0], from[1]] },
+    { type: pawnType, target: to },
   ]);
   return paths;
 };
@@ -269,8 +295,6 @@ function formatWinReason(reason?: GameResult["reason"]): string {
       return "draw";
     case "one-move-rule":
       return "one-move rule";
-    case "stalemate":
-      return "stalemate";
     default:
       return "unknown reason";
   }
@@ -312,32 +336,499 @@ const resolvePlayerColor = (value?: string | null): PlayerColor => {
     : "red";
 };
 
-function buildStartPositions(
-  width: number,
-  height: number
-): NonNullable<GameConfig["startPos"]> {
-  const leftFile = "a";
-  const rightFile = String.fromCharCode("a".charCodeAt(0) + width - 1);
-  const topRank = height;
-  const bottomRank = 1;
-
-  return {
-    p1Cat: `${leftFile}${topRank}`,
-    p1Mouse: `${leftFile}${bottomRank}`,
-    p2Cat: `${rightFile}${topRank}`,
-    p2Mouse: `${rightFile}${bottomRank}`,
-  };
-}
-
 function GamePage() {
   const { id } = Route.useParams();
+  const search = Route.useSearch();
+  const maskToken = useCallback((value?: string | null) => {
+    if (!value) return undefined;
+    if (value.length <= 8) return value;
+    return `${value.slice(0, 4)}…${value.slice(-4)}`;
+  }, []);
+  const debugMatch = useCallback(
+    (message: string, extra?: Record<string, unknown>) => {
+      console.debug(`[friend-game] ${message}`, extra);
+    },
+    []
+  );
 
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
+  const [gameHandshake, setGameHandshake] =
+    useState<StoredGameHandshake | null>(null);
+  const [matchSnapshot, setMatchSnapshot] = useState<GameSnapshot | null>(null);
+  const [matchShareUrl, setMatchShareUrl] = useState<string | undefined>(
+    undefined
+  );
+  const [matchError, setMatchError] = useState<string | null>(null);
+  const [isMultiplayerMatch, setIsMultiplayerMatch] = useState(false);
+  const [isJoiningMatch, setIsJoiningMatch] = useState(false);
+  const gameClientRef = useRef<GameClient | null>(null);
+  const gameInitializedRef = useRef(false);
+  const gameAwaitingServerRef = useRef(false);
+  const hostReadyRef = useRef(false);
+  const updateGameHandshake = useCallback(
+    (next: StoredGameHandshake | null) => {
+      if (next) {
+        saveGameHandshake(next);
+        setGameHandshake(next);
+        setMatchShareUrl(next.shareUrl);
+      } else {
+        clearGameHandshake(id);
+        setGameHandshake(null);
+        setMatchShareUrl(undefined);
+      }
+    },
+    [id]
+  );
+
+  const preferredPawnColor = resolvePlayerColor(settings.pawnColor);
+  const preferredCatSkin = settings.catPawn;
+  const preferredMouseSkin = settings.mousePawn;
+
+  useEffect(() => {
+    let cancelled = false;
+    const stored = getGameHandshake(id);
+    debugMatch("Bootstrapping friend match state", {
+      id,
+      hasStoredHandshake: Boolean(stored),
+      hasInviteParam: Boolean(search.invite),
+    });
+    if (stored) {
+      debugMatch("Using stored friend handshake", {
+        id,
+        role: stored.role,
+        playerId: stored.playerId,
+        token: maskToken(stored.token),
+        socketToken: maskToken(stored.socketToken),
+      });
+      setMatchShareUrl(stored.shareUrl);
+      setGameHandshake(stored);
+      setIsMultiplayerMatch(true);
+      return () => {
+        cancelled = true;
+      };
+    }
+    if (!search.invite) {
+      debugMatch(
+        "No stored handshake or invite found; falling back to local config",
+        {
+          id,
+        }
+      );
+      setIsMultiplayerMatch(false);
+      return () => {
+        cancelled = true;
+      };
+    }
+    setIsMultiplayerMatch(true);
+    setIsJoiningMatch(true);
+    void (async () => {
+      try {
+        const details = await joinGameSession({
+          gameId: id,
+          inviteCode: search.invite!,
+          displayName: settings.displayName,
+          appearance: {
+            pawnColor: preferredPawnColor,
+            catSkin: preferredCatSkin,
+            mouseSkin: preferredMouseSkin,
+          },
+        });
+        if (cancelled) return;
+        const handshake: StoredGameHandshake = {
+          gameId: id,
+          token: details.token,
+          socketToken: details.socketToken,
+          role: details.role,
+          playerId: details.playerId,
+          matchType: details.snapshot.matchType,
+          shareUrl: details.shareUrl,
+          inviteCode: search.invite,
+        };
+        updateGameHandshake(handshake);
+        debugMatch("Joined friend game via invite", {
+          id,
+          role: handshake.role,
+          playerId: handshake.playerId,
+          token: maskToken(handshake.token),
+          socketToken: maskToken(handshake.socketToken),
+        });
+      } catch (error) {
+        if (cancelled) return;
+        debugMatch("Failed to join friend game via invite", {
+          id,
+          error:
+            error instanceof Error
+              ? { message: error.message }
+              : { message: "unknown error" },
+        });
+        setMatchError(
+          error instanceof Error ? error.message : "Unable to join friend game."
+        );
+        setIsMultiplayerMatch(false);
+      } finally {
+        if (!cancelled) {
+          setIsJoiningMatch(false);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [
+    debugMatch,
+    id,
+    maskToken,
+    preferredCatSkin,
+    preferredMouseSkin,
+    preferredPawnColor,
+    search.invite,
+    settings.displayName,
+    updateGameHandshake,
+  ]);
+
+  useEffect(() => {
+    if (!gameHandshake) return;
+    let cancelled = false;
+    debugMatch("Fetching friend game session snapshot", {
+      id,
+      role: gameHandshake.role,
+      playerId: gameHandshake.playerId,
+      token: maskToken(gameHandshake.token),
+    });
+    void (async () => {
+      try {
+        const details = await fetchGameSession({
+          gameId: id,
+          token: gameHandshake.token,
+        });
+        if (cancelled) return;
+        setMatchSnapshot(details.snapshot);
+        setMatchShareUrl(details.shareUrl ?? gameHandshake.shareUrl);
+        if (details.shareUrl && details.shareUrl !== gameHandshake.shareUrl) {
+          updateGameHandshake({
+            ...gameHandshake,
+            shareUrl: details.shareUrl,
+          });
+        }
+        debugMatch("Loaded friend session snapshot", {
+          id,
+          status: details.snapshot.status,
+          players: details.snapshot.players.map((player) => ({
+            playerId: player.playerId,
+            ready: player.ready,
+            connected: player.connected,
+          })),
+        });
+        const status = details.snapshot.status;
+        setIsMatchingOpen(status !== "in-progress" && status !== "completed");
+        if (details.role === "host" && !hostReadyRef.current) {
+          try {
+            debugMatch("Marking host as ready for friend game", {
+              id,
+              token: maskToken(gameHandshake.token),
+            });
+            const snapshot = await markGameReady({
+              gameId: id,
+              token: gameHandshake.token,
+            });
+            if (!cancelled) {
+              setMatchSnapshot(snapshot);
+              setIsMatchingOpen(
+                snapshot.status !== "in-progress" &&
+                  snapshot.status !== "completed"
+              );
+            }
+          } catch (error) {
+            if (!cancelled) {
+              console.error("Failed to mark friend game ready:", error);
+            }
+          } finally {
+            hostReadyRef.current = true;
+          }
+        }
+      } catch (error) {
+        if (cancelled) return;
+        debugMatch("Failed to load friend game snapshot", {
+          id,
+          error:
+            error instanceof Error
+              ? { message: error.message }
+              : { message: "unknown error" },
+        });
+        setMatchError(
+          error instanceof Error ? error.message : "Unable to load friend game."
+        );
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+  }, [debugMatch, gameHandshake, id, maskToken, updateGameHandshake]);
+
+  const addSystemMessage = useCallback((text: string) => {
+    setMessages((prev) => [
+      ...prev,
+      {
+        id: Date.now().toString(),
+        sender: "System",
+        text,
+        timestamp: new Date(),
+        channel: "game",
+        isSystem: true,
+      },
+    ]);
+  }, []);
+
+  const [playerTypes, setPlayerTypes] = useState<PlayerType[]>(DEFAULT_PLAYERS);
+
+  useEffect(() => {
+    if (!isMultiplayerMatch) return;
+    if (!playerTypes.length) return;
+    setMatchParticipants(playerTypes);
+  }, [isMultiplayerMatch, playerTypes]);
+
+  const primaryLocalPlayerId = useMemo<PlayerId>(() => {
+    const idx = playerTypes.findIndex((type) => type === "you");
+    return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
+  }, [playerTypes]);
+
+  const playerControllersRef = useRef<
+    Partial<Record<PlayerId, GamePlayerController>>
+  >({});
+
+  const initializeGame = useCallback(
+    (
+      incomingConfig: GameConfiguration,
+      incomingPlayers: PlayerType[],
+      options?: { forceYouFirst?: boolean }
+    ) => {
+      const nextGameId = currentGameIdRef.current + 1;
+      currentGameIdRef.current = nextGameId;
+      const sanitizedPlayers = sanitizePlayerList(incomingPlayers, {
+        forceYouFirst: options?.forceYouFirst ?? true,
+      });
+      const nextPrimaryLocalPlayerId = (() => {
+        const idx = sanitizedPlayers.findIndex((type) => type === "you");
+        return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
+      })();
+      const state = new GameState(incomingConfig, Date.now());
+
+      gameStateRef.current = state;
+      setConfig(incomingConfig);
+      setPlayerTypes(sanitizedPlayers);
+      setSelectedPawnId(null);
+      setDraggingPawnId(null);
+      setActionError(null);
+      setMessages([]);
+      setChatInput("");
+      setActiveTab("history");
+      setChatChannel("game");
+      setLastMove(undefined);
+      setStagedActions([]);
+      setActiveLocalPlayerId(null);
+      setAutomatedPlayerId(null);
+      setResignFlowPlayerId(null);
+      setIncomingPassiveNotice(null);
+      setOutgoingTimeInfo(null);
+      setPendingDrawOffer(null);
+      setPendingTakebackRequest(null);
+      setDrawDecisionPrompt(null);
+      setTakebackDecisionPrompt(null);
+      pendingTurnRequestRef.current = null;
+
+      Object.values(playerControllersRef.current).forEach((controller) =>
+        controller.cancel?.(new Error("Game reset"))
+      );
+      const controllers: Partial<Record<PlayerId, GamePlayerController>> = {};
+      sanitizedPlayers.forEach((type, index) => {
+        const playerId = (index + 1) as PlayerId;
+        controllers[playerId] = createPlayerController({
+          playerId,
+          playerType: type,
+        });
+      });
+      playerControllersRef.current = controllers;
+
+      const initialPlayers: GamePlayer[] = sanitizedPlayers.map(
+        (type, index) => ({
+          id: `p${index + 1}`,
+          playerId: (index + 1) as PlayerId,
+          name: buildPlayerName(type, index, settings.displayName),
+          rating: type.includes("bot") ? 1200 : 1250,
+          color:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? preferredPawnColor
+              : DEFAULT_PLAYER_COLORS[(index + 1) as PlayerId],
+          type,
+          isOnline: type === "you" || type.includes("bot"),
+          catSkin:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? preferredCatSkin
+              : undefined,
+          mouseSkin:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? preferredMouseSkin
+              : undefined,
+        })
+      );
+      playersRef.current = initialPlayers;
+      setPlayers(initialPlayers);
+
+      const matchingList: MatchingPlayer[] = initialPlayers.map((player) => ({
+        id: player.id,
+        type: player.type,
+        name: player.name,
+        isReady: player.type === "you" || player.type.includes("bot"),
+        isYou: player.type === "you",
+      }));
+      setMatchingPlayers(matchingList);
+      const waiting = matchingList.some((entry) => !entry.isReady);
+      setIsMatchingOpen(waiting);
+
+      setGameState(state);
+
+      addSystemMessage(
+        waiting ? "Waiting for players..." : "Game created. Good luck!"
+      );
+      setRematchState((prev) => ({
+        status: "idle",
+        responses: { 1: "pending", 2: "pending" },
+        requestId: prev.requestId,
+      }));
+    },
+    [
+      addSystemMessage,
+      playerControllersRef,
+      preferredCatSkin,
+      preferredMouseSkin,
+      preferredPawnColor,
+      settings.displayName,
+    ]
+  );
+
+  const updateGameState = useCallback(
+    (
+      nextState: GameState,
+      options?: {
+        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+      }
+    ) => {
+      gameStateRef.current = nextState;
+      setGameState(nextState);
+      if (
+        options &&
+        Object.prototype.hasOwnProperty.call(options, "lastMoves")
+      ) {
+        if (options.lastMoves) {
+          setLastMove(options.lastMoves);
+        } else {
+          setLastMove(undefined);
+        }
+      } else {
+        setLastMove(undefined);
+      }
+    },
+    []
+  );
+
+  useEffect(() => {
+    if (!gameHandshake) return;
+    debugMatch("Connecting GameClient", {
+      id,
+      playerId: gameHandshake.playerId,
+      socketToken: maskToken(gameHandshake.socketToken),
+    });
+    const client = new GameClient({
+      gameId: id,
+      socketToken: gameHandshake.socketToken,
+    });
+    gameClientRef.current = client;
+    client.connect({
+      onState: (state) => {
+        setMatchError(null);
+        const config = buildGameConfigurationFromSerialized(state);
+        if (!gameInitializedRef.current) {
+          const playerTypes: PlayerType[] =
+            gameHandshake.playerId === 1
+              ? ["you", "friend"]
+              : ["friend", "you"];
+          initializeGame(config, playerTypes, { forceYouFirst: false });
+          setPlayerTypes(playerTypes);
+          gameInitializedRef.current = true;
+        }
+        const resolvedState = hydrateGameStateFromSerialized(state, config);
+        updateGameState(resolvedState);
+        gameAwaitingServerRef.current = false;
+        if (gameHandshake.playerId === resolvedState.turn) {
+          setActiveLocalPlayerId(gameHandshake.playerId);
+        } else {
+          setActiveLocalPlayerId(null);
+        }
+      },
+      onMatchStatus: (snapshot) => {
+        setMatchSnapshot(snapshot);
+        setIsMatchingOpen(
+          snapshot.status !== "in-progress" && snapshot.status !== "completed"
+        );
+      },
+      onError: (message) => {
+        setMatchError(message);
+      },
+    });
+    return () => {
+      client.close();
+      if (gameClientRef.current === client) {
+        gameClientRef.current = null;
+      }
+      gameInitializedRef.current = false;
+      gameAwaitingServerRef.current = false;
+    };
+  }, [
+    debugMatch,
+    gameHandshake,
+    id,
+    initializeGame,
+    maskToken,
+    updateGameState,
+  ]);
+
+  useEffect(() => {
+    if (!isMultiplayerMatch || !matchSnapshot) return;
+    setPlayers((prev) => {
+      if (!prev.length) return prev;
+      const next = prev.map((player) => {
+        const remote = matchSnapshot.players.find(
+          (entry) => entry.playerId === player.playerId
+        );
+        if (!remote) return player;
+        const isLocal = player.playerId === primaryLocalPlayerId;
+        const appearance = remote.appearance;
+        return {
+          ...player,
+          name: remote.displayName || player.name,
+          isOnline: remote.connected,
+          color:
+            !isLocal && appearance?.pawnColor
+              ? resolvePlayerColor(appearance.pawnColor)
+              : player.color,
+          catSkin:
+            !isLocal && appearance?.catSkin
+              ? appearance.catSkin
+              : player.catSkin,
+          mouseSkin:
+            !isLocal && appearance?.mouseSkin
+              ? appearance.mouseSkin
+              : player.mouseSkin,
+        };
+      });
+      playersRef.current = next;
+      return next;
+    });
+  }, [matchSnapshot, isMultiplayerMatch, primaryLocalPlayerId]);
 
   const [config, setConfig] = useState<GameConfiguration | null>(null);
-  const [playerTypes, setPlayerTypes] = useState<PlayerType[]>(DEFAULT_PLAYERS);
   const [players, setPlayers] = useState<GamePlayer[]>([]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [isMatchingOpen, setIsMatchingOpen] = useState(false);
@@ -387,12 +878,52 @@ function GamePage() {
     responses: { 1: "pending", 2: "pending" },
     requestId: 0,
   });
+  const panelInviteCode =
+    matchSnapshot?.inviteCode ?? gameHandshake?.inviteCode;
+  const defaultShareUrl =
+    typeof window !== "undefined" ? window.location.href : undefined;
+  const resolvedShareUrl = isMultiplayerMatch
+    ? (matchShareUrl ?? defaultShareUrl)
+    : defaultShareUrl;
+  const matchingPanelPlayers: MatchingPlayer[] = useMemo(() => {
+    if (isMultiplayerMatch && matchSnapshot && gameHandshake) {
+      // Determine the opponent type based on matchType
+      const opponentType =
+        gameHandshake.matchType === "matchmaking" ? "matched-user" : "friend";
+      return matchSnapshot.players.map((player) => ({
+        id: `player-${player.playerId}`,
+        type: player.playerId === gameHandshake.playerId ? "you" : opponentType,
+        name: player.displayName,
+        isReady: player.ready,
+        isYou: player.playerId === gameHandshake.playerId,
+        isConnected: player.connected,
+      }));
+    }
+    return matchingPlayers;
+  }, [isMultiplayerMatch, matchSnapshot, gameHandshake, matchingPlayers]);
+  const matchingPanelOpen = isMultiplayerMatch
+    ? matchSnapshot?.status === "waiting"
+    : isMatchingOpen;
+  const matchingCanAbort =
+    !isMultiplayerMatch || !matchSnapshot || matchSnapshot.status === "waiting";
+  const matchingStatusMessage = useMemo(() => {
+    if (!isMultiplayerMatch) return undefined;
+    if (matchError) return matchError;
+    if (isJoiningMatch) return "Joining friend game...";
+    switch (matchSnapshot?.status) {
+      case "waiting":
+        return "Waiting for players...";
+      case "ready":
+        return "Both players almost ready...";
+      case "completed":
+        return "Game finished.";
+      default:
+        return undefined;
+    }
+  }, [isMultiplayerMatch, matchError, isJoiningMatch, matchSnapshot?.status]);
 
   const gameStateRef = useRef<GameState | null>(null);
   const playersRef = useRef<GamePlayer[]>([]);
-  const playerControllersRef = useRef<
-    Partial<Record<PlayerId, GamePlayerController>>
-  >({});
   const pendingTurnRequestRef = useRef<PlayerId | null>(null);
   const drawOfferRequestIdRef = useRef(0);
   const takebackRequestIdRef = useRef(0);
@@ -402,11 +933,6 @@ function GamePage() {
   const currentGameIdRef = useRef(0);
   const lastScoredGameIdRef = useRef(0);
   const rematchRequestIdRef = useRef(0);
-
-  const primaryLocalPlayerId = useMemo<PlayerId>(() => {
-    const idx = playerTypes.findIndex((type) => type === "you");
-    return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
-  }, [playerTypes]);
 
   const localPlayerIds = useMemo<PlayerId[]>(() => {
     return playerTypes.reduce((acc, type, index) => {
@@ -430,20 +956,43 @@ function GamePage() {
     () => playerTypes.filter((type) => type !== "you" && type !== "easy-bot"),
     [playerTypes]
   );
-  const interactionLocked = unsupportedPlayers.length > 0;
+  const matchReadyForPlay =
+    isMultiplayerMatch &&
+    Boolean(gameHandshake) &&
+    (matchSnapshot?.status === "in-progress" ||
+      matchSnapshot?.status === "ready");
+  const interactionLocked =
+    (!isMultiplayerMatch && unsupportedPlayers.length > 0) ||
+    (isMultiplayerMatch && !matchReadyForPlay);
 
-  const preferredCatSkin = settings.catPawn;
-  const preferredMouseSkin = settings.mousePawn;
-  const preferredPawnColor = resolvePlayerColor(settings.pawnColor);
+  const friendColorOverrides = useMemo(() => {
+    if (!isMultiplayerMatch || !matchSnapshot) return {};
+    const map: Partial<Record<PlayerId, PlayerColor>> = {};
+    matchSnapshot.players.forEach((player) => {
+      if (player.appearance?.pawnColor) {
+        map[player.playerId] = resolvePlayerColor(player.appearance.pawnColor);
+      }
+    });
+    return map;
+  }, [matchSnapshot, isMultiplayerMatch]);
 
   const playerColorsForBoard = useMemo(() => {
     const colors: Record<PlayerId, PlayerColor> = {
       1: DEFAULT_PLAYER_COLORS[1],
       2: DEFAULT_PLAYER_COLORS[2],
     };
-    colors[primaryLocalPlayerId] = preferredPawnColor;
+    if (primaryLocalPlayerId) {
+      colors[primaryLocalPlayerId] = preferredPawnColor;
+    }
+    Object.entries(friendColorOverrides).forEach(([key, value]) => {
+      const playerId = Number(key) as PlayerId;
+      if (playerId === primaryLocalPlayerId) {
+        return;
+      }
+      colors[playerId] = value;
+    });
     return colors;
-  }, [primaryLocalPlayerId, preferredPawnColor]);
+  }, [friendColorOverrides, preferredPawnColor, primaryLocalPlayerId]);
 
   const getPlayerName = useCallback(
     (playerId: PlayerId) =>
@@ -460,31 +1009,6 @@ function GamePage() {
   const resolvePrimaryActionPlayerId = useCallback(
     () => primaryLocalPlayerId ?? null,
     [primaryLocalPlayerId]
-  );
-
-  const updateGameState = useCallback(
-    (
-      nextState: GameState,
-      options?: {
-        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
-      }
-    ) => {
-      gameStateRef.current = nextState;
-      setGameState(nextState);
-      if (
-        options &&
-        Object.prototype.hasOwnProperty.call(options, "lastMoves")
-      ) {
-        if (options.lastMoves) {
-          setLastMove(options.lastMoves);
-        } else {
-          setLastMove(undefined);
-        }
-      } else {
-        setLastMove(undefined);
-      }
-    },
-    []
   );
 
   const performGameAction = useCallback(
@@ -538,7 +1062,7 @@ function GamePage() {
       try {
         return gameState.applyGameAction({
           kind: "move",
-          move: new Move(actions),
+          move: { actions },
           playerId: gameState.turn,
           timestamp: Date.now(),
         });
@@ -555,26 +1079,35 @@ function GamePage() {
     [stagedActions, simulateMove]
   );
 
-  const stagedWallOverlays = useMemo<PlayerWall[]>(() => {
+  const stagedWallOverlays = useMemo<WallPosition[]>(() => {
     if (!stagedActions.length) return [];
     return stagedActions
       .filter((action) => action.type === "wall")
       .map((action) => ({
-        wall: new Wall(action.target, action.wallOrientation!),
+        cell: action.target,
+        orientation: action.wallOrientation!,
         playerId: gameState?.turn ?? primaryLocalPlayerId,
-        state: "staged" as const,
       }));
   }, [stagedActions, gameState, primaryLocalPlayerId]);
 
-  const boardWalls = useMemo<PlayerWall[]>(() => {
-    const base = gameState ? gameState.getWalls() : [];
-    if (!stagedWallOverlays.length) {
-      return base;
-    }
-    return [...base, ...stagedWallOverlays];
+  type WallPositionWithState = WallPosition & {
+    state?: "placed" | "staged" | "premoved" | "calculated" | "missing";
+  };
+
+  const boardWalls = useMemo<WallPositionWithState[]>(() => {
+    const base = gameState
+      ? gameState.grid
+          .getWalls()
+          .map((wall) => ({ ...wall, state: "placed" as const }))
+      : [];
+    const staged = stagedWallOverlays.map((wall) => ({
+      ...wall,
+      state: "staged" as const,
+    }));
+    return [...base, ...staged];
   }, [gameState, stagedWallOverlays]);
 
-  const boardPawns = useMemo(() => {
+  const boardPawns = useMemo((): BoardPawn[] => {
     const sourceState = previewState ?? gameState;
     if (!sourceState) return [];
     const normalizedCat =
@@ -592,8 +1125,13 @@ function GamePage() {
       const preferred = pawn.type === "mouse" ? normalizedMouse : normalizedCat;
       return preferred ? { ...pawn, pawnStyle: preferred } : pawn;
     });
+    // Convert to BoardPawn[] with IDs and preview states
+    const pawnsWithIds: BoardPawn[] = basePawns.map((pawn) => ({
+      ...pawn,
+      id: pawnId(pawn),
+    }));
     if (!stagedActions.length) {
-      return basePawns;
+      return pawnsWithIds;
     }
     const stagedPawnTypes = new Set(
       stagedActions
@@ -601,7 +1139,7 @@ function GamePage() {
         .map((action) => action.type)
     );
     const stagingPlayerId = gameState?.turn ?? activeLocalPlayerId;
-    return basePawns.map((pawn) => {
+    return pawnsWithIds.map((pawn) => {
       if (
         stagingPlayerId &&
         pawn.playerId === stagingPlayerId &&
@@ -650,8 +1188,8 @@ function GamePage() {
 
           return [
             {
-              from: new Cell(fromCell.row, fromCell.col),
-              to: new Cell(toCell.row, toCell.col),
+              from: [fromCell[0], fromCell[1]],
+              to: [toCell[0], toCell[1]],
               type: "staged",
             },
           ];
@@ -678,8 +1216,8 @@ function GamePage() {
           ? afterState.pawns[actorId].cat
           : afterState.pawns[actorId].mouse;
       arrows.push({
-        from: new Cell(fromCell.row, fromCell.col),
-        to: new Cell(toCell.row, toCell.col),
+        from: [fromCell[0], fromCell[1]],
+        to: [toCell[0], toCell[1]],
         type: "staged",
       });
     });
@@ -695,7 +1233,7 @@ function GamePage() {
     const rows = gameState.config.boardHeight;
     const entries = gameState.history.map((entry) => ({
       number: Math.ceil(entry.index / 2),
-      notation: entry.move.toNotation(rows),
+      notation: moveToStandardNotation(entry.move, rows),
     }));
     const paired: {
       num: number;
@@ -711,20 +1249,6 @@ function GamePage() {
     }
     return paired;
   }, [gameState]);
-
-  const addSystemMessage = useCallback((text: string) => {
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        sender: "System",
-        text,
-        timestamp: new Date(),
-        channel: "game",
-        isSystem: true,
-      },
-    ]);
-  }, []);
 
   const applyMove = useCallback(
     (playerId: PlayerId, move: Move) => {
@@ -747,12 +1271,12 @@ function GamePage() {
       // Check Cat
       const catBefore = currentState.pawns[playerId].cat;
       const catAfter = nextState.pawns[playerId].cat;
-      if (catBefore.row !== catAfter.row || catBefore.col !== catAfter.col) {
+      if (catBefore[0] !== catAfter[0] || catBefore[1] !== catAfter[1]) {
         moves.push({
-          fromRow: catBefore.row,
-          fromCol: catBefore.col,
-          toRow: catAfter.row,
-          toCol: catAfter.col,
+          fromRow: catBefore[0],
+          fromCol: catBefore[1],
+          toRow: catAfter[0],
+          toCol: catAfter[1],
           playerColor,
         });
       }
@@ -761,14 +1285,14 @@ function GamePage() {
       const mouseBefore = currentState.pawns[playerId].mouse;
       const mouseAfter = nextState.pawns[playerId].mouse;
       if (
-        mouseBefore.row !== mouseAfter.row ||
-        mouseBefore.col !== mouseAfter.col
+        mouseBefore[0] !== mouseAfter[0] ||
+        mouseBefore[1] !== mouseAfter[1]
       ) {
         moves.push({
-          fromRow: mouseBefore.row,
-          fromCol: mouseBefore.col,
-          toRow: mouseAfter.row,
-          toCol: mouseAfter.col,
+          fromRow: mouseBefore[0],
+          fromCol: mouseBefore[1],
+          toRow: mouseAfter[0],
+          toCol: mouseAfter[1],
           playerColor,
         });
       }
@@ -787,6 +1311,15 @@ function GamePage() {
   const commitStagedActions = useCallback(
     (actions?: Action[]) => {
       const moveActions = actions ?? stagedActions;
+      if (moveActions.length === 0) return;
+      if (
+        isMultiplayerMatch &&
+        (!matchReadyForPlay || !gameClientRef.current)
+      ) {
+        setActionError("Waiting for connection to stabilize.");
+        return;
+      }
+
       const currentState = gameStateRef.current;
       if (!currentState) {
         setActionError("Game is still loading");
@@ -801,7 +1334,7 @@ function GamePage() {
       }
 
       try {
-        controller.submitMove(new Move(moveActions));
+        controller.submitMove({ actions: moveActions });
         setStagedActions([]);
         setSelectedPawnId(null);
         setDraggingPawnId(null);
@@ -813,7 +1346,13 @@ function GamePage() {
         );
       }
     },
-    [stagedActions]
+    [
+      matchReadyForPlay,
+      isMultiplayerMatch,
+      stagedActions,
+      setDraggingPawnId,
+      setSelectedPawnId,
+    ]
   );
 
   const clearStagedActions = useCallback(() => {
@@ -882,6 +1421,15 @@ function GamePage() {
       setResignFlowPlayerId(null);
       return;
     }
+    if (isMultiplayerMatch) {
+      if (!matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+      } else {
+        gameClientRef.current.sendResign();
+      }
+      setResignFlowPlayerId(null);
+      return;
+    }
     try {
       lastResignedPlayerRef.current = actorId;
       performGameAction({
@@ -899,6 +1447,8 @@ function GamePage() {
       setResignFlowPlayerId(null);
     }
   }, [
+    matchReadyForPlay,
+    isMultiplayerMatch,
     resignFlowPlayerId,
     resolvePrimaryActionPlayerId,
     performGameAction,
@@ -912,8 +1462,16 @@ function GamePage() {
       setActionError("You need to control a player to offer a draw.");
       return;
     }
+    if (isMultiplayerMatch) {
+      setActionError("Draw offers are not available in friend games yet.");
+      return;
+    }
     const currentState = gameStateRef.current;
-    if (!currentState || currentState.status !== "playing") {
+    if (!currentState) {
+      setActionError("Game is still loading.");
+      return;
+    }
+    if (currentState.status !== "playing") {
       setActionError("Draw offers are only available during active games.");
       return;
     }
@@ -1015,6 +1573,7 @@ function GamePage() {
     getPlayerName,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
+    isMultiplayerMatch,
   ]);
 
   const handleCancelDrawOffer = useCallback(() => {
@@ -1034,8 +1593,16 @@ function GamePage() {
       setActionError("You need to control a player to request a takeback.");
       return;
     }
+    if (isMultiplayerMatch) {
+      setActionError("Takebacks are not available in friend games yet.");
+      return;
+    }
     const currentState = gameStateRef.current;
-    if (!currentState || currentState.history.length === 0) {
+    if (!currentState) {
+      setActionError("Game is still loading.");
+      return;
+    }
+    if (currentState.history.length === 0) {
       setActionError("There are no moves to take back yet.");
       return;
     }
@@ -1126,6 +1693,7 @@ function GamePage() {
     getPlayerName,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
+    isMultiplayerMatch,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
@@ -1145,8 +1713,16 @@ function GamePage() {
       setActionError("You need to control a player to give time.");
       return;
     }
+    if (isMultiplayerMatch) {
+      setActionError("Manual time adjustments are disabled in friend games.");
+      return;
+    }
     const currentState = gameStateRef.current;
-    if (!currentState || currentState.status !== "playing") {
+    if (!currentState) {
+      setActionError("Game is still loading.");
+      return;
+    }
+    if (currentState.status !== "playing") {
       setActionError("You can only adjust clocks during an active game.");
       return;
     }
@@ -1176,6 +1752,7 @@ function GamePage() {
     performGameAction,
     addSystemMessage,
     getPlayerName,
+    isMultiplayerMatch,
   ]);
 
   const handleDismissIncomingNotice = useCallback(() => {
@@ -1285,122 +1862,6 @@ function GamePage() {
     [takebackDecisionPrompt]
   );
 
-  const initializeGame = useCallback(
-    (
-      incomingConfig: GameConfiguration,
-      incomingPlayers: PlayerType[],
-      options?: { forceYouFirst?: boolean }
-    ) => {
-      const nextGameId = currentGameIdRef.current + 1;
-      currentGameIdRef.current = nextGameId;
-      const sanitizedPlayers = sanitizePlayerList(incomingPlayers, {
-        forceYouFirst: options?.forceYouFirst ?? true,
-      });
-      const nextPrimaryLocalPlayerId = (() => {
-        const idx = sanitizedPlayers.findIndex((type) => type === "you");
-        return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
-      })();
-      const boardWidth =
-        incomingConfig.boardWidth ?? DEFAULT_CONFIG.boardWidth!;
-      const boardHeight =
-        incomingConfig.boardHeight ?? DEFAULT_CONFIG.boardHeight!;
-      const variant =
-        VARIANT_LABELS[incomingConfig.variant] ?? VARIANT_LABELS.standard;
-      const timeControl = mapTimeControl(incomingConfig.timeControl);
-      const state = new GameState(
-        {
-          boardWidth,
-          boardHeight,
-          variant,
-          timeControl,
-          startPos: buildStartPositions(boardWidth, boardHeight),
-        },
-        Date.now()
-      );
-
-      gameStateRef.current = state;
-      setConfig(incomingConfig);
-      setPlayerTypes(sanitizedPlayers);
-      setSelectedPawnId(null);
-      setDraggingPawnId(null);
-      setActionError(null);
-      setMessages([]);
-      setChatInput("");
-      setActiveTab("history");
-      setChatChannel("game");
-      setLastMove(undefined);
-      setStagedActions([]);
-      setActiveLocalPlayerId(null);
-      setAutomatedPlayerId(null);
-      setResignFlowPlayerId(null);
-      setIncomingPassiveNotice(null);
-      setOutgoingTimeInfo(null);
-      setPendingDrawOffer(null);
-      setPendingTakebackRequest(null);
-      setDrawDecisionPrompt(null);
-      setTakebackDecisionPrompt(null);
-      pendingTurnRequestRef.current = null;
-
-      Object.values(playerControllersRef.current).forEach((controller) =>
-        controller.cancel?.(new Error("Game reset"))
-      );
-      const controllers: Partial<Record<PlayerId, GamePlayerController>> = {};
-      sanitizedPlayers.forEach((type, index) => {
-        const playerId = (index + 1) as PlayerId;
-        controllers[playerId] = createPlayerController({
-          playerId,
-          playerType: type,
-        });
-      });
-      playerControllersRef.current = controllers;
-
-      const initialPlayers: GamePlayer[] = sanitizedPlayers.map(
-        (type, index) => ({
-          id: `p${index + 1}`,
-          playerId: (index + 1) as PlayerId,
-          name: buildPlayerName(type, index, settings.displayName),
-          rating: type.includes("bot") ? 1200 : 1250,
-          color:
-            index + 1 === nextPrimaryLocalPlayerId
-              ? preferredPawnColor
-              : DEFAULT_PLAYER_COLORS[(index + 1) as PlayerId],
-          type,
-          isOnline: type === "you" || type.includes("bot"),
-        })
-      );
-      playersRef.current = initialPlayers;
-      setPlayers(initialPlayers);
-
-      const matchingList: MatchingPlayer[] = initialPlayers.map((player) => ({
-        id: player.id,
-        type: player.type,
-        name: player.name,
-        isReady: player.type === "you" || player.type.includes("bot"),
-        isYou: player.type === "you",
-      }));
-      setMatchingPlayers(matchingList);
-      const waiting = matchingList.some((entry) => !entry.isReady);
-      setIsMatchingOpen(waiting);
-
-      setGameState(state);
-
-      addSystemMessage(
-        waiting ? "Waiting for players..." : "Game created. Good luck!"
-      );
-      setRematchState((prev) => ({
-        status: "idle",
-        responses: { 1: "pending", 2: "pending" },
-        requestId: prev.requestId,
-      }));
-    },
-    [
-      addSystemMessage,
-      preferredPawnColor,
-      settings.displayName,
-      playerControllersRef,
-    ]
-  );
-
   const startRematch = useCallback(() => {
     if (matchParticipants.length < 2) return;
     const nextSeatOrder: [number, number] = [
@@ -1416,6 +1877,11 @@ function GamePage() {
   }, [config, initializeGame, matchParticipants]);
 
   useEffect(() => {
+    if (isMultiplayerMatch) {
+      setLoadError(null);
+      setIsLoadingConfig(false);
+      return;
+    }
     setIsLoadingConfig(true);
     setLoadError(null);
 
@@ -1480,7 +1946,7 @@ function GamePage() {
       setTakebackDecisionPrompt(null);
       setGameState(null);
     };
-  }, [id, initializeGame]);
+  }, [id, initializeGame, isMultiplayerMatch]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1532,10 +1998,10 @@ function GamePage() {
       if (participantIndex != null) {
         setMatchScore((prev) => {
           const targetLength = prev.length || matchParticipants.length || 2;
-          const next =
+          const next: number[] =
             prev.length === targetLength
               ? [...prev]
-              : Array(targetLength).fill(0);
+              : Array<number>(targetLength).fill(0);
           next[participantIndex] = (next[participantIndex] ?? 0) + 1;
           return next;
         });
@@ -1629,8 +2095,8 @@ function GamePage() {
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== activeLocalPlayerId) return;
       const pawnType = pawn.type;
-      const targetCell = new Cell(targetRow, targetCol);
-      const newAction = new Action(pawnType, targetCell);
+      const targetCell: Cell = [targetRow, targetCol];
+      const newAction: Action = { type: pawnType, target: targetCell };
       const duplicateIndex = stagedActions.findIndex((existing) =>
         actionsEqual(existing, newAction)
       );
@@ -1641,11 +2107,10 @@ function GamePage() {
         return;
       }
 
-      if (pawn.cell.row === targetRow && pawn.cell.col === targetCol) return;
+      if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
 
       const distance =
-        Math.abs(pawn.cell.row - targetRow) +
-        Math.abs(pawn.cell.col - targetCol);
+        Math.abs(pawn.cell[0] - targetRow) + Math.abs(pawn.cell[1] - targetCol);
       const isDoubleStep = distance === 2;
       if (isDoubleStep) {
         if (stagedActions.length > 0) {
@@ -1702,13 +2167,17 @@ function GamePage() {
   );
 
   const handleWallClick = useCallback(
-    (row: number, col: number, orientation: "horizontal" | "vertical") => {
+    (row: number, col: number, orientation: WallOrientation) => {
       if (interactionLocked) return;
       if (gameState?.status !== "playing") return;
       if (!activeLocalPlayerId) return;
       if (gameState.turn !== activeLocalPlayerId) return;
 
-      const newAction = new Action("wall", new Cell(row, col), orientation);
+      const newAction: Action = {
+        type: "wall",
+        target: [row, col],
+        wallOrientation: orientation,
+      };
       const duplicateIndex = stagedActions.findIndex((existing) =>
         actionsEqual(existing, newAction)
       );
@@ -1753,7 +2222,7 @@ function GamePage() {
       if (pendingTurnRequestRef.current === playerId) return;
 
       const currentState = gameStateRef.current;
-      if (!currentState || currentState.status !== "playing") return;
+      if (currentState?.status !== "playing") return;
 
       const controller = playerControllersRef.current[playerId];
       if (!controller || !isSupportedController(controller)) return;
@@ -1773,6 +2242,24 @@ function GamePage() {
           opponentId: playerId === 1 ? 2 : 1,
         })
         .then((move) => {
+          if (
+            isMultiplayerMatch &&
+            (!matchReadyForPlay || !gameClientRef.current)
+          ) {
+            setActionError("Waiting for connection to stabilize.");
+            return;
+          }
+          if (isMultiplayerMatch) {
+            gameAwaitingServerRef.current = true;
+            const payload = serializeActions(move.actions);
+            debugMatch("Sending move over websocket", {
+              actionCount: payload.length,
+              turn: playerId,
+            });
+            gameClientRef.current?.sendMove(payload);
+            setActionError(null);
+            return;
+          }
           applyMove(playerId, move);
           setActionError(null);
         })
@@ -1797,16 +2284,23 @@ function GamePage() {
           }
         });
     },
-    [applyMove, interactionLocked]
+    [
+      applyMove,
+      debugMatch,
+      matchReadyForPlay,
+      interactionLocked,
+      isMultiplayerMatch,
+    ]
   );
 
   useEffect(() => {
     if (!gameState) return;
     if (gameState.status !== "playing") return;
     if (interactionLocked) return;
+    if (isMultiplayerMatch && gameAwaitingServerRef.current) return;
     if (pendingTurnRequestRef.current === gameState.turn) return;
     requestMoveForPlayer(gameState.turn);
-  }, [gameState, interactionLocked, requestMoveForPlayer]);
+  }, [gameState, interactionLocked, isMultiplayerMatch, requestMoveForPlayer]);
 
   useEffect(() => {
     if (gameState?.status !== "finished" || !gameState.result) return;
@@ -1864,8 +2358,8 @@ function GamePage() {
         const pawn = boardPawns.find(
           (p) =>
             p.playerId === activeLocalPlayerId &&
-            p.cell.row === row &&
-            p.cell.col === col
+            p.cell[0] === row &&
+            p.cell[1] === col
         );
         if (pawn) {
           setSelectedPawnId(pawn.id);
@@ -1893,10 +2387,11 @@ function GamePage() {
   }, []);
 
   const handleCellDrop = useCallback(
-    (row: number, col: number) => {
+    (pawnId: string, targetRow: number, targetCol: number) => {
       if (!draggingPawnId) return;
       if (!activeLocalPlayerId) return;
-      stagePawnAction(draggingPawnId, row, col);
+      // Use pawnId from parameter to ensure consistency
+      stagePawnAction(pawnId, targetRow, targetCol);
       setDraggingPawnId(null);
     },
     [draggingPawnId, activeLocalPlayerId, stagePawnAction]
@@ -1919,6 +2414,9 @@ function GamePage() {
   };
 
   const handleAbort = () => {
+    if (isMultiplayerMatch) {
+      updateGameHandshake(null);
+    }
     window.history.back();
   };
 
@@ -1926,8 +2424,8 @@ function GamePage() {
     // Placeholder for future audio hooks
   };
 
-  const rows = config?.boardHeight ?? DEFAULT_CONFIG.boardHeight!;
-  const cols = config?.boardWidth ?? DEFAULT_CONFIG.boardWidth!;
+  const rows = config?.boardHeight ?? DEFAULT_CONFIG.boardHeight;
+  const cols = config?.boardWidth ?? DEFAULT_CONFIG.boardWidth;
 
   // Board sizing constants (matching Board component internals)
   const maxCellSize = 3;
@@ -2030,13 +2528,11 @@ function GamePage() {
     !interactionLocked &&
     gameState?.status === "playing";
   const pendingDrawForLocal =
-    pendingDrawOffer &&
-    pendingDrawOffer.status === "pending" &&
+    pendingDrawOffer?.status === "pending" &&
     actionPanelPlayerId != null &&
     pendingDrawOffer.from === actionPanelPlayerId;
   const takebackPendingForLocal =
-    pendingTakebackRequest &&
-    pendingTakebackRequest.status === "pending" &&
+    pendingTakebackRequest?.status === "pending" &&
     actionPanelPlayerId != null &&
     pendingTakebackRequest.requester === actionPanelPlayerId;
   const hasTakebackHistory = (gameState?.history.length ?? 0) > 0;
@@ -2053,6 +2549,13 @@ function GamePage() {
   const canCancelTakebackRequest =
     takebackPendingForLocal &&
     clockTick - (pendingTakebackRequest?.createdAt ?? 0) >= 2000;
+  const manualActionsDisabled = isMultiplayerMatch;
+  const hasActionMessage = Boolean(actionError) || Boolean(selectedPawn);
+  const actionStatusText =
+    actionError ??
+    (selectedPawn
+      ? `Selected ${selectedPawn.type} (${cellToStandardNotation(selectedPawn.cell, rows)})`
+      : null);
 
   const thinkingPlayer =
     automatedPlayerId != null
@@ -2061,16 +2564,16 @@ function GamePage() {
 
   const bottomTimerPlayer =
     (primaryLocalPlayerId &&
-      players.find((player) => player.playerId === primaryLocalPlayerId)) ||
-    players[0] ||
+      players.find((player) => player.playerId === primaryLocalPlayerId)) ??
+    players[0] ??
     null;
 
   const topTimerPlayer =
-    players.find((player) => player.playerId !== bottomTimerPlayer?.playerId) ||
+    players.find((player) => player.playerId !== bottomTimerPlayer?.playerId) ??
     (players.length > 1 ? players[1] : null);
 
   const bottomTimerDisplayPlayer =
-    bottomTimerPlayer && bottomTimerPlayer.type === "you"
+    bottomTimerPlayer?.type === "you"
       ? {
           ...bottomTimerPlayer,
           name: bottomTimerPlayer.name.includes("Also You")
@@ -2304,9 +2807,12 @@ function GamePage() {
     <>
       <div className="min-h-screen bg-background flex flex-col">
         <MatchingStagePanel
-          isOpen={isMatchingOpen}
-          players={matchingPlayers}
-          gameUrl={typeof window !== "undefined" ? window.location.href : ""}
+          isOpen={matchingPanelOpen}
+          players={matchingPanelPlayers}
+          shareUrl={resolvedShareUrl}
+          inviteCode={panelInviteCode}
+          statusMessage={matchingStatusMessage}
+          canAbort={matchingCanAbort}
           onAbort={handleAbort}
         />
 
@@ -2340,8 +2846,6 @@ function GamePage() {
                   thinkingPlayer?.playerId === topTimerPlayer.playerId
                 }
                 score={getPlayerMatchScore(topTimerPlayer)}
-                preferredCatSkin={preferredCatSkin}
-                primaryLocalPlayerId={primaryLocalPlayerId}
               />
             )}
 
@@ -2517,7 +3021,7 @@ function GamePage() {
               {/* Action messaging + staged action buttons */}
               <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-4 w-full">
                 <div className="flex items-center text-xs text-muted-foreground min-h-[1.25rem] justify-self-start">
-                  {(actionError || selectedPawn) && (
+                  {hasActionMessage && (
                     <>
                       <AlertCircle
                         className={`w-4 h-4 mr-2 ${
@@ -2527,11 +3031,7 @@ function GamePage() {
                       <span
                         className={actionError ? "text-red-500" : undefined}
                       >
-                        {actionError
-                          ? actionError
-                          : selectedPawn
-                            ? `Selected ${selectedPawn.type} (${selectedPawn.cell.toNotation(rows)})`
-                            : null}
+                        {actionStatusText}
                       </span>
                     </>
                   )}
@@ -2572,8 +3072,6 @@ function GamePage() {
                   thinkingPlayer?.playerId === bottomTimerDisplayPlayer.playerId
                 }
                 score={getPlayerMatchScore(bottomTimerDisplayPlayer)}
-                preferredCatSkin={preferredCatSkin}
-                primaryLocalPlayerId={primaryLocalPlayerId}
               />
             )}
           </div>
@@ -2602,7 +3100,9 @@ function GamePage() {
                 <div className="flex items-center gap-2">
                   <Clock className="w-4 h-4" />
                   <span className="capitalize">
-                    {config?.timeControl ?? DEFAULT_CONFIG.timeControl}
+                    {config?.timeControl.preset ??
+                      DEFAULT_CONFIG.timeControl.preset ??
+                      "blitz"}
                   </span>
                 </div>
                 <Button
@@ -2620,7 +3120,7 @@ function GamePage() {
               </div>
             </Card>
 
-            {interactionLocked && (
+            {interactionLocked && !isMultiplayerMatch && (
               <Alert>
                 <AlertCircle className="h-4 w-4" />
                 <AlertDescription className="space-y-1">
@@ -2653,7 +3153,11 @@ function GamePage() {
                   className="w-full justify-start gap-2"
                   size="sm"
                   onClick={handleOfferDraw}
-                  disabled={actionButtonsDisabled || Boolean(pendingDrawOffer)}
+                  disabled={
+                    actionButtonsDisabled ||
+                    manualActionsDisabled ||
+                    Boolean(pendingDrawOffer)
+                  }
                 >
                   <Handshake className="w-4 h-4" /> Draw
                 </Button>
@@ -2664,6 +3168,7 @@ function GamePage() {
                   onClick={handleRequestTakeback}
                   disabled={
                     actionButtonsDisabled ||
+                    manualActionsDisabled ||
                     Boolean(pendingTakebackRequest) ||
                     !hasTakebackHistory
                   }
@@ -2675,7 +3180,7 @@ function GamePage() {
                   className="w-full justify-start gap-2"
                   size="sm"
                   onClick={handleGiveTime}
-                  disabled={actionButtonsDisabled}
+                  disabled={actionButtonsDisabled || manualActionsDisabled}
                 >
                   <Timer className="w-4 h-4" /> Give time
                 </Button>
@@ -2838,30 +3343,23 @@ function GamePage() {
     </>
   );
 }
-
 function PlayerInfo({
   player,
   isActive,
   timeLeft,
   isThinking = false,
   score = null,
-  preferredCatSkin,
-  primaryLocalPlayerId,
 }: {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
   isThinking?: boolean;
   score?: number | null;
-  preferredCatSkin?: string;
-  primaryLocalPlayerId?: PlayerId;
 }) {
   // Determine if we should show cat SVG for this player
   const shouldShowCatSvg =
-    player.playerId === primaryLocalPlayerId &&
-    preferredCatSkin &&
-    preferredCatSkin !== "default";
-  const catSvgPath = shouldShowCatSvg ? `/pawns/cat/${preferredCatSkin}` : null;
+    player.catSkin && player.catSkin !== "default" && player.catSkin.length > 0;
+  const catSvgPath = shouldShowCatSvg ? `/pawns/cat/${player.catSkin}` : null;
   const colorFilter = colorFilterMap[player.color]
     ? { filter: colorFilterMap[player.color] }
     : undefined;

@@ -11,15 +11,18 @@ import {
 } from "@/components/ui/select";
 import { Label } from "@/components/ui/label";
 import { Board } from "@/components/board";
-import {
-  Cell,
-  Wall,
-  type Pawn,
-  type PawnType,
-  type WallState,
-  type PlayerWall,
-  type PlayerId,
-} from "@/lib/game";
+import type { BoardPawn } from "../components/board";
+import type {
+  PlayerId,
+  WallOrientation,
+  PawnType,
+  WallPosition,
+} from "../../../shared/game-types";
+import { sameWallPosition } from "../../../shared/game-utils";
+
+type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
+
+type WallPositionWithState = WallPosition & { state: WallState };
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
@@ -63,8 +66,8 @@ function StudyBoard() {
   );
 
   // Board state
-  const [pawns, setPawns] = useState<Pawn[]>([]);
-  const [walls, setWalls] = useState<PlayerWall[]>([]);
+  const [pawns, setPawns] = useState<BoardPawn[]>([]);
+  const [walls, setWalls] = useState<WallPositionWithState[]>([]);
 
   // Selected properties for adding new elements
   const [selectedPawnColor, setSelectedPawnColor] =
@@ -86,7 +89,7 @@ function StudyBoard() {
       setPawns((prev) => {
         // Find pawns at this cell
         const pawnsAtCell = prev.filter(
-          (p) => p.cell.row === row && p.cell.col === col
+          (p) => p.cell[0] === row && p.cell[1] === col
         );
 
         // If there are pawns in this cell, remove the last one added (LIFOish for UI feel)
@@ -95,11 +98,11 @@ function StudyBoard() {
           return prev.filter((p) => p.id !== pawnToRemove.id);
         } else {
           // Add a new pawn
-          const newPawn: Pawn = {
+          const newPawn: BoardPawn = {
             id: `${row}-${col}-${Date.now()}`,
             playerId: colorToId[selectedPawnColor] as PlayerId,
             type: selectedPawnType,
-            cell: new Cell(row, col),
+            cell: [row, col],
             pawnStyle:
               selectedPawnType === "cat"
                 ? catPawn !== "default"
@@ -118,47 +121,29 @@ function StudyBoard() {
 
   // Handle wall clicks to add/remove walls
   const handleWallClick = useCallback(
-    (row: number, col: number, orientation: "horizontal" | "vertical") => {
+    (row: number, col: number, orientation: WallOrientation) => {
       setWalls((prev) => {
         // Check if wall already exists at this position
-        const existingWallIndex = prev.findIndex((pWall) => {
-          const wall = pWall.wall;
-          if (orientation === "horizontal") {
-            // Horizontal wall separates rows: (row-1, col) and (row, col)
-            return (
-              wall.col1 === wall.col2 &&
-              wall.col1 === col &&
-              Math.min(wall.row1, wall.row2) === Math.min(row - 1, row)
-            );
-          } else {
-            // Vertical wall separates columns: (row, col) and (row, col+1)
-            return (
-              wall.row1 === wall.row2 &&
-              wall.row1 === row &&
-              Math.min(wall.col1, wall.col2) === Math.min(col, col + 1)
-            );
-          }
-        });
+        const newWall: WallPosition = {
+          cell: [row, col],
+          orientation,
+        };
+        const existingWallIndex = prev.findIndex((wall) =>
+          sameWallPosition(wall, newWall)
+        );
 
         if (existingWallIndex !== -1) {
           // Remove existing wall
           return prev.filter((_, index) => index !== existingWallIndex);
         } else {
           // Add new wall
-          let newWall: Wall;
-          if (orientation === "horizontal") {
-            newWall = new Wall(new Cell(row, col), "horizontal");
-          } else {
-            newWall = new Wall(new Cell(row, col), "vertical");
-          }
-
-          const playerWall: PlayerWall = {
-            wall: newWall,
+          const wallWithState: WallPositionWithState = {
+            ...newWall,
             playerId: colorToId[selectedWallColor] as PlayerId,
             state: selectedWallState,
           };
 
-          return [...prev, playerWall];
+          return [...prev, wallWithState];
         }
       });
     },
@@ -227,12 +212,15 @@ function StudyBoard() {
                         const newRows = parseInt(value);
                         setRows(newRows);
                         setPawns((prev) =>
-                          prev.filter((p) => p.cell.row < newRows)
+                          prev.filter((p) => p.cell[0] < newRows)
                         );
                         setWalls((prev) =>
                           prev.filter(
                             (w) =>
-                              w.wall.row1 < newRows && w.wall.row2 < newRows
+                              w.cell[0] < newRows &&
+                              (w.orientation === "horizontal"
+                                ? w.cell[0] > 0
+                                : true)
                           )
                         );
                       }}
@@ -260,12 +248,15 @@ function StudyBoard() {
                         const newCols = parseInt(value);
                         setCols(newCols);
                         setPawns((prev) =>
-                          prev.filter((p) => p.cell.col < newCols)
+                          prev.filter((p) => p.cell[1] < newCols)
                         );
                         setWalls((prev) =>
                           prev.filter(
                             (w) =>
-                              w.wall.col1 < newCols && w.wall.col2 < newCols
+                              w.cell[1] < newCols &&
+                              (w.orientation === "vertical"
+                                ? w.cell[1] < newCols - 1
+                                : true)
                           )
                         );
                       }}
