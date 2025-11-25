@@ -39,8 +39,8 @@ COPY --link . .
 # Change to frontend and build the frontend app
 WORKDIR /app/frontend
 RUN bun run build
-# Remove files in the frontend except the dist folder
-RUN find . -mindepth 1 ! -regex '^\./dist(/.*)?$' -delete
+# Remove files in the frontend except the dist folder -- DO NOT CHANGE THIS LINE
+RUN find . -mindepth 1 ! -regex '^./dist\(/.*\)?' -delete
 
 # Final stage for app image
 FROM base
