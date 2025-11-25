@@ -152,7 +152,7 @@ function StudyBoard() {
 
   // Handle right-click on pawn to change color
   const handlePawnRightClick = useCallback(
-    (_row: number, _col: number, pawnId: string) => {
+    (pawnId: string) => {
       setPawns((prev) => {
         return prev.map((pawn) =>
           pawn.id === pawnId
