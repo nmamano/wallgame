@@ -91,12 +91,6 @@ import type { GameSnapshot } from "../../../shared/game-types";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
-  validateSearch: (search: Record<string, unknown>) => ({
-    invite:
-      typeof search.invite === "string" && search.invite.length > 0
-        ? search.invite
-        : undefined,
-  }),
 });
 
 interface GamePlayer {
@@ -338,7 +332,7 @@ const resolvePlayerColor = (value?: string | null): PlayerColor => {
 
 function GamePage() {
   const { id } = Route.useParams();
-  const search = Route.useSearch();
+  // const search = Route.useSearch();
   const maskToken = useCallback((value?: string | null) => {
     if (!value) return undefined;
     if (value.length <= 8) return value;
@@ -392,7 +386,6 @@ function GamePage() {
     debugMatch("Bootstrapping friend match state", {
       id,
       hasStoredHandshake: Boolean(stored),
-      hasInviteParam: Boolean(search.invite),
     });
     if (stored) {
       debugMatch("Using stored friend handshake", {
@@ -408,73 +401,67 @@ function GamePage() {
       return () => {
         cancelled = true;
       };
-    }
-    if (!search.invite) {
+    } else {
+      // Try to join the game directly via URL
       debugMatch(
-        "No stored handshake or invite found; falling back to local config",
+        "No stored handshake found; attempting to join game directly",
         {
           id,
         },
       );
-      setIsMultiplayerMatch(false);
-      return () => {
-        cancelled = true;
-      };
-    }
-    setIsMultiplayerMatch(true);
-    setIsJoiningMatch(true);
-    void (async () => {
-      try {
-        const details = await joinGameSession({
-          gameId: id,
-          inviteCode: search.invite!,
-          displayName: settings.displayName,
-          appearance: {
-            pawnColor: preferredPawnColor,
-            catSkin: preferredCatSkin,
-            mouseSkin: preferredMouseSkin,
-          },
-        });
-        if (cancelled) return;
-        const handshake: StoredGameHandshake = {
-          gameId: id,
-          token: details.token,
-          socketToken: details.socketToken,
-          role: details.role,
-          playerId: details.playerId,
-          matchType: details.snapshot.matchType,
-          shareUrl: details.shareUrl,
-          inviteCode: search.invite,
-        };
-        updateGameHandshake(handshake);
-        debugMatch("Joined friend game via invite", {
-          id,
-          role: handshake.role,
-          playerId: handshake.playerId,
-          token: maskToken(handshake.token),
-          socketToken: maskToken(handshake.socketToken),
-        });
-      } catch (error) {
-        if (cancelled) return;
-        debugMatch("Failed to join friend game via invite", {
-          id,
-          error:
+      setIsMultiplayerMatch(true);
+      setIsJoiningMatch(true);
+      void (async () => {
+        try {
+          const details = await joinGameSession({
+            gameId: id,
+            displayName: settings.displayName,
+            appearance: {
+              pawnColor: preferredPawnColor,
+              catSkin: preferredCatSkin,
+              mouseSkin: preferredMouseSkin,
+            },
+          });
+          if (cancelled) return;
+          const handshake: StoredGameHandshake = {
+            gameId: id,
+            token: details.token,
+            socketToken: details.socketToken,
+            role: details.role,
+            playerId: details.playerId,
+            matchType: details.snapshot.matchType,
+            shareUrl: details.shareUrl,
+          };
+          updateGameHandshake(handshake);
+          debugMatch("Joined friend game", {
+            id,
+            role: handshake.role,
+            playerId: handshake.playerId,
+            token: maskToken(handshake.token),
+            socketToken: maskToken(handshake.socketToken),
+          });
+        } catch (error) {
+          if (cancelled) return;
+          debugMatch("Failed to join friend game via invite", {
+            id,
+            error:
+              error instanceof Error
+                ? { message: error.message }
+                : { message: "unknown error" },
+          });
+          setMatchError(
             error instanceof Error
-              ? { message: error.message }
-              : { message: "unknown error" },
-        });
-        setMatchError(
-          error instanceof Error
-            ? error.message
-            : "Unable to join friend game.",
-        );
-        setIsMultiplayerMatch(false);
-      } finally {
-        if (!cancelled) {
-          setIsJoiningMatch(false);
+              ? error.message
+              : "Unable to join friend game.",
+          );
+          setIsMultiplayerMatch(false);
+        } finally {
+          if (!cancelled) {
+            setIsJoiningMatch(false);
+          }
         }
-      }
-    })();
+      })();
+    }
     return () => {
       cancelled = true;
     };
@@ -485,7 +472,6 @@ function GamePage() {
     preferredCatSkin,
     preferredMouseSkin,
     preferredPawnColor,
-    search.invite,
     settings.displayName,
     updateGameHandshake,
   ]);
@@ -882,8 +868,6 @@ function GamePage() {
     responses: { 1: "pending", 2: "pending" },
     requestId: 0,
   });
-  const panelInviteCode =
-    matchSnapshot?.inviteCode ?? gameHandshake?.inviteCode;
   const defaultShareUrl =
     typeof window !== "undefined" ? window.location.href : undefined;
   const resolvedShareUrl = isMultiplayerMatch
@@ -2814,7 +2798,6 @@ function GamePage() {
           isOpen={matchingPanelOpen}
           players={matchingPanelPlayers}
           shareUrl={resolvedShareUrl}
-          inviteCode={panelInviteCode}
           statusMessage={matchingStatusMessage}
           canAbort={matchingCanAbort}
           onAbort={handleAbort}

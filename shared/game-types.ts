@@ -61,7 +61,6 @@ export interface GameSnapshot {
   status: SessionStatus;
   config: GameConfiguration;
   matchType: MatchType;
-  inviteCode?: string; // Only present for friend games
   createdAt: number; // Timestamp (milliseconds since epoch) when the session was created
   updatedAt: number; // Timestamp (milliseconds since epoch) when the session was last updated
   players: GamePlayerSummary[];

@@ -47,7 +47,6 @@ const createGameSchema = z.object({
 });
 
 const joinGameSchema = z.object({
-  inviteCode: z.string().min(6).optional(), // Optional for matchmaking games
   displayName: z.string().max(50).optional(),
   appearance: appearanceSchema,
 });
@@ -105,10 +104,11 @@ export const gamesRoute = new Hono()
         hostDisplayName: parsed.hostDisplayName,
         hostAppearance: parsed.hostAppearance,
       });
-      const origin = new URL(c.req.url).origin;
-      const shareUrl = session.inviteCode
-        ? `${origin}/game/${session.id}?invite=${session.inviteCode}`
-        : `${origin}/game/${session.id}`;
+      // The FRONTEND_URL environment variable is used for creating shareable
+      // links. It is only needed in dev mode because the proxied URL is not
+      // the same URL as the backend is running on.
+      const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
+      const shareUrl = `${origin}/game/${session.id}`;
 
       // Broadcast to lobby if this is a matchmaking game
       if (parsed.matchType === "matchmaking") {
@@ -120,7 +120,6 @@ export const gamesRoute = new Hono()
           gameId: session.id,
           hostToken,
           socketToken: hostSocketToken,
-          inviteCode: session.inviteCode,
           shareUrl,
           snapshot: getSessionSnapshot(session.id),
         },
@@ -140,11 +139,9 @@ export const gamesRoute = new Hono()
         return c.json({ error: "Game not found" }, 404);
       }
       const snapshot = getSessionSnapshot(id);
-      const origin = new URL(c.req.url).origin;
+      const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
       const shareUrl =
-        resolved.player.role === "host"
-          ? `${origin}/game/${id}?invite=${snapshot.inviteCode}`
-          : undefined;
+        resolved.player.role === "host" ? `${origin}/game/${id}` : undefined;
 
       return c.json({
         snapshot,
@@ -165,20 +162,17 @@ export const gamesRoute = new Hono()
       const parsed = c.req.valid("json");
       const { session, guestToken, guestSocketToken } = joinGameSession({
         id,
-        inviteCode: parsed.inviteCode,
         displayName: parsed.displayName,
         appearance: parsed.appearance,
       });
-      const origin = new URL(c.req.url).origin;
+      const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
 
       // Broadcast to lobby if this was a matchmaking game (it's now full)
       if (session.matchType === "matchmaking") {
         broadcastLobbyUpdate();
       }
 
-      const shareUrl = session.inviteCode
-        ? `${origin}/game/${session.id}?invite=${session.inviteCode}`
-        : `${origin}/game/${session.id}`;
+      const shareUrl = `${origin}/game/${session.id}`;
 
       return c.json({
         gameId: session.id,

@@ -4,7 +4,7 @@
   "type": "module",
   "scripts": {
     "start": "bun run server/index.ts",
-    "dev": "bun run --hot server/index.ts",
+    "dev": "FRONTEND_URL=http://localhost:5173 bun run --hot server/index.ts",
     "test": "bun test",
     "build": "bun --cwd=frontend run build",
     "format": "bunx prettier --write .",
@@ -17,6 +17,7 @@
     "@kinde-oss/kinde-typescript-sdk": "^2.9.1",
     "drizzle-orm": "^0.39.3",
     "hono": "^4.6.20",
+    "nanoid": "^5.1.6",
     "pg": "^8.13.3",
     "postgres": "^3.4.5",
     "react": "^19.0.0",

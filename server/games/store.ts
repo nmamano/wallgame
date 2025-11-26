@@ -1,4 +1,4 @@
-import { randomUUID } from "crypto";
+import { nanoid } from "nanoid";
 import { GameState } from "../../shared/game-state";
 import type { GameAction } from "../../shared/game-types";
 import { moveToStandardNotation } from "../../shared/standard-notation";
@@ -37,7 +37,6 @@ export interface GameSession {
   config: GameConfiguration;
   status: SessionStatus;
   matchType: MatchType;
-  inviteCode?: string; // Only for friend games
   players: {
     host: SessionPlayer;
     joiner: SessionPlayer;
@@ -73,15 +72,12 @@ export const createGameSession = (args: {
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
 }): GameCreationResult => {
-  const id = randomUUID();
-  const inviteCode =
-    args.matchType === "friend"
-      ? randomUUID().replace(/-/g, "").slice(0, 12)
-      : undefined;
-  const hostToken = randomUUID();
-  const hostSocketToken = randomUUID();
-  const guestToken = randomUUID();
-  const guestSocketToken = randomUUID();
+  const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
+  // No invite code needed - the game ID itself is secure enough
+  const hostToken = nanoid(); // 21 chars by default for security
+  const hostSocketToken = nanoid();
+  const guestToken = nanoid();
+  const guestSocketToken = nanoid();
   const now = Date.now();
 
   const session: GameSession = {
@@ -91,7 +87,6 @@ export const createGameSession = (args: {
     config: args.config,
     status: "waiting",
     matchType: args.matchType,
-    inviteCode,
     players: {
       host: {
         role: "host",
@@ -130,7 +125,6 @@ export const createGameSession = (args: {
 
 export const joinGameSession = (args: {
   id: string;
-  inviteCode?: string; // Required for friend games, not needed for matchmaking
   displayName?: string;
   appearance?: PlayerAppearance;
 }): {
@@ -139,13 +133,6 @@ export const joinGameSession = (args: {
   guestSocketToken: string;
 } => {
   const session = ensureSession(args.id);
-
-  // For friend games, validate invite code
-  if (session.matchType === "friend") {
-    if (!args.inviteCode || session.inviteCode !== args.inviteCode) {
-      throw new Error("Invalid invite code");
-    }
-  }
 
   // For matchmaking games, check if still accepting joiners
   if (session.matchType === "matchmaking" && session.status !== "waiting") {
@@ -192,7 +179,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
     status: session.status,
     config: session.config,
     matchType: session.matchType,
-    inviteCode: session.inviteCode,
+
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     players: [session.players.host, session.players.joiner].map(
@@ -245,7 +232,7 @@ export const listSessions = (): GameSnapshot[] => {
     status: session.status,
     config: session.config,
     matchType: session.matchType,
-    inviteCode: session.inviteCode,
+
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
     players: [session.players.host, session.players.joiner].map(
