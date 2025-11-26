@@ -23,7 +23,6 @@ interface MatchingStagePanelProps {
   isOpen: boolean;
   players: MatchingPlayer[];
   shareUrl?: string;
-  inviteCode?: string;
   statusMessage?: string;
   canAbort?: boolean;
   onAbort: () => void;
@@ -33,7 +32,6 @@ export function MatchingStagePanel({
   isOpen,
   players,
   shareUrl,
-  inviteCode,
   statusMessage,
   canAbort = true,
   onAbort,
@@ -151,11 +149,6 @@ export function MatchingStagePanel({
           </DialogTitle>
           {statusMessage && (
             <p className="text-sm text-muted-foreground">{statusMessage}</p>
-          )}
-          {inviteCode && (
-            <p className="text-xs text-muted-foreground font-mono">
-              Invite code: {inviteCode}
-            </p>
           )}
         </DialogHeader>
 

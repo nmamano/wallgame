@@ -324,7 +324,6 @@ function GameSetup() {
           playerId: 1,
           matchType,
           shareUrl: response.shareUrl,
-          inviteCode: response.inviteCode,
         });
         void navigate({ to: `/game/${response.gameId}` });
       } catch (error) {
@@ -512,7 +511,6 @@ function GameSetup() {
         playerId: response.playerId,
         matchType: response.snapshot.matchType,
         shareUrl: response.shareUrl,
-        inviteCode: response.snapshot.inviteCode,
       });
 
       void navigate({ to: `/game/${gameId}` });

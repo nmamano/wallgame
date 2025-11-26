@@ -143,7 +143,6 @@ export interface GameCreateResponse {
   gameId: string;
   hostToken: string;
   socketToken: string;
-  inviteCode?: string; // Only present for friend games
   shareUrl: string;
   snapshot: GameSnapshot;
 }
@@ -209,7 +208,6 @@ export const fetchGameSession = async (args: {
 
 export const joinGameSession = async (args: {
   gameId: string;
-  inviteCode?: string; // Optional for matchmaking games
   displayName?: string;
   appearance?: PlayerAppearance;
 }): Promise<GameSessionDetails> => {
@@ -223,7 +221,6 @@ export const joinGameSession = async (args: {
     api.games[":id"].join.$post({
       param: { id: args.gameId },
       json: {
-        inviteCode: args.inviteCode,
         displayName: args.displayName,
         appearance: args.appearance,
       },

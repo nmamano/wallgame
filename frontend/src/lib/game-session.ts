@@ -10,7 +10,6 @@ export interface StoredGameHandshake {
   playerId: PlayerId;
   matchType: MatchType;
   shareUrl?: string;
-  inviteCode?: string;
 }
 
 const STORAGE_PREFIX = "game-handshake";

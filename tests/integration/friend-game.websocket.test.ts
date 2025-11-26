@@ -1,6 +1,7 @@
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { createApp } from "../../server/index";
 import { WebSocket } from "ws";
+import type { GameCreateResponse } from "../../frontend/src/lib/api";
 
 // --- Test Harness ---
 
@@ -25,20 +26,14 @@ async function stopTestServer() {
 
 // --- HTTP Client Helpers ---
 
-type CreateGameResponse = {
-  gameId: string;
-  inviteCode: string;
-  hostToken: string;
-  socketToken: string;
-};
-
+// Type for join game response (subset of GameSessionDetails from API)
 type JoinGameResponse = {
   gameId: string;
   token: string;
   socketToken: string;
 };
 
-async function createFriendGame(userId: string): Promise<CreateGameResponse> {
+async function createFriendGame(userId: string): Promise<GameCreateResponse> {
   const res = await fetch(`${baseUrl}/api/games`, {
     method: "POST",
     headers: {
@@ -62,13 +57,12 @@ async function createFriendGame(userId: string): Promise<CreateGameResponse> {
 
   expect(res.status).toBe(201);
   const json = await res.json();
-  return json as CreateGameResponse;
+  return json as GameCreateResponse;
 }
 
 async function joinFriendGame(
   userId: string,
   gameId: string,
-  inviteCode: string,
 ): Promise<JoinGameResponse> {
   const res = await fetch(`${baseUrl}/api/games/${gameId}/join`, {
     method: "POST",
@@ -76,7 +70,7 @@ async function joinFriendGame(
       "Content-Type": "application/json",
       "x-test-user-id": userId,
     },
-    body: JSON.stringify({ inviteCode }),
+    body: JSON.stringify({}),
   });
 
   expect(res.status).toBe(200);
@@ -182,19 +176,15 @@ describe("friend game WebSocket integration", () => {
     // 1. User A creates a friend game
     const {
       gameId,
-      inviteCode,
+      shareUrl,
       socketToken: socketTokenA,
     } = await createFriendGame(userA);
     expect(gameId).toBeDefined();
-    expect(inviteCode).toBeDefined();
+    expect(shareUrl).toBeDefined();
     expect(socketTokenA).toBeDefined();
 
     // 2. User B joins the game
-    const { socketToken: socketTokenB } = await joinFriendGame(
-      userB,
-      gameId,
-      inviteCode,
-    );
+    const { socketToken: socketTokenB } = await joinFriendGame(userB, gameId);
     expect(socketTokenB).toBeDefined();
 
     // 3. Both connect via WebSocket
