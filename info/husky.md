@@ -24,3 +24,9 @@ Should output `.husky`.
 The current setup checks
 - formatting, linting, and tests on commit.
 - formatting, linting, tests, and build before pushing.
+
+The scripts can be run directly with:
+
+```
+./husky/pre-commit
+```

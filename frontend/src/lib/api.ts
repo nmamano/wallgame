@@ -1,4 +1,4 @@
-import { hc } from "hono/client";
+import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/index";
 import { queryOptions } from "@tanstack/react-query";
 import type {
@@ -19,6 +19,31 @@ const client = hc<ApiRoutes>("/");
 
 export const api = client.api;
 
+// Helper that ensures that API errors still throw exceptions, which React Query
+// and other consumers expect.
+async function handleResponse<T>(
+  request: Promise<ClientResponse<unknown>>,
+): Promise<T> {
+  const res = await request;
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  return res.json() as Promise<T>;
+}
+
+export interface User {
+  id: string;
+  email?: string | null;
+  given_name?: string | null;
+  family_name?: string | null;
+  picture?: string | null;
+}
+
 export const userQueryOptions = queryOptions({
   queryKey: ["get-current-user"],
   queryFn: getCurrentUser,
@@ -26,16 +51,7 @@ export const userQueryOptions = queryOptions({
 });
 
 async function getCurrentUser() {
-  const res = await api.me.$get();
-  if (!res.ok) {
-    // Throw error for real failures (network errors, server crashes, etc.)
-    // so React Query can retry. The server handles unauthenticated users
-    // by returning 200 OK with { user: null }, so this only triggers on real errors.
-    throw new Error(
-      `Server error: Failed to fetch current user: ${res.statusText}`,
-    );
-  }
-  const data = await res.json();
+  const data = await handleResponse<{ user: User | null }>(api.me.$get());
   return data;
 }
 
@@ -66,21 +82,7 @@ export interface SettingsResponse {
 export const settingsQueryOptions = queryOptions({
   queryKey: SETTINGS_QUERY_KEY,
   queryFn: async (): Promise<SettingsResponse> => {
-    const res = await (
-      api as unknown as {
-        settings: { $get: () => Promise<Response> };
-      }
-    ).settings.$get();
-
-    if (!res.ok) {
-      throw new Error(
-        `Server error: Failed to fetch settings: ${res.statusText}`,
-      );
-    }
-
-    // Parse JSON and assert type once
-    const data = (await res.json()) as SettingsResponse;
-    return data;
+    return handleResponse<SettingsResponse>(api.settings.$get());
   },
   staleTime: 5 * 60 * 1000,
   gcTime: 10 * 60 * 1000,
@@ -88,67 +90,53 @@ export const settingsQueryOptions = queryOptions({
 });
 
 // Settings mutation functions
-async function updateSetting(
-  endpoint: string,
-  body: Record<string, unknown>,
-): Promise<{ success: boolean }> {
-  const res = await fetch(`/api/settings/${endpoint}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    credentials: "include",
-    body: JSON.stringify(body),
-  });
-
-  if (!res.ok) {
-    const errorData = (await res.json().catch(() => ({}))) as {
-      error?: string;
-    };
-    throw new Error(
-      errorData.error ?? `Failed to update setting: ${res.statusText}`,
-    );
-  }
-
-  return res.json() as Promise<{ success: boolean }>;
-}
-
 export const settingsMutations = {
   updateBoardTheme: (boardTheme: string) =>
-    updateSetting("board-theme", { boardTheme }),
+    handleResponse<{ success: boolean }>(
+      api.settings["board-theme"].$put({ json: { boardTheme } }),
+    ),
 
   updatePawnColor: (pawnColor: string) =>
-    updateSetting("pawn-color", { pawnColor }),
+    handleResponse<{ success: boolean }>(
+      api.settings["pawn-color"].$put({ json: { pawnColor } }),
+    ),
 
   updatePawn: (pawnType: PawnType, pawnShape: string) =>
-    updateSetting("pawn", { pawnType, pawnShape }),
+    handleResponse<{ success: boolean }>(
+      api.settings.pawn.$put({ json: { pawnType, pawnShape } }),
+    ),
 
   updateTimeControl: (timeControl: TimeControlPreset) =>
-    updateSetting("time-control", { timeControl }),
+    handleResponse<{ success: boolean }>(
+      api.settings["time-control"].$put({ json: { timeControl } }),
+    ),
 
   updateRatedStatus: (rated: boolean) =>
-    updateSetting("rated-status", { rated }),
+    handleResponse<{ success: boolean }>(
+      api.settings["rated-status"].$put({ json: { rated } }),
+    ),
 
   updateDefaultVariant: (variant: Variant) =>
-    updateSetting("default-variant", { variant }),
+    handleResponse<{ success: boolean }>(
+      api.settings["default-variant"].$put({ json: { variant } }),
+    ),
 
   updateVariantParameters: (
     variant: Variant,
     parameters: { boardWidth: number; boardHeight: number },
-  ) => updateSetting("variant-parameters", { variant, parameters }),
+  ) =>
+    handleResponse<{ success: boolean }>(
+      api.settings["variant-parameters"].$put({
+        json: { variant, parameters },
+      }),
+    ),
 
   updateDisplayName: (displayName: string) =>
-    updateSetting("display-name", { displayName }),
-};
-
-const parseJsonResponse = async <T>(res: Response): Promise<T> => {
-  if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
-    );
-  }
-  return res.json() as Promise<T>;
+    handleResponse<{
+      success: boolean;
+      displayName: string;
+      capitalizedDisplayName: string;
+    }>(api.settings["display-name"].$put({ json: { displayName } })),
 };
 
 export interface GameCreateResponse {
@@ -178,24 +166,24 @@ export const createGameSession = async (args: {
     timeControl = args.config.timeControl;
   }
 
-  const payload = {
-    config: {
-      timeControl,
-      rated: args.config.rated,
-      variant: args.config.variant,
-      boardWidth: args.config.boardWidth,
-      boardHeight: args.config.boardHeight,
-    },
-    matchType: args.matchType,
-    hostDisplayName: args.hostDisplayName,
-    hostAppearance: args.hostAppearance,
-  };
-  const res = await fetch("/api/games", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(payload),
-  });
-  return parseJsonResponse<GameCreateResponse>(res);
+  return handleResponse<GameCreateResponse>(
+    // We can hover over api.games.$post or response objects in the frontend to
+    // see the exact types inferred from the server's Zod schemas.
+    api.games.$post({
+      json: {
+        config: {
+          timeControl,
+          rated: args.config.rated,
+          variant: args.config.variant,
+          boardWidth: args.config.boardWidth,
+          boardHeight: args.config.boardHeight,
+        },
+        matchType: args.matchType,
+        hostDisplayName: args.hostDisplayName,
+        hostAppearance: args.hostAppearance,
+      },
+    }),
+  );
 };
 
 export interface GameSessionDetails {
@@ -211,8 +199,12 @@ export const fetchGameSession = async (args: {
   gameId: string;
   token: string;
 }): Promise<GameSessionDetails> => {
-  const res = await fetch(`/api/games/${args.gameId}?token=${args.token}`);
-  return parseJsonResponse<GameSessionDetails>(res);
+  return handleResponse<GameSessionDetails>(
+    api.games[":id"].$get({
+      param: { id: args.gameId },
+      query: { token: args.token },
+    }),
+  );
 };
 
 export const joinGameSession = async (args: {
@@ -221,22 +213,22 @@ export const joinGameSession = async (args: {
   displayName?: string;
   appearance?: PlayerAppearance;
 }): Promise<GameSessionDetails> => {
-  const res = await fetch(`/api/games/${args.gameId}/join`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      inviteCode: args.inviteCode,
-      displayName: args.displayName,
-      appearance: args.appearance,
-    }),
-  });
-  const data = await parseJsonResponse<{
+  const data = await handleResponse<{
     gameId: string;
     token: string;
     socketToken: string;
     snapshot: GameSnapshot;
     shareUrl?: string;
-  }>(res);
+  }>(
+    api.games[":id"].join.$post({
+      param: { id: args.gameId },
+      json: {
+        inviteCode: args.inviteCode,
+        displayName: args.displayName,
+        appearance: args.appearance,
+      },
+    }),
+  );
   return {
     snapshot: data.snapshot,
     role: "joiner",
@@ -251,21 +243,22 @@ export const markGameReady = async (args: {
   gameId: string;
   token: string;
 }): Promise<GameSnapshot> => {
-  const res = await fetch(`/api/games/${args.gameId}/ready`, {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({ token: args.token }),
-  });
-  const data = await parseJsonResponse<{
+  const data = await handleResponse<{
     success: boolean;
     snapshot: GameSnapshot;
-  }>(res);
+  }>(
+    api.games[":id"].ready.$post({
+      param: { id: args.gameId },
+      json: { token: args.token },
+    }),
+  );
   return data.snapshot;
 };
 
 // Fetch list of available matchmaking games
 export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
-  const res = await fetch("/api/games/matchmaking");
-  const data = await parseJsonResponse<{ games: GameSnapshot[] }>(res);
+  const data = await handleResponse<{ games: GameSnapshot[] }>(
+    api.games.matchmaking.$get(),
+  );
   return data.games;
 };
