@@ -3,6 +3,8 @@ alwaysApply: true
 ---
 
 - Use bun, not npm, pnpm, etc.
-- Before finishing a task, ensure that `bun run build` and `bun lint` run clean from the frontend directory and `bun test` passes from the root directory.
 - When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
 - If you need new UI components they may be in `frontend/src/components/unused-components/`. Read `frontend/src/components/unused-components/RE_ADDING_COMPONENTS.md` for how to re-add them.
+- When finishing a task, run `bun run format`.
+- If you deem it necessary, when finishing a task, you can run `bun run test`, `bun run lint`, and `bun run build` to ensure that the tests, linting, and build pass.
+- When listing object properties or function arguments that take multiple lines, use a comma after the last one.

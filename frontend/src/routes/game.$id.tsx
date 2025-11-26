@@ -1098,20 +1098,25 @@ function GamePage() {
   const boardPawns = useMemo((): BoardPawn[] => {
     const sourceState = previewState ?? gameState;
     if (!sourceState) return [];
-    const normalizedCat =
-      preferredCatSkin && preferredCatSkin !== "default"
-        ? preferredCatSkin
-        : undefined;
-    const normalizedMouse =
-      preferredMouseSkin && preferredMouseSkin !== "default"
-        ? preferredMouseSkin
-        : undefined;
     const basePawns = sourceState.getPawns().map((pawn) => {
-      if (pawn.playerId !== primaryLocalPlayerId) {
-        return pawn;
+      const player = players.find((p) => p.playerId === pawn.playerId);
+
+      let pawnStyle: string | undefined;
+      if (
+        pawn.type === "cat" &&
+        player?.catSkin &&
+        player.catSkin !== "default"
+      ) {
+        pawnStyle = player.catSkin;
+      } else if (
+        pawn.type === "mouse" &&
+        player?.mouseSkin &&
+        player.mouseSkin !== "default"
+      ) {
+        pawnStyle = player.mouseSkin;
       }
-      const preferred = pawn.type === "mouse" ? normalizedMouse : normalizedCat;
-      return preferred ? { ...pawn, pawnStyle: preferred } : pawn;
+
+      return pawnStyle ? { ...pawn, pawnStyle } : pawn;
     });
     // Convert to BoardPawn[] with IDs and preview states
     const pawnsWithIds: BoardPawn[] = basePawns.map((pawn) => ({
@@ -1143,8 +1148,7 @@ function GamePage() {
     stagedActions,
     activeLocalPlayerId,
     primaryLocalPlayerId,
-    preferredCatSkin,
-    preferredMouseSkin,
+    players,
   ]);
 
   const stagedArrows = useMemo<Arrow[]>(() => {
