@@ -19,7 +19,7 @@ export function sameWallPosition(a: WallPosition, b: WallPosition): boolean {
 }
 
 export function timeControlConfigFromPreset(
-  preset: TimeControlPreset
+  preset: TimeControlPreset,
 ): TimeControlConfig {
   switch (preset) {
     case "bullet":

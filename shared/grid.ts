@@ -27,10 +27,10 @@ export class Grid {
   constructor(
     public width: number,
     public height: number,
-    public variant: Variant = "standard"
+    public variant: Variant = "standard",
   ) {
     this.cells = Array.from({ length: height }, () =>
-      Array.from({ length: width }, () => 0)
+      Array.from({ length: width }, () => 0),
     );
   }
 
@@ -50,7 +50,7 @@ export class Grid {
   canBuildWall(
     cats: [Cell, Cell],
     mice: [Cell, Cell],
-    wall: WallPosition
+    wall: WallPosition,
   ): boolean {
     // Check if wall is out of bounds
     if (!this.inBounds(wall.cell)) {

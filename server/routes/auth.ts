@@ -36,7 +36,7 @@ export const authRoute = new Hono()
           // User profile not available yet - this is OK, we'll create them
           // lazily when they first access a protected endpoint
           console.log(
-            "User profile not available in callback (will be created on first access)"
+            "User profile not available in callback (will be created on first access)",
           );
         }
       } catch (error) {

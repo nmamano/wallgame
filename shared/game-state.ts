@@ -126,7 +126,7 @@ export class GameState {
         // Let's keep it as float for accuracy, but display/store rounded if needed.
         this.timeLeft[this.turn] = Math.max(
           0,
-          this.timeLeft[this.turn] - elapsed
+          this.timeLeft[this.turn] - elapsed,
         );
       }
     }
@@ -364,7 +364,7 @@ export class GameState {
       if (player === 1) {
         const dist = this.grid.distance(
           [opPawns.cat[0], opPawns.cat[1]],
-          [nextMyPawns.mouse[0], nextMyPawns.mouse[1]]
+          [nextMyPawns.mouse[0], nextMyPawns.mouse[1]],
         );
         if (dist <= 2 && dist !== -1) {
           this.status = "finished";

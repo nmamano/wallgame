@@ -13,11 +13,11 @@ export const gamePlayersTable = pgTable(
     playerConfigType: varchar("player_config_type", { length: 255 }).notNull(), // "you", "friend", "matched user", "bot", "custom bot"
     userId: integer("user_id").references(() => usersTable.userId), // NULL for non-logged-in users and built-in bots
     botId: varchar("bot_id", { length: 255 }).references(
-      () => builtInBotsTable.botId
+      () => builtInBotsTable.botId,
     ), // Only non-NULL for built-in bots
     ratingAtStart: integer("rating_at_start"), // Rating at game start, NULL for custom bots
     outcomeRank: integer("outcome_rank").notNull(), // e.g., 1 for winner
     outcomeReason: varchar("outcome_reason", { length: 255 }).notNull(), // "timeout", "resignation", "knockout", "agreement", "tie", "abandoned"
   },
-  (table) => [primaryKey({ columns: [table.gameId, table.playerOrder] })]
+  (table) => [primaryKey({ columns: [table.gameId, table.playerOrder] })],
 );

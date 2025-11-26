@@ -22,7 +22,7 @@ export interface UserInfo {
  */
 export async function ensureUserExists(
   kindeUser: UserType,
-  authProvider = "kinde"
+  authProvider = "kinde",
 ): Promise<number> {
   if (!kindeUser) {
     throw new Error("Kinde user is null or undefined");
