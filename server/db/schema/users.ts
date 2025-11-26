@@ -27,9 +27,9 @@ export const usersTable = pgTable(
   (table) => [
     check(
       "lowercase_display_name",
-      sql`${table.displayName} = LOWER(${table.displayName})`
+      sql`${table.displayName} = LOWER(${table.displayName})`,
     ),
-  ]
+  ],
 );
 
 export const userAuthTable = pgTable(
@@ -41,5 +41,5 @@ export const userAuthTable = pgTable(
     authProvider: varchar("auth_provider", { length: 255 }).notNull(),
     authUserId: text("auth_user_id").notNull().unique(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.authProvider] })]
+  (table) => [primaryKey({ columns: [table.userId, table.authProvider] })],
 );

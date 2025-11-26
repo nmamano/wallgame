@@ -24,7 +24,7 @@ export function cellToStandardNotation(cell: Cell, totalRows: number): string {
  */
 export function cellFromStandardNotation(
   notation: string,
-  totalRows: number
+  totalRows: number,
 ): Cell {
   const colChar = notation.charAt(0).toLowerCase();
   const rowStr = notation.slice(1);
@@ -43,7 +43,7 @@ export function cellFromStandardNotation(
  */
 export function wallToStandardNotation(
   wall: WallPosition,
-  totalRows: number
+  totalRows: number,
 ): string {
   const symbol = wall.orientation === "vertical" ? ">" : "^";
   return `${symbol}${cellToStandardNotation(wall.cell, totalRows)}`;
@@ -54,7 +54,7 @@ export function wallToStandardNotation(
  */
 export function wallFromStandardNotation(
   notation: string,
-  totalRows: number
+  totalRows: number,
 ): WallPosition {
   const symbol = notation.charAt(0);
   const cellNotation = notation.slice(1);
@@ -77,7 +77,7 @@ export function wallFromStandardNotation(
  */
 export function actionToStandardNotation(
   action: Action,
-  totalRows: number
+  totalRows: number,
 ): string {
   if (action.type === "cat")
     return `C${cellToStandardNotation(action.target, totalRows)}`;
@@ -95,7 +95,7 @@ export function actionToStandardNotation(
  */
 export function actionFromStandardNotation(
   notation: string,
-  totalRows: number
+  totalRows: number,
 ): Action {
   const firstChar = notation.charAt(0);
   if (firstChar === "C") {
@@ -148,12 +148,12 @@ export function moveToStandardNotation(move: Move, totalRows: number): string {
  */
 export function moveFromStandardNotation(
   notation: string,
-  totalRows: number
+  totalRows: number,
 ): Move {
   if (notation === "---") return { actions: [] };
   const actionStrs = notation.split(".");
   const actions = actionStrs.map((s) =>
-    actionFromStandardNotation(s, totalRows)
+    actionFromStandardNotation(s, totalRows),
   );
   return { actions };
 }
@@ -164,7 +164,7 @@ export function moveFromStandardNotation(
 export function playerWallFromStandardNotation(
   notation: string,
   totalRows: number,
-  playerId: PlayerId
+  playerId: PlayerId,
 ): WallPosition {
   const wall = wallFromStandardNotation(notation, totalRows);
   return {
@@ -180,7 +180,7 @@ export function turnToStandardNotation(turn: Turn, totalRows: number): string {
   if (!turn.move2) return moveToStandardNotation(turn.move1, totalRows);
   return `${moveToStandardNotation(
     turn.move1,
-    totalRows
+    totalRows,
   )} ${moveToStandardNotation(turn.move2, totalRows)}`;
 }
 
@@ -189,7 +189,7 @@ export function turnToStandardNotation(turn: Turn, totalRows: number): string {
  */
 export function turnFromStandardNotation(
   notation: string,
-  totalRows: number
+  totalRows: number,
 ): Turn {
   const parts = notation.trim().split(/\s+/);
   if (parts.length === 1) {

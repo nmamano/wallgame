@@ -101,7 +101,7 @@ const sendStateOnce = (entry: SessionSocket) => {
       JSON.stringify({
         type: "state",
         state: getSerializedState(entry.sessionId),
-      })
+      }),
     );
   } catch (error) {
     console.error("Failed to send initial state snapshot", {
@@ -158,7 +158,7 @@ const handleResign = (socket: SessionSocket) => {
 
 const handleClientMessage = (
   socket: SessionSocket,
-  raw: string | ArrayBuffer
+  raw: string | ArrayBuffer,
 ) => {
   let payload: ClientMessage;
   try {
@@ -168,7 +168,7 @@ const handleClientMessage = (
       JSON.stringify({
         type: "error",
         message: (error as Error).message ?? "Malformed message",
-      })
+      }),
     );
     return;
   }
@@ -185,7 +185,7 @@ const handleClientMessage = (
               error instanceof Error
                 ? error.message
                 : "Move could not be applied",
-          })
+          }),
         );
       }
       break;
@@ -197,7 +197,7 @@ const handleClientMessage = (
       break;
     default:
       socket.ctx.send(
-        JSON.stringify({ type: "error", message: "Unknown message type" })
+        JSON.stringify({ type: "error", message: "Unknown message type" }),
       );
   }
 };
@@ -338,7 +338,7 @@ export const registerGameSocketRoute = (app: Hono) => {
                   error instanceof Error
                     ? error.message
                     : "Message processing failed",
-              })
+              }),
             );
           }
         },
@@ -360,7 +360,7 @@ export const registerGameSocketRoute = (app: Hono) => {
           });
         },
       };
-    })
+    }),
   );
 
   // Lobby WebSocket for matchmaking game list
@@ -387,7 +387,7 @@ export const registerGameSocketRoute = (app: Hono) => {
               const msg = JSON.parse(raw);
               if (msg.type === "ping") {
                 ws.send(
-                  JSON.stringify({ type: "pong", timestamp: Date.now() })
+                  JSON.stringify({ type: "pong", timestamp: Date.now() }),
                 );
               }
             } catch {
@@ -402,7 +402,7 @@ export const registerGameSocketRoute = (app: Hono) => {
           console.info("[ws-lobby] client disconnected");
         },
       };
-    })
+    }),
   );
 
   return websocket;

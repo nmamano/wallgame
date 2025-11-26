@@ -26,5 +26,5 @@ export const ratingsTable = pgTable(
   },
   (table) => [
     primaryKey({ columns: [table.userId, table.variant, table.timeControl] }),
-  ]
+  ],
 );

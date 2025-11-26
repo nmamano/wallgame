@@ -203,7 +203,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
         connected: player.connected,
         ready: player.ready,
         appearance: player.appearance,
-      })
+      }),
     ),
   };
 };
@@ -217,8 +217,8 @@ export const resolveSessionForToken = (args: {
     session.players.host.token === args.token
       ? session.players.host
       : session.players.joiner.token === args.token
-      ? session.players.joiner
-      : null;
+        ? session.players.joiner
+        : null;
   if (!player) return null;
   player.lastSeenAt = Date.now();
   return { session, player };
@@ -233,8 +233,8 @@ export const resolveSessionForSocketToken = (args: {
     session.players.host.socketToken === args.socketToken
       ? session.players.host
       : session.players.joiner.socketToken === args.socketToken
-      ? session.players.joiner
-      : null;
+        ? session.players.joiner
+        : null;
   if (!player) return null;
   return { session, player };
 };
@@ -256,7 +256,7 @@ export const listSessions = (): GameSnapshot[] => {
         connected: player.connected,
         ready: player.ready,
         appearance: player.appearance,
-      })
+      }),
     ),
   }));
 };
@@ -266,7 +266,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
   return [...sessions.values()]
     .filter(
       (session) =>
-        session.matchType === "matchmaking" && session.status === "waiting"
+        session.matchType === "matchmaking" && session.status === "waiting",
     )
     .map((session) => ({
       id: session.id,
@@ -283,7 +283,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
           connected: player.connected,
           ready: player.ready,
           appearance: player.appearance,
-        })
+        }),
       ),
     }));
 };
@@ -307,7 +307,7 @@ const toAction = (payload: GameActionPayload): Action => {
 
 const applyActionToSession = (
   session: GameSession,
-  action: GameAction
+  action: GameAction,
 ): GameState => {
   const next = session.gameState.applyGameAction(action);
   session.gameState = next;
@@ -366,7 +366,7 @@ export const giveTime = (args: {
 };
 
 export const serializeGameState = (
-  session: GameSession
+  session: GameSession,
 ): SerializedGameState => {
   const state = session.gameState;
   const historyRows = state.config.boardHeight;
@@ -427,8 +427,8 @@ export const updateConnectionState = (args: {
     session.players.host.socketToken === args.socketToken
       ? session.players.host
       : session.players.joiner.socketToken === args.socketToken
-      ? session.players.joiner
-      : null;
+        ? session.players.joiner
+        : null;
   if (!player) {
     throw new Error("Invalid socket token for session");
   }

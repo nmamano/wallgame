@@ -37,7 +37,7 @@ export const userPawnSettingsTable = pgTable(
     pawnType: varchar("pawn_type", { length: 255 }).notNull(),
     pawnShape: varchar("pawn_shape", { length: 255 }).notNull(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.pawnType] })]
+  (table) => [primaryKey({ columns: [table.userId, table.pawnType] })],
 );
 
 export const userVariantSettingsTable = pgTable(
@@ -49,5 +49,5 @@ export const userVariantSettingsTable = pgTable(
     variant: varchar("variant", { length: 255 }).notNull(),
     defaultParameters: jsonb("default_parameters").notNull(),
   },
-  (table) => [primaryKey({ columns: [table.userId, table.variant] })]
+  (table) => [primaryKey({ columns: [table.userId, table.variant] })],
 );

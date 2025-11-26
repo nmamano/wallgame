@@ -123,7 +123,7 @@ gamesRoute.post("/", async (c) => {
         shareUrl,
         snapshot: getSessionSnapshot(session.id),
       },
-      201
+      201,
     );
   } catch (error) {
     if (error instanceof z.ZodError) {

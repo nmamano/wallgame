@@ -94,7 +94,7 @@ settingsRoute.get("/", getUserMiddleware, async (c) => {
     if (settingsResult.length > 1) {
       console.error(
         "Data integrity error: multiple settings found for user:",
-        userId
+        userId,
       );
       return c.json({ error: "Internal server error" }, 500);
     }
@@ -141,7 +141,7 @@ settingsRoute.put("/board-theme", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -177,7 +177,7 @@ settingsRoute.put("/pawn-color", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -227,7 +227,7 @@ settingsRoute.put("/pawn", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -263,7 +263,7 @@ settingsRoute.put("/default-variant", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -303,7 +303,7 @@ settingsRoute.put("/time-control", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -339,7 +339,7 @@ settingsRoute.put("/rated-status", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -392,7 +392,7 @@ settingsRoute.put("/variant-parameters", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     if (error instanceof Error) {
@@ -440,7 +440,7 @@ settingsRoute.put("/display-name", getUserMiddleware, async (c) => {
           error:
             "Names including 'guest', 'deleted', or 'bot' are not allowed.",
         },
-        400
+        400,
       );
     }
 
@@ -449,7 +449,7 @@ settingsRoute.put("/display-name", getUserMiddleware, async (c) => {
       .select()
       .from(usersTable)
       .where(
-        sql`${usersTable.displayName} = ${displayNameLower} AND ${usersTable.userId} != ${userId}`
+        sql`${usersTable.displayName} = ${displayNameLower} AND ${usersTable.userId} != ${userId}`,
       )
       .limit(1);
 
@@ -461,7 +461,7 @@ settingsRoute.put("/display-name", getUserMiddleware, async (c) => {
           error:
             "This display name is already taken. Please choose another one.",
         },
-        409
+        409,
       );
     }
 
@@ -486,7 +486,7 @@ settingsRoute.put("/display-name", getUserMiddleware, async (c) => {
     if (error instanceof z.ZodError) {
       return c.json(
         { error: "Invalid request data", details: error.issues },
-        400
+        400,
       );
     }
     return c.json({ error: "Internal server error" }, 500);
