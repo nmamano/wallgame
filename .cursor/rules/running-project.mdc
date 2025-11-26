@@ -1,6 +1,0 @@
----
-description: Tasks that may want to build or run the project
-alwaysApply: false
----
-
-- Use bun, not npm, pnpm, etc.
