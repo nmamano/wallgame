@@ -1,4 +1,4 @@
-import type { Hono, MiddlewareHandler } from "hono";
+import type { Hono, MiddlewareHandler, Context } from "hono";
 import { createBunWebSocket } from "hono/bun";
 import type { WSContext } from "hono/ws";
 import {
@@ -207,7 +207,52 @@ type GameSocketMeta = {
   player: SessionPlayer;
 };
 
+const checkOrigin = (c: Context): boolean => {
+  const origin = c.req.header("origin");
+  const isDev = process.env.NODE_ENV !== "production";
+
+  const allowedOrigins = isDev
+    ? ["http://localhost:5173"]
+    : ["https://wallgame.fly.dev"];
+
+  if (origin && !allowedOrigins.includes(origin)) {
+    console.warn("[ws] rejected connection from unauthorized origin", {
+      origin,
+      allowedOrigins,
+    });
+    return false;
+  }
+  return true;
+};
+
+const originCheckMiddleware: MiddlewareHandler = async (c, next) => {
+  if (!checkOrigin(c)) {
+    return c.text("Unauthorized origin", 403);
+  }
+  await next();
+};
+
 const gameSocketAuth: MiddlewareHandler = async (c, next) => {
+  // Check origin for security
+  if (!checkOrigin(c)) {
+    return c.text("Unauthorized origin", 403);
+  }
+  // Check origin for security
+  const origin = c.req.header("origin");
+  const isDev = process.env.NODE_ENV !== "production";
+
+  const allowedOrigins = isDev
+    ? ["http://localhost:5173"]
+    : ["https://wallgame.fly.dev"];
+
+  if (origin && !allowedOrigins.includes(origin)) {
+    console.warn("[ws] rejected connection from unauthorized origin", {
+      origin,
+      allowedOrigins,
+    });
+    return c.text("Unauthorized origin", 403);
+  }
+
   const sessionId = c.req.param("id");
   if (!sessionId) {
     return c.text("Missing session id", 400);
@@ -320,6 +365,7 @@ export const registerGameSocketRoute = (app: Hono) => {
   // Lobby WebSocket for matchmaking game list
   app.get(
     "/ws/lobby",
+    originCheckMiddleware,
     upgradeWebSocket(() => {
       return {
         onOpen(_event: Event, ws: WSContext) {
@@ -340,7 +386,9 @@ export const registerGameSocketRoute = (app: Hono) => {
             try {
               const msg = JSON.parse(raw);
               if (msg.type === "ping") {
-                ws.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
+                ws.send(
+                  JSON.stringify({ type: "pong", timestamp: Date.now() })
+                );
               }
             } catch {
               // Ignore parse errors
