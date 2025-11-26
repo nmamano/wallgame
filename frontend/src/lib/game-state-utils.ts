@@ -9,14 +9,14 @@ import type {
 } from "../../../shared/game-types";
 
 export const buildGameConfigurationFromSerialized = (
-  serialized: SerializedGameState
+  serialized: SerializedGameState,
 ): GameConfiguration => {
   return serialized.config;
 };
 
 export const hydrateGameStateFromSerialized = (
   serialized: SerializedGameState,
-  baseConfig: GameConfiguration
+  baseConfig: GameConfiguration,
 ): GameState => {
   const config: GameConfiguration = {
     boardWidth: serialized.config.boardWidth,

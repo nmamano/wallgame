@@ -292,5 +292,5 @@ export const CAT_PAWNS = [
   "cat308.svg",
   "cat309.svg",
   "cat310.svg",
-  "cat311.svg"
+  "cat311.svg",
 ] as const;

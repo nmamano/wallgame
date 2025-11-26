@@ -149,7 +149,7 @@ function Index() {
                     if (typeof window !== "undefined") {
                       sessionStorage.setItem(
                         "game-setup-mode",
-                        "invite-friend"
+                        "invite-friend",
                       );
                     }
                   }}

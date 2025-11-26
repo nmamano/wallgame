@@ -11,6 +11,7 @@ import {
   listMatchmakingGames,
   type SessionPlayer,
 } from "../games/store";
+import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { GameActionPayload, PlayerId } from "../../shared/game-types";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -201,11 +202,11 @@ const handleClientMessage = (
   }
 };
 
-type GameSocketMeta = {
+interface GameSocketMeta {
   sessionId: string;
   socketToken: string;
   player: SessionPlayer;
-};
+}
 
 const checkOrigin = (c: Context): boolean => {
   const origin = c.req.header("origin");
@@ -371,7 +372,6 @@ export const registerGameSocketRoute = (app: Hono) => {
         onOpen(_event: Event, ws: WSContext) {
           // Store raw socket reference for lobby broadcasts
           if (ws.raw && typeof ws.raw === "object") {
-            const { addLobbyConnection } = require("./games");
             addLobbyConnection(ws.raw as WebSocket);
           }
           console.info("[ws-lobby] client connected");
@@ -397,7 +397,6 @@ export const registerGameSocketRoute = (app: Hono) => {
         },
         onClose(_event: CloseEvent, ws: WSContext) {
           if (ws.raw && typeof ws.raw === "object") {
-            const { removeLobbyConnection } = require("./games");
             removeLobbyConnection(ws.raw as WebSocket);
           }
           console.info("[ws-lobby] client disconnected");

@@ -19,7 +19,11 @@ import { GameConfigurationPanel } from "@/components/game-configuration-panel";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
-import { PLAYER_COLORS, colorDisplayNames, colorHexMap } from "@/lib/player-colors";
+import {
+  PLAYER_COLORS,
+  colorDisplayNames,
+  colorHexMap,
+} from "@/lib/player-colors";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,

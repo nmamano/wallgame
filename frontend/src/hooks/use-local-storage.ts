@@ -2,7 +2,7 @@ import { useState, useEffect } from "react";
 
 export function useLocalStorageState<T>(
   key: string,
-  defaultValue: T | (() => T)
+  defaultValue: T | (() => T),
 ) {
   const [value, setValue] = useState<T>(() => {
     // Resolve defaultValue (could be a function or value)

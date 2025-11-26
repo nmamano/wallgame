@@ -172,7 +172,9 @@ export function MatchingStagePanel({
                   {typeof player.isConnected === "boolean" && (
                     <span
                       className={`flex items-center gap-1 text-xs ${
-                        player.isConnected ? "text-green-600" : "text-muted-foreground"
+                        player.isConnected
+                          ? "text-green-600"
+                          : "text-muted-foreground"
                       }`}
                     >
                       <span

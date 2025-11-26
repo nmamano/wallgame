@@ -192,7 +192,7 @@ function GameSetup() {
     const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
     const newConfigs: PlayerType[] = Array.from(
       { length: playerCount },
-      () => defaultOtherPlayerType
+      () => defaultOtherPlayerType,
     );
     newConfigs[0] = "you"; // Player A defaults to "You"
     setPlayerConfigs(newConfigs);
@@ -204,7 +204,7 @@ function GameSetup() {
   const playerBAllowedOptions = useMemo(() => {
     if (playerAType === "you") {
       return (["you", ...PLAYER_B_BASE_OPTIONS] as PlayerType[]).filter(
-        (value, index, array) => array.indexOf(value) === index
+        (value, index, array) => array.indexOf(value) === index,
       );
     }
     return PLAYER_B_BASE_OPTIONS;
@@ -239,7 +239,7 @@ function GameSetup() {
         p === "easy-bot" ||
         p === "medium-bot" ||
         p === "hard-bot" ||
-        p === "custom-bot"
+        p === "custom-bot",
     );
 
     // Rated games are only allowed if:
@@ -288,7 +288,7 @@ function GameSetup() {
       const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
       const newConfigs: PlayerType[] = Array.from(
         { length: playerCount },
-        () => defaultOtherPlayerType
+        () => defaultOtherPlayerType,
       );
       newConfigs[0] = "you";
       setPlayerConfigs(newConfigs);
@@ -331,7 +331,7 @@ function GameSetup() {
         setCreateGameError(
           error instanceof Error
             ? error.message
-            : "Unable to create game right now."
+            : "Unable to create game right now.",
         );
       } finally {
         setIsCreatingGame(false);
@@ -346,7 +346,7 @@ function GameSetup() {
         JSON.stringify({
           config: gameConfig,
           players: playerConfigs,
-        })
+        }),
       );
     }
     void navigate({ to: `/game/${gameId}` });
@@ -384,9 +384,12 @@ function GameSetup() {
       socket.addEventListener("message", (event) => {
         if (typeof event.data !== "string") return;
         try {
-          const msg = JSON.parse(event.data);
-          if (msg.type === "games") {
-            setMatchmakingGames(msg.games as GameSnapshot[]);
+          const msg = JSON.parse(event.data) as {
+            type: string;
+            games?: GameSnapshot[];
+          };
+          if (msg.type === "games" && msg.games) {
+            setMatchmakingGames(msg.games);
           }
         } catch (error) {
           console.error("[game-setup] failed to parse lobby message", error);
@@ -461,7 +464,7 @@ function GameSetup() {
             allMatch,
           },
         };
-      }
+      },
     );
 
     // Sort: matching games first, then by time created (older first)
@@ -517,7 +520,7 @@ function GameSetup() {
       setCreateGameError(
         error instanceof Error
           ? error.message
-          : "Unable to join game right now."
+          : "Unable to join game right now.",
       );
     } finally {
       setIsJoiningGame(null);
@@ -846,10 +849,10 @@ function GameSetup() {
                             {getTimeControlIcon(game.config.timeControl) && (
                               <img
                                 src={getTimeControlIcon(
-                                  game.config.timeControl
+                                  game.config.timeControl,
                                 )}
                                 alt={
-                                  game.config.timeControl.preset ||
+                                  game.config.timeControl.preset ??
                                   formatTimeControl(game.config.timeControl)
                                 }
                                 className="w-5 h-5"
@@ -868,7 +871,7 @@ function GameSetup() {
                           >
                             {formatBoardSize(
                               game.config.boardWidth,
-                              game.config.boardHeight
+                              game.config.boardHeight,
                             )}
                           </span>
                         </TableCell>

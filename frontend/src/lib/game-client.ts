@@ -32,7 +32,7 @@ export class GameClient {
     private readonly params: {
       gameId: string;
       socketToken: string;
-    }
+    },
   ) {}
 
   connect(handlers: GameClientHandlers): void {

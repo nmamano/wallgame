@@ -202,7 +202,7 @@ function formatTime(seconds: number): string {
 function buildPlayerName(
   type: PlayerType,
   index: number,
-  username?: string
+  username?: string,
 ): string {
   switch (type) {
     case "you":
@@ -241,7 +241,7 @@ const actionsEqual = (a: Action, b: Action): boolean => {
 const buildDoubleStepPaths = (
   pawnType: PawnType,
   from: Cell,
-  to: Cell
+  to: Cell,
 ): Action[][] => {
   const paths: Action[][] = [];
   const rowDiff = Math.abs(from[0] - to[0]);
@@ -302,7 +302,7 @@ function formatWinReason(reason?: GameResult["reason"]): string {
 
 function sanitizePlayerList(
   players: PlayerType[],
-  options?: { forceYouFirst?: boolean }
+  options?: { forceYouFirst?: boolean },
 ): PlayerType[] {
   const { forceYouFirst = true } = options ?? {};
   const list = players.slice(0, 2);
@@ -348,7 +348,7 @@ function GamePage() {
     (message: string, extra?: Record<string, unknown>) => {
       console.debug(`[friend-game] ${message}`, extra);
     },
-    []
+    [],
   );
 
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
@@ -358,7 +358,7 @@ function GamePage() {
     useState<StoredGameHandshake | null>(null);
   const [matchSnapshot, setMatchSnapshot] = useState<GameSnapshot | null>(null);
   const [matchShareUrl, setMatchShareUrl] = useState<string | undefined>(
-    undefined
+    undefined,
   );
   const [matchError, setMatchError] = useState<string | null>(null);
   const [isMultiplayerMatch, setIsMultiplayerMatch] = useState(false);
@@ -379,7 +379,7 @@ function GamePage() {
         setMatchShareUrl(undefined);
       }
     },
-    [id]
+    [id],
   );
 
   const preferredPawnColor = resolvePlayerColor(settings.pawnColor);
@@ -414,7 +414,7 @@ function GamePage() {
         "No stored handshake or invite found; falling back to local config",
         {
           id,
-        }
+        },
       );
       setIsMultiplayerMatch(false);
       return () => {
@@ -464,7 +464,9 @@ function GamePage() {
               : { message: "unknown error" },
         });
         setMatchError(
-          error instanceof Error ? error.message : "Unable to join friend game."
+          error instanceof Error
+            ? error.message
+            : "Unable to join friend game.",
         );
         setIsMultiplayerMatch(false);
       } finally {
@@ -537,7 +539,7 @@ function GamePage() {
               setMatchSnapshot(snapshot);
               setIsMatchingOpen(
                 snapshot.status !== "in-progress" &&
-                  snapshot.status !== "completed"
+                  snapshot.status !== "completed",
               );
             }
           } catch (error) {
@@ -558,7 +560,9 @@ function GamePage() {
               : { message: "unknown error" },
         });
         setMatchError(
-          error instanceof Error ? error.message : "Unable to load friend game."
+          error instanceof Error
+            ? error.message
+            : "Unable to load friend game.",
         );
       }
     })();
@@ -602,7 +606,7 @@ function GamePage() {
     (
       incomingConfig: GameConfiguration,
       incomingPlayers: PlayerType[],
-      options?: { forceYouFirst?: boolean }
+      options?: { forceYouFirst?: boolean },
     ) => {
       const nextGameId = currentGameIdRef.current + 1;
       currentGameIdRef.current = nextGameId;
@@ -639,7 +643,7 @@ function GamePage() {
       pendingTurnRequestRef.current = null;
 
       Object.values(playerControllersRef.current).forEach((controller) =>
-        controller.cancel?.(new Error("Game reset"))
+        controller.cancel?.(new Error("Game reset")),
       );
       const controllers: Partial<Record<PlayerId, GamePlayerController>> = {};
       sanitizedPlayers.forEach((type, index) => {
@@ -671,7 +675,7 @@ function GamePage() {
             index + 1 === nextPrimaryLocalPlayerId
               ? preferredMouseSkin
               : undefined,
-        })
+        }),
       );
       playersRef.current = initialPlayers;
       setPlayers(initialPlayers);
@@ -690,7 +694,7 @@ function GamePage() {
       setGameState(state);
 
       addSystemMessage(
-        waiting ? "Waiting for players..." : "Game created. Good luck!"
+        waiting ? "Waiting for players..." : "Game created. Good luck!",
       );
       setRematchState((prev) => ({
         status: "idle",
@@ -705,7 +709,7 @@ function GamePage() {
       preferredMouseSkin,
       preferredPawnColor,
       settings.displayName,
-    ]
+    ],
   );
 
   const updateGameState = useCallback(
@@ -713,7 +717,7 @@ function GamePage() {
       nextState: GameState,
       options?: {
         lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
-      }
+      },
     ) => {
       gameStateRef.current = nextState;
       setGameState(nextState);
@@ -730,7 +734,7 @@ function GamePage() {
         setLastMove(undefined);
       }
     },
-    []
+    [],
   );
 
   useEffect(() => {
@@ -770,7 +774,7 @@ function GamePage() {
       onMatchStatus: (snapshot) => {
         setMatchSnapshot(snapshot);
         setIsMatchingOpen(
-          snapshot.status !== "in-progress" && snapshot.status !== "completed"
+          snapshot.status !== "in-progress" && snapshot.status !== "completed",
         );
       },
       onError: (message) => {
@@ -800,7 +804,7 @@ function GamePage() {
       if (!prev.length) return prev;
       const next = prev.map((player) => {
         const remote = matchSnapshot.players.find(
-          (entry) => entry.playerId === player.playerId
+          (entry) => entry.playerId === player.playerId,
         );
         if (!remote) return player;
         const isLocal = player.playerId === primaryLocalPlayerId;
@@ -838,7 +842,7 @@ function GamePage() {
   >(undefined);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
-    "game"
+    "game",
   );
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
@@ -849,7 +853,7 @@ function GamePage() {
   const [activeLocalPlayerId, setActiveLocalPlayerId] =
     useState<PlayerId | null>(null);
   const [automatedPlayerId, setAutomatedPlayerId] = useState<PlayerId | null>(
-    null
+    null,
   );
   const [pendingDrawOffer, setPendingDrawOffer] =
     useState<PendingDrawOfferState | null>(null);
@@ -860,7 +864,7 @@ function GamePage() {
   const [takebackDecisionPrompt, setTakebackDecisionPrompt] =
     useState<TakebackDecisionPromptState | null>(null);
   const [resignFlowPlayerId, setResignFlowPlayerId] = useState<PlayerId | null>(
-    null
+    null,
   );
   const [incomingPassiveNotice, setIncomingPassiveNotice] =
     useState<PassiveNotice | null>(null);
@@ -947,14 +951,14 @@ function GamePage() {
   const autoAcceptingLocalIds = useMemo(
     () =>
       localPlayerIds.filter(
-        (playerId) => playerId !== primaryLocalPlayerId && playerId != null
+        (playerId) => playerId !== primaryLocalPlayerId && playerId != null,
       ),
-    [localPlayerIds, primaryLocalPlayerId]
+    [localPlayerIds, primaryLocalPlayerId],
   );
 
   const unsupportedPlayers = useMemo(
     () => playerTypes.filter((type) => type !== "you" && type !== "easy-bot"),
-    [playerTypes]
+    [playerTypes],
   );
   const matchReadyForPlay =
     isMultiplayerMatch &&
@@ -998,17 +1002,17 @@ function GamePage() {
     (playerId: PlayerId) =>
       playersRef.current.find((p) => p.playerId === playerId)?.name ??
       `Player ${playerId}`,
-    []
+    [],
   );
 
   const resolveBoardControlPlayerId = useCallback(
     () => activeLocalPlayerId ?? defaultLocalPlayerId ?? null,
-    [activeLocalPlayerId, defaultLocalPlayerId]
+    [activeLocalPlayerId, defaultLocalPlayerId],
   );
 
   const resolvePrimaryActionPlayerId = useCallback(
     () => primaryLocalPlayerId ?? null,
-    [primaryLocalPlayerId]
+    [primaryLocalPlayerId],
   );
 
   const performGameAction = useCallback(
@@ -1016,7 +1020,7 @@ function GamePage() {
       action: GameAction,
       options?: {
         lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
-      }
+      },
     ) => {
       const currentState = gameStateRef.current;
       if (!currentState) {
@@ -1050,7 +1054,7 @@ function GamePage() {
       getPlayerName,
       setOutgoingTimeInfo,
       setIncomingPassiveNotice,
-    ]
+    ],
   );
 
   const simulateMove = useCallback(
@@ -1071,12 +1075,12 @@ function GamePage() {
         return null;
       }
     },
-    [gameState]
+    [gameState],
   );
 
   const previewState = useMemo(
     () => (stagedActions.length ? simulateMove(stagedActions) : null),
-    [stagedActions, simulateMove]
+    [stagedActions, simulateMove],
   );
 
   const stagedWallOverlays = useMemo<WallPosition[]>(() => {
@@ -1136,7 +1140,7 @@ function GamePage() {
     const stagedPawnTypes = new Set(
       stagedActions
         .filter((action) => action.type === "cat" || action.type === "mouse")
-        .map((action) => action.type)
+        .map((action) => action.type),
     );
     const stagingPlayerId = gameState?.turn ?? activeLocalPlayerId;
     return pawnsWithIds.map((pawn) => {
@@ -1305,7 +1309,7 @@ function GamePage() {
         playSound();
       }
     },
-    [playerColorsForBoard, soundEnabled, updateGameState]
+    [playerColorsForBoard, soundEnabled, updateGameState],
   );
 
   const commitStagedActions = useCallback(
@@ -1342,7 +1346,7 @@ function GamePage() {
       } catch (error) {
         console.error(error);
         setActionError(
-          error instanceof Error ? error.message : "Move could not be applied."
+          error instanceof Error ? error.message : "Move could not be applied.",
         );
       }
     },
@@ -1352,7 +1356,7 @@ function GamePage() {
       stagedActions,
       setDraggingPawnId,
       setSelectedPawnId,
-    ]
+    ],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -1397,7 +1401,7 @@ function GamePage() {
       setDraggingPawnId(null);
       return true;
     },
-    [updateGameState]
+    [updateGameState],
   );
 
   const handleStartResign = useCallback(() => {
@@ -1441,7 +1445,7 @@ function GamePage() {
     } catch (error) {
       console.error(error);
       setActionError(
-        error instanceof Error ? error.message : "Unable to resign the game."
+        error instanceof Error ? error.message : "Unable to resign the game.",
       );
     } finally {
       setResignFlowPlayerId(null);
@@ -1496,13 +1500,13 @@ function GamePage() {
     });
     addSystemMessage(
       `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
-        opponentId
-      )}.`
+        opponentId,
+      )}.`,
     );
     const shouldAutoAccept = autoAcceptingLocalIds.includes(opponentId);
     const responsePromise = shouldAutoAccept
       ? new Promise<DrawDecision>((resolve) =>
-          window.setTimeout(() => resolve("accept"), 300)
+          window.setTimeout(() => resolve("accept"), 300),
         )
       : opponentController.respondToDrawOffer({
           state: currentState.clone(),
@@ -1532,19 +1536,19 @@ function GamePage() {
               timestamp: Date.now(),
             });
             addSystemMessage(
-              `${getPlayerName(opponentId)} accepted the draw offer.`
+              `${getPlayerName(opponentId)} accepted the draw offer.`,
             );
           } catch (error) {
             console.error(error);
             setActionError(
               error instanceof Error
                 ? error.message
-                : "Unable to convert the draw offer into a result."
+                : "Unable to convert the draw offer into a result.",
             );
           }
         } else {
           addSystemMessage(
-            `${getPlayerName(opponentId)} declined the draw offer.`
+            `${getPlayerName(opponentId)} declined the draw offer.`,
           );
         }
       })
@@ -1554,7 +1558,7 @@ function GamePage() {
         setActionError(
           error instanceof Error
             ? error.message
-            : "The draw offer could not be processed."
+            : "The draw offer could not be processed.",
         );
       })
       .finally(() => {
@@ -1627,13 +1631,13 @@ function GamePage() {
     });
     addSystemMessage(
       `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
-        responderId
-      )}.`
+        responderId,
+      )}.`,
     );
     const shouldAutoAccept = autoAcceptingLocalIds.includes(responderId);
     const responsePromise = shouldAutoAccept
       ? new Promise<TakebackDecision>((resolve) =>
-          window.setTimeout(() => resolve("allow"), 300)
+          window.setTimeout(() => resolve("allow"), 300),
         )
       : responderController.respondToTakebackRequest({
           state: currentState.clone(),
@@ -1659,12 +1663,12 @@ function GamePage() {
           const success = executeTakeback(requesterId);
           if (success) {
             addSystemMessage(
-              `${getPlayerName(responderId)} accepted the takeback request.`
+              `${getPlayerName(responderId)} accepted the takeback request.`,
             );
           }
         } else {
           addSystemMessage(
-            `${getPlayerName(responderId)} declined the takeback request.`
+            `${getPlayerName(responderId)} declined the takeback request.`,
           );
         }
       })
@@ -1674,7 +1678,7 @@ function GamePage() {
         setActionError(
           error instanceof Error
             ? error.message
-            : "The takeback request could not be processed."
+            : "The takeback request could not be processed.",
         );
       })
       .finally(() => {
@@ -1736,15 +1740,15 @@ function GamePage() {
       });
       addSystemMessage(
         `${getPlayerName(giverId)} gave ${getPlayerName(
-          opponentId
-        )} one minute.`
+          opponentId,
+        )} one minute.`,
       );
     } catch (error) {
       console.error(error);
       setActionError(
         error instanceof Error
           ? error.message
-          : "Unable to adjust the clocks right now."
+          : "Unable to adjust the clocks right now.",
       );
     }
   }, [
@@ -1806,7 +1810,7 @@ function GamePage() {
         };
       });
     },
-    [addSystemMessage, getPlayerName]
+    [addSystemMessage, getPlayerName],
   );
 
   const handleAcceptRematch = useCallback(() => {
@@ -1837,11 +1841,11 @@ function GamePage() {
         setActionError(
           error instanceof Error
             ? error.message
-            : "Unable to respond to the draw offer."
+            : "Unable to respond to the draw offer.",
         );
       }
     },
-    [drawDecisionPrompt]
+    [drawDecisionPrompt],
   );
 
   const respondToTakebackPrompt = useCallback(
@@ -1855,11 +1859,11 @@ function GamePage() {
         setActionError(
           error instanceof Error
             ? error.message
-            : "Unable to respond to the takeback request."
+            : "Unable to respond to the takeback request.",
         );
       }
     },
-    [takebackDecisionPrompt]
+    [takebackDecisionPrompt],
   );
 
   const startRematch = useCallback(() => {
@@ -1870,7 +1874,7 @@ function GamePage() {
     ];
     seatOrderIndicesRef.current = nextSeatOrder;
     const playersForGame = nextSeatOrder.map(
-      (participantIndex) => matchParticipants[participantIndex]
+      (participantIndex) => matchParticipants[participantIndex],
     );
     const nextConfig = config ?? DEFAULT_CONFIG;
     initializeGame(nextConfig, playersForGame, { forceYouFirst: false });
@@ -1925,7 +1929,7 @@ function GamePage() {
     ];
     seatOrderIndicesRef.current = seatOrder;
     const playersForGame = seatOrder.map(
-      (participantIndex) => participants[participantIndex]
+      (participantIndex) => participants[participantIndex],
     );
 
     initializeGame(resolvedConfig, playersForGame, { forceYouFirst: false });
@@ -1933,7 +1937,7 @@ function GamePage() {
 
     return () => {
       Object.values(playerControllersRef.current).forEach((controller) =>
-        controller.cancel?.(new Error("Game closed"))
+        controller.cancel?.(new Error("Game closed")),
       );
       playerControllersRef.current = {};
       pendingTurnRequestRef.current = null;
@@ -1960,7 +1964,7 @@ function GamePage() {
       const next = prev.map((player) =>
         player.playerId === primaryLocalPlayerId
           ? { ...player, color: preferredPawnColor }
-          : player
+          : player,
       );
       playersRef.current = next;
       return next;
@@ -2029,7 +2033,7 @@ function GamePage() {
       if (isAutomatedController(controller)) {
         const timeoutId = window.setTimeout(
           () => respondToRematch(playerId, "accepted"),
-          800
+          800,
         );
         timers.push(timeoutId);
       } else if (
@@ -2038,7 +2042,7 @@ function GamePage() {
       ) {
         const timeoutId = window.setTimeout(
           () => respondToRematch(playerId, "accepted"),
-          400
+          400,
         );
         timers.push(timeoutId);
       }
@@ -2098,7 +2102,7 @@ function GamePage() {
       const targetCell: Cell = [targetRow, targetCol];
       const newAction: Action = { type: pawnType, target: targetCell };
       const duplicateIndex = stagedActions.findIndex((existing) =>
-        actionsEqual(existing, newAction)
+        actionsEqual(existing, newAction),
       );
       if (duplicateIndex !== -1) {
         removeStagedAction(duplicateIndex);
@@ -2115,14 +2119,14 @@ function GamePage() {
       if (isDoubleStep) {
         if (stagedActions.length > 0) {
           setActionError(
-            "You can't make a double move after staging another action."
+            "You can't make a double move after staging another action.",
           );
           return;
         }
         const candidatePaths = buildDoubleStepPaths(
           pawnType,
           pawn.cell,
-          targetCell
+          targetCell,
         );
         const validPath = candidatePaths.find((path) => !!simulateMove(path));
         if (!validPath) {
@@ -2163,7 +2167,7 @@ function GamePage() {
       commitStagedActions,
       removeStagedAction,
       activeLocalPlayerId,
-    ]
+    ],
   );
 
   const handleWallClick = useCallback(
@@ -2179,7 +2183,7 @@ function GamePage() {
         wallOrientation: orientation,
       };
       const duplicateIndex = stagedActions.findIndex((existing) =>
-        actionsEqual(existing, newAction)
+        actionsEqual(existing, newAction),
       );
       if (duplicateIndex !== -1) {
         removeStagedAction(duplicateIndex);
@@ -2213,7 +2217,7 @@ function GamePage() {
       simulateMove,
       commitStagedActions,
       removeStagedAction,
-    ]
+    ],
   );
 
   const requestMoveForPlayer = useCallback(
@@ -2269,7 +2273,7 @@ function GamePage() {
             setActionError(
               error instanceof Error
                 ? error.message
-                : "Player failed to provide a move."
+                : "Player failed to provide a move.",
             );
           }
         })
@@ -2290,7 +2294,7 @@ function GamePage() {
       matchReadyForPlay,
       interactionLocked,
       isMultiplayerMatch,
-    ]
+    ],
   );
 
   useEffect(() => {
@@ -2311,7 +2315,7 @@ function GamePage() {
       addSystemMessage(
         player
           ? `${player.name} won by ${formatWinReason(result.reason)}.`
-          : `Game finished by ${formatWinReason(result.reason)}.`
+          : `Game finished by ${formatWinReason(result.reason)}.`,
       );
     } else {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
@@ -2327,13 +2331,13 @@ function GamePage() {
 
       // Check if this pawn has staged moves
       const stagedActionsForPawn = stagedActions.filter(
-        (action) => action.type === pawn.type
+        (action) => action.type === pawn.type,
       );
 
       if (stagedActionsForPawn.length > 0) {
         // Remove all staged actions for this pawn type
         setStagedActions((prev) =>
-          prev.filter((action) => action.type !== pawn.type)
+          prev.filter((action) => action.type !== pawn.type),
         );
         setSelectedPawnId(null);
         setActionError(null);
@@ -2348,7 +2352,7 @@ function GamePage() {
       }
       setActionError(null);
     },
-    [gameState, boardPawns, activeLocalPlayerId, selectedPawnId, stagedActions]
+    [gameState, boardPawns, activeLocalPlayerId, selectedPawnId, stagedActions],
   );
 
   const handleCellClick = useCallback(
@@ -2359,7 +2363,7 @@ function GamePage() {
           (p) =>
             p.playerId === activeLocalPlayerId &&
             p.cell[0] === row &&
-            p.cell[1] === col
+            p.cell[1] === col,
         );
         if (pawn) {
           setSelectedPawnId(pawn.id);
@@ -2368,7 +2372,7 @@ function GamePage() {
       }
       stagePawnAction(selectedPawnId, row, col);
     },
-    [selectedPawnId, boardPawns, activeLocalPlayerId, stagePawnAction]
+    [selectedPawnId, boardPawns, activeLocalPlayerId, stagePawnAction],
   );
 
   const handlePawnDragStart = useCallback(
@@ -2379,7 +2383,7 @@ function GamePage() {
       setDraggingPawnId(pawnId);
       setSelectedPawnId(pawnId);
     },
-    [activeLocalPlayerId, boardPawns]
+    [activeLocalPlayerId, boardPawns],
   );
 
   const handlePawnDragEnd = useCallback(() => {
@@ -2394,7 +2398,7 @@ function GamePage() {
       stagePawnAction(pawnId, targetRow, targetCol);
       setDraggingPawnId(null);
     },
-    [draggingPawnId, activeLocalPlayerId, stagePawnAction]
+    [draggingPawnId, activeLocalPlayerId, stagePawnAction],
   );
 
   const handleSendMessage = (event: React.FormEvent) => {
@@ -2589,7 +2593,7 @@ function GamePage() {
         name: buildPlayerName(type, index, settings.displayName),
         score: matchScore[index] ?? 0,
       })),
-    [matchParticipants, matchScore, settings.displayName]
+    [matchParticipants, matchScore, settings.displayName],
   );
 
   const getPlayerMatchScore = (player: GamePlayer | null) => {
@@ -2674,7 +2678,7 @@ function GamePage() {
           <div className="flex items-center gap-2 text-sm">
             <RotateCcw className="w-4 h-4" />
             {`${getPlayerName(
-              takebackDecisionPrompt.requester
+              takebackDecisionPrompt.requester,
             )} requested a takeback.`}
           </div>
           <div className="flex gap-2">
@@ -3243,7 +3247,7 @@ function GamePage() {
                           >
                             {channel.charAt(0).toUpperCase() + channel.slice(1)}
                           </button>
-                        )
+                        ),
                       )}
                     </div>
                     <ScrollArea className="flex-1 p-4">
@@ -3252,7 +3256,7 @@ function GamePage() {
                           .filter(
                             (message) =>
                               message.channel === chatChannel ||
-                              message.isSystem
+                              message.isSystem,
                           )
                           .map((message) => (
                             <div

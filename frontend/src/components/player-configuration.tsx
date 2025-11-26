@@ -72,10 +72,10 @@ export function PlayerConfiguration({
     allowedOptions && allowedOptions.length > 0
       ? allowedOptions
           .map((allowed) =>
-            allOptions.find((option) => option.value === allowed)
+            allOptions.find((option) => option.value === allowed),
           )
           .filter((option): option is { value: PlayerType; label: string } =>
-            Boolean(option)
+            Boolean(option),
           )
       : allOptions;
 

@@ -13,7 +13,11 @@ const timeControlValues = ["bullet", "blitz", "rapid", "classical"] as const;
 const variantValues = ["standard", "classic"] as const;
 
 const timeControlSchema = z.object({
-  initialSeconds: z.number().int().min(10).max(60 * 60),
+  initialSeconds: z
+    .number()
+    .int()
+    .min(10)
+    .max(60 * 60),
   incrementSeconds: z.number().int().min(0).max(60),
   preset: z.enum(timeControlValues).optional(),
 });
@@ -101,7 +105,7 @@ gamesRoute.post("/", async (c) => {
       hostAppearance: parsed.hostAppearance,
     });
     const origin = new URL(c.req.url).origin;
-    const shareUrl = session.inviteCode 
+    const shareUrl = session.inviteCode
       ? `${origin}/game/${session.id}?invite=${session.inviteCode}`
       : `${origin}/game/${session.id}`;
 
@@ -123,7 +127,7 @@ gamesRoute.post("/", async (c) => {
     );
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ error: "Invalid payload", details: error.errors }, 400);
+      return c.json({ error: "Invalid payload", details: error.issues }, 400);
     }
     console.error("Failed to create game:", error);
     return c.json({ error: "Internal server error" }, 500);
@@ -174,16 +178,16 @@ gamesRoute.post("/:id/join", async (c) => {
       appearance: parsed.appearance,
     });
     const origin = new URL(c.req.url).origin;
-    
+
     // Broadcast to lobby if this was a matchmaking game (it's now full)
     if (session.matchType === "matchmaking") {
       broadcastLobbyUpdate();
     }
-    
+
     const shareUrl = session.inviteCode
       ? `${origin}/game/${session.id}?invite=${session.inviteCode}`
       : `${origin}/game/${session.id}`;
-      
+
     return c.json({
       gameId: session.id,
       token: guestToken,
@@ -193,7 +197,7 @@ gamesRoute.post("/:id/join", async (c) => {
     });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ error: "Invalid payload", details: error.errors }, 400);
+      return c.json({ error: "Invalid payload", details: error.issues }, 400);
     }
     console.error("Failed to join game:", error);
     return c.json({ error: (error as Error).message ?? "Join failed" }, 400);
@@ -213,7 +217,7 @@ gamesRoute.post("/:id/ready", async (c) => {
     return c.json({ success: true, snapshot: getSessionSnapshot(id) });
   } catch (error) {
     if (error instanceof z.ZodError) {
-      return c.json({ error: "Invalid payload", details: error.errors }, 400);
+      return c.json({ error: "Invalid payload", details: error.issues }, 400);
     }
     console.error("Failed to mark host ready:", error);
     return c.json({ error: "Internal server error" }, 500);

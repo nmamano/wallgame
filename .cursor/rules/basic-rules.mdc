@@ -3,6 +3,6 @@ alwaysApply: true
 ---
 
 - Use bun, not npm, pnpm, etc.
-- Ensure that build and lint run without errors before finishing a task.
-- Use `bun test tests/integration/friend-game.websocket.test.ts` when modifying the backend.
+- Before finishing a task, ensure that `bun run build` and `bun lint` run clean from the frontend directory and `bun test` passes from the root directory.
 - When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
+- If you need new UI components they may be in `frontend/src/components/unused-components/`. Read `frontend/src/components/unused-components/RE_ADDING_COMPONENTS.md` for how to re-add them.

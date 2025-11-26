@@ -44,10 +44,13 @@ settingsRoute.get("/", getUserMiddleware, async (c) => {
         defaultVariant: userSettingsTable.defaultVariant,
         defaultTimeControl: userSettingsTable.defaultTimeControl,
         defaultRatedStatus: userSettingsTable.defaultRatedStatus,
-        pawnSettings: sql<Array<{
-          pawn_type: string;
-          pawn_shape: string;
-        }> | null>`(
+        pawnSettings: sql<
+          | {
+              pawn_type: string;
+              pawn_shape: string;
+            }[]
+          | null
+        >`(
           SELECT COALESCE(
             json_agg(
               json_build_object(
@@ -60,10 +63,13 @@ settingsRoute.get("/", getUserMiddleware, async (c) => {
           FROM user_pawn_settings AS ups
           WHERE ups.user_id = ${userSettingsTable.userId}
         )`,
-        variantSettings: sql<Array<{
-          variant: string;
-          default_parameters: unknown;
-        }> | null>`(
+        variantSettings: sql<
+          | {
+              variant: string;
+              default_parameters: unknown;
+            }[]
+          | null
+        >`(
           SELECT COALESCE(
             json_agg(
               json_build_object(
@@ -134,7 +140,7 @@ settingsRoute.put("/board-theme", getUserMiddleware, async (c) => {
     console.error("Error updating board theme:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -170,7 +176,7 @@ settingsRoute.put("/pawn-color", getUserMiddleware, async (c) => {
     console.error("Error updating pawn color:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -220,7 +226,7 @@ settingsRoute.put("/pawn", getUserMiddleware, async (c) => {
     console.error("Error updating pawn:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -256,7 +262,7 @@ settingsRoute.put("/default-variant", getUserMiddleware, async (c) => {
     console.error("Error updating default variant:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -296,7 +302,7 @@ settingsRoute.put("/time-control", getUserMiddleware, async (c) => {
     console.error("Error updating time control:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -332,7 +338,7 @@ settingsRoute.put("/rated-status", getUserMiddleware, async (c) => {
     console.error("Error updating rated status:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -359,7 +365,7 @@ settingsRoute.put("/variant-parameters", getUserMiddleware, async (c) => {
     const { variant, parameters } = z
       .object({
         variant: z.string(),
-        parameters: z.record(z.unknown()),
+        parameters: z.record(z.string(), z.unknown()),
       })
       .parse(body);
 
@@ -385,7 +391,7 @@ settingsRoute.put("/variant-parameters", getUserMiddleware, async (c) => {
     console.error("Error updating variant parameters:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }
@@ -479,7 +485,7 @@ settingsRoute.put("/display-name", getUserMiddleware, async (c) => {
     console.error("Error updating display name:", error);
     if (error instanceof z.ZodError) {
       return c.json(
-        { error: "Invalid request data", details: error.errors },
+        { error: "Invalid request data", details: error.issues },
         400
       );
     }

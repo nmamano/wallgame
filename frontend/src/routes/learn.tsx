@@ -176,28 +176,31 @@ function Learn() {
               "grid transition-all duration-300 ease-in-out",
               openSections.rules
                 ? "grid-rows-[1fr] opacity-100"
-                : "grid-rows-[0fr] opacity-0"
+                : "grid-rows-[0fr] opacity-0",
             )}
           >
             <div className="overflow-hidden">
-            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary hover:prose-a:text-primary/80">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {rulesContent}
-              </ReactMarkdown>
+              <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary hover:prose-a:text-primary/80">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                >
+                  {rulesContent}
+                </ReactMarkdown>
 
-              <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded border border-blue-200 dark:border-blue-800">
-                <p className="text-blue-900 dark:text-blue-200">
-                  <strong>Ready to play?</strong> You can now{" "}
-                  <Link
-                    to="/solo-campaign"
-                    className="underline hover:text-blue-600 dark:hover:text-blue-400"
-                  >
-                    start the solo campaign
-                  </Link>{" "}
-                  to learn through practice!
-                </p>
+                <div className="mt-6 p-4 bg-blue-50 dark:bg-blue-950/30 rounded border border-blue-200 dark:border-blue-800">
+                  <p className="text-blue-900 dark:text-blue-200">
+                    <strong>Ready to play?</strong> You can now{" "}
+                    <Link
+                      to="/solo-campaign"
+                      className="underline hover:text-blue-600 dark:hover:text-blue-400"
+                    >
+                      start the solo campaign
+                    </Link>{" "}
+                    to learn through practice!
+                  </p>
+                </div>
               </div>
-            </div>
             </div>
           </div>
         </Card>
@@ -223,15 +226,18 @@ function Learn() {
               "grid transition-all duration-300 ease-in-out",
               openSections.notation
                 ? "grid-rows-[1fr] opacity-100"
-                : "grid-rows-[0fr] opacity-0"
+                : "grid-rows-[0fr] opacity-0",
             )}
           >
             <div className="overflow-hidden">
-            <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {notationContent}
-              </ReactMarkdown>
-            </div>
+              <div className="px-6 pb-6 space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                >
+                  {notationContent}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         </Card>
@@ -257,30 +263,30 @@ function Learn() {
               "grid transition-all duration-300 ease-in-out",
               openSections.lessons
                 ? "grid-rows-[1fr] opacity-100"
-                : "grid-rows-[0fr] opacity-0"
+                : "grid-rows-[0fr] opacity-0",
             )}
           >
             <div className="overflow-hidden">
-            <div className="px-6 pb-6">
-              <p className="text-foreground leading-relaxed mb-4">
-                Improve your game with these strategic and tactical lessons:
-              </p>
-              <div className="space-y-2">
-                {lessons.map((lesson, idx) => (
-                  <a
-                    key={idx}
-                    href={lesson.url}
-                    className="flex items-center justify-between p-3 rounded hover:bg-muted/50 transition-colors group"
-                  >
-                    <span className="text-foreground font-medium">
-                      {lesson.title}
-                    </span>
-                    <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
-                  </a>
-                ))}
+              <div className="px-6 pb-6">
+                <p className="text-foreground leading-relaxed mb-4">
+                  Improve your game with these strategic and tactical lessons:
+                </p>
+                <div className="space-y-2">
+                  {lessons.map((lesson, idx) => (
+                    <a
+                      key={idx}
+                      href={lesson.url}
+                      className="flex items-center justify-between p-3 rounded hover:bg-muted/50 transition-colors group"
+                    >
+                      <span className="text-foreground font-medium">
+                        {lesson.title}
+                      </span>
+                      <ExternalLink className="w-4 h-4 text-muted-foreground group-hover:translate-x-1 transition-transform" />
+                    </a>
+                  ))}
+                </div>
               </div>
             </div>
-          </div>
           </div>
         </Card>
 
@@ -305,15 +311,18 @@ function Learn() {
               "grid transition-all duration-300 ease-in-out",
               openSections.variants
                 ? "grid-rows-[1fr] opacity-100"
-                : "grid-rows-[0fr] opacity-0"
+                : "grid-rows-[0fr] opacity-0",
             )}
           >
             <div className="overflow-hidden">
-            <div className="px-6 pb-6 space-y-6 prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
-              <ReactMarkdown remarkPlugins={[remarkGfm]} rehypePlugins={[rehypeRaw]}>
-                {variantsContent}
-              </ReactMarkdown>
-            </div>
+              <div className="px-6 pb-6 space-y-6 prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
+                <ReactMarkdown
+                  remarkPlugins={[remarkGfm]}
+                  rehypePlugins={[rehypeRaw]}
+                >
+                  {variantsContent}
+                </ReactMarkdown>
+              </div>
             </div>
           </div>
         </Card>

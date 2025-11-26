@@ -50,35 +50,41 @@ export function PawnSelector({
   };
 
   // Get display name for the selected value
-  const displayValue = value === "default" ? defaultLabel : getDisplayName(value);
+  const displayValue =
+    value === "default" ? defaultLabel : getDisplayName(value);
 
   // Get the CSS filter for the selected color
-  const colorFilter = color && colorFilterMap[color] ? colorFilterMap[color] : undefined;
+  const colorFilter =
+    color && colorFilterMap[color] ? colorFilterMap[color] : undefined;
 
   // Scroll to selected item when dialog opens
   useEffect(() => {
     if (open) {
       const timeoutId = setTimeout(() => {
         // Find the selected button by its data attribute
-        const selectedButton = document.querySelector(`[data-pawn-value="${value}"]`);
+        const selectedButton = document.querySelector(
+          `[data-pawn-value="${value}"]`,
+        );
         if (selectedButton instanceof HTMLElement && scrollAreaRef.current) {
           // Get the viewport element from Radix ScrollArea
-          const viewport = scrollAreaRef.current.querySelector('[data-radix-scroll-area-viewport]');
+          const viewport = scrollAreaRef.current.querySelector(
+            "[data-radix-scroll-area-viewport]",
+          );
           if (viewport instanceof HTMLElement) {
             // Calculate the position to scroll to (center the selected item)
             const buttonTop = selectedButton.offsetTop;
             const buttonHeight = selectedButton.offsetHeight;
             const viewportHeight = viewport.clientHeight;
-            const scrollTo = buttonTop - (viewportHeight / 2) + (buttonHeight / 2);
-            
+            const scrollTo = buttonTop - viewportHeight / 2 + buttonHeight / 2;
+
             viewport.scrollTo({
               top: Math.max(0, scrollTo),
-              behavior: 'auto'
+              behavior: "auto",
             });
           }
         }
       }, 250);
-      
+
       return () => clearTimeout(timeoutId);
     }
   }, [open, value]);
@@ -87,9 +93,7 @@ export function PawnSelector({
     <Dialog open={open} onOpenChange={setOpen}>
       <DialogTrigger asChild>
         <Button variant="outline" className="w-full justify-between h-12">
-          <span className="truncate">
-            {displayValue}
-          </span>
+          <span className="truncate">{displayValue}</span>
           {/* Preview of selected pawn */}
           {value !== "default" && (
             <div className="h-8 w-8 ml-2 shrink-0">
@@ -114,7 +118,7 @@ export function PawnSelector({
                 variant="ghost"
                 className={cn(
                   "w-full p-3 border-2 flex flex-col gap-2 h-auto aspect-square",
-                  value === "default" ? "border-primary" : "border-transparent"
+                  value === "default" ? "border-primary" : "border-transparent",
                 )}
                 onClick={() => {
                   onChange("default");
@@ -130,7 +134,7 @@ export function PawnSelector({
                   variant="ghost"
                   className={cn(
                     "p-1 border-2 h-auto aspect-square",
-                    value === pawn ? "border-primary" : "border-transparent"
+                    value === pawn ? "border-primary" : "border-transparent",
                   )}
                   onClick={() => {
                     onChange(pawn);
