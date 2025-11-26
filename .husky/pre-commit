@@ -1,0 +1,16 @@
+#!/usr/bin/env bash
+set -e
+
+# Make sure Bun is on PATH (Windows + Git Bash)
+export PATH="$HOME/.bun/bin:$PATH"
+
+echo "🔍🔍 Running Prettier check..."
+bun run format:check
+
+echo "🔎🔎 Running ESLint (global)..."
+bun run lint
+
+echo "🧪🧪 Running backend tests..."
+bun run test
+
+echo "✅✅ All checks passed – commit allowed."

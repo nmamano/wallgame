@@ -1,5 +1,3 @@
-tmp/
-
 # deps
 node_modules/
 
@@ -8,7 +6,5 @@ dist/
 .env
 .env.prod
 
-v0export
-geometric-primitive-library/
-testing_lib/
-waste/
+ignore/
+**/.tanstack/tmp/

@@ -22,7 +22,6 @@ bun run dev
 When running locally, you have two servers:
 
 - **Port 5173 (Vite dev server)**: Frontend development server with hot reload
-
   - Use `http://localhost:5173` for development
   - Vite proxies `/api/*` requests to port 3000
   - Changes to frontend code appear instantly

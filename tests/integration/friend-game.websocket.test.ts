@@ -47,7 +47,11 @@ async function createFriendGame(userId: string): Promise<CreateGameResponse> {
     },
     body: JSON.stringify({
       config: {
-        timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+        timeControl: {
+          initialSeconds: 600,
+          incrementSeconds: 0,
+          preset: "rapid",
+        },
         variant: "standard",
         boardWidth: 9,
         boardHeight: 9,
@@ -64,7 +68,7 @@ async function createFriendGame(userId: string): Promise<CreateGameResponse> {
 async function joinFriendGame(
   userId: string,
   gameId: string,
-  inviteCode: string
+  inviteCode: string,
 ): Promise<JoinGameResponse> {
   const res = await fetch(`${baseUrl}/api/games/${gameId}/join`, {
     method: "POST",
@@ -86,18 +90,21 @@ type WSMessage = { type: string; [key: string]: any };
 
 type TestSocket = {
   ws: WebSocket;
-  waitForMessage: (predicate: (msg: WSMessage) => boolean) => Promise<WSMessage>;
+  waitForMessage: (
+    predicate: (msg: WSMessage) => boolean,
+  ) => Promise<WSMessage>;
   close: () => void;
 };
 
 async function openGameSocket(
   userId: string,
   gameId: string,
-  socketToken: string
+  socketToken: string,
 ): Promise<TestSocket> {
   return new Promise((resolve, reject) => {
     const wsUrl =
-      baseUrl.replace("http", "ws") + `/ws/games/${gameId}?token=${socketToken}`;
+      baseUrl.replace("http", "ws") +
+      `/ws/games/${gameId}?token=${socketToken}`;
 
     const ws = new WebSocket(wsUrl, {
       headers: {
@@ -173,9 +180,11 @@ describe("friend game WebSocket integration", () => {
     const userB = "user-b";
 
     // 1. User A creates a friend game
-    const { gameId, inviteCode, socketToken: socketTokenA } = await createFriendGame(
-      userA
-    );
+    const {
+      gameId,
+      inviteCode,
+      socketToken: socketTokenA,
+    } = await createFriendGame(userA);
     expect(gameId).toBeDefined();
     expect(inviteCode).toBeDefined();
     expect(socketTokenA).toBeDefined();
@@ -184,7 +193,7 @@ describe("friend game WebSocket integration", () => {
     const { socketToken: socketTokenB } = await joinFriendGame(
       userB,
       gameId,
-      inviteCode
+      inviteCode,
     );
     expect(socketTokenB).toBeDefined();
 
@@ -193,8 +202,12 @@ describe("friend game WebSocket integration", () => {
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
     // Wait for initial state
-    const stateMsgA = await socketA.waitForMessage((msg) => msg.type === "state");
-    const stateMsgB = await socketB.waitForMessage((msg) => msg.type === "state");
+    const stateMsgA = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+    const stateMsgB = await socketB.waitForMessage(
+      (msg) => msg.type === "state",
+    );
 
     const initialState = stateMsgA.state;
     expect(initialState).toBeDefined();
@@ -212,11 +225,15 @@ describe("friend game WebSocket integration", () => {
     socketA.ws.send(JSON.stringify(movePayload));
 
     // 5. Verify User B receives the new state
-    const updateMsgB = await socketB.waitForMessage((msg) => msg.type === "state");
+    const updateMsgB = await socketB.waitForMessage(
+      (msg) => msg.type === "state",
+    );
     expect(updateMsgB.state.pawns["1"].cat).toEqual(moveTarget);
 
     // Verify User A also receives the update
-    const updateMsgA = await socketA.waitForMessage((msg) => msg.type === "state");
+    const updateMsgA = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
 
     // 6. User B sends a move
     const p2Cat = updateMsgB.state.pawns["2"].cat as [number, number];
@@ -231,7 +248,9 @@ describe("friend game WebSocket integration", () => {
     socketB.ws.send(JSON.stringify(movePayloadB));
 
     // 7. Verify User A receives the new state
-    const finalMsgA = await socketA.waitForMessage((msg) => msg.type === "state");
+    const finalMsgA = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
     expect(finalMsgA.state.pawns["2"].cat).toEqual(moveTargetB);
 
     socketA.close();
