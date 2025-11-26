@@ -360,10 +360,7 @@ function GameSetup() {
 
   // Build WebSocket URL for lobby
   const buildLobbySocketUrl = useCallback((): string => {
-    const isDev = import.meta.env.DEV;
-    const base = isDev
-      ? new URL("http://localhost:3000")
-      : new URL(window.location.origin);
+    const base = new URL(window.location.origin);
     base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
     base.pathname = "/ws/lobby";
     return base.toString();
