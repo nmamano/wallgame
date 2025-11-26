@@ -746,7 +746,7 @@ function GamePage() {
         }),
       );
       playersRef.current = initialPlayers;
-      setPlayers(initialPlayers);
+      setBasePlayers(initialPlayers);
 
       const matchingList: MatchingPlayer[] = initialPlayers.map((player) => ({
         id: player.id,
@@ -868,42 +868,45 @@ function GamePage() {
     updateGameState,
   ]);
 
-  useEffect(() => {
-    if (!isMultiplayerMatch || !matchSnapshot) return;
-    setPlayers((prev) => {
-      if (!prev.length) return prev;
-      const next = prev.map((player) => {
-        const remote = matchSnapshot.players.find(
-          (entry) => entry.playerId === player.playerId,
-        );
-        if (!remote) return player;
-        const isLocal = player.playerId === primaryLocalPlayerId;
-        const appearance = remote.appearance;
-        return {
-          ...player,
-          name: remote.displayName || player.name,
-          isOnline: remote.connected,
-          color:
-            !isLocal && appearance?.pawnColor
-              ? resolvePlayerColor(appearance.pawnColor)
-              : player.color,
-          catSkin:
-            !isLocal && appearance?.catSkin
-              ? appearance.catSkin
-              : player.catSkin,
-          mouseSkin:
-            !isLocal && appearance?.mouseSkin
-              ? appearance.mouseSkin
-              : player.mouseSkin,
-        };
-      });
-      playersRef.current = next;
-      return next;
-    });
-  }, [matchSnapshot, isMultiplayerMatch, primaryLocalPlayerId]);
-
   const [config, setConfig] = useState<GameConfiguration | null>(null);
-  const [players, setPlayers] = useState<GamePlayer[]>([]);
+  const [basePlayers, setBasePlayers] = useState<GamePlayer[]>([]);
+
+  // Derive players with appearance info from matchSnapshot
+  // This is a memo instead of an effect to avoid race conditions between
+  // matchSnapshot and basePlayers being set at different times
+  const players = useMemo((): GamePlayer[] => {
+    if (!basePlayers.length) return basePlayers;
+    if (!isMultiplayerMatch || !matchSnapshot) return basePlayers;
+
+    return basePlayers.map((player) => {
+      const remote = matchSnapshot.players.find(
+        (entry) => entry.playerId === player.playerId,
+      );
+      if (!remote) return player;
+      const isLocal = player.playerId === primaryLocalPlayerId;
+      const appearance = remote.appearance;
+      return {
+        ...player,
+        name: remote.displayName || player.name,
+        isOnline: remote.connected,
+        color:
+          !isLocal && appearance?.pawnColor
+            ? resolvePlayerColor(appearance.pawnColor)
+            : player.color,
+        catSkin:
+          !isLocal && appearance?.catSkin ? appearance.catSkin : player.catSkin,
+        mouseSkin:
+          !isLocal && appearance?.mouseSkin
+            ? appearance.mouseSkin
+            : player.mouseSkin,
+      };
+    });
+  }, [basePlayers, isMultiplayerMatch, matchSnapshot, primaryLocalPlayerId]);
+
+  // Keep playersRef in sync with the derived players
+  useEffect(() => {
+    playersRef.current = players;
+  }, [players]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [isMatchingOpen, setIsMatchingOpen] = useState(false);
   const [gameState, setGameState] = useState<GameState | null>(null);
@@ -1979,15 +1982,13 @@ function GamePage() {
   }, []);
 
   useEffect(() => {
-    setPlayers((prev) => {
-      const next = prev.map((player) =>
+    setBasePlayers((prev) =>
+      prev.map((player) =>
         player.playerId === primaryLocalPlayerId
           ? { ...player, color: preferredPawnColor }
           : player,
-      );
-      playersRef.current = next;
-      return next;
-    });
+      ),
+    );
   }, [primaryLocalPlayerId, preferredPawnColor]);
 
   useEffect(() => {
