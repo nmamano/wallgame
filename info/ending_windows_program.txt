@@ -1,0 +1,6 @@
+To end program running on port 3000:
+
+```sh
+netstat -ano | grep 3000
+taskkill //PID 44372 //F
+```

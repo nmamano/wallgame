@@ -1,0 +1,12 @@
+node_modules
+dist
+build
+coverage
+drizzle
+.vscode/settings.json
+info
+ignore
+**/.tanstack/tmp/
+frontend/src/components/ui/
+frontend/src/components/unused-components/
+frontend/src/routeTree.gen.ts
