@@ -4,30 +4,18 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { ScrollArea } from "@/components/ui/scroll-area";
-import { Input } from "@/components/ui/input";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import {
   MessageSquare,
   History,
-  Flag,
-  Handshake,
   RotateCcw,
   Clock,
   Volume2,
   VolumeX,
-  ChevronLeft,
-  ChevronRight,
-  ChevronsLeft,
-  ChevronsRight,
-  Timer,
-  User,
-  Bot,
   Trophy,
   Swords,
   AlertCircle,
 } from "lucide-react";
-import { colorFilterMap } from "@/lib/player-colors";
 import {
   Board,
   type BoardProps,
@@ -38,6 +26,10 @@ import {
   MatchingStagePanel,
   type MatchingPlayer,
 } from "@/components/matching-stage-panel";
+import { PlayerTimerCard } from "@/components/player-timer-card";
+import { ActionsPanel } from "@/components/actions-panel";
+import { MoveListPanel } from "@/components/move-list-panel";
+import { GameChatPanel } from "@/components/game-chat-panel";
 import { type GameAction } from "../../../shared/game-types";
 import { GameState } from "../../../shared/game-state";
 import type {
@@ -230,12 +222,6 @@ const PLACEHOLDER_COPY: Partial<Record<PlayerType, string>> = {
   "custom-bot":
     "Uploading your own bot needs an API token from the server (not yet available).",
 };
-
-function formatTime(seconds: number): string {
-  const mins = Math.floor(seconds / 60);
-  const secs = seconds % 60;
-  return `${mins}:${secs.toString().padStart(2, "0")}`;
-}
 
 function buildPlayerName(
   type: PlayerType,
@@ -2802,164 +2788,6 @@ function GamePage() {
     }
   })();
 
-  const incomingSection = (() => {
-    if (drawDecisionPrompt) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <Handshake className="w-4 h-4 text-primary" />
-            {`${getPlayerName(drawDecisionPrompt.from)} offered a draw.`}
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => respondToDrawPrompt("accept")}>
-              Accept
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => respondToDrawPrompt("reject")}
-            >
-              Decline
-            </Button>
-          </div>
-        </>
-      );
-    }
-    if (takebackDecisionPrompt) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <RotateCcw className="w-4 h-4" />
-            {`${getPlayerName(
-              takebackDecisionPrompt.requester,
-            )} requested a takeback.`}
-          </div>
-          <div className="flex gap-2">
-            <Button size="sm" onClick={() => respondToTakebackPrompt("allow")}>
-              Allow
-            </Button>
-            <Button
-              size="sm"
-              variant="outline"
-              onClick={() => respondToTakebackPrompt("decline")}
-            >
-              Decline
-            </Button>
-          </div>
-        </>
-      );
-    }
-    if (incomingPassiveNotice) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            {incomingPassiveNotice.type === "opponent-resigned" ? (
-              <Flag className="w-4 h-4 text-destructive" />
-            ) : (
-              <Timer className="w-4 h-4 text-primary" />
-            )}
-            {incomingPassiveNotice.message}
-          </div>
-          <div>
-            <Button
-              size="sm"
-              variant="ghost"
-              className="text-xs px-2"
-              onClick={handleDismissIncomingNotice}
-            >
-              Dismiss
-            </Button>
-          </div>
-        </>
-      );
-    }
-    return (
-      <p className="text-sm text-muted-foreground">
-        No active incoming offers.
-      </p>
-    );
-  })();
-
-  const outgoingSection = (() => {
-    if (resignFlowPlayerId) {
-      return (
-        <>
-          <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleCancelResign}>
-              Keep playing
-            </Button>
-            <Button
-              size="sm"
-              variant="destructive"
-              onClick={handleConfirmResign}
-            >
-              Resign
-            </Button>
-          </div>
-        </>
-      );
-    }
-    if (pendingDrawForLocal && pendingDrawOffer) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <Handshake className="w-4 h-4" />
-            {`Waiting for a response to your draw offer.`}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCancelDrawOffer}
-            disabled={!canCancelDrawOffer}
-          >
-            {canCancelDrawOffer ? "Cancel offer" : "Can cancel in 2s"}
-          </Button>
-        </>
-      );
-    }
-    if (takebackPendingForLocal && pendingTakebackRequest) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <RotateCcw className="w-4 h-4" />
-            {`Waiting for a response to your takeback request.`}
-          </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCancelTakebackRequest}
-            disabled={!canCancelTakebackRequest}
-          >
-            {canCancelTakebackRequest ? "Cancel request" : "Can cancel in 2s"}
-          </Button>
-        </>
-      );
-    }
-    if (outgoingTimeInfo) {
-      return (
-        <>
-          <div className="flex items-center gap-2 text-sm">
-            <Timer className="w-4 h-4 text-primary" />
-            {outgoingTimeInfo.message}
-          </div>
-          <Button
-            size="sm"
-            variant="ghost"
-            className="text-xs px-2 self-start"
-            onClick={handleDismissOutgoingInfo}
-          >
-            Dismiss
-          </Button>
-        </>
-      );
-    }
-    return (
-      <p className="text-sm text-muted-foreground">
-        No active outgoing offers.
-      </p>
-    );
-  })();
-
   return (
     <>
       <div className="min-h-screen bg-background flex flex-col">
@@ -2994,7 +2822,7 @@ function GamePage() {
           >
             {/* Top Player (Opponent) Timer */}
             {topTimerPlayer && (
-              <PlayerInfo
+              <PlayerTimerCard
                 player={topTimerPlayer}
                 isActive={gameTurn === topTimerPlayer.playerId}
                 timeLeft={displayedTimeLeft[topTimerPlayer.playerId] ?? 0}
@@ -3218,7 +3046,7 @@ function GamePage() {
 
             {/* Bottom Player (You) Timer */}
             {bottomTimerDisplayPlayer && (
-              <PlayerInfo
+              <PlayerTimerCard
                 player={bottomTimerDisplayPlayer}
                 isActive={gameTurn === bottomTimerDisplayPlayer.playerId}
                 timeLeft={
@@ -3290,61 +3118,35 @@ function GamePage() {
               </Alert>
             )}
 
-            <Card className="p-3 bg-card/50 backdrop-blur">
-              <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-2">
-                {incomingSection}
-              </div>
-              <div className="grid grid-cols-2 gap-2">
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  size="sm"
-                  onClick={handleStartResign}
-                  disabled={actionButtonsDisabled}
-                >
-                  <Flag className="w-4 h-4" /> Resign
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  size="sm"
-                  onClick={handleOfferDraw}
-                  disabled={
-                    actionButtonsDisabled ||
-                    manualActionsDisabled ||
-                    Boolean(pendingDrawOffer)
-                  }
-                >
-                  <Handshake className="w-4 h-4" /> Draw
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  size="sm"
-                  onClick={handleRequestTakeback}
-                  disabled={
-                    actionButtonsDisabled ||
-                    manualActionsDisabled ||
-                    Boolean(pendingTakebackRequest) ||
-                    !hasTakebackHistory
-                  }
-                >
-                  <RotateCcw className="w-4 h-4" /> Takeback
-                </Button>
-                <Button
-                  variant="outline"
-                  className="w-full justify-start gap-2"
-                  size="sm"
-                  onClick={handleGiveTime}
-                  disabled={actionButtonsDisabled || manualActionsDisabled}
-                >
-                  <Timer className="w-4 h-4" /> Give time
-                </Button>
-              </div>
-              <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-1.5">
-                {outgoingSection}
-              </div>
-            </Card>
+            <ActionsPanel
+              drawDecisionPrompt={drawDecisionPrompt}
+              takebackDecisionPrompt={takebackDecisionPrompt}
+              incomingPassiveNotice={incomingPassiveNotice}
+              getPlayerName={getPlayerName}
+              respondToDrawPrompt={respondToDrawPrompt}
+              respondToTakebackPrompt={respondToTakebackPrompt}
+              handleDismissIncomingNotice={handleDismissIncomingNotice}
+              resignFlowPlayerId={resignFlowPlayerId}
+              pendingDrawForLocal={pendingDrawForLocal}
+              pendingDrawOffer={pendingDrawOffer}
+              takebackPendingForLocal={takebackPendingForLocal}
+              pendingTakebackRequest={pendingTakebackRequest}
+              outgoingTimeInfo={outgoingTimeInfo}
+              canCancelDrawOffer={canCancelDrawOffer}
+              canCancelTakebackRequest={canCancelTakebackRequest}
+              handleCancelResign={handleCancelResign}
+              handleConfirmResign={handleConfirmResign}
+              handleCancelDrawOffer={handleCancelDrawOffer}
+              handleCancelTakebackRequest={handleCancelTakebackRequest}
+              handleDismissOutgoingInfo={handleDismissOutgoingInfo}
+              actionButtonsDisabled={actionButtonsDisabled}
+              manualActionsDisabled={manualActionsDisabled}
+              hasTakebackHistory={hasTakebackHistory}
+              handleStartResign={handleStartResign}
+              handleOfferDraw={handleOfferDraw}
+              handleRequestTakeback={handleRequestTakeback}
+              handleGiveTime={handleGiveTime}
+            />
 
             <Card
               className="flex flex-col overflow-hidden bg-card/50 backdrop-blur"
@@ -3384,112 +3186,16 @@ function GamePage() {
 
               <div className="flex-1 overflow-hidden relative flex flex-col">
                 {activeTab === "chat" ? (
-                  <>
-                    <div className="flex p-2 gap-1 bg-muted/30 flex-shrink-0">
-                      {(["game", "team", "audience"] as const).map(
-                        (channel) => (
-                          <button
-                            key={channel}
-                            onClick={() => setChatChannel(channel)}
-                            className={`px-3 py-1 rounded-full text-xs font-medium transition-colors ${
-                              chatChannel === channel
-                                ? "bg-primary text-primary-foreground"
-                                : "hover:bg-muted text-muted-foreground"
-                            }`}
-                          >
-                            {channel.charAt(0).toUpperCase() + channel.slice(1)}
-                          </button>
-                        ),
-                      )}
-                    </div>
-                    <ScrollArea className="flex-1 p-4">
-                      <div className="space-y-3">
-                        {messages
-                          .filter(
-                            (message) =>
-                              message.channel === chatChannel ||
-                              message.isSystem,
-                          )
-                          .map((message) => (
-                            <div
-                              key={message.id}
-                              className={`flex flex-col ${
-                                message.sender === "You"
-                                  ? "items-end"
-                                  : "items-start"
-                              }`}
-                            >
-                              {!message.isSystem && (
-                                <span className="text-[10px] text-muted-foreground mb-1">
-                                  {message.sender}
-                                </span>
-                              )}
-                              <div
-                                className={`px-3 py-2 rounded-lg text-sm max-w-[85%] ${
-                                  message.isSystem
-                                    ? "bg-muted text-muted-foreground text-center w-full italic"
-                                    : message.sender === "You"
-                                      ? "bg-primary text-primary-foreground"
-                                      : "bg-muted"
-                                }`}
-                              >
-                                {message.text}
-                              </div>
-                            </div>
-                          ))}
-                      </div>
-                    </ScrollArea>
-                    <form
-                      onSubmit={handleSendMessage}
-                      className="p-3 border-t bg-background/50 flex-shrink-0"
-                    >
-                      <Input
-                        value={chatInput}
-                        onChange={(event) => setChatInput(event.target.value)}
-                        placeholder={`Message ${chatChannel}...`}
-                        className="bg-background"
-                      />
-                    </form>
-                  </>
+                  <GameChatPanel
+                    chatChannel={chatChannel}
+                    messages={messages}
+                    chatInput={chatInput}
+                    onChannelChange={setChatChannel}
+                    onInputChange={setChatInput}
+                    onSendMessage={handleSendMessage}
+                  />
                 ) : (
-                  <>
-                    <ScrollArea className="flex-1 p-0">
-                      <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
-                        {formattedHistory.map((row, index) => (
-                          <div
-                            key={index}
-                            className={`contents group ${
-                              index % 2 === 1 ? "bg-muted/30" : ""
-                            }`}
-                          >
-                            <div className="p-2 text-muted-foreground text-center border-r">
-                              {row.num}.
-                            </div>
-                            <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
-                              {row.white}
-                            </button>
-                            <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
-                              {row.black}
-                            </button>
-                          </div>
-                        ))}
-                      </div>
-                    </ScrollArea>
-                    <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
-                      <Button variant="ghost" size="icon" className="h-8">
-                        <ChevronsLeft className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8">
-                        <ChevronLeft className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8">
-                        <ChevronRight className="w-4 h-4" />
-                      </Button>
-                      <Button variant="ghost" size="icon" className="h-8">
-                        <ChevronsRight className="w-4 h-4" />
-                      </Button>
-                    </div>
-                  </>
+                  <MoveListPanel formattedHistory={formattedHistory} />
                 )}
               </div>
             </Card>
@@ -3497,109 +3203,5 @@ function GamePage() {
         </div>
       </div>
     </>
-  );
-}
-function PlayerInfo({
-  player,
-  isActive,
-  timeLeft,
-  isThinking = false,
-  score = null,
-}: {
-  player: GamePlayer;
-  isActive: boolean;
-  timeLeft: number;
-  isThinking?: boolean;
-  score?: number | null;
-}) {
-  // Determine if we should show cat SVG for this player
-  const shouldShowCatSvg =
-    player.catSkin && player.catSkin !== "default" && player.catSkin.length > 0;
-  const catSvgPath = shouldShowCatSvg ? `/pawns/cat/${player.catSkin}` : null;
-  const colorFilter = colorFilterMap[player.color]
-    ? { filter: colorFilterMap[player.color] }
-    : undefined;
-
-  return (
-    <div
-      className={`flex items-center justify-between gap-3 p-3 rounded-lg transition-colors shadow-sm ${
-        isActive
-          ? "bg-accent/50 border border-accent"
-          : "bg-card/50 backdrop-blur border border-border"
-      }`}
-    >
-      {/* Left side: Profile pic, Name/Rating/Online, Score card */}
-      <div className="flex items-center gap-3 min-w-0 flex-1">
-        {/* Profile pic */}
-        <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-            player.color === "red"
-              ? "bg-red-100 text-red-700"
-              : "bg-blue-100 text-blue-700"
-          }`}
-        >
-          {catSvgPath ? (
-            <img
-              src={catSvgPath}
-              alt="player avatar"
-              className="w-full h-full object-contain rounded-full"
-              style={colorFilter}
-            />
-          ) : player.type.includes("bot") ? (
-            <Bot size={20} />
-          ) : (
-            <User size={20} />
-          )}
-        </div>
-
-        {/* Name with rating and online indicator */}
-        <div className="min-w-0">
-          <div className="flex items-center gap-2">
-            <span className="font-semibold truncate">{player.name}</span>
-            <Badge variant="outline" className="text-xs flex-shrink-0">
-              {player.rating}
-            </Badge>
-          </div>
-          <div className="flex items-center gap-1 text-xs text-muted-foreground">
-            <span
-              className={`w-2 h-2 rounded-full ${
-                player.isOnline ? "bg-green-500" : "bg-gray-300"
-              }`}
-            />
-            {player.isOnline ? "Online" : "Offline"}
-          </div>
-        </div>
-
-        {/* Match score card */}
-        {typeof score === "number" && (
-          <Badge
-            variant="outline"
-            className="text-[12px] px-2 py-0.5 flex-shrink-0 bg-card/50 border-border"
-          >
-            Score {score}
-          </Badge>
-        )}
-      </div>
-
-      {/* Right side: "Bot is thinking" message, Timer */}
-      <div className="flex items-center gap-3 flex-shrink-0">
-        {/* "Bot is thinking" info message */}
-        {isThinking && (
-          <div className="flex items-center gap-1.5 text-xs text-muted-foreground">
-            <Bot className="w-3 h-3" />
-            <span>{`Thinking...`}</span>
-          </div>
-        )}
-
-        {/* Timer */}
-        <div
-          className={`text-2xl font-mono font-bold whitespace-nowrap ${
-            isActive ? "text-foreground" : "text-muted-foreground/50"
-          } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
-        >
-          {formatTime(Math.max(0, Math.round(timeLeft)))}
-        </div>
-      </div>
-    </div>
   );
 }
