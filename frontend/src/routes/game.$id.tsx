@@ -584,6 +584,88 @@ function GamePage() {
     return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
   }, [playerTypes]);
 
+  const friendColorOverrides = useMemo(() => {
+    if (!isMultiplayerMatch || !matchSnapshot) return {};
+    const map: Partial<Record<PlayerId, PlayerColor>> = {};
+    matchSnapshot.players.forEach((player) => {
+      if (player.appearance?.pawnColor) {
+        map[player.playerId] = resolvePlayerColor(player.appearance.pawnColor);
+      }
+    });
+    return map;
+  }, [matchSnapshot, isMultiplayerMatch]);
+
+  const playerColorsForBoard = useMemo(() => {
+    const colors: Record<PlayerId, PlayerColor> = {
+      1: DEFAULT_PLAYER_COLORS[1],
+      2: DEFAULT_PLAYER_COLORS[2],
+    };
+    if (primaryLocalPlayerId) {
+      colors[primaryLocalPlayerId] = preferredPawnColor;
+    }
+    Object.entries(friendColorOverrides).forEach(([key, value]) => {
+      const playerId = Number(key) as PlayerId;
+      if (playerId === primaryLocalPlayerId) {
+        return;
+      }
+      colors[playerId] = value;
+    });
+    return colors;
+  }, [friendColorOverrides, preferredPawnColor, primaryLocalPlayerId]);
+
+  const computeLastMoves = useCallback(
+    (
+      before: GameState | null,
+      after: GameState,
+    ): BoardProps["lastMoves"] | null => {
+      if (!before) return null;
+      const moves: NonNullable<BoardProps["lastMoves"]> = [];
+      (Object.keys(after.pawns) as unknown as PlayerId[]).forEach(
+        (playerId) => {
+          const playerColor =
+            playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
+          const beforePawns = before.pawns[playerId];
+          const afterPawns = after.pawns[playerId];
+          // Cat
+          const catBefore = beforePawns.cat;
+          const catAfter = afterPawns.cat;
+          if (catBefore[0] !== catAfter[0] || catBefore[1] !== catAfter[1]) {
+            moves.push({
+              fromRow: catBefore[0],
+              fromCol: catBefore[1],
+              toRow: catAfter[0],
+              toCol: catAfter[1],
+              playerColor,
+            });
+          }
+          // Mouse
+          const mouseBefore = beforePawns.mouse;
+          const mouseAfter = afterPawns.mouse;
+          if (
+            mouseBefore[0] !== mouseAfter[0] ||
+            mouseBefore[1] !== mouseAfter[1]
+          ) {
+            moves.push({
+              fromRow: mouseBefore[0],
+              fromCol: mouseBefore[1],
+              toRow: mouseAfter[0],
+              toCol: mouseAfter[1],
+              playerColor,
+            });
+          }
+        },
+      );
+      return moves.length ? moves : null;
+    },
+    [playerColorsForBoard],
+  );
+
+  // Use a ref for computeLastMoves to avoid it being a dependency of the GameClient useEffect
+  const computeLastMovesRef = useRef(computeLastMoves);
+  useEffect(() => {
+    computeLastMovesRef.current = computeLastMoves;
+  }, [computeLastMoves]);
+
   const playerControllersRef = useRef<
     Partial<Record<PlayerId, GamePlayerController>>
   >({});
@@ -707,6 +789,7 @@ function GamePage() {
     ) => {
       gameStateRef.current = nextState;
       setGameState(nextState);
+      // Only touch lastMove when explicitly passed in options
       if (
         options &&
         Object.prototype.hasOwnProperty.call(options, "lastMoves")
@@ -716,9 +799,8 @@ function GamePage() {
         } else {
           setLastMove(undefined);
         }
-      } else {
-        setLastMove(undefined);
       }
+      // else: don't touch lastMove - preserve existing arrows
     },
     [],
   );
@@ -749,7 +831,9 @@ function GamePage() {
           gameInitializedRef.current = true;
         }
         const resolvedState = hydrateGameStateFromSerialized(state, config);
-        updateGameState(resolvedState);
+        const before = gameStateRef.current;
+        const lastMoves = computeLastMovesRef.current(before, resolvedState);
+        updateGameState(resolvedState, { lastMoves });
         gameAwaitingServerRef.current = false;
         if (gameHandshake.playerId === resolvedState.turn) {
           setActiveLocalPlayerId(gameHandshake.playerId);
@@ -953,35 +1037,6 @@ function GamePage() {
     (!isMultiplayerMatch && unsupportedPlayers.length > 0) ||
     (isMultiplayerMatch && !matchReadyForPlay);
 
-  const friendColorOverrides = useMemo(() => {
-    if (!isMultiplayerMatch || !matchSnapshot) return {};
-    const map: Partial<Record<PlayerId, PlayerColor>> = {};
-    matchSnapshot.players.forEach((player) => {
-      if (player.appearance?.pawnColor) {
-        map[player.playerId] = resolvePlayerColor(player.appearance.pawnColor);
-      }
-    });
-    return map;
-  }, [matchSnapshot, isMultiplayerMatch]);
-
-  const playerColorsForBoard = useMemo(() => {
-    const colors: Record<PlayerId, PlayerColor> = {
-      1: DEFAULT_PLAYER_COLORS[1],
-      2: DEFAULT_PLAYER_COLORS[2],
-    };
-    if (primaryLocalPlayerId) {
-      colors[primaryLocalPlayerId] = preferredPawnColor;
-    }
-    Object.entries(friendColorOverrides).forEach(([key, value]) => {
-      const playerId = Number(key) as PlayerId;
-      if (playerId === primaryLocalPlayerId) {
-        return;
-      }
-      colors[playerId] = value;
-    });
-    return colors;
-  }, [friendColorOverrides, preferredPawnColor, primaryLocalPlayerId]);
-
   const getPlayerName = useCallback(
     (playerId: PlayerId) =>
       playersRef.current.find((p) => p.playerId === playerId)?.name ??
@@ -1011,9 +1066,15 @@ function GamePage() {
         throw new Error("Game is still loading");
       }
       const nextState = currentState.applyGameAction(action);
-      updateGameState(nextState, {
-        lastMoves: options?.lastMoves ?? null,
-      });
+      // Only pass lastMoves option if explicitly provided; otherwise preserve existing arrows
+      if (
+        options &&
+        Object.prototype.hasOwnProperty.call(options, "lastMoves")
+      ) {
+        updateGameState(nextState, { lastMoves: options.lastMoves });
+      } else {
+        updateGameState(nextState);
+      }
       if (action.kind === "giveTime") {
         const recipientId: PlayerId = action.playerId === 1 ? 2 : 1;
         if (action.playerId === primaryLocalPlayerId) {
@@ -1142,14 +1203,7 @@ function GamePage() {
       }
       return pawn;
     });
-  }, [
-    previewState,
-    gameState,
-    stagedActions,
-    activeLocalPlayerId,
-    primaryLocalPlayerId,
-    players,
-  ]);
+  }, [previewState, gameState, stagedActions, activeLocalPlayerId, players]);
 
   const stagedArrows = useMemo<Arrow[]>(() => {
     if (!gameState || stagedActions.length === 0) return [];
@@ -1244,60 +1298,24 @@ function GamePage() {
 
   const applyMove = useCallback(
     (playerId: PlayerId, move: Move) => {
-      const currentState = gameStateRef.current;
-      if (!currentState) {
+      const before = gameStateRef.current;
+      if (!before) {
         throw new Error("Game is still loading");
       }
 
-      const nextState = currentState.applyGameAction({
+      const nextState = before.applyGameAction({
         kind: "move",
         move,
         playerId,
         timestamp: Date.now(),
       });
-      // Calculate last moves by comparing pawn positions
-      const moves: BoardProps["lastMoves"] = [];
-      const playerColor =
-        playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
-
-      // Check Cat
-      const catBefore = currentState.pawns[playerId].cat;
-      const catAfter = nextState.pawns[playerId].cat;
-      if (catBefore[0] !== catAfter[0] || catBefore[1] !== catAfter[1]) {
-        moves.push({
-          fromRow: catBefore[0],
-          fromCol: catBefore[1],
-          toRow: catAfter[0],
-          toCol: catAfter[1],
-          playerColor,
-        });
-      }
-
-      // Check Mouse
-      const mouseBefore = currentState.pawns[playerId].mouse;
-      const mouseAfter = nextState.pawns[playerId].mouse;
-      if (
-        mouseBefore[0] !== mouseAfter[0] ||
-        mouseBefore[1] !== mouseAfter[1]
-      ) {
-        moves.push({
-          fromRow: mouseBefore[0],
-          fromCol: mouseBefore[1],
-          toRow: mouseAfter[0],
-          toCol: mouseAfter[1],
-          playerColor,
-        });
-      }
-
-      // If we have moves, set them. Otherwise clear.
-      updateGameState(nextState, {
-        lastMoves: moves.length > 0 ? moves : null,
-      });
+      const lastMoves = computeLastMoves(before, nextState);
+      updateGameState(nextState, { lastMoves });
       if (soundEnabled) {
         playSound();
       }
     },
-    [playerColorsForBoard, soundEnabled, updateGameState],
+    [computeLastMoves, soundEnabled, updateGameState],
   );
 
   const commitStagedActions = useCallback(
@@ -1383,13 +1401,26 @@ function GamePage() {
           timestamp: Date.now(),
         });
       }
-      updateGameState(nextState, { lastMoves: null });
+
+      // After takeback, if there's still history, show arrow for the now-last move
+      let lastMoves: BoardProps["lastMoves"] | null = null;
+      if (nextState.history.length > 0) {
+        // Temporarily undo one more move to get the "before" state for the last move
+        const beforeLastMove = nextState.applyGameAction({
+          kind: "takeback",
+          playerId: requesterId,
+          timestamp: Date.now(),
+        });
+        lastMoves = computeLastMoves(beforeLastMove, nextState);
+      }
+
+      updateGameState(nextState, { lastMoves });
       setStagedActions([]);
       setSelectedPawnId(null);
       setDraggingPawnId(null);
       return true;
     },
-    [updateGameState],
+    [computeLastMoves, updateGameState],
   );
 
   const handleStartResign = useCallback(() => {
