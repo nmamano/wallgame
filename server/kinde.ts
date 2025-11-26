@@ -65,11 +65,11 @@ export const sessionManager = (c: Context): SessionManager => ({
   },
 });
 
-type Env = {
+interface Env {
   Variables: {
     user: UserType;
   };
-};
+}
 
 // Add this middleware to all routes that need to be authenticated.
 // Note: /api/me does NOT use this middleware - it handles auth directly to allow guests.

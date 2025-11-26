@@ -63,7 +63,7 @@ function Puzzles() {
       name: puzzle.title ?? `Puzzle ${puzzle.id}`,
       difficulty: Math.min(
         5,
-        Math.max(1, Math.floor((puzzle.rating ?? 1000) / 200))
+        Math.max(1, Math.floor((puzzle.rating ?? 1000) / 200)),
       ), // Convert rating to 1-5 difficulty
       completed: false, // TODO: Get from user data
     })) ?? [];

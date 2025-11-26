@@ -203,10 +203,10 @@ export class StyledPillar {
           colorCounts.set(color, (colorCounts.get(color) ?? 0) + 1);
         });
         const mainColor = Array.from(colorCounts.entries()).find(
-          ([, count]) => count === 2
+          ([, count]) => count === 2,
         )?.[0];
         const sideColor = Array.from(colorCounts.entries()).find(
-          ([, count]) => count === 1
+          ([, count]) => count === 1,
         )?.[0];
 
         if (mainColor && sideColor) {
@@ -285,10 +285,10 @@ export class StyledPillar {
         const counts = Array.from(colorCounts.values()).sort();
         if (counts[0] === 1 && counts[1] === 3) {
           const mainColor = Array.from(colorCounts.entries()).find(
-            ([, count]) => count === 3
+            ([, count]) => count === 3,
           )?.[0];
           const sideColor = Array.from(colorCounts.entries()).find(
-            ([, count]) => count === 1
+            ([, count]) => count === 1,
           )?.[0];
 
           if (mainColor && sideColor) {
@@ -376,7 +376,7 @@ export class StyledPillar {
             // Determine which color is mainColor (the one at the orientation corner)
             const orientationEdges = MAIN_ORIENTATION_TO_EDGES[orientation];
             const mainColor = orientationEdges.every((edge) =>
-              color1Edges.includes(edge)
+              color1Edges.includes(edge),
             )
               ? color1
               : color2;
@@ -429,7 +429,7 @@ function averageHexColors(colorA: string, colorB: string): string {
   const toHex = (value: number) => value.toString(16).padStart(2, "0");
 
   return `#${toHex(avg(a.r, b.r))}${toHex(avg(a.g, b.g))}${toHex(
-    avg(a.b, b.b)
+    avg(a.b, b.b),
   )}`;
 }
 
@@ -903,7 +903,7 @@ class FourColorSquare {
         color: colors[config.edge],
         startColor: averageHexColors(
           colors[config.edge],
-          colors[config.adjacent]
+          colors[config.adjacent],
         ),
       };
     });
@@ -1368,7 +1368,7 @@ class CornerColorSquare {
   private extendPointOutward(
     point: Point,
     center: Point,
-    distance: number
+    distance: number,
   ): Point {
     const dx = point.x - center.x;
     const dy = point.y - center.y;
@@ -1416,12 +1416,12 @@ class CornerColorSquare {
             this.extendPointOutward(
               cornerPoints[baseCornerKeys[0]],
               extendedCenter,
-              1
+              1,
             ),
             this.extendPointOutward(
               cornerPoints[baseCornerKeys[1]],
               extendedCenter,
-              1
+              1,
             ),
             extendedCenter,
           ],
@@ -1433,7 +1433,7 @@ class CornerColorSquare {
           cwEdgeToDiag,
           cwDiagToEdge,
         };
-      }
+      },
     );
   }
 
@@ -1579,7 +1579,7 @@ class ThreeSidedSquare {
 
     if (mainEdges.includes(sideEdge)) {
       throw new Error(
-        "ThreeSidedSquare: sideOrientation cannot overlap mainOrientation"
+        "ThreeSidedSquare: sideOrientation cannot overlap mainOrientation",
       );
     }
   }
@@ -1700,7 +1700,7 @@ class ThreeSidedSquare {
   private getCornerOnEdge(
     rect: BoundingBox,
     edge: EdgeColorKey,
-    exclude: Point
+    exclude: Point,
   ): Point {
     const corners = this.getRectCorners(rect);
 
@@ -1717,7 +1717,7 @@ class ThreeSidedSquare {
       candidates.find(
         (corner) =>
           Math.abs(corner.x - exclude.x) > 0.0001 ||
-          Math.abs(corner.y - exclude.y) > 0.0001
+          Math.abs(corner.y - exclude.y) > 0.0001,
       ) ?? candidates[0]
     );
   }
@@ -1737,7 +1737,7 @@ class ThreeSidedSquare {
 
   private getLinearGradientLine(
     edge: EdgeColorKey,
-    rect: BoundingBox
+    rect: BoundingBox,
   ): { x1: number; y1: number; x2: number; y2: number } {
     const center = this.getCenter();
 
@@ -1776,7 +1776,7 @@ class ThreeSidedSquare {
   private getTriangleConfig(
     quadrant: QuadrantInfo,
     edge: EdgeColorKey,
-    center: Point
+    center: Point,
   ): TriangleGradientConfig {
     const pivotPoint = quadrant.outerCorner;
     const edgeMidpoint = this.getEdgeMidpoint(quadrant.rect, edge);
@@ -1839,7 +1839,7 @@ class ThreeSidedSquare {
     quadrants.forEach((quadrant) => {
       const touchesSide = quadrant.edges.includes(sideEdge);
       const mainEdgeCount = quadrant.edges.filter((edge) =>
-        mainEdges.includes(edge)
+        mainEdges.includes(edge),
       ).length;
 
       if (mainEdgeCount === 2 || (mainEdgeCount === 1 && !touchesSide)) {
@@ -1851,7 +1851,7 @@ class ThreeSidedSquare {
             width={quadrant.rect.width}
             height={quadrant.rect.height}
             fill={this.params.mainColor}
-          />
+          />,
         );
         return;
       }
@@ -1872,7 +1872,7 @@ class ThreeSidedSquare {
             <stop offset="0%" stopColor={this.params.mainColor} />
             <stop offset="20%" stopColor={this.params.mainColor} />
             <stop offset="100%" stopColor={this.params.sideColor} />
-          </linearGradient>
+          </linearGradient>,
         );
         elements.push(
           <rect
@@ -1882,7 +1882,7 @@ class ThreeSidedSquare {
             width={quadrant.rect.width}
             height={quadrant.rect.height}
             fill={`url(#${gradientId})`}
-          />
+          />,
         );
         return;
       }
@@ -1891,12 +1891,12 @@ class ThreeSidedSquare {
       const mainCorner = this.getCornerOnEdge(
         quadrant.rect,
         mainEdge,
-        quadrant.outerCorner
+        quadrant.outerCorner,
       );
       const sideCorner = this.getCornerOnEdge(
         quadrant.rect,
         sideEdge,
-        quadrant.outerCorner
+        quadrant.outerCorner,
       );
 
       const mainTrianglePoints = [quadrant.outerCorner, mainCorner, center]
@@ -1915,7 +1915,7 @@ class ThreeSidedSquare {
           clipPathUnits="userSpaceOnUse"
         >
           <polygon points={gradientTrianglePoints} />
-        </clipPath>
+        </clipPath>,
       );
 
       const triangleConfig = this.getTriangleConfig(quadrant, sideEdge, center);
@@ -1949,7 +1949,7 @@ class ThreeSidedSquare {
               }}
             />
           </foreignObject>
-        </g>
+        </g>,
       );
     });
 
@@ -2015,7 +2015,7 @@ class ThreeColoredSidesSquare {
     const nullCount = values.filter((color) => color === null).length;
     if (nullCount !== 1) {
       throw new Error(
-        "ThreeColoredSidesSquare: exactly one edge color must be null"
+        "ThreeColoredSidesSquare: exactly one edge color must be null",
       );
     }
   }
@@ -2030,11 +2030,11 @@ class ThreeColoredSidesSquare {
 
   private getNullEdge(): EdgeColorKey {
     const entry = Object.entries(this.params.colors).find(
-      ([, color]) => color === null
+      ([, color]) => color === null,
     ) as [EdgeColorKey, string | null] | undefined;
     if (!entry) {
       throw new Error(
-        "ThreeColoredSidesSquare: unable to determine null edge color"
+        "ThreeColoredSidesSquare: unable to determine null edge color",
       );
     }
     return entry[0];
@@ -2044,7 +2044,7 @@ class ThreeColoredSidesSquare {
     const color = this.params.colors[edge];
     if (!color) {
       throw new Error(
-        `ThreeColoredSidesSquare: missing color for edge "${edge}"`
+        `ThreeColoredSidesSquare: missing color for edge "${edge}"`,
       );
     }
     return color;
@@ -2125,7 +2125,7 @@ class ThreeColoredSidesSquare {
   private getCornerOnEdge(
     rect: BoundingBox,
     edge: EdgeColorKey,
-    exclude: Point
+    exclude: Point,
   ): Point {
     const corners = {
       "top-left": { x: rect.x, y: rect.y },
@@ -2150,14 +2150,14 @@ class ThreeColoredSidesSquare {
       candidates.find(
         (corner) =>
           Math.abs(corner.x - exclude.x) > 0.0001 ||
-          Math.abs(corner.y - exclude.y) > 0.0001
+          Math.abs(corner.y - exclude.y) > 0.0001,
       ) ?? candidates[0]
     );
   }
 
   private getLinearGradientLineTowardsCenter(
     edge: EdgeColorKey,
-    rect: BoundingBox
+    rect: BoundingBox,
   ): { x1: number; y1: number; x2: number; y2: number } {
     const edgeMidpoint = this.getEdgeMidpoint(rect, edge);
 
@@ -2214,7 +2214,7 @@ class ThreeColoredSidesSquare {
   private getTriangleConfig(
     quadrant: QuadrantInfo,
     edge: EdgeColorKey,
-    center: Point
+    center: Point,
   ): SplitTriangleConfig {
     const pivotPoint = quadrant.outerCorner;
     const edgeMidpoint = this.getEdgeMidpoint(quadrant.rect, edge);
@@ -2269,12 +2269,12 @@ class ThreeColoredSidesSquare {
   private getTrianglePoints(
     quadrant: QuadrantInfo,
     edge: EdgeColorKey,
-    center: Point
+    center: Point,
   ): string {
     const corner = this.getCornerOnEdge(
       quadrant.rect,
       edge,
-      quadrant.outerCorner
+      quadrant.outerCorner,
     );
     const points =
       edge === quadrant.edges[0]
@@ -2293,7 +2293,7 @@ class ThreeColoredSidesSquare {
   private getAverageColor(): string {
     const { colors } = this.params;
     const nonNullColors = Object.values(colors).filter(
-      (color): color is string => color !== null
+      (color): color is string => color !== null,
     );
     if (nonNullColors.length === 0) {
       return "#808080"; // fallback gray
@@ -2325,15 +2325,15 @@ class ThreeColoredSidesSquare {
         const nonNullEdge = quadrant.edges.find((edge) => edge !== nullEdge)!;
         const edgeColor = this.getRequiredEdgeColor(nonNullEdge);
         const oppositeColor = this.getRequiredEdgeColor(
-          OPPOSITE_EDGE[nonNullEdge]
+          OPPOSITE_EDGE[nonNullEdge],
         );
         const blendColor = averageHexColors(edgeColor, oppositeColor);
         const gradientId = this.getLinearGradientId(
-          `${quadrant.key}-${nonNullEdge}`
+          `${quadrant.key}-${nonNullEdge}`,
         );
         const line = this.getLinearGradientLineTowardsCenter(
           nonNullEdge,
-          quadrant.rect
+          quadrant.rect,
         );
 
         gradientDefs.push(
@@ -2348,7 +2348,7 @@ class ThreeColoredSidesSquare {
           >
             <stop offset="0%" stopColor={edgeColor} />
             <stop offset="100%" stopColor={blendColor} />
-          </linearGradient>
+          </linearGradient>,
         );
 
         elements.push(
@@ -2359,7 +2359,7 @@ class ThreeColoredSidesSquare {
             width={quadrant.rect.width}
             height={quadrant.rect.height}
             fill={`url(#${gradientId})`}
-          />
+          />,
         );
         return;
       }
@@ -2377,7 +2377,7 @@ class ThreeColoredSidesSquare {
             clipPathUnits="userSpaceOnUse"
           >
             <polygon points={trianglePoints} />
-          </clipPath>
+          </clipPath>,
         );
 
         elements.push(
@@ -2396,7 +2396,7 @@ class ThreeColoredSidesSquare {
                 background: this.getTriangleBackground(triangleConfig),
               }}
             />
-          </foreignObject>
+          </foreignObject>,
         );
       });
     });

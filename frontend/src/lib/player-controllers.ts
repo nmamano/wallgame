@@ -29,7 +29,7 @@ interface BasePlayerController {
   makeMove(context: PlayerControllerContext): Promise<Move>;
   respondToDrawOffer(context: DrawOfferContext): Promise<DrawDecision>;
   respondToTakebackRequest(
-    context: TakebackRequestContext
+    context: TakebackRequestContext,
   ): Promise<TakebackDecision>;
   cancel?(reason?: unknown): void;
 }
@@ -71,19 +71,19 @@ export function createPlayerController(args: {
 }
 
 export function isLocalController(
-  controller: GamePlayerController
+  controller: GamePlayerController,
 ): controller is LocalPlayerController {
   return controller.kind === "local-human";
 }
 
 export function isAutomatedController(
-  controller: GamePlayerController
+  controller: GamePlayerController,
 ): controller is AutomatedPlayerController {
   return controller.kind === "easy-bot";
 }
 
 export function isSupportedController(
-  controller: GamePlayerController
+  controller: GamePlayerController,
 ): controller is LocalPlayerController | AutomatedPlayerController {
   return controller.kind !== "unsupported";
 }
@@ -105,13 +105,13 @@ class LocalHumanController implements LocalPlayerController {
 
   constructor(
     public playerId: PlayerId,
-    public playerType: PlayerType
+    public playerType: PlayerType,
   ) {}
 
   async makeMove(): Promise<Move> {
     if (this.pendingMove) {
       this.pendingMove.reject(
-        new Error("Previous move request was still pending.")
+        new Error("Previous move request was still pending."),
       );
       this.pendingMove = null;
     }
@@ -136,7 +136,7 @@ class LocalHumanController implements LocalPlayerController {
   respondToDrawOffer(): Promise<DrawDecision> {
     if (this.pendingDrawDecision) {
       this.pendingDrawDecision.reject(
-        new Error("Previous draw request was still pending.")
+        new Error("Previous draw request was still pending."),
       );
     }
     return new Promise<DrawDecision>((resolve, reject) => {
@@ -155,7 +155,7 @@ class LocalHumanController implements LocalPlayerController {
   respondToTakebackRequest(): Promise<TakebackDecision> {
     if (this.pendingTakebackDecision) {
       this.pendingTakebackDecision.reject(
-        new Error("Previous takeback request was still pending.")
+        new Error("Previous takeback request was still pending."),
       );
     }
     return new Promise<TakebackDecision>((resolve, reject) => {
@@ -174,19 +174,19 @@ class LocalHumanController implements LocalPlayerController {
   cancel(reason?: unknown): void {
     if (this.pendingMove) {
       this.pendingMove.reject(
-        reason ?? new Error("Move request cancelled by system.")
+        reason ?? new Error("Move request cancelled by system."),
       );
       this.pendingMove = null;
     }
     if (this.pendingDrawDecision) {
       this.pendingDrawDecision.reject(
-        reason ?? new Error("Draw request cancelled by system.")
+        reason ?? new Error("Draw request cancelled by system."),
       );
       this.pendingDrawDecision = null;
     }
     if (this.pendingTakebackDecision) {
       this.pendingTakebackDecision.reject(
-        reason ?? new Error("Takeback request cancelled by system.")
+        reason ?? new Error("Takeback request cancelled by system."),
       );
       this.pendingTakebackDecision = null;
     }
@@ -198,7 +198,7 @@ class EasyBotController implements AutomatedPlayerController {
 
   constructor(
     public playerId: PlayerId,
-    public playerType: PlayerType
+    public playerType: PlayerType,
   ) {}
 
   async makeMove({
@@ -239,26 +239,26 @@ class UnsupportedController implements UnsupportedPlayerController {
 
   constructor(
     public playerId: PlayerId,
-    public playerType: PlayerType
+    public playerType: PlayerType,
   ) {}
 
   async makeMove(): Promise<Move> {
     return Promise.reject(
-      new Error(`Player type "${this.playerType}" is not supported yet.`)
+      new Error(`Player type "${this.playerType}" is not supported yet.`),
     );
   }
 
   async respondToDrawOffer(): Promise<DrawDecision> {
     return Promise.reject(
-      new Error(`Player type "${this.playerType}" cannot answer draw offers.`)
+      new Error(`Player type "${this.playerType}" cannot answer draw offers.`),
     );
   }
 
   async respondToTakebackRequest(): Promise<TakebackDecision> {
     return Promise.reject(
       new Error(
-        `Player type "${this.playerType}" cannot answer takeback requests.`
-      )
+        `Player type "${this.playerType}" cannot answer takeback requests.`,
+      ),
     );
   }
 

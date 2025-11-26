@@ -83,5 +83,5 @@ export const MOUSE_PAWNS = [
   "mouse82.svg",
   "mouse83.svg",
   "mouse84.svg",
-  "mouse85.svg"
+  "mouse85.svg",
 ] as const;

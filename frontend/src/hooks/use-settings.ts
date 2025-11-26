@@ -1,5 +1,5 @@
 import { useQuery, useQueryClient, useMutation } from "@tanstack/react-query";
-import { useMemo, useState, useEffect } from "react";
+import { useMemo, useState, useEffect, useRef } from "react";
 import {
   settingsQueryOptions,
   settingsMutations,
@@ -105,7 +105,7 @@ const DEFAULT_VARIANT: Variant = "standard";
  */
 function useSettingsInternal(
   isLoggedIn: boolean,
-  userPending: boolean
+  userPending: boolean,
 ): SettingsState {
   const queryClient = useQueryClient();
 
@@ -125,19 +125,19 @@ function useSettingsInternal(
   // Always call localStorage hooks (used for logged-out users, fallback for logged-in)
   const [localBoardTheme, setLocalBoardTheme] = useLocalStorageState<string>(
     STORAGE_KEYS.BOARD_THEME,
-    "default"
+    "default",
   );
   const [localPawnColor, setLocalPawnColor] = useLocalStorageState<string>(
     STORAGE_KEYS.PAWN_COLOR,
-    "default"
+    "default",
   );
   const [localCatPawn, setLocalCatPawn] = useLocalStorageState<string>(
     STORAGE_KEYS.CAT_PAWN,
-    "default"
+    "default",
   );
   const [localMousePawn, setLocalMousePawn] = useLocalStorageState<string>(
     STORAGE_KEYS.MOUSE_PAWN,
-    "default"
+    "default",
   );
   const [localVariantSettings, setLocalVariantSettings] =
     useLocalStorageState<VariantSettingsMap>(STORAGE_KEYS.VARIANT_SETTINGS, {});
@@ -155,11 +155,11 @@ function useSettingsInternal(
       // Read VARIANT_SETTINGS directly from localStorage (independent of localVariantSettings hook)
       try {
         const variantSettingsStr = localStorage.getItem(
-          STORAGE_KEYS.VARIANT_SETTINGS
+          STORAGE_KEYS.VARIANT_SETTINGS,
         );
         if (variantSettingsStr) {
           const variantSettings = JSON.parse(
-            variantSettingsStr
+            variantSettingsStr,
           ) as VariantSettingsMap;
           const variantParams = variantSettings[defaultGameConfig.variant];
           if (variantParams) {
@@ -179,19 +179,31 @@ function useSettingsInternal(
     });
 
   // Display name state (always initialized, but only used for logged-in users)
-  const [displayName, setDisplayName] = useState("");
-  const [originalDisplayName, setOriginalDisplayName] = useState<string>("");
   const [displayNameError, setDisplayNameError] = useState<string | null>(null);
 
-  // Load display name from DB when available (only for logged-in users)
-  useEffect(() => {
+  // Derive display name from DB settings
+  const dbDisplayName = useMemo(() => {
     if (isLoggedIn && dbSettings?.displayName !== undefined) {
-      const dbDisplayName =
-        dbSettings.capitalizedDisplayName ?? dbSettings.displayName;
+      return dbSettings.capitalizedDisplayName ?? dbSettings.displayName;
+    }
+    return "";
+  }, [isLoggedIn, dbSettings?.displayName, dbSettings?.capitalizedDisplayName]);
+
+  // Display name state - initialized with DB value, updated only on DB changes
+  const [displayName, setDisplayName] = useState(() => dbDisplayName);
+  const [originalDisplayName, setOriginalDisplayName] = useState<string>(
+    () => dbDisplayName,
+  );
+
+  // Sync display name with DB changes (only when DB value actually changes)
+  const prevDbDisplayNameRef = useRef(dbDisplayName);
+  useEffect(() => {
+    if (prevDbDisplayNameRef.current !== dbDisplayName) {
       setDisplayName(dbDisplayName);
       setOriginalDisplayName(dbDisplayName);
+      prevDbDisplayNameRef.current = dbDisplayName;
     }
-  }, [isLoggedIn, dbSettings?.displayName, dbSettings?.capitalizedDisplayName]);
+  }, [dbDisplayName]);
 
   // Display name mutation
   // Note: No optimistic update - we rely on server response for correctness.
@@ -214,7 +226,7 @@ function useSettingsInternal(
         // Dev safety net: this should never happen if callers gate correctly
         if (import.meta.env.MODE !== "production") {
           console.error(
-            "updateDisplayNameMutation called while logged out. Did you forget to gate on isLoggedIn?"
+            "updateDisplayNameMutation called while logged out. Did you forget to gate on isLoggedIn?",
           );
         }
         // Fail with a generic user-facing error
@@ -244,7 +256,7 @@ function useSettingsInternal(
               capitalizedDisplayName:
                 data.capitalizedDisplayName ?? prev.capitalizedDisplayName,
             };
-          }
+          },
         );
       }
       // Refetch to ensure cache is in sync with server
@@ -338,7 +350,7 @@ function useSettingsInternal(
     const currentVariantParams = variantSettingsFromDb[currentVariant];
     return {
       timeControl: timeControlConfigFromPreset(
-        dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET
+        dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,
       ),
       rated: dbSettings.defaultRatedStatus ?? false,
       variant: currentVariant,
@@ -398,7 +410,7 @@ function useSettingsInternal(
           ? [...prev.pawnSettings]
           : [];
         const existingIndex = pawnSettings.findIndex(
-          (ps) => ps.pawn_type === pawnType
+          (ps) => ps.pawn_type === pawnType,
         );
         if (existingIndex >= 0) {
           pawnSettings[existingIndex] = {
@@ -490,7 +502,7 @@ function useSettingsInternal(
           : [];
 
         const nextVariantSettings = previousVariantSettings.some(
-          (vs) => vs.variant === variables.variant
+          (vs) => vs.variant === variables.variant,
         )
           ? previousVariantSettings.map((vs) =>
               vs.variant === variables.variant
@@ -501,7 +513,7 @@ function useSettingsInternal(
                       ...variables.parameters,
                     },
                   }
-                : vs
+                : vs,
             )
           : [
               ...previousVariantSettings,
@@ -799,7 +811,7 @@ function useSettingsInternal(
  */
 export function useSettings(
   isLoggedIn: boolean,
-  userPending = false
+  userPending = false,
 ): SettingsState {
   return useSettingsInternal(isLoggedIn, userPending);
 }

@@ -59,7 +59,7 @@ export interface BoardProps {
   onWallClick?: (
     row: number,
     col: number,
-    orientation: WallOrientation
+    orientation: WallOrientation,
   ) => void;
   onPawnRightClick?: (pawnId: string) => void;
   onWallRightClick?: (wallIndex: number) => void;
@@ -100,7 +100,7 @@ const buildWallMaps = (walls: WallPositionWithState[]): WallMaps => {
 
 const getWallColor = (
   wall: WallPositionWithState,
-  playerColors?: Record<PlayerId, PlayerColor>
+  playerColors?: Record<PlayerId, PlayerColor>,
 ): string => {
   if (wall.state === "placed" && wall.playerId && playerColors) {
     const color = playerColors[wall.playerId];
@@ -116,7 +116,7 @@ const getPillarColors = (
   rowIndex: number,
   colIndex: number,
   wallMaps: WallMaps,
-  resolveColor: (wall: WallPositionWithState) => string
+  resolveColor: (wall: WallPositionWithState) => string,
 ): PillarColors => {
   const northWall = wallMaps.vertical.get(wallKey(rowIndex - 1, colIndex - 1));
   const southWall = wallMaps.vertical.get(wallKey(rowIndex, colIndex - 1));
@@ -179,7 +179,7 @@ export function Board({
     Array.from({ length: cols }, (_, colIndex) => ({
       row: rowIndex,
       col: colIndex,
-    }))
+    })),
   );
 
   // Calculate cell size for positioning walls (dynamic based on grid size)
@@ -253,7 +253,7 @@ export function Board({
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
   const resolveWallColor = useCallback(
     (wall: WallPositionWithState) => getWallColor(wall, playerColors),
-    [playerColors]
+    [playerColors],
   );
 
   // Get pawns for a cell
@@ -291,7 +291,7 @@ export function Board({
       for (let col = 0; col < cols; col++) {
         const distance = gameGrid.distance(
           [pawn.cell[0], pawn.cell[1]],
-          [row, col]
+          [row, col],
         );
         if (stagedActionsCount === 0) {
           // With 0 staged actions: highlight cells at distance 1 OR 2
@@ -323,7 +323,7 @@ export function Board({
     fromRow: number,
     fromCol: number,
     toRow: number,
-    toCol: number
+    toCol: number,
   ) => {
     const rowDelta = Math.abs(toRow - fromRow);
     const colDelta = Math.abs(toCol - fromCol);
@@ -352,7 +352,7 @@ export function Board({
   const shortenLineBetweenCenters = (
     start: { x: number; y: number },
     end: { x: number; y: number },
-    scale: number
+    scale: number,
   ) => {
     const boundedScale = Math.max(0, Math.min(scale, 1));
     if (boundedScale === 1) {
@@ -389,7 +389,7 @@ export function Board({
       const { start, end } = shortenLineBetweenCenters(
         { x: fromCenter.x, y: fromCenter.y },
         { x: toCenter.x, y: toCenter.y },
-        getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol)
+        getArrowScale(move.fromRow, move.fromCol, move.toRow, move.toCol),
       );
 
       const arrowColor = move.playerColor
@@ -404,7 +404,7 @@ export function Board({
           style={{ zIndex: 3, opacity: 0.3 }}
           viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
             gridMetrics.height,
-            1
+            1,
           )}`}
           preserveAspectRatio="none"
         >
@@ -443,7 +443,7 @@ export function Board({
   // Convert WallPosition to rectangle coordinates for rendering
   // Returns [row1, col1, row2, col2] representing the two cells separated by the wall
   const wallToRectCoords = (
-    wall: WallPosition
+    wall: WallPosition,
   ): [number, number, number, number] => {
     if (wall.orientation === "vertical") {
       // Vertical wall: separates (row, col) and (row, col+1)
@@ -472,7 +472,7 @@ export function Board({
     const { start, end } = shortenLineBetweenCenters(
       { x: fromCenter.x, y: fromCenter.y },
       { x: toCenter.x, y: toCenter.y },
-      getArrowScale(arrow.from[0], arrow.from[1], arrow.to[0], arrow.to[1])
+      getArrowScale(arrow.from[0], arrow.from[1], arrow.to[0], arrow.to[1]),
     );
 
     const arrowColor = getArrowColor(arrow);
@@ -488,7 +488,7 @@ export function Board({
         style={{ zIndex: arrow.type === "calculated" ? 1 : 5 }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
           gridMetrics.height,
-          1
+          1,
         )}`}
         preserveAspectRatio="none"
       >
@@ -541,7 +541,7 @@ export function Board({
         height: cellHeightPx,
       };
     },
-    [cellWidthPx, cellHeightPx, gridMetrics.gapX, gridMetrics.gapY]
+    [cellWidthPx, cellHeightPx, gridMetrics.gapX, gridMetrics.gapY],
   );
 
   const getCellCenterPosition = useCallback(
@@ -559,7 +559,7 @@ export function Board({
 
       return { x: centerX, y: centerY, leftPercent, topPercent };
     },
-    [getCellRect, gridMetrics.width, gridMetrics.height]
+    [getCellRect, gridMetrics.width, gridMetrics.height],
   );
 
   const renderMoveHighlights = useCallback(() => {
@@ -578,7 +578,7 @@ export function Board({
       }
       const { topPercent, leftPercent } = getCellCenterPosition(
         rowIndex,
-        colIndex
+        colIndex,
       );
       return (
         <span
@@ -605,7 +605,7 @@ export function Board({
   const arrowVisuals = useMemo(() => {
     const wallThickness = Math.max(
       Math.max(gridMetrics.gapX, gridMetrics.gapY),
-      2
+      2,
     );
     const strokeWidth = Math.max(2, wallThickness / 2);
     const markerSize = 3;
@@ -638,7 +638,7 @@ export function Board({
           rowIndex,
           colIndex,
           wallMaps,
-          resolveWallColor
+          resolveWallColor,
         );
         const boundingBox = buildPillarBoundingBox(rowIndex, colIndex);
         const pillar = new StyledPillar({ boundingBox, colors });
@@ -667,7 +667,7 @@ export function Board({
             >
               {pillar.render()}
             </svg>
-          </div>
+          </div>,
         );
       }
     }
@@ -696,7 +696,7 @@ export function Board({
   const handleCellDrop = (
     event: DragEvent<HTMLDivElement>,
     row: number,
-    col: number
+    col: number,
   ) => {
     if (!onCellDrop) return;
     event.preventDefault();
@@ -930,12 +930,12 @@ export function Board({
                         onWallClick?.(
                           rowIndex + 1,
                           colIndex,
-                          "horizontal" as WallOrientation
+                          "horizontal" as WallOrientation,
                         )
                       }
                     />
                   );
-                })
+                }),
               )}
 
             {/* Wall click areas - vertical (between columns) */}
@@ -961,12 +961,12 @@ export function Board({
                         onWallClick?.(
                           rowIndex,
                           colIndex,
-                          "vertical" as WallOrientation
+                          "vertical" as WallOrientation,
                         )
                       }
                     />
                   );
-                })
+                }),
               )}
 
             {/* Render arrows */}
@@ -981,7 +981,7 @@ export function Board({
               if (cellWidthPx === 0 || cellHeightPx === 0) {
                 return null;
               }
-              const [row1, col1, row2, _col2] = wallToRectCoords(pWall);
+              const [row1, col1, row2] = wallToRectCoords(pWall);
               const isVertical = pWall.orientation === "vertical";
               const wallColor = resolveWallColor(pWall);
 
@@ -1083,7 +1083,7 @@ export function Board({
                         ) : (
                           <div className="flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) =>
-                              renderPawnWrapper(pawn, "sm")
+                              renderPawnWrapper(pawn, "sm"),
                             )}
                           </div>
                         )}
@@ -1091,7 +1091,7 @@ export function Board({
                     )}
                   </div>
                 );
-              })
+              }),
             )}
           </div>
         </div>

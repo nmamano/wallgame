@@ -54,15 +54,15 @@ function StudyBoard() {
       brown: 7,
       gray: 8,
     }),
-    []
+    [],
   );
 
   const idToColor = useMemo<Record<number, PlayerColor>>(
     () =>
       Object.fromEntries(
-        Object.entries(colorToId).map(([k, v]) => [v, k])
+        Object.entries(colorToId).map(([k, v]) => [v, k]),
       ) as Record<number, PlayerColor>,
-    [colorToId]
+    [colorToId],
   );
 
   // Board state
@@ -89,7 +89,7 @@ function StudyBoard() {
       setPawns((prev) => {
         // Find pawns at this cell
         const pawnsAtCell = prev.filter(
-          (p) => p.cell[0] === row && p.cell[1] === col
+          (p) => p.cell[0] === row && p.cell[1] === col,
         );
 
         // If there are pawns in this cell, remove the last one added (LIFOish for UI feel)
@@ -116,7 +116,7 @@ function StudyBoard() {
         }
       });
     },
-    [selectedPawnColor, selectedPawnType, catPawn, mousePawn, colorToId]
+    [selectedPawnColor, selectedPawnType, catPawn, mousePawn, colorToId],
   );
 
   // Handle wall clicks to add/remove walls
@@ -129,7 +129,7 @@ function StudyBoard() {
           orientation,
         };
         const existingWallIndex = prev.findIndex((wall) =>
-          sameWallPosition(wall, newWall)
+          sameWallPosition(wall, newWall),
         );
 
         if (existingWallIndex !== -1) {
@@ -147,7 +147,7 @@ function StudyBoard() {
         }
       });
     },
-    [selectedWallColor, selectedWallState, colorToId]
+    [selectedWallColor, selectedWallState, colorToId],
   );
 
   // Handle right-click on pawn to change color
@@ -157,11 +157,11 @@ function StudyBoard() {
         return prev.map((pawn) =>
           pawn.id === pawnId
             ? { ...pawn, playerId: colorToId[selectedPawnColor] as PlayerId }
-            : pawn
+            : pawn,
         );
       });
     },
-    [selectedPawnColor, colorToId]
+    [selectedPawnColor, colorToId],
   );
 
   // Handle right-click on wall to change color
@@ -171,11 +171,11 @@ function StudyBoard() {
         prev.map((pWall, index) =>
           index === wallIndex
             ? { ...pWall, playerId: colorToId[selectedWallColor] as PlayerId }
-            : pWall
-        )
+            : pWall,
+        ),
       );
     },
-    [selectedWallColor, colorToId]
+    [selectedWallColor, colorToId],
   );
 
   const clearBoard = useCallback(() => {
@@ -212,7 +212,7 @@ function StudyBoard() {
                         const newRows = parseInt(value);
                         setRows(newRows);
                         setPawns((prev) =>
-                          prev.filter((p) => p.cell[0] < newRows)
+                          prev.filter((p) => p.cell[0] < newRows),
                         );
                         setWalls((prev) =>
                           prev.filter(
@@ -220,8 +220,8 @@ function StudyBoard() {
                               w.cell[0] < newRows &&
                               (w.orientation === "horizontal"
                                 ? w.cell[0] > 0
-                                : true)
-                          )
+                                : true),
+                          ),
                         );
                       }}
                     >
@@ -248,7 +248,7 @@ function StudyBoard() {
                         const newCols = parseInt(value);
                         setCols(newCols);
                         setPawns((prev) =>
-                          prev.filter((p) => p.cell[1] < newCols)
+                          prev.filter((p) => p.cell[1] < newCols),
                         );
                         setWalls((prev) =>
                           prev.filter(
@@ -256,8 +256,8 @@ function StudyBoard() {
                               w.cell[1] < newCols &&
                               (w.orientation === "vertical"
                                 ? w.cell[1] < newCols - 1
-                                : true)
-                          )
+                                : true),
+                          ),
                         );
                       }}
                     >

@@ -6,7 +6,7 @@ import type { Cell, Move } from "../../../shared/game-types";
 export function getAiMove(
   grid: Grid,
   aiCatPos: Cell,
-  opponentMousePos: Cell
+  opponentMousePos: Cell,
 ): Promise<Move> {
   return Promise.resolve(DoubleWalkMove(grid, aiCatPos, opponentMousePos));
 }

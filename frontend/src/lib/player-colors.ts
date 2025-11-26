@@ -51,10 +51,13 @@ export const colorHexMap: Record<string, string> = {
 export const colorFilterMap: Record<string, string> = {
   red: "invert(27%) sepia(51%) saturate(2878%) hue-rotate(346deg) brightness(104%) contrast(97%)",
   blue: "invert(39%) sepia(57%) saturate(1815%) hue-rotate(195deg) brightness(96%) contrast(106%)",
-  green: "invert(48%) sepia(79%) saturate(2476%) hue-rotate(86deg) brightness(96%) contrast(119%)",
-  purple: "invert(32%) sepia(90%) saturate(1853%) hue-rotate(258deg) brightness(91%) contrast(101%)",
+  green:
+    "invert(48%) sepia(79%) saturate(2476%) hue-rotate(86deg) brightness(96%) contrast(119%)",
+  purple:
+    "invert(32%) sepia(90%) saturate(1853%) hue-rotate(258deg) brightness(91%) contrast(101%)",
   pink: "invert(65%) sepia(57%) saturate(4146%) hue-rotate(303deg) brightness(100%) contrast(101%)",
   cyan: "invert(69%) sepia(59%) saturate(4498%) hue-rotate(157deg) brightness(100%) contrast(101%)",
-  brown: "invert(46%) sepia(84%) saturate(514%) hue-rotate(1deg) brightness(94%) contrast(101%)",
+  brown:
+    "invert(46%) sepia(84%) saturate(514%) hue-rotate(1deg) brightness(94%) contrast(101%)",
   gray: "invert(50%) sepia(0%) saturate(0%) hue-rotate(173deg) brightness(95%) contrast(89%)",
 };

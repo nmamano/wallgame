@@ -32,7 +32,7 @@ async function getCurrentUser() {
     // so React Query can retry. The server handles unauthenticated users
     // by returning 200 OK with { user: null }, so this only triggers on real errors.
     throw new Error(
-      `Server error: Failed to fetch current user: ${res.statusText}`
+      `Server error: Failed to fetch current user: ${res.statusText}`,
     );
   }
   const data = await res.json();
@@ -74,7 +74,7 @@ export const settingsQueryOptions = queryOptions({
 
     if (!res.ok) {
       throw new Error(
-        `Server error: Failed to fetch settings: ${res.statusText}`
+        `Server error: Failed to fetch settings: ${res.statusText}`,
       );
     }
 
@@ -90,7 +90,7 @@ export const settingsQueryOptions = queryOptions({
 // Settings mutation functions
 async function updateSetting(
   endpoint: string,
-  body: Record<string, unknown>
+  body: Record<string, unknown>,
 ): Promise<{ success: boolean }> {
   const res = await fetch(`/api/settings/${endpoint}`, {
     method: "PUT",
@@ -104,7 +104,7 @@ async function updateSetting(
       error?: string;
     };
     throw new Error(
-      errorData.error ?? `Failed to update setting: ${res.statusText}`
+      errorData.error ?? `Failed to update setting: ${res.statusText}`,
     );
   }
 
@@ -132,7 +132,7 @@ export const settingsMutations = {
 
   updateVariantParameters: (
     variant: Variant,
-    parameters: { boardWidth: number; boardHeight: number }
+    parameters: { boardWidth: number; boardHeight: number },
   ) => updateSetting("variant-parameters", { variant, parameters }),
 
   updateDisplayName: (displayName: string) =>
@@ -145,7 +145,7 @@ const parseJsonResponse = async <T>(res: Response): Promise<T> => {
       error?: string;
     } | null;
     throw new Error(
-      data?.error ?? `Request failed: ${res.status} ${res.statusText}`
+      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
     );
   }
   return res.json() as Promise<T>;
@@ -172,7 +172,7 @@ export const createGameSession = async (args: {
   if (typeof rawTimeControl === "string") {
     // Legacy format: just a preset string like "rapid"
     timeControl = timeControlConfigFromPreset(
-      rawTimeControl as TimeControlPreset
+      rawTimeControl as TimeControlPreset,
     );
   } else {
     timeControl = args.config.timeControl;

@@ -23,7 +23,7 @@ export const saveGameHandshake = (payload: StoredGameHandshake) => {
 };
 
 export const getGameHandshake = (
-  gameId: string
+  gameId: string,
 ): StoredGameHandshake | null => {
   if (typeof window === "undefined") return null;
   const raw = sessionStorage.getItem(buildKey(gameId));

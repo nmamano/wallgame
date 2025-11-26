@@ -35,7 +35,7 @@ export function createApp() {
   return { app, websocket, apiRoutes };
 }
 
-const { app, websocket, apiRoutes } = createApp();
+const { app, websocket } = createApp();
 
 console.log("Server is running");
 
@@ -43,4 +43,4 @@ export default {
   fetch: app.fetch,
   websocket,
 };
-export type ApiRoutes = typeof apiRoutes;
+export type ApiRoutes = ReturnType<typeof createApp>["apiRoutes"];

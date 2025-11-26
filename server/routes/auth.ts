@@ -18,7 +18,7 @@ export const authRoute = new Hono()
   .get("/callback", async (c) => {
     // Gets called every time the user logs in or registers.
     const url = new URL(c.req.url);
-    await kindeClient.handleRedirectToApp(sessionManager(c), url as any);
+    await kindeClient.handleRedirectToApp(sessionManager(c), url as URL);
 
     // Ensure user exists in our database
     // Note: getUserProfile might return null immediately after handleRedirectToApp
