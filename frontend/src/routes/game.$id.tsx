@@ -163,6 +163,50 @@ interface RematchState {
   decliner?: PlayerId;
 }
 
+// ============================================================================
+// View Model Architecture
+// ============================================================================
+// The GameViewModel is the single source of truth for all server-controlled
+// game state. All server updates flow through a single entry point, and all
+// UI state is derived from this model plus local preferences.
+
+interface LocalPreferences {
+  pawnColor: PlayerColor;
+  catSkin: string | undefined;
+  mouseSkin: string | undefined;
+  displayName: string;
+}
+
+interface GameViewModel {
+  // Game configuration (board size, time control, etc.)
+  config: GameConfiguration | null;
+  // Current game state (board, turn, clocks, history)
+  gameState: GameState | null;
+  // Match/lobby metadata (players, readiness, appearances)
+  match: GameSnapshot | null;
+  // Last move arrows to display on the board
+  lastMoves: BoardProps["lastMoves"] | null;
+  // Whether the game has been initialized
+  initialized: boolean;
+}
+
+type ServerUpdate =
+  | {
+      type: "game-state";
+      config: GameConfiguration;
+      gameState: GameState;
+      isInitial: boolean;
+    }
+  | { type: "match"; snapshot: GameSnapshot };
+
+const DEFAULT_VIEW_MODEL: GameViewModel = {
+  config: null,
+  gameState: null,
+  match: null,
+  lastMoves: null,
+  initialized: false,
+};
+
 const DEFAULT_CONFIG: GameConfiguration = {
   timeControl: {
     initialSeconds: 180,
@@ -348,9 +392,41 @@ function GamePage() {
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
+
+  // ============================================================================
+  // Local Preferences (derived from settings hook)
+  // ============================================================================
+  const localPreferences = useMemo<LocalPreferences>(
+    () => ({
+      pawnColor: resolvePlayerColor(settings.pawnColor),
+      catSkin: settings.catPawn,
+      mouseSkin: settings.mousePawn,
+      displayName: settings.displayName,
+    }),
+    [
+      settings.pawnColor,
+      settings.catPawn,
+      settings.mousePawn,
+      settings.displayName,
+    ],
+  );
+
+  // ============================================================================
+  // View Model State - Single source of truth for server-controlled state
+  // ============================================================================
+  const [viewModel, setViewModel] = useState<GameViewModel>(DEFAULT_VIEW_MODEL);
+  const viewModelRef = useRef<GameViewModel>(DEFAULT_VIEW_MODEL);
+
+  // Keep ref in sync with state for use in callbacks
+  useEffect(() => {
+    viewModelRef.current = viewModel;
+  }, [viewModel]);
+
+  // ============================================================================
+  // Connection & Session State
+  // ============================================================================
   const [gameHandshake, setGameHandshake] =
     useState<StoredGameHandshake | null>(null);
-  const [matchSnapshot, setMatchSnapshot] = useState<GameSnapshot | null>(null);
   const [matchShareUrl, setMatchShareUrl] = useState<string | undefined>(
     undefined,
   );
@@ -376,9 +452,38 @@ function GamePage() {
     [id],
   );
 
-  const preferredPawnColor = resolvePlayerColor(settings.pawnColor);
-  const preferredCatSkin = settings.catPawn;
-  const preferredMouseSkin = settings.mousePawn;
+  // ============================================================================
+  // Single Entry Point for Server Updates
+  // ============================================================================
+  // All server updates (game state, match status) flow through this function.
+  // This ensures consistent state updates and prevents race conditions.
+  const applyServerUpdate = useCallback((update: ServerUpdate) => {
+    setViewModel((prev) => {
+      switch (update.type) {
+        case "game-state": {
+          // Compute last moves by diffing previous and new game state
+          const before = prev.gameState;
+          const lastMoves = computeLastMovesRef.current(
+            before,
+            update.gameState,
+          );
+          return {
+            ...prev,
+            config: update.config,
+            gameState: update.gameState,
+            lastMoves,
+            initialized: prev.initialized || update.isInitial,
+          };
+        }
+        case "match": {
+          return {
+            ...prev,
+            match: update.snapshot,
+          };
+        }
+      }
+    });
+  }, []);
 
   useEffect(() => {
     let cancelled = false;
@@ -415,11 +520,11 @@ function GamePage() {
         try {
           const details = await joinGameSession({
             gameId: id,
-            displayName: settings.displayName,
+            displayName: localPreferences.displayName,
             appearance: {
-              pawnColor: preferredPawnColor,
-              catSkin: preferredCatSkin,
-              mouseSkin: preferredMouseSkin,
+              pawnColor: localPreferences.pawnColor,
+              catSkin: localPreferences.catSkin,
+              mouseSkin: localPreferences.mouseSkin,
             },
           });
           if (cancelled) return;
@@ -465,16 +570,7 @@ function GamePage() {
     return () => {
       cancelled = true;
     };
-  }, [
-    debugMatch,
-    id,
-    maskToken,
-    preferredCatSkin,
-    preferredMouseSkin,
-    preferredPawnColor,
-    settings.displayName,
-    updateGameHandshake,
-  ]);
+  }, [debugMatch, id, maskToken, localPreferences, updateGameHandshake]);
 
   useEffect(() => {
     if (!gameHandshake) return;
@@ -492,7 +588,7 @@ function GamePage() {
           token: gameHandshake.token,
         });
         if (cancelled) return;
-        setMatchSnapshot(details.snapshot);
+        applyServerUpdate({ type: "match", snapshot: details.snapshot });
         setMatchShareUrl(details.shareUrl ?? gameHandshake.shareUrl);
         if (details.shareUrl && details.shareUrl !== gameHandshake.shareUrl) {
           updateGameHandshake({
@@ -522,7 +618,7 @@ function GamePage() {
               token: gameHandshake.token,
             });
             if (!cancelled) {
-              setMatchSnapshot(snapshot);
+              applyServerUpdate({ type: "match", snapshot });
               setIsMatchingOpen(
                 snapshot.status !== "in-progress" &&
                   snapshot.status !== "completed",
@@ -555,7 +651,14 @@ function GamePage() {
     return () => {
       cancelled = true;
     };
-  }, [debugMatch, gameHandshake, id, maskToken, updateGameHandshake]);
+  }, [
+    applyServerUpdate,
+    debugMatch,
+    gameHandshake,
+    id,
+    maskToken,
+    updateGameHandshake,
+  ]);
 
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -585,15 +688,15 @@ function GamePage() {
   }, [playerTypes]);
 
   const friendColorOverrides = useMemo(() => {
-    if (!isMultiplayerMatch || !matchSnapshot) return {};
+    if (!isMultiplayerMatch || !viewModel.match) return {};
     const map: Partial<Record<PlayerId, PlayerColor>> = {};
-    matchSnapshot.players.forEach((player) => {
+    viewModel.match.players.forEach((player) => {
       if (player.appearance?.pawnColor) {
         map[player.playerId] = resolvePlayerColor(player.appearance.pawnColor);
       }
     });
     return map;
-  }, [matchSnapshot, isMultiplayerMatch]);
+  }, [viewModel.match, isMultiplayerMatch]);
 
   const playerColorsForBoard = useMemo(() => {
     const colors: Record<PlayerId, PlayerColor> = {
@@ -601,7 +704,7 @@ function GamePage() {
       2: DEFAULT_PLAYER_COLORS[2],
     };
     if (primaryLocalPlayerId) {
-      colors[primaryLocalPlayerId] = preferredPawnColor;
+      colors[primaryLocalPlayerId] = localPreferences.pawnColor;
     }
     Object.entries(friendColorOverrides).forEach(([key, value]) => {
       const playerId = Number(key) as PlayerId;
@@ -611,7 +714,7 @@ function GamePage() {
       colors[playerId] = value;
     });
     return colors;
-  }, [friendColorOverrides, preferredPawnColor, primaryLocalPlayerId]);
+  }, [friendColorOverrides, localPreferences.pawnColor, primaryLocalPlayerId]);
 
   const computeLastMoves = useCallback(
     (
@@ -687,8 +790,14 @@ function GamePage() {
       })();
       const state = new GameState(incomingConfig, Date.now());
 
-      gameStateRef.current = state;
-      setConfig(incomingConfig);
+      // Update view model with new game state
+      applyServerUpdate({
+        type: "game-state",
+        config: incomingConfig,
+        gameState: state,
+        isInitial: true,
+      });
+
       setPlayerTypes(sanitizedPlayers);
       setSelectedPawnId(null);
       setDraggingPawnId(null);
@@ -697,7 +806,6 @@ function GamePage() {
       setChatInput("");
       setActiveTab("history");
       setChatChannel("game");
-      setLastMove(undefined);
       setStagedActions([]);
       setActiveLocalPlayerId(null);
       setAutomatedPlayerId(null);
@@ -727,21 +835,21 @@ function GamePage() {
         (type, index) => ({
           id: `p${index + 1}`,
           playerId: (index + 1) as PlayerId,
-          name: buildPlayerName(type, index, settings.displayName),
+          name: buildPlayerName(type, index, localPreferences.displayName),
           rating: type.includes("bot") ? 1200 : 1250,
           color:
             index + 1 === nextPrimaryLocalPlayerId
-              ? preferredPawnColor
+              ? localPreferences.pawnColor
               : DEFAULT_PLAYER_COLORS[(index + 1) as PlayerId],
           type,
           isOnline: type === "you" || type.includes("bot"),
           catSkin:
             index + 1 === nextPrimaryLocalPlayerId
-              ? preferredCatSkin
+              ? localPreferences.catSkin
               : undefined,
           mouseSkin:
             index + 1 === nextPrimaryLocalPlayerId
-              ? preferredMouseSkin
+              ? localPreferences.mouseSkin
               : undefined,
         }),
       );
@@ -759,8 +867,6 @@ function GamePage() {
       const waiting = matchingList.some((entry) => !entry.isReady);
       setIsMatchingOpen(waiting);
 
-      setGameState(state);
-
       addSystemMessage(
         waiting ? "Waiting for players..." : "Game created. Good luck!",
       );
@@ -772,11 +878,9 @@ function GamePage() {
     },
     [
       addSystemMessage,
+      applyServerUpdate,
+      localPreferences,
       playerControllersRef,
-      preferredCatSkin,
-      preferredMouseSkin,
-      preferredPawnColor,
-      settings.displayName,
     ],
   );
 
@@ -787,20 +891,19 @@ function GamePage() {
         lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
       },
     ) => {
-      gameStateRef.current = nextState;
-      setGameState(nextState);
-      // Only touch lastMove when explicitly passed in options
-      if (
-        options &&
-        Object.prototype.hasOwnProperty.call(options, "lastMoves")
-      ) {
-        if (options.lastMoves) {
-          setLastMove(options.lastMoves);
-        } else {
-          setLastMove(undefined);
-        }
-      }
-      // else: don't touch lastMove - preserve existing arrows
+      // Update view model with new game state
+      setViewModel((prev) => {
+        const shouldUpdateLastMoves =
+          options && Object.prototype.hasOwnProperty.call(options, "lastMoves");
+
+        return {
+          ...prev,
+          gameState: nextState,
+          lastMoves: shouldUpdateLastMoves
+            ? ((options.lastMoves as BoardProps["lastMoves"] | null) ?? null)
+            : prev.lastMoves,
+        };
+      });
     },
     [],
   );
@@ -821,7 +924,8 @@ function GamePage() {
       onState: (state) => {
         setMatchError(null);
         const config = buildGameConfigurationFromSerialized(state);
-        if (!gameInitializedRef.current) {
+        const isInitial = !gameInitializedRef.current;
+        if (isInitial) {
           const playerTypes: PlayerType[] =
             gameHandshake.playerId === 1
               ? ["you", "friend"]
@@ -831,9 +935,13 @@ function GamePage() {
           gameInitializedRef.current = true;
         }
         const resolvedState = hydrateGameStateFromSerialized(state, config);
-        const before = gameStateRef.current;
-        const lastMoves = computeLastMovesRef.current(before, resolvedState);
-        updateGameState(resolvedState, { lastMoves });
+        // Use the single entry point for server updates
+        applyServerUpdate({
+          type: "game-state",
+          config,
+          gameState: resolvedState,
+          isInitial,
+        });
         gameAwaitingServerRef.current = false;
         if (gameHandshake.playerId === resolvedState.turn) {
           setActiveLocalPlayerId(gameHandshake.playerId);
@@ -842,7 +950,7 @@ function GamePage() {
         }
       },
       onMatchStatus: (snapshot) => {
-        setMatchSnapshot(snapshot);
+        applyServerUpdate({ type: "match", snapshot });
         setIsMatchingOpen(
           snapshot.status !== "in-progress" && snapshot.status !== "completed",
         );
@@ -860,48 +968,85 @@ function GamePage() {
       gameAwaitingServerRef.current = false;
     };
   }, [
+    applyServerUpdate,
     debugMatch,
     gameHandshake,
     id,
     initializeGame,
     maskToken,
-    updateGameState,
   ]);
 
-  const [config, setConfig] = useState<GameConfiguration | null>(null);
+  // ============================================================================
+  // Derived Values from View Model
+  // ============================================================================
+  // These are derived from the view model for easier access throughout the component
+  const config = viewModel.config;
+  const gameState = viewModel.gameState;
+  const matchSnapshot = viewModel.match;
+  // Convert null to undefined for Board component compatibility
+  const lastMove = viewModel.lastMoves ?? undefined;
+
+  // Refs for synchronous access in callbacks
+  const gameStateRef = useRef<GameState | null>(null);
+  useEffect(() => {
+    gameStateRef.current = gameState;
+  }, [gameState]);
+
   const [basePlayers, setBasePlayers] = useState<GamePlayer[]>([]);
 
-  // Derive players with appearance info from matchSnapshot
-  // This is a memo instead of an effect to avoid race conditions between
-  // matchSnapshot and basePlayers being set at different times
+  // Derive players with:
+  // 1. Local preferences (for the local player)
+  // 2. Remote appearances from matchSnapshot (for multiplayer opponents)
+  // This is a memo to avoid race conditions between matchSnapshot/basePlayers
   const players = useMemo((): GamePlayer[] => {
     if (!basePlayers.length) return basePlayers;
-    if (!isMultiplayerMatch || !matchSnapshot) return basePlayers;
 
     return basePlayers.map((player) => {
-      const remote = matchSnapshot.players.find(
-        (entry) => entry.playerId === player.playerId,
-      );
-      if (!remote) return player;
       const isLocal = player.playerId === primaryLocalPlayerId;
-      const appearance = remote.appearance;
-      return {
-        ...player,
-        name: remote.displayName || player.name,
-        isOnline: remote.connected,
-        color:
-          !isLocal && appearance?.pawnColor
+
+      // For multiplayer, get remote player info from matchSnapshot
+      const remote =
+        isMultiplayerMatch && viewModel.match
+          ? viewModel.match.players.find(
+              (entry) => entry.playerId === player.playerId,
+            )
+          : null;
+
+      if (isLocal) {
+        // Local player: apply local preferences
+        return {
+          ...player,
+          name: remote?.displayName ?? player.name,
+          isOnline: remote?.connected ?? player.isOnline,
+          color: localPreferences.pawnColor,
+          catSkin: localPreferences.catSkin,
+          mouseSkin: localPreferences.mouseSkin,
+        };
+      } else if (remote) {
+        // Remote player in multiplayer: apply their appearance
+        const appearance = remote.appearance;
+        return {
+          ...player,
+          name: remote.displayName ?? player.name,
+          isOnline: remote.connected,
+          color: appearance?.pawnColor
             ? resolvePlayerColor(appearance.pawnColor)
             : player.color,
-        catSkin:
-          !isLocal && appearance?.catSkin ? appearance.catSkin : player.catSkin,
-        mouseSkin:
-          !isLocal && appearance?.mouseSkin
-            ? appearance.mouseSkin
-            : player.mouseSkin,
-      };
+          catSkin: appearance?.catSkin ?? player.catSkin,
+          mouseSkin: appearance?.mouseSkin ?? player.mouseSkin,
+        };
+      }
+
+      // Non-multiplayer opponent (bot): use base player info
+      return player;
     });
-  }, [basePlayers, isMultiplayerMatch, matchSnapshot, primaryLocalPlayerId]);
+  }, [
+    basePlayers,
+    isMultiplayerMatch,
+    viewModel.match,
+    primaryLocalPlayerId,
+    localPreferences,
+  ]);
 
   // Keep playersRef in sync with the derived players
   useEffect(() => {
@@ -909,10 +1054,6 @@ function GamePage() {
   }, [players]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [isMatchingOpen, setIsMatchingOpen] = useState(false);
-  const [gameState, setGameState] = useState<GameState | null>(null);
-  const [lastMove, setLastMove] = useState<
-    BoardProps["lastMove"] | BoardProps["lastMoves"]
-  >(undefined);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
     "game",
@@ -997,7 +1138,6 @@ function GamePage() {
     }
   }, [isMultiplayerMatch, matchError, isJoiningMatch, matchSnapshot?.status]);
 
-  const gameStateRef = useRef<GameState | null>(null);
   const playersRef = useRef<GamePlayer[]>([]);
   const pendingTurnRequestRef = useRef<PlayerId | null>(null);
   const drawOfferRequestIdRef = useRef(0);
@@ -1970,7 +2110,7 @@ function GamePage() {
       setPendingTakebackRequest(null);
       setDrawDecisionPrompt(null);
       setTakebackDecisionPrompt(null);
-      setGameState(null);
+      setViewModel(DEFAULT_VIEW_MODEL);
     };
   }, [id, initializeGame, isMultiplayerMatch]);
 
@@ -1981,15 +2121,8 @@ function GamePage() {
     return () => window.clearInterval(interval);
   }, []);
 
-  useEffect(() => {
-    setBasePlayers((prev) =>
-      prev.map((player) =>
-        player.playerId === primaryLocalPlayerId
-          ? { ...player, color: preferredPawnColor }
-          : player,
-      ),
-    );
-  }, [primaryLocalPlayerId, preferredPawnColor]);
+  // Note: Local player color preference is now applied in the `players` memo
+  // rather than mutating basePlayers. This ensures consistent derivation.
 
   useEffect(() => {
     if (!gameState) return;
