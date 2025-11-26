@@ -75,6 +75,22 @@ type Env = {
 // Note: /api/me does NOT use this middleware - it handles auth directly to allow guests.
 export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
   try {
+    // Mock auth for testing
+    if (process.env.NODE_ENV === "test") {
+      const testUserId = c.req.header("x-test-user-id");
+      if (testUserId) {
+        c.set("user", {
+          id: testUserId,
+          given_name: "Test",
+          family_name: "User",
+          email: `${testUserId}@example.com`,
+          picture: null,
+        });
+        await next();
+        return;
+      }
+    }
+
     const manager = sessionManager(c);
     const isAuthenticated = await kindeClient.isAuthenticated(manager);
     if (!isAuthenticated) {

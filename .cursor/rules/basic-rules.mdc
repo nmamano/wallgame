@@ -1,0 +1,8 @@
+---
+alwaysApply: true
+---
+
+- Use bun, not npm, pnpm, etc.
+- Ensure that build and lint run without errors before finishing a task.
+- Use `bun test tests/integration/friend-game.websocket.test.ts` when modifying the backend.
+- When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.

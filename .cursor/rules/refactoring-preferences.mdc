@@ -1,6 +1,0 @@
----
-description: Tasks involving refactoring or improving code.
-alwaysApply: false
----
-
-When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
