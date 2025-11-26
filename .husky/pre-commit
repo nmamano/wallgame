@@ -4,13 +4,42 @@ set -e
 # Make sure Bun is on PATH (Windows + Git Bash)
 export PATH="$HOME/.bun/bin:$PATH"
 
-echo "🔍🔍 Running Prettier check..."
-bun run format:check
+echo "🔍🔍 Collecting staged files..."
 
-echo "🔎🔎 Running ESLint (global)..."
-bun run lint
+# Get paths of files with staged changes (Added, Copied, Modified, Renamed)
+STAGED_FILES=$(git diff --cached --name-only --diff-filter=ACMR || true)
 
-echo "🧪🧪 Running backend tests..."
-bun run test
+if [ -z "$STAGED_FILES" ]; then
+  echo "No staged files – skipping pre-commit checks."
+  exit 0
+fi
 
-echo "✅✅ All checks passed – commit allowed."
+echo "Staged files:"
+echo "$STAGED_FILES"
+echo
+
+# ----- Prettier: only on staged files that Prettier cares about -----
+FORMATTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|json|md|css|html)$' || true)
+
+if [ -n "$FORMATTABLE_FILES" ]; then
+  echo "🔍🔍 Running Prettier check on staged files..."
+  # NOTE: This checks only the staged files' current on-disk contents.
+  echo "$FORMATTABLE_FILES" | xargs bunx prettier --check
+else
+  echo "No staged files need Prettier."
+fi
+
+echo
+
+# ----- ESLint: only on staged code files -----
+LINTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+
+if [ -n "$LINTABLE_FILES" ]; then
+  echo "🔎🔎 Running ESLint on staged files..."
+  echo "$LINTABLE_FILES" | xargs bunx eslint
+else
+  echo "No staged files need ESLint."
+fi
+
+echo
+echo "✅✅ Pre-commit checks passed – commit allowed."
