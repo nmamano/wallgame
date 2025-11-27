@@ -583,7 +583,7 @@ export function Board({
       return (
         <span
           key={`move-target-${key}`}
-          className="absolute bg-amber-500/80 rounded-full pointer-events-none shadow-sm"
+          className="absolute bg-amber-500/80 dark:bg-primary/80 rounded-full pointer-events-none shadow-sm"
           style={{
             width: "0.45rem",
             height: "0.45rem",
@@ -820,7 +820,7 @@ export function Board({
       className={`flex items-center justify-center ${className} ${maxWidth}`}
     >
       <div
-        className="rounded-lg p-2.5 lg:p-4 bg-amber-100 w-full h-auto"
+        className="rounded-lg p-2.5 lg:p-4 bg-amber-100 dark:bg-card w-full h-auto"
         style={{
           maxWidth: maxBoardWidth,
         }}
@@ -837,7 +837,7 @@ export function Board({
                 className="flex items-center justify-center"
                 style={{ width: cellSize }}
               >
-                <span className="text-[10px] text-gray-600 font-medium">
+                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
                   {String.fromCharCode(97 + colIndex)}
                 </span>
               </div>
@@ -855,7 +855,7 @@ export function Board({
                 className="flex items-center justify-center"
                 style={{ width: cellSize }}
               >
-                <span className="text-[10px] text-gray-600 font-medium">
+                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
                   {String.fromCharCode(97 + colIndex)}
                 </span>
               </div>
@@ -873,7 +873,7 @@ export function Board({
                 className="flex items-center justify-center w-full"
                 style={{ height: cellHeight }}
               >
-                <span className="text-[10px] text-gray-600 font-medium">
+                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
                   {rows - rowIndex}
                 </span>
               </div>
@@ -891,7 +891,7 @@ export function Board({
                 className="flex items-center justify-center w-full"
                 style={{ height: cellHeight }}
               >
-                <span className="text-[10px] text-gray-600 font-medium">
+                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
                   {rows - rowIndex}
                 </span>
               </div>
@@ -917,7 +917,7 @@ export function Board({
                   return (
                     <div
                       key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
-                      className="absolute cursor-pointer hover:bg-blue-200/20"
+                      className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
                       style={{
                         width: `${rect.width}px`,
                         height: `${gapHeight}px`,
@@ -948,7 +948,7 @@ export function Board({
                   return (
                     <div
                       key={`vertical-wall-click-${rowIndex}-${colIndex}`}
-                      className="absolute cursor-pointer hover:bg-blue-200/20"
+                      className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
                       style={{
                         width: `${gapWidth}px`,
                         height: `${rect.height}px`,
@@ -1062,8 +1062,10 @@ export function Board({
                 return (
                   <div
                     key={`${rowIndex}-${colIndex}`}
-                    className={`aspect-square border border-amber-400 flex items-center justify-center relative cursor-pointer hover:bg-amber-300 ${
-                      isLight ? "bg-amber-200" : "bg-amber-100"
+                    className={`aspect-square border border-amber-400 dark:border-border flex items-center justify-center relative cursor-pointer transition-colors ${
+                      isLight
+                        ? "bg-amber-200 dark:bg-muted/80 hover:bg-amber-300 dark:hover:bg-accent/30"
+                        : "bg-amber-100 dark:bg-background hover:bg-amber-200 dark:hover:bg-accent/30"
                     }`}
                     onClick={() => onCellClick?.(rowIndex, colIndex)}
                     onDragOver={(event) => {
