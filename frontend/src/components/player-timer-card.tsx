@@ -1,6 +1,6 @@
 import { Badge } from "@/components/ui/badge";
 import { Bot, User } from "lucide-react";
-import { colorFilterMap } from "@/lib/player-colors";
+import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
 import type { PlayerId } from "../../../shared/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/lib/gameViewModel";
@@ -58,11 +58,11 @@ export function PlayerTimerCard({
       <div className="flex items-center gap-3 min-w-0 flex-1">
         {/* Profile pic */}
         <div
-          className={`w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0 ${
-            player.color === "red"
-              ? "bg-red-100 text-red-700"
-              : "bg-blue-100 text-blue-700"
-          }`}
+          className="w-10 h-10 rounded-full flex items-center justify-center flex-shrink-0"
+          style={{
+            backgroundColor: `${colorHexMap[player.color]}20`,
+            color: colorHexMap[player.color],
+          }}
         >
           {catSvgPath ? (
             <img

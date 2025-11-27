@@ -20,7 +20,7 @@ import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
 import {
-  PLAYER_COLORS,
+  SELECTABLE_PLAYER_COLORS,
   colorDisplayNames,
   colorHexMap,
 } from "@/lib/player-colors";
@@ -251,7 +251,7 @@ function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      {PLAYER_COLORS.map((color) => (
+                      {SELECTABLE_PLAYER_COLORS.map((color) => (
                         <SelectItem key={color} value={color}>
                           <div className="flex items-center gap-2">
                             <div
