@@ -344,11 +344,73 @@ export const giveTime = (args: {
   seconds: number;
 }): GameState => {
   const session = ensureSession(args.id);
+  const state = session.gameState;
+
+  if (state.status !== "playing") {
+    return state;
+  }
+
+  const opponent: PlayerId = args.playerId === 1 ? 2 : 1;
+  state.timeLeft[opponent] += args.seconds;
+
+  session.updatedAt = Date.now();
+  return state;
+};
+
+export const takeback = (args: {
+  id: string;
+  playerId: PlayerId;
+}): GameState => {
+  const session = ensureSession(args.id);
   return applyActionToSession(session, {
-    kind: "giveTime",
+    kind: "takeback",
     playerId: args.playerId,
-    seconds: args.seconds,
     timestamp: Date.now(),
+  });
+};
+
+export const acceptDraw = (args: {
+  id: string;
+  playerId: PlayerId;
+}): GameState => {
+  const session = ensureSession(args.id);
+  return applyActionToSession(session, {
+    kind: "draw",
+    playerId: args.playerId,
+    timestamp: Date.now(),
+  });
+};
+
+export const rejectDraw = (args: { id: string; playerId: PlayerId }): void => {
+  // This is handled in the WebSocket layer for broadcasting
+  // The function exists for API consistency
+  console.info("Draw rejected", {
+    sessionId: args.id,
+    playerId: args.playerId,
+  });
+};
+
+export const acceptTakeback = (args: {
+  id: string;
+  playerId: PlayerId;
+}): GameState => {
+  const session = ensureSession(args.id);
+  return applyActionToSession(session, {
+    kind: "takeback",
+    playerId: args.playerId,
+    timestamp: Date.now(),
+  });
+};
+
+export const rejectTakeback = (args: {
+  id: string;
+  playerId: PlayerId;
+}): void => {
+  // This is handled in the WebSocket layer for broadcasting
+  // The function exists for API consistency
+  console.info("Takeback rejected", {
+    sessionId: args.id,
+    playerId: args.playerId,
   });
 };
 
@@ -357,6 +419,10 @@ export const serializeGameState = (
 ): SerializedGameState => {
   const state = session.gameState;
   const historyRows = state.config.boardHeight;
+  console.info("[debug-serialize] walls", {
+    sessionId: session.id,
+    walls: state.grid.getWalls(),
+  });
   return {
     status: state.status,
     result: state.result,

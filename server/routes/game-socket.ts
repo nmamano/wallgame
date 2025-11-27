@@ -9,6 +9,12 @@ import {
   resignGame,
   updateConnectionState,
   listMatchmakingGames,
+  giveTime,
+  acceptDraw,
+  rejectDraw,
+  acceptTakeback,
+  rejectTakeback,
+  resetSession,
   type SessionPlayer,
 } from "../games/store";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
@@ -19,7 +25,17 @@ const { upgradeWebSocket, websocket } = createBunWebSocket();
 type ClientMessage =
   | { type: "submit-move"; actions: GameActionPayload[] }
   | { type: "resign" }
-  | { type: "ping" };
+  | { type: "ping" }
+  | { type: "give-time"; seconds: number }
+  | { type: "takeback-offer" }
+  | { type: "takeback-accept" }
+  | { type: "takeback-reject" }
+  | { type: "draw-offer" }
+  | { type: "draw-accept" }
+  | { type: "draw-reject" }
+  | { type: "rematch-offer" }
+  | { type: "rematch-accept" }
+  | { type: "rematch-reject" };
 
 interface SessionSocket {
   ctx: WSContext;
@@ -156,6 +172,143 @@ const handleResign = (socket: SessionSocket) => {
   sendMatchStatus(socket.sessionId);
 };
 
+const handleGiveTime = (socket: SessionSocket, seconds: number) => {
+  giveTime({
+    id: socket.sessionId,
+    playerId: socket.playerId,
+    seconds,
+  });
+  console.info("[ws] give-time processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+    seconds,
+  });
+  broadcast(socket.sessionId, {
+    type: "state",
+    state: getSerializedState(socket.sessionId),
+  });
+  sendMatchStatus(socket.sessionId);
+};
+
+const handleTakebackOffer = (socket: SessionSocket) => {
+  broadcast(socket.sessionId, {
+    type: "takeback-offer",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] takeback-offer processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
+const handleTakebackAccept = (socket: SessionSocket) => {
+  acceptTakeback({
+    id: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  console.info("[ws] takeback-accept processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  broadcast(socket.sessionId, {
+    type: "state",
+    state: getSerializedState(socket.sessionId),
+  });
+  sendMatchStatus(socket.sessionId);
+};
+
+const handleTakebackReject = (socket: SessionSocket) => {
+  rejectTakeback({
+    id: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  broadcast(socket.sessionId, {
+    type: "takeback-rejected",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] takeback-reject processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
+const handleDrawOffer = (socket: SessionSocket) => {
+  broadcast(socket.sessionId, {
+    type: "draw-offer",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] draw-offer processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
+const handleDrawAccept = (socket: SessionSocket) => {
+  acceptDraw({
+    id: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  console.info("[ws] draw-accept processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  broadcast(socket.sessionId, {
+    type: "state",
+    state: getSerializedState(socket.sessionId),
+  });
+  sendMatchStatus(socket.sessionId);
+};
+
+const handleDrawReject = (socket: SessionSocket) => {
+  rejectDraw({
+    id: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  broadcast(socket.sessionId, {
+    type: "draw-rejected",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] draw-reject processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
+const handleRematchOffer = (socket: SessionSocket) => {
+  broadcast(socket.sessionId, {
+    type: "rematch-offer",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] rematch-offer processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
+const handleRematchAccept = (socket: SessionSocket) => {
+  resetSession(socket.sessionId);
+  console.info("[ws] rematch-accept processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+  broadcast(socket.sessionId, {
+    type: "state",
+    state: getSerializedState(socket.sessionId),
+  });
+  sendMatchStatus(socket.sessionId);
+};
+
+const handleRematchReject = (socket: SessionSocket) => {
+  broadcast(socket.sessionId, {
+    type: "rematch-rejected",
+    playerId: socket.playerId,
+  });
+  console.info("[ws] rematch-reject processed", {
+    sessionId: socket.sessionId,
+    playerId: socket.playerId,
+  });
+};
+
 const handleClientMessage = (
   socket: SessionSocket,
   raw: string | ArrayBuffer,
@@ -191,6 +344,36 @@ const handleClientMessage = (
       break;
     case "resign":
       handleResign(socket);
+      break;
+    case "give-time":
+      handleGiveTime(socket, payload.seconds);
+      break;
+    case "takeback-offer":
+      handleTakebackOffer(socket);
+      break;
+    case "takeback-accept":
+      handleTakebackAccept(socket);
+      break;
+    case "takeback-reject":
+      handleTakebackReject(socket);
+      break;
+    case "draw-offer":
+      handleDrawOffer(socket);
+      break;
+    case "draw-accept":
+      handleDrawAccept(socket);
+      break;
+    case "draw-reject":
+      handleDrawReject(socket);
+      break;
+    case "rematch-offer":
+      handleRematchOffer(socket);
+      break;
+    case "rematch-accept":
+      handleRematchAccept(socket);
+      break;
+    case "rematch-reject":
+      handleRematchReject(socket);
       break;
     case "ping":
       socket.ctx.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
