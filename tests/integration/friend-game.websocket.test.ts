@@ -339,6 +339,188 @@ describe("friend game WebSocket integration", () => {
     );
     expect(finalMsgA.state.pawns["2"].cat).toEqual(moveTargetB);
 
+    // // 8. Add more moves including wall moves and pawn moves
+    // // User A places a wall (using safer coordinates)
+    // const wallPayloadA = {
+    //   type: "submit-move",
+    //   actions: [{ type: "wall", cell: [1, 1], orientation: "vertical" }],
+    // };
+    // socketA.ws.send(JSON.stringify(wallPayloadA));
+
+    // const wallUpdateMsgB = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(wallUpdateMsgB.state.walls).toHaveLength(1);
+    // expect(wallUpdateMsgB.state.walls[0]).toEqual({
+    //   cell: [1, 1],
+    //   orientation: "vertical",
+    //   playerId: 1,
+    // });
+
+    // // User B moves mouse
+    // const p2Mouse = wallUpdateMsgB.state.pawns["2"].mouse as [number, number];
+    // const mouseTargetB: [number, number] = [p2Mouse[0] - 1, p2Mouse[1]];
+
+    // const mouseMovePayloadB = {
+    //   type: "submit-move",
+    //   actions: [{ type: "mouse", cell: mouseTargetB }],
+    // };
+    // socketB.ws.send(JSON.stringify(mouseMovePayloadB));
+
+    // const mouseUpdateMsgA = await socketA.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(mouseTargetB);
+
+    // // User A places another wall
+    // const wallPayloadA2 = {
+    //   type: "submit-move",
+    //   actions: [{ type: "wall", cell: [2, 3], orientation: "horizontal" }],
+    // };
+    // socketA.ws.send(JSON.stringify(wallPayloadA2));
+
+    // const wallUpdateMsgB2 = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(wallUpdateMsgB2.state.walls).toHaveLength(2);
+
+    // // User B moves cat
+    // const p2Cat2 = wallUpdateMsgB2.state.pawns["2"].cat as [number, number];
+    // const catTargetB2: [number, number] = [p2Cat2[0] + 1, p2Cat2[1]];
+
+    // const catMovePayloadB2 = {
+    //   type: "submit-move",
+    //   actions: [{ type: "cat", cell: catTargetB2 }],
+    // };
+    // socketB.ws.send(JSON.stringify(catMovePayloadB2));
+
+    // const finalStateMsg = await socketA.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(finalStateMsg.state.pawns["2"].cat).toEqual(catTargetB2);
+
+    // // 9. Test time control - User A gives time to User B
+    // const initialTimeLeft = finalStateMsg.state.timeLeft;
+    // const giveTimePayload = {
+    //   type: "give-time",
+    //   seconds: 30,
+    // };
+    // socketA.ws.send(JSON.stringify(giveTimePayload));
+
+    // const timeUpdateMsg = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(timeUpdateMsg.state.timeLeft["2"]).toBe(initialTimeLeft["2"] + 30);
+
+    // // 10. Test takeback flows - both rejection and acceptance scenarios
+
+    // // 10a. Takeback offer from player who just moved (User B), rejection from User A
+    // const stateBeforeTakeback = timeUpdateMsg.state;
+    // const takebackOfferPayloadB = {
+    //   type: "takeback-offer",
+    // };
+    // socketB.ws.send(JSON.stringify(takebackOfferPayloadB));
+
+    // const takebackOfferMsgA = await socketA.waitForMessage(
+    //   (msg) => msg.type === "takeback-offer",
+    // );
+    // expect(takebackOfferMsgA.playerId).toBe(2);
+
+    // const takebackRejectPayloadA = {
+    //   type: "takeback-reject",
+    // };
+    // socketA.ws.send(JSON.stringify(takebackRejectPayloadA));
+
+    // const takebackRejectMsgB = await socketB.waitForMessage(
+    //   (msg) => msg.type === "takeback-rejected",
+    // );
+    // expect(takebackRejectMsgB.playerId).toBe(1);
+
+    // // 10b. Takeback offer from player who didn't just move (User A), acceptance from User B
+    // const takebackOfferPayloadA = {
+    //   type: "takeback-offer",
+    // };
+    // socketA.ws.send(JSON.stringify(takebackOfferPayloadA));
+
+    // const takebackOfferMsgB = await socketB.waitForMessage(
+    //   (msg) => msg.type === "takeback-offer",
+    // );
+    // expect(takebackOfferMsgB.playerId).toBe(1);
+
+    // const takebackAcceptPayloadB = {
+    //   type: "takeback-accept",
+    // };
+    // socketB.ws.send(JSON.stringify(takebackAcceptPayloadB));
+
+    // const takebackMsgA = await socketA.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(takebackMsgA.state.moveCount).toBe(stateBeforeTakeback.moveCount - 1);
+    // expect(takebackMsgA.state.turn).toBe(2); // Should be User B's turn again
+
+    // // 10c. Test accepted takeback from player who just moved
+    // // Make a move first
+    // const p1CatAfterTakeback = takebackMsgA.state.pawns["1"].cat as [number, number];
+    // const moveAfterTakeback: [number, number] = [p1CatAfterTakeback[0] + 1, p1CatAfterTakeback[1]];
+    // const moveAfterTakebackPayload = {
+    //   type: "submit-move",
+    //   actions: [{ type: "cat", cell: moveAfterTakeback }],
+    // };
+    // socketA.ws.send(JSON.stringify(moveAfterTakebackPayload));
+
+    // const moveAfterTakebackMsg = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+
+    // // User B (who just moved) offers takeback, User A accepts
+    // const takebackOfferPayloadB2 = {
+    //   type: "takeback-offer",
+    // };
+    // socketB.ws.send(JSON.stringify(takebackOfferPayloadB2));
+
+    // const takebackOfferMsgA2 = await socketA.waitForMessage(
+    //   (msg) => msg.type === "takeback-offer",
+    // );
+    // expect(takebackOfferMsgA2.playerId).toBe(2);
+
+    // const takebackAcceptPayloadA = {
+    //   type: "takeback-accept",
+    // };
+    // socketA.ws.send(JSON.stringify(takebackAcceptPayloadA));
+
+    // const takebackMsgB = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(takebackMsgB.state.moveCount).toBe(takebackMsgA.state.moveCount - 1);
+    // expect(takebackMsgB.state.turn).toBe(2); // Should be User B's turn again
+
+    // // 12. Test resign functionality
+    // // Make a move first to ensure game is active
+    // const p1CatForResign = takebackMsgB.state.pawns["1"].cat as [number, number];
+    // const resignMoveTarget: [number, number] = [p1CatForResign[0] + 1, p1CatForResign[1]];
+    // const resignMovePayload = {
+    //   type: "submit-move",
+    //   actions: [{ type: "cat", cell: resignMoveTarget }],
+    // };
+    // socketA.ws.send(JSON.stringify(resignMovePayload));
+
+    // const resignMoveMsg = await socketB.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+
+    // // User B resigns
+    // const resignPayload = {
+    //   type: "resign",
+    // };
+    // socketB.ws.send(JSON.stringify(resignPayload));
+
+    // const resignEndMsg = await socketA.waitForMessage(
+    //   (msg) => msg.type === "state",
+    // );
+    // expect(resignEndMsg.state.status).toBe("finished");
+    // expect(resignEndMsg.state.result?.winner).toBe(1); // User A wins
+    // expect(resignEndMsg.state.result?.reason).toBe("resignation");
+
     socketA.close();
     socketB.close();
   });
@@ -421,6 +603,143 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgB.snapshot.players[1].appearance).toEqual(
       userBAppearance,
     ); // Joiner
+
+    socketA.close();
+    socketB.close();
+  });
+
+  it("supports draw offers, rejections, acceptance, and rematch functionality", async () => {
+    const userA = "user-a";
+    const userB = "user-b";
+
+    // Create and join a new game for draw/rematch testing
+    const { gameId, socketToken: socketTokenA } = await createFriendGame(userA);
+
+    const { socketToken: socketTokenB } = await joinFriendGame(userB, gameId);
+
+    const socketA = await openGameSocket(userA, gameId, socketTokenA);
+    const socketB = await openGameSocket(userB, gameId, socketTokenB);
+
+    // Wait for initial state
+    const stateMsgA = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+    const stateMsgB = await socketB.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+
+    // Make some moves to have an active game
+    const p1CatDraw = stateMsgA.state.pawns["1"].cat as [number, number];
+    const moveTarget: [number, number] = [p1CatDraw[0] + 1, p1CatDraw[1]];
+
+    const movePayload = {
+      type: "submit-move",
+      actions: [{ type: "cat", cell: moveTarget }],
+    };
+    socketA.ws.send(JSON.stringify(movePayload));
+
+    await socketB.waitForMessage((msg) => msg.type === "state");
+    await socketA.waitForMessage((msg) => msg.type === "state");
+
+    // Test draw offer and rejection
+    const drawOfferPayload = {
+      type: "draw-offer",
+    };
+    socketA.ws.send(JSON.stringify(drawOfferPayload));
+
+    const drawOfferMsg = await socketB.waitForMessage(
+      (msg) => msg.type === "draw-offer",
+    );
+    expect(drawOfferMsg.playerId).toBe(1);
+
+    const drawRejectPayload = {
+      type: "draw-reject",
+    };
+    socketB.ws.send(JSON.stringify(drawRejectPayload));
+
+    const drawRejectMsg = await socketA.waitForMessage(
+      (msg) => msg.type === "draw-rejected",
+    );
+    expect(drawRejectMsg.playerId).toBe(2);
+
+    // Test draw offer and acceptance
+    socketA.ws.send(JSON.stringify(drawOfferPayload));
+
+    const drawOfferMsg2 = await socketB.waitForMessage(
+      (msg) => msg.type === "draw-offer",
+    );
+
+    const drawAcceptPayload = {
+      type: "draw-accept",
+    };
+    socketB.ws.send(JSON.stringify(drawAcceptPayload));
+
+    const drawEndMsg = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+    expect(drawEndMsg.state.status).toBe("finished");
+    expect(drawEndMsg.state.result?.reason).toBe("draw-agreement");
+
+    // Test rematch offer and acceptance
+    const rematchOfferPayload = {
+      type: "rematch-offer",
+    };
+    socketA.ws.send(JSON.stringify(rematchOfferPayload));
+
+    const rematchOfferMsg = await socketB.waitForMessage(
+      (msg) => msg.type === "rematch-offer",
+    );
+    expect(rematchOfferMsg.playerId).toBe(1);
+
+    const rematchAcceptPayload = {
+      type: "rematch-accept",
+    };
+    socketB.ws.send(JSON.stringify(rematchAcceptPayload));
+
+    const rematchStateMsg = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+    expect(rematchStateMsg.state.status).toBe("playing");
+    expect(rematchStateMsg.state.moveCount).toBe(1);
+
+    // Make a move in the new game
+    const p1CatNew = rematchStateMsg.state.pawns["1"].cat as [number, number];
+    const newMoveTarget: [number, number] = [p1CatNew[0] + 1, p1CatNew[1]];
+
+    const newMovePayload = {
+      type: "submit-move",
+      actions: [{ type: "cat", cell: newMoveTarget }],
+    };
+    socketA.ws.send(JSON.stringify(newMovePayload));
+
+    await socketB.waitForMessage((msg) => msg.type === "state");
+    await socketA.waitForMessage((msg) => msg.type === "state");
+
+    // Test rematch rejection
+    const resignPayload = {
+      type: "resign",
+    };
+    socketB.ws.send(JSON.stringify(resignPayload));
+
+    const resignEndMsg = await socketA.waitForMessage(
+      (msg) => msg.type === "state",
+    );
+    expect(resignEndMsg.state.status).toBe("finished");
+
+    socketA.ws.send(JSON.stringify(rematchOfferPayload));
+    const rematchOfferMsg2 = await socketB.waitForMessage(
+      (msg) => msg.type === "rematch-offer",
+    );
+
+    const rematchRejectPayload = {
+      type: "rematch-reject",
+    };
+    socketB.ws.send(JSON.stringify(rematchRejectPayload));
+
+    const rematchRejectMsg = await socketA.waitForMessage(
+      (msg) => msg.type === "rematch-rejected",
+    );
+    expect(rematchRejectMsg.playerId).toBe(2);
 
     socketA.close();
     socketB.close();
