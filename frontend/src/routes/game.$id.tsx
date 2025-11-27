@@ -35,12 +35,7 @@ import { pawnId } from "../../../shared/game-utils";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/components/player-configuration";
 import type { GameConfiguration } from "../../../shared/game-types";
-import {
-  userQueryOptions,
-  fetchGameSession,
-  joinGameSession,
-  markGameReady,
-} from "@/lib/api";
+import { userQueryOptions } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import {
   createPlayerController,
@@ -53,12 +48,7 @@ import {
   type TakebackDecision,
 } from "@/lib/player-controllers";
 import { GameClient } from "@/lib/game-client";
-import {
-  getGameHandshake,
-  saveGameHandshake,
-  clearGameHandshake,
-  type StoredGameHandshake,
-} from "@/lib/game-session";
+import { useOnlineGameSession } from "@/hooks/use-online-game-session";
 import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
@@ -147,7 +137,7 @@ interface RematchState {
 // game state. All server updates flow through a single entry point, and all
 // UI state is derived from this model plus local preferences.
 
-interface LocalPreferences {
+export interface LocalPreferences {
   pawnColor: PlayerColor;
   catSkin: string | undefined;
   mouseSkin: string | undefined;
@@ -396,32 +386,9 @@ function GamePage() {
   // ============================================================================
   // Connection & Session State
   // ============================================================================
-  const [gameHandshake, setGameHandshake] =
-    useState<StoredGameHandshake | null>(null);
-  const [matchShareUrl, setMatchShareUrl] = useState<string | undefined>(
-    undefined,
-  );
-  const [matchError, setMatchError] = useState<string | null>(null);
-  const [isMultiplayerMatch, setIsMultiplayerMatch] = useState(false);
-  const [isJoiningMatch, setIsJoiningMatch] = useState(false);
   const gameClientRef = useRef<GameClient | null>(null);
   const gameInitializedRef = useRef(false);
   const gameAwaitingServerRef = useRef(false);
-  const hostReadyRef = useRef(false);
-  const updateGameHandshake = useCallback(
-    (next: StoredGameHandshake | null) => {
-      if (next) {
-        saveGameHandshake(next);
-        setGameHandshake(next);
-        setMatchShareUrl(next.shareUrl);
-      } else {
-        clearGameHandshake(id);
-        setGameHandshake(null);
-        setMatchShareUrl(undefined);
-      }
-    },
-    [id],
-  );
 
   // ============================================================================
   // Single Entry Point for Server Updates
@@ -456,180 +423,27 @@ function GamePage() {
     });
   }, []);
 
-  useEffect(() => {
-    let cancelled = false;
-    const stored = getGameHandshake(id);
-    debugMatch("Bootstrapping friend match state", {
-      id,
-      hasStoredHandshake: Boolean(stored),
-    });
-    if (stored) {
-      debugMatch("Using stored friend handshake", {
-        id,
-        role: stored.role,
-        playerId: stored.playerId,
-        token: maskToken(stored.token),
-        socketToken: maskToken(stored.socketToken),
-      });
-      setMatchShareUrl(stored.shareUrl);
-      setGameHandshake(stored);
-      setIsMultiplayerMatch(true);
-      return () => {
-        cancelled = true;
-      };
-    } else {
-      // Try to join the game directly via URL
-      debugMatch(
-        "No stored handshake found; attempting to join game directly",
-        {
-          id,
-        },
-      );
-      setIsMultiplayerMatch(true);
-      setIsJoiningMatch(true);
-      void (async () => {
-        try {
-          const details = await joinGameSession({
-            gameId: id,
-            displayName: localPreferences.displayName,
-            appearance: {
-              pawnColor: localPreferences.pawnColor,
-              catSkin: localPreferences.catSkin,
-              mouseSkin: localPreferences.mouseSkin,
-            },
-          });
-          if (cancelled) return;
-          const handshake: StoredGameHandshake = {
-            gameId: id,
-            token: details.token,
-            socketToken: details.socketToken,
-            role: details.role,
-            playerId: details.playerId,
-            matchType: details.snapshot.matchType,
-            shareUrl: details.shareUrl,
-          };
-          updateGameHandshake(handshake);
-          debugMatch("Joined friend game", {
-            id,
-            role: handshake.role,
-            playerId: handshake.playerId,
-            token: maskToken(handshake.token),
-            socketToken: maskToken(handshake.socketToken),
-          });
-        } catch (error) {
-          if (cancelled) return;
-          debugMatch("Failed to join friend game via invite", {
-            id,
-            error:
-              error instanceof Error
-                ? { message: error.message }
-                : { message: "unknown error" },
-          });
-          setMatchError(
-            error instanceof Error
-              ? error.message
-              : "Unable to join friend game.",
-          );
-          setIsMultiplayerMatch(false);
-        } finally {
-          if (!cancelled) {
-            setIsJoiningMatch(false);
-          }
-        }
-      })();
-    }
-    return () => {
-      cancelled = true;
-    };
-  }, [debugMatch, id, maskToken, localPreferences, updateGameHandshake]);
+  const handleMatchSnapshotUpdate = useCallback(
+    (snapshot: GameSnapshot) => {
+      applyServerUpdate({ type: "match", snapshot });
+    },
+    [applyServerUpdate],
+  );
 
-  useEffect(() => {
-    if (!gameHandshake) return;
-    let cancelled = false;
-    debugMatch("Fetching friend game session snapshot", {
-      id,
-      role: gameHandshake.role,
-      playerId: gameHandshake.playerId,
-      token: maskToken(gameHandshake.token),
-    });
-    void (async () => {
-      try {
-        const details = await fetchGameSession({
-          gameId: id,
-          token: gameHandshake.token,
-        });
-        if (cancelled) return;
-        applyServerUpdate({ type: "match", snapshot: details.snapshot });
-        setMatchShareUrl(details.shareUrl ?? gameHandshake.shareUrl);
-        if (details.shareUrl && details.shareUrl !== gameHandshake.shareUrl) {
-          updateGameHandshake({
-            ...gameHandshake,
-            shareUrl: details.shareUrl,
-          });
-        }
-        debugMatch("Loaded friend session snapshot", {
-          id,
-          status: details.snapshot.status,
-          players: details.snapshot.players.map((player) => ({
-            playerId: player.playerId,
-            ready: player.ready,
-            connected: player.connected,
-          })),
-        });
-        const status = details.snapshot.status;
-        setIsMatchingOpen(status !== "in-progress" && status !== "completed");
-        if (details.role === "host" && !hostReadyRef.current) {
-          try {
-            debugMatch("Marking host as ready for friend game", {
-              id,
-              token: maskToken(gameHandshake.token),
-            });
-            const snapshot = await markGameReady({
-              gameId: id,
-              token: gameHandshake.token,
-            });
-            if (!cancelled) {
-              applyServerUpdate({ type: "match", snapshot });
-              setIsMatchingOpen(
-                snapshot.status !== "in-progress" &&
-                  snapshot.status !== "completed",
-              );
-            }
-          } catch (error) {
-            if (!cancelled) {
-              console.error("Failed to mark friend game ready:", error);
-            }
-          } finally {
-            hostReadyRef.current = true;
-          }
-        }
-      } catch (error) {
-        if (cancelled) return;
-        debugMatch("Failed to load friend game snapshot", {
-          id,
-          error:
-            error instanceof Error
-              ? { message: error.message }
-              : { message: "unknown error" },
-        });
-        setMatchError(
-          error instanceof Error
-            ? error.message
-            : "Unable to load friend game.",
-        );
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [
-    applyServerUpdate,
-    debugMatch,
+  const {
     gameHandshake,
-    id,
-    maskToken,
+    matchShareUrl,
+    isMultiplayerMatch,
+    isJoiningMatch,
+    matchError,
+    setMatchError,
     updateGameHandshake,
-  ]);
+  } = useOnlineGameSession({
+    gameId: id,
+    localPreferences,
+    onMatchSnapshotUpdate: handleMatchSnapshotUpdate,
+    debugMatch,
+  });
 
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -836,7 +650,6 @@ function GamePage() {
       }));
       setMatchingPlayers(matchingList);
       const waiting = matchingList.some((entry) => !entry.isReady);
-      setIsMatchingOpen(waiting);
 
       addSystemMessage(
         waiting ? "Waiting for players..." : "Game created. Good luck!",
@@ -922,9 +735,6 @@ function GamePage() {
       },
       onMatchStatus: (snapshot) => {
         applyServerUpdate({ type: "match", snapshot });
-        setIsMatchingOpen(
-          snapshot.status !== "in-progress" && snapshot.status !== "completed",
-        );
       },
       onError: (message) => {
         setMatchError(message);
@@ -945,6 +755,7 @@ function GamePage() {
     id,
     initializeGame,
     maskToken,
+    setMatchError,
   ]);
 
   // ============================================================================
@@ -1024,7 +835,6 @@ function GamePage() {
     playersRef.current = players;
   }, [players]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
-  const [isMatchingOpen, setIsMatchingOpen] = useState(false);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
     "game",
@@ -1090,7 +900,7 @@ function GamePage() {
   }, [isMultiplayerMatch, matchSnapshot, gameHandshake, matchingPlayers]);
   const matchingPanelOpen = isMultiplayerMatch
     ? matchSnapshot?.status === "waiting"
-    : isMatchingOpen;
+    : matchingPlayers.some((entry) => !entry.isReady);
   const matchingCanAbort =
     !isMultiplayerMatch || !matchSnapshot || matchSnapshot.status === "waiting";
   const matchingStatusMessage = useMemo(() => {
