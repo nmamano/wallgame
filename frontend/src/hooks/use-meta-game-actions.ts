@@ -50,6 +50,9 @@ export interface OutgoingTimeInfo {
 }
 
 interface UseMetaGameActionsParams {
+  // Game instance identifier (changes when a new game starts)
+  gameInstanceId: number;
+
   // Game state
   gameState: GameState | null;
   gameStateRef: React.MutableRefObject<GameState | null>;
@@ -107,6 +110,7 @@ const CANCEL_COOLDOWN_MS = 2000;
 const AUTO_ACCEPT_DELAY_MS = 300;
 
 export function useMetaGameActions({
+  gameInstanceId,
   gameState,
   gameStateRef,
   primaryLocalPlayerId,
@@ -648,6 +652,21 @@ export function useMetaGameActions({
     getPlayerName,
   ]);
 
+  // Effect: Reset meta game state when game instance changes
+  useEffect(() => {
+    setPendingDrawOffer(null);
+    setPendingTakebackRequest(null);
+    setDrawDecisionPrompt(null);
+    setTakebackDecisionPrompt(null);
+    setResignFlowPlayerId(null);
+    setIncomingPassiveNotice(null);
+    setOutgoingTimeInfo(null);
+    lastResignedPlayerRef.current = null;
+    drawOfferRequestIdRef.current = 0;
+    takebackRequestIdRef.current = 0;
+    noticeCounterRef.current = 0;
+  }, [gameInstanceId]);
+
   // Effect: Clear meta game state when game finishes
   useEffect(() => {
     if (gameState?.status === "finished") {
@@ -681,17 +700,6 @@ export function useMetaGameActions({
     [primaryLocalPlayerId, getPlayerName],
   );
 
-  // Reset all meta game actions (for initialization cleanup)
-  const resetMetaGameActions = useCallback(() => {
-    setPendingDrawOffer(null);
-    setPendingTakebackRequest(null);
-    setDrawDecisionPrompt(null);
-    setTakebackDecisionPrompt(null);
-    setResignFlowPlayerId(null);
-    setIncomingPassiveNotice(null);
-    setOutgoingTimeInfo(null);
-  }, []);
-
   return {
     // State
     pendingDrawOffer,
@@ -717,8 +725,5 @@ export function useMetaGameActions({
     handleDismissIncomingNotice,
     handleDismissOutgoingInfo,
     handleGiveTimeNotice,
-
-    // Reset function (for initialization cleanup)
-    resetMetaGameActions,
   };
 }
