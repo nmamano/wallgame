@@ -7,7 +7,7 @@ import {
   type StoredGameHandshake,
 } from "@/lib/game-session";
 import type { GameSnapshot } from "../../../shared/game-types";
-import type { LocalPreferences } from "../routes/game.$id";
+import type { LocalPreferences } from "@/hooks/use-game-page-controller";
 
 interface UseOnlineGameSessionOptions {
   gameId: string;
