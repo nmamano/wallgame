@@ -3,7 +3,7 @@ import { Bot, User } from "lucide-react";
 import { colorFilterMap } from "@/lib/player-colors";
 import type { PlayerId } from "../../../shared/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
-import type { PlayerType } from "@/components/player-configuration";
+import type { PlayerType } from "@/lib/gameViewModel";
 
 export interface GamePlayer {
   id: string;

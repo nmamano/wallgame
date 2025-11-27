@@ -10,10 +10,7 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import {
-  PlayerConfiguration,
-  PlayerType,
-} from "@/components/player-configuration";
+import { PlayerConfiguration } from "@/components/player-configuration";
 import type { GameConfiguration } from "../../../shared/game-types";
 import type {
   TimeControlPreset,
@@ -26,6 +23,7 @@ import {
   formatTimeControl as formatTimeControlUtil,
 } from "../../../shared/game-utils";
 import { Input } from "@/components/ui/input";
+import type { PlayerType } from "@/lib/gameViewModel";
 import { Switch } from "@/components/ui/switch";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";

@@ -8,7 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Check, Copy, Loader2, User, Bot, Users } from "lucide-react";
-import { PlayerType } from "./player-configuration";
+import type { PlayerType } from "@/lib/gameViewModel";
 
 export interface MatchingPlayer {
   id: string;

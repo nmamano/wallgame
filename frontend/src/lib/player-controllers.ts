@@ -1,4 +1,4 @@
-import type { PlayerType } from "@/components/player-configuration";
+import type { PlayerType } from "@/lib/gameViewModel";
 import { getAiMove } from "./dumb-ai";
 import type { PlayerId, Move } from "../../../shared/game-types";
 import type { GameState } from "../../../shared/game-state";
