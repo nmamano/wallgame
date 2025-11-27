@@ -6,15 +6,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-
-export type PlayerType =
-  | "you"
-  | "friend"
-  | "matched-user"
-  | "easy-bot"
-  | "medium-bot"
-  | "hard-bot"
-  | "custom-bot";
+import type { PlayerType } from "@/lib/gameViewModel";
 
 interface PlayerConfigurationProps {
   value?: PlayerType;

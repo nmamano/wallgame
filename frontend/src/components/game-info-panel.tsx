@@ -4,7 +4,7 @@ import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Clock, Volume2, VolumeX, Swords, AlertCircle } from "lucide-react";
 import type { GameConfiguration } from "../../../shared/game-types";
-import type { PlayerType } from "@/components/player-configuration";
+import type { PlayerType } from "@/lib/gameViewModel";
 
 interface GameInfoPanelProps {
   config: GameConfiguration | null;
