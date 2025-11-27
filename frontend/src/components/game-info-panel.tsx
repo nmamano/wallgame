@@ -31,21 +31,24 @@ export function GameInfoPanel({
 }: GameInfoPanelProps) {
   return (
     <>
-      <Card className="p-4 space-y-3 bg-card/50 backdrop-blur">
+      <Card className="p-2 lg:p-4 space-y-2 lg:space-y-3 bg-card/50 backdrop-blur">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-2">
-            <Swords className="w-4 h-4 text-muted-foreground" />
-            <span className="font-medium capitalize">
+          <div className="flex items-center gap-1.5 lg:gap-2">
+            <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
+            <span className="font-medium capitalize text-sm lg:text-base">
               {config?.variant ?? defaultVariant}
             </span>
           </div>
-          <Badge variant={config?.rated ? "default" : "secondary"}>
+          <Badge
+            variant={config?.rated ? "default" : "secondary"}
+            className="text-[10px] lg:text-xs px-1.5 lg:px-2.5 h-5 lg:h-auto"
+          >
             {config?.rated ? "Rated" : "Casual"}
           </Badge>
         </div>
-        <div className="flex items-center justify-between text-sm text-muted-foreground">
-          <div className="flex items-center gap-2">
-            <Clock className="w-4 h-4" />
+        <div className="flex items-center justify-between text-xs lg:text-sm text-muted-foreground">
+          <div className="flex items-center gap-1.5 lg:gap-2">
+            <Clock className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             <span className="capitalize">
               {config?.timeControl.preset ??
                 defaultTimeControlPreset ??
@@ -55,13 +58,13 @@ export function GameInfoPanel({
           <Button
             variant="ghost"
             size="icon"
-            className="h-6 w-6"
+            className="h-5 w-5 lg:h-6 lg:w-6"
             onClick={onSoundToggle}
           >
             {soundEnabled ? (
-              <Volume2 className="w-4 h-4" />
+              <Volume2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             ) : (
-              <VolumeX className="w-4 h-4" />
+              <VolumeX className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
             )}
           </Button>
         </div>

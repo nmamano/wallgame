@@ -1388,7 +1388,7 @@ export function useGamePageController(gameId: string) {
       const nextActions = [...stagedActions, newAction];
       const simulated = simulateMove(nextActions);
       if (!simulated) {
-        setActionError("That wall placement is not legal.");
+        setActionError("Illegal wall placement.");
         return;
       }
 

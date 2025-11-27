@@ -6,6 +6,7 @@ import { BoardPanel } from "@/components/board-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -16,17 +17,20 @@ function GamePage() {
   const { matching, board, timers, actions, chat, info } =
     useGamePageController(id);
 
+  // Detect if screen is large (lg breakpoint = 1024px)
+  const isLargeScreen = useMediaQuery("(min-width: 1024px)");
+
   // ============================================================================
   // Layout Calculations
   // ============================================================================
   const rows = board.rows ?? 8;
   const cols = board.cols ?? 8;
 
-  // Board sizing constants (matching Board component internals)
+  // Board sizing constants - responsive based on screen size
   const maxCellSize = 3;
   const gapSize = 0.9;
-  const boardPadding = 2;
-  const containerMargin = 1;
+  const boardPadding = isLargeScreen ? 2 : 1;
+  const containerMargin = isLargeScreen ? 1 : 0.5;
   const boardWidth = cols * maxCellSize + (cols - 1) * gapSize + boardPadding;
   const boardHeight = rows * maxCellSize + (rows - 1) * gapSize + boardPadding;
 
@@ -47,8 +51,8 @@ function GamePage() {
     boardHeight + containerMargin * 2 + stagedActionsButtonsHeight;
   const minChatScrollableHeight = 12;
 
-  // Calculate gap size
-  const gap = 1;
+  // Calculate gap size - responsive based on screen size
+  const gap = isLargeScreen ? 1 : 0.5;
 
   // Right column max width
   const rightColumnMaxWidth = 25;
@@ -98,22 +102,17 @@ function GamePage() {
         />
 
         <div
-          className="flex-1 py-4 px-4"
+          className="flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit"
           style={{
-            display: "grid",
             gridTemplateColumns: `${boardContainerWidth}rem ${rightColumnMaxWidth}rem`,
             gap: `${gap}rem`,
-            alignItems: "start",
-            justifyContent: "center",
-            margin: "0 auto",
-            width: "fit-content",
           }}
         >
           {/* Left Column: Timers & Board */}
           <div
-            className="flex flex-col"
+            className="flex flex-col w-full"
             style={{
-              width: `${boardContainerWidth}rem`,
+              maxWidth: `${boardContainerWidth}rem`,
               gap: `${gap}rem`,
             }}
           >
@@ -197,66 +196,76 @@ function GamePage() {
 
           {/* Right Column: Info, Actions & Chat */}
           <div
-            className="flex flex-col"
+            className="flex flex-col w-full"
             style={{
               gap: `${gap}rem`,
               maxWidth: `${rightColumnMaxWidth}rem`,
             }}
           >
-            <GameInfoPanel
-              config={info.config}
-              defaultVariant={info.defaultVariant}
-              defaultTimeControlPreset={info.defaultTimeControlPreset}
-              soundEnabled={info.soundEnabled}
-              onSoundToggle={info.onSoundToggle}
-              interactionLocked={info.interactionLocked}
-              isMultiplayerMatch={info.isMultiplayerMatch}
-              unsupportedPlayers={info.unsupportedPlayers}
-              placeholderCopy={info.placeholderCopy}
-            />
+            <div className="order-3 lg:order-1">
+              <GameInfoPanel
+                config={info.config}
+                defaultVariant={info.defaultVariant}
+                defaultTimeControlPreset={info.defaultTimeControlPreset}
+                soundEnabled={info.soundEnabled}
+                onSoundToggle={info.onSoundToggle}
+                interactionLocked={info.interactionLocked}
+                isMultiplayerMatch={info.isMultiplayerMatch}
+                unsupportedPlayers={info.unsupportedPlayers}
+                placeholderCopy={info.placeholderCopy}
+              />
+            </div>
 
-            <ActionsPanel
-              drawDecisionPrompt={actions.drawDecisionPrompt}
-              takebackDecisionPrompt={actions.takebackDecisionPrompt}
-              incomingPassiveNotice={actions.incomingPassiveNotice}
-              getPlayerName={actions.getPlayerName}
-              respondToDrawPrompt={actions.respondToDrawPrompt}
-              respondToTakebackPrompt={actions.respondToTakebackPrompt}
-              handleDismissIncomingNotice={actions.handleDismissIncomingNotice}
-              resignFlowPlayerId={actions.resignFlowPlayerId}
-              pendingDrawForLocal={actions.pendingDrawForLocal}
-              pendingDrawOffer={actions.pendingDrawOffer}
-              takebackPendingForLocal={actions.takebackPendingForLocal}
-              pendingTakebackRequest={actions.pendingTakebackRequest}
-              outgoingTimeInfo={actions.outgoingTimeInfo}
-              canCancelDrawOffer={actions.canCancelDrawOffer}
-              canCancelTakebackRequest={actions.canCancelTakebackRequest}
-              handleCancelResign={actions.handleCancelResign}
-              handleConfirmResign={actions.handleConfirmResign}
-              handleCancelDrawOffer={actions.handleCancelDrawOffer}
-              handleCancelTakebackRequest={actions.handleCancelTakebackRequest}
-              handleDismissOutgoingInfo={actions.handleDismissOutgoingInfo}
-              actionButtonsDisabled={actions.actionButtonsDisabled}
-              manualActionsDisabled={actions.manualActionsDisabled}
-              hasTakebackHistory={actions.hasTakebackHistory}
-              handleStartResign={actions.handleStartResign}
-              handleOfferDraw={actions.handleOfferDraw}
-              handleRequestTakeback={actions.handleRequestTakeback}
-              handleGiveTime={actions.handleGiveTime}
-            />
+            <div className="order-1 lg:order-2">
+              <ActionsPanel
+                drawDecisionPrompt={actions.drawDecisionPrompt}
+                takebackDecisionPrompt={actions.takebackDecisionPrompt}
+                incomingPassiveNotice={actions.incomingPassiveNotice}
+                getPlayerName={actions.getPlayerName}
+                respondToDrawPrompt={actions.respondToDrawPrompt}
+                respondToTakebackPrompt={actions.respondToTakebackPrompt}
+                handleDismissIncomingNotice={
+                  actions.handleDismissIncomingNotice
+                }
+                resignFlowPlayerId={actions.resignFlowPlayerId}
+                pendingDrawForLocal={actions.pendingDrawForLocal}
+                pendingDrawOffer={actions.pendingDrawOffer}
+                takebackPendingForLocal={actions.takebackPendingForLocal}
+                pendingTakebackRequest={actions.pendingTakebackRequest}
+                outgoingTimeInfo={actions.outgoingTimeInfo}
+                canCancelDrawOffer={actions.canCancelDrawOffer}
+                canCancelTakebackRequest={actions.canCancelTakebackRequest}
+                handleCancelResign={actions.handleCancelResign}
+                handleConfirmResign={actions.handleConfirmResign}
+                handleCancelDrawOffer={actions.handleCancelDrawOffer}
+                handleCancelTakebackRequest={
+                  actions.handleCancelTakebackRequest
+                }
+                handleDismissOutgoingInfo={actions.handleDismissOutgoingInfo}
+                actionButtonsDisabled={actions.actionButtonsDisabled}
+                manualActionsDisabled={actions.manualActionsDisabled}
+                hasTakebackHistory={actions.hasTakebackHistory}
+                handleStartResign={actions.handleStartResign}
+                handleOfferDraw={actions.handleOfferDraw}
+                handleRequestTakeback={actions.handleRequestTakeback}
+                handleGiveTime={actions.handleGiveTime}
+              />
+            </div>
 
-            <MoveListAndChatPanel
-              adjustedChatCardHeight={adjustedChatCardHeight}
-              activeTab={chat.activeTab}
-              onTabChange={chat.onTabChange}
-              formattedHistory={chat.formattedHistory}
-              chatChannel={chat.chatChannel}
-              messages={chat.messages}
-              chatInput={chat.chatInput}
-              onChannelChange={chat.onChannelChange}
-              onInputChange={chat.onInputChange}
-              onSendMessage={chat.onSendMessage}
-            />
+            <div className="order-2 lg:order-3">
+              <MoveListAndChatPanel
+                adjustedChatCardHeight={adjustedChatCardHeight}
+                activeTab={chat.activeTab}
+                onTabChange={chat.onTabChange}
+                formattedHistory={chat.formattedHistory}
+                chatChannel={chat.chatChannel}
+                messages={chat.messages}
+                chatInput={chat.chatInput}
+                onChannelChange={chat.onChannelChange}
+                onInputChange={chat.onInputChange}
+                onSendMessage={chat.onSendMessage}
+              />
+            </div>
           </div>
         </div>
       </div>

@@ -141,11 +141,12 @@ export function BoardPanel({
 }: BoardPanelProps) {
   return (
     <div
-      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-4 relative"
-      style={{
-        minHeight: `${adjustedBoardContainerHeight}rem`,
-        height: `${adjustedBoardContainerHeight}rem`,
-      }}
+      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
+      style={
+        {
+          "--board-panel-height": `${adjustedBoardContainerHeight}rem`,
+        } as React.CSSProperties
+      }
     >
       {/* Game Over Overlay */}
       {gameStatus === "finished" && (
@@ -305,12 +306,12 @@ export function BoardPanel({
       />
 
       {/* Action messaging + staged action buttons */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-3 mt-4 w-full">
-        <div className="flex items-center text-xs text-muted-foreground min-h-[1.25rem] justify-self-start">
+      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 lg:gap-3 mt-2 lg:mt-4 w-full">
+        <div className="flex items-center text-[10px] lg:text-xs text-muted-foreground min-h-[1rem] lg:min-h-[1.25rem] justify-self-start">
           {hasActionMessage && (
             <>
               <AlertCircle
-                className={`w-4 h-4 mr-2 ${
+                className={`w-3 h-3 lg:w-4 lg:h-4 mr-1 lg:mr-2 ${
                   actionError ? "text-red-500" : "text-muted-foreground"
                 }`}
               />
@@ -320,10 +321,11 @@ export function BoardPanel({
             </>
           )}
         </div>
-        <div className="flex gap-3 justify-center">
+        <div className="flex gap-1.5 lg:gap-3 justify-center">
           <Button
             size="sm"
             variant="outline"
+            className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
             onClick={clearStagedActions}
             disabled={stagedActions.length === 0}
           >
@@ -331,6 +333,7 @@ export function BoardPanel({
           </Button>
           <Button
             size="sm"
+            className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
             onClick={commitStagedActions}
             disabled={
               gameState?.status !== "playing" ||
