@@ -820,7 +820,7 @@ export function Board({
       className={`flex items-center justify-center ${className} ${maxWidth}`}
     >
       <div
-        className="rounded-lg p-4 bg-amber-100 w-full h-auto"
+        className="rounded-lg p-2.5 lg:p-4 bg-amber-100 w-full h-auto"
         style={{
           maxWidth: maxBoardWidth,
         }}
@@ -828,7 +828,7 @@ export function Board({
         <div className="relative">
           {/* Top row labels (column letters) */}
           <div
-            className="absolute -top-4 left-0 right-0 flex"
+            className="absolute -top-4 left-0 right-0 flex hidden lg:flex"
             style={{ gap: `${gapSize}rem` }}
           >
             {Array.from({ length: cols }, (_, colIndex) => (
@@ -846,7 +846,7 @@ export function Board({
 
           {/* Bottom row labels (column letters) */}
           <div
-            className="absolute -bottom-4 left-0 right-0 flex"
+            className="absolute -bottom-4 left-0 right-0 flex hidden lg:flex"
             style={{ gap: `${gapSize}rem` }}
           >
             {Array.from({ length: cols }, (_, colIndex) => (
@@ -864,7 +864,7 @@ export function Board({
 
           {/* Left column labels (row numbers) */}
           <div
-            className="absolute -left-4 top-0 bottom-0 flex flex-col items-center"
+            className="absolute -left-4 top-0 bottom-0 flex flex-col items-center hidden lg:flex"
             style={{ gap: `${gapSize}rem`, width: "1rem" }}
           >
             {Array.from({ length: rows }, (_, rowIndex) => (
@@ -882,7 +882,7 @@ export function Board({
 
           {/* Right column labels (row numbers) */}
           <div
-            className="absolute -right-4 top-0 bottom-0 flex flex-col items-center"
+            className="absolute -right-4 top-0 bottom-0 flex flex-col items-center hidden lg:flex"
             style={{ gap: `${gapSize}rem`, width: "1rem" }}
           >
             {Array.from({ length: rows }, (_, rowIndex) => (
