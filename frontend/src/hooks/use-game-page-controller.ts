@@ -267,6 +267,17 @@ export function useGamePageController(gameId: string) {
       }
       colors[playerId] = value;
     });
+
+    // Handle color collision: apply tinting if both players have the same color
+    if (colors[1] === colors[2]) {
+      const baseColor = colors[1];
+      // Only apply tinting if it's a base color (not already a variant)
+      if (!baseColor.endsWith("-dark") && !baseColor.endsWith("-light")) {
+        colors[1] = `${baseColor}-dark` as PlayerColor;
+        colors[2] = `${baseColor}-light` as PlayerColor;
+      }
+    }
+
     return colors;
   }, [friendColorOverrides, localPreferences.pawnColor, primaryLocalPlayerId]);
 
@@ -507,13 +518,17 @@ export function useGamePageController(gameId: string) {
             )
           : null;
 
+      // Use the calculated board color which includes tinting logic
+      const resolvedColor =
+        playerColorsForBoard[player.playerId] ?? player.color;
+
       if (isLocal) {
         // Local player: apply local preferences
         return {
           ...player,
           name: remote?.displayName ?? player.name,
           isOnline: remote?.connected ?? player.isOnline,
-          color: localPreferences.pawnColor,
+          color: resolvedColor,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
         };
@@ -524,16 +539,17 @@ export function useGamePageController(gameId: string) {
           ...player,
           name: remote.displayName ?? player.name,
           isOnline: remote.connected,
-          color: appearance?.pawnColor
-            ? resolvePlayerColor(appearance.pawnColor)
-            : player.color,
+          color: resolvedColor,
           catSkin: appearance?.catSkin ?? player.catSkin,
           mouseSkin: appearance?.mouseSkin ?? player.mouseSkin,
         };
       }
 
-      // Non-multiplayer opponent (bot): use base player info
-      return player;
+      // Non-multiplayer opponent (bot): use base player info with resolved color
+      return {
+        ...player,
+        color: resolvedColor,
+      };
     });
   }, [
     basePlayers,
@@ -541,6 +557,7 @@ export function useGamePageController(gameId: string) {
     viewModel.match,
     primaryLocalPlayerId,
     localPreferences,
+    playerColorsForBoard,
   ]);
 
   // Keep playersRef in sync with the derived players
