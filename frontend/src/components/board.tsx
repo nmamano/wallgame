@@ -186,7 +186,7 @@ export function Board({
   const gapSize = 0.9; // rem
   const maxCellSize = 3; // rem
   const paddingX = 2; // rem (p-4 = 1rem on each side)
-  const paddingY = 2; // rem (p-4 = 1rem on each side)
+
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
@@ -603,18 +603,18 @@ export function Board({
   ]);
 
   const arrowVisuals = useMemo(() => {
-    const wallThickness = Math.max(
-      Math.max(gridMetrics.gapX, gridMetrics.gapY),
-      2,
-    );
-    const strokeWidth = Math.max(2, wallThickness / 2);
-    const markerSize = 3;
+    const minCellDimension = Math.min(cellWidthPx || 100, cellHeightPx || 100);
+    // Make arrow proportional to cell size (approx 15% of cell width)
+    // But cap it so it doesn't get too thin on very small screens or too thick on large ones
+    const strokeWidth = Math.max(2, Math.min(minCellDimension * 0.15, 10));
+
+    const markerSize = 3; // Multiplier of strokeWidth
     return {
       strokeWidth,
       markerSize,
       markerRef: markerSize / 2,
     };
-  }, [gridMetrics.gapX, gridMetrics.gapY]);
+  }, [cellWidthPx, cellHeightPx]);
 
   const pillars = useMemo(() => {
     if (
@@ -688,10 +688,6 @@ export function Board({
   ]);
 
   const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
-  const maxBoardHeight = `${rows * maxCellSize + (rows - 1) * gapSize + paddingY}rem`;
-
-  // Calculate aspect ratio based on rows and cols
-  const aspectRatio = cols / rows;
 
   const handleCellDrop = (
     event: DragEvent<HTMLDivElement>,
@@ -711,7 +707,12 @@ export function Board({
     const pawnColor = playerColors[pawn.playerId];
     const isControllable =
       controllablePlayerId == null || pawn.playerId === controllablePlayerId;
-    const dimensionClass = size === "lg" ? "w-full h-full p-0.5" : "w-6 h-6";
+
+    // Use percentage padding for large pawns to maintain proportions on small screens
+    const dimensionClass = size === "lg" ? "w-full h-full" : "w-6 h-6";
+    // If pawns are too close to the edge boundaries, increase this padding.
+    const paddingStyle = size === "lg" ? { padding: "0%" } : undefined;
+
     const hoverClass = isControllable ? "hover:scale-110" : "";
     const isDraggingThisPawn = draggingPawnId === pawn.id;
     const cursorClass = isControllable
@@ -776,7 +777,8 @@ export function Board({
         );
       }
       const Icon = pawn.type === "mouse" ? Rat : Cat;
-      const sizePx = size === "lg" ? 36 : 24;
+      // Remove fixed pixel size for lg, let it fill container
+      const sizePx = size === "lg" ? undefined : 24;
       return (
         <Icon
           size={sizePx}
@@ -800,6 +802,7 @@ export function Board({
       <div
         key={pawn.id}
         className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses}`}
+        style={paddingStyle}
         onContextMenu={handleContextMenu}
         onClick={handleClick}
         draggable={canDrag}
@@ -817,13 +820,9 @@ export function Board({
       className={`flex items-center justify-center ${className} ${maxWidth}`}
     >
       <div
-        className="rounded-lg p-4 bg-amber-100 max-w-full max-h-full"
+        className="rounded-lg p-4 bg-amber-100 w-full h-auto"
         style={{
-          width: maxBoardWidth,
-          height: maxBoardHeight,
-          maxWidth: "100%",
-          maxHeight: "100%",
-          aspectRatio: aspectRatio.toString(),
+          maxWidth: maxBoardWidth,
         }}
       >
         <div className="relative">

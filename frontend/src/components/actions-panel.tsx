@@ -264,23 +264,23 @@ export function ActionsPanel({
   })();
 
   return (
-    <Card className="p-3 bg-card/50 backdrop-blur">
-      <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-2">
+    <Card className="p-2 lg:p-3 bg-card/50 backdrop-blur">
+      <div className="min-h-[60px] lg:min-h-[80px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 flex flex-col justify-center gap-1.5 lg:gap-2">
         {incomingSection}
       </div>
-      <div className="grid grid-cols-2 gap-2">
+      <div className="grid grid-cols-2 gap-1.5 lg:gap-2 my-1 lg:my-0">
         <Button
           variant="outline"
-          className="w-full justify-start gap-2"
+          className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
           size="sm"
           onClick={handleStartResign}
           disabled={actionButtonsDisabled}
         >
-          <Flag className="w-4 h-4" /> Resign
+          <Flag className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Resign
         </Button>
         <Button
           variant="outline"
-          className="w-full justify-start gap-2"
+          className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
           size="sm"
           onClick={handleOfferDraw}
           disabled={
@@ -289,11 +289,11 @@ export function ActionsPanel({
             Boolean(pendingDrawOffer)
           }
         >
-          <Handshake className="w-4 h-4" /> Draw
+          <Handshake className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Draw
         </Button>
         <Button
           variant="outline"
-          className="w-full justify-start gap-2"
+          className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
           size="sm"
           onClick={handleRequestTakeback}
           disabled={
@@ -303,19 +303,19 @@ export function ActionsPanel({
             !hasTakebackHistory
           }
         >
-          <RotateCcw className="w-4 h-4" /> Takeback
+          <RotateCcw className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Takeback
         </Button>
         <Button
           variant="outline"
-          className="w-full justify-start gap-2"
+          className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
           size="sm"
           onClick={handleGiveTime}
           disabled={actionButtonsDisabled || manualActionsDisabled}
         >
-          <Timer className="w-4 h-4" /> Give time
+          <Timer className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Give time
         </Button>
       </div>
-      <div className="min-h-[80px] rounded-lg border border-dashed border-border/60 p-2.5 flex flex-col justify-center gap-1.5">
+      <div className="min-h-[60px] lg:min-h-[80px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 flex flex-col justify-center gap-1.5">
         {outgoingSection}
       </div>
     </Card>

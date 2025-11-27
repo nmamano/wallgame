@@ -51,7 +51,7 @@ export function MoveListAndChatPanel({
     >
       <div className="flex border-b flex-shrink-0">
         <button
-          className={`flex-1 py-3 text-sm font-medium transition-colors ${
+          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors ${
             activeTab === "history"
               ? "border-b-2 border-primary text-primary"
               : "text-muted-foreground hover:text-foreground"
@@ -64,7 +64,7 @@ export function MoveListAndChatPanel({
           </div>
         </button>
         <button
-          className={`flex-1 py-3 text-sm font-medium transition-colors ${
+          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors ${
             activeTab === "chat"
               ? "border-b-2 border-primary text-primary"
               : "text-muted-foreground hover:text-foreground"
