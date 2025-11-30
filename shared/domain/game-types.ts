@@ -1,5 +1,38 @@
 // Core game types - shared between frontend and backend
 
+/**
+ * PLAYER TERMINOLOGY
+ * ==================
+ *
+ * This codebase uses two distinct player identification systems:
+ *
+ * 1. PLAYER A / PLAYER B (Setup Page Terminology)
+ *    - Used on the game setup page when configuring players
+ *    - Player A is ALWAYS the host (game creator)
+ *    - Player B is ALWAYS the joiner (second player)
+ *    - Corresponds to the `role` field: "host" | "joiner"
+ *    - In future variants, more players (C, D...) may be added
+ *
+ * 2. PLAYER 1 / PLAYER 2 (Game Logic Terminology)
+ *    - Used during actual gameplay for turn order and board positions
+ *    - Player 1 ALWAYS starts first (moves on turn 1, 3, 5...)
+ *    - Player 1 ALWAYS has pawns on the left side of the board
+ *    - Player 2 ALWAYS goes second (moves on turn 2, 4, 6...)
+ *    - Player 2 ALWAYS has pawns on the right side of the board
+ *    - Corresponds to the `PlayerId` type: 1 | 2
+ *
+ * WHO IS PLAYER 1?
+ * ================
+ * The assignment of which role (host/joiner) becomes Player 1 is determined:
+ *
+ * - Frontend-only games (bots, you vs you): The frontend randomly assigns
+ *   which player slot becomes Player 1 at game start.
+ *
+ * - Backend games (friend, matchmaking): The host frontend randomly chooses
+ *   and sends `hostIsPlayer1` when creating the game. The server uses this
+ *   to assign PlayerId values to each role.
+ */
+
 export type PlayerId = 1 | 2;
 
 export type Variant =

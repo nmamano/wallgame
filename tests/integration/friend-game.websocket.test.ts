@@ -4,7 +4,18 @@ import { WebSocket } from "ws";
 import type {
   GameCreateResponse,
   GameSessionDetails,
-} from "../../frontend/src/lib/api";
+  JoinGameResponse,
+  MatchmakingGamesResponse,
+} from "../../shared/contracts/games";
+import type {
+  ClientMessage,
+  ServerMessage,
+} from "../../shared/contracts/websocket-messages";
+import type {
+  GameConfiguration,
+  PlayerAppearance,
+} from "../../shared/domain/game-types";
+import { cellFromStandardNotation } from "../../shared/domain/standard-notation";
 
 // ================================
 // --- Test Harness ---
@@ -33,9 +44,20 @@ async function stopTestServer() {
 // --- HTTP Client Helpers ---
 // ================================
 
+/**
+ * Creates a friend game with explicit Player 1 assignment for deterministic tests.
+ *
+ * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
+ *   Pass explicitly in tests for determinism. If omitted, server chooses randomly.
+ *   See game-types.ts for terminology: Player A/B (roles) vs Player 1/2 (game logic).
+ */
 async function createFriendGame(
   userId: string,
-  appearance?: { pawnColor?: string; catSkin?: string; mouseSkin?: string },
+  config: GameConfiguration,
+  options?: {
+    appearance?: PlayerAppearance;
+    hostIsPlayer1?: boolean;
+  },
 ): Promise<GameCreateResponse> {
   const res = await fetch(`${baseUrl}/api/games`, {
     method: "POST",
@@ -44,19 +66,11 @@ async function createFriendGame(
       "x-test-user-id": userId,
     },
     body: JSON.stringify({
-      config: {
-        timeControl: {
-          initialSeconds: 600,
-          incrementSeconds: 0,
-          preset: "rapid",
-        },
-        variant: "standard",
-        boardWidth: 9,
-        boardHeight: 9,
-      },
+      config: config,
       matchType: "friend",
       hostDisplayName: `Player ${userId}`,
-      hostAppearance: appearance,
+      hostAppearance: options?.appearance,
+      hostIsPlayer1: options?.hostIsPlayer1,
     }),
   });
 
@@ -65,9 +79,20 @@ async function createFriendGame(
   return json as GameCreateResponse;
 }
 
+/**
+ * Creates a matchmaking game with explicit Player 1 assignment for deterministic tests.
+ *
+ * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
+ *   Pass explicitly in tests for determinism. If omitted, server chooses randomly.
+ *   See game-types.ts for terminology: Player A/B (roles) vs Player 1/2 (game logic).
+ */
 async function createMatchmakingGame(
   userId: string,
-  appearance?: { pawnColor?: string; catSkin?: string; mouseSkin?: string },
+  config: GameConfiguration,
+  options?: {
+    appearance?: PlayerAppearance;
+    hostIsPlayer1?: boolean;
+  },
 ): Promise<GameCreateResponse> {
   const res = await fetch(`${baseUrl}/api/games`, {
     method: "POST",
@@ -76,19 +101,11 @@ async function createMatchmakingGame(
       "x-test-user-id": userId,
     },
     body: JSON.stringify({
-      config: {
-        timeControl: {
-          initialSeconds: 600,
-          incrementSeconds: 0,
-          preset: "rapid",
-        },
-        variant: "standard",
-        boardWidth: 9,
-        boardHeight: 9,
-      },
+      config: config,
       matchType: "matchmaking",
       hostDisplayName: `Player ${userId}`,
-      hostAppearance: appearance,
+      hostAppearance: options?.appearance,
+      hostIsPlayer1: options?.hostIsPlayer1,
     }),
   });
 
@@ -100,7 +117,7 @@ async function createMatchmakingGame(
 async function joinFriendGame(
   userId: string,
   gameId: string,
-  appearance?: { pawnColor?: string; catSkin?: string; mouseSkin?: string },
+  appearance?: PlayerAppearance,
 ): Promise<GameSessionDetails> {
   const res = await fetch(`${baseUrl}/api/games/${gameId}/join`, {
     method: "POST",
@@ -115,27 +132,29 @@ async function joinFriendGame(
   });
 
   expect(res.status).toBe(200);
-  const json = (await res.json()) as {
-    gameId: string;
-    token: string;
-    socketToken: string;
-    snapshot: any;
-    shareUrl: string;
-  };
+  const json = (await res.json()) as JoinGameResponse;
+
+  // Find joiner's playerId from the snapshot
+  // The host chose whether they're Player 1 or 2, so joiner gets the other
+  const joinerPlayer = json.snapshot.players.find((p) => p.role === "joiner");
+  const playerId = joinerPlayer?.playerId ?? 2;
+
   return {
     snapshot: json.snapshot,
     role: "joiner",
-    playerId: 2,
+    playerId,
     token: json.token,
     socketToken: json.socketToken,
     shareUrl: json.shareUrl,
   };
 }
 
-async function fetchMatchmakingGames(): Promise<any[]> {
+async function fetchMatchmakingGames(): Promise<
+  MatchmakingGamesResponse["games"]
+> {
   const res = await fetch(`${baseUrl}/api/games/matchmaking`);
   expect(res.status).toBe(200);
-  const json = (await res.json()) as { games: any[] };
+  const json = (await res.json()) as MatchmakingGamesResponse;
   return json.games;
 }
 
@@ -143,13 +162,11 @@ async function fetchMatchmakingGames(): Promise<any[]> {
 // --- WebSocket Client Helpers ---
 // ================================
 
-type WSMessage = { type: string; [key: string]: any };
-
 type TestSocket = {
   ws: WebSocket;
-  waitForMessage: (
-    predicate: (msg: WSMessage) => boolean,
-  ) => Promise<WSMessage>;
+  waitForMessage: <T extends ServerMessage>(
+    predicate: (msg: ServerMessage) => msg is T,
+  ) => Promise<T>;
   close: () => void;
 };
 
@@ -170,11 +187,11 @@ async function openGameSocket(
       },
     });
 
-    const buffer: WSMessage[] = [];
-    const listeners: ((msg: WSMessage) => void)[] = [];
+    const buffer: ServerMessage[] = [];
+    const listeners: ((msg: ServerMessage) => void)[] = [];
 
     ws.on("message", (data) => {
-      const msg = JSON.parse(data.toString());
+      const msg = JSON.parse(data.toString()) as ServerMessage;
       buffer.push(msg);
       listeners.forEach((l) => l(msg));
     });
@@ -183,16 +200,18 @@ async function openGameSocket(
       resolve({
         ws,
         close: () => ws.close(),
-        waitForMessage: (predicate: (msg: WSMessage) => boolean) => {
-          return new Promise<WSMessage>((resolveWait, rejectWait) => {
+        waitForMessage: <T extends ServerMessage>(
+          predicate: (msg: ServerMessage) => msg is T,
+        ) => {
+          return new Promise<T>((resolveWait, rejectWait) => {
             // Check buffer first
             const index = buffer.findIndex(predicate);
             if (index > -1) {
               const [msg] = buffer.splice(index, 1);
-              return resolveWait(msg);
+              return resolveWait(msg as T);
             }
 
-            const check = (msg: WSMessage) => {
+            const check = (msg: ServerMessage) => {
               if (predicate(msg)) {
                 clearTimeout(timeout);
                 const listenerIndex = listeners.indexOf(check);
@@ -201,7 +220,7 @@ async function openGameSocket(
                 const bufferIndex = buffer.indexOf(msg);
                 if (bufferIndex > -1) buffer.splice(bufferIndex, 1);
 
-                resolveWait(msg);
+                resolveWait(msg as T);
               }
             };
 
@@ -251,12 +270,29 @@ describe("friend game WebSocket integration", () => {
     };
 
     // 1. User A creates a friend game with appearance
+    // The board is 5x5 (from a1 at the bottom-left to e5 at the top-right)
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+    };
+    // Create game with host as Player 1 for deterministic testing
+    // In production, hostIsPlayer1 is randomly chosen by the host frontend
     const {
       gameId,
       shareUrl,
       socketToken: socketTokenA,
       snapshot: initialSnapshotA,
-    } = await createFriendGame(userA, userAAppearance);
+    } = await createFriendGame(userA, gameConfig, {
+      appearance: userAAppearance,
+      hostIsPlayer1: true,
+    });
     expect(gameId).toBeDefined();
     expect(shareUrl).toBeDefined();
     expect(socketTokenA).toBeDefined();
@@ -275,10 +311,12 @@ describe("friend game WebSocket integration", () => {
 
     // Wait for initial state
     const stateMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     const stateMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
 
     const initialState = stateMsgA.state;
@@ -287,10 +325,12 @@ describe("friend game WebSocket integration", () => {
 
     // Wait for match status updates to get player appearances
     const matchStatusMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "match-status",
+      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
+        msg.type === "match-status",
     );
     const matchStatusMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "match-status",
+      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
+        msg.type === "match-status",
     );
 
     // Verify both clients receive correct player appearances
@@ -307,45 +347,54 @@ describe("friend game WebSocket integration", () => {
       userBAppearance,
     ); // Joiner
 
-    // 4. User A sends a move
-    const p1Cat = initialState.pawns["1"].cat as [number, number];
-    const moveTarget: [number, number] = [p1Cat[0] + 1, p1Cat[1]];
+    // 4. User A (Player 1) sends first move - move cat from a5 to b4
+    // Player 1 always starts, and their cat starts at a5 (top-left)
+    socketA.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        actions: [{ type: "cat", cell: cellFromStandardNotation("b4", 5) }],
+      }),
+    );
 
-    const movePayload = {
-      type: "submit-move",
-      actions: [{ type: "cat", cell: moveTarget }],
-    };
-
-    socketA.ws.send(JSON.stringify(movePayload));
-
-    // 5. Verify User B receives the new state
+    // 5. Verify both players receive the new state
     const updateMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
-    expect(updateMsgB.state.pawns["1"].cat).toEqual(moveTarget);
-
-    // Verify User A also receives the update
     const updateMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
+    expect(updateMsgB.state.pawns["1"].cat).toEqual(
+      cellFromStandardNotation("b4", 5),
+    );
+    expect(updateMsgA.state.pawns["1"].cat).toEqual(
+      cellFromStandardNotation("b4", 5),
     );
 
-    // 6. User B sends a move
-    const p2Cat = updateMsgB.state.pawns["2"].cat as [number, number];
-    const targetRowB = p2Cat[0] > 4 ? p2Cat[0] - 1 : p2Cat[0] + 1;
-    const moveTargetB: [number, number] = [targetRowB, p2Cat[1]];
+    // 6. User B (Player 2) sends a move - move cat from e5 to d4
+    socketB.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        actions: [{ type: "cat", cell: cellFromStandardNotation("d4", 5) }],
+      }),
+    );
 
-    const movePayloadB = {
-      type: "submit-move",
-      actions: [{ type: "cat", cell: moveTargetB }],
-    };
-
-    socketB.ws.send(JSON.stringify(movePayloadB));
-
-    // 7. Verify User A receives the new state
+    // 7. Verify both players receive the new state
     const finalMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
-    expect(finalMsgA.state.pawns["2"].cat).toEqual(moveTargetB);
+    const finalMsgB = await socketB.waitForMessage(
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
+    expect(finalMsgA.state.pawns["2"].cat).toEqual(
+      cellFromStandardNotation("d4", 5),
+    );
+    expect(finalMsgB.state.pawns["2"].cat).toEqual(
+      cellFromStandardNotation("d4", 5),
+    );
 
     // // 8. Add more moves including wall moves and pawn moves
     // // User A places a wall (using safer coordinates)
@@ -550,11 +599,26 @@ describe("friend game WebSocket integration", () => {
     };
 
     // 1. User A creates a matchmaking game with appearance
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: false,
+      boardWidth: 9,
+      boardHeight: 9,
+    };
+    // Create game with host as Player 1 for deterministic testing
     const {
       gameId,
       socketToken: socketTokenA,
       snapshot: initialSnapshotA,
-    } = await createMatchmakingGame(userA, userAAppearance);
+    } = await createMatchmakingGame(userA, gameConfig, {
+      appearance: userAAppearance,
+      hostIsPlayer1: true,
+    });
     expect(gameId).toBeDefined();
     expect(socketTokenA).toBeDefined();
     expect(initialSnapshotA.players[0].appearance).toEqual(userAAppearance);
@@ -564,9 +628,9 @@ describe("friend game WebSocket integration", () => {
     expect(availableGames.length).toBeGreaterThan(0);
 
     // Find the game created by user A
-    const gameToJoin = availableGames.find((game: any) => game.id === gameId);
+    const gameToJoin = availableGames.find((game) => game.id === gameId);
     expect(gameToJoin).toBeDefined();
-    expect(gameToJoin.players[0].appearance).toEqual(userAAppearance);
+    expect(gameToJoin?.players[0].appearance).toEqual(userAAppearance);
 
     const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
       await joinFriendGame(userB, gameId, userBAppearance);
@@ -580,10 +644,12 @@ describe("friend game WebSocket integration", () => {
 
     // Wait for initial state
     const stateMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     const stateMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
 
     const initialState = stateMsgA.state;
@@ -592,10 +658,12 @@ describe("friend game WebSocket integration", () => {
 
     // Wait for match status updates to get player appearances
     const matchStatusMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "match-status",
+      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
+        msg.type === "match-status",
     );
     const matchStatusMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "match-status",
+      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
+        msg.type === "match-status",
     );
 
     // Verify both clients receive correct player appearances
@@ -621,7 +689,23 @@ describe("friend game WebSocket integration", () => {
     const userB = "user-b";
 
     // Create and join a new game for draw/rematch testing
-    const { gameId, socketToken: socketTokenA } = await createFriendGame(userA);
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: false,
+      boardWidth: 9,
+      boardHeight: 9,
+    };
+    // Create game with host as Player 1 for deterministic testing
+    const { gameId, socketToken: socketTokenA } = await createFriendGame(
+      userA,
+      gameConfig,
+      { hostIsPlayer1: true },
+    );
 
     const { socketToken: socketTokenB } = await joinFriendGame(userB, gameId);
 
@@ -630,43 +714,53 @@ describe("friend game WebSocket integration", () => {
 
     // Wait for initial state
     const stateMsgA = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     const stateMsgB = await socketB.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
 
     // Make some moves to have an active game
-    const p1CatDraw = stateMsgA.state.pawns["1"].cat as [number, number];
-    const moveTarget: [number, number] = [p1CatDraw[0] + 1, p1CatDraw[1]];
+    // Player 1 moves cat from a9 to e8
+    const moveTarget = cellFromStandardNotation("b8", gameConfig.boardHeight);
 
-    const movePayload = {
+    const movePayload: ClientMessage = {
       type: "submit-move",
       actions: [{ type: "cat", cell: moveTarget }],
     };
     socketA.ws.send(JSON.stringify(movePayload));
 
-    await socketB.waitForMessage((msg) => msg.type === "state");
-    await socketA.waitForMessage((msg) => msg.type === "state");
+    await socketB.waitForMessage(
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
+    await socketA.waitForMessage(
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
 
     // Test draw offer and rejection
-    const drawOfferPayload = {
+    const drawOfferPayload: ClientMessage = {
       type: "draw-offer",
     };
     socketA.ws.send(JSON.stringify(drawOfferPayload));
 
     const drawOfferMsg = await socketB.waitForMessage(
-      (msg) => msg.type === "draw-offer",
+      (msg): msg is Extract<ServerMessage, { type: "draw-offer" }> =>
+        msg.type === "draw-offer",
     );
     expect(drawOfferMsg.playerId).toBe(1);
 
-    const drawRejectPayload = {
+    const drawRejectPayload: ClientMessage = {
       type: "draw-reject",
     };
     socketB.ws.send(JSON.stringify(drawRejectPayload));
 
     const drawRejectMsg = await socketA.waitForMessage(
-      (msg) => msg.type === "draw-rejected",
+      (msg): msg is Extract<ServerMessage, { type: "draw-rejected" }> =>
+        msg.type === "draw-rejected",
     );
     expect(drawRejectMsg.playerId).toBe(2);
 
@@ -674,78 +768,94 @@ describe("friend game WebSocket integration", () => {
     socketA.ws.send(JSON.stringify(drawOfferPayload));
 
     const drawOfferMsg2 = await socketB.waitForMessage(
-      (msg) => msg.type === "draw-offer",
+      (msg): msg is Extract<ServerMessage, { type: "draw-offer" }> =>
+        msg.type === "draw-offer",
     );
 
-    const drawAcceptPayload = {
+    const drawAcceptPayload: ClientMessage = {
       type: "draw-accept",
     };
     socketB.ws.send(JSON.stringify(drawAcceptPayload));
 
     const drawEndMsg = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     expect(drawEndMsg.state.status).toBe("finished");
     expect(drawEndMsg.state.result?.reason).toBe("draw-agreement");
 
     // Test rematch offer and acceptance
-    const rematchOfferPayload = {
+    const rematchOfferPayload: ClientMessage = {
       type: "rematch-offer",
     };
     socketA.ws.send(JSON.stringify(rematchOfferPayload));
 
     const rematchOfferMsg = await socketB.waitForMessage(
-      (msg) => msg.type === "rematch-offer",
+      (msg): msg is Extract<ServerMessage, { type: "rematch-offer" }> =>
+        msg.type === "rematch-offer",
     );
     expect(rematchOfferMsg.playerId).toBe(1);
 
-    const rematchAcceptPayload = {
+    const rematchAcceptPayload: ClientMessage = {
       type: "rematch-accept",
     };
     socketB.ws.send(JSON.stringify(rematchAcceptPayload));
 
     const rematchStateMsg = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     expect(rematchStateMsg.state.status).toBe("playing");
     expect(rematchStateMsg.state.moveCount).toBe(1);
 
     // Make a move in the new game
-    const p1CatNew = rematchStateMsg.state.pawns["1"].cat as [number, number];
-    const newMoveTarget: [number, number] = [p1CatNew[0] + 1, p1CatNew[1]];
+    // Player 1 moves cat from a9 to e8
+    const newMoveTarget = cellFromStandardNotation(
+      "b8",
+      gameConfig.boardHeight,
+    );
 
-    const newMovePayload = {
+    const newMovePayload: ClientMessage = {
       type: "submit-move",
       actions: [{ type: "cat", cell: newMoveTarget }],
     };
     socketA.ws.send(JSON.stringify(newMovePayload));
 
-    await socketB.waitForMessage((msg) => msg.type === "state");
-    await socketA.waitForMessage((msg) => msg.type === "state");
+    await socketB.waitForMessage(
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
+    await socketA.waitForMessage(
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
+    );
 
     // Test rematch rejection
-    const resignPayload = {
+    const resignPayload: ClientMessage = {
       type: "resign",
     };
     socketB.ws.send(JSON.stringify(resignPayload));
 
     const resignEndMsg = await socketA.waitForMessage(
-      (msg) => msg.type === "state",
+      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
+        msg.type === "state",
     );
     expect(resignEndMsg.state.status).toBe("finished");
 
     socketA.ws.send(JSON.stringify(rematchOfferPayload));
     const rematchOfferMsg2 = await socketB.waitForMessage(
-      (msg) => msg.type === "rematch-offer",
+      (msg): msg is Extract<ServerMessage, { type: "rematch-offer" }> =>
+        msg.type === "rematch-offer",
     );
 
-    const rematchRejectPayload = {
+    const rematchRejectPayload: ClientMessage = {
       type: "rematch-reject",
     };
     socketB.ws.send(JSON.stringify(rematchRejectPayload));
 
     const rematchRejectMsg = await socketA.waitForMessage(
-      (msg) => msg.type === "rematch-rejected",
+      (msg): msg is Extract<ServerMessage, { type: "rematch-rejected" }> =>
+        msg.type === "rematch-rejected",
     );
     expect(rematchRejectMsg.playerId).toBe(2);
 

@@ -42,6 +42,14 @@ export const createGameSchema = z.object({
   matchType: z.enum(matchTypeValues).default("friend"),
   hostDisplayName: z.string().max(50).optional(),
   hostAppearance: appearanceSchema,
+  /**
+   * Whether the host becomes Player 1 (who starts first and has left-side pawns).
+   * If true, host is Player 1 and joiner is Player 2.
+   * If false, host is Player 2 and joiner is Player 1.
+   * If not provided, the server randomly chooses.
+   * Tests can pass this explicitly for deterministic behavior.
+   */
+  hostIsPlayer1: z.boolean().optional(),
 });
 
 export interface GameCreateResponse {

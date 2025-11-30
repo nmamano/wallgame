@@ -123,6 +123,13 @@ export const settingsMutations = {
     ),
 };
 
+/**
+ * Creates a backend game session (friend or matchmaking).
+ *
+ * The server randomly determines whether the host will be Player 1 (who starts first)
+ * or Player 2. This ensures fair assignment of the first-move advantage.
+ * See game-types.ts for terminology: Player A/B (roles) vs Player 1/2 (game logic).
+ */
 export const createGameSession = async (args: {
   config: GameConfiguration;
   matchType: MatchType;
@@ -156,6 +163,7 @@ export const createGameSession = async (args: {
         matchType: args.matchType,
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
+        // Let server randomly decide who is Player 1
       },
     }),
   );
@@ -187,10 +195,16 @@ export const joinGameSession = async (args: {
       },
     }),
   );
+
+  // Find joiner's playerId from the snapshot
+  // The host randomly chose whether they're Player 1 or 2, so joiner gets the other
+  const joinerPlayer = data.snapshot.players.find((p) => p.role === "joiner");
+  const playerId = joinerPlayer?.playerId ?? 2;
+
   return {
     snapshot: data.snapshot,
     role: "joiner",
-    playerId: 2,
+    playerId,
     token: data.token,
     socketToken: data.socketToken,
     shareUrl: data.shareUrl,

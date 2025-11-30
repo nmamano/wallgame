@@ -63,6 +63,7 @@ export const gamesRoute = new Hono()
         matchType: parsed.matchType,
         hostDisplayName: parsed.hostDisplayName,
         hostAppearance: parsed.hostAppearance,
+        hostIsPlayer1: parsed.hostIsPlayer1,
       });
       // The FRONTEND_URL environment variable is used for creating shareable
       // links. It is only needed in dev mode because the proxied URL is not

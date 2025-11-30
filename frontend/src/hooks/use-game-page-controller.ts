@@ -1166,6 +1166,9 @@ export function useGamePageController(gameId: string) {
     currentGameIdRef.current = 0;
     setGameInstanceId(0);
 
+    // Randomly determine which participant becomes Player 1 (who starts first).
+    // seatOrder[0] is the participant index for Player 1, seatOrder[1] for Player 2.
+    // See game-types.ts for terminology: Player A/B (setup roles) vs Player 1/2 (game logic).
     const seatOrder = (Math.random() < 0.5 ? [0, 1] : [1, 0]) as [
       number,
       number,
