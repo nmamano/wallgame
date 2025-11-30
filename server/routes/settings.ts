@@ -8,14 +8,18 @@ import {
 } from "../db/schema/user-settings";
 import { usersTable } from "../db/schema/users";
 import { eq, sql } from "drizzle-orm";
-import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import { getUserFromKinde, getUserIdFromKinde } from "../db/user-helpers";
-
-// Schema for updating display name
-const updateDisplayNameSchema = z.object({
-  displayName: z.string().min(3),
-});
+import {
+  updateDisplayNameSchema,
+  updateBoardThemeSchema,
+  updatePawnColorSchema,
+  updatePawnSchema,
+  updateDefaultVariantSchema,
+  updateTimeControlSchema,
+  updateRatedStatusSchema,
+  updateVariantParametersSchema,
+} from "../../shared/contracts/settings";
 
 export const settingsRoute = new Hono()
   /**
@@ -132,7 +136,7 @@ export const settingsRoute = new Hono()
   .put(
     "/board-theme",
     getUserMiddleware,
-    zValidator("json", z.object({ boardTheme: z.string() })),
+    zValidator("json", updateBoardThemeSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -166,7 +170,7 @@ export const settingsRoute = new Hono()
   .put(
     "/pawn-color",
     getUserMiddleware,
-    zValidator("json", z.object({ pawnColor: z.string() })),
+    zValidator("json", updatePawnColorSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -200,13 +204,7 @@ export const settingsRoute = new Hono()
   .put(
     "/pawn",
     getUserMiddleware,
-    zValidator(
-      "json",
-      z.object({
-        pawnType: z.string(),
-        pawnShape: z.string(),
-      }),
-    ),
+    zValidator("json", updatePawnSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -252,7 +250,7 @@ export const settingsRoute = new Hono()
   .put(
     "/default-variant",
     getUserMiddleware,
-    zValidator("json", z.object({ variant: z.string() })),
+    zValidator("json", updateDefaultVariantSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -286,12 +284,7 @@ export const settingsRoute = new Hono()
   .put(
     "/time-control",
     getUserMiddleware,
-    zValidator(
-      "json",
-      z.object({
-        timeControl: z.enum(["bullet", "blitz", "rapid", "classical"]),
-      }),
-    ),
+    zValidator("json", updateTimeControlSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -325,7 +318,7 @@ export const settingsRoute = new Hono()
   .put(
     "/rated-status",
     getUserMiddleware,
-    zValidator("json", z.object({ rated: z.boolean() })),
+    zValidator("json", updateRatedStatusSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);
@@ -359,13 +352,7 @@ export const settingsRoute = new Hono()
   .put(
     "/variant-parameters",
     getUserMiddleware,
-    zValidator(
-      "json",
-      z.object({
-        variant: z.string(),
-        parameters: z.record(z.string(), z.unknown()),
-      }),
-    ),
+    zValidator("json", updateVariantParametersSchema),
     async (c) => {
       try {
         const userId = await getUserIdFromKinde(c);

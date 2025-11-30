@@ -1,12 +1,12 @@
-import type { GameConfiguration } from "../../../shared/game-types";
-import { Grid } from "../../../shared/grid";
-import { GameState } from "../../../shared/game-state";
-import type { Action } from "../../../shared/game-types";
-import { moveFromStandardNotation } from "../../../shared/standard-notation";
+import type { GameConfiguration } from "../../../shared/domain/game-types";
+import { Grid } from "../../../shared/domain/grid";
+import { GameState } from "../../../shared/domain/game-state";
+import type { Action } from "../../../shared/domain/game-types";
+import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
 import type {
   GameActionPayload,
   SerializedGameState,
-} from "../../../shared/game-types";
+} from "../../../shared/domain/game-types";
 
 export const buildGameConfigurationFromSerialized = (
   serialized: SerializedGameState,

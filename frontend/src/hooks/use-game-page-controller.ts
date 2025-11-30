@@ -6,8 +6,8 @@ import {
   type BoardPawn,
 } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
-import { type GameAction } from "../../../shared/game-types";
-import { GameState } from "../../../shared/game-state";
+import { type GameAction } from "../../../shared/domain/game-types";
+import { GameState } from "../../../shared/domain/game-state";
 import type {
   PlayerId,
   Cell,
@@ -15,14 +15,14 @@ import type {
   WallPosition,
   Move,
   Action,
-} from "../../../shared/game-types";
+} from "../../../shared/domain/game-types";
 import {
   moveToStandardNotation,
   cellToStandardNotation,
-} from "../../../shared/standard-notation";
-import { pawnId } from "../../../shared/game-utils";
+} from "../../../shared/domain/standard-notation";
+import { pawnId } from "../../../shared/domain/game-utils";
 import { type PlayerColor } from "@/lib/player-colors";
-import type { GameConfiguration } from "../../../shared/game-types";
+import type { GameConfiguration } from "../../../shared/domain/game-types";
 import { userQueryOptions } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
@@ -40,7 +40,7 @@ import {
   hydrateGameStateFromSerialized,
   serializeActions,
 } from "@/lib/game-state-utils";
-import type { GameSnapshot } from "../../../shared/game-types";
+import type { GameSnapshot } from "../../../shared/domain/game-types";
 import {
   type GameViewModel,
   type ServerUpdate,

@@ -8,3 +8,4 @@ alwaysApply: true
 - When finishing a task, run `bun run format`.
 - If you deem it necessary, when finishing a task, you can run `bun run test`, `bun run lint`, and `bun run build` to ensure that the tests, linting, and build pass.
 - When listing object properties or function arguments that take multiple lines, use a comma after the last one.
+- Every type used across the frontend-server boundary must be in `shared/contracts/`.

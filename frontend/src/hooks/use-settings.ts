@@ -4,22 +4,21 @@ import {
   settingsQueryOptions,
   settingsMutations,
   SETTINGS_QUERY_KEY,
-  type SettingsResponse,
 } from "@/lib/api";
 import { useLocalStorageState } from "./use-local-storage";
-import type { GameConfiguration } from "../../../shared/game-types";
+import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
   Variant,
   PawnType,
-} from "../../../shared/game-types";
-import { timeControlConfigFromPreset } from "../../../shared/game-utils";
-
-interface VariantParameters {
-  boardWidth?: number;
-  boardHeight?: number;
-}
-type VariantSettingsMap = Record<string, VariantParameters>;
+} from "../../../shared/domain/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
+import type {
+  SettingsResponse,
+  VariantParameters,
+  VariantSetting,
+} from "../../../shared/contracts/settings";
+type VariantSettingsMap = Record<string, Partial<VariantParameters>>;
 
 // Validate display name
 function isValidDisplayName(name: string): { valid: boolean; error?: string } {
@@ -248,7 +247,7 @@ function useSettingsInternal(
         // Update cache with server's version
         queryClient.setQueryData<SettingsResponse>(
           SETTINGS_QUERY_KEY,
-          (prev) => {
+          (prev: SettingsResponse | undefined) => {
             if (!prev) return prev;
             return {
               ...prev,
@@ -364,10 +363,13 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updateBoardTheme,
     onMutate: async (newBoardTheme) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        return { ...prev, boardTheme: newBoardTheme };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          return { ...prev, boardTheme: newBoardTheme };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -381,10 +383,13 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updatePawnColor,
     onMutate: async (newPawnColor) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        return { ...prev, pawnColor: newPawnColor };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          return { ...prev, pawnColor: newPawnColor };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -404,27 +409,30 @@ function useSettingsInternal(
     }) => settingsMutations.updatePawn(pawnType as PawnType, pawnShape),
     onMutate: async ({ pawnType, pawnShape }) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const pawnSettings = Array.isArray(prev.pawnSettings)
-          ? [...prev.pawnSettings]
-          : [];
-        const existingIndex = pawnSettings.findIndex(
-          (ps) => ps.pawn_type === pawnType,
-        );
-        if (existingIndex >= 0) {
-          pawnSettings[existingIndex] = {
-            pawn_type: pawnType,
-            pawn_shape: pawnShape,
-          };
-        } else {
-          pawnSettings.push({
-            pawn_type: pawnType,
-            pawn_shape: pawnShape,
-          });
-        }
-        return { ...prev, pawnSettings };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          const pawnSettings = Array.isArray(prev.pawnSettings)
+            ? [...prev.pawnSettings]
+            : [];
+          const existingIndex = pawnSettings.findIndex(
+            (ps) => ps.pawn_type === pawnType,
+          );
+          if (existingIndex >= 0) {
+            pawnSettings[existingIndex] = {
+              pawn_type: pawnType,
+              pawn_shape: pawnShape,
+            };
+          } else {
+            pawnSettings.push({
+              pawn_type: pawnType,
+              pawn_shape: pawnShape,
+            });
+          }
+          return { ...prev, pawnSettings };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -438,10 +446,13 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updateTimeControl,
     onMutate: async (newTimeControl) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        return { ...prev, defaultTimeControl: newTimeControl };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          return { ...prev, defaultTimeControl: newTimeControl };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -455,10 +466,13 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updateRatedStatus,
     onMutate: async (newRated) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        return { ...prev, defaultRatedStatus: newRated };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          return { ...prev, defaultRatedStatus: newRated };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -472,10 +486,13 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updateDefaultVariant,
     onMutate: async (newVariant) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        return { ...prev, defaultVariant: newVariant };
-      });
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          return { ...prev, defaultVariant: newVariant };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({
@@ -491,43 +508,46 @@ function useSettingsInternal(
       parameters,
     }: {
       variant: Variant;
-      parameters: { boardWidth: number; boardHeight: number };
+      parameters: VariantParameters;
     }) => settingsMutations.updateVariantParameters(variant, parameters),
     onMutate: async (variables) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
-      queryClient.setQueryData<SettingsResponse>(SETTINGS_QUERY_KEY, (prev) => {
-        if (!prev) return prev;
-        const previousVariantSettings = Array.isArray(prev.variantSettings)
-          ? prev.variantSettings
-          : [];
+      queryClient.setQueryData<SettingsResponse>(
+        SETTINGS_QUERY_KEY,
+        (prev: SettingsResponse | undefined) => {
+          if (!prev) return prev;
+          const previousVariantSettings = Array.isArray(prev.variantSettings)
+            ? prev.variantSettings
+            : [];
 
-        const nextVariantSettings = previousVariantSettings.some(
-          (vs) => vs.variant === variables.variant,
-        )
-          ? previousVariantSettings.map((vs) =>
-              vs.variant === variables.variant
-                ? {
-                    ...vs,
-                    default_parameters: {
-                      ...vs.default_parameters,
-                      ...variables.parameters,
-                    },
-                  }
-                : vs,
-            )
-          : [
-              ...previousVariantSettings,
-              {
-                variant: variables.variant,
-                default_parameters: variables.parameters,
-              },
-            ];
+          const nextVariantSettings = previousVariantSettings.some(
+            (vs: VariantSetting) => vs.variant === variables.variant,
+          )
+            ? previousVariantSettings.map((vs: VariantSetting) =>
+                vs.variant === variables.variant
+                  ? {
+                      ...vs,
+                      default_parameters: {
+                        ...vs.default_parameters,
+                        ...variables.parameters,
+                      },
+                    }
+                  : vs,
+              )
+            : [
+                ...previousVariantSettings,
+                {
+                  variant: variables.variant,
+                  default_parameters: variables.parameters,
+                },
+              ];
 
-        return {
-          ...prev,
-          variantSettings: nextVariantSettings,
-        };
-      });
+          return {
+            ...prev,
+            variantSettings: nextVariantSettings,
+          };
+        },
+      );
     },
     onSuccess: () => {
       void queryClient.invalidateQueries({

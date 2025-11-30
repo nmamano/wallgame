@@ -1,21 +1,9 @@
 import { Hono } from "hono";
-import { z } from "zod";
 
 import { db } from "../db";
 import { puzzlesTable } from "../db/schema/puzzles";
 import { count, eq } from "drizzle-orm";
-
-// Mock schema/type.
-const puzzleSchema = z.object({
-  //Created by the db.
-  id: z.number().int().positive().min(1),
-
-  title: z.string().min(3).max(100),
-  author: z.string().min(3).max(100),
-  rating: z.number().int().positive().min(1).max(10000),
-});
-
-const createPostSchema = puzzleSchema.omit({ id: true });
+import { createPostSchema } from "../../shared/contracts/puzzles";
 
 export const puzzlesRoute = new Hono()
   .get("/", async (c) => {

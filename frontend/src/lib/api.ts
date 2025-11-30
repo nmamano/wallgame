@@ -8,12 +8,24 @@ import type {
   TimeControlPreset,
   TimeControlConfig,
   Variant,
-  PlayerId,
   PawnType,
   MatchType,
-} from "../../../shared/game-types";
-import { timeControlConfigFromPreset } from "../../../shared/game-utils";
-import type { GameRole } from "@/lib/game-session";
+} from "../../../shared/domain/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
+import type {
+  GameCreateResponse,
+  GameSessionDetails,
+  JoinGameResponse,
+  ReadyGameResponse,
+  MatchmakingGamesResponse,
+} from "../../../shared/contracts/games";
+import type {
+  SettingsResponse,
+  SuccessResponse,
+  UpdateDisplayNameResponse,
+  VariantParameters,
+} from "../../../shared/contracts/settings";
+import type { MeResponse } from "../../../shared/contracts/user";
 
 const client = hc<ApiRoutes>("/");
 
@@ -36,14 +48,6 @@ async function handleResponse<T>(
   return res.json() as Promise<T>;
 }
 
-export interface User {
-  id: string;
-  email?: string | null;
-  given_name?: string | null;
-  family_name?: string | null;
-  picture?: string | null;
-}
-
 export const userQueryOptions = queryOptions({
   queryKey: ["get-current-user"],
   queryFn: getCurrentUser,
@@ -51,33 +55,12 @@ export const userQueryOptions = queryOptions({
 });
 
 async function getCurrentUser() {
-  const data = await handleResponse<{ user: User | null }>(api.me.$get());
+  const data = await handleResponse<MeResponse>(api.me.$get());
   return data;
 }
 
 // Shared query key constant to prevent coupling issues
 export const SETTINGS_QUERY_KEY = ["settings"] as const;
-
-export interface SettingsResponse {
-  displayName: string;
-  capitalizedDisplayName?: string;
-  boardTheme: string;
-  pawnColor: string;
-  pawnSettings: {
-    pawn_type: string;
-    pawn_shape: string;
-  }[];
-  defaultVariant: Variant;
-  defaultTimeControl: TimeControlPreset;
-  defaultRatedStatus: boolean;
-  variantSettings: {
-    variant: Variant;
-    default_parameters: {
-      boardWidth?: number;
-      boardHeight?: number;
-    };
-  }[];
-}
 
 export const settingsQueryOptions = queryOptions({
   queryKey: SETTINGS_QUERY_KEY,
@@ -92,60 +75,53 @@ export const settingsQueryOptions = queryOptions({
 // Settings mutation functions
 export const settingsMutations = {
   updateBoardTheme: (boardTheme: string) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings["board-theme"].$put({ json: { boardTheme } }),
     ),
 
   updatePawnColor: (pawnColor: string) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings["pawn-color"].$put({ json: { pawnColor } }),
     ),
 
   updatePawn: (pawnType: PawnType, pawnShape: string) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings.pawn.$put({ json: { pawnType, pawnShape } }),
     ),
 
   updateTimeControl: (timeControl: TimeControlPreset) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings["time-control"].$put({ json: { timeControl } }),
     ),
 
   updateRatedStatus: (rated: boolean) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings["rated-status"].$put({ json: { rated } }),
     ),
 
   updateDefaultVariant: (variant: Variant) =>
-    handleResponse<{ success: boolean }>(
+    handleResponse<SuccessResponse>(
       api.settings["default-variant"].$put({ json: { variant } }),
     ),
 
-  updateVariantParameters: (
-    variant: Variant,
-    parameters: { boardWidth: number; boardHeight: number },
-  ) =>
-    handleResponse<{ success: boolean }>(
+  updateVariantParameters: (variant: Variant, parameters: VariantParameters) =>
+    handleResponse<SuccessResponse>(
       api.settings["variant-parameters"].$put({
-        json: { variant, parameters },
+        json: {
+          variant,
+          parameters: {
+            boardWidth: parameters.boardWidth,
+            boardHeight: parameters.boardHeight,
+          },
+        },
       }),
     ),
 
   updateDisplayName: (displayName: string) =>
-    handleResponse<{
-      success: boolean;
-      displayName: string;
-      capitalizedDisplayName: string;
-    }>(api.settings["display-name"].$put({ json: { displayName } })),
+    handleResponse<UpdateDisplayNameResponse>(
+      api.settings["display-name"].$put({ json: { displayName } }),
+    ),
 };
-
-export interface GameCreateResponse {
-  gameId: string;
-  hostToken: string;
-  socketToken: string;
-  shareUrl: string;
-  snapshot: GameSnapshot;
-}
 
 export const createGameSession = async (args: {
   config: GameConfiguration;
@@ -185,15 +161,6 @@ export const createGameSession = async (args: {
   );
 };
 
-export interface GameSessionDetails {
-  snapshot: GameSnapshot;
-  role: GameRole;
-  playerId: PlayerId;
-  token: string;
-  socketToken: string;
-  shareUrl?: string;
-}
-
 export const fetchGameSession = async (args: {
   gameId: string;
   token: string;
@@ -211,13 +178,7 @@ export const joinGameSession = async (args: {
   displayName?: string;
   appearance?: PlayerAppearance;
 }): Promise<GameSessionDetails> => {
-  const data = await handleResponse<{
-    gameId: string;
-    token: string;
-    socketToken: string;
-    snapshot: GameSnapshot;
-    shareUrl?: string;
-  }>(
+  const data = await handleResponse<JoinGameResponse>(
     api.games[":id"].join.$post({
       param: { id: args.gameId },
       json: {
@@ -240,10 +201,7 @@ export const markGameReady = async (args: {
   gameId: string;
   token: string;
 }): Promise<GameSnapshot> => {
-  const data = await handleResponse<{
-    success: boolean;
-    snapshot: GameSnapshot;
-  }>(
+  const data = await handleResponse<ReadyGameResponse>(
     api.games[":id"].ready.$post({
       param: { id: args.gameId },
       json: { token: args.token },
@@ -254,7 +212,7 @@ export const markGameReady = async (args: {
 
 // Fetch list of available matchmaking games
 export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
-  const data = await handleResponse<{ games: GameSnapshot[] }>(
+  const data = await handleResponse<MatchmakingGamesResponse>(
     api.games.matchmaking.$get(),
   );
   return data.games;

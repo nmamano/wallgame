@@ -1,6 +1,5 @@
-import type { PlayerId, MatchType } from "../../../shared/game-types";
-
-export type GameRole = "host" | "joiner";
+import type { PlayerId, MatchType } from "../../../shared/domain/game-types";
+import type { GameRole } from "../../../shared/contracts/games";
 
 export interface StoredGameHandshake {
   gameId: string;

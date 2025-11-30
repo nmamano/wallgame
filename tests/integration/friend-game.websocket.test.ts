@@ -6,7 +6,9 @@ import type {
   GameSessionDetails,
 } from "../../frontend/src/lib/api";
 
+// ================================
 // --- Test Harness ---
+// ================================
 
 let server: any;
 let baseUrl: string;
@@ -27,7 +29,9 @@ async function stopTestServer() {
   }
 }
 
+// ================================
 // --- HTTP Client Helpers ---
+// ================================
 
 async function createFriendGame(
   userId: string,
@@ -135,7 +139,9 @@ async function fetchMatchmakingGames(): Promise<any[]> {
   return json.games;
 }
 
+// ================================
 // --- WebSocket Client Helpers ---
+// ================================
 
 type WSMessage = { type: string; [key: string]: any };
 
@@ -215,7 +221,9 @@ async function openGameSocket(
   });
 }
 
-// --- Main Test ---
+// ================================
+// --- Main Tests ---
+// ================================
 
 describe("friend game WebSocket integration", () => {
   beforeAll(() => {
@@ -226,7 +234,7 @@ describe("friend game WebSocket integration", () => {
     await stopTestServer();
   });
 
-  it("allows two players to create a friend game, join it, and exchange moves", async () => {
+  it("allows two players to create a friend game, join it, exchange moves, and do meta actions", async () => {
     const userA = "user-a";
     const userB = "user-b";
 

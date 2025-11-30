@@ -3,7 +3,10 @@ import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { AlertCircle, Trophy, RotateCcw } from "lucide-react";
 import { Board, type BoardProps, type BoardPawn } from "@/components/board";
-import type { PlayerId, WallOrientation } from "../../../shared/game-types";
+import type {
+  PlayerId,
+  WallOrientation,
+} from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 
 type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];

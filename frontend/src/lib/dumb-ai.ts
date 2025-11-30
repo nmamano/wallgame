@@ -1,7 +1,7 @@
 // Frontend-specific game functionality
 
-import { Grid } from "../../../shared/grid";
-import type { Cell, Move } from "../../../shared/game-types";
+import { Grid } from "../../../shared/domain/grid";
+import type { Cell, Move } from "../../../shared/domain/game-types";
 
 export function getAiMove(
   grid: Grid,

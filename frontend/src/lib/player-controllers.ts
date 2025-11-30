@@ -1,7 +1,7 @@
 import type { PlayerType } from "@/lib/gameViewModel";
 import { getAiMove } from "./dumb-ai";
-import type { PlayerId, Move } from "../../../shared/game-types";
-import type { GameState } from "../../../shared/game-state";
+import type { PlayerId, Move } from "../../../shared/domain/game-types";
+import type { GameState } from "../../../shared/domain/game-state";
 
 export type PlayerControllerKind = "local-human" | "easy-bot" | "unsupported";
 
