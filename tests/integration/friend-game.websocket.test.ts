@@ -15,7 +15,10 @@ import type {
   GameConfiguration,
   PlayerAppearance,
 } from "../../shared/domain/game-types";
-import { cellFromStandardNotation } from "../../shared/domain/standard-notation";
+import {
+  cellFromStandardNotation,
+  moveFromStandardNotation,
+} from "../../shared/domain/standard-notation";
 
 // ================================
 // --- Test Harness ---
@@ -164,9 +167,15 @@ async function fetchMatchmakingGames(): Promise<
 
 type TestSocket = {
   ws: WebSocket;
-  waitForMessage: <T extends ServerMessage>(
-    predicate: (msg: ServerMessage) => msg is T,
-  ) => Promise<T>;
+  /** Wait for the next message of the expected type. Skips messages of ignored types. Fails immediately if an unexpected type arrives. */
+  waitForMessage: <T extends ServerMessage["type"]>(
+    expectedType: T,
+    options?: { ignore?: ServerMessage["type"][] },
+  ) => Promise<Extract<ServerMessage, { type: T }>>;
+  /** Consume and ignore any buffered messages of the given type (useful for match-status messages). */
+  drainMessages: (type: ServerMessage["type"]) => void;
+  /** Get current buffer state for debugging. */
+  getBufferState: () => string;
   close: () => void;
 };
 
@@ -188,50 +197,94 @@ async function openGameSocket(
     });
 
     const buffer: ServerMessage[] = [];
-    const listeners: ((msg: ServerMessage) => void)[] = [];
+    let waitingResolve: ((msg: ServerMessage) => void) | null = null;
 
     ws.on("message", (data) => {
       const msg = JSON.parse(data.toString()) as ServerMessage;
-      buffer.push(msg);
-      listeners.forEach((l) => l(msg));
+      if (waitingResolve) {
+        const resolve = waitingResolve;
+        waitingResolve = null;
+        resolve(msg);
+      } else {
+        buffer.push(msg);
+      }
     });
 
     ws.on("open", () => {
       resolve({
         ws,
         close: () => ws.close(),
-        waitForMessage: <T extends ServerMessage>(
-          predicate: (msg: ServerMessage) => msg is T,
-        ) => {
-          return new Promise<T>((resolveWait, rejectWait) => {
-            // Check buffer first
-            const index = buffer.findIndex(predicate);
-            if (index > -1) {
-              const [msg] = buffer.splice(index, 1);
-              return resolveWait(msg as T);
+
+        getBufferState: () => {
+          return buffer.map((m) => m.type).join(", ") || "(empty)";
+        },
+
+        drainMessages: (type: ServerMessage["type"]) => {
+          for (let i = buffer.length - 1; i >= 0; i--) {
+            if (buffer[i].type === type) {
+              buffer.splice(i, 1);
             }
+          }
+        },
 
-            const check = (msg: ServerMessage) => {
-              if (predicate(msg)) {
-                clearTimeout(timeout);
-                const listenerIndex = listeners.indexOf(check);
-                if (listenerIndex > -1) listeners.splice(listenerIndex, 1);
+        waitForMessage: <T extends ServerMessage["type"]>(
+          expectedType: T,
+          options?: { ignore?: ServerMessage["type"][] },
+        ) => {
+          const ignoreTypes = options?.ignore ?? [];
 
-                const bufferIndex = buffer.indexOf(msg);
-                if (bufferIndex > -1) buffer.splice(bufferIndex, 1);
+          return new Promise<Extract<ServerMessage, { type: T }>>(
+            (resolveWait, rejectWait) => {
+              const processMessage = (msg: ServerMessage): boolean => {
+                if (msg.type === expectedType) {
+                  resolveWait(msg as Extract<ServerMessage, { type: T }>);
+                  return true; // Handled
+                } else if (ignoreTypes.includes(msg.type)) {
+                  return false; // Skip, keep waiting
+                } else {
+                  rejectWait(
+                    new Error(
+                      `Expected message type "${expectedType}" but got "${msg.type}". ` +
+                        `Message: ${JSON.stringify(msg, null, 2)}`,
+                    ),
+                  );
+                  return true; // Handled (with error)
+                }
+              };
 
-                resolveWait(msg as T);
+              // Check buffer first, skip ignored messages
+              while (buffer.length > 0) {
+                const msg = buffer.shift()!;
+                if (processMessage(msg)) {
+                  return;
+                }
+                // Message was ignored, continue checking buffer
               }
-            };
 
-            const timeout = setTimeout(() => {
-              const listenerIndex = listeners.indexOf(check);
-              if (listenerIndex > -1) listeners.splice(listenerIndex, 1);
-              rejectWait(new Error("Timeout waiting for WS message"));
-            }, 5000);
+              // Set up timeout
+              const timeout = setTimeout(() => {
+                waitingResolve = null;
+                rejectWait(
+                  new Error(
+                    `Timeout waiting for "${expectedType}" message. Buffer: ${buffer.map((m) => m.type).join(", ") || "(empty)"}`,
+                  ),
+                );
+              }, 5000);
 
-            listeners.push(check);
-          });
+              // Wait for messages, skipping ignored ones
+              const waitForNext = () => {
+                waitingResolve = (msg: ServerMessage) => {
+                  if (processMessage(msg)) {
+                    clearTimeout(timeout);
+                  } else {
+                    // Message was ignored, wait for next
+                    waitForNext();
+                  }
+                };
+              };
+              waitForNext();
+            },
+          );
         },
       });
     });
@@ -309,29 +362,15 @@ describe("friend game WebSocket integration", () => {
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
-    // Wait for initial state
-    const stateMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    const stateMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    // Wait for initial match status and state (match-status comes first on connect)
+    const matchStatusMsgA = await socketA.waitForMessage("match-status");
+    const stateMsgA = await socketA.waitForMessage("state");
+    const matchStatusMsgB = await socketB.waitForMessage("match-status");
+    const stateMsgB = await socketB.waitForMessage("state");
 
     const initialState = stateMsgA.state;
     expect(initialState).toBeDefined();
     expect(stateMsgB.state).toEqual(initialState);
-
-    // Wait for match status updates to get player appearances
-    const matchStatusMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
-        msg.type === "match-status",
-    );
-    const matchStatusMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
-        msg.type === "match-status",
-    );
 
     // Verify both clients receive correct player appearances
     expect(matchStatusMsgA.snapshot.players[0].appearance).toEqual(
@@ -352,19 +391,15 @@ describe("friend game WebSocket integration", () => {
     socketA.ws.send(
       JSON.stringify({
         type: "submit-move",
-        actions: [{ type: "cat", cell: cellFromStandardNotation("b4", 5) }],
+        move: moveFromStandardNotation("Cb4", 5),
       }),
     );
 
     // 5. Verify both players receive the new state
-    const updateMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    const updateMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    const [updateMsgA, updateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
     expect(updateMsgB.state.pawns["1"].cat).toEqual(
       cellFromStandardNotation("b4", 5),
     );
@@ -376,19 +411,15 @@ describe("friend game WebSocket integration", () => {
     socketB.ws.send(
       JSON.stringify({
         type: "submit-move",
-        actions: [{ type: "cat", cell: cellFromStandardNotation("d4", 5) }],
+        move: moveFromStandardNotation("Cd4", 5),
       }),
     );
 
     // 7. Verify both players receive the new state
-    const finalMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    const finalMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    const [finalMsgA, finalMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
     expect(finalMsgA.state.pawns["2"].cat).toEqual(
       cellFromStandardNotation("d4", 5),
     );
@@ -396,78 +427,79 @@ describe("friend game WebSocket integration", () => {
       cellFromStandardNotation("d4", 5),
     );
 
-    // // 8. Add more moves including wall moves and pawn moves
-    // // User A places a wall (using safer coordinates)
-    // const wallPayloadA = {
-    //   type: "submit-move",
-    //   actions: [{ type: "wall", cell: [1, 1], orientation: "vertical" }],
-    // };
-    // socketA.ws.send(JSON.stringify(wallPayloadA));
+    // 8. Add more moves including wall moves and pawn moves
+    // User A places a vertical wall to the right of b4
+    socketA.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation(">b4", 5),
+      }),
+    );
 
-    // const wallUpdateMsgB = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(wallUpdateMsgB.state.walls).toHaveLength(1);
-    // expect(wallUpdateMsgB.state.walls[0]).toEqual({
-    //   cell: [1, 1],
-    //   orientation: "vertical",
-    //   playerId: 1,
-    // });
+    const [wallUpdateMsgA, wallUpdateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(wallUpdateMsgA.state.walls).toHaveLength(1);
+    expect(wallUpdateMsgB.state.walls).toHaveLength(1);
+    expect(wallUpdateMsgB.state.walls[0]).toEqual({
+      cell: cellFromStandardNotation("b4", 5),
+      orientation: "vertical",
+      playerId: 1,
+    });
 
-    // // User B moves mouse
-    // const p2Mouse = wallUpdateMsgB.state.pawns["2"].mouse as [number, number];
-    // const mouseTargetB: [number, number] = [p2Mouse[0] - 1, p2Mouse[1]];
+    // User B moves mouse from e1 to e2
+    socketB.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("Me2", 5),
+      }),
+    );
 
-    // const mouseMovePayloadB = {
-    //   type: "submit-move",
-    //   actions: [{ type: "mouse", cell: mouseTargetB }],
-    // };
-    // socketB.ws.send(JSON.stringify(mouseMovePayloadB));
+    const [mouseUpdateMsgA, mouseUpdateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(
+      cellFromStandardNotation("e2", 5),
+    );
+    expect(mouseUpdateMsgB.state.pawns["2"].mouse).toEqual(
+      cellFromStandardNotation("e2", 5),
+    );
 
-    // const mouseUpdateMsgA = await socketA.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(mouseTargetB);
+    // User A places a horizontal wall above c2 (doesn't block cat's path)
+    socketA.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("^c2", 5),
+      }),
+    );
 
-    // // User A places another wall
-    // const wallPayloadA2 = {
-    //   type: "submit-move",
-    //   actions: [{ type: "wall", cell: [2, 3], orientation: "horizontal" }],
-    // };
-    // socketA.ws.send(JSON.stringify(wallPayloadA2));
+    const [wall2UpdateMsgA, wall2UpdateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(wall2UpdateMsgA.state.walls).toHaveLength(2);
+    expect(wall2UpdateMsgB.state.walls).toHaveLength(2);
 
-    // const wallUpdateMsgB2 = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(wallUpdateMsgB2.state.walls).toHaveLength(2);
+    // User B moves cat from d4 to d3
+    socketB.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("Cd3", 5),
+      }),
+    );
 
-    // // User B moves cat
-    // const p2Cat2 = wallUpdateMsgB2.state.pawns["2"].cat as [number, number];
-    // const catTargetB2: [number, number] = [p2Cat2[0] + 1, p2Cat2[1]];
-
-    // const catMovePayloadB2 = {
-    //   type: "submit-move",
-    //   actions: [{ type: "cat", cell: catTargetB2 }],
-    // };
-    // socketB.ws.send(JSON.stringify(catMovePayloadB2));
-
-    // const finalStateMsg = await socketA.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(finalStateMsg.state.pawns["2"].cat).toEqual(catTargetB2);
-
-    // // 9. Test time control - User A gives time to User B
-    // const initialTimeLeft = finalStateMsg.state.timeLeft;
-    // const giveTimePayload = {
-    //   type: "give-time",
-    //   seconds: 30,
-    // };
-    // socketA.ws.send(JSON.stringify(giveTimePayload));
-
-    // const timeUpdateMsg = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(timeUpdateMsg.state.timeLeft["2"]).toBe(initialTimeLeft["2"] + 30);
+    const [catUpdateMsgA, catUpdateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(catUpdateMsgA.state.pawns["2"].cat).toEqual(
+      cellFromStandardNotation("d3", 5),
+    );
+    expect(catUpdateMsgB.state.pawns["2"].cat).toEqual(
+      cellFromStandardNotation("d3", 5),
+    );
 
     // // 10. Test takeback flows - both rejection and acceptance scenarios
 
@@ -642,29 +674,15 @@ describe("friend game WebSocket integration", () => {
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
-    // Wait for initial state
-    const stateMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    const stateMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    // Wait for initial match status and state (match-status comes first on connect)
+    const matchStatusMsgA = await socketA.waitForMessage("match-status");
+    const stateMsgA = await socketA.waitForMessage("state");
+    const matchStatusMsgB = await socketB.waitForMessage("match-status");
+    const stateMsgB = await socketB.waitForMessage("state");
 
     const initialState = stateMsgA.state;
     expect(initialState).toBeDefined();
     expect(stateMsgB.state).toEqual(initialState);
-
-    // Wait for match status updates to get player appearances
-    const matchStatusMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
-        msg.type === "match-status",
-    );
-    const matchStatusMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "match-status" }> =>
-        msg.type === "match-status",
-    );
 
     // Verify both clients receive correct player appearances
     expect(matchStatusMsgA.snapshot.players[0].appearance).toEqual(
@@ -712,34 +730,22 @@ describe("friend game WebSocket integration", () => {
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
-    // Wait for initial state
-    const stateMsgA = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    const stateMsgB = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    // Wait for initial match status and state (match-status comes first on connect)
+    await socketA.waitForMessage("match-status");
+    await socketA.waitForMessage("state");
+    await socketB.waitForMessage("match-status");
+    await socketB.waitForMessage("state");
 
     // Make some moves to have an active game
-    // Player 1 moves cat from a9 to e8
-    const moveTarget = cellFromStandardNotation("b8", gameConfig.boardHeight);
-
+    // Player 1 moves cat from a9 to b8
     const movePayload: ClientMessage = {
       type: "submit-move",
-      actions: [{ type: "cat", cell: moveTarget }],
+      move: moveFromStandardNotation("Cb8", gameConfig.boardHeight),
     };
     socketA.ws.send(JSON.stringify(movePayload));
 
-    await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    await socketA.waitForMessage("state", { ignore: ["match-status"] });
+    await socketB.waitForMessage("state", { ignore: ["match-status"] });
 
     // Test draw offer and rejection
     const drawOfferPayload: ClientMessage = {
@@ -747,10 +753,9 @@ describe("friend game WebSocket integration", () => {
     };
     socketA.ws.send(JSON.stringify(drawOfferPayload));
 
-    const drawOfferMsg = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "draw-offer" }> =>
-        msg.type === "draw-offer",
-    );
+    const drawOfferMsg = await socketB.waitForMessage("draw-offer", {
+      ignore: ["match-status"],
+    });
     expect(drawOfferMsg.playerId).toBe(1);
 
     const drawRejectPayload: ClientMessage = {
@@ -758,29 +763,26 @@ describe("friend game WebSocket integration", () => {
     };
     socketB.ws.send(JSON.stringify(drawRejectPayload));
 
-    const drawRejectMsg = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "draw-rejected" }> =>
-        msg.type === "draw-rejected",
-    );
+    const drawRejectMsg = await socketA.waitForMessage("draw-rejected", {
+      ignore: ["match-status", "draw-offer"],
+    });
     expect(drawRejectMsg.playerId).toBe(2);
 
     // Test draw offer and acceptance
     socketA.ws.send(JSON.stringify(drawOfferPayload));
 
-    const drawOfferMsg2 = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "draw-offer" }> =>
-        msg.type === "draw-offer",
-    );
+    await socketB.waitForMessage("draw-offer", {
+      ignore: ["match-status", "draw-rejected"],
+    });
 
     const drawAcceptPayload: ClientMessage = {
       type: "draw-accept",
     };
     socketB.ws.send(JSON.stringify(drawAcceptPayload));
 
-    const drawEndMsg = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    const drawEndMsg = await socketA.waitForMessage("state", {
+      ignore: ["match-status", "draw-offer"],
+    });
     expect(drawEndMsg.state.status).toBe("finished");
     expect(drawEndMsg.state.result?.reason).toBe("draw-agreement");
 
@@ -790,10 +792,9 @@ describe("friend game WebSocket integration", () => {
     };
     socketA.ws.send(JSON.stringify(rematchOfferPayload));
 
-    const rematchOfferMsg = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "rematch-offer" }> =>
-        msg.type === "rematch-offer",
-    );
+    const rematchOfferMsg = await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+    });
     expect(rematchOfferMsg.playerId).toBe(1);
 
     const rematchAcceptPayload: ClientMessage = {
@@ -801,34 +802,22 @@ describe("friend game WebSocket integration", () => {
     };
     socketB.ws.send(JSON.stringify(rematchAcceptPayload));
 
-    const rematchStateMsg = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    const rematchStateMsg = await socketA.waitForMessage("state", {
+      ignore: ["match-status", "rematch-offer"],
+    });
     expect(rematchStateMsg.state.status).toBe("playing");
     expect(rematchStateMsg.state.moveCount).toBe(1);
 
     // Make a move in the new game
-    // Player 1 moves cat from a9 to e8
-    const newMoveTarget = cellFromStandardNotation(
-      "b8",
-      gameConfig.boardHeight,
-    );
-
+    // Player 1 moves cat from a9 to b8
     const newMovePayload: ClientMessage = {
       type: "submit-move",
-      actions: [{ type: "cat", cell: newMoveTarget }],
+      move: moveFromStandardNotation("Cb8", gameConfig.boardHeight),
     };
     socketA.ws.send(JSON.stringify(newMovePayload));
 
-    await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
-    await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    await socketA.waitForMessage("state", { ignore: ["match-status"] });
+    await socketB.waitForMessage("state", { ignore: ["match-status"] });
 
     // Test rematch rejection
     const resignPayload: ClientMessage = {
@@ -836,27 +825,24 @@ describe("friend game WebSocket integration", () => {
     };
     socketB.ws.send(JSON.stringify(resignPayload));
 
-    const resignEndMsg = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "state" }> =>
-        msg.type === "state",
-    );
+    const resignEndMsg = await socketA.waitForMessage("state", {
+      ignore: ["match-status"],
+    });
     expect(resignEndMsg.state.status).toBe("finished");
 
     socketA.ws.send(JSON.stringify(rematchOfferPayload));
-    const rematchOfferMsg2 = await socketB.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "rematch-offer" }> =>
-        msg.type === "rematch-offer",
-    );
+    await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+    });
 
     const rematchRejectPayload: ClientMessage = {
       type: "rematch-reject",
     };
     socketB.ws.send(JSON.stringify(rematchRejectPayload));
 
-    const rematchRejectMsg = await socketA.waitForMessage(
-      (msg): msg is Extract<ServerMessage, { type: "rematch-rejected" }> =>
-        msg.type === "rematch-rejected",
-    );
+    const rematchRejectMsg = await socketA.waitForMessage("rematch-rejected", {
+      ignore: ["match-status", "rematch-offer"],
+    });
     expect(rematchRejectMsg.playerId).toBe(2);
 
     socketA.close();

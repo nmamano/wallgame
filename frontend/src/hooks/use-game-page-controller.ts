@@ -38,7 +38,6 @@ import { useOnlineGameSession } from "@/hooks/use-online-game-session";
 import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
-  serializeActions,
 } from "@/lib/game-state-utils";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
 import {
@@ -1448,12 +1447,11 @@ export function useGamePageController(gameId: string) {
           }
           if (isMultiplayerMatch) {
             gameAwaitingServerRef.current = true;
-            const payload = serializeActions(move.actions);
             debugMatch("Sending move over websocket", {
-              actionCount: payload.length,
+              actionCount: move.actions.length,
               turn: playerId,
             });
-            gameClientRef.current?.sendMove(payload);
+            gameClientRef.current?.sendMove(move);
             setActionError(null);
             return;
           }

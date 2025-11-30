@@ -8,7 +8,7 @@
  */
 
 import type {
-  GameActionPayload,
+  Move,
   SerializedGameState,
   GameSnapshot,
 } from "../domain/game-types";
@@ -22,7 +22,7 @@ import type {
  * - Utility: ping, give-time
  */
 export type ClientMessage =
-  | { type: "submit-move"; actions: GameActionPayload[] }
+  | { type: "submit-move"; move: Move }
   | { type: "resign" }
   | { type: "ping" }
   | { type: "give-time"; seconds: number }

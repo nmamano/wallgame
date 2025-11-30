@@ -7,12 +7,10 @@ import type {
   GameSnapshot,
   PlayerId,
   SessionStatus,
-  GameActionPayload,
   SerializedGameState,
   GamePlayerSummary,
   PlayerAppearance,
   Move,
-  Action,
 } from "../../shared/domain/game-types";
 
 // Match type determines how players join the game
@@ -290,23 +288,6 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
     }));
 };
 
-const toAction = (payload: GameActionPayload): Action => {
-  if (payload.type === "wall") {
-    if (!payload.orientation) {
-      throw new Error("Wall orientation required");
-    }
-    return {
-      type: payload.type,
-      target: payload.cell,
-      wallOrientation: payload.orientation,
-    };
-  }
-  return {
-    type: payload.type,
-    target: payload.cell,
-  };
-};
-
 const applyActionToSession = (
   session: GameSession,
   action: GameAction,
@@ -321,17 +302,16 @@ const applyActionToSession = (
 export const applyPlayerMove = (args: {
   id: string;
   playerId: PlayerId;
-  actions: GameActionPayload[];
+  move: Move;
   timestamp: number;
 }): GameState => {
   const session = ensureSession(args.id);
   if (session.gameState.status !== "playing") {
     throw new Error("Game has already finished");
   }
-  const move: Move = { actions: args.actions.map(toAction) };
   return applyActionToSession(session, {
     kind: "move",
-    move,
+    move: args.move,
     playerId: args.playerId,
     timestamp: args.timestamp,
   });

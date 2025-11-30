@@ -1,12 +1,8 @@
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import { Grid } from "../../../shared/domain/grid";
 import { GameState } from "../../../shared/domain/game-state";
-import type { Action } from "../../../shared/domain/game-types";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
-import type {
-  GameActionPayload,
-  SerializedGameState,
-} from "../../../shared/domain/game-types";
+import type { SerializedGameState } from "../../../shared/domain/game-types";
 
 export const buildGameConfigurationFromSerialized = (
   serialized: SerializedGameState,
@@ -76,12 +72,4 @@ export const hydrateGameStateFromSerialized = (
   }
 
   return state;
-};
-
-export const serializeActions = (actions: Action[]): GameActionPayload[] => {
-  return actions.map((action) => ({
-    type: action.type,
-    cell: action.target,
-    orientation: action.wallOrientation,
-  }));
 };
