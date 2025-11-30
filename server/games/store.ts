@@ -66,11 +66,19 @@ const createGameState = (config: GameConfiguration): GameState => {
   return new GameState(config, Date.now());
 };
 
+/**
+ * Creates a new game session.
+ *
+ * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
+ *   If not provided, the server randomly chooses. Tests can pass this explicitly
+ *   for deterministic behavior.
+ */
 export const createGameSession = (args: {
   config: GameConfiguration;
   matchType: MatchType;
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
+  hostIsPlayer1?: boolean;
 }): GameCreationResult => {
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
   // No invite code needed - the game ID itself is secure enough
@@ -79,6 +87,12 @@ export const createGameSession = (args: {
   const guestToken = nanoid();
   const guestSocketToken = nanoid();
   const now = Date.now();
+
+  // Determine which role gets which PlayerId based on hostIsPlayer1
+  // If not provided, randomly choose. See game-types.ts for Player A/B vs Player 1/2 terminology.
+  const hostIsPlayer1 = args.hostIsPlayer1 ?? Math.random() < 0.5;
+  const hostPlayerId: PlayerId = hostIsPlayer1 ? 1 : 2;
+  const joinerPlayerId: PlayerId = hostIsPlayer1 ? 2 : 1;
 
   const session: GameSession = {
     id,
@@ -90,10 +104,10 @@ export const createGameSession = (args: {
     players: {
       host: {
         role: "host",
-        playerId: 1,
+        playerId: hostPlayerId,
         token: hostToken,
         socketToken: hostSocketToken,
-        displayName: args.hostDisplayName ?? "Player 1",
+        displayName: args.hostDisplayName ?? `Player ${hostPlayerId}`,
         connected: false,
         ready: false,
         lastSeenAt: now,
@@ -101,10 +115,11 @@ export const createGameSession = (args: {
       },
       joiner: {
         role: "joiner",
-        playerId: 2,
+        playerId: joinerPlayerId,
         token: guestToken,
         socketToken: guestSocketToken,
-        displayName: args.matchType === "friend" ? "Friend" : "Player 2",
+        displayName:
+          args.matchType === "friend" ? "Friend" : `Player ${joinerPlayerId}`,
         connected: false,
         ready: false,
         lastSeenAt: now,

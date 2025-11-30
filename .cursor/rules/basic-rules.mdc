@@ -4,8 +4,10 @@ alwaysApply: true
 
 - Use bun, not npm, pnpm, etc.
 - When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
+- Don't add comments about backward compatibility. The game is not finished yet so there shouldn't be tech debt like that.
 - If you need new UI components they may be in `frontend/src/components/unused-components/`. Read `frontend/src/components/unused-components/RE_ADDING_COMPONENTS.md` for how to re-add them.
 - When finishing a task, run `bun run format`.
 - If you deem it necessary, when finishing a task, you can run `bun run test`, `bun run lint`, and `bun run build` to ensure that the tests, linting, and build pass.
 - When listing object properties or function arguments that take multiple lines, use a comma after the last one.
 - Every type used across the frontend-server boundary must be in `shared/contracts/`.
+- Player 1/2 determines who starts (Player 1 always starts) and the starting pawn positions. This is known as Player ID. On the game setup page, players are setup as Player A/B. It corresponds to the `role` field: "host" | "joiner", as Player A is always the host. Who becomes Player 1 is random.
