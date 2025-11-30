@@ -1,6 +1,6 @@
 import type {
   GameSnapshot,
-  GameActionPayload,
+  Move,
   SerializedGameState,
 } from "../../../shared/domain/game-types";
 import type { ServerMessage } from "../../../shared/contracts/websocket-messages";
@@ -87,16 +87,16 @@ export class GameClient {
     });
   }
 
-  sendMove(actions: GameActionPayload[]): void {
+  sendMove(move: Move): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       this.handlers.onError?.("Socket not connected.");
       return;
     }
     console.debug("[game-client] send move", {
       gameId: this.params.gameId,
-      actionCount: actions.length,
+      actionCount: move.actions.length,
     });
-    this.socket.send(JSON.stringify({ type: "submit-move", actions }));
+    this.socket.send(JSON.stringify({ type: "submit-move", move }));
   }
 
   sendResign(): void {

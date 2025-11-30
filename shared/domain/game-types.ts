@@ -123,13 +123,6 @@ export interface Turn {
   move2?: Move;
 }
 
-// Action payload sent from client to server. TODO: rename
-export interface GameActionPayload {
-  type: "cat" | "mouse" | "wall";
-  cell: Cell;
-  orientation?: WallOrientation;
-}
-
 export type WinReason =
   | "capture"
   | "timeout"

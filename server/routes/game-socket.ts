@@ -126,13 +126,13 @@ const handleMove = (socket: SessionSocket, message: ClientMessage) => {
   applyPlayerMove({
     id: socket.sessionId,
     playerId: socket.playerId,
-    actions: message.actions ?? [],
+    move: message.move,
     timestamp: Date.now(),
   });
   console.info("[ws] move processed", {
     sessionId: socket.sessionId,
     playerId: socket.playerId,
-    actionCount: message.actions?.length ?? 0,
+    actionCount: message.move?.actions?.length ?? 0,
   });
   broadcast(socket.sessionId, {
     type: "state",
