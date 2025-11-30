@@ -6,9 +6,9 @@ import type {
   PawnType,
   Action,
   GameConfiguration,
-} from "../../../shared/game-types";
-import { GameState } from "../../../shared/game-state";
-import type { GameSnapshot } from "../../../shared/game-types";
+} from "../../../shared/domain/game-types";
+import { GameState } from "../../../shared/domain/game-state";
+import type { GameSnapshot } from "../../../shared/domain/game-types";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 
 export type PlayerType =

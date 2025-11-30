@@ -6,7 +6,7 @@ import {
   clearGameHandshake,
   type StoredGameHandshake,
 } from "@/lib/game-session";
-import type { GameSnapshot } from "../../../shared/game-types";
+import type { GameSnapshot } from "../../../shared/domain/game-types";
 import type { LocalPreferences } from "@/hooks/use-game-page-controller";
 
 interface UseOnlineGameSessionOptions {

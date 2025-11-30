@@ -11,17 +11,17 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PlayerConfiguration } from "@/components/player-configuration";
-import type { GameConfiguration } from "../../../shared/game-types";
+import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
   Variant,
   TimeControlConfig,
   GameSnapshot,
-} from "../../../shared/game-types";
+} from "../../../shared/domain/game-types";
 import {
   timeControlConfigFromPreset,
   formatTimeControl as formatTimeControlUtil,
-} from "../../../shared/game-utils";
+} from "../../../shared/domain/game-utils";
 import { Input } from "@/components/ui/input";
 import type { PlayerType } from "@/lib/gameViewModel";
 import { Switch } from "@/components/ui/switch";

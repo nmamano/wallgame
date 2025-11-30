@@ -10,15 +10,15 @@ import {
   colorFilterMap,
   colorHexMap,
 } from "@/lib/player-colors";
-import { Grid } from "../../../shared/grid";
+import { Grid } from "../../../shared/domain/grid";
 import type {
   PlayerId,
   WallOrientation,
   Cell,
   WallPosition,
-} from "../../../shared/game-types";
-import type { Pawn } from "../../../shared/game-types";
-import { pawnId } from "../../../shared/game-utils";
+} from "../../../shared/domain/game-types";
+import type { Pawn } from "../../../shared/domain/game-types";
+import { pawnId } from "../../../shared/domain/game-utils";
 
 type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
 

@@ -2,19 +2,14 @@ import type {
   GameSnapshot,
   GameActionPayload,
   SerializedGameState,
-} from "../../../shared/game-types";
+} from "../../../shared/domain/game-types";
+import type { ServerMessage } from "../../../shared/contracts/websocket-messages";
 
 export interface GameClientHandlers {
   onState?: (state: SerializedGameState) => void;
   onMatchStatus?: (snapshot: GameSnapshot) => void;
   onError?: (message: string) => void;
 }
-
-type ServerMessage =
-  | { type: "state"; state: SerializedGameState }
-  | { type: "match-status"; snapshot: GameSnapshot }
-  | { type: "error"; message: string }
-  | { type: "pong"; timestamp: number };
 
 const buildSocketUrl = (gameId: string, token: string): string => {
   const base = new URL(window.location.origin);

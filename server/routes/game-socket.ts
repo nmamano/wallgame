@@ -18,24 +18,10 @@ import {
   type SessionPlayer,
 } from "../games/store";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
-import type { GameActionPayload, PlayerId } from "../../shared/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { ClientMessage } from "../../shared/contracts/websocket-messages";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
-
-type ClientMessage =
-  | { type: "submit-move"; actions: GameActionPayload[] }
-  | { type: "resign" }
-  | { type: "ping" }
-  | { type: "give-time"; seconds: number }
-  | { type: "takeback-offer" }
-  | { type: "takeback-accept" }
-  | { type: "takeback-reject" }
-  | { type: "draw-offer" }
-  | { type: "draw-accept" }
-  | { type: "draw-reject" }
-  | { type: "rematch-offer" }
-  | { type: "rematch-accept" }
-  | { type: "rematch-reject" };
 
 interface SessionSocket {
   ctx: WSContext;

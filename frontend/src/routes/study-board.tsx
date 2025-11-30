@@ -17,8 +17,8 @@ import type {
   WallOrientation,
   PawnType,
   WallPosition,
-} from "../../../shared/game-types";
-import { sameWallPosition } from "../../../shared/game-utils";
+} from "../../../shared/domain/game-types";
+import { sameWallPosition } from "../../../shared/domain/game-utils";
 
 type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
 

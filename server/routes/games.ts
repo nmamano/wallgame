@@ -1,5 +1,4 @@
 import { Hono } from "hono";
-import { z } from "zod";
 import { zValidator } from "@hono/zod-validator";
 import {
   createGameSession,
@@ -9,51 +8,12 @@ import {
   resolveSessionForToken,
   listMatchmakingGames,
 } from "../games/store";
-
-const timeControlValues = ["bullet", "blitz", "rapid", "classical"] as const;
-const variantValues = ["standard", "classic"] as const;
-
-const timeControlSchema = z.object({
-  initialSeconds: z
-    .number()
-    .int()
-    .min(10)
-    .max(60 * 60),
-  incrementSeconds: z.number().int().min(0).max(60),
-  preset: z.enum(timeControlValues).optional(),
-});
-
-const appearanceSchema = z
-  .object({
-    pawnColor: z.string().max(32).optional(),
-    catSkin: z.string().max(64).optional(),
-    mouseSkin: z.string().max(64).optional(),
-  })
-  .optional();
-
-const matchTypeValues = ["friend", "matchmaking"] as const;
-
-const createGameSchema = z.object({
-  config: z.object({
-    timeControl: timeControlSchema,
-    rated: z.boolean().optional().default(false),
-    variant: z.enum(variantValues),
-    boardWidth: z.number().int().min(4).max(20),
-    boardHeight: z.number().int().min(4).max(20),
-  }),
-  matchType: z.enum(matchTypeValues).default("friend"),
-  hostDisplayName: z.string().max(50).optional(),
-  hostAppearance: appearanceSchema,
-});
-
-const joinGameSchema = z.object({
-  displayName: z.string().max(50).optional(),
-  appearance: appearanceSchema,
-});
-
-const readySchema = z.object({
-  token: z.string(),
-});
+import {
+  createGameSchema,
+  joinGameSchema,
+  readySchema,
+  getGameSessionQuerySchema,
+} from "../../shared/contracts/games";
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -130,7 +90,7 @@ export const gamesRoute = new Hono()
       return c.json({ error: "Internal server error" }, 500);
     }
   })
-  .get("/:id", zValidator("query", z.object({ token: z.string() })), (c) => {
+  .get("/:id", zValidator("query", getGameSessionQuerySchema), (c) => {
     try {
       const { id } = c.req.param();
       const { token } = c.req.valid("query");

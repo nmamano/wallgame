@@ -1,7 +1,7 @@
 import { nanoid } from "nanoid";
-import { GameState } from "../../shared/game-state";
-import type { GameAction } from "../../shared/game-types";
-import { moveToStandardNotation } from "../../shared/standard-notation";
+import { GameState } from "../../shared/domain/game-state";
+import type { GameAction } from "../../shared/domain/game-types";
+import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type {
   GameConfiguration,
   GameSnapshot,
@@ -13,7 +13,7 @@ import type {
   PlayerAppearance,
   Move,
   Action,
-} from "../../shared/game-types";
+} from "../../shared/domain/game-types";
 
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";

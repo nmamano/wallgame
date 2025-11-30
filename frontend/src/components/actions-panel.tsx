@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Flag, Handshake, RotateCcw, Timer } from "lucide-react";
-import type { PlayerId } from "../../../shared/game-types";
+import type { PlayerId } from "../../../shared/domain/game-types";
 
 interface DrawDecisionPromptState {
   from: PlayerId;

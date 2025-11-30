@@ -15,8 +15,8 @@ import type {
   GameConfiguration,
   TimeControlPreset,
   Variant,
-} from "../../../shared/game-types";
-import { timeControlConfigFromPreset } from "../../../shared/game-utils";
+} from "../../../shared/domain/game-types";
+import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 
 interface GameConfigurationPanelProps {
   config: GameConfiguration;

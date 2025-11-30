@@ -1,7 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
-import type { PlayerId } from "../../../shared/game-types";
+import type { PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/lib/gameViewModel";
 

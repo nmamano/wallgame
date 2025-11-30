@@ -1,6 +1,6 @@
 import { useState, useRef, useCallback, useEffect } from "react";
-import type { PlayerId } from "../../../shared/game-types";
-import type { GameState } from "../../../shared/game-state";
+import type { PlayerId } from "../../../shared/domain/game-types";
+import type { GameState } from "../../../shared/domain/game-state";
 import type { LocalPlayerController } from "@/lib/player-controllers";
 import type { DrawDecision, TakebackDecision } from "@/lib/player-controllers";
 import {
@@ -76,7 +76,7 @@ interface UseMetaGameActionsParams {
 
   // Actions
   performGameAction: (
-    action: import("../../../shared/game-types").GameAction,
+    action: import("../../../shared/domain/game-types").GameAction,
   ) => GameState;
   updateGameState: (
     nextState: GameState,

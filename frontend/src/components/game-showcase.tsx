@@ -3,7 +3,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
 import { Board, type Arrow } from "@/components/board";
-import type { WallPosition, Pawn } from "../../../shared/game-types";
+import type { WallPosition, Pawn } from "../../../shared/domain/game-types";
 
 type WallPositionWithState = WallPosition & {
   state?: "placed" | "staged" | "premoved" | "calculated" | "missing";
@@ -11,7 +11,7 @@ type WallPositionWithState = WallPosition & {
 import {
   cellFromStandardNotation,
   playerWallFromStandardNotation,
-} from "../../../shared/standard-notation";
+} from "../../../shared/domain/standard-notation";
 
 export function GameShowcase() {
   const [isPlaying, setIsPlaying] = useState(true);
