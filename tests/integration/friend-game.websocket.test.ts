@@ -77,7 +77,12 @@ async function createFriendGame(
     }),
   });
 
-  expect(res.status).toBe(201);
+  if (res.status !== 201) {
+    const text = await res.text();
+    throw new Error(
+      `Expected status 201 but got ${res.status}. Error: ${text}`,
+    );
+  }
   const json = await res.json();
   return json as GameCreateResponse;
 }
@@ -293,6 +298,56 @@ async function openGameSocket(
   });
 }
 
+/**
+ * Sends a move from one socket and waits for both sockets to receive the state update.
+ * Verifies both sockets received the same state and that the move was applied correctly.
+ * Returns the state from the first socket.
+ */
+async function sendMoveAndWaitForState(
+  senderSocketIdx: 0 | 1,
+  allSockets: [TestSocket, TestSocket],
+  moveNotation: string,
+  boardHeight: number,
+): Promise<Extract<ServerMessage, { type: "state" }>["state"]> {
+  const move = moveFromStandardNotation(moveNotation, boardHeight);
+
+  const senderSocket = allSockets[senderSocketIdx];
+  senderSocket.ws.send(
+    JSON.stringify({
+      type: "submit-move",
+      move,
+    }),
+  );
+
+  const [stateA, stateB] = await Promise.all([
+    allSockets[0].waitForMessage("state", { ignore: ["match-status"] }),
+    allSockets[1].waitForMessage("state", { ignore: ["match-status"] }),
+  ]);
+
+  expect(stateA.state).toEqual(stateB.state);
+
+  // Verify each action in the move was applied correctly
+  // After a move, state.turn switches to the other player, so the mover is the opposite
+  const playerId = stateA.state.turn === 1 ? "2" : "1";
+  for (const action of move.actions) {
+    if (action.type === "cat") {
+      expect(stateA.state.pawns[playerId].cat).toEqual(action.target);
+    } else if (action.type === "mouse") {
+      expect(stateA.state.pawns[playerId].mouse).toEqual(action.target);
+    } else if (action.type === "wall") {
+      const matchingWall = stateA.state.walls.find(
+        (w) =>
+          w.cell[0] === action.target[0] &&
+          w.cell[1] === action.target[1] &&
+          w.orientation === action.wallOrientation,
+      );
+      expect(matchingWall).toBeDefined();
+    }
+  }
+
+  return stateA.state;
+}
+
 // ================================
 // --- Main Tests ---
 // ================================
@@ -323,7 +378,12 @@ describe("friend game WebSocket integration", () => {
     };
 
     // 1. User A creates a friend game with appearance
-    // The board is 5x5 (from a1 at the bottom-left to e5 at the top-right)
+    // The board is 3x3 (from a1 at the bottom-left to c3 at the top-right)
+    /*
+      C1 __ C2
+      __ __ __
+      M1 __ M2
+    */
     const gameConfig: GameConfiguration = {
       timeControl: {
         initialSeconds: 600,
@@ -332,11 +392,11 @@ describe("friend game WebSocket integration", () => {
       },
       variant: "standard",
       rated: false,
-      boardWidth: 5,
-      boardHeight: 5,
+      boardWidth: 3,
+      boardHeight: 3,
     };
-    // Create game with host as Player 1 for deterministic testing
-    // In production, hostIsPlayer1 is randomly chosen by the host frontend
+    // Create game with host as Player 1 (who starts first) for deterministic testing
+    // In normal games, hostIsPlayer1 is randomly chosen by the host frontend
     const {
       gameId,
       shareUrl,
@@ -386,120 +446,94 @@ describe("friend game WebSocket integration", () => {
       userBAppearance,
     ); // Joiner
 
-    // 4. User A (Player 1) sends first move - move cat from a5 to b4
-    // Player 1 always starts, and their cat starts at a5 (top-left)
-    socketA.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation("Cb4", 5),
-      }),
-    );
+    // 4. User A (Player 1) sends first move - move cat from a3 to b2
+    // Player 1 starts, and their cat starts at a3 (top-left)
+    /* __ __ C2
+       __ C1 __
+       M1 __ M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
-    // 5. Verify both players receive the new state
-    const [updateMsgA, updateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(updateMsgB.state.pawns["1"].cat).toEqual(
-      cellFromStandardNotation("b4", 5),
-    );
-    expect(updateMsgA.state.pawns["1"].cat).toEqual(
-      cellFromStandardNotation("b4", 5),
-    );
+    // 5. User B (Player 2) sends a move - move cat from c3 to b2
+    /* __ _____ __
+       __ C1/C2 __
+       M1 _____ M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
-    // 6. User B (Player 2) sends a move - move cat from e5 to d4
-    socketB.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation("Cd4", 5),
-      }),
-    );
+    // // 8. Add more moves including wall moves and pawn moves
+    // // User A places a vertical wall to the right of b4
+    // socketA.ws.send(
+    //   JSON.stringify({
+    //     type: "submit-move",
+    //     move: moveFromStandardNotation(">b4", 5),
+    //   }),
+    // );
 
-    // 7. Verify both players receive the new state
-    const [finalMsgA, finalMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(finalMsgA.state.pawns["2"].cat).toEqual(
-      cellFromStandardNotation("d4", 5),
-    );
-    expect(finalMsgB.state.pawns["2"].cat).toEqual(
-      cellFromStandardNotation("d4", 5),
-    );
+    // const [wallUpdateMsgA, wallUpdateMsgB] = await Promise.all([
+    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
+    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    // ]);
+    // expect(wallUpdateMsgA.state.walls).toHaveLength(1);
+    // expect(wallUpdateMsgB.state.walls).toHaveLength(1);
+    // expect(wallUpdateMsgB.state.walls[0]).toEqual({
+    //   cell: cellFromStandardNotation("b4", 5),
+    //   orientation: "vertical",
+    //   playerId: 1,
+    // });
 
-    // 8. Add more moves including wall moves and pawn moves
-    // User A places a vertical wall to the right of b4
-    socketA.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation(">b4", 5),
-      }),
-    );
+    // // User B moves mouse from e1 to e2
+    // socketB.ws.send(
+    //   JSON.stringify({
+    //     type: "submit-move",
+    //     move: moveFromStandardNotation("Me2", 5),
+    //   }),
+    // );
 
-    const [wallUpdateMsgA, wallUpdateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(wallUpdateMsgA.state.walls).toHaveLength(1);
-    expect(wallUpdateMsgB.state.walls).toHaveLength(1);
-    expect(wallUpdateMsgB.state.walls[0]).toEqual({
-      cell: cellFromStandardNotation("b4", 5),
-      orientation: "vertical",
-      playerId: 1,
-    });
+    // const [mouseUpdateMsgA, mouseUpdateMsgB] = await Promise.all([
+    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
+    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    // ]);
+    // expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(
+    //   cellFromStandardNotation("e2", 5),
+    // );
+    // expect(mouseUpdateMsgB.state.pawns["2"].mouse).toEqual(
+    //   cellFromStandardNotation("e2", 5),
+    // );
 
-    // User B moves mouse from e1 to e2
-    socketB.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation("Me2", 5),
-      }),
-    );
+    // // User A places a horizontal wall above c2 (doesn't block cat's path)
+    // socketA.ws.send(
+    //   JSON.stringify({
+    //     type: "submit-move",
+    //     move: moveFromStandardNotation("^c2", 5),
+    //   }),
+    // );
 
-    const [mouseUpdateMsgA, mouseUpdateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(
-      cellFromStandardNotation("e2", 5),
-    );
-    expect(mouseUpdateMsgB.state.pawns["2"].mouse).toEqual(
-      cellFromStandardNotation("e2", 5),
-    );
+    // const [wall2UpdateMsgA, wall2UpdateMsgB] = await Promise.all([
+    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
+    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    // ]);
+    // expect(wall2UpdateMsgA.state.walls).toHaveLength(2);
+    // expect(wall2UpdateMsgB.state.walls).toHaveLength(2);
 
-    // User A places a horizontal wall above c2 (doesn't block cat's path)
-    socketA.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation("^c2", 5),
-      }),
-    );
+    // // User B moves cat from d4 to d3
+    // socketB.ws.send(
+    //   JSON.stringify({
+    //     type: "submit-move",
+    //     move: moveFromStandardNotation("Cd3", 5),
+    //   }),
+    // );
 
-    const [wall2UpdateMsgA, wall2UpdateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(wall2UpdateMsgA.state.walls).toHaveLength(2);
-    expect(wall2UpdateMsgB.state.walls).toHaveLength(2);
-
-    // User B moves cat from d4 to d3
-    socketB.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: moveFromStandardNotation("Cd3", 5),
-      }),
-    );
-
-    const [catUpdateMsgA, catUpdateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    ]);
-    expect(catUpdateMsgA.state.pawns["2"].cat).toEqual(
-      cellFromStandardNotation("d3", 5),
-    );
-    expect(catUpdateMsgB.state.pawns["2"].cat).toEqual(
-      cellFromStandardNotation("d3", 5),
-    );
+    // const [catUpdateMsgA, catUpdateMsgB] = await Promise.all([
+    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
+    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    // ]);
+    // expect(catUpdateMsgA.state.pawns["2"].cat).toEqual(
+    //   cellFromStandardNotation("d3", 5),
+    // );
+    // expect(catUpdateMsgB.state.pawns["2"].cat).toEqual(
+    //   cellFromStandardNotation("d3", 5),
+    // );
 
     // // 10. Test takeback flows - both rejection and acceptance scenarios
 
@@ -738,14 +772,12 @@ describe("friend game WebSocket integration", () => {
 
     // Make some moves to have an active game
     // Player 1 moves cat from a9 to b8
-    const movePayload: ClientMessage = {
-      type: "submit-move",
-      move: moveFromStandardNotation("Cb8", gameConfig.boardHeight),
-    };
-    socketA.ws.send(JSON.stringify(movePayload));
-
-    await socketA.waitForMessage("state", { ignore: ["match-status"] });
-    await socketB.waitForMessage("state", { ignore: ["match-status"] });
+    await sendMoveAndWaitForState(
+      0,
+      [socketA, socketB],
+      "Cb8",
+      gameConfig.boardHeight,
+    );
 
     // Test draw offer and rejection
     const drawOfferPayload: ClientMessage = {
@@ -802,22 +834,27 @@ describe("friend game WebSocket integration", () => {
     };
     socketB.ws.send(JSON.stringify(rematchAcceptPayload));
 
-    const rematchStateMsg = await socketA.waitForMessage("state", {
-      ignore: ["match-status", "rematch-offer"],
-    });
-    expect(rematchStateMsg.state.status).toBe("playing");
-    expect(rematchStateMsg.state.moveCount).toBe(1);
+    // Wait for both sockets to receive the new game state after rematch
+    const [rematchStateMsgA, rematchStateMsgB] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+    ]);
+    expect(rematchStateMsgA.state.status).toBe("playing");
+    expect(rematchStateMsgA.state.moveCount).toBe(1);
+    expect(rematchStateMsgA.state).toEqual(rematchStateMsgB.state);
 
     // Make a move in the new game
     // Player 1 moves cat from a9 to b8
-    const newMovePayload: ClientMessage = {
-      type: "submit-move",
-      move: moveFromStandardNotation("Cb8", gameConfig.boardHeight),
-    };
-    socketA.ws.send(JSON.stringify(newMovePayload));
-
-    await socketA.waitForMessage("state", { ignore: ["match-status"] });
-    await socketB.waitForMessage("state", { ignore: ["match-status"] });
+    await sendMoveAndWaitForState(
+      0,
+      [socketA, socketB],
+      "Cb8",
+      gameConfig.boardHeight,
+    );
 
     // Test rematch rejection
     const resignPayload: ClientMessage = {

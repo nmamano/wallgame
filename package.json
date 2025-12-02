@@ -5,7 +5,7 @@
   "scripts": {
     "start": "bun run server/index.ts",
     "dev": "FRONTEND_URL=http://localhost:5173 bun run --hot server/index.ts",
-    "test": "bun test",
+    "test": "bun test --bail",
     "build": "bun --cwd=frontend run build",
     "format": "bunx prettier --write .",
     "format:check": "bunx prettier --check .",
