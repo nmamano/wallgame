@@ -188,7 +188,7 @@ export type GameAction =
   | { kind: "resign"; playerId: PlayerId; timestamp: number }
   | { kind: "timeout"; playerId: PlayerId; timestamp: number }
   | { kind: "draw"; playerId?: PlayerId; timestamp: number }
-  | { kind: "takeback"; playerId?: PlayerId; timestamp: number }
+  | { kind: "takeback"; playerId: PlayerId; timestamp: number }
   | {
       kind: "giveTime";
       playerId: PlayerId;

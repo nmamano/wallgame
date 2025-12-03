@@ -487,6 +487,13 @@ export const resetSession = (id: string): GameState => {
   session.updatedAt = Date.now();
   session.players.host.ready = false;
   session.players.joiner.ready = false;
+
+  // Swap player IDs so the other player goes first in the rematch
+  const hostPlayerId = session.players.host.playerId;
+  const joinerPlayerId = session.players.joiner.playerId;
+  session.players.host.playerId = joinerPlayerId;
+  session.players.joiner.playerId = hostPlayerId;
+
   return session.gameState;
 };
 

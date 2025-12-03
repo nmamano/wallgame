@@ -23,12 +23,11 @@ import type {
   GameConfiguration,
   PlayerAppearance,
 } from "../../shared/domain/game-types";
-import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
-  newRatingsAfterGame,
-  Outcome,
-  type RatingState,
-} from "../../server/games/rating-system";
+  cellFromStandardNotation,
+  moveFromStandardNotation,
+} from "../../shared/domain/standard-notation";
+import { newRatingsAfterGame, Outcome } from "../../server/games/rating-system";
 
 // ================================
 // --- Test Harness ---
@@ -479,7 +478,7 @@ describe("friend game WebSocket integration", () => {
     const userB = "user-b";
 
     // Define Glicko-2 rating state for both players
-    // Note: DB uses ratingDeviation, but RatingState type uses deviation
+    // Note: DB uses ratingDeviation, but rating-system uses deviation
     const userARating = { rating: 1500, deviation: 200, volatility: 0.06 };
     const userBRating = { rating: 1350, deviation: 150, volatility: 0.05 };
 
@@ -511,7 +510,7 @@ describe("friend game WebSocket integration", () => {
       mouseSkin: "mouse3.svg",
     };
 
-    // 1. User A creates a friend game with appearance
+    // User A creates a friend game with appearance
     // The board is 3x3 (from a1 at the bottom-left to c3 at the top-right)
     /*
       C1 .. C2
@@ -546,7 +545,7 @@ describe("friend game WebSocket integration", () => {
     expect(initialSnapshotA.players[0].appearance).toEqual(userAAppearance);
     expect(initialSnapshotA.players[0].elo).toBe(userARating.rating); // Host's rating should be included
 
-    // 2. User B joins the game with appearance
+    // User B joins the game with appearance
     const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
       await joinFriendGame(userB, gameId, userBAppearance);
     expect(socketTokenB).toBeDefined();
@@ -555,15 +554,15 @@ describe("friend game WebSocket integration", () => {
     expect(joinSnapshotB.players[0].elo).toBe(userARating.rating); // Host rating
     expect(joinSnapshotB.players[1].elo).toBe(userBRating.rating); // Joiner rating
 
-    // 3. Both connect via WebSocket
+    // Both connect via WebSocket
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
-    // Wait for initial match status and state (match-status comes first on connect)
-    const matchStatusMsgA = await socketA.waitForMessage("match-status");
+    // Wait for initial state and match status (state comes first on connect)
     const stateMsgA = await socketA.waitForMessage("state");
-    const matchStatusMsgB = await socketB.waitForMessage("match-status");
+    const matchStatusMsgA = await socketA.waitForMessage("match-status");
     const stateMsgB = await socketB.waitForMessage("state");
+    const matchStatusMsgB = await socketB.waitForMessage("match-status");
 
     const initialState = stateMsgA.state;
     expect(initialState).toBeDefined();
@@ -589,7 +588,7 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
     expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
 
-    // 4. User A (Player 1) sends first move - move cat from a3 to b2
+    // User A (Player 1) sends first move - move cat from a3 to b2
     // Player 1 starts, and their cat starts at a3 (top-left)
     /* .. .. C2
        .. C1 ..
@@ -597,14 +596,123 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
-    // 5. User B (Player 2) sends a move - move cat from c3 to b2
+    // User B (Player 2) sends a move - move cat from c3 to b2
     /* .. ..... ..
        .. C1/C2 ..
        M1 ..... M2
     */
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
-    // 6. User A (Player 1) sends a move - places two walls
+    // Player 2 requests a takeback
+    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+    // Only the opponent (Player 1) receives the takeback offer
+    const takebackOfferA = await socketA.waitForMessage("takeback-offer", {
+      ignore: ["match-status"],
+    });
+    expect(takebackOfferA.playerId).toBe(2);
+
+    // Player 1 accepts the takeback
+    socketA.ws.send(JSON.stringify({ type: "takeback-accept" }));
+
+    // Both players receive the updated state (move undone)
+    const [takebackStateA, takebackStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(takebackStateA.state).toEqual(takebackStateB.state);
+    // After takeback, it should be Player 2's turn again
+    expect(takebackStateA.state.turn).toBe(2);
+    // Player 2's cat should be back on c3
+    expect(takebackStateA.state.pawns[2].cat).toEqual(
+      cellFromStandardNotation("c3", 3),
+    );
+
+    // Player 2 makes the same move again
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
+    // Player 2 requests another takeback
+    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+    // Only the opponent (Player 1) receives the takeback offer
+    const takebackOffer2A = await socketA.waitForMessage("takeback-offer", {
+      ignore: ["match-status"],
+    });
+    expect(takebackOffer2A.playerId).toBe(2);
+
+    // Player 1 rejects the takeback
+    socketA.ws.send(JSON.stringify({ type: "takeback-reject" }));
+
+    // Both players receive the rejection (rejections are broadcast)
+    const [takebackReject2A, takebackReject2B] = await Promise.all([
+      socketA.waitForMessage("takeback-rejected", { ignore: ["match-status"] }),
+      socketB.waitForMessage("takeback-rejected", { ignore: ["match-status"] }),
+    ]);
+    expect(takebackReject2A.playerId).toBe(1);
+    expect(takebackReject2B.playerId).toBe(1);
+
+    // Player 2 requests yet another takeback
+    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+    // Only the opponent (Player 1) receives the takeback offer
+    const takebackOffer3A = await socketA.waitForMessage("takeback-offer", {
+      ignore: ["match-status"],
+    });
+    expect(takebackOffer3A.playerId).toBe(2);
+
+    // Player 1 requests a takeback while Player 2's takeback is still pending
+    // Player 1 is asking to undo THEIR OWN last move (Cb2)
+    socketA.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+    // Only the opponent (Player 2) receives Player 1's takeback offer
+    const takebackOffer4B = await socketB.waitForMessage("takeback-offer", {
+      ignore: ["match-status"],
+    });
+    expect(takebackOffer4B.playerId).toBe(1);
+
+    // Player 2 accepts Player 1's takeback
+    socketB.ws.send(JSON.stringify({ type: "takeback-accept" }));
+
+    // Both players receive the updated state
+    // Since P1 requested to undo their own move, this undoes both:
+    // - Player 2's last move (Cb2) - to get back to P1's turn
+    // - Player 1's last move (Cb2) - the move P1 asked to take back
+    // This brings the game back to the starting position
+    const [takebackState2A, takebackState2B] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(takebackState2A.state).toEqual(takebackState2B.state);
+    // After takeback, it's Player 1's turn (back to start)
+    expect(takebackState2A.state.turn).toBe(1);
+    // Both cats should be back at their starting corners
+    expect(takebackState2A.state.pawns[1].cat).toEqual(
+      cellFromStandardNotation("a3", 3),
+    );
+    expect(takebackState2A.state.pawns[2].cat).toEqual(
+      cellFromStandardNotation("c3", 3),
+    );
+
+    // Players replay the same moves
+    // Player 1 moves cat from a3 to b2
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+
+    // Player 2 moves cat from c3 to b2
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
+    // User A (Player 1) sends a move - places two walls
     /* .. ..... ..
        ..|C1/C2 ..
           -----
@@ -612,7 +720,7 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], ">a2.^b1", 3);
 
-    // 7. User B (Player 2) sends a move - cat move and wall
+    // User B (Player 2) sends a move - cat move and wall
     /* .. .. ..
        ..|C1 C2
        -- --
@@ -620,7 +728,7 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cc2.^a1", 3);
 
-    // 8. User A (Player 1) wins by capturing Player 2's mouse at c1
+    // User A (Player 1) wins by capturing Player 2's mouse at c1
     /* .. .. ..
        ..|.. C2
        -- --
@@ -674,6 +782,361 @@ describe("friend game WebSocket integration", () => {
     // Sanity check: winner's rating should increase, loser's should decrease
     expect(hostNewRating).toBeGreaterThan(userARating.rating);
     expect(joinerNewRating).toBeLessThan(userBRating.rating);
+
+    // Test rematch - Player A offers, Player B accepts
+    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+
+    // Only the opponent (Player B) receives the rematch offer
+    const rematchOfferMsgB = await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status"],
+    });
+    expect(rematchOfferMsgB.playerId).toBe(1);
+
+    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+
+    // Wait for both sockets to receive the new game state after rematch
+    const [rematchStateA, rematchStateB] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+    ]);
+    expect(rematchStateA.state.status).toBe("playing");
+    expect(rematchStateA.state.moveCount).toBe(1);
+    expect(rematchStateA.state).toEqual(rematchStateB.state);
+
+    // Wait for match-status to verify player roles have swapped
+    const [rematchStatusA, rematchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // After rematch, Player B (joiner) should now be Player 1 (goes first)
+    // players[0] is still the host (User A), players[1] is still the joiner (User B)
+    expect(rematchStatusA.snapshot.players[0].playerId).toBe(2); // Host is now Player 2
+    expect(rematchStatusA.snapshot.players[1].playerId).toBe(1); // Joiner is now Player 1
+    expect(rematchStatusB.snapshot).toEqual(rematchStatusA.snapshot);
+
+    // Player B (now Player 1) makes the first move
+    // Since player IDs swapped, socketB (User B) is now Player 1
+    // Move cat from a3 (Player 1's starting corner) to b2
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
+    // Player A (now Player 2) makes a move
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+
+    // Both players offer draws in parallel
+    socketA.ws.send(JSON.stringify({ type: "draw-offer" }));
+    socketB.ws.send(JSON.stringify({ type: "draw-offer" }));
+
+    // Each socket receives only the opponent's offer (not their own)
+    const [drawOfferFromB, drawOfferFromA] = await Promise.all([
+      socketA.waitForMessage("draw-offer", { ignore: ["match-status"] }),
+      socketB.waitForMessage("draw-offer", { ignore: ["match-status"] }),
+    ]);
+    expect(drawOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
+    expect(drawOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
+
+    // One player rejects, the other accepts
+    // Player A rejects (B's offer), Player B accepts (A's offer) → Draw happens
+    socketA.ws.send(JSON.stringify({ type: "draw-reject" }));
+    socketB.ws.send(JSON.stringify({ type: "draw-accept" }));
+
+    // Both players receive the draw result
+    const [drawState2A, drawState2B] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "draw-offer", "draw-rejected"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "draw-offer", "draw-rejected"],
+      }),
+    ]);
+    expect(drawState2A.state.status).toBe("finished");
+    expect(drawState2A.state.result?.reason).toBe("draw-agreement");
+    expect(drawState2A.state).toEqual(drawState2B.state);
+
+    // Wait for match-status messages which contain updated ratings after draw
+    const [drawMatchStatusA, drawMatchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // Verify updated ratings after draw
+    // players[0] is host (User A), players[1] is joiner (User B)
+    const hostRatingAfterDraw = drawMatchStatusA.snapshot.players[0].elo!;
+    const joinerRatingAfterDraw = drawMatchStatusA.snapshot.players[1].elo!;
+
+    // Both clients should receive the same updated ratings
+    expect(drawMatchStatusB.snapshot.players[0].elo).toBe(hostRatingAfterDraw);
+    expect(drawMatchStatusB.snapshot.players[1].elo).toBe(
+      joinerRatingAfterDraw,
+    );
+
+    // Verify ratings changed from post-game-1 values
+    expect(hostRatingAfterDraw).not.toBe(hostNewRating);
+    expect(joinerRatingAfterDraw).not.toBe(joinerNewRating);
+
+    // In a draw, the higher-rated player loses rating, lower-rated gains
+    // After game 1, host (A) had higher rating than joiner (B)
+    expect(hostRatingAfterDraw).toBeLessThan(hostNewRating);
+    expect(joinerRatingAfterDraw).toBeGreaterThan(joinerNewRating);
+
+    // Both players offer rematch
+    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    socketB.ws.send(JSON.stringify({ type: "rematch-offer" }));
+
+    // Each socket receives only the opponent's offer (not their own)
+    const [rematchOfferFromB, rematchOfferFromA] = await Promise.all([
+      socketA.waitForMessage("rematch-offer", {
+        ignore: ["match-status", "state"],
+      }),
+      socketB.waitForMessage("rematch-offer", {
+        ignore: ["match-status", "state"],
+      }),
+    ]);
+    expect(rematchOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
+    expect(rematchOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
+
+    // One player accepts
+    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+
+    // Wait for new game state after second rematch
+    const [rematch2StateA, rematch2StateB] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+    ]);
+    expect(rematch2StateA.state.status).toBe("playing");
+    expect(rematch2StateA.state.moveCount).toBe(1);
+    expect(rematch2StateA.state).toEqual(rematch2StateB.state);
+
+    // Wait for match-status to verify player roles have swapped back
+    const [rematch2StatusA, rematch2StatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // After second rematch, Host (User A) should be Player 1 again
+    expect(rematch2StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1 again
+    expect(rematch2StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2 again
+    expect(rematch2StatusB.snapshot).toEqual(rematch2StatusA.snapshot);
+
+    // Host (Player 1) makes the first move in game 3
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+
+    // Host resigns game 3
+    socketA.ws.send(JSON.stringify({ type: "resign" }));
+
+    // Both players receive the game end state
+    const [resignStateA, resignStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(resignStateA.state.status).toBe("finished");
+    expect(resignStateA.state.result?.reason).toBe("resignation");
+    expect(resignStateA.state.result?.winner).toBe(2); // Joiner wins
+    expect(resignStateA.state).toEqual(resignStateB.state);
+
+    // Both players offer rematch
+    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    socketB.ws.send(JSON.stringify({ type: "rematch-offer" }));
+
+    // Each socket receives only the opponent's offer
+    await Promise.all([
+      socketA.waitForMessage("rematch-offer", {
+        ignore: ["match-status", "state"],
+      }),
+      socketB.waitForMessage("rematch-offer", {
+        ignore: ["match-status", "state"],
+      }),
+    ]);
+
+    // One player accepts
+    socketA.ws.send(JSON.stringify({ type: "rematch-accept" }));
+
+    // Wait for new game state after third rematch
+    const [rematch3StateA, rematch3StateB] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+    ]);
+    expect(rematch3StateA.state.status).toBe("playing");
+    expect(rematch3StateA.state.moveCount).toBe(1);
+    expect(rematch3StateA.state).toEqual(rematch3StateB.state);
+
+    // Wait for match-status to verify player roles have swapped again
+    const [rematch3StatusA, rematch3StatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // After third rematch, Joiner (User B) should be Player 1
+    expect(rematch3StatusA.snapshot.players[0].playerId).toBe(2); // Host is Player 2
+    expect(rematch3StatusA.snapshot.players[1].playerId).toBe(1); // Joiner is Player 1
+    expect(rematch3StatusB.snapshot).toEqual(rematch3StatusA.snapshot);
+
+    // Joiner (now Player 1) makes the first move in game 4
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
+    // Player 2 (Host) moves cat to b2
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+
+    // Player 1 (Joiner) moves cat to c1 - triggers 1-move rule draw
+    /* .. .. C2
+       .. .. ..
+       M1 C1 M2
+    */
+    socketB.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("Cc1", 3),
+      }),
+    );
+
+    // Game ends in draw due to 1-move rule
+    const [drawRuleStateA, drawRuleStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(drawRuleStateA.state.status).toBe("finished");
+    expect(drawRuleStateA.state.result?.reason).toBe("one-move-rule");
+    expect(drawRuleStateA.state).toEqual(drawRuleStateB.state);
+
+    // One player offers rematch, the other accepts
+    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+
+    await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+    });
+
+    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+
+    // Wait for new game state after fourth rematch
+    const [rematch4StateA, rematch4StateB] = await Promise.all([
+      socketA.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+      socketB.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      }),
+    ]);
+    expect(rematch4StateA.state.status).toBe("playing");
+    expect(rematch4StateA.state.moveCount).toBe(1);
+    expect(rematch4StateA.state).toEqual(rematch4StateB.state);
+
+    // Wait for match-status to verify player roles
+    const [rematch4StatusA, rematch4StatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // After fourth rematch, Host (User A) should be Player 1 again
+    expect(rematch4StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1
+    expect(rematch4StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2
+    expect(rematch4StatusB.snapshot).toEqual(rematch4StatusA.snapshot);
+
+    // Host (Player 1) makes the first move in game 5
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+
+    // Player 1 offers draw, Player 2 rejects
+    socketA.ws.send(JSON.stringify({ type: "draw-offer" }));
+
+    const drawOffer5B = await socketB.waitForMessage("draw-offer", {
+      ignore: ["match-status"],
+    });
+    expect(drawOffer5B.playerId).toBe(1);
+
+    socketB.ws.send(JSON.stringify({ type: "draw-reject" }));
+
+    const [drawReject5A, drawReject5B] = await Promise.all([
+      socketA.waitForMessage("draw-rejected", { ignore: ["match-status"] }),
+      socketB.waitForMessage("draw-rejected", { ignore: ["match-status"] }),
+    ]);
+    expect(drawReject5A.playerId).toBe(2);
+    expect(drawReject5B.playerId).toBe(2);
+
+    // Player 1 gives 30 seconds to Player 2
+    socketA.ws.send(JSON.stringify({ type: "give-time", seconds: 30 }));
+
+    // Both players receive updated state with the new time
+    const [giveTimeStateA, giveTimeStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(giveTimeStateA.state).toEqual(giveTimeStateB.state);
+    // Player 2's time should have increased (we just verify the state was broadcast)
+    expect(giveTimeStateA.state.status).toBe("playing");
+
+    // Player 2 makes suicidal move "Mb2" - moving mouse onto cat loses the game
+    /* .. .. C2
+       .. C1 ..
+       .. M1 M2   <- M1 moves to b2, lands on C1, loses
+    */
+    socketB.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: moveFromStandardNotation("Mb2", 3),
+      }),
+    );
+
+    // Game ends - Player 2 loses by moving mouse onto cat
+    const [suicideStateA, suicideStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+    expect(suicideStateA.state.status).toBe("finished");
+    expect(suicideStateA.state.result?.winner).toBe(1); // Player 1 wins
+    expect(suicideStateA.state.result?.reason).toBe("capture");
+    expect(suicideStateA.state).toEqual(suicideStateB.state);
+
+    // Player 1 offers rematch, Player 2 rejects
+    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+
+    const rematchOffer5B = await socketB.waitForMessage("rematch-offer", {
+      ignore: ["match-status", "state"],
+    });
+    expect(rematchOffer5B.playerId).toBe(1);
+
+    socketB.ws.send(JSON.stringify({ type: "rematch-reject" }));
+
+    const [rematchReject5A, rematchReject5B] = await Promise.all([
+      socketA.waitForMessage("rematch-rejected", { ignore: ["match-status"] }),
+      socketB.waitForMessage("rematch-rejected", { ignore: ["match-status"] }),
+    ]);
+    expect(rematchReject5A.playerId).toBe(2);
+    expect(rematchReject5B.playerId).toBe(2);
 
     socketA.close();
     socketB.close();
@@ -739,11 +1202,11 @@ describe("friend game WebSocket integration", () => {
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
     const socketB = await openGameSocket(userB, gameId, socketTokenB);
 
-    // Wait for initial match status and state (match-status comes first on connect)
-    const matchStatusMsgA = await socketA.waitForMessage("match-status");
+    // Wait for initial state and match status (state comes first on connect)
     const stateMsgA = await socketA.waitForMessage("state");
-    const matchStatusMsgB = await socketB.waitForMessage("match-status");
+    const matchStatusMsgA = await socketA.waitForMessage("match-status");
     const stateMsgB = await socketB.waitForMessage("state");
+    const matchStatusMsgB = await socketB.waitForMessage("match-status");
 
     const initialState = stateMsgA.state;
     expect(initialState).toBeDefined();
@@ -762,156 +1225,6 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgB.snapshot.players[1].appearance).toEqual(
       userBAppearance,
     ); // Joiner
-
-    socketA.close();
-    socketB.close();
-  });
-
-  it("supports draw offers, rejections, acceptance, and rematch functionality", async () => {
-    const userA = "user-a";
-    const userB = "user-b";
-
-    // Create and join a new game for draw/rematch testing
-    const gameConfig: GameConfiguration = {
-      timeControl: {
-        initialSeconds: 600,
-        incrementSeconds: 0,
-        preset: "rapid",
-      },
-      variant: "standard",
-      rated: false,
-      boardWidth: 9,
-      boardHeight: 9,
-    };
-    // Create game with host as Player 1 for deterministic testing
-    const { gameId, socketToken: socketTokenA } = await createFriendGame(
-      userA,
-      gameConfig,
-      { hostIsPlayer1: true },
-    );
-
-    const { socketToken: socketTokenB } = await joinFriendGame(userB, gameId);
-
-    const socketA = await openGameSocket(userA, gameId, socketTokenA);
-    const socketB = await openGameSocket(userB, gameId, socketTokenB);
-
-    // Wait for initial match status and state (match-status comes first on connect)
-    await socketA.waitForMessage("match-status");
-    await socketA.waitForMessage("state");
-    await socketB.waitForMessage("match-status");
-    await socketB.waitForMessage("state");
-
-    // Make some moves to have an active game
-    // Player 1 moves cat from a9 to b8
-    await sendMoveAndWaitForState(
-      0,
-      [socketA, socketB],
-      "Cb8",
-      gameConfig.boardHeight,
-    );
-
-    // Test draw offer and rejection
-    const drawOfferPayload: ClientMessage = {
-      type: "draw-offer",
-    };
-    socketA.ws.send(JSON.stringify(drawOfferPayload));
-
-    const drawOfferMsg = await socketB.waitForMessage("draw-offer", {
-      ignore: ["match-status"],
-    });
-    expect(drawOfferMsg.playerId).toBe(1);
-
-    const drawRejectPayload: ClientMessage = {
-      type: "draw-reject",
-    };
-    socketB.ws.send(JSON.stringify(drawRejectPayload));
-
-    const drawRejectMsg = await socketA.waitForMessage("draw-rejected", {
-      ignore: ["match-status", "draw-offer"],
-    });
-    expect(drawRejectMsg.playerId).toBe(2);
-
-    // Test draw offer and acceptance
-    socketA.ws.send(JSON.stringify(drawOfferPayload));
-
-    await socketB.waitForMessage("draw-offer", {
-      ignore: ["match-status", "draw-rejected"],
-    });
-
-    const drawAcceptPayload: ClientMessage = {
-      type: "draw-accept",
-    };
-    socketB.ws.send(JSON.stringify(drawAcceptPayload));
-
-    const drawEndMsg = await socketA.waitForMessage("state", {
-      ignore: ["match-status", "draw-offer"],
-    });
-    expect(drawEndMsg.state.status).toBe("finished");
-    expect(drawEndMsg.state.result?.reason).toBe("draw-agreement");
-
-    // Test rematch offer and acceptance
-    const rematchOfferPayload: ClientMessage = {
-      type: "rematch-offer",
-    };
-    socketA.ws.send(JSON.stringify(rematchOfferPayload));
-
-    const rematchOfferMsg = await socketB.waitForMessage("rematch-offer", {
-      ignore: ["match-status", "state"],
-    });
-    expect(rematchOfferMsg.playerId).toBe(1);
-
-    const rematchAcceptPayload: ClientMessage = {
-      type: "rematch-accept",
-    };
-    socketB.ws.send(JSON.stringify(rematchAcceptPayload));
-
-    // Wait for both sockets to receive the new game state after rematch
-    const [rematchStateMsgA, rematchStateMsgB] = await Promise.all([
-      socketA.waitForMessage("state", {
-        ignore: ["match-status", "rematch-offer"],
-      }),
-      socketB.waitForMessage("state", {
-        ignore: ["match-status", "rematch-offer"],
-      }),
-    ]);
-    expect(rematchStateMsgA.state.status).toBe("playing");
-    expect(rematchStateMsgA.state.moveCount).toBe(1);
-    expect(rematchStateMsgA.state).toEqual(rematchStateMsgB.state);
-
-    // Make a move in the new game
-    // Player 1 moves cat from a9 to b8
-    await sendMoveAndWaitForState(
-      0,
-      [socketA, socketB],
-      "Cb8",
-      gameConfig.boardHeight,
-    );
-
-    // Test rematch rejection
-    const resignPayload: ClientMessage = {
-      type: "resign",
-    };
-    socketB.ws.send(JSON.stringify(resignPayload));
-
-    const resignEndMsg = await socketA.waitForMessage("state", {
-      ignore: ["match-status"],
-    });
-    expect(resignEndMsg.state.status).toBe("finished");
-
-    socketA.ws.send(JSON.stringify(rematchOfferPayload));
-    await socketB.waitForMessage("rematch-offer", {
-      ignore: ["match-status", "state"],
-    });
-
-    const rematchRejectPayload: ClientMessage = {
-      type: "rematch-reject",
-    };
-    socketB.ws.send(JSON.stringify(rematchRejectPayload));
-
-    const rematchRejectMsg = await socketA.waitForMessage("rematch-rejected", {
-      ignore: ["match-status", "rematch-offer"],
-    });
-    expect(rematchRejectMsg.playerId).toBe(2);
 
     socketA.close();
     socketB.close();
