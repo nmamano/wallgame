@@ -346,7 +346,7 @@ export function useGamePageController(gameId: string) {
           id: `p${index + 1}`,
           playerId: (index + 1) as PlayerId,
           name: buildPlayerName(type, index, localPreferences.displayName),
-          rating: type.includes("bot") ? 1200 : 1250,
+          rating: 1500,
           color:
             index + 1 === nextPrimaryLocalPlayerId
               ? localPreferences.pawnColor

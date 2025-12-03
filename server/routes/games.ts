@@ -84,6 +84,7 @@ export const gamesRoute = new Hono()
           hostDisplayName: parsed.hostDisplayName,
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: parsed.hostIsPlayer1,
+          hostAuthUserId: user?.id,
           hostElo,
         });
         // The FRONTEND_URL environment variable is used for creating shareable
@@ -168,6 +169,7 @@ export const gamesRoute = new Hono()
           id,
           displayName: parsed.displayName,
           appearance: parsed.appearance,
+          authUserId: user?.id,
           elo: joinerElo,
         });
         const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;

@@ -12,6 +12,16 @@ import type {
   PlayerAppearance,
   Move,
 } from "../../shared/domain/game-types";
+import {
+  getRatingStateForAuthUser,
+  updateRatingStateForAuthUser,
+} from "../db/rating-helpers";
+import {
+  newRatingsAfterGame,
+  initialRating,
+  Outcome,
+  type RatingState,
+} from "./rating-system";
 
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
@@ -26,6 +36,7 @@ export interface SessionPlayer {
   ready: boolean;
   lastSeenAt: number;
   appearance: PlayerAppearance;
+  authUserId?: string; // Auth provider's user ID (for rating updates)
   elo?: number; // Looked up from DB based on authenticated user
 }
 
@@ -71,6 +82,7 @@ const createGameState = (config: GameConfiguration): GameState => {
  * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
  *   If not provided, the server randomly chooses. Tests can pass this explicitly
  *   for deterministic behavior.
+ * @param hostAuthUserId - Host's auth provider user ID (for rating updates).
  * @param hostElo - Host's ELO rating, looked up from DB by the route handler.
  */
 export const createGameSession = (args: {
@@ -79,6 +91,7 @@ export const createGameSession = (args: {
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
   hostIsPlayer1?: boolean;
+  hostAuthUserId?: string;
   hostElo?: number;
 }): GameCreationResult => {
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
@@ -113,6 +126,7 @@ export const createGameSession = (args: {
         ready: false,
         lastSeenAt: now,
         appearance: args.hostAppearance ?? {},
+        authUserId: args.hostAuthUserId,
         elo: args.hostElo,
       },
       joiner: {
@@ -144,6 +158,7 @@ export const joinGameSession = (args: {
   id: string;
   displayName?: string;
   appearance?: PlayerAppearance;
+  authUserId?: string; // Auth provider's user ID (for rating updates)
   elo?: number; // Looked up from DB by the route handler
 }): {
   session: GameSession;
@@ -173,6 +188,7 @@ export const joinGameSession = (args: {
     ...joiner.appearance,
     ...args.appearance,
   };
+  joiner.authUserId = args.authUserId;
   joiner.elo = args.elo;
   joiner.lastSeenAt = Date.now();
   session.updatedAt = Date.now();
@@ -492,4 +508,125 @@ export const updateConnectionState = (args: {
   player.connected = args.connected;
   player.lastSeenAt = Date.now();
   session.updatedAt = Date.now();
+};
+
+/**
+ * Processes rating updates after a game ends.
+ * Returns the new rating values if ratings were updated, or undefined otherwise.
+ *
+ * Rating updates only happen for rated games where both players are authenticated.
+ */
+export const processRatingUpdate = async (
+  id: string,
+): Promise<{ player1NewElo: number; player2NewElo: number } | undefined> => {
+  const session = ensureSession(id);
+  const gameState = session.gameState;
+
+  // Only process if game is finished
+  if (gameState.status !== "finished") {
+    return undefined;
+  }
+
+  // Only process rated games
+  if (!session.config.rated) {
+    return undefined;
+  }
+
+  // Get player info - find which player is which by playerId
+  const player1 =
+    session.players.host.playerId === 1
+      ? session.players.host
+      : session.players.joiner;
+  const player2 =
+    session.players.host.playerId === 2
+      ? session.players.host
+      : session.players.joiner;
+
+  // Both players must be authenticated for rating updates
+  if (!player1.authUserId || !player2.authUserId) {
+    console.info("[ratings] Skipping update - not all players authenticated", {
+      sessionId: id,
+      player1Auth: !!player1.authUserId,
+      player2Auth: !!player2.authUserId,
+    });
+    return undefined;
+  }
+
+  const variant = session.config.variant;
+  const timeControl = session.config.timeControl.preset ?? "rapid";
+
+  // Get current rating states from DB
+  const [player1State, player2State] = await Promise.all([
+    getRatingStateForAuthUser(player1.authUserId, variant, timeControl),
+    getRatingStateForAuthUser(player2.authUserId, variant, timeControl),
+  ]);
+
+  // Use initial rating if players don't have a rating yet
+  const state1: RatingState = player1State ?? initialRating();
+  const state2: RatingState = player2State ?? initialRating();
+
+  // Determine outcome from game result
+  const result = gameState.result;
+  if (!result) {
+    console.warn("[ratings] Game finished but no result found", {
+      sessionId: id,
+    });
+    return undefined;
+  }
+
+  let outcomeForPlayer1: Outcome;
+  if (result.winner === 1) {
+    outcomeForPlayer1 = Outcome.Win;
+  } else if (result.winner === 2) {
+    outcomeForPlayer1 = Outcome.Loss;
+  } else {
+    outcomeForPlayer1 = Outcome.Tie;
+  }
+
+  // Calculate new ratings
+  const { a: newState1, b: newState2 } = newRatingsAfterGame(
+    state1,
+    state2,
+    outcomeForPlayer1,
+  );
+
+  console.info("[ratings] Updating ratings", {
+    sessionId: id,
+    player1: {
+      authUserId: player1.authUserId,
+      oldRating: state1.rating,
+      newRating: newState1.rating,
+    },
+    player2: {
+      authUserId: player2.authUserId,
+      oldRating: state2.rating,
+      newRating: newState2.rating,
+    },
+    outcome: outcomeForPlayer1,
+  });
+
+  // Update ratings in DB
+  await Promise.all([
+    updateRatingStateForAuthUser(
+      player1.authUserId,
+      variant,
+      timeControl,
+      newState1,
+    ),
+    updateRatingStateForAuthUser(
+      player2.authUserId,
+      variant,
+      timeControl,
+      newState2,
+    ),
+  ]);
+
+  // Update session's ELO values so match-status reflects new ratings
+  player1.elo = newState1.rating;
+  player2.elo = newState2.rating;
+
+  return {
+    player1NewElo: newState1.rating,
+    player2NewElo: newState2.rating,
+  };
 };
