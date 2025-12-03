@@ -173,7 +173,7 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
     actionCount: message.move?.actions?.length ?? 0,
   });
 
-  // Process rating update if game ended
+  // Process rating update and send match-status if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
   }
@@ -182,7 +182,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
     type: "state",
     state: getSerializedState(socket.sessionId),
   });
-  sendMatchStatus(socket.sessionId);
+
+  // Only send match-status when game ends (ratings changed)
+  if (newState.status === "finished") {
+    sendMatchStatus(socket.sessionId);
+  }
 };
 
 const handleResign = async (socket: SessionSocket) => {

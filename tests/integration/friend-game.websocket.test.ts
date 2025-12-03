@@ -607,9 +607,7 @@ describe("friend game WebSocket integration", () => {
     socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
 
     // Only the opponent (Player 1) receives the takeback offer
-    const takebackOfferA = await socketA.waitForMessage("takeback-offer", {
-      ignore: ["match-status"],
-    });
+    const takebackOfferA = await socketA.waitForMessage("takeback-offer");
     expect(takebackOfferA.playerId).toBe(2);
 
     // Player 1 accepts the takeback
@@ -617,8 +615,8 @@ describe("friend game WebSocket integration", () => {
 
     // Both players receive the updated state (move undone)
     const [takebackStateA, takebackStateB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+      socketA.waitForMessage("state"),
+      socketB.waitForMessage("state"),
     ]);
     expect(takebackStateA.state).toEqual(takebackStateB.state);
     // After takeback, it should be Player 2's turn again
@@ -639,9 +637,7 @@ describe("friend game WebSocket integration", () => {
     socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
 
     // Only the opponent (Player 1) receives the takeback offer
-    const takebackOffer2A = await socketA.waitForMessage("takeback-offer", {
-      ignore: ["match-status"],
-    });
+    const takebackOffer2A = await socketA.waitForMessage("takeback-offer");
     expect(takebackOffer2A.playerId).toBe(2);
 
     // Player 1 rejects the takeback
@@ -649,8 +645,8 @@ describe("friend game WebSocket integration", () => {
 
     // Both players receive the rejection (rejections are broadcast)
     const [takebackReject2A, takebackReject2B] = await Promise.all([
-      socketA.waitForMessage("takeback-rejected", { ignore: ["match-status"] }),
-      socketB.waitForMessage("takeback-rejected", { ignore: ["match-status"] }),
+      socketA.waitForMessage("takeback-rejected"),
+      socketB.waitForMessage("takeback-rejected"),
     ]);
     expect(takebackReject2A.playerId).toBe(1);
     expect(takebackReject2B.playerId).toBe(1);
@@ -659,9 +655,7 @@ describe("friend game WebSocket integration", () => {
     socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
 
     // Only the opponent (Player 1) receives the takeback offer
-    const takebackOffer3A = await socketA.waitForMessage("takeback-offer", {
-      ignore: ["match-status"],
-    });
+    const takebackOffer3A = await socketA.waitForMessage("takeback-offer");
     expect(takebackOffer3A.playerId).toBe(2);
 
     // Player 1 requests a takeback while Player 2's takeback is still pending
@@ -669,9 +663,7 @@ describe("friend game WebSocket integration", () => {
     socketA.ws.send(JSON.stringify({ type: "takeback-offer" }));
 
     // Only the opponent (Player 2) receives Player 1's takeback offer
-    const takebackOffer4B = await socketB.waitForMessage("takeback-offer", {
-      ignore: ["match-status"],
-    });
+    const takebackOffer4B = await socketB.waitForMessage("takeback-offer");
     expect(takebackOffer4B.playerId).toBe(1);
 
     // Player 2 accepts Player 1's takeback
@@ -683,8 +675,8 @@ describe("friend game WebSocket integration", () => {
     // - Player 1's last move (Cb2) - the move P1 asked to take back
     // This brings the game back to the starting position
     const [takebackState2A, takebackState2B] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+      socketA.waitForMessage("state"),
+      socketB.waitForMessage("state"),
     ]);
     expect(takebackState2A.state).toEqual(takebackState2B.state);
     // After takeback, it's Player 1's turn (back to start)
@@ -787,9 +779,7 @@ describe("friend game WebSocket integration", () => {
     socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
 
     // Only the opponent (Player B) receives the rematch offer
-    const rematchOfferMsgB = await socketB.waitForMessage("rematch-offer", {
-      ignore: ["match-status"],
-    });
+    const rematchOfferMsgB = await socketB.waitForMessage("rematch-offer");
     expect(rematchOfferMsgB.playerId).toBe(1);
 
     socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
@@ -841,8 +831,8 @@ describe("friend game WebSocket integration", () => {
 
     // Each socket receives only the opponent's offer (not their own)
     const [drawOfferFromB, drawOfferFromA] = await Promise.all([
-      socketA.waitForMessage("draw-offer", { ignore: ["match-status"] }),
-      socketB.waitForMessage("draw-offer", { ignore: ["match-status"] }),
+      socketA.waitForMessage("draw-offer"),
+      socketB.waitForMessage("draw-offer"),
     ]);
     expect(drawOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
     expect(drawOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
@@ -897,12 +887,8 @@ describe("friend game WebSocket integration", () => {
 
     // Each socket receives only the opponent's offer (not their own)
     const [rematchOfferFromB, rematchOfferFromA] = await Promise.all([
-      socketA.waitForMessage("rematch-offer", {
-        ignore: ["match-status", "state"],
-      }),
-      socketB.waitForMessage("rematch-offer", {
-        ignore: ["match-status", "state"],
-      }),
+      socketA.waitForMessage("rematch-offer"),
+      socketB.waitForMessage("rematch-offer"),
     ]);
     expect(rematchOfferFromB.playerId).toBe(1); // A receives B's offer (B is now P1)
     expect(rematchOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
@@ -1073,16 +1059,14 @@ describe("friend game WebSocket integration", () => {
     // Player 1 offers draw, Player 2 rejects
     socketA.ws.send(JSON.stringify({ type: "draw-offer" }));
 
-    const drawOffer5B = await socketB.waitForMessage("draw-offer", {
-      ignore: ["match-status"],
-    });
+    const drawOffer5B = await socketB.waitForMessage("draw-offer");
     expect(drawOffer5B.playerId).toBe(1);
 
     socketB.ws.send(JSON.stringify({ type: "draw-reject" }));
 
     const [drawReject5A, drawReject5B] = await Promise.all([
-      socketA.waitForMessage("draw-rejected", { ignore: ["match-status"] }),
-      socketB.waitForMessage("draw-rejected", { ignore: ["match-status"] }),
+      socketA.waitForMessage("draw-rejected"),
+      socketB.waitForMessage("draw-rejected"),
     ]);
     expect(drawReject5A.playerId).toBe(2);
     expect(drawReject5B.playerId).toBe(2);
@@ -1092,8 +1076,8 @@ describe("friend game WebSocket integration", () => {
 
     // Both players receive updated state with the new time
     const [giveTimeStateA, giveTimeStateB] = await Promise.all([
-      socketA.waitForMessage("state", { ignore: ["match-status"] }),
-      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+      socketA.waitForMessage("state"),
+      socketB.waitForMessage("state"),
     ]);
     expect(giveTimeStateA.state).toEqual(giveTimeStateB.state);
     // Player 2's time should have increased (we just verify the state was broadcast)
@@ -1131,6 +1115,7 @@ describe("friend game WebSocket integration", () => {
 
     socketB.ws.send(JSON.stringify({ type: "rematch-reject" }));
 
+    // Need to ignore match-status from the game-ending move
     const [rematchReject5A, rematchReject5B] = await Promise.all([
       socketA.waitForMessage("rematch-rejected", { ignore: ["match-status"] }),
       socketB.waitForMessage("rematch-rejected", { ignore: ["match-status"] }),
