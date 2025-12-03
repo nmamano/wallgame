@@ -161,15 +161,17 @@ const parseMessage = (raw: string | ArrayBuffer) => {
 
 const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;
+  const playerId = getSocketPlayerId(socket);
+
   const newState = applyPlayerMove({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
     move: message.move,
     timestamp: Date.now(),
   });
   console.info("[ws] move processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
     actionCount: message.move?.actions?.length ?? 0,
   });
 
@@ -190,14 +192,16 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 };
 
 const handleResign = async (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   const newState = resignGame({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
     timestamp: Date.now(),
   });
   console.info("[ws] resign processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 
   // Process rating update if game ended
@@ -213,14 +217,16 @@ const handleResign = async (socket: SessionSocket) => {
 };
 
 const handleGiveTime = (socket: SessionSocket, seconds: number) => {
+  const playerId = getSocketPlayerId(socket);
+
   giveTime({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
     seconds,
   });
   console.info("[ws] give-time processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
     seconds,
   });
   broadcast(socket.sessionId, {
@@ -230,24 +236,28 @@ const handleGiveTime = (socket: SessionSocket, seconds: number) => {
 };
 
 const handleTakebackOffer = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "takeback-offer",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] takeback-offer processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
 const handleTakebackAccept = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   acceptTakeback({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] takeback-accept processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   broadcast(socket.sessionId, {
     type: "state",
@@ -256,39 +266,45 @@ const handleTakebackAccept = (socket: SessionSocket) => {
 };
 
 const handleTakebackReject = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   rejectTakeback({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   broadcast(socket.sessionId, {
     type: "takeback-rejected",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] takeback-reject processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
 const handleDrawOffer = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "draw-offer",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] draw-offer processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
 const handleDrawAccept = async (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   const newState = acceptDraw({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] draw-accept processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 
   // Process rating update if game ended
@@ -304,36 +320,42 @@ const handleDrawAccept = async (socket: SessionSocket) => {
 };
 
 const handleDrawReject = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   rejectDraw({
     id: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   broadcast(socket.sessionId, {
     type: "draw-rejected",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] draw-reject processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
 const handleRematchOffer = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "rematch-offer",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] rematch-offer processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
 const handleRematchAccept = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   resetSession(socket.sessionId);
   console.info("[ws] rematch-accept processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   broadcast(socket.sessionId, {
     type: "state",
@@ -343,13 +365,15 @@ const handleRematchAccept = (socket: SessionSocket) => {
 };
 
 const handleRematchReject = (socket: SessionSocket) => {
+  const playerId = getSocketPlayerId(socket);
+
   broadcast(socket.sessionId, {
     type: "rematch-rejected",
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
   console.info("[ws] rematch-reject processed", {
     sessionId: socket.sessionId,
-    playerId: getSocketPlayerId(socket),
+    playerId,
   });
 };
 
@@ -461,23 +485,7 @@ const originCheckMiddleware: MiddlewareHandler = async (c, next) => {
 };
 
 const gameSocketAuth: MiddlewareHandler = async (c, next) => {
-  // Check origin for security
   if (!checkOrigin(c)) {
-    return c.text("Unauthorized origin", 403);
-  }
-  // Check origin for security
-  const origin = c.req.header("origin");
-  const isDev = process.env.NODE_ENV !== "production";
-
-  const allowedOrigins = isDev
-    ? ["http://localhost:5173"]
-    : ["https://wallgame.fly.dev"];
-
-  if (origin && !allowedOrigins.includes(origin)) {
-    console.warn("[ws] rejected connection from unauthorized origin", {
-      origin,
-      allowedOrigins,
-    });
     return c.text("Unauthorized origin", 403);
   }
 
@@ -485,15 +493,17 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
   if (!sessionId) {
     return c.text("Missing session id", 400);
   }
+
   const socketToken = c.req.query("token");
   if (!socketToken) {
     return c.text("Missing token", 400);
   }
-  const confirmedToken = socketToken as string;
+
   const resolved = resolveSessionForSocketToken({
     id: sessionId,
-    socketToken: confirmedToken,
+    socketToken,
   });
+
   if (!resolved) {
     console.warn("[ws] rejected connection with invalid token", {
       sessionId,
@@ -501,11 +511,13 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
     });
     return c.text("Invalid socket token", 401);
   }
+
   c.set("gameSocketMeta", {
     sessionId,
-    socketToken: confirmedToken,
+    socketToken,
     player: resolved.player,
   } satisfies GameSocketMeta);
+
   await next();
 };
 
@@ -548,10 +560,10 @@ export const registerGameSocketRoute = (app: Hono) => {
             console.warn("[ws] received message for unknown socket");
             return;
           }
+
           const payload = event.data as string | ArrayBuffer;
-          try {
-            handleClientMessage(entry, payload);
-          } catch (error) {
+
+          void handleClientMessage(entry, payload).catch((error) => {
             console.error("[ws] failed to handle message", {
               error,
               sessionId: entry.sessionId,
@@ -566,7 +578,7 @@ export const registerGameSocketRoute = (app: Hono) => {
                     : "Message processing failed",
               }),
             );
-          }
+          });
         },
         onClose(_event: CloseEvent, ws: WSContext) {
           const entry = getEntryForContext(ws);
