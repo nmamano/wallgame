@@ -29,6 +29,10 @@ export const settingsRoute = new Hono()
   .get("/", getUserMiddleware, async (c) => {
     try {
       const kindeUser = c.get("user");
+      if (!kindeUser) {
+        console.error("User not found in context after middleware");
+        return c.json({ error: "Internal server error" }, 500);
+      }
       const authUserId = kindeUser.id;
       if (!authUserId) {
         console.error(`User ID not found for user: ${kindeUser.email}`);
