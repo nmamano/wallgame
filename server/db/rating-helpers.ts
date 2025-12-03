@@ -2,6 +2,7 @@ import { db } from "./index";
 import { ratingsTable } from "./schema/ratings";
 import { userAuthTable } from "./schema/users";
 import { eq, and } from "drizzle-orm";
+import type { RatingState } from "../games/rating-system";
 
 /**
  * Looks up a user's rating from the database based on their auth ID.
@@ -43,4 +44,115 @@ export async function getRatingForAuthUser(
     .limit(1);
 
   return rating[0]?.rating; // undefined if no rating exists
+}
+
+/**
+ * Looks up a user's full Glicko-2 rating state from the database based on their auth ID.
+ *
+ * @param authUserId - The auth provider's user ID (e.g., Kinde ID or test header ID)
+ * @param variant - The game variant ("standard" or "classic")
+ * @param timeControl - The time control preset ("bullet", "blitz", "rapid", "classical")
+ * @returns The user's full rating state, or undefined if not found
+ */
+export async function getRatingStateForAuthUser(
+  authUserId: string,
+  variant: string,
+  timeControl: string,
+): Promise<RatingState | undefined> {
+  // First get the internal userId from auth mapping
+  const authMapping = await db
+    .select({ userId: userAuthTable.userId })
+    .from(userAuthTable)
+    .where(eq(userAuthTable.authUserId, authUserId))
+    .limit(1);
+
+  if (authMapping.length === 0) {
+    return undefined; // User doesn't exist in DB yet
+  }
+
+  const userId = authMapping[0].userId;
+
+  // Then get their full rating state for this variant/time control
+  const result = await db
+    .select({
+      rating: ratingsTable.rating,
+      deviation: ratingsTable.ratingDeviation,
+      volatility: ratingsTable.volatility,
+    })
+    .from(ratingsTable)
+    .where(
+      and(
+        eq(ratingsTable.userId, userId),
+        eq(ratingsTable.variant, variant),
+        eq(ratingsTable.timeControl, timeControl),
+      ),
+    )
+    .limit(1);
+
+  return result[0]; // undefined if no rating exists
+}
+
+/**
+ * Updates a user's Glicko-2 rating state in the database.
+ *
+ * @param authUserId - The auth provider's user ID
+ * @param variant - The game variant
+ * @param timeControl - The time control preset
+ * @param newState - The new rating state to save
+ * @returns The updated rating value, or undefined if user not found
+ */
+export async function updateRatingStateForAuthUser(
+  authUserId: string,
+  variant: string,
+  timeControl: string,
+  newState: RatingState,
+): Promise<number | undefined> {
+  // First get the internal userId from auth mapping
+  const authMapping = await db
+    .select({ userId: userAuthTable.userId })
+    .from(userAuthTable)
+    .where(eq(userAuthTable.authUserId, authUserId))
+    .limit(1);
+
+  if (authMapping.length === 0) {
+    return undefined; // User doesn't exist in DB yet
+  }
+
+  const userId = authMapping[0].userId;
+
+  // Get current peak rating to compare
+  const currentRating = await db
+    .select({ peakRating: ratingsTable.peakRating })
+    .from(ratingsTable)
+    .where(
+      and(
+        eq(ratingsTable.userId, userId),
+        eq(ratingsTable.variant, variant),
+        eq(ratingsTable.timeControl, timeControl),
+      ),
+    )
+    .limit(1);
+
+  const currentPeak = currentRating[0]?.peakRating ?? 0;
+  const newPeakRating = Math.max(currentPeak, newState.rating);
+
+  // Update the rating state
+  await db
+    .update(ratingsTable)
+    .set({
+      rating: newState.rating,
+      ratingDeviation: newState.deviation,
+      volatility: newState.volatility,
+      peakRating: newPeakRating,
+      lastGameAt: new Date(),
+    })
+    .where(
+      and(
+        eq(ratingsTable.userId, userId),
+        eq(ratingsTable.variant, variant),
+        eq(ratingsTable.timeControl, timeControl),
+      ),
+    );
+
+  return newState.rating;
 }

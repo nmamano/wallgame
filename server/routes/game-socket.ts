@@ -15,6 +15,7 @@ import {
   acceptTakeback,
   rejectTakeback,
   resetSession,
+  processRatingUpdate,
   type SessionPlayer,
 } from "../games/store";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
@@ -121,9 +122,9 @@ const parseMessage = (raw: string | ArrayBuffer) => {
   return JSON.parse(raw) as ClientMessage;
 };
 
-const handleMove = (socket: SessionSocket, message: ClientMessage) => {
+const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;
-  applyPlayerMove({
+  const newState = applyPlayerMove({
     id: socket.sessionId,
     playerId: socket.playerId,
     move: message.move,
@@ -134,6 +135,12 @@ const handleMove = (socket: SessionSocket, message: ClientMessage) => {
     playerId: socket.playerId,
     actionCount: message.move?.actions?.length ?? 0,
   });
+
+  // Process rating update if game ended
+  if (newState.status === "finished") {
+    await processRatingUpdate(socket.sessionId);
+  }
+
   broadcast(socket.sessionId, {
     type: "state",
     state: getSerializedState(socket.sessionId),
@@ -141,8 +148,8 @@ const handleMove = (socket: SessionSocket, message: ClientMessage) => {
   sendMatchStatus(socket.sessionId);
 };
 
-const handleResign = (socket: SessionSocket) => {
-  resignGame({
+const handleResign = async (socket: SessionSocket) => {
+  const newState = resignGame({
     id: socket.sessionId,
     playerId: socket.playerId,
     timestamp: Date.now(),
@@ -151,6 +158,12 @@ const handleResign = (socket: SessionSocket) => {
     sessionId: socket.sessionId,
     playerId: socket.playerId,
   });
+
+  // Process rating update if game ended
+  if (newState.status === "finished") {
+    await processRatingUpdate(socket.sessionId);
+  }
+
   broadcast(socket.sessionId, {
     type: "state",
     state: getSerializedState(socket.sessionId),
@@ -229,8 +242,8 @@ const handleDrawOffer = (socket: SessionSocket) => {
   });
 };
 
-const handleDrawAccept = (socket: SessionSocket) => {
-  acceptDraw({
+const handleDrawAccept = async (socket: SessionSocket) => {
+  const newState = acceptDraw({
     id: socket.sessionId,
     playerId: socket.playerId,
   });
@@ -238,6 +251,12 @@ const handleDrawAccept = (socket: SessionSocket) => {
     sessionId: socket.sessionId,
     playerId: socket.playerId,
   });
+
+  // Process rating update if game ended
+  if (newState.status === "finished") {
+    await processRatingUpdate(socket.sessionId);
+  }
+
   broadcast(socket.sessionId, {
     type: "state",
     state: getSerializedState(socket.sessionId),
@@ -295,7 +314,7 @@ const handleRematchReject = (socket: SessionSocket) => {
   });
 };
 
-const handleClientMessage = (
+const handleClientMessage = async (
   socket: SessionSocket,
   raw: string | ArrayBuffer,
 ) => {
@@ -315,7 +334,7 @@ const handleClientMessage = (
   switch (payload.type) {
     case "submit-move":
       try {
-        handleMove(socket, payload);
+        await handleMove(socket, payload);
       } catch (error) {
         socket.ctx.send(
           JSON.stringify({
@@ -329,7 +348,7 @@ const handleClientMessage = (
       }
       break;
     case "resign":
-      handleResign(socket);
+      await handleResign(socket);
       break;
     case "give-time":
       handleGiveTime(socket, payload.seconds);
@@ -347,7 +366,7 @@ const handleClientMessage = (
       handleDrawOffer(socket);
       break;
     case "draw-accept":
-      handleDrawAccept(socket);
+      await handleDrawAccept(socket);
       break;
     case "draw-reject":
       handleDrawReject(socket);

@@ -24,6 +24,11 @@ import type {
   PlayerAppearance,
 } from "../../shared/domain/game-types";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
+import {
+  newRatingsAfterGame,
+  Outcome,
+  type RatingState,
+} from "../../server/games/rating-system";
 
 // ================================
 // --- Test Harness ---
@@ -83,7 +88,7 @@ async function stopTestServer() {
 const seededUserIds: number[] = [];
 
 /**
- * Seeds a test user with an ELO rating in the database.
+ * Seeds a test user with a Glicko-2 rating in the database.
  * The authUserId should match the x-test-user-id header used in requests.
  */
 async function seedTestUser(
@@ -92,6 +97,8 @@ async function seedTestUser(
     variant: string;
     timeControl: string;
     rating: number;
+    ratingDeviation: number;
+    volatility: number;
   },
 ): Promise<number> {
   // Create user
@@ -113,12 +120,14 @@ async function seedTestUser(
     authUserId: authUserId, // This matches x-test-user-id header
   });
 
-  // Create rating
+  // Create rating with full Glicko-2 state
   await db.insert(ratingsTable).values({
     userId: user.userId,
     variant: options.variant,
     timeControl: options.timeControl,
     rating: options.rating,
+    ratingDeviation: options.ratingDeviation,
+    volatility: options.volatility,
   });
 
   return user.userId;
@@ -469,6 +478,27 @@ describe("friend game WebSocket integration", () => {
     const userA = "user-a";
     const userB = "user-b";
 
+    // Define Glicko-2 rating state for both players
+    // Note: DB uses ratingDeviation, but RatingState type uses deviation
+    const userARating = { rating: 1500, deviation: 200, volatility: 0.06 };
+    const userBRating = { rating: 1350, deviation: 150, volatility: 0.05 };
+
+    // Seed test users with Glicko-2 ratings in the database
+    await seedTestUser(userA, {
+      variant: "standard",
+      timeControl: "rapid",
+      rating: userARating.rating,
+      ratingDeviation: userARating.deviation,
+      volatility: userARating.volatility,
+    });
+    await seedTestUser(userB, {
+      variant: "standard",
+      timeControl: "rapid",
+      rating: userBRating.rating,
+      ratingDeviation: userBRating.deviation,
+      volatility: userBRating.volatility,
+    });
+
     // Define appearance data for testing
     const userAAppearance = {
       pawnColor: "green",
@@ -484,9 +514,9 @@ describe("friend game WebSocket integration", () => {
     // 1. User A creates a friend game with appearance
     // The board is 3x3 (from a1 at the bottom-left to c3 at the top-right)
     /*
-      C1 __ C2
-      __ __ __
-      M1 __ M2
+      C1 .. C2
+      .. .. ..
+      M1 .. M2
     */
     const gameConfig: GameConfiguration = {
       timeControl: {
@@ -495,7 +525,7 @@ describe("friend game WebSocket integration", () => {
         preset: "rapid",
       },
       variant: "standard",
-      rated: false,
+      rated: true,
       boardWidth: 3,
       boardHeight: 3,
     };
@@ -514,6 +544,7 @@ describe("friend game WebSocket integration", () => {
     expect(shareUrl).toBeDefined();
     expect(socketTokenA).toBeDefined();
     expect(initialSnapshotA.players[0].appearance).toEqual(userAAppearance);
+    expect(initialSnapshotA.players[0].elo).toBe(userARating.rating); // Host's rating should be included
 
     // 2. User B joins the game with appearance
     const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
@@ -521,6 +552,8 @@ describe("friend game WebSocket integration", () => {
     expect(socketTokenB).toBeDefined();
     expect(joinSnapshotB.players[0].appearance).toEqual(userAAppearance); // Host appearance
     expect(joinSnapshotB.players[1].appearance).toEqual(userBAppearance); // Joiner appearance
+    expect(joinSnapshotB.players[0].elo).toBe(userARating.rating); // Host rating
+    expect(joinSnapshotB.players[1].elo).toBe(userBRating.rating); // Joiner rating
 
     // 3. Both connect via WebSocket
     const socketA = await openGameSocket(userA, gameId, socketTokenA);
@@ -550,20 +583,97 @@ describe("friend game WebSocket integration", () => {
       userBAppearance,
     ); // Joiner
 
+    // Verify both clients receive correct player ratings via WebSocket
+    expect(matchStatusMsgA.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
+    expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
+    expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
+    expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
+
     // 4. User A (Player 1) sends first move - move cat from a3 to b2
     // Player 1 starts, and their cat starts at a3 (top-left)
-    /* __ __ C2
-       __ C1 __
-       M1 __ M2
+    /* .. .. C2
+       .. C1 ..
+       M1 .. M2
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
     // 5. User B (Player 2) sends a move - move cat from c3 to b2
-    /* __ _____ __
-       __ C1/C2 __
-       M1 _____ M2
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
     */
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
+    // 6. User A (Player 1) sends a move - places two walls
+    /* .. ..... ..
+       ..|C1/C2 ..
+          -----
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(0, [socketA, socketB], ">a2.^b1", 3);
+
+    // 7. User B (Player 2) sends a move - cat move and wall
+    /* .. .. ..
+       ..|C1 C2
+       -- --
+       M1 .. M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cc2.^a1", 3);
+
+    // 8. User A (Player 1) wins by capturing Player 2's mouse at c1
+    /* .. .. ..
+       ..|.. C2
+       -- --
+       M1 .. C1(captured M2)
+    */
+    const move = moveFromStandardNotation("Cc1", 3);
+    socketA.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move,
+      }),
+    );
+
+    // Both clients should receive the game-ending state
+    const [finalStateA, finalStateB] = await Promise.all([
+      socketA.waitForMessage("state", { ignore: ["match-status"] }),
+      socketB.waitForMessage("state", { ignore: ["match-status"] }),
+    ]);
+
+    // Verify game ended with Player 1 winning
+    expect(finalStateA.state.status).toBe("finished");
+    expect(finalStateA.state.result?.winner).toBe(1);
+    expect(finalStateA.state.result?.reason).toBe("capture");
+    expect(finalStateB.state).toEqual(finalStateA.state);
+
+    // Wait for match-status messages which contain updated ratings
+    const [matchStatusA, matchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+
+    // Calculate expected new ratings using the Glicko-2 system
+    const expectedNewRatings = newRatingsAfterGame(
+      userARating,
+      userBRating,
+      Outcome.Win, // Player 1 (User A) won
+    );
+
+    // Verify both clients receive the updated ratings
+    // User A is the host (Player 1), User B is the joiner (Player 2)
+    const hostNewRating = matchStatusA.snapshot.players[0].elo!;
+    const joinerNewRating = matchStatusA.snapshot.players[1].elo!;
+
+    expect(hostNewRating).toBeCloseTo(expectedNewRatings.a.rating, 5);
+    expect(joinerNewRating).toBeCloseTo(expectedNewRatings.b.rating, 5);
+
+    // Both clients should receive the same updated ratings
+    expect(matchStatusB.snapshot.players[0].elo).toBe(hostNewRating);
+    expect(matchStatusB.snapshot.players[1].elo).toBe(joinerNewRating);
+
+    // Sanity check: winner's rating should increase, loser's should decrease
+    expect(hostNewRating).toBeGreaterThan(userARating.rating);
+    expect(joinerNewRating).toBeLessThan(userBRating.rating);
 
     socketA.close();
     socketB.close();
@@ -652,83 +762,6 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgB.snapshot.players[1].appearance).toEqual(
       userBAppearance,
     ); // Joiner
-
-    socketA.close();
-    socketB.close();
-  });
-
-  it("ensures each player receives the other player's ELO during setup", async () => {
-    // Use unique user IDs for this test to avoid conflicts
-    const userA = "user-elo-a";
-    const userB = "user-elo-b";
-
-    // Define ELO ratings for both players
-    const userAElo = 1500;
-    const userBElo = 1350;
-
-    // Seed test users with ELO ratings in the database
-    await seedTestUser(userA, {
-      variant: "standard",
-      timeControl: "rapid",
-      rating: userAElo,
-    });
-    await seedTestUser(userB, {
-      variant: "standard",
-      timeControl: "rapid",
-      rating: userBElo,
-    });
-
-    // 1. User A creates a friend game
-    const gameConfig: GameConfiguration = {
-      timeControl: {
-        initialSeconds: 600,
-        incrementSeconds: 0,
-        preset: "rapid",
-      },
-      variant: "standard",
-      rated: true,
-      boardWidth: 9,
-      boardHeight: 9,
-    };
-
-    const {
-      gameId,
-      socketToken: socketTokenA,
-      snapshot: initialSnapshotA,
-    } = await createFriendGame(userA, gameConfig, {
-      hostIsPlayer1: true,
-    });
-    expect(gameId).toBeDefined();
-    expect(socketTokenA).toBeDefined();
-    // Host's ELO should be included in the snapshot
-    expect(initialSnapshotA.players[0].elo).toBe(userAElo);
-
-    // 2. User B joins the game
-    const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
-      await joinFriendGame(userB, gameId);
-    expect(socketTokenB).toBeDefined();
-    // Both players' ELO should be in the join response
-    expect(joinSnapshotB.players[0].elo).toBe(userAElo); // Host ELO
-    expect(joinSnapshotB.players[1].elo).toBe(userBElo); // Joiner ELO
-
-    // 3. Both connect via WebSocket
-    const socketA = await openGameSocket(userA, gameId, socketTokenA);
-    const socketB = await openGameSocket(userB, gameId, socketTokenB);
-
-    // Wait for initial match status (match-status comes first on connect)
-    const matchStatusMsgA = await socketA.waitForMessage("match-status");
-    await socketA.waitForMessage("state");
-    const matchStatusMsgB = await socketB.waitForMessage("match-status");
-    await socketB.waitForMessage("state");
-
-    // Verify both clients receive both players' ELO ratings via WebSocket
-    // Host (Player A) should see their own ELO and opponent's ELO
-    expect(matchStatusMsgA.snapshot.players[0].elo).toBe(userAElo); // Host ELO
-    expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBElo); // Joiner ELO
-
-    // Joiner (Player B) should see their own ELO and opponent's ELO
-    expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userAElo); // Host ELO
-    expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBElo); // Joiner ELO
 
     socketA.close();
     socketB.close();
