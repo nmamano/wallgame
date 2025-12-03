@@ -156,7 +156,7 @@ export class GameState {
         };
         break;
       case "takeback":
-        this.undoLastMove();
+        this.undoTakebackForPlayer(action.playerId);
         break;
       case "giveTime": {
         const opponent = action.playerId === 1 ? 2 : 1;
@@ -396,6 +396,29 @@ export class GameState {
 
     this.turn = opponent;
     this.moveCount++;
+  }
+
+  /**
+   * Undo moves to take back the requesting player's last move.
+   * The accepterId is the player who accepted the takeback (passed in action).
+   * The requester is the opponent of the accepter.
+   * If the opponent moved after the requester, both moves are undone.
+   */
+  private undoTakebackForPlayer(accepterId: PlayerId) {
+    if (this.history.length === 0) return;
+
+    // The requester is the opponent of the accepter
+    const requesterId: PlayerId = accepterId === 1 ? 2 : 1;
+
+    // If it's the requester's turn, the accepter (opponent) moved last,
+    // so we need to undo 2 moves (accepter's move + requester's move)
+    // If it's the accepter's turn, requester moved last,
+    // so we only need to undo 1 move (requester's move)
+    const movesToUndo = this.turn === requesterId ? 2 : 1;
+
+    for (let i = 0; i < movesToUndo && this.history.length > 0; i++) {
+      this.undoLastMove();
+    }
   }
 
   private undoLastMove() {

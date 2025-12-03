@@ -4,6 +4,7 @@ import type { WSContext } from "hono/ws";
 import {
   applyPlayerMove,
   getSerializedState,
+  getSession,
   getSessionSnapshot,
   resolveSessionForSocketToken,
   resignGame,
@@ -26,11 +27,21 @@ const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 interface SessionSocket {
   ctx: WSContext;
-  playerId: PlayerId;
   sessionId: string;
   socketToken: string;
   role: "host" | "joiner";
 }
+
+/**
+ * Get the current playerId for a socket from the session.
+ * This is dynamic because playerIds can swap after a rematch.
+ */
+const getSocketPlayerId = (socket: SessionSocket): PlayerId => {
+  const session = getSession(socket.sessionId);
+  return socket.role === "host"
+    ? session.players.host.playerId
+    : session.players.joiner.playerId;
+};
 
 const sessionSockets = new Map<string, Set<SessionSocket>>();
 const contextEntryMap = new WeakMap<WSContext, SessionSocket>();
@@ -91,6 +102,32 @@ const broadcast = (sessionId: string, message: unknown) => {
   });
 };
 
+/**
+ * Send a message to the opponent only (not to the sender).
+ * Used for offers (draw, takeback, rematch) which should only go to the other player.
+ */
+const sendToOpponent = (
+  sessionId: string,
+  senderSocketToken: string,
+  message: unknown,
+) => {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+  const data = JSON.stringify(message);
+  sockets.forEach((entry) => {
+    if (entry.socketToken === senderSocketToken) return; // Skip sender
+    try {
+      entry.ctx.send(data);
+    } catch (error) {
+      console.error("Failed to send websocket payload to opponent", {
+        error,
+        sessionId,
+        socketToken: entry.socketToken,
+      });
+    }
+  });
+};
+
 const sendMatchStatus = (sessionId: string) => {
   broadcast(sessionId, {
     type: "match-status",
@@ -126,13 +163,13 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;
   const newState = applyPlayerMove({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
     move: message.move,
     timestamp: Date.now(),
   });
   console.info("[ws] move processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
     actionCount: message.move?.actions?.length ?? 0,
   });
 
@@ -151,12 +188,12 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 const handleResign = async (socket: SessionSocket) => {
   const newState = resignGame({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
     timestamp: Date.now(),
   });
   console.info("[ws] resign processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 
   // Process rating update if game ended
@@ -174,82 +211,80 @@ const handleResign = async (socket: SessionSocket) => {
 const handleGiveTime = (socket: SessionSocket, seconds: number) => {
   giveTime({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
     seconds,
   });
   console.info("[ws] give-time processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
     seconds,
   });
   broadcast(socket.sessionId, {
     type: "state",
     state: getSerializedState(socket.sessionId),
   });
-  sendMatchStatus(socket.sessionId);
 };
 
 const handleTakebackOffer = (socket: SessionSocket) => {
-  broadcast(socket.sessionId, {
+  sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "takeback-offer",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] takeback-offer processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
 const handleTakebackAccept = (socket: SessionSocket) => {
   acceptTakeback({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] takeback-accept processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   broadcast(socket.sessionId, {
     type: "state",
     state: getSerializedState(socket.sessionId),
   });
-  sendMatchStatus(socket.sessionId);
 };
 
 const handleTakebackReject = (socket: SessionSocket) => {
   rejectTakeback({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   broadcast(socket.sessionId, {
     type: "takeback-rejected",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] takeback-reject processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
 const handleDrawOffer = (socket: SessionSocket) => {
-  broadcast(socket.sessionId, {
+  sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "draw-offer",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] draw-offer processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
 const handleDrawAccept = async (socket: SessionSocket) => {
   const newState = acceptDraw({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] draw-accept processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 
   // Process rating update if game ended
@@ -267,26 +302,26 @@ const handleDrawAccept = async (socket: SessionSocket) => {
 const handleDrawReject = (socket: SessionSocket) => {
   rejectDraw({
     id: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   broadcast(socket.sessionId, {
     type: "draw-rejected",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] draw-reject processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
 const handleRematchOffer = (socket: SessionSocket) => {
-  broadcast(socket.sessionId, {
+  sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "rematch-offer",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] rematch-offer processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
@@ -294,7 +329,7 @@ const handleRematchAccept = (socket: SessionSocket) => {
   resetSession(socket.sessionId);
   console.info("[ws] rematch-accept processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   broadcast(socket.sessionId, {
     type: "state",
@@ -306,11 +341,11 @@ const handleRematchAccept = (socket: SessionSocket) => {
 const handleRematchReject = (socket: SessionSocket) => {
   broadcast(socket.sessionId, {
     type: "rematch-rejected",
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
   console.info("[ws] rematch-reject processed", {
     sessionId: socket.sessionId,
-    playerId: socket.playerId,
+    playerId: getSocketPlayerId(socket),
   });
 };
 
@@ -485,7 +520,6 @@ export const registerGameSocketRoute = (app: Hono) => {
         onOpen(_event: Event, ws: WSContext) {
           const entry: SessionSocket = {
             ctx: ws,
-            playerId: player.playerId,
             sessionId,
             socketToken,
             role: player.role,
@@ -499,10 +533,10 @@ export const registerGameSocketRoute = (app: Hono) => {
           console.info("[ws] connected", {
             sessionId,
             socketToken,
-            playerId: entry.playerId,
+            playerId: getSocketPlayerId(entry),
           });
-          sendMatchStatus(sessionId);
           sendStateOnce(entry);
+          sendMatchStatus(sessionId);
         },
         onMessage(event: MessageEvent, ws: WSContext) {
           const entry = getEntryForContext(ws);
