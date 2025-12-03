@@ -26,6 +26,7 @@ export interface SessionPlayer {
   ready: boolean;
   lastSeenAt: number;
   appearance: PlayerAppearance;
+  elo?: number; // Looked up from DB based on authenticated user
 }
 
 export interface GameSession {
@@ -70,6 +71,7 @@ const createGameState = (config: GameConfiguration): GameState => {
  * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
  *   If not provided, the server randomly chooses. Tests can pass this explicitly
  *   for deterministic behavior.
+ * @param hostElo - Host's ELO rating, looked up from DB by the route handler.
  */
 export const createGameSession = (args: {
   config: GameConfiguration;
@@ -77,6 +79,7 @@ export const createGameSession = (args: {
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
   hostIsPlayer1?: boolean;
+  hostElo?: number;
 }): GameCreationResult => {
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
   // No invite code needed - the game ID itself is secure enough
@@ -110,6 +113,7 @@ export const createGameSession = (args: {
         ready: false,
         lastSeenAt: now,
         appearance: args.hostAppearance ?? {},
+        elo: args.hostElo,
       },
       joiner: {
         role: "joiner",
@@ -140,6 +144,7 @@ export const joinGameSession = (args: {
   id: string;
   displayName?: string;
   appearance?: PlayerAppearance;
+  elo?: number; // Looked up from DB by the route handler
 }): {
   session: GameSession;
   guestToken: string;
@@ -168,6 +173,7 @@ export const joinGameSession = (args: {
     ...joiner.appearance,
     ...args.appearance,
   };
+  joiner.elo = args.elo;
   joiner.lastSeenAt = Date.now();
   session.updatedAt = Date.now();
   session.status = session.players.host.ready ? "ready" : "waiting";
@@ -203,6 +209,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
         connected: player.connected,
         ready: player.ready,
         appearance: player.appearance,
+        elo: player.elo,
       }),
     ),
   };
@@ -256,6 +263,7 @@ export const listSessions = (): GameSnapshot[] => {
         connected: player.connected,
         ready: player.ready,
         appearance: player.appearance,
+        elo: player.elo,
       }),
     ),
   }));
@@ -283,6 +291,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
           connected: player.connected,
           ready: player.ready,
           appearance: player.appearance,
+          elo: player.elo,
         }),
       ),
     }));

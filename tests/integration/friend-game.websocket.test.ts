@@ -1,6 +1,14 @@
+/**
+ * Integration tests for friend game WebSocket functionality.
+ *
+ * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
+ * No manual database setup required - just Docker.
+ */
+
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
-import { createApp } from "../../server/index";
 import { WebSocket } from "ws";
+import type { StartedTestContainer } from "testcontainers";
+import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type {
   GameCreateResponse,
   GameSessionDetails,
@@ -15,17 +23,41 @@ import type {
   GameConfiguration,
   PlayerAppearance,
 } from "../../shared/domain/game-types";
-import {
-  cellFromStandardNotation,
-  moveFromStandardNotation,
-} from "../../shared/domain/standard-notation";
+import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 
 // ================================
 // --- Test Harness ---
 // ================================
 
+let container: StartedTestContainer;
 let server: any;
 let baseUrl: string;
+
+// These will be dynamically imported after DB is set up
+let db: typeof import("../../server/db").db;
+let createApp: typeof import("../../server/index").createApp;
+let usersTable: typeof import("../../server/db/schema/users").usersTable;
+let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
+let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
+let eq: typeof import("drizzle-orm").eq;
+let sql: typeof import("drizzle-orm").sql;
+
+async function importServerModules() {
+  // Dynamic imports - these must happen AFTER DATABASE_URL is set
+  const dbModule = await import("../../server/db");
+  const serverModule = await import("../../server/index");
+  const usersSchemaModule = await import("../../server/db/schema/users");
+  const ratingsSchemaModule = await import("../../server/db/schema/ratings");
+  const drizzleOrm = await import("drizzle-orm");
+
+  db = dbModule.db;
+  createApp = serverModule.createApp;
+  usersTable = usersSchemaModule.usersTable;
+  userAuthTable = usersSchemaModule.userAuthTable;
+  ratingsTable = ratingsSchemaModule.ratingsTable;
+  eq = drizzleOrm.eq;
+  sql = drizzleOrm.sql;
+}
 
 function startTestServer() {
   const { app, websocket } = createApp();
@@ -41,6 +73,68 @@ async function stopTestServer() {
   if (server) {
     server.stop();
   }
+}
+
+// ================================
+// --- Database Seeding Helpers ---
+// ================================
+
+/** Track seeded user IDs for cleanup */
+const seededUserIds: number[] = [];
+
+/**
+ * Seeds a test user with an ELO rating in the database.
+ * The authUserId should match the x-test-user-id header used in requests.
+ */
+async function seedTestUser(
+  authUserId: string,
+  options: {
+    variant: string;
+    timeControl: string;
+    rating: number;
+  },
+): Promise<number> {
+  // Create user
+  const [user] = await db
+    .insert(usersTable)
+    .values({
+      displayName: `player_${authUserId}`,
+      capitalizedDisplayName: `Player_${authUserId}`,
+      authProvider: "test",
+    })
+    .returning();
+
+  seededUserIds.push(user.userId);
+
+  // Create auth mapping (links test auth ID to internal user ID)
+  await db.insert(userAuthTable).values({
+    userId: user.userId,
+    authProvider: "test",
+    authUserId: authUserId, // This matches x-test-user-id header
+  });
+
+  // Create rating
+  await db.insert(ratingsTable).values({
+    userId: user.userId,
+    variant: options.variant,
+    timeControl: options.timeControl,
+    rating: options.rating,
+  });
+
+  return user.userId;
+}
+
+/**
+ * Cleans up all seeded test users and their related data.
+ */
+async function cleanupTestUsers(): Promise<void> {
+  for (const userId of seededUserIds) {
+    // Delete in order respecting foreign keys
+    await db.delete(ratingsTable).where(eq(ratingsTable.userId, userId));
+    await db.delete(userAuthTable).where(eq(userAuthTable.userId, userId));
+    await db.delete(usersTable).where(eq(usersTable.userId, userId));
+  }
+  seededUserIds.length = 0;
 }
 
 // ================================
@@ -353,12 +447,22 @@ async function sendMoveAndWaitForState(
 // ================================
 
 describe("friend game WebSocket integration", () => {
-  beforeAll(() => {
+  beforeAll(async () => {
+    // Start ephemeral PostgreSQL container and run migrations
+    const handle = await setupEphemeralDb();
+    container = handle.container;
+
+    // Now import server modules (they will use the ephemeral DB)
+    await importServerModules();
+
+    // Start the test server
     startTestServer();
   });
 
   afterAll(async () => {
+    await cleanupTestUsers();
     await stopTestServer();
+    await teardownEphemeralDb(container);
   });
 
   it("allows two players to create a friend game, join it, exchange moves, and do meta actions", async () => {
@@ -461,189 +565,6 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
-    // // 8. Add more moves including wall moves and pawn moves
-    // // User A places a vertical wall to the right of b4
-    // socketA.ws.send(
-    //   JSON.stringify({
-    //     type: "submit-move",
-    //     move: moveFromStandardNotation(">b4", 5),
-    //   }),
-    // );
-
-    // const [wallUpdateMsgA, wallUpdateMsgB] = await Promise.all([
-    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
-    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    // ]);
-    // expect(wallUpdateMsgA.state.walls).toHaveLength(1);
-    // expect(wallUpdateMsgB.state.walls).toHaveLength(1);
-    // expect(wallUpdateMsgB.state.walls[0]).toEqual({
-    //   cell: cellFromStandardNotation("b4", 5),
-    //   orientation: "vertical",
-    //   playerId: 1,
-    // });
-
-    // // User B moves mouse from e1 to e2
-    // socketB.ws.send(
-    //   JSON.stringify({
-    //     type: "submit-move",
-    //     move: moveFromStandardNotation("Me2", 5),
-    //   }),
-    // );
-
-    // const [mouseUpdateMsgA, mouseUpdateMsgB] = await Promise.all([
-    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
-    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    // ]);
-    // expect(mouseUpdateMsgA.state.pawns["2"].mouse).toEqual(
-    //   cellFromStandardNotation("e2", 5),
-    // );
-    // expect(mouseUpdateMsgB.state.pawns["2"].mouse).toEqual(
-    //   cellFromStandardNotation("e2", 5),
-    // );
-
-    // // User A places a horizontal wall above c2 (doesn't block cat's path)
-    // socketA.ws.send(
-    //   JSON.stringify({
-    //     type: "submit-move",
-    //     move: moveFromStandardNotation("^c2", 5),
-    //   }),
-    // );
-
-    // const [wall2UpdateMsgA, wall2UpdateMsgB] = await Promise.all([
-    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
-    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    // ]);
-    // expect(wall2UpdateMsgA.state.walls).toHaveLength(2);
-    // expect(wall2UpdateMsgB.state.walls).toHaveLength(2);
-
-    // // User B moves cat from d4 to d3
-    // socketB.ws.send(
-    //   JSON.stringify({
-    //     type: "submit-move",
-    //     move: moveFromStandardNotation("Cd3", 5),
-    //   }),
-    // );
-
-    // const [catUpdateMsgA, catUpdateMsgB] = await Promise.all([
-    //   socketA.waitForMessage("state", { ignore: ["match-status"] }),
-    //   socketB.waitForMessage("state", { ignore: ["match-status"] }),
-    // ]);
-    // expect(catUpdateMsgA.state.pawns["2"].cat).toEqual(
-    //   cellFromStandardNotation("d3", 5),
-    // );
-    // expect(catUpdateMsgB.state.pawns["2"].cat).toEqual(
-    //   cellFromStandardNotation("d3", 5),
-    // );
-
-    // // 10. Test takeback flows - both rejection and acceptance scenarios
-
-    // // 10a. Takeback offer from player who just moved (User B), rejection from User A
-    // const stateBeforeTakeback = timeUpdateMsg.state;
-    // const takebackOfferPayloadB = {
-    //   type: "takeback-offer",
-    // };
-    // socketB.ws.send(JSON.stringify(takebackOfferPayloadB));
-
-    // const takebackOfferMsgA = await socketA.waitForMessage(
-    //   (msg) => msg.type === "takeback-offer",
-    // );
-    // expect(takebackOfferMsgA.playerId).toBe(2);
-
-    // const takebackRejectPayloadA = {
-    //   type: "takeback-reject",
-    // };
-    // socketA.ws.send(JSON.stringify(takebackRejectPayloadA));
-
-    // const takebackRejectMsgB = await socketB.waitForMessage(
-    //   (msg) => msg.type === "takeback-rejected",
-    // );
-    // expect(takebackRejectMsgB.playerId).toBe(1);
-
-    // // 10b. Takeback offer from player who didn't just move (User A), acceptance from User B
-    // const takebackOfferPayloadA = {
-    //   type: "takeback-offer",
-    // };
-    // socketA.ws.send(JSON.stringify(takebackOfferPayloadA));
-
-    // const takebackOfferMsgB = await socketB.waitForMessage(
-    //   (msg) => msg.type === "takeback-offer",
-    // );
-    // expect(takebackOfferMsgB.playerId).toBe(1);
-
-    // const takebackAcceptPayloadB = {
-    //   type: "takeback-accept",
-    // };
-    // socketB.ws.send(JSON.stringify(takebackAcceptPayloadB));
-
-    // const takebackMsgA = await socketA.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(takebackMsgA.state.moveCount).toBe(stateBeforeTakeback.moveCount - 1);
-    // expect(takebackMsgA.state.turn).toBe(2); // Should be User B's turn again
-
-    // // 10c. Test accepted takeback from player who just moved
-    // // Make a move first
-    // const p1CatAfterTakeback = takebackMsgA.state.pawns["1"].cat as [number, number];
-    // const moveAfterTakeback: [number, number] = [p1CatAfterTakeback[0] + 1, p1CatAfterTakeback[1]];
-    // const moveAfterTakebackPayload = {
-    //   type: "submit-move",
-    //   actions: [{ type: "cat", cell: moveAfterTakeback }],
-    // };
-    // socketA.ws.send(JSON.stringify(moveAfterTakebackPayload));
-
-    // const moveAfterTakebackMsg = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-
-    // // User B (who just moved) offers takeback, User A accepts
-    // const takebackOfferPayloadB2 = {
-    //   type: "takeback-offer",
-    // };
-    // socketB.ws.send(JSON.stringify(takebackOfferPayloadB2));
-
-    // const takebackOfferMsgA2 = await socketA.waitForMessage(
-    //   (msg) => msg.type === "takeback-offer",
-    // );
-    // expect(takebackOfferMsgA2.playerId).toBe(2);
-
-    // const takebackAcceptPayloadA = {
-    //   type: "takeback-accept",
-    // };
-    // socketA.ws.send(JSON.stringify(takebackAcceptPayloadA));
-
-    // const takebackMsgB = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(takebackMsgB.state.moveCount).toBe(takebackMsgA.state.moveCount - 1);
-    // expect(takebackMsgB.state.turn).toBe(2); // Should be User B's turn again
-
-    // // 12. Test resign functionality
-    // // Make a move first to ensure game is active
-    // const p1CatForResign = takebackMsgB.state.pawns["1"].cat as [number, number];
-    // const resignMoveTarget: [number, number] = [p1CatForResign[0] + 1, p1CatForResign[1]];
-    // const resignMovePayload = {
-    //   type: "submit-move",
-    //   actions: [{ type: "cat", cell: resignMoveTarget }],
-    // };
-    // socketA.ws.send(JSON.stringify(resignMovePayload));
-
-    // const resignMoveMsg = await socketB.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-
-    // // User B resigns
-    // const resignPayload = {
-    //   type: "resign",
-    // };
-    // socketB.ws.send(JSON.stringify(resignPayload));
-
-    // const resignEndMsg = await socketA.waitForMessage(
-    //   (msg) => msg.type === "state",
-    // );
-    // expect(resignEndMsg.state.status).toBe("finished");
-    // expect(resignEndMsg.state.result?.winner).toBe(1); // User A wins
-    // expect(resignEndMsg.state.result?.reason).toBe("resignation");
-
     socketA.close();
     socketB.close();
   });
@@ -731,6 +652,83 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgB.snapshot.players[1].appearance).toEqual(
       userBAppearance,
     ); // Joiner
+
+    socketA.close();
+    socketB.close();
+  });
+
+  it("ensures each player receives the other player's ELO during setup", async () => {
+    // Use unique user IDs for this test to avoid conflicts
+    const userA = "user-elo-a";
+    const userB = "user-elo-b";
+
+    // Define ELO ratings for both players
+    const userAElo = 1500;
+    const userBElo = 1350;
+
+    // Seed test users with ELO ratings in the database
+    await seedTestUser(userA, {
+      variant: "standard",
+      timeControl: "rapid",
+      rating: userAElo,
+    });
+    await seedTestUser(userB, {
+      variant: "standard",
+      timeControl: "rapid",
+      rating: userBElo,
+    });
+
+    // 1. User A creates a friend game
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: true,
+      boardWidth: 9,
+      boardHeight: 9,
+    };
+
+    const {
+      gameId,
+      socketToken: socketTokenA,
+      snapshot: initialSnapshotA,
+    } = await createFriendGame(userA, gameConfig, {
+      hostIsPlayer1: true,
+    });
+    expect(gameId).toBeDefined();
+    expect(socketTokenA).toBeDefined();
+    // Host's ELO should be included in the snapshot
+    expect(initialSnapshotA.players[0].elo).toBe(userAElo);
+
+    // 2. User B joins the game
+    const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
+      await joinFriendGame(userB, gameId);
+    expect(socketTokenB).toBeDefined();
+    // Both players' ELO should be in the join response
+    expect(joinSnapshotB.players[0].elo).toBe(userAElo); // Host ELO
+    expect(joinSnapshotB.players[1].elo).toBe(userBElo); // Joiner ELO
+
+    // 3. Both connect via WebSocket
+    const socketA = await openGameSocket(userA, gameId, socketTokenA);
+    const socketB = await openGameSocket(userB, gameId, socketTokenB);
+
+    // Wait for initial match status (match-status comes first on connect)
+    const matchStatusMsgA = await socketA.waitForMessage("match-status");
+    await socketA.waitForMessage("state");
+    const matchStatusMsgB = await socketB.waitForMessage("match-status");
+    await socketB.waitForMessage("state");
+
+    // Verify both clients receive both players' ELO ratings via WebSocket
+    // Host (Player A) should see their own ELO and opponent's ELO
+    expect(matchStatusMsgA.snapshot.players[0].elo).toBe(userAElo); // Host ELO
+    expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBElo); // Joiner ELO
+
+    // Joiner (Player B) should see their own ELO and opponent's ELO
+    expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userAElo); // Host ELO
+    expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBElo); // Joiner ELO
 
     socketA.close();
     socketB.close();

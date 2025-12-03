@@ -83,7 +83,7 @@ export interface GamePlayerSummary {
   connected: boolean; // Whether player is currently connected via WebSocket
   ready: boolean; // Whether player has clicked "ready" in the matching stage. Both players must be ready before game starts.
   appearance?: PlayerAppearance;
-  // TODO: consider adding rating here
+  elo?: number; // Player's ELO rating for this game's variant/time control (undefined for guests)
 }
 
 // Match type determines how players join the game

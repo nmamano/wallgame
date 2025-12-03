@@ -44,9 +44,10 @@ export const sessionManager = (c: Context): SessionManager => ({
     return getCookie(c, key);
   },
   async setSessionItem(key: string, value: unknown) {
+    const isProduction = process.env.NODE_ENV === "production";
     const cookieOptions = {
       httpOnly: true,
-      secure: true,
+      secure: isProduction, // Only require HTTPS in production (localhost doesn't have HTTPS)
       sameSite: "Lax",
     } as const;
     if (typeof value === "string") {
@@ -67,7 +68,28 @@ export const sessionManager = (c: Context): SessionManager => ({
 
 interface Env {
   Variables: {
-    user: UserType;
+    user?: UserType;
+  };
+}
+
+/**
+ * In test mode, creates a mock user from the x-test-user-id header.
+ * This is walled off in its own function for clarity and easy removal.
+ */
+function getTestUserFromHeader(c: Context): UserType | null {
+  if (process.env.NODE_ENV !== "test") {
+    return null;
+  }
+  const testUserId = c.req.header("x-test-user-id");
+  if (!testUserId) {
+    return null;
+  }
+  return {
+    id: testUserId,
+    given_name: "Test",
+    family_name: "User",
+    email: `${testUserId}@example.com`,
+    picture: null,
   };
 }
 
@@ -76,19 +98,11 @@ interface Env {
 export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
   try {
     // Mock auth for testing
-    if (process.env.NODE_ENV === "test") {
-      const testUserId = c.req.header("x-test-user-id");
-      if (testUserId) {
-        c.set("user", {
-          id: testUserId,
-          given_name: "Test",
-          family_name: "User",
-          email: `${testUserId}@example.com`,
-          picture: null,
-        });
-        await next();
-        return;
-      }
+    const testUser = getTestUserFromHeader(c);
+    if (testUser) {
+      c.set("user", testUser);
+      await next();
+      return;
     }
 
     const manager = sessionManager(c);
@@ -108,3 +122,40 @@ export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
     return c.json({ error: "Internal Server Error" }, 500);
   }
 });
+
+/**
+ * Optional authentication middleware for routes that work for both
+ * authenticated users and guests. Sets c.get("user") if authenticated,
+ * otherwise leaves it undefined.
+ */
+export const getOptionalUserMiddleware = createMiddleware<Env>(
+  async (c, next) => {
+    try {
+      // Mock auth for testing
+      const testUser = getTestUserFromHeader(c);
+      if (testUser) {
+        c.set("user", testUser);
+        await next();
+        return;
+      }
+
+      // Try to get authenticated user, but don't fail if not logged in
+      const manager = sessionManager(c);
+      const isAuthenticated = await kindeClient.isAuthenticated(manager);
+
+      if (isAuthenticated) {
+        const user = await kindeClient.getUserProfile(manager);
+        if (user?.id) {
+          c.set("user", user);
+        }
+      }
+      // If not authenticated, user remains undefined (guest)
+
+      await next();
+    } catch (error) {
+      // Don't fail on auth errors for optional auth - just proceed as guest
+      console.warn("Optional auth check failed, proceeding as guest:", error);
+      await next();
+    }
+  },
+);
