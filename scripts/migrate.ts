@@ -1,23 +1,19 @@
 /* Configuration script to set up the database.
-Whenever the schema changes
-
-Run with
+Whenever the schema changes, run:
 
 bun drizzle-kit generate
-bun migrate.ts
+bun run migrate
 
 The first command updates the drizzle/ folder, which contains the necessary
 migration commands.
 The second command runs this file.
 
+On fly deploy, the migration runs automatically via release_command.
+
 The db can be inspected manually by running:
 bunx drizzle-kit studio
 
-And don't forget to deploy the backend:
-
-fly deploy
-
- If you try running it again, you'll get an error saying there is nothing
+If you try running it again, you'll get an error saying there is nothing
 to migrate:
 
 {
