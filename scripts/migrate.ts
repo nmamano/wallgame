@@ -45,4 +45,5 @@ const migrationClient = postgres(process.env.DATABASE_URL!, { max: 1 });
 const db = drizzle(migrationClient);
 
 await migrate(db, { migrationsFolder: "drizzle" });
+await migrationClient.end();
 console.log("Migration complete");
