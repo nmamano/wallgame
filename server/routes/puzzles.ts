@@ -17,7 +17,7 @@ export const puzzlesRoute = new Hono()
     });
   })
   .post("/", async (c) => {
-    const data = await c.req.json();
+    const data: unknown = await c.req.json();
     const puzzle = createPostSchema.parse(data);
     const res = await db.insert(puzzlesTable).values(puzzle).returning();
     c.status(201);

@@ -15,10 +15,7 @@ import type {
   JoinGameResponse,
   MatchmakingGamesResponse,
 } from "../../shared/contracts/games";
-import type {
-  ClientMessage,
-  ServerMessage,
-} from "../../shared/contracts/websocket-messages";
+import type { ServerMessage } from "../../shared/contracts/websocket-messages";
 import type {
   GameConfiguration,
   PlayerAppearance,
@@ -34,7 +31,7 @@ import { newRatingsAfterGame, Outcome } from "../../server/games/rating-system";
 // ================================
 
 let container: StartedTestContainer;
-let server: any;
+let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 // These will be dynamically imported after DB is set up
@@ -44,7 +41,6 @@ let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
 let eq: typeof import("drizzle-orm").eq;
-let sql: typeof import("drizzle-orm").sql;
 
 async function importServerModules() {
   // Dynamic imports - these must happen AFTER DATABASE_URL is set
@@ -60,7 +56,6 @@ async function importServerModules() {
   userAuthTable = usersSchemaModule.userAuthTable;
   ratingsTable = ratingsSchemaModule.ratingsTable;
   eq = drizzleOrm.eq;
-  sql = drizzleOrm.sql;
 }
 
 function startTestServer() {
@@ -75,7 +70,7 @@ function startTestServer() {
 
 async function stopTestServer() {
   if (server) {
-    server.stop();
+    await server.stop(true); // Force close all connections
   }
 }
 
@@ -272,7 +267,7 @@ async function fetchMatchmakingGames(): Promise<
 // --- WebSocket Client Helpers ---
 // ================================
 
-type TestSocket = {
+interface TestSocket {
   ws: WebSocket;
   /** Wait for the next message of the expected type. Skips messages of ignored types. Fails immediately if an unexpected type arrives. */
   waitForMessage: <T extends ServerMessage["type"]>(
@@ -284,7 +279,7 @@ type TestSocket = {
   /** Get current buffer state for debugging. */
   getBufferState: () => string;
   close: () => void;
-};
+}
 
 async function openGameSocket(
   userId: string,
@@ -306,7 +301,7 @@ async function openGameSocket(
     const buffer: ServerMessage[] = [];
     let waitingResolve: ((msg: ServerMessage) => void) | null = null;
 
-    ws.on("message", (data) => {
+    ws.on("message", (data: Buffer) => {
       const msg = JSON.parse(data.toString()) as ServerMessage;
       if (waitingResolve) {
         const resolve = waitingResolve;

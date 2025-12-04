@@ -18,10 +18,11 @@ export default tseslint.config(
       "frontend/src/components/ui/**",
       "**/.tanstack/tmp/**",
       "server/db/schema/**",
+      "scripts/**",
     ],
   },
 
-  // FRONTEND: React + type-checked TS, just like your current config
+  // FRONTEND: React + type-checked TS
   {
     extends: [
       js.configs.recommended,
@@ -33,7 +34,6 @@ export default tseslint.config(
       ecmaVersion: 2020,
       globals: globals.browser,
       parserOptions: {
-        // same as before, but tsconfigRootDir is now frontend/, not repo root
         project: ["./tsconfig.node.json", "./tsconfig.app.json"],
         tsconfigRootDir: fileURLToPath(new URL("./frontend", import.meta.url)),
       },
@@ -61,23 +61,25 @@ export default tseslint.config(
     },
   },
 
-  // SERVER + SHARED: TS without type-checking (lighter setup for now)
+  // SERVER + SHARED + TESTS: Type-checked TS
   {
-    files: ["server/**/*.{ts,tsx}", "shared/**/*.{ts,tsx}"],
     extends: [
       js.configs.recommended,
-      ...tseslint.configs.recommended,
-      ...tseslint.configs.stylistic,
+      ...tseslint.configs.recommendedTypeChecked,
+      ...tseslint.configs.stylisticTypeChecked,
     ],
+    files: ["server/**/*.ts", "shared/**/*.ts", "tests/**/*.ts"],
     languageOptions: {
       ecmaVersion: 2020,
       sourceType: "module",
       globals: {
         ...globals.node,
       },
+      parserOptions: {
+        project: ["./tsconfig.server.json"],
+        tsconfigRootDir: fileURLToPath(new URL(".", import.meta.url)),
+      },
     },
-    rules: {
-      // You can add backend-specific rules here later if you like
-    },
+    rules: {},
   },
 );

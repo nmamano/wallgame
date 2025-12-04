@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, useEffect, useRef, useMemo } from "react";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
@@ -20,11 +20,33 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Users } from "lucide-react";
+import { Eye, Users, Loader2 } from "lucide-react";
+import type { LiveGameSummary } from "../../../shared/contracts/games";
+import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
 
 export const Route = createFileRoute("/live-games")({
   component: LiveGames,
 });
+
+function formatTimeControl(game: LiveGameSummary): string {
+  const preset = game.timeControl.preset ?? "custom";
+  const initial = Math.floor(game.timeControl.initialSeconds / 60);
+  const increment = game.timeControl.incrementSeconds;
+  return `${preset} (${initial}+${increment})`;
+}
+
+function formatBoardSize(game: LiveGameSummary): string {
+  const size = game.boardWidth;
+  if (size <= 6) return `small (${size}x${size})`;
+  if (size <= 8) return `medium (${size}x${size})`;
+  return `large (${size}x${size})`;
+}
+
+function formatPlayers(game: LiveGameSummary): string {
+  return game.players
+    .map((p) => `${p.displayName} (${p.elo ?? "?"})`)
+    .join(" vs ");
+}
 
 function LiveGames() {
   const navigate = useNavigate();
@@ -38,42 +60,105 @@ function LiveGames() {
     eloMax: "",
   });
 
-  // Mock data
-  const games = [
-    {
-      id: "live-1",
-      variant: "Standard",
-      rated: true,
-      timeControl: "rapid (10+2)",
-      boardSize: "medium (8x8)",
-      players: "GrandMaster (1850) vs ProPlayer (1820)",
-      moves: 23,
-      viewers: 156,
-      maxElo: 1850,
-    },
-    {
-      id: "live-2",
-      variant: "Standard",
-      rated: true,
-      timeControl: "blitz (3+2)",
-      boardSize: "small (6x6)",
-      players: "Alice (1450) vs Bob (1460)",
-      moves: 15,
-      viewers: 42,
-      maxElo: 1460,
-    },
-    {
-      id: "live-3",
-      variant: "Classic",
-      rated: false,
-      timeControl: "rapid (10+2)",
-      boardSize: "large (10x10)",
-      players: "Charlie (1320) vs Diana (1280)",
-      moves: 8,
-      viewers: 18,
-      maxElo: 1320,
-    },
-  ];
+  const [games, setGames] = useState<LiveGameSummary[]>([]);
+  const [isConnected, setIsConnected] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+  const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const url = new URL(window.location.origin);
+    url.protocol = url.protocol === "https:" ? "wss:" : "ws:";
+    url.pathname = "/ws/live-games";
+
+    const ws = new WebSocket(url.toString());
+    wsRef.current = ws;
+
+    ws.addEventListener("open", () => {
+      setIsConnected(true);
+      setError(null);
+    });
+
+    ws.addEventListener("message", (event) => {
+      try {
+        const msg = JSON.parse(event.data as string) as LiveGamesServerMessage;
+
+        if (msg.type === "snapshot") {
+          setGames(msg.games);
+        } else if (msg.type === "upsert") {
+          setGames((prev) => {
+            const idx = prev.findIndex((g) => g.id === msg.game.id);
+            if (idx >= 0) {
+              const next = [...prev];
+              next[idx] = msg.game;
+              return next;
+            }
+            return [...prev, msg.game];
+          });
+        } else if (msg.type === "remove") {
+          setGames((prev) => prev.filter((g) => g.id !== msg.gameId));
+        }
+      } catch (err) {
+        console.error("Failed to parse live games message", err);
+      }
+    });
+
+    ws.addEventListener("close", () => {
+      setIsConnected(false);
+    });
+
+    ws.addEventListener("error", () => {
+      setError("Connection error. Retrying...");
+    });
+
+    // Ping to keep connection alive
+    const pingInterval = setInterval(() => {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(JSON.stringify({ type: "ping" }));
+      }
+    }, 30000);
+
+    return () => {
+      clearInterval(pingInterval);
+      ws.close();
+    };
+  }, []);
+
+  // Filter games client-side
+  const filteredGames = useMemo(() => {
+    return games
+      .filter((game) => {
+        if (filters.variant !== "all" && game.variant !== filters.variant)
+          return false;
+        if (filters.rated !== "all") {
+          const wantRated = filters.rated === "yes";
+          if (game.rated !== wantRated) return false;
+        }
+        if (
+          filters.timeControl !== "all" &&
+          game.timeControl.preset !== filters.timeControl
+        )
+          return false;
+        if (filters.boardSize !== "all") {
+          const size = game.boardWidth;
+          if (filters.boardSize === "small" && size > 6) return false;
+          if (filters.boardSize === "medium" && (size <= 6 || size > 8))
+            return false;
+          if (filters.boardSize === "large" && size <= 8) return false;
+        }
+        if (filters.eloMin) {
+          const min = parseInt(filters.eloMin, 10);
+          if (!isNaN(min) && game.averageElo < min) return false;
+        }
+        if (filters.eloMax) {
+          const max = parseInt(filters.eloMax, 10);
+          if (!isNaN(max) && game.averageElo > max) return false;
+        }
+        return true;
+      })
+      .sort(
+        (a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt,
+      );
+  }, [games, filters]);
 
   const handleWatchGame = (gameId: string) => {
     void navigate({ to: `/game/${gameId}` });
@@ -86,9 +171,12 @@ function LiveGames() {
           <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
             Live Games
           </h1>
-          <Badge className="px-3 py-1 bg-red-600 dark:bg-red-700 animate-pulse">
-            LIVE
+          <Badge
+            className={`px-3 py-1 ${isConnected ? "bg-red-600 dark:bg-red-700 animate-pulse" : "bg-gray-500"}`}
+          >
+            {isConnected ? "LIVE" : "CONNECTING..."}
           </Badge>
+          {error && <span className="text-sm text-destructive">{error}</span>}
         </div>
 
         {/* Filters */}
@@ -170,9 +258,9 @@ function LiveGames() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="small">Small</SelectItem>
-                  <SelectItem value="medium">Medium</SelectItem>
-                  <SelectItem value="large">Large</SelectItem>
+                  <SelectItem value="small">Small (≤6)</SelectItem>
+                  <SelectItem value="medium">Medium (7-8)</SelectItem>
+                  <SelectItem value="large">Large (≥9)</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -207,51 +295,70 @@ function LiveGames() {
 
         {/* Games Table */}
         <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead>Watch</TableHead>
-                <TableHead>Viewers</TableHead>
-                <TableHead>Variant</TableHead>
-                <TableHead>Rated</TableHead>
-                <TableHead>Time Control</TableHead>
-                <TableHead>Board Size</TableHead>
-                <TableHead>Players</TableHead>
-                <TableHead>Moves</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {games.map((game) => (
-                <TableRow key={game.id} className="hover:bg-muted/30">
-                  <TableCell>
-                    <Button
-                      size="sm"
-                      variant="ghost"
-                      onClick={() => handleWatchGame(game.id)}
-                    >
-                      <Eye className="w-4 h-4" />
-                    </Button>
-                  </TableCell>
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      <Users className="w-4 h-4 text-amber-700 dark:text-amber-300" />
-                      <span className="font-semibold">{game.viewers}</span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-medium">{game.variant}</TableCell>
-                  <TableCell>
-                    <Badge variant={game.rated ? "default" : "secondary"}>
-                      {game.rated ? "Yes" : "No"}
-                    </Badge>
-                  </TableCell>
-                  <TableCell>{game.timeControl}</TableCell>
-                  <TableCell>{game.boardSize}</TableCell>
-                  <TableCell>{game.players}</TableCell>
-                  <TableCell>{game.moves}</TableCell>
+          {!isConnected && games.length === 0 ? (
+            <div className="flex items-center justify-center py-12">
+              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mr-2" />
+              <span className="text-muted-foreground">
+                Loading live games...
+              </span>
+            </div>
+          ) : filteredGames.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {games.length === 0
+                ? "No live games at the moment. Check back later!"
+                : "No games match your filters."}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>Watch</TableHead>
+                  <TableHead>Viewers</TableHead>
+                  <TableHead>Variant</TableHead>
+                  <TableHead>Rated</TableHead>
+                  <TableHead>Time Control</TableHead>
+                  <TableHead>Board Size</TableHead>
+                  <TableHead>Players</TableHead>
+                  <TableHead>Moves</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {filteredGames.map((game) => (
+                  <TableRow key={game.id} className="hover:bg-muted/30">
+                    <TableCell>
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => handleWatchGame(game.id)}
+                      >
+                        <Eye className="w-4 h-4" />
+                      </Button>
+                    </TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        <Users className="w-4 h-4 text-amber-700 dark:text-amber-300" />
+                        <span className="font-semibold">
+                          {game.spectatorCount}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-medium capitalize">
+                      {game.variant}
+                    </TableCell>
+                    <TableCell>
+                      <Badge variant={game.rated ? "default" : "secondary"}>
+                        {game.rated ? "Yes" : "No"}
+                      </Badge>
+                    </TableCell>
+                    <TableCell>{formatTimeControl(game)}</TableCell>
+                    <TableCell>{formatBoardSize(game)}</TableCell>
+                    <TableCell>{formatPlayers(game)}</TableCell>
+                    <TableCell>{game.moveCount}</TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
         </Card>
       </div>
     </div>
