@@ -18,7 +18,7 @@ export const authRoute = new Hono()
   .get("/callback", async (c) => {
     // Gets called every time the user logs in or registers.
     const url = new URL(c.req.url);
-    await kindeClient.handleRedirectToApp(sessionManager(c), url as URL);
+    await kindeClient.handleRedirectToApp(sessionManager(c), url);
 
     // Ensure user exists in our database
     // Note: getUserProfile might return null immediately after handleRedirectToApp
@@ -30,7 +30,7 @@ export const authRoute = new Hono()
       try {
         // Try to get user profile, but don't fail if it's null (timing issue)
         const kindeUser = await kindeClient.getUserProfile(manager);
-        if (kindeUser && kindeUser.id) {
+        if (kindeUser?.id) {
           await ensureUserExists(kindeUser);
         } else {
           // User profile not available yet - this is OK, we'll create them

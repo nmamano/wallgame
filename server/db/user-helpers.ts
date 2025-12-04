@@ -218,7 +218,10 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
  */
 export async function getUserIdFromKinde(c: Context): Promise<number> {
   try {
-    const kindeUser = c.get("user");
+    const kindeUser = c.get("user") as UserType | undefined;
+    if (!kindeUser) {
+      throw new Error("User not found in context");
+    }
     const authUserId = kindeUser.id;
 
     if (!authUserId) {

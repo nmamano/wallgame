@@ -12,6 +12,7 @@ import type {
   PlayerAppearance,
   Move,
 } from "../../shared/domain/game-types";
+import type { LiveGameSummary } from "../../shared/contracts/games";
 import {
   getRatingStateForAuthUser,
   updateRatingStateForAuthUser,
@@ -182,7 +183,7 @@ export const joinGameSession = (args: {
   }
   joiner.ready = true;
   joiner.displayName =
-    args.displayName?.trim() ||
+    args.displayName?.trim() ??
     (session.matchType === "friend" ? "Friend" : "Player 2");
   joiner.appearance = {
     ...joiner.appearance,
@@ -311,6 +312,105 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
         }),
       ),
     }));
+};
+
+// ============================================================================
+// Spectator Tracking
+// ============================================================================
+
+const spectatorCounts = new Map<string, number>();
+
+export const incrementSpectatorCount = (gameId: string): number => {
+  const count = (spectatorCounts.get(gameId) ?? 0) + 1;
+  spectatorCounts.set(gameId, count);
+  return count;
+};
+
+export const decrementSpectatorCount = (gameId: string): number => {
+  const count = Math.max(0, (spectatorCounts.get(gameId) ?? 1) - 1);
+  if (count === 0) {
+    spectatorCounts.delete(gameId);
+  } else {
+    spectatorCounts.set(gameId, count);
+  }
+  return count;
+};
+
+export const getSpectatorCount = (gameId: string): number => {
+  return spectatorCounts.get(gameId) ?? 0;
+};
+
+// ============================================================================
+// Live Games (In-Progress Games for Spectating)
+// ============================================================================
+
+/**
+ * Lists all in-progress games for the live games page.
+ * Returns games sorted by average ELO (descending), then by lastMoveAt (descending).
+ */
+export const listLiveGames = (limit = 100): LiveGameSummary[] => {
+  return [...sessions.values()]
+    .filter((session) => session.status === "in-progress")
+    .map((session) => {
+      const players = [session.players.host, session.players.joiner];
+      const elos = players.map((p) => p.elo ?? 1500);
+      const averageElo = Math.round((elos[0] + elos[1]) / 2);
+
+      return {
+        id: session.id,
+        variant: session.config.variant,
+        rated: session.config.rated,
+        timeControl: session.config.timeControl,
+        boardWidth: session.config.boardWidth,
+        boardHeight: session.config.boardHeight,
+        players: players.map((p) => ({
+          playerId: p.playerId,
+          displayName: p.displayName,
+          elo: p.elo,
+          role: p.role,
+        })),
+        status: "in-progress" as const,
+        moveCount: session.gameState.moveCount,
+        averageElo,
+        lastMoveAt: session.updatedAt,
+        spectatorCount: getSpectatorCount(session.id),
+      };
+    })
+    .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
+    .slice(0, limit);
+};
+
+/**
+ * Gets a single live game summary by ID.
+ * Returns null if the game doesn't exist or is not in-progress.
+ */
+export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
+  const session = sessions.get(gameId);
+  if (session?.status !== "in-progress") return null;
+
+  const players = [session.players.host, session.players.joiner];
+  const elos = players.map((p) => p.elo ?? 1500);
+  const averageElo = Math.round((elos[0] + elos[1]) / 2);
+
+  return {
+    id: session.id,
+    variant: session.config.variant,
+    rated: session.config.rated,
+    timeControl: session.config.timeControl,
+    boardWidth: session.config.boardWidth,
+    boardHeight: session.config.boardHeight,
+    players: players.map((p) => ({
+      playerId: p.playerId,
+      displayName: p.displayName,
+      elo: p.elo,
+      role: p.role,
+    })),
+    status: "in-progress" as const,
+    moveCount: session.gameState.moveCount,
+    averageElo,
+    lastMoveAt: session.updatedAt,
+    spectatorCount: getSpectatorCount(session.id),
+  };
 };
 
 const applyActionToSession = (

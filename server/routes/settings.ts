@@ -113,8 +113,8 @@ export const settingsRoute = new Hono()
       }
 
       const settings = settingsResult[0];
-      const pawnSettings = settings.pawnSettings || [];
-      const variantSettings = settings.variantSettings || [];
+      const pawnSettings = settings.pawnSettings ?? [];
+      const variantSettings = settings.variantSettings ?? [];
 
       return c.json({
         displayName: userInfo.displayName,

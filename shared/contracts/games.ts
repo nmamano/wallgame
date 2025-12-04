@@ -1,5 +1,11 @@
 import { z } from "zod";
-import type { GameSnapshot, PlayerId } from "../domain/game-types";
+import type {
+  GameSnapshot,
+  PlayerId,
+  Variant,
+  TimeControlConfig,
+  SerializedGameState,
+} from "../domain/game-types";
 
 export type GameRole = "host" | "joiner";
 
@@ -102,4 +108,45 @@ export interface ReadyGameResponse {
 
 export interface ErrorResponse {
   error: string;
+}
+
+// ============================================================================
+// Live Games / Spectate Types
+// ============================================================================
+
+/**
+ * A minimal, list-friendly summary of a live game.
+ * Used on the /live-games page for displaying in-progress games.
+ */
+export interface LiveGameSummary {
+  id: string;
+  variant: Variant;
+  rated: boolean;
+  timeControl: TimeControlConfig;
+  boardWidth: number;
+  boardHeight: number;
+  players: {
+    playerId: PlayerId;
+    displayName: string;
+    elo?: number;
+    role: "host" | "joiner";
+  }[];
+  status: "in-progress";
+  moveCount: number;
+  averageElo: number;
+  lastMoveAt: number;
+  spectatorCount: number;
+}
+
+/**
+ * Response from the spectate REST endpoint.
+ * Provides initial state for spectators joining a game.
+ */
+export interface SpectateResponse {
+  snapshot: GameSnapshot;
+  state: SerializedGameState;
+}
+
+export interface LiveGamesResponse {
+  games: LiveGameSummary[];
 }

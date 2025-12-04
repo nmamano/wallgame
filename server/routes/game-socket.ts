@@ -10,6 +10,10 @@ import {
   resignGame,
   updateConnectionState,
   listMatchmakingGames,
+  listLiveGames,
+  getLiveGameSummary,
+  incrementSpectatorCount,
+  decrementSpectatorCount,
   giveTime,
   acceptDraw,
   rejectDraw,
@@ -28,15 +32,17 @@ const { upgradeWebSocket, websocket } = createBunWebSocket();
 interface SessionSocket {
   ctx: WSContext;
   sessionId: string;
-  socketToken: string;
-  role: "host" | "joiner";
+  socketToken: string | null; // null for spectators
+  role: "host" | "joiner" | "spectator";
 }
 
 /**
  * Get the current playerId for a socket from the session.
  * This is dynamic because playerIds can swap after a rematch.
+ * Returns null for spectators.
  */
-const getSocketPlayerId = (socket: SessionSocket): PlayerId => {
+const getSocketPlayerId = (socket: SessionSocket): PlayerId | null => {
+  if (socket.role === "spectator") return null;
   const session = getSession(socket.sessionId);
   return socket.role === "host"
     ? session.players.host.playerId
@@ -50,7 +56,7 @@ const rawSocketMap = new WeakMap<object, SessionSocket>();
 const mapSocketContext = (ctx: WSContext, entry: SessionSocket) => {
   contextEntryMap.set(ctx, entry);
   if (ctx.raw && typeof ctx.raw === "object") {
-    rawSocketMap.set(ctx.raw as object, entry);
+    rawSocketMap.set(ctx.raw, entry);
   }
 };
 
@@ -58,7 +64,7 @@ const getEntryForContext = (ctx: WSContext): SessionSocket | undefined => {
   const direct = contextEntryMap.get(ctx);
   if (direct) return direct;
   if (ctx.raw && typeof ctx.raw === "object") {
-    return rawSocketMap.get(ctx.raw as object);
+    return rawSocketMap.get(ctx.raw);
   }
   return undefined;
 };
@@ -81,7 +87,7 @@ const removeSocket = (entry: SessionSocket) => {
   }
   contextEntryMap.delete(entry.ctx);
   if (entry.ctx.raw && typeof entry.ctx.raw === "object") {
-    rawSocketMap.delete(entry.ctx.raw as object);
+    rawSocketMap.delete(entry.ctx.raw);
   }
 };
 
@@ -103,7 +109,7 @@ const broadcast = (sessionId: string, message: unknown) => {
 };
 
 /**
- * Send a message to the opponent only (not to the sender).
+ * Send a message to the opponent only (not to the sender or spectators).
  * Used for offers (draw, takeback, rematch) which should only go to the other player.
  */
 const sendToOpponent = (
@@ -116,6 +122,7 @@ const sendToOpponent = (
   const data = JSON.stringify(message);
   sockets.forEach((entry) => {
     if (entry.socketToken === senderSocketToken) return; // Skip sender
+    if (entry.role === "spectator") return; // Skip spectators
     try {
       entry.ctx.send(data);
     } catch (error) {
@@ -132,6 +139,56 @@ const sendMatchStatus = (sessionId: string) => {
   broadcast(sessionId, {
     type: "match-status",
     snapshot: getSessionSnapshot(sessionId),
+  });
+};
+
+// ============================================================================
+// Live Games WebSocket (for /live-games page)
+// ============================================================================
+
+const liveGamesConnections = new Set<WebSocket>();
+
+export const addLiveGamesConnection = (ws: WebSocket) => {
+  liveGamesConnections.add(ws);
+};
+
+export const removeLiveGamesConnection = (ws: WebSocket) => {
+  liveGamesConnections.delete(ws);
+};
+
+/**
+ * Broadcast an upsert (add or update) for a live game.
+ * Called when a game becomes in-progress, on each move, and when spectator count changes.
+ */
+export const broadcastLiveGamesUpsert = (gameId: string) => {
+  const summary = getLiveGameSummary(gameId);
+  if (!summary) return;
+  const message = JSON.stringify({ type: "upsert", game: summary });
+  liveGamesConnections.forEach((ws) => {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    } catch (error) {
+      console.error("Failed to broadcast live games upsert:", error);
+    }
+  });
+};
+
+/**
+ * Broadcast removal of a game from the live list.
+ * Called when a game ends (by win, resign, draw, or timeout).
+ */
+export const broadcastLiveGamesRemove = (gameId: string) => {
+  const message = JSON.stringify({ type: "remove", gameId });
+  liveGamesConnections.forEach((ws) => {
+    try {
+      if (ws.readyState === WebSocket.OPEN) {
+        ws.send(message);
+      }
+    } catch (error) {
+      console.error("Failed to broadcast live games remove:", error);
+    }
   });
 };
 
@@ -152,6 +209,23 @@ const sendStateOnce = (entry: SessionSocket) => {
   }
 };
 
+const sendMatchStatusOnce = (entry: SessionSocket) => {
+  try {
+    entry.ctx.send(
+      JSON.stringify({
+        type: "match-status",
+        snapshot: getSessionSnapshot(entry.sessionId),
+      }),
+    );
+  } catch (error) {
+    console.error("Failed to send match status snapshot", {
+      error,
+      sessionId: entry.sessionId,
+      socketToken: entry.socketToken,
+    });
+  }
+};
+
 const parseMessage = (raw: string | ArrayBuffer) => {
   if (typeof raw !== "string") {
     throw new Error("Invalid message format");
@@ -162,6 +236,7 @@ const parseMessage = (raw: string | ArrayBuffer) => {
 const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return; // Spectators can't move
 
   const newState = applyPlayerMove({
     id: socket.sessionId,
@@ -178,6 +253,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   // Process rating update and send match-status if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    // Broadcast removal from live games list
+    broadcastLiveGamesRemove(socket.sessionId);
+  } else {
+    // Broadcast upsert for live games list (game became in-progress or move count updated)
+    broadcastLiveGamesUpsert(socket.sessionId);
   }
 
   broadcast(socket.sessionId, {
@@ -193,6 +273,7 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 
 const handleResign = async (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return; // Spectators can't resign
 
   const newState = resignGame({
     id: socket.sessionId,
@@ -207,6 +288,8 @@ const handleResign = async (socket: SessionSocket) => {
   // Process rating update if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    // Broadcast removal from live games list
+    broadcastLiveGamesRemove(socket.sessionId);
   }
 
   broadcast(socket.sessionId, {
@@ -218,6 +301,7 @@ const handleResign = async (socket: SessionSocket) => {
 
 const handleGiveTime = (socket: SessionSocket, seconds: number) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return; // Spectators can't give time
 
   giveTime({
     id: socket.sessionId,
@@ -237,6 +321,7 @@ const handleGiveTime = (socket: SessionSocket, seconds: number) => {
 
 const handleTakebackOffer = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "takeback-offer",
@@ -250,6 +335,7 @@ const handleTakebackOffer = (socket: SessionSocket) => {
 
 const handleTakebackAccept = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return;
 
   acceptTakeback({
     id: socket.sessionId,
@@ -267,6 +353,7 @@ const handleTakebackAccept = (socket: SessionSocket) => {
 
 const handleTakebackReject = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return;
 
   rejectTakeback({
     id: socket.sessionId,
@@ -284,6 +371,7 @@ const handleTakebackReject = (socket: SessionSocket) => {
 
 const handleDrawOffer = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "draw-offer",
@@ -297,6 +385,7 @@ const handleDrawOffer = (socket: SessionSocket) => {
 
 const handleDrawAccept = async (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return; // Spectators can't accept draws
 
   const newState = acceptDraw({
     id: socket.sessionId,
@@ -310,6 +399,8 @@ const handleDrawAccept = async (socket: SessionSocket) => {
   // Process rating update if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    // Broadcast removal from live games list
+    broadcastLiveGamesRemove(socket.sessionId);
   }
 
   broadcast(socket.sessionId, {
@@ -321,6 +412,7 @@ const handleDrawAccept = async (socket: SessionSocket) => {
 
 const handleDrawReject = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return;
 
   rejectDraw({
     id: socket.sessionId,
@@ -338,6 +430,7 @@ const handleDrawReject = (socket: SessionSocket) => {
 
 const handleRematchOffer = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "rematch-offer",
@@ -351,6 +444,7 @@ const handleRematchOffer = (socket: SessionSocket) => {
 
 const handleRematchAccept = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return; // Spectators can't accept rematches
 
   resetSession(socket.sessionId);
   console.info("[ws] rematch-accept processed", {
@@ -362,10 +456,13 @@ const handleRematchAccept = (socket: SessionSocket) => {
     state: getSerializedState(socket.sessionId),
   });
   sendMatchStatus(socket.sessionId);
+  // Note: Game will become in-progress again when first move is made,
+  // which will trigger broadcastLiveGamesUpsert
 };
 
 const handleRematchReject = (socket: SessionSocket) => {
   const playerId = getSocketPlayerId(socket);
+  if (playerId === null) return;
 
   broadcast(socket.sessionId, {
     type: "rematch-rejected",
@@ -455,8 +552,9 @@ const handleClientMessage = async (
 
 interface GameSocketMeta {
   sessionId: string;
-  socketToken: string;
-  player: SessionPlayer;
+  socketToken: string | null; // null for spectators
+  player: SessionPlayer | null; // null for spectators
+  isSpectator: boolean;
 }
 
 const checkOrigin = (c: Context): boolean => {
@@ -495,10 +593,29 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
   }
 
   const socketToken = c.req.query("token");
+
+  // If no token provided, this is a spectator connection
   if (!socketToken) {
-    return c.text("Missing token", 400);
+    // Verify game exists and is spectatable
+    try {
+      const session = getSession(sessionId);
+      if (session.status === "waiting" || session.status === "ready") {
+        return c.text("Game not yet in progress", 400);
+      }
+      c.set("gameSocketMeta", {
+        sessionId,
+        socketToken: null,
+        player: null,
+        isSpectator: true,
+      } satisfies GameSocketMeta);
+      await next();
+      return;
+    } catch {
+      return c.text("Game not found", 404);
+    }
   }
 
+  // Player connection with token
   const resolved = resolveSessionForSocketToken({
     id: sessionId,
     socketToken,
@@ -516,6 +633,7 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
     sessionId,
     socketToken,
     player: resolved.player,
+    isSpectator: false,
   } satisfies GameSocketMeta);
 
   await next();
@@ -530,29 +648,46 @@ export const registerGameSocketRoute = (app: Hono) => {
       if (!meta) {
         throw new Error("Game socket metadata missing");
       }
-      const { sessionId, socketToken, player } = meta;
+      const { sessionId, socketToken, player, isSpectator } = meta;
 
       return {
         onOpen(_event: Event, ws: WSContext) {
-          const entry: SessionSocket = {
-            ctx: ws,
-            sessionId,
-            socketToken,
-            role: player.role,
-          };
-          addSocket(entry);
-          updateConnectionState({
-            id: sessionId,
-            socketToken,
-            connected: true,
-          });
-          console.info("[ws] connected", {
-            sessionId,
-            socketToken,
-            playerId: getSocketPlayerId(entry),
-          });
-          sendStateOnce(entry);
-          sendMatchStatus(sessionId);
+          if (isSpectator) {
+            // Spectator connection
+            const entry: SessionSocket = {
+              ctx: ws,
+              sessionId,
+              socketToken: null,
+              role: "spectator",
+            };
+            addSocket(entry);
+            incrementSpectatorCount(sessionId);
+            broadcastLiveGamesUpsert(sessionId); // Update spectator count in list
+            console.info("[ws] spectator connected", { sessionId });
+            sendStateOnce(entry);
+            sendMatchStatusOnce(entry);
+          } else {
+            // Player connection
+            const entry: SessionSocket = {
+              ctx: ws,
+              sessionId,
+              socketToken: socketToken!,
+              role: player!.role,
+            };
+            addSocket(entry);
+            updateConnectionState({
+              id: sessionId,
+              socketToken: socketToken!,
+              connected: true,
+            });
+            console.info("[ws] connected", {
+              sessionId,
+              socketToken,
+              playerId: getSocketPlayerId(entry),
+            });
+            sendStateOnce(entry);
+            sendMatchStatus(sessionId);
+          }
         },
         onMessage(event: MessageEvent, ws: WSContext) {
           const entry = getEntryForContext(ws);
@@ -561,9 +696,33 @@ export const registerGameSocketRoute = (app: Hono) => {
             return;
           }
 
-          const payload = event.data as string | ArrayBuffer;
+          const raw = event.data as string | ArrayBuffer;
 
-          void handleClientMessage(entry, payload).catch((error) => {
+          // Spectators can only send ping messages
+          if (entry.role === "spectator") {
+            if (typeof raw === "string") {
+              try {
+                const msg = JSON.parse(raw) as { type?: string };
+                if (msg.type === "ping") {
+                  ws.send(
+                    JSON.stringify({ type: "pong", timestamp: Date.now() }),
+                  );
+                  return;
+                }
+              } catch {
+                // Ignore parse errors
+              }
+            }
+            ws.send(
+              JSON.stringify({
+                type: "error",
+                message: "Spectators cannot send game messages",
+              }),
+            );
+            return;
+          }
+
+          void handleClientMessage(entry, raw).catch((error: unknown) => {
             console.error("[ws] failed to handle message", {
               error,
               sessionId: entry.sessionId,
@@ -586,16 +745,27 @@ export const registerGameSocketRoute = (app: Hono) => {
             return;
           }
           removeSocket(entry);
-          updateConnectionState({
-            id: entry.sessionId,
-            socketToken: entry.socketToken,
-            connected: false,
-          });
-          sendMatchStatus(entry.sessionId);
-          console.info("[ws] disconnected", {
-            sessionId: entry.sessionId,
-            socketToken: entry.socketToken,
-          });
+
+          if (entry.role === "spectator") {
+            // Spectator disconnect
+            decrementSpectatorCount(entry.sessionId);
+            broadcastLiveGamesUpsert(entry.sessionId); // Update spectator count
+            console.info("[ws] spectator disconnected", {
+              sessionId: entry.sessionId,
+            });
+          } else {
+            // Player disconnect
+            updateConnectionState({
+              id: entry.sessionId,
+              socketToken: entry.socketToken!,
+              connected: false,
+            });
+            sendMatchStatus(entry.sessionId);
+            console.info("[ws] disconnected", {
+              sessionId: entry.sessionId,
+              socketToken: entry.socketToken,
+            });
+          }
         },
       };
     }),
@@ -619,10 +789,10 @@ export const registerGameSocketRoute = (app: Hono) => {
         },
         onMessage(event: MessageEvent, ws: WSContext) {
           // Handle ping messages to keep connection alive
-          const raw = event.data;
+          const raw = event.data as string | ArrayBuffer;
           if (typeof raw === "string") {
             try {
-              const msg = JSON.parse(raw);
+              const msg = JSON.parse(raw) as { type?: string };
               if (msg.type === "ping") {
                 ws.send(
                   JSON.stringify({ type: "pong", timestamp: Date.now() }),
@@ -638,6 +808,52 @@ export const registerGameSocketRoute = (app: Hono) => {
             removeLobbyConnection(ws.raw as WebSocket);
           }
           console.info("[ws-lobby] client disconnected");
+        },
+      };
+    }),
+  );
+
+  // Live Games WebSocket for spectator list updates
+  app.get(
+    "/ws/live-games",
+    originCheckMiddleware,
+    upgradeWebSocket(() => {
+      return {
+        onOpen(_event: Event, ws: WSContext) {
+          // Store raw socket reference for live games broadcasts
+          if (ws.raw && typeof ws.raw === "object") {
+            addLiveGamesConnection(ws.raw as WebSocket);
+          }
+          console.info("[ws-live-games] client connected");
+          // Send current live games immediately
+          const games = listLiveGames(100);
+          const snapshotMsg = JSON.stringify({ type: "snapshot", games });
+          console.info("[ws-live-games] sending snapshot", {
+            gamesCount: games.length,
+          });
+          ws.send(snapshotMsg);
+        },
+        onMessage(event: MessageEvent, ws: WSContext) {
+          // Handle ping messages to keep connection alive
+          const raw = event.data as string | ArrayBuffer;
+          if (typeof raw === "string") {
+            try {
+              const msg = JSON.parse(raw) as { type?: string };
+              if (msg.type === "ping") {
+                ws.send(
+                  JSON.stringify({ type: "pong", timestamp: Date.now() }),
+                );
+              }
+            } catch {
+              // Ignore parse errors
+            }
+          }
+        },
+        onClose(_event: CloseEvent, ws: WSContext) {
+          if (ws.raw && typeof ws.raw === "object") {
+            removeLiveGamesConnection(ws.raw as WebSocket);
+          }
+          console.info("[ws-live-games] client disconnected");
         },
       };
     }),

@@ -40,10 +40,10 @@ export const kindeClient = createKindeServerClient(
 );
 
 export const sessionManager = (c: Context): SessionManager => ({
-  async getSessionItem(key: string) {
-    return getCookie(c, key);
+  getSessionItem(key: string) {
+    return Promise.resolve(getCookie(c, key));
   },
-  async setSessionItem(key: string, value: unknown) {
+  setSessionItem(key: string, value: unknown) {
     const isProduction = process.env.NODE_ENV === "production";
     const cookieOptions = {
       httpOnly: true,
@@ -55,14 +55,17 @@ export const sessionManager = (c: Context): SessionManager => ({
     } else {
       setCookie(c, key, JSON.stringify(value), cookieOptions);
     }
+    return Promise.resolve();
   },
-  async removeSessionItem(key: string) {
+  removeSessionItem(key: string) {
     deleteCookie(c, key);
+    return Promise.resolve();
   },
-  async destroySession() {
+  destroySession() {
     ["id_token", "access_token", "user", "refresh_token"].forEach((key) => {
       deleteCookie(c, key);
     });
+    return Promise.resolve();
   },
 });
 
@@ -111,7 +114,7 @@ export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
       return c.json({ error: "Unauthorized" }, 401);
     }
     const user = await kindeClient.getUserProfile(manager);
-    if (!user || !user.id) {
+    if (!user?.id) {
       console.error("getUserMiddleware: User profile is null or missing ID");
       return c.json({ error: "Failed to get user profile" }, 500);
     }

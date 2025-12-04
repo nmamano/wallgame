@@ -14,8 +14,9 @@ export const Route = createFileRoute("/game/$id")({
 
 function GamePage() {
   const { id } = Route.useParams();
-  const { matching, board, timers, actions, chat, info } =
-    useGamePageController(id);
+  const controller = useGamePageController(id);
+  const { isSpectator, matching, board, timers, actions, chat, info } =
+    controller;
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
@@ -92,14 +93,25 @@ function GamePage() {
   return (
     <>
       <div className="min-h-screen bg-background flex flex-col">
-        <MatchingStagePanel
-          isOpen={matching.isOpen}
-          players={matching.players}
-          shareUrl={matching.shareUrl}
-          statusMessage={matching.statusMessage}
-          canAbort={matching.canAbort}
-          onAbort={matching.onAbort}
-        />
+        {/* Spectator indicator banner */}
+        {isSpectator && (
+          <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-2 text-sm font-medium border-b border-amber-200 dark:border-amber-800">
+            <span className="mr-2">👁️</span>
+            Spectating
+          </div>
+        )}
+
+        {/* Only show matching panel for players */}
+        {!isSpectator && (
+          <MatchingStagePanel
+            isOpen={matching.isOpen}
+            players={matching.players}
+            shareUrl={matching.shareUrl}
+            statusMessage={matching.statusMessage}
+            canAbort={matching.canAbort}
+            onAbort={matching.onAbort}
+          />
+        )}
 
         <div
           className="flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit"
@@ -216,41 +228,44 @@ function GamePage() {
               />
             </div>
 
-            <div className="order-1 lg:order-2">
-              <ActionsPanel
-                drawDecisionPrompt={actions.drawDecisionPrompt}
-                takebackDecisionPrompt={actions.takebackDecisionPrompt}
-                incomingPassiveNotice={actions.incomingPassiveNotice}
-                getPlayerName={actions.getPlayerName}
-                respondToDrawPrompt={actions.respondToDrawPrompt}
-                respondToTakebackPrompt={actions.respondToTakebackPrompt}
-                handleDismissIncomingNotice={
-                  actions.handleDismissIncomingNotice
-                }
-                resignFlowPlayerId={actions.resignFlowPlayerId}
-                pendingDrawForLocal={actions.pendingDrawForLocal}
-                pendingDrawOffer={actions.pendingDrawOffer}
-                takebackPendingForLocal={actions.takebackPendingForLocal}
-                pendingTakebackRequest={actions.pendingTakebackRequest}
-                outgoingTimeInfo={actions.outgoingTimeInfo}
-                canCancelDrawOffer={actions.canCancelDrawOffer}
-                canCancelTakebackRequest={actions.canCancelTakebackRequest}
-                handleCancelResign={actions.handleCancelResign}
-                handleConfirmResign={actions.handleConfirmResign}
-                handleCancelDrawOffer={actions.handleCancelDrawOffer}
-                handleCancelTakebackRequest={
-                  actions.handleCancelTakebackRequest
-                }
-                handleDismissOutgoingInfo={actions.handleDismissOutgoingInfo}
-                actionButtonsDisabled={actions.actionButtonsDisabled}
-                manualActionsDisabled={actions.manualActionsDisabled}
-                hasTakebackHistory={actions.hasTakebackHistory}
-                handleStartResign={actions.handleStartResign}
-                handleOfferDraw={actions.handleOfferDraw}
-                handleRequestTakeback={actions.handleRequestTakeback}
-                handleGiveTime={actions.handleGiveTime}
-              />
-            </div>
+            {/* Only show actions panel for players */}
+            {!isSpectator && (
+              <div className="order-1 lg:order-2">
+                <ActionsPanel
+                  drawDecisionPrompt={actions.drawDecisionPrompt}
+                  takebackDecisionPrompt={actions.takebackDecisionPrompt}
+                  incomingPassiveNotice={actions.incomingPassiveNotice}
+                  getPlayerName={actions.getPlayerName}
+                  respondToDrawPrompt={actions.respondToDrawPrompt}
+                  respondToTakebackPrompt={actions.respondToTakebackPrompt}
+                  handleDismissIncomingNotice={
+                    actions.handleDismissIncomingNotice
+                  }
+                  resignFlowPlayerId={actions.resignFlowPlayerId}
+                  pendingDrawForLocal={actions.pendingDrawForLocal}
+                  pendingDrawOffer={actions.pendingDrawOffer}
+                  takebackPendingForLocal={actions.takebackPendingForLocal}
+                  pendingTakebackRequest={actions.pendingTakebackRequest}
+                  outgoingTimeInfo={actions.outgoingTimeInfo}
+                  canCancelDrawOffer={actions.canCancelDrawOffer}
+                  canCancelTakebackRequest={actions.canCancelTakebackRequest}
+                  handleCancelResign={actions.handleCancelResign}
+                  handleConfirmResign={actions.handleConfirmResign}
+                  handleCancelDrawOffer={actions.handleCancelDrawOffer}
+                  handleCancelTakebackRequest={
+                    actions.handleCancelTakebackRequest
+                  }
+                  handleDismissOutgoingInfo={actions.handleDismissOutgoingInfo}
+                  actionButtonsDisabled={actions.actionButtonsDisabled}
+                  manualActionsDisabled={actions.manualActionsDisabled}
+                  hasTakebackHistory={actions.hasTakebackHistory}
+                  handleStartResign={actions.handleStartResign}
+                  handleOfferDraw={actions.handleOfferDraw}
+                  handleRequestTakeback={actions.handleRequestTakeback}
+                  handleGiveTime={actions.handleGiveTime}
+                />
+              </div>
+            )}
 
             <div className="order-2 lg:order-3">
               <MoveListAndChatPanel

@@ -100,7 +100,7 @@ export class Grid {
     const r = wall.cell[0];
     const c = wall.cell[1];
     const current = this.cells[r][c];
-    const ownerId = wall.playerId || 1; // Default to player 1 if not specified
+    const ownerId = wall.playerId ?? 1; // Default to player 1 if not specified
 
     if (wall.orientation === "vertical") {
       // Set lower byte to owner ID, preserve upper byte

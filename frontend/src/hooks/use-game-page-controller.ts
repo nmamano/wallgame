@@ -39,6 +39,8 @@ import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
 } from "@/lib/game-state-utils";
+import { getGameHandshake } from "@/lib/game-session";
+import { useSpectatorGameController } from "@/hooks/use-spectator-game-controller";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
 import {
   type GameViewModel,
@@ -124,6 +126,17 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 };
 
 export function useGamePageController(gameId: string) {
+  // Check if this is a spectator session (no stored handshake)
+  const storedHandshake = useMemo(() => getGameHandshake(gameId), [gameId]);
+  const isSpectator = !storedHandshake;
+
+  // Use spectator controller if no handshake exists
+  const spectatorController = useSpectatorGameController(gameId);
+
+  // Early return for spectators - they use a simplified controller
+  // Note: hooks must be called unconditionally, so we call both controllers
+  // but only return the spectator one when appropriate
+
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
@@ -1778,7 +1791,13 @@ export function useGamePageController(gameId: string) {
     }
   })();
 
+  // Return spectator controller if this is a spectator session
+  if (isSpectator) {
+    return spectatorController;
+  }
+
   return {
+    isSpectator: false,
     matching: {
       isOpen: matchingPanelOpen,
       players: matchingPanelPlayers,

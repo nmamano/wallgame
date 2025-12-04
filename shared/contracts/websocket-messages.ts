@@ -71,3 +71,27 @@ export interface LobbyClientMessage {
 export type LobbyServerMessage =
   | { type: "games"; games: GameSnapshot[] }
   | { type: "pong"; timestamp: number };
+
+// ============================================================================
+// Live Games WebSocket Messages (for /ws/live-games)
+// ============================================================================
+
+import type { LiveGameSummary } from "./games";
+
+/**
+ * Messages sent from client to server over the live-games WebSocket connection.
+ * Used for keeping the connection alive.
+ */
+export interface LiveGamesClientMessage {
+  type: "ping";
+}
+
+/**
+ * Messages sent from server to client over the live-games WebSocket connection.
+ * Used for real-time updates of the live games list.
+ */
+export type LiveGamesServerMessage =
+  | { type: "snapshot"; games: LiveGameSummary[] }
+  | { type: "upsert"; game: LiveGameSummary }
+  | { type: "remove"; gameId: string }
+  | { type: "pong"; timestamp: number };

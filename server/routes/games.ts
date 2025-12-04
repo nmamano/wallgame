@@ -4,10 +4,12 @@ import {
   createGameSession,
   getSession,
   getSessionSnapshot,
+  getSerializedState,
   joinGameSession,
   markHostReady,
   resolveSessionForToken,
   listMatchmakingGames,
+  listLiveGames,
 } from "../games/store";
 import {
   createGameSchema,
@@ -51,6 +53,16 @@ export const gamesRoute = new Hono()
       return c.json({ games });
     } catch (error) {
       console.error("Failed to list matchmaking games:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  // Get list of in-progress games for spectating
+  .get("/live", (c) => {
+    try {
+      const games = listLiveGames(100);
+      return c.json({ games });
+    } catch (error) {
+      console.error("Failed to list live games:", error);
       return c.json({ error: "Internal server error" }, 500);
     }
   })
@@ -197,12 +209,12 @@ export const gamesRoute = new Hono()
       }
     },
   )
-  .post("/:id/ready", zValidator("json", readySchema), async (c) => {
+  .post("/:id/ready", zValidator("json", readySchema), (c) => {
     try {
       const { id } = c.req.param();
       const parsed = c.req.valid("json");
       const resolved = resolveSessionForToken({ id, token: parsed.token });
-      if (!resolved || resolved.player.role !== "host") {
+      if (resolved?.player.role !== "host") {
         return c.json({ error: "Invalid host token" }, 403);
       }
       markHostReady(id);
@@ -210,5 +222,31 @@ export const gamesRoute = new Hono()
     } catch (error) {
       console.error("Failed to mark host ready:", error);
       return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  // Get spectate data for a game (no token required)
+  .get("/:id/spectate", (c) => {
+    try {
+      const { id } = c.req.param();
+      const session = getSession(id);
+
+      // Only allow spectating in-progress or completed games
+      if (session.status === "waiting" || session.status === "ready") {
+        return c.json(
+          {
+            error: "This game is not currently spectatable",
+            code: "GAME_NOT_STARTED",
+          },
+          404,
+        );
+      }
+
+      const snapshot = getSessionSnapshot(id);
+      const state = getSerializedState(id);
+
+      return c.json({ snapshot, state });
+    } catch (error) {
+      console.error("Failed to get spectate data:", error);
+      return c.json({ error: "Game not found" }, 404);
     }
   });
