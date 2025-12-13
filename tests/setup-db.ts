@@ -33,35 +33,43 @@ const DB_PASSWORD = "test";
  */
 export async function setupEphemeralDb(): Promise<TestDbHandle> {
   // Use GenericContainer instead of PostgreSqlContainer for better Bun compatibility
-  let container: StartedTestContainer;
-  try {
-    container = await new GenericContainer("postgres:16-alpine")
-      .withEnvironment({
-        POSTGRES_DB: DB_NAME,
-        POSTGRES_USER: DB_USER,
-        POSTGRES_PASSWORD: DB_PASSWORD,
-      })
-      .withExposedPorts(5432)
-      .withWaitStrategy(
-        Wait.forLogMessage(/database system is ready to accept connections/, 2),
-      )
-      .withStartupTimeout(120_000)
-      .start();
-  } catch (error) {
-    if (
-      error instanceof Error &&
-      error.message.includes("Could not find a working container runtime")
-    ) {
-      throw new Error(
-        "Docker is not running. Please start Docker Desktop and try again.\n" +
-          "  macOS: open -a Docker\n" +
-          "  Or launch Docker Desktop from Applications.",
-      );
+
+  const container = await (async (): Promise<StartedTestContainer> => {
+    try {
+      return await new GenericContainer("postgres:16-alpine")
+        .withEnvironment({
+          POSTGRES_DB: DB_NAME,
+          POSTGRES_USER: DB_USER,
+          POSTGRES_PASSWORD: DB_PASSWORD,
+        })
+        .withExposedPorts(5432)
+        .withWaitStrategy(
+          Wait.forLogMessage(
+            /database system is ready to accept connections/,
+            2,
+          ),
+        )
+        .withStartupTimeout(120_000)
+        .start();
+    } catch (error) {
+      if (
+        error instanceof Error &&
+        error.message.includes("Could not find a working container runtime")
+      ) {
+        throw new Error(
+          "Docker is not running. Please start Docker Desktop and try again.\n" +
+            "  macOS: open -a Docker\n" +
+            "  Or launch Docker Desktop from Applications.\n" +
+            "  Original error: " +
+            error.message,
+        );
+      }
+      throw error;
     }
-    throw error;
-  }
+  })();
 
   const host = container.getHost();
+
   const port = container.getMappedPort(5432);
   const url = `postgres://${DB_USER}:${DB_PASSWORD}@${host}:${port}/${DB_NAME}`;
 
@@ -83,7 +91,11 @@ export async function setupEphemeralDb(): Promise<TestDbHandle> {
  * Call this in afterAll() to clean up.
  */
 export async function teardownEphemeralDb(
-  container: StartedTestContainer,
+  container: StartedTestContainer | undefined,
 ): Promise<void> {
+  if (!container) {
+    return; // Container was never initialized (setup failed)
+  }
+
   await container.stop();
 }

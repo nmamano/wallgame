@@ -28,7 +28,7 @@ import type {
 // --- Test Harness ---
 // ================================
 
-let container: StartedTestContainer;
+let container: StartedTestContainer | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
@@ -452,7 +452,9 @@ async function openLiveGamesSocket(): Promise<LiveGamesTestSocket> {
 // ================================
 
 beforeAll(async () => {
-  ({ container } = await setupEphemeralDb());
+  const handle = await setupEphemeralDb();
+
+  container = handle.container;
   await importServerModules();
   startTestServer();
 }, 60000);
