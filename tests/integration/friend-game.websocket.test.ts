@@ -30,7 +30,7 @@ import { newRatingsAfterGame, Outcome } from "../../server/games/rating-system";
 // --- Test Harness ---
 // ================================
 
-let container: StartedTestContainer;
+let container: StartedTestContainer | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
@@ -453,8 +453,8 @@ describe("friend game WebSocket integration", () => {
   beforeAll(async () => {
     // Start ephemeral PostgreSQL container and run migrations
     const handle = await setupEphemeralDb();
-    container = handle.container;
 
+    container = handle.container;
     // Now import server modules (they will use the ephemeral DB)
     await importServerModules();
 

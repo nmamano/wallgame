@@ -27,14 +27,24 @@ async function main() {
     // This prevents double-wrapping if the script is run multiple times
     const shapes: SvgNode[] = [];
     const stylesAndDefs: SvgNode[] = [];
-    
+
     function collectNodes(node: SvgNode) {
       if (node.name === "style" || node.name === "defs") {
         stylesAndDefs.push(node);
-      } else if (["path", "rect", "circle", "ellipse", "line", "polyline", "polygon"].includes(node.name)) {
+      } else if (
+        [
+          "path",
+          "rect",
+          "circle",
+          "ellipse",
+          "line",
+          "polyline",
+          "polygon",
+        ].includes(node.name)
+      ) {
         shapes.push(node);
       }
-      
+
       // Recursively check children
       if (node.children) {
         node.children.forEach(collectNodes);
@@ -68,7 +78,12 @@ async function main() {
       }
     }
 
-    if (!isFinite(minX) || !isFinite(minY) || !isFinite(maxX) || !isFinite(maxY)) {
+    if (
+      !isFinite(minX) ||
+      !isFinite(minY) ||
+      !isFinite(maxX) ||
+      !isFinite(maxY)
+    ) {
       console.warn("  -> no paths with valid bounds found, skipping");
       continue;
     }
