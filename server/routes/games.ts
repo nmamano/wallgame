@@ -19,6 +19,7 @@ import {
 } from "../../shared/contracts/games";
 import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
+import { sendMatchStatus } from "./game-socket";
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -190,6 +191,10 @@ export const gamesRoute = new Hono()
         if (session.matchType === "matchmaking") {
           broadcastLobbyUpdate();
         }
+
+        // Broadcast match-status to all connected WebSocket clients
+        // so they receive the updated joiner appearance
+        sendMatchStatus(id);
 
         const shareUrl = `${origin}/game/${session.id}`;
 

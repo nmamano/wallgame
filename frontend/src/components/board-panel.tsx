@@ -337,7 +337,7 @@ export function BoardPanel({
           <Button
             size="sm"
             className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
-            onClick={commitStagedActions}
+            onClick={() => commitStagedActions()}
             disabled={
               gameState?.status !== "playing" ||
               gameState?.turn !== activeLocalPlayerId

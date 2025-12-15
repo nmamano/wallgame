@@ -135,7 +135,7 @@ const sendToOpponent = (
   });
 };
 
-const sendMatchStatus = (sessionId: string) => {
+export const sendMatchStatus = (sessionId: string) => {
   broadcast(sessionId, {
     type: "match-status",
     snapshot: getSessionSnapshot(sessionId),
