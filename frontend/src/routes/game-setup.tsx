@@ -314,12 +314,17 @@ function GameSetup() {
             mouseSkin: settings.mousePawn,
           },
         });
+        // Get host's playerId from the snapshot (server randomly assigns Player 1 or 2)
+        const hostPlayer = response.snapshot.players.find(
+          (p) => p.role === "host",
+        );
+        const hostPlayerId = hostPlayer?.playerId ?? 1;
         saveGameHandshake({
           gameId: response.gameId,
           token: response.hostToken,
           socketToken: response.socketToken,
           role: "host",
-          playerId: 1,
+          playerId: hostPlayerId,
           matchType,
           shareUrl: response.shareUrl,
         });
@@ -367,46 +372,75 @@ function GameSetup() {
   useEffect(() => {
     if (typeof window === "undefined") return;
 
+    let reconnectTimeout: ReturnType<typeof setTimeout> | null = null;
+    let isCleanedUp = false;
+
     const connect = () => {
+      if (isCleanedUp) return;
+
+      // Close existing connection if any
+      if (lobbySocketRef.current) {
+        lobbySocketRef.current.close();
+        lobbySocketRef.current = null;
+      }
+
       const url = buildLobbySocketUrl();
       console.debug("[game-setup] connecting to lobby websocket", { url });
-      const socket = new WebSocket(url);
-      lobbySocketRef.current = socket;
 
-      socket.addEventListener("open", () => {
-        console.debug("[game-setup] lobby websocket open");
-        setIsLoadingGames(false);
-      });
+      try {
+        const socket = new WebSocket(url);
+        lobbySocketRef.current = socket;
 
-      socket.addEventListener("message", (event) => {
-        if (typeof event.data !== "string") return;
-        try {
-          const msg = JSON.parse(event.data) as {
-            type: string;
-            games?: GameSnapshot[];
-          };
-          if (msg.type === "games" && msg.games) {
-            setMatchmakingGames(msg.games);
+        socket.addEventListener("open", () => {
+          console.debug("[game-setup] lobby websocket open");
+          setIsLoadingGames(false);
+        });
+
+        socket.addEventListener("message", (event) => {
+          if (typeof event.data !== "string") return;
+          try {
+            const msg = JSON.parse(event.data) as {
+              type: string;
+              games?: GameSnapshot[];
+            };
+            if (msg.type === "games" && msg.games) {
+              setMatchmakingGames(msg.games);
+            }
+          } catch (error) {
+            console.error("[game-setup] failed to parse lobby message", error);
           }
-        } catch (error) {
-          console.error("[game-setup] failed to parse lobby message", error);
-        }
-      });
+        });
 
-      socket.addEventListener("close", () => {
-        console.debug("[game-setup] lobby websocket closed");
-        lobbySocketRef.current = null;
-        // Reconnect after a short delay
-        setTimeout(connect, 2000);
-      });
+        socket.addEventListener("close", (event) => {
+          console.debug("[game-setup] lobby websocket closed", {
+            code: event.code,
+            reason: event.reason,
+            wasClean: event.wasClean,
+          });
+          lobbySocketRef.current = null;
 
-      socket.addEventListener("error", (event) => {
-        console.error("[game-setup] lobby websocket error", event);
+          // Only reconnect if not cleaned up and not a normal closure
+          if (!isCleanedUp && event.code !== 1000) {
+            reconnectTimeout = setTimeout(connect, 2000);
+          }
+        });
+
+        socket.addEventListener("error", (event) => {
+          console.error("[game-setup] lobby websocket error", event);
+          setIsLoadingGames(false);
+          // Error will be followed by close event, which will handle reconnection
+        });
+      } catch (error) {
+        console.error("[game-setup] failed to create websocket", error);
         setIsLoadingGames(false);
-      });
+        if (!isCleanedUp) {
+          reconnectTimeout = setTimeout(connect, 2000);
+        }
+      }
     };
 
-    connect();
+    // Small delay to ensure page is fully loaded before connecting
+    const initialTimeout = setTimeout(connect, 100);
 
     // Also fetch initially via REST in case WebSocket is slow
     void fetchMatchmakingGames()
@@ -420,8 +454,13 @@ function GameSetup() {
       });
 
     return () => {
+      isCleanedUp = true;
+      clearTimeout(initialTimeout);
+      if (reconnectTimeout) {
+        clearTimeout(reconnectTimeout);
+      }
       if (lobbySocketRef.current) {
-        lobbySocketRef.current.close();
+        lobbySocketRef.current.close(1000, "Component unmounting");
         lobbySocketRef.current = null;
       }
     };
