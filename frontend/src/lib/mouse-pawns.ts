@@ -1,6 +1,6 @@
 // Dynamically discover mouse SVG files at build time
 // This automatically detects which files exist - no manual maintenance needed
-const mouseModules = import.meta.glob("/public/pawns/mouse/*.svg", {
+const mouseModules = import.meta.glob("/pawns/mouse/*.svg", {
   eager: true,
   query: "?url",
   import: "default",

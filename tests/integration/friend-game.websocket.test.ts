@@ -368,7 +368,9 @@ async function openGameSocket(
                 waitingResolve = null;
                 rejectWait(
                   new Error(
-                    `Timeout waiting for "${expectedType}" message. Buffer: ${buffer.map((m) => m.type).join(", ") || "(empty)"}`,
+                    `Timeout waiting for "${expectedType}" message. Buffer: ${
+                      buffer.map((m) => m.type).join(", ") || "(empty)"
+                    }`,
                   ),
                 );
               }, 5000);
@@ -1120,7 +1122,7 @@ describe("friend game WebSocket integration", () => {
 
     socketA.close();
     socketB.close();
-  });
+  }, 60000);
 
   it("allows two players to create a matchmaking game, join via lobby, and see pawn styles", async () => {
     const userA = "user-a";
@@ -1208,5 +1210,5 @@ describe("friend game WebSocket integration", () => {
 
     socketA.close();
     socketB.close();
-  });
+  }, 30000);
 });

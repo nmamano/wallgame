@@ -14,17 +14,28 @@ async function runTests() {
     console.log(`Running: ${file}`);
     console.log("=".repeat(60));
 
-    const proc = Bun.spawn(["bun", "test", file], {
-      stdout: "inherit",
-      stderr: "inherit",
+    // Run tests and capture output
+    const proc = Bun.spawn([process.execPath, "test", file], {
+      stdout: "pipe",
+      stderr: "pipe",
     });
+
+    const [stdout, stderr] = await Promise.all([
+      proc.stdout ? new Response(proc.stdout).text() : "",
+      proc.stderr ? new Response(proc.stderr).text() : "",
+    ]);
 
     const exitCode = await proc.exited;
 
     if (exitCode === 0) {
       passed++;
+      console.log(`✓ ${file} passed`);
     } else {
       failed++;
+      console.log(`✗ ${file} failed`);
+      // Only show detailed output on failure
+      if (stdout.trim()) console.log(stdout.trim());
+      if (stderr.trim()) console.error(stderr.trim());
     }
   }
 
