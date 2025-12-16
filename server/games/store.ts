@@ -583,10 +583,11 @@ export const getSerializedState = (id: string): SerializedGameState => {
 export const resetSession = (id: string): GameState => {
   const session = ensureSession(id);
   session.gameState = createGameState(session.config);
-  session.status = "waiting";
   session.updatedAt = Date.now();
-  session.players.host.ready = false;
-  session.players.joiner.ready = false;
+  // Both players are already present; after accepting a rematch we should be ready to play.
+  session.players.host.ready = true;
+  session.players.joiner.ready = true;
+  session.status = "ready";
 
   // Swap player IDs so the other player goes first in the rematch
   const hostPlayerId = session.players.host.playerId;

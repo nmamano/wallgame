@@ -3,11 +3,16 @@ import type {
   Move,
   SerializedGameState,
 } from "../../../shared/domain/game-types";
-import type { ServerMessage } from "../../../shared/contracts/websocket-messages";
+import type {
+  ClientMessage,
+  ServerMessage,
+} from "../../../shared/contracts/websocket-messages";
 
 export interface GameClientHandlers {
   onState?: (state: SerializedGameState) => void;
   onMatchStatus?: (snapshot: GameSnapshot) => void;
+  onRematchOffer?: (playerId: number) => void;
+  onRematchRejected?: (playerId: number) => void;
   onError?: (message: string) => void;
 }
 
@@ -66,6 +71,10 @@ export class GameClient {
           this.handlers.onMatchStatus?.(payload.snapshot);
         } else if (payload.type === "error") {
           this.handlers.onError?.(payload.message);
+        } else if (payload.type === "rematch-offer") {
+          this.handlers.onRematchOffer?.(payload.playerId);
+        } else if (payload.type === "rematch-rejected") {
+          this.handlers.onRematchRejected?.(payload.playerId);
         }
       } catch (error) {
         console.error("Failed to parse websocket message", error);
@@ -87,24 +96,36 @@ export class GameClient {
     });
   }
 
-  sendMove(move: Move): void {
+  private send(payload: ClientMessage): void {
     if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
       this.handlers.onError?.("Socket not connected.");
       return;
     }
+    this.socket.send(JSON.stringify(payload));
+  }
+
+  sendMove(move: Move): void {
     console.debug("[game-client] send move", {
       gameId: this.params.gameId,
       actionCount: move.actions.length,
     });
-    this.socket.send(JSON.stringify({ type: "submit-move", move }));
+    this.send({ type: "submit-move", move });
   }
 
   sendResign(): void {
-    if (!this.socket || this.socket.readyState !== WebSocket.OPEN) {
-      this.handlers.onError?.("Socket not connected.");
-      return;
-    }
-    this.socket.send(JSON.stringify({ type: "resign" }));
+    this.send({ type: "resign" });
+  }
+
+  sendRematchOffer(): void {
+    this.send({ type: "rematch-offer" });
+  }
+
+  sendRematchAccept(): void {
+    this.send({ type: "rematch-accept" });
+  }
+
+  sendRematchReject(): void {
+    this.send({ type: "rematch-reject" });
   }
 
   close(): void {

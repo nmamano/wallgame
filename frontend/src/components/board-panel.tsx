@@ -44,6 +44,7 @@ interface BoardPanelProps {
     status: "playing" | "finished" | "aborted";
     turn: PlayerId;
   } | null;
+  isMultiplayerMatch: boolean;
   isLoadingConfig: boolean;
   loadError: string | null;
 
@@ -56,6 +57,7 @@ interface BoardPanelProps {
     responses: Record<PlayerId, "pending" | "accepted" | "declined">;
     requestId: number;
     decliner?: PlayerId;
+    offerer?: PlayerId;
   };
   rematchResponseSummary: RematchResponseSummary[];
   rematchStatusText: string;
@@ -63,6 +65,7 @@ interface BoardPanelProps {
   userRematchResponse: "pending" | "accepted" | "declined" | null;
   handleAcceptRematch: () => void;
   handleDeclineRematch: () => void;
+  handleProposeRematch: () => void;
   openRematchWindow: () => void;
   handleExitAfterMatch: () => void;
 
@@ -102,6 +105,7 @@ export function BoardPanel({
   adjustedBoardContainerHeight,
   gameStatus,
   gameState,
+  isMultiplayerMatch,
   isLoadingConfig,
   loadError,
   winnerPlayer,
@@ -114,6 +118,7 @@ export function BoardPanel({
   userRematchResponse,
   handleAcceptRematch,
   handleDeclineRematch,
+  handleProposeRematch,
   openRematchWindow,
   handleExitAfterMatch,
   rows,
@@ -142,6 +147,23 @@ export function BoardPanel({
   clearStagedActions,
   commitStagedActions,
 }: BoardPanelProps) {
+  const isIncomingMultiplayerOffer =
+    isMultiplayerMatch &&
+    rematchState.status === "pending" &&
+    primaryLocalPlayerId != null &&
+    rematchState.offerer != null &&
+    rematchState.offerer !== primaryLocalPlayerId;
+
+  const isOutgoingMultiplayerOffer =
+    isMultiplayerMatch &&
+    rematchState.status === "pending" &&
+    primaryLocalPlayerId != null &&
+    rematchState.offerer === primaryLocalPlayerId;
+
+  const canProposeMultiplayerRematch =
+    isMultiplayerMatch &&
+    (rematchState.status === "idle" || rematchState.status === "declined");
+
   return (
     <div
       className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
@@ -190,37 +212,63 @@ export function BoardPanel({
                 <RotateCcw className="w-4 h-4" />
                 Rematch
               </div>
-              <p className="text-sm text-muted-foreground">
-                {rematchStatusText}
-              </p>
-              <div className="grid grid-cols-2 gap-2">
-                {rematchResponseSummary.map((entry, idx) => (
-                  <div
-                    key={`${entry.label}-${idx}`}
-                    className="rounded-lg border border-border/60 px-3 py-2 text-left"
-                  >
-                    <div className="text-xs text-muted-foreground">
-                      {entry.label}
-                    </div>
-                    <Badge
-                      variant={
-                        entry.response === "accepted"
-                          ? "default"
-                          : entry.response === "declined"
-                            ? "destructive"
-                            : "secondary"
-                      }
-                      className="mt-1"
-                    >
-                      {entry.response === "pending"
-                        ? "Pending"
-                        : entry.response.charAt(0).toUpperCase() +
-                          entry.response.slice(1)}
-                    </Badge>
+              {isMultiplayerMatch && rematchState.status === "idle" ? (
+                <p className="text-sm text-muted-foreground">
+                  Propose a rematch to play again.
+                </p>
+              ) : (
+                <>
+                  <p className="text-sm text-muted-foreground">
+                    {rematchStatusText}
+                  </p>
+                  <div className="grid grid-cols-2 gap-2">
+                    {rematchResponseSummary.map((entry, idx) => (
+                      <div
+                        key={`${entry.label}-${idx}`}
+                        className="rounded-lg border border-border/60 px-3 py-2 text-left"
+                      >
+                        <div className="text-xs text-muted-foreground">
+                          {entry.label}
+                        </div>
+                        <Badge
+                          variant={
+                            entry.response === "accepted"
+                              ? "default"
+                              : entry.response === "declined"
+                                ? "destructive"
+                                : "secondary"
+                          }
+                          className="mt-1"
+                        >
+                          {entry.response === "pending"
+                            ? "Pending"
+                            : entry.response.charAt(0).toUpperCase() +
+                              entry.response.slice(1)}
+                        </Badge>
+                      </div>
+                    ))}
                   </div>
-                ))}
-              </div>
-              {rematchState.status === "pending" && (
+                </>
+              )}
+
+              {canProposeMultiplayerRematch && (
+                <div className="flex justify-center">
+                  <Button onClick={handleProposeRematch}>
+                    {rematchState.status === "declined"
+                      ? "Propose rematch again"
+                      : "Propose rematch"}
+                  </Button>
+                </div>
+              )}
+
+              {isOutgoingMultiplayerOffer && (
+                <div className="flex justify-center">
+                  <Button disabled>Rematch proposed</Button>
+                </div>
+              )}
+
+              {((rematchState.status === "pending" && !isMultiplayerMatch) ||
+                isIncomingMultiplayerOffer) && (
                 <div className="flex justify-center gap-3">
                   <Button
                     onClick={handleAcceptRematch}
@@ -244,7 +292,7 @@ export function BoardPanel({
                   </Button>
                 </div>
               )}
-              {rematchState.status === "declined" && (
+              {rematchState.status === "declined" && !isMultiplayerMatch && (
                 <div className="flex justify-center">
                   <Button
                     variant="ghost"

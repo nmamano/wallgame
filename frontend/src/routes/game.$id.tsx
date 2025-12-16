@@ -148,6 +148,7 @@ function GamePage() {
               adjustedBoardContainerHeight={adjustedBoardContainerHeight}
               gameStatus={board.gameStatus}
               gameState={board.gameState}
+              isMultiplayerMatch={board.isMultiplayerMatch}
               isLoadingConfig={board.isLoadingConfig}
               loadError={board.loadError}
               winnerPlayer={board.winnerPlayer}
@@ -160,6 +161,7 @@ function GamePage() {
               userRematchResponse={board.userRematchResponse}
               handleAcceptRematch={board.handleAcceptRematch}
               handleDeclineRematch={board.handleDeclineRematch}
+              handleProposeRematch={board.handleProposeRematch}
               openRematchWindow={board.openRematchWindow}
               handleExitAfterMatch={board.handleExitAfterMatch}
               rows={board.rows}

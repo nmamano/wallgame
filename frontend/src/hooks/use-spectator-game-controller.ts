@@ -210,6 +210,7 @@ export function useSpectatorGameController(gameId: string) {
     board: {
       gameStatus,
       gameState,
+      isMultiplayerMatch: true,
       isLoadingConfig: spectatorSession.isLoading,
       loadError: spectatorSession.error,
       winnerPlayer: null,
@@ -229,6 +230,7 @@ export function useSpectatorGameController(gameId: string) {
       userRematchResponse: null,
       handleAcceptRematch: noop,
       handleDeclineRematch: noop,
+      handleProposeRematch: noop,
       openRematchWindow: noop,
       handleExitAfterMatch: () => window.history.back(),
       rows,
