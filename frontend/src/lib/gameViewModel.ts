@@ -66,23 +66,50 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 // Server Update Logic
 // ============================================================================
 
-/**
- * Computes the last moves by diffing previous and new game state.
- * Returns arrows to display on the board.
- */
-export function computeLastMoves(
-  before: GameState | null,
-  after: GameState,
+type PawnSnapshot = Record<PlayerId, { cat: Cell; mouse: Cell }>;
+
+const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
+
+const snapshotFromHistoryEntry = (
+  entry: GameState["history"][number],
+): PawnSnapshot => ({
+  1: {
+    cat: cloneCell(entry.catPos[0]),
+    mouse: cloneCell(entry.mousePos[0]),
+  },
+  2: {
+    cat: cloneCell(entry.catPos[1]),
+    mouse: cloneCell(entry.mousePos[1]),
+  },
+});
+
+const buildInitialSnapshot = (config: GameConfiguration): PawnSnapshot => {
+  const rows = config.boardHeight;
+  const cols = config.boardWidth;
+  return {
+    1: {
+      cat: [0, 0] as Cell,
+      mouse: [rows - 1, 0] as Cell,
+    },
+    2: {
+      cat: [0, cols - 1] as Cell,
+      mouse: [rows - 1, cols - 1] as Cell,
+    },
+  };
+};
+
+const diffSnapshots = (
+  before: PawnSnapshot,
+  after: PawnSnapshot,
   playerColorsForBoard: Record<PlayerId, PlayerColor>,
-): BoardProps["lastMoves"] | null {
-  if (!before) return null;
+): BoardProps["lastMoves"] | null => {
   const moves: NonNullable<BoardProps["lastMoves"]> = [];
-  (Object.keys(after.pawns) as unknown as PlayerId[]).forEach((playerId) => {
+  (Object.keys(after) as unknown as PlayerId[]).forEach((playerId) => {
     const playerColor =
       playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
-    const beforePawns = before.pawns[playerId];
-    const afterPawns = after.pawns[playerId];
-    // Cat
+    const beforePawns = before[playerId];
+    const afterPawns = after[playerId];
+
     const catBefore = beforePawns.cat;
     const catAfter = afterPawns.cat;
     if (catBefore[0] !== catAfter[0] || catBefore[1] !== catAfter[1]) {
@@ -94,7 +121,7 @@ export function computeLastMoves(
         playerColor,
       });
     }
-    // Mouse
+
     const mouseBefore = beforePawns.mouse;
     const mouseAfter = afterPawns.mouse;
     if (mouseBefore[0] !== mouseAfter[0] || mouseBefore[1] !== mouseAfter[1]) {
@@ -107,7 +134,34 @@ export function computeLastMoves(
       });
     }
   });
+
   return moves.length ? moves : null;
+};
+
+/**
+ * Computes last-move arrows from the authoritative move history.
+ * After a takeback, the history is truncated, so arrows disappear naturally.
+ */
+export function computeLastMoves(
+  current: GameState | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): BoardProps["lastMoves"] | null {
+  if (!current || current.history.length === 0) {
+    return null;
+  }
+
+  const lastEntry = current.history[current.history.length - 1];
+  const beforeEntry =
+    current.history.length > 1
+      ? current.history[current.history.length - 2]
+      : null;
+
+  const afterSnapshot = snapshotFromHistoryEntry(lastEntry);
+  const beforeSnapshot = beforeEntry
+    ? snapshotFromHistoryEntry(beforeEntry)
+    : buildInitialSnapshot(current.config);
+
+  return diffSnapshots(beforeSnapshot, afterSnapshot, playerColorsForBoard);
 }
 
 /**
@@ -121,10 +175,8 @@ export function applyServerUpdate(
 ): GameViewModel {
   switch (update.type) {
     case "game-state": {
-      // Compute last moves by diffing previous and new game state
-      const before = prev.gameState;
+      // Compute last moves solely from the new state's history
       const lastMoves = computeLastMoves(
-        before,
         update.gameState,
         playerColorsForBoard,
       );

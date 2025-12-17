@@ -39,6 +39,7 @@ interface PendingTakebackRequestState {
   requestId: number;
   status: "pending";
   createdAt: number;
+  historyLengthAtRequest: number;
 }
 
 interface ActionsPanelProps {
@@ -58,8 +59,8 @@ interface ActionsPanelProps {
   takebackPendingForLocal: boolean;
   pendingTakebackRequest: PendingTakebackRequestState | null;
   outgoingTimeInfo: OutgoingTimeInfo | null;
-  canCancelDrawOffer: boolean;
-  canCancelTakebackRequest: boolean;
+  canCancelDrawOffer: boolean | null;
+  canCancelTakebackRequest: boolean | null;
   handleCancelResign: () => void;
   handleConfirmResign: () => void;
   handleCancelDrawOffer: () => void;
@@ -109,17 +110,24 @@ export function ActionsPanel({
     if (drawDecisionPrompt) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
-            <Handshake className="w-4 h-4 text-primary" />
-            {`${getPlayerName(drawDecisionPrompt.from)} offered a draw.`}
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
+            <Handshake className="w-4 h-4 text-primary shrink-0" />
+            <span className="truncate">
+              {`${getPlayerName(drawDecisionPrompt.from)} offered a draw.`}
+            </span>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => respondToDrawPrompt("accept")}>
+            <Button
+              size="sm"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
+              onClick={() => respondToDrawPrompt("accept")}
+            >
               Accept
             </Button>
             <Button
               size="sm"
               variant="outline"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
               onClick={() => respondToDrawPrompt("reject")}
             >
               Decline
@@ -131,19 +139,26 @@ export function ActionsPanel({
     if (takebackDecisionPrompt) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
-            <RotateCcw className="w-4 h-4" />
-            {`${getPlayerName(
-              takebackDecisionPrompt.requester,
-            )} requested a takeback.`}
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
+            <RotateCcw className="w-4 h-4 shrink-0" />
+            <span className="truncate">
+              {`${getPlayerName(
+                takebackDecisionPrompt.requester,
+              )} requested a takeback.`}
+            </span>
           </div>
           <div className="flex gap-2">
-            <Button size="sm" onClick={() => respondToTakebackPrompt("allow")}>
+            <Button
+              size="sm"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
+              onClick={() => respondToTakebackPrompt("allow")}
+            >
               Allow
             </Button>
             <Button
               size="sm"
               variant="outline"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
               onClick={() => respondToTakebackPrompt("decline")}
             >
               Decline
@@ -155,19 +170,19 @@ export function ActionsPanel({
     if (incomingPassiveNotice) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
             {incomingPassiveNotice.type === "opponent-resigned" ? (
-              <Flag className="w-4 h-4 text-destructive" />
+              <Flag className="w-4 h-4 text-destructive shrink-0" />
             ) : (
-              <Timer className="w-4 h-4 text-primary" />
+              <Timer className="w-4 h-4 text-primary shrink-0" />
             )}
-            {incomingPassiveNotice.message}
+            <span className="truncate">{incomingPassiveNotice.message}</span>
           </div>
           <div>
             <Button
               size="sm"
               variant="ghost"
-              className="text-xs px-2"
+              className="text-xs px-2 h-7"
               onClick={handleDismissIncomingNotice}
             >
               Dismiss
@@ -177,7 +192,7 @@ export function ActionsPanel({
       );
     }
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs sm:text-sm leading-tight text-muted-foreground truncate">
         No active incoming offers.
       </p>
     );
@@ -188,12 +203,18 @@ export function ActionsPanel({
       return (
         <>
           <div className="flex gap-2">
-            <Button size="sm" variant="outline" onClick={handleCancelResign}>
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
+              onClick={handleCancelResign}
+            >
               Keep playing
             </Button>
             <Button
               size="sm"
               variant="destructive"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
               onClick={handleConfirmResign}
             >
               Resign
@@ -205,50 +226,60 @@ export function ActionsPanel({
     if (pendingDrawForLocal && pendingDrawOffer) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
-            <Handshake className="w-4 h-4" />
-            {`Waiting for a response to your draw offer.`}
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
+            <Handshake className="w-4 h-4 shrink-0" />
+            <span className="truncate">
+              {`Waiting for a response to your draw offer.`}
+            </span>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCancelDrawOffer}
-            disabled={!canCancelDrawOffer}
-          >
-            {canCancelDrawOffer ? "Cancel offer" : "Can cancel in 2s"}
-          </Button>
+          {canCancelDrawOffer !== null && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
+              onClick={handleCancelDrawOffer}
+              disabled={!canCancelDrawOffer}
+            >
+              {canCancelDrawOffer ? "Cancel offer" : "Can cancel in 2s"}
+            </Button>
+          )}
         </>
       );
     }
     if (takebackPendingForLocal && pendingTakebackRequest) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
-            <RotateCcw className="w-4 h-4" />
-            {`Waiting for a response to your takeback request.`}
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
+            <RotateCcw className="w-4 h-4 shrink-0" />
+            <span className="truncate">
+              {`Waiting for a response to your takeback request.`}
+            </span>
           </div>
-          <Button
-            size="sm"
-            variant="outline"
-            onClick={handleCancelTakebackRequest}
-            disabled={!canCancelTakebackRequest}
-          >
-            {canCancelTakebackRequest ? "Cancel request" : "Can cancel in 2s"}
-          </Button>
+          {canCancelTakebackRequest !== null && (
+            <Button
+              size="sm"
+              variant="outline"
+              className="h-7 sm:h-8 px-3 text-xs sm:text-sm"
+              onClick={handleCancelTakebackRequest}
+              disabled={!canCancelTakebackRequest}
+            >
+              {canCancelTakebackRequest ? "Cancel request" : "Can cancel in 2s"}
+            </Button>
+          )}
         </>
       );
     }
     if (outgoingTimeInfo) {
       return (
         <>
-          <div className="flex items-center gap-2 text-sm">
-            <Timer className="w-4 h-4 text-primary" />
-            {outgoingTimeInfo.message}
+          <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
+            <Timer className="w-4 h-4 text-primary shrink-0" />
+            <span className="truncate">{outgoingTimeInfo.message}</span>
           </div>
           <Button
             size="sm"
             variant="ghost"
-            className="text-xs px-2 self-start"
+            className="text-xs px-2 self-start h-7"
             onClick={handleDismissOutgoingInfo}
           >
             Dismiss
@@ -257,7 +288,7 @@ export function ActionsPanel({
       );
     }
     return (
-      <p className="text-sm text-muted-foreground">
+      <p className="text-xs sm:text-sm leading-tight text-muted-foreground truncate">
         No active outgoing offers.
       </p>
     );
@@ -265,8 +296,10 @@ export function ActionsPanel({
 
   return (
     <Card className="p-2 lg:p-3 bg-card/50 backdrop-blur">
-      <div className="min-h-[60px] lg:min-h-[80px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 flex flex-col justify-center gap-1.5 lg:gap-2">
-        {incomingSection}
+      <div className="h-[64px] lg:h-[84px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 overflow-hidden">
+        <div className="flex flex-col justify-center gap-1 h-full">
+          {incomingSection}
+        </div>
       </div>
       <div className="grid grid-cols-2 gap-1.5 lg:gap-2 my-1 lg:my-0">
         <Button
@@ -315,8 +348,10 @@ export function ActionsPanel({
           <Timer className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Give time
         </Button>
       </div>
-      <div className="min-h-[60px] lg:min-h-[80px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 flex flex-col justify-center gap-1.5">
-        {outgoingSection}
+      <div className="h-[64px] lg:h-[84px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 overflow-hidden">
+        <div className="flex flex-col justify-center gap-1 h-full">
+          {outgoingSection}
+        </div>
       </div>
     </Card>
   );

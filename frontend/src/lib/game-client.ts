@@ -13,6 +13,10 @@ export interface GameClientHandlers {
   onMatchStatus?: (snapshot: GameSnapshot) => void;
   onRematchOffer?: (playerId: number) => void;
   onRematchRejected?: (playerId: number) => void;
+  onDrawOffer?: (playerId: number) => void;
+  onDrawRejected?: (playerId: number) => void;
+  onTakebackOffer?: (playerId: number) => void;
+  onTakebackRejected?: (playerId: number) => void;
   onError?: (message: string) => void;
 }
 
@@ -75,6 +79,14 @@ export class GameClient {
           this.handlers.onRematchOffer?.(payload.playerId);
         } else if (payload.type === "rematch-rejected") {
           this.handlers.onRematchRejected?.(payload.playerId);
+        } else if (payload.type === "draw-offer") {
+          this.handlers.onDrawOffer?.(payload.playerId);
+        } else if (payload.type === "draw-rejected") {
+          this.handlers.onDrawRejected?.(payload.playerId);
+        } else if (payload.type === "takeback-offer") {
+          this.handlers.onTakebackOffer?.(payload.playerId);
+        } else if (payload.type === "takeback-rejected") {
+          this.handlers.onTakebackRejected?.(payload.playerId);
         }
       } catch (error) {
         console.error("Failed to parse websocket message", error);
@@ -114,6 +126,34 @@ export class GameClient {
 
   sendResign(): void {
     this.send({ type: "resign" });
+  }
+
+  sendGiveTime(seconds: number): void {
+    this.send({ type: "give-time", seconds });
+  }
+
+  sendTakebackOffer(): void {
+    this.send({ type: "takeback-offer" });
+  }
+
+  sendTakebackAccept(): void {
+    this.send({ type: "takeback-accept" });
+  }
+
+  sendTakebackReject(): void {
+    this.send({ type: "takeback-reject" });
+  }
+
+  sendDrawOffer(): void {
+    this.send({ type: "draw-offer" });
+  }
+
+  sendDrawAccept(): void {
+    this.send({ type: "draw-accept" });
+  }
+
+  sendDrawReject(): void {
+    this.send({ type: "draw-reject" });
   }
 
   sendRematchOffer(): void {
