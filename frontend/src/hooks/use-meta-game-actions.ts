@@ -23,18 +23,23 @@ export interface PendingTakebackRequestState {
   requestId: number;
   status: "pending";
   createdAt: number;
+  historyLengthAtRequest: number;
 }
+
+type DecisionPromptSource = "local" | "remote";
 
 export interface DrawDecisionPromptState {
   from: PlayerId;
   to: PlayerId;
-  controller: LocalPlayerController;
+  controller?: LocalPlayerController;
+  source: DecisionPromptSource;
 }
 
 export interface TakebackDecisionPromptState {
   requester: PlayerId;
   responder: PlayerId;
-  controller: LocalPlayerController;
+  controller?: LocalPlayerController;
+  source: DecisionPromptSource;
 }
 
 export interface PassiveNotice {
@@ -60,7 +65,6 @@ interface UseMetaGameActionsParams {
   autoAcceptingLocalIds: PlayerId[];
   isMultiplayerMatch: boolean;
   matchReadyForPlay: boolean;
-  clockTick: number;
 
   // Controllers
   playerControllersRef: React.MutableRefObject<
@@ -83,8 +87,7 @@ interface UseMetaGameActionsParams {
     options?: { lastMoves?: BoardProps["lastMoves"] | null },
   ) => void;
   computeLastMoves: (
-    before: GameState,
-    after: GameState,
+    state: GameState,
     playerColorsForBoard: Record<
       PlayerId,
       import("@/lib/player-colors").PlayerColor
@@ -151,6 +154,7 @@ export function useMetaGameActions({
   const takebackRequestIdRef = useRef(0);
   const lastResignedPlayerRef = useRef<PlayerId | null>(null);
   const noticeCounterRef = useRef(0);
+  const previousTimeLeftRef = useRef<Record<PlayerId, number> | null>(null);
 
   // Execute takeback
   const executeTakeback = useCallback(
@@ -178,22 +182,7 @@ export function useMetaGameActions({
         });
       }
 
-      // After takeback, if there's still history, show arrow for the now-last move
-      let lastMoves: BoardProps["lastMoves"] | null = null;
-      if (nextState.history.length > 0) {
-        // Temporarily undo one more move to get the "before" state for the last move
-        const beforeLastMove = nextState.applyGameAction({
-          kind: "takeback",
-          playerId: requesterId,
-          timestamp: Date.now(),
-        });
-        lastMoves = computeLastMoves(
-          beforeLastMove,
-          nextState,
-          playerColorsForBoard,
-        );
-      }
-
+      const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
       updateGameState(nextState, { lastMoves });
       if (clearStaging) {
         clearStaging();
@@ -276,10 +265,7 @@ export function useMetaGameActions({
       setActionError("You need to control a player to offer a draw.");
       return;
     }
-    if (isMultiplayerMatch) {
-      setActionError("Draw offers are not available in friend games yet.");
-      return;
-    }
+    const opponentId: PlayerId = actorId === 1 ? 2 : 1;
     const currentState = gameStateRef.current;
     if (!currentState) {
       setActionError("Game is still loading.");
@@ -293,7 +279,30 @@ export function useMetaGameActions({
       setActionError("You already have a draw offer pending.");
       return;
     }
-    const opponentId: PlayerId = actorId === 1 ? 2 : 1;
+
+    if (isMultiplayerMatch) {
+      if (!matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+        return;
+      }
+      const requestId = ++drawOfferRequestIdRef.current;
+      setActionError(null);
+      setPendingDrawOffer({
+        from: actorId,
+        to: opponentId,
+        status: "pending",
+        createdAt: Date.now(),
+        requestId,
+      });
+      addSystemMessage(
+        `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
+          opponentId,
+        )}.`,
+      );
+      gameClientRef.current.sendDrawOffer();
+      return;
+    }
+
     const opponentController = playerControllersRef.current[opponentId];
     if (!opponentController || !isSupportedController(opponentController)) {
       setActionError("This opponent cannot respond to draw offers yet.");
@@ -333,6 +342,7 @@ export function useMetaGameActions({
         from: actorId,
         to: opponentId,
         controller: opponentController,
+        source: "local",
       });
     }
     responsePromise
@@ -388,6 +398,8 @@ export function useMetaGameActions({
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     isMultiplayerMatch,
+    matchReadyForPlay,
+    gameClientRef,
     gameStateRef,
     playerControllersRef,
     setActionError,
@@ -395,6 +407,10 @@ export function useMetaGameActions({
 
   const handleCancelDrawOffer = useCallback(() => {
     if (!pendingDrawOffer) return;
+    if (isMultiplayerMatch) {
+      setActionError("Draw offers cannot be cancelled in online games.");
+      return;
+    }
     const canCancel =
       Date.now() - pendingDrawOffer.createdAt >= CANCEL_COOLDOWN_MS &&
       pendingDrawOffer.status === "pending";
@@ -402,24 +418,53 @@ export function useMetaGameActions({
     drawOfferRequestIdRef.current++;
     setPendingDrawOffer(null);
     addSystemMessage("You cancelled your draw offer.");
-  }, [pendingDrawOffer, addSystemMessage]);
+  }, [pendingDrawOffer, addSystemMessage, isMultiplayerMatch, setActionError]);
 
   const respondToDrawPrompt = useCallback(
     (decision: DrawDecision) => {
       if (!drawDecisionPrompt) return;
-      try {
-        drawDecisionPrompt.controller.submitDrawDecision(decision);
-        setDrawDecisionPrompt(null);
-      } catch (error) {
-        console.error(error);
-        setActionError(
-          error instanceof Error
-            ? error.message
-            : "Unable to respond to the draw offer.",
+      if (drawDecisionPrompt.controller) {
+        try {
+          drawDecisionPrompt.controller.submitDrawDecision(decision);
+          setDrawDecisionPrompt(null);
+        } catch (error) {
+          console.error(error);
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : "Unable to respond to the draw offer.",
+          );
+        }
+        return;
+      }
+
+      if (!isMultiplayerMatch || !matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+        return;
+      }
+
+      if (decision === "accept") {
+        gameClientRef.current.sendDrawAccept();
+        addSystemMessage(
+          `${getPlayerName(drawDecisionPrompt.to)} accepted the draw offer.`,
+        );
+      } else {
+        gameClientRef.current.sendDrawReject();
+        addSystemMessage(
+          `${getPlayerName(drawDecisionPrompt.to)} declined the draw offer.`,
         );
       }
+      setDrawDecisionPrompt(null);
     },
-    [drawDecisionPrompt, setActionError],
+    [
+      drawDecisionPrompt,
+      setActionError,
+      isMultiplayerMatch,
+      matchReadyForPlay,
+      gameClientRef,
+      addSystemMessage,
+      getPlayerName,
+    ],
   );
 
   // Takeback handlers
@@ -427,10 +472,6 @@ export function useMetaGameActions({
     const requesterId = resolvePrimaryActionPlayerId();
     if (!requesterId) {
       setActionError("You need to control a player to request a takeback.");
-      return;
-    }
-    if (isMultiplayerMatch) {
-      setActionError("Takebacks are not available in friend games yet.");
       return;
     }
     const currentState = gameStateRef.current;
@@ -447,6 +488,30 @@ export function useMetaGameActions({
       return;
     }
     const responderId: PlayerId = requesterId === 1 ? 2 : 1;
+    const historyLengthAtRequest = currentState.history.length;
+    if (isMultiplayerMatch) {
+      if (!matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+        return;
+      }
+      const requestId = ++takebackRequestIdRef.current;
+      setActionError(null);
+      setPendingTakebackRequest({
+        requester: requesterId,
+        responder: responderId,
+        status: "pending",
+        createdAt: Date.now(),
+        requestId,
+        historyLengthAtRequest,
+      });
+      addSystemMessage(
+        `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
+          responderId,
+        )}.`,
+      );
+      gameClientRef.current.sendTakebackOffer();
+      return;
+    }
     const responderController = playerControllersRef.current[responderId];
     if (!responderController || !isSupportedController(responderController)) {
       setActionError("This opponent cannot respond to takeback requests yet.");
@@ -460,6 +525,7 @@ export function useMetaGameActions({
       status: "pending",
       createdAt: Date.now(),
       requestId,
+      historyLengthAtRequest,
     });
     addSystemMessage(
       `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
@@ -486,6 +552,7 @@ export function useMetaGameActions({
         requester: requesterId,
         responder: responderId,
         controller: responderController,
+        source: "local",
       });
     }
     responsePromise
@@ -530,13 +597,19 @@ export function useMetaGameActions({
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     isMultiplayerMatch,
+    matchReadyForPlay,
     gameStateRef,
     playerControllersRef,
     setActionError,
+    gameClientRef,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
     if (!pendingTakebackRequest) return;
+    if (isMultiplayerMatch) {
+      setActionError("Takeback requests cannot be cancelled in online games.");
+      return;
+    }
     const canCancel =
       Date.now() - pendingTakebackRequest.createdAt >= CANCEL_COOLDOWN_MS &&
       pendingTakebackRequest.status === "pending";
@@ -544,24 +617,58 @@ export function useMetaGameActions({
     takebackRequestIdRef.current++;
     setPendingTakebackRequest(null);
     addSystemMessage("You cancelled your takeback request.");
-  }, [pendingTakebackRequest, addSystemMessage]);
+  }, [
+    pendingTakebackRequest,
+    addSystemMessage,
+    isMultiplayerMatch,
+    setActionError,
+  ]);
 
   const respondToTakebackPrompt = useCallback(
     (decision: TakebackDecision) => {
       if (!takebackDecisionPrompt) return;
-      try {
-        takebackDecisionPrompt.controller.submitTakebackDecision(decision);
-        setTakebackDecisionPrompt(null);
-      } catch (error) {
-        console.error(error);
-        setActionError(
-          error instanceof Error
-            ? error.message
-            : "Unable to respond to the takeback request.",
+      if (takebackDecisionPrompt.controller) {
+        try {
+          takebackDecisionPrompt.controller.submitTakebackDecision(decision);
+          setTakebackDecisionPrompt(null);
+        } catch (error) {
+          console.error(error);
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : "Unable to respond to the takeback request.",
+          );
+        }
+        return;
+      }
+
+      if (!isMultiplayerMatch || !matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+        return;
+      }
+
+      if (decision === "allow") {
+        gameClientRef.current.sendTakebackAccept();
+        addSystemMessage(
+          `${getPlayerName(takebackDecisionPrompt.responder)} accepted the takeback request.`,
+        );
+      } else {
+        gameClientRef.current.sendTakebackReject();
+        addSystemMessage(
+          `${getPlayerName(takebackDecisionPrompt.responder)} declined the takeback request.`,
         );
       }
+      setTakebackDecisionPrompt(null);
     },
-    [takebackDecisionPrompt, setActionError],
+    [
+      takebackDecisionPrompt,
+      setActionError,
+      isMultiplayerMatch,
+      matchReadyForPlay,
+      gameClientRef,
+      addSystemMessage,
+      getPlayerName,
+    ],
   );
 
   // Give time handler
@@ -569,10 +676,6 @@ export function useMetaGameActions({
     const giverId = resolvePrimaryActionPlayerId();
     if (!giverId) {
       setActionError("You need to control a player to give time.");
-      return;
-    }
-    if (isMultiplayerMatch) {
-      setActionError("Manual time adjustments are disabled in friend games.");
       return;
     }
     const currentState = gameStateRef.current;
@@ -585,6 +688,27 @@ export function useMetaGameActions({
       return;
     }
     const opponentId: PlayerId = giverId === 1 ? 2 : 1;
+    if (isMultiplayerMatch) {
+      if (!matchReadyForPlay || !gameClientRef.current) {
+        setActionError("Connection unavailable.");
+        return;
+      }
+      try {
+        gameClientRef.current.sendGiveTime(60);
+        setOutgoingTimeInfo({
+          id: ++noticeCounterRef.current,
+          message: `You gave ${getPlayerName(opponentId)} 1:00.`,
+          createdAt: Date.now(),
+        });
+        addSystemMessage(
+          `${getPlayerName(giverId)} gave ${getPlayerName(opponentId)} one minute.`,
+        );
+      } catch (error) {
+        console.error(error);
+        setActionError("Unable to adjust the clocks right now.");
+      }
+      return;
+    }
     try {
       performGameAction({
         kind: "giveTime",
@@ -611,9 +735,103 @@ export function useMetaGameActions({
     addSystemMessage,
     getPlayerName,
     isMultiplayerMatch,
+    matchReadyForPlay,
     gameStateRef,
     setActionError,
+    gameClientRef,
   ]);
+
+  const handleIncomingDrawOffer = useCallback(
+    (playerId: PlayerId) => {
+      if (!isMultiplayerMatch) return;
+      const recipientId: PlayerId = playerId === 1 ? 2 : 1;
+      if (primaryLocalPlayerId !== recipientId) return;
+      setDrawDecisionPrompt({
+        from: playerId,
+        to: recipientId,
+        source: "remote",
+      });
+      setActionError(null);
+      addSystemMessage(`${getPlayerName(playerId)} offered a draw.`);
+    },
+    [
+      isMultiplayerMatch,
+      primaryLocalPlayerId,
+      addSystemMessage,
+      getPlayerName,
+      setActionError,
+    ],
+  );
+
+  const handleIncomingDrawRejected = useCallback(
+    (playerId: PlayerId) => {
+      if (!isMultiplayerMatch) return;
+      if (playerId === primaryLocalPlayerId) {
+        return;
+      }
+      if (
+        pendingDrawOffer?.from === primaryLocalPlayerId &&
+        pendingDrawOffer.to === playerId
+      ) {
+        setPendingDrawOffer(null);
+      }
+      addSystemMessage(`${getPlayerName(playerId)} declined the draw offer.`);
+    },
+    [
+      isMultiplayerMatch,
+      pendingDrawOffer,
+      primaryLocalPlayerId,
+      addSystemMessage,
+      getPlayerName,
+    ],
+  );
+
+  const handleIncomingTakebackOffer = useCallback(
+    (playerId: PlayerId) => {
+      if (!isMultiplayerMatch) return;
+      const responderId: PlayerId = playerId === 1 ? 2 : 1;
+      if (primaryLocalPlayerId !== responderId) return;
+      setTakebackDecisionPrompt({
+        requester: playerId,
+        responder: responderId,
+        source: "remote",
+      });
+      setActionError(null);
+      addSystemMessage(`${getPlayerName(playerId)} requested a takeback.`);
+    },
+    [
+      isMultiplayerMatch,
+      primaryLocalPlayerId,
+      addSystemMessage,
+      getPlayerName,
+      setActionError,
+    ],
+  );
+
+  const handleIncomingTakebackRejected = useCallback(
+    (playerId: PlayerId) => {
+      if (!isMultiplayerMatch) return;
+      if (playerId === primaryLocalPlayerId) {
+        return;
+      }
+      if (
+        pendingTakebackRequest?.requester === primaryLocalPlayerId &&
+        pendingTakebackRequest.responder === playerId
+      ) {
+        setPendingTakebackRequest(null);
+      }
+      addSystemMessage(
+        `${getPlayerName(playerId)} declined the takeback request.`,
+      );
+    },
+    [
+      isMultiplayerMatch,
+      pendingTakebackRequest,
+      primaryLocalPlayerId,
+      addSystemMessage,
+      getPlayerName,
+    ],
+  );
 
   // Notice handlers
   const handleDismissIncomingNotice = useCallback(() => {
@@ -679,6 +897,83 @@ export function useMetaGameActions({
     }
   }, [gameState?.status]);
 
+  useEffect(() => {
+    if (
+      !isMultiplayerMatch ||
+      !pendingDrawOffer ||
+      gameState?.status !== "finished" ||
+      gameState?.result?.reason !== "draw-agreement"
+    ) {
+      return;
+    }
+    addSystemMessage(
+      `${getPlayerName(pendingDrawOffer.to)} accepted the draw offer.`,
+    );
+    setPendingDrawOffer(null);
+  }, [
+    isMultiplayerMatch,
+    pendingDrawOffer,
+    gameState?.status,
+    gameState?.result?.reason,
+    addSystemMessage,
+    getPlayerName,
+  ]);
+
+  useEffect(() => {
+    if (
+      !isMultiplayerMatch ||
+      pendingTakebackRequest?.requester !== primaryLocalPlayerId ||
+      !gameState
+    ) {
+      return;
+    }
+    const historyLength = gameState.history.length;
+    if (historyLength < pendingTakebackRequest.historyLengthAtRequest) {
+      addSystemMessage(
+        `${getPlayerName(pendingTakebackRequest.responder)} accepted the takeback request.`,
+      );
+      setPendingTakebackRequest(null);
+    }
+  }, [
+    isMultiplayerMatch,
+    pendingTakebackRequest,
+    gameState,
+    gameState?.history.length,
+    addSystemMessage,
+    getPlayerName,
+    primaryLocalPlayerId,
+  ]);
+
+  useEffect(() => {
+    if (!gameState) {
+      previousTimeLeftRef.current = null;
+      return;
+    }
+    if (!isMultiplayerMatch || !primaryLocalPlayerId) {
+      previousTimeLeftRef.current = { ...gameState.timeLeft };
+      return;
+    }
+    const prev = previousTimeLeftRef.current;
+    previousTimeLeftRef.current = { ...gameState.timeLeft };
+    if (!prev) return;
+    const diff =
+      gameState.timeLeft[primaryLocalPlayerId] - prev[primaryLocalPlayerId];
+    if (diff >= 55) {
+      const opponentId: PlayerId = primaryLocalPlayerId === 1 ? 2 : 1;
+      setIncomingPassiveNotice({
+        id: ++noticeCounterRef.current,
+        type: "opponent-gave-time",
+        message: `${getPlayerName(opponentId)} gave you 1:00.`,
+      });
+    }
+  }, [
+    gameState,
+    isMultiplayerMatch,
+    primaryLocalPlayerId,
+    getPlayerName,
+    setIncomingPassiveNotice,
+  ]);
+
   // Helper to handle giveTime action notices (called from performGameAction)
   const handleGiveTimeNotice = useCallback(
     (action: { kind: "giveTime"; playerId: PlayerId }) => {
@@ -725,5 +1020,9 @@ export function useMetaGameActions({
     handleDismissIncomingNotice,
     handleDismissOutgoingInfo,
     handleGiveTimeNotice,
+    handleIncomingDrawOffer,
+    handleIncomingDrawRejected,
+    handleIncomingTakebackOffer,
+    handleIncomingTakebackRejected,
   };
 }

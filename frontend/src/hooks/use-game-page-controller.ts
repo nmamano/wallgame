@@ -155,6 +155,13 @@ export function useGamePageController(gameId: string) {
     ],
   );
 
+  const [hasLocalConfig, setHasLocalConfig] = useState<boolean>(() => {
+    if (typeof window === "undefined") {
+      return false;
+    }
+    return sessionStorage.getItem(`game-config-${gameId}`) != null;
+  });
+
   // ============================================================================
   // View Model State - Single source of truth for server-controlled state
   // ============================================================================
@@ -334,6 +341,9 @@ export function useGamePageController(gameId: string) {
   const playerControllersRef = useRef<
     Partial<Record<PlayerId, GamePlayerController>>
   >({});
+  const metaGameActionsRef = useRef<ReturnType<
+    typeof useMetaGameActions
+  > | null>(null);
 
   const initializeGame = useCallback(
     (
@@ -573,6 +583,26 @@ export function useGamePageController(gameId: string) {
           },
         }));
         addSystemMessage(`${getPlayerName(decliner)} declined the rematch.`);
+      },
+      onDrawOffer: (playerId) => {
+        metaGameActionsRef.current?.handleIncomingDrawOffer(
+          playerId as PlayerId,
+        );
+      },
+      onDrawRejected: (playerId) => {
+        metaGameActionsRef.current?.handleIncomingDrawRejected(
+          playerId as PlayerId,
+        );
+      },
+      onTakebackOffer: (playerId) => {
+        metaGameActionsRef.current?.handleIncomingTakebackOffer(
+          playerId as PlayerId,
+        );
+      },
+      onTakebackRejected: (playerId) => {
+        metaGameActionsRef.current?.handleIncomingTakebackRejected(
+          playerId as PlayerId,
+        );
       },
       onError: (message) => {
         setMatchError(message);
@@ -836,7 +866,6 @@ export function useGamePageController(gameId: string) {
     autoAcceptingLocalIds,
     isMultiplayerMatch,
     matchReadyForPlay,
-    clockTick,
     playerControllersRef,
     gameClientRef,
     performGameAction: performGameActionImpl,
@@ -853,6 +882,7 @@ export function useGamePageController(gameId: string) {
       setDraggingPawnId(null);
     },
   });
+  metaGameActionsRef.current = metaGameActions;
 
   // Wrapper that handles notices
   const performGameAction = useCallback(
@@ -1080,11 +1110,7 @@ export function useGamePageController(gameId: string) {
         playerId,
         timestamp: Date.now(),
       });
-      const lastMoves = computeLastMoves(
-        before,
-        nextState,
-        playerColorsForBoard,
-      );
+      const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
       updateGameState(nextState, { lastMoves });
       if (soundEnabled) {
         playSound();
@@ -1341,6 +1367,7 @@ export function useGamePageController(gameId: string) {
 
   useEffect(() => {
     if (isMultiplayerMatch) {
+      setHasLocalConfig(false);
       setLoadError(null);
       setIsLoadingConfig(false);
       return;
@@ -1354,6 +1381,7 @@ export function useGamePageController(gameId: string) {
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem(`game-config-${gameId}`);
       if (stored) {
+        setHasLocalConfig(true);
         try {
           const parsed = JSON.parse(stored) as {
             config?: Partial<GameConfiguration>;
@@ -1367,11 +1395,15 @@ export function useGamePageController(gameId: string) {
             ? parsed.players
             : DEFAULT_PLAYERS;
         } catch {
+          setHasLocalConfig(false);
           setLoadError("We couldn't read the saved game. Using defaults.");
         }
       } else {
+        setHasLocalConfig(false);
         setLoadError("No saved game found. We'll start a new easy bot game.");
       }
+    } else {
+      setHasLocalConfig(false);
     }
 
     const participants = sanitizePlayerList(resolvedPlayers);
@@ -1454,6 +1486,7 @@ export function useGamePageController(gameId: string) {
 
     openRematchWindow();
   }, [
+    gameState,
     gameState?.result,
     gameState?.status,
     isMultiplayerMatch,
@@ -1898,14 +1931,20 @@ export function useGamePageController(gameId: string) {
     Boolean(pendingDrawForLocal) ||
     Boolean(takebackPendingForLocal);
   const actionButtonsDisabled = !actionPanelAvailable || actionPanelLocked;
-  const canCancelDrawOffer =
-    pendingDrawForLocal &&
-    clockTick - (metaGameActions.pendingDrawOffer?.createdAt ?? 0) >= 2000;
-  const canCancelTakebackRequest =
-    takebackPendingForLocal &&
-    clockTick - (metaGameActions.pendingTakebackRequest?.createdAt ?? 0) >=
-      2000;
-  const manualActionsDisabled = isMultiplayerMatch;
+  const canCancelDrawOffer = !isMultiplayerMatch
+    ? Boolean(
+        pendingDrawForLocal &&
+        clockTick - (metaGameActions.pendingDrawOffer?.createdAt ?? 0) >= 2000,
+      )
+    : null;
+  const canCancelTakebackRequest = !isMultiplayerMatch
+    ? Boolean(
+        takebackPendingForLocal &&
+        clockTick - (metaGameActions.pendingTakebackRequest?.createdAt ?? 0) >=
+          2000,
+      )
+    : null;
+  const manualActionsDisabled = false;
   const hasActionMessage = Boolean(actionError) || Boolean(selectedPawn);
   const actionStatusText =
     actionError ??
@@ -2006,7 +2045,8 @@ export function useGamePageController(gameId: string) {
    * This must be derived from reactive state (not a memoized sessionStorage read),
    * otherwise invite-join can succeed but the UI stays stuck in spectator mode.
    */
-  const isSpectatorSession = !gameHandshake && !isJoiningMatch && !!matchError;
+  const isSpectatorSession =
+    !hasLocalConfig && !gameHandshake && !isJoiningMatch && !!matchError;
 
   // Return spectator controller if this is a spectator session.
   if (isSpectatorSession) {

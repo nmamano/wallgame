@@ -1,8 +1,11 @@
-import type { GameConfiguration } from "../../../shared/domain/game-types";
+import type {
+  GameConfiguration,
+  PlayerId,
+  SerializedGameState,
+} from "../../../shared/domain/game-types";
 import { Grid } from "../../../shared/domain/grid";
 import { GameState } from "../../../shared/domain/game-state";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
-import type { SerializedGameState } from "../../../shared/domain/game-types";
 
 export const buildGameConfigurationFromSerialized = (
   serialized: SerializedGameState,
@@ -51,22 +54,38 @@ export const hydrateGameStateFromSerialized = (
   };
 
   try {
-    state.history = serialized.history.map((entry) => ({
-      index: entry.index,
-      move: moveFromStandardNotation(entry.notation, config.boardHeight),
-      grid: grid.clone(),
-      catPos: [
-        [state.pawns[1].cat[0], state.pawns[1].cat[1]],
-        [state.pawns[2].cat[0], state.pawns[2].cat[1]],
-      ],
-      mousePos: [
-        [state.pawns[1].mouse[0], state.pawns[1].mouse[1]],
-        [state.pawns[2].mouse[0], state.pawns[2].mouse[1]],
-      ],
-      timeLeftSeconds: [state.timeLeft[1], state.timeLeft[2]],
-      distances: [0, 0],
-      wallCounts: [0, 0],
-    }));
+    const orderedHistory = [...serialized.history].sort(
+      (a, b) => a.index - b.index,
+    );
+    let replayState: GameState = new GameState(config, Date.now());
+    state.history = orderedHistory.map((entry) => {
+      const move = moveFromStandardNotation(entry.notation, config.boardHeight);
+      const playerId = (entry.index % 2 === 1 ? 1 : 2) as PlayerId;
+      const nextState = replayState.applyGameAction({
+        kind: "move",
+        move,
+        playerId,
+        timestamp: Date.now(),
+      });
+      replayState = nextState;
+
+      return {
+        index: entry.index,
+        move,
+        grid: nextState.grid.clone(),
+        catPos: [
+          [nextState.pawns[1].cat[0], nextState.pawns[1].cat[1]],
+          [nextState.pawns[2].cat[0], nextState.pawns[2].cat[1]],
+        ],
+        mousePos: [
+          [nextState.pawns[1].mouse[0], nextState.pawns[1].mouse[1]],
+          [nextState.pawns[2].mouse[0], nextState.pawns[2].mouse[1]],
+        ],
+        timeLeftSeconds: [nextState.timeLeft[1], nextState.timeLeft[2]],
+        distances: [0, 0],
+        wallCounts: [0, 0],
+      };
+    });
   } catch {
     state.history = [];
   }
