@@ -12,6 +12,7 @@ alwaysApply: true
 
 - Use bun, not npm, pnpm, etc. If you need, the actual bun installation is at `/c/Users/Nilo/.bun/bin/bun`.
 - If you deem it necessary, when finishing a task, you can run `bun run test`, `bun run lint`, and `bun run build` to ensure that the tests, linting, and build pass. Optionally, you can run `bun run format`.
+- Always use Linux-style line endings when editing files.
 
 # Organization
 

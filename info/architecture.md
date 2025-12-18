@@ -30,7 +30,6 @@ All of these conform to the `GamePlayerController` union:
 
 - **LocalHumanController**: Used for "your" seat in offline games. Queues local UI interactions and feeds them to the orchestrator.
 - **RemotePlayerController**: Used for "your" seat in online games. Wraps `GameClient` (the WebSocket transport client for an online game seat) but fulfills the same interface by delegating to `LocalHumanController` for staged moves (which are purely local) and implementing each voluntary action via socket calls. Initialization: when `useOnlineGameSession` has a `gameHandshake` for this browser tab, `use-game-page-controller` installs a RemotePlayerController for that `playerId`.
-- **RemoteSpectatorPlayerController**: read-only controller representing spectator seats (all interactive methods throw by design).
 - **EasyBotController**: a bot that makes moves automatically.
 - **UnsupportedController**: For seat types that are not wired yet.
 
@@ -42,18 +41,23 @@ The UI always talks to a "manual controller", and that controller internally dec
 
 ### Registry
 
-## `playerControllersRef`
+## `seatActionsRef`
 
-- Stores the current map from `PlayerId` to `GamePlayerController`.
-- It contains two controllers for local games and spectator mode. It contains only one for online games (the other is `undefined`).
-- It acts as the registry of controllers for both seats (player 1 and 2), across renders and effects.
-- Consumers never touch transport objects directly; they call controller methods and rely on capabilities.
+- Stores the current map from `PlayerId` to `GamePlayerController | null`.
+- Only seats this client may command have a controller entry; uncontrollable seats (remote opponents, spectatated players) use `null`.
+- Consumers never touch transport objects directly; they call controller methods acquired via `getSeatController(playerId)` and rely on capabilities/availability.
+
+## `seatViewsRef`
+
+- Holds the latest seat metadata (name, avatar, clock color, connection indicator) derived from the match snapshot.
+- Every seat always has a view. When a match snapshot is unavailable (e.g., offline setup), the fallback view is built from the local placeholder configuration.
+- UI rendering code reads from this ref to stay transport-agnostic, while action logic relies on `seatActionsRef`.
 
 ## Game page controller
 
 This is the orchestrator.
 
-- Creates the controllers and stores them in `playerControllersRef`. No post-hoc mutations: everything is computed before returning the controller object.
+- Creates the controllers and stores them in `seatActionsRef`. No post-hoc mutations: everything is computed before returning the controller object.
 - Drives the main loop.
 - Owns the logic of waiting for server game updates.
   - Details: when the game page controller calls `makeMove` on "your" `RemotePlayerController`, the controller sends your move via `GameClient.sendMove`. In the `then` of `makeMove`, the game page controller does not apply the move locally; instead it waits for the server.
@@ -66,7 +70,7 @@ This is the orchestrator.
 ### Spectator Flow
 
 1. Detect `isSpectatorSession` (REST handshake failed, no local config, etc.).
-2. Instantiate a `SpectatorSession` and register two `RemoteSpectatorPlayerController`s.
+2. Instantiate a `SpectatorSession` (spectator seats have seat views only, no controllers).
 3. Feed REST snapshot + websocket updates through `applySpectatorSnapshotUpdate` / `applySpectatorStateUpdate`.
 4. UI derives full read-only state from the same view-model pipeline as players.
 
@@ -84,8 +88,6 @@ This is the orchestrator.
       - Class `LocalHumanController`
     - Interface `RemoteHumanController`: Human seat whose game state lives on the server
       - Class `RemotePlayerController`
-  - Interface `SpectatorPlayerController`: Read-only spectator seat
-    - Class `RemoteSpectatorPlayerController`
   - Interface `AutomatedPlayerController`: Automated bot seat
     - Class `EasyBotController`
   - Interface `UnsupportedPlayerController`: Placeholder seat
@@ -99,16 +101,6 @@ This is the orchestrator.
 ### Achieving pure capability-driven logic
 
 There are still explicit mode branches (`isMultiplayerMatch`) throughout `use-meta-game-actions.ts` deciding which code path to take (local performGameAction vs remote controller methods, cancellation rules, etc.). Those checks wouldn't vanish entirely, but ideally more of the behavior differences would be expressed via capabilities and presence/absence of specific controller methods, rather than `if (isMultiplayerMatch) ... else ...`.
-
-### Spectator vs Opponent simplification
-
-Conceptually, "spectated players" and "opponent players" are the same kind of thing: seats that you can see but not command. The current implementation treats them differently mostly for historical / layering reasons, not because the concepts differ.
-
-For `RemoteSpectatorPlayerController`, their only meaningful content is `playerId` / `playerType` / `kind`, and `capabilities` copied from `getCapabilitiesForType("friend")` (all false). The actual "seat view" (name, avatar, clock, color) is still coming from the view model: `buildSpectatorPlayersFromSnapshot` → `playersRef` → `players`.
-
-For online matches, the opponent has no controller. Only a seat view in `viewModel.match.players` (identity, appearance), and `GameState` (pawns, clocks, result).
-
-Proposed split: Seat view (what the UI renders) vs Seat actions (what this client may command for that seat). Rule: Every seat always has a Seat view; only controllable seats also have Seat actions.
 
 ### Minor things
 

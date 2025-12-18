@@ -70,11 +70,6 @@ interface UseMetaGameActionsParams {
   isMultiplayerMatch: boolean;
 
   // Controllers
-  playerControllersRef: React.MutableRefObject<
-    Partial<
-      Record<PlayerId, import("@/lib/player-controllers").GamePlayerController>
-    >
-  >;
   getSeatController: (playerId: PlayerId | null) => GamePlayerController | null;
 
   // Actions
@@ -118,7 +113,6 @@ export function useMetaGameActions({
   primaryLocalPlayerId,
   autoAcceptingLocalIds,
   isMultiplayerMatch,
-  playerControllersRef,
   getSeatController,
   performGameAction,
   updateGameState,
@@ -279,14 +273,7 @@ export function useMetaGameActions({
     }
 
     const actorController = getSeatController(actorId);
-    if (isMultiplayerMatch) {
-      if (!actorController || typeof actorController.offerDraw !== "function") {
-        setActionError("Connection unavailable.");
-        return;
-      }
-    }
-
-    const opponentController = playerControllersRef.current[opponentId];
+    const opponentController = getSeatController(opponentId);
     const requestId = ++drawOfferRequestIdRef.current;
     setActionError(null);
     setPendingDrawOffer({
@@ -301,11 +288,19 @@ export function useMetaGameActions({
         opponentId,
       )}.`,
     );
-    if (isMultiplayerMatch) {
-      void actorController?.offerDraw?.();
+    if (!opponentController) {
+      if (!isMultiplayerMatch) {
+        setActionError("This opponent cannot respond to draw offers yet.");
+        return;
+      }
+      if (!actorController || typeof actorController.offerDraw !== "function") {
+        setActionError("Connection unavailable.");
+        return;
+      }
+      void actorController.offerDraw();
       return;
     }
-    if (!opponentController || !isSupportedController(opponentController)) {
+    if (!isSupportedController(opponentController)) {
       setActionError("This opponent cannot respond to draw offers yet.");
       return;
     }
@@ -386,7 +381,6 @@ export function useMetaGameActions({
     primaryLocalPlayerId,
     isMultiplayerMatch,
     gameStateRef,
-    playerControllersRef,
     setActionError,
     getSeatController,
   ]);
@@ -477,7 +471,14 @@ export function useMetaGameActions({
     const responderId: PlayerId = requesterId === 1 ? 2 : 1;
     const historyLengthAtRequest = currentState.history.length;
     const requesterController = getSeatController(requesterId);
-    if (isMultiplayerMatch) {
+    const responderController = getSeatController(responderId);
+    if (!responderController) {
+      if (!isMultiplayerMatch) {
+        setActionError(
+          "This opponent cannot respond to takeback requests yet.",
+        );
+        return;
+      }
       if (
         !requesterController ||
         typeof requesterController.requestTakeback !== "function"
@@ -500,11 +501,10 @@ export function useMetaGameActions({
           responderId,
         )}.`,
       );
-      void requesterController.requestTakeback?.();
+      void requesterController.requestTakeback();
       return;
     }
-    const responderController = playerControllersRef.current[responderId];
-    if (!responderController || !isSupportedController(responderController)) {
+    if (!isSupportedController(responderController)) {
       setActionError("This opponent cannot respond to takeback requests yet.");
       return;
     }
@@ -589,7 +589,6 @@ export function useMetaGameActions({
     primaryLocalPlayerId,
     isMultiplayerMatch,
     gameStateRef,
-    playerControllersRef,
     setActionError,
     getSeatController,
   ]);
