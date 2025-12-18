@@ -1,33 +1,42 @@
-import { useState, useRef, useCallback, useEffect } from "react";
+import { useState, useRef, useCallback, useEffect, useMemo } from "react";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
 import type {
+  ActionChannel,
+  ControllerResult,
   DrawDecision,
   GamePlayerController,
   ManualPlayerController,
+  MetaActionKind,
+  MetaActionPayload,
   TakebackDecision,
 } from "@/lib/player-controllers";
 import {
+  controllerError,
+  controllerOk,
   isLocalController,
   isSupportedController,
 } from "@/lib/player-controllers";
+import { describeControllerError } from "@/lib/controller-errors";
 import type { BoardProps } from "@/components/board";
 
 export interface PendingDrawOfferState {
-  from: PlayerId;
-  to: PlayerId;
+  actorSeatId: PlayerId;
+  opponentSeatId: PlayerId;
   requestId: number;
   status: "pending";
   createdAt: number;
+  channel: ActionChannel;
 }
 
 export interface PendingTakebackRequestState {
-  requester: PlayerId;
-  responder: PlayerId;
+  actorSeatId: PlayerId;
+  opponentSeatId: PlayerId;
   requestId: number;
   status: "pending";
   createdAt: number;
   historyLengthAtRequest: number;
+  channel: ActionChannel;
 }
 
 type DecisionPromptSource = "local" | "remote";
@@ -67,7 +76,6 @@ interface UseMetaGameActionsParams {
   gameStateRef: React.MutableRefObject<GameState | null>;
   primaryLocalPlayerId: PlayerId | null;
   autoAcceptingLocalIds: PlayerId[];
-  isMultiplayerMatch: boolean;
 
   // Controllers
   getSeatController: (playerId: PlayerId | null) => GamePlayerController | null;
@@ -102,6 +110,199 @@ interface UseMetaGameActionsParams {
   clearStaging?: () => void;
 }
 
+type MetaActionResult = { status: "completed" } | { status: "started" };
+
+interface MetaActionExecutor {
+  can: (seatId: PlayerId, action: MetaActionKind) => boolean;
+  run<K extends MetaActionKind>(
+    seatId: PlayerId,
+    action: K,
+    payload: MetaActionPayload<K>,
+  ): Promise<{
+    result: ControllerResult<MetaActionResult>;
+    channel: ActionChannel | null;
+  }>;
+}
+
+interface CreateMetaActionExecutorOptions {
+  getSeatController: (playerId: PlayerId | null) => GamePlayerController | null;
+  performGameAction: (
+    action: import("../../../shared/domain/game-types").GameAction,
+  ) => GameState;
+}
+
+const META_ACTION_CAPABILITY_MAP: Record<
+  MetaActionKind,
+  keyof GamePlayerController["capabilities"] | null
+> = {
+  resign: "canMove",
+  offerDraw: "canOfferDraw",
+  requestTakeback: "canRequestTakeback",
+  giveTime: "canMove",
+};
+
+function createMetaActionExecutor({
+  getSeatController,
+  performGameAction,
+}: CreateMetaActionExecutorOptions): MetaActionExecutor {
+  const can = (seatId: PlayerId, action: MetaActionKind) => {
+    const controller = getSeatController(seatId);
+    if (!controller) return false;
+    const capabilityKey = META_ACTION_CAPABILITY_MAP[action];
+    if (!capabilityKey) {
+      return true;
+    }
+    return Boolean(controller.capabilities[capabilityKey]);
+  };
+
+  const run = async <K extends MetaActionKind>(
+    seatId: PlayerId,
+    action: K,
+    payload: MetaActionPayload<K>,
+  ): Promise<{
+    result: ControllerResult<MetaActionResult>;
+    channel: ActionChannel | null;
+  }> => {
+    const controller = getSeatController(seatId);
+    if (!controller) {
+      return {
+        channel: null,
+        result: controllerError({
+          kind: "ControllerUnavailable",
+          action,
+          message: "Seat controller unavailable.",
+        }),
+      };
+    }
+
+    const capabilityKey = META_ACTION_CAPABILITY_MAP[action];
+    if (capabilityKey && !controller.capabilities[capabilityKey]) {
+      return {
+        channel: controller.actionChannel,
+        result: controllerError({
+          kind: "NotCapable",
+          action,
+          message: "This seat cannot perform that action right now.",
+        }),
+      };
+    }
+
+    if (controller.actionChannel === "local-state") {
+      const localResult = executeLocalAction(seatId, action, payload);
+      return {
+        channel: controller.actionChannel,
+        result: wrapMetaResult(action, localResult),
+      };
+    }
+
+    if (typeof controller.performVoluntaryAction !== "function") {
+      return {
+        channel: controller.actionChannel,
+        result: controllerError({
+          kind: "UnsupportedAction",
+          action,
+          message: "Seat cannot perform remote voluntary actions.",
+        }),
+      };
+    }
+
+    try {
+      const remoteResult = await controller.performVoluntaryAction(
+        action,
+        payload,
+      );
+      return {
+        channel: controller.actionChannel,
+        result: wrapMetaResult(action, remoteResult),
+      };
+    } catch (error) {
+      console.error(error);
+      return {
+        channel: controller.actionChannel,
+        result: controllerError({
+          kind: "Unknown",
+          action,
+          message:
+            error instanceof Error
+              ? error.message
+              : "Unexpected error while executing action.",
+          cause: error,
+        }),
+      };
+    }
+  };
+
+  const executeLocalAction = <K extends MetaActionKind>(
+    seatId: PlayerId,
+    action: K,
+    payload: MetaActionPayload<K>,
+  ): ControllerResult<void> => {
+    try {
+      switch (action) {
+        case "resign": {
+          performGameAction({
+            kind: "resign",
+            playerId: seatId,
+            timestamp: Date.now(),
+          });
+          return controllerOk(undefined);
+        }
+        case "giveTime": {
+          const seconds = payload?.seconds ?? 0;
+          performGameAction({
+            kind: "giveTime",
+            playerId: seatId,
+            seconds,
+            timestamp: Date.now(),
+          });
+          return controllerOk(undefined);
+        }
+        case "offerDraw":
+        case "requestTakeback":
+          return controllerOk(undefined);
+        default:
+          return controllerError({
+            kind: "UnsupportedAction",
+            action,
+            message: "Unsupported local meta action.",
+          });
+      }
+    } catch (error) {
+      return controllerError({
+        kind: "Unknown",
+        action,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unexpected error while executing local action.",
+        cause: error,
+      });
+    }
+  };
+
+  const wrapMetaResult = (
+    action: MetaActionKind,
+    result: ControllerResult<void>,
+  ): ControllerResult<MetaActionResult> => {
+    if (result.ok) {
+      return controllerOk(deriveMetaActionStatus(action));
+    }
+    return controllerError(result.error);
+  };
+
+  return { can, run };
+}
+
+function deriveMetaActionStatus(action: MetaActionKind): MetaActionResult {
+  switch (action) {
+    case "offerDraw":
+    case "requestTakeback":
+      return { status: "started" };
+    default:
+      return { status: "completed" };
+  }
+}
+
 // Constants
 const CANCEL_COOLDOWN_MS = 2000;
 const AUTO_ACCEPT_DELAY_MS = 300;
@@ -112,7 +313,6 @@ export function useMetaGameActions({
   gameStateRef,
   primaryLocalPlayerId,
   autoAcceptingLocalIds,
-  isMultiplayerMatch,
   getSeatController,
   performGameAction,
   updateGameState,
@@ -147,6 +347,26 @@ export function useMetaGameActions({
   const lastResignedPlayerRef = useRef<PlayerId | null>(null);
   const noticeCounterRef = useRef(0);
   const previousTimeLeftRef = useRef<Record<PlayerId, number> | null>(null);
+
+  const metaActionExecutor = useMemo(
+    () =>
+      createMetaActionExecutor({
+        getSeatController,
+        performGameAction,
+      }),
+    [getSeatController, performGameAction],
+  );
+
+  const resolveSeatChannel = useCallback(
+    (playerId: PlayerId | null): ActionChannel | null => {
+      if (playerId == null) {
+        return null;
+      }
+      const controller = getSeatController(playerId);
+      return controller?.actionChannel ?? null;
+    },
+    [getSeatController],
+  );
 
   // Execute takeback
   const executeTakeback = useCallback(
@@ -213,41 +433,53 @@ export function useMetaGameActions({
       setResignFlowPlayerId(null);
       return;
     }
-    if (isMultiplayerMatch) {
-      const seatController = getSeatController(actorId);
-      if (!seatController || typeof seatController.resign !== "function") {
-        setActionError("Connection unavailable.");
-      } else {
-        void seatController.resign();
-      }
+    const controller = getSeatController(actorId);
+    if (!controller) {
+      setActionError(
+        describeControllerError("resign", {
+          kind: "ControllerUnavailable",
+          action: "resign",
+        }),
+      );
       setResignFlowPlayerId(null);
       return;
     }
-    try {
-      lastResignedPlayerRef.current = actorId;
-      performGameAction({
-        kind: "resign",
-        playerId: actorId,
-        timestamp: Date.now(),
-      });
-      addSystemMessage(`${getPlayerName(actorId)} resigned.`);
-    } catch (error) {
-      console.error(error);
-      setActionError(
-        error instanceof Error ? error.message : "Unable to resign the game.",
-      );
-    } finally {
+    if (!metaActionExecutor.can(actorId, "resign")) {
+      setActionError("You cannot resign right now.");
       setResignFlowPlayerId(null);
+      return;
     }
+    if (controller.actionChannel === "local-state") {
+      lastResignedPlayerRef.current = actorId;
+    }
+    void metaActionExecutor
+      .run(actorId, "resign", undefined)
+      .then(({ channel, result }) => {
+        if (!result.ok) {
+          setActionError(describeControllerError("resign", result.error));
+          return;
+        }
+        if (channel === "local-state") {
+          addSystemMessage(`${getPlayerName(actorId)} resigned.`);
+        }
+      })
+      .catch((error) => {
+        console.error(error);
+        setActionError(
+          error instanceof Error ? error.message : "Unable to resign the game.",
+        );
+      })
+      .finally(() => {
+        setResignFlowPlayerId(null);
+      });
   }, [
-    isMultiplayerMatch,
     resignFlowPlayerId,
     resolvePrimaryActionPlayerId,
-    performGameAction,
+    getSeatController,
+    metaActionExecutor,
     addSystemMessage,
     getPlayerName,
     setActionError,
-    getSeatController,
   ]);
 
   // Draw offer handlers
@@ -273,37 +505,67 @@ export function useMetaGameActions({
     }
 
     const actorController = getSeatController(actorId);
+    if (!actorController) {
+      setActionError(
+        describeControllerError("offerDraw", {
+          kind: "ControllerUnavailable",
+          action: "offerDraw",
+        }),
+      );
+      return;
+    }
+    if (!metaActionExecutor.can(actorId, "offerDraw")) {
+      setActionError("You cannot offer a draw right now.");
+      return;
+    }
     const opponentController = getSeatController(opponentId);
     const requestId = ++drawOfferRequestIdRef.current;
-    setActionError(null);
-    setPendingDrawOffer({
-      from: actorId,
-      to: opponentId,
+    const pendingEntry: PendingDrawOfferState = {
+      actorSeatId: actorId,
+      opponentSeatId: opponentId,
       status: "pending",
       createdAt: Date.now(),
       requestId,
-    });
-    addSystemMessage(
-      `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
-        opponentId,
-      )}.`,
-    );
+      channel: actorController.actionChannel,
+    };
+    const announceOffer = () => {
+      setPendingDrawOffer(pendingEntry);
+      addSystemMessage(
+        `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
+          opponentId,
+        )}.`,
+      );
+    };
+    setActionError(null);
+    if (actorController.actionChannel === "remote-controller") {
+      void metaActionExecutor
+        .run(actorId, "offerDraw", undefined)
+        .then(({ result }) => {
+          if (!result.ok) {
+            setActionError(describeControllerError("offerDraw", result.error));
+            return;
+          }
+          announceOffer();
+        })
+        .catch((error) => {
+          console.error(error);
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : "The draw offer could not be sent.",
+          );
+        });
+      return;
+    }
     if (!opponentController) {
-      if (!isMultiplayerMatch) {
-        setActionError("This opponent cannot respond to draw offers yet.");
-        return;
-      }
-      if (!actorController || typeof actorController.offerDraw !== "function") {
-        setActionError("Connection unavailable.");
-        return;
-      }
-      void actorController.offerDraw();
+      setActionError("This opponent cannot respond to draw offers yet.");
       return;
     }
     if (!isSupportedController(opponentController)) {
       setActionError("This opponent cannot respond to draw offers yet.");
       return;
     }
+    announceOffer();
     const shouldAutoAccept = autoAcceptingLocalIds.includes(opponentId);
     const responsePromise = shouldAutoAccept
       ? new Promise<DrawDecision>((resolve) =>
@@ -379,15 +641,15 @@ export function useMetaGameActions({
     getPlayerName,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
-    isMultiplayerMatch,
     gameStateRef,
     setActionError,
     getSeatController,
+    metaActionExecutor,
   ]);
 
   const handleCancelDrawOffer = useCallback(() => {
     if (!pendingDrawOffer) return;
-    if (isMultiplayerMatch) {
+    if (pendingDrawOffer.channel === "remote-controller") {
       setActionError("Draw offers cannot be cancelled in online games.");
       return;
     }
@@ -398,7 +660,7 @@ export function useMetaGameActions({
     drawOfferRequestIdRef.current++;
     setPendingDrawOffer(null);
     addSystemMessage("You cancelled your draw offer.");
-  }, [pendingDrawOffer, addSystemMessage, isMultiplayerMatch, setActionError]);
+  }, [pendingDrawOffer, addSystemMessage, setActionError]);
 
   const respondToDrawPrompt = useCallback(
     (decision: DrawDecision) => {
@@ -418,8 +680,10 @@ export function useMetaGameActions({
         return;
       }
 
-      if (!isMultiplayerMatch) {
-        setActionError("Connection unavailable.");
+      if (drawDecisionPrompt.source !== "remote") {
+        setActionError(
+          "We no longer have a connection for that draw offer. Please wait for the next update.",
+        );
         return;
       }
       const responderController = getSeatController(drawDecisionPrompt.to);
@@ -427,7 +691,9 @@ export function useMetaGameActions({
         !responderController ||
         typeof responderController.respondToRemoteDraw !== "function"
       ) {
-        setActionError("Connection unavailable.");
+        setActionError(
+          "We can't reach that player's controller to deliver your decision.",
+        );
         return;
       }
       void responderController.respondToRemoteDraw(decision);
@@ -441,7 +707,6 @@ export function useMetaGameActions({
     [
       drawDecisionPrompt,
       setActionError,
-      isMultiplayerMatch,
       addSystemMessage,
       getPlayerName,
       getSeatController,
@@ -471,58 +736,70 @@ export function useMetaGameActions({
     const responderId: PlayerId = requesterId === 1 ? 2 : 1;
     const historyLengthAtRequest = currentState.history.length;
     const requesterController = getSeatController(requesterId);
+    if (!requesterController) {
+      setActionError(
+        describeControllerError("requestTakeback", {
+          kind: "ControllerUnavailable",
+          action: "requestTakeback",
+        }),
+      );
+      return;
+    }
+    if (!metaActionExecutor.can(requesterId, "requestTakeback")) {
+      setActionError("You cannot request a takeback right now.");
+      return;
+    }
     const responderController = getSeatController(responderId);
-    if (!responderController) {
-      if (!isMultiplayerMatch) {
-        setActionError(
-          "This opponent cannot respond to takeback requests yet.",
-        );
-        return;
-      }
-      if (
-        !requesterController ||
-        typeof requesterController.requestTakeback !== "function"
-      ) {
-        setActionError("Connection unavailable.");
-        return;
-      }
-      const requestId = ++takebackRequestIdRef.current;
-      setActionError(null);
-      setPendingTakebackRequest({
-        requester: requesterId,
-        responder: responderId,
-        status: "pending",
-        createdAt: Date.now(),
-        requestId,
-        historyLengthAtRequest,
-      });
+    const requestId = ++takebackRequestIdRef.current;
+    const pendingEntry: PendingTakebackRequestState = {
+      actorSeatId: requesterId,
+      opponentSeatId: responderId,
+      status: "pending",
+      createdAt: Date.now(),
+      requestId,
+      historyLengthAtRequest,
+      channel: requesterController.actionChannel,
+    };
+    const announceRequest = () => {
+      setPendingTakebackRequest(pendingEntry);
       addSystemMessage(
         `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
           responderId,
         )}.`,
       );
-      void requesterController.requestTakeback();
+    };
+    setActionError(null);
+    if (requesterController.actionChannel === "remote-controller") {
+      void metaActionExecutor
+        .run(requesterId, "requestTakeback", undefined)
+        .then(({ result }) => {
+          if (!result.ok) {
+            setActionError(
+              describeControllerError("requestTakeback", result.error),
+            );
+            return;
+          }
+          announceRequest();
+        })
+        .catch((error) => {
+          console.error(error);
+          setActionError(
+            error instanceof Error
+              ? error.message
+              : "The takeback request could not be sent.",
+          );
+        });
+      return;
+    }
+    if (!responderController) {
+      setActionError("This opponent cannot respond to takeback requests yet.");
       return;
     }
     if (!isSupportedController(responderController)) {
       setActionError("This opponent cannot respond to takeback requests yet.");
       return;
     }
-    const requestId = ++takebackRequestIdRef.current;
-    setActionError(null);
-    setPendingTakebackRequest({
-      requester: requesterId,
-      responder: responderId,
-      status: "pending",
-      createdAt: Date.now(),
-      requestId,
-      historyLengthAtRequest,
-    });
-    addSystemMessage(
-      `${getPlayerName(requesterId)} requested a takeback from ${getPlayerName(
-        responderId,
-      )}.`,
-    );
+    announceRequest();
     const shouldAutoAccept = autoAcceptingLocalIds.includes(responderId);
     const responsePromise = shouldAutoAccept
       ? new Promise<TakebackDecision>((resolve) =>
@@ -587,15 +864,15 @@ export function useMetaGameActions({
     getPlayerName,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
-    isMultiplayerMatch,
     gameStateRef,
     setActionError,
     getSeatController,
+    metaActionExecutor,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
     if (!pendingTakebackRequest) return;
-    if (isMultiplayerMatch) {
+    if (pendingTakebackRequest.channel === "remote-controller") {
       setActionError("Takeback requests cannot be cancelled in online games.");
       return;
     }
@@ -606,12 +883,7 @@ export function useMetaGameActions({
     takebackRequestIdRef.current++;
     setPendingTakebackRequest(null);
     addSystemMessage("You cancelled your takeback request.");
-  }, [
-    pendingTakebackRequest,
-    addSystemMessage,
-    isMultiplayerMatch,
-    setActionError,
-  ]);
+  }, [pendingTakebackRequest, addSystemMessage, setActionError]);
 
   const respondToTakebackPrompt = useCallback(
     (decision: TakebackDecision) => {
@@ -631,8 +903,10 @@ export function useMetaGameActions({
         return;
       }
 
-      if (!isMultiplayerMatch) {
-        setActionError("Connection unavailable.");
+      if (takebackDecisionPrompt.source !== "remote") {
+        setActionError(
+          "We no longer have a connection for that takeback request. Please wait for the next update.",
+        );
         return;
       }
       const responderController = getSeatController(
@@ -642,7 +916,9 @@ export function useMetaGameActions({
         !responderController ||
         typeof responderController.respondToRemoteTakeback !== "function"
       ) {
-        setActionError("Connection unavailable.");
+        setActionError(
+          "We can't reach that player's controller to deliver your decision.",
+        );
         return;
       }
       void responderController.respondToRemoteTakeback(decision);
@@ -656,7 +932,6 @@ export function useMetaGameActions({
     [
       takebackDecisionPrompt,
       setActionError,
-      isMultiplayerMatch,
       addSystemMessage,
       getPlayerName,
       getSeatController,
@@ -680,62 +955,68 @@ export function useMetaGameActions({
       return;
     }
     const opponentId: PlayerId = giverId === 1 ? 2 : 1;
-    if (isMultiplayerMatch) {
-      const giverController = getSeatController(giverId);
-      if (!giverController || typeof giverController.giveTime !== "function") {
-        setActionError("Connection unavailable.");
-        return;
-      }
-      try {
-        void giverController.giveTime(60);
-        setOutgoingTimeInfo({
-          id: ++noticeCounterRef.current,
-          message: `You gave ${getPlayerName(opponentId)} 1:00.`,
-          createdAt: Date.now(),
-        });
-        addSystemMessage(
-          `${getPlayerName(giverId)} gave ${getPlayerName(opponentId)} one minute.`,
-        );
-      } catch (error) {
-        console.error(error);
-        setActionError("Unable to adjust the clocks right now.");
-      }
+    const giverController = getSeatController(giverId);
+    if (!giverController) {
+      setActionError(
+        describeControllerError("giveTime", {
+          kind: "ControllerUnavailable",
+          action: "giveTime",
+        }),
+      );
       return;
     }
-    try {
-      performGameAction({
-        kind: "giveTime",
-        playerId: giverId,
-        seconds: 60,
-        timestamp: Date.now(),
-      });
-      addSystemMessage(
-        `${getPlayerName(giverId)} gave ${getPlayerName(
-          opponentId,
-        )} one minute.`,
-      );
-    } catch (error) {
-      console.error(error);
-      setActionError(
-        error instanceof Error
-          ? error.message
-          : "Unable to adjust the clocks right now.",
-      );
+    if (!metaActionExecutor.can(giverId, "giveTime")) {
+      setActionError("You cannot give time right now.");
+      return;
     }
+    setActionError(null);
+    void metaActionExecutor
+      .run(giverId, "giveTime", {
+        seconds: 60,
+      })
+      .then(({ channel, result }) => {
+        if (!result.ok) {
+          setActionError(describeControllerError("giveTime", result.error));
+          return;
+        }
+        if (channel === "remote-controller") {
+          setOutgoingTimeInfo({
+            id: ++noticeCounterRef.current,
+            message: `You gave ${getPlayerName(opponentId)} 1:00.`,
+            createdAt: Date.now(),
+          });
+        }
+        addSystemMessage(
+          `${getPlayerName(giverId)} gave ${getPlayerName(
+            opponentId,
+          )} one minute.`,
+        );
+      })
+      .catch((error) => {
+        console.error(error);
+        setActionError(
+          error instanceof Error
+            ? error.message
+            : "Unable to adjust the clocks right now.",
+        );
+      });
   }, [
     resolvePrimaryActionPlayerId,
-    performGameAction,
     addSystemMessage,
     getPlayerName,
-    isMultiplayerMatch,
     gameStateRef,
     setActionError,
     getSeatController,
+    metaActionExecutor,
+    noticeCounterRef,
   ]);
 
   const handleIncomingDrawOffer = useCallback(
     (playerId: PlayerId) => {
-      if (!isMultiplayerMatch) return;
+      if (!primaryLocalPlayerId) return;
+      if (resolveSeatChannel(primaryLocalPlayerId) !== "remote-controller") {
+        return;
+      }
       const recipientId: PlayerId = playerId === 1 ? 2 : 1;
       if (primaryLocalPlayerId !== recipientId) return;
       setDrawDecisionPrompt({
@@ -747,8 +1028,8 @@ export function useMetaGameActions({
       addSystemMessage(`${getPlayerName(playerId)} offered a draw.`);
     },
     [
-      isMultiplayerMatch,
       primaryLocalPlayerId,
+      resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
       setActionError,
@@ -757,22 +1038,25 @@ export function useMetaGameActions({
 
   const handleIncomingDrawRejected = useCallback(
     (playerId: PlayerId) => {
-      if (!isMultiplayerMatch) return;
+      if (!primaryLocalPlayerId) return;
+      if (resolveSeatChannel(primaryLocalPlayerId) !== "remote-controller") {
+        return;
+      }
       if (playerId === primaryLocalPlayerId) {
         return;
       }
       if (
-        pendingDrawOffer?.from === primaryLocalPlayerId &&
-        pendingDrawOffer.to === playerId
+        pendingDrawOffer?.actorSeatId === primaryLocalPlayerId &&
+        pendingDrawOffer.opponentSeatId === playerId
       ) {
         setPendingDrawOffer(null);
       }
       addSystemMessage(`${getPlayerName(playerId)} declined the draw offer.`);
     },
     [
-      isMultiplayerMatch,
       pendingDrawOffer,
       primaryLocalPlayerId,
+      resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
     ],
@@ -780,7 +1064,10 @@ export function useMetaGameActions({
 
   const handleIncomingTakebackOffer = useCallback(
     (playerId: PlayerId) => {
-      if (!isMultiplayerMatch) return;
+      if (!primaryLocalPlayerId) return;
+      if (resolveSeatChannel(primaryLocalPlayerId) !== "remote-controller") {
+        return;
+      }
       const responderId: PlayerId = playerId === 1 ? 2 : 1;
       if (primaryLocalPlayerId !== responderId) return;
       setTakebackDecisionPrompt({
@@ -792,8 +1079,8 @@ export function useMetaGameActions({
       addSystemMessage(`${getPlayerName(playerId)} requested a takeback.`);
     },
     [
-      isMultiplayerMatch,
       primaryLocalPlayerId,
+      resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
       setActionError,
@@ -802,13 +1089,16 @@ export function useMetaGameActions({
 
   const handleIncomingTakebackRejected = useCallback(
     (playerId: PlayerId) => {
-      if (!isMultiplayerMatch) return;
+      if (!primaryLocalPlayerId) return;
+      if (resolveSeatChannel(primaryLocalPlayerId) !== "remote-controller") {
+        return;
+      }
       if (playerId === primaryLocalPlayerId) {
         return;
       }
       if (
-        pendingTakebackRequest?.requester === primaryLocalPlayerId &&
-        pendingTakebackRequest.responder === playerId
+        pendingTakebackRequest?.actorSeatId === primaryLocalPlayerId &&
+        pendingTakebackRequest.opponentSeatId === playerId
       ) {
         setPendingTakebackRequest(null);
       }
@@ -817,9 +1107,9 @@ export function useMetaGameActions({
       );
     },
     [
-      isMultiplayerMatch,
       pendingTakebackRequest,
       primaryLocalPlayerId,
+      resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
     ],
@@ -890,20 +1180,22 @@ export function useMetaGameActions({
   }, [gameState?.status]);
 
   useEffect(() => {
+    const activeDrawOffer = pendingDrawOffer;
     if (
-      !isMultiplayerMatch ||
-      !pendingDrawOffer ||
+      activeDrawOffer?.channel !== "remote-controller" ||
       gameState?.status !== "finished" ||
       gameState?.result?.reason !== "draw-agreement"
     ) {
       return;
     }
+    if (!activeDrawOffer) {
+      return;
+    }
     addSystemMessage(
-      `${getPlayerName(pendingDrawOffer.to)} accepted the draw offer.`,
+      `${getPlayerName(activeDrawOffer.opponentSeatId)} accepted the draw offer.`,
     );
     setPendingDrawOffer(null);
   }, [
-    isMultiplayerMatch,
     pendingDrawOffer,
     gameState?.status,
     gameState?.result?.reason,
@@ -912,22 +1204,25 @@ export function useMetaGameActions({
   ]);
 
   useEffect(() => {
+    const activeTakebackRequest = pendingTakebackRequest;
     if (
-      !isMultiplayerMatch ||
-      pendingTakebackRequest?.requester !== primaryLocalPlayerId ||
+      activeTakebackRequest?.channel !== "remote-controller" ||
+      activeTakebackRequest?.actorSeatId !== primaryLocalPlayerId ||
       !gameState
     ) {
       return;
     }
+    if (!activeTakebackRequest) {
+      return;
+    }
     const historyLength = gameState.history.length;
-    if (historyLength < pendingTakebackRequest.historyLengthAtRequest) {
+    if (historyLength < activeTakebackRequest.historyLengthAtRequest) {
       addSystemMessage(
-        `${getPlayerName(pendingTakebackRequest.responder)} accepted the takeback request.`,
+        `${getPlayerName(activeTakebackRequest.opponentSeatId)} accepted the takeback request.`,
       );
       setPendingTakebackRequest(null);
     }
   }, [
-    isMultiplayerMatch,
     pendingTakebackRequest,
     gameState,
     gameState?.history.length,
@@ -941,7 +1236,12 @@ export function useMetaGameActions({
       previousTimeLeftRef.current = null;
       return;
     }
-    if (!isMultiplayerMatch || !primaryLocalPlayerId) {
+    if (!primaryLocalPlayerId) {
+      previousTimeLeftRef.current = { ...gameState.timeLeft };
+      return;
+    }
+    const channel = resolveSeatChannel(primaryLocalPlayerId);
+    if (channel !== "remote-controller") {
       previousTimeLeftRef.current = { ...gameState.timeLeft };
       return;
     }
@@ -960,8 +1260,8 @@ export function useMetaGameActions({
     }
   }, [
     gameState,
-    isMultiplayerMatch,
     primaryLocalPlayerId,
+    resolveSeatChannel,
     getPlayerName,
     setIncomingPassiveNotice,
   ]);

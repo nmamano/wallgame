@@ -32,6 +32,7 @@ import {
   isLocalController,
   isRemoteController,
   isSupportedController,
+  type ControllerActionKind,
   type GamePlayerController,
   type PlayerControllerContext,
 } from "@/lib/player-controllers";
@@ -57,6 +58,7 @@ import {
   resolvePlayerColor,
 } from "@/lib/gameViewModel";
 import { SpectatorSession } from "@/lib/spectator-controller";
+import { describeControllerError } from "@/lib/controller-errors";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -94,6 +96,20 @@ interface RematchState {
   requestId: number;
   decliner?: PlayerId;
   offerer?: PlayerId;
+}
+
+function buildUnexpectedControllerErrorMessage(
+  action: ControllerActionKind,
+  error: unknown,
+): string {
+  return describeControllerError(action, {
+    kind: "Unknown",
+    message:
+      error instanceof Error
+        ? error.message
+        : "Unexpected error while talking to the controller.",
+    cause: error,
+  });
 }
 
 const DEFAULT_CONFIG: GameConfiguration = {
@@ -1046,7 +1062,6 @@ export function useGamePageController(gameId: string) {
     gameStateRef,
     primaryLocalPlayerId,
     autoAcceptingLocalIds,
-    isMultiplayerMatch,
     getSeatController,
     performGameAction: performGameActionImpl,
     updateGameState,
@@ -1435,29 +1450,49 @@ export function useGamePageController(gameId: string) {
     if (!primaryLocalPlayerId) return;
     if (!canOfferRematch) return;
     if (isMultiplayerMatch) {
+      const actionKind: ControllerActionKind = "respondRematch";
       const seatController = getSeatController(primaryLocalPlayerId);
       if (
         !seatController ||
         typeof seatController.respondToRematch !== "function"
       ) {
-        setActionError("Connection unavailable.");
+        setActionError(
+          describeControllerError(actionKind, {
+            kind: "ControllerUnavailable",
+            action: actionKind,
+          }),
+        );
         return;
       }
-      void seatController.respondToRematch("accepted");
-      setRematchState((prev) => {
-        if (prev.status !== "pending") return prev;
-        return {
-          ...prev,
-          status: "starting",
-          responses: {
-            ...prev.responses,
-            [primaryLocalPlayerId]: "accepted",
-          },
-        };
-      });
-      addSystemMessage(
-        `${getPlayerName(primaryLocalPlayerId)} accepted the rematch.`,
-      );
+      setActionError(null);
+      void seatController
+        .respondToRematch("accepted")
+        .then((result) => {
+          if (!result.ok) {
+            setActionError(describeControllerError(actionKind, result.error));
+            return;
+          }
+          setRematchState((prev) => {
+            if (prev.status !== "pending") return prev;
+            return {
+              ...prev,
+              status: "starting",
+              responses: {
+                ...prev.responses,
+                [primaryLocalPlayerId]: "accepted",
+              },
+            };
+          });
+          addSystemMessage(
+            `${getPlayerName(primaryLocalPlayerId)} accepted the rematch.`,
+          );
+        })
+        .catch((error) => {
+          console.error(error);
+          setActionError(
+            buildUnexpectedControllerErrorMessage(actionKind, error),
+          );
+        });
       return;
     }
     respondToRematch(primaryLocalPlayerId, "accepted");
@@ -1476,27 +1511,47 @@ export function useGamePageController(gameId: string) {
     if (!primaryLocalPlayerId) return;
     if (!canOfferRematch) return;
     if (isMultiplayerMatch) {
+      const actionKind: ControllerActionKind = "respondRematch";
       const seatController = getSeatController(primaryLocalPlayerId);
       if (
         !seatController ||
         typeof seatController.respondToRematch !== "function"
       ) {
-        setActionError("Connection unavailable.");
+        setActionError(
+          describeControllerError(actionKind, {
+            kind: "ControllerUnavailable",
+            action: actionKind,
+          }),
+        );
         return;
       }
-      void seatController.respondToRematch("declined");
-      setRematchState((prev) => ({
-        ...prev,
-        status: "declined",
-        decliner: primaryLocalPlayerId,
-        responses: {
-          ...prev.responses,
-          [primaryLocalPlayerId]: "declined",
-        },
-      }));
-      addSystemMessage(
-        `${getPlayerName(primaryLocalPlayerId)} declined the rematch.`,
-      );
+      setActionError(null);
+      void seatController
+        .respondToRematch("declined")
+        .then((result) => {
+          if (!result.ok) {
+            setActionError(describeControllerError(actionKind, result.error));
+            return;
+          }
+          setRematchState((prev) => ({
+            ...prev,
+            status: "declined",
+            decliner: primaryLocalPlayerId,
+            responses: {
+              ...prev.responses,
+              [primaryLocalPlayerId]: "declined",
+            },
+          }));
+          addSystemMessage(
+            `${getPlayerName(primaryLocalPlayerId)} declined the rematch.`,
+          );
+        })
+        .catch((error) => {
+          console.error(error);
+          setActionError(
+            buildUnexpectedControllerErrorMessage(actionKind, error),
+          );
+        });
       return;
     }
     respondToRematch(primaryLocalPlayerId, "declined");
@@ -1517,25 +1572,45 @@ export function useGamePageController(gameId: string) {
       openRematchWindow();
       return;
     }
+    const actionKind: ControllerActionKind = "offerRematch";
     const seatController = getSeatController(primaryLocalPlayerId);
     if (!seatController || typeof seatController.offerRematch !== "function") {
-      setActionError("Connection unavailable.");
+      setActionError(
+        describeControllerError(actionKind, {
+          kind: "ControllerUnavailable",
+          action: actionKind,
+        }),
+      );
       return;
     }
     if (!primaryLocalPlayerId) return;
-    void seatController.offerRematch();
-    rematchRequestIdRef.current += 1;
-    const requestId = rematchRequestIdRef.current;
-    setRematchState({
-      status: "pending",
-      responses: {
-        1: primaryLocalPlayerId === 1 ? "accepted" : "pending",
-        2: primaryLocalPlayerId === 2 ? "accepted" : "pending",
-      },
-      requestId,
-      offerer: primaryLocalPlayerId,
-    });
-    addSystemMessage("Rematch proposed. Waiting for opponent...");
+    setActionError(null);
+    void seatController
+      .offerRematch()
+      .then((result) => {
+        if (!result.ok) {
+          setActionError(describeControllerError(actionKind, result.error));
+          return;
+        }
+        rematchRequestIdRef.current += 1;
+        const requestId = rematchRequestIdRef.current;
+        setRematchState({
+          status: "pending",
+          responses: {
+            1: primaryLocalPlayerId === 1 ? "accepted" : "pending",
+            2: primaryLocalPlayerId === 2 ? "accepted" : "pending",
+          },
+          requestId,
+          offerer: primaryLocalPlayerId,
+        });
+        addSystemMessage("Rematch proposed. Waiting for opponent...");
+      })
+      .catch((error) => {
+        console.error(error);
+        setActionError(
+          buildUnexpectedControllerErrorMessage(actionKind, error),
+        );
+      });
   }, [
     addSystemMessage,
     canOfferRematch,
@@ -1550,7 +1625,14 @@ export function useGamePageController(gameId: string) {
     if (rematchState.status === "pending" && primaryLocalPlayerId) {
       if (isMultiplayerMatch) {
         const seatController = getSeatController(primaryLocalPlayerId);
-        void seatController?.respondToRematch?.("declined");
+        if (
+          seatController &&
+          typeof seatController.respondToRematch === "function"
+        ) {
+          void seatController
+            .respondToRematch("declined")
+            .catch((error) => console.error(error));
+        }
         setRematchState((prev) => ({
           ...prev,
           status: "declined",
@@ -2140,18 +2222,20 @@ export function useGamePageController(gameId: string) {
 
   const actionablePlayerId = resolveBoardControlPlayerId();
   const actionPanelPlayerId = primaryLocalPlayerId ?? null;
+  const pendingDrawOffer = metaGameActions.pendingDrawOffer;
+  const pendingTakebackRequest = metaGameActions.pendingTakebackRequest;
   const actionPanelAvailable =
     actionPanelPlayerId != null &&
     !interactionLocked &&
     gameState?.status === "playing";
   const pendingDrawForLocal =
-    metaGameActions.pendingDrawOffer?.status === "pending" &&
+    pendingDrawOffer?.status === "pending" &&
     actionPanelPlayerId != null &&
-    metaGameActions.pendingDrawOffer.from === actionPanelPlayerId;
+    pendingDrawOffer.actorSeatId === actionPanelPlayerId;
   const takebackPendingForLocal =
-    metaGameActions.pendingTakebackRequest?.status === "pending" &&
+    pendingTakebackRequest?.status === "pending" &&
     actionPanelPlayerId != null &&
-    metaGameActions.pendingTakebackRequest.requester === actionPanelPlayerId;
+    pendingTakebackRequest.actorSeatId === actionPanelPlayerId;
   const hasTakebackHistory = (gameState?.history.length ?? 0) > 0;
   const actionPanelLocked =
     Boolean(metaGameActions.resignFlowPlayerId) ||
@@ -2160,21 +2244,20 @@ export function useGamePageController(gameId: string) {
     Boolean(pendingDrawForLocal) ||
     Boolean(takebackPendingForLocal);
   const actionButtonsDisabled = !actionPanelAvailable || actionPanelLocked;
-  const canCancelDrawOffer = !isMultiplayerMatch
-    ? Boolean(
-        seatCapabilities?.canOfferDraw &&
-        pendingDrawForLocal &&
-        clockTick - (metaGameActions.pendingDrawOffer?.createdAt ?? 0) >= 2000,
-      )
-    : null;
-  const canCancelTakebackRequest = !isMultiplayerMatch
-    ? Boolean(
-        seatCapabilities?.canRequestTakeback &&
-        takebackPendingForLocal &&
-        clockTick - (metaGameActions.pendingTakebackRequest?.createdAt ?? 0) >=
-          2000,
-      )
-    : null;
+  const canCancelDrawOffer =
+    pendingDrawForLocal && pendingDrawOffer?.channel === "local-state"
+      ? Boolean(
+          seatCapabilities?.canOfferDraw &&
+          clockTick - (pendingDrawOffer.createdAt ?? 0) >= 2000,
+        )
+      : null;
+  const canCancelTakebackRequest =
+    takebackPendingForLocal && pendingTakebackRequest?.channel === "local-state"
+      ? Boolean(
+          seatCapabilities?.canRequestTakeback &&
+          clockTick - (pendingTakebackRequest.createdAt ?? 0) >= 2000,
+        )
+      : null;
   const manualActionsDisabled = !controllerAllowsInteraction;
   const hasActionMessage = Boolean(actionError) || Boolean(selectedPawn);
   const actionStatusText =

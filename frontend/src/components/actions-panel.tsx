@@ -2,6 +2,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Flag, Handshake, RotateCcw, Timer } from "lucide-react";
 import type { PlayerId } from "../../../shared/domain/game-types";
+import type { ActionChannel } from "@/lib/player-controllers";
 
 interface DrawDecisionPromptState {
   from: PlayerId;
@@ -26,20 +27,22 @@ interface OutgoingTimeInfo {
 }
 
 interface PendingDrawOfferState {
-  from: PlayerId;
-  to: PlayerId;
+  actorSeatId: PlayerId;
+  opponentSeatId: PlayerId;
   requestId: number;
   status: "pending";
   createdAt: number;
+  channel: ActionChannel;
 }
 
 interface PendingTakebackRequestState {
-  requester: PlayerId;
-  responder: PlayerId;
+  actorSeatId: PlayerId;
+  opponentSeatId: PlayerId;
   requestId: number;
   status: "pending";
   createdAt: number;
   historyLengthAtRequest: number;
+  channel: ActionChannel;
 }
 
 interface ActionsPanelProps {

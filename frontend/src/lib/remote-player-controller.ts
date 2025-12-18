@@ -1,11 +1,21 @@
 import { GameClient } from "@/lib/game-client";
-import type { GameClientHandlers } from "@/lib/game-client";
+import type {
+  GameClientHandlers,
+  ActionRequestOutcome,
+} from "@/lib/game-client";
 import {
+  type ActionChannel,
   LocalHumanController,
+  controllerError,
+  controllerOk,
   getCapabilitiesForType,
+  type ControllerActionKind,
   type ControllerCapabilities,
+  type ControllerResult,
   type DrawDecision,
   type DrawOfferContext,
+  type MetaActionKind,
+  type MetaActionPayload,
   type PlayerControllerContext,
   type RemoteHumanController,
   type RematchDecision,
@@ -14,11 +24,22 @@ import {
 } from "@/lib/player-controllers";
 import type { PlayerType } from "@/lib/gameViewModel";
 import type { Move, PlayerId } from "../../../shared/domain/game-types";
+import type { ActionRequestPayload } from "../../../shared/contracts/controller-actions";
 
 export type RemoteControllerHandlers = GameClientHandlers;
 
+const CONTROLLER_ACTION_DESCRIPTIONS: Record<ControllerActionKind, string> = {
+  resign: "resign",
+  offerDraw: "offer a draw",
+  requestTakeback: "request a takeback",
+  giveTime: "adjust the clocks",
+  offerRematch: "offer a rematch",
+  respondRematch: "respond to a rematch",
+};
+
 export class RemotePlayerController implements RemoteHumanController {
   public readonly kind = "remote-human" as const;
+  public readonly actionChannel: ActionChannel = "remote-controller";
   public readonly capabilities: ControllerCapabilities;
   private client: GameClient | null = null;
   private readonly delegate: LocalHumanController;
@@ -125,16 +146,12 @@ export class RemotePlayerController implements RemoteHumanController {
     cancelableDelegate.cancel?.(reason);
   }
 
-  resign(): Promise<void> {
-    const client = this.getClient();
-    client.sendResign();
-    return Promise.resolve();
+  resign(): Promise<ControllerResult<void>> {
+    return this.runClientAction("resign");
   }
 
-  offerDraw(): Promise<void> {
-    const client = this.getClient();
-    client.sendDrawOffer();
-    return Promise.resolve();
+  offerDraw(): Promise<ControllerResult<void>> {
+    return this.runClientAction("offerDraw");
   }
 
   respondToRemoteDraw(decision: DrawDecision): Promise<void> {
@@ -147,10 +164,8 @@ export class RemotePlayerController implements RemoteHumanController {
     return Promise.resolve();
   }
 
-  requestTakeback(): Promise<void> {
-    const client = this.getClient();
-    client.sendTakebackOffer();
-    return Promise.resolve();
+  requestTakeback(): Promise<ControllerResult<void>> {
+    return this.runClientAction("requestTakeback");
   }
 
   respondToRemoteTakeback(decision: TakebackDecision): Promise<void> {
@@ -163,26 +178,49 @@ export class RemotePlayerController implements RemoteHumanController {
     return Promise.resolve();
   }
 
-  giveTime(seconds: number): Promise<void> {
-    const client = this.getClient();
-    client.sendGiveTime(seconds);
-    return Promise.resolve();
+  giveTime(seconds: number): Promise<ControllerResult<void>> {
+    return this.runClientAction("giveTime", { seconds });
   }
 
-  offerRematch(): Promise<void> {
-    const client = this.getClient();
-    client.sendRematchOffer();
-    return Promise.resolve();
+  offerRematch(): Promise<ControllerResult<void>> {
+    return this.runClientAction("offerRematch");
   }
 
-  respondToRematch(decision: RematchDecision): Promise<void> {
-    const client = this.getClient();
-    if (decision === "accepted") {
-      client.sendRematchAccept();
-      return Promise.resolve();
+  respondToRematch(decision: RematchDecision): Promise<ControllerResult<void>> {
+    return this.runClientAction("respondRematch", { decision });
+  }
+
+  performVoluntaryAction<K extends MetaActionKind>(
+    action: K,
+    payload: MetaActionPayload<K>,
+  ): Promise<ControllerResult<void>> {
+    switch (action) {
+      case "resign": {
+        return this.resign();
+      }
+      case "offerDraw": {
+        return this.offerDraw();
+      }
+      case "requestTakeback": {
+        return this.requestTakeback();
+      }
+      case "giveTime": {
+        const seconds =
+          (payload as MetaActionPayload<"giveTime"> | undefined)?.seconds ?? 0;
+        return this.giveTime(seconds);
+      }
+      default: {
+        const exhaustiveCheck: never = action;
+        void exhaustiveCheck;
+        return Promise.resolve(
+          controllerError({
+            kind: "UnsupportedAction",
+            action,
+            message: "Unsupported meta action.",
+          }),
+        );
+      }
     }
-    client.sendRematchReject();
-    return Promise.resolve();
   }
 
   private getClient(): GameClient {
@@ -190,5 +228,84 @@ export class RemotePlayerController implements RemoteHumanController {
       throw new Error("Connection unavailable.");
     }
     return this.client;
+  }
+
+  private ensureClientFor(
+    action: ControllerActionKind,
+  ): ControllerResult<GameClient> {
+    if (!this.client || !this.isConnected()) {
+      return controllerError({
+        kind: "TransientTransport",
+        action,
+        message: `Cannot ${CONTROLLER_ACTION_DESCRIPTIONS[action]} because the game server connection is unavailable.`,
+      });
+    }
+    return controllerOk(this.client);
+  }
+
+  private runClientAction<K extends ControllerActionKind>(
+    action: K,
+    payload?: ActionRequestPayload<K>,
+  ): Promise<ControllerResult<void>> {
+    const clientResult = this.ensureClientFor(action);
+    if (!clientResult.ok) {
+      return Promise.resolve(controllerError(clientResult.error));
+    }
+    return this.dispatchActionRequest(clientResult.value, action, payload);
+  }
+
+  private async dispatchActionRequest<K extends ControllerActionKind>(
+    client: GameClient,
+    action: K,
+    payload?: ActionRequestPayload<K>,
+  ): Promise<ControllerResult<void>> {
+    try {
+      const outcome = await client.sendActionRequest(action, payload);
+      return this.translateOutcome(action, outcome);
+    } catch (error) {
+      return controllerError({
+        kind: "Unknown",
+        action,
+        message:
+          error instanceof Error
+            ? error.message
+            : "Unexpected error while sending action request.",
+        cause: error,
+      });
+    }
+  }
+
+  private translateOutcome(
+    action: ControllerActionKind,
+    outcome: ActionRequestOutcome,
+  ): ControllerResult<void> {
+    switch (outcome.kind) {
+      case "ack":
+        return controllerOk(undefined);
+      case "nack":
+        return controllerError({
+          kind: "ActionRejected",
+          action,
+          code: outcome.code,
+          message: outcome.message,
+        });
+      case "transport-error":
+        return controllerError({
+          kind: "TransientTransport",
+          action,
+          message:
+            outcome.message ??
+            `Unable to ${CONTROLLER_ACTION_DESCRIPTIONS[action]} due to connection issues.`,
+        });
+      default: {
+        const exhaustiveCheck: never = outcome;
+        void exhaustiveCheck;
+        return controllerError({
+          kind: "Unknown",
+          action,
+          message: "Unexpected controller outcome.",
+        });
+      }
+    }
   }
 }

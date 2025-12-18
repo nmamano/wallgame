@@ -2,6 +2,16 @@ import type { PlayerType } from "@/lib/gameViewModel";
 import { getAiMove } from "./dumb-ai";
 import type { PlayerId, Move } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import type {
+  ControllerActionKind,
+  RematchDecision,
+} from "../../../shared/contracts/controller-actions";
+export type {
+  ControllerActionKind,
+  RematchDecision,
+} from "../../../shared/contracts/controller-actions";
+
+export type ActionChannel = "local-state" | "remote-controller";
 
 export type PlayerControllerKind =
   | "local-human"
@@ -11,8 +21,6 @@ export type PlayerControllerKind =
 
 export type DrawDecision = "accept" | "reject";
 export type TakebackDecision = "allow" | "decline";
-export type RematchDecision = "accepted" | "declined";
-
 export interface PlayerControllerContext {
   state: GameState;
   playerId: PlayerId;
@@ -37,24 +45,87 @@ export interface ControllerCapabilities {
   canUseChat: boolean;
 }
 
+export interface MetaActionPayloadMap {
+  resign: void;
+  offerDraw: void;
+  requestTakeback: void;
+  giveTime: { seconds: number };
+}
+
+export type MetaActionKind = keyof MetaActionPayloadMap;
+
+export type MetaActionPayload<K extends MetaActionKind> =
+  MetaActionPayloadMap[K];
+
+export type Result<T, E> = { ok: true; value: T } | { ok: false; error: E };
+
+interface ControllerErrorBase {
+  message?: string;
+  cause?: unknown;
+}
+
+export type ControllerError =
+  | ({
+      kind: "ControllerUnavailable";
+      action?: ControllerActionKind;
+    } & ControllerErrorBase)
+  | ({
+      kind: "NotCapable";
+      action: ControllerActionKind;
+    } & ControllerErrorBase)
+  | ({
+      kind: "TransientTransport";
+      action?: ControllerActionKind;
+    } & ControllerErrorBase)
+  | ({
+      kind: "ActionRejected";
+      action: ControllerActionKind;
+      code?: string;
+    } & ControllerErrorBase)
+  | ({
+      kind: "UnsupportedAction";
+      action: ControllerActionKind;
+    } & ControllerErrorBase)
+  | ({
+      kind: "Unknown";
+      action?: ControllerActionKind;
+    } & ControllerErrorBase);
+
+export type ControllerResult<T = void> = Result<T, ControllerError>;
+
+export function controllerOk<T = void>(value: T): ControllerResult<T> {
+  return { ok: true, value };
+}
+
+export function controllerError(
+  error: ControllerError,
+): ControllerResult<never> {
+  return { ok: false, error };
+}
+
 interface BasePlayerController {
   playerId: PlayerId;
   playerType: PlayerType;
   kind: PlayerControllerKind;
+  actionChannel: ActionChannel;
   capabilities: ControllerCapabilities;
   makeMove(context: PlayerControllerContext): Promise<Move>;
   respondToDrawOffer(context: DrawOfferContext): Promise<DrawDecision>;
   respondToTakebackRequest(
     context: TakebackRequestContext,
   ): Promise<TakebackDecision>;
-  resign?(): Promise<void>;
-  offerDraw?(): Promise<void>;
+  performVoluntaryAction?<K extends MetaActionKind>(
+    action: K,
+    payload: MetaActionPayload<K>,
+  ): Promise<ControllerResult<void>>;
+  resign?(): Promise<ControllerResult<void>>;
+  offerDraw?(): Promise<ControllerResult<void>>;
   respondToRemoteDraw?(decision: DrawDecision): Promise<void>;
-  requestTakeback?(): Promise<void>;
+  requestTakeback?(): Promise<ControllerResult<void>>;
   respondToRemoteTakeback?(decision: TakebackDecision): Promise<void>;
-  giveTime?(seconds: number): Promise<void>;
-  offerRematch?(): Promise<void>;
-  respondToRematch?(decision: RematchDecision): Promise<void>;
+  giveTime?(seconds: number): Promise<ControllerResult<void>>;
+  offerRematch?(): Promise<ControllerResult<void>>;
+  respondToRematch?(decision: RematchDecision): Promise<ControllerResult<void>>;
   handleStateUpdate?(context: PlayerControllerContext): void;
   cancel?(reason?: unknown): void;
 }
@@ -137,6 +208,7 @@ export function isRemoteController(
 
 export class LocalHumanController implements LocalPlayerController {
   kind = "local-human" as const;
+  actionChannel = "local-state" as const;
   readonly capabilities = getCapabilitiesForType("you");
   private pendingMove: {
     resolve: (move: Move) => void;
@@ -239,10 +311,17 @@ export class LocalHumanController implements LocalPlayerController {
       this.pendingTakebackDecision = null;
     }
   }
+
+  performVoluntaryAction(): never {
+    throw new Error(
+      "LocalHumanController cannot perform voluntary actions directly.",
+    );
+  }
 }
 
 class EasyBotController implements AutomatedPlayerController {
   kind = "easy-bot" as const;
+  actionChannel = "local-state" as const;
   readonly capabilities = getCapabilitiesForType("easy-bot");
 
   constructor(
@@ -281,10 +360,17 @@ class EasyBotController implements AutomatedPlayerController {
   cancel(): void {
     // Nothing to cancel for deterministic bots right now.
   }
+
+  performVoluntaryAction(): never {
+    throw new Error(
+      "Bots do not initiate voluntary actions through MetaActionExecutor.",
+    );
+  }
 }
 
 class UnsupportedController implements UnsupportedPlayerController {
   kind = "unsupported" as const;
+  actionChannel = "local-state" as const;
   readonly capabilities = getCapabilitiesForType("friend");
 
   constructor(
@@ -314,6 +400,10 @@ class UnsupportedController implements UnsupportedPlayerController {
 
   cancel(): void {
     // Nothing to cancel.
+  }
+
+  performVoluntaryAction(): never {
+    throw new Error("Unsupported controller cannot perform voluntary actions.");
   }
 }
 

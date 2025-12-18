@@ -6,7 +6,15 @@ import type {
 import type {
   ClientMessage,
   ServerMessage,
+  ActionRequestMessage,
+  ActionAckMessage,
+  ActionNackMessage,
 } from "../../../shared/contracts/websocket-messages";
+import type {
+  ControllerActionKind,
+  ActionRequestPayload,
+  ActionNackCode,
+} from "../../../shared/contracts/controller-actions";
 
 export interface GameClientHandlers {
   onState?: (state: SerializedGameState) => void;
@@ -20,6 +28,24 @@ export interface GameClientHandlers {
   onError?: (message: string) => void;
 }
 
+export type ActionRequestOutcome =
+  | { kind: "ack" }
+  | {
+      kind: "nack";
+      code: ActionNackCode;
+      message?: string;
+      retryable?: boolean;
+    }
+  | { kind: "transport-error"; message?: string };
+
+interface InflightActionRequest {
+  action: ControllerActionKind;
+  resolve: (outcome: ActionRequestOutcome) => void;
+  timeoutId: number;
+}
+
+const ACTION_RESPONSE_TIMEOUT_MS = 5000;
+
 const buildSocketUrl = (gameId: string, token: string): string => {
   const base = new URL(window.location.origin);
   base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
@@ -31,6 +57,7 @@ const buildSocketUrl = (gameId: string, token: string): string => {
 export class GameClient {
   private socket: WebSocket | null = null;
   private handlers: GameClientHandlers = {};
+  private readonly inflightRequests = new Map<string, InflightActionRequest>();
 
   constructor(
     private readonly params: {
@@ -87,6 +114,10 @@ export class GameClient {
           this.handlers.onTakebackOffer?.(payload.playerId);
         } else if (payload.type === "takeback-rejected") {
           this.handlers.onTakebackRejected?.(payload.playerId);
+        } else if (payload.type === "actionAck") {
+          this.handleActionAck(payload);
+        } else if (payload.type === "actionNack") {
+          this.handleActionNack(payload);
         }
       } catch (error) {
         console.error("Failed to parse websocket message", error);
@@ -96,6 +127,7 @@ export class GameClient {
       console.debug("[game-client] websocket closed", {
         gameId: this.params.gameId,
       });
+      this.resolveAllInflightAsTransportError("Connection to server closed.");
       this.handlers.onError?.("Connection to server closed.");
     });
     this.socket.addEventListener("error", (event) => {
@@ -104,6 +136,7 @@ export class GameClient {
         readyState: this.socket?.readyState,
         event,
       });
+      this.resolveAllInflightAsTransportError("WebSocket error occurred.");
       this.handlers.onError?.("WebSocket error occurred.");
     });
   }
@@ -114,6 +147,39 @@ export class GameClient {
       return;
     }
     this.socket.send(JSON.stringify(payload));
+  }
+
+  sendActionRequest<K extends ControllerActionKind>(
+    action: K,
+    payload?: ActionRequestPayload<K>,
+  ): Promise<ActionRequestOutcome> {
+    const requestId = crypto.randomUUID();
+    const message: ActionRequestMessage<K> = {
+      type: "action-request",
+      requestId,
+      action,
+    };
+    if (payload !== undefined) {
+      message.payload = payload;
+    }
+
+    return new Promise<ActionRequestOutcome>((resolve) => {
+      const timeoutId = window.setTimeout(() => {
+        this.inflightRequests.delete(requestId);
+        resolve({
+          kind: "transport-error",
+          message: "The server did not acknowledge the action.",
+        });
+      }, ACTION_RESPONSE_TIMEOUT_MS);
+
+      this.inflightRequests.set(requestId, {
+        action,
+        resolve,
+        timeoutId,
+      });
+
+      this.send(message as ClientMessage);
+    });
   }
 
   sendMove(move: Move): void {
@@ -170,5 +236,44 @@ export class GameClient {
 
   close(): void {
     this.socket?.close();
+  }
+
+  private handleActionAck(message: ActionAckMessage): void {
+    const entry = this.inflightRequests.get(message.requestId);
+    if (!entry) {
+      return;
+    }
+    window.clearTimeout(entry.timeoutId);
+    this.inflightRequests.delete(message.requestId);
+    entry.resolve({ kind: "ack" });
+  }
+
+  private handleActionNack(message: ActionNackMessage): void {
+    const entry = this.inflightRequests.get(message.requestId);
+    if (!entry) {
+      return;
+    }
+    window.clearTimeout(entry.timeoutId);
+    this.inflightRequests.delete(message.requestId);
+    entry.resolve({
+      kind: "nack",
+      code: message.code,
+      message: message.message,
+      retryable: message.retryable,
+    });
+  }
+
+  private resolveAllInflightAsTransportError(reason: string): void {
+    if (this.inflightRequests.size === 0) {
+      return;
+    }
+    this.inflightRequests.forEach((entry, requestId) => {
+      window.clearTimeout(entry.timeoutId);
+      entry.resolve({
+        kind: "transport-error",
+        message: reason,
+      });
+      this.inflightRequests.delete(requestId);
+    });
   }
 }
