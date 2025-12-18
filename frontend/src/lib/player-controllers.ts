@@ -3,10 +3,16 @@ import { getAiMove } from "./dumb-ai";
 import type { PlayerId, Move } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
 
-export type PlayerControllerKind = "local-human" | "easy-bot" | "unsupported";
+export type PlayerControllerKind =
+  | "local-human"
+  | "remote-human"
+  | "remote-spectator"
+  | "easy-bot"
+  | "unsupported";
 
 export type DrawDecision = "accept" | "reject";
 export type TakebackDecision = "allow" | "decline";
+export type RematchDecision = "accepted" | "declined";
 
 export interface PlayerControllerContext {
   state: GameState;
@@ -22,24 +28,58 @@ export interface TakebackRequestContext extends PlayerControllerContext {
   requestedBy: PlayerId;
 }
 
+export interface ControllerCapabilities {
+  canMove: boolean;
+  canOfferDraw: boolean;
+  canRespondToDraw: boolean;
+  canRequestTakeback: boolean;
+  canRespondToTakeback: boolean;
+  canOfferRematch: boolean;
+  canUseChat: boolean;
+}
+
 interface BasePlayerController {
   playerId: PlayerId;
   playerType: PlayerType;
   kind: PlayerControllerKind;
+  capabilities: ControllerCapabilities;
   makeMove(context: PlayerControllerContext): Promise<Move>;
   respondToDrawOffer(context: DrawOfferContext): Promise<DrawDecision>;
   respondToTakebackRequest(
     context: TakebackRequestContext,
   ): Promise<TakebackDecision>;
+  resign?(): Promise<void>;
+  offerDraw?(): Promise<void>;
+  respondToRemoteDraw?(decision: DrawDecision): Promise<void>;
+  requestTakeback?(): Promise<void>;
+  respondToRemoteTakeback?(decision: TakebackDecision): Promise<void>;
+  giveTime?(seconds: number): Promise<void>;
+  offerRematch?(): Promise<void>;
+  respondToRematch?(decision: RematchDecision): Promise<void>;
+  handleStateUpdate?(context: PlayerControllerContext): void;
   cancel?(reason?: unknown): void;
 }
 
-export interface LocalPlayerController extends BasePlayerController {
-  kind: "local-human";
+export interface ManualPlayerController extends BasePlayerController {
   submitMove(move: Move): void;
   hasPendingMove(): boolean;
   submitDrawDecision(decision: DrawDecision): void;
   submitTakebackDecision(decision: TakebackDecision): void;
+}
+
+export interface LocalPlayerController extends ManualPlayerController {
+  kind: "local-human";
+}
+
+export interface RemoteHumanController extends ManualPlayerController {
+  kind: "remote-human";
+  connect?(handlers: unknown): void;
+  disconnect?(): void;
+  isConnected(): boolean;
+}
+
+export interface SpectatorPlayerController extends BasePlayerController {
+  kind: "remote-spectator";
 }
 
 export interface AutomatedPlayerController extends BasePlayerController {
@@ -52,6 +92,8 @@ export interface UnsupportedPlayerController extends BasePlayerController {
 
 export type GamePlayerController =
   | LocalPlayerController
+  | RemoteHumanController
+  | SpectatorPlayerController
   | AutomatedPlayerController
   | UnsupportedPlayerController;
 
@@ -72,8 +114,10 @@ export function createPlayerController(args: {
 
 export function isLocalController(
   controller: GamePlayerController,
-): controller is LocalPlayerController {
-  return controller.kind === "local-human";
+): controller is LocalPlayerController | RemoteHumanController {
+  return (
+    controller.kind === "local-human" || controller.kind === "remote-human"
+  );
 }
 
 export function isAutomatedController(
@@ -84,12 +128,29 @@ export function isAutomatedController(
 
 export function isSupportedController(
   controller: GamePlayerController,
-): controller is LocalPlayerController | AutomatedPlayerController {
+): controller is
+  | LocalPlayerController
+  | RemoteHumanController
+  | SpectatorPlayerController
+  | AutomatedPlayerController {
   return controller.kind !== "unsupported";
 }
 
-class LocalHumanController implements LocalPlayerController {
+export function isSpectatorController(
+  controller: GamePlayerController,
+): controller is SpectatorPlayerController {
+  return controller.kind === "remote-spectator";
+}
+
+export function isRemoteController(
+  controller: GamePlayerController,
+): controller is RemoteHumanController {
+  return controller.kind === "remote-human";
+}
+
+export class LocalHumanController implements LocalPlayerController {
   kind = "local-human" as const;
+  readonly capabilities = getCapabilitiesForType("you");
   private pendingMove: {
     resolve: (move: Move) => void;
     reject: (reason?: unknown) => void;
@@ -195,6 +256,7 @@ class LocalHumanController implements LocalPlayerController {
 
 class EasyBotController implements AutomatedPlayerController {
   kind = "easy-bot" as const;
+  readonly capabilities = getCapabilitiesForType("easy-bot");
 
   constructor(
     public playerId: PlayerId,
@@ -236,6 +298,7 @@ class EasyBotController implements AutomatedPlayerController {
 
 class UnsupportedController implements UnsupportedPlayerController {
   kind = "unsupported" as const;
+  readonly capabilities = getCapabilitiesForType("friend");
 
   constructor(
     public playerId: PlayerId,
@@ -269,4 +332,46 @@ class UnsupportedController implements UnsupportedPlayerController {
 
 function delay(ms: number): Promise<void> {
   return new Promise((resolve) => setTimeout(resolve, ms));
+}
+
+const BASE_CAPABILITIES: ControllerCapabilities = {
+  canMove: false,
+  canOfferDraw: false,
+  canRespondToDraw: false,
+  canRequestTakeback: false,
+  canRespondToTakeback: false,
+  canOfferRematch: false,
+  canUseChat: false,
+};
+
+const CAPABILITIES_BY_TYPE: Record<PlayerType, ControllerCapabilities> = {
+  you: {
+    canMove: true,
+    canOfferDraw: true,
+    canRespondToDraw: true,
+    canRequestTakeback: true,
+    canRespondToTakeback: true,
+    canOfferRematch: true,
+    canUseChat: true,
+  },
+  friend: BASE_CAPABILITIES,
+  "matched-user": BASE_CAPABILITIES,
+  "easy-bot": {
+    canMove: true,
+    canOfferDraw: true,
+    canRespondToDraw: true,
+    canRequestTakeback: true,
+    canRespondToTakeback: true,
+    canOfferRematch: true,
+    canUseChat: false,
+  },
+  "medium-bot": BASE_CAPABILITIES,
+  "hard-bot": BASE_CAPABILITIES,
+  "custom-bot": BASE_CAPABILITIES,
+};
+
+export function getCapabilitiesForType(
+  playerType: PlayerType,
+): ControllerCapabilities {
+  return { ...CAPABILITIES_BY_TYPE[playerType] };
 }

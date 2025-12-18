@@ -30,23 +30,24 @@ import {
   createPlayerController,
   isAutomatedController,
   isLocalController,
+  isRemoteController,
   isSupportedController,
   type GamePlayerController,
+  type PlayerControllerContext,
 } from "@/lib/player-controllers";
-import { GameClient } from "@/lib/game-client";
+import { RemotePlayerController } from "@/lib/remote-player-controller";
 import { useOnlineGameSession } from "@/hooks/use-online-game-session";
 import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
 } from "@/lib/game-state-utils";
-import { useSpectatorGameController } from "@/hooks/use-spectator-game-controller";
-import type { GameSnapshot } from "../../../shared/domain/game-types";
+import type {
+  GameSnapshot,
+  SerializedGameState,
+} from "../../../shared/domain/game-types";
+import { useGameViewModel } from "@/hooks/use-game-view-model";
 import {
-  type GameViewModel,
-  type ServerUpdate,
   type PlayerType,
-  DEFAULT_VIEW_MODEL,
-  applyServerUpdate as applyServerUpdatePure,
   computeLastMoves,
   buildPlayerName,
   actionsEqual,
@@ -55,6 +56,10 @@ import {
   sanitizePlayerList,
   resolvePlayerColor,
 } from "@/lib/gameViewModel";
+import {
+  RemoteSpectatorPlayerController,
+  SpectatorSession,
+} from "@/lib/spectator-controller";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -125,14 +130,32 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
   2: "blue",
 };
 
+const SPECTATOR_PLAYER_TYPES: PlayerType[] = ["friend", "friend"];
+const NOOP = () => undefined;
+
+function buildSpectatorPlayersFromSnapshot(
+  snapshot: GameSnapshot,
+): GamePlayer[] {
+  const ordered = [...snapshot.players].sort((a, b) => {
+    if (a.role === "host" && b.role !== "host") return -1;
+    if (b.role === "host" && a.role !== "host") return 1;
+    return a.playerId - b.playerId;
+  });
+
+  return ordered.map((player) => ({
+    id: `p${player.playerId}`,
+    playerId: player.playerId,
+    name: player.displayName,
+    rating: player.elo ?? 1500,
+    color: DEFAULT_PLAYER_COLORS[player.playerId],
+    type: "friend" as PlayerType,
+    isOnline: player.connected,
+    catSkin: player.appearance?.catSkin,
+    mouseSkin: player.appearance?.mouseSkin,
+  }));
+}
+
 export function useGamePageController(gameId: string) {
-  // Always initialize spectator controller; we may return it later.
-  const spectatorController = useSpectatorGameController(gameId);
-
-  // Early return for spectators - they use a simplified controller
-  // Note: hooks must be called unconditionally, so we call both controllers
-  // but only return the spectator one when appropriate
-
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
@@ -162,21 +185,26 @@ export function useGamePageController(gameId: string) {
     return sessionStorage.getItem(`game-config-${gameId}`) != null;
   });
 
-  // ============================================================================
-  // View Model State - Single source of truth for server-controlled state
-  // ============================================================================
-  const [viewModel, setViewModel] = useState<GameViewModel>(DEFAULT_VIEW_MODEL);
-  const viewModelRef = useRef<GameViewModel>(DEFAULT_VIEW_MODEL);
-
-  // Keep ref in sync with state for use in callbacks
   useEffect(() => {
-    viewModelRef.current = viewModel;
-  }, [viewModel]);
+    if (typeof window === "undefined") {
+      setHasLocalConfig(false);
+      return;
+    }
+    setHasLocalConfig(sessionStorage.getItem(`game-config-${gameId}`) != null);
+  }, [gameId]);
+
+  const {
+    viewModel,
+    applyServerUpdate,
+    updateGameState,
+    resetViewModel,
+    playerColorsForBoardRef,
+  } = useGameViewModel(DEFAULT_PLAYER_COLORS);
 
   // ============================================================================
   // Connection & Session State
   // ============================================================================
-  const gameClientRef = useRef<GameClient | null>(null);
+  const remotePlayerIdRef = useRef<PlayerId | null>(null);
   const gameInitializedRef = useRef(false);
   const gameAwaitingServerRef = useRef(false);
   const playersRef = useRef<GamePlayer[]>([]);
@@ -187,20 +215,6 @@ export function useGamePageController(gameId: string) {
       `Player ${playerId}`,
     [],
   );
-
-  // ============================================================================
-  // Single Entry Point for Server Updates
-  // ============================================================================
-  const playerColorsForBoardRef = useRef<Record<PlayerId, PlayerColor>>({
-    1: DEFAULT_PLAYER_COLORS[1],
-    2: DEFAULT_PLAYER_COLORS[2],
-  });
-
-  const applyServerUpdate = useCallback((update: ServerUpdate) => {
-    setViewModel((prev) =>
-      applyServerUpdatePure(prev, update, playerColorsForBoardRef.current),
-    );
-  }, []);
 
   const handleMatchSnapshotUpdate = useCallback(
     (snapshot: GameSnapshot) => {
@@ -222,6 +236,8 @@ export function useGamePageController(gameId: string) {
     [],
   );
 
+  const shouldUseOnlineSession = !hasLocalConfig;
+
   const {
     gameHandshake,
     matchShareUrl,
@@ -235,7 +251,24 @@ export function useGamePageController(gameId: string) {
     localPreferences,
     onMatchSnapshotUpdate: handleMatchSnapshotUpdate,
     debugMatch,
+    enabled: shouldUseOnlineSession,
   });
+
+  const isSpectatorSession = useMemo(
+    () => !hasLocalConfig && !gameHandshake && !isJoiningMatch && !!matchError,
+    [hasLocalConfig, gameHandshake, isJoiningMatch, matchError],
+  );
+
+  const spectatorSessionRef = useRef<SpectatorSession | null>(null);
+  const spectatorInitializedRef = useRef(false);
+  const [spectatorStatus, setSpectatorStatus] = useState<{
+    isLoading: boolean;
+    error: string | null;
+  }>({
+    isLoading: false,
+    error: null,
+  });
+  const displayMatchError = isSpectatorSession ? null : matchError;
 
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -288,13 +321,16 @@ export function useGamePageController(gameId: string) {
     setMatchParticipants(playerTypes);
   }, [isMultiplayerMatch, playerTypes]);
 
-  const primaryLocalPlayerId = useMemo<PlayerId>(() => {
+  const primaryLocalPlayerId = useMemo<PlayerId | null>(() => {
     const idx = playerTypes.findIndex((type) => type === "you");
-    return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
+    if (idx === -1) return null;
+    return (idx + 1) as PlayerId;
   }, [playerTypes]);
 
   const friendColorOverrides = useMemo(() => {
-    if (!isMultiplayerMatch || !viewModel.match) return {};
+    if ((!isMultiplayerMatch && !isSpectatorSession) || !viewModel.match) {
+      return {};
+    }
     const map: Partial<Record<PlayerId, PlayerColor>> = {};
     viewModel.match.players.forEach((player) => {
       if (player.appearance?.pawnColor) {
@@ -302,7 +338,7 @@ export function useGamePageController(gameId: string) {
       }
     });
     return map;
-  }, [viewModel.match, isMultiplayerMatch]);
+  }, [viewModel.match, isMultiplayerMatch, isSpectatorSession]);
 
   const playerColorsForBoard = useMemo(() => {
     const colors: Record<PlayerId, PlayerColor> = {
@@ -336,11 +372,17 @@ export function useGamePageController(gameId: string) {
   // Keep ref in sync with computed value
   useEffect(() => {
     playerColorsForBoardRef.current = playerColorsForBoard;
-  }, [playerColorsForBoard]);
+  }, [playerColorsForBoard, playerColorsForBoardRef]);
 
   const playerControllersRef = useRef<
     Partial<Record<PlayerId, GamePlayerController>>
   >({});
+
+  const getSeatController = useCallback((playerId: PlayerId | null) => {
+    if (playerId == null) return null;
+    return playerControllersRef.current[playerId] ?? null;
+  }, []);
+
   const metaGameActionsRef = useRef<ReturnType<
     typeof useMetaGameActions
   > | null>(null);
@@ -451,43 +493,34 @@ export function useGamePageController(gameId: string) {
     ],
   );
 
-  const updateGameState = useCallback(
-    (
-      nextState: GameState,
-      options?: {
-        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
-      },
-    ) => {
-      // Update view model with new game state
-      setViewModel((prev) => {
-        const shouldUpdateLastMoves =
-          options && Object.prototype.hasOwnProperty.call(options, "lastMoves");
-
-        return {
-          ...prev,
-          gameState: nextState,
-          lastMoves: shouldUpdateLastMoves
-            ? ((options.lastMoves as BoardProps["lastMoves"] | null) ?? null)
-            : prev.lastMoves,
-        };
-      });
-    },
-    [],
-  );
-
   useEffect(() => {
-    if (!gameHandshake) return;
-    debugMatch("Connecting GameClient", {
+    if (!gameHandshake) {
+      const previousId = remotePlayerIdRef.current;
+      if (previousId != null) {
+        playerControllersRef.current[previousId] = createPlayerController({
+          playerId: previousId,
+          playerType: "you",
+        });
+        remotePlayerIdRef.current = null;
+      }
+      return;
+    }
+    debugMatch("Connecting remote controller", {
       id: gameId,
       playerId: gameHandshake.playerId,
       socketToken: maskToken(gameHandshake.socketToken),
     });
-    const client = new GameClient({
-      gameId,
-      socketToken: gameHandshake.socketToken,
-    });
-    gameClientRef.current = client;
-    client.connect({
+    const controller = new RemotePlayerController(
+      gameHandshake.playerId,
+      "you",
+      {
+        gameId,
+        socketToken: gameHandshake.socketToken,
+      },
+    );
+    remotePlayerIdRef.current = gameHandshake.playerId;
+    playerControllersRef.current[gameHandshake.playerId] = controller;
+    controller.connect({
       onState: (state) => {
         setMatchError(null);
         const config = buildGameConfigurationFromSerialized(state);
@@ -499,10 +532,10 @@ export function useGamePageController(gameId: string) {
               : ["friend", "you"];
           initializeGame(config, playerTypes, { forceYouFirst: false });
           setPlayerTypes(playerTypes);
+          playerControllersRef.current[gameHandshake.playerId] = controller;
           gameInitializedRef.current = true;
         }
 
-        // Detect new game start to refresh match snapshot (roles may have swapped in rematch)
         if (
           state.moveCount === 0 &&
           isMultiplayerMatch &&
@@ -539,7 +572,6 @@ export function useGamePageController(gameId: string) {
             };
           });
         }
-        // Use the single entry point for server updates
         applyServerUpdate({
           type: "game-state",
           config,
@@ -609,9 +641,14 @@ export function useGamePageController(gameId: string) {
       },
     });
     return () => {
-      client.close();
-      if (gameClientRef.current === client) {
-        gameClientRef.current = null;
+      controller.disconnect();
+      if (remotePlayerIdRef.current === gameHandshake.playerId) {
+        remotePlayerIdRef.current = null;
+        playerControllersRef.current[gameHandshake.playerId] =
+          createPlayerController({
+            playerId: gameHandshake.playerId,
+            playerType: "you",
+          });
       }
       gameInitializedRef.current = false;
       gameAwaitingServerRef.current = false;
@@ -626,6 +663,7 @@ export function useGamePageController(gameId: string) {
     initializeGame,
     isMultiplayerMatch,
     maskToken,
+    playerControllersRef,
     setMatchError,
   ]);
 
@@ -709,6 +747,133 @@ export function useGamePageController(gameId: string) {
   useEffect(() => {
     playersRef.current = players;
   }, [players]);
+
+  useEffect(() => {
+    if (!gameState) return;
+    Object.values(playerControllersRef.current).forEach((controller) => {
+      if (!controller) return;
+      if (typeof controller.handleStateUpdate !== "function") return;
+      const opponentId = controller.playerId === 1 ? 2 : 1;
+      (
+        controller.handleStateUpdate as (
+          context: PlayerControllerContext,
+        ) => void
+      )({
+        state: gameState,
+        playerId: controller.playerId,
+        opponentId,
+      });
+    });
+  }, [gameState]);
+
+  const applySpectatorSnapshotUpdate = useCallback(
+    (snapshot: GameSnapshot) => {
+      applyServerUpdate({ type: "match", snapshot });
+      const derivedPlayers = buildSpectatorPlayersFromSnapshot(snapshot);
+      if (derivedPlayers.length) {
+        setBasePlayers(derivedPlayers);
+        playersRef.current = derivedPlayers;
+      }
+      setPlayerTypes((prev) => {
+        const matches =
+          prev.length === SPECTATOR_PLAYER_TYPES.length &&
+          prev.every((type, index) => type === SPECTATOR_PLAYER_TYPES[index]);
+        return matches ? prev : SPECTATOR_PLAYER_TYPES;
+      });
+      setMatchParticipants((prev) => {
+        const matches =
+          prev.length === SPECTATOR_PLAYER_TYPES.length &&
+          prev.every((type, index) => type === SPECTATOR_PLAYER_TYPES[index]);
+        return matches ? prev : SPECTATOR_PLAYER_TYPES;
+      });
+    },
+    [applyServerUpdate],
+  );
+
+  const applySpectatorStateUpdate = useCallback(
+    (serializedState: SerializedGameState) => {
+      const config = buildGameConfigurationFromSerialized(serializedState);
+      const resolvedState = hydrateGameStateFromSerialized(
+        serializedState,
+        config,
+      );
+      const isInitial = !spectatorInitializedRef.current;
+      applyServerUpdate({
+        type: "game-state",
+        config,
+        gameState: resolvedState,
+        isInitial,
+      });
+      spectatorInitializedRef.current = true;
+    },
+    [applyServerUpdate],
+  );
+
+  useEffect(() => {
+    if (!isSpectatorSession) {
+      spectatorSessionRef.current?.disconnect();
+      spectatorSessionRef.current = null;
+      spectatorInitializedRef.current = false;
+      setSpectatorStatus({ isLoading: false, error: null });
+      return;
+    }
+
+    const session = new SpectatorSession(gameId);
+    spectatorSessionRef.current = session;
+
+    playerControllersRef.current = {
+      1: new RemoteSpectatorPlayerController(1 as PlayerId, "friend"),
+      2: new RemoteSpectatorPlayerController(2 as PlayerId, "friend"),
+    };
+
+    setSpectatorStatus({ isLoading: true, error: null });
+    let cancelled = false;
+
+    void session.connect({
+      onSnapshot: (snapshot: GameSnapshot) => {
+        if (cancelled) return;
+        applySpectatorSnapshotUpdate(snapshot);
+        setSpectatorStatus((prev) => ({ ...prev, isLoading: false }));
+      },
+      onState: (state: SerializedGameState) => {
+        if (cancelled) return;
+        applySpectatorStateUpdate(state);
+        setSpectatorStatus((prev) => ({ ...prev, isLoading: false }));
+      },
+      onError: (message) => {
+        if (cancelled) return;
+        setSpectatorStatus((prev) => ({
+          ...prev,
+          isLoading: false,
+          error: message,
+        }));
+      },
+      onStatusChange: (status) => {
+        if (cancelled) return;
+        setSpectatorStatus((prev) => ({
+          ...prev,
+          isLoading: !status.isConnected,
+        }));
+      },
+    });
+
+    return () => {
+      cancelled = true;
+      session.disconnect();
+      if (spectatorSessionRef.current === session) {
+        spectatorSessionRef.current = null;
+      }
+      spectatorInitializedRef.current = false;
+      setSpectatorStatus({ isLoading: false, error: null });
+      playerControllersRef.current = {};
+    };
+  }, [
+    isSpectatorSession,
+    gameId,
+    applySpectatorSnapshotUpdate,
+    applySpectatorStateUpdate,
+    playerControllersRef,
+  ]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
   const [chatChannel, setChatChannel] = useState<"game" | "team" | "audience">(
@@ -765,7 +930,7 @@ export function useGamePageController(gameId: string) {
     !isMultiplayerMatch || !matchSnapshot || matchSnapshot.status === "waiting";
   const matchingStatusMessage = useMemo(() => {
     if (!isMultiplayerMatch) return undefined;
-    if (matchError) return matchError;
+    if (displayMatchError) return displayMatchError;
     if (isJoiningMatch) return "Joining friend game...";
     switch (matchSnapshot?.status) {
       case "waiting":
@@ -777,7 +942,12 @@ export function useGamePageController(gameId: string) {
       default:
         return undefined;
     }
-  }, [isMultiplayerMatch, matchError, isJoiningMatch, matchSnapshot?.status]);
+  }, [
+    isMultiplayerMatch,
+    displayMatchError,
+    isJoiningMatch,
+    matchSnapshot?.status,
+  ]);
 
   const pendingTurnRequestRef = useRef<PlayerId | null>(null);
   const seatOrderIndicesRef = useRef<[number, number]>([0, 1]);
@@ -813,7 +983,22 @@ export function useGamePageController(gameId: string) {
     Boolean(gameHandshake) &&
     (matchSnapshot?.status === "in-progress" ||
       matchSnapshot?.status === "ready");
+  const localSeatController =
+    primaryLocalPlayerId != null
+      ? playerControllersRef.current[primaryLocalPlayerId]
+      : null;
+  const seatCapabilities = localSeatController?.capabilities;
+  const canMovePieces = seatCapabilities?.canMove ?? false;
+  const canOfferRematch = seatCapabilities?.canOfferRematch ?? false;
+  const canOfferDraw = seatCapabilities?.canOfferDraw ?? false;
+  const canRespondToDraw = seatCapabilities?.canRespondToDraw ?? false;
+  const canRequestTakeback = seatCapabilities?.canRequestTakeback ?? false;
+  const canRespondToTakeback = seatCapabilities?.canRespondToTakeback ?? false;
+  const canUseChat = seatCapabilities?.canUseChat ?? false;
+  const controllerAllowsInteraction = canMovePieces;
   const interactionLocked =
+    isSpectatorSession ||
+    !controllerAllowsInteraction ||
     (!isMultiplayerMatch && unsupportedPlayers.length > 0) ||
     (isMultiplayerMatch && !matchReadyForPlay);
 
@@ -865,9 +1050,8 @@ export function useGamePageController(gameId: string) {
     primaryLocalPlayerId,
     autoAcceptingLocalIds,
     isMultiplayerMatch,
-    matchReadyForPlay,
     playerControllersRef,
-    gameClientRef,
+    getSeatController,
     performGameAction: performGameActionImpl,
     updateGameState,
     computeLastMoves,
@@ -883,6 +1067,42 @@ export function useGamePageController(gameId: string) {
     },
   });
   metaGameActionsRef.current = metaGameActions;
+
+  const handleStartResignAction = useCallback(() => {
+    if (!canMovePieces) return;
+    metaGameActions.handleStartResign();
+  }, [canMovePieces, metaGameActions]);
+
+  const handleOfferDrawAction = useCallback(() => {
+    if (!canOfferDraw) return;
+    metaGameActions.handleOfferDraw();
+  }, [canOfferDraw, metaGameActions]);
+
+  const respondToDrawPromptAction = useCallback(
+    (decision: "accept" | "reject") => {
+      if (!canRespondToDraw) return;
+      metaGameActions.respondToDrawPrompt(decision);
+    },
+    [canRespondToDraw, metaGameActions],
+  );
+
+  const handleRequestTakebackAction = useCallback(() => {
+    if (!canRequestTakeback) return;
+    metaGameActions.handleRequestTakeback();
+  }, [canRequestTakeback, metaGameActions]);
+
+  const respondToTakebackPromptAction = useCallback(
+    (decision: "allow" | "decline") => {
+      if (!canRespondToTakeback) return;
+      metaGameActions.respondToTakebackPrompt(decision);
+    },
+    [canRespondToTakeback, metaGameActions],
+  );
+
+  const handleGiveTimeAction = useCallback(() => {
+    if (!canMovePieces) return;
+    metaGameActions.handleGiveTime();
+  }, [canMovePieces, metaGameActions]);
 
   // Wrapper that handles notices
   const performGameAction = useCallback(
@@ -931,12 +1151,13 @@ export function useGamePageController(gameId: string) {
 
   const stagedWallOverlays = useMemo<WallPosition[]>(() => {
     if (!stagedActions.length) return [];
+    const wallPlayerId = gameState?.turn ?? primaryLocalPlayerId ?? undefined;
     return stagedActions
       .filter((action) => action.type === "wall")
       .map((action) => ({
         cell: action.target,
         orientation: action.wallOrientation!,
-        playerId: gameState?.turn ?? primaryLocalPlayerId,
+        ...(wallPlayerId ? { playerId: wallPlayerId } : {}),
       }));
   }, [stagedActions, gameState, primaryLocalPlayerId]);
 
@@ -1122,13 +1343,6 @@ export function useGamePageController(gameId: string) {
   const commitStagedActions = useCallback(
     (actions?: Action[]) => {
       const moveActions = actions ?? stagedActions;
-      if (
-        isMultiplayerMatch &&
-        (!matchReadyForPlay || !gameClientRef.current)
-      ) {
-        setActionError("Waiting for connection to stabilize.");
-        return;
-      }
 
       const currentState = gameStateRef.current;
       if (!currentState) {
@@ -1156,13 +1370,7 @@ export function useGamePageController(gameId: string) {
         );
       }
     },
-    [
-      matchReadyForPlay,
-      isMultiplayerMatch,
-      stagedActions,
-      setDraggingPawnId,
-      setSelectedPawnId,
-    ],
+    [stagedActions, setDraggingPawnId, setSelectedPawnId],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -1229,12 +1437,17 @@ export function useGamePageController(gameId: string) {
 
   const handleAcceptRematch = useCallback(() => {
     if (!primaryLocalPlayerId) return;
+    if (!canOfferRematch) return;
     if (isMultiplayerMatch) {
-      if (!gameClientRef.current) {
+      const seatController = getSeatController(primaryLocalPlayerId);
+      if (
+        !seatController ||
+        typeof seatController.respondToRematch !== "function"
+      ) {
         setActionError("Connection unavailable.");
         return;
       }
-      gameClientRef.current.sendRematchAccept();
+      void seatController.respondToRematch("accepted");
       setRematchState((prev) => {
         if (prev.status !== "pending") return prev;
         return {
@@ -1254,21 +1467,28 @@ export function useGamePageController(gameId: string) {
     respondToRematch(primaryLocalPlayerId, "accepted");
   }, [
     addSystemMessage,
+    canOfferRematch,
     getPlayerName,
     isMultiplayerMatch,
     primaryLocalPlayerId,
     respondToRematch,
     setActionError,
+    getSeatController,
   ]);
 
   const handleDeclineRematch = useCallback(() => {
     if (!primaryLocalPlayerId) return;
+    if (!canOfferRematch) return;
     if (isMultiplayerMatch) {
-      if (!gameClientRef.current) {
+      const seatController = getSeatController(primaryLocalPlayerId);
+      if (
+        !seatController ||
+        typeof seatController.respondToRematch !== "function"
+      ) {
         setActionError("Connection unavailable.");
         return;
       }
-      gameClientRef.current.sendRematchReject();
+      void seatController.respondToRematch("declined");
       setRematchState((prev) => ({
         ...prev,
         status: "declined",
@@ -1286,24 +1506,28 @@ export function useGamePageController(gameId: string) {
     respondToRematch(primaryLocalPlayerId, "declined");
   }, [
     addSystemMessage,
+    canOfferRematch,
     getPlayerName,
     isMultiplayerMatch,
     primaryLocalPlayerId,
     respondToRematch,
     setActionError,
+    getSeatController,
   ]);
 
   const handleProposeRematch = useCallback(() => {
+    if (!canOfferRematch) return;
     if (!isMultiplayerMatch) {
       openRematchWindow();
       return;
     }
-    if (!gameClientRef.current) {
+    const seatController = getSeatController(primaryLocalPlayerId);
+    if (!seatController || typeof seatController.offerRematch !== "function") {
       setActionError("Connection unavailable.");
       return;
     }
     if (!primaryLocalPlayerId) return;
-    gameClientRef.current.sendRematchOffer();
+    void seatController.offerRematch();
     rematchRequestIdRef.current += 1;
     const requestId = rematchRequestIdRef.current;
     setRematchState({
@@ -1318,18 +1542,19 @@ export function useGamePageController(gameId: string) {
     addSystemMessage("Rematch proposed. Waiting for opponent...");
   }, [
     addSystemMessage,
+    canOfferRematch,
     isMultiplayerMatch,
     openRematchWindow,
     primaryLocalPlayerId,
     setActionError,
+    getSeatController,
   ]);
 
   const handleExitAfterMatch = useCallback(() => {
     if (rematchState.status === "pending" && primaryLocalPlayerId) {
       if (isMultiplayerMatch) {
-        if (gameClientRef.current) {
-          gameClientRef.current.sendRematchReject();
-        }
+        const seatController = getSeatController(primaryLocalPlayerId);
+        void seatController?.respondToRematch?.("declined");
         setRematchState((prev) => ({
           ...prev,
           status: "declined",
@@ -1349,6 +1574,7 @@ export function useGamePageController(gameId: string) {
     primaryLocalPlayerId,
     rematchState.status,
     respondToRematch,
+    getSeatController,
   ]);
 
   const startRematch = useCallback(() => {
@@ -1366,6 +1592,12 @@ export function useGamePageController(gameId: string) {
   }, [config, initializeGame, matchParticipants]);
 
   useEffect(() => {
+    if (isSpectatorSession) {
+      setHasLocalConfig(false);
+      setLoadError(null);
+      setIsLoadingConfig(false);
+      return;
+    }
     if (isMultiplayerMatch) {
       setHasLocalConfig(false);
       setLoadError(null);
@@ -1440,9 +1672,15 @@ export function useGamePageController(gameId: string) {
       setActiveLocalPlayerId(null);
       setAutomatedPlayerId(null);
       // Meta game actions will be reset via useEffect in the hook when game finishes
-      setViewModel(DEFAULT_VIEW_MODEL);
+      resetViewModel();
     };
-  }, [gameId, initializeGame, isMultiplayerMatch]);
+  }, [
+    gameId,
+    initializeGame,
+    isMultiplayerMatch,
+    isSpectatorSession,
+    resetViewModel,
+  ]);
 
   useEffect(() => {
     const interval = window.setInterval(() => {
@@ -1461,7 +1699,7 @@ export function useGamePageController(gameId: string) {
   useEffect(() => {
     if (!matchParticipants.length) return;
     if (gameState?.status !== "finished" || !gameState.result) return;
-    if (isMultiplayerMatch) return;
+    if (isMultiplayerMatch || isSpectatorSession) return;
     const activeGameId = currentGameIdRef.current;
     if (lastScoredGameIdRef.current === activeGameId) return;
     lastScoredGameIdRef.current = activeGameId;
@@ -1490,12 +1728,13 @@ export function useGamePageController(gameId: string) {
     gameState?.result,
     gameState?.status,
     isMultiplayerMatch,
+    isSpectatorSession,
     matchParticipants.length,
     openRematchWindow,
   ]);
 
   useEffect(() => {
-    if (isMultiplayerMatch) return;
+    if (isMultiplayerMatch || isSpectatorSession) return;
     if (rematchState.status !== "pending") return;
     const timers: number[] = [];
     ([1, 2] as PlayerId[]).forEach((playerId) => {
@@ -1525,6 +1764,7 @@ export function useGamePageController(gameId: string) {
     };
   }, [
     isMultiplayerMatch,
+    isSpectatorSession,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     rematchState,
@@ -1532,10 +1772,15 @@ export function useGamePageController(gameId: string) {
   ]);
 
   useEffect(() => {
-    if (isMultiplayerMatch) return;
+    if (isMultiplayerMatch || isSpectatorSession) return;
     if (rematchState.status !== "starting") return;
     startRematch();
-  }, [isMultiplayerMatch, rematchState.status, startRematch]);
+  }, [
+    isMultiplayerMatch,
+    isSpectatorSession,
+    rematchState.status,
+    startRematch,
+  ]);
 
   const stagePawnAction = useCallback(
     (pawnId: string, targetRow: number, targetCol: number) => {
@@ -1694,20 +1939,13 @@ export function useGamePageController(gameId: string) {
           opponentId: playerId === 1 ? 2 : 1,
         })
         .then((move) => {
-          if (
-            isMultiplayerMatch &&
-            (!matchReadyForPlay || !gameClientRef.current)
-          ) {
-            setActionError("Waiting for connection to stabilize.");
-            return;
-          }
           if (isMultiplayerMatch) {
+            if (isRemoteController(controller)) {
+              gameAwaitingServerRef.current = true;
+              setActionError(null);
+              return;
+            }
             gameAwaitingServerRef.current = true;
-            debugMatch("Sending move over websocket", {
-              actionCount: move.actions.length,
-              turn: playerId,
-            });
-            gameClientRef.current?.sendMove(move);
             setActionError(null);
             return;
           }
@@ -1735,13 +1973,7 @@ export function useGamePageController(gameId: string) {
           }
         });
     },
-    [
-      applyMove,
-      debugMatch,
-      matchReadyForPlay,
-      interactionLocked,
-      isMultiplayerMatch,
-    ],
+    [applyMove, interactionLocked, isMultiplayerMatch],
   );
 
   useEffect(() => {
@@ -1850,6 +2082,7 @@ export function useGamePageController(gameId: string) {
 
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
+    if (!canUseChat) return;
     if (!chatInput.trim()) return;
     setMessages((prev) => [
       ...prev,
@@ -1933,18 +2166,20 @@ export function useGamePageController(gameId: string) {
   const actionButtonsDisabled = !actionPanelAvailable || actionPanelLocked;
   const canCancelDrawOffer = !isMultiplayerMatch
     ? Boolean(
+        seatCapabilities?.canOfferDraw &&
         pendingDrawForLocal &&
         clockTick - (metaGameActions.pendingDrawOffer?.createdAt ?? 0) >= 2000,
       )
     : null;
   const canCancelTakebackRequest = !isMultiplayerMatch
     ? Boolean(
+        seatCapabilities?.canRequestTakeback &&
         takebackPendingForLocal &&
         clockTick - (metaGameActions.pendingTakebackRequest?.createdAt ?? 0) >=
           2000,
       )
     : null;
-  const manualActionsDisabled = false;
+  const manualActionsDisabled = !controllerAllowsInteraction;
   const hasActionMessage = Boolean(actionError) || Boolean(selectedPawn);
   const actionStatusText =
     actionError ??
@@ -2040,122 +2275,188 @@ export function useGamePageController(gameId: string) {
     }
   })();
 
-  /**
-   * Spectator mode is the fallback when we *failed* to join as a player.
-   * This must be derived from reactive state (not a memoized sessionStorage read),
-   * otherwise invite-join can succeed but the UI stays stuck in spectator mode.
-   */
-  const isSpectatorSession =
-    !hasLocalConfig && !gameHandshake && !isJoiningMatch && !!matchError;
+  const spectatorPlayerSlots = useMemo(() => {
+    if (!isSpectatorSession) return null;
+    if (players.length >= 2) {
+      return players.slice(0, 2);
+    }
+    return [
+      {
+        id: "p1",
+        playerId: 1 as PlayerId,
+        name: "Host",
+        rating: 1500,
+        color: DEFAULT_PLAYER_COLORS[1],
+        type: "friend" as PlayerType,
+        isOnline: true,
+        catSkin: undefined,
+        mouseSkin: undefined,
+      },
+      {
+        id: "p2",
+        playerId: 2 as PlayerId,
+        name: "Joiner",
+        rating: 1500,
+        color: DEFAULT_PLAYER_COLORS[2],
+        type: "friend" as PlayerType,
+        isOnline: true,
+        catSkin: undefined,
+        mouseSkin: undefined,
+      },
+    ];
+  }, [isSpectatorSession, players]);
 
-  // Return spectator controller if this is a spectator session.
-  if (isSpectatorSession) {
-    return spectatorController;
-  }
+  const matchingPlayersForView = spectatorPlayerSlots ?? matchingPanelPlayers;
+  const matchingShareUrl = isSpectatorSession ? undefined : resolvedShareUrl;
+  const matchingStatusForView = isSpectatorSession
+    ? undefined
+    : matchingStatusMessage;
+  const matchingAbortEnabled = !isSpectatorSession && matchingCanAbort;
+  const matchingIsOpen = !isSpectatorSession && matchingPanelOpen;
 
-  return {
-    isSpectator: false,
-    matching: {
-      isOpen: matchingPanelOpen,
-      players: matchingPanelPlayers,
-      shareUrl: resolvedShareUrl,
-      statusMessage: matchingStatusMessage,
-      canAbort: matchingCanAbort,
-      onAbort: handleAbort,
-    },
-    board: {
-      isMultiplayerMatch,
-      gameStatus,
-      gameState,
-      isLoadingConfig,
-      loadError,
-      winnerPlayer,
-      winReason,
-      scoreboardEntries,
-      rematchState,
-      rematchResponseSummary,
-      rematchStatusText,
-      primaryLocalPlayerId,
-      userRematchResponse,
-      handleAcceptRematch,
-      handleDeclineRematch,
-      handleProposeRematch,
-      openRematchWindow,
-      handleExitAfterMatch,
-      rows,
-      cols,
-      boardPawns,
-      boardWalls,
-      stagedArrows,
-      playerColorsForBoard,
-      interactionLocked,
-      lastMove,
-      draggingPawnId,
-      selectedPawnId,
-      stagedActionsCount: stagedActions.length,
-      actionablePlayerId,
-      onCellClick: handleCellClick,
-      onWallClick: handleWallClick,
-      onPawnClick: handlePawnClick,
-      onPawnDragStart: handlePawnDragStart,
-      onPawnDragEnd: handlePawnDragEnd,
-      onCellDrop: handleCellDrop,
-      stagedActions,
-      activeLocalPlayerId,
-      hasActionMessage,
-      actionError,
-      actionStatusText,
-      clearStagedActions,
-      commitStagedActions,
-    },
-    timers: {
-      topPlayer: topTimerPlayer,
-      bottomPlayer: bottomTimerDisplayPlayer,
-      displayedTimeLeft,
-      gameTurn,
-      thinkingPlayer,
-      getPlayerMatchScore,
-    },
-    actions: {
-      drawDecisionPrompt: metaGameActions.drawDecisionPrompt,
-      takebackDecisionPrompt: metaGameActions.takebackDecisionPrompt,
-      incomingPassiveNotice: metaGameActions.incomingPassiveNotice,
-      getPlayerName,
-      respondToDrawPrompt: metaGameActions.respondToDrawPrompt,
-      respondToTakebackPrompt: metaGameActions.respondToTakebackPrompt,
-      handleDismissIncomingNotice: metaGameActions.handleDismissIncomingNotice,
-      resignFlowPlayerId: metaGameActions.resignFlowPlayerId,
-      pendingDrawForLocal,
-      pendingDrawOffer: metaGameActions.pendingDrawOffer,
-      takebackPendingForLocal,
-      pendingTakebackRequest: metaGameActions.pendingTakebackRequest,
-      outgoingTimeInfo: metaGameActions.outgoingTimeInfo,
-      canCancelDrawOffer,
-      canCancelTakebackRequest,
-      handleCancelResign: metaGameActions.handleCancelResign,
-      handleConfirmResign: metaGameActions.handleConfirmResign,
-      handleCancelDrawOffer: metaGameActions.handleCancelDrawOffer,
-      handleCancelTakebackRequest: metaGameActions.handleCancelTakebackRequest,
-      handleDismissOutgoingInfo: metaGameActions.handleDismissOutgoingInfo,
-      actionButtonsDisabled,
-      manualActionsDisabled,
-      hasTakebackHistory,
-      handleStartResign: metaGameActions.handleStartResign,
-      handleOfferDraw: metaGameActions.handleOfferDraw,
-      handleRequestTakeback: metaGameActions.handleRequestTakeback,
-      handleGiveTime: metaGameActions.handleGiveTime,
-    },
-    chat: {
-      activeTab,
-      onTabChange: setActiveTab,
-      formattedHistory,
-      chatChannel,
-      messages,
-      chatInput,
-      onChannelChange: setChatChannel,
-      onInputChange: setChatInput,
-      onSendMessage: handleSendMessage,
-    },
+  const boardIsMultiplayer = isSpectatorSession ? true : isMultiplayerMatch;
+  const boardIsLoading = isSpectatorSession
+    ? spectatorStatus.isLoading
+    : isLoadingConfig;
+  const boardLoadError = isSpectatorSession ? spectatorStatus.error : loadError;
+  const boardPrimaryPlayerId = isSpectatorSession ? null : primaryLocalPlayerId;
+  const boardUserRematchResponse = isSpectatorSession
+    ? null
+    : userRematchResponse;
+  const rematchHandlersEnabled =
+    !isSpectatorSession && canOfferRematch && primaryLocalPlayerId != null;
+  const rematchAcceptHandler = rematchHandlersEnabled
+    ? handleAcceptRematch
+    : NOOP;
+  const rematchDeclineHandler = rematchHandlersEnabled
+    ? handleDeclineRematch
+    : NOOP;
+  const rematchProposeHandler = rematchHandlersEnabled
+    ? handleProposeRematch
+    : NOOP;
+  const rematchWindowHandler = rematchHandlersEnabled
+    ? openRematchWindow
+    : NOOP;
+
+  const infoIsMultiplayerMatch = isSpectatorSession ? true : isMultiplayerMatch;
+
+  const matchingSection = {
+    isOpen: matchingIsOpen,
+    players: matchingPanelPlayers,
+    spectatorPlayers: matchingPlayersForView,
+    shareUrl: matchingShareUrl,
+    statusMessage: matchingStatusForView,
+    canAbort: matchingAbortEnabled,
+    onAbort: matchingAbortEnabled ? handleAbort : NOOP,
+  };
+
+  const boardSection = {
+    isMultiplayerMatch: boardIsMultiplayer,
+    gameStatus,
+    gameState,
+    isLoadingConfig: boardIsLoading,
+    loadError: boardLoadError,
+    winnerPlayer,
+    winReason,
+    scoreboardEntries,
+    rematchState,
+    rematchResponseSummary,
+    rematchStatusText,
+    primaryLocalPlayerId: boardPrimaryPlayerId,
+    userRematchResponse: boardUserRematchResponse,
+    handleAcceptRematch: rematchAcceptHandler,
+    handleDeclineRematch: rematchDeclineHandler,
+    handleProposeRematch: rematchProposeHandler,
+    openRematchWindow: rematchWindowHandler,
+    handleExitAfterMatch,
+    rows,
+    cols,
+    boardPawns,
+    boardWalls,
+    stagedArrows,
+    playerColorsForBoard,
+    interactionLocked,
+    lastMove,
+    draggingPawnId,
+    selectedPawnId,
+    stagedActionsCount: stagedActions.length,
+    actionablePlayerId,
+    onCellClick: handleCellClick,
+    onWallClick: handleWallClick,
+    onPawnClick: handlePawnClick,
+    onPawnDragStart: handlePawnDragStart,
+    onPawnDragEnd: handlePawnDragEnd,
+    onCellDrop: handleCellDrop,
+    stagedActions,
+    activeLocalPlayerId,
+    hasActionMessage,
+    actionError,
+    actionStatusText,
+    clearStagedActions,
+    commitStagedActions,
+  };
+
+  const timerSection = {
+    topPlayer: topTimerPlayer,
+    bottomPlayer: bottomTimerDisplayPlayer,
+    displayedTimeLeft,
+    gameTurn,
+    thinkingPlayer,
+    getPlayerMatchScore,
+  };
+
+  const actionsSection = {
+    drawDecisionPrompt: metaGameActions.drawDecisionPrompt,
+    takebackDecisionPrompt: metaGameActions.takebackDecisionPrompt,
+    incomingPassiveNotice: metaGameActions.incomingPassiveNotice,
+    getPlayerName,
+    respondToDrawPrompt: respondToDrawPromptAction,
+    respondToTakebackPrompt: respondToTakebackPromptAction,
+    handleDismissIncomingNotice: metaGameActions.handleDismissIncomingNotice,
+    resignFlowPlayerId: metaGameActions.resignFlowPlayerId,
+    pendingDrawForLocal,
+    pendingDrawOffer: metaGameActions.pendingDrawOffer,
+    takebackPendingForLocal,
+    pendingTakebackRequest: metaGameActions.pendingTakebackRequest,
+    outgoingTimeInfo: metaGameActions.outgoingTimeInfo,
+    canCancelDrawOffer,
+    canCancelTakebackRequest,
+    handleCancelResign: metaGameActions.handleCancelResign,
+    handleConfirmResign: metaGameActions.handleConfirmResign,
+    handleCancelDrawOffer: metaGameActions.handleCancelDrawOffer,
+    handleCancelTakebackRequest: metaGameActions.handleCancelTakebackRequest,
+    handleDismissOutgoingInfo: metaGameActions.handleDismissOutgoingInfo,
+    actionButtonsDisabled,
+    manualActionsDisabled,
+    hasTakebackHistory,
+    handleStartResign: handleStartResignAction,
+    handleOfferDraw: handleOfferDrawAction,
+    handleRequestTakeback: handleRequestTakebackAction,
+    handleGiveTime: handleGiveTimeAction,
+  };
+
+  const chatSection = {
+    activeTab,
+    onTabChange: setActiveTab,
+    formattedHistory,
+    chatChannel,
+    messages,
+    chatInput,
+    onChannelChange: setChatChannel,
+    onInputChange: canUseChat ? setChatInput : NOOP,
+    onSendMessage: canUseChat
+      ? handleSendMessage
+      : (event: React.FormEvent) => {
+          event.preventDefault();
+        },
+  };
+  const controller = {
+    isSpectator: isSpectatorSession,
+    matching: matchingSection,
+    board: boardSection,
+    timers: timerSection,
+    actions: actionsSection,
+    chat: chatSection,
     info: {
       config,
       defaultVariant: DEFAULT_CONFIG.variant,
@@ -2163,9 +2464,11 @@ export function useGamePageController(gameId: string) {
       soundEnabled,
       onSoundToggle: () => setSoundEnabled((prev) => !prev),
       interactionLocked,
-      isMultiplayerMatch,
+      isMultiplayerMatch: infoIsMultiplayerMatch,
       unsupportedPlayers,
       placeholderCopy: PLACEHOLDER_COPY,
     },
   };
+
+  return controller;
 }
