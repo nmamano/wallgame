@@ -160,9 +160,13 @@ export function BoardPanel({
     primaryLocalPlayerId != null &&
     rematchState.offerer === primaryLocalPlayerId;
 
+  const hasLocalPlayer = primaryLocalPlayerId != null;
   const canProposeMultiplayerRematch =
+    hasLocalPlayer &&
     isMultiplayerMatch &&
     (rematchState.status === "idle" || rematchState.status === "declined");
+  const showStagedActionControls = hasLocalPlayer;
+  const forceReadOnlyBoard = !hasLocalPlayer;
 
   return (
     <div
@@ -354,10 +358,17 @@ export function BoardPanel({
         selectedPawnId={selectedPawnId}
         stagedActionsCount={stagedActionsCount}
         controllablePlayerId={actionablePlayerId ?? undefined}
+        forceReadOnly={forceReadOnlyBoard}
       />
 
       {/* Action messaging + staged action buttons */}
-      <div className="grid grid-cols-[1fr_auto_1fr] items-center gap-2 lg:gap-3 mt-2 lg:mt-4 w-full">
+      <div
+        className={`mt-2 lg:mt-4 w-full ${
+          showStagedActionControls
+            ? "grid grid-cols-[1fr_auto_1fr] items-center gap-2 lg:gap-3"
+            : "flex items-center justify-start"
+        }`}
+      >
         <div className="flex items-center text-[10px] lg:text-xs text-muted-foreground min-h-[1rem] lg:min-h-[1.25rem] justify-self-start">
           {hasActionMessage && (
             <>
@@ -372,29 +383,33 @@ export function BoardPanel({
             </>
           )}
         </div>
-        <div className="flex gap-1.5 lg:gap-3 justify-center">
-          <Button
-            size="sm"
-            variant="outline"
-            className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
-            onClick={clearStagedActions}
-            disabled={stagedActions.length === 0}
-          >
-            Clear staged actions
-          </Button>
-          <Button
-            size="sm"
-            className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
-            onClick={() => commitStagedActions()}
-            disabled={
-              gameState?.status !== "playing" ||
-              gameState?.turn !== activeLocalPlayerId
-            }
-          >
-            Finish move
-          </Button>
-        </div>
-        <div />
+        {showStagedActionControls && (
+          <>
+            <div className="flex gap-1.5 lg:gap-3 justify-center">
+              <Button
+                size="sm"
+                variant="outline"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
+                onClick={clearStagedActions}
+                disabled={stagedActions.length === 0}
+              >
+                Clear staged actions
+              </Button>
+              <Button
+                size="sm"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
+                onClick={() => commitStagedActions()}
+                disabled={
+                  gameState?.status !== "playing" ||
+                  gameState?.turn !== activeLocalPlayerId
+                }
+              >
+                Finish move
+              </Button>
+            </div>
+            <div />
+          </>
+        )}
       </div>
     </div>
   );

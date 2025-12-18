@@ -2291,15 +2291,89 @@ export function useGamePageController(gameId: string) {
         }
       : bottomTimerPlayer;
 
-  const scoreboardEntries = useMemo(
-    () =>
-      matchParticipants.map((type, index) => ({
+  const scoreboardEntries = useMemo(() => {
+    const seats = players.map((player) => ({ player, used: false }));
+    const claimSeat = (matcher: (player: GamePlayer) => boolean) => {
+      const entry = seats.find((seat) => !seat.used && matcher(seat.player));
+      if (entry) {
+        entry.used = true;
+        return entry.player;
+      }
+      return null;
+    };
+    const claimSeatForParticipant = (type: PlayerType) => {
+      switch (type) {
+        case "you": {
+          if (primaryLocalPlayerId != null) {
+            const localSeat = claimSeat(
+              (seatPlayer) => seatPlayer.playerId === primaryLocalPlayerId,
+            );
+            if (localSeat) return localSeat;
+          }
+          return claimSeat((seatPlayer) => seatPlayer.type === "you");
+        }
+        case "friend":
+        case "matched-user": {
+          if (primaryLocalPlayerId != null) {
+            const opponentSeat = claimSeat(
+              (seatPlayer) => seatPlayer.playerId !== primaryLocalPlayerId,
+            );
+            if (opponentSeat) return opponentSeat;
+          }
+          const fallbackTypes: PlayerType[] =
+            type === "matched-user"
+              ? ["matched-user", "friend"]
+              : ["friend", "matched-user"];
+          for (const seatType of fallbackTypes) {
+            const seat = claimSeat(
+              (seatPlayer) => seatPlayer.type === seatType,
+            );
+            if (seat) return seat;
+          }
+          return null;
+        }
+        default:
+          return claimSeat((seatPlayer) => seatPlayer.type === type);
+      }
+    };
+    const appendSuffix = (name: string, suffix: string | null) => {
+      if (!suffix) return name;
+      const normalized = suffix.toLowerCase();
+      return name.toLowerCase().includes(normalized)
+        ? name
+        : `${name} ${suffix}`;
+    };
+    let youSeen = 0;
+    return matchParticipants.map((type, index) => {
+      const seat = claimSeatForParticipant(type);
+      let label: string;
+      if (seat) {
+        if (type === "you") {
+          const suffix = youSeen === 0 ? "(You)" : "(Also You)";
+          label = appendSuffix(seat.name, suffix);
+          youSeen += 1;
+        } else {
+          label = seat.name;
+        }
+      } else {
+        label = buildPlayerName(type, index, settings.displayName);
+        if (type === "you") {
+          youSeen += 1;
+        }
+      }
+      return {
         id: index,
-        name: buildPlayerName(type, index, settings.displayName),
+        name: label,
         score: matchScore[index] ?? 0,
-      })),
-    [matchParticipants, matchScore, settings.displayName],
-  );
+      };
+    });
+  }, [
+    matchParticipants,
+    matchScore,
+    players,
+    primaryLocalPlayerId,
+    settings.displayName,
+  ]);
 
   const getPlayerMatchScore = (player: GamePlayer | null) => {
     if (!player) return null;
@@ -2314,6 +2388,11 @@ export function useGamePageController(gameId: string) {
       : primaryLocalPlayerId === 2
         ? (1 as PlayerId)
         : null;
+  const resolveSeatName = (playerId: PlayerId | null): string | null => {
+    if (playerId == null) return null;
+    const seat = players.find((player) => player.playerId === playerId);
+    return seat?.name ?? getPlayerName(playerId);
+  };
 
   const userRematchResponse =
     primaryLocalPlayerId != null
@@ -2321,12 +2400,11 @@ export function useGamePageController(gameId: string) {
       : null;
   const opponentRematchResponse =
     opponentPlayerId != null ? rematchState.responses[opponentPlayerId] : null;
-  const opponentName = opponentPlayerId
-    ? getPlayerName(opponentPlayerId)
-    : "Opponent";
+  const opponentName = resolveSeatName(opponentPlayerId) ?? "Opponent";
   const youName =
     bottomTimerDisplayPlayer?.name ??
-    (primaryLocalPlayerId ? getPlayerName(primaryLocalPlayerId) : "You");
+    resolveSeatName(primaryLocalPlayerId) ??
+    "You";
   const rematchResponseSummary = [
     { label: youName, response: userRematchResponse ?? "pending" },
     { label: opponentName, response: opponentRematchResponse ?? "pending" },
@@ -2343,12 +2421,11 @@ export function useGamePageController(gameId: string) {
         return "Waiting for responses...";
       case "starting":
         return "Both players accepted. Setting up the next game...";
-      case "declined":
-        return `${
-          rematchState.decliner
-            ? getPlayerName(rematchState.decliner)
-            : opponentName
-        } declined the rematch.`;
+      case "declined": {
+        const declinerName =
+          resolveSeatName(rematchState.decliner ?? null) ?? opponentName;
+        return `${declinerName} declined the rematch.`;
+      }
       default:
         return "";
     }
