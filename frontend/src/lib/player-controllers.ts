@@ -6,7 +6,6 @@ import type { GameState } from "../../../shared/domain/game-state";
 export type PlayerControllerKind =
   | "local-human"
   | "remote-human"
-  | "remote-spectator"
   | "easy-bot"
   | "unsupported";
 
@@ -78,10 +77,6 @@ export interface RemoteHumanController extends ManualPlayerController {
   isConnected(): boolean;
 }
 
-export interface SpectatorPlayerController extends BasePlayerController {
-  kind: "remote-spectator";
-}
-
 export interface AutomatedPlayerController extends BasePlayerController {
   kind: "easy-bot";
 }
@@ -93,7 +88,6 @@ export interface UnsupportedPlayerController extends BasePlayerController {
 export type GamePlayerController =
   | LocalPlayerController
   | RemoteHumanController
-  | SpectatorPlayerController
   | AutomatedPlayerController
   | UnsupportedPlayerController;
 
@@ -131,15 +125,8 @@ export function isSupportedController(
 ): controller is
   | LocalPlayerController
   | RemoteHumanController
-  | SpectatorPlayerController
   | AutomatedPlayerController {
   return controller.kind !== "unsupported";
-}
-
-export function isSpectatorController(
-  controller: GamePlayerController,
-): controller is SpectatorPlayerController {
-  return controller.kind === "remote-spectator";
 }
 
 export function isRemoteController(

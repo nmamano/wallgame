@@ -56,10 +56,7 @@ import {
   sanitizePlayerList,
   resolvePlayerColor,
 } from "@/lib/gameViewModel";
-import {
-  RemoteSpectatorPlayerController,
-  SpectatorSession,
-} from "@/lib/spectator-controller";
+import { SpectatorSession } from "@/lib/spectator-controller";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -133,9 +130,16 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 const SPECTATOR_PLAYER_TYPES: PlayerType[] = ["friend", "friend"];
 const NOOP = () => undefined;
 
-function buildSpectatorPlayersFromSnapshot(
+function buildSeatViewsFromSnapshot(
   snapshot: GameSnapshot,
+  options: {
+    primaryLocalPlayerId: PlayerId | null;
+    localPreferences: LocalPreferences;
+    playerColorsForBoard: Record<PlayerId, PlayerColor>;
+  },
 ): GamePlayer[] {
+  const { primaryLocalPlayerId, localPreferences, playerColorsForBoard } =
+    options;
   const ordered = [...snapshot.players].sort((a, b) => {
     if (a.role === "host" && b.role !== "host") return -1;
     if (b.role === "host" && a.role !== "host") return 1;
@@ -145,13 +149,27 @@ function buildSpectatorPlayersFromSnapshot(
   return ordered.map((player) => ({
     id: `p${player.playerId}`,
     playerId: player.playerId,
-    name: player.displayName,
+    name:
+      player.playerId === primaryLocalPlayerId
+        ? player.displayName || localPreferences.displayName
+        : player.displayName,
     rating: player.elo ?? 1500,
-    color: DEFAULT_PLAYER_COLORS[player.playerId],
-    type: "friend" as PlayerType,
+    color:
+      playerColorsForBoard[player.playerId] ??
+      DEFAULT_PLAYER_COLORS[player.playerId],
+    type:
+      player.playerId === primaryLocalPlayerId
+        ? ("you" as PlayerType)
+        : ("friend" as PlayerType),
     isOnline: player.connected,
-    catSkin: player.appearance?.catSkin,
-    mouseSkin: player.appearance?.mouseSkin,
+    catSkin:
+      player.playerId === primaryLocalPlayerId
+        ? localPreferences.catSkin
+        : player.appearance?.catSkin,
+    mouseSkin:
+      player.playerId === primaryLocalPlayerId
+        ? localPreferences.mouseSkin
+        : player.appearance?.mouseSkin,
   }));
 }
 
@@ -207,11 +225,11 @@ export function useGamePageController(gameId: string) {
   const remotePlayerIdRef = useRef<PlayerId | null>(null);
   const gameInitializedRef = useRef(false);
   const gameAwaitingServerRef = useRef(false);
-  const playersRef = useRef<GamePlayer[]>([]);
+  const seatViewsRef = useRef<GamePlayer[]>([]);
 
   const getPlayerName = useCallback(
     (playerId: PlayerId) =>
-      playersRef.current.find((p) => p.playerId === playerId)?.name ??
+      seatViewsRef.current.find((p) => p.playerId === playerId)?.name ??
       `Player ${playerId}`,
     [],
   );
@@ -374,13 +392,14 @@ export function useGamePageController(gameId: string) {
     playerColorsForBoardRef.current = playerColorsForBoard;
   }, [playerColorsForBoard, playerColorsForBoardRef]);
 
-  const playerControllersRef = useRef<
-    Partial<Record<PlayerId, GamePlayerController>>
-  >({});
+  const seatActionsRef = useRef<Record<PlayerId, GamePlayerController | null>>({
+    1: null,
+    2: null,
+  });
 
   const getSeatController = useCallback((playerId: PlayerId | null) => {
     if (playerId == null) return null;
-    return playerControllersRef.current[playerId] ?? null;
+    return seatActionsRef.current[playerId] ?? null;
   }, []);
 
   const metaGameActionsRef = useRef<ReturnType<
@@ -426,10 +445,13 @@ export function useGamePageController(gameId: string) {
       setAutomatedPlayerId(null);
       pendingTurnRequestRef.current = null;
 
-      Object.values(playerControllersRef.current).forEach((controller) =>
-        controller.cancel?.(new Error("Game reset")),
+      Object.values(seatActionsRef.current).forEach((controller) =>
+        controller?.cancel?.(new Error("Game reset")),
       );
-      const controllers: Partial<Record<PlayerId, GamePlayerController>> = {};
+      const controllers: Record<PlayerId, GamePlayerController | null> = {
+        1: null,
+        2: null,
+      };
       sanitizedPlayers.forEach((type, index) => {
         const playerId = (index + 1) as PlayerId;
         controllers[playerId] = createPlayerController({
@@ -437,7 +459,7 @@ export function useGamePageController(gameId: string) {
           playerType: type,
         });
       });
-      playerControllersRef.current = controllers;
+      seatActionsRef.current = controllers;
 
       const initialPlayers: GamePlayer[] = sanitizedPlayers.map(
         (type, index) => ({
@@ -461,8 +483,8 @@ export function useGamePageController(gameId: string) {
               : undefined,
         }),
       );
-      playersRef.current = initialPlayers;
-      setBasePlayers(initialPlayers);
+      seatViewsRef.current = initialPlayers;
+      setFallbackSeatViews(initialPlayers);
 
       const matchingList: MatchingPlayer[] = initialPlayers.map((player) => ({
         id: player.id,
@@ -485,19 +507,14 @@ export function useGamePageController(gameId: string) {
         decliner: undefined,
       }));
     },
-    [
-      addSystemMessage,
-      applyServerUpdate,
-      localPreferences,
-      playerControllersRef,
-    ],
+    [addSystemMessage, applyServerUpdate, localPreferences, seatActionsRef],
   );
 
   useEffect(() => {
     if (!gameHandshake) {
       const previousId = remotePlayerIdRef.current;
       if (previousId != null) {
-        playerControllersRef.current[previousId] = createPlayerController({
+        seatActionsRef.current[previousId] = createPlayerController({
           playerId: previousId,
           playerType: "you",
         });
@@ -519,7 +536,7 @@ export function useGamePageController(gameId: string) {
       },
     );
     remotePlayerIdRef.current = gameHandshake.playerId;
-    playerControllersRef.current[gameHandshake.playerId] = controller;
+    seatActionsRef.current[gameHandshake.playerId] = controller;
     controller.connect({
       onState: (state) => {
         setMatchError(null);
@@ -532,7 +549,7 @@ export function useGamePageController(gameId: string) {
               : ["friend", "you"];
           initializeGame(config, playerTypes, { forceYouFirst: false });
           setPlayerTypes(playerTypes);
-          playerControllersRef.current[gameHandshake.playerId] = controller;
+          seatActionsRef.current[gameHandshake.playerId] = controller;
           gameInitializedRef.current = true;
         }
 
@@ -644,11 +661,12 @@ export function useGamePageController(gameId: string) {
       controller.disconnect();
       if (remotePlayerIdRef.current === gameHandshake.playerId) {
         remotePlayerIdRef.current = null;
-        playerControllersRef.current[gameHandshake.playerId] =
-          createPlayerController({
+        seatActionsRef.current[gameHandshake.playerId] = createPlayerController(
+          {
             playerId: gameHandshake.playerId,
             playerType: "you",
-          });
+          },
+        );
       }
       gameInitializedRef.current = false;
       gameAwaitingServerRef.current = false;
@@ -663,7 +681,7 @@ export function useGamePageController(gameId: string) {
     initializeGame,
     isMultiplayerMatch,
     maskToken,
-    playerControllersRef,
+    seatActionsRef,
     setMatchError,
   ]);
 
@@ -682,75 +700,59 @@ export function useGamePageController(gameId: string) {
     gameStateRef.current = gameState;
   }, [gameState]);
 
-  const [basePlayers, setBasePlayers] = useState<GamePlayer[]>([]);
+  const [fallbackSeatViews, setFallbackSeatViews] = useState<GamePlayer[]>([]);
 
-  // Derive players with:
-  // 1. Local preferences (for the local player)
-  // 2. Remote appearances from matchSnapshot (for multiplayer opponents)
   const players = useMemo((): GamePlayer[] => {
-    if (!basePlayers.length) return basePlayers;
+    if (matchSnapshot) {
+      return buildSeatViewsFromSnapshot(matchSnapshot, {
+        primaryLocalPlayerId,
+        localPreferences,
+        playerColorsForBoard,
+      });
+    }
 
-    return basePlayers.map((player) => {
+    if (fallbackSeatViews.length === 0) {
+      return fallbackSeatViews;
+    }
+
+    // No snapshot yet; reuse the fallback list but reapply local overrides.
+    const normalizedFallback = fallbackSeatViews.map((player) => {
       const isLocal = player.playerId === primaryLocalPlayerId;
-
-      // For multiplayer, get remote player info from matchSnapshot
-      const remote =
-        isMultiplayerMatch && viewModel.match
-          ? viewModel.match.players.find(
-              (entry) => entry.playerId === player.playerId,
-            )
-          : null;
-
-      // Use the calculated board color which includes tinting logic
       const resolvedColor =
         playerColorsForBoard[player.playerId] ?? player.color;
 
       if (isLocal) {
-        // Local player: apply local preferences
         return {
           ...player,
-          name: remote?.displayName ?? player.name,
-          isOnline: remote?.connected ?? player.isOnline,
           color: resolvedColor,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
         };
-      } else if (remote) {
-        // Remote player in multiplayer: apply their appearance
-        const appearance = remote.appearance;
-        return {
-          ...player,
-          name: remote.displayName ?? player.name,
-          isOnline: remote.connected,
-          color: resolvedColor,
-          catSkin: appearance?.catSkin ?? player.catSkin,
-          mouseSkin: appearance?.mouseSkin ?? player.mouseSkin,
-        };
       }
 
-      // Non-multiplayer opponent (bot): use base player info with resolved color
       return {
         ...player,
         color: resolvedColor,
       };
     });
+
+    return normalizedFallback;
   }, [
-    basePlayers,
-    isMultiplayerMatch,
-    viewModel.match,
+    matchSnapshot,
+    fallbackSeatViews,
     primaryLocalPlayerId,
     localPreferences,
     playerColorsForBoard,
   ]);
 
-  // Keep playersRef in sync with the derived players
+  // Keep seatViewsRef in sync with the derived seat views
   useEffect(() => {
-    playersRef.current = players;
+    seatViewsRef.current = players;
   }, [players]);
 
   useEffect(() => {
     if (!gameState) return;
-    Object.values(playerControllersRef.current).forEach((controller) => {
+    Object.values(seatActionsRef.current).forEach((controller) => {
       if (!controller) return;
       if (typeof controller.handleStateUpdate !== "function") return;
       const opponentId = controller.playerId === 1 ? 2 : 1;
@@ -769,11 +771,6 @@ export function useGamePageController(gameId: string) {
   const applySpectatorSnapshotUpdate = useCallback(
     (snapshot: GameSnapshot) => {
       applyServerUpdate({ type: "match", snapshot });
-      const derivedPlayers = buildSpectatorPlayersFromSnapshot(snapshot);
-      if (derivedPlayers.length) {
-        setBasePlayers(derivedPlayers);
-        playersRef.current = derivedPlayers;
-      }
       setPlayerTypes((prev) => {
         const matches =
           prev.length === SPECTATOR_PLAYER_TYPES.length &&
@@ -818,13 +815,13 @@ export function useGamePageController(gameId: string) {
       return;
     }
 
+    Object.values(seatActionsRef.current).forEach((controller) =>
+      controller?.cancel?.(new Error("Spectator session started")),
+    );
+    seatActionsRef.current = { 1: null, 2: null };
+
     const session = new SpectatorSession(gameId);
     spectatorSessionRef.current = session;
-
-    playerControllersRef.current = {
-      1: new RemoteSpectatorPlayerController(1 as PlayerId, "friend"),
-      2: new RemoteSpectatorPlayerController(2 as PlayerId, "friend"),
-    };
 
     setSpectatorStatus({ isLoading: true, error: null });
     let cancelled = false;
@@ -865,14 +862,14 @@ export function useGamePageController(gameId: string) {
       }
       spectatorInitializedRef.current = false;
       setSpectatorStatus({ isLoading: false, error: null });
-      playerControllersRef.current = {};
+      seatActionsRef.current = { 1: null, 2: null };
     };
   }, [
     isSpectatorSession,
     gameId,
     applySpectatorSnapshotUpdate,
     applySpectatorStateUpdate,
-    playerControllersRef,
+    seatActionsRef,
   ]);
   const [matchingPlayers, setMatchingPlayers] = useState<MatchingPlayer[]>([]);
   const [activeTab, setActiveTab] = useState<"chat" | "history">("history");
@@ -985,7 +982,7 @@ export function useGamePageController(gameId: string) {
       matchSnapshot?.status === "ready");
   const localSeatController =
     primaryLocalPlayerId != null
-      ? playerControllersRef.current[primaryLocalPlayerId]
+      ? seatActionsRef.current[primaryLocalPlayerId]
       : null;
   const seatCapabilities = localSeatController?.capabilities;
   const canMovePieces = seatCapabilities?.canMove ?? false;
@@ -1050,7 +1047,6 @@ export function useGamePageController(gameId: string) {
     primaryLocalPlayerId,
     autoAcceptingLocalIds,
     isMultiplayerMatch,
-    playerControllersRef,
     getSeatController,
     performGameAction: performGameActionImpl,
     updateGameState,
@@ -1351,7 +1347,7 @@ export function useGamePageController(gameId: string) {
       }
 
       const currentTurn = currentState.turn;
-      const controller = playerControllersRef.current[currentTurn];
+      const controller = seatActionsRef.current[currentTurn];
       if (!controller || !isLocalController(controller)) {
         setActionError("This player can't submit moves manually right now.");
         return;
@@ -1663,10 +1659,10 @@ export function useGamePageController(gameId: string) {
     setIsLoadingConfig(false);
 
     return () => {
-      Object.values(playerControllersRef.current).forEach((controller) =>
-        controller.cancel?.(new Error("Game closed")),
+      Object.values(seatActionsRef.current).forEach((controller) =>
+        controller?.cancel?.(new Error("Game closed")),
       );
-      playerControllersRef.current = {};
+      seatActionsRef.current = { 1: null, 2: null };
       pendingTurnRequestRef.current = null;
       gameStateRef.current = null;
       setActiveLocalPlayerId(null);
@@ -1740,7 +1736,7 @@ export function useGamePageController(gameId: string) {
     ([1, 2] as PlayerId[]).forEach((playerId) => {
       if (rematchState.responses[playerId] !== "pending") return;
       if (playerId === primaryLocalPlayerId) return;
-      const controller = playerControllersRef.current[playerId];
+      const controller = seatActionsRef.current[playerId];
       if (!controller) return;
       if (isAutomatedController(controller)) {
         const timeoutId = window.setTimeout(
@@ -1921,7 +1917,7 @@ export function useGamePageController(gameId: string) {
       const currentState = gameStateRef.current;
       if (currentState?.status !== "playing") return;
 
-      const controller = playerControllersRef.current[playerId];
+      const controller = seatActionsRef.current[playerId];
       if (!controller || !isSupportedController(controller)) return;
 
       pendingTurnRequestRef.current = playerId;
@@ -1990,7 +1986,7 @@ export function useGamePageController(gameId: string) {
     const result = gameState.result;
     if (result.winner) {
       const player =
-        playersRef.current.find((p) => p.playerId === result.winner) ?? null;
+        seatViewsRef.current.find((p) => p.playerId === result.winner) ?? null;
       addSystemMessage(
         player
           ? `${player.name} won by ${formatWinReason(result.reason)}.`
