@@ -12,6 +12,11 @@ import type {
   SerializedGameState,
   GameSnapshot,
 } from "../domain/game-types";
+import type {
+  ControllerActionKind,
+  ActionRequestPayload,
+  ActionNackCode,
+} from "./controller-actions";
 
 /**
  * Messages sent from client to server over the game WebSocket connection.
@@ -21,6 +26,15 @@ import type {
  * - Meta game actions: resign, draw offers/accept/reject, takeback offers/accept/reject, rematch offers/accept/reject
  * - Utility: ping, give-time
  */
+export interface ActionRequestMessage<
+  K extends ControllerActionKind = ControllerActionKind,
+> {
+  type: "action-request";
+  requestId: string;
+  action: K;
+  payload?: ActionRequestPayload<K>;
+}
+
 export type ClientMessage =
   | { type: "submit-move"; move: Move }
   | { type: "resign" }
@@ -34,7 +48,8 @@ export type ClientMessage =
   | { type: "draw-reject" }
   | { type: "rematch-offer" }
   | { type: "rematch-accept" }
-  | { type: "rematch-reject" };
+  | { type: "rematch-reject" }
+  | ActionRequestMessage;
 
 /**
  * Messages sent from server to client over the game WebSocket connection.
@@ -44,6 +59,23 @@ export type ClientMessage =
  * - Meta action broadcasts: takeback/draw/rematch offers and rejections (broadcast to both players)
  * - Utility: error messages, pong responses
  */
+export interface ActionAckMessage {
+  type: "actionAck";
+  requestId: string;
+  action: ControllerActionKind;
+  serverTime: number;
+}
+
+export interface ActionNackMessage {
+  type: "actionNack";
+  requestId: string;
+  action: ControllerActionKind;
+  code: ActionNackCode;
+  message?: string;
+  retryable?: boolean;
+  serverTime: number;
+}
+
 export type ServerMessage =
   | { type: "state"; state: SerializedGameState }
   | { type: "match-status"; snapshot: GameSnapshot }
@@ -54,7 +86,9 @@ export type ServerMessage =
   | { type: "draw-offer"; playerId: number }
   | { type: "draw-rejected"; playerId: number }
   | { type: "rematch-offer"; playerId: number }
-  | { type: "rematch-rejected"; playerId: number };
+  | { type: "rematch-rejected"; playerId: number }
+  | ActionAckMessage
+  | ActionNackMessage;
 
 /**
  * Messages sent from client to server over the lobby WebSocket connection.

@@ -25,7 +25,14 @@ import {
 } from "../games/store";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
-import type { ClientMessage } from "../../shared/contracts/websocket-messages";
+import type {
+  ClientMessage,
+  ActionRequestMessage,
+} from "../../shared/contracts/websocket-messages";
+import type {
+  ActionNackCode,
+  RematchDecision,
+} from "../../shared/contracts/controller-actions";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -516,6 +523,227 @@ const handleRematchReject = (socket: SessionSocket) => {
   });
 };
 
+const sendActionAck = (
+  socket: SessionSocket,
+  message: ActionRequestMessage,
+) => {
+  socket.ctx.send(
+    JSON.stringify({
+      type: "actionAck",
+      requestId: message.requestId,
+      action: message.action,
+      serverTime: Date.now(),
+    }),
+  );
+};
+
+const sendActionNack = (
+  socket: SessionSocket,
+  message: ActionRequestMessage,
+  code: ActionNackCode,
+  options?: { retryable?: boolean; error?: unknown },
+) => {
+  socket.ctx.send(
+    JSON.stringify({
+      type: "actionNack",
+      requestId: message.requestId,
+      action: message.action,
+      code,
+      message:
+        options?.error instanceof Error ? options.error.message : undefined,
+      retryable: options?.retryable ?? false,
+      serverTime: Date.now(),
+    }),
+  );
+};
+
+const handleActionRequest = async (
+  socket: SessionSocket,
+  message: ActionRequestMessage,
+) => {
+  switch (message.action) {
+    case "resign": {
+      const playerId = ensureAuthorizedPlayer(socket, "resign");
+      if (playerId === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      try {
+        const newState = resignGame({
+          id: socket.sessionId,
+          playerId,
+          timestamp: Date.now(),
+        });
+        sendActionAck(socket, message);
+        console.info("[ws] action-resign processed", {
+          sessionId: socket.sessionId,
+          playerId,
+        });
+        if (newState.status === "finished") {
+          await processRatingUpdate(socket.sessionId);
+          broadcastLiveGamesRemove(socket.sessionId);
+        }
+        broadcast(socket.sessionId, {
+          type: "state",
+          state: getSerializedState(socket.sessionId),
+        });
+        sendMatchStatus(socket.sessionId);
+      } catch (error) {
+        console.error("[ws] action-resign failed", {
+          error,
+          sessionId: socket.sessionId,
+        });
+        sendActionNack(socket, message, "INTERNAL_ERROR", { error });
+      }
+      return;
+    }
+    case "offerDraw": {
+      const playerId = ensureAuthorizedPlayer(socket, "draw-offer");
+      if (playerId === null || socket.socketToken === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      sendToOpponent(socket.sessionId, socket.socketToken, {
+        type: "draw-offer",
+        playerId,
+      });
+      sendActionAck(socket, message);
+      console.info("[ws] action-offerDraw processed", {
+        sessionId: socket.sessionId,
+        playerId,
+      });
+      return;
+    }
+    case "requestTakeback": {
+      const playerId = ensureAuthorizedPlayer(socket, "takeback-offer");
+      if (playerId === null || socket.socketToken === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      sendToOpponent(socket.sessionId, socket.socketToken, {
+        type: "takeback-offer",
+        playerId,
+      });
+      sendActionAck(socket, message);
+      console.info("[ws] action-requestTakeback processed", {
+        sessionId: socket.sessionId,
+        playerId,
+      });
+      return;
+    }
+    case "giveTime": {
+      const seconds = (message.payload as { seconds?: number } | undefined)
+        ?.seconds;
+      if (
+        typeof seconds !== "number" ||
+        Number.isNaN(seconds) ||
+        seconds <= 0
+      ) {
+        sendActionNack(socket, message, "INVALID_SECONDS");
+        return;
+      }
+      const playerId = ensureAuthorizedPlayer(socket, "give-time");
+      if (playerId === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      try {
+        giveTime({
+          id: socket.sessionId,
+          playerId,
+          seconds,
+        });
+        sendActionAck(socket, message);
+        console.info("[ws] action-giveTime processed", {
+          sessionId: socket.sessionId,
+          playerId,
+          seconds,
+        });
+        broadcast(socket.sessionId, {
+          type: "state",
+          state: getSerializedState(socket.sessionId),
+        });
+      } catch (error) {
+        console.error("[ws] action-giveTime failed", {
+          error,
+          sessionId: socket.sessionId,
+        });
+        sendActionNack(socket, message, "INTERNAL_ERROR", { error });
+      }
+      return;
+    }
+    case "offerRematch": {
+      const playerId = ensureAuthorizedPlayer(socket, "rematch-offer");
+      if (playerId === null || socket.socketToken === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      sendToOpponent(socket.sessionId, socket.socketToken, {
+        type: "rematch-offer",
+        playerId,
+      });
+      sendActionAck(socket, message);
+      console.info("[ws] action-offerRematch processed", {
+        sessionId: socket.sessionId,
+        playerId,
+      });
+      return;
+    }
+    case "respondRematch": {
+      const decision = (
+        message.payload as { decision?: RematchDecision } | undefined
+      )?.decision;
+      if (decision !== "accepted" && decision !== "declined") {
+        sendActionNack(socket, message, "INVALID_PAYLOAD");
+        return;
+      }
+      const actionType =
+        decision === "accepted" ? "rematch-accept" : "rematch-reject";
+      const playerId = ensureAuthorizedPlayer(socket, actionType);
+      if (playerId === null) {
+        sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      try {
+        if (decision === "accepted") {
+          resetSession(socket.sessionId);
+          sendActionAck(socket, message);
+          console.info("[ws] action-respondRematch accept processed", {
+            sessionId: socket.sessionId,
+            playerId,
+          });
+          broadcast(socket.sessionId, {
+            type: "state",
+            state: getSerializedState(socket.sessionId),
+          });
+          sendMatchStatus(socket.sessionId);
+        } else {
+          broadcast(socket.sessionId, {
+            type: "rematch-rejected",
+            playerId,
+          });
+          sendActionAck(socket, message);
+          console.info("[ws] action-respondRematch decline processed", {
+            sessionId: socket.sessionId,
+            playerId,
+          });
+        }
+      } catch (error) {
+        console.error("[ws] action-respondRematch failed", {
+          error,
+          sessionId: socket.sessionId,
+          playerId,
+        });
+        sendActionNack(socket, message, "INTERNAL_ERROR", { error });
+      }
+      return;
+    }
+    default: {
+      sendActionNack(socket, message, "UNKNOWN_ACTION");
+    }
+  }
+};
+
 const handleClientMessage = async (
   socket: SessionSocket,
   raw: string | ArrayBuffer,
@@ -581,6 +809,9 @@ const handleClientMessage = async (
       break;
     case "rematch-reject":
       handleRematchReject(socket);
+      break;
+    case "action-request":
+      await handleActionRequest(socket, payload);
       break;
     case "ping":
       socket.ctx.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));

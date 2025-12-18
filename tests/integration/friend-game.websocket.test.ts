@@ -6,6 +6,7 @@
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
+import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
@@ -15,7 +16,10 @@ import type {
   JoinGameResponse,
   MatchmakingGamesResponse,
 } from "../../shared/contracts/games";
-import type { ServerMessage } from "../../shared/contracts/websocket-messages";
+import type {
+  ActionRequestMessage,
+  ServerMessage,
+} from "../../shared/contracts/websocket-messages";
 import type {
   GameConfiguration,
   PlayerAppearance,
@@ -25,6 +29,10 @@ import {
   moveFromStandardNotation,
 } from "../../shared/domain/standard-notation";
 import { newRatingsAfterGame, Outcome } from "../../server/games/rating-system";
+import type {
+  ActionRequestPayload,
+  ControllerActionKind,
+} from "../../shared/contracts/controller-actions";
 
 // ================================
 // --- Test Harness ---
@@ -331,19 +339,39 @@ async function openGameSocket(
 
         waitForMessage: <T extends ServerMessage["type"]>(
           expectedType: T,
-          options?: { ignore?: ServerMessage["type"][] },
+          options?: {
+            ignore?: ServerMessage["type"][];
+            preserveIgnored?: boolean;
+          },
         ) => {
           const ignoreTypes = options?.ignore ?? [];
+          const preserveIgnored = options?.preserveIgnored ?? false;
+          const preservedMessages: ServerMessage[] = [];
+
+          const restorePreservedMessages = () => {
+            if (!preserveIgnored || preservedMessages.length === 0) {
+              return;
+            }
+            for (let i = preservedMessages.length - 1; i >= 0; i--) {
+              buffer.unshift(preservedMessages[i]);
+            }
+            preservedMessages.length = 0;
+          };
 
           return new Promise<Extract<ServerMessage, { type: T }>>(
             (resolveWait, rejectWait) => {
               const processMessage = (msg: ServerMessage): boolean => {
                 if (msg.type === expectedType) {
+                  restorePreservedMessages();
                   resolveWait(msg as Extract<ServerMessage, { type: T }>);
                   return true; // Handled
                 } else if (ignoreTypes.includes(msg.type)) {
+                  if (preserveIgnored) {
+                    preservedMessages.push(msg);
+                  }
                   return false; // Skip, keep waiting
                 } else {
+                  restorePreservedMessages();
                   rejectWait(
                     new Error(
                       `Expected message type "${expectedType}" but got "${msg.type}". ` +
@@ -366,6 +394,7 @@ async function openGameSocket(
               // Set up timeout
               const timeout = setTimeout(() => {
                 waitingResolve = null;
+                restorePreservedMessages();
                 rejectWait(
                   new Error(
                     `Timeout waiting for "${expectedType}" message. Buffer: ${
@@ -380,6 +409,7 @@ async function openGameSocket(
                 waitingResolve = (msg: ServerMessage) => {
                   if (processMessage(msg)) {
                     clearTimeout(timeout);
+                    // preserved messages already restored in processMessage when needed
                   } else {
                     // Message was ignored, wait for next
                     waitForNext();
@@ -395,6 +425,40 @@ async function openGameSocket(
 
     ws.on("error", (err) => reject(err));
   });
+}
+
+const ACTION_REQUEST_IGNORED_MESSAGE_TYPES: ServerMessage["type"][] = [
+  "state",
+  "match-status",
+  "draw-offer",
+  "draw-rejected",
+  "takeback-offer",
+  "takeback-rejected",
+  "rematch-offer",
+  "rematch-rejected",
+];
+
+async function sendActionRequestAndExpectAck<K extends ControllerActionKind>(
+  socket: TestSocket,
+  action: K,
+  payload?: ActionRequestPayload<K>,
+): Promise<void> {
+  const requestId = randomUUID();
+  const message: ActionRequestMessage<K> = {
+    type: "action-request",
+    requestId,
+    action,
+  };
+  if (payload !== undefined) {
+    message.payload = payload;
+  }
+  socket.ws.send(JSON.stringify(message));
+  const ack = await socket.waitForMessage("actionAck", {
+    ignore: ACTION_REQUEST_IGNORED_MESSAGE_TYPES,
+    preserveIgnored: true,
+  });
+  expect(ack.requestId).toBe(requestId);
+  expect(ack.action).toBe(action);
 }
 
 /**
@@ -601,7 +665,7 @@ describe("friend game WebSocket integration", () => {
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
     // Player 2 requests a takeback
-    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+    await sendActionRequestAndExpectAck(socketB, "requestTakeback");
 
     // Only the opponent (Player 1) receives the takeback offer
     const takebackOfferA = await socketA.waitForMessage("takeback-offer");
@@ -631,7 +695,7 @@ describe("friend game WebSocket integration", () => {
     await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
     // Player 2 requests another takeback
-    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+    await sendActionRequestAndExpectAck(socketB, "requestTakeback");
 
     // Only the opponent (Player 1) receives the takeback offer
     const takebackOffer2A = await socketA.waitForMessage("takeback-offer");
@@ -649,7 +713,7 @@ describe("friend game WebSocket integration", () => {
     expect(takebackReject2B.playerId).toBe(1);
 
     // Player 2 requests yet another takeback
-    socketB.ws.send(JSON.stringify({ type: "takeback-offer" }));
+    await sendActionRequestAndExpectAck(socketB, "requestTakeback");
 
     // Only the opponent (Player 1) receives the takeback offer
     const takebackOffer3A = await socketA.waitForMessage("takeback-offer");
@@ -657,7 +721,7 @@ describe("friend game WebSocket integration", () => {
 
     // Player 1 requests a takeback while Player 2's takeback is still pending
     // Player 1 is asking to undo THEIR OWN last move (Cb2)
-    socketA.ws.send(JSON.stringify({ type: "takeback-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "requestTakeback");
 
     // Only the opponent (Player 2) receives Player 1's takeback offer
     const takebackOffer4B = await socketB.waitForMessage("takeback-offer");
@@ -773,13 +837,15 @@ describe("friend game WebSocket integration", () => {
     expect(joinerNewRating).toBeLessThan(userBRating.rating);
 
     // Test rematch - Player A offers, Player B accepts
-    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerRematch");
 
     // Only the opponent (Player B) receives the rematch offer
     const rematchOfferMsgB = await socketB.waitForMessage("rematch-offer");
     expect(rematchOfferMsgB.playerId).toBe(1);
 
-    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+    await sendActionRequestAndExpectAck(socketB, "respondRematch", {
+      decision: "accepted",
+    });
 
     // Wait for both sockets to receive the new game state after rematch
     const [rematchStateA, rematchStateB] = await Promise.all([
@@ -823,8 +889,8 @@ describe("friend game WebSocket integration", () => {
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
     // Both players offer draws in parallel
-    socketA.ws.send(JSON.stringify({ type: "draw-offer" }));
-    socketB.ws.send(JSON.stringify({ type: "draw-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerDraw");
+    await sendActionRequestAndExpectAck(socketB, "offerDraw");
 
     // Each socket receives only the opponent's offer (not their own)
     const [drawOfferFromB, drawOfferFromA] = await Promise.all([
@@ -879,8 +945,8 @@ describe("friend game WebSocket integration", () => {
     expect(joinerRatingAfterDraw).toBeGreaterThan(joinerNewRating);
 
     // Both players offer rematch
-    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
-    socketB.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerRematch");
+    await sendActionRequestAndExpectAck(socketB, "offerRematch");
 
     // Each socket receives only the opponent's offer (not their own)
     const [rematchOfferFromB, rematchOfferFromA] = await Promise.all([
@@ -891,7 +957,9 @@ describe("friend game WebSocket integration", () => {
     expect(rematchOfferFromA.playerId).toBe(2); // B receives A's offer (A is now P2)
 
     // One player accepts
-    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+    await sendActionRequestAndExpectAck(socketB, "respondRematch", {
+      decision: "accepted",
+    });
 
     // Wait for new game state after second rematch
     const [rematch2StateA, rematch2StateB] = await Promise.all([
@@ -925,7 +993,7 @@ describe("friend game WebSocket integration", () => {
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
     // Host resigns game 3
-    socketA.ws.send(JSON.stringify({ type: "resign" }));
+    await sendActionRequestAndExpectAck(socketA, "resign");
 
     // Both players receive the game end state
     const [resignStateA, resignStateB] = await Promise.all([
@@ -938,8 +1006,8 @@ describe("friend game WebSocket integration", () => {
     expect(resignStateA.state).toEqual(resignStateB.state);
 
     // Both players offer rematch
-    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
-    socketB.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerRematch");
+    await sendActionRequestAndExpectAck(socketB, "offerRematch");
 
     // Each socket receives only the opponent's offer
     await Promise.all([
@@ -952,7 +1020,9 @@ describe("friend game WebSocket integration", () => {
     ]);
 
     // One player accepts
-    socketA.ws.send(JSON.stringify({ type: "rematch-accept" }));
+    await sendActionRequestAndExpectAck(socketA, "respondRematch", {
+      decision: "accepted",
+    });
 
     // Wait for new game state after third rematch
     const [rematch3StateA, rematch3StateB] = await Promise.all([
@@ -1014,13 +1084,15 @@ describe("friend game WebSocket integration", () => {
     expect(drawRuleStateA.state).toEqual(drawRuleStateB.state);
 
     // One player offers rematch, the other accepts
-    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerRematch");
 
     await socketB.waitForMessage("rematch-offer", {
       ignore: ["match-status", "state"],
     });
 
-    socketB.ws.send(JSON.stringify({ type: "rematch-accept" }));
+    await sendActionRequestAndExpectAck(socketB, "respondRematch", {
+      decision: "accepted",
+    });
 
     // Wait for new game state after fourth rematch
     const [rematch4StateA, rematch4StateB] = await Promise.all([
@@ -1054,7 +1126,7 @@ describe("friend game WebSocket integration", () => {
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
     // Player 1 offers draw, Player 2 rejects
-    socketA.ws.send(JSON.stringify({ type: "draw-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerDraw");
 
     const drawOffer5B = await socketB.waitForMessage("draw-offer");
     expect(drawOffer5B.playerId).toBe(1);
@@ -1069,7 +1141,7 @@ describe("friend game WebSocket integration", () => {
     expect(drawReject5B.playerId).toBe(2);
 
     // Player 1 gives 30 seconds to Player 2
-    socketA.ws.send(JSON.stringify({ type: "give-time", seconds: 30 }));
+    await sendActionRequestAndExpectAck(socketA, "giveTime", { seconds: 30 });
 
     // Both players receive updated state with the new time
     const [giveTimeStateA, giveTimeStateB] = await Promise.all([
@@ -1103,14 +1175,16 @@ describe("friend game WebSocket integration", () => {
     expect(suicideStateA.state).toEqual(suicideStateB.state);
 
     // Player 1 offers rematch, Player 2 rejects
-    socketA.ws.send(JSON.stringify({ type: "rematch-offer" }));
+    await sendActionRequestAndExpectAck(socketA, "offerRematch");
 
     const rematchOffer5B = await socketB.waitForMessage("rematch-offer", {
       ignore: ["match-status", "state"],
     });
     expect(rematchOffer5B.playerId).toBe(1);
 
-    socketB.ws.send(JSON.stringify({ type: "rematch-reject" }));
+    await sendActionRequestAndExpectAck(socketB, "respondRematch", {
+      decision: "declined",
+    });
 
     // Need to ignore match-status from the game-ending move
     const [rematchReject5A, rematchReject5B] = await Promise.all([

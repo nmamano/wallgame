@@ -98,14 +98,8 @@ This is the orchestrator.
 
 ## Potential future TODOs
 
-### Achieving pure capability-driven logic
-
-There are still explicit mode branches (`isMultiplayerMatch`) throughout `use-meta-game-actions.ts` deciding which code path to take (local performGameAction vs remote controller methods, cancellation rules, etc.). Those checks wouldn't vanish entirely, but ideally more of the behavior differences would be expressed via capabilities and presence/absence of specific controller methods, rather than `if (isMultiplayerMatch) ... else ...`.
-
 ### Minor things
 
 - Controller polymorphism in tests: Expand coverage to include spectator controllers and remote voluntary action methods.
 - Spectator chat capability: Currently disabled via `isSpectatorSession`. If future spectators gain limited chat, wire it through controller capabilities instead of explicit session checks.
 - Session lifecycle: Consider moving spectator session creation into a dedicated hook so other pages (e.g., replays) can reuse the same infrastructure.
-- Error surfacing: Voluntary action rejections surface as generic "Connection unavailable." We could expose more granular error codes (e.g., capability missing vs. temporary socket issue).
-- Make every controller method return something like `Result<void, ControllerError>` (or `Promise<Result<...>>` for remote). Define ControllerError variants like `NotCapable(action)`, `Rejected(reasonCode)`, `TransientTransport(issue)`.
