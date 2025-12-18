@@ -48,6 +48,11 @@ function formatPlayers(game: LiveGameSummary): string {
     .join(" vs ");
 }
 
+function getDisplayedMoveCount(game: LiveGameSummary): number {
+  // Server moveCount is 1-based (starts at 1 before any moves); subtract 1 for completed moves
+  return Math.max(0, game.moveCount - 1);
+}
+
 function LiveGames() {
   const navigate = useNavigate();
 
@@ -353,7 +358,7 @@ function LiveGames() {
                     <TableCell>{formatTimeControl(game)}</TableCell>
                     <TableCell>{formatBoardSize(game)}</TableCell>
                     <TableCell>{formatPlayers(game)}</TableCell>
-                    <TableCell>{game.moveCount}</TableCell>
+                    <TableCell>{getDisplayedMoveCount(game)}</TableCell>
                   </TableRow>
                 ))}
               </TableBody>

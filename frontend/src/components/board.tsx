@@ -72,6 +72,7 @@ export interface BoardProps {
   selectedPawnId?: string | null;
   stagedActionsCount?: number;
   controllablePlayerId?: PlayerId;
+  forceReadOnly?: boolean;
 }
 
 interface WallMaps {
@@ -167,6 +168,7 @@ export function Board({
   selectedPawnId = null,
   stagedActionsCount = 0,
   controllablePlayerId,
+  forceReadOnly = false,
 }: BoardProps) {
   // Generate IDs for pawns internally
   const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
@@ -706,7 +708,8 @@ export function Board({
   const renderPawnWrapper = (pawn: BoardPawn, size: "lg" | "sm") => {
     const pawnColor = playerColors[pawn.playerId];
     const isControllable =
-      controllablePlayerId == null || pawn.playerId === controllablePlayerId;
+      !forceReadOnly &&
+      (controllablePlayerId == null || pawn.playerId === controllablePlayerId);
 
     // Use percentage padding for large pawns to maintain proportions on small screens
     const dimensionClass = size === "lg" ? "w-full h-full" : "w-6 h-6";
