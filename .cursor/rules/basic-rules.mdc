@@ -2,6 +2,7 @@
 alwaysApply: true
 ---
 
+- The app is not finished/launched yet, so we want the architecture to be correct from the start. Don't add things for backward compatibility - there is no data yet. Do things right, not fast.
 - Use bun, not npm, pnpm, etc.
 - When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
 - Don't add comments about backward compatibility. The game is not finished yet so there shouldn't be tech debt like that.

@@ -952,4 +952,85 @@ describe("Spectator WebSocket", () => {
       joinerSocket.close();
     }
   });
+
+  it("spectator follows rematch transitions", async () => {
+    const hostId = "host-rematch-spectator";
+    const joinerId = "joiner-rematch-spectator";
+
+    const createRes = await createFriendGame(hostId, DEFAULT_CONFIG, {
+      hostIsPlayer1: true,
+    });
+    const joinRes = await joinFriendGame(joinerId, createRes.gameId);
+    await markHostReady(createRes.gameId, createRes.hostToken);
+
+    const hostSocket = await openGameSocket(
+      hostId,
+      createRes.gameId,
+      createRes.socketToken,
+    );
+    const joinerSocket = await openGameSocket(
+      joinerId,
+      createRes.gameId,
+      joinRes.socketToken,
+    );
+
+    await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
+    await joinerSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+    // First move to enter in-progress state
+    hostSocket.ws.send(
+      JSON.stringify({
+        type: "submit-move",
+        move: {
+          actions: [
+            { type: "cat", target: [0, 1] },
+            { type: "mouse", target: [7, 0] },
+          ],
+        },
+      }),
+    );
+
+    await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
+    await joinerSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+    // Connect spectator
+    const spectatorSocket = await openSpectatorSocket(createRes.gameId);
+    await spectatorSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+    try {
+      // Finish game via resignation
+      hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
+      await joinerSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+      const finishedMsg = await spectatorSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(finishedMsg.state.status).toBe("finished");
+
+      // Host offers rematch, joiner accepts
+      hostSocket.ws.send(JSON.stringify({ type: "rematch-offer" }));
+      await joinerSocket.waitForMessage("rematch-offer", {
+        ignore: ["state", "match-status"],
+      });
+      joinerSocket.ws.send(JSON.stringify({ type: "rematch-accept" }));
+
+      await hostSocket.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      });
+      await joinerSocket.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      });
+
+      const rematchState = await spectatorSocket.waitForMessage("state", {
+        ignore: ["match-status", "rematch-offer"],
+      });
+      expect(rematchState.state.status).toBe("playing");
+      expect(rematchState.state.moveCount).toBe(1);
+    } finally {
+      spectatorSocket.close();
+      hostSocket.close();
+      joinerSocket.close();
+    }
+  });
 });

@@ -14,6 +14,7 @@ interface UseOnlineGameSessionOptions {
   localPreferences: LocalPreferences;
   onMatchSnapshotUpdate?: (snapshot: GameSnapshot) => void;
   debugMatch?: (message: string, extra?: Record<string, unknown>) => void;
+  enabled?: boolean;
 }
 
 export function useOnlineGameSession({
@@ -21,6 +22,7 @@ export function useOnlineGameSession({
   localPreferences,
   onMatchSnapshotUpdate,
   debugMatch,
+  enabled = true,
 }: UseOnlineGameSessionOptions) {
   const [gameHandshake, setGameHandshake] =
     useState<StoredGameHandshake | null>(null);
@@ -40,6 +42,7 @@ export function useOnlineGameSession({
 
   const updateGameHandshake = useCallback(
     (next: StoredGameHandshake | null) => {
+      if (!enabled) return;
       if (next) {
         saveGameHandshake(next);
         setGameHandshake(next);
@@ -50,11 +53,12 @@ export function useOnlineGameSession({
         setMatchShareUrl(undefined);
       }
     },
-    [gameId],
+    [enabled, gameId],
   );
 
   // Bootstrap: Load stored handshake or join game via URL
   useEffect(() => {
+    if (!enabled) return;
     let cancelled = false;
     const stored = getGameHandshake(gameId);
     debugMatch?.("Bootstrapping friend match state", {
@@ -142,6 +146,7 @@ export function useOnlineGameSession({
     // debugMatch is intentionally excluded from deps - it's just for logging
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [
+    enabled,
     gameId,
     maskToken,
     localPreferences.displayName,
@@ -153,7 +158,7 @@ export function useOnlineGameSession({
 
   // Fetch game session snapshot and mark host as ready if needed
   useEffect(() => {
-    if (!gameHandshake) return;
+    if (!enabled || !gameHandshake) return;
     let cancelled = false;
     debugMatch?.("Fetching friend game session snapshot", {
       id: gameId,
@@ -229,7 +234,7 @@ export function useOnlineGameSession({
     // debugMatch is intentionally excluded from deps - it's just for logging
     // onMatchSnapshotUpdate should be stable (memoized in caller)
     // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [gameHandshake, gameId, maskToken, updateGameHandshake]);
+  }, [enabled, gameHandshake, gameId, maskToken, updateGameHandshake]);
 
   return {
     gameHandshake,

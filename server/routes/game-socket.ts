@@ -49,6 +49,48 @@ const getSocketPlayerId = (socket: SessionSocket): PlayerId | null => {
     : session.players.joiner.playerId;
 };
 
+const ensureAuthorizedPlayer = (
+  socket: SessionSocket,
+  action: string,
+): PlayerId | null => {
+  if (socket.role === "spectator" || socket.socketToken === null) {
+    socket.ctx.send(
+      JSON.stringify({
+        type: "error",
+        message: "Only active players can perform that action.",
+      }),
+    );
+    console.warn("[ws] blocked spectator action", {
+      sessionId: socket.sessionId,
+      action,
+    });
+    return null;
+  }
+
+  const session = getSession(socket.sessionId);
+  const expectedToken =
+    socket.role === "host"
+      ? session.players.host.socketToken
+      : session.players.joiner.socketToken;
+
+  if (expectedToken !== socket.socketToken) {
+    socket.ctx.send(
+      JSON.stringify({
+        type: "error",
+        message: "This connection is no longer authorized for the game.",
+      }),
+    );
+    console.warn("[ws] blocked stale token action", {
+      sessionId: socket.sessionId,
+      action,
+      socketToken: socket.socketToken,
+    });
+    return null;
+  }
+
+  return getSocketPlayerId(socket);
+};
+
 const sessionSockets = new Map<string, Set<SessionSocket>>();
 const contextEntryMap = new WeakMap<WSContext, SessionSocket>();
 const rawSocketMap = new WeakMap<object, SessionSocket>();
@@ -235,8 +277,8 @@ const parseMessage = (raw: string | ArrayBuffer) => {
 
 const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;
-  const playerId = getSocketPlayerId(socket);
-  if (playerId === null) return; // Spectators can't move
+  const playerId = ensureAuthorizedPlayer(socket, "submit-move");
+  if (playerId === null) return;
 
   const newState = applyPlayerMove({
     id: socket.sessionId,
@@ -272,8 +314,8 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 };
 
 const handleResign = async (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
-  if (playerId === null) return; // Spectators can't resign
+  const playerId = ensureAuthorizedPlayer(socket, "resign");
+  if (playerId === null) return;
 
   const newState = resignGame({
     id: socket.sessionId,
@@ -300,8 +342,8 @@ const handleResign = async (socket: SessionSocket) => {
 };
 
 const handleGiveTime = (socket: SessionSocket, seconds: number) => {
-  const playerId = getSocketPlayerId(socket);
-  if (playerId === null) return; // Spectators can't give time
+  const playerId = ensureAuthorizedPlayer(socket, "give-time");
+  if (playerId === null) return;
 
   giveTime({
     id: socket.sessionId,
@@ -320,7 +362,7 @@ const handleGiveTime = (socket: SessionSocket, seconds: number) => {
 };
 
 const handleTakebackOffer = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "takeback-offer");
   if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
@@ -334,7 +376,7 @@ const handleTakebackOffer = (socket: SessionSocket) => {
 };
 
 const handleTakebackAccept = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "takeback-accept");
   if (playerId === null) return;
 
   acceptTakeback({
@@ -352,7 +394,7 @@ const handleTakebackAccept = (socket: SessionSocket) => {
 };
 
 const handleTakebackReject = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "takeback-reject");
   if (playerId === null) return;
 
   rejectTakeback({
@@ -370,7 +412,7 @@ const handleTakebackReject = (socket: SessionSocket) => {
 };
 
 const handleDrawOffer = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "draw-offer");
   if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
@@ -384,8 +426,8 @@ const handleDrawOffer = (socket: SessionSocket) => {
 };
 
 const handleDrawAccept = async (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
-  if (playerId === null) return; // Spectators can't accept draws
+  const playerId = ensureAuthorizedPlayer(socket, "draw-accept");
+  if (playerId === null) return;
 
   const newState = acceptDraw({
     id: socket.sessionId,
@@ -411,7 +453,7 @@ const handleDrawAccept = async (socket: SessionSocket) => {
 };
 
 const handleDrawReject = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "draw-reject");
   if (playerId === null) return;
 
   rejectDraw({
@@ -429,7 +471,7 @@ const handleDrawReject = (socket: SessionSocket) => {
 };
 
 const handleRematchOffer = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "rematch-offer");
   if (playerId === null || socket.socketToken === null) return;
 
   sendToOpponent(socket.sessionId, socket.socketToken, {
@@ -443,8 +485,8 @@ const handleRematchOffer = (socket: SessionSocket) => {
 };
 
 const handleRematchAccept = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
-  if (playerId === null) return; // Spectators can't accept rematches
+  const playerId = ensureAuthorizedPlayer(socket, "rematch-accept");
+  if (playerId === null) return;
 
   resetSession(socket.sessionId);
   console.info("[ws] rematch-accept processed", {
@@ -461,7 +503,7 @@ const handleRematchAccept = (socket: SessionSocket) => {
 };
 
 const handleRematchReject = (socket: SessionSocket) => {
-  const playerId = getSocketPlayerId(socket);
+  const playerId = ensureAuthorizedPlayer(socket, "rematch-reject");
   if (playerId === null) return;
 
   broadcast(socket.sessionId, {

@@ -1,8 +1,12 @@
 import { useState, useRef, useCallback, useEffect } from "react";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
-import type { LocalPlayerController } from "@/lib/player-controllers";
-import type { DrawDecision, TakebackDecision } from "@/lib/player-controllers";
+import type {
+  DrawDecision,
+  GamePlayerController,
+  ManualPlayerController,
+  TakebackDecision,
+} from "@/lib/player-controllers";
 import {
   isLocalController,
   isSupportedController,
@@ -31,14 +35,14 @@ type DecisionPromptSource = "local" | "remote";
 export interface DrawDecisionPromptState {
   from: PlayerId;
   to: PlayerId;
-  controller?: LocalPlayerController;
+  controller?: ManualPlayerController;
   source: DecisionPromptSource;
 }
 
 export interface TakebackDecisionPromptState {
   requester: PlayerId;
   responder: PlayerId;
-  controller?: LocalPlayerController;
+  controller?: ManualPlayerController;
   source: DecisionPromptSource;
 }
 
@@ -64,7 +68,6 @@ interface UseMetaGameActionsParams {
   primaryLocalPlayerId: PlayerId | null;
   autoAcceptingLocalIds: PlayerId[];
   isMultiplayerMatch: boolean;
-  matchReadyForPlay: boolean;
 
   // Controllers
   playerControllersRef: React.MutableRefObject<
@@ -72,11 +75,7 @@ interface UseMetaGameActionsParams {
       Record<PlayerId, import("@/lib/player-controllers").GamePlayerController>
     >
   >;
-
-  // Game client (for multiplayer)
-  gameClientRef: React.MutableRefObject<
-    import("@/lib/game-client").GameClient | null
-  >;
+  getSeatController: (playerId: PlayerId | null) => GamePlayerController | null;
 
   // Actions
   performGameAction: (
@@ -119,9 +118,8 @@ export function useMetaGameActions({
   primaryLocalPlayerId,
   autoAcceptingLocalIds,
   isMultiplayerMatch,
-  matchReadyForPlay,
   playerControllersRef,
-  gameClientRef,
+  getSeatController,
   performGameAction,
   updateGameState,
   computeLastMoves,
@@ -222,10 +220,11 @@ export function useMetaGameActions({
       return;
     }
     if (isMultiplayerMatch) {
-      if (!matchReadyForPlay || !gameClientRef.current) {
+      const seatController = getSeatController(actorId);
+      if (!seatController || typeof seatController.resign !== "function") {
         setActionError("Connection unavailable.");
       } else {
-        gameClientRef.current.sendResign();
+        void seatController.resign();
       }
       setResignFlowPlayerId(null);
       return;
@@ -247,7 +246,6 @@ export function useMetaGameActions({
       setResignFlowPlayerId(null);
     }
   }, [
-    matchReadyForPlay,
     isMultiplayerMatch,
     resignFlowPlayerId,
     resolvePrimaryActionPlayerId,
@@ -255,7 +253,7 @@ export function useMetaGameActions({
     addSystemMessage,
     getPlayerName,
     setActionError,
-    gameClientRef,
+    getSeatController,
   ]);
 
   // Draw offer handlers
@@ -280,34 +278,15 @@ export function useMetaGameActions({
       return;
     }
 
+    const actorController = getSeatController(actorId);
     if (isMultiplayerMatch) {
-      if (!matchReadyForPlay || !gameClientRef.current) {
+      if (!actorController || typeof actorController.offerDraw !== "function") {
         setActionError("Connection unavailable.");
         return;
       }
-      const requestId = ++drawOfferRequestIdRef.current;
-      setActionError(null);
-      setPendingDrawOffer({
-        from: actorId,
-        to: opponentId,
-        status: "pending",
-        createdAt: Date.now(),
-        requestId,
-      });
-      addSystemMessage(
-        `${getPlayerName(actorId)} offered a draw to ${getPlayerName(
-          opponentId,
-        )}.`,
-      );
-      gameClientRef.current.sendDrawOffer();
-      return;
     }
 
     const opponentController = playerControllersRef.current[opponentId];
-    if (!opponentController || !isSupportedController(opponentController)) {
-      setActionError("This opponent cannot respond to draw offers yet.");
-      return;
-    }
     const requestId = ++drawOfferRequestIdRef.current;
     setActionError(null);
     setPendingDrawOffer({
@@ -322,6 +301,14 @@ export function useMetaGameActions({
         opponentId,
       )}.`,
     );
+    if (isMultiplayerMatch) {
+      void actorController?.offerDraw?.();
+      return;
+    }
+    if (!opponentController || !isSupportedController(opponentController)) {
+      setActionError("This opponent cannot respond to draw offers yet.");
+      return;
+    }
     const shouldAutoAccept = autoAcceptingLocalIds.includes(opponentId);
     const responsePromise = shouldAutoAccept
       ? new Promise<DrawDecision>((resolve) =>
@@ -398,11 +385,10 @@ export function useMetaGameActions({
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     isMultiplayerMatch,
-    matchReadyForPlay,
-    gameClientRef,
     gameStateRef,
     playerControllersRef,
     setActionError,
+    getSeatController,
   ]);
 
   const handleCancelDrawOffer = useCallback(() => {
@@ -438,32 +424,33 @@ export function useMetaGameActions({
         return;
       }
 
-      if (!isMultiplayerMatch || !matchReadyForPlay || !gameClientRef.current) {
+      if (!isMultiplayerMatch) {
         setActionError("Connection unavailable.");
         return;
       }
-
-      if (decision === "accept") {
-        gameClientRef.current.sendDrawAccept();
-        addSystemMessage(
-          `${getPlayerName(drawDecisionPrompt.to)} accepted the draw offer.`,
-        );
-      } else {
-        gameClientRef.current.sendDrawReject();
-        addSystemMessage(
-          `${getPlayerName(drawDecisionPrompt.to)} declined the draw offer.`,
-        );
+      const responderController = getSeatController(drawDecisionPrompt.to);
+      if (
+        !responderController ||
+        typeof responderController.respondToRemoteDraw !== "function"
+      ) {
+        setActionError("Connection unavailable.");
+        return;
       }
+      void responderController.respondToRemoteDraw(decision);
+      addSystemMessage(
+        decision === "accept"
+          ? `${getPlayerName(drawDecisionPrompt.to)} accepted the draw offer.`
+          : `${getPlayerName(drawDecisionPrompt.to)} declined the draw offer.`,
+      );
       setDrawDecisionPrompt(null);
     },
     [
       drawDecisionPrompt,
       setActionError,
       isMultiplayerMatch,
-      matchReadyForPlay,
-      gameClientRef,
       addSystemMessage,
       getPlayerName,
+      getSeatController,
     ],
   );
 
@@ -489,8 +476,12 @@ export function useMetaGameActions({
     }
     const responderId: PlayerId = requesterId === 1 ? 2 : 1;
     const historyLengthAtRequest = currentState.history.length;
+    const requesterController = getSeatController(requesterId);
     if (isMultiplayerMatch) {
-      if (!matchReadyForPlay || !gameClientRef.current) {
+      if (
+        !requesterController ||
+        typeof requesterController.requestTakeback !== "function"
+      ) {
         setActionError("Connection unavailable.");
         return;
       }
@@ -509,7 +500,7 @@ export function useMetaGameActions({
           responderId,
         )}.`,
       );
-      gameClientRef.current.sendTakebackOffer();
+      void requesterController.requestTakeback?.();
       return;
     }
     const responderController = playerControllersRef.current[responderId];
@@ -597,11 +588,10 @@ export function useMetaGameActions({
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     isMultiplayerMatch,
-    matchReadyForPlay,
     gameStateRef,
     playerControllersRef,
     setActionError,
-    gameClientRef,
+    getSeatController,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
@@ -642,32 +632,35 @@ export function useMetaGameActions({
         return;
       }
 
-      if (!isMultiplayerMatch || !matchReadyForPlay || !gameClientRef.current) {
+      if (!isMultiplayerMatch) {
         setActionError("Connection unavailable.");
         return;
       }
-
-      if (decision === "allow") {
-        gameClientRef.current.sendTakebackAccept();
-        addSystemMessage(
-          `${getPlayerName(takebackDecisionPrompt.responder)} accepted the takeback request.`,
-        );
-      } else {
-        gameClientRef.current.sendTakebackReject();
-        addSystemMessage(
-          `${getPlayerName(takebackDecisionPrompt.responder)} declined the takeback request.`,
-        );
+      const responderController = getSeatController(
+        takebackDecisionPrompt.responder,
+      );
+      if (
+        !responderController ||
+        typeof responderController.respondToRemoteTakeback !== "function"
+      ) {
+        setActionError("Connection unavailable.");
+        return;
       }
+      void responderController.respondToRemoteTakeback(decision);
+      addSystemMessage(
+        decision === "allow"
+          ? `${getPlayerName(takebackDecisionPrompt.responder)} accepted the takeback request.`
+          : `${getPlayerName(takebackDecisionPrompt.responder)} declined the takeback request.`,
+      );
       setTakebackDecisionPrompt(null);
     },
     [
       takebackDecisionPrompt,
       setActionError,
       isMultiplayerMatch,
-      matchReadyForPlay,
-      gameClientRef,
       addSystemMessage,
       getPlayerName,
+      getSeatController,
     ],
   );
 
@@ -689,12 +682,13 @@ export function useMetaGameActions({
     }
     const opponentId: PlayerId = giverId === 1 ? 2 : 1;
     if (isMultiplayerMatch) {
-      if (!matchReadyForPlay || !gameClientRef.current) {
+      const giverController = getSeatController(giverId);
+      if (!giverController || typeof giverController.giveTime !== "function") {
         setActionError("Connection unavailable.");
         return;
       }
       try {
-        gameClientRef.current.sendGiveTime(60);
+        void giverController.giveTime(60);
         setOutgoingTimeInfo({
           id: ++noticeCounterRef.current,
           message: `You gave ${getPlayerName(opponentId)} 1:00.`,
@@ -735,10 +729,9 @@ export function useMetaGameActions({
     addSystemMessage,
     getPlayerName,
     isMultiplayerMatch,
-    matchReadyForPlay,
     gameStateRef,
     setActionError,
-    gameClientRef,
+    getSeatController,
   ]);
 
   const handleIncomingDrawOffer = useCallback(
