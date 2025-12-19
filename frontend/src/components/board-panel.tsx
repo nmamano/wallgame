@@ -164,9 +164,7 @@ export function BoardPanel({
 
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const canProposeMultiplayerRematch =
-    hasLocalPlayer &&
-    isMultiplayerMatch &&
-    (rematchState.status === "idle" || rematchState.status === "declined");
+    hasLocalPlayer && isMultiplayerMatch && rematchState.status === "idle";
   const showStagedActionControls = hasLocalPlayer;
   const forceReadOnlyBoard = !hasLocalPlayer;
 
