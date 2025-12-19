@@ -648,6 +648,8 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
     expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
     expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
+    expect(matchStatusMsgA.snapshot.matchScore).toEqual({ 1: 0, 2: 0 });
+    expect(matchStatusMsgB.snapshot.matchScore).toEqual({ 1: 0, 2: 0 });
 
     // User A (Player 1) sends first move - move cat from a3 to b2
     // Player 1 starts, and their cat starts at a3 (top-left)
@@ -812,6 +814,10 @@ describe("friend game WebSocket integration", () => {
       socketA.waitForMessage("match-status"),
       socketB.waitForMessage("match-status"),
     ]);
+    expect(matchStatusA.snapshot.matchScore).toEqual({ 1: 1, 2: 0 });
+    expect(matchStatusB.snapshot.matchScore).toEqual(
+      matchStatusA.snapshot.matchScore,
+    );
 
     // Calculate expected new ratings using the Glicko-2 system
     const expectedNewRatings = newRatingsAfterGame(
@@ -871,6 +877,7 @@ describe("friend game WebSocket integration", () => {
     expect(rematchStatusA.snapshot.players[0].playerId).toBe(2); // Host is now Player 2
     expect(rematchStatusA.snapshot.players[1].playerId).toBe(1); // Joiner is now Player 1
     expect(rematchStatusB.snapshot).toEqual(rematchStatusA.snapshot);
+    expect(rematchStatusA.snapshot.matchScore).toEqual({ 1: 0, 2: 1 });
 
     // Player B (now Player 1) makes the first move
     // Since player IDs swapped, socketB (User B) is now Player 1
@@ -923,6 +930,10 @@ describe("friend game WebSocket integration", () => {
       socketA.waitForMessage("match-status"),
       socketB.waitForMessage("match-status"),
     ]);
+    expect(drawMatchStatusA.snapshot.matchScore).toEqual({ 1: 0.5, 2: 1.5 });
+    expect(drawMatchStatusB.snapshot.matchScore).toEqual(
+      drawMatchStatusA.snapshot.matchScore,
+    );
 
     // Verify updated ratings after draw
     // players[0] is host (User A), players[1] is joiner (User B)
@@ -984,6 +995,7 @@ describe("friend game WebSocket integration", () => {
     expect(rematch2StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1 again
     expect(rematch2StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2 again
     expect(rematch2StatusB.snapshot).toEqual(rematch2StatusA.snapshot);
+    expect(rematch2StatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 0.5 });
 
     // Host (Player 1) makes the first move in game 3
     /* .. .. C2
@@ -1004,6 +1016,15 @@ describe("friend game WebSocket integration", () => {
     expect(resignStateA.state.result?.reason).toBe("resignation");
     expect(resignStateA.state.result?.winner).toBe(2); // Joiner wins
     expect(resignStateA.state).toEqual(resignStateB.state);
+
+    const [resignMatchStatusA, resignMatchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+    expect(resignMatchStatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 1.5 });
+    expect(resignMatchStatusB.snapshot.matchScore).toEqual(
+      resignMatchStatusA.snapshot.matchScore,
+    );
 
     // Both players offer rematch
     await sendActionRequestAndExpectAck(socketA, "offerRematch");
@@ -1047,6 +1068,7 @@ describe("friend game WebSocket integration", () => {
     expect(rematch3StatusA.snapshot.players[0].playerId).toBe(2); // Host is Player 2
     expect(rematch3StatusA.snapshot.players[1].playerId).toBe(1); // Joiner is Player 1
     expect(rematch3StatusB.snapshot).toEqual(rematch3StatusA.snapshot);
+    expect(rematch3StatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 1.5 });
 
     // Joiner (now Player 1) makes the first move in game 4
     /* .. .. C2
@@ -1083,6 +1105,15 @@ describe("friend game WebSocket integration", () => {
     expect(drawRuleStateA.state.result?.reason).toBe("one-move-rule");
     expect(drawRuleStateA.state).toEqual(drawRuleStateB.state);
 
+    const [drawRuleMatchStatusA, drawRuleMatchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+    expect(drawRuleMatchStatusA.snapshot.matchScore).toEqual({ 1: 2, 2: 2 });
+    expect(drawRuleMatchStatusB.snapshot.matchScore).toEqual(
+      drawRuleMatchStatusA.snapshot.matchScore,
+    );
+
     // One player offers rematch, the other accepts
     await sendActionRequestAndExpectAck(socketA, "offerRematch");
 
@@ -1117,6 +1148,7 @@ describe("friend game WebSocket integration", () => {
     expect(rematch4StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1
     expect(rematch4StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2
     expect(rematch4StatusB.snapshot).toEqual(rematch4StatusA.snapshot);
+    expect(rematch4StatusA.snapshot.matchScore).toEqual({ 1: 2, 2: 2 });
 
     // Host (Player 1) makes the first move in game 5
     /* .. .. C2
@@ -1173,6 +1205,15 @@ describe("friend game WebSocket integration", () => {
     expect(suicideStateA.state.result?.winner).toBe(1); // Player 1 wins
     expect(suicideStateA.state.result?.reason).toBe("capture");
     expect(suicideStateA.state).toEqual(suicideStateB.state);
+
+    const [suicideMatchStatusA, suicideMatchStatusB] = await Promise.all([
+      socketA.waitForMessage("match-status"),
+      socketB.waitForMessage("match-status"),
+    ]);
+    expect(suicideMatchStatusA.snapshot.matchScore).toEqual({ 1: 3, 2: 2 });
+    expect(suicideMatchStatusB.snapshot.matchScore).toEqual(
+      suicideMatchStatusA.snapshot.matchScore,
+    );
 
     // Player 1 offers rematch, Player 2 rejects
     await sendActionRequestAndExpectAck(socketA, "offerRematch");

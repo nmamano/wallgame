@@ -1,7 +1,7 @@
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { AlertCircle, Trophy, RotateCcw } from "lucide-react";
+import { AlertCircle, Trophy } from "lucide-react";
 import { Board, type BoardProps, type BoardPawn } from "@/components/board";
 import type {
   PlayerId,
@@ -45,6 +45,7 @@ interface BoardPanelProps {
     turn: PlayerId;
   } | null;
   isMultiplayerMatch: boolean;
+  isSpectator: boolean;
   isLoadingConfig: boolean;
   loadError: string | null;
 
@@ -106,6 +107,7 @@ export function BoardPanel({
   gameStatus,
   gameState,
   isMultiplayerMatch,
+  isSpectator,
   isLoadingConfig,
   loadError,
   winnerPlayer,
@@ -186,7 +188,11 @@ export function BoardPanel({
               <h2 className="text-3xl font-bold mb-2">
                 {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
               </h2>
-              <p className="text-muted-foreground text-lg">{winReason}</p>
+              <p className="text-muted-foreground text-lg">
+                {winReason
+                  ? winReason.charAt(0).toUpperCase() + winReason.slice(1)
+                  : ""}
+              </p>
             </div>
             {scoreboardEntries.length === 2 && (
               <div className="space-y-3">
@@ -212,11 +218,11 @@ export function BoardPanel({
               </div>
             )}
             <div className="space-y-3">
-              <div className="flex items-center justify-center gap-2 text-sm font-semibold">
-                <RotateCcw className="w-4 h-4" />
-                Rematch
-              </div>
-              {isMultiplayerMatch && rematchState.status === "idle" ? (
+              {isSpectator ? (
+                <p className="text-sm text-muted-foreground">
+                  Waiting to see if players rematch.
+                </p>
+              ) : isMultiplayerMatch && rematchState.status === "idle" ? (
                 <p className="text-sm text-muted-foreground">
                   Propose a rematch to play again.
                 </p>
@@ -255,7 +261,7 @@ export function BoardPanel({
                 </>
               )}
 
-              {canProposeMultiplayerRematch && (
+              {!isSpectator && canProposeMultiplayerRematch && (
                 <div className="flex justify-center">
                   <Button onClick={handleProposeRematch}>
                     {rematchState.status === "declined"

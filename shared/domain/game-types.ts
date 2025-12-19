@@ -89,6 +89,8 @@ export interface GamePlayerSummary {
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
 
+export type MatchScore = Record<PlayerId, number>;
+
 export interface GameSnapshot {
   id: string;
   status: SessionStatus;
@@ -97,6 +99,7 @@ export interface GameSnapshot {
   createdAt: number; // Timestamp (milliseconds since epoch) when the session was created
   updatedAt: number; // Timestamp (milliseconds since epoch) when the session was last updated
   players: GamePlayerSummary[];
+  matchScore: MatchScore; // Total wins per PlayerId across the rematch session
 }
 
 export type WallOrientation = "vertical" | "horizontal";
