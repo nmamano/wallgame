@@ -149,6 +149,7 @@ function GamePage() {
               gameStatus={board.gameStatus}
               gameState={board.gameState}
               isMultiplayerMatch={board.isMultiplayerMatch}
+              isSpectator={controller.isSpectator}
               isLoadingConfig={board.isLoadingConfig}
               loadError={board.loadError}
               winnerPlayer={board.winnerPlayer}

@@ -110,6 +110,12 @@ Remote seats are guarded by a capability-token system so that transports remain 
 
 - **Defense in depth** — Even if the UI malfunctioned, spectators never learn seat tokens, and the WebSocket layer refuses to bind a socket to a seat unless the presented token matches the current session record. All controller code therefore assumes “capabilities == seat credential”, keeping transport checks centralized.
 
+## Match Scores
+
+- Online match scores live on the server inside `GameSession.matchScore`. Each session keeps a monotonically increasing `gameInstanceId` and a `lastScoredGameInstanceId`, ensuring that every finished game updates the tally at most once.
+- Snapshots expose the score as `{ 1: winsForSeat1, 2: winsForSeat2 }` using the *current* `playerId` mapping, so swapping seats during rematches automatically re-labels totals without migrating historical data.
+- Offline games still keep a local counter; the UI always prefers the authoritative snapshot whenever one exists so spectators and reconnecting players stay in sync.
+
 ## Potential future TODOs
 
 ### Minor things

@@ -911,7 +911,7 @@ export function useGamePageController(gameId: string) {
   const [clockTick, setClockTick] = useState(() => Date.now());
   const [stagedActions, setStagedActions] = useState<Action[]>([]);
   const [matchParticipants, setMatchParticipants] = useState<PlayerType[]>([]);
-  const [matchScore, setMatchScore] = useState<number[]>([]);
+  const [localMatchScore, setLocalMatchScore] = useState<number[]>([]);
   const [, setMatchDraws] = useState(0);
   const [rematchState, setRematchState] = useState<RematchState>({
     status: "idle",
@@ -1721,7 +1721,7 @@ export function useGamePageController(gameId: string) {
 
     const participants = sanitizePlayerList(resolvedPlayers);
     setMatchParticipants(participants);
-    setMatchScore(Array(participants.length).fill(0));
+    setLocalMatchScore(Array(participants.length).fill(0));
     setMatchDraws(0);
     rematchRequestIdRef.current = 0;
     lastScoredGameIdRef.current = 0;
@@ -1789,7 +1789,7 @@ export function useGamePageController(gameId: string) {
     if (winnerId) {
       const participantIndex = seatOrderIndicesRef.current[winnerId - 1];
       if (participantIndex != null) {
-        setMatchScore((prev) => {
+        setLocalMatchScore((prev) => {
           const targetLength = prev.length || matchParticipants.length || 2;
           const next: number[] =
             prev.length === targetLength
@@ -1800,6 +1800,17 @@ export function useGamePageController(gameId: string) {
         });
       }
     } else {
+      setLocalMatchScore((prev) => {
+        const targetLength = prev.length || matchParticipants.length || 2;
+        const next: number[] =
+          prev.length === targetLength
+            ? [...prev]
+            : Array<number>(targetLength).fill(0);
+        for (let i = 0; i < targetLength; i += 1) {
+          next[i] = (next[i] ?? 0) + 0.5;
+        }
+        return next;
+      });
       setMatchDraws((prev) => prev + 1);
     }
 
@@ -2294,7 +2305,9 @@ export function useGamePageController(gameId: string) {
         }
       : bottomTimerPlayer;
 
-  const scoreboardEntries = useMemo(() => {
+  const snapshotMatchScore = matchSnapshot?.matchScore ?? null;
+
+  const participantSeatInfos = useMemo(() => {
     const seats = players.map((player) => ({ player, used: false }));
     const claimSeat = (matcher: (player: GamePlayer) => boolean) => {
       const entry = seats.find((seat) => !seat.used && matcher(seat.player));
@@ -2365,24 +2378,59 @@ export function useGamePageController(gameId: string) {
         }
       }
       return {
-        id: index,
-        name: label,
-        score: matchScore[index] ?? 0,
+        label,
+        playerId: seat?.playerId ?? null,
       };
     });
+  }, [matchParticipants, players, primaryLocalPlayerId, settings.displayName]);
+
+  const resolvedMatchScore = useMemo(() => {
+    const fallbackScores = participantSeatInfos.map(
+      (_, index) => localMatchScore[index] ?? 0,
+    );
+    if ((isMultiplayerMatch || isSpectatorSession) && snapshotMatchScore) {
+      return participantSeatInfos.map((seat, index) => {
+        if (seat.playerId == null) {
+          return fallbackScores[index];
+        }
+        const remoteScore = snapshotMatchScore[seat.playerId];
+        return typeof remoteScore === "number"
+          ? remoteScore
+          : fallbackScores[index];
+      });
+    }
+    return fallbackScores;
   }, [
-    matchParticipants,
-    matchScore,
-    players,
-    primaryLocalPlayerId,
-    settings.displayName,
+    participantSeatInfos,
+    localMatchScore,
+    isMultiplayerMatch,
+    isSpectatorSession,
+    snapshotMatchScore,
   ]);
+
+  const scoreboardEntries = useMemo(
+    () =>
+      participantSeatInfos.map((seat, index) => ({
+        id: index,
+        name: seat.label,
+        score: resolvedMatchScore[index] ?? 0,
+      })),
+    [participantSeatInfos, resolvedMatchScore],
+  );
+
+  const scoreByPlayerId = useMemo<Record<PlayerId, number>>(() => {
+    const map: Record<PlayerId, number> = { 1: 0, 2: 0 };
+    participantSeatInfos.forEach((seat, index) => {
+      if (seat.playerId != null) {
+        map[seat.playerId] = resolvedMatchScore[index] ?? 0;
+      }
+    });
+    return map;
+  }, [participantSeatInfos, resolvedMatchScore]);
 
   const getPlayerMatchScore = (player: GamePlayer | null) => {
     if (!player) return null;
-    const participantIndex = seatOrderIndicesRef.current[player.playerId - 1];
-    if (participantIndex == null) return null;
-    return scoreboardEntries[participantIndex]?.score ?? 0;
+    return scoreByPlayerId[player.playerId] ?? 0;
   };
 
   const opponentPlayerId =
@@ -2511,6 +2559,7 @@ export function useGamePageController(gameId: string) {
 
   const boardSection = {
     isMultiplayerMatch: boardIsMultiplayer,
+    isSpectator: isSpectatorSession,
     gameStatus,
     gameState,
     isLoadingConfig: boardIsLoading,

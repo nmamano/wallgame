@@ -11,6 +11,8 @@ import type {
   GamePlayerSummary,
   PlayerAppearance,
   Move,
+  MatchScore,
+  GameResult,
 } from "../../shared/domain/game-types";
 import type { LiveGameSummary } from "../../shared/contracts/games";
 import {
@@ -41,6 +43,8 @@ export interface SessionPlayer {
   elo?: number; // Looked up from DB based on authenticated user
 }
 
+type SessionMatchScore = Record<SessionPlayer["role"], number>;
+
 export interface GameSession {
   id: string;
   createdAt: number;
@@ -52,6 +56,9 @@ export interface GameSession {
     host: SessionPlayer;
     joiner: SessionPlayer;
   };
+  matchScore: SessionMatchScore;
+  gameInstanceId: number;
+  lastScoredGameInstanceId: number;
   gameState: GameState;
 }
 
@@ -93,6 +100,48 @@ export const getSession = (id: string): GameSession => ensureSession(id);
 
 const createGameState = (config: GameConfiguration): GameState => {
   return new GameState(config, Date.now());
+};
+
+const buildMatchScoreSnapshot = (session: GameSession): MatchScore => {
+  const hostId = session.players.host.playerId;
+  const joinerId = session.players.joiner.playerId;
+  const snapshot: MatchScore = { 1: 0, 2: 0 };
+  snapshot[hostId] = session.matchScore.host;
+  snapshot[joinerId] = session.matchScore.joiner;
+  return snapshot;
+};
+
+const awardWin = (session: GameSession, winner: PlayerId) => {
+  if (session.players.host.playerId === winner) {
+    session.matchScore.host += 1;
+    return;
+  }
+  if (session.players.joiner.playerId === winner) {
+    session.matchScore.joiner += 1;
+  }
+};
+
+const awardDraw = (session: GameSession) => {
+  session.matchScore.host += 0.5;
+  session.matchScore.joiner += 0.5;
+};
+
+const finalizeMatchScore = (
+  session: GameSession,
+  result: GameResult | null | undefined,
+) => {
+  if (session.lastScoredGameInstanceId === session.gameInstanceId) {
+    return;
+  }
+  if (!result) {
+    return;
+  }
+  if (result.winner === 1 || result.winner === 2) {
+    awardWin(session, result.winner);
+  } else {
+    awardDraw(session);
+  }
+  session.lastScoredGameInstanceId = session.gameInstanceId;
 };
 
 /**
@@ -161,6 +210,12 @@ export const createGameSession = (args: {
         appearance: {},
       },
     },
+    matchScore: {
+      host: 0,
+      joiner: 0,
+    },
+    gameInstanceId: 0,
+    lastScoredGameInstanceId: -1,
     gameState: createGameState(args.config),
   };
 
@@ -256,6 +311,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
         elo: player.elo,
       }),
     ),
+    matchScore: buildMatchScoreSnapshot(session),
   };
 };
 
@@ -310,6 +366,7 @@ export const listSessions = (): GameSnapshot[] => {
         elo: player.elo,
       }),
     ),
+    matchScore: buildMatchScoreSnapshot(session),
   }));
 };
 
@@ -338,6 +395,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
           elo: player.elo,
         }),
       ),
+      matchScore: buildMatchScoreSnapshot(session),
     }));
 };
 
@@ -448,6 +506,9 @@ const applyActionToSession = (
   session.gameState = next;
   session.updatedAt = Date.now();
   session.status = next.status === "finished" ? "completed" : "in-progress";
+  if (next.status === "finished") {
+    finalizeMatchScore(session, next.result ?? null);
+  }
   return next;
 };
 
@@ -621,6 +682,8 @@ export const resetSession = (id: string): GameState => {
   const joinerPlayerId = session.players.joiner.playerId;
   session.players.host.playerId = joinerPlayerId;
   session.players.joiner.playerId = hostPlayerId;
+
+  session.gameInstanceId += 1;
 
   return session.gameState;
 };
