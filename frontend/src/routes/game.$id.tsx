@@ -276,6 +276,9 @@ function GamePage() {
                 activeTab={chat.activeTab}
                 onTabChange={chat.onTabChange}
                 formattedHistory={chat.formattedHistory}
+                historyNav={chat.historyNav}
+                hasNewMovesWhileRewound={chat.hasNewMovesWhileRewound}
+                historyTabHighlighted={chat.historyTabHighlighted}
                 chatChannel={chat.chatChannel}
                 messages={chat.messages}
                 chatInput={chat.chatInput}

@@ -1,7 +1,7 @@
 import { Glob } from "bun";
 
 async function runTests() {
-  const glob = new Glob("tests/integration/*.test.ts");
+  const glob = new Glob("tests/**/*.test.ts");
   const testFiles = [...glob.scanSync(".")].sort();
 
   console.log(`Found ${testFiles.length} test files\n`);
