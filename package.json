@@ -10,7 +10,7 @@
     "build": "bun --cwd=frontend run build",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
-    "lint": "bun x eslint .",
+    "lint": "bun x eslint . --cache --cache-location .eslintcache",
     "ci": "bun x prettier --check . && bun x eslint . && bun run test && bun run build"
   },
   "dependencies": {

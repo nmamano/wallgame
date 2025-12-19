@@ -247,15 +247,15 @@ async function joinFriendGame(
   expect(res.status).toBe(200);
   const json = (await res.json()) as JoinGameResponse;
 
-  // Find joiner's playerId from the snapshot
-  // The host chose whether they're Player 1 or 2, so joiner gets the other
-  const joinerPlayer = json.snapshot.players.find((p) => p.role === "joiner");
-  const playerId = joinerPlayer?.playerId ?? 2;
+  expect(json.role).toBe("player");
+  if (json.role !== "player") {
+    throw new Error("Expected join response to return player credentials");
+  }
 
   return {
     snapshot: json.snapshot,
-    role: "joiner",
-    playerId,
+    role: json.seat,
+    playerId: json.playerId,
     token: json.token,
     socketToken: json.socketToken,
     shareUrl: json.shareUrl,

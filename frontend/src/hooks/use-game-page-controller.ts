@@ -280,6 +280,7 @@ export function useGamePageController(gameId: string) {
     matchError,
     setMatchError,
     updateGameHandshake,
+    shouldSpectate,
   } = useOnlineGameSession({
     gameId,
     localPreferences,
@@ -289,8 +290,10 @@ export function useGamePageController(gameId: string) {
   });
 
   const isSpectatorSession = useMemo(
-    () => !hasLocalConfig && !gameHandshake && !isJoiningMatch && !!matchError,
-    [hasLocalConfig, gameHandshake, isJoiningMatch, matchError],
+    () =>
+      !hasLocalConfig &&
+      (shouldSpectate || (!gameHandshake && !isJoiningMatch && !!matchError)),
+    [hasLocalConfig, shouldSpectate, gameHandshake, isJoiningMatch, matchError],
   );
 
   const spectatorSessionRef = useRef<SpectatorSession | null>(null);

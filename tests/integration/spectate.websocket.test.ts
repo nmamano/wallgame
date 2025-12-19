@@ -11,6 +11,7 @@ import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type {
   GameCreateResponse,
+  GameSessionDetails,
   JoinGameResponse,
   LiveGameSummary,
   SpectateResponse,
@@ -105,7 +106,7 @@ async function joinFriendGame(
   userId: string,
   gameId: string,
   appearance?: PlayerAppearance,
-): Promise<JoinGameResponse> {
+): Promise<GameSessionDetails> {
   const res = await fetch(`${baseUrl}/api/games/${gameId}/join`, {
     method: "POST",
     headers: {
@@ -119,7 +120,19 @@ async function joinFriendGame(
   });
 
   expect(res.status).toBe(200);
-  return (await res.json()) as JoinGameResponse;
+  const json = (await res.json()) as JoinGameResponse;
+  expect(json.role).toBe("player");
+  if (json.role !== "player") {
+    throw new Error("Expected player join response");
+  }
+  return {
+    snapshot: json.snapshot,
+    role: json.seat,
+    playerId: json.playerId,
+    token: json.token,
+    socketToken: json.socketToken,
+    shareUrl: json.shareUrl,
+  };
 }
 
 async function markHostReady(gameId: string, hostToken: string): Promise<void> {

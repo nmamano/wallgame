@@ -178,13 +178,14 @@ export const gamesRoute = new Hono()
           );
         }
 
-        const { session, guestToken, guestSocketToken } = joinGameSession({
+        const joinResult = joinGameSession({
           id,
           displayName: parsed.displayName,
           appearance: parsed.appearance,
           authUserId: user?.id,
           elo: joinerElo,
         });
+        const session = joinResult.session;
         const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
 
         // Broadcast to lobby if this was a matchmaking game (it's now full)
@@ -198,11 +199,23 @@ export const gamesRoute = new Hono()
 
         const shareUrl = `${origin}/game/${session.id}`;
 
+        const snapshot = getSessionSnapshot(session.id);
+
+        if (joinResult.kind === "player") {
+          return c.json({
+            role: "player" as const,
+            seat: joinResult.player.role,
+            playerId: joinResult.player.playerId,
+            token: joinResult.player.token,
+            socketToken: joinResult.player.socketToken,
+            snapshot,
+            shareUrl,
+          });
+        }
+
         return c.json({
-          gameId: session.id,
-          token: guestToken,
-          socketToken: guestSocketToken,
-          snapshot: getSessionSnapshot(session.id),
+          role: "spectator" as const,
+          snapshot,
           shareUrl,
         });
       } catch (error) {

@@ -96,6 +96,20 @@ This is the orchestrator.
 `GamePlayerController` is the union of all of those interfaces.
 
 
+## Seat Credential Ownership Model
+
+Remote seats are guarded by a capability-token system so that transports remain dumb pipes while the server enforces “seat = identity”.
+
+- **User identity (auth)** — Every authenticated HTTP/WebSocket request passes through the Kinde middleware which attaches `user.id` to the Hono context; guests have `user` unset. The join route never accepts an `authUserId` parameter from the client—it only reads `user?.id` from the middleware, so callers cannot spoof ownership with crafted JSON/query payloads.
+
+- **Seat credentials** — When a seat vacancy exists (`joiner.ready === false`), the server stores the caller’s `authUserId` on the `SessionPlayer` record **and** mints a fresh `{ token, socketToken }` pair. These tokens are the only credentials that authorize future seat actions; every privileged WebSocket handler compares the active socket’s token against the session map before applying a move or meta-action.
+
+- **Spectator path** — If both seats are full, the join route still succeeds but returns `{ role: "spectator" }`. Frontend hooks treat that as a first-class success path: they clear any stale handshakes and install a `SpectatorSession` (REST snapshot + read-only WebSocket).
+
+- **Rejoin semantics** — Logged-in players can reclaim their seat from any browser because the server recorded `authUserId` during the initial join. When such a user reconnects, `joinGameSession` verifies `joiner.authUserId === user.id`, rotates the seat credential pair, and immediately invalidates stale sockets. Guests cannot rejoin across devices: without a matching `authUserId`, the server refuses to reissue credentials and downgrades them to spectators.
+
+- **Defense in depth** — Even if the UI malfunctioned, spectators never learn seat tokens, and the WebSocket layer refuses to bind a socket to a seat unless the presented token matches the current session record. All controller code therefore assumes “capabilities == seat credential”, keeping transport checks centralized.
+
 ## Potential future TODOs
 
 ### Minor things

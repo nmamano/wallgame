@@ -32,6 +32,7 @@ export function useOnlineGameSession({
   const [matchError, setMatchError] = useState<string | null>(null);
   const [isMultiplayerMatch, setIsMultiplayerMatch] = useState(false);
   const [isJoiningMatch, setIsJoiningMatch] = useState(false);
+  const [shouldSpectate, setShouldSpectate] = useState(false);
   const hostReadyRef = useRef(false);
 
   const maskToken = useCallback((value?: string | null) => {
@@ -47,6 +48,7 @@ export function useOnlineGameSession({
         saveGameHandshake(next);
         setGameHandshake(next);
         setMatchShareUrl(next.shareUrl);
+        setShouldSpectate(false);
       } else {
         clearGameHandshake(gameId);
         setGameHandshake(null);
@@ -73,6 +75,7 @@ export function useOnlineGameSession({
         token: maskToken(stored.token),
         socketToken: maskToken(stored.socketToken),
       });
+      setShouldSpectate(false);
       setMatchShareUrl(stored.shareUrl);
       setGameHandshake(stored);
       setIsMultiplayerMatch(true);
@@ -89,9 +92,10 @@ export function useOnlineGameSession({
       );
       setIsMultiplayerMatch(true);
       setIsJoiningMatch(true);
+      setShouldSpectate(false);
       void (async () => {
         try {
-          const details = await joinGameSession({
+          const result = await joinGameSession({
             gameId,
             displayName: localPreferences.displayName,
             appearance: {
@@ -101,25 +105,36 @@ export function useOnlineGameSession({
             },
           });
           if (cancelled) return;
-          const handshake: StoredGameHandshake = {
-            gameId,
-            token: details.token,
-            socketToken: details.socketToken,
-            role: details.role,
-            playerId: details.playerId,
-            matchType: details.snapshot.matchType,
-            shareUrl: details.shareUrl,
-          };
-          updateGameHandshake(handshake);
-          debugMatch?.("Joined friend game", {
-            id: gameId,
-            role: handshake.role,
-            playerId: handshake.playerId,
-            token: maskToken(handshake.token),
-            socketToken: maskToken(handshake.socketToken),
-          });
+          if (result.kind === "spectator") {
+            clearGameHandshake(gameId);
+            setShouldSpectate(true);
+            setGameHandshake(null);
+            setMatchShareUrl(result.shareUrl);
+            setMatchError(null);
+            debugMatch?.("Join attempt resolved as spectator", { id: gameId });
+          } else {
+            const handshake: StoredGameHandshake = {
+              gameId,
+              token: result.token,
+              socketToken: result.socketToken,
+              role: result.role,
+              playerId: result.playerId,
+              matchType: result.snapshot.matchType,
+              shareUrl: result.shareUrl,
+            };
+            setShouldSpectate(false);
+            updateGameHandshake(handshake);
+            debugMatch?.("Joined friend game", {
+              id: gameId,
+              role: handshake.role,
+              playerId: handshake.playerId,
+              token: maskToken(handshake.token),
+              socketToken: maskToken(handshake.socketToken),
+            });
+          }
         } catch (error) {
           if (cancelled) return;
+          setShouldSpectate(false);
           debugMatch?.("Failed to join friend game via invite", {
             id: gameId,
             error:
@@ -244,5 +259,6 @@ export function useOnlineGameSession({
     matchError,
     setMatchError,
     updateGameHandshake,
+    shouldSpectate,
   };
 }
