@@ -9,3 +9,4 @@ dist/
 ignore/
 **/.tanstack/tmp/
 .cursor/debug.log
+.eslintcache

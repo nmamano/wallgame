@@ -39,7 +39,7 @@ import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { createGameSession, joinGameSession } from "@/lib/api";
-import { saveGameHandshake } from "@/lib/game-session";
+import { saveGameHandshake, clearGameHandshake } from "@/lib/game-session";
 
 export const Route = createFileRoute("/game-setup")({
   component: GameSetup,
@@ -539,6 +539,11 @@ function GameSetup() {
           mouseSkin: settings.mousePawn,
         },
       });
+      if (response.kind === "spectator") {
+        clearGameHandshake(gameId);
+        void navigate({ to: `/game/${gameId}` });
+        return;
+      }
 
       saveGameHandshake({
         gameId,

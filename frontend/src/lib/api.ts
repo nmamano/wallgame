@@ -181,11 +181,21 @@ export const fetchGameSession = async (args: {
   );
 };
 
+export type JoinGameSessionResult =
+  | (GameSessionDetails & {
+      kind: "player";
+    })
+  | {
+      kind: "spectator";
+      snapshot: GameSnapshot;
+      shareUrl: string;
+    };
+
 export const joinGameSession = async (args: {
   gameId: string;
   displayName?: string;
   appearance?: PlayerAppearance;
-}): Promise<GameSessionDetails> => {
+}): Promise<JoinGameSessionResult> => {
   const data = await handleResponse<JoinGameResponse>(
     api.games[":id"].join.$post({
       param: { id: args.gameId },
@@ -196,15 +206,19 @@ export const joinGameSession = async (args: {
     }),
   );
 
-  // Find joiner's playerId from the snapshot
-  // The host randomly chose whether they're Player 1 or 2, so joiner gets the other
-  const joinerPlayer = data.snapshot.players.find((p) => p.role === "joiner");
-  const playerId = joinerPlayer?.playerId ?? 2;
+  if (data.role === "spectator") {
+    return {
+      kind: "spectator",
+      snapshot: data.snapshot,
+      shareUrl: data.shareUrl,
+    };
+  }
 
   return {
+    kind: "player",
     snapshot: data.snapshot,
-    role: "joiner",
-    playerId,
+    role: data.seat,
+    playerId: data.playerId,
     token: data.token,
     socketToken: data.socketToken,
     shareUrl: data.shareUrl,

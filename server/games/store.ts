@@ -61,6 +61,24 @@ export interface GameCreationResult {
   hostSocketToken: string;
 }
 
+const refreshSeatCredential = (player: SessionPlayer) => {
+  player.token = nanoid();
+  player.socketToken = nanoid();
+  player.connected = false;
+  player.lastSeenAt = Date.now();
+};
+
+export type JoinGameSessionResult =
+  | {
+      kind: "player";
+      session: GameSession;
+      player: SessionPlayer;
+    }
+  | {
+      kind: "spectator";
+      session: GameSession;
+    };
+
 const sessions = new Map<string, GameSession>();
 
 const ensureSession = (id: string): GameSession => {
@@ -159,13 +177,9 @@ export const joinGameSession = (args: {
   id: string;
   displayName?: string;
   appearance?: PlayerAppearance;
-  authUserId?: string; // Auth provider's user ID (for rating updates)
+  authUserId?: string; // Auth provider's user ID (for rating updates + seat ownership)
   elo?: number; // Looked up from DB by the route handler
-}): {
-  session: GameSession;
-  guestToken: string;
-  guestSocketToken: string;
-} => {
+}): JoinGameSessionResult => {
   const session = ensureSession(args.id);
 
   // For matchmaking games, check if still accepting joiners
@@ -174,30 +188,43 @@ export const joinGameSession = (args: {
   }
 
   const joiner = session.players.joiner;
-  if (joiner.ready) {
+
+  // Seat is available – assign it immediately.
+  if (!joiner.ready) {
+    joiner.ready = true;
+    joiner.displayName =
+      args.displayName?.trim() ??
+      (session.matchType === "friend" ? "Friend" : "Player 2");
+    joiner.appearance = {
+      ...joiner.appearance,
+      ...args.appearance,
+    };
+    joiner.authUserId = args.authUserId;
+    joiner.elo = args.elo;
+    joiner.lastSeenAt = Date.now();
+    session.updatedAt = Date.now();
+    session.status = session.players.host.ready ? "ready" : "waiting";
     return {
+      kind: "player",
       session,
-      guestToken: joiner.token,
-      guestSocketToken: joiner.socketToken,
+      player: joiner,
     };
   }
-  joiner.ready = true;
-  joiner.displayName =
-    args.displayName?.trim() ??
-    (session.matchType === "friend" ? "Friend" : "Player 2");
-  joiner.appearance = {
-    ...joiner.appearance,
-    ...args.appearance,
-  };
-  joiner.authUserId = args.authUserId;
-  joiner.elo = args.elo;
-  joiner.lastSeenAt = Date.now();
-  session.updatedAt = Date.now();
-  session.status = session.players.host.ready ? "ready" : "waiting";
+
+  // Seat already claimed. Allow reissue only if the authenticated user owns it.
+  if (args.authUserId && joiner.authUserId === args.authUserId) {
+    refreshSeatCredential(joiner);
+    session.updatedAt = Date.now();
+    return {
+      kind: "player",
+      session,
+      player: joiner,
+    };
+  }
+
   return {
+    kind: "spectator",
     session,
-    guestToken: joiner.token,
-    guestSocketToken: joiner.socketToken,
   };
 };
 

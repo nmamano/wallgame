@@ -93,13 +93,21 @@ export interface MatchmakingGamesResponse {
   games: GameSnapshot[];
 }
 
-export interface JoinGameResponse {
-  gameId: string;
-  token: string;
-  socketToken: string;
-  snapshot: GameSnapshot;
-  shareUrl: string;
-}
+export type JoinGameResponse =
+  | {
+      role: "player";
+      seat: GameRole;
+      playerId: PlayerId;
+      token: string;
+      socketToken: string;
+      snapshot: GameSnapshot;
+      shareUrl: string;
+    }
+  | {
+      role: "spectator";
+      snapshot: GameSnapshot;
+      shareUrl: string;
+    };
 
 export interface ReadyGameResponse {
   success: boolean;
