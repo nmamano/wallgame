@@ -20,6 +20,7 @@ import {
   moveToStandardNotation,
   cellToStandardNotation,
 } from "../../../shared/domain/standard-notation";
+import type { MoveHistoryRow } from "@/components/move-list-panel";
 import { pawnId } from "../../../shared/domain/game-utils";
 import { type PlayerColor } from "@/lib/player-colors";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
@@ -47,6 +48,8 @@ import type {
   SerializedGameState,
 } from "../../../shared/domain/game-types";
 import { useGameViewModel } from "@/hooks/use-game-view-model";
+import { buildHistoryState } from "@/lib/history-utils";
+import type { HistoryNav } from "@/types/history";
 import {
   type PlayerType,
   computeLastMoves,
@@ -145,6 +148,24 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 
 const SPECTATOR_PLAYER_TYPES: PlayerType[] = ["friend", "friend"];
 const NOOP = () => undefined;
+
+const cloneAction = (action: Action): Action => {
+  const { target } = action;
+  const clonedTarget: Cell = [target[0], target[1]];
+  if (action.type === "wall") {
+    return {
+      ...action,
+      target: clonedTarget,
+      wallOrientation: action.wallOrientation,
+    };
+  }
+  return {
+    ...action,
+    target: clonedTarget,
+  };
+};
+
+const cloneActions = (actions: Action[]): Action[] => actions.map(cloneAction);
 
 function buildSeatViewsFromSnapshot(
   snapshot: GameSnapshot,
@@ -415,6 +436,10 @@ export function useGamePageController(gameId: string) {
     1: null,
     2: null,
   });
+  const stagedActionsSnapshotRef = useRef<Action[] | null>(null);
+  const latestStagedActionsRef = useRef<Action[]>([]);
+  const previousHistoryCursorRef = useRef<number | null>(null);
+  const previousHistoryLengthRef = useRef(0);
 
   const getSeatController = useCallback((playerId: PlayerId | null) => {
     if (playerId == null) return null;
@@ -424,6 +449,8 @@ export function useGamePageController(gameId: string) {
   const metaGameActionsRef = useRef<ReturnType<
     typeof useMetaGameActions
   > | null>(null);
+  const [historyCursor, setHistoryCursor] = useState<number | null>(null);
+  const [hasNewMovesWhileRewound, setHasNewMovesWhileRewound] = useState(false);
 
   const initializeGame = useCallback(
     (
@@ -710,9 +737,26 @@ export function useGamePageController(gameId: string) {
   const config = viewModel.config;
   const gameState = viewModel.gameState;
   const matchSnapshot = viewModel.match;
+  const historyEntries = useMemo(() => gameState?.history ?? [], [gameState]);
+  const historyEntryCount = historyEntries.length;
+  const historyState = useMemo(() => {
+    if (historyCursor === null) return null;
+    if (!gameState || !config) return null;
+    return buildHistoryState({
+      config,
+      historyEntries,
+      cursor: historyCursor,
+    });
+  }, [historyCursor, gameState, config, historyEntries]);
+  const historyLastMoves = useMemo(() => {
+    if (!historyState) return null;
+    return computeLastMoves(historyState, playerColorsForBoard);
+  }, [historyState, playerColorsForBoard]);
+  const resolvedLastMoves = historyState
+    ? historyLastMoves
+    : viewModel.lastMoves;
   // Convert null to undefined for Board component compatibility
-  const lastMove = viewModel.lastMoves ?? undefined;
-
+  const lastMove = resolvedLastMoves ?? undefined;
   // Refs for synchronous access in callbacks
   const gameStateRef = useRef<GameState | null>(null);
   useEffect(() => {
@@ -972,6 +1016,36 @@ export function useGamePageController(gameId: string) {
   const lastScoredGameIdRef = useRef(0);
   const rematchRequestIdRef = useRef(0);
 
+  useEffect(() => {
+    setHistoryCursor(null);
+    setHasNewMovesWhileRewound(false);
+    stagedActionsSnapshotRef.current = null;
+    previousHistoryCursorRef.current = null;
+    previousHistoryLengthRef.current = 0;
+  }, [gameInstanceId]);
+
+  useEffect(() => {
+    if (historyCursor === null) return;
+    if (historyEntryCount === 0) {
+      if (historyCursor !== -1) {
+        setHistoryCursor(-1);
+      }
+      return;
+    }
+    const maxIndex = historyEntryCount - 1;
+    if (historyCursor > maxIndex) {
+      setHistoryCursor(maxIndex);
+    }
+  }, [historyCursor, historyEntryCount]);
+
+  useEffect(() => {
+    const previousLength = previousHistoryLengthRef.current;
+    if (historyCursor !== null && historyEntryCount > previousLength) {
+      setHasNewMovesWhileRewound(true);
+    }
+    previousHistoryLengthRef.current = historyEntryCount;
+  }, [historyEntryCount, historyCursor]);
+
   const localPlayerIds = useMemo<PlayerId[]>(() => {
     return playerTypes.reduce((acc, type, index) => {
       if (type === "you") {
@@ -1180,8 +1254,9 @@ export function useGamePageController(gameId: string) {
   };
 
   const boardWalls = useMemo<WallPositionWithState[]>(() => {
-    const base = gameState
-      ? gameState.grid
+    const wallSource = historyState ?? gameState;
+    const base = wallSource
+      ? wallSource.grid
           .getWalls()
           .map((wall) => ({ ...wall, state: "placed" as const }))
       : [];
@@ -1190,10 +1265,11 @@ export function useGamePageController(gameId: string) {
       state: "staged" as const,
     }));
     return [...base, ...staged];
-  }, [gameState, stagedWallOverlays]);
+  }, [gameState, historyState, stagedWallOverlays]);
 
   const boardPawns = useMemo((): BoardPawn[] => {
-    const sourceState = previewState ?? gameState;
+    const boardState = historyState ?? gameState;
+    const sourceState = previewState ?? boardState;
     if (!sourceState) return [];
     const basePawns = sourceState.getPawns().map((pawn) => {
       const player = players.find((p) => p.playerId === pawn.playerId);
@@ -1239,7 +1315,14 @@ export function useGamePageController(gameId: string) {
       }
       return pawn;
     });
-  }, [previewState, gameState, stagedActions, activeLocalPlayerId, players]);
+  }, [
+    previewState,
+    gameState,
+    historyState,
+    stagedActions,
+    activeLocalPlayerId,
+    players,
+  ]);
 
   const stagedArrows = useMemo<Arrow[]>(() => {
     if (!gameState || stagedActions.length === 0) return [];
@@ -1310,27 +1393,88 @@ export function useGamePageController(gameId: string) {
   const gameTurn = gameState?.turn ?? 1;
   const gameResult = gameState?.result;
 
-  const formattedHistory = useMemo(() => {
+  const formattedHistory = useMemo<MoveHistoryRow[]>(() => {
     if (!gameState) return [];
     const rows = gameState.config.boardHeight;
-    const entries = gameState.history.map((entry) => ({
+    const entries = gameState.history.map((entry, index) => ({
       number: Math.ceil(entry.index / 2),
       notation: moveToStandardNotation(entry.move, rows),
+      plyIndex: index,
     }));
-    const paired: {
-      num: number;
-      white?: string;
-      black?: string;
-    }[] = [];
+    const paired: MoveHistoryRow[] = [];
     for (let i = 0; i < entries.length; i += 2) {
       paired.push({
         num: entries[i].number,
-        white: entries[i]?.notation,
-        black: entries[i + 1]?.notation,
+        white: entries[i]
+          ? { notation: entries[i].notation, plyIndex: entries[i].plyIndex }
+          : undefined,
+        black: entries[i + 1]
+          ? {
+              notation: entries[i + 1].notation,
+              plyIndex: entries[i + 1].plyIndex,
+            }
+          : undefined,
       });
     }
     return paired;
   }, [gameState]);
+
+  const historyNav = useMemo<HistoryNav>(() => {
+    const lastPlyIndex = historyEntryCount - 1;
+    const hasHistory = historyEntryCount > 0;
+    const canStepBack =
+      hasHistory && (historyCursor === null || historyCursor > -1);
+    const canStepForward = historyCursor !== null;
+    const latestPlyIndex = lastPlyIndex >= 0 ? lastPlyIndex : null;
+
+    const stepBackFromLive = () => {
+      if (!hasHistory) return null;
+      if (historyEntryCount === 1) return -1;
+      return Math.max(-1, lastPlyIndex - 1);
+    };
+
+    return {
+      cursor: historyCursor,
+      latestPlyIndex,
+      canStepBack,
+      canStepForward,
+      stepBack: () => {
+        if (!hasHistory) return;
+        setHistoryCursor((prev) => {
+          if (prev === null) {
+            return stepBackFromLive();
+          }
+          const next = prev - 1;
+          return next < -1 ? -1 : next;
+        });
+      },
+      stepForward: () => {
+        setHistoryCursor((prev) => {
+          if (prev === null) return prev;
+          if (lastPlyIndex < 0) return null;
+          const next = prev + 1;
+          return next >= lastPlyIndex ? null : next;
+        });
+      },
+      jumpStart: () => {
+        if (!hasHistory) return;
+        setHistoryCursor(-1);
+      },
+      jumpEnd: () => {
+        setHistoryCursor(null);
+      },
+      goTo: (plyIndex: number) => {
+        if (!hasHistory) return;
+        if (Number.isNaN(plyIndex)) return;
+        if (lastPlyIndex >= 0 && plyIndex >= lastPlyIndex) {
+          setHistoryCursor(null);
+          return;
+        }
+        const clamped = Math.max(-1, Math.min(plyIndex, lastPlyIndex - 1));
+        setHistoryCursor(clamped);
+      },
+    };
+  }, [historyCursor, historyEntryCount]);
 
   const applyMove = useCallback(
     (playerId: PlayerId, move: Move) => {
@@ -1356,6 +1500,7 @@ export function useGamePageController(gameId: string) {
 
   const commitStagedActions = useCallback(
     (actions?: Action[]) => {
+      if (historyCursor !== null) return;
       const moveActions = actions ?? stagedActions;
 
       const currentState = gameStateRef.current;
@@ -1384,14 +1529,15 @@ export function useGamePageController(gameId: string) {
         );
       }
     },
-    [stagedActions, setDraggingPawnId, setSelectedPawnId],
+    [historyCursor, stagedActions, setDraggingPawnId, setSelectedPawnId],
   );
 
   const clearStagedActions = useCallback(() => {
+    if (historyCursor !== null) return;
     setStagedActions([]);
     setActionError(null);
     setSelectedPawnId(null);
-  }, []);
+  }, [historyCursor]);
 
   const removeStagedAction = useCallback((index: number) => {
     setStagedActions((prev) => prev.filter((_, idx) => idx !== index));
@@ -1778,6 +1924,41 @@ export function useGamePageController(gameId: string) {
   }, [gameState, activeLocalPlayerId, stagedActions.length]);
 
   useEffect(() => {
+    latestStagedActionsRef.current = stagedActions;
+  }, [stagedActions]);
+
+  useEffect(() => {
+    const prevCursor = previousHistoryCursorRef.current;
+    if (prevCursor === historyCursor) return;
+    const enteringHistory = prevCursor === null && historyCursor !== null;
+    const exitingHistory = prevCursor !== null && historyCursor === null;
+
+    if (enteringHistory) {
+      const pendingSnapshot = cloneActions(latestStagedActionsRef.current);
+      stagedActionsSnapshotRef.current = pendingSnapshot.length
+        ? pendingSnapshot
+        : null;
+      if (pendingSnapshot.length) {
+        setStagedActions([]);
+      }
+      setSelectedPawnId(null);
+      setDraggingPawnId(null);
+    } else if (exitingHistory) {
+      const snapshot = stagedActionsSnapshotRef.current;
+      if (snapshot?.length) {
+        setStagedActions(snapshot);
+      }
+      stagedActionsSnapshotRef.current = null;
+    }
+
+    if (historyCursor === null) {
+      setHasNewMovesWhileRewound(false);
+    }
+
+    previousHistoryCursorRef.current = historyCursor;
+  }, [historyCursor, setStagedActions, setSelectedPawnId, setDraggingPawnId]);
+
+  useEffect(() => {
     if (!matchParticipants.length) return;
     if (gameState?.status !== "finished" || !gameState.result) return;
     if (isMultiplayerMatch || isSpectatorSession) return;
@@ -2095,6 +2276,7 @@ export function useGamePageController(gameId: string) {
 
   const handlePawnClick = useCallback(
     (pawnId: string) => {
+      if (historyCursor !== null) return;
       if (!activeLocalPlayerId) return;
       if (gameState?.status !== "playing") return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
@@ -2123,11 +2305,19 @@ export function useGamePageController(gameId: string) {
       }
       setActionError(null);
     },
-    [gameState, boardPawns, activeLocalPlayerId, selectedPawnId, stagedActions],
+    [
+      historyCursor,
+      gameState,
+      boardPawns,
+      activeLocalPlayerId,
+      selectedPawnId,
+      stagedActions,
+    ],
   );
 
   const handleCellClick = useCallback(
     (row: number, col: number) => {
+      if (historyCursor !== null) return;
       if (!activeLocalPlayerId) return;
       if (!selectedPawnId) {
         const pawn = boardPawns.find(
@@ -2143,33 +2333,42 @@ export function useGamePageController(gameId: string) {
       }
       stagePawnAction(selectedPawnId, row, col);
     },
-    [selectedPawnId, boardPawns, activeLocalPlayerId, stagePawnAction],
+    [
+      historyCursor,
+      selectedPawnId,
+      boardPawns,
+      activeLocalPlayerId,
+      stagePawnAction,
+    ],
   );
 
   const handlePawnDragStart = useCallback(
     (pawnId: string) => {
+      if (historyCursor !== null) return;
       if (!activeLocalPlayerId) return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== activeLocalPlayerId) return;
       setDraggingPawnId(pawnId);
       setSelectedPawnId(pawnId);
     },
-    [activeLocalPlayerId, boardPawns],
+    [historyCursor, activeLocalPlayerId, boardPawns],
   );
 
   const handlePawnDragEnd = useCallback(() => {
+    if (historyCursor !== null) return;
     setDraggingPawnId(null);
-  }, []);
+  }, [historyCursor]);
 
   const handleCellDrop = useCallback(
     (pawnId: string, targetRow: number, targetCol: number) => {
+      if (historyCursor !== null) return;
       if (!draggingPawnId) return;
       if (!activeLocalPlayerId) return;
       // Use pawnId from parameter to ensure consistency
       stagePawnAction(pawnId, targetRow, targetCol);
       setDraggingPawnId(null);
     },
-    [draggingPawnId, activeLocalPlayerId, stagePawnAction],
+    [historyCursor, draggingPawnId, activeLocalPlayerId, stagePawnAction],
   );
 
   const handleSendMessage = (event: React.FormEvent) => {
@@ -2235,6 +2434,10 @@ export function useGamePageController(gameId: string) {
     : null;
 
   const actionablePlayerId = resolveBoardControlPlayerId();
+  const boardActionablePlayerId =
+    historyCursor !== null ? null : actionablePlayerId;
+  const boardActiveLocalPlayerId =
+    historyCursor !== null ? null : activeLocalPlayerId;
   const actionPanelPlayerId = primaryLocalPlayerId ?? null;
   const pendingDrawOffer = metaGameActions.pendingDrawOffer;
   const pendingTakebackRequest = metaGameActions.pendingTakebackRequest;
@@ -2561,7 +2764,7 @@ export function useGamePageController(gameId: string) {
     isMultiplayerMatch: boardIsMultiplayer,
     isSpectator: isSpectatorSession,
     gameStatus,
-    gameState,
+    gameState: historyState ?? gameState,
     isLoadingConfig: boardIsLoading,
     loadError: boardLoadError,
     winnerPlayer,
@@ -2588,7 +2791,7 @@ export function useGamePageController(gameId: string) {
     draggingPawnId,
     selectedPawnId,
     stagedActionsCount: stagedActions.length,
-    actionablePlayerId,
+    actionablePlayerId: boardActionablePlayerId,
     onCellClick: handleCellClick,
     onWallClick: handleWallClick,
     onPawnClick: handlePawnClick,
@@ -2596,7 +2799,7 @@ export function useGamePageController(gameId: string) {
     onPawnDragEnd: handlePawnDragEnd,
     onCellDrop: handleCellDrop,
     stagedActions,
-    activeLocalPlayerId,
+    activeLocalPlayerId: boardActiveLocalPlayerId,
     hasActionMessage,
     actionError,
     actionStatusText,
@@ -2647,6 +2850,10 @@ export function useGamePageController(gameId: string) {
     activeTab,
     onTabChange: setActiveTab,
     formattedHistory,
+    historyNav,
+    hasNewMovesWhileRewound,
+    historyTabHighlighted:
+      activeTab === "chat" && hasNewMovesWhileRewound && historyCursor !== null,
     chatChannel,
     messages,
     chatInput,

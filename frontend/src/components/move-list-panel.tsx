@@ -6,16 +6,68 @@ import {
   ChevronsLeft,
   ChevronsRight,
 } from "lucide-react";
+import type { HistoryNav } from "@/types/history";
 
-interface MoveListPanelProps {
-  formattedHistory: {
-    num: number;
-    white?: string;
-    black?: string;
-  }[];
+export interface MoveHistoryCell {
+  notation: string;
+  plyIndex: number;
 }
 
-export function MoveListPanel({ formattedHistory }: MoveListPanelProps) {
+export interface MoveHistoryRow {
+  num: number;
+  white?: MoveHistoryCell;
+  black?: MoveHistoryCell;
+}
+
+interface MoveListPanelProps {
+  formattedHistory: MoveHistoryRow[];
+  historyNav: HistoryNav;
+  hasNewMovesWhileRewound: boolean;
+}
+
+export function MoveListPanel({
+  formattedHistory,
+  historyNav,
+  hasNewMovesWhileRewound,
+}: MoveListPanelProps) {
+  const hasHistory = formattedHistory.length > 0;
+  const renderMoveButton = (
+    cell: MoveHistoryCell | undefined,
+    showRightBorder: boolean,
+  ) => {
+    if (!cell) {
+      return (
+        <button
+          className={`p-2 text-center text-muted-foreground font-mono cursor-default ${
+            showRightBorder ? "border-r" : ""
+          }`}
+          disabled
+        >
+          —
+        </button>
+      );
+    }
+    const isLiveView = historyNav.cursor === null;
+    const isSelected =
+      historyNav.cursor === cell.plyIndex ||
+      (isLiveView && historyNav.latestPlyIndex === cell.plyIndex);
+    const baseClasses = "p-2 text-center transition-colors font-mono";
+    const hoverClasses = isSelected
+      ? "bg-primary/15 text-primary font-semibold"
+      : "hover:bg-accent";
+    return (
+      <button
+        className={`${baseClasses} ${hoverClasses} ${
+          showRightBorder ? "border-r" : ""
+        }`}
+        onClick={() => historyNav.goTo(cell.plyIndex)}
+        aria-pressed={isSelected}
+      >
+        {cell.notation}
+      </button>
+    );
+  };
+
   return (
     <>
       <ScrollArea className="flex-1 p-0">
@@ -30,27 +82,53 @@ export function MoveListPanel({ formattedHistory }: MoveListPanelProps) {
               <div className="p-2 text-muted-foreground text-center border-r">
                 {row.num}.
               </div>
-              <button className="p-2 hover:bg-accent text-center transition-colors border-r font-mono">
-                {row.white}
-              </button>
-              <button className="p-2 hover:bg-accent text-center transition-colors font-mono">
-                {row.black}
-              </button>
+              {renderMoveButton(row.white, true)}
+              {renderMoveButton(row.black, false)}
             </div>
           ))}
         </div>
       </ScrollArea>
       <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
-        <Button variant="ghost" size="icon" className="h-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8"
+          onClick={historyNav.jumpStart}
+          disabled={!hasHistory || historyNav.cursor === -1}
+          aria-label="Jump to beginning"
+        >
           <ChevronsLeft className="w-4 h-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8"
+          onClick={historyNav.stepBack}
+          disabled={!historyNav.canStepBack}
+          aria-label="Step back"
+        >
           <ChevronLeft className="w-4 h-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8">
+        <Button
+          variant="ghost"
+          size="icon"
+          className="h-8"
+          onClick={historyNav.stepForward}
+          disabled={!historyNav.canStepForward}
+          aria-label="Step forward"
+        >
           <ChevronRight className="w-4 h-4" />
         </Button>
-        <Button variant="ghost" size="icon" className="h-8">
+        <Button
+          variant={hasNewMovesWhileRewound ? "secondary" : "ghost"}
+          size="icon"
+          className={`h-8 ${
+            hasNewMovesWhileRewound ? "animate-pulse text-primary" : ""
+          }`}
+          onClick={historyNav.jumpEnd}
+          disabled={historyNav.cursor === null}
+          aria-label="Go live"
+        >
           <ChevronsRight className="w-4 h-4" />
         </Button>
       </div>

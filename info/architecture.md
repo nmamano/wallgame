@@ -116,6 +116,14 @@ Remote seats are guarded by a capability-token system so that transports remain 
 - Snapshots expose the score as `{ 1: winsForSeat1, 2: winsForSeat2 }` using the *current* `playerId` mapping, so swapping seats during rematches automatically re-labels totals without migrating historical data.
 - Offline games still keep a local counter; the UI always prefers the authoritative snapshot whenever one exists so spectators and reconnecting players stay in sync.
 
+## Move History Navigation
+
+- The game page controller owns a single `historyCursor` that represents the currently viewed ply. `null` means "live"; any number refers to a specific half-move index. All paths (offline, online, spectator) consume the same cursor and the same `historyNav` API, so history semantics do not fork across transports.
+- When rewound, the controller builds a pure snapshot via `buildHistoryState({ config, historyEntries, cursor })`. The snapshot is a regular `GameState`, allowing every downstream derivation (board pawns, walls, timers, last-move arrows) to read from a single `historyState` reference. No other subsystem knows whether it is looking at live or historic data.
+- Staged actions remain local-only. Entering history mode snapshots any staged work, clears it from the board, and freezes interaction handlers. Leaving history mode restores the staged actions exactly as they were, so staging visuals stay yellow and never leak into historic snapshots.
+- The Move History UI is the only component that renders navigation controls. It consumes `historyNav` plus `hasNewMovesWhileRewound` to highlight the current ply, pulse the "Go live" button when new moves arrive, and notify users (via the tab highlight) if they are rewound while looking at chat.
+- Incoming moves while rewound never mutate the cursor; they only flip `hasNewMovesWhileRewound = true`. Resuming live play (cursor → `null`) clears that flag, ensuring the controller never auto-jumps or spams UI chrome outside the history panel.
+
 ## Potential future TODOs
 
 ### Minor things
