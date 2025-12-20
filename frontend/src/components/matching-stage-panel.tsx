@@ -9,6 +9,11 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Check, Copy, Loader2, User, Bot, Users } from "lucide-react";
 import type { PlayerType } from "@/lib/gameViewModel";
+import type { MatchType } from "../../../shared/domain/game-types";
+import type {
+  GameAccessWaitingReason,
+  GameRole,
+} from "../../../shared/contracts/games";
 
 export interface MatchingPlayer {
   id: string;
@@ -17,6 +22,8 @@ export interface MatchingPlayer {
   isReady: boolean;
   isYou: boolean;
   isConnected?: boolean;
+  role?: GameRole;
+  statusOverride?: "aborted";
 }
 
 interface MatchingStagePanelProps {
@@ -26,6 +33,17 @@ interface MatchingStagePanelProps {
   statusMessage?: string;
   canAbort?: boolean;
   onAbort: () => void;
+  primaryAction?: {
+    label: string;
+    description?: string;
+    onClick: () => void;
+    disabled?: boolean;
+  };
+  matchTypeHint: MatchType | null;
+  localRole: GameRole | null;
+  onJoinerDismiss: () => void;
+  showShareInstructions: boolean;
+  waitingReason?: GameAccessWaitingReason | null;
 }
 
 export function MatchingStagePanel({
@@ -35,6 +53,12 @@ export function MatchingStagePanel({
   statusMessage,
   canAbort = true,
   onAbort,
+  primaryAction,
+  matchTypeHint,
+  localRole,
+  onJoinerDismiss,
+  showShareInstructions,
+  waitingReason,
 }: MatchingStagePanelProps) {
   const [copied, setCopied] = useState(false);
   const resolvedShareUrl =
@@ -55,14 +79,25 @@ export function MatchingStagePanel({
     return <Bot className="h-5 w-5" />;
   };
 
+  const resolveOnlineOpponentLabel = () => {
+    if (matchTypeHint === null) {
+      return "Opponent";
+    }
+    return matchTypeHint === "matchmaking" ? "Matched Player" : "Friend";
+  };
+
   const getPlayerLabel = (player: MatchingPlayer) => {
+    if (!player.isReady) {
+      return player.isYou ? player.name || "You" : "Open Seat";
+    }
     switch (player.type) {
       case "you":
-        return "You";
+        // Prefer the resolved display name ("BEANA", "Guest", etc.) for the local player.
+        // Fall back to "You" if no name is available.
+        return player.name || "You";
       case "friend":
-        return "Friend";
       case "matched-user":
-        return "Matched Player";
+        return player.name || resolveOnlineOpponentLabel();
       case "easy-bot":
         return "Easy Bot";
       case "medium-bot":
@@ -76,35 +111,62 @@ export function MatchingStagePanel({
     }
   };
 
+  const renderFriendShareInstructions = () => (
+    <div className="mt-2 space-y-2">
+      <p className="text-sm text-muted-foreground">
+        Share this link with your friend:
+      </p>
+      <div className="flex items-center gap-2">
+        <code className="flex-1 bg-muted p-2 rounded text-xs truncate">
+          {resolvedShareUrl ?? "Share link unavailable"}
+        </code>
+        <Button
+          size="icon"
+          variant="outline"
+          className="h-8 w-8 shrink-0"
+          onClick={handleCopyLink}
+          disabled={!resolvedShareUrl}
+        >
+          {copied ? (
+            <Check className="h-4 w-4 text-green-500" />
+          ) : (
+            <Copy className="h-4 w-4" />
+          )}
+        </Button>
+      </div>
+    </div>
+  );
+
+  const renderOnlineOpponentInstructions = (player: MatchingPlayer) => {
+    if (waitingReason === "host-aborted") {
+      return (
+        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          The creator aborted this game.
+        </div>
+      );
+    }
+    if (
+      showShareInstructions &&
+      matchTypeHint === "friend" &&
+      player.role === "joiner" &&
+      !player.isReady
+    ) {
+      return renderFriendShareInstructions();
+    }
+    return (
+      <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+        <Loader2 className="h-3 w-3 animate-spin" />
+        Waiting for someone to join...
+      </div>
+    );
+  };
+
   const renderInstructions = (player: MatchingPlayer) => {
     if (player.isReady) return null;
 
-    if (player.type === "friend") {
-      return (
-        <div className="mt-2 space-y-2">
-          <p className="text-sm text-muted-foreground">
-            Share this link with your friend:
-          </p>
-          <div className="flex items-center gap-2">
-            <code className="flex-1 bg-muted p-2 rounded text-xs truncate">
-              {resolvedShareUrl ?? "Share link unavailable"}
-            </code>
-            <Button
-              size="icon"
-              variant="outline"
-              className="h-8 w-8 shrink-0"
-              onClick={handleCopyLink}
-              disabled={!resolvedShareUrl}
-            >
-              {copied ? (
-                <Check className="h-4 w-4 text-green-500" />
-              ) : (
-                <Copy className="h-4 w-4" />
-              )}
-            </Button>
-          </div>
-        </div>
-      );
+    if (player.type === "friend" || player.type === "matched-user") {
+      return renderOnlineOpponentInstructions(player);
     }
 
     if (player.type === "custom-bot") {
@@ -118,30 +180,22 @@ export function MatchingStagePanel({
       );
     }
 
-    if (player.type === "matched-user") {
-      return (
-        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
-          <Loader2 className="h-3 w-3 animate-spin" />
-          Waiting for someone to join...
-        </div>
-      );
-    }
-
     return null;
   };
 
   return (
     <Dialog
       open={isOpen}
-      onOpenChange={() => {
-        // Dialog should not be closable during matching stage
+      onOpenChange={(open) => {
+        if (open) return;
+        if (localRole === "host" && canAbort) {
+          onAbort();
+        } else {
+          onJoinerDismiss();
+        }
       }}
     >
-      <DialogContent
-        className="sm:max-w-md"
-        onPointerDownOutside={(e) => e.preventDefault()}
-        onEscapeKeyDown={(e) => e.preventDefault()}
-      >
+      <DialogContent className="sm:max-w-md">
         <DialogHeader>
           <DialogTitle className="flex items-center gap-2">
             <Users className="h-5 w-5" />
@@ -180,7 +234,12 @@ export function MatchingStagePanel({
                   )}
                 </div>
                 <div className="flex items-center gap-2">
-                  {player.isReady ? (
+                  {player.statusOverride === "aborted" ? (
+                    <span className="flex items-center gap-1 text-sm text-red-600 font-medium">
+                      <Loader2 className="h-3 w-3 animate-spin" />
+                      Aborted
+                    </span>
+                  ) : player.isReady ? (
                     <span className="flex items-center gap-1 text-sm text-green-600 font-medium">
                       <Check className="h-4 w-4" />
                       Ready
@@ -196,13 +255,31 @@ export function MatchingStagePanel({
               {renderInstructions(player)}
             </Card>
           ))}
+          {primaryAction && (
+            <div className="space-y-2">
+              {primaryAction.description && (
+                <p className="text-sm text-muted-foreground">
+                  {primaryAction.description}
+                </p>
+              )}
+              <Button
+                className="w-full"
+                onClick={primaryAction.onClick}
+                disabled={primaryAction.disabled}
+              >
+                {primaryAction.label}
+              </Button>
+            </div>
+          )}
         </div>
 
-        <div className="flex justify-center">
-          <Button variant="destructive" onClick={onAbort} disabled={!canAbort}>
-            Abort Game
-          </Button>
-        </div>
+        {localRole === "host" && canAbort && (
+          <div className="flex justify-center">
+            <Button variant="destructive" onClick={onAbort}>
+              Abort Game
+            </Button>
+          </div>
+        )}
       </DialogContent>
     </Dialog>
   );

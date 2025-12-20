@@ -62,12 +62,14 @@ interface BoardPanelProps {
   };
   rematchResponseSummary: RematchResponseSummary[];
   rematchStatusText: string;
+  spectatorRematchGameId?: string | null;
   primaryLocalPlayerId: PlayerId | null;
   userRematchResponse: "pending" | "accepted" | "declined" | null;
   handleAcceptRematch: () => void;
   handleDeclineRematch: () => void;
   handleProposeRematch: () => void;
   openRematchWindow: () => void;
+  handleFollowSpectatorRematch?: () => void;
   handleExitAfterMatch: () => void;
 
   // Board props
@@ -116,12 +118,14 @@ export function BoardPanel({
   rematchState,
   rematchResponseSummary,
   rematchStatusText,
+  spectatorRematchGameId,
   primaryLocalPlayerId,
   userRematchResponse,
   handleAcceptRematch,
   handleDeclineRematch,
   handleProposeRematch,
   openRematchWindow,
+  handleFollowSpectatorRematch,
   handleExitAfterMatch,
   rows,
   cols,
@@ -149,6 +153,8 @@ export function BoardPanel({
   clearStagedActions,
   commitStagedActions,
 }: BoardPanelProps) {
+  const followSpectatorRematch =
+    handleFollowSpectatorRematch ?? (() => undefined);
   const isIncomingMultiplayerOffer =
     isMultiplayerMatch &&
     rematchState.status === "pending" &&
@@ -217,9 +223,20 @@ export function BoardPanel({
             )}
             <div className="space-y-3">
               {isSpectator ? (
-                <p className="text-sm text-muted-foreground">
-                  Waiting to see if players rematch.
-                </p>
+                spectatorRematchGameId ? (
+                  <div className="flex flex-col gap-3">
+                    <p className="text-sm text-muted-foreground">
+                      Players started a rematch.
+                    </p>
+                    <Button onClick={followSpectatorRematch}>
+                      Watch rematch
+                    </Button>
+                  </div>
+                ) : (
+                  <p className="text-sm text-muted-foreground">
+                    Waiting to see if players rematch.
+                  </p>
+                )
               ) : isMultiplayerMatch && rematchState.status === "idle" ? (
                 <p className="text-sm text-muted-foreground">
                   Propose a rematch to play again.

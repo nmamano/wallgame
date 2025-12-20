@@ -1432,11 +1432,22 @@ The same URL `/game/:id` works throughout the game lifecycle:
    - Player IDs swapped (loser goes first)
    - New tokens generated for both players
 4. Server broadcasts to all connected clients:
-   ```typescript
-   { type: "rematch-started", newGameId: "def456" }
-   ```
+   - **Targeted to each player seat (includes credentials):**
+     ```typescript
+     {
+       type: "rematch-started",
+       newGameId: "def456",
+       seat: { token, socketToken }
+     }
+     ```
+   - **Broadcast to everyone else (spectators, stale sockets, etc.):**
+     ```typescript
+     { type: "rematch-started", newGameId: "def456" }
+     ```
+   - Immediately after broadcasting, the server marks `abc123` as completed/read-only and rejects new gameplay actions for that id.
 5. Players' clients:
-   - Store new handshake for `def456`
+   - Receive the new seat credentials in-band
+   - Store the handshake payload for `def456`
    - Navigate to `/game/def456`
 6. Spectators' clients:
    - Show "Players started a rematch" message
@@ -1444,6 +1455,8 @@ The same URL `/game/:id` works throughout the game lifecycle:
    - Can choose to stay viewing completed game or follow
 7. Old session (`abc123`) eventually cleaned from memory
    - URL `/game/abc123` continues to work via DB replay
+
+Offline (vs-bot/solo) games obey the same rule: each `/game/:id` covers a single lifecycle. Creating a new local game generates a fresh NanoID client-side, and rematching locally creates another ID before routing to `/game/:newId`.
 
 **Backend changes required:**
 
@@ -1507,7 +1520,7 @@ export const createRematchSession = (
 export type ServerMessage =
   | { type: "state"; state: SerializedGameState }
   | { type: "match-status"; snapshot: GameSnapshot }
-  | { type: "rematch-started"; newGameId: string; yourToken?: string }
+  | { type: "rematch-started"; newGameId: string; seat?: { token: string; socketToken: string } }
   // ... other existing types
 ```
 

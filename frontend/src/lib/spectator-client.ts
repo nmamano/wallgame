@@ -10,6 +10,7 @@ export interface SpectatorClientHandlers {
   onError?: (message: string) => void;
   onClose?: () => void;
   onOpen?: () => void;
+  onRematchStarted?: (newGameId: string) => void;
 }
 
 const buildSpectatorSocketUrl = (gameId: string): string => {
@@ -75,6 +76,8 @@ export class SpectatorClient {
             status: payload.snapshot.status,
           });
           this.handlers.onMatchStatus?.(payload.snapshot);
+        } else if (payload.type === "rematch-started") {
+          this.handlers.onRematchStarted?.(payload.newGameId);
         } else if (payload.type === "error") {
           this.handlers.onError?.(payload.message);
         }
@@ -84,9 +87,12 @@ export class SpectatorClient {
       }
     });
 
-    this.socket.addEventListener("close", () => {
+    this.socket.addEventListener("close", (event) => {
       console.debug("[spectator-client] websocket closed", {
         gameId: this.gameId,
+        code: event.code,
+        reason: event.reason,
+        wasClean: event.wasClean,
       });
       this.clearPingInterval();
       this.handlers.onClose?.();

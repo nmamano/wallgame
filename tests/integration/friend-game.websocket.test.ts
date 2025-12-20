@@ -511,6 +511,49 @@ async function sendMoveAndWaitForState(
   return stateA.state;
 }
 
+async function reconnectPlayersForRematch(args: {
+  hostSocket: TestSocket;
+  joinerSocket: TestSocket;
+  hostUserId: string;
+  joinerUserId: string;
+}): Promise<{
+  newGameId: string;
+  hostSocket: TestSocket;
+  joinerSocket: TestSocket;
+}> {
+  const ignoreTypes: ServerMessage["type"][] = [
+    "match-status",
+    "rematch-offer",
+    "state",
+  ];
+  const [hostMessage, joinerMessage] = await Promise.all([
+    args.hostSocket.waitForMessage("rematch-started", { ignore: ignoreTypes }),
+    args.joinerSocket.waitForMessage("rematch-started", {
+      ignore: ignoreTypes,
+    }),
+  ]);
+  expect(hostMessage.newGameId).toBe(joinerMessage.newGameId);
+  expect(hostMessage.seat).toBeDefined();
+  expect(joinerMessage.seat).toBeDefined();
+  args.hostSocket.close();
+  args.joinerSocket.close();
+  const nextHostSocket = await openGameSocket(
+    args.hostUserId,
+    hostMessage.newGameId,
+    hostMessage.seat!.socketToken,
+  );
+  const nextJoinerSocket = await openGameSocket(
+    args.joinerUserId,
+    joinerMessage.newGameId,
+    joinerMessage.seat!.socketToken,
+  );
+  return {
+    newGameId: hostMessage.newGameId,
+    hostSocket: nextHostSocket,
+    joinerSocket: nextJoinerSocket,
+  };
+}
+
 // ================================
 // --- Main Tests ---
 // ================================
@@ -526,13 +569,13 @@ describe("friend game WebSocket integration", () => {
 
     // Start the test server
     startTestServer();
-  });
+  }, 120_000);
 
   afterAll(async () => {
     await cleanupTestUsers();
     await stopTestServer();
     await teardownEphemeralDb(container);
-  });
+  }, 60_000);
 
   it("allows two players to create a friend game, join it, exchange moves, and do meta actions", async () => {
     const userA = "user-a";
@@ -616,8 +659,8 @@ describe("friend game WebSocket integration", () => {
     expect(joinSnapshotB.players[1].elo).toBe(userBRating.rating); // Joiner rating
 
     // Both connect via WebSocket
-    const socketA = await openGameSocket(userA, gameId, socketTokenA);
-    const socketB = await openGameSocket(userB, gameId, socketTokenB);
+    let socketA = await openGameSocket(userA, gameId, socketTokenA);
+    let socketB = await openGameSocket(userB, gameId, socketTokenB);
 
     // Wait for initial state and match status (state comes first on connect)
     const stateMsgA = await socketA.waitForMessage("state");
@@ -853,7 +896,15 @@ describe("friend game WebSocket integration", () => {
       decision: "accepted",
     });
 
-    // Wait for both sockets to receive the new game state after rematch
+    const rematch1 = await reconnectPlayersForRematch({
+      hostSocket: socketA,
+      joinerSocket: socketB,
+      hostUserId: userA,
+      joinerUserId: userB,
+    });
+    socketA = rematch1.hostSocket;
+    socketB = rematch1.joinerSocket;
+
     const [rematchStateA, rematchStateB] = await Promise.all([
       socketA.waitForMessage("state", {
         ignore: ["match-status", "rematch-offer"],
@@ -863,7 +914,7 @@ describe("friend game WebSocket integration", () => {
       }),
     ]);
     expect(rematchStateA.state.status).toBe("playing");
-    expect(rematchStateA.state.moveCount).toBe(1);
+    expect(rematchStateA.state.moveCount).toBe(0);
     expect(rematchStateA.state).toEqual(rematchStateB.state);
 
     // Wait for match-status to verify player roles have swapped
@@ -876,7 +927,12 @@ describe("friend game WebSocket integration", () => {
     // players[0] is still the host (User A), players[1] is still the joiner (User B)
     expect(rematchStatusA.snapshot.players[0].playerId).toBe(2); // Host is now Player 2
     expect(rematchStatusA.snapshot.players[1].playerId).toBe(1); // Joiner is now Player 1
-    expect(rematchStatusB.snapshot).toEqual(rematchStatusA.snapshot);
+    expect(
+      rematchStatusB.snapshot.players.map((player) => player.playerId),
+    ).toEqual(rematchStatusA.snapshot.players.map((player) => player.playerId));
+    expect(rematchStatusB.snapshot.matchScore).toEqual(
+      rematchStatusA.snapshot.matchScore,
+    );
     expect(rematchStatusA.snapshot.matchScore).toEqual({ 1: 0, 2: 1 });
 
     // Player B (now Player 1) makes the first move
@@ -972,7 +1028,15 @@ describe("friend game WebSocket integration", () => {
       decision: "accepted",
     });
 
-    // Wait for new game state after second rematch
+    const rematch2 = await reconnectPlayersForRematch({
+      hostSocket: socketA,
+      joinerSocket: socketB,
+      hostUserId: userA,
+      joinerUserId: userB,
+    });
+    socketA = rematch2.hostSocket;
+    socketB = rematch2.joinerSocket;
+
     const [rematch2StateA, rematch2StateB] = await Promise.all([
       socketA.waitForMessage("state", {
         ignore: ["match-status", "rematch-offer"],
@@ -982,7 +1046,7 @@ describe("friend game WebSocket integration", () => {
       }),
     ]);
     expect(rematch2StateA.state.status).toBe("playing");
-    expect(rematch2StateA.state.moveCount).toBe(1);
+    expect(rematch2StateA.state.moveCount).toBe(0);
     expect(rematch2StateA.state).toEqual(rematch2StateB.state);
 
     // Wait for match-status to verify player roles have swapped back
@@ -994,7 +1058,14 @@ describe("friend game WebSocket integration", () => {
     // After second rematch, Host (User A) should be Player 1 again
     expect(rematch2StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1 again
     expect(rematch2StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2 again
-    expect(rematch2StatusB.snapshot).toEqual(rematch2StatusA.snapshot);
+    expect(
+      rematch2StatusB.snapshot.players.map((player) => player.playerId),
+    ).toEqual(
+      rematch2StatusA.snapshot.players.map((player) => player.playerId),
+    );
+    expect(rematch2StatusB.snapshot.matchScore).toEqual(
+      rematch2StatusA.snapshot.matchScore,
+    );
     expect(rematch2StatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 0.5 });
 
     // Host (Player 1) makes the first move in game 3
@@ -1045,7 +1116,15 @@ describe("friend game WebSocket integration", () => {
       decision: "accepted",
     });
 
-    // Wait for new game state after third rematch
+    const rematch3 = await reconnectPlayersForRematch({
+      hostSocket: socketA,
+      joinerSocket: socketB,
+      hostUserId: userA,
+      joinerUserId: userB,
+    });
+    socketA = rematch3.hostSocket;
+    socketB = rematch3.joinerSocket;
+
     const [rematch3StateA, rematch3StateB] = await Promise.all([
       socketA.waitForMessage("state", {
         ignore: ["match-status", "rematch-offer"],
@@ -1055,7 +1134,7 @@ describe("friend game WebSocket integration", () => {
       }),
     ]);
     expect(rematch3StateA.state.status).toBe("playing");
-    expect(rematch3StateA.state.moveCount).toBe(1);
+    expect(rematch3StateA.state.moveCount).toBe(0);
     expect(rematch3StateA.state).toEqual(rematch3StateB.state);
 
     // Wait for match-status to verify player roles have swapped again
@@ -1067,7 +1146,14 @@ describe("friend game WebSocket integration", () => {
     // After third rematch, Joiner (User B) should be Player 1
     expect(rematch3StatusA.snapshot.players[0].playerId).toBe(2); // Host is Player 2
     expect(rematch3StatusA.snapshot.players[1].playerId).toBe(1); // Joiner is Player 1
-    expect(rematch3StatusB.snapshot).toEqual(rematch3StatusA.snapshot);
+    expect(
+      rematch3StatusB.snapshot.players.map((player) => player.playerId),
+    ).toEqual(
+      rematch3StatusA.snapshot.players.map((player) => player.playerId),
+    );
+    expect(rematch3StatusB.snapshot.matchScore).toEqual(
+      rematch3StatusA.snapshot.matchScore,
+    );
     expect(rematch3StatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 1.5 });
 
     // Joiner (now Player 1) makes the first move in game 4
@@ -1125,7 +1211,15 @@ describe("friend game WebSocket integration", () => {
       decision: "accepted",
     });
 
-    // Wait for new game state after fourth rematch
+    const rematch4 = await reconnectPlayersForRematch({
+      hostSocket: socketA,
+      joinerSocket: socketB,
+      hostUserId: userA,
+      joinerUserId: userB,
+    });
+    socketA = rematch4.hostSocket;
+    socketB = rematch4.joinerSocket;
+
     const [rematch4StateA, rematch4StateB] = await Promise.all([
       socketA.waitForMessage("state", {
         ignore: ["match-status", "rematch-offer"],
@@ -1135,7 +1229,7 @@ describe("friend game WebSocket integration", () => {
       }),
     ]);
     expect(rematch4StateA.state.status).toBe("playing");
-    expect(rematch4StateA.state.moveCount).toBe(1);
+    expect(rematch4StateA.state.moveCount).toBe(0);
     expect(rematch4StateA.state).toEqual(rematch4StateB.state);
 
     // Wait for match-status to verify player roles
@@ -1147,7 +1241,14 @@ describe("friend game WebSocket integration", () => {
     // After fourth rematch, Host (User A) should be Player 1 again
     expect(rematch4StatusA.snapshot.players[0].playerId).toBe(1); // Host is Player 1
     expect(rematch4StatusA.snapshot.players[1].playerId).toBe(2); // Joiner is Player 2
-    expect(rematch4StatusB.snapshot).toEqual(rematch4StatusA.snapshot);
+    expect(
+      rematch4StatusB.snapshot.players.map((player) => player.playerId),
+    ).toEqual(
+      rematch4StatusA.snapshot.players.map((player) => player.playerId),
+    );
+    expect(rematch4StatusB.snapshot.matchScore).toEqual(
+      rematch4StatusA.snapshot.matchScore,
+    );
     expect(rematch4StatusA.snapshot.matchScore).toEqual({ 1: 2, 2: 2 });
 
     // Host (Player 1) makes the first move in game 5

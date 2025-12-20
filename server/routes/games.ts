@@ -1,12 +1,14 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
+  cancelGameSession,
   createGameSession,
   getSession,
   getSessionSnapshot,
   getSerializedState,
   joinGameSession,
   markHostReady,
+  resolveGameAccess,
   resolveSessionForToken,
   listMatchmakingGames,
   listLiveGames,
@@ -100,6 +102,11 @@ export const gamesRoute = new Hono()
           hostAuthUserId: user?.id,
           hostElo,
         });
+        console.info("[games] created session", {
+          gameId: session.id,
+          storedMatchType: session.matchType,
+          requestedMatchType: parsed.matchType,
+        });
         // The FRONTEND_URL environment variable is used for creating shareable
         // links. It is only needed in dev mode because the proxied URL is not
         // the same URL as the backend is running on.
@@ -127,32 +134,104 @@ export const gamesRoute = new Hono()
       }
     },
   )
-  .get("/:id", zValidator("query", getGameSessionQuerySchema), (c) => {
+  .post("/:id/abort", zValidator("json", readySchema), (c) => {
     try {
       const { id } = c.req.param();
-      const { token } = c.req.valid("query");
-      const resolved = resolveSessionForToken({ id, token });
-      if (!resolved) {
-        return c.json({ error: "Game not found" }, 404);
+      const parsed = c.req.valid("json");
+      const session = cancelGameSession({ id, token: parsed.token });
+      if (session.matchType === "matchmaking") {
+        broadcastLobbyUpdate();
       }
-      const snapshot = getSessionSnapshot(id);
-      const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
-      const shareUrl =
-        resolved.player.role === "host" ? `${origin}/game/${id}` : undefined;
-
+      sendMatchStatus(id);
       return c.json({
-        snapshot,
-        role: resolved.player.role,
-        playerId: resolved.player.playerId,
-        socketToken: resolved.player.socketToken,
-        token,
-        shareUrl,
+        success: true,
+        snapshot: getSessionSnapshot(id),
       });
     } catch (error) {
-      console.error("Failed to fetch game session:", error);
-      return c.json({ error: "Internal server error" }, 500);
+      console.error("Failed to abort game:", error);
+      return c.json({ error: (error as Error).message ?? "Abort failed" }, 400);
     }
   })
+  .get(
+    "/:id",
+    getOptionalUserMiddleware,
+    zValidator("query", getGameSessionQuerySchema),
+    (c) => {
+      try {
+        const { id } = c.req.param();
+        const { token } = c.req.valid("query");
+        const user = c.get("user");
+        const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
+        const shareUrl = `${origin}/game/${id}`;
+        const access = resolveGameAccess({
+          id,
+          token,
+          authUserId: user?.id,
+        });
+
+        if (access.kind === "not-found") {
+          return c.json({ kind: "not-found" });
+        }
+
+        const matchStatus = getSessionSnapshot(id);
+        const matchType = matchStatus.matchType;
+        console.info("[resolve-access] response", {
+          gameId: id,
+          accessKind: access.kind,
+          lifecycle: matchStatus.status,
+          matchType,
+        });
+
+        if (access.kind === "player") {
+          return c.json({
+            kind: "player",
+            gameId: id,
+            matchType,
+            seat: {
+              role: access.player.role,
+              playerId: access.player.playerId,
+              token: access.player.token,
+              socketToken: access.player.socketToken,
+            },
+            matchStatus,
+            state: getSerializedState(id),
+            shareUrl,
+          });
+        }
+
+        if (access.kind === "spectator") {
+          return c.json({
+            kind: "spectator",
+            gameId: id,
+            matchType,
+            matchStatus,
+            state: getSerializedState(id),
+            shareUrl,
+          });
+        }
+
+        if (access.kind === "waiting") {
+          return c.json({
+            kind: "waiting",
+            gameId: id,
+            reason: access.reason ?? ("seat-not-filled" as const),
+            matchStatus,
+            shareUrl,
+          });
+        }
+
+        return c.json({
+          kind: "replay",
+          gameId: id,
+          matchStatus,
+          shareUrl,
+        });
+      } catch (error) {
+        console.error("Failed to resolve game access:", error);
+        return c.json({ error: "Internal server error" }, 500);
+      }
+    },
+  )
   .post(
     "/:id/join",
     getOptionalUserMiddleware,
@@ -240,31 +319,5 @@ export const gamesRoute = new Hono()
     } catch (error) {
       console.error("Failed to mark host ready:", error);
       return c.json({ error: "Internal server error" }, 500);
-    }
-  })
-  // Get spectate data for a game (no token required)
-  .get("/:id/spectate", (c) => {
-    try {
-      const { id } = c.req.param();
-      const session = getSession(id);
-
-      // Only allow spectating in-progress or completed games
-      if (session.status === "waiting" || session.status === "ready") {
-        return c.json(
-          {
-            error: "This game is not currently spectatable",
-            code: "GAME_NOT_STARTED",
-          },
-          404,
-        );
-      }
-
-      const snapshot = getSessionSnapshot(id);
-      const state = getSerializedState(id);
-
-      return c.json({ snapshot, state });
-    } catch (error) {
-      console.error("Failed to get spectate data:", error);
-      return c.json({ error: "Game not found" }, 404);
     }
   });

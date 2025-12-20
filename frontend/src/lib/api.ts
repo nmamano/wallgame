@@ -16,8 +16,9 @@ import type {
   GameCreateResponse,
   GameSessionDetails,
   JoinGameResponse,
-  ReadyGameResponse,
   MatchmakingGamesResponse,
+  ReadyGameResponse,
+  ResolveGameAccessResponse,
 } from "../../../shared/contracts/games";
 import type {
   SettingsResponse,
@@ -173,10 +174,32 @@ export const fetchGameSession = async (args: {
   gameId: string;
   token: string;
 }): Promise<GameSessionDetails> => {
-  return handleResponse<GameSessionDetails>(
+  const access = await resolveGameAccess({
+    gameId: args.gameId,
+    token: args.token,
+  });
+  if (access.kind !== "player") {
+    throw new Error("Unable to resolve player access for this token.");
+  }
+  return {
+    snapshot: access.matchStatus,
+    role: access.seat.role,
+    playerId: access.seat.playerId,
+    token: access.seat.token,
+    socketToken: access.seat.socketToken,
+    shareUrl: access.shareUrl,
+  };
+};
+
+export const resolveGameAccess = async (args: {
+  gameId: string;
+  token?: string;
+}): Promise<ResolveGameAccessResponse> => {
+  const query = args.token ? { token: args.token } : {};
+  return handleResponse<ResolveGameAccessResponse>(
     api.games[":id"].$get({
       param: { id: args.gameId },
-      query: { token: args.token },
+      query,
     }),
   );
 };
@@ -225,17 +248,16 @@ export const joinGameSession = async (args: {
   };
 };
 
-export const markGameReady = async (args: {
+export const abortGameSession = async (args: {
   gameId: string;
   token: string;
-}): Promise<GameSnapshot> => {
-  const data = await handleResponse<ReadyGameResponse>(
-    api.games[":id"].ready.$post({
+}): Promise<ReadyGameResponse> => {
+  return handleResponse<ReadyGameResponse>(
+    api.games[":id"].abort.$post({
       param: { id: args.gameId },
       json: { token: args.token },
     }),
   );
-  return data.snapshot;
 };
 
 // Fetch list of available matchmaking games

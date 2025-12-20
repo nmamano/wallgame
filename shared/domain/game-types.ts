@@ -204,7 +204,7 @@ export interface SerializedGameState {
   status: GameStatus;
   result?: GameResult;
   turn: PlayerId;
-  moveCount: number; // Global move counter, increments every turn (1, 2, 3...), not per-player
+  moveCount: number; // Completed moves count (0 before any moves), not per-player
   timeLeft: Record<PlayerId, number>; // Milliseconds remaining for each player
   lastMoveTime: number; // Timestamp in milliseconds (milliseconds since epoch)
   pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;

@@ -21,6 +21,10 @@ export interface GameClientHandlers {
   onMatchStatus?: (snapshot: GameSnapshot) => void;
   onRematchOffer?: (playerId: number) => void;
   onRematchRejected?: (playerId: number) => void;
+  onRematchStarted?: (payload: {
+    newGameId: string;
+    seat?: { token: string; socketToken: string };
+  }) => void;
   onDrawOffer?: (playerId: number) => void;
   onDrawRejected?: (playerId: number) => void;
   onTakebackOffer?: (playerId: number) => void;
@@ -106,6 +110,11 @@ export class GameClient {
           this.handlers.onRematchOffer?.(payload.playerId);
         } else if (payload.type === "rematch-rejected") {
           this.handlers.onRematchRejected?.(payload.playerId);
+        } else if (payload.type === "rematch-started") {
+          this.handlers.onRematchStarted?.({
+            newGameId: payload.newGameId,
+            seat: payload.seat,
+          });
         } else if (payload.type === "draw-offer") {
           this.handlers.onDrawOffer?.(payload.playerId);
         } else if (payload.type === "draw-rejected") {
@@ -234,8 +243,16 @@ export class GameClient {
     this.send({ type: "rematch-reject" });
   }
 
-  close(): void {
-    this.socket?.close();
+  close(reason = "unspecified"): void {
+    if (!this.socket) {
+      return;
+    }
+    console.warn("[game-client] close()", {
+      gameId: this.params.gameId,
+      reason,
+      stack: new Error().stack,
+    });
+    this.socket.close(1000, "Client closing connection");
   }
 
   private handleActionAck(message: ActionAckMessage): void {

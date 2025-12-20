@@ -5,6 +5,7 @@ import type {
   Variant,
   TimeControlConfig,
   SerializedGameState,
+  MatchType,
 } from "../domain/game-types";
 
 export type GameRole = "host" | "joiner";
@@ -85,7 +86,7 @@ export const readySchema = z.object({
 });
 
 export const getGameSessionQuerySchema = z.object({
-  token: z.string(),
+  token: z.string().optional(),
 });
 
 // Response types
@@ -118,6 +119,48 @@ export interface ErrorResponse {
   error: string;
 }
 
+export type GameAccessWaitingReason = "seat-not-filled" | "host-aborted";
+
+export type ResolveGameAccessResponse =
+  | {
+      kind: "player";
+      gameId: string;
+      matchType: MatchType;
+      seat: {
+        role: GameRole;
+        playerId: PlayerId;
+        token: string;
+        socketToken: string;
+      };
+      matchStatus: GameSnapshot;
+      state: SerializedGameState;
+      shareUrl?: string;
+    }
+  | {
+      kind: "spectator";
+      gameId: string;
+      matchType: MatchType;
+      matchStatus: GameSnapshot;
+      state: SerializedGameState;
+      shareUrl?: string;
+    }
+  | {
+      kind: "waiting";
+      gameId: string;
+      reason: GameAccessWaitingReason;
+      matchStatus: GameSnapshot;
+      shareUrl?: string;
+    }
+  | {
+      kind: "replay";
+      gameId: string;
+      matchStatus: GameSnapshot;
+      shareUrl?: string;
+    }
+  | {
+      kind: "not-found";
+    };
+
 // ============================================================================
 // Live Games / Spectate Types
 // ============================================================================
@@ -139,20 +182,11 @@ export interface LiveGameSummary {
     elo?: number;
     role: "host" | "joiner";
   }[];
-  status: "in-progress";
+  status: "ready" | "in-progress";
   moveCount: number;
   averageElo: number;
   lastMoveAt: number;
   spectatorCount: number;
-}
-
-/**
- * Response from the spectate REST endpoint.
- * Provides initial state for spectators joining a game.
- */
-export interface SpectateResponse {
-  snapshot: GameSnapshot;
-  state: SerializedGameState;
 }
 
 export interface LiveGamesResponse {

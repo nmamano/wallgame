@@ -66,7 +66,7 @@ export class RemotePlayerController implements RemoteHumanController {
   }
 
   disconnect(): void {
-    this.client?.close();
+    this.client?.close("remote-controller disconnect");
     this.client = null;
     this.connectionReady = false;
   }

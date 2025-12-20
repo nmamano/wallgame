@@ -103,14 +103,28 @@ function GamePage() {
 
         {/* Only show matching panel for players */}
         {!isSpectator && (
-          <MatchingStagePanel
-            isOpen={matching.isOpen}
-            players={matching.players}
-            shareUrl={matching.shareUrl}
-            statusMessage={matching.statusMessage}
-            canAbort={matching.canAbort}
-            onAbort={matching.onAbort}
-          />
+          <>
+            {console.debug("[game-page] matching panel state", {
+              isMultiplayerMatch: info.isMultiplayerMatch,
+              matchTypeHint: matching.matchType,
+              authoritativeLifecycle: matching.lifecycle,
+              accessKind: matching.accessKind,
+            })}
+            <MatchingStagePanel
+              isOpen={matching.isOpen}
+              players={matching.players}
+              shareUrl={matching.shareUrl}
+              statusMessage={matching.statusMessage}
+              canAbort={matching.canAbort}
+              onAbort={matching.onAbort}
+              primaryAction={matching.primaryAction}
+              matchTypeHint={matching.matchType}
+              localRole={matching.localRole}
+              onJoinerDismiss={matching.onJoinerDismiss}
+              showShareInstructions={matching.showShareInstructions}
+              waitingReason={matching.waitingReason}
+            />
+          </>
         )}
 
         <div
@@ -128,84 +142,103 @@ function GamePage() {
               gap: `${gap}rem`,
             }}
           >
-            {/* Top Player (Opponent) Timer */}
-            {timers.topPlayer && (
-              <PlayerTimerCard
-                player={timers.topPlayer}
-                isActive={timers.gameTurn === timers.topPlayer.playerId}
-                timeLeft={
-                  timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
-                }
-                isThinking={
-                  timers.thinkingPlayer?.playerId === timers.topPlayer.playerId
-                }
-                score={timers.getPlayerMatchScore(timers.topPlayer)}
-              />
-            )}
+            {board.shouldRender ? (
+              <>
+                {/* Top Player (Opponent) Timer */}
+                {timers.topPlayer && (
+                  <PlayerTimerCard
+                    player={timers.topPlayer}
+                    isActive={timers.gameTurn === timers.topPlayer.playerId}
+                    timeLeft={
+                      timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
+                    }
+                    isThinking={
+                      timers.thinkingPlayer?.playerId ===
+                      timers.topPlayer.playerId
+                    }
+                    score={timers.getPlayerMatchScore(timers.topPlayer)}
+                  />
+                )}
 
-            {/* Board Container */}
-            <BoardPanel
-              adjustedBoardContainerHeight={adjustedBoardContainerHeight}
-              gameStatus={board.gameStatus}
-              gameState={board.gameState}
-              isMultiplayerMatch={board.isMultiplayerMatch}
-              isSpectator={controller.isSpectator}
-              isLoadingConfig={board.isLoadingConfig}
-              loadError={board.loadError}
-              winnerPlayer={board.winnerPlayer}
-              winReason={board.winReason}
-              scoreboardEntries={board.scoreboardEntries}
-              rematchState={board.rematchState}
-              rematchResponseSummary={board.rematchResponseSummary}
-              rematchStatusText={board.rematchStatusText}
-              primaryLocalPlayerId={board.primaryLocalPlayerId}
-              userRematchResponse={board.userRematchResponse}
-              handleAcceptRematch={board.handleAcceptRematch}
-              handleDeclineRematch={board.handleDeclineRematch}
-              handleProposeRematch={board.handleProposeRematch}
-              openRematchWindow={board.openRematchWindow}
-              handleExitAfterMatch={board.handleExitAfterMatch}
-              rows={board.rows}
-              cols={board.cols}
-              boardPawns={board.boardPawns}
-              boardWalls={board.boardWalls}
-              stagedArrows={board.stagedArrows}
-              playerColorsForBoard={board.playerColorsForBoard}
-              interactionLocked={board.interactionLocked}
-              lastMove={board.lastMove}
-              draggingPawnId={board.draggingPawnId}
-              selectedPawnId={board.selectedPawnId}
-              stagedActionsCount={board.stagedActionsCount}
-              actionablePlayerId={board.actionablePlayerId}
-              onCellClick={board.onCellClick}
-              onWallClick={board.onWallClick}
-              onPawnClick={board.onPawnClick}
-              onPawnDragStart={board.onPawnDragStart}
-              onPawnDragEnd={board.onPawnDragEnd}
-              onCellDrop={board.onCellDrop}
-              stagedActions={board.stagedActions}
-              activeLocalPlayerId={board.activeLocalPlayerId}
-              hasActionMessage={board.hasActionMessage}
-              actionError={board.actionError}
-              actionStatusText={board.actionStatusText}
-              clearStagedActions={board.clearStagedActions}
-              commitStagedActions={board.commitStagedActions}
-            />
+                {/* Board Container */}
+                <BoardPanel
+                  adjustedBoardContainerHeight={adjustedBoardContainerHeight}
+                  gameStatus={board.gameStatus}
+                  gameState={board.gameState}
+                  isMultiplayerMatch={board.isMultiplayerMatch}
+                  isSpectator={controller.isSpectator}
+                  isLoadingConfig={board.isLoadingConfig}
+                  loadError={board.loadError}
+                  winnerPlayer={board.winnerPlayer}
+                  winReason={board.winReason}
+                  scoreboardEntries={board.scoreboardEntries}
+                  rematchState={board.rematchState}
+                  rematchResponseSummary={board.rematchResponseSummary}
+                  rematchStatusText={board.rematchStatusText}
+                  spectatorRematchGameId={board.spectatorRematchGameId}
+                  primaryLocalPlayerId={board.primaryLocalPlayerId}
+                  userRematchResponse={board.userRematchResponse}
+                  handleAcceptRematch={board.handleAcceptRematch}
+                  handleDeclineRematch={board.handleDeclineRematch}
+                  handleProposeRematch={board.handleProposeRematch}
+                  openRematchWindow={board.openRematchWindow}
+                  handleFollowSpectatorRematch={
+                    board.handleFollowSpectatorRematch
+                  }
+                  handleExitAfterMatch={board.handleExitAfterMatch}
+                  rows={board.rows}
+                  cols={board.cols}
+                  boardPawns={board.boardPawns}
+                  boardWalls={board.boardWalls}
+                  stagedArrows={board.stagedArrows}
+                  playerColorsForBoard={board.playerColorsForBoard}
+                  interactionLocked={board.interactionLocked}
+                  lastMove={board.lastMove}
+                  draggingPawnId={board.draggingPawnId}
+                  selectedPawnId={board.selectedPawnId}
+                  stagedActionsCount={board.stagedActionsCount}
+                  actionablePlayerId={board.actionablePlayerId}
+                  onCellClick={board.onCellClick}
+                  onWallClick={board.onWallClick}
+                  onPawnClick={board.onPawnClick}
+                  onPawnDragStart={board.onPawnDragStart}
+                  onPawnDragEnd={board.onPawnDragEnd}
+                  onCellDrop={board.onCellDrop}
+                  stagedActions={board.stagedActions}
+                  activeLocalPlayerId={board.activeLocalPlayerId}
+                  hasActionMessage={board.hasActionMessage}
+                  actionError={board.actionError}
+                  actionStatusText={board.actionStatusText}
+                  clearStagedActions={board.clearStagedActions}
+                  commitStagedActions={board.commitStagedActions}
+                />
 
-            {/* Bottom Player (You) Timer */}
-            {timers.bottomPlayer && (
-              <PlayerTimerCard
-                player={timers.bottomPlayer}
-                isActive={timers.gameTurn === timers.bottomPlayer.playerId}
-                timeLeft={
-                  timers.displayedTimeLeft[timers.bottomPlayer.playerId] ?? 0
-                }
-                isThinking={
-                  timers.thinkingPlayer?.playerId ===
-                  timers.bottomPlayer.playerId
-                }
-                score={timers.getPlayerMatchScore(timers.bottomPlayer)}
-              />
+                {/* Bottom Player (You) Timer */}
+                {timers.bottomPlayer && (
+                  <PlayerTimerCard
+                    player={timers.bottomPlayer}
+                    isActive={timers.gameTurn === timers.bottomPlayer.playerId}
+                    timeLeft={
+                      timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??
+                      0
+                    }
+                    isThinking={
+                      timers.thinkingPlayer?.playerId ===
+                      timers.bottomPlayer.playerId
+                    }
+                    score={timers.getPlayerMatchScore(timers.bottomPlayer)}
+                  />
+                )}
+              </>
+            ) : (
+              <div
+                className="flex flex-1 items-center justify-center rounded border border-dashed border-border/50 bg-muted/30 text-center text-sm text-muted-foreground p-6"
+                style={{
+                  minHeight: `${adjustedBoardContainerHeight}rem`,
+                }}
+              >
+                {matching.waitingMessage ?? "Waiting for players to join..."}
+              </div>
             )}
           </div>
 

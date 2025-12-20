@@ -5,8 +5,13 @@ alwaysApply: true
 # Principles
 
 - The app is not finished/launched yet, so we want the architecture to be correct from the start. Don't add things for backward compatibility - there is no data yet.
-- Do things right, not fast. Don't introduce tech debt.
+- Do abstractions right, not fast. Don't introduce tech debt.
 - When renaming or moving shared types, avoid re-exporting them for backward compatibility. Try to just update all references at once.
+- Avoid optionality. Optionality hides bugs because it collapses "unknown" and "not provided." If a value is required for correctness, it must be: non-optional, and explicitly nullable when unknown.
+- If UI bugs persist, stop coding and trace truth flow.
+- Explicit is better than implicit. Unknown beats wrong. When the client infers instead of being told, we often end with a race condition. Avoid this pattern.
+- It is encouraged to identify issues as we move toward the north star design and take detours to clean them up.
+- Avoid temporary flows or dual flows.
 
 # Tools
 
@@ -29,6 +34,8 @@ Sticking to this architecture ensures that:
 - UI/logic changes stay transport-agnostic.
 - Spectators remain first-class citizens.
 - Future expansions (additional controller types or transport layers) can slot in with minimal churn.
+
+Read `info/game_lifecycle_design.md` for the current game lifecycle design.
 
 # Business logic
 

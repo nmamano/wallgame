@@ -14,7 +14,7 @@ import type {
   GameSessionDetails,
   JoinGameResponse,
   LiveGameSummary,
-  SpectateResponse,
+  ResolveGameAccessResponse,
 } from "../../shared/contracts/games";
 import type {
   ServerMessage,
@@ -102,6 +102,33 @@ async function createFriendGame(
   return (await res.json()) as GameCreateResponse;
 }
 
+async function createMatchmakingGame(
+  userId: string,
+  config: GameConfiguration = DEFAULT_CONFIG,
+  options?: {
+    appearance?: PlayerAppearance;
+    hostIsPlayer1?: boolean;
+  },
+): Promise<GameCreateResponse> {
+  const res = await fetch(`${baseUrl}/api/games`, {
+    method: "POST",
+    headers: {
+      "Content-Type": "application/json",
+      "x-test-user-id": userId,
+    },
+    body: JSON.stringify({
+      config,
+      matchType: "matchmaking",
+      hostDisplayName: `Player ${userId}`,
+      hostAppearance: options?.appearance,
+      hostIsPlayer1: options?.hostIsPlayer1,
+    }),
+  });
+
+  expect(res.status).toBe(201);
+  return (await res.json()) as GameCreateResponse;
+}
+
 async function joinFriendGame(
   userId: string,
   gameId: string,
@@ -152,15 +179,24 @@ async function fetchLiveGames(): Promise<LiveGameSummary[]> {
   return json.games;
 }
 
-async function fetchSpectateData(
-  gameId: string,
-): Promise<{ status: number; data?: SpectateResponse; error?: string }> {
-  const res = await fetch(`${baseUrl}/api/games/${gameId}/spectate`);
-  if (res.ok) {
-    return { status: res.status, data: (await res.json()) as SpectateResponse };
+async function resolveGameAccessForTest(args: {
+  gameId: string;
+  userId?: string;
+  token?: string;
+}): Promise<ResolveGameAccessResponse> {
+  const url = new URL(`${baseUrl}/api/games/${args.gameId}`);
+  if (args.token) {
+    url.searchParams.set("token", args.token);
   }
-  const error = (await res.json().catch(() => ({}))) as { error?: string };
-  return { status: res.status, error: error.error };
+  const res = await fetch(url.toString(), {
+    headers: args.userId
+      ? {
+          "x-test-user-id": args.userId,
+        }
+      : undefined,
+  });
+  expect(res.status).toBe(200);
+  return (await res.json()) as ResolveGameAccessResponse;
 }
 
 // ================================
@@ -617,68 +653,86 @@ describe("Live Games List", () => {
 });
 
 // ================================
-// --- Spectate REST Endpoint Tests ---
+// --- Resolve Access Endpoint Tests ---
 // ================================
 
-describe("Spectate REST Endpoint", () => {
-  it("returns 404 for waiting game", async () => {
-    const hostId = "host-rest-1";
-    const createRes = await createFriendGame(hostId);
-
-    const result = await fetchSpectateData(createRes.gameId);
-    expect(result.status).toBe(404);
-    expect(result.error).toContain("not currently spectatable");
-  });
-
-  it("returns 200 for in-progress game", async () => {
-    const hostId = "host-rest-2";
-    const joinerId = "joiner-rest-2";
+describe("Resolve game access", () => {
+  it("returns spectator data for ready game before the first move", async () => {
+    const hostId = "host-resolve-1";
+    const joinerId = "joiner-resolve-1";
+    const spectatorId = "spectator-resolve-1";
 
     const createRes = await createFriendGame(hostId, DEFAULT_CONFIG, {
       hostIsPlayer1: true,
     });
-    const joinRes = await joinFriendGame(joinerId, createRes.gameId);
-    await markHostReady(createRes.gameId, createRes.hostToken);
+    await joinFriendGame(joinerId, createRes.gameId);
 
-    // Connect and make a move
-    const hostSocket = await openGameSocket(
-      hostId,
-      createRes.gameId,
-      createRes.socketToken,
-    );
-    const joinerSocket = await openGameSocket(
-      joinerId,
-      createRes.gameId,
-      joinRes.socketToken,
-    );
+    const access = await resolveGameAccessForTest({
+      gameId: createRes.gameId,
+      userId: spectatorId,
+    });
 
-    await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
-    await joinerSocket.waitForMessage("state", { ignore: ["match-status"] });
-
-    hostSocket.ws.send(
-      JSON.stringify({
-        type: "submit-move",
-        move: {
-          actions: [
-            { type: "cat", target: [0, 1] },
-            { type: "mouse", target: [7, 0] },
-          ],
-        },
-      }),
-    );
-
-    await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
-
-    try {
-      const result = await fetchSpectateData(createRes.gameId);
-      expect(result.status).toBe(200);
-      expect(result.data).toBeDefined();
-      expect(result.data!.snapshot.id).toBe(createRes.gameId);
-      expect(result.data!.state.moveCount).toBeGreaterThanOrEqual(1);
-    } finally {
-      hostSocket.close();
-      joinerSocket.close();
+    expect(access.kind).toBe("spectator");
+    if (access.kind !== "spectator") {
+      throw new Error("Expected spectator access");
     }
+    expect(access.matchStatus.status).toBe("ready");
+    expect(access.state.moveCount).toBe(0);
+
+    const spectatorSocket = await openSpectatorSocket(createRes.gameId);
+    try {
+      const stateMsg = await spectatorSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(stateMsg.state.moveCount).toBe(0);
+    } finally {
+      spectatorSocket.close();
+    }
+  });
+
+  it("returns spectator data for full matchmaking games", async () => {
+    const hostId = "host-resolve-2";
+    const joinerId = "joiner-resolve-2";
+    const spectatorId = "spectator-resolve-2";
+
+    const createRes = await createMatchmakingGame(hostId, DEFAULT_CONFIG, {
+      hostIsPlayer1: true,
+    });
+    await joinFriendGame(joinerId, createRes.gameId);
+
+    const access = await resolveGameAccessForTest({
+      gameId: createRes.gameId,
+      userId: spectatorId,
+    });
+
+    expect(access.kind).toBe("spectator");
+    if (access.kind !== "spectator") {
+      throw new Error("Expected spectator access");
+    }
+    expect(
+      access.matchStatus.status === "ready" ||
+        access.matchStatus.status === "in-progress",
+    ).toBe(true);
+  });
+
+  it("returns seat credentials for rightful owners", async () => {
+    const hostId = "host-resolve-3";
+    const createRes = await createFriendGame(hostId, DEFAULT_CONFIG, {
+      hostIsPlayer1: true,
+    });
+
+    const access = await resolveGameAccessForTest({
+      gameId: createRes.gameId,
+      token: createRes.hostToken,
+    });
+
+    expect(access.kind).toBe("player");
+    if (access.kind !== "player") {
+      throw new Error("Expected player access");
+    }
+    expect(access.seat.role).toBe("host");
+    expect(access.seat.token).toBeTruthy();
+    expect(access.seat.socketToken).toBeTruthy();
   });
 });
 
@@ -687,6 +741,33 @@ describe("Spectate REST Endpoint", () => {
 // ================================
 
 describe("Spectator WebSocket", () => {
+  it("allows spectators to connect before the first move when game is ready", async () => {
+    const hostId = "host-spec-ready";
+    const joinerId = "joiner-spec-ready";
+
+    const createRes = await createFriendGame(hostId, DEFAULT_CONFIG, {
+      hostIsPlayer1: true,
+    });
+    await joinFriendGame(joinerId, createRes.gameId);
+    await markHostReady(createRes.gameId, createRes.hostToken);
+
+    const spectatorSocket = await openSpectatorSocket(createRes.gameId);
+
+    try {
+      const stateMsg = await spectatorSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(stateMsg.state.moveCount).toBe(0);
+
+      const matchMsg = await spectatorSocket.waitForMessage("match-status", {
+        ignore: ["state"],
+      });
+      expect(matchMsg.snapshot.status).toBe("ready");
+    } finally {
+      spectatorSocket.close();
+    }
+  });
+
   it("spectator receives current state on connect", async () => {
     const hostId = "host-spec-1";
     const joinerId = "joiner-spec-1";
@@ -976,12 +1057,12 @@ describe("Spectator WebSocket", () => {
     const joinRes = await joinFriendGame(joinerId, createRes.gameId);
     await markHostReady(createRes.gameId, createRes.hostToken);
 
-    const hostSocket = await openGameSocket(
+    let hostSocket = await openGameSocket(
       hostId,
       createRes.gameId,
       createRes.socketToken,
     );
-    const joinerSocket = await openGameSocket(
+    let joinerSocket = await openGameSocket(
       joinerId,
       createRes.gameId,
       joinRes.socketToken,
@@ -1007,7 +1088,7 @@ describe("Spectator WebSocket", () => {
     await joinerSocket.waitForMessage("state", { ignore: ["match-status"] });
 
     // Connect spectator
-    const spectatorSocket = await openSpectatorSocket(createRes.gameId);
+    let spectatorSocket = await openSpectatorSocket(createRes.gameId);
     await spectatorSocket.waitForMessage("state", { ignore: ["match-status"] });
 
     try {
@@ -1028,18 +1109,52 @@ describe("Spectator WebSocket", () => {
       });
       joinerSocket.ws.send(JSON.stringify({ type: "rematch-accept" }));
 
+      const [hostRematch, joinerRematch, spectatorRematch] = await Promise.all([
+        hostSocket.waitForMessage("rematch-started", {
+          ignore: ["match-status", "state", "rematch-offer"],
+        }),
+        joinerSocket.waitForMessage("rematch-started", {
+          ignore: ["match-status", "state", "rematch-offer"],
+        }),
+        spectatorSocket.waitForMessage("rematch-started", {
+          ignore: ["match-status", "state", "rematch-offer"],
+        }),
+      ]);
+
+      expect(hostRematch.seat).toBeDefined();
+      expect(joinerRematch.seat).toBeDefined();
+      expect(hostRematch.newGameId).toBe(joinerRematch.newGameId);
+      expect(hostRematch.newGameId).toBe(spectatorRematch.newGameId);
+      expect(spectatorRematch.seat).toBeUndefined();
+
+      hostSocket.close();
+      joinerSocket.close();
+      spectatorSocket.close();
+
+      hostSocket = await openGameSocket(
+        hostId,
+        hostRematch.newGameId,
+        hostRematch.seat!.socketToken,
+      );
+      joinerSocket = await openGameSocket(
+        joinerId,
+        joinerRematch.newGameId,
+        joinerRematch.seat!.socketToken,
+      );
+      spectatorSocket = await openSpectatorSocket(hostRematch.newGameId);
+
       await hostSocket.waitForMessage("state", {
-        ignore: ["match-status", "rematch-offer"],
+        ignore: ["match-status"],
       });
       await joinerSocket.waitForMessage("state", {
-        ignore: ["match-status", "rematch-offer"],
+        ignore: ["match-status"],
       });
 
       const rematchState = await spectatorSocket.waitForMessage("state", {
-        ignore: ["match-status", "rematch-offer"],
+        ignore: ["match-status"],
       });
       expect(rematchState.state.status).toBe("playing");
-      expect(rematchState.state.moveCount).toBe(1);
+      expect(rematchState.state.moveCount).toBe(0);
     } finally {
       spectatorSocket.close();
       hostSocket.close();

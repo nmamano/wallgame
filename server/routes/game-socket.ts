@@ -19,7 +19,8 @@ import {
   rejectDraw,
   acceptTakeback,
   rejectTakeback,
-  resetSession,
+  createRematchSession,
+  type RematchSessionResult,
   processRatingUpdate,
   type SessionPlayer,
 } from "../games/store";
@@ -145,6 +146,25 @@ const broadcast = (sessionId: string, message: unknown) => {
   if (!sockets) return;
   const data = JSON.stringify(message);
   sockets.forEach((entry) => {
+    const rawSocket =
+      entry.ctx.raw && typeof entry.ctx.raw === "object"
+        ? (entry.ctx.raw as WebSocket)
+        : null;
+    const readyState =
+      rawSocket && typeof rawSocket.readyState === "number"
+        ? rawSocket.readyState
+        : undefined;
+    console.debug("[broadcast]", {
+      sessionId,
+      messageType:
+        typeof message === "object" && message !== null
+          ? (message as { type?: string }).type
+          : undefined,
+      role: entry.role,
+      socketToken: entry.socketToken,
+      hasWebSocket: !!rawSocket,
+      readyState,
+    });
     try {
       entry.ctx.send(data);
     } catch (error) {
@@ -189,6 +209,68 @@ export const sendMatchStatus = (sessionId: string) => {
     type: "match-status",
     snapshot: getSessionSnapshot(sessionId),
   });
+};
+
+const broadcastRematchStarted = (
+  sessionId: string,
+  result: RematchSessionResult,
+) => {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+
+  sockets.forEach((entry) => {
+    const payloadBase = {
+      type: "rematch-started" as const,
+      newGameId: result.newSession.id,
+    };
+    if (entry.role === "spectator") {
+      try {
+        entry.ctx.send(JSON.stringify(payloadBase));
+      } catch (error) {
+        console.error("Failed to send rematch-started to spectator", {
+          error,
+          sessionId,
+        });
+      }
+      return;
+    }
+    const seat =
+      entry.role === "host"
+        ? result.seatCredentials.host
+        : result.seatCredentials.joiner;
+    try {
+      entry.ctx.send(
+        JSON.stringify({
+          ...payloadBase,
+          seat,
+        }),
+      );
+    } catch (error) {
+      console.error("Failed to send rematch-started payload", {
+        error,
+        sessionId,
+        socketRole: entry.role,
+      });
+    }
+  });
+};
+
+const ensureRematchSession = (
+  sessionId: string,
+): {
+  kind: "started" | "already-started";
+  result: RematchSessionResult;
+} => {
+  const session = getSession(sessionId);
+  if (session.nextGameId && session.nextGameSeatCredentials) {
+    const existingResult: RematchSessionResult = {
+      newSession: getSession(session.nextGameId),
+      seatCredentials: session.nextGameSeatCredentials,
+    };
+    return { kind: "already-started", result: existingResult };
+  }
+  const result = createRematchSession(sessionId);
+  return { kind: "started", result };
 };
 
 // ============================================================================
@@ -495,18 +577,28 @@ const handleRematchAccept = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "rematch-accept");
   if (playerId === null) return;
 
-  resetSession(socket.sessionId);
-  console.info("[ws] rematch-accept processed", {
-    sessionId: socket.sessionId,
-    playerId,
-  });
-  broadcast(socket.sessionId, {
-    type: "state",
-    state: getSerializedState(socket.sessionId),
-  });
-  sendMatchStatus(socket.sessionId);
-  // Note: Game will become in-progress again when first move is made,
-  // which will trigger broadcastLiveGamesUpsert
+  try {
+    const outcome = ensureRematchSession(socket.sessionId);
+    broadcastRematchStarted(socket.sessionId, outcome.result);
+    console.info("[ws] rematch-accept processed", {
+      sessionId: socket.sessionId,
+      playerId,
+      rematchStatus: outcome.kind,
+      newGameId: outcome.result.newSession.id,
+    });
+  } catch (error) {
+    console.error("[ws] rematch-accept failed", {
+      error,
+      sessionId: socket.sessionId,
+      playerId,
+    });
+    socket.ctx.send(
+      JSON.stringify({
+        type: "error",
+        message: "Unable to start a rematch right now.",
+      }),
+    );
+  }
 };
 
 const handleRematchReject = (socket: SessionSocket) => {
@@ -697,32 +789,31 @@ const handleActionRequest = async (
         sendActionNack(socket, message, "INVALID_PAYLOAD");
         return;
       }
-      const actionType =
-        decision === "accepted" ? "rematch-accept" : "rematch-reject";
-      const playerId = ensureAuthorizedPlayer(socket, actionType);
+      const playerId = ensureAuthorizedPlayer(
+        socket,
+        decision === "accepted" ? "rematch-accept" : "rematch-reject",
+      );
       if (playerId === null) {
         sendActionNack(socket, message, "UNAUTHORIZED");
         return;
       }
       try {
         if (decision === "accepted") {
-          resetSession(socket.sessionId);
+          const outcome = ensureRematchSession(socket.sessionId);
           sendActionAck(socket, message);
+          broadcastRematchStarted(socket.sessionId, outcome.result);
           console.info("[ws] action-respondRematch accept processed", {
             sessionId: socket.sessionId,
             playerId,
+            rematchStatus: outcome.kind,
+            newGameId: outcome.result.newSession.id,
           });
-          broadcast(socket.sessionId, {
-            type: "state",
-            state: getSerializedState(socket.sessionId),
-          });
-          sendMatchStatus(socket.sessionId);
         } else {
+          sendActionAck(socket, message);
           broadcast(socket.sessionId, {
             type: "rematch-rejected",
             playerId,
           });
-          sendActionAck(socket, message);
           console.info("[ws] action-respondRematch decline processed", {
             sessionId: socket.sessionId,
             playerId,
@@ -734,7 +825,9 @@ const handleActionRequest = async (
           sessionId: socket.sessionId,
           playerId,
         });
-        sendActionNack(socket, message, "INTERNAL_ERROR", { error });
+        const nackCode: ActionNackCode =
+          decision === "accepted" ? "REMATCH_NOT_AVAILABLE" : "INTERNAL_ERROR";
+        sendActionNack(socket, message, nackCode, { error });
       }
       return;
     }
@@ -872,8 +965,14 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
     // Verify game exists and is spectatable
     try {
       const session = getSession(sessionId);
-      if (session.status === "waiting" || session.status === "ready") {
-        return c.text("Game not yet in progress", 400);
+      const isSpectatable =
+        session.status === "ready" || session.status === "in-progress";
+      if (!isSpectatable) {
+        const message =
+          session.status === "waiting"
+            ? "Game not yet spectatable"
+            : "Game not available for live spectating";
+        return c.text(message, 400);
       }
       c.set("gameSocketMeta", {
         sessionId,
