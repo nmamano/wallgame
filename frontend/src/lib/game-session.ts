@@ -1,4 +1,4 @@
-import type { PlayerId, MatchType } from "../../../shared/domain/game-types";
+import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameRole } from "../../../shared/contracts/games";
 
 export interface StoredGameHandshake {
@@ -7,7 +7,6 @@ export interface StoredGameHandshake {
   socketToken: string;
   role: GameRole;
   playerId: PlayerId;
-  matchType: MatchType;
   shareUrl?: string;
 }
 

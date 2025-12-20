@@ -87,6 +87,11 @@ export type ServerMessage =
   | { type: "draw-rejected"; playerId: number }
   | { type: "rematch-offer"; playerId: number }
   | { type: "rematch-rejected"; playerId: number }
+  | {
+      type: "rematch-started";
+      newGameId: string;
+      seat?: { token: string; socketToken: string };
+    }
   | ActionAckMessage
   | ActionNackMessage;
 

@@ -14,7 +14,10 @@ import type {
   MatchScore,
   GameResult,
 } from "../../shared/domain/game-types";
-import type { LiveGameSummary } from "../../shared/contracts/games";
+import type {
+  GameAccessWaitingReason,
+  LiveGameSummary,
+} from "../../shared/contracts/games";
 import {
   getRatingStateForAuthUser,
   updateRatingStateForAuthUser,
@@ -43,15 +46,29 @@ export interface SessionPlayer {
   elo?: number; // Looked up from DB based on authenticated user
 }
 
+export interface RematchSeatCredentials {
+  token: string;
+  socketToken: string;
+}
+
 type SessionMatchScore = Record<SessionPlayer["role"], number>;
 
 export interface GameSession {
   id: string;
+  seriesId: string;
+  rematchParentId?: string;
+  rematchNumber: number;
+  nextGameId?: string;
+  nextGameSeatCredentials?: {
+    host: RematchSeatCredentials;
+    joiner: RematchSeatCredentials;
+  };
   createdAt: number;
   updatedAt: number;
   config: GameConfiguration;
   status: SessionStatus;
   matchType: MatchType;
+  cancelled: boolean;
   players: {
     host: SessionPlayer;
     joiner: SessionPlayer;
@@ -178,11 +195,15 @@ export const createGameSession = (args: {
 
   const session: GameSession = {
     id,
+    seriesId: id,
+    rematchParentId: undefined,
+    rematchNumber: 0,
     createdAt: now,
     updatedAt: now,
     config: args.config,
     status: "waiting",
     matchType: args.matchType,
+    cancelled: false,
     players: {
       host: {
         role: "host",
@@ -191,7 +212,7 @@ export const createGameSession = (args: {
         socketToken: hostSocketToken,
         displayName: args.hostDisplayName ?? `Player ${hostPlayerId}`,
         connected: false,
-        ready: false,
+        ready: true,
         lastSeenAt: now,
         appearance: args.hostAppearance ?? {},
         authUserId: args.hostAuthUserId,
@@ -236,10 +257,8 @@ export const joinGameSession = (args: {
   elo?: number; // Looked up from DB by the route handler
 }): JoinGameSessionResult => {
   const session = ensureSession(args.id);
-
-  // For matchmaking games, check if still accepting joiners
-  if (session.matchType === "matchmaking" && session.status !== "waiting") {
-    throw new Error("Game is no longer accepting players");
+  if (session.cancelled) {
+    throw new Error("The game was aborted by the creator.");
   }
 
   const joiner = session.players.joiner;
@@ -331,6 +350,71 @@ export const resolveSessionForToken = (args: {
   return { session, player };
 };
 
+export type SessionAccessResolution =
+  | { kind: "not-found" }
+  | { kind: "player"; session: GameSession; player: SessionPlayer }
+  | { kind: "waiting"; session: GameSession; reason?: GameAccessWaitingReason }
+  | { kind: "spectator"; session: GameSession }
+  | { kind: "replay"; session: GameSession };
+
+export const resolveGameAccess = (args: {
+  id: string;
+  token?: string;
+  authUserId?: string;
+}): SessionAccessResolution => {
+  const session = sessions.get(args.id);
+  if (!session) {
+    return { kind: "not-found" };
+  }
+
+  const now = Date.now();
+
+  const matchByToken = (): SessionPlayer | null => {
+    if (!args.token) return null;
+    if (session.players.host.token === args.token) {
+      return session.players.host;
+    }
+    if (session.players.joiner.token === args.token) {
+      return session.players.joiner;
+    }
+    return null;
+  };
+
+  const matchByAuth = (): SessionPlayer | null => {
+    if (!args.authUserId) return null;
+    if (session.players.host.authUserId === args.authUserId) {
+      refreshSeatCredential(session.players.host);
+      session.updatedAt = now;
+      return session.players.host;
+    }
+    if (session.players.joiner.authUserId === args.authUserId) {
+      refreshSeatCredential(session.players.joiner);
+      session.updatedAt = now;
+      return session.players.joiner;
+    }
+    return null;
+  };
+
+  const matchedPlayer = matchByToken() ?? matchByAuth();
+  if (matchedPlayer) {
+    matchedPlayer.lastSeenAt = now;
+    return { kind: "player", session, player: matchedPlayer };
+  }
+
+  if (session.status === "waiting") {
+    if (session.cancelled) {
+      return { kind: "waiting", session, reason: "host-aborted" };
+    }
+    return { kind: "waiting", session };
+  }
+
+  if (session.status === "completed") {
+    return { kind: "replay", session };
+  }
+
+  return { kind: "spectator", session };
+};
+
 export const resolveSessionForSocketToken = (args: {
   id: string;
   socketToken: string;
@@ -375,7 +459,9 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
   return [...sessions.values()]
     .filter(
       (session) =>
-        session.matchType === "matchmaking" && session.status === "waiting",
+        session.matchType === "matchmaking" &&
+        session.status === "waiting" &&
+        !session.cancelled,
     )
     .map((session) => ({
       id: session.id,
@@ -433,49 +519,12 @@ export const getSpectatorCount = (gameId: string): number => {
  * Lists all in-progress games for the live games page.
  * Returns games sorted by average ELO (descending), then by lastMoveAt (descending).
  */
-export const listLiveGames = (limit = 100): LiveGameSummary[] => {
-  return [...sessions.values()]
-    .filter((session) => session.status === "in-progress")
-    .map((session) => {
-      const players = [session.players.host, session.players.joiner];
-      const elos = players.map((p) => p.elo ?? 1500);
-      const averageElo = Math.round((elos[0] + elos[1]) / 2);
-
-      return {
-        id: session.id,
-        variant: session.config.variant,
-        rated: session.config.rated,
-        timeControl: session.config.timeControl,
-        boardWidth: session.config.boardWidth,
-        boardHeight: session.config.boardHeight,
-        players: players.map((p) => ({
-          playerId: p.playerId,
-          displayName: p.displayName,
-          elo: p.elo,
-          role: p.role,
-        })),
-        status: "in-progress" as const,
-        moveCount: session.gameState.moveCount,
-        averageElo,
-        lastMoveAt: session.updatedAt,
-        spectatorCount: getSpectatorCount(session.id),
-      };
-    })
-    .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
-    .slice(0, limit);
-};
-
-/**
- * Gets a single live game summary by ID.
- * Returns null if the game doesn't exist or is not in-progress.
- */
-export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
-  const session = sessions.get(gameId);
-  if (session?.status !== "in-progress") return null;
-
+const buildLiveGameSummary = (session: GameSession): LiveGameSummary => {
   const players = [session.players.host, session.players.joiner];
   const elos = players.map((p) => p.elo ?? 1500);
   const averageElo = Math.round((elos[0] + elos[1]) / 2);
+  const status: LiveGameSummary["status"] =
+    session.status === "ready" ? "ready" : "in-progress";
 
   return {
     id: session.id,
@@ -490,12 +539,40 @@ export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
       elo: p.elo,
       role: p.role,
     })),
-    status: "in-progress" as const,
+    status,
     moveCount: session.gameState.moveCount,
     averageElo,
     lastMoveAt: session.updatedAt,
     spectatorCount: getSpectatorCount(session.id),
   };
+};
+
+export const listLiveGames = (limit = 100): LiveGameSummary[] => {
+  return [...sessions.values()]
+    .filter(
+      (session) =>
+        (session.status === "ready" || session.status === "in-progress") &&
+        !session.cancelled,
+    )
+    .map((session) => buildLiveGameSummary(session))
+    .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
+    .slice(0, limit);
+};
+
+/**
+ * Gets a single live game summary by ID.
+ * Returns null if the game doesn't exist or is not in-progress.
+ */
+export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
+  const session = sessions.get(gameId);
+  if (
+    !session ||
+    (session.status !== "ready" && session.status !== "in-progress")
+  ) {
+    return null;
+  }
+
+  return buildLiveGameSummary(session);
 };
 
 const applyActionToSession = (
@@ -668,24 +745,97 @@ export const getSerializedState = (id: string): SerializedGameState => {
   return serializeGameState(session);
 };
 
-export const resetSession = (id: string): GameState => {
-  const session = ensureSession(id);
-  session.gameState = createGameState(session.config);
-  session.updatedAt = Date.now();
-  // Both players are already present; after accepting a rematch we should be ready to play.
-  session.players.host.ready = true;
-  session.players.joiner.ready = true;
-  session.status = "ready";
+export interface RematchSessionResult {
+  newSession: GameSession;
+  seatCredentials: {
+    host: RematchSeatCredentials;
+    joiner: RematchSeatCredentials;
+  };
+}
+
+export const createRematchSession = (
+  previousSessionId: string,
+): RematchSessionResult => {
+  const previous = ensureSession(previousSessionId);
+
+  if (previous.gameState.status !== "finished") {
+    throw new Error("Cannot start a rematch before the game is finished.");
+  }
+
+  if (previous.nextGameId) {
+    throw new Error("Rematch already started for this game.");
+  }
+
+  const now = Date.now();
+  const newId = nanoid(8);
+  const hostCredentials: RematchSeatCredentials = {
+    token: nanoid(),
+    socketToken: nanoid(),
+  };
+  const joinerCredentials: RematchSeatCredentials = {
+    token: nanoid(),
+    socketToken: nanoid(),
+  };
 
   // Swap player IDs so the other player goes first in the rematch
-  const hostPlayerId = session.players.host.playerId;
-  const joinerPlayerId = session.players.joiner.playerId;
-  session.players.host.playerId = joinerPlayerId;
-  session.players.joiner.playerId = hostPlayerId;
+  const hostPlayerId = previous.players.host.playerId;
+  const joinerPlayerId = previous.players.joiner.playerId;
 
-  session.gameInstanceId += 1;
+  const newSession: GameSession = {
+    id: newId,
+    seriesId: previous.seriesId ?? previous.id,
+    rematchParentId: previous.id,
+    rematchNumber: previous.rematchNumber + 1,
+    createdAt: now,
+    updatedAt: now,
+    config: previous.config,
+    status: "ready",
+    matchType: previous.matchType,
+    cancelled: false,
+    players: {
+      host: {
+        ...previous.players.host,
+        playerId: joinerPlayerId,
+        token: hostCredentials.token,
+        socketToken: hostCredentials.socketToken,
+        connected: false,
+        ready: true,
+        lastSeenAt: now,
+      },
+      joiner: {
+        ...previous.players.joiner,
+        playerId: hostPlayerId,
+        token: joinerCredentials.token,
+        socketToken: joinerCredentials.socketToken,
+        connected: false,
+        ready: true,
+        lastSeenAt: now,
+      },
+    },
+    matchScore: {
+      host: previous.matchScore.host,
+      joiner: previous.matchScore.joiner,
+    },
+    gameInstanceId: 0,
+    lastScoredGameInstanceId: -1,
+    gameState: createGameState(previous.config),
+  };
 
-  return session.gameState;
+  sessions.set(newId, newSession);
+  previous.nextGameId = newId;
+  previous.nextGameSeatCredentials = {
+    host: hostCredentials,
+    joiner: joinerCredentials,
+  };
+  previous.updatedAt = now;
+
+  return {
+    newSession,
+    seatCredentials: {
+      host: hostCredentials,
+      joiner: joinerCredentials,
+    },
+  };
 };
 
 export const updateConnectionState = (args: {
@@ -701,7 +851,15 @@ export const updateConnectionState = (args: {
         ? session.players.joiner
         : null;
   if (!player) {
-    throw new Error("Invalid socket token for session");
+    console.warn(
+      "[sessions] updateConnectionState skipped for unknown socket",
+      {
+        sessionId: args.id,
+        socketToken: args.socketToken,
+        connected: args.connected,
+      },
+    );
+    return;
   }
   player.connected = args.connected;
   player.lastSeenAt = Date.now();
@@ -827,4 +985,21 @@ export const processRatingUpdate = async (
     player1NewElo: newState1.rating,
     player2NewElo: newState2.rating,
   };
+};
+
+export const cancelGameSession = (args: {
+  id: string;
+  token?: string;
+}): GameSession => {
+  const session = ensureSession(args.id);
+  if (session.cancelled) {
+    return session;
+  }
+  const hostToken = session.players.host.token;
+  if (hostToken !== args.token) {
+    throw new Error("Only the host can abort this game.");
+  }
+  session.cancelled = true;
+  session.updatedAt = Date.now();
+  return session;
 };

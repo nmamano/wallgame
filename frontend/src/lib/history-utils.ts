@@ -41,7 +41,7 @@ export function buildHistoryState({
   if (cursor === -1) {
     snapshot.history = [];
     snapshot.turn = 1;
-    snapshot.moveCount = 1;
+    snapshot.moveCount = 0;
     return snapshot;
   }
 
@@ -66,7 +66,7 @@ export function buildHistoryState({
     2: entry.timeLeftSeconds[1],
   };
   snapshot.turn = nextTurnAfter(entry.index);
-  snapshot.moveCount = entry.index + 1;
+  snapshot.moveCount = entry.index;
   snapshot.history = historyEntries.slice(0, cursor + 1);
   snapshot.status = "playing";
   snapshot.result = undefined;

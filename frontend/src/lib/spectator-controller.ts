@@ -3,13 +3,13 @@ import type {
   GameSnapshot,
   SerializedGameState,
 } from "../../../shared/domain/game-types";
-import type { SpectateResponse } from "../../../shared/contracts/games";
 
 export interface SpectatorControllerHandlers {
   onSnapshot: (snapshot: GameSnapshot) => void;
   onState: (state: SerializedGameState) => void;
   onError?: (message: string) => void;
   onStatusChange?: (status: { isConnected: boolean }) => void;
+  onRematchStarted?: (newGameId: string) => void;
 }
 
 export class SpectatorSession {
@@ -17,25 +17,12 @@ export class SpectatorSession {
 
   constructor(private readonly gameId: string) {}
 
-  async connect(handlers: SpectatorControllerHandlers): Promise<void> {
-    try {
-      const res = await fetch(`/api/games/${this.gameId}/spectate`);
-      if (!res.ok) {
-        const data = (await res.json().catch(() => ({}))) as {
-          error?: string;
-        };
-        throw new Error(data.error ?? "Failed to load game");
-      }
-      const data = (await res.json()) as SpectateResponse;
-      handlers.onSnapshot(data.snapshot);
-      handlers.onState(data.state);
-    } catch (error) {
-      handlers.onError?.(
-        error instanceof Error ? error.message : "Failed to load game",
-      );
-      return;
-    }
-
+  connect(
+    handlers: SpectatorControllerHandlers,
+    bootstrap: { snapshot: GameSnapshot; state: SerializedGameState },
+  ): void {
+    handlers.onSnapshot(bootstrap.snapshot);
+    handlers.onState(bootstrap.state);
     this.client = new SpectatorClient(this.gameId);
     this.client.connect({
       onState: (state) => {
@@ -46,6 +33,9 @@ export class SpectatorSession {
       },
       onError: (message) => {
         handlers.onError?.(message);
+      },
+      onRematchStarted: (newGameId) => {
+        handlers.onRematchStarted?.(newGameId);
       },
       onOpen: () => {
         handlers.onStatusChange?.({ isConnected: true });

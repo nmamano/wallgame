@@ -325,7 +325,6 @@ function GameSetup() {
           socketToken: response.socketToken,
           role: "host",
           playerId: hostPlayerId,
-          matchType,
           shareUrl: response.shareUrl,
         });
         void navigate({ to: `/game/${response.gameId}` });
@@ -551,7 +550,6 @@ function GameSetup() {
         socketToken: response.socketToken,
         role: response.role,
         playerId: response.playerId,
-        matchType: response.snapshot.matchType,
         shareUrl: response.shareUrl,
       });
 

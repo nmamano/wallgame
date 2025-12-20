@@ -28,7 +28,7 @@ export class GameState {
   grid: Grid;
   pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
   turn: PlayerId;
-  moveCount: number; // Increments every turn (1, 2, 3...)
+  moveCount: number; // Completed moves count (0 before any moves)
 
   history: MoveInHistory[];
   status: GameStatus;
@@ -72,7 +72,7 @@ export class GameState {
     };
 
     this.turn = 1;
-    this.moveCount = 1;
+    this.moveCount = 0;
     this.history = [];
     this.status = "playing";
 
@@ -341,8 +341,9 @@ export class GameState {
       2: player === 2 ? nextMyPawns : opPawns,
     };
 
+    const nextMoveIndex = this.moveCount + 1;
     const moveInHistory: MoveInHistory = {
-      index: this.moveCount,
+      index: nextMoveIndex,
       move: move,
       grid: nextGrid.clone(),
       catPos: [
@@ -395,7 +396,7 @@ export class GameState {
     }
 
     this.turn = opponent;
-    this.moveCount++;
+    this.moveCount = nextMoveIndex;
   }
 
   /**
@@ -446,7 +447,7 @@ export class GameState {
         1: last.timeLeftSeconds[0],
         2: last.timeLeftSeconds[1],
       };
-      this.moveCount = last.index + 1;
+      this.moveCount = last.index;
     } else {
       prevGrid = this.initialGrid.clone();
       prevPawns = {
@@ -457,7 +458,7 @@ export class GameState {
         1: this.config.timeControl.initialSeconds,
         2: this.config.timeControl.initialSeconds,
       };
-      this.moveCount = 1;
+      this.moveCount = 0;
     }
 
     this.grid = prevGrid;
