@@ -79,7 +79,7 @@ export interface LocalPreferences {
   displayName: string;
 }
 
-interface GamePlayer {
+export interface GamePlayer {
   id: string;
   playerId: PlayerId;
   name: string;
@@ -89,6 +89,12 @@ interface GamePlayer {
   isOnline: boolean;
   catSkin?: string;
   mouseSkin?: string;
+}
+
+export interface ScoreboardEntry {
+  id: string | number;
+  name: string;
+  score: number;
 }
 
 interface ChatMessage {
@@ -102,7 +108,7 @@ interface ChatMessage {
 
 type RematchResponse = "pending" | "accepted" | "declined";
 
-interface RematchState {
+export interface RematchState {
   status: "idle" | "pending" | "starting" | "declined";
   responses: Record<PlayerId, RematchResponse>;
   requestId: number;
@@ -2165,13 +2171,14 @@ export function useGamePageController(gameId: string) {
         respondToRematch(primaryLocalPlayerId, "declined");
       }
     }
-    window.history.back();
+    void navigate({ to: "/" });
   }, [
     isMultiplayerMatch,
     primaryLocalPlayerId,
     rematchState.status,
     respondToRematch,
     getSeatController,
+    navigate,
   ]);
 
   const navigateToLocalRematch = useCallback(() => {
@@ -3070,15 +3077,13 @@ export function useGamePageController(gameId: string) {
     snapshotMatchScore,
   ]);
 
-  const scoreboardEntries = useMemo(
-    () =>
-      participantSeatInfos.map((seat, index) => ({
-        id: index,
-        name: seat.label,
-        score: resolvedMatchScore[index] ?? 0,
-      })),
-    [participantSeatInfos, resolvedMatchScore],
-  );
+  const scoreboardEntries = useMemo(() => {
+    return participantSeatInfos.map((seat, index) => ({
+      id: seat.playerId ?? `seat-${index}`,
+      name: seat.label,
+      score: resolvedMatchScore[index] ?? 0,
+    }));
+  }, [participantSeatInfos, resolvedMatchScore]);
 
   const scoreByPlayerId = useMemo<Record<PlayerId, number>>(() => {
     const map: Record<PlayerId, number> = { 1: 0, 2: 0 };
@@ -3114,14 +3119,6 @@ export function useGamePageController(gameId: string) {
   const opponentRematchResponse =
     opponentPlayerId != null ? rematchState.responses[opponentPlayerId] : null;
   const opponentName = resolveSeatName(opponentPlayerId) ?? "Opponent";
-  const youName =
-    bottomTimerDisplayPlayer?.name ??
-    resolveSeatName(primaryLocalPlayerId) ??
-    "You";
-  const rematchResponseSummary = [
-    { label: youName, response: userRematchResponse ?? "pending" },
-    { label: opponentName, response: opponentRematchResponse ?? "pending" },
-  ];
   const rematchStatusText = (() => {
     switch (rematchState.status) {
       case "pending":
@@ -3269,7 +3266,6 @@ export function useGamePageController(gameId: string) {
     winReason,
     scoreboardEntries,
     rematchState,
-    rematchResponseSummary,
     rematchStatusText,
     primaryLocalPlayerId: boardPrimaryPlayerId,
     userRematchResponse: boardUserRematchResponse,
@@ -3319,33 +3315,61 @@ export function useGamePageController(gameId: string) {
   };
 
   const actionsSection = {
-    drawDecisionPrompt: metaGameActions.drawDecisionPrompt,
-    takebackDecisionPrompt: metaGameActions.takebackDecisionPrompt,
-    incomingPassiveNotice: metaGameActions.incomingPassiveNotice,
-    getPlayerName,
-    respondToDrawPrompt: respondToDrawPromptAction,
-    respondToTakebackPrompt: respondToTakebackPromptAction,
-    handleDismissIncomingNotice: metaGameActions.handleDismissIncomingNotice,
-    resignFlowPlayerId: metaGameActions.resignFlowPlayerId,
-    pendingDrawForLocal,
-    pendingDrawOffer: metaGameActions.pendingDrawOffer,
-    takebackPendingForLocal,
-    pendingTakebackRequest: metaGameActions.pendingTakebackRequest,
-    outgoingTimeInfo: metaGameActions.outgoingTimeInfo,
-    canCancelDrawOffer,
-    canCancelTakebackRequest,
-    handleCancelResign: metaGameActions.handleCancelResign,
-    handleConfirmResign: metaGameActions.handleConfirmResign,
-    handleCancelDrawOffer: metaGameActions.handleCancelDrawOffer,
-    handleCancelTakebackRequest: metaGameActions.handleCancelTakebackRequest,
-    handleDismissOutgoingInfo: metaGameActions.handleDismissOutgoingInfo,
-    actionButtonsDisabled,
-    manualActionsDisabled,
-    hasTakebackHistory,
-    handleStartResign: handleStartResignAction,
-    handleOfferDraw: handleOfferDrawAction,
-    handleRequestTakeback: handleRequestTakebackAction,
-    handleGiveTime: handleGiveTimeAction,
+    live: {
+      drawDecisionPrompt: metaGameActions.drawDecisionPrompt,
+      takebackDecisionPrompt: metaGameActions.takebackDecisionPrompt,
+      getPlayerName,
+      respondToDrawPrompt: respondToDrawPromptAction,
+      respondToTakebackPrompt: respondToTakebackPromptAction,
+      resignFlowPlayerId: metaGameActions.resignFlowPlayerId,
+      pendingDrawForLocal,
+      pendingDrawOffer: metaGameActions.pendingDrawOffer,
+      takebackPendingForLocal,
+      pendingTakebackRequest: metaGameActions.pendingTakebackRequest,
+      outgoingTimeInfo: metaGameActions.outgoingTimeInfo,
+      canCancelDrawOffer,
+      canCancelTakebackRequest,
+      incomingPassiveNotice: metaGameActions.incomingPassiveNotice,
+      handleCancelResign: metaGameActions.handleCancelResign,
+      handleConfirmResign: metaGameActions.handleConfirmResign,
+      handleCancelDrawOffer: metaGameActions.handleCancelDrawOffer,
+      handleCancelTakebackRequest: metaGameActions.handleCancelTakebackRequest,
+      handleDismissOutgoingInfo: metaGameActions.handleDismissOutgoingInfo,
+      handleDismissIncomingNotice: metaGameActions.handleDismissIncomingNotice,
+      actionButtonsDisabled,
+      manualActionsDisabled,
+      hasTakebackHistory,
+      handleStartResign: handleStartResignAction,
+      handleOfferDraw: handleOfferDrawAction,
+      handleRequestTakeback: handleRequestTakebackAction,
+      handleGiveTime: handleGiveTimeAction,
+    },
+    endgame: {
+      gameStatus,
+      winnerPlayer,
+      winReason,
+      scoreboardEntries,
+      rematchState,
+      rematchStatusText,
+      userRematchResponse: boardUserRematchResponse,
+      handleAcceptRematch: rematchAcceptHandler,
+      handleDeclineRematch: rematchDeclineHandler,
+      handleProposeRematch: rematchProposeHandler,
+      openRematchWindow: rematchWindowHandler,
+      handleExitAfterMatch,
+      isMultiplayerMatch: boardIsMultiplayer,
+      primaryLocalPlayerId: boardPrimaryPlayerId,
+      accessKind,
+      isReadOnly: isReadOnlySession,
+      spectatorRematchGameId,
+      handleFollowSpectatorRematch:
+        isSpectatorSession && spectatorRematchGameId
+          ? handleFollowSpectatorRematch
+          : undefined,
+      canFollowSpectatorRematch:
+        isSpectatorSession &&
+        Boolean(spectatorRematchGameId && handleFollowSpectatorRematch),
+    },
   };
 
   const chatSection = {

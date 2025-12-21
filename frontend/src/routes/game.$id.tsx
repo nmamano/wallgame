@@ -178,30 +178,10 @@ function GamePage() {
                 {/* Board Container */}
                 <BoardPanel
                   adjustedBoardContainerHeight={adjustedBoardContainerHeight}
-                  gameStatus={board.gameStatus}
                   gameState={board.gameState}
-                  isMultiplayerMatch={board.isMultiplayerMatch}
-                  accessKind={board.accessKind}
-                  isReadOnly={board.isReadOnly}
                   isLoadingConfig={board.isLoadingConfig}
                   loadError={board.loadError}
-                  winnerPlayer={board.winnerPlayer}
-                  winReason={board.winReason}
-                  scoreboardEntries={board.scoreboardEntries}
-                  rematchState={board.rematchState}
-                  rematchResponseSummary={board.rematchResponseSummary}
-                  rematchStatusText={board.rematchStatusText}
-                  spectatorRematchGameId={board.spectatorRematchGameId}
                   primaryLocalPlayerId={board.primaryLocalPlayerId}
-                  userRematchResponse={board.userRematchResponse}
-                  handleAcceptRematch={board.handleAcceptRematch}
-                  handleDeclineRematch={board.handleDeclineRematch}
-                  handleProposeRematch={board.handleProposeRematch}
-                  openRematchWindow={board.openRematchWindow}
-                  handleFollowSpectatorRematch={
-                    board.handleFollowSpectatorRematch
-                  }
-                  handleExitAfterMatch={board.handleExitAfterMatch}
                   rows={board.rows}
                   cols={board.cols}
                   boardPawns={board.boardPawns}
@@ -280,44 +260,9 @@ function GamePage() {
               />
             </div>
 
-            {/* Only show actions panel for players */}
-            {!isReadOnly && (
-              <div className="order-1 lg:order-2">
-                <ActionsPanel
-                  drawDecisionPrompt={actions.drawDecisionPrompt}
-                  takebackDecisionPrompt={actions.takebackDecisionPrompt}
-                  incomingPassiveNotice={actions.incomingPassiveNotice}
-                  getPlayerName={actions.getPlayerName}
-                  respondToDrawPrompt={actions.respondToDrawPrompt}
-                  respondToTakebackPrompt={actions.respondToTakebackPrompt}
-                  handleDismissIncomingNotice={
-                    actions.handleDismissIncomingNotice
-                  }
-                  resignFlowPlayerId={actions.resignFlowPlayerId}
-                  pendingDrawForLocal={actions.pendingDrawForLocal}
-                  pendingDrawOffer={actions.pendingDrawOffer}
-                  takebackPendingForLocal={actions.takebackPendingForLocal}
-                  pendingTakebackRequest={actions.pendingTakebackRequest}
-                  outgoingTimeInfo={actions.outgoingTimeInfo}
-                  canCancelDrawOffer={actions.canCancelDrawOffer}
-                  canCancelTakebackRequest={actions.canCancelTakebackRequest}
-                  handleCancelResign={actions.handleCancelResign}
-                  handleConfirmResign={actions.handleConfirmResign}
-                  handleCancelDrawOffer={actions.handleCancelDrawOffer}
-                  handleCancelTakebackRequest={
-                    actions.handleCancelTakebackRequest
-                  }
-                  handleDismissOutgoingInfo={actions.handleDismissOutgoingInfo}
-                  actionButtonsDisabled={actions.actionButtonsDisabled}
-                  manualActionsDisabled={actions.manualActionsDisabled}
-                  hasTakebackHistory={actions.hasTakebackHistory}
-                  handleStartResign={actions.handleStartResign}
-                  handleOfferDraw={actions.handleOfferDraw}
-                  handleRequestTakeback={actions.handleRequestTakeback}
-                  handleGiveTime={actions.handleGiveTime}
-                />
-              </div>
-            )}
+            <div className="order-1 lg:order-2">
+              <ActionsPanel live={actions.live} endgame={actions.endgame} />
+            </div>
 
             <div className="order-2 lg:order-3">
               <MoveListAndChatPanel
