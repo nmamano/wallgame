@@ -48,18 +48,21 @@ let createApp: typeof import("../../server/index").createApp;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
+let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let eq: typeof import("drizzle-orm").eq;
 
 async function importServerModules() {
   // Dynamic imports - these must happen AFTER DATABASE_URL is set
   const dbModule = await import("../../server/db");
   const serverModule = await import("../../server/index");
+  const gamesSchemaModule = await import("../../server/db/schema/games");
   const usersSchemaModule = await import("../../server/db/schema/users");
   const ratingsSchemaModule = await import("../../server/db/schema/ratings");
   const drizzleOrm = await import("drizzle-orm");
 
   db = dbModule.db;
   createApp = serverModule.createApp;
+  gamesTable = gamesSchemaModule.gamesTable;
   usersTable = usersSchemaModule.usersTable;
   userAuthTable = usersSchemaModule.userAuthTable;
   ratingsTable = ratingsSchemaModule.ratingsTable;
@@ -139,6 +142,7 @@ async function seedTestUser(
  * Cleans up all seeded test users and their related data.
  */
 async function cleanupTestUsers(): Promise<void> {
+  await db.delete(gamesTable);
   for (const userId of seededUserIds) {
     // Delete in order respecting foreign keys
     await db.delete(ratingsTable).where(eq(ratingsTable.userId, userId));

@@ -37,6 +37,7 @@ export const appearanceSchema = z
   .optional();
 
 export const matchTypeValues = ["friend", "matchmaking"] as const;
+export const boardSizeValues = ["small", "medium", "large"] as const;
 
 export const createGameSchema = z.object({
   config: z.object({
@@ -154,8 +155,11 @@ export type ResolveGameAccessResponse =
   | {
       kind: "replay";
       gameId: string;
+      matchType: MatchType;
       matchStatus: GameSnapshot;
+      state: SerializedGameState;
       shareUrl?: string;
+      views?: number;
     }
   | {
       kind: "not-found";
@@ -191,4 +195,51 @@ export interface LiveGameSummary {
 
 export interface LiveGamesResponse {
   games: LiveGameSummary[];
+}
+
+// ============================================================================
+// Past Games Types
+// ============================================================================
+
+export const pastGamesQuerySchema = z.object({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(100),
+  variant: z.enum(variantValues).optional(),
+  rated: z.enum(["yes", "no"]).optional(),
+  timeControl: z.enum(timeControlValues).optional(),
+  boardSize: z.enum(boardSizeValues).optional(),
+  minElo: z.coerce.number().int().min(0).optional(),
+  maxElo: z.coerce.number().int().min(0).optional(),
+  dateFrom: z.coerce.date().optional(),
+  dateTo: z.coerce.date().optional(),
+  player1: z.string().trim().min(1).optional(),
+  player2: z.string().trim().min(1).optional(),
+});
+
+export interface PastGamePlayerSummary {
+  playerOrder: PlayerId;
+  displayName: string;
+  ratingAtStart: number | null;
+  outcomeRank: number;
+  outcomeReason: string;
+}
+
+export interface PastGameSummary {
+  gameId: string;
+  variant: Variant;
+  rated: boolean;
+  timeControl: string;
+  boardWidth: number;
+  boardHeight: number;
+  movesCount: number;
+  startedAt: number;
+  views: number;
+  players: PastGamePlayerSummary[];
+}
+
+export interface PastGamesResponse {
+  games: PastGameSummary[];
+  page: number;
+  pageSize: number;
+  hasMore: boolean;
 }

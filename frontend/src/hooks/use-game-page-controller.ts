@@ -70,6 +70,7 @@ import {
 } from "@/lib/gameViewModel";
 import { SpectatorSession } from "@/lib/spectator-controller";
 import { describeControllerError } from "@/lib/controller-errors";
+import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -108,6 +109,11 @@ interface RematchState {
   decliner?: PlayerId;
   offerer?: PlayerId;
 }
+
+type ReadOnlyAccess = Extract<
+  ResolveGameAccessResponse,
+  { kind: "spectator" | "replay" }
+>;
 
 function buildUnexpectedControllerErrorMessage(
   action: ControllerActionKind,
@@ -389,18 +395,42 @@ export function useGamePageController(gameId: string) {
   const localRole = gameHandshake?.role ?? null;
   const isCreator = localRole === "host";
 
+  const accessKind = access?.kind ?? null;
+  const readOnlyAccess = useMemo<ReadOnlyAccess | null>(() => {
+    if (!access) {
+      return null;
+    }
+    if (access.kind === "spectator" || access.kind === "replay") {
+      return access;
+    }
+    return null;
+  }, [access]);
   const isSpectatorSession = useMemo(
-    () => !hasLocalConfig && access?.kind === "spectator",
-    [hasLocalConfig, access],
+    () => !hasLocalConfig && accessKind === "spectator",
+    [hasLocalConfig, accessKind],
   );
+  const isReplaySession = useMemo(
+    () => !hasLocalConfig && accessKind === "replay",
+    [hasLocalConfig, accessKind],
+  );
+  const isReadOnlySession = isSpectatorSession || isReplaySession;
   useEffect(() => {
     console.debug("[game-page] remote access state", {
       gameId,
       isSpectatorSession,
+      isReplaySession,
+      isReadOnlySession,
       isMultiplayerMatch,
-      accessKind: access?.kind ?? null,
+      accessKind,
     });
-  }, [gameId, isSpectatorSession, isMultiplayerMatch, access?.kind]);
+  }, [
+    gameId,
+    isSpectatorSession,
+    isReplaySession,
+    isReadOnlySession,
+    isMultiplayerMatch,
+    accessKind,
+  ]);
 
   const remoteSeatIdentity = useMemo(() => {
     if (!shouldUseOnlineSession) return null;
@@ -456,15 +486,15 @@ export function useGamePageController(gameId: string) {
     error: null,
   });
   const spectatorBootstrap = useMemo(() => {
-    if (access?.kind === "spectator") {
-      return {
-        snapshot: access.matchStatus,
-        state: access.state,
-      };
+    if (!readOnlyAccess) {
+      return null;
     }
-    return null;
-  }, [access]);
-  const displayMatchError = isSpectatorSession ? null : matchError;
+    return {
+      snapshot: readOnlyAccess.matchStatus,
+      state: readOnlyAccess.state,
+    };
+  }, [readOnlyAccess]);
+  const displayMatchError = isReadOnlySession ? null : matchError;
 
   const addSystemMessage = useCallback((text: string) => {
     setMessages((prev) => [
@@ -532,7 +562,7 @@ export function useGamePageController(gameId: string) {
   }, [playerTypes]);
 
   const friendColorOverrides = useMemo(() => {
-    if ((!isMultiplayerMatch && !isSpectatorSession) || !viewModel.match) {
+    if ((!isMultiplayerMatch && !isReadOnlySession) || !viewModel.match) {
       return {};
     }
     const map: Partial<Record<PlayerId, PlayerColor>> = {};
@@ -542,7 +572,7 @@ export function useGamePageController(gameId: string) {
       }
     });
     return map;
-  }, [viewModel.match, isMultiplayerMatch, isSpectatorSession]);
+  }, [viewModel.match, isMultiplayerMatch, isReadOnlySession]);
 
   const playerColorsForBoard = useMemo(() => {
     const colors: Record<PlayerId, PlayerColor> = {
@@ -997,7 +1027,7 @@ export function useGamePageController(gameId: string) {
   );
 
   useEffect(() => {
-    if (!isSpectatorSession) {
+    if (!isReadOnlySession) {
       spectatorSessionRef.current?.disconnect();
       spectatorSessionRef.current = null;
       spectatorInitializedRef.current = false;
@@ -1017,6 +1047,16 @@ export function useGamePageController(gameId: string) {
       controller?.cancel?.(new Error("Spectator session started")),
     );
     seatActionsRef.current = { 1: null, 2: null };
+
+    if (isReplaySession) {
+      spectatorSessionRef.current?.disconnect();
+      spectatorSessionRef.current = null;
+      spectatorInitializedRef.current = false;
+      applySpectatorSnapshotUpdate(spectatorBootstrap.snapshot);
+      applySpectatorStateUpdate(spectatorBootstrap.state);
+      setSpectatorStatus({ isLoading: false, error: null });
+      return;
+    }
 
     const session = new SpectatorSession(gameId);
     spectatorSessionRef.current = session;
@@ -1070,7 +1110,8 @@ export function useGamePageController(gameId: string) {
       seatActionsRef.current = { 1: null, 2: null };
     };
   }, [
-    isSpectatorSession,
+    isReadOnlySession,
+    isReplaySession,
     gameId,
     applySpectatorSnapshotUpdate,
     applySpectatorStateUpdate,
@@ -1163,7 +1204,7 @@ export function useGamePageController(gameId: string) {
         responses: { 1: "pending", 2: "pending" },
       }));
       addSystemMessage(
-        isSpectatorSession
+        isReadOnlySession
           ? `Players started a rematch. You can follow them at /game/${payload.newGameId}.`
           : `Players started a rematch. Watch it at /game/${payload.newGameId}.`,
       );
@@ -1172,7 +1213,7 @@ export function useGamePageController(gameId: string) {
       addSystemMessage,
       gameHandshake,
       isMultiplayerMatch,
-      isSpectatorSession,
+      isReadOnlySession,
       navigate,
       updateGameHandshake,
     ],
@@ -1295,10 +1336,10 @@ export function useGamePageController(gameId: string) {
   ]);
   const isAuthoritativeWaiting =
     isRemoteFlow &&
-    !isSpectatorSession &&
+    !isReadOnlySession &&
     (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null);
   const matchingPanelOpen = isRemoteFlow
-    ? !isSpectatorSession &&
+    ? !isReadOnlySession &&
       (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null)
     : matchingPlayers.some((entry) => !entry.isReady);
   const matchingCanAbort = isRemoteFlow
@@ -1416,7 +1457,7 @@ export function useGamePageController(gameId: string) {
   const canUseChat = seatCapabilities?.canUseChat ?? false;
   const controllerAllowsInteraction = canMovePieces;
   const interactionLocked =
-    isSpectatorSession ||
+    isReadOnlySession ||
     !controllerAllowsInteraction ||
     (!isMultiplayerMatch && unsupportedPlayers.length > 0) ||
     (isMultiplayerMatch && !matchReadyForPlay);
@@ -2178,7 +2219,7 @@ export function useGamePageController(gameId: string) {
   ]);
 
   useEffect(() => {
-    if (isSpectatorSession) {
+    if (isReadOnlySession) {
       setHasLocalConfig(false);
       setLoadError(null);
       setIsLoadingConfig(false);
@@ -2294,7 +2335,7 @@ export function useGamePageController(gameId: string) {
     initializeGame,
     isResolvingAccess,
     isMultiplayerMatch,
-    isSpectatorSession,
+    isReadOnlySession,
     resetViewModel,
   ]);
 
@@ -2350,7 +2391,7 @@ export function useGamePageController(gameId: string) {
   useEffect(() => {
     if (!matchParticipants.length) return;
     if (gameState?.status !== "finished" || !gameState.result) return;
-    if (isMultiplayerMatch || isSpectatorSession) return;
+    if (isMultiplayerMatch || isReadOnlySession) return;
     const activeGameId = currentGameIdRef.current;
     if (lastScoredGameIdRef.current === activeGameId) return;
     lastScoredGameIdRef.current = activeGameId;
@@ -2390,13 +2431,13 @@ export function useGamePageController(gameId: string) {
     gameState?.result,
     gameState?.status,
     isMultiplayerMatch,
-    isSpectatorSession,
+    isReadOnlySession,
     matchParticipants.length,
     openRematchWindow,
   ]);
 
   useEffect(() => {
-    if (isMultiplayerMatch || isSpectatorSession) return;
+    if (isMultiplayerMatch || isReadOnlySession) return;
     if (rematchState.status !== "pending") return;
     const timers: number[] = [];
     ([1, 2] as PlayerId[]).forEach((playerId) => {
@@ -2426,7 +2467,7 @@ export function useGamePageController(gameId: string) {
     };
   }, [
     isMultiplayerMatch,
-    isSpectatorSession,
+    isReadOnlySession,
     autoAcceptingLocalIds,
     primaryLocalPlayerId,
     rematchState,
@@ -2434,12 +2475,12 @@ export function useGamePageController(gameId: string) {
   ]);
 
   useEffect(() => {
-    if (isMultiplayerMatch || isSpectatorSession) return;
+    if (isMultiplayerMatch || isReadOnlySession) return;
     if (rematchState.status !== "starting") return;
     navigateToLocalRematch();
   }, [
     isMultiplayerMatch,
-    isSpectatorSession,
+    isReadOnlySession,
     rematchState.status,
     navigateToLocalRematch,
   ]);
@@ -2830,7 +2871,8 @@ export function useGamePageController(gameId: string) {
       gameState &&
       state.status === "playing" &&
       gameState.status === "playing" &&
-      state.turn === gameState.turn
+      state.turn === gameState.turn &&
+      state.moveCount > 0
     ) {
       const elapsed = (Date.now() - state.lastMoveTime) / 1000;
       base[state.turn] = Math.max(0, base[state.turn] - elapsed);
@@ -3008,7 +3050,7 @@ export function useGamePageController(gameId: string) {
     const fallbackScores = participantSeatInfos.map(
       (_, index) => localMatchScore[index] ?? 0,
     );
-    if ((isMultiplayerMatch || isSpectatorSession) && snapshotMatchScore) {
+    if ((isMultiplayerMatch || isReadOnlySession) && snapshotMatchScore) {
       return participantSeatInfos.map((seat, index) => {
         if (seat.playerId == null) {
           return fallbackScores[index];
@@ -3024,7 +3066,7 @@ export function useGamePageController(gameId: string) {
     participantSeatInfos,
     localMatchScore,
     isMultiplayerMatch,
-    isSpectatorSession,
+    isReadOnlySession,
     snapshotMatchScore,
   ]);
 
@@ -3103,7 +3145,7 @@ export function useGamePageController(gameId: string) {
   })();
 
   const spectatorPlayerSlots = useMemo(() => {
-    if (!isSpectatorSession) return null;
+    if (!isReadOnlySession) return null;
     if (players.length >= 2) {
       return players.slice(0, 2);
     }
@@ -3131,11 +3173,11 @@ export function useGamePageController(gameId: string) {
         mouseSkin: undefined,
       },
     ];
-  }, [isSpectatorSession, players]);
+  }, [isReadOnlySession, players]);
 
   const matchingPlayersForView = spectatorPlayerSlots ?? matchingPanelPlayers;
-  const matchingShareUrl = isSpectatorSession ? undefined : resolvedShareUrl;
-  const matchingStatusForView = isSpectatorSession
+  const matchingShareUrl = isReadOnlySession ? undefined : resolvedShareUrl;
+  const matchingStatusForView = isReadOnlySession
     ? undefined
     : matchingStatusMessage;
   const waitingMessage = isAuthoritativeWaiting
@@ -3144,7 +3186,7 @@ export function useGamePageController(gameId: string) {
       : "Waiting for another player to join before the match starts."
     : undefined;
   const matchingJoinAction =
-    !isSpectatorSession && access?.kind === "waiting"
+    !isReadOnlySession && access?.kind === "waiting"
       ? {
           label:
             waitingAccessReason === "host-aborted"
@@ -3162,21 +3204,21 @@ export function useGamePageController(gameId: string) {
           disabled: isClaimingSeat || waitingAccessReason === "host-aborted",
         }
       : undefined;
-  const matchingAbortEnabled = !isSpectatorSession && matchingCanAbort;
-  const matchingIsOpen = !isSpectatorSession && matchingPanelOpen;
+  const matchingAbortEnabled = !isReadOnlySession && matchingCanAbort;
+  const matchingIsOpen = !isReadOnlySession && matchingPanelOpen;
 
-  const boardIsMultiplayer = isSpectatorSession ? true : isRemoteFlow;
-  const boardShouldRender = isSpectatorSession || !isAuthoritativeWaiting;
-  const boardIsLoading = isSpectatorSession
+  const boardIsMultiplayer = isReadOnlySession ? true : isRemoteFlow;
+  const boardShouldRender = isReadOnlySession || !isAuthoritativeWaiting;
+  const boardIsLoading = isReadOnlySession
     ? spectatorStatus.isLoading
     : isLoadingConfig;
-  const boardLoadError = isSpectatorSession ? spectatorStatus.error : loadError;
-  const boardPrimaryPlayerId = isSpectatorSession ? null : primaryLocalPlayerId;
-  const boardUserRematchResponse = isSpectatorSession
+  const boardLoadError = isReadOnlySession ? spectatorStatus.error : loadError;
+  const boardPrimaryPlayerId = isReadOnlySession ? null : primaryLocalPlayerId;
+  const boardUserRematchResponse = isReadOnlySession
     ? null
     : userRematchResponse;
   const rematchHandlersEnabled =
-    !isSpectatorSession && canOfferRematch && primaryLocalPlayerId != null;
+    !isReadOnlySession && canOfferRematch && primaryLocalPlayerId != null;
   const rematchAcceptHandler = rematchHandlersEnabled
     ? handleAcceptRematch
     : NOOP;
@@ -3190,7 +3232,7 @@ export function useGamePageController(gameId: string) {
     ? openRematchWindow
     : NOOP;
 
-  const infoIsMultiplayerMatch = isSpectatorSession ? true : isRemoteFlow;
+  const infoIsMultiplayerMatch = isReadOnlySession ? true : isRemoteFlow;
 
   const showShareInstructions = isCreator && resolvedMatchType === "friend";
   const matchingSection = {
@@ -3206,7 +3248,7 @@ export function useGamePageController(gameId: string) {
     waitingMessage,
     isWaiting: isAuthoritativeWaiting,
     lifecycle: authoritativeLifecycle,
-    accessKind: access?.kind ?? null,
+    accessKind,
     localRole,
     showShareInstructions,
     waitingReason: waitingAccessReason,
@@ -3217,7 +3259,8 @@ export function useGamePageController(gameId: string) {
     shouldRender: boardShouldRender,
     waitingMessage,
     isMultiplayerMatch: boardIsMultiplayer,
-    isSpectator: isSpectatorSession,
+    accessKind,
+    isReadOnly: isReadOnlySession,
     gameStatus,
     gameState: historyState ?? gameState,
     isLoadingConfig: boardIsLoading,
@@ -3325,6 +3368,8 @@ export function useGamePageController(gameId: string) {
         },
   };
   const controller = {
+    accessKind,
+    isReadOnly: isReadOnlySession,
     isSpectator: isSpectatorSession,
     matching: matchingSection,
     board: boardSection,

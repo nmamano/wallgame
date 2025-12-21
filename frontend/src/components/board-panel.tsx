@@ -7,9 +7,11 @@ import type {
   PlayerId,
   WallOrientation,
 } from "../../../shared/domain/game-types";
+import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 import type { PlayerColor } from "@/lib/player-colors";
 
 type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];
+type AccessKind = ResolveGameAccessResponse["kind"] | null;
 
 interface GamePlayer {
   id: string;
@@ -45,7 +47,8 @@ interface BoardPanelProps {
     turn: PlayerId;
   } | null;
   isMultiplayerMatch: boolean;
-  isSpectator: boolean;
+  accessKind: AccessKind;
+  isReadOnly: boolean;
   isLoadingConfig: boolean;
   loadError: string | null;
 
@@ -109,7 +112,8 @@ export function BoardPanel({
   gameStatus,
   gameState,
   isMultiplayerMatch,
-  isSpectator,
+  accessKind,
+  isReadOnly,
   isLoadingConfig,
   loadError,
   winnerPlayer,
@@ -155,6 +159,8 @@ export function BoardPanel({
 }: BoardPanelProps) {
   const followSpectatorRematch =
     handleFollowSpectatorRematch ?? (() => undefined);
+  const isReplayView = accessKind === "replay";
+  const isReadOnlyView = isReadOnly;
   const isIncomingMultiplayerOffer =
     isMultiplayerMatch &&
     rematchState.status === "pending" &&
@@ -222,8 +228,12 @@ export function BoardPanel({
               </div>
             )}
             <div className="space-y-3">
-              {isSpectator ? (
-                spectatorRematchGameId ? (
+              {isReadOnlyView ? (
+                isReplayView ? (
+                  <p className="text-sm text-muted-foreground">
+                    Replay complete.
+                  </p>
+                ) : spectatorRematchGameId ? (
                   <div className="flex flex-col gap-3">
                     <p className="text-sm text-muted-foreground">
                       Players started a rematch.
@@ -276,7 +286,7 @@ export function BoardPanel({
                 </>
               )}
 
-              {!isSpectator && canProposeMultiplayerRematch && (
+              {!isReadOnlyView && canProposeMultiplayerRematch && (
                 <div className="flex justify-center">
                   <Button onClick={handleProposeRematch}>
                     {rematchState.status === "declined"

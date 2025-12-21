@@ -18,10 +18,12 @@ import {
   joinGameSchema,
   readySchema,
   getGameSessionQuerySchema,
+  pastGamesQuerySchema,
 } from "../../shared/contracts/games";
 import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
+import { getReplayGame, queryPastGames } from "../db/game-queries";
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -66,6 +68,29 @@ export const gamesRoute = new Hono()
       return c.json({ games });
     } catch (error) {
       console.error("Failed to list live games:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  .get("/past", zValidator("query", pastGamesQuerySchema), async (c) => {
+    try {
+      const query = c.req.valid("query");
+      const response = await queryPastGames({
+        page: query.page,
+        pageSize: query.pageSize,
+        variant: query.variant,
+        rated: query.rated,
+        timeControl: query.timeControl,
+        boardSize: query.boardSize,
+        minElo: query.minElo,
+        maxElo: query.maxElo,
+        dateFrom: query.dateFrom,
+        dateTo: query.dateTo,
+        player1: query.player1,
+        player2: query.player2,
+      });
+      return c.json(response);
+    } catch (error) {
+      console.error("Failed to query past games:", error);
       return c.json({ error: "Internal server error" }, 500);
     }
   })
@@ -156,7 +181,7 @@ export const gamesRoute = new Hono()
     "/:id",
     getOptionalUserMiddleware,
     zValidator("query", getGameSessionQuerySchema),
-    (c) => {
+    async (c) => {
       try {
         const { id } = c.req.param();
         const { token } = c.req.valid("query");
@@ -170,7 +195,19 @@ export const gamesRoute = new Hono()
         });
 
         if (access.kind === "not-found") {
-          return c.json({ kind: "not-found" });
+          const replay = await getReplayGame(id);
+          if (!replay) {
+            return c.json({ kind: "not-found" });
+          }
+          return c.json({
+            kind: "replay",
+            gameId: id,
+            matchType: replay.matchStatus.matchType,
+            matchStatus: replay.matchStatus,
+            state: replay.state,
+            shareUrl,
+            views: replay.views,
+          });
         }
 
         const matchStatus = getSessionSnapshot(id);
@@ -220,12 +257,31 @@ export const gamesRoute = new Hono()
           });
         }
 
-        return c.json({
-          kind: "replay",
-          gameId: id,
-          matchStatus,
-          shareUrl,
-        });
+        if (access.kind === "replay") {
+          const replay = await getReplayGame(id);
+          if (replay) {
+            return c.json({
+              kind: "replay",
+              gameId: id,
+              matchType: replay.matchStatus.matchType,
+              matchStatus: replay.matchStatus,
+              state: replay.state,
+              shareUrl,
+              views: replay.views,
+            });
+          }
+
+          return c.json({
+            kind: "replay",
+            gameId: id,
+            matchType,
+            matchStatus,
+            state: getSerializedState(id),
+            shareUrl,
+          });
+        }
+
+        return c.json({ kind: "not-found" });
       } catch (error) {
         console.error("Failed to resolve game access:", error);
         return c.json({ error: "Internal server error" }, 500);

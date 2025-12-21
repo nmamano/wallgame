@@ -6,10 +6,11 @@ import { builtInBotsTable } from "./built-in-bots";
 export const gamePlayersTable = pgTable(
   "game_players",
   {
-    gameId: integer("game_id")
+    gameId: varchar("game_id", { length: 255 })
       .notNull()
       .references(() => gamesTable.gameId, { onDelete: "cascade" }),
     playerOrder: integer("player_order").notNull(), // 1 for the 1st mover, 2 for the 2nd mover, etc.
+    playerRole: varchar("player_role", { length: 255 }).notNull(), // "host" or "joiner"
     playerConfigType: varchar("player_config_type", { length: 255 }).notNull(), // "you", "friend", "matched user", "bot", "custom bot"
     userId: integer("user_id").references(() => usersTable.userId), // NULL for non-logged-in users and built-in bots
     botId: varchar("bot_id", { length: 255 }).references(
