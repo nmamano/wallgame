@@ -1,69 +1,76 @@
 {
-  "version": "7",
-  "dialect": "postgresql",
-  "entries": [
-    {
-      "idx": 0,
-      "version": "7",
-      "when": 1740113506263,
-      "tag": "0000_tired_starjammers",
-      "breakpoints": true
-    },
-    {
-      "idx": 1,
-      "version": "7",
-      "when": 1763278064389,
-      "tag": "0001_foamy_junta",
-      "breakpoints": true
-    },
-    {
-      "idx": 2,
-      "version": "7",
-      "when": 1763278232865,
-      "tag": "0002_nostalgic_barracuda",
-      "breakpoints": true
-    },
-    {
-      "idx": 3,
-      "version": "7",
-      "when": 1763284851951,
-      "tag": "0003_mute_warlock",
-      "breakpoints": true
-    },
-    {
-      "idx": 4,
-      "version": "7",
-      "when": 1763287187748,
-      "tag": "0004_loose_omega_red",
-      "breakpoints": true
-    },
-    {
-      "idx": 5,
-      "version": "7",
-      "when": 1763327321122,
-      "tag": "0005_lying_absorbing_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 6,
-      "version": "7",
-      "when": 1763360032460,
-      "tag": "0006_watery_sugar_man",
-      "breakpoints": true
-    },
-    {
-      "idx": 7,
-      "version": "7",
-      "when": 1763360510729,
-      "tag": "0007_light_brood",
-      "breakpoints": true
-    },
-    {
-      "idx": 8,
-      "version": "7",
-      "when": 1764745426611,
-      "tag": "0008_flaky_sunspot",
-      "breakpoints": true
-    }
-  ]
+    "version":  "7",
+    "dialect":  "postgresql",
+    "entries":  [
+                    {
+                        "idx":  0,
+                        "version":  "7",
+                        "when":  1740113506263,
+                        "tag":  "0000_tired_starjammers",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  1,
+                        "version":  "7",
+                        "when":  1763278064389,
+                        "tag":  "0001_foamy_junta",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  2,
+                        "version":  "7",
+                        "when":  1763278232865,
+                        "tag":  "0002_nostalgic_barracuda",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  3,
+                        "version":  "7",
+                        "when":  1763284851951,
+                        "tag":  "0003_mute_warlock",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  4,
+                        "version":  "7",
+                        "when":  1763287187748,
+                        "tag":  "0004_loose_omega_red",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  5,
+                        "version":  "7",
+                        "when":  1763327321122,
+                        "tag":  "0005_lying_absorbing_man",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  6,
+                        "version":  "7",
+                        "when":  1763360032460,
+                        "tag":  "0006_watery_sugar_man",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  7,
+                        "version":  "7",
+                        "when":  1763360510729,
+                        "tag":  "0007_light_brood",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  8,
+                        "version":  "7",
+                        "when":  1764745426611,
+                        "tag":  "0008_flaky_sunspot",
+                        "breakpoints":  true
+                    },
+                    {
+                        "idx":  9,
+                        "version":  "7",
+                        "when":  1766284971481,
+                        "tag":  "0009_nanoid_game_ids",
+                        "breakpoints":  true
+                    }
+                ]
 }

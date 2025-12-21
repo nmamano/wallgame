@@ -15,8 +15,18 @@ export const Route = createFileRoute("/game/$id")({
 function GamePage() {
   const { id } = Route.useParams();
   const controller = useGamePageController(id);
-  const { isSpectator, matching, board, timers, actions, chat, info } =
-    controller;
+  const {
+    accessKind,
+    isReadOnly,
+    matching,
+    board,
+    timers,
+    actions,
+    chat,
+    info,
+  } = controller;
+  const isSpectator = accessKind === "spectator";
+  const isReplay = accessKind === "replay";
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
@@ -100,9 +110,14 @@ function GamePage() {
             Spectating
           </div>
         )}
+        {isReplay && (
+          <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-2 text-sm font-medium border-b border-amber-200 dark:border-amber-800">
+            Replay
+          </div>
+        )}
 
         {/* Only show matching panel for players */}
-        {!isSpectator && (
+        {!isReadOnly && (
           <>
             {console.debug("[game-page] matching panel state", {
               isMultiplayerMatch: info.isMultiplayerMatch,
@@ -166,7 +181,8 @@ function GamePage() {
                   gameStatus={board.gameStatus}
                   gameState={board.gameState}
                   isMultiplayerMatch={board.isMultiplayerMatch}
-                  isSpectator={controller.isSpectator}
+                  accessKind={board.accessKind}
+                  isReadOnly={board.isReadOnly}
                   isLoadingConfig={board.isLoadingConfig}
                   loadError={board.loadError}
                   winnerPlayer={board.winnerPlayer}
@@ -265,7 +281,7 @@ function GamePage() {
             </div>
 
             {/* Only show actions panel for players */}
-            {!isSpectator && (
+            {!isReadOnly && (
               <div className="order-1 lg:order-2">
                 <ActionsPanel
                   drawDecisionPrompt={actions.drawDecisionPrompt}

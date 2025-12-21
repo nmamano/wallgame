@@ -24,6 +24,7 @@ import {
   processRatingUpdate,
   type SessionPlayer,
 } from "../games/store";
+import { persistCompletedGame } from "../games/persistence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
 import type {
@@ -384,6 +385,14 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   // Process rating update and send match-status if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    try {
+      await persistCompletedGame(getSession(socket.sessionId));
+    } catch (error) {
+      console.error("[persistence] failed after move", {
+        error,
+        sessionId: socket.sessionId,
+      });
+    }
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
   } else {
@@ -419,6 +428,14 @@ const handleResign = async (socket: SessionSocket) => {
   // Process rating update if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    try {
+      await persistCompletedGame(getSession(socket.sessionId));
+    } catch (error) {
+      console.error("[persistence] failed after resign", {
+        error,
+        sessionId: socket.sessionId,
+      });
+    }
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
   }
@@ -530,6 +547,14 @@ const handleDrawAccept = async (socket: SessionSocket) => {
   // Process rating update if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(socket.sessionId);
+    try {
+      await persistCompletedGame(getSession(socket.sessionId));
+    } catch (error) {
+      console.error("[persistence] failed after draw", {
+        error,
+        sessionId: socket.sessionId,
+      });
+    }
     // Broadcast removal from live games list
     broadcastLiveGamesRemove(socket.sessionId);
   }
@@ -673,6 +698,14 @@ const handleActionRequest = async (
         });
         if (newState.status === "finished") {
           await processRatingUpdate(socket.sessionId);
+          try {
+            await persistCompletedGame(getSession(socket.sessionId));
+          } catch (error) {
+            console.error("[persistence] failed after action resign", {
+              error,
+              sessionId: socket.sessionId,
+            });
+          }
           broadcastLiveGamesRemove(socket.sessionId);
         }
         broadcast(socket.sessionId, {

@@ -43,6 +43,7 @@ export interface SessionPlayer {
   lastSeenAt: number;
   appearance: PlayerAppearance;
   authUserId?: string; // Auth provider's user ID (for rating updates)
+  ratingAtStart?: number; // Rating at game start, captured before updates
   elo?: number; // Looked up from DB based on authenticated user
 }
 
@@ -64,6 +65,7 @@ export interface GameSession {
     joiner: RematchSeatCredentials;
   };
   createdAt: number;
+  startedAt?: number | null;
   updatedAt: number;
   config: GameConfiguration;
   status: SessionStatus;
@@ -199,6 +201,7 @@ export const createGameSession = (args: {
     rematchParentId: undefined,
     rematchNumber: 0,
     createdAt: now,
+    startedAt: null,
     updatedAt: now,
     config: args.config,
     status: "waiting",
@@ -216,6 +219,7 @@ export const createGameSession = (args: {
         lastSeenAt: now,
         appearance: args.hostAppearance ?? {},
         authUserId: args.hostAuthUserId,
+        ratingAtStart: args.hostElo,
         elo: args.hostElo,
       },
       joiner: {
@@ -229,6 +233,7 @@ export const createGameSession = (args: {
         ready: false,
         lastSeenAt: now,
         appearance: {},
+        ratingAtStart: undefined,
       },
     },
     matchScore: {
@@ -274,6 +279,7 @@ export const joinGameSession = (args: {
       ...args.appearance,
     };
     joiner.authUserId = args.authUserId;
+    joiner.ratingAtStart = args.elo;
     joiner.elo = args.elo;
     joiner.lastSeenAt = Date.now();
     session.updatedAt = Date.now();
@@ -579,6 +585,13 @@ const applyActionToSession = (
   session: GameSession,
   action: GameAction,
 ): GameState => {
+  if (
+    action.kind === "move" &&
+    session.gameState.moveCount === 0 &&
+    session.startedAt == null
+  ) {
+    session.startedAt = action.timestamp;
+  }
   const next = session.gameState.applyGameAction(action);
   session.gameState = next;
   session.updatedAt = Date.now();
@@ -787,6 +800,7 @@ export const createRematchSession = (
     rematchParentId: previous.id,
     rematchNumber: previous.rematchNumber + 1,
     createdAt: now,
+    startedAt: null,
     updatedAt: now,
     config: previous.config,
     status: "ready",
@@ -801,6 +815,7 @@ export const createRematchSession = (
         connected: false,
         ready: true,
         lastSeenAt: now,
+        ratingAtStart: previous.players.host.elo,
       },
       joiner: {
         ...previous.players.joiner,
@@ -810,6 +825,7 @@ export const createRematchSession = (
         connected: false,
         ready: true,
         lastSeenAt: now,
+        ratingAtStart: previous.players.joiner.elo,
       },
     },
     matchScore: {

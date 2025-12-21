@@ -116,19 +116,21 @@ export class GameState {
       throw new Error("Game is not playing");
     }
 
-    if (action.kind !== "timeout" && action.kind !== "giveTime") {
-      const elapsed = (action.timestamp - this.lastMoveTime) / 1000;
-      if (action.kind === "move") {
-        if (action.playerId !== this.turn) {
-          throw new Error("Not your turn");
-        }
-        // Deduct time, ensuring 0.1s resolution (rounding down/up? usually floor or just float)
-        // Let's keep it as float for accuracy, but display/store rounded if needed.
-        this.timeLeft[this.turn] = Math.max(
-          0,
-          this.timeLeft[this.turn] - elapsed,
-        );
+    if (action.kind === "move") {
+      if (action.playerId !== this.turn) {
+        throw new Error("Not your turn");
       }
+      // Start the clock on the first move; don't penalize pre-move waiting time.
+      const elapsed =
+        this.moveCount === 0
+          ? 0
+          : (action.timestamp - this.lastMoveTime) / 1000;
+      // Deduct time, ensuring 0.1s resolution (rounding down/up? usually floor or just float)
+      // Let's keep it as float for accuracy, but display/store rounded if needed.
+      this.timeLeft[this.turn] = Math.max(
+        0,
+        this.timeLeft[this.turn] - elapsed,
+      );
     }
 
     switch (action.kind) {
