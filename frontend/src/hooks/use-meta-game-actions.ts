@@ -1,4 +1,4 @@
-import { useState, useRef, useCallback, useEffect, useMemo } from "react";
+import { useState, useRef, useCallback, useEffect } from "react";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
 import type {
@@ -129,6 +129,7 @@ interface CreateMetaActionExecutorOptions {
   performGameAction: (
     action: import("../../../shared/domain/game-types").GameAction,
   ) => GameState;
+  recordGiveTimeNotice: (giverId: PlayerId) => void;
 }
 
 const META_ACTION_CAPABILITY_MAP: Record<
@@ -144,6 +145,7 @@ const META_ACTION_CAPABILITY_MAP: Record<
 function createMetaActionExecutor({
   getSeatController,
   performGameAction,
+  recordGiveTimeNotice,
 }: CreateMetaActionExecutorOptions): MetaActionExecutor {
   const can = (seatId: PlayerId, action: MetaActionKind) => {
     const controller = getSeatController(seatId);
@@ -255,6 +257,7 @@ function createMetaActionExecutor({
             seconds,
             timestamp: Date.now(),
           });
+          recordGiveTimeNotice(seatId);
           return controllerOk(undefined);
         }
         case "offerDraw":
@@ -348,14 +351,37 @@ export function useMetaGameActions({
   const noticeCounterRef = useRef(0);
   const previousTimeLeftRef = useRef<Record<PlayerId, number> | null>(null);
 
-  const metaActionExecutor = useMemo(
-    () =>
-      createMetaActionExecutor({
-        getSeatController,
-        performGameAction,
-      }),
-    [getSeatController, performGameAction],
+  const recordGiveTimeNotice = useCallback(
+    (giverId: PlayerId) => {
+      const recipientId: PlayerId = giverId === 1 ? 2 : 1;
+      const isLocalGiver =
+        primaryLocalPlayerId === null || giverId === primaryLocalPlayerId;
+      if (isLocalGiver) {
+        setOutgoingTimeInfo({
+          id: ++noticeCounterRef.current,
+          message: `You gave ${getPlayerName(recipientId)} 1:00.`,
+          createdAt: Date.now(),
+        });
+      } else if (recipientId === primaryLocalPlayerId) {
+        setIncomingPassiveNotice({
+          id: ++noticeCounterRef.current,
+          type: "opponent-gave-time",
+          message: `${getPlayerName(giverId)} gave you 1:00.`,
+        });
+      }
+    },
+    [getPlayerName, primaryLocalPlayerId],
   );
+
+  const metaActionExecutorRef = useRef<MetaActionExecutor | null>(null);
+  const getMetaActionExecutor = useCallback(() => {
+    metaActionExecutorRef.current ??= createMetaActionExecutor({
+      getSeatController,
+      performGameAction,
+      recordGiveTimeNotice,
+    });
+    return metaActionExecutorRef.current;
+  }, [getSeatController, performGameAction, recordGiveTimeNotice]);
 
   const resolveSeatChannel = useCallback(
     (playerId: PlayerId | null): ActionChannel | null => {
@@ -444,7 +470,8 @@ export function useMetaGameActions({
       setResignFlowPlayerId(null);
       return;
     }
-    if (!metaActionExecutor.can(actorId, "resign")) {
+    const executor = getMetaActionExecutor();
+    if (!executor.can(actorId, "resign")) {
       setActionError("You cannot resign right now.");
       setResignFlowPlayerId(null);
       return;
@@ -452,7 +479,7 @@ export function useMetaGameActions({
     if (controller.actionChannel === "local-state") {
       lastResignedPlayerRef.current = actorId;
     }
-    void metaActionExecutor
+    void executor
       .run(actorId, "resign", undefined)
       .then(({ channel, result }) => {
         if (!result.ok) {
@@ -476,7 +503,7 @@ export function useMetaGameActions({
     resignFlowPlayerId,
     resolvePrimaryActionPlayerId,
     getSeatController,
-    metaActionExecutor,
+    getMetaActionExecutor,
     addSystemMessage,
     getPlayerName,
     setActionError,
@@ -514,7 +541,8 @@ export function useMetaGameActions({
       );
       return;
     }
-    if (!metaActionExecutor.can(actorId, "offerDraw")) {
+    const executor = getMetaActionExecutor();
+    if (!executor.can(actorId, "offerDraw")) {
       setActionError("You cannot offer a draw right now.");
       return;
     }
@@ -538,7 +566,7 @@ export function useMetaGameActions({
     };
     setActionError(null);
     if (actorController.actionChannel === "remote-controller") {
-      void metaActionExecutor
+      void executor
         .run(actorId, "offerDraw", undefined)
         .then(({ result }) => {
           if (!result.ok) {
@@ -644,7 +672,7 @@ export function useMetaGameActions({
     gameStateRef,
     setActionError,
     getSeatController,
-    metaActionExecutor,
+    getMetaActionExecutor,
   ]);
 
   const handleCancelDrawOffer = useCallback(() => {
@@ -745,7 +773,8 @@ export function useMetaGameActions({
       );
       return;
     }
-    if (!metaActionExecutor.can(requesterId, "requestTakeback")) {
+    const executor = getMetaActionExecutor();
+    if (!executor.can(requesterId, "requestTakeback")) {
       setActionError("You cannot request a takeback right now.");
       return;
     }
@@ -770,7 +799,7 @@ export function useMetaGameActions({
     };
     setActionError(null);
     if (requesterController.actionChannel === "remote-controller") {
-      void metaActionExecutor
+      void executor
         .run(requesterId, "requestTakeback", undefined)
         .then(({ result }) => {
           if (!result.ok) {
@@ -867,7 +896,7 @@ export function useMetaGameActions({
     gameStateRef,
     setActionError,
     getSeatController,
-    metaActionExecutor,
+    getMetaActionExecutor,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
@@ -965,12 +994,13 @@ export function useMetaGameActions({
       );
       return;
     }
-    if (!metaActionExecutor.can(giverId, "giveTime")) {
+    const executor = getMetaActionExecutor();
+    if (!executor.can(giverId, "giveTime")) {
       setActionError("You cannot give time right now.");
       return;
     }
     setActionError(null);
-    void metaActionExecutor
+    void executor
       .run(giverId, "giveTime", {
         seconds: 60,
       })
@@ -1007,7 +1037,7 @@ export function useMetaGameActions({
     gameStateRef,
     setActionError,
     getSeatController,
-    metaActionExecutor,
+    getMetaActionExecutor,
     noticeCounterRef,
   ]);
 
@@ -1269,22 +1299,9 @@ export function useMetaGameActions({
   // Helper to handle giveTime action notices (called from performGameAction)
   const handleGiveTimeNotice = useCallback(
     (action: { kind: "giveTime"; playerId: PlayerId }) => {
-      const recipientId: PlayerId = action.playerId === 1 ? 2 : 1;
-      if (action.playerId === primaryLocalPlayerId) {
-        setOutgoingTimeInfo({
-          id: ++noticeCounterRef.current,
-          message: `You gave ${getPlayerName(recipientId)} 1:00.`,
-          createdAt: Date.now(),
-        });
-      } else if (recipientId === primaryLocalPlayerId) {
-        setIncomingPassiveNotice({
-          id: ++noticeCounterRef.current,
-          type: "opponent-gave-time",
-          message: `${getPlayerName(action.playerId)} gave you 1:00.`,
-        });
-      }
+      recordGiveTimeNotice(action.playerId);
     },
-    [primaryLocalPlayerId, getPlayerName],
+    [recordGiveTimeNotice],
   );
 
   return {
