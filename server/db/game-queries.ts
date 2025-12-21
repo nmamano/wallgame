@@ -23,6 +23,10 @@ import type {
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
+import {
+  BOARD_SIZE_AREA_MEDIUM_MAX,
+  BOARD_SIZE_AREA_SMALL_MAX,
+} from "../../shared/domain/past-games";
 import type { PastGamesResponse } from "../../shared/contracts/games";
 
 const buildMatchScore = (result: GameResult | undefined): MatchScore => {
@@ -348,11 +352,13 @@ export const queryPastGames = async (args: {
   if (args.boardSize) {
     const area = sql`${gamesTable.boardWidth} * ${gamesTable.boardHeight}`;
     if (args.boardSize === "small") {
-      conditions.push(sql`${area} <= 36`);
+      conditions.push(sql`${area} <= ${BOARD_SIZE_AREA_SMALL_MAX}`);
     } else if (args.boardSize === "medium") {
-      conditions.push(sql`${area} > 36 AND ${area} <= 81`);
+      conditions.push(
+        sql`${area} > ${BOARD_SIZE_AREA_SMALL_MAX} AND ${area} <= ${BOARD_SIZE_AREA_MEDIUM_MAX}`,
+      );
     } else {
-      conditions.push(sql`${area} > 81`);
+      conditions.push(sql`${area} > ${BOARD_SIZE_AREA_MEDIUM_MAX}`);
     }
   }
 

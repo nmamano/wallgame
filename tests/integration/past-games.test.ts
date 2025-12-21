@@ -366,5 +366,21 @@ describe("past games persistence", () => {
     const smallBoardGames = (await resBoard.json()) as PastGamesResponse;
     expect(smallBoardGames.games.length).toBe(1);
     expect(smallBoardGames.games[0]?.gameId).toBe(gameB);
+
+    const resBoardMedium = await fetch(
+      `${baseUrl}/api/games/past?boardSize=medium&page=1&pageSize=10`,
+    );
+    expect(resBoardMedium.status).toBe(200);
+    const mediumBoardGames = (await resBoardMedium.json()) as PastGamesResponse;
+    expect(mediumBoardGames.games.length).toBe(1);
+    expect(mediumBoardGames.games[0]?.gameId).toBe(gameA);
+
+    const resBoardLarge = await fetch(
+      `${baseUrl}/api/games/past?boardSize=large&page=1&pageSize=10`,
+    );
+    expect(resBoardLarge.status).toBe(200);
+    const largeBoardGames = (await resBoardLarge.json()) as PastGamesResponse;
+    expect(largeBoardGames.games.length).toBe(1);
+    expect(largeBoardGames.games[0]?.gameId).toBe(gameC);
   });
 });
