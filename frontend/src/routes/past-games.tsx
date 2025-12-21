@@ -1,5 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import {
+  createFileRoute,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +29,7 @@ import { Eye, Loader2 } from "lucide-react";
 import { api } from "@/lib/api";
 import type { PastGamesResponse } from "../../../shared/contracts/games";
 import { presentPastGameRow } from "@/lib/past-games";
+import { parsePastGamesNavState } from "@/lib/navigation-state";
 
 export const Route = createFileRoute("/past-games")({
   component: PastGames,
@@ -116,8 +121,17 @@ const fetchPastGames = async (
 
 function PastGames() {
   const navigate = useNavigate();
+  const router = useRouterState();
 
-  const [filters, setFilters] = useState<Filters>(defaultFilters);
+  const initialFilters = useMemo(
+    () => parsePastGamesNavState(router.location.state),
+    [router.location.state],
+  );
+
+  const [filters, setFilters] = useState<Filters>(() => ({
+    ...defaultFilters,
+    ...initialFilters,
+  }));
   const [page, setPage] = useState<number>(1);
 
   const { data, isPending, error } = useQuery({
