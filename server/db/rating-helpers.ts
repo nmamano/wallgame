@@ -1,7 +1,7 @@
 import { db } from "./index";
 import { ratingsTable } from "./schema/ratings";
 import { userAuthTable } from "./schema/users";
-import { eq, and } from "drizzle-orm";
+import { eq, and, sql } from "drizzle-orm";
 import type { RatingState } from "../games/rating-system";
 
 /**
@@ -106,6 +106,7 @@ export async function updateRatingStateForAuthUser(
   variant: string,
   timeControl: string,
   newState: RatingState,
+  recordDelta: { wins: number; losses: number },
 ): Promise<number | undefined> {
   // First get the internal userId from auth mapping
   const authMapping = await db
@@ -120,39 +121,41 @@ export async function updateRatingStateForAuthUser(
 
   const userId = authMapping[0].userId;
 
-  // Get current peak rating to compare
-  const currentRating = await db
-    .select({ peakRating: ratingsTable.peakRating })
-    .from(ratingsTable)
-    .where(
-      and(
-        eq(ratingsTable.userId, userId),
-        eq(ratingsTable.variant, variant),
-        eq(ratingsTable.timeControl, timeControl),
-      ),
-    )
-    .limit(1);
+  const winsDelta = recordDelta.wins;
+  const lossesDelta = recordDelta.losses;
+  const now = new Date();
 
-  const currentPeak = currentRating[0]?.peakRating ?? 0;
-  const newPeakRating = Math.max(currentPeak, newState.rating);
-
-  // Update the rating state
+  // Upsert rating state and record totals.
   await db
-    .update(ratingsTable)
-    .set({
+    .insert(ratingsTable)
+    .values({
+      userId,
+      variant,
+      timeControl,
       rating: newState.rating,
       ratingDeviation: newState.deviation,
       volatility: newState.volatility,
-      peakRating: newPeakRating,
-      lastGameAt: new Date(),
+      peakRating: newState.rating,
+      recordWins: winsDelta,
+      recordLosses: lossesDelta,
+      lastGameAt: now,
     })
-    .where(
-      and(
-        eq(ratingsTable.userId, userId),
-        eq(ratingsTable.variant, variant),
-        eq(ratingsTable.timeControl, timeControl),
-      ),
-    );
+    .onConflictDoUpdate({
+      target: [
+        ratingsTable.userId,
+        ratingsTable.variant,
+        ratingsTable.timeControl,
+      ],
+      set: {
+        rating: newState.rating,
+        ratingDeviation: newState.deviation,
+        volatility: newState.volatility,
+        peakRating: sql`GREATEST(${ratingsTable.peakRating}, ${newState.rating})`,
+        recordWins: sql`${ratingsTable.recordWins} + ${winsDelta}`,
+        recordLosses: sql`${ratingsTable.recordLosses} + ${lossesDelta}`,
+        lastGameAt: now,
+      },
+    });
 
   return newState.rating;
 }

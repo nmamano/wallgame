@@ -1,6 +1,8 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
+import { Button } from "@/components/ui/button";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
 import {
@@ -18,79 +20,120 @@ import {
   TableHeader,
   TableRow,
 } from "@/components/ui/table";
-import { Trophy, Medal, Award } from "lucide-react";
+import { Trophy, Medal, Award, Loader2 } from "lucide-react";
+import { api } from "@/lib/api";
+import {
+  type PastGamesFiltersState,
+  type PastGamesNavState,
+} from "@/lib/navigation-state";
+import type {
+  RankingResponse,
+  RankingRow,
+} from "../../../shared/contracts/ranking";
 
 export const Route = createFileRoute("/ranking")({
   component: Ranking,
 });
 
+const PAGE_SIZE = 100;
+type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
+
+interface RankingFilters {
+  variant: "standard" | "classic";
+  timeControl: "bullet" | "blitz" | "rapid" | "classical";
+  player: string;
+}
+
+const buildRankingQuery = (
+  filters: RankingFilters,
+  page: number,
+): RankingQuery => {
+  const player = filters.player.trim().toLowerCase();
+  return {
+    variant: filters.variant,
+    timeControl: filters.timeControl,
+    page: String(page),
+    pageSize: String(PAGE_SIZE),
+    ...(player ? { player } : {}),
+  };
+};
+
+const fetchRanking = async (
+  filters: RankingFilters,
+  page: number,
+): Promise<RankingResponse> => {
+  const query = buildRankingQuery(filters, page);
+  const res = await api.ranking.$get({ query });
+  if (!res.ok) {
+    const data = (await res.json().catch(() => null)) as {
+      error?: string;
+    } | null;
+    throw new Error(
+      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
+    );
+  }
+  return res.json() as Promise<RankingResponse>;
+};
+
+const formatNumber = (value: number): string => {
+  return Number.isInteger(value) ? `${value}` : value.toFixed(1);
+};
+
+const formatRecord = (row: RankingRow): string => {
+  return `${formatNumber(row.recordWins)}-${formatNumber(row.recordLosses)}`;
+};
+
+const formatDate = (timestamp: number): string => {
+  return new Date(timestamp).toLocaleDateString(undefined, {
+    year: "numeric",
+    month: "short",
+    day: "2-digit",
+  });
+};
+
 function Ranking() {
   const navigate = useNavigate();
 
-  const [filters, setFilters] = useState({
+  const [filters, setFilters] = useState<RankingFilters>({
     variant: "standard",
     timeControl: "rapid",
     player: "",
   });
+  const [page, setPage] = useState<number>(1);
 
-  // Mock data
-  const rankings = [
-    {
-      rank: 1,
-      player: "GrandMaster",
-      rating: 1850,
-      peakRating: 1890,
-      record: "127-43",
-      firstGame: "2024-03-15",
-      lastGame: "2025-01-15",
-    },
-    {
-      rank: 2,
-      player: "ProPlayer",
-      rating: 1820,
-      peakRating: 1825,
-      record: "98-52",
-      firstGame: "2024-05-20",
-      lastGame: "2025-01-14",
-    },
-    {
-      rank: 3,
-      player: "ChessKnight",
-      rating: 1785,
-      peakRating: 1800,
-      record: "142-68",
-      firstGame: "2024-01-10",
-      lastGame: "2025-01-13",
-    },
-    {
-      rank: 4,
-      player: "Alice",
-      rating: 1450,
-      peakRating: 1520,
-      record: "65-45",
-      firstGame: "2024-08-01",
-      lastGame: "2025-01-10",
-    },
-    {
-      rank: 5,
-      player: "Bob",
-      rating: 1420,
-      peakRating: 1480,
-      record: "54-48",
-      firstGame: "2024-09-15",
-      lastGame: "2025-01-09",
-    },
-  ];
+  const { data, isPending, error } = useQuery({
+    queryKey: [
+      "ranking",
+      page,
+      PAGE_SIZE,
+      filters.variant,
+      filters.timeControl,
+      filters.player,
+    ],
+    queryFn: () => fetchRanking(filters, page),
+  });
 
-  const handleRowClick = (player: string) => {
+  const rankings = data?.rows ?? [];
+  const hasMore = data?.hasMore ?? false;
+  const resolvedPage = data?.page ?? page;
+  const hasPlayerSearch = filters.player.trim().length > 0;
+
+  const updateFilters = (next: Partial<RankingFilters>) => {
+    setFilters((prev) => ({ ...prev, ...next }));
+    setPage(1);
+  };
+
+  const handleRowClick = (row: RankingRow) => {
+    const pastGamesFilters: PastGamesFiltersState = {
+      variant: filters.variant,
+      timeControl: filters.timeControl,
+      rated: "yes",
+      player1: row.displayName,
+    };
+    const navState: PastGamesNavState = { pastGamesFilters };
     void navigate({
       to: "/past-games",
-      search: {
-        variant: filters.variant,
-        timeControl: filters.timeControl,
-        player,
-        rated: "yes",
-      },
+      state: navState,
     });
   };
 
@@ -125,7 +168,7 @@ function Ranking() {
               <Select
                 value={filters.variant}
                 onValueChange={(value) =>
-                  setFilters({ ...filters, variant: value })
+                  updateFilters({ variant: value as RankingFilters["variant"] })
                 }
               >
                 <SelectTrigger className="bg-background">
@@ -143,7 +186,9 @@ function Ranking() {
               <Select
                 value={filters.timeControl}
                 onValueChange={(value) =>
-                  setFilters({ ...filters, timeControl: value })
+                  updateFilters({
+                    timeControl: value as RankingFilters["timeControl"],
+                  })
                 }
               >
                 <SelectTrigger className="bg-background">
@@ -163,9 +208,7 @@ function Ranking() {
               <Input
                 placeholder="Enter player name..."
                 value={filters.player}
-                onChange={(e) =>
-                  setFilters({ ...filters, player: e.target.value })
-                }
+                onChange={(e) => updateFilters({ player: e.target.value })}
                 className="bg-background"
               />
             </div>
@@ -174,53 +217,93 @@ function Ranking() {
 
         {/* Rankings Table */}
         <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/50">
-                <TableHead>Rank</TableHead>
-                <TableHead>Player</TableHead>
-                <TableHead>Rating</TableHead>
-                <TableHead>Peak Rating</TableHead>
-                <TableHead>Record</TableHead>
-                <TableHead>First Game</TableHead>
-                <TableHead>Last Game</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {rankings.map((ranking) => (
-                <TableRow
-                  key={ranking.rank}
-                  className="hover:bg-muted/30 cursor-pointer"
-                  onClick={() => handleRowClick(ranking.player)}
-                >
-                  <TableCell>
-                    <div className="flex items-center gap-2">
-                      {getRankIcon(ranking.rank)}
-                      <span className="font-bold text-foreground">
-                        {ranking.rank}
-                      </span>
-                    </div>
-                  </TableCell>
-                  <TableCell className="font-semibold text-foreground">
-                    {ranking.player}
-                  </TableCell>
-                  <TableCell className="font-bold text-lg">
-                    {ranking.rating}
-                  </TableCell>
-                  <TableCell className="text-muted-foreground/70">
-                    {ranking.peakRating}
-                  </TableCell>
-                  <TableCell>{ranking.record}</TableCell>
-                  <TableCell className="text-sm text-muted-foreground/70">
-                    {ranking.firstGame}
-                  </TableCell>
-                  <TableCell className="text-sm text-muted-foreground/70">
-                    {ranking.lastGame}
-                  </TableCell>
+          {isPending ? (
+            <div className="flex items-center justify-center py-12 text-muted-foreground">
+              <Loader2 className="w-5 h-5 animate-spin mr-2" />
+              Loading rankings...
+            </div>
+          ) : error ? (
+            <div className="text-center py-12 text-destructive">
+              {error.message}
+            </div>
+          ) : rankings.length === 0 ? (
+            <div className="text-center py-12 text-muted-foreground">
+              {hasPlayerSearch
+                ? "No player found for that search."
+                : "No ranking data available for these filters."}
+            </div>
+          ) : (
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/50">
+                  <TableHead>Rank</TableHead>
+                  <TableHead>Player</TableHead>
+                  <TableHead>Rating</TableHead>
+                  <TableHead>Peak Rating</TableHead>
+                  <TableHead>Record</TableHead>
+                  <TableHead>Join Date</TableHead>
+                  <TableHead>Last Game</TableHead>
                 </TableRow>
-              ))}
-            </TableBody>
-          </Table>
+              </TableHeader>
+              <TableBody>
+                {rankings.map((ranking) => (
+                  <TableRow
+                    key={ranking.rank}
+                    className="hover:bg-muted/30 cursor-pointer"
+                    onClick={() => handleRowClick(ranking)}
+                  >
+                    <TableCell>
+                      <div className="flex items-center gap-2">
+                        {getRankIcon(ranking.rank)}
+                        <span className="font-bold text-foreground">
+                          {ranking.rank}
+                        </span>
+                      </div>
+                    </TableCell>
+                    <TableCell className="font-semibold text-foreground">
+                      {ranking.displayLabel}
+                    </TableCell>
+                    <TableCell className="font-bold text-lg">
+                      {Math.round(ranking.rating)}
+                    </TableCell>
+                    <TableCell className="text-muted-foreground/70">
+                      {Math.round(ranking.peakRating)}
+                    </TableCell>
+                    <TableCell>{formatRecord(ranking)}</TableCell>
+                    <TableCell className="text-sm text-muted-foreground/70">
+                      {formatDate(ranking.createdAt)}
+                    </TableCell>
+                    <TableCell className="text-sm text-muted-foreground/70">
+                      {formatDate(ranking.lastGameAt)}
+                    </TableCell>
+                  </TableRow>
+                ))}
+              </TableBody>
+            </Table>
+          )}
+          <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
+            <span className="text-sm text-muted-foreground">
+              Page {resolvedPage}
+            </span>
+            <div className="flex items-center gap-2">
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                disabled={hasPlayerSearch || page <= 1}
+              >
+                Previous
+              </Button>
+              <Button
+                size="sm"
+                variant="ghost"
+                onClick={() => setPage((prev) => prev + 1)}
+                disabled={hasPlayerSearch || !hasMore}
+              >
+                Next
+              </Button>
+            </div>
+          </div>
         </Card>
       </div>
     </div>

@@ -22,8 +22,8 @@ export const ratingsTable = pgTable(
     volatility: doublePrecision("volatility").notNull().default(0.06),
     // Precomputed fields by the backend:
     peakRating: doublePrecision("peak_rating").notNull().default(1500),
-    recordWins: integer("record_wins").notNull().default(0),
-    recordLosses: integer("record_losses").notNull().default(0),
+    recordWins: doublePrecision("record_wins").notNull().default(0),
+    recordLosses: doublePrecision("record_losses").notNull().default(0),
     lastGameAt: timestamp("last_game_at", { withTimezone: true })
       .notNull()
       .defaultNow(),

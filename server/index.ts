@@ -5,6 +5,7 @@ import { puzzlesRoute } from "./routes/puzzles";
 import { authRoute } from "./routes/auth";
 import { settingsRoute } from "./routes/settings";
 import { gamesRoute } from "./routes/games";
+import { rankingRoute } from "./routes/ranking";
 import { registerGameSocketRoute } from "./routes/game-socket";
 export function createApp() {
   const app = new Hono();
@@ -23,6 +24,7 @@ export function createApp() {
     .route("/puzzles", puzzlesRoute)
     .route("/settings", settingsRoute)
     .route("/games", gamesRoute)
+    .route("/ranking", rankingRoute)
     .route("/", authRoute); // /api/login, /api/register, etc.
 
   const websocket = registerGameSocketRoute(app);

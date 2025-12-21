@@ -954,6 +954,17 @@ export const processRatingUpdate = async (
   } else {
     outcomeForPlayer1 = Outcome.Tie;
   }
+  const outcomeForPlayer2 =
+    outcomeForPlayer1 === Outcome.Win
+      ? Outcome.Loss
+      : outcomeForPlayer1 === Outcome.Loss
+        ? Outcome.Win
+        : Outcome.Tie;
+
+  const recordDeltaForOutcome = (outcome: Outcome) => ({
+    wins: outcome === Outcome.Win ? 1 : outcome === Outcome.Tie ? 0.5 : 0,
+    losses: outcome === Outcome.Loss ? 1 : outcome === Outcome.Tie ? 0.5 : 0,
+  });
 
   // Calculate new ratings
   const { a: newState1, b: newState2 } = newRatingsAfterGame(
@@ -984,12 +995,14 @@ export const processRatingUpdate = async (
       variant,
       timeControl,
       newState1,
+      recordDeltaForOutcome(outcomeForPlayer1),
     ),
     updateRatingStateForAuthUser(
       player2.authUserId,
       variant,
       timeControl,
       newState2,
+      recordDeltaForOutcome(outcomeForPlayer2),
     ),
   ]);
 
