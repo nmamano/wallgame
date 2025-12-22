@@ -1,6 +1,6 @@
 // Dynamically discover cat SVG files at build time
 // This automatically detects which files exist - no manual maintenance needed
-const catModules = import.meta.glob("/pawns/cat/*.svg", {
+const catModules = import.meta.glob("/public/pawns/cat/*.svg", {
   eager: true,
   query: "?url",
   import: "default",
