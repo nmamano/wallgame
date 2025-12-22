@@ -28,7 +28,7 @@ export type ArrowType = "staged" | "premoved" | "calculated";
 
 export type BoardPawn = Pawn & {
   id: string;
-  previewState?: "staged" | "ghost"; // TODO: rename "ghost" to "premoved"
+  previewState?: "staged" | "premoved";
 };
 
 export interface Arrow {
@@ -797,8 +797,8 @@ export function Board({
     const previewClasses =
       previewState === "staged"
         ? "opacity-80 ring-2 ring-amber-400 ring-offset-2"
-        : previewState === "ghost"
-          ? "opacity-70"
+        : previewState === "premoved"
+          ? "opacity-70 ring-2 ring-sky-400/70 ring-offset-2"
           : "";
 
     return (

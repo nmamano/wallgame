@@ -34,7 +34,6 @@ interface BoardPanelProps {
   lastMove: BoardProps["lastMove"] | BoardProps["lastMoves"];
   draggingPawnId: string | null;
   selectedPawnId: string | null;
-  stagedActionsCount: number;
   actionablePlayerId: PlayerId | null;
 
   // Board handlers
@@ -47,6 +46,8 @@ interface BoardPanelProps {
 
   // Staged actions
   stagedActions: unknown[];
+  premovedActions: unknown[];
+  pendingActionsCount: number;
   activeLocalPlayerId: PlayerId | null;
   hasActionMessage: boolean;
   actionError: string | null;
@@ -71,7 +72,6 @@ export function BoardPanel({
   lastMove,
   draggingPawnId,
   selectedPawnId,
-  stagedActionsCount,
   actionablePlayerId,
   onCellClick,
   onWallClick,
@@ -80,6 +80,8 @@ export function BoardPanel({
   onPawnDragEnd,
   onCellDrop,
   stagedActions,
+  premovedActions,
+  pendingActionsCount,
   activeLocalPlayerId,
   hasActionMessage,
   actionError,
@@ -90,6 +92,8 @@ export function BoardPanel({
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const showStagedActionControls = hasLocalPlayer;
   const forceReadOnlyBoard = !hasLocalPlayer;
+  const hasPendingActions =
+    stagedActions.length > 0 || premovedActions.length > 0;
 
   return (
     <div
@@ -134,7 +138,7 @@ export function BoardPanel({
         lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
         draggingPawnId={draggingPawnId}
         selectedPawnId={selectedPawnId}
-        stagedActionsCount={stagedActionsCount}
+        stagedActionsCount={pendingActionsCount}
         controllablePlayerId={actionablePlayerId ?? undefined}
         forceReadOnly={forceReadOnlyBoard}
       />
@@ -169,7 +173,7 @@ export function BoardPanel({
                 variant="outline"
                 className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
                 onClick={clearStagedActions}
-                disabled={stagedActions.length === 0}
+                disabled={!hasPendingActions}
               >
                 Clear staged actions
               </Button>
