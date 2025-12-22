@@ -3,6 +3,7 @@ import {
   type MoveInHistory,
 } from "../../../shared/domain/game-state";
 import type {
+  Cell,
   GameConfiguration,
   PlayerId,
 } from "../../../shared/domain/game-types";
@@ -13,10 +14,7 @@ interface BuildHistoryStateOptions {
   cursor: number;
 }
 
-const cloneCell = (cell: [number, number]): [number, number] => [
-  cell[0],
-  cell[1],
-];
+const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
 
 const nextTurnAfter = (moveIndex: number): PlayerId => {
   // moveIndex is 1-based, matching GameState.moveCount snapshots

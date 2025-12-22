@@ -318,10 +318,23 @@ export class GameState {
           wallsBefore: nextGrid.getWalls(),
         });
 
-        // Let the grid enforce only basic bounds/overlap constraints.
-        // If the wall is out of bounds or overlaps, Grid.addWall will effectively
-        // no-op on an invalid cell index access, but for normal in-bounds cases
-        // like [1, 1] vertical it will be applied and serialized.
+        const pendingPawns = {
+          1: player === 1 ? nextMyPawns : opPawns,
+          2: player === 2 ? nextMyPawns : opPawns,
+        };
+        const cats: [Cell, Cell] = [
+          [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
+          [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
+        ];
+        const mice: [Cell, Cell] = [
+          [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
+          [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
+        ];
+
+        if (!nextGrid.canBuildWall(cats, mice, wall)) {
+          throw new Error("Illegal wall placement");
+        }
+
         nextGrid.addWall(wallWithPlayer);
 
         console.info("[debug-wall] after addWall", {

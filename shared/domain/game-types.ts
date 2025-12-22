@@ -106,8 +106,8 @@ export type WallOrientation = "vertical" | "horizontal";
 
 export type PawnType = "cat" | "mouse";
 
-// Cell represents a position on the board as [row, col]
-export type Cell = [number, number];
+// Cell represents an immutable [row, col] coordinate to prevent accidental writes
+export type Cell = readonly [number, number];
 
 // Action represents a single game action (cat move, mouse move, or wall placement)
 export interface Action {

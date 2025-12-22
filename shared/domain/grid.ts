@@ -93,7 +93,7 @@ export class Grid {
     this.cells[r][c] = testValue;
     const res = this.isValidBoard(cats, mice);
     this.cells[r][c] = current;
-    return res || true;
+    return res;
   }
 
   addWall(wall: WallPosition) {

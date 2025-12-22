@@ -10,3 +10,4 @@ ignore/
 **/.tanstack/tmp/
 .cursor/debug.log
 .eslintcache
+diff.txt

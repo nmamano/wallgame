@@ -192,7 +192,6 @@ function GamePage() {
                   lastMove={board.lastMove}
                   draggingPawnId={board.draggingPawnId}
                   selectedPawnId={board.selectedPawnId}
-                  stagedActionsCount={board.stagedActionsCount}
                   actionablePlayerId={board.actionablePlayerId}
                   onCellClick={board.onCellClick}
                   onWallClick={board.onWallClick}
@@ -201,6 +200,8 @@ function GamePage() {
                   onPawnDragEnd={board.onPawnDragEnd}
                   onCellDrop={board.onCellDrop}
                   stagedActions={board.stagedActions}
+                  premovedActions={board.premovedActions}
+                  pendingActionsCount={board.pendingActionsCount}
                   activeLocalPlayerId={board.activeLocalPlayerId}
                   hasActionMessage={board.hasActionMessage}
                   actionError={board.actionError}
