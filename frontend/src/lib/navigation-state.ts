@@ -31,3 +31,28 @@ export const parsePastGamesNavState = (
   }
   return parsed.data.pastGamesFilters;
 };
+
+const rankingFiltersSchema = z.object({
+  variant: z.enum(["standard", "classic"]).optional(),
+  timeControl: z.enum(["bullet", "blitz", "rapid", "classical"]).optional(),
+  player: z.string().optional(),
+});
+
+const rankingNavStateSchema = z
+  .object({
+    rankingFilters: rankingFiltersSchema.optional(),
+  })
+  .passthrough();
+
+export type RankingFiltersState = z.infer<typeof rankingFiltersSchema>;
+export type RankingNavState = z.infer<typeof rankingNavStateSchema>;
+
+export const parseRankingNavState = (
+  state: unknown,
+): RankingFiltersState | undefined => {
+  const parsed = rankingNavStateSchema.safeParse(state);
+  if (!parsed.success) {
+    return undefined;
+  }
+  return parsed.data.rankingFilters;
+};

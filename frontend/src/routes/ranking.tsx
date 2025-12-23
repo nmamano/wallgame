@@ -1,5 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import {
+  createFileRoute,
+  useNavigate,
+  useRouterState,
+} from "@tanstack/react-router";
+import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -25,6 +29,7 @@ import { api } from "@/lib/api";
 import {
   type PastGamesFiltersState,
   type PastGamesNavState,
+  parseRankingNavState,
 } from "@/lib/navigation-state";
 import type {
   RankingResponse,
@@ -43,6 +48,12 @@ interface RankingFilters {
   timeControl: "bullet" | "blitz" | "rapid" | "classical";
   player: string;
 }
+
+const defaultFilters: RankingFilters = {
+  variant: "standard",
+  timeControl: "rapid",
+  player: "",
+};
 
 const buildRankingQuery = (
   filters: RankingFilters,
@@ -93,12 +104,17 @@ const formatDate = (timestamp: number): string => {
 
 function Ranking() {
   const navigate = useNavigate();
+  const router = useRouterState();
 
-  const [filters, setFilters] = useState<RankingFilters>({
-    variant: "standard",
-    timeControl: "rapid",
-    player: "",
-  });
+  const initialFilters = useMemo(
+    () => parseRankingNavState(router.location.state),
+    [router.location.state],
+  );
+
+  const [filters, setFilters] = useState<RankingFilters>(() => ({
+    ...defaultFilters,
+    ...initialFilters,
+  }));
   const [page, setPage] = useState<number>(1);
 
   const { data, isPending, error } = useQuery({
