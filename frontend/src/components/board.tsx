@@ -1,6 +1,12 @@
 "use client";
 
-import type { CSSProperties, ReactNode, DragEvent, MouseEvent } from "react";
+import type {
+  CSSProperties,
+  ReactNode,
+  DragEvent,
+  MouseEvent,
+  TouchEvent as ReactTouchEvent,
+} from "react";
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Cat, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
@@ -199,6 +205,18 @@ export function Board({
     gapX: 0,
     gapY: 0,
   });
+
+  // Touch drag state
+  const [touchDragPawnId, setTouchDragPawnId] = useState<string | null>(null);
+  const [touchPosition, setTouchPosition] = useState<{
+    x: number;
+    y: number;
+  } | null>(null);
+  const [suppressNextClick, setSuppressNextClick] = useState(false); // Suppress exactly one ghost click after drag
+  const touchPosRef = useRef<{ x: number; y: number } | null>(null); // Live position for calculations
+  const touchStartPos = useRef<{ x: number; y: number } | null>(null);
+  const isDraggingRef = useRef(false);
+  const dragStartNotifiedRef = useRef(false); // Track if we notified parent of drag start
 
   useEffect(() => {
     const node = gridRef.current;
@@ -564,6 +582,212 @@ export function Board({
     [getCellRect, gridMetrics.width, gridMetrics.height],
   );
 
+  // Calculate which cell a point is over (for touch drag)
+  const getCellFromPoint = useCallback(
+    (clientX: number, clientY: number): { row: number; col: number } | null => {
+      const gridNode = gridRef.current;
+      if (!gridNode || cellWidthPx === 0 || cellHeightPx === 0) return null;
+
+      const gridRect = gridNode.getBoundingClientRect();
+      const x = clientX - gridRect.left;
+      const y = clientY - gridRect.top;
+
+      // Calculate cell coordinates accounting for gaps
+      const cellWithGapWidth = cellWidthPx + gridMetrics.gapX;
+      const cellWithGapHeight = cellHeightPx + gridMetrics.gapY;
+
+      const col = Math.floor(x / cellWithGapWidth);
+      const row = Math.floor(y / cellWithGapHeight);
+
+      // Check bounds
+      if (row < 0 || row >= rows || col < 0 || col >= cols) return null;
+
+      // Check if we're in the gap area (not on a cell)
+      const cellLocalX = x - col * cellWithGapWidth;
+      const cellLocalY = y - row * cellWithGapHeight;
+      if (cellLocalX > cellWidthPx || cellLocalY > cellHeightPx) return null;
+
+      return { row, col };
+    },
+    [cellWidthPx, cellHeightPx, gridMetrics.gapX, gridMetrics.gapY, rows, cols],
+  );
+
+  // Touch event handlers
+  const handleTouchStart = useCallback(
+    (
+      event: ReactTouchEvent<HTMLDivElement>,
+      pawnId: string,
+      pawnPlayerId: PlayerId,
+    ) => {
+      const isControllable =
+        !forceReadOnly &&
+        (controllablePlayerId == null || pawnPlayerId === controllablePlayerId);
+      if (!isControllable || !dragEnabled) return;
+
+      const touch = event.touches[0];
+      const pos = { x: touch.clientX, y: touch.clientY };
+      touchStartPos.current = pos;
+      touchPosRef.current = pos;
+      isDraggingRef.current = false;
+      dragStartNotifiedRef.current = false;
+
+      // Only set pawn ID to track potential drag - don't notify parent yet
+      setTouchDragPawnId(pawnId);
+    },
+    [forceReadOnly, controllablePlayerId, dragEnabled],
+  );
+
+  // Stable refs for callbacks to avoid effect re-runs
+  const onCellDropRef = useRef(onCellDrop);
+  const onPawnDragStartRef = useRef(onPawnDragStart);
+  const onPawnDragEndRef = useRef(onPawnDragEnd);
+  const getCellFromPointRef = useRef(getCellFromPoint);
+
+  useEffect(() => {
+    onCellDropRef.current = onCellDrop;
+    onPawnDragStartRef.current = onPawnDragStart;
+    onPawnDragEndRef.current = onPawnDragEnd;
+    getCellFromPointRef.current = getCellFromPoint;
+  }, [onCellDrop, onPawnDragStart, onPawnDragEnd, getCellFromPoint]);
+
+  // Global touch move/end handlers (attached to document for reliability)
+  useEffect(() => {
+    if (!touchDragPawnId) return;
+
+    const handleGlobalTouchMove = (event: TouchEvent) => {
+      const touch = event.touches[0];
+      const startPos = touchStartPos.current;
+      const pos = { x: touch.clientX, y: touch.clientY };
+      touchPosRef.current = pos;
+
+      // Prevent scroll as soon as any movement while potential drag is active
+      // This stops the page from scrolling before we cross the drag threshold
+      event.preventDefault();
+
+      // Check threshold for drag activation
+      if (!isDraggingRef.current && startPos) {
+        const dx = Math.abs(pos.x - startPos.x);
+        const dy = Math.abs(pos.y - startPos.y);
+        if (dx > 10 || dy > 10) {
+          isDraggingRef.current = true;
+          // NOW notify parent that drag started (after threshold crossed)
+          if (!dragStartNotifiedRef.current) {
+            dragStartNotifiedRef.current = true;
+            onPawnDragStartRef.current?.(touchDragPawnId);
+          }
+        }
+      }
+
+      if (isDraggingRef.current) {
+        // Update state for ghost rendering
+        setTouchPosition(pos);
+      }
+    };
+
+    const handleGlobalTouchEnd = () => {
+      const pos = touchPosRef.current;
+      const wasDragging = isDraggingRef.current;
+
+      if (wasDragging && pos) {
+        const cell = getCellFromPointRef.current(pos.x, pos.y);
+        if (cell && onCellDropRef.current) {
+          onCellDropRef.current(touchDragPawnId, cell.row, cell.col);
+        }
+      }
+
+      // Only notify drag end if we actually started a drag
+      if (dragStartNotifiedRef.current) {
+        onPawnDragEndRef.current?.();
+      }
+
+      setTouchDragPawnId(null);
+      setTouchPosition(null);
+      touchPosRef.current = null;
+      touchStartPos.current = null;
+      isDraggingRef.current = false;
+      dragStartNotifiedRef.current = false;
+
+      // Suppress exactly one ghost click if we actually dragged
+      if (wasDragging) {
+        setSuppressNextClick(true);
+      }
+    };
+
+    document.addEventListener("touchmove", handleGlobalTouchMove, {
+      passive: false,
+    });
+    document.addEventListener("touchend", handleGlobalTouchEnd);
+    document.addEventListener("touchcancel", handleGlobalTouchEnd);
+
+    return () => {
+      document.removeEventListener("touchmove", handleGlobalTouchMove);
+      document.removeEventListener("touchend", handleGlobalTouchEnd);
+      document.removeEventListener("touchcancel", handleGlobalTouchEnd);
+    };
+  }, [touchDragPawnId]); // Only depends on touchDragPawnId now
+
+  // Render drag ghost for touch dragging
+  // Note: touchPosition is only set when isDraggingRef is true, so no need to check ref here
+  const renderDragGhost = () => {
+    if (!touchDragPawnId || !touchPosition) return null;
+
+    const pawn = pawnsWithIds.find((p) => p.id === touchDragPawnId);
+    if (!pawn) return null;
+
+    const pawnColor = playerColors[pawn.playerId];
+    const customCatPath =
+      pawn.type !== "mouse" && pawn.pawnStyle
+        ? `/pawns/cat/${pawn.pawnStyle}`
+        : null;
+    const customMousePath =
+      pawn.type === "mouse" && pawn.pawnStyle
+        ? `/pawns/mouse/${pawn.pawnStyle}`
+        : null;
+
+    const ghostSize = Math.min(cellWidthPx, cellHeightPx) * 0.8 || 48;
+
+    const content = (() => {
+      if (customCatPath || customMousePath) {
+        const src = (customCatPath ?? customMousePath)!;
+        return (
+          <img
+            src={src}
+            alt="pawn"
+            draggable={false}
+            className="w-full h-full object-contain drop-shadow-lg"
+            style={
+              colorFilterMap[pawnColor]
+                ? { filter: colorFilterMap[pawnColor] }
+                : undefined
+            }
+          />
+        );
+      }
+      const Icon = pawn.type === "mouse" ? Rat : Cat;
+      return (
+        <Icon
+          strokeWidth={2.5}
+          className={`${colorClassMap[pawnColor] || "text-red-600"} w-full h-full`}
+        />
+      );
+    })();
+
+    return (
+      <div
+        className="fixed pointer-events-none z-50 opacity-80"
+        style={{
+          left: touchPosition.x,
+          top: touchPosition.y,
+          width: ghostSize,
+          height: ghostSize,
+          transform: "translate(-50%, -50%)",
+        }}
+      >
+        {content}
+      </div>
+    );
+  };
+
   const renderMoveHighlights = useCallback(() => {
     if (
       validDropCells.size === 0 ||
@@ -717,13 +941,17 @@ export function Board({
     const paddingStyle = size === "lg" ? { padding: "0%" } : undefined;
 
     const hoverClass = isControllable ? "hover:scale-110" : "";
-    const isDraggingThisPawn = draggingPawnId === pawn.id;
+    const isDraggingThisPawn =
+      draggingPawnId === pawn.id || touchDragPawnId === pawn.id;
     const cursorClass = isControllable
       ? isDraggingThisPawn
         ? "cursor-grabbing"
         : "cursor-grab"
       : "cursor-not-allowed";
     const canDrag = dragEnabled && isControllable;
+    // Derive from state: touchPosition is only set when actively dragging
+    const isTouchDragging =
+      touchDragPawnId === pawn.id && touchPosition !== null;
 
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
@@ -735,6 +963,11 @@ export function Board({
     const handleClick = (event: MouseEvent<HTMLDivElement>) => {
       event.stopPropagation();
       if (!isControllable) return;
+      // Suppress exactly one ghost click after touch drag
+      if (suppressNextClick) {
+        setSuppressNextClick(false);
+        return;
+      }
       onPawnClick?.(pawn.id);
     };
 
@@ -801,16 +1034,19 @@ export function Board({
           ? "opacity-70 ring-2 ring-sky-400/70 ring-offset-2"
           : "";
 
+    const touchDragOpacity = isTouchDragging ? "opacity-40" : "";
+
     return (
       <div
         key={pawn.id}
-        className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses}`}
+        className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses} ${touchDragOpacity}`}
         style={paddingStyle}
         onContextMenu={handleContextMenu}
         onClick={handleClick}
         draggable={canDrag}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
+        onTouchStart={(e) => handleTouchStart(e, pawn.id, pawn.playerId)}
         aria-disabled={!isControllable}
       >
         {content}
@@ -1070,7 +1306,14 @@ export function Board({
                         ? "bg-amber-200 dark:bg-muted/80 hover:bg-amber-300 dark:hover:bg-accent/30"
                         : "bg-amber-100 dark:bg-background hover:bg-amber-200 dark:hover:bg-accent/30"
                     }`}
-                    onClick={() => onCellClick?.(rowIndex, colIndex)}
+                    onClick={() => {
+                      // Suppress exactly one ghost click after touch drag
+                      if (suppressNextClick) {
+                        setSuppressNextClick(false);
+                        return;
+                      }
+                      onCellClick?.(rowIndex, colIndex);
+                    }}
                     onDragOver={(event) => {
                       if (!dragEnabled) return;
                       event.preventDefault();
@@ -1100,6 +1343,8 @@ export function Board({
           </div>
         </div>
       </div>
+      {/* Touch drag ghost */}
+      {renderDragGhost()}
     </div>
   );
 }
