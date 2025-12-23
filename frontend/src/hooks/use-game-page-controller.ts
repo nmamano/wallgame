@@ -2687,6 +2687,60 @@ export function useGamePageController(gameId: string) {
       if (!pawn || pawn.playerId !== ownerId) return;
       if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
 
+      const queue = queueMode === "staged" ? stagedActions : premovedActions;
+      const setQueue =
+        queueMode === "staged" ? setStagedActions : setPremovedActions;
+
+      // Check if there's already a staged action for this pawn type
+      const existingStagedPawnAction = queue.find(
+        (action) => action.type === pawn.type,
+      );
+
+      if (existingStagedPawnAction && gameState) {
+        // Get the pawn's ORIGINAL position from gameState
+        const originalCell =
+          pawn.type === "cat"
+            ? gameState.pawns[ownerId].cat
+            : gameState.pawns[ownerId].mouse;
+
+        // Case 1: Dragging back to original position = undo the staged action
+        if (originalCell[0] === targetRow && originalCell[1] === targetCol) {
+          setQueue((prev) => prev.filter((a) => a.type !== pawn.type));
+          setSelectedPawnId(null);
+          setDraggingPawnId(null);
+          setActionError(null);
+          return;
+        }
+
+        // Case 2: Moving from staged position - only allow distance 1 (single move)
+        // Calculate distance from STAGED position (pawn.cell) to target
+        const distanceFromStaged =
+          Math.abs(pawn.cell[0] - targetRow) +
+          Math.abs(pawn.cell[1] - targetCol);
+
+        if (distanceFromStaged > 1) {
+          setActionError(
+            "You can only move 1 cell when you already have a staged action.",
+          );
+          return;
+        }
+
+        const baseAction: Action = {
+          type: pawn.type,
+          target: [targetRow, targetCol],
+        };
+        const outcome = enqueueLocalAction(baseAction, queueMode, {
+          errorMessage:
+            queueMode === "premove" ? "Premove is illegal." : "Illegal move.",
+        });
+        if (outcome !== "rejected") {
+          setSelectedPawnId(null);
+          setDraggingPawnId(null);
+        }
+        return;
+      }
+
+      // No existing staged action for this pawn - original logic
       const baseAction: Action = {
         type: pawn.type,
         target: [targetRow, targetCol],
@@ -2697,7 +2751,6 @@ export function useGamePageController(gameId: string) {
         action: baseAction,
       });
       if (doubleStepSequence) {
-        const queue = queueMode === "staged" ? stagedActions : premovedActions;
         if (queue.length > 0) {
           setActionError(
             "You can't make a double move after staging another action.",
@@ -2740,6 +2793,7 @@ export function useGamePageController(gameId: string) {
       setDraggingPawnId,
       setPremovedActions,
       setSelectedPawnId,
+      setStagedActions,
       stagedActions,
     ],
   );
