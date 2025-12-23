@@ -12,5 +12,10 @@ declare module "@tanstack/history" {
       eloMin?: string;
       eloMax?: string;
     };
+    rankingFilters?: {
+      variant?: "standard" | "classic";
+      timeControl?: "bullet" | "blitz" | "rapid" | "classical";
+      player?: string;
+    };
   }
 }

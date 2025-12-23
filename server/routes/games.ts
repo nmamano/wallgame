@@ -74,6 +74,8 @@ export const gamesRoute = new Hono()
   .get("/past", zValidator("query", pastGamesQuerySchema), async (c) => {
     try {
       const query = c.req.valid("query");
+      const player1 = query.player1?.trim().toLowerCase();
+      const player2 = query.player2?.trim().toLowerCase();
       const response = await queryPastGames({
         page: query.page,
         pageSize: query.pageSize,
@@ -85,8 +87,8 @@ export const gamesRoute = new Hono()
         maxElo: query.maxElo,
         dateFrom: query.dateFrom,
         dateTo: query.dateTo,
-        player1: query.player1,
-        player2: query.player2,
+        player1,
+        player2,
       });
       return c.json(response);
     } catch (error) {
