@@ -172,6 +172,7 @@ function GamePage() {
                       timers.topPlayer.playerId
                     }
                     score={timers.getPlayerMatchScore(timers.topPlayer)}
+                    gameStatus={board.gameStatus}
                   />
                 )}
 
@@ -224,6 +225,7 @@ function GamePage() {
                       timers.bottomPlayer.playerId
                     }
                     score={timers.getPlayerMatchScore(timers.bottomPlayer)}
+                    gameStatus={board.gameStatus}
                   />
                 )}
               </>

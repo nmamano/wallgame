@@ -2,7 +2,8 @@
   "permissions": {
     "allow": [
       "mcp__ide__getDiagnostics",
-      "Bash(/c/Users/Nilo/.bun/bin/bun run build:*)"
+      "Bash(/c/Users/Nilo/.bun/bin/bun run build:*)",
+      "Bash(bun run build:*)"
     ]
   },
   "outputStyle": "Explanatory"
