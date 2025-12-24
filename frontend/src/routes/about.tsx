@@ -34,41 +34,48 @@ The game is inspired by classic strategy games like [Quoridor](https://en.wikipe
 
 function About() {
   return (
-    <div className="container mx-auto py-12 px-4 max-w-3xl">
-      <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground mb-8 text-balance">
-        About
-      </h1>
+    <div className="min-h-screen bg-background">
+      <main className="container mx-auto py-12 px-4">
+        <div className="max-w-3xl mx-auto">
+          <div className="space-y-2 mb-8">
+            <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
+              About
+            </h1>
+            <p className="text-lg text-muted-foreground">What is Wall Game?</p>
+          </div>
 
-      <Card className="p-8 border-border/50 bg-card/50 backdrop-blur">
-        <div className="space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary hover:prose-a:text-primary/80">
-          <ReactMarkdown
-            remarkPlugins={[remarkGfm]}
-            rehypePlugins={[rehypeRaw]}
-            components={{
-              a: ({
-                href,
-                ...props
-              }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-                href?: string;
-              }) => {
-                if (href?.startsWith("http")) {
-                  return (
-                    <a
-                      {...props}
-                      href={href}
-                      target="_blank"
-                      rel="noopener noreferrer"
-                    />
-                  );
-                }
-                return <a {...props} href={href} />;
-              },
-            }}
-          >
-            {aboutContent}
-          </ReactMarkdown>
+          <Card className="p-8 border-border/50 bg-card/50 backdrop-blur">
+            <div className="space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary prose-a:transition-colors prose-a:hover:text-primary/80">
+              <ReactMarkdown
+                remarkPlugins={[remarkGfm]}
+                rehypePlugins={[rehypeRaw]}
+                components={{
+                  a: ({
+                    href,
+                    ...props
+                  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
+                    href?: string;
+                  }) => {
+                    if (href?.startsWith("http")) {
+                      return (
+                        <a
+                          {...props}
+                          href={href}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                        />
+                      );
+                    }
+                    return <a {...props} href={href} />;
+                  },
+                }}
+              >
+                {aboutContent}
+              </ReactMarkdown>
+            </div>
+          </Card>
         </div>
-      </Card>
+      </main>
     </div>
   );
 }

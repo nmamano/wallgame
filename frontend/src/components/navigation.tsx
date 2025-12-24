@@ -47,7 +47,7 @@ export function Navigation() {
               <Link key={item.href} to={item.href}>
                 <Button
                   variant={pathname === item.href ? "secondary" : "ghost"}
-                  className="text-sm font-medium"
+                  className="text-sm font-medium cursor-pointer"
                 >
                   {item.label}
                 </Button>
@@ -56,6 +56,7 @@ export function Navigation() {
             <Button
               variant="ghost"
               size="icon"
+              className="cursor-pointer"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? (
@@ -71,6 +72,7 @@ export function Navigation() {
             <Button
               variant="ghost"
               size="icon"
+              className="cursor-pointer"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
             >
               {theme === "dark" ? (
@@ -81,7 +83,7 @@ export function Navigation() {
             </Button>
             <Sheet open={isOpen} onOpenChange={setIsOpen}>
               <SheetTrigger asChild>
-                <Button variant="ghost" size="icon">
+                <Button variant="ghost" size="icon" className="cursor-pointer">
                   <Menu className="h-5 w-5" />
                 </Button>
               </SheetTrigger>
@@ -91,7 +93,7 @@ export function Navigation() {
                     <Link key={item.href} to={item.href}>
                       <Button
                         variant={pathname === item.href ? "secondary" : "ghost"}
-                        className="w-full justify-start text-base"
+                        className="w-full justify-start text-base cursor-pointer"
                         onClick={() => setIsOpen(false)}
                       >
                         {item.label}
