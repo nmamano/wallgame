@@ -1,6 +1,6 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
-import { api, settingsQueryOptions, userQueryOptions } from "@/lib/api";
+import { settingsQueryOptions, userQueryOptions } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
@@ -14,43 +14,10 @@ import {
   DialogTitle,
   DialogTrigger,
 } from "@/components/ui/dialog";
-import { Loader2 } from "lucide-react";
-import type {
-  RankingResponse,
-  RankingRow,
-} from "../../../shared/contracts/ranking";
 
 export const Route = createFileRoute("/profile")({
   component: Profile,
 });
-
-type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
-
-const fetchUserRankingRow = async (args: {
-  variant: RankingQuery["variant"];
-  timeControl: RankingQuery["timeControl"];
-  player: string;
-}): Promise<RankingRow | null> => {
-  const res = await api.ranking.$get({
-    query: {
-      variant: args.variant,
-      timeControl: args.timeControl,
-      page: "1",
-      pageSize: "1",
-      player: args.player,
-    },
-  });
-  if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
-    );
-  }
-  const data = (await res.json()) as RankingResponse;
-  return data.rows[0] ?? null;
-};
 
 const LoginLayout = () => {
   return (
@@ -113,26 +80,6 @@ function Profile() {
   const displayNameFilter = settingsData?.displayName ?? "";
   const canFilterByName = displayNameFilter.length > 0;
 
-  const variant: RankingQuery["variant"] =
-    settingsData?.defaultVariant ?? "standard";
-  const timeControl: RankingQuery["timeControl"] =
-    settingsData?.defaultTimeControl ?? "rapid";
-
-  const {
-    data: ratingRow,
-    isPending: ratingPending,
-    error: ratingError,
-  } = useQuery({
-    queryKey: ["profile-rating", displayNameFilter, variant, timeControl],
-    enabled: isLoggedIn && canFilterByName && !settingsPending,
-    queryFn: () =>
-      fetchUserRankingRow({
-        variant,
-        timeControl,
-        player: displayNameFilter,
-      }),
-  });
-
   if (userPending) {
     return (
       <div className="min-h-screen bg-background">
@@ -156,14 +103,6 @@ function Profile() {
   if (!isLoggedIn) {
     return <LoginLayout />;
   }
-
-  const ratingValue = ratingRow ? Math.round(ratingRow.rating) : null;
-  const ratingIsLoading = settingsPending || ratingPending;
-  const ratingText = ratingIsLoading
-    ? "Loading..."
-    : settingsError || ratingError
-      ? "Unavailable"
-      : (ratingValue ?? "Unrated");
 
   const handlePastGames = () => {
     if (!canFilterByName) return;
@@ -199,7 +138,7 @@ function Profile() {
         <div className="max-w-3xl mx-auto space-y-8">
           <div className="space-y-2">
             <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
-              Profile
+              Profile — {displayName}
             </h1>
             <p className="text-lg text-muted-foreground">
               Manage your account and activity
@@ -218,34 +157,15 @@ function Profile() {
           )}
 
           <Card className="border-border/50 bg-card/50 backdrop-blur">
-            <CardContent className="grid gap-6 sm:grid-cols-2">
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Display Name</p>
-                <p className="text-2xl font-serif font-semibold text-foreground">
-                  {displayName}
-                </p>
-              </div>
-              <div className="space-y-1">
-                <p className="text-sm text-muted-foreground">Rating</p>
-                <div className="flex items-center gap-2 text-2xl font-semibold text-foreground">
-                  {ratingIsLoading && (
-                    <Loader2 className="h-5 w-5 animate-spin text-muted-foreground" />
-                  )}
-                  <span>{ratingText}</span>
-                </div>
-              </div>
-            </CardContent>
-          </Card>
-
-          <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardHeader>
-              <CardTitle className="text-2xl">Your Activity</CardTitle>
+              <CardTitle className="text-2xl">Activity</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+            <CardContent className="flex flex-wrap gap-3 justify-around">
               <Button
                 variant="outline"
                 onClick={handlePastGames}
                 disabled={!canFilterByName || settingsPending}
+                className="cursor-pointer w-40"
               >
                 Past Games
               </Button>
@@ -253,10 +173,15 @@ function Profile() {
                 variant="outline"
                 onClick={handleRanking}
                 disabled={!canFilterByName || settingsPending}
+                className="cursor-pointer w-40"
               >
                 Ranking
               </Button>
-              <Button variant="outline" onClick={handleSettings}>
+              <Button
+                variant="outline"
+                onClick={handleSettings}
+                className="cursor-pointer w-40"
+              >
                 Settings
               </Button>
             </CardContent>
@@ -266,13 +191,15 @@ function Profile() {
             <CardHeader>
               <CardTitle className="text-2xl">Account</CardTitle>
             </CardHeader>
-            <CardContent className="grid gap-3 sm:grid-cols-2">
-              <Button variant="outline" asChild>
+            <CardContent className="flex flex-wrap gap-3 justify-around">
+              <Button variant="outline" asChild className="w-40">
                 <a href="/api/logout">Log out</a>
               </Button>
               <Dialog>
                 <DialogTrigger asChild>
-                  <Button variant="destructive">Delete account</Button>
+                  <Button variant="destructive" className="w-40">
+                    Delete account
+                  </Button>
                 </DialogTrigger>
                 <DialogContent>
                   <DialogHeader>
