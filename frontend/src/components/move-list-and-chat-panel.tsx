@@ -66,7 +66,7 @@ export function MoveListAndChatPanel({
     >
       <div className="flex border-b flex-shrink-0">
         <button
-          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors ${historyTabClasses}`}
+          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors cursor-pointer ${historyTabClasses}`}
           onClick={() => onTabChange("history")}
         >
           <div className="flex items-center justify-center gap-2">
@@ -75,7 +75,7 @@ export function MoveListAndChatPanel({
           </div>
         </button>
         <button
-          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors ${chatTabClasses}`}
+          className={`flex-1 py-2 lg:py-3 text-sm font-medium transition-colors cursor-pointer ${chatTabClasses}`}
           onClick={() => onTabChange("chat")}
         >
           <div className="flex items-center justify-center gap-2">
