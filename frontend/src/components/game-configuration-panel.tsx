@@ -1,4 +1,4 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -17,6 +17,26 @@ import type {
   Variant,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
+
+const BOARD_SIZE_MIN = 4;
+const BOARD_SIZE_MAX = 20;
+
+const isBoardSizeDraft = (value: string): boolean => {
+  if (!/^\d{0,2}$/.test(value)) {
+    return false;
+  }
+  if (value === "") {
+    return true;
+  }
+  const numeric = Number(value);
+  if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
+    return true;
+  }
+  return value.length === 1 && (value === "1" || value === "2");
+};
+
+const clampBoardSize = (value: number): number =>
+  Math.min(Math.max(value, BOARD_SIZE_MIN), BOARD_SIZE_MAX);
 
 interface GameConfigurationPanelProps {
   config: GameConfiguration;
@@ -43,12 +63,109 @@ export function GameConfigurationPanel({
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [isLoggedIn, ratedDisabled]);
 
+  const [boardWidthInput, setBoardWidthInput] = useState(() =>
+    String(config.boardWidth),
+  );
+  const [boardHeightInput, setBoardHeightInput] = useState(() =>
+    String(config.boardHeight),
+  );
+
+  useEffect(() => {
+    setBoardWidthInput(String(config.boardWidth));
+  }, [config.boardWidth]);
+
+  useEffect(() => {
+    setBoardHeightInput(String(config.boardHeight));
+  }, [config.boardHeight]);
+
   const updateConfig = (updates: Partial<GameConfiguration>) => {
     // Prevent setting rated to true if not logged in or if rated is disabled
     if ((!isLoggedIn || ratedDisabled) && updates.rated === true) {
       return;
     }
     onChange({ ...config, ...updates });
+  };
+
+  const handleBoardWidthChange = (nextValue: string) => {
+    if (!isBoardSizeDraft(nextValue)) {
+      return;
+    }
+
+    if (nextValue === "") {
+      setBoardWidthInput(nextValue);
+      return;
+    }
+
+    const numeric = Number(nextValue);
+    if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
+      setBoardWidthInput(String(numeric));
+      if (numeric !== config.boardWidth) {
+        updateConfig({ boardWidth: numeric });
+      }
+      return;
+    }
+
+    setBoardWidthInput(nextValue);
+  };
+
+  const handleBoardHeightChange = (nextValue: string) => {
+    if (!isBoardSizeDraft(nextValue)) {
+      return;
+    }
+
+    if (nextValue === "") {
+      setBoardHeightInput(nextValue);
+      return;
+    }
+
+    const numeric = Number(nextValue);
+    if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
+      setBoardHeightInput(String(numeric));
+      if (numeric !== config.boardHeight) {
+        updateConfig({ boardHeight: numeric });
+      }
+      return;
+    }
+
+    setBoardHeightInput(nextValue);
+  };
+
+  const commitBoardWidth = () => {
+    if (boardWidthInput === "") {
+      setBoardWidthInput(String(config.boardWidth));
+      return;
+    }
+
+    const numeric = Number(boardWidthInput);
+    if (!Number.isFinite(numeric)) {
+      setBoardWidthInput(String(config.boardWidth));
+      return;
+    }
+
+    const clamped = clampBoardSize(numeric);
+    setBoardWidthInput(String(clamped));
+    if (clamped !== config.boardWidth) {
+      updateConfig({ boardWidth: clamped });
+    }
+  };
+
+  const commitBoardHeight = () => {
+    if (boardHeightInput === "") {
+      setBoardHeightInput(String(config.boardHeight));
+      return;
+    }
+
+    const numeric = Number(boardHeightInput);
+    if (!Number.isFinite(numeric)) {
+      setBoardHeightInput(String(config.boardHeight));
+      return;
+    }
+
+    const clamped = clampBoardSize(numeric);
+    setBoardHeightInput(String(clamped));
+    if (clamped !== config.boardHeight) {
+      updateConfig({ boardHeight: clamped });
+    }
   };
 
   const renderVariantParameters = () => {
@@ -65,10 +182,9 @@ export function GameConfigurationPanel({
                 type="number"
                 min="4"
                 max="20"
-                value={config.boardWidth}
-                onChange={(e) =>
-                  updateConfig({ boardWidth: parseInt(e.target.value) || 8 })
-                }
+                value={boardWidthInput}
+                onChange={(e) => handleBoardWidthChange(e.target.value)}
+                onBlur={commitBoardWidth}
                 className="bg-background max-w-[100px]"
               />
             </div>
@@ -81,10 +197,9 @@ export function GameConfigurationPanel({
                 type="number"
                 min="4"
                 max="20"
-                value={config.boardHeight}
-                onChange={(e) =>
-                  updateConfig({ boardHeight: parseInt(e.target.value) || 8 })
-                }
+                value={boardHeightInput}
+                onChange={(e) => handleBoardHeightChange(e.target.value)}
+                onBlur={commitBoardHeight}
                 className="bg-background max-w-[100px]"
               />
             </div>
