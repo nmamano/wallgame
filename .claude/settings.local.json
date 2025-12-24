@@ -3,7 +3,8 @@
     "allow": [
       "mcp__ide__getDiagnostics",
       "Bash(/c/Users/Nilo/.bun/bin/bun run build:*)",
-      "Bash(bun run build:*)"
+      "Bash(bun run build:*)",
+      "Bash(bun run build:frontend:*)"
     ]
   },
   "outputStyle": "Explanatory"

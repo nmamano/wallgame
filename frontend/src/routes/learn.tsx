@@ -152,9 +152,14 @@ function Learn() {
     <div className="min-h-screen bg-background">
       <main className="container mx-auto py-12 px-4">
         <div className="max-w-3xl mx-auto">
-          <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground mb-8 text-balance">
-            Learn
-          </h1>
+          <div className="space-y-2 mb-8">
+            <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
+              Learn
+            </h1>
+            <p className="text-lg text-muted-foreground">
+              Rules, notation, and game variants
+            </p>
+          </div>
 
           <div className="space-y-4">
             {/* Rules Section */}

@@ -66,7 +66,6 @@ function LiveGames() {
 
   const [games, setGames] = useState<LiveGameSummary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
-  const [error, setError] = useState<string | null>(null);
   const wsRef = useRef<WebSocket | null>(null);
 
   useEffect(() => {
@@ -79,7 +78,6 @@ function LiveGames() {
 
     ws.addEventListener("open", () => {
       setIsConnected(true);
-      setError(null);
     });
 
     ws.addEventListener("message", (event) => {
@@ -111,7 +109,8 @@ function LiveGames() {
     });
 
     ws.addEventListener("error", () => {
-      setError("Connection error. Retrying...");
+      // Error handling is implicit - the connection will either
+      // succeed (triggering "open") or fail (triggering "close")
     });
 
     // Ping to keep connection alive
@@ -171,17 +170,9 @@ function LiveGames() {
   return (
     <div className="min-h-screen bg-background">
       <div className="container mx-auto py-8 px-4">
-        <div className="flex items-center gap-3 mb-8">
-          <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
-            Live Games
-          </h1>
-          <Badge
-            className={`px-3 py-1 ${isConnected ? "bg-red-600 dark:bg-red-700 animate-pulse" : "bg-gray-500"}`}
-          >
-            {isConnected ? "LIVE" : "CONNECTING..."}
-          </Badge>
-          {error && <span className="text-sm text-destructive">{error}</span>}
-        </div>
+        <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance mb-8">
+          Live Games
+        </h1>
 
         {/* Filters */}
         <Card className="p-6 mb-6 border-border/50 bg-card/50 backdrop-blur">
@@ -309,7 +300,7 @@ function LiveGames() {
           ) : filteredGames.length === 0 ? (
             <div className="text-center py-12 text-muted-foreground">
               {games.length === 0
-                ? "No live games at the moment. Check back later!"
+                ? "No ongoing games at the moment. Check back later!"
                 : "No games match your filters."}
             </div>
           ) : (
