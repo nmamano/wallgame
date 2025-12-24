@@ -1,4 +1,4 @@
-import { useRef, useEffect, useLayoutEffect } from "react";
+import { useRef, useEffect } from "react";
 import { Button } from "@/components/ui/button";
 import {
   ChevronLeft,
@@ -32,22 +32,22 @@ export function MoveListPanel({
 }: MoveListPanelProps) {
   const hasHistory = formattedHistory.length > 0;
   const scrollRef = useRef<HTMLDivElement>(null);
-  const wasAtBottomRef = useRef(true);
+  const isAtBottomRef = useRef(true);
 
-  // Track if user is at bottom before content updates
-  useLayoutEffect(() => {
+  // Track scroll position during user scrolling
+  const handleScroll = () => {
     const el = scrollRef.current;
     if (!el) return;
     const threshold = 10;
-    wasAtBottomRef.current =
+    isAtBottomRef.current =
       el.scrollHeight - el.scrollTop - el.clientHeight < threshold;
-  });
+  };
 
   // Auto-scroll to bottom when new moves come in (only if was at bottom)
   useEffect(() => {
     const el = scrollRef.current;
     if (!el) return;
-    if (wasAtBottomRef.current) {
+    if (isAtBottomRef.current) {
       el.scrollTop = el.scrollHeight;
     }
   }, [formattedHistory.length]);
@@ -90,7 +90,11 @@ export function MoveListPanel({
 
   return (
     <>
-      <div ref={scrollRef} className="flex-1 min-h-0 overflow-y-auto">
+      <div
+        ref={scrollRef}
+        onScroll={handleScroll}
+        className="flex-1 min-h-0 overflow-y-auto scrollbar-none"
+      >
         <div className="grid grid-cols-[3rem_1fr_1fr] text-sm">
           {formattedHistory.map((row, index) => (
             <div
