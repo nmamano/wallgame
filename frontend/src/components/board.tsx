@@ -943,11 +943,19 @@ export function Board({
     const hoverClass = isControllable ? "hover:scale-110" : "";
     const isDraggingThisPawn =
       draggingPawnId === pawn.id || touchDragPawnId === pawn.id;
+    // When user has a pawn selected or is dragging, opponent pawns should have
+    // pointer cursor (valid move target) instead of not-allowed
+    const hasActiveSelection =
+      selectedPawnId !== null ||
+      draggingPawnId !== null ||
+      touchDragPawnId !== null;
     const cursorClass = isControllable
       ? isDraggingThisPawn
         ? "cursor-grabbing"
         : "cursor-grab"
-      : "cursor-not-allowed";
+      : hasActiveSelection
+        ? "cursor-pointer"
+        : "cursor-not-allowed";
     const canDrag = dragEnabled && isControllable;
     // Derive from state: touchPosition is only set when actively dragging
     const isTouchDragging =
@@ -961,6 +969,12 @@ export function Board({
     };
 
     const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+      // When user has a pawn selected, clicking opponent's pawn should
+      // bubble to cell onClick to trigger the move
+      if (!isControllable && hasActiveSelection) {
+        // Don't stop propagation - let cell handle it
+        return;
+      }
       event.stopPropagation();
       if (!isControllable) return;
       // Suppress exactly one ghost click after touch drag
