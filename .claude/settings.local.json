@@ -5,7 +5,8 @@
       "Bash(/c/Users/Nilo/.bun/bin/bun run build:*)",
       "Bash(bun run build:*)",
       "Bash(bun run build:frontend:*)",
-      "Bash(cat:*)"
+      "Bash(cat:*)",
+      "Bash(dir:*)"
     ]
   },
   "outputStyle": "Explanatory"

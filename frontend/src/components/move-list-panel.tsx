@@ -108,11 +108,11 @@ export function MoveListPanel({
           ))}
         </div>
       </div>
-      <div className="p-2 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0">
+      <div className="px-2 py-1 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0 justify-items-center">
         <Button
           variant="ghost"
           size="icon"
-          className="h-8"
+          className="h-7 cursor-pointer"
           onClick={historyNav.jumpStart}
           disabled={!hasHistory || historyNav.cursor === -1}
           aria-label="Jump to beginning"
@@ -122,7 +122,7 @@ export function MoveListPanel({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8"
+          className="h-7 cursor-pointer"
           onClick={historyNav.stepBack}
           disabled={!historyNav.canStepBack}
           aria-label="Step back"
@@ -132,7 +132,7 @@ export function MoveListPanel({
         <Button
           variant="ghost"
           size="icon"
-          className="h-8"
+          className="h-7 cursor-pointer"
           onClick={historyNav.stepForward}
           disabled={!historyNav.canStepForward}
           aria-label="Step forward"
@@ -142,7 +142,7 @@ export function MoveListPanel({
         <Button
           variant={hasNewMovesWhileRewound ? "secondary" : "ghost"}
           size="icon"
-          className={`h-8 ${
+          className={`h-7 cursor-pointer ${
             hasNewMovesWhileRewound ? "animate-pulse text-primary" : ""
           }`}
           onClick={historyNav.jumpEnd}
