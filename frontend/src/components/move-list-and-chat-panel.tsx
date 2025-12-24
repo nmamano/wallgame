@@ -58,7 +58,7 @@ export function MoveListAndChatPanel({
 
   return (
     <Card
-      className="flex flex-col overflow-hidden bg-card/50 backdrop-blur"
+      className="flex flex-col overflow-hidden bg-card/50 backdrop-blur py-0 gap-0"
       style={{
         height: `${adjustedChatCardHeight}rem`,
         minHeight: `${adjustedChatCardHeight}rem`,
