@@ -147,50 +147,64 @@ export function BoardPanel({
       <div
         className={`mt-2 lg:mt-4 w-full ${
           showStagedActionControls
-            ? "grid grid-cols-[1fr_auto_1fr] items-center gap-2 lg:gap-3"
+            ? "grid grid-cols-3 items-center gap-2 lg:gap-3"
             : "flex items-center justify-start"
         }`}
       >
-        <div className="flex items-center text-[10px] lg:text-xs text-muted-foreground min-h-[1rem] lg:min-h-[1.25rem] justify-self-start">
-          {hasActionMessage && (
-            <>
-              <AlertCircle
-                className={`w-3 h-3 lg:w-4 lg:h-4 mr-1 lg:mr-2 ${
-                  actionError ? "text-red-500" : "text-muted-foreground"
-                }`}
-              />
-              <span className={actionError ? "text-red-500" : undefined}>
-                {actionStatusText}
-              </span>
-            </>
-          )}
-        </div>
         {showStagedActionControls && (
           <>
-            <div className="flex gap-1.5 lg:gap-3 justify-center">
+            <div className="flex justify-start min-w-0">
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(10px,1.3vw,13px)] lg:text-[clamp(12px,1vw,15px)] whitespace-nowrap w-full"
                 onClick={clearStagedActions}
                 disabled={!hasPendingActions}
               >
-                Clear staged actions
+                <span className="truncate block">Clear staged actions</span>
               </Button>
+            </div>
+            <div className="flex items-center justify-center text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] text-muted-foreground h-[2.2rem] lg:h-[2.4rem] min-w-0 overflow-hidden text-center leading-snug">
+              {hasActionMessage && (
+                <span
+                  className={`min-w-0 block whitespace-normal break-words ${
+                    actionError ? "text-red-500" : ""
+                  }`}
+                  title={actionStatusText ?? undefined}
+                >
+                  {actionStatusText}
+                </span>
+              )}
+            </div>
+            <div className="flex justify-end min-w-0">
               <Button
                 size="sm"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[11px] lg:text-sm"
+                variant="outline"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(10px,1.3vw,13px)] lg:text-[clamp(12px,1vw,15px)] whitespace-nowrap w-full"
                 onClick={() => commitStagedActions()}
                 disabled={
                   gameState?.status !== "playing" ||
                   gameState?.turn !== activeLocalPlayerId
                 }
               >
-                Finish move
+                <span className="truncate block">Finish move</span>
               </Button>
             </div>
-            <div />
           </>
+        )}
+        {!showStagedActionControls && (
+          <div className="flex items-center text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] text-muted-foreground h-[2.2rem] lg:h-[2.4rem] min-w-0 overflow-hidden leading-snug">
+            {hasActionMessage && (
+              <span
+                className={`min-w-0 block whitespace-normal break-words ${
+                  actionError ? "text-red-500" : ""
+                }`}
+                title={actionStatusText ?? undefined}
+              >
+                {actionStatusText}
+              </span>
+            )}
+          </div>
         )}
       </div>
     </div>
