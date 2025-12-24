@@ -205,7 +205,11 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
       isReadOnlyView && Boolean(spectatorFollowHandler);
 
     return (
-      <Card className="p-2 lg:p-3 bg-card/50 backdrop-blur space-y-1.5 lg:space-y-2">
+      <Card
+        className={`p-2 lg:p-3 space-y-1.5 lg:space-y-2 bg-card/50 backdrop-blur ${
+          gameStatus === "finished" ? "border border-accent/40" : ""
+        }`}
+      >
         {/* Result Summary Area - Fixed height 64/84px */}
         <div className="h-[64px] lg:h-[84px] rounded-lg border border-dashed border-border/60 p-2 lg:p-2.5 overflow-hidden flex items-center gap-3">
           <Trophy className="w-8 h-8 lg:w-10 lg:h-10 text-yellow-500 shrink-0" />

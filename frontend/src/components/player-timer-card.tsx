@@ -23,6 +23,7 @@ interface PlayerTimerCardProps {
   timeLeft: number;
   isThinking?: boolean;
   score?: number | null;
+  gameStatus?: "playing" | "finished" | "aborted";
 }
 
 function formatTime(seconds: number): string {
@@ -37,6 +38,7 @@ export function PlayerTimerCard({
   timeLeft,
   isThinking = false,
   score = null,
+  gameStatus = "playing",
 }: PlayerTimerCardProps) {
   // Determine if we should show cat SVG for this player
   const shouldShowCatSvg =
@@ -46,10 +48,13 @@ export function PlayerTimerCard({
     ? { filter: colorFilterMap[player.color] }
     : undefined;
 
+  // Suppress active highlighting when game is finished (nobody's turn)
+  const shouldShowActiveState = gameStatus !== "finished" && isActive;
+
   return (
     <div
       className={`flex items-center justify-between gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg transition-colors shadow-sm ${
-        isActive
+        shouldShowActiveState
           ? "bg-accent/50 border border-accent"
           : "bg-card/50 backdrop-blur border border-border"
       }`}
@@ -125,7 +130,9 @@ export function PlayerTimerCard({
         {/* Timer */}
         <div
           className={`text-md lg:text-xl font-mono font-bold whitespace-nowrap ${
-            isActive ? "text-foreground" : "text-muted-foreground/50"
+            shouldShowActiveState
+              ? "text-foreground"
+              : "text-muted-foreground/50"
           } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
         >
           {formatTime(Math.max(0, Math.round(timeLeft)))}
