@@ -97,7 +97,7 @@ export function BoardPanel({
 
   return (
     <div
-      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
+      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)] min-w-[400px]"
       style={
         {
           "--board-panel-height": `${adjustedBoardContainerHeight}rem`,
@@ -157,7 +157,7 @@ export function BoardPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(10px,1.3vw,13px)] lg:text-[clamp(12px,1vw,15px)] whitespace-nowrap w-full"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)] whitespace-nowrap w-full"
                 onClick={clearStagedActions}
                 disabled={!hasPendingActions}
               >
@@ -180,7 +180,7 @@ export function BoardPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(10px,1.3vw,13px)] lg:text-[clamp(12px,1vw,15px)] whitespace-nowrap w-full"
+                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)] whitespace-nowrap w-full"
                 onClick={() => commitStagedActions()}
                 disabled={
                   gameState?.status !== "playing" ||

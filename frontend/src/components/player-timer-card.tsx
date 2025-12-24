@@ -53,7 +53,7 @@ export function PlayerTimerCard({
 
   return (
     <div
-      className={`flex items-center justify-between gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg transition-colors shadow-sm ${
+      className={`flex items-center justify-between gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg transition-colors shadow-sm min-w-[400px] ${
         shouldShowActiveState
           ? "bg-accent/50 border border-accent"
           : "bg-card/50 backdrop-blur border border-border"

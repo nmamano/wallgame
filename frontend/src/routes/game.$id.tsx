@@ -46,7 +46,12 @@ function GamePage() {
   const boardHeight = rows * maxCellSize + (rows - 1) * gapSize + boardPadding;
 
   // Calculate board container dimensions (board + margin)
-  const boardContainerWidth = boardWidth + containerMargin * 2;
+  // Ensure minimum width of 25rem (400px) to accommodate button text and timer cards
+  const minBoardContainerWidth = 25;
+  const boardContainerWidth = Math.max(
+    boardWidth + containerMargin * 2,
+    minBoardContainerWidth,
+  );
 
   // Fixed component heights
   const timerHeight = 4;
@@ -90,10 +95,14 @@ function GamePage() {
       : minBoardContainerHeight;
 
   // When chat card grows, only the scrollable content area grows (not tabs, channels, or input)
-  const adjustedChatScrollableHeight =
+  // Cap the scrollable height to prevent the panel from becoming too tall
+  const maxChatScrollableHeight = 10.95;
+  const adjustedChatScrollableHeight = Math.min(
     heightDiff > 0
       ? minChatScrollableHeight + heightDiff
-      : minChatScrollableHeight;
+      : minChatScrollableHeight,
+    maxChatScrollableHeight,
+  );
   const adjustedChatCardHeight =
     chatTabsHeight +
     chatChannelsHeight +
