@@ -23,13 +23,18 @@ import {
   type RematchSessionResult,
   processRatingUpdate,
   type SessionPlayer,
+  assignChatGuestIndex,
 } from "../games/store";
+import { moderateMessage } from "../chat/moderation";
+import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
 import type {
   ClientMessage,
   ActionRequestMessage,
+  ChatChannel,
+  ChatErrorCode,
 } from "../../shared/contracts/websocket-messages";
 import type {
   ActionNackCode,
@@ -43,7 +48,14 @@ interface SessionSocket {
   sessionId: string;
   socketToken: string | null; // null for spectators
   role: "host" | "joiner" | "spectator";
+  id: string; // Unique identifier for this socket connection
 }
+
+let nextSocketId = 0;
+const generateSocketId = (): string => {
+  nextSocketId += 1;
+  return `socket-${nextSocketId}-${Date.now()}`;
+};
 
 /**
  * Get the current playerId for a socket from the session.
@@ -322,6 +334,23 @@ export const broadcastLiveGamesRemove = (gameId: string) => {
       console.error("Failed to broadcast live games remove:", error);
     }
   });
+};
+
+const sendWelcome = (entry: SessionSocket) => {
+  try {
+    entry.ctx.send(
+      JSON.stringify({
+        type: "welcome",
+        socketId: entry.id,
+      }),
+    );
+  } catch (error) {
+    console.error("Failed to send welcome message", {
+      error,
+      sessionId: entry.sessionId,
+      socketToken: entry.socketToken,
+    });
+  }
 };
 
 const sendStateOnce = (entry: SessionSocket) => {
@@ -640,6 +669,202 @@ const handleRematchReject = (socket: SessionSocket) => {
   });
 };
 
+// ============================================================================
+// Chat Handlers
+// ============================================================================
+
+/**
+ * Get the number of players per team for a variant.
+ * Used to determine if team chat should be enabled.
+ */
+const getPlayersPerTeam = (variant: string): number => {
+  // Currently all variants are 1v1, but this is structured for future team variants
+  switch (variant) {
+    case "standard":
+    case "classic":
+    default:
+      return 1;
+  }
+};
+
+interface ChatChannelValidation {
+  allowed: boolean;
+  reason?: string;
+}
+
+const validateChatChannelAccess = (
+  socket: SessionSocket,
+  channel: ChatChannel,
+): ChatChannelValidation => {
+  const session = getSession(socket.sessionId);
+  const isSpectator = socket.role === "spectator";
+
+  if (channel === "game") {
+    if (isSpectator) {
+      return {
+        allowed: false,
+        reason: "Game chat is disabled for spectators.",
+      };
+    }
+    return { allowed: true };
+  }
+
+  if (channel === "team") {
+    if (isSpectator) {
+      return {
+        allowed: false,
+        reason: "Team chat is disabled for spectators.",
+      };
+    }
+    const playersPerTeam = getPlayersPerTeam(session.config.variant);
+    if (playersPerTeam <= 1) {
+      return { allowed: false, reason: "Team chat is disabled in 1v1 games." };
+    }
+    return { allowed: true };
+  }
+
+  if (channel === "audience") {
+    if (!isSpectator) {
+      return {
+        allowed: false,
+        reason: "Audience chat is only for spectators.",
+      };
+    }
+    return { allowed: true };
+  }
+
+  return { allowed: false, reason: "Invalid channel." };
+};
+
+const getChatSenderName = (socket: SessionSocket): string => {
+  const session = getSession(socket.sessionId);
+
+  if (socket.role === "spectator") {
+    // Spectators are always guests - use the unique socket id
+    const guestIndex = assignChatGuestIndex(socket.sessionId, socket.id);
+    return `Guest ${guestIndex}`;
+  }
+
+  // Get the player for this socket
+  const player =
+    socket.role === "host" ? session.players.host : session.players.joiner;
+
+  // If the player has a proper display name from auth, use it
+  if (player.authUserId && player.displayName) {
+    return player.displayName;
+  }
+
+  // Otherwise, assign a guest index based on their socket token (or unique id as fallback)
+  const socketId = socket.socketToken ?? socket.id;
+  const guestIndex = assignChatGuestIndex(socket.sessionId, socketId);
+  return `Guest ${guestIndex}`;
+};
+
+const sendChatError = (
+  socket: SessionSocket,
+  code: ChatErrorCode,
+  message: string,
+) => {
+  socket.ctx.send(
+    JSON.stringify({
+      type: "chat-error",
+      code,
+      message,
+    }),
+  );
+};
+
+const broadcastChatMessage = (
+  sessionId: string,
+  channel: ChatChannel,
+  senderId: string,
+  senderName: string,
+  text: string,
+) => {
+  const sockets = sessionSockets.get(sessionId);
+  if (!sockets) return;
+
+  const message = JSON.stringify({
+    type: "chat-message",
+    channel,
+    senderId,
+    senderName,
+    text,
+    timestamp: Date.now(),
+  });
+
+  sockets.forEach((entry) => {
+    const isSpectator = entry.role === "spectator";
+
+    // Filter based on channel visibility
+    if (channel === "game" && isSpectator) return;
+    if (channel === "audience" && !isSpectator) return;
+    // For team chat, would need to filter by team - but currently all variants are 1v1
+
+    try {
+      entry.ctx.send(message);
+    } catch (error) {
+      console.error("Failed to send chat message", {
+        error,
+        sessionId,
+        role: entry.role,
+      });
+    }
+  });
+};
+
+const handleChatMessage = (
+  socket: SessionSocket,
+  channel: ChatChannel,
+  text: string,
+) => {
+  // Validate channel access
+  const channelValidation = validateChatChannelAccess(socket, channel);
+  if (!channelValidation.allowed) {
+    sendChatError(
+      socket,
+      "INVALID_CHANNEL",
+      channelValidation.reason ?? "Invalid channel",
+    );
+    return;
+  }
+
+  // Rate limiting - use the unique socket id
+  const socketId = socket.id;
+  if (!canSendMessage(socketId)) {
+    sendChatError(
+      socket,
+      "RATE_LIMITED",
+      "Please wait before sending another message.",
+    );
+    return;
+  }
+
+  // Content moderation
+  const modResult = moderateMessage(text);
+  if (!modResult.allowed) {
+    const errorMessage =
+      modResult.code === "TOO_LONG"
+        ? "Message too long."
+        : "Message not allowed.";
+    sendChatError(socket, modResult.code ?? "MODERATION", errorMessage);
+    return;
+  }
+
+  // Get sender display name
+  const senderName = getChatSenderName(socket);
+
+  // Broadcast to appropriate recipients (include socket.id for echo detection)
+  broadcastChatMessage(socket.sessionId, channel, socket.id, senderName, text);
+
+  console.info("[ws] chat-message processed", {
+    sessionId: socket.sessionId,
+    channel,
+    senderName,
+    textLength: text.length,
+  });
+};
+
 const sendActionAck = (
   socket: SessionSocket,
   message: ActionRequestMessage,
@@ -939,6 +1164,9 @@ const handleClientMessage = async (
     case "action-request":
       await handleActionRequest(socket, payload);
       break;
+    case "chat-message":
+      handleChatMessage(socket, payload.channel, payload.text);
+      break;
     case "ping":
       socket.ctx.send(JSON.stringify({ type: "pong", timestamp: Date.now() }));
       break;
@@ -1064,11 +1292,13 @@ export const registerGameSocketRoute = (app: Hono) => {
               sessionId,
               socketToken: null,
               role: "spectator",
+              id: generateSocketId(),
             };
             addSocket(entry);
             incrementSpectatorCount(sessionId);
             broadcastLiveGamesUpsert(sessionId); // Update spectator count in list
             console.info("[ws] spectator connected", { sessionId });
+            sendWelcome(entry);
             sendStateOnce(entry);
             sendMatchStatusOnce(entry);
           } else {
@@ -1078,6 +1308,7 @@ export const registerGameSocketRoute = (app: Hono) => {
               sessionId,
               socketToken: socketToken!,
               role: player!.role,
+              id: generateSocketId(),
             };
             addSocket(entry);
             updateConnectionState({
@@ -1090,6 +1321,7 @@ export const registerGameSocketRoute = (app: Hono) => {
               socketToken,
               playerId: getSocketPlayerId(entry),
             });
+            sendWelcome(entry);
             sendStateOnce(entry);
             sendMatchStatus(sessionId);
           }
@@ -1103,7 +1335,7 @@ export const registerGameSocketRoute = (app: Hono) => {
 
           const raw = event.data as string | ArrayBuffer;
 
-          // Spectators can only send ping messages
+          // Spectators can only send ping and chat messages
           if (entry.role === "spectator") {
             if (typeof raw === "string") {
               try {
@@ -1111,6 +1343,27 @@ export const registerGameSocketRoute = (app: Hono) => {
                 if (msg.type === "ping") {
                   ws.send(
                     JSON.stringify({ type: "pong", timestamp: Date.now() }),
+                  );
+                  return;
+                }
+                if (msg.type === "chat-message") {
+                  // Allow spectators to send chat messages (handled below)
+                  void handleClientMessage(entry, raw).catch(
+                    (error: unknown) => {
+                      console.error("[ws] failed to handle spectator chat", {
+                        error,
+                        sessionId: entry.sessionId,
+                      });
+                      ws.send(
+                        JSON.stringify({
+                          type: "error",
+                          message:
+                            error instanceof Error
+                              ? error.message
+                              : "Chat message processing failed",
+                        }),
+                      );
+                    },
                   );
                   return;
                 }
@@ -1150,6 +1403,9 @@ export const registerGameSocketRoute = (app: Hono) => {
             return;
           }
           removeSocket(entry);
+
+          // Clean up chat rate limit entry
+          clearRateLimitEntry(entry.id);
 
           if (entry.role === "spectator") {
             // Spectator disconnect

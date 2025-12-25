@@ -18,6 +18,18 @@ import type {
   ActionNackCode,
 } from "./controller-actions";
 
+// ============================================================================
+// Chat Types
+// ============================================================================
+
+export type ChatChannel = "game" | "team" | "audience";
+
+export type ChatErrorCode =
+  | "MODERATION"
+  | "RATE_LIMITED"
+  | "TOO_LONG"
+  | "INVALID_CHANNEL";
+
 /**
  * Messages sent from client to server over the game WebSocket connection.
  *
@@ -49,6 +61,7 @@ export type ClientMessage =
   | { type: "rematch-offer" }
   | { type: "rematch-accept" }
   | { type: "rematch-reject" }
+  | { type: "chat-message"; channel: ChatChannel; text: string }
   | ActionRequestMessage;
 
 /**
@@ -79,6 +92,7 @@ export interface ActionNackMessage {
 export type ServerMessage =
   | { type: "state"; state: SerializedGameState }
   | { type: "match-status"; snapshot: GameSnapshot }
+  | { type: "welcome"; socketId: string }
   | { type: "error"; message: string }
   | { type: "pong"; timestamp: number }
   | { type: "takeback-offer"; playerId: number }
@@ -92,6 +106,15 @@ export type ServerMessage =
       newGameId: string;
       seat?: { token: string; socketToken: string };
     }
+  | {
+      type: "chat-message";
+      channel: ChatChannel;
+      senderId: string;
+      senderName: string;
+      text: string;
+      timestamp: number;
+    }
+  | { type: "chat-error"; code: ChatErrorCode; message: string }
   | ActionAckMessage
   | ActionNackMessage;
 

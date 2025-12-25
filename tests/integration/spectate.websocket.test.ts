@@ -259,15 +259,17 @@ async function openGameSocket(
           expectedType: T,
           options?: { ignore?: ServerMessage["type"][] },
         ) => {
-          const ignoreTypes = options?.ignore ?? [];
+          const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
+          const shouldIgnore = (msg: ServerMessage) =>
+            msg.type === "welcome" || ignoreTypes.includes(msg.type);
           return new Promise<Extract<ServerMessage, { type: T }>>(
             (resolveWait, rejectWait) => {
               const processMessage = (msg: ServerMessage): boolean => {
-                if (msg.type === expectedType) {
+                if (shouldIgnore(msg)) {
+                  return false;
+                } else if (msg.type === expectedType) {
                   resolveWait(msg as Extract<ServerMessage, { type: T }>);
                   return true;
-                } else if (ignoreTypes.includes(msg.type)) {
-                  return false;
                 } else {
                   rejectWait(
                     new Error(
@@ -351,15 +353,17 @@ async function openSpectatorSocket(gameId: string): Promise<TestSocket> {
           expectedType: T,
           options?: { ignore?: ServerMessage["type"][] },
         ) => {
-          const ignoreTypes = options?.ignore ?? [];
+          const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
+          const shouldIgnore = (msg: ServerMessage) =>
+            msg.type === "welcome" || ignoreTypes.includes(msg.type);
           return new Promise<Extract<ServerMessage, { type: T }>>(
             (resolveWait, rejectWait) => {
               const processMessage = (msg: ServerMessage): boolean => {
-                if (msg.type === expectedType) {
+                if (shouldIgnore(msg)) {
+                  return false;
+                } else if (msg.type === expectedType) {
                   resolveWait(msg as Extract<ServerMessage, { type: T }>);
                   return true;
-                } else if (ignoreTypes.includes(msg.type)) {
-                  return false;
                 } else {
                   rejectWait(
                     new Error(
