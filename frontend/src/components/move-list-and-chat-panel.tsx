@@ -1,18 +1,9 @@
 import { Card } from "@/components/ui/card";
 import { History, MessageSquare } from "lucide-react";
 import { MoveListPanel } from "@/components/move-list-panel";
-import { GameChatPanel } from "@/components/game-chat-panel";
+import { GameChatPanel, type ChatMessage } from "@/components/game-chat-panel";
 import type { MoveHistoryRow } from "@/components/move-list-panel";
 import type { HistoryNav } from "@/types/history";
-
-interface ChatMessage {
-  id: string;
-  sender: string;
-  text: string;
-  timestamp: Date;
-  channel: "game" | "team" | "audience";
-  isSystem?: boolean;
-}
 
 interface MoveListAndChatPanelProps {
   adjustedChatCardHeight: number;
@@ -22,12 +13,18 @@ interface MoveListAndChatPanelProps {
   historyNav: HistoryNav;
   hasNewMovesWhileRewound: boolean;
   historyTabHighlighted: boolean;
+  chatTabHighlighted: boolean;
   chatChannel: "game" | "team" | "audience";
   messages: ChatMessage[];
   chatInput: string;
   onChannelChange: (channel: "game" | "team" | "audience") => void;
   onInputChange: (value: string) => void;
   onSendMessage: (e: React.FormEvent) => void;
+  isSpectator: boolean;
+  isReplay: boolean;
+  isTeamVariant: boolean;
+  isSending: boolean;
+  isOnlineGame: boolean;
 }
 
 export function MoveListAndChatPanel({
@@ -38,12 +35,18 @@ export function MoveListAndChatPanel({
   historyNav,
   hasNewMovesWhileRewound,
   historyTabHighlighted,
+  chatTabHighlighted,
   chatChannel,
   messages,
   chatInput,
   onChannelChange,
   onInputChange,
   onSendMessage,
+  isSpectator,
+  isReplay,
+  isTeamVariant,
+  isSending,
+  isOnlineGame,
 }: MoveListAndChatPanelProps) {
   const historyTabClasses =
     activeTab === "history"
@@ -51,10 +54,13 @@ export function MoveListAndChatPanel({
       : historyTabHighlighted
         ? "border-b-2 border-primary text-primary animate-pulse"
         : "text-muted-foreground hover:text-foreground";
+
   const chatTabClasses =
     activeTab === "chat"
       ? "border-b-2 border-primary text-primary"
-      : "text-muted-foreground hover:text-foreground";
+      : chatTabHighlighted
+        ? "border-b-2 border-primary text-primary animate-pulse"
+        : "text-muted-foreground hover:text-foreground";
 
   return (
     <Card
@@ -94,6 +100,11 @@ export function MoveListAndChatPanel({
             onChannelChange={onChannelChange}
             onInputChange={onInputChange}
             onSendMessage={onSendMessage}
+            isSpectator={isSpectator}
+            isReplay={isReplay}
+            isTeamVariant={isTeamVariant}
+            isSending={isSending}
+            isOnlineGame={isOnlineGame}
           />
         ) : (
           <MoveListPanel

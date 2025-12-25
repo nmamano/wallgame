@@ -285,12 +285,18 @@ function GamePage() {
                 historyNav={chat.historyNav}
                 hasNewMovesWhileRewound={chat.hasNewMovesWhileRewound}
                 historyTabHighlighted={chat.historyTabHighlighted}
+                chatTabHighlighted={chat.chatTabHighlighted}
                 chatChannel={chat.chatChannel}
                 messages={chat.messages}
                 chatInput={chat.chatInput}
                 onChannelChange={chat.onChannelChange}
                 onInputChange={chat.onInputChange}
                 onSendMessage={chat.onSendMessage}
+                isSpectator={chat.isSpectator}
+                isReplay={chat.isReplay}
+                isTeamVariant={chat.isTeamVariant}
+                isSending={chat.isSending}
+                isOnlineGame={chat.isOnlineGame}
               />
             </div>
           </div>

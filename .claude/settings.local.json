@@ -6,7 +6,8 @@
       "Bash(bun run build:*)",
       "Bash(bun run build:frontend:*)",
       "Bash(cat:*)",
-      "Bash(dir:*)"
+      "Bash(dir:*)",
+      "Bash(bun run build:frontend:types:*)"
     ]
   },
   "outputStyle": "Explanatory"

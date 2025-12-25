@@ -9,6 +9,8 @@ import type {
   ActionRequestMessage,
   ActionAckMessage,
   ActionNackMessage,
+  ChatChannel,
+  ChatErrorCode,
 } from "../../../shared/contracts/websocket-messages";
 import type {
   ControllerActionKind,
@@ -19,6 +21,7 @@ import type {
 export interface GameClientHandlers {
   onState?: (state: SerializedGameState) => void;
   onMatchStatus?: (snapshot: GameSnapshot) => void;
+  onWelcome?: (socketId: string) => void;
   onRematchOffer?: (playerId: number) => void;
   onRematchRejected?: (playerId: number) => void;
   onRematchStarted?: (payload: {
@@ -29,6 +32,14 @@ export interface GameClientHandlers {
   onDrawRejected?: (playerId: number) => void;
   onTakebackOffer?: (playerId: number) => void;
   onTakebackRejected?: (playerId: number) => void;
+  onChatMessage?: (message: {
+    channel: ChatChannel;
+    senderId: string;
+    senderName: string;
+    text: string;
+    timestamp: number;
+  }) => void;
+  onChatError?: (error: { code: ChatErrorCode; message: string }) => void;
   onError?: (message: string) => void;
 }
 
@@ -104,6 +115,12 @@ export class GameClient {
             status: payload.snapshot.status,
           });
           this.handlers.onMatchStatus?.(payload.snapshot);
+        } else if (payload.type === "welcome") {
+          console.debug("[game-client] received welcome", {
+            gameId: this.params.gameId,
+            socketId: payload.socketId,
+          });
+          this.handlers.onWelcome?.(payload.socketId);
         } else if (payload.type === "error") {
           this.handlers.onError?.(payload.message);
         } else if (payload.type === "rematch-offer") {
@@ -123,6 +140,19 @@ export class GameClient {
           this.handlers.onTakebackOffer?.(payload.playerId);
         } else if (payload.type === "takeback-rejected") {
           this.handlers.onTakebackRejected?.(payload.playerId);
+        } else if (payload.type === "chat-message") {
+          this.handlers.onChatMessage?.({
+            channel: payload.channel,
+            senderId: payload.senderId,
+            senderName: payload.senderName,
+            text: payload.text,
+            timestamp: payload.timestamp,
+          });
+        } else if (payload.type === "chat-error") {
+          this.handlers.onChatError?.({
+            code: payload.code,
+            message: payload.message,
+          });
         } else if (payload.type === "actionAck") {
           this.handleActionAck(payload);
         } else if (payload.type === "actionNack") {
@@ -241,6 +271,10 @@ export class GameClient {
 
   sendRematchReject(): void {
     this.send({ type: "rematch-reject" });
+  }
+
+  sendChatMessage(channel: ChatChannel, text: string): void {
+    this.send({ type: "chat-message", channel, text });
   }
 
   close(reason = "unspecified"): void {

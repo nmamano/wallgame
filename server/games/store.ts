@@ -79,6 +79,9 @@ export interface GameSession {
   gameInstanceId: number;
   lastScoredGameInstanceId: number;
   gameState: GameState;
+  // Chat guest index tracking (per-session)
+  chatGuestCounter: number;
+  chatGuestIndexMap: Map<string, number>; // socketId -> guestIndex
 }
 
 export interface GameCreationResult {
@@ -243,6 +246,8 @@ export const createGameSession = (args: {
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
     gameState: createGameState(args.config),
+    chatGuestCounter: 0,
+    chatGuestIndexMap: new Map(),
   };
 
   sessions.set(id, session);
@@ -515,6 +520,45 @@ export const decrementSpectatorCount = (gameId: string): number => {
 
 export const getSpectatorCount = (gameId: string): number => {
   return spectatorCounts.get(gameId) ?? 0;
+};
+
+// ============================================================================
+// Chat Guest Index Tracking
+// ============================================================================
+
+/**
+ * Assigns a guest index to a socket for chat display names.
+ * If the socket already has an index, returns the existing one.
+ * Index starts at 1 and increments for each new guest.
+ */
+export const assignChatGuestIndex = (
+  sessionId: string,
+  socketId: string,
+): number => {
+  const session = ensureSession(sessionId);
+
+  // Return existing index if already assigned
+  const existing = session.chatGuestIndexMap.get(socketId);
+  if (existing !== undefined) {
+    return existing;
+  }
+
+  // Assign new index
+  session.chatGuestCounter += 1;
+  const index = session.chatGuestCounter;
+  session.chatGuestIndexMap.set(socketId, index);
+  return index;
+};
+
+/**
+ * Gets the guest index for a socket, if one has been assigned.
+ */
+export const getChatGuestIndex = (
+  sessionId: string,
+  socketId: string,
+): number | undefined => {
+  const session = sessions.get(sessionId);
+  return session?.chatGuestIndexMap.get(socketId);
 };
 
 // ============================================================================
@@ -835,6 +879,8 @@ export const createRematchSession = (
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
     gameState: createGameState(previous.config),
+    chatGuestCounter: 0,
+    chatGuestIndexMap: new Map(),
   };
 
   sessions.set(newId, newSession);

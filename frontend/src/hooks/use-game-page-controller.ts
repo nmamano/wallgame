@@ -116,6 +116,7 @@ interface ChatMessage {
   timestamp: Date;
   channel: "game" | "team" | "audience";
   isSystem?: boolean;
+  isError?: boolean;
 }
 
 type RematchResponse = "pending" | "accepted" | "declined";
@@ -473,6 +474,17 @@ export function useGamePageController(gameId: string) {
   const spectatorSessionRef = useRef<SpectatorSession | null>(null);
   const spectatorInitializedRef = useRef(false);
   const isMultiplayerMatchRef = useRef(isMultiplayerMatch);
+  const chatHandlerRef = useRef<{
+    onMessage: (msg: {
+      channel: "game" | "team" | "audience";
+      senderId: string;
+      senderName: string;
+      text: string;
+      timestamp: number;
+    }) => void;
+    onError: (err: { code: string; message: string }) => void;
+  } | null>(null);
+  const mySocketIdRef = useRef<string | null>(null);
   useEffect(() => {
     isMultiplayerMatchRef.current = isMultiplayerMatch;
   }, [isMultiplayerMatch]);
@@ -711,11 +723,7 @@ export function useGamePageController(gameId: string) {
         isYou: player.type === "you",
       }));
       setMatchingPlayers(matchingList);
-      const waiting = matchingList.some((entry) => !entry.isReady);
 
-      addSystemMessage(
-        waiting ? "Waiting for players..." : "Game created. Good luck!",
-      );
       setRematchState((prev) => ({
         status: "idle",
         responses: { 1: "pending", 2: "pending" },
@@ -724,7 +732,7 @@ export function useGamePageController(gameId: string) {
         decliner: undefined,
       }));
     },
-    [addSystemMessage, applyServerUpdate, localPreferences, seatActionsRef],
+    [applyServerUpdate, localPreferences, seatActionsRef],
   );
 
   useEffect(() => {
@@ -865,6 +873,11 @@ export function useGamePageController(gameId: string) {
           playerId as PlayerId,
         );
       },
+      onWelcome: (socketId) => {
+        mySocketIdRef.current = socketId;
+      },
+      onChatMessage: (msg) => chatHandlerRef.current?.onMessage(msg),
+      onChatError: (err) => chatHandlerRef.current?.onError(err),
       onError: (message) => {
         setMatchError(message);
       },
@@ -1094,6 +1107,18 @@ export function useGamePageController(gameId: string) {
           if (cancelled) return;
           rematchStartedHandlerRef.current?.({ newGameId });
         },
+        onWelcome: (socketId) => {
+          if (cancelled) return;
+          mySocketIdRef.current = socketId;
+        },
+        onChatMessage: (msg) => {
+          if (cancelled) return;
+          chatHandlerRef.current?.onMessage(msg);
+        },
+        onChatError: (err) => {
+          if (cancelled) return;
+          chatHandlerRef.current?.onError(err);
+        },
       },
       spectatorBootstrap,
     );
@@ -1124,6 +1149,85 @@ export function useGamePageController(gameId: string) {
   );
   const [chatInput, setChatInput] = useState("");
   const [messages, setMessages] = useState<ChatMessage[]>([]);
+  const [chatTabHighlighted, setChatTabHighlighted] = useState(false);
+  const [isSendingChat, setIsSendingChat] = useState(false);
+  const pendingChatTextRef = useRef<string>("");
+
+  // Set up chat message handlers (uses refs to avoid recreating WebSocket)
+  useEffect(() => {
+    chatHandlerRef.current = {
+      onMessage: (msg) => {
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `${msg.timestamp}-${msg.senderName}`,
+            sender: msg.senderName,
+            text: msg.text,
+            timestamp: new Date(msg.timestamp),
+            channel: msg.channel,
+          },
+        ]);
+        // Clear pending state only when we receive our own echoed message.
+        // We use senderId for reliable identity matching instead of text.
+        const isOwnMessage =
+          mySocketIdRef.current !== null &&
+          msg.senderId === mySocketIdRef.current;
+        if (isSendingChat && isOwnMessage) {
+          setIsSendingChat(false);
+          setChatInput("");
+          pendingChatTextRef.current = "";
+        }
+        // Highlight chat tab if not currently viewing it (but not for own messages)
+        if (activeTab !== "chat" && !isOwnMessage) {
+          setChatTabHighlighted(true);
+        }
+      },
+      onError: (err) => {
+        setIsSendingChat(false);
+        // Restore the pending text so user can retry
+        setChatInput(pendingChatTextRef.current);
+        pendingChatTextRef.current = "";
+        // Show error message locally
+        const errorText =
+          err.code === "MODERATION"
+            ? "Message not allowed."
+            : err.code === "TOO_LONG"
+              ? "Message too long."
+              : err.code === "RATE_LIMITED"
+                ? "Please wait before sending another message."
+                : "Failed to send message.";
+        setMessages((prev) => [
+          ...prev,
+          {
+            id: `error-${Date.now()}`,
+            sender: "System",
+            text: errorText,
+            timestamp: new Date(),
+            channel: chatChannel,
+            isSystem: true,
+            isError: true,
+          },
+        ]);
+      },
+    };
+  }, [activeTab, chatChannel, isSendingChat]);
+
+  // Clear chat tab highlight when switching to chat tab
+  useEffect(() => {
+    if (activeTab === "chat") {
+      setChatTabHighlighted(false);
+    }
+  }, [activeTab]);
+
+  // Set default chat channel based on role
+  useEffect(() => {
+    if (isSpectatorSession) {
+      setChatChannel("audience");
+    } else {
+      setChatChannel("game");
+    }
+  }, [isSpectatorSession]);
+
   const [soundEnabled, setSoundEnabled] = useState(true);
   const [selectedPawnId, setSelectedPawnId] = useState<string | null>(null);
   const [draggingPawnId, setDraggingPawnId] = useState<string | null>(null);
@@ -1188,7 +1292,9 @@ export function useGamePageController(gameId: string) {
   const canRespondToDraw = seatCapabilities?.canRespondToDraw ?? false;
   const canRequestTakeback = seatCapabilities?.canRequestTakeback ?? false;
   const canRespondToTakeback = seatCapabilities?.canRespondToTakeback ?? false;
-  const canUseChat = seatCapabilities?.canUseChat ?? false;
+  // Chat is available for online players and spectators, but not for local games or replays
+  const canUseChat =
+    !isReplaySession && (isMultiplayerMatch || isSpectatorSession);
   const controllerAllowsInteraction = canMovePieces;
   const interactionLocked =
     isReadOnlySession ||
@@ -3091,19 +3197,28 @@ export function useGamePageController(gameId: string) {
 
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
-    if (!canUseChat) return;
     if (!chatInput.trim()) return;
-    setMessages((prev) => [
-      ...prev,
-      {
-        id: Date.now().toString(),
-        sender: "You",
-        text: chatInput,
-        timestamp: new Date(),
-        channel: chatChannel,
-      },
-    ]);
-    setChatInput("");
+
+    const text = chatInput.trim();
+    pendingChatTextRef.current = text;
+    setIsSendingChat(true);
+
+    // For spectators, send via spectator session (always audience channel)
+    if (isSpectatorSession) {
+      spectatorSessionRef.current?.sendChatMessage(text);
+      return;
+    }
+
+    // For players, send via the player controller
+    if (primaryLocalPlayerId) {
+      const controller = seatActionsRef.current[primaryLocalPlayerId];
+      if (controller?.kind === "remote-human") {
+        (controller as RemotePlayerController).sendChatMessage(
+          chatChannel,
+          text,
+        );
+      }
+    }
   };
 
   const handleAbort = useCallback(() => {
@@ -3664,6 +3779,7 @@ export function useGamePageController(gameId: string) {
     hasNewMovesWhileRewound,
     historyTabHighlighted:
       activeTab === "chat" && hasNewMovesWhileRewound && historyCursor !== null,
+    chatTabHighlighted,
     chatChannel,
     messages,
     chatInput,
@@ -3674,6 +3790,11 @@ export function useGamePageController(gameId: string) {
       : (event: React.FormEvent) => {
           event.preventDefault();
         },
+    isSpectator: isSpectatorSession,
+    isReplay: isReplaySession,
+    isTeamVariant: false, // Currently all variants are 1v1
+    isSending: isSendingChat,
+    isOnlineGame: isMultiplayerMatch || isSpectatorSession,
   };
   const controller = {
     accessKind,

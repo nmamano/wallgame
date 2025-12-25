@@ -348,7 +348,7 @@ async function openGameSocket(
             preserveIgnored?: boolean;
           },
         ) => {
-          const ignoreTypes = options?.ignore ?? [];
+          const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
           const preserveIgnored = options?.preserveIgnored ?? false;
           const preservedMessages: ServerMessage[] = [];
 

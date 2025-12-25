@@ -220,7 +220,9 @@ async function openGameSocket(
           expectedType: T,
           options?: { ignore?: ServerMessage["type"][] },
         ) => {
-          const ignoreTypes = options?.ignore ?? [];
+          const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
+          const shouldIgnore = (msg: ServerMessage) =>
+            msg.type === "welcome" || ignoreTypes.includes(msg.type);
           return new Promise<Extract<ServerMessage, { type: T }>>(
             (resolveWait, rejectWait) => {
               const processMessage = (msg: ServerMessage): boolean => {
@@ -228,7 +230,7 @@ async function openGameSocket(
                   resolveWait(msg as Extract<ServerMessage, { type: T }>);
                   return true;
                 }
-                if (ignoreTypes.includes(msg.type)) {
+                if (shouldIgnore(msg)) {
                   return false;
                 }
                 rejectWait(

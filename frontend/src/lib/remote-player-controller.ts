@@ -25,6 +25,7 @@ import {
 import type { PlayerType } from "@/lib/gameViewModel";
 import type { Move, PlayerId } from "../../../shared/domain/game-types";
 import type { ActionRequestPayload } from "../../../shared/contracts/controller-actions";
+import type { ChatChannel } from "../../../shared/contracts/websocket-messages";
 
 export type RemoteControllerHandlers = GameClientHandlers;
 
@@ -180,6 +181,10 @@ export class RemotePlayerController implements RemoteHumanController {
 
   giveTime(seconds: number): Promise<ControllerResult<void>> {
     return this.runClientAction("giveTime", { seconds });
+  }
+
+  sendChatMessage(channel: ChatChannel, text: string): void {
+    this.client?.sendChatMessage(channel, text);
   }
 
   offerRematch(): Promise<ControllerResult<void>> {
