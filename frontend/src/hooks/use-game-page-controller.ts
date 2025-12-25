@@ -33,6 +33,7 @@ import {
   abortGameSession,
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
+import { sounds, play } from "@/lib/sounds";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
 import {
   createPlayerController,
@@ -814,6 +815,17 @@ export function useGamePageController(gameId: string) {
           isInitial,
         });
         gameAwaitingServerRef.current = false;
+        // Play sound for opponent moves (when it becomes your turn after their move)
+        if (!isInitial && seat.playerId === resolvedState.turn) {
+          const lastEntry =
+            resolvedState.history[resolvedState.history.length - 1];
+          if (lastEntry && soundEnabledRef.current) {
+            const hasWall = lastEntry.move.actions.some(
+              (a) => a.type === "wall",
+            );
+            play(hasWall ? sounds.wall : sounds.pawn);
+          }
+        }
         if (seat.playerId === resolvedState.turn) {
           setActiveLocalPlayerId(seat.playerId);
         } else {
@@ -1229,6 +1241,8 @@ export function useGamePageController(gameId: string) {
   }, [isSpectatorSession]);
 
   const [soundEnabled, setSoundEnabled] = useState(true);
+  const soundEnabledRef = useRef(soundEnabled);
+  soundEnabledRef.current = soundEnabled;
   const [selectedPawnId, setSelectedPawnId] = useState<string | null>(null);
   const [draggingPawnId, setDraggingPawnId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -1368,6 +1382,9 @@ export function useGamePageController(gameId: string) {
       if (removed) {
         setQueue(nextQueue);
         setActionError(null);
+        if (soundEnabled) {
+          play(action.type === "wall" ? sounds.wallUndo : sounds.pawnUndo);
+        }
         return "removed";
       }
       if (
@@ -1383,6 +1400,9 @@ export function useGamePageController(gameId: string) {
       }
       setQueue(nextQueue);
       setActionError(null);
+      if (soundEnabled) {
+        play(action.type === "wall" ? sounds.wall : sounds.pawn);
+      }
       if (mode === "staged" && nextQueue.length === MAX_LOCAL_ACTIONS) {
         commitStagedActions(nextQueue);
       }
@@ -1397,6 +1417,7 @@ export function useGamePageController(gameId: string) {
       setActionError,
       setPremovedActions,
       setStagedActions,
+      soundEnabled,
       stagedActions,
     ],
   );
@@ -2186,11 +2207,18 @@ export function useGamePageController(gameId: string) {
       });
       const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
       updateGameState(nextState, { lastMoves });
-      if (soundEnabled) {
-        playSound();
+      // Only play sound for bot moves - human moves already played during staging
+      const controller = seatActionsRef.current[playerId];
+      if (
+        soundEnabledRef.current &&
+        controller &&
+        isAutomatedController(controller)
+      ) {
+        const hasWall = move.actions.some((a) => a.type === "wall");
+        play(hasWall ? sounds.wall : sounds.pawn);
       }
     },
-    [soundEnabled, updateGameState, playerColorsForBoard],
+    [updateGameState, playerColorsForBoard],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -2815,6 +2843,9 @@ export function useGamePageController(gameId: string) {
           setSelectedPawnId(null);
           setDraggingPawnId(null);
           setActionError(null);
+          if (soundEnabled) {
+            play(sounds.pawnUndo);
+          }
           return;
         }
 
@@ -2864,10 +2895,16 @@ export function useGamePageController(gameId: string) {
           return;
         }
         if (queueMode === "staged") {
+          if (soundEnabled) {
+            play(sounds.pawn);
+          }
           commitStagedActions(doubleStepSequence);
         } else {
           setPremovedActions(doubleStepSequence);
           setActionError(null);
+          if (soundEnabled) {
+            play(sounds.pawn);
+          }
         }
         setSelectedPawnId(null);
         setDraggingPawnId(null);
@@ -2900,6 +2937,7 @@ export function useGamePageController(gameId: string) {
       setPremovedActions,
       setSelectedPawnId,
       setStagedActions,
+      soundEnabled,
       stagedActions,
     ],
   );
@@ -3087,6 +3125,9 @@ export function useGamePageController(gameId: string) {
         setter((prev) => prev.filter((action) => action.type !== pawn.type));
         setSelectedPawnId(null);
         setActionError(null);
+        if (soundEnabled) {
+          play(sounds.pawnUndo);
+        }
         return;
       }
 
@@ -3110,6 +3151,7 @@ export function useGamePageController(gameId: string) {
       setPremovedActions,
       setSelectedPawnId,
       setStagedActions,
+      soundEnabled,
       stagedActions,
       viewingHistory,
     ],
@@ -3255,10 +3297,6 @@ export function useGamePageController(gameId: string) {
   const handleJoinerDismiss = useCallback(() => {
     void navigate({ to: "/game-setup" });
   }, [navigate]);
-
-  const playSound = () => {
-    // Placeholder for future audio hooks
-  };
 
   const rows = config?.boardHeight ?? DEFAULT_CONFIG.boardHeight;
   const cols = config?.boardWidth ?? DEFAULT_CONFIG.boardWidth;
