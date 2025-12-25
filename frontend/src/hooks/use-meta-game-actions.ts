@@ -420,7 +420,7 @@ export function useMetaGameActions({
 
   // Execute takeback
   const executeTakeback = useCallback(
-    (requesterId: PlayerId) => {
+    (accepterId: PlayerId, requesterId: PlayerId) => {
       const currentState = gameStateRef.current;
       if (!currentState) {
         setActionError("Game is still loading");
@@ -430,19 +430,16 @@ export function useMetaGameActions({
         setActionError("There are no moves to take back yet.");
         return false;
       }
-      const stepsNeeded = currentState.turn === requesterId ? 2 : 1;
-      if (currentState.history.length < stepsNeeded) {
+      const movesToUndo = currentState.turn === requesterId ? 2 : 1;
+      if (currentState.history.length < movesToUndo) {
         setActionError("Not enough moves have been played for a takeback.");
         return false;
       }
-      let nextState = currentState;
-      for (let i = 0; i < stepsNeeded; i++) {
-        nextState = nextState.applyGameAction({
-          kind: "takeback",
-          playerId: requesterId,
-          timestamp: Date.now(),
-        });
-      }
+      const nextState = currentState.applyGameAction({
+        kind: "takeback",
+        playerId: accepterId,
+        timestamp: Date.now(),
+      });
 
       const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
       updateGameState(nextState, { lastMoves });
@@ -884,7 +881,7 @@ export function useMetaGameActions({
       .then((decision) => {
         if (takebackRequestIdRef.current !== requestId) return;
         if (decision === "allow") {
-          const success = executeTakeback(requesterId);
+          const success = executeTakeback(responderId, requesterId);
           if (success) {
             addSystemMessage(
               `${getPlayerName(responderId)} accepted the takeback request.`,
