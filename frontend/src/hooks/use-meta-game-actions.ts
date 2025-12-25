@@ -57,7 +57,11 @@ export interface TakebackDecisionPromptState {
 
 export interface PassiveNotice {
   id: number;
-  type: "opponent-resigned" | "opponent-gave-time";
+  type:
+    | "opponent-resigned"
+    | "opponent-gave-time"
+    | "draw-offer-declined"
+    | "takeback-request-declined";
   message: string;
 }
 
@@ -373,6 +377,26 @@ export function useMetaGameActions({
     [getPlayerName, primaryLocalPlayerId],
   );
 
+  const recordRejectionNotice = useCallback(
+    (
+      type: Extract<
+        PassiveNotice["type"],
+        "draw-offer-declined" | "takeback-request-declined"
+      >,
+      opponentId: PlayerId,
+    ) => {
+      setIncomingPassiveNotice({
+        id: ++noticeCounterRef.current,
+        type,
+        message:
+          type === "draw-offer-declined"
+            ? `${getPlayerName(opponentId)} declined your draw offer.`
+            : `${getPlayerName(opponentId)} declined your takeback request.`,
+      });
+    },
+    [getPlayerName],
+  );
+
   const metaActionExecutorRef = useRef<MetaActionExecutor | null>(null);
   const getMetaActionExecutor = useCallback(() => {
     metaActionExecutorRef.current ??= createMetaActionExecutor({
@@ -642,6 +666,9 @@ export function useMetaGameActions({
           addSystemMessage(
             `${getPlayerName(opponentId)} declined the draw offer.`,
           );
+          if (primaryLocalPlayerId === actorId) {
+            recordRejectionNotice("draw-offer-declined", opponentId);
+          }
         }
       })
       .catch((error) => {
@@ -673,6 +700,7 @@ export function useMetaGameActions({
     setActionError,
     getSeatController,
     getMetaActionExecutor,
+    recordRejectionNotice,
   ]);
 
   const handleCancelDrawOffer = useCallback(() => {
@@ -866,6 +894,9 @@ export function useMetaGameActions({
           addSystemMessage(
             `${getPlayerName(responderId)} declined the takeback request.`,
           );
+          if (primaryLocalPlayerId === requesterId) {
+            recordRejectionNotice("takeback-request-declined", responderId);
+          }
         }
       })
       .catch((error) => {
@@ -897,6 +928,7 @@ export function useMetaGameActions({
     setActionError,
     getSeatController,
     getMetaActionExecutor,
+    recordRejectionNotice,
   ]);
 
   const handleCancelTakebackRequest = useCallback(() => {
@@ -1080,6 +1112,7 @@ export function useMetaGameActions({
         pendingDrawOffer.opponentSeatId === playerId
       ) {
         setPendingDrawOffer(null);
+        recordRejectionNotice("draw-offer-declined", playerId);
       }
       addSystemMessage(`${getPlayerName(playerId)} declined the draw offer.`);
     },
@@ -1089,6 +1122,7 @@ export function useMetaGameActions({
       resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
+      recordRejectionNotice,
     ],
   );
 
@@ -1131,6 +1165,7 @@ export function useMetaGameActions({
         pendingTakebackRequest.opponentSeatId === playerId
       ) {
         setPendingTakebackRequest(null);
+        recordRejectionNotice("takeback-request-declined", playerId);
       }
       addSystemMessage(
         `${getPlayerName(playerId)} declined the takeback request.`,
@@ -1142,6 +1177,7 @@ export function useMetaGameActions({
       resolveSeatChannel,
       addSystemMessage,
       getPlayerName,
+      recordRejectionNotice,
     ],
   );
 

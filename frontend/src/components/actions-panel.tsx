@@ -37,7 +37,11 @@ interface OutgoingTimeInfo {
 
 interface PassiveNotice {
   id: number;
-  type: "opponent-resigned" | "opponent-gave-time";
+  type:
+    | "opponent-resigned"
+    | "opponent-gave-time"
+    | "draw-offer-declined"
+    | "takeback-request-declined";
   message: string;
 }
 
@@ -424,14 +428,22 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
       );
     }
     if (incomingPassiveNotice && !isReadOnlyView) {
+      const noticeIcon = (() => {
+        switch (incomingPassiveNotice.type) {
+          case "opponent-resigned":
+            return <Flag className="w-4 h-4 text-destructive shrink-0" />;
+          case "opponent-gave-time":
+            return <Timer className="w-4 h-4 text-primary shrink-0" />;
+          case "draw-offer-declined":
+            return <Handshake className="w-4 h-4 text-destructive shrink-0" />;
+          case "takeback-request-declined":
+            return <RotateCcw className="w-4 h-4 text-destructive shrink-0" />;
+        }
+      })();
       return (
         <>
           <div className="flex items-center gap-2 text-xs sm:text-sm leading-tight">
-            {incomingPassiveNotice.type === "opponent-resigned" ? (
-              <Flag className="w-4 h-4 text-destructive shrink-0" />
-            ) : (
-              <Timer className="w-4 h-4 text-primary shrink-0" />
-            )}
+            {noticeIcon}
             <span className="truncate">{incomingPassiveNotice.message}</span>
           </div>
           <div>
