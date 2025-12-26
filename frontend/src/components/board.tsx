@@ -1315,10 +1315,10 @@ export function Board({
                 return (
                   <div
                     key={`${rowIndex}-${colIndex}`}
-                    className={`aspect-square border border-amber-400 dark:border-border flex items-center justify-center relative cursor-pointer transition-colors ${
+                    className={`aspect-square flex items-center justify-center relative cursor-pointer transition-colors ${
                       isLight
-                        ? "bg-amber-200 dark:bg-muted/80 hover:bg-amber-300 dark:hover:bg-accent/30"
-                        : "bg-amber-100 dark:bg-background hover:bg-amber-200 dark:hover:bg-accent/30"
+                        ? "bg-amber-300/45 dark:bg-muted hover:bg-amber-400/70 dark:hover:bg-accent/40"
+                        : "bg-amber-200/50 dark:bg-muted/50 hover:bg-amber-300/60 dark:hover:bg-accent/30"
                     }`}
                     onClick={() => {
                       // Suppress exactly one ghost click after touch drag
