@@ -121,7 +121,7 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
 
 ### Freestyle
 
-A variant where the cat and mice start at random places, and there are some starting walls.
+A randomized 12x10 setup with neutral starting walls.
 `;
 
 export const Route = createFileRoute("/learn")({

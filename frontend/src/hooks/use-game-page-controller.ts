@@ -9,6 +9,10 @@ import {
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import { type GameAction } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
+import {
+  generateFreestyleInitialState,
+  normalizeFreestyleConfig,
+} from "../../../shared/domain/freestyle-setup";
 import type {
   PlayerId,
   Cell,
@@ -18,6 +22,7 @@ import type {
   Action,
   MatchType,
   GameSnapshot,
+  GameInitialState,
 } from "../../../shared/domain/game-types";
 import {
   moveToStandardNotation,
@@ -673,11 +678,12 @@ export function useGamePageController(gameId: string) {
     (
       incomingConfig: GameConfiguration,
       incomingPlayers: PlayerType[],
-      options?: { forceYouFirst?: boolean },
+      options?: { forceYouFirst?: boolean; initialState?: GameInitialState },
     ) => {
       const nextGameId = currentGameIdRef.current + 1;
       currentGameIdRef.current = nextGameId;
       setGameInstanceId(nextGameId);
+      const normalizedConfig = normalizeFreestyleConfig(incomingConfig);
       const sanitizedPlayers = sanitizePlayerList(incomingPlayers, {
         forceYouFirst: options?.forceYouFirst ?? true,
       });
@@ -685,12 +691,16 @@ export function useGamePageController(gameId: string) {
         const idx = sanitizedPlayers.findIndex((type) => type === "you");
         return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
       })();
-      const state = new GameState(incomingConfig, Date.now());
+      const state = new GameState(
+        normalizedConfig,
+        Date.now(),
+        options?.initialState,
+      );
 
       // Update view model with new game state
       applyServerUpdate({
         type: "game-state",
-        config: incomingConfig,
+        config: normalizedConfig,
         gameState: state,
         isInitial: true,
       });
@@ -959,6 +969,7 @@ export function useGamePageController(gameId: string) {
       config,
       historyEntries,
       cursor: historyCursor,
+      initialSnapshot: gameState.getInitialSnapshot(),
     });
   }, [historyCursor, gameState, config, historyEntries]);
   const historyLastMoves = useMemo(() => {
@@ -2614,10 +2625,10 @@ export function useGamePageController(gameId: string) {
         setHasLocalConfig(true);
         try {
           const parsed = JSON.parse(stored) as StoredLocalGameConfig;
-          resolvedConfig = {
+          resolvedConfig = normalizeFreestyleConfig({
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
-          };
+          });
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;
@@ -2676,7 +2687,14 @@ export function useGamePageController(gameId: string) {
       (participantIndex) => participants[participantIndex],
     );
 
-    initializeGame(resolvedConfig, playersForGame, { forceYouFirst: false });
+    const initialState =
+      resolvedConfig.variant === "freestyle"
+        ? generateFreestyleInitialState()
+        : undefined;
+    initializeGame(resolvedConfig, playersForGame, {
+      forceYouFirst: false,
+      initialState,
+    });
     setIsLoadingConfig(false);
 
     return () => {

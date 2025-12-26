@@ -3,7 +3,7 @@ export {};
 declare module "@tanstack/history" {
   interface HistoryState {
     pastGamesFilters?: {
-      variant?: "all" | "standard" | "classic";
+      variant?: "all" | "standard" | "classic" | "freestyle";
       rated?: "all" | "yes" | "no";
       timeControl?: "all" | "bullet" | "blitz" | "rapid" | "classical";
       boardSize?: "all" | "small" | "medium" | "large";
@@ -13,7 +13,7 @@ declare module "@tanstack/history" {
       eloMax?: string;
     };
     rankingFilters?: {
-      variant?: "standard" | "classic";
+      variant?: "standard" | "classic" | "freestyle";
       timeControl?: "bullet" | "blitz" | "rapid" | "classical";
       player?: string;
     };

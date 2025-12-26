@@ -13,6 +13,7 @@ import type {
   PawnType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
+import { normalizeFreestyleConfig } from "../../../shared/domain/freestyle-setup";
 import type {
   SettingsResponse,
   VariantParameters,
@@ -162,19 +163,19 @@ function useSettingsInternal(
           ) as VariantSettingsMap;
           const variantParams = variantSettings[defaultGameConfig.variant];
           if (variantParams) {
-            return {
+            return normalizeFreestyleConfig({
               ...defaultGameConfig,
               boardWidth: variantParams.boardWidth ?? 8,
               boardHeight: variantParams.boardHeight ?? 8,
               rated: false,
-            };
+            });
           }
         }
       } catch {
         // If parsing fails, fall back to default
       }
 
-      return { ...defaultGameConfig, rated: false };
+      return normalizeFreestyleConfig({ ...defaultGameConfig, rated: false });
     });
 
   // Display name state (always initialized, but only used for logged-in users)
@@ -347,7 +348,7 @@ function useSettingsInternal(
     if (!dbSettings) return null;
     const currentVariant = dbSettings.defaultVariant ?? DEFAULT_VARIANT;
     const currentVariantParams = variantSettingsFromDb[currentVariant];
-    return {
+    return normalizeFreestyleConfig({
       timeControl: timeControlConfigFromPreset(
         dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,
       ),
@@ -355,7 +356,7 @@ function useSettingsInternal(
       variant: currentVariant,
       boardWidth: currentVariantParams?.boardWidth ?? 8,
       boardHeight: currentVariantParams?.boardHeight ?? 8,
-    };
+    });
   }, [isLoggedIn, dbSettings, variantSettingsFromDb]);
 
   // Track mutation states
@@ -577,7 +578,7 @@ function useSettingsInternal(
   const gameConfig = isLoggedIn
     ? (gameConfigFromDb ??
       ({ ...defaultGameConfig, rated: false } as GameConfiguration))
-    : localGameConfig;
+    : normalizeFreestyleConfig(localGameConfig);
 
   // Aggregate mutation states (excluding display name mutation - it has its own error state)
   const isSavingSettings =
@@ -662,17 +663,21 @@ function useSettingsInternal(
 
       // When variant changes, load saved parameters for the new variant
       if (newConfig.variant !== gameConfig.variant) {
-        const variantParams = variantSettingsFromDb[newConfig.variant];
-        if (variantParams) {
-          newConfig = {
-            ...newConfig,
-            boardWidth: variantParams.boardWidth ?? 8,
-            boardHeight: variantParams.boardHeight ?? 8,
-          };
+        if (newConfig.variant !== "freestyle") {
+          const variantParams = variantSettingsFromDb[newConfig.variant];
+          if (variantParams) {
+            newConfig = {
+              ...newConfig,
+              boardWidth: variantParams.boardWidth ?? 8,
+              boardHeight: variantParams.boardHeight ?? 8,
+            };
+          }
         }
         // Mutation's onMutate handles the optimistic update
         updateDefaultVariantMutation.mutate(newConfig.variant);
       }
+
+      newConfig = normalizeFreestyleConfig(newConfig);
 
       // Handle time control change
       if (
@@ -696,6 +701,7 @@ function useSettingsInternal(
       // Handle variant parameters change (when variant stays the same)
       if (
         newConfig.variant === gameConfig.variant &&
+        newConfig.variant !== "freestyle" &&
         (newConfig.boardWidth !== gameConfig.boardWidth ||
           newConfig.boardHeight !== gameConfig.boardHeight)
       ) {
@@ -713,28 +719,33 @@ function useSettingsInternal(
 
       // When variant changes, save current variant's parameters and load new ones
       if (newConfig.variant !== gameConfig.variant) {
-        setLocalVariantSettings((prev) => ({
-          ...prev,
-          [gameConfig.variant]: {
-            boardWidth: gameConfig.boardWidth,
-            boardHeight: gameConfig.boardHeight,
-          },
-        }));
+        if (gameConfig.variant !== "freestyle") {
+          setLocalVariantSettings((prev) => ({
+            ...prev,
+            [gameConfig.variant]: {
+              boardWidth: gameConfig.boardWidth,
+              boardHeight: gameConfig.boardHeight,
+            },
+          }));
+        }
 
         // Load saved parameters for the new variant
-        const variantParams = localVariantSettings[newConfig.variant];
-        if (variantParams) {
-          newConfig = {
-            ...newConfig,
-            boardWidth: variantParams.boardWidth ?? 8,
-            boardHeight: variantParams.boardHeight ?? 8,
-          };
+        if (newConfig.variant !== "freestyle") {
+          const variantParams = localVariantSettings[newConfig.variant];
+          if (variantParams) {
+            newConfig = {
+              ...newConfig,
+              boardWidth: variantParams.boardWidth ?? 8,
+              boardHeight: variantParams.boardHeight ?? 8,
+            };
+          }
         }
       }
 
       // Save variant parameters when dimensions change (but variant stays the same)
       if (
         newConfig.variant === gameConfig.variant &&
+        newConfig.variant !== "freestyle" &&
         (newConfig.boardWidth !== gameConfig.boardWidth ||
           newConfig.boardHeight !== gameConfig.boardHeight)
       ) {
@@ -747,6 +758,7 @@ function useSettingsInternal(
         }));
       }
 
+      newConfig = normalizeFreestyleConfig(newConfig);
       setLocalGameConfig(newConfig);
     }
   };

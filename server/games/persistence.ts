@@ -102,6 +102,7 @@ export const persistCompletedGame = async (
       gameId: session.id,
       configParameters: {
         timeControl: session.config.timeControl,
+        initialState: state.getInitialState(),
       },
       moves: moveNotations,
     });

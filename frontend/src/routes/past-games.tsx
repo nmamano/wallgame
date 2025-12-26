@@ -38,7 +38,7 @@ export const Route = createFileRoute("/past-games")({
 const PAGE_SIZE = 100;
 
 interface Filters {
-  variant: "all" | "standard" | "classic";
+  variant: "all" | "standard" | "classic" | "freestyle";
   rated: "all" | "yes" | "no";
   timeControl: "all" | "bullet" | "blitz" | "rapid" | "classical";
   boardSize: "all" | "small" | "medium" | "large";
@@ -195,6 +195,7 @@ function PastGames() {
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
+                  <SelectItem value="freestyle">Freestyle</SelectItem>
                 </SelectContent>
               </Select>
             </div>

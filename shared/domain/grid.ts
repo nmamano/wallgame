@@ -1,6 +1,11 @@
 import type { PlayerId, Cell, WallPosition, Variant } from "./game-types";
 import { cellEq } from "./game-utils";
 
+const NEUTRAL_WALL_OWNER = 255;
+
+const resolveWallOwner = (owner: number): PlayerId | undefined =>
+  owner === 1 || owner === 2 ? (owner as PlayerId) : undefined;
+
 /**
  * Represents the state of a 2D grid-based board including wall positions and ownership.
  *
@@ -100,7 +105,7 @@ export class Grid {
     const r = wall.cell[0];
     const c = wall.cell[1];
     const current = this.cells[r][c];
-    const ownerId = wall.playerId ?? 1; // Default to player 1 if not specified
+    const ownerId = wall.playerId ?? NEUTRAL_WALL_OWNER;
 
     if (wall.orientation === "vertical") {
       // Set lower byte to owner ID, preserve upper byte
@@ -207,14 +212,14 @@ export class Grid {
           walls.push({
             cell: [r, c],
             orientation: "vertical",
-            playerId: verticalOwner as PlayerId,
+            playerId: resolveWallOwner(verticalOwner),
           });
         }
         if (horizontalOwner !== 0) {
           walls.push({
             cell: [r, c],
             orientation: "horizontal",
-            playerId: horizontalOwner as PlayerId,
+            playerId: resolveWallOwner(horizontalOwner),
           });
         }
       }

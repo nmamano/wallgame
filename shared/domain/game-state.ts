@@ -9,6 +9,7 @@ import type {
   GameConfiguration,
   Pawn,
   GameAction,
+  GameInitialState,
 } from "./game-types";
 import { Grid } from "./grid";
 import { cellEq } from "./game-utils";
@@ -44,25 +45,51 @@ export class GameState {
   private initialGrid: Grid;
   private initialPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
 
-  constructor(config: GameConfiguration, startTime: number) {
+  constructor(
+    config: GameConfiguration,
+    startTime: number,
+    initialState?: GameInitialState,
+  ) {
     this.config = config;
     this.grid = new Grid(config.boardWidth, config.boardHeight, config.variant);
 
     const rows = config.boardHeight;
     const cols = config.boardWidth;
 
-    // Always use default starting positions
-    // Cats start at top (row 0), mice start at bottom (row rows-1)
-    this.pawns = {
-      1: {
-        cat: [0, 0],
-        mouse: [rows - 1, 0],
-      },
-      2: {
-        cat: [0, cols - 1],
-        mouse: [rows - 1, cols - 1],
-      },
-    };
+    if (initialState) {
+      this.pawns = {
+        1: {
+          cat: [initialState.pawns[1].cat[0], initialState.pawns[1].cat[1]],
+          mouse: [
+            initialState.pawns[1].mouse[0],
+            initialState.pawns[1].mouse[1],
+          ],
+        },
+        2: {
+          cat: [initialState.pawns[2].cat[0], initialState.pawns[2].cat[1]],
+          mouse: [
+            initialState.pawns[2].mouse[0],
+            initialState.pawns[2].mouse[1],
+          ],
+        },
+      };
+      initialState.walls.forEach((wall) => {
+        this.grid.addWall(wall);
+      });
+    } else {
+      // Always use default starting positions
+      // Cats start at top (row 0), mice start at bottom (row rows-1)
+      this.pawns = {
+        1: {
+          cat: [0, 0],
+          mouse: [rows - 1, 0],
+        },
+        2: {
+          cat: [0, cols - 1],
+          mouse: [rows - 1, cols - 1],
+        },
+      };
+    }
 
     // Save initial state
     this.initialGrid = this.grid.clone();
@@ -497,5 +524,32 @@ export class GameState {
       { playerId: 2, type: "cat", cell: this.pawns[2].cat },
       { playerId: 2, type: "mouse", cell: this.pawns[2].mouse },
     ];
+  }
+
+  getInitialSnapshot(): {
+    grid: Grid;
+    pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  } {
+    return {
+      grid: this.initialGrid.clone(),
+      pawns: {
+        1: {
+          cat: [this.initialPawns[1].cat[0], this.initialPawns[1].cat[1]],
+          mouse: [this.initialPawns[1].mouse[0], this.initialPawns[1].mouse[1]],
+        },
+        2: {
+          cat: [this.initialPawns[2].cat[0], this.initialPawns[2].cat[1]],
+          mouse: [this.initialPawns[2].mouse[0], this.initialPawns[2].mouse[1]],
+        },
+      },
+    };
+  }
+
+  getInitialState(): GameInitialState {
+    const snapshot = this.getInitialSnapshot();
+    return {
+      pawns: snapshot.pawns,
+      walls: snapshot.grid.getWalls(),
+    };
   }
 }

@@ -682,6 +682,7 @@ const getPlayersPerTeam = (variant: string): number => {
   switch (variant) {
     case "standard":
     case "classic":
+    case "freestyle":
     default:
       return 1;
   }

@@ -39,6 +39,7 @@ let createGameSession: typeof import("../../server/games/store").createGameSessi
 let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
+let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
@@ -60,6 +61,7 @@ async function importServerModules() {
   joinGameSession = storeModule.joinGameSession;
   applyPlayerMove = storeModule.applyPlayerMove;
   resignGame = storeModule.resignGame;
+  acceptDraw = storeModule.acceptDraw;
   persistCompletedGame = persistenceModule.persistCompletedGame;
   gamesTable = gamesSchemaModule.gamesTable;
   usersTable = usersSchemaModule.usersTable;
@@ -270,6 +272,83 @@ describe("past games persistence", () => {
       throw new Error("Expected replay response");
     }
     expect(replay2.views).toBe(2);
+  });
+
+  it("persists freestyle initial state for past games", async () => {
+    const config: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 120,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "freestyle",
+      rated: false,
+      boardWidth: 12,
+      boardHeight: 10,
+    };
+
+    const { session } = createGameSession({
+      config,
+      matchType: "friend",
+      hostDisplayName: "host",
+      hostIsPlayer1: true,
+    });
+
+    joinGameSession({
+      id: session.id,
+      displayName: "joiner",
+    });
+
+    const initialState = session.gameState.getInitialState();
+    expect(initialState.walls.length).toBeGreaterThan(0);
+    expect(initialState.walls.every((wall) => wall.playerId == null)).toBe(
+      true,
+    );
+
+    const passMove: Move = { actions: [] };
+    const startTimestamp = Date.now();
+
+    applyPlayerMove({
+      id: session.id,
+      playerId: 1,
+      move: passMove,
+      timestamp: startTimestamp,
+    });
+
+    applyPlayerMove({
+      id: session.id,
+      playerId: 2,
+      move: passMove,
+      timestamp: startTimestamp + 1000,
+    });
+
+    acceptDraw({
+      id: session.id,
+      playerId: 1,
+    });
+
+    await persistCompletedGame(session);
+
+    const res = await fetch(
+      `${baseUrl}/api/games/past?variant=freestyle&page=1&pageSize=1`,
+    );
+    expect(res.status).toBe(200);
+    const pastGames = (await res.json()) as PastGamesResponse;
+    expect(pastGames.games.length).toBe(1);
+    expect(pastGames.games[0]?.gameId).toBe(session.id);
+
+    const replayRes = await fetch(`${baseUrl}/api/games/${session.id}`);
+    expect(replayRes.status).toBe(200);
+    const replay = (await replayRes.json()) as ResolveGameAccessResponse;
+    expect(replay.kind).toBe("replay");
+    if (replay.kind !== "replay") {
+      throw new Error("Expected replay response");
+    }
+
+    expect(replay.state.initialState).toEqual(initialState);
+    expect(
+      replay.state.initialState.walls.every((wall) => wall.playerId == null),
+    ).toBe(true);
   });
 
   it("filters and paginates past games", async () => {

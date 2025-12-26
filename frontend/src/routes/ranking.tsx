@@ -44,7 +44,7 @@ const PAGE_SIZE = 100;
 type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
 
 interface RankingFilters {
-  variant: "standard" | "classic";
+  variant: "standard" | "classic" | "freestyle";
   timeControl: "bullet" | "blitz" | "rapid" | "classical";
   player: string;
 }
@@ -193,6 +193,7 @@ function Ranking() {
                 <SelectContent>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
+                  <SelectItem value="freestyle">Freestyle</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -1,5 +1,6 @@
 import { z } from "zod";
 import type { TimeControlPreset, Variant } from "../domain/game-types";
+import { variantValues } from "./games";
 
 // Request schemas
 export const updateDisplayNameSchema = z.object({
@@ -20,7 +21,7 @@ export const updatePawnSchema = z.object({
 });
 
 export const updateDefaultVariantSchema = z.object({
-  variant: z.string(),
+  variant: z.enum(variantValues),
 });
 
 export const updateTimeControlSchema = z.object({
@@ -32,7 +33,7 @@ export const updateRatedStatusSchema = z.object({
 });
 
 export const updateVariantParametersSchema = z.object({
-  variant: z.string(),
+  variant: z.enum(variantValues),
   parameters: z.object({
     boardWidth: z.number(),
     boardHeight: z.number(),

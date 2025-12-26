@@ -106,13 +106,18 @@ const buildWallMaps = (walls: WallPositionWithState[]): WallMaps => {
   return { vertical, horizontal };
 };
 
+const NEUTRAL_WALL_COLOR = "#92400e";
+
 const getWallColor = (
   wall: WallPositionWithState,
   playerColors?: Record<PlayerId, PlayerColor>,
 ): string => {
-  if (wall.state === "placed" && wall.playerId && playerColors) {
-    const color = playerColors[wall.playerId];
-    return colorHexMap[color] || "#dc2626";
+  if (wall.state === "placed") {
+    if (wall.playerId && playerColors) {
+      const color = playerColors[wall.playerId];
+      return colorHexMap[color] || "#dc2626";
+    }
+    return NEUTRAL_WALL_COLOR;
   }
   if (wall.state === "staged") return "#fbbf24";
   if (wall.state === "premoved") return "#60a5fa";
