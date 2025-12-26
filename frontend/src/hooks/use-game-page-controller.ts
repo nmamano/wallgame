@@ -1666,6 +1666,18 @@ export function useGamePageController(gameId: string) {
     previousHistoryLengthRef.current = 0;
   }, [gameInstanceId]);
 
+  const prevMatchingPanelOpenRef = useRef<boolean | null>(null);
+  useEffect(() => {
+    const prev = prevMatchingPanelOpenRef.current;
+    prevMatchingPanelOpenRef.current = matchingPanelOpen;
+    // Play sound when matching panel closes (all seats filled, game starts)
+    if (prev === true && matchingPanelOpen === false) {
+      if (soundEnabled && !isReadOnlySession) {
+        play(sounds.gameStart);
+      }
+    }
+  }, [matchingPanelOpen, soundEnabled, isReadOnlySession]);
+
   useEffect(() => {
     if (historyCursor === null) return;
     if (historyEntryCount === 0) {
@@ -3084,6 +3096,9 @@ export function useGamePageController(gameId: string) {
 
   useEffect(() => {
     if (gameState?.status !== "finished" || !gameState.result) return;
+    if (soundEnabledRef.current) {
+      play(sounds.gameEnd);
+    }
     const result = gameState.result;
     if (result.winner) {
       const player =
