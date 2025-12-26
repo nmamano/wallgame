@@ -23,6 +23,11 @@ import type {
   Cell,
   WallPosition,
 } from "../../../shared/domain/game-types";
+import {
+  type Annotation,
+  ANNOTATION_COLOR,
+  ANNOTATION_PREVIEW_OPACITY,
+} from "@/hooks/use-annotations";
 import type { Pawn } from "../../../shared/domain/game-types";
 import { pawnId } from "../../../shared/domain/game-utils";
 
@@ -80,6 +85,18 @@ export interface BoardProps {
   controllablePlayerId?: PlayerId;
   forceReadOnly?: boolean;
   disableMousePawnInteraction?: boolean;
+  // Annotation props
+  annotations?: Annotation[];
+  previewAnnotation?: Annotation | null;
+  onWallSlotRightClick?: (
+    row: number,
+    col: number,
+    orientation: WallOrientation,
+  ) => void;
+  onCellRightClickDragStart?: (row: number, col: number) => void;
+  onCellRightClickDragMove?: (row: number, col: number) => void;
+  onCellRightClickDragEnd?: (row: number, col: number) => void;
+  onArrowDragFinalize?: () => void;
 }
 
 interface WallMaps {
@@ -182,6 +199,13 @@ export function Board({
   controllablePlayerId,
   forceReadOnly = false,
   disableMousePawnInteraction = false,
+  annotations = [],
+  previewAnnotation,
+  onWallSlotRightClick,
+  onCellRightClickDragStart,
+  onCellRightClickDragMove,
+  onCellRightClickDragEnd,
+  onArrowDragFinalize,
 }: BoardProps) {
   // Generate IDs for pawns internally
   const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
@@ -212,6 +236,11 @@ export function Board({
     gapX: 0,
     gapY: 0,
   });
+
+  // Right-click drag state for annotations (arrow drawing)
+  const rightClickDragStart = useRef<{ row: number; col: number } | null>(null);
+  // Flag to suppress contextmenu after arrow drag (since contextmenu fires after mouseup)
+  const suppressNextContextMenu = useRef(false);
 
   // Touch drag state
   const [touchDragPawnId, setTouchDragPawnId] = useState<string | null>(null);
@@ -260,6 +289,41 @@ export function Board({
     resizeObserver.observe(node);
     return () => resizeObserver.disconnect();
   }, [rows, cols]);
+
+  // Global mouseup handler to finalize arrow drag when released outside a cell
+  useEffect(() => {
+    if (!onArrowDragFinalize) return;
+
+    const handleGlobalMouseUp = (event: globalThis.MouseEvent) => {
+      // Only handle right-click releases
+      if (event.button === 2 && rightClickDragStart.current) {
+        // Set flag to suppress the contextmenu that fires after mouseup
+        suppressNextContextMenu.current = true;
+        rightClickDragStart.current = null;
+        onArrowDragFinalize();
+      }
+    };
+
+    // Capture-phase contextmenu handler to block wall annotations during arrow drag
+    const handleGlobalContextMenu = (event: globalThis.MouseEvent) => {
+      if (suppressNextContextMenu.current) {
+        event.preventDefault();
+        event.stopPropagation();
+        suppressNextContextMenu.current = false;
+      }
+    };
+
+    document.addEventListener("mouseup", handleGlobalMouseUp);
+    document.addEventListener("contextmenu", handleGlobalContextMenu, true); // capture phase
+    return () => {
+      document.removeEventListener("mouseup", handleGlobalMouseUp);
+      document.removeEventListener(
+        "contextmenu",
+        handleGlobalContextMenu,
+        true,
+      );
+    };
+  }, [onArrowDragFinalize]);
 
   const cellWidthPx = useMemo(() => {
     if (cols <= 0) return 0;
@@ -550,6 +614,207 @@ export function Board({
         />
       </svg>
     );
+  };
+
+  // Render annotation circle on a cell
+  const renderAnnotationCircle = (
+    row: number,
+    col: number,
+    index: number,
+    isPreview = false,
+  ): ReactNode => {
+    if (gridMetrics.width === 0 || gridMetrics.height === 0) return null;
+
+    const { leftPercent, topPercent } = getCellCenterPosition(row, col);
+    const circleSize = Math.min(cellWidthPx, cellHeightPx) * 0.7;
+
+    return (
+      <div
+        key={`annotation-circle-${row}-${col}-${index}`}
+        className="absolute rounded-full pointer-events-none"
+        style={{
+          width: `${circleSize}px`,
+          height: `${circleSize}px`,
+          top: `${topPercent}%`,
+          left: `${leftPercent}%`,
+          transform: "translate(-50%, -50%)",
+          border: `3px solid ${ANNOTATION_COLOR}`,
+          zIndex: 14, // Above pillars (z-index 12)
+          opacity: isPreview ? ANNOTATION_PREVIEW_OPACITY : 1,
+        }}
+      />
+    );
+  };
+
+  // Render annotation line on a wall slot
+  const renderAnnotationWallLine = (
+    row: number,
+    col: number,
+    orientation: WallOrientation,
+    index: number,
+  ): ReactNode => {
+    if (cellWidthPx === 0 || cellHeightPx === 0) return null;
+
+    const isVertical = orientation === "vertical";
+    let style: CSSProperties;
+
+    if (isVertical) {
+      // Vertical wall slot: between col and col+1
+      const rect = getCellRect(row, col);
+      if (!rect) return null;
+      const wallCenterX = rect.left + rect.width + gridMetrics.gapX / 2;
+      const thickness = 4;
+
+      style = {
+        position: "absolute",
+        height: `${rect.height * 0.8}px`,
+        width: `${thickness}px`,
+        top: `${rect.top + rect.height * 0.1}px`,
+        left: `${wallCenterX}px`,
+        transform: "translateX(-50%)",
+        backgroundColor: ANNOTATION_COLOR,
+        zIndex: 14, // Above pillars (z-index 12)
+        pointerEvents: "none",
+        borderRadius: "2px",
+      };
+    } else {
+      // Horizontal wall slot: between row-1 and row
+      const anchorRow = row - 1;
+      const rect = getCellRect(anchorRow, col);
+      if (!rect) return null;
+      const wallCenterY = rect.bottom + gridMetrics.gapY / 2;
+      const thickness = 4;
+
+      style = {
+        position: "absolute",
+        width: `${rect.width * 0.8}px`,
+        height: `${thickness}px`,
+        left: `${rect.left + rect.width * 0.1}px`,
+        top: `${wallCenterY}px`,
+        transform: "translateY(-50%)",
+        backgroundColor: ANNOTATION_COLOR,
+        zIndex: 14, // Above pillars (z-index 12)
+        pointerEvents: "none",
+        borderRadius: "2px",
+      };
+    }
+
+    return (
+      <div
+        key={`annotation-wall-${row}-${col}-${orientation}-${index}`}
+        style={style}
+      />
+    );
+  };
+
+  // Render annotation arrow between cells
+  const renderAnnotationArrow = (
+    from: Cell,
+    to: Cell,
+    index: number,
+    isPreview = false,
+  ): ReactNode => {
+    if (gridMetrics.width === 0 || gridMetrics.height === 0) return null;
+
+    const fromCenter = getCellCenterPosition(from[0], from[1]);
+    const toCenter = getCellCenterPosition(to[0], to[1]);
+    const { start, end } = shortenLineBetweenCenters(
+      { x: fromCenter.x, y: fromCenter.y },
+      { x: toCenter.x, y: toCenter.y },
+      getArrowScale(from[0], from[1], to[0], to[1]),
+    );
+
+    const { strokeWidth, markerSize, markerRef } = arrowVisuals;
+    const markerId = `annotation-arrowhead-${from[0]}-${from[1]}-${to[0]}-${to[1]}-${index}`;
+    const opacity = isPreview ? ANNOTATION_PREVIEW_OPACITY : 1;
+
+    return (
+      <svg
+        key={`annotation-arrow-${from[0]}-${from[1]}-${to[0]}-${to[1]}-${index}`}
+        className="absolute inset-0 pointer-events-none"
+        style={{ zIndex: 14 }} // Above pillars (z-index 12)
+        viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
+          gridMetrics.height,
+          1,
+        )}`}
+        preserveAspectRatio="none"
+      >
+        <defs>
+          <marker
+            id={markerId}
+            markerWidth={markerSize}
+            markerHeight={markerSize}
+            refX={markerRef}
+            refY={markerRef}
+            orient="auto"
+          >
+            <polygon
+              points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
+              fill={ANNOTATION_COLOR}
+              opacity={opacity}
+            />
+          </marker>
+        </defs>
+        <line
+          x1={start.x}
+          y1={start.y}
+          x2={end.x}
+          y2={end.y}
+          stroke={ANNOTATION_COLOR}
+          strokeWidth={strokeWidth}
+          strokeLinecap="round"
+          strokeLinejoin="round"
+          markerEnd={`url(#${markerId})`}
+          opacity={opacity}
+        />
+      </svg>
+    );
+  };
+
+  // Render all annotations - returns array of ReactNodes to be rendered in JSX
+  const renderAnnotations = () => {
+    const rendered = annotations.map((annotation, index) => {
+      if (annotation.type === "circle") {
+        return renderAnnotationCircle(annotation.row, annotation.col, index);
+      }
+      if (annotation.type === "wall-line") {
+        return renderAnnotationWallLine(
+          annotation.row,
+          annotation.col,
+          annotation.orientation,
+          index,
+        );
+      }
+      if (annotation.type === "arrow") {
+        return renderAnnotationArrow(annotation.from, annotation.to, index);
+      }
+      return null;
+    });
+
+    // Also render the preview annotation if present (with lighter opacity)
+    if (previewAnnotation) {
+      if (previewAnnotation.type === "circle") {
+        rendered.push(
+          renderAnnotationCircle(
+            previewAnnotation.row,
+            previewAnnotation.col,
+            -1,
+            true, // isPreview
+          ),
+        );
+      } else if (previewAnnotation.type === "arrow") {
+        rendered.push(
+          renderAnnotationArrow(
+            previewAnnotation.from,
+            previewAnnotation.to,
+            -1,
+            true, // isPreview
+          ),
+        );
+      }
+    }
+
+    return rendered;
   };
 
   const getCellRect = useCallback(
@@ -1216,6 +1481,16 @@ export function Board({
                           "horizontal" as WallOrientation,
                         )
                       }
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        // Don't add wall annotation if we're in an arrow drag
+                        if (rightClickDragStart.current) return;
+                        onWallSlotRightClick?.(
+                          rowIndex + 1,
+                          colIndex,
+                          "horizontal" as WallOrientation,
+                        );
+                      }}
                     />
                   );
                 }),
@@ -1247,6 +1522,16 @@ export function Board({
                           "vertical" as WallOrientation,
                         )
                       }
+                      onContextMenu={(event) => {
+                        event.preventDefault();
+                        // Don't add wall annotation if we're in an arrow drag
+                        if (rightClickDragStart.current) return;
+                        onWallSlotRightClick?.(
+                          rowIndex,
+                          colIndex,
+                          "vertical" as WallOrientation,
+                        );
+                      }}
                     />
                   );
                 }),
@@ -1256,6 +1541,8 @@ export function Board({
             {arrows.map((arrow, index) => renderArrow(arrow, index))}
             {/* Render last move arrow */}
             {renderLastMoveArrows()}
+            {/* Render annotations */}
+            {renderAnnotations()}
             {/* Render move targets */}
             {renderMoveHighlights()}
 
@@ -1330,7 +1617,18 @@ export function Board({
                   className={`shadow-md ${borderStyle}`}
                   onContextMenu={(e) => {
                     e.preventDefault();
-                    onWallRightClick?.(index);
+                    // Don't add wall annotation if we're in an arrow drag
+                    if (rightClickDragStart.current) return;
+                    // If annotation handler exists, use it; otherwise fall back to wall right-click
+                    if (onWallSlotRightClick) {
+                      onWallSlotRightClick(
+                        pWall.cell[0],
+                        pWall.cell[1],
+                        pWall.orientation,
+                      );
+                    } else {
+                      onWallRightClick?.(index);
+                    }
                   }}
                 />
               );
@@ -1358,6 +1656,32 @@ export function Board({
                         return;
                       }
                       onCellClick?.(rowIndex, colIndex);
+                    }}
+                    onContextMenu={(event) => {
+                      event.preventDefault();
+                    }}
+                    onMouseDown={(event) => {
+                      // Right click starts annotation drag
+                      if (event.button === 2) {
+                        rightClickDragStart.current = {
+                          row: rowIndex,
+                          col: colIndex,
+                        };
+                        onCellRightClickDragStart?.(rowIndex, colIndex);
+                      }
+                    }}
+                    onMouseUp={(event) => {
+                      // Right click ends annotation drag
+                      if (event.button === 2 && rightClickDragStart.current) {
+                        rightClickDragStart.current = null;
+                        onCellRightClickDragEnd?.(rowIndex, colIndex);
+                      }
+                    }}
+                    onMouseEnter={() => {
+                      // Track mouse movement during right-click drag
+                      if (rightClickDragStart.current) {
+                        onCellRightClickDragMove?.(rowIndex, colIndex);
+                      }
                     }}
                     onDragOver={(event) => {
                       if (!dragEnabled) return;
