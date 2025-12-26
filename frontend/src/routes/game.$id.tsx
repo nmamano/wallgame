@@ -263,8 +263,10 @@ function GamePage() {
                 config={info.config}
                 defaultVariant={info.defaultVariant}
                 defaultTimeControlPreset={info.defaultTimeControlPreset}
-                soundEnabled={info.soundEnabled}
-                onSoundToggle={info.onSoundToggle}
+                sfxEnabled={info.sfxEnabled}
+                onSfxToggle={info.onSfxToggle}
+                musicEnabled={info.musicEnabled}
+                onMusicToggle={info.onMusicToggle}
                 interactionLocked={info.interactionLocked}
                 isMultiplayerMatch={info.isMultiplayerMatch}
                 unsupportedPlayers={info.unsupportedPlayers}

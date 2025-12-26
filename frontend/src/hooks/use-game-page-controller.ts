@@ -34,6 +34,7 @@ import {
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { sounds, play } from "@/lib/sounds";
+import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
 import {
@@ -241,8 +242,37 @@ export function useGamePageController(gameId: string) {
   const settings = useSettings(isLoggedIn, userPending);
   const navigate = useNavigate();
 
-  // Sound setting from global provider (persisted to localStorage)
-  const { soundEnabled, setSoundEnabled, soundEnabledRef } = useSound();
+  // Sound settings from global provider (persisted to localStorage)
+  const {
+    sfxEnabled,
+    setSfxEnabled,
+    sfxEnabledRef,
+    musicEnabled,
+    setMusicEnabled,
+    musicEnabledRef,
+  } = useSound();
+
+  // ============================================================================
+  // Music Controller - plays background music only during game sessions
+  // ============================================================================
+  const musicControllerRef = useRef<MusicController | null>(null);
+
+  // Create and start music controller on mount, teardown on unmount
+  useEffect(() => {
+    const controller = new MusicController(musicEnabledRef);
+    musicControllerRef.current = controller;
+    controller.start();
+
+    return () => {
+      controller.teardown();
+      musicControllerRef.current = null;
+    };
+  }, [musicEnabledRef]);
+
+  // React to musicEnabled policy changes
+  useEffect(() => {
+    musicControllerRef.current?.onPolicyChange(musicEnabled);
+  }, [musicEnabled]);
 
   // ============================================================================
   // Local Preferences (derived from settings hook)
@@ -823,7 +853,7 @@ export function useGamePageController(gameId: string) {
         if (!isInitial && seat.playerId === resolvedState.turn) {
           const lastEntry =
             resolvedState.history[resolvedState.history.length - 1];
-          if (lastEntry && soundEnabledRef.current) {
+          if (lastEntry && sfxEnabledRef.current) {
             const hasWall = lastEntry.move.actions.some(
               (a) => a.type === "wall",
             );
@@ -910,7 +940,7 @@ export function useGamePageController(gameId: string) {
     maskToken,
     seatActionsRef,
     setMatchError,
-    soundEnabledRef,
+    sfxEnabledRef,
     teardownRemoteController,
   ]);
 
@@ -1384,7 +1414,7 @@ export function useGamePageController(gameId: string) {
       if (removed) {
         setQueue(nextQueue);
         setActionError(null);
-        if (soundEnabled) {
+        if (sfxEnabled) {
           play(action.type === "wall" ? sounds.wallUndo : sounds.pawnUndo);
         }
         return "removed";
@@ -1402,7 +1432,7 @@ export function useGamePageController(gameId: string) {
       }
       setQueue(nextQueue);
       setActionError(null);
-      if (soundEnabled) {
+      if (sfxEnabled) {
         play(action.type === "wall" ? sounds.wall : sounds.pawn);
       }
       if (mode === "staged" && nextQueue.length === MAX_LOCAL_ACTIONS) {
@@ -1419,7 +1449,7 @@ export function useGamePageController(gameId: string) {
       setActionError,
       setPremovedActions,
       setStagedActions,
-      soundEnabled,
+      sfxEnabled,
       stagedActions,
     ],
   );
@@ -1674,11 +1704,11 @@ export function useGamePageController(gameId: string) {
     prevMatchingPanelOpenRef.current = matchingPanelOpen;
     // Play sound when matching panel closes (all seats filled, game starts)
     if (prev === true && matchingPanelOpen === false) {
-      if (soundEnabled && !isReadOnlySession) {
+      if (sfxEnabled && !isReadOnlySession) {
         play(sounds.gameStart);
       }
     }
-  }, [matchingPanelOpen, soundEnabled, isReadOnlySession]);
+  }, [matchingPanelOpen, sfxEnabled, isReadOnlySession]);
 
   useEffect(() => {
     if (historyCursor === null) return;
@@ -2224,7 +2254,7 @@ export function useGamePageController(gameId: string) {
       // Only play sound for bot moves - human moves already played during staging
       const controller = seatActionsRef.current[playerId];
       if (
-        soundEnabledRef.current &&
+        sfxEnabledRef.current &&
         controller &&
         isAutomatedController(controller)
       ) {
@@ -2232,7 +2262,7 @@ export function useGamePageController(gameId: string) {
         play(hasWall ? sounds.wall : sounds.pawn);
       }
     },
-    [updateGameState, playerColorsForBoard, soundEnabledRef],
+    [updateGameState, playerColorsForBoard, sfxEnabledRef],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -2857,7 +2887,7 @@ export function useGamePageController(gameId: string) {
           setSelectedPawnId(null);
           setDraggingPawnId(null);
           setActionError(null);
-          if (soundEnabled) {
+          if (sfxEnabled) {
             play(sounds.pawnUndo);
           }
           return;
@@ -2909,14 +2939,14 @@ export function useGamePageController(gameId: string) {
           return;
         }
         if (queueMode === "staged") {
-          if (soundEnabled) {
+          if (sfxEnabled) {
             play(sounds.pawn);
           }
           commitStagedActions(doubleStepSequence);
         } else {
           setPremovedActions(doubleStepSequence);
           setActionError(null);
-          if (soundEnabled) {
+          if (sfxEnabled) {
             play(sounds.pawn);
           }
         }
@@ -2951,7 +2981,7 @@ export function useGamePageController(gameId: string) {
       setPremovedActions,
       setSelectedPawnId,
       setStagedActions,
-      soundEnabled,
+      sfxEnabled,
       stagedActions,
     ],
   );
@@ -3098,7 +3128,7 @@ export function useGamePageController(gameId: string) {
 
   useEffect(() => {
     if (gameState?.status !== "finished" || !gameState.result) return;
-    if (soundEnabledRef.current) {
+    if (sfxEnabledRef.current) {
       play(sounds.gameEnd);
     }
     const result = gameState.result;
@@ -3113,7 +3143,7 @@ export function useGamePageController(gameId: string) {
     } else {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
     }
-  }, [gameState, addSystemMessage, soundEnabledRef]);
+  }, [gameState, addSystemMessage, sfxEnabledRef]);
 
   const handlePawnClick = useCallback(
     (pawnId: string) => {
@@ -3142,7 +3172,7 @@ export function useGamePageController(gameId: string) {
         setter((prev) => prev.filter((action) => action.type !== pawn.type));
         setSelectedPawnId(null);
         setActionError(null);
-        if (soundEnabled) {
+        if (sfxEnabled) {
           play(sounds.pawnUndo);
         }
         return;
@@ -3168,7 +3198,7 @@ export function useGamePageController(gameId: string) {
       setPremovedActions,
       setSelectedPawnId,
       setStagedActions,
-      soundEnabled,
+      sfxEnabled,
       stagedActions,
       viewingHistory,
     ],
@@ -3864,8 +3894,10 @@ export function useGamePageController(gameId: string) {
       config,
       defaultVariant: DEFAULT_CONFIG.variant,
       defaultTimeControlPreset: DEFAULT_CONFIG.timeControl.preset,
-      soundEnabled,
-      onSoundToggle: () => setSoundEnabled((prev) => !prev),
+      sfxEnabled,
+      onSfxToggle: () => setSfxEnabled((prev) => !prev),
+      musicEnabled,
+      onMusicToggle: () => setMusicEnabled((prev) => !prev),
       interactionLocked,
       isMultiplayerMatch: infoIsMultiplayerMatch,
       unsupportedPlayers,
