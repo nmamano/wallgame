@@ -260,6 +260,7 @@ export function GameConfigurationPanel({
             <SelectContent>
               <SelectItem value="standard">Standard</SelectItem>
               <SelectItem value="classic">Classic</SelectItem>
+              <SelectItem value="freestyle">Freestyle</SelectItem>
             </SelectContent>
           </Select>
         </div>

@@ -1,7 +1,7 @@
 import { z } from "zod";
 
 const pastGamesFiltersSchema = z.object({
-  variant: z.enum(["all", "standard", "classic"]).optional(),
+  variant: z.enum(["all", "standard", "classic", "freestyle"]).optional(),
   rated: z.enum(["all", "yes", "no"]).optional(),
   timeControl: z
     .enum(["all", "bullet", "blitz", "rapid", "classical"])
@@ -33,7 +33,7 @@ export const parsePastGamesNavState = (
 };
 
 const rankingFiltersSchema = z.object({
-  variant: z.enum(["standard", "classic"]).optional(),
+  variant: z.enum(["standard", "classic", "freestyle"]).optional(),
   timeControl: z.enum(["bullet", "blitz", "rapid", "classical"]).optional(),
   player: z.string().optional(),
 });

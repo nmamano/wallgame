@@ -22,6 +22,11 @@ import {
   timeControlConfigFromPreset,
   formatTimeControl as formatTimeControlUtil,
 } from "../../../shared/domain/game-utils";
+import {
+  FREESTYLE_BOARD_HEIGHT,
+  FREESTYLE_BOARD_WIDTH,
+  normalizeFreestyleConfig,
+} from "../../../shared/domain/freestyle-setup";
 import { Input } from "@/components/ui/input";
 import type { PlayerType } from "@/lib/gameViewModel";
 import { Switch } from "@/components/ui/switch";
@@ -52,6 +57,7 @@ function getPlayerCountForVariant(variant: Variant): number {
   switch (variant) {
     case "standard":
     case "classic":
+    case "freestyle":
       return 2;
     default:
       return 2;
@@ -313,11 +319,15 @@ function GameSetup() {
   const handleGameConfigChange = (newConfig: GameConfiguration) => {
     // Prevent setting rated to true if not allowed
     const finalRated = canRatedGame && isLoggedIn ? newConfig.rated : false;
-    setGameConfig({ ...newConfig, rated: finalRated });
+    const normalizedConfig = normalizeFreestyleConfig({
+      ...newConfig,
+      rated: finalRated,
+    });
+    setGameConfig(normalizedConfig);
 
     // If variant changed, reset player configs (preserving mode-based defaults)
-    if (newConfig.variant !== gameConfig.variant) {
-      const playerCount = getPlayerCountForVariant(newConfig.variant);
+    if (normalizedConfig.variant !== gameConfig.variant) {
+      const playerCount = getPlayerCountForVariant(normalizedConfig.variant);
       const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
       const newConfigs: PlayerType[] = Array.from(
         { length: playerCount },
@@ -837,6 +847,7 @@ function GameSetup() {
                     <SelectContent>
                       <SelectItem value="standard">Standard</SelectItem>
                       <SelectItem value="classic">Classic</SelectItem>
+                      <SelectItem value="freestyle">Freestyle</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -847,6 +858,8 @@ function GameSetup() {
                       "Catch the mouse first."}
                     {gameConfig.variant === "classic" &&
                       "Reach the corner first."}
+                    {gameConfig.variant === "freestyle" &&
+                      `Randomized setup with neutral starting walls (${FREESTYLE_BOARD_WIDTH}x${FREESTYLE_BOARD_HEIGHT}).`}
                   </p>
                 </div>
               </div>

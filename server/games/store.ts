@@ -1,5 +1,9 @@
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
+import {
+  generateFreestyleInitialState,
+  normalizeFreestyleConfig,
+} from "../../shared/domain/freestyle-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type {
@@ -121,6 +125,9 @@ const ensureSession = (id: string): GameSession => {
 export const getSession = (id: string): GameSession => ensureSession(id);
 
 const createGameState = (config: GameConfiguration): GameState => {
+  if (config.variant === "freestyle") {
+    return new GameState(config, Date.now(), generateFreestyleInitialState());
+  }
   return new GameState(config, Date.now());
 };
 
@@ -184,6 +191,7 @@ export const createGameSession = (args: {
   hostAuthUserId?: string;
   hostElo?: number;
 }): GameCreationResult => {
+  const normalizedConfig = normalizeFreestyleConfig(args.config);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
   // No invite code needed - the game ID itself is secure enough
   const hostToken = nanoid(); // 21 chars by default for security
@@ -206,7 +214,7 @@ export const createGameSession = (args: {
     createdAt: now,
     startedAt: null,
     updatedAt: now,
-    config: args.config,
+    config: normalizedConfig,
     status: "waiting",
     matchType: args.matchType,
     cancelled: false,
@@ -245,7 +253,7 @@ export const createGameSession = (args: {
     },
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
-    gameState: createGameState(args.config),
+    gameState: createGameState(normalizedConfig),
     chatGuestCounter: 0,
     chatGuestIndexMap: new Map(),
   };
@@ -783,6 +791,7 @@ export const serializeGameState = (
       },
     },
     walls: state.grid.getWalls(),
+    initialState: state.getInitialState(),
     history: state.history.map((entry) => ({
       index: entry.index,
       notation: moveToStandardNotation(entry.move, historyRows),
@@ -833,6 +842,7 @@ export const createRematchSession = (
     token: nanoid(),
     socketToken: nanoid(),
   };
+  const normalizedConfig = normalizeFreestyleConfig(previous.config);
 
   // Swap player IDs so the other player goes first in the rematch
   const hostPlayerId = previous.players.host.playerId;
@@ -846,7 +856,7 @@ export const createRematchSession = (
     createdAt: now,
     startedAt: null,
     updatedAt: now,
-    config: previous.config,
+    config: normalizedConfig,
     status: "ready",
     matchType: previous.matchType,
     cancelled: false,
@@ -878,7 +888,7 @@ export const createRematchSession = (
     },
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
-    gameState: createGameState(previous.config),
+    gameState: createGameState(normalizedConfig),
     chatGuestCounter: 0,
     chatGuestIndexMap: new Map(),
   };

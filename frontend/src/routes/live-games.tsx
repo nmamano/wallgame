@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Eye, Users, Loader2 } from "lucide-react";
 import type { LiveGameSummary } from "../../../shared/contracts/games";
 import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
+import { getBoardSizeBucket } from "../../../shared/domain/past-games";
 
 export const Route = createFileRoute("/live-games")({
   component: LiveGames,
@@ -36,10 +37,8 @@ function formatTimeControl(game: LiveGameSummary): string {
 }
 
 function formatBoardSize(game: LiveGameSummary): string {
-  const size = game.boardWidth;
-  if (size <= 6) return `small (${size}x${size})`;
-  if (size <= 8) return `medium (${size}x${size})`;
-  return `large (${size}x${size})`;
+  const bucket = getBoardSizeBucket(game.boardWidth, game.boardHeight);
+  return `${bucket} (${game.boardWidth}x${game.boardHeight})`;
 }
 
 function formatPlayers(game: LiveGameSummary): string {
@@ -142,11 +141,8 @@ function LiveGames() {
         )
           return false;
         if (filters.boardSize !== "all") {
-          const size = game.boardWidth;
-          if (filters.boardSize === "small" && size > 6) return false;
-          if (filters.boardSize === "medium" && (size <= 6 || size > 8))
-            return false;
-          if (filters.boardSize === "large" && size <= 8) return false;
+          const bucket = getBoardSizeBucket(game.boardWidth, game.boardHeight);
+          if (filters.boardSize !== bucket) return false;
         }
         if (filters.eloMin) {
           const min = parseInt(filters.eloMin, 10);
@@ -196,6 +192,7 @@ function LiveGames() {
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
+                  <SelectItem value="freestyle">Freestyle</SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -253,9 +250,9 @@ function LiveGames() {
                 </SelectTrigger>
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
-                  <SelectItem value="small">Small (≤6)</SelectItem>
-                  <SelectItem value="medium">Medium (7-8)</SelectItem>
-                  <SelectItem value="large">Large (≥9)</SelectItem>
+                  <SelectItem value="small">Small</SelectItem>
+                  <SelectItem value="medium">Medium</SelectItem>
+                  <SelectItem value="large">Large</SelectItem>
                 </SelectContent>
               </Select>
             </div>

@@ -83,21 +83,6 @@ const snapshotFromHistoryEntry = (
   },
 });
 
-const buildInitialSnapshot = (config: GameConfiguration): PawnSnapshot => {
-  const rows = config.boardHeight;
-  const cols = config.boardWidth;
-  return {
-    1: {
-      cat: [0, 0] as Cell,
-      mouse: [rows - 1, 0] as Cell,
-    },
-    2: {
-      cat: [0, cols - 1] as Cell,
-      mouse: [rows - 1, cols - 1] as Cell,
-    },
-  };
-};
-
 const diffSnapshots = (
   before: PawnSnapshot,
   after: PawnSnapshot,
@@ -159,7 +144,7 @@ export function computeLastMoves(
   const afterSnapshot = snapshotFromHistoryEntry(lastEntry);
   const beforeSnapshot = beforeEntry
     ? snapshotFromHistoryEntry(beforeEntry)
-    : buildInitialSnapshot(current.config);
+    : current.getInitialSnapshot().pawns;
 
   return diffSnapshots(beforeSnapshot, afterSnapshot, playerColorsForBoard);
 }

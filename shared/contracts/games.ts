@@ -16,7 +16,7 @@ export const timeControlValues = [
   "rapid",
   "classical",
 ] as const;
-export const variantValues = ["standard", "classic"] as const;
+export const variantValues = ["standard", "classic", "freestyle"] as const;
 
 export const timeControlSchema = z.object({
   initialSeconds: z

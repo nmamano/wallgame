@@ -37,7 +37,8 @@ export type PlayerId = 1 | 2;
 
 export type Variant =
   | "standard" // Catch the mouse first
-  | "classic"; // Reach the opposite corner first
+  | "classic" // Reach the opposite corner first
+  | "freestyle"; // Randomized setup with starting walls
 
 export type TimeControlPreset =
   | "bullet" // 1+0
@@ -186,6 +187,11 @@ export interface Pawn {
   pawnStyle?: string;
 }
 
+export interface GameInitialState {
+  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  walls: WallPosition[];
+}
+
 export type GameAction =
   | { kind: "move"; move: Move; playerId: PlayerId; timestamp: number }
   | { kind: "resign"; playerId: PlayerId; timestamp: number }
@@ -209,6 +215,7 @@ export interface SerializedGameState {
   lastMoveTime: number; // Timestamp in milliseconds (milliseconds since epoch)
   pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
   walls: WallPosition[];
+  initialState: GameInitialState;
   history: { index: number; notation: string }[]; // Move history: notation is a string representation (e.g., "Ce4.Md5.>f3") that can be parsed back into Move objects via Move.fromNotation()
   config: GameConfiguration;
 }

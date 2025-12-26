@@ -13,6 +13,7 @@ import type {
   GameConfiguration,
   GameResult,
   GameSnapshot,
+  GameInitialState,
   MatchScore,
   PlayerId,
   SerializedGameState,
@@ -54,7 +55,7 @@ const normalizeWinReason = (value?: string | null): WinReason => {
 };
 
 const normalizeVariant = (value: string): Variant => {
-  if (value === "standard" || value === "classic") {
+  if (value === "standard" || value === "classic" || value === "freestyle") {
     return value;
   }
   return "standard";
@@ -100,6 +101,13 @@ const resolveTimeControl = (
     return timeControlConfigFromPreset(stored as TimeControlPreset);
   }
   return timeControlConfigFromPreset("rapid");
+};
+
+const resolveInitialState = (
+  configParameters: unknown,
+): GameInitialState | undefined => {
+  const parameters = configParameters as { initialState?: GameInitialState };
+  return parameters?.initialState;
 };
 
 export interface ReplayGameData {
@@ -225,10 +233,11 @@ export const getReplayGame = async (
     boardWidth: game.boardWidth,
     boardHeight: game.boardHeight,
   };
+  const initialState = resolveInitialState(details?.configParameters);
 
   const startTimestamp = game.startedAt.getTime();
   const moves = Array.isArray(details?.moves) ? details.moves : [];
-  let replayState = new GameState(config, startTimestamp);
+  let replayState = new GameState(config, startTimestamp, initialState);
   moves.forEach((notation, index) => {
     const move = moveFromStandardNotation(String(notation), config.boardHeight);
     const playerId = (index % 2 === 0 ? 1 : 2) as PlayerId;
@@ -268,6 +277,7 @@ export const getReplayGame = async (
       },
     },
     walls: replayState.grid.getWalls(),
+    initialState: replayState.getInitialState(),
     history,
     config,
   };

@@ -3,6 +3,7 @@ import type {
   PlayerId,
   SerializedGameState,
 } from "../../../shared/domain/game-types";
+import { normalizeFreestyleConfig } from "../../../shared/domain/freestyle-setup";
 import { Grid } from "../../../shared/domain/grid";
 import { GameState } from "../../../shared/domain/game-state";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
@@ -10,7 +11,7 @@ import { moveFromStandardNotation } from "../../../shared/domain/standard-notati
 export const buildGameConfigurationFromSerialized = (
   serialized: SerializedGameState,
 ): GameConfiguration => {
-  return serialized.config;
+  return normalizeFreestyleConfig(serialized.config);
 };
 
 export const hydrateGameStateFromSerialized = (
@@ -24,19 +25,28 @@ export const hydrateGameStateFromSerialized = (
     timeControl: serialized.config.timeControl,
     rated: baseConfig.rated,
   };
+  const normalizedConfig = normalizeFreestyleConfig(config);
 
-  const state = new GameState(config, Date.now());
+  const state = new GameState(
+    normalizedConfig,
+    Date.now(),
+    serialized.initialState,
+  );
   state.turn = serialized.turn;
   state.moveCount = serialized.moveCount;
   state.status = serialized.status;
   state.result = serialized.result;
   state.timeLeft = {
-    1: serialized.timeLeft[1] ?? config.timeControl.initialSeconds,
-    2: serialized.timeLeft[2] ?? config.timeControl.initialSeconds,
+    1: serialized.timeLeft[1] ?? normalizedConfig.timeControl.initialSeconds,
+    2: serialized.timeLeft[2] ?? normalizedConfig.timeControl.initialSeconds,
   };
   state.lastMoveTime = serialized.lastMoveTime;
 
-  const grid = new Grid(config.boardWidth, config.boardHeight, config.variant);
+  const grid = new Grid(
+    normalizedConfig.boardWidth,
+    normalizedConfig.boardHeight,
+    normalizedConfig.variant,
+  );
   serialized.walls.forEach((wall) => {
     grid.addWall(wall);
   });
@@ -57,9 +67,16 @@ export const hydrateGameStateFromSerialized = (
     const orderedHistory = [...serialized.history].sort(
       (a, b) => a.index - b.index,
     );
-    let replayState: GameState = new GameState(config, Date.now());
+    let replayState: GameState = new GameState(
+      normalizedConfig,
+      Date.now(),
+      serialized.initialState,
+    );
     state.history = orderedHistory.map((entry) => {
-      const move = moveFromStandardNotation(entry.notation, config.boardHeight);
+      const move = moveFromStandardNotation(
+        entry.notation,
+        normalizedConfig.boardHeight,
+      );
       const playerId = (entry.index % 2 === 1 ? 1 : 2) as PlayerId;
       const nextState = replayState.applyGameAction({
         kind: "move",
