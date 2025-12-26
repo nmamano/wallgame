@@ -34,6 +34,7 @@ import {
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { sounds, play } from "@/lib/sounds";
+import { useSound } from "@/components/sound-provider";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
 import {
   createPlayerController,
@@ -239,6 +240,9 @@ export function useGamePageController(gameId: string) {
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
   const navigate = useNavigate();
+
+  // Sound setting from global provider (persisted to localStorage)
+  const { soundEnabled, setSoundEnabled, soundEnabledRef } = useSound();
 
   // ============================================================================
   // Local Preferences (derived from settings hook)
@@ -906,6 +910,7 @@ export function useGamePageController(gameId: string) {
     maskToken,
     seatActionsRef,
     setMatchError,
+    soundEnabledRef,
     teardownRemoteController,
   ]);
 
@@ -1240,9 +1245,6 @@ export function useGamePageController(gameId: string) {
     }
   }, [isSpectatorSession]);
 
-  const [soundEnabled, setSoundEnabled] = useState(true);
-  const soundEnabledRef = useRef(soundEnabled);
-  soundEnabledRef.current = soundEnabled;
   const [selectedPawnId, setSelectedPawnId] = useState<string | null>(null);
   const [draggingPawnId, setDraggingPawnId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
@@ -2230,7 +2232,7 @@ export function useGamePageController(gameId: string) {
         play(hasWall ? sounds.wall : sounds.pawn);
       }
     },
-    [updateGameState, playerColorsForBoard],
+    [updateGameState, playerColorsForBoard, soundEnabledRef],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -3111,7 +3113,7 @@ export function useGamePageController(gameId: string) {
     } else {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
     }
-  }, [gameState, addSystemMessage]);
+  }, [gameState, addSystemMessage, soundEnabledRef]);
 
   const handlePawnClick = useCallback(
     (pawnId: string) => {
