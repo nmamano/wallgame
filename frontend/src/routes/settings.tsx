@@ -14,7 +14,9 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
+import { Switch } from "@/components/ui/switch";
 import { Info, Loader2 } from "lucide-react";
+import { useSound } from "@/components/sound-provider";
 import { GameConfigurationPanel } from "@/components/game-configuration-panel";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
@@ -60,6 +62,10 @@ function Settings() {
     loadError,
     saveError,
   } = useSettings(isLoggedIn, userPending);
+
+  // Sound settings from global provider
+  const { sfxEnabled, setSfxEnabled, musicEnabled, setMusicEnabled } =
+    useSound();
 
   return (
     <div className="min-h-screen bg-background">
@@ -190,11 +196,11 @@ function Settings() {
             </CardContent>
           </Card>
 
-          {/* 2. Visual Style */}
+          {/* 2. Style */}
           <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardHeader>
               <CardTitle className="text-2xl flex items-center gap-2">
-                Visual Style
+                Style
                 {isSavingVisualStyle && isLoggedIn && (
                   <span className="text-sm font-normal text-muted-foreground flex items-center gap-1.5">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
@@ -204,14 +210,25 @@ function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  {isLoggedIn
-                    ? "These settings are saved to your account."
-                    : "These settings are saved locally in your web browser."}
-                </AlertDescription>
-              </Alert>
+              {/* SFX Toggle */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="sfx-toggle">Sound Effects</Label>
+                <Switch
+                  id="sfx-toggle"
+                  checked={sfxEnabled}
+                  onCheckedChange={setSfxEnabled}
+                />
+              </div>
+
+              {/* Music Toggle */}
+              <div className="flex items-center justify-between">
+                <Label htmlFor="music-toggle">Music</Label>
+                <Switch
+                  id="music-toggle"
+                  checked={musicEnabled}
+                  onCheckedChange={setMusicEnabled}
+                />
+              </div>
 
               {isLoadingSettings && isLoggedIn && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
@@ -309,15 +326,6 @@ function Settings() {
               </CardTitle>
             </CardHeader>
             <CardContent className="space-y-6">
-              <Alert>
-                <Info className="h-4 w-4" />
-                <AlertDescription>
-                  {isLoggedIn
-                    ? "These settings are saved to your account."
-                    : "These settings are saved locally in your web browser."}
-                </AlertDescription>
-              </Alert>
-
               {isLoadingSettings && isLoggedIn && (
                 <div className="flex items-center gap-2 text-sm text-muted-foreground">
                   <Loader2 className="h-4 w-4 animate-spin" />
@@ -342,6 +350,15 @@ function Settings() {
               </div>
             </CardContent>
           </Card>
+
+          {/* Info Panel */}
+          <Alert>
+            <Info className="h-4 w-4" />
+            <AlertDescription>
+              For guests, settings are saved locally in your web browser. If you
+              log in, settings are saved to your account.
+            </AlertDescription>
+          </Alert>
         </div>
       </main>
     </div>

@@ -2,7 +2,15 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Clock, Volume2, VolumeX, Swords, AlertCircle } from "lucide-react";
+import {
+  Clock,
+  Volume2,
+  VolumeX,
+  Music,
+  Music2,
+  Swords,
+  AlertCircle,
+} from "lucide-react";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { PlayerType } from "@/lib/gameViewModel";
 
@@ -10,8 +18,10 @@ interface GameInfoPanelProps {
   config: GameConfiguration | null;
   defaultVariant: string;
   defaultTimeControlPreset: string | null | undefined;
-  soundEnabled: boolean;
-  onSoundToggle: () => void;
+  sfxEnabled: boolean;
+  onSfxToggle: () => void;
+  musicEnabled: boolean;
+  onMusicToggle: () => void;
   interactionLocked: boolean;
   isMultiplayerMatch: boolean;
   unsupportedPlayers: PlayerType[];
@@ -22,8 +32,10 @@ export function GameInfoPanel({
   config,
   defaultVariant,
   defaultTimeControlPreset,
-  soundEnabled,
-  onSoundToggle,
+  sfxEnabled,
+  onSfxToggle,
+  musicEnabled,
+  onMusicToggle,
   interactionLocked,
   isMultiplayerMatch,
   unsupportedPlayers,
@@ -55,18 +67,34 @@ export function GameInfoPanel({
                 "blitz"}
             </span>
           </div>
-          <Button
-            variant="ghost"
-            size="icon"
-            className="h-5 w-5 lg:h-6 lg:w-6"
-            onClick={onSoundToggle}
-          >
-            {soundEnabled ? (
-              <Volume2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-            ) : (
-              <VolumeX className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-            )}
-          </Button>
+          <div className="flex items-center gap-1">
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 lg:h-6 lg:w-6"
+              onClick={onSfxToggle}
+              title={sfxEnabled ? "Mute sound effects" : "Unmute sound effects"}
+            >
+              {sfxEnabled ? (
+                <Volume2 className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              ) : (
+                <VolumeX className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 lg:h-6 lg:w-6"
+              onClick={onMusicToggle}
+              title={musicEnabled ? "Mute music" : "Unmute music"}
+            >
+              {musicEnabled ? (
+                <Music className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              ) : (
+                <Music2 className="w-3.5 h-3.5 lg:w-4 lg:h-4 opacity-50" />
+              )}
+            </Button>
+          </div>
         </div>
       </Card>
 
