@@ -6,6 +6,7 @@ import type {
   WallOrientation,
 } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
+import type { Annotation } from "@/hooks/use-annotations";
 
 type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];
 
@@ -55,6 +56,19 @@ interface BoardPanelProps {
   actionStatusText: string | null;
   clearStagedActions: () => void;
   commitStagedActions: () => void;
+
+  // Annotations (optional - only for non-touch devices)
+  annotations?: Annotation[];
+  previewAnnotation?: Annotation | null;
+  onWallSlotRightClick?: (
+    row: number,
+    col: number,
+    orientation: WallOrientation,
+  ) => void;
+  onCellRightClickDragStart?: (row: number, col: number) => void;
+  onCellRightClickDragMove?: (row: number, col: number) => void;
+  onCellRightClickDragEnd?: (row: number, col: number) => void;
+  onArrowDragFinalize?: () => void;
 }
 
 export function BoardPanel({
@@ -90,6 +104,13 @@ export function BoardPanel({
   actionStatusText,
   clearStagedActions,
   commitStagedActions,
+  annotations,
+  previewAnnotation,
+  onWallSlotRightClick,
+  onCellRightClickDragStart,
+  onCellRightClickDragMove,
+  onCellRightClickDragEnd,
+  onArrowDragFinalize,
 }: BoardPanelProps) {
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const showStagedActionControls = hasLocalPlayer;
@@ -144,6 +165,13 @@ export function BoardPanel({
         stagedActionsCount={pendingActionsCount}
         controllablePlayerId={actionablePlayerId ?? undefined}
         forceReadOnly={forceReadOnlyBoard}
+        annotations={annotations}
+        previewAnnotation={previewAnnotation}
+        onWallSlotRightClick={onWallSlotRightClick}
+        onCellRightClickDragStart={onCellRightClickDragStart}
+        onCellRightClickDragMove={onCellRightClickDragMove}
+        onCellRightClickDragEnd={onCellRightClickDragEnd}
+        onArrowDragFinalize={onArrowDragFinalize}
       />
 
       {/* Action messaging + staged action buttons */}
