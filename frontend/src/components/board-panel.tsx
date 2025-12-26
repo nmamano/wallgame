@@ -34,6 +34,7 @@ interface BoardPanelProps {
   lastMove: BoardProps["lastMove"] | BoardProps["lastMoves"];
   draggingPawnId: string | null;
   selectedPawnId: string | null;
+  disableMousePawnInteraction: boolean;
   actionablePlayerId: PlayerId | null;
 
   // Board handlers
@@ -72,6 +73,7 @@ export function BoardPanel({
   lastMove,
   draggingPawnId,
   selectedPawnId,
+  disableMousePawnInteraction,
   actionablePlayerId,
   onCellClick,
   onWallClick,
@@ -138,6 +140,7 @@ export function BoardPanel({
         lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
         draggingPawnId={draggingPawnId}
         selectedPawnId={selectedPawnId}
+        disableMousePawnInteraction={disableMousePawnInteraction}
         stagedActionsCount={pendingActionsCount}
         controllablePlayerId={actionablePlayerId ?? undefined}
         forceReadOnly={forceReadOnlyBoard}

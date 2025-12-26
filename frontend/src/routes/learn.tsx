@@ -117,9 +117,9 @@ The default variant with cat and mouse pawns in the corners.
 
 ### Classic
 
-A traditional variant where the mice are called "goals" and are fixed in the bottom corners. The goal is to reach the opposing corner before the opponent.
+A traditional variant where the mice are called "goals" and are fixed in the bottom corners. You win by reaching the goal (the opposite corner) before the opponent reaches theirs.
 
-### Freestyle (coming soon)
+### Freestyle
 
 A variant where the cat and mice start at random places, and there are some starting walls.
 `;

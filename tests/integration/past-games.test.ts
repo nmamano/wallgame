@@ -127,19 +127,24 @@ const buildOpeningMove = (
 ): Move => {
   const rows = config.boardHeight;
   const cols = config.boardWidth;
+  const includeMouse = config.variant !== "classic";
   if (playerId === 1) {
     return {
-      actions: [
-        { type: "cat", target: [0, 1] },
-        { type: "mouse", target: [rows - 2, 0] },
-      ],
+      actions: includeMouse
+        ? [
+            { type: "cat", target: [0, 1] },
+            { type: "mouse", target: [rows - 2, 0] },
+          ]
+        : [{ type: "cat", target: [0, 1] }],
     };
   }
   return {
-    actions: [
-      { type: "cat", target: [0, cols - 2] },
-      { type: "mouse", target: [rows - 2, cols - 1] },
-    ],
+    actions: includeMouse
+      ? [
+          { type: "cat", target: [0, cols - 2] },
+          { type: "mouse", target: [rows - 2, cols - 1] },
+        ]
+      : [{ type: "cat", target: [0, cols - 2] }],
   };
 };
 

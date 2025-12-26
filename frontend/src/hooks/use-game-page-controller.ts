@@ -2150,6 +2150,7 @@ export function useGamePageController(gameId: string) {
 
   const gameStatus = gameState?.status ?? "playing";
   const isGamePlaying = gameState?.status === "playing";
+  const isClassicVariant = gameState?.config.variant === "classic";
   const gameTurn = gameState?.turn ?? 1;
   const gameResult = gameState?.result;
 
@@ -2864,6 +2865,12 @@ export function useGamePageController(gameId: string) {
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== ownerId) return;
       if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
+      if (isClassicVariant && pawn.type === "mouse") {
+        setActionError("Goal is fixed.");
+        setSelectedPawnId(null);
+        setDraggingPawnId(null);
+        return;
+      }
 
       const queue = queueMode === "staged" ? stagedActions : premovedActions;
       const setQueue =
@@ -2973,6 +2980,7 @@ export function useGamePageController(gameId: string) {
       commitStagedActions,
       enqueueLocalAction,
       gameState,
+      isClassicVariant,
       interactionLocked,
       isGamePlaying,
       premovedActions,
@@ -3160,6 +3168,12 @@ export function useGamePageController(gameId: string) {
       if (!ownerId) return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== ownerId) return;
+      if (isClassicVariant && pawn.type === "mouse") {
+        setActionError("Goal is fixed.");
+        setSelectedPawnId(null);
+        setDraggingPawnId(null);
+        return;
+      }
 
       const targetQueue =
         queueMode === "staged" ? stagedActions : premovedActions;
@@ -3193,8 +3207,10 @@ export function useGamePageController(gameId: string) {
       canBufferPremoves,
       isGamePlaying,
       premovedActions,
+      isClassicVariant,
       selectedPawnId,
       setActionError,
+      setDraggingPawnId,
       setPremovedActions,
       setSelectedPawnId,
       setStagedActions,
@@ -3222,6 +3238,10 @@ export function useGamePageController(gameId: string) {
             p.playerId === ownerId && p.cell[0] === row && p.cell[1] === col,
         );
         if (pawn) {
+          if (isClassicVariant && pawn.type === "mouse") {
+            setActionError("Goal is fixed.");
+            return;
+          }
           setSelectedPawnId(pawn.id);
         }
         return;
@@ -3234,7 +3254,9 @@ export function useGamePageController(gameId: string) {
       boardPawns,
       canActNow,
       canBufferPremoves,
+      isClassicVariant,
       selectedPawnId,
+      setActionError,
       stagePawnAction,
       viewingHistory,
     ],
@@ -3254,6 +3276,12 @@ export function useGamePageController(gameId: string) {
       if (!ownerId) return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== ownerId) return;
+      if (isClassicVariant && pawn?.type === "mouse") {
+        setActionError("Goal is fixed.");
+        setSelectedPawnId(null);
+        setDraggingPawnId(null);
+        return;
+      }
       setDraggingPawnId(pawnId);
       setSelectedPawnId(pawnId);
     },
@@ -3263,8 +3291,10 @@ export function useGamePageController(gameId: string) {
       boardPawns,
       canActNow,
       canBufferPremoves,
+      isClassicVariant,
       setDraggingPawnId,
       setSelectedPawnId,
+      setActionError,
       viewingHistory,
     ],
   );
@@ -3771,6 +3801,7 @@ export function useGamePageController(gameId: string) {
     lastMove,
     draggingPawnId,
     selectedPawnId,
+    disableMousePawnInteraction: isClassicVariant,
     actionablePlayerId: boardActionablePlayerId,
     onCellClick: handleCellClick,
     onWallClick: handleWallClick,
