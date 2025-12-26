@@ -79,6 +79,7 @@ export interface BoardProps {
   stagedActionsCount?: number;
   controllablePlayerId?: PlayerId;
   forceReadOnly?: boolean;
+  disableMousePawnInteraction?: boolean;
 }
 
 interface WallMaps {
@@ -175,6 +176,7 @@ export function Board({
   stagedActionsCount = 0,
   controllablePlayerId,
   forceReadOnly = false,
+  disableMousePawnInteraction = false,
 }: BoardProps) {
   // Generate IDs for pawns internally
   const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
@@ -618,7 +620,9 @@ export function Board({
       event: ReactTouchEvent<HTMLDivElement>,
       pawnId: string,
       pawnPlayerId: PlayerId,
+      pawnType: Pawn["type"],
     ) => {
+      if (disableMousePawnInteraction && pawnType === "mouse") return;
       const isControllable =
         !forceReadOnly &&
         (controllablePlayerId == null || pawnPlayerId === controllablePlayerId);
@@ -634,7 +638,12 @@ export function Board({
       // Only set pawn ID to track potential drag - don't notify parent yet
       setTouchDragPawnId(pawnId);
     },
-    [forceReadOnly, controllablePlayerId, dragEnabled],
+    [
+      disableMousePawnInteraction,
+      forceReadOnly,
+      controllablePlayerId,
+      dragEnabled,
+    ],
   );
 
   // Stable refs for callbacks to avoid effect re-runs
@@ -934,13 +943,16 @@ export function Board({
     const isControllable =
       !forceReadOnly &&
       (controllablePlayerId == null || pawn.playerId === controllablePlayerId);
+    const isMouseInteractionDisabled =
+      disableMousePawnInteraction && pawn.type === "mouse";
 
     // Use percentage padding for large pawns to maintain proportions on small screens
     const dimensionClass = size === "lg" ? "w-full h-full" : "w-6 h-6";
     // If pawns are too close to the edge boundaries, increase this padding.
     const paddingStyle = size === "lg" ? { padding: "0%" } : undefined;
 
-    const hoverClass = isControllable ? "hover:scale-110" : "";
+    const hoverClass =
+      isControllable && !isMouseInteractionDisabled ? "hover:scale-110" : "";
     const isDraggingThisPawn =
       draggingPawnId === pawn.id || touchDragPawnId === pawn.id;
     // When user has a pawn selected or is dragging, opponent pawns should have
@@ -949,14 +961,17 @@ export function Board({
       selectedPawnId !== null ||
       draggingPawnId !== null ||
       touchDragPawnId !== null;
-    const cursorClass = isControllable
-      ? isDraggingThisPawn
-        ? "cursor-grabbing"
-        : "cursor-grab"
-      : hasActiveSelection
-        ? "cursor-pointer"
-        : "cursor-not-allowed";
-    const canDrag = dragEnabled && isControllable;
+    const cursorClass = isMouseInteractionDisabled
+      ? "cursor-not-allowed"
+      : isControllable
+        ? isDraggingThisPawn
+          ? "cursor-grabbing"
+          : "cursor-grab"
+        : hasActiveSelection
+          ? "cursor-pointer"
+          : "cursor-not-allowed";
+    const canDrag =
+      dragEnabled && isControllable && !isMouseInteractionDisabled;
     // Derive from state: touchPosition is only set when actively dragging
     const isTouchDragging =
       touchDragPawnId === pawn.id && touchPosition !== null;
@@ -964,11 +979,20 @@ export function Board({
     const handleContextMenu = (event: MouseEvent<HTMLDivElement>) => {
       event.preventDefault();
       event.stopPropagation();
+      if (isMouseInteractionDisabled) return;
       if (!isControllable) return;
       onPawnRightClick?.(pawn.id);
     };
 
     const handleClick = (event: MouseEvent<HTMLDivElement>) => {
+      if (isMouseInteractionDisabled) {
+        if (hasActiveSelection) {
+          return;
+        }
+        event.stopPropagation();
+        onPawnClick?.(pawn.id);
+        return;
+      }
       // When user has a pawn selected, clicking opponent's pawn should
       // bubble to cell onClick to trigger the move
       if (!isControllable && hasActiveSelection) {
@@ -1060,7 +1084,9 @@ export function Board({
         draggable={canDrag}
         onDragStart={handleDragStart}
         onDragEnd={handleDragEnd}
-        onTouchStart={(e) => handleTouchStart(e, pawn.id, pawn.playerId)}
+        onTouchStart={(e) =>
+          handleTouchStart(e, pawn.id, pawn.playerId, pawn.type)
+        }
         aria-disabled={!isControllable}
       >
         {content}

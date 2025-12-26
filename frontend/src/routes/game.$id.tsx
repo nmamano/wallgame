@@ -202,6 +202,9 @@ function GamePage() {
                   lastMove={board.lastMove}
                   draggingPawnId={board.draggingPawnId}
                   selectedPawnId={board.selectedPawnId}
+                  disableMousePawnInteraction={
+                    board.disableMousePawnInteraction
+                  }
                   actionablePlayerId={board.actionablePlayerId}
                   onCellClick={board.onCellClick}
                   onWallClick={board.onWallClick}

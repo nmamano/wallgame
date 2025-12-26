@@ -180,7 +180,12 @@ export class GameState {
       mouse: [myPawns.mouse[0], myPawns.mouse[1]] as Cell,
     };
 
+    const isClassic = this.config.variant === "classic";
+
     for (const action of move.actions) {
+      if (isClassic && action.type === "mouse") {
+        throw new Error("Mouse cannot move in classic variant");
+      }
       if (action.type === "cat" || action.type === "mouse") {
         const currentPos =
           action.type === "cat" ? nextMyPawns.cat : nextMyPawns.mouse;
