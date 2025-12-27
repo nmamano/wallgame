@@ -60,6 +60,7 @@ interface BoardPanelProps {
   // Annotations (optional - only for non-touch devices)
   annotations?: Annotation[];
   previewAnnotation?: Annotation | null;
+  arrowDragStateRef?: BoardProps["arrowDragStateRef"];
   onWallSlotRightClick?: (
     row: number,
     col: number,
@@ -106,6 +107,7 @@ export function BoardPanel({
   commitStagedActions,
   annotations,
   previewAnnotation,
+  arrowDragStateRef,
   onWallSlotRightClick,
   onCellRightClickDragStart,
   onCellRightClickDragMove,
@@ -167,6 +169,7 @@ export function BoardPanel({
         forceReadOnly={forceReadOnlyBoard}
         annotations={annotations}
         previewAnnotation={previewAnnotation}
+        arrowDragStateRef={arrowDragStateRef}
         onWallSlotRightClick={onWallSlotRightClick}
         onCellRightClickDragStart={onCellRightClickDragStart}
         onCellRightClickDragMove={onCellRightClickDragMove}
