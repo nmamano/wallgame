@@ -4,6 +4,7 @@ import type {
   CSSProperties,
   ReactNode,
   DragEvent,
+  MutableRefObject,
   MouseEvent,
   TouchEvent as ReactTouchEvent,
 } from "react";
@@ -25,6 +26,7 @@ import type {
 } from "../../../shared/domain/game-types";
 import {
   type Annotation,
+  type AnnotationDragState,
   ANNOTATION_COLOR,
   ANNOTATION_PREVIEW_OPACITY,
 } from "@/hooks/use-annotations";
@@ -88,6 +90,7 @@ export interface BoardProps {
   // Annotation props
   annotations?: Annotation[];
   previewAnnotation?: Annotation | null;
+  arrowDragStateRef?: MutableRefObject<AnnotationDragState> | null;
   onWallSlotRightClick?: (
     row: number,
     col: number,
@@ -201,6 +204,7 @@ export function Board({
   disableMousePawnInteraction = false,
   annotations = [],
   previewAnnotation,
+  arrowDragStateRef,
   onWallSlotRightClick,
   onCellRightClickDragStart,
   onCellRightClickDragMove,
@@ -237,8 +241,6 @@ export function Board({
     gapY: 0,
   });
 
-  // Right-click drag state for annotations (arrow drawing)
-  const rightClickDragStart = useRef<{ row: number; col: number } | null>(null);
   // Flag to suppress contextmenu after arrow drag (since contextmenu fires after mouseup)
   const suppressNextContextMenu = useRef(false);
 
@@ -292,14 +294,13 @@ export function Board({
 
   // Global mouseup handler to finalize arrow drag when released outside a cell
   useEffect(() => {
-    if (!onArrowDragFinalize) return;
+    if (!onArrowDragFinalize || !arrowDragStateRef) return;
 
     const handleGlobalMouseUp = (event: globalThis.MouseEvent) => {
       // Only handle right-click releases
-      if (event.button === 2 && rightClickDragStart.current) {
+      if (event.button === 2 && arrowDragStateRef.current.isDragging) {
         // Set flag to suppress the contextmenu that fires after mouseup
         suppressNextContextMenu.current = true;
-        rightClickDragStart.current = null;
         onArrowDragFinalize();
       }
     };
@@ -323,7 +324,7 @@ export function Board({
         true,
       );
     };
-  }, [onArrowDragFinalize]);
+  }, [onArrowDragFinalize, arrowDragStateRef]);
 
   const cellWidthPx = useMemo(() => {
     if (cols <= 0) return 0;
@@ -433,7 +434,7 @@ export function Board({
       return 0.6;
     }
 
-    if (rowDelta === colDelta && rowDelta > 0) {
+    if (rowDelta === colDelta && rowDelta === 1) {
       return 0.45;
     }
 
@@ -1484,7 +1485,7 @@ export function Board({
                       onContextMenu={(event) => {
                         event.preventDefault();
                         // Don't add wall annotation if we're in an arrow drag
-                        if (rightClickDragStart.current) return;
+                        if (arrowDragStateRef?.current.isDragging) return;
                         onWallSlotRightClick?.(
                           rowIndex + 1,
                           colIndex,
@@ -1525,7 +1526,7 @@ export function Board({
                       onContextMenu={(event) => {
                         event.preventDefault();
                         // Don't add wall annotation if we're in an arrow drag
-                        if (rightClickDragStart.current) return;
+                        if (arrowDragStateRef?.current.isDragging) return;
                         onWallSlotRightClick?.(
                           rowIndex,
                           colIndex,
@@ -1618,7 +1619,7 @@ export function Board({
                   onContextMenu={(e) => {
                     e.preventDefault();
                     // Don't add wall annotation if we're in an arrow drag
-                    if (rightClickDragStart.current) return;
+                    if (arrowDragStateRef?.current.isDragging) return;
                     // If annotation handler exists, use it; otherwise fall back to wall right-click
                     if (onWallSlotRightClick) {
                       onWallSlotRightClick(
@@ -1663,23 +1664,21 @@ export function Board({
                     onMouseDown={(event) => {
                       // Right click starts annotation drag
                       if (event.button === 2) {
-                        rightClickDragStart.current = {
-                          row: rowIndex,
-                          col: colIndex,
-                        };
                         onCellRightClickDragStart?.(rowIndex, colIndex);
                       }
                     }}
                     onMouseUp={(event) => {
                       // Right click ends annotation drag
-                      if (event.button === 2 && rightClickDragStart.current) {
-                        rightClickDragStart.current = null;
+                      if (
+                        event.button === 2 &&
+                        arrowDragStateRef?.current.isDragging
+                      ) {
                         onCellRightClickDragEnd?.(rowIndex, colIndex);
                       }
                     }}
                     onMouseEnter={() => {
                       // Track mouse movement during right-click drag
-                      if (rightClickDragStart.current) {
+                      if (arrowDragStateRef?.current.isDragging) {
                         onCellRightClickDragMove?.(rowIndex, colIndex);
                       }
                     }}

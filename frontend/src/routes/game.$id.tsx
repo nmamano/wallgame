@@ -44,6 +44,7 @@ function GamePage() {
     updateArrowDrag,
     endArrowDrag,
     finalizeArrowDrag,
+    dragStateRef,
   } = useAnnotations();
 
   // Clear annotations when a move is committed (detected by turn change)
@@ -281,6 +282,7 @@ function GamePage() {
                   commitStagedActions={board.commitStagedActions}
                   annotations={annotations}
                   previewAnnotation={previewAnnotation}
+                  arrowDragStateRef={dragStateRef}
                   onWallSlotRightClick={handleWallSlotRightClick}
                   onCellRightClickDragStart={handleCellRightClickDragStart}
                   onCellRightClickDragMove={handleCellRightClickDragMove}
