@@ -28,7 +28,7 @@ When a game is created with one or more Custom Bot seats:
 - The server matches the seat token to a specific gameId + seat assignment and attaches the connection as the controller for that seat.
 - The client does not implement bot logic itself; it runs a local engine process and exchanges messages with it over stdin/stdout.
 - The server remains authoritative for rules, legality, clocks, and game state.
-- The connection can be reused for rematch games within the same "match". The seatToken is only used for initial attachment; after attachment, the server assigns a connection-scoped seat identity that persists across rematches within the same match created from the initial game. The same token CANNOT be used for unrelated games.
+- The connection can be reused for rematch games within the same "match". The `seatToken` is only used for initial attachment; after attachment, the server keeps the same socket attached to the same seat role across rematches and notifies the client on rematch transitions. The same token CANNOT be used for unrelated games.
 - The server-client protocol and the client-engine API are public-facing. They should be implementable by anyone with the spec.
 
 ## Trust and Invariants
@@ -72,27 +72,22 @@ Responsibilities:
 
 ### 3. Turn and Offer Dispatcher
 
-When it is the bot-controlled seat's turn:
+The server-bot protocol is strict **request/response**. The server sends a `request` only when it needs a decision from the bot, and includes the full authoritative state with each request. See `info/custom_bot_protocol.md` for the exact message shapes and semantics.
 
-- Server sends an event to the bot client including:
-  - remaining time and time controls
-- The current position/state is delivered via the normal `state` snapshot stream; the turn prompt itself should not need to embed state.
-- Server waits for a response (move or resign). If the client runs out of time, they lose as usual.
+When the bot is required to make a move:
+
+- Server sends a `request` of kind `move` (includes current state and match snapshot).
+- Server waits for a `response` (move or resign). If the bot runs out of time, they lose as usual.
   - The client can manage their time as they wish. There is no additional "liveness" ping or heartbeat.
   - Server validates and applies the response if legal.
-- Clients CANNOT initiate meta-actions.
+- Clients CANNOT initiate meta-actions (draw offer, takeback request, give extra time, rematch offer).
 
-Draw offers (simplified, advisory):
+Draw offers:
 
-- Offers are created at a specific moveCount and are associated with the position at that moveCount.
-- The server only delivers a draw offer to a bot-controlled client when:
-  - the bot is NOT the activeSeat, and
-  - offer.moveCount == current moveCount.
-- The server rejects draw offers automatically otherwise.
-- The client is NOT required to respond to a draw offer. It MAY evaluate the offer via its engine and respond accept/decline.
-- An offer expires immediately when moveCount increases. Moves increment moveCount and implicitly decline existing offers.
-- If the client is evaluating an offer and receives a state with a higher moveCount, the evaluation MUST be discarded and no response is sent for the expired offer.
-- Offers are advisory and cannot block, pause, or delay play.
+- If the opponent offers a draw and it's not the bot's turn, the server sends a `request` of kind `draw`.
+- Draw requests do not block play: the server may send a newer `request` (which invalidates the previous one) if the game advances.
+- The client is not required to consult its engine; it may auto-decline or ignore the request.
+- If the opponent offers a draw when it is the bot's turn, the server automatically rejects it. The client doesn't get the offer.
 
 Takebacks vs bots (server-only):
 
@@ -101,12 +96,12 @@ Takebacks vs bots (server-only):
 
 ### 4. Validation and Enforcement
 
-- The server validates all moves:
+- The server validates all bot responses:
   - legal in current position
   - correct seat to act
   - within time budget
-  - consistent with current game revision (reject stale responses)
-- Invalid or late responses return an error to the client.
+  - not stale (responses must match the currently active `requestId`)
+- Invalid responses produce a server `nack`; retryable errors allow re-responding to the same request (see `info/custom_bot_protocol.md`).
 
 ## Client Components (Go, Source-Distributed)
 
@@ -136,36 +131,31 @@ Takebacks vs bots (server-only):
 
 ## Protocol Overview (Server <-> Bot Client)
 
+This is intentionally high-level. For the full public protocol spec, see `info/custom_bot_protocol.md`.
+
 ### Handshake
 
-- Client connects to server WS endpoint and sends seatToken.
-- Server replies accepted/rejected with:
-  - gameId, seatId, game config (variant, time controls, board width/height, ...)
-  - protocol version info (server + client)
-- Connection is considered "attached" after acceptance.
+- Client connects to the custom bot WebSocket endpoint and sends an `attach` message including `seatToken`.
+- Server replies with `attached` or `attach-rejected`.
 
 ### Gameplay Events
 
-Server -> Client:
-- `state` snapshots: authoritative position + clocks + config
-- `turn` prompts: indicates it is the bot's turn to act for a specific `moveCount`
-- meta-action events: draw offered, rematch offered.
-- game-over
-- error responses for invalid or stale moves (the client logs these)
+Server -> Client (high-level):
+- `request` when the server needs a decision (move/draw/rematch), always including full state + snapshot
+- `ack` / `nack` responses to bot `response` messages
+- `rematch-started` when a rematch game is created and the bot connection continues into the new game
 
-Client -> Server:
-- move submission (using standard notation)
-- meta-action responses (accept/decline draw, rematch)
+Client -> Server (high-level):
+- `attach`
+- `response` (answering a single active `requestId`)
 
 ## State Snapshot Strategy
 
-- Server sends a minimal, canonical representation sufficient for decision-making:
-  - board state
-  - player to act
-  - game config (variant, time controls, board width/height, ...)
-  - move history index for stale-response rejection
-  - clocks/time remaining
-- Server remains authoritative regardless.
+- The server sends authoritative state snapshots:
+  - once on successful attachment (`attached`)
+  - whenever it needs a bot decision (embedded in `request`)
+  - on rematch transition (`rematch-started`)
+- Clients should treat each `request` as a complete, self-contained snapshot suitable for decision making, and should ignore any unknown fields for forward compatibility.
 
 ## Security and Abuse Controls
 

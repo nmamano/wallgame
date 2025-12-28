@@ -14,7 +14,7 @@ The issue was caused by a Dockerfile regex that deleted **everything inside dist
 Therefore:
 
 - The server tried to serve ./frontend/dist/index.html
-- That file didn’t exist
+- That file didn't exist
 - → GET / returned 404
 
 The regex shouldn't be touched.
@@ -90,7 +90,7 @@ Or hit: https://wallgame.fly.dev/
 
 # Fly Builder 401 Errors (Depot)
 
-Fly’s Depot builder sometimes returns:
+Fly's Depot builder sometimes returns:
 
 ```
 unexpected status ... 401 Unauthorized

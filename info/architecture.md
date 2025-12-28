@@ -102,7 +102,7 @@ Remote seats are guarded by a capability-token system so that transports remain 
 
 - **User identity (auth)** — Every authenticated HTTP/WebSocket request passes through the Kinde middleware which attaches `user.id` to the Hono context; guests have `user` unset. The join route never accepts an `authUserId` parameter from the client—it only reads `user?.id` from the middleware, so callers cannot spoof ownership with crafted JSON/query payloads.
 
-- **Seat credentials** — When a seat vacancy exists (`joiner.ready === false`), the server stores the caller’s `authUserId` on the `SessionPlayer` record **and** mints a fresh `{ token, socketToken }` pair. These tokens are the only credentials that authorize future seat actions; every privileged WebSocket handler compares the active socket’s token against the session map before applying a move or meta-action.
+- **Seat credentials** — When a seat vacancy exists (`joiner.ready === false`), the server stores the caller's `authUserId` on the `SessionPlayer` record **and** mints a fresh `{ token, socketToken }` pair. These tokens are the only credentials that authorize future seat actions; every privileged WebSocket handler compares the active socket's token against the session map before applying a move or meta-action.
 
 - **Spectator path** — If both seats are full, the join route still succeeds but returns `{ role: "spectator" }`. Frontend hooks treat that as a first-class success path: they clear any stale handshakes and install a `SpectatorSession` (REST snapshot + read-only WebSocket).
 
