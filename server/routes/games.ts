@@ -12,6 +12,8 @@ import {
   resolveSessionForToken,
   listMatchmakingGames,
   listLiveGames,
+  setCustomBotSeatToken,
+  type PlayerConfigType,
 } from "../games/store";
 import {
   createGameSchema,
@@ -24,6 +26,7 @@ import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
 import { getReplayGame, queryPastGames } from "../db/game-queries";
+import { generateSeatToken } from "../games/custom-bot-store";
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -120,6 +123,14 @@ export const gamesRoute = new Hono()
           );
         }
 
+        // Map the joinerConfig type from schema to store type
+        const joinerConfig = parsed.joinerConfig
+          ? {
+              type: parsed.joinerConfig.type as PlayerConfigType,
+              displayName: parsed.joinerConfig.displayName,
+            }
+          : undefined;
+
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: parsed.config,
           matchType: parsed.matchType,
@@ -128,11 +139,21 @@ export const gamesRoute = new Hono()
           hostIsPlayer1: parsed.hostIsPlayer1,
           hostAuthUserId: user?.id,
           hostElo,
+          joinerConfig,
         });
+
+        // Generate and store seat token for custom bot seats
+        let customBotSeatToken: string | undefined;
+        if (joinerConfig?.type === "custom-bot") {
+          customBotSeatToken = generateSeatToken(session.id, "joiner");
+          setCustomBotSeatToken(session.id, "joiner", customBotSeatToken);
+        }
+
         console.info("[games] created session", {
           gameId: session.id,
           storedMatchType: session.matchType,
           requestedMatchType: parsed.matchType,
+          hasCustomBot: !!customBotSeatToken,
         });
         // The FRONTEND_URL environment variable is used for creating shareable
         // links. It is only needed in dev mode because the proxied URL is not
@@ -152,6 +173,7 @@ export const gamesRoute = new Hono()
             socketToken: hostSocketToken,
             shareUrl,
             snapshot: getSessionSnapshot(session.id),
+            customBotSeatToken,
           },
           201,
         );

@@ -40,6 +40,7 @@ import type {
   ActionNackCode,
   RematchDecision,
 } from "../../shared/contracts/controller-actions";
+import { sendBotRequest } from "./custom-bot-socket";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -68,6 +69,28 @@ const getSocketPlayerId = (socket: SessionSocket): PlayerId | null => {
   return socket.role === "host"
     ? session.players.host.playerId
     : session.players.joiner.playerId;
+};
+
+/**
+ * Check if the current active player is a custom bot and send them a move request.
+ * Called after any state change that might change whose turn it is.
+ */
+const notifyCustomBotIfActive = (sessionId: string): void => {
+  const session = getSession(sessionId);
+  if (session.gameState.status !== "playing") return;
+
+  const activeTurn = session.gameState.turn;
+
+  // Find which player is active
+  const activePlayer =
+    session.players.host.playerId === activeTurn
+      ? session.players.host
+      : session.players.joiner;
+
+  // If the active player is a custom bot, send them a move request
+  if (activePlayer.configType === "custom-bot") {
+    sendBotRequest(sessionId, activePlayer.role, "move");
+  }
 };
 
 const ensureAuthorizedPlayer = (
@@ -154,7 +177,7 @@ const removeSocket = (entry: SessionSocket) => {
   }
 };
 
-const broadcast = (sessionId: string, message: unknown) => {
+export const broadcast = (sessionId: string, message: unknown) => {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets) return;
   const data = JSON.stringify(message);
@@ -224,7 +247,7 @@ export const sendMatchStatus = (sessionId: string) => {
   });
 };
 
-const broadcastRematchStarted = (
+export const broadcastRematchStarted = (
   sessionId: string,
   result: RematchSessionResult,
 ) => {
@@ -437,6 +460,9 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   // Only send match-status when game ends (ratings changed)
   if (newState.status === "finished") {
     sendMatchStatus(socket.sessionId);
+  } else {
+    // If game is still playing, check if next player is a custom bot
+    notifyCustomBotIfActive(socket.sessionId);
   }
 };
 
@@ -550,10 +576,37 @@ const handleDrawOffer = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "draw-offer");
   if (playerId === null || socket.socketToken === null) return;
 
-  sendToOpponent(socket.sessionId, socket.socketToken, {
-    type: "draw-offer",
-    playerId,
-  });
+  const session = getSession(socket.sessionId);
+  const opponentRole = socket.role === "host" ? "joiner" : "host";
+  const opponent =
+    opponentRole === "host" ? session.players.host : session.players.joiner;
+
+  // If opponent is a custom bot, handle specially
+  if (opponent.configType === "custom-bot") {
+    // If it's the bot's turn, reject immediately (bot is busy thinking)
+    if (session.gameState.turn === opponent.playerId) {
+      socket.ctx.send(
+        JSON.stringify({
+          type: "draw-rejected",
+          playerId: opponent.playerId,
+        }),
+      );
+      console.info("[ws] draw-offer rejected (bot is thinking)", {
+        sessionId: socket.sessionId,
+        playerId,
+      });
+      return;
+    }
+    // Otherwise, send draw request to bot
+    sendBotRequest(socket.sessionId, opponentRole, "draw", playerId);
+  } else {
+    // Regular player opponent - send via WebSocket
+    sendToOpponent(socket.sessionId, socket.socketToken, {
+      type: "draw-offer",
+      playerId,
+    });
+  }
+
   console.info("[ws] draw-offer processed", {
     sessionId: socket.sessionId,
     playerId,
@@ -617,10 +670,22 @@ const handleRematchOffer = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "rematch-offer");
   if (playerId === null || socket.socketToken === null) return;
 
+  // Send to regular player opponent
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "rematch-offer",
     playerId,
   });
+
+  // Also notify custom bot if opponent is a custom bot
+  const session = getSession(socket.sessionId);
+  const opponentRole = socket.role === "host" ? "joiner" : "host";
+  const opponent =
+    opponentRole === "host" ? session.players.host : session.players.joiner;
+
+  if (opponent.configType === "custom-bot") {
+    sendBotRequest(socket.sessionId, opponentRole, "rematch", playerId);
+  }
+
   console.info("[ws] rematch-offer processed", {
     sessionId: socket.sessionId,
     playerId,

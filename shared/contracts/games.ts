@@ -38,6 +38,7 @@ export const appearanceSchema = z
 
 export const matchTypeValues = ["friend", "matchmaking"] as const;
 export const boardSizeValues = ["small", "medium", "large"] as const;
+export const playerConfigTypeValues = ["friend", "custom-bot"] as const;
 
 export const createGameSchema = z.object({
   config: z.object({
@@ -58,6 +59,16 @@ export const createGameSchema = z.object({
    * Tests can pass this explicitly for deterministic behavior.
    */
   hostIsPlayer1: z.boolean().optional(),
+  /**
+   * Configuration for the joiner/opponent seat.
+   * If not provided, defaults to "friend" (human opponent joining via link).
+   */
+  joinerConfig: z
+    .object({
+      type: z.enum(playerConfigTypeValues),
+      displayName: z.string().max(50).optional(),
+    })
+    .optional(),
 });
 
 export interface GameCreateResponse {
@@ -66,6 +77,11 @@ export interface GameCreateResponse {
   socketToken: string;
   shareUrl: string;
   snapshot: GameSnapshot;
+  /**
+   * Seat token for custom bot attachment.
+   * Only present when joinerConfig.type === "custom-bot".
+   */
+  customBotSeatToken?: string;
 }
 
 export interface GameSessionDetails {

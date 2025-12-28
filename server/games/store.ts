@@ -36,6 +36,13 @@ import {
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
 
+export type PlayerConfigType =
+  | "you" // Human playing locally
+  | "friend" // Human friend joining via link
+  | "matched-user" // Matchmaking opponent
+  | "bot" // Built-in bot
+  | "custom-bot"; // Custom bot (user-provided)
+
 export interface SessionPlayer {
   role: "host" | "joiner";
   playerId: PlayerId;
@@ -49,6 +56,8 @@ export interface SessionPlayer {
   authUserId?: string; // Auth provider's user ID (for rating updates)
   ratingAtStart?: number; // Rating at game start, captured before updates
   elo?: number; // Looked up from DB based on authenticated user
+  configType?: PlayerConfigType; // How this player seat was configured
+  customBotSeatToken?: string; // Seat token for custom bot attachment (only for custom-bot)
 }
 
 export interface RematchSeatCredentials {
@@ -99,6 +108,37 @@ const refreshSeatCredential = (player: SessionPlayer) => {
   player.socketToken = nanoid();
   player.connected = false;
   player.lastSeenAt = Date.now();
+};
+
+/**
+ * Set the custom bot seat token for a player.
+ * Called after session creation when configuring a custom bot seat.
+ */
+export const setCustomBotSeatToken = (
+  sessionId: string,
+  role: "host" | "joiner",
+  seatToken: string,
+): void => {
+  const session = ensureSession(sessionId);
+  const player =
+    role === "host" ? session.players.host : session.players.joiner;
+  if (player.configType !== "custom-bot") {
+    throw new Error(`Seat ${role} is not configured as a custom bot`);
+  }
+  player.customBotSeatToken = seatToken;
+};
+
+/**
+ * Get the custom bot seat token for a player.
+ */
+export const getCustomBotSeatToken = (
+  sessionId: string,
+  role: "host" | "joiner",
+): string | undefined => {
+  const session = ensureSession(sessionId);
+  const player =
+    role === "host" ? session.players.host : session.players.joiner;
+  return player.customBotSeatToken;
 };
 
 export type JoinGameSessionResult =
@@ -181,6 +221,7 @@ const finalizeMatchScore = (
  *   for deterministic behavior.
  * @param hostAuthUserId - Host's auth provider user ID (for rating updates).
  * @param hostElo - Host's ELO rating, looked up from DB by the route handler.
+ * @param joinerConfig - Configuration for the joiner seat (custom bot, etc.)
  */
 export const createGameSession = (args: {
   config: GameConfiguration;
@@ -190,6 +231,10 @@ export const createGameSession = (args: {
   hostIsPlayer1?: boolean;
   hostAuthUserId?: string;
   hostElo?: number;
+  joinerConfig?: {
+    type: PlayerConfigType;
+    displayName?: string;
+  };
 }): GameCreationResult => {
   const normalizedConfig = normalizeFreestyleConfig(args.config);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
@@ -206,6 +251,19 @@ export const createGameSession = (args: {
   const hostPlayerId: PlayerId = hostIsPlayer1 ? 1 : 2;
   const joinerPlayerId: PlayerId = hostIsPlayer1 ? 2 : 1;
 
+  // Determine joiner display name and config type
+  const joinerConfigType = args.joinerConfig?.type ?? "friend";
+  const joinerDisplayName =
+    args.joinerConfig?.displayName ??
+    (joinerConfigType === "custom-bot"
+      ? "Custom Bot"
+      : args.matchType === "friend"
+        ? "Friend"
+        : `Player ${joinerPlayerId}`);
+
+  // For custom bot seats, the seat is immediately ready (waiting for bot to connect)
+  const joinerReady = joinerConfigType === "custom-bot";
+
   const session: GameSession = {
     id,
     seriesId: id,
@@ -215,7 +273,7 @@ export const createGameSession = (args: {
     startedAt: null,
     updatedAt: now,
     config: normalizedConfig,
-    status: "waiting",
+    status: joinerReady ? "ready" : "waiting",
     matchType: args.matchType,
     cancelled: false,
     players: {
@@ -238,13 +296,13 @@ export const createGameSession = (args: {
         playerId: joinerPlayerId,
         token: guestToken,
         socketToken: guestSocketToken,
-        displayName:
-          args.matchType === "friend" ? "Friend" : `Player ${joinerPlayerId}`,
+        displayName: joinerDisplayName,
         connected: false,
-        ready: false,
+        ready: joinerReady,
         lastSeenAt: now,
         appearance: {},
         ratingAtStart: undefined,
+        configType: joinerConfigType,
       },
     },
     matchScore: {
