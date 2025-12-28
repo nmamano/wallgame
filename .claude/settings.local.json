@@ -14,7 +14,10 @@
       "Bash(bun run tsc:server:*)",
       "Bash(/c/Users/Nilo/.bun/bin/bun x tsc:*)",
       "Bash(bun run test:*)",
-      "Bash(/c/Users/Nilo/.bun/bin/bun run:*)"
+      "Bash(/c/Users/Nilo/.bun/bin/bun run:*)",
+      "Bash(bun install:*)",
+      "Bash(bun run:*)",
+      "Bash(./wallgame-bot-client.exe:*)"
     ]
   },
   "outputStyle": "Explanatory"
