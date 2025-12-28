@@ -22,6 +22,9 @@ export default tseslint.config(
       // Bot client is standalone (downloaded separately via sparse checkout)
       // It has its own tsconfig and is type-checked with `bun run typecheck`
       "official-custom-bot-client/**",
+      // Dummy engine is standalone (downloaded separately via sparse checkout)
+      // It has its own tsconfig and is type-checked with `bun run typecheck`
+      "dummy-engine/**",
     ],
   },
 

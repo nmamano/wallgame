@@ -1,0 +1,20 @@
+{
+  "name": "wallgame-dummy-engine",
+  "version": "1.0.0",
+  "description": "Dummy Wall Game engine that walks toward the goal",
+  "type": "module",
+  "main": "src/index.ts",
+  "bin": {
+    "wallgame-dummy-engine": "./src/index.ts"
+  },
+  "scripts": {
+    "start": "bun run src/index.ts",
+    "build": "bun build src/index.ts --compile --outfile wallgame-dummy-engine",
+    "typecheck": "bunx tsc --noEmit"
+  },
+  "dependencies": {},
+  "devDependencies": {
+    "@types/bun": "latest",
+    "typescript": "^5.0.0"
+  }
+}

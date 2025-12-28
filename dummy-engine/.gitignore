@@ -1,0 +1,13 @@
+# Build artifacts
+wallgame-dummy-engine
+wallgame-dummy-engine.exe
+
+# Dependencies
+node_modules/
+
+# Bun
+bun.lockb
+
+# IDE
+.vscode/
+.idea/

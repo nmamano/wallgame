@@ -1,9 +1,6 @@
 /**
  * Engine API Types (v1)
  *
- * This module defines the interface between the official custom-bot client
- * and a bot engine (decision making process).
- *
  * The engine:
  * - Reads a single JSON request from stdin
  * - Writes a single JSON response to stdout
@@ -11,11 +8,11 @@
  */
 
 import type {
-  SerializedGameState,
   GameSnapshot,
   PlayerId,
-} from "../../shared/domain/game-types";
-import type { CustomBotSeatIdentity } from "../../shared/contracts/custom-bot-protocol";
+  SerializedGameState,
+} from "../domain/game-types";
+import type { CustomBotSeatIdentity } from "../contracts/custom-bot-protocol";
 
 export const ENGINE_API_VERSION = 1;
 

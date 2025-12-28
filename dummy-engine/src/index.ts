@@ -1,32 +1,25 @@
+#!/usr/bin/env bun
 /**
- * Dumb Bot - A simple fallback AI for testing
+ * Wall Game Dummy Engine
  *
- * This bot walks its cat towards the opponent's mouse without placing walls.
- * It's used when no external engine is provided.
+ * Reads an EngineRequest from stdin and writes an EngineResponse to stdout.
+ * Uses the shared dummy AI to move the cat toward its goal.
  */
 
-import type { Cell, PlayerId } from "../../shared/domain/game-types";
 import { computeDummyAiMove } from "../../shared/domain/dummy-ai";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
-import {
-  getCatGoal,
-  reconstructGrid,
-} from "../../shared/custom-bot/dummy-engine-utils";
 import type {
   EngineRequest,
   EngineResponse,
 } from "../../shared/custom-bot/engine-api";
 import { ENGINE_API_VERSION } from "../../shared/custom-bot/engine-api";
-import { logger } from "./logger";
+import {
+  getCatGoal,
+  reconstructGrid,
+} from "../../shared/custom-bot/dummy-engine-utils";
 
-/**
- * Handle a request from the official client
- */
-export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
-  logger.debug("Dumb bot processing request:", request.kind);
-
+function handleRequest(request: EngineRequest): EngineResponse {
   if (request.kind === "draw") {
-    // Always decline draws
     return {
       engineApiVersion: ENGINE_API_VERSION,
       requestId: request.requestId,
@@ -34,24 +27,15 @@ export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
     };
   }
 
-  // kind === "move"
   const state = request.state;
   const myPlayerId = request.seat.playerId;
 
   const grid = reconstructGrid(state);
-  const myCatPos = state.pawns[myPlayerId].cat as Cell;
+  const myCatPos = state.pawns[myPlayerId].cat;
   const goalPos = getCatGoal(state, myPlayerId);
-
-  logger.debug("Computing move:", {
-    myCatPos,
-    goalPos,
-    variant: state.config.variant,
-  });
 
   const move = computeDummyAiMove(grid, myCatPos, goalPos);
   const moveNotation = moveToStandardNotation(move, state.config.boardHeight);
-
-  logger.debug("Dumb bot chose move:", moveNotation);
 
   return {
     engineApiVersion: ENGINE_API_VERSION,
@@ -59,3 +43,20 @@ export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
     response: { action: "move", moveNotation },
   };
 }
+
+async function main(): Promise<void> {
+  const input = await Bun.stdin.text();
+  if (!input.trim()) {
+    throw new Error("No engine request provided on stdin.");
+  }
+
+  const request = JSON.parse(input) as EngineRequest;
+  const response = handleRequest(request);
+  process.stdout.write(`${JSON.stringify(response)}\n`);
+}
+
+main().catch((error) => {
+  const message = error instanceof Error ? error.message : String(error);
+  console.error(`Dummy engine error: ${message}`);
+  process.exit(1);
+});

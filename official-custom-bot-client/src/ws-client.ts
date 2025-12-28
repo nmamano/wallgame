@@ -24,8 +24,14 @@ import {
 } from "../../shared/contracts/custom-bot-protocol";
 import type { Variant, PlayerId } from "../../shared/domain/game-types";
 import { logger } from "./logger";
-import type { EngineRequest, EngineResponse } from "./engine-api";
-import { createMoveRequest, createDrawRequest } from "./engine-api";
+import type {
+  EngineRequest,
+  EngineResponse,
+} from "../../shared/custom-bot/engine-api";
+import {
+  createMoveRequest,
+  createDrawRequest,
+} from "../../shared/custom-bot/engine-api";
 import { handleDumbBotRequest } from "./dumb-bot";
 import {
   runEngine,
