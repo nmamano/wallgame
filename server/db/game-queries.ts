@@ -317,6 +317,7 @@ export const getReplayGame = async (
           pawnColor,
           catSkin: pawnShapes.cat,
           mouseSkin: pawnShapes.mouse,
+          homeSkin: pawnShapes.home,
         },
         elo: player.ratingAtStart ?? undefined,
       };

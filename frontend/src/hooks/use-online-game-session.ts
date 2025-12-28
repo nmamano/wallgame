@@ -320,6 +320,7 @@ export function useOnlineGameSession({
           pawnColor: localPreferences.pawnColor,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
+          homeSkin: localPreferences.homeSkin,
         },
       });
       if (result.kind !== "player") {
@@ -366,6 +367,7 @@ export function useOnlineGameSession({
     localPreferences.catSkin,
     localPreferences.displayName,
     localPreferences.mouseSkin,
+    localPreferences.homeSkin,
     localPreferences.pawnColor,
     refetchAccess,
     updateGameHandshake,

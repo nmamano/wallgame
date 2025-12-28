@@ -33,6 +33,7 @@ export const appearanceSchema = z
     pawnColor: z.string().max(32).optional(),
     catSkin: z.string().max(64).optional(),
     mouseSkin: z.string().max(64).optional(),
+    homeSkin: z.string().max(64).optional(),
   })
   .optional();
 

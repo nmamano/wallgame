@@ -9,7 +9,7 @@ import type {
   TouchEvent as ReactTouchEvent,
 } from "react";
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
-import { Cat, Rat } from "lucide-react";
+import { Cat, House, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
 import {
   type PlayerColor,
@@ -42,6 +42,8 @@ export type ArrowType = "staged" | "premoved" | "calculated";
 export type BoardPawn = Pawn & {
   id: string;
   previewState?: "staged" | "premoved";
+  visualType?: Pawn["type"];
+  visualPlayerId?: PlayerId;
 };
 
 export interface Arrow {
@@ -1006,6 +1008,28 @@ export function Board({
     };
   }, [touchDragPawnId]); // Only depends on touchDragPawnId now
 
+  const resolvePawnVisual = (pawn: BoardPawn) => {
+    const pawnStyle = pawn.pawnStyle;
+    const visualType = pawn.visualType ?? pawn.type;
+    const src = pawnStyle
+      ? visualType === "cat"
+        ? `/pawns/cat/${pawnStyle}`
+        : visualType === "mouse"
+          ? `/pawns/mouse/${pawnStyle}`
+          : visualType === "home"
+            ? `/pawns/home/${pawnStyle}`
+            : null
+      : null;
+
+    const Icon =
+      visualType === "mouse" ? Rat : visualType === "home" ? House : Cat;
+
+    return { src, Icon };
+  };
+
+  const resolvePawnColor = (pawn: BoardPawn) =>
+    playerColors[pawn.visualPlayerId ?? pawn.playerId];
+
   // Render drag ghost for touch dragging
   // Note: touchPosition is only set when isDraggingRef is true, so no need to check ref here
   const renderDragGhost = () => {
@@ -1014,21 +1038,13 @@ export function Board({
     const pawn = pawnsWithIds.find((p) => p.id === touchDragPawnId);
     if (!pawn) return null;
 
-    const pawnColor = playerColors[pawn.playerId];
-    const customCatPath =
-      pawn.type !== "mouse" && pawn.pawnStyle
-        ? `/pawns/cat/${pawn.pawnStyle}`
-        : null;
-    const customMousePath =
-      pawn.type === "mouse" && pawn.pawnStyle
-        ? `/pawns/mouse/${pawn.pawnStyle}`
-        : null;
+    const pawnColor = resolvePawnColor(pawn);
+    const { src, Icon } = resolvePawnVisual(pawn);
 
     const ghostSize = Math.min(cellWidthPx, cellHeightPx) * 0.8 || 48;
 
     const content = (() => {
-      if (customCatPath || customMousePath) {
-        const src = (customCatPath ?? customMousePath)!;
+      if (src) {
         return (
           <img
             src={src}
@@ -1043,7 +1059,6 @@ export function Board({
           />
         );
       }
-      const Icon = pawn.type === "mouse" ? Rat : Cat;
       return (
         <Icon
           strokeWidth={2.5}
@@ -1210,7 +1225,7 @@ export function Board({
   };
 
   const renderPawnWrapper = (pawn: BoardPawn, size: "lg" | "sm") => {
-    const pawnColor = playerColors[pawn.playerId];
+    const pawnColor = resolvePawnColor(pawn);
     const isControllable =
       !forceReadOnly &&
       (controllablePlayerId == null || pawn.playerId === controllablePlayerId);
@@ -1295,18 +1310,10 @@ export function Board({
       onPawnDragEnd?.();
     };
 
-    const customCatPath =
-      pawn.type !== "mouse" && pawn.pawnStyle
-        ? `/pawns/cat/${pawn.pawnStyle}`
-        : null;
-    const customMousePath =
-      pawn.type === "mouse" && pawn.pawnStyle
-        ? `/pawns/mouse/${pawn.pawnStyle}`
-        : null;
+    const { src, Icon } = resolvePawnVisual(pawn);
 
     const content = (() => {
-      if (customCatPath || customMousePath) {
-        const src = (customCatPath ?? customMousePath)!;
+      if (src) {
         return (
           <img
             src={src}
@@ -1321,7 +1328,6 @@ export function Board({
           />
         );
       }
-      const Icon = pawn.type === "mouse" ? Rat : Cat;
       // Remove fixed pixel size for lg, let it fill container
       const sizePx = size === "lg" ? undefined : 24;
       return (

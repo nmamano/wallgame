@@ -8,7 +8,6 @@ import type {
   TimeControlPreset,
   TimeControlConfig,
   Variant,
-  PawnType,
   MatchType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
@@ -21,6 +20,7 @@ import type {
   ResolveGameAccessResponse,
 } from "../../../shared/contracts/games";
 import type {
+  PawnSkinType,
   SettingsResponse,
   SuccessResponse,
   UpdateDisplayNameResponse,
@@ -85,7 +85,7 @@ export const settingsMutations = {
       api.settings["pawn-color"].$put({ json: { pawnColor } }),
     ),
 
-  updatePawn: (pawnType: PawnType, pawnShape: string) =>
+  updatePawn: (pawnType: PawnSkinType, pawnShape: string) =>
     handleResponse<SuccessResponse>(
       api.settings.pawn.$put({ json: { pawnType, pawnShape } }),
     ),

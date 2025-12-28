@@ -20,6 +20,7 @@ import { useSound } from "@/components/sound-provider";
 import { GameConfigurationPanel } from "@/components/game-configuration-panel";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
+import { HOME_PAWNS } from "@/lib/home-pawns";
 import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
 import {
   SELECTABLE_PLAYER_COLORS,
@@ -47,6 +48,8 @@ function Settings() {
     setCatPawn,
     mousePawn,
     setMousePawn,
+    homePawn,
+    setHomePawn,
     gameConfig,
     setGameConfig,
     displayName,
@@ -305,6 +308,19 @@ function Settings() {
                     basePath="/pawns/mouse/"
                     label="Mouse Pawn"
                     defaultLabel="Default Mouse"
+                    color={pawnColor}
+                  />
+                </div>
+
+                <div className="space-y-2">
+                  <Label htmlFor="home-pawn">Home Pawn</Label>
+                  <PawnSelector
+                    value={homePawn}
+                    onChange={setHomePawn}
+                    pawns={HOME_PAWNS}
+                    basePath="/pawns/home/"
+                    label="Home Pawn"
+                    defaultLabel="Default Home"
                     color={pawnColor}
                   />
                 </div>

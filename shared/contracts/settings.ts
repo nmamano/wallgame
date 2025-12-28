@@ -15,8 +15,11 @@ export const updatePawnColorSchema = z.object({
   pawnColor: z.string(),
 });
 
+export const pawnSkinTypeValues = ["cat", "mouse", "home"] as const;
+export type PawnSkinType = (typeof pawnSkinTypeValues)[number];
+
 export const updatePawnSchema = z.object({
-  pawnType: z.string(),
+  pawnType: z.enum(pawnSkinTypeValues),
   pawnShape: z.string(),
 });
 
@@ -54,7 +57,7 @@ export interface SettingsResponse {
 }
 
 export interface PawnSetting {
-  pawn_type: string;
+  pawn_type: PawnSkinType;
   pawn_shape: string;
 }
 
