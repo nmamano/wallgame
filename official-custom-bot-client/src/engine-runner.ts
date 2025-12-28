@@ -7,7 +7,10 @@
  */
 
 import { spawn } from "bun";
-import type { EngineRequest, EngineResponse } from "./engine-api";
+import type {
+  EngineRequest,
+  EngineResponse,
+} from "../../shared/custom-bot/engine-api";
 import { logger } from "./logger";
 
 export interface EngineRunnerOptions {
