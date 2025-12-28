@@ -10,11 +10,11 @@ import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
   Variant,
-  PawnType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { normalizeFreestyleConfig } from "../../../shared/domain/freestyle-setup";
 import type {
+  PawnSkinType,
   SettingsResponse,
   VariantParameters,
   VariantSetting,
@@ -52,6 +52,8 @@ export interface SettingsState {
   setCatPawn: (value: string) => void;
   mousePawn: string;
   setMousePawn: (value: string) => void;
+  homePawn: string;
+  setHomePawn: (value: string) => void;
   gameConfig: GameConfiguration;
   setGameConfig: (config: GameConfiguration) => void;
   // Display name (only relevant for logged-in users)
@@ -79,6 +81,7 @@ const STORAGE_KEYS = {
   PAWN_COLOR: "wall-game-pawn-color",
   CAT_PAWN: "wall-game-cat-pawn",
   MOUSE_PAWN: "wall-game-mouse-pawn",
+  HOME_PAWN: "wall-game-home-pawn",
   GAME_CONFIG: "wall-game-default-config",
   VARIANT_SETTINGS: "wall-game-variant-settings",
 } as const;
@@ -137,6 +140,10 @@ function useSettingsInternal(
   );
   const [localMousePawn, setLocalMousePawn] = useLocalStorageState<string>(
     STORAGE_KEYS.MOUSE_PAWN,
+    "default",
+  );
+  const [localHomePawn, setLocalHomePawn] = useLocalStorageState<string>(
+    STORAGE_KEYS.HOME_PAWN,
     "default",
   );
   const [localVariantSettings, setLocalVariantSettings] =
@@ -332,10 +339,12 @@ function useSettingsInternal(
   }, [isLoggedIn, dbSettings?.variantSettings]);
 
   // Derive pawn settings from DB (only for logged-in users)
-  const pawnSettingsFromDb = useMemo<Record<string, string> | null>(() => {
+  const pawnSettingsFromDb = useMemo<Partial<
+    Record<PawnSkinType, string>
+  > | null>(() => {
     if (!isLoggedIn) return null;
     if (!dbSettings?.pawnSettings) return null;
-    const pawnMap: Record<string, string> = {};
+    const pawnMap: Partial<Record<PawnSkinType, string>> = {};
     for (const pawn of dbSettings.pawnSettings) {
       pawnMap[pawn.pawn_type] = pawn.pawn_shape;
     }
@@ -405,9 +414,9 @@ function useSettingsInternal(
       pawnType,
       pawnShape,
     }: {
-      pawnType: string;
+      pawnType: PawnSkinType;
       pawnShape: string;
-    }) => settingsMutations.updatePawn(pawnType as PawnType, pawnShape),
+    }) => settingsMutations.updatePawn(pawnType, pawnShape),
     onMutate: async ({ pawnType, pawnShape }) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
       queryClient.setQueryData<SettingsResponse>(
@@ -575,6 +584,9 @@ function useSettingsInternal(
   const mousePawn = isLoggedIn
     ? (pawnSettingsFromDb?.mouse ?? "default")
     : localMousePawn;
+  const homePawn = isLoggedIn
+    ? (pawnSettingsFromDb?.home ?? "default")
+    : localHomePawn;
   const gameConfig = isLoggedIn
     ? (gameConfigFromDb ??
       ({ ...defaultGameConfig, rated: false } as GameConfiguration))
@@ -641,6 +653,14 @@ function useSettingsInternal(
       updatePawnMutation.mutate({ pawnType: "mouse", pawnShape: value });
     } else {
       setLocalMousePawn(value);
+    }
+  };
+
+  const setHomePawn = (value: string) => {
+    if (isLoggedIn) {
+      updatePawnMutation.mutate({ pawnType: "home", pawnShape: value });
+    } else {
+      setLocalHomePawn(value);
     }
   };
 
@@ -772,6 +792,8 @@ function useSettingsInternal(
     setCatPawn,
     mousePawn,
     setMousePawn,
+    homePawn,
+    setHomePawn,
     gameConfig,
     setGameConfig,
     displayName: isLoggedIn ? displayName : "Guest",

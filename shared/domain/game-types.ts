@@ -75,6 +75,7 @@ export interface PlayerAppearance {
   pawnColor?: string;
   catSkin?: string;
   mouseSkin?: string;
+  homeSkin?: string;
 }
 
 export interface GamePlayerSummary {
@@ -105,14 +106,15 @@ export interface GameSnapshot {
 
 export type WallOrientation = "vertical" | "horizontal";
 
-export type PawnType = "cat" | "mouse";
+export type PawnType = "cat" | "mouse" | "home";
+export type GamePawnType = Exclude<PawnType, "home">;
 
 // Cell represents an immutable [row, col] coordinate to prevent accidental writes
 export type Cell = readonly [number, number];
 
 // Action represents a single game action (cat move, mouse move, or wall placement)
 export interface Action {
-  type: "cat" | "mouse" | "wall";
+  type: GamePawnType | "wall";
   target: Cell;
   wallOrientation?: WallOrientation;
 }

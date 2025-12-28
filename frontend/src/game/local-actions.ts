@@ -1,7 +1,7 @@
 import type {
   Action,
   PlayerId,
-  PawnType,
+  GamePawnType,
 } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
 import { actionsEqual, buildDoubleStepPaths } from "@/lib/gameViewModel";
@@ -114,7 +114,7 @@ export const enqueueToggle = (
 const resolvePawnCell = (
   state: GameState,
   playerId: PlayerId,
-  pawnType: PawnType,
+  pawnType: GamePawnType,
 ) => {
   const pawns = state.pawns[playerId];
   return pawnType === "cat" ? pawns.cat : pawns.mouse;
@@ -138,11 +138,7 @@ export const resolveDoubleStep = ({
   if (distance !== 2) {
     return null;
   }
-  const paths = buildDoubleStepPaths(
-    action.type as PawnType,
-    currentCell,
-    action.target,
-  );
+  const paths = buildDoubleStepPaths(action.type, currentCell, action.target);
   if (!paths.length) {
     return null;
   }

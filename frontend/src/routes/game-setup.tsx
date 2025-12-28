@@ -439,6 +439,7 @@ function GameSetup() {
             pawnColor: settings.pawnColor,
             catSkin: settings.catPawn,
             mouseSkin: settings.mousePawn,
+            homeSkin: settings.homePawn,
           },
         });
         // Get host's playerId from the snapshot (server randomly assigns Player 1 or 2)
@@ -663,6 +664,7 @@ function GameSetup() {
           pawnColor: settings.pawnColor,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          homeSkin: settings.homePawn,
         },
       });
       if (response.kind === "spectator") {

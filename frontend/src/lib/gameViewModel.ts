@@ -3,7 +3,7 @@ import type {
   PlayerId,
   GameResult,
   Cell,
-  PawnType,
+  GamePawnType,
   Action,
   GameConfiguration,
 } from "../../../shared/domain/game-types";
@@ -224,7 +224,7 @@ export function actionsEqual(a: Action, b: Action): boolean {
 }
 
 export function buildDoubleStepPaths(
-  pawnType: PawnType,
+  pawnType: GamePawnType,
   from: Cell,
   to: Cell,
 ): Action[][] {

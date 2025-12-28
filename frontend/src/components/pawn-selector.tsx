@@ -56,6 +56,8 @@ export function PawnSelector({
   // Get the CSS filter for the selected color
   const colorFilter =
     color && colorFilterMap[color] ? colorFilterMap[color] : undefined;
+  const selectedPreviewSrc =
+    value === "default" ? null : `${normalizedBasePath}${value}`;
 
   // Scroll to selected item when dialog opens
   useEffect(() => {
@@ -95,10 +97,10 @@ export function PawnSelector({
         <Button variant="outline" className="w-full justify-between h-12">
           <span className="truncate">{displayValue}</span>
           {/* Preview of selected pawn */}
-          {value !== "default" && (
+          {selectedPreviewSrc && (
             <div className="h-8 w-8 ml-2 shrink-0">
               <img
-                src={`${normalizedBasePath}${value}`}
+                src={selectedPreviewSrc}
                 alt="Selected"
                 className="h-full w-full object-contain"
                 style={colorFilter ? { filter: colorFilter } : undefined}

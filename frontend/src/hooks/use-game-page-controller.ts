@@ -96,6 +96,7 @@ export interface LocalPreferences {
   pawnColor: PlayerColor;
   catSkin: string | undefined;
   mouseSkin: string | undefined;
+  homeSkin: string | undefined;
   displayName: string;
 }
 
@@ -109,6 +110,7 @@ export interface GamePlayer {
   isOnline: boolean;
   catSkin?: string;
   mouseSkin?: string;
+  homeSkin?: string;
 }
 
 export interface ScoreboardEntry {
@@ -238,6 +240,10 @@ function buildSeatViewsFromSnapshot(
       player.playerId === primaryLocalPlayerId
         ? localPreferences.mouseSkin
         : player.appearance?.mouseSkin,
+    homeSkin:
+      player.playerId === primaryLocalPlayerId
+        ? localPreferences.homeSkin
+        : player.appearance?.homeSkin,
   }));
 }
 
@@ -287,12 +293,14 @@ export function useGamePageController(gameId: string) {
       pawnColor: resolvePlayerColor(settings.pawnColor),
       catSkin: settings.catPawn,
       mouseSkin: settings.mousePawn,
+      homeSkin: settings.homePawn,
       displayName: settings.displayName,
     }),
     [
       settings.pawnColor,
       settings.catPawn,
       settings.mousePawn,
+      settings.homePawn,
       settings.displayName,
     ],
   );
@@ -755,6 +763,10 @@ export function useGamePageController(gameId: string) {
             index + 1 === nextPrimaryLocalPlayerId
               ? localPreferences.mouseSkin
               : undefined,
+          homeSkin:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? localPreferences.homeSkin
+              : undefined,
         }),
       );
       seatViewsRef.current = initialPlayers;
@@ -1014,6 +1026,7 @@ export function useGamePageController(gameId: string) {
           color: resolvedColor,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
+          homeSkin: localPreferences.homeSkin,
         };
       }
 
@@ -2004,22 +2017,45 @@ export function useGamePageController(gameId: string) {
     const sourceState =
       viewingHistory || !previewState ? boardState : previewState;
     if (!sourceState) return [];
+    const isClassicVariant = sourceState.config.variant === "classic";
     const basePawns = sourceState.getPawns().map((pawn) => {
-      const player = players.find((p) => p.playerId === pawn.playerId);
+      const isClassicGoal = isClassicVariant && pawn.type === "mouse";
+      const visualType = isClassicGoal ? "home" : pawn.type;
+      const visualPlayerId = isClassicGoal
+        ? pawn.playerId === 1
+          ? 2
+          : 1
+        : pawn.playerId;
+      const player = players.find((p) => p.playerId === visualPlayerId);
 
       let pawnStyle: string | undefined;
       if (
-        pawn.type === "cat" &&
+        visualType === "cat" &&
         player?.catSkin &&
         player.catSkin !== "default"
       ) {
         pawnStyle = player.catSkin;
       } else if (
-        pawn.type === "mouse" &&
+        visualType === "mouse" &&
         player?.mouseSkin &&
         player.mouseSkin !== "default"
       ) {
         pawnStyle = player.mouseSkin;
+      } else if (
+        visualType === "home" &&
+        player?.homeSkin &&
+        player.homeSkin !== "default"
+      ) {
+        pawnStyle = player.homeSkin;
+      }
+
+      if (isClassicGoal) {
+        return {
+          ...pawn,
+          pawnStyle,
+          visualType,
+          visualPlayerId,
+        };
       }
 
       return pawnStyle ? { ...pawn, pawnStyle } : pawn;
@@ -2042,6 +2078,7 @@ export function useGamePageController(gameId: string) {
           .map((action) => action.type),
       );
       pawnsWithIds.forEach((pawn) => {
+        if (pawn.type !== "cat" && pawn.type !== "mouse") return;
         if (
           pawn.playerId === stagingPlayerId &&
           stagedPawnTypes.has(pawn.type) &&
@@ -2060,6 +2097,7 @@ export function useGamePageController(gameId: string) {
           .map((action) => action.type),
       );
       pawnsWithIds.forEach((pawn) => {
+        if (pawn.type !== "cat" && pawn.type !== "mouse") return;
         if (
           pawn.playerId === premovePlayerId &&
           premovePawnTypes.has(pawn.type) &&
@@ -2882,8 +2920,10 @@ export function useGamePageController(gameId: string) {
 
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== ownerId) return;
+      if (pawn.type !== "cat" && pawn.type !== "mouse") return;
+      const pawnType = pawn.type;
       if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
-      if (isClassicVariant && pawn.type === "mouse") {
+      if (isClassicVariant && pawnType === "mouse") {
         setActionError("Goal is fixed.");
         setSelectedPawnId(null);
         setDraggingPawnId(null);
@@ -2896,19 +2936,19 @@ export function useGamePageController(gameId: string) {
 
       // Check if there's already a staged action for this pawn type
       const existingStagedPawnAction = queue.find(
-        (action) => action.type === pawn.type,
+        (action) => action.type === pawnType,
       );
 
       if (existingStagedPawnAction && gameState) {
         // Get the pawn's ORIGINAL position from gameState
         const originalCell =
-          pawn.type === "cat"
+          pawnType === "cat"
             ? gameState.pawns[ownerId].cat
             : gameState.pawns[ownerId].mouse;
 
         // Case 1: Dragging back to original position = undo the staged action
         if (originalCell[0] === targetRow && originalCell[1] === targetCol) {
-          setQueue((prev) => prev.filter((a) => a.type !== pawn.type));
+          setQueue((prev) => prev.filter((a) => a.type !== pawnType));
           setSelectedPawnId(null);
           setDraggingPawnId(null);
           setActionError(null);
@@ -2932,7 +2972,7 @@ export function useGamePageController(gameId: string) {
         }
 
         const baseAction: Action = {
-          type: pawn.type,
+          type: pawnType,
           target: [targetRow, targetCol],
         };
         const outcome = enqueueLocalAction(baseAction, queueMode, {
@@ -2948,7 +2988,7 @@ export function useGamePageController(gameId: string) {
 
       // No existing staged action for this pawn - original logic
       const baseAction: Action = {
-        type: pawn.type,
+        type: pawnType,
         target: [targetRow, targetCol],
       };
       const doubleStepSequence = resolveDoubleStep({
