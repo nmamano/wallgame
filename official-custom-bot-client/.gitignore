@@ -1,0 +1,13 @@
+# Build artifacts
+wallgame-bot-client
+wallgame-bot-client.exe
+
+# Dependencies
+node_modules/
+
+# Bun
+bun.lockb
+
+# IDE
+.vscode/
+.idea/

@@ -17,7 +17,9 @@
       "Bash(/c/Users/Nilo/.bun/bin/bun run:*)",
       "Bash(bun install:*)",
       "Bash(bun run:*)",
-      "Bash(./wallgame-bot-client.exe:*)"
+      "Bash(./wallgame-bot-client.exe:*)",
+      "Bash(bun test:*)",
+      "Bash(wsl bash -c 'cd /mnt/c/Users/Nilo/repos/wallgame && bun test tests/integration/custom-bot-client.integration.test.ts 2>&1')"
     ]
   },
   "outputStyle": "Explanatory"
