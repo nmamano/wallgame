@@ -44,5 +44,5 @@ The rules of the game are the same as Standard, except that the mouse cannot mov
 
 ## Non-goals
 
-- Don’t rename UI copy from “mouse” to “goal”.
-- Don’t add tests as part of this change.
+- Don't rename UI copy from “mouse” to “goal”.
+- Don't add tests as part of this change.

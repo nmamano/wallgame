@@ -212,6 +212,23 @@ const handleAttach = (
   socket: BotSocket,
   message: AttachMessage,
 ): boolean => {
+  // Validate client info (mandatory)
+  if (
+    typeof (message as unknown as { client?: unknown }).client !== "object" ||
+    message.client === null ||
+    typeof message.client.name !== "string" ||
+    message.client.name.trim() === "" ||
+    typeof message.client.version !== "string" ||
+    message.client.version.trim() === ""
+  ) {
+    sendAttachRejected(
+      ctx,
+      "INVALID_MESSAGE",
+      "`client` is required and must include non-empty `name` and `version`.",
+    );
+    return false;
+  }
+
   // Validate protocol version
   if (message.protocolVersion !== CUSTOM_BOT_PROTOCOL_VERSION) {
     sendAttachRejected(
@@ -334,6 +351,8 @@ const handleAttach = (
         playerId: connection.playerId,
       },
     },
+    state: serializeGameState(session),
+    snapshot: getSessionSnapshot(session.id),
     limits: DEFAULT_BOT_LIMITS,
   });
 
@@ -352,8 +371,8 @@ const handleAttach = (
     gameId: session.id,
     role: connection.role,
     playerId: connection.playerId,
-    clientName: message.client?.name,
-    clientVersion: message.client?.version,
+    clientName: message.client.name,
+    clientVersion: message.client.version,
   });
 
   return true;

@@ -1,226 +1,112 @@
-# Custom Bot Server <-> Client Protocol (Draft)
+# Wallgame Custom Bot Server <-> Client Protocol (v1)
 
-This document specifies the public WebSocket protocol between a Wallgame server and a "custom bot client".
+This document specifies the public WebSocket protocol between a Wallgame server and a **custom bot client**.
 
-A custom bot client attaches to a single game seat using a per-seat `seatToken` (shown in the UI during game setup), receives authoritative state snapshots, and submits proposed actions. The server remains authoritative for:
+The server is authoritative for rules, legality, clocks, ordering, and match lifecycle. A bot client is untrusted and can only respond to server requests.
 
-- rules and legality
-- clocks and timeouts
-- ordering / stale-response rejection
-- match lifecycle (including rematches)
+Source of truth in this repo:
 
-The protocol is designed to be implementable by anyone (not just the official Go client).
+- `shared/contracts/custom-bot-protocol.ts` (message shapes, codes)
+- `shared/domain/game-types.ts` (the `SerializedGameState` and `GameSnapshot` payloads)
+
+## Protocol Model (Request/Response)
+
+- The bot client is **idle** unless there is an outstanding server request.
+- The server sends game state with every decision request (`request`). It also sends it at the beginning of a game for information purposes (with `attached` for the first game and `rematch-started` for rematches).
+- There is at most **one active request** at a time.
+  - A newer request **invalidates** any prior request.
+  - If the client responds to an invalidated request, the server replies with `nack` code `STALE_REQUEST`.
+- If the client responds with an illegal action, the server replies with `nack` and the **same request remains active** when `retryable: true`.
 
 ## Versioning
 
 - The protocol is versioned by a single integer: `protocolVersion`.
-- This document describes `protocolVersion = 1` (draft).
-- Clients MUST include `protocolVersion` in the initial `attach` message.
+- This document describes `protocolVersion = 1`.
+- Clients MUST send `protocolVersion` in the initial `attach` message.
 - Clients MUST ignore unknown fields in server messages (forward compatibility).
-- Servers SHOULD ignore unknown fields in client messages, but MAY reject unknown `type` values.
+- Servers MAY ignore unknown fields in client messages, but will reject unknown/invalid message shapes.
 
 ## Transport
 
 - WebSocket endpoint:
   - Production: `wss://{host}/ws/custom-bot`
-  - Development: `ws://localhost:5173/ws/custom-bot`
-- All messages are UTF-8 JSON in WebSocket *text* frames.
+  - Local backend: `ws://localhost:3000/ws/custom-bot`
+  - Dev via Vite proxy: `ws://localhost:5173/ws/custom-bot`
+- All messages are UTF-8 JSON in WebSocket **text** frames.
 - Each WebSocket frame MUST contain exactly one JSON object.
-- Servers MUST enforce a max message size: 64 KiB. Oversized messages SHOULD close the socket with close code `1009`.
 
 ## Authentication: `seatToken`
 
-- Authentication is via a bearer token: `seatToken`.
-- A `seatToken` is issued for exactly one seat in exactly one game, and is intended to be used by exactly one custom bot client connection.
-- Tokens are single-use for attachment. After a successful attach, reuse MUST be rejected.
+- Authentication is via a bearer token: `seatToken` (shown in the game setup UI when a seat is configured as “Custom bot”).
+- A `seatToken` is scoped to exactly one seat in exactly one game (and successive games within the same match).
+- Tokens are **single-use** for attachment:
+  - After a successful `attach`, reusing the token MUST be rejected (`attach-rejected` code `TOKEN_ALREADY_USED`).
+  - The server treats disconnect during `playing` as resignation (so reconnect is not supported).
 
-## Core Concepts
+## IDs and Times
 
-### Seat identity vs `playerId`
+- `requestId`: server-generated string identifying a single decision window.
+- `serverTime`: milliseconds since Unix epoch.
 
-Wallgame distinguishes:
+## Message Types
 
-- **Seat identity:** stable within a match (rematch series). In v1 this is `role: "host" | "joiner"`.
-- **Game identity:** `gameId` (changes on rematch; each rematch is a new game).
-- **PlayerId:** `1 | 2` for turn order. This can swap between games in a match.
+### Client -> Server
 
-Bots attach to a seat identity (role), and should read the current `playerId` from server messages for the current game.
+#### `attach`
 
-### Active seat
-
-The "active seat" is the seat whose turn it currently is to act.
-
-- The active seat is identified by `state.turn` (a `PlayerId`).
-- A bot is the active seat when `state.turn === botSeat.playerId`.
-
-### State revision (`moveCount`)
-
-The authoritative state includes a monotonically increasing integer `moveCount` that acts as a game revision counter.
-
-- `moveCount` starts at `0`.
-- `moveCount` MUST increase after every applied move.
-- Clients MUST treat `moveCount` as opaque revision (not a move number) and MUST use it for stale-response prevention.
-- Clients MUST NOT assume `moveCount === state.history.length` (use `history` if you need move numbering).
-
-### IDs
-
-- `gameId`: string (currently generated by `nanoid(8)`).
-- `matchId`: string identifying the match series across rematches.
-  - In v1, `matchId` is server-defined; clients MUST treat it as an opaque string.
-- `turnRequestId`: string generated by the server to request a move.
-- `offerId`: string generated by the server to identify an offer (draw/rematch).
-- `requestId`: string generated by the client to correlate an `ack`/`nack` with a request.
-
-## Shared Data Types
-
-This protocol reuses Wallgame's canonical on-wire state representation. JSON field names are stable; unknown fields may be added in the future.
-
-### PlayerId
-
-`PlayerId` is `1` or `2`.
-
-In JSON objects keyed by `PlayerId`, keys are strings: `"1"` and `"2"` (because JSON object keys are strings).
-
-### Enumerations
-
-These are the current v1 enum values. Clients MUST treat unknown values as "unsupported" (the server may add variants/features in the future).
-
-- `state.status`: `playing` | `finished` | `aborted`
-- `state.result.reason`:
-  - `capture`
-  - `timeout`
-  - `resignation`
-  - `draw-agreement`
-  - `one-move-rule`
-- `state.config.variant`: `standard` | `classic` | `freestyle`
-- `snapshot.status`: `waiting` | `ready` | `in-progress` | `completed` | `aborted`
-- `snapshot.matchType`: `friend` | `matchmaking`
-
-### Coordinates (`Cell`)
-
-`Cell` is a JSON array `[row, col]`:
-
-- `row` is 0-based and increases downward (top row is `0`)
-- `col` is 0-based and increases rightward (leftmost column is `0`)
-- top-left is `[0, 0]`
-
-### Walls (`WallPosition`)
-
-`WallPosition` is:
-
-```json
-{
-  "cell": [4, 4],
-  "orientation": "vertical",
-  "playerId": 1
-}
-```
-
-- `orientation: "vertical"` means the wall is placed to the **right** of `cell` and blocks movement between `(row,col)` and `(row,col+1)`.
-- `orientation: "horizontal"` means the wall is placed **above** `cell` and blocks movement between `(row-1,col)` and `(row,col)`.
-- `playerId` MAY be omitted for neutral starting walls (e.g. Freestyle variant).
-
-### Standard move notation
-
-Moves are represented as strings in "standard notation" (also used in `state.history[].notation`):
-
-- **Cell notation:** `<file><rank>` where:
-  - `file` is a letter starting at `a` for `col = 0`, `b` for `col = 1`, ...
-  - `rank` is `1..boardHeight` bottom-up
-  - Example: on a 9-row board, `a1` is `[8,0]` and `a9` is `[0,0]`
-- **Action notation:**
-  - Cat move: `C{cell}` (e.g. `Ce4`)
-  - Mouse move: `M{cell}` (e.g. `Md5`)
-  - Vertical wall: `>{cell}` (e.g. `>f3`)
-  - Horizontal wall: `^{cell}` (e.g. `^f3`)
-- **Move notation:** actions joined by `.` in canonical order:
-  1. cat action (if any)
-  2. mouse action (if any)
-  3. wall actions (if any), ordered with vertical walls first, then horizontal; within each, sorted by column then row
-- **Pass move:** `---` (no actions)
-
-Clients SHOULD emit canonical ordering. Servers MUST interpret move notation as an unordered set of actions and apply actions in canonical order (to avoid ambiguity from client ordering).
-
-### Serialized game state (`SerializedGameState`)
-
-Server state snapshots are sent as:
-
-```json
-{
-  "status": "playing",
-  "turn": 1,
-  "moveCount": 12,
-  "timeLeft": { "1": 87.2, "2": 91.9 },
-  "lastMoveTime": 1735264000000,
-  "pawns": {
-    "1": { "cat": [4, 1], "mouse": [6, 2] },
-    "2": { "cat": [4, 7], "mouse": [6, 6] }
-  },
-  "walls": [{ "cell": [3, 3], "orientation": "vertical", "playerId": 1 }],
-  "initialState": { "pawns": { "1": { "cat": [..], "mouse": [..] }, "2": { "cat": [..], "mouse": [..] } }, "walls": [] },
-  "history": [{ "index": 1, "notation": "Ce4" }],
-  "config": { "variant": "standard", "rated": false, "boardWidth": 9, "boardHeight": 9, "timeControl": { "initialSeconds": 180, "incrementSeconds": 2 } }
-}
-```
-
-Notes:
-
-- `timeLeft` is in **seconds** (may be fractional).
-- `lastMoveTime` is milliseconds since epoch (server time when the last move was applied).
-- `result` is present only when `status !== "playing"`.
-- `state.config.timeControl` is always expressed as exact numbers: `{ initialSeconds: number, incrementSeconds: number }` (no preset labels).
-
-## Handshake (Attach)
-
-After the WebSocket connection is established, the client MUST send `attach` as its first message.
-
-### Client -> Server: `attach`
+Sent once immediately after opening the WebSocket.
 
 ```json
 {
   "type": "attach",
   "protocolVersion": 1,
-  "seatToken": "...",
+  "seatToken": "cbt_...",
   "supportedGame": {
-    "variants": ["standard", "classic"],
-    "maxBoardWidth": 12,
-    "maxBoardHeight": 12
+    "variants": ["standard", "classic", "freestyle"],
+    "maxBoardWidth": 20,
+    "maxBoardHeight": 20
   },
-  "client": {
-    "name": "my-bot-client",
-    "version": "0.1.0"
-  }
+  "client": { "name": "my-bot-client", "version": "0.1.0" }
 }
 ```
 
-- `supportedGame` is REQUIRED and is used to reject unsupported games at attach time (before the bot is considered "playing").
-- `client` is used for debugging.
+Notes:
 
-#### Compatibility check (attach time)
+- All the fields are mandatory.
+- `client` is used for logging purposes.
+- The server may reject attachment if `supportedGame` does not support the session's configuration.
 
-On receiving `attach`, the server MUST decide whether the client can control the seat for this game's config.
+#### `response`
 
-In v1, the compatibility rules are:
+Response to a single active server `request` (identified by `requestId`).
 
-- `state.config.variant` MUST be included in `attach.supportedGame.variants`.
-- `state.config.boardWidth <= attach.supportedGame.maxBoardWidth`
-- `state.config.boardHeight <= attach.supportedGame.maxBoardHeight`
+```json
+{
+  "type": "response",
+  "requestId": "req_...",
+  "response": { "action": "move", "moveNotation": "Ce4.Md5.>f3" }
+}
+```
 
-If the game is incompatible, the server MUST respond with `attach-rejected` using `code: "UNSUPPORTED_GAME_CONFIG"` and SHOULD close the socket.
+### Server -> Client
 
-### Server -> Client: `attached`
+#### `attached`
+
+Sent after successful `attach`.
 
 ```json
 {
   "type": "attached",
   "protocolVersion": 1,
-  "serverTime": 1735264000000,
-  "server": { "name": "wallgame", "version": "..." },
+  "serverTime": 1735264000123,
+  "server": { "name": "wallgame", "version": "1.0.0" },
   "match": {
-    "matchId": "...",
+    "matchId": "match_...",
     "gameId": "abcd1234",
-    "seat": { "role": "host", "playerId": 1 }
+    "seat": { "role": "joiner", "playerId": 2 }
   },
+  "state": { "...": "SerializedGameState" },
+  "snapshot": { "...": "GameSnapshot" },
   "limits": {
     "maxMessageBytes": 65536,
     "minClientMessageIntervalMs": 200,
@@ -229,16 +115,17 @@ If the game is incompatible, the server MUST respond with `attach-rejected` usin
 }
 ```
 
-After `attached`, the server MUST send an initial `state` snapshot and SHOULD send an initial `match-status` snapshot.
+Notes:
 
-### Server -> Client: `attach-rejected`
+- `seat.role` is stable across rematches; `seat.playerId` may change across rematches and is updated via `rematch-started`.
+- Receiving `attached` does not create a decision window; the client must remain idle until a `request` arrives.
+
+#### `attach-rejected`
+
+Sent when the server rejects `attach`, then the server closes the socket.
 
 ```json
-{
-  "type": "attach-rejected",
-  "code": "INVALID_TOKEN",
-  "message": "Seat token is invalid."
-}
+{ "type": "attach-rejected", "code": "INVALID_TOKEN", "message": "Seat token is invalid." }
 ```
 
 `code` values:
@@ -249,31 +136,175 @@ After `attached`, the server MUST send an initial `state` snapshot and SHOULD se
 - `SEAT_ALREADY_CONNECTED`
 - `UNSUPPORTED_GAME_CONFIG`
 - `PROTOCOL_UNSUPPORTED`
+- `INVALID_MESSAGE`
 - `INTERNAL_ERROR`
 
-After sending `attach-rejected`, the server SHOULD close the socket.
+#### `request`
 
-## Server -> Client Messages
-
-### `state`
-
-Sent whenever the authoritative game state changes, and also once immediately after a successful attach.
+The only way the server asks the bot for a decision. The server includes full state in every request.
 
 ```json
-{ "type": "state", "serverTime": 1735264000123, "state": { "...": "..." } }
+{
+  "type": "request",
+  "requestId": "req_...",
+  "serverTime": 1735264000456,
+  "kind": "move",
+  "state": { "...": "SerializedGameState" },
+  "snapshot": { "...": "GameSnapshot" }
+}
 ```
 
-### `match-status`
-
-Sent whenever match metadata changes (players joining/leaving, readiness, match score, rematch transitions), and also once after attach.
+For draw requests the server includes `offeredBy`:
 
 ```json
-{ "type": "match-status", "serverTime": 1735264000123, "snapshot": { "...": "..." } }
+{
+  "type": "request",
+  "requestId": "req_...",
+  "serverTime": 1735264000456,
+  "kind": "draw",
+  "offeredBy": 1,
+  "state": { "...": "SerializedGameState" },
+  "snapshot": { "...": "GameSnapshot" }
+}
 ```
 
-`snapshot` is Wallgame's `GameSnapshot` shape (players, status, config, match score, etc.).
+#### `ack`
 
-For completeness, v1 `GameSnapshot` looks like:
+Indicates the response was accepted and applied.
+
+```json
+{ "type": "ack", "requestId": "req_...", "serverTime": 1735264000789 }
+```
+
+#### `nack`
+
+Indicates the response was rejected.
+
+```json
+{
+  "type": "nack",
+  "requestId": "req_...",
+  "code": "ILLEGAL_MOVE",
+  "message": "Invalid move notation: Invalid action notation: Xz9",
+  "retryable": true,
+  "serverTime": 1735264000789
+}
+```
+
+If `retryable` is `true`, the same request is still active and the client may send another `response` with the same `requestId`.
+
+`code` values:
+
+- `NOT_ATTACHED`
+- `INVALID_MESSAGE`
+- `RATE_LIMITED`
+- `STALE_REQUEST`
+- `ILLEGAL_MOVE`
+- `INVALID_ACTION`
+- `INTERNAL_ERROR`
+
+#### `rematch-started`
+
+Sent when a rematch game is created within the same match and the bot connection continues into the new game.
+
+```json
+{
+  "type": "rematch-started",
+  "serverTime": 1735264000999,
+  "matchId": "match_...",
+  "newGameId": "wxyz9876",
+  "seat": { "role": "joiner", "playerId": 1 },
+  "state": { "...": "SerializedGameState" },
+  "snapshot": { "...": "GameSnapshot" }
+}
+```
+
+After `rematch-started`, the server may immediately send a new `request` if it needs a decision (for example, a `move` request if it is the bot's turn).
+
+## Request Kinds and Valid Responses
+
+The valid response actions are determined by the request `kind`. Any mismatched action receives `nack` code `INVALID_ACTION`.
+
+### `kind: "move"`
+
+Server expects the bot to either play a move or resign (it is the bot's turn).
+
+Valid `response.action` values:
+
+- `"move"` with `moveNotation`
+- `"resign"`
+
+### `kind: "draw"`
+
+Server informs the bot that the opponent offered a draw (the bot is not the active seat).
+
+Valid `response.action` values:
+
+- `"accept-draw"`
+- `"decline-draw"`
+
+### `kind: "rematch"`
+
+Server informs the bot that the opponent offered a rematch (the game is finished).
+
+Valid `response.action` values:
+
+- `"accept-rematch"`
+- `"decline-rematch"`
+
+## Shared Payloads
+
+Every `request` includes:
+
+- `state`: a `SerializedGameState`
+- `snapshot`: a `GameSnapshot`
+
+These are the server's canonical on-wire representations. Clients SHOULD ignore unknown fields.
+
+### `PlayerId`
+
+`PlayerId` is `1` or `2` (this may change later if we add more variants).
+
+In JSON objects keyed by `PlayerId` (e.g. `timeLeft`), keys are strings: `"1"` and `"2"`.
+
+### `SerializedGameState`
+
+```json
+{
+  "status": "playing",
+  "turn": 2,
+  "moveCount": 12,
+  "timeLeft": { "1": 123000, "2": 98000 },
+  "lastMoveTime": 1735264000123,
+  "pawns": { "1": { "cat": [8, 0], "mouse": [7, 0] }, "2": { "cat": [0, 8], "mouse": [1, 8] } },
+  "walls": [{ "cell": [4, 4], "orientation": "vertical", "playerId": 1 }],
+  "initialState": { "pawns": { "1": { "cat": [8, 0], "mouse": [7, 0] }, "2": { "cat": [0, 8], "mouse": [1, 8] } }, "walls": [] },
+  "history": [{ "index": 0, "notation": "Ce4.Md5" }],
+  "config": {
+    "variant": "standard",
+    "timeControl": { "initialSeconds": 180, "incrementSeconds": 2, "preset": "blitz" },
+    "rated": false,
+    "boardWidth": 9,
+    "boardHeight": 9
+  }
+}
+```
+
+Key fields:
+- `status`: `"playing"` | `"finished"` | `"aborted"`
+- `turn`: the `PlayerId` who must act next
+- `moveCount`: monotonically increasing revision counter (clients do NOT need to echo this; use `requestId` for ordering)
+- `timeLeft`: remaining time in milliseconds per player
+- `history[].notation`: standard move notation (see below)
+
+`result.reason` values:
+- `capture`
+- `timeout`
+- `resignation`
+- `draw-agreement`
+- `one-move-rule`
+
+### `GameSnapshot`
 
 ```json
 {
@@ -281,244 +312,69 @@ For completeness, v1 `GameSnapshot` looks like:
   "status": "in-progress",
   "config": { "variant": "standard", "timeControl": { "initialSeconds": 180, "incrementSeconds": 2 }, "rated": false, "boardWidth": 9, "boardHeight": 9 },
   "matchType": "friend",
-  "createdAt": 1735264000000,
+  "createdAt": 1735263999000,
   "updatedAt": 1735264000123,
   "players": [
-    { "role": "host", "playerId": 1, "displayName": "Alice", "connected": true, "ready": true },
+    { "role": "host", "playerId": 1, "displayName": "Alice", "connected": true, "ready": true, "appearance": { "pawnColor": "#f00" }, "elo": 1200 },
     { "role": "joiner", "playerId": 2, "displayName": "Bot", "connected": true, "ready": true }
   ],
   "matchScore": { "1": 0, "2": 0 }
 }
 ```
 
-Where each `players[]` entry MAY include:
+`status` values:
+- `waiting` | `ready` | `in-progress` | `completed` | `aborted`
 
-- `appearance`: `{ pawnColor?: string, catSkin?: string, mouseSkin?: string }`
-- `elo`: number (absent for guests)
+`matchType` values:
+- `friend` | `matchmaking`
 
-### `turn` (turn-to-act)
+## Standard Move Notation (`moveNotation`)
 
-Sent when the bot-controlled seat is expected to act (typically when it becomes that seat's turn).
+Moves are sent as a single string in standard notation (see the [learn page](https://wallgame.io/learn) for more details):
 
-```json
-{
-  "type": "turn",
-  "serverTime": 1735264000456,
-  "turnRequestId": "...",
-  "expectedMoveCount": 12,
-  "seat": { "role": "host", "playerId": 1 }
-}
-```
+- `"Ce4"`: move the cat to cell `e4`
+- `"Md5"`: move the mouse to cell `d5`
+- `">f3"`: place a **vertical** wall to the **right** of cell `f3`
+- `"^f3"`: place a **horizontal** wall **above** cell `f3`
+- Combine multiple actions in one move with `.` separators: `"Ce4.Md5"`
+- `"---"` represents an empty move (no actions)
 
-Rules:
+Cell notation:
+- Columns use letters (`a`, `b`, `c`, ...) from left to right.
+- Rows use numbers from bottom to top, so on a 9-row board the top row is `9` and bottom row is `1`.
 
-- `turn` does not carry state. Clients MUST act using the latest `state` message.
-- If a client has not yet received a `state` with `state.moveCount === expectedMoveCount`, it MUST wait and must not send `bot-action` yet.
-- `expectedMoveCount` MUST equal `state.moveCount`: a request is valid iff `expectedMoveCount === current state.moveCount` at the moment it is processed, not when it was sent.
-- `turn` MUST only be sent when the bot is the active seat (i.e., `state.turn === seat.playerId`).
-- `turn` MAY be re-sent (same `turnRequestId`) if the server wants to re-prompt; clients MUST be idempotent.
-- Draw offers are never included in `turn` messages; they are delivered separately and only when the bot is NOT the active seat.
+## Abuse Controls / Limits
 
-### Draw offers (advisory)
+The server sends its current limits in `attached.limits`. Clients SHOULD respect them.
 
-A draw offer is created at a specific `moveCount` (the game revision at the time the offer was made) and is associated with the game position at that revision.
+Current server behavior:
+- Rate limiting: if the client sends messages too quickly, the server replies `nack` code `RATE_LIMITED` (`retryable: true`).
+- Disconnect handling: if the bot disconnects while the game is `playing`, the server treats it as resignation for that seat.
+- The server may close the connection if too many invalid messages are received.
 
-Delivery rules:
+## Example Flows
 
-- The server MUST only send `draw-offer` to a bot-controlled connection when:
-  - the bot is NOT the active seat, and
-  - `offer.moveCount === current state.moveCount`.
-- Otherwise, the server MUST automatically reject the offer and MUST NOT deliver it to the bot client.
+### Move
 
-Client response rules:
+1. Client connects to `/ws/custom-bot`
+2. Client sends `attach`
+3. Server sends `attached`
+4. Server sends `request` with `kind: "move"`
+5. Client sends `response` with `action: "move"`
+6. Server sends `ack`
+7. Later, the server sends the next `request` when it needs another decision
 
-- The client is NOT required to respond to a draw offer.
-- The client MAY respond by sending a `bot-action` with `action.kind: "draw"`.
-- A draw offer expires immediately when `moveCount` increases.
-- Any applied move implicitly declines the active draw offer (if any).
-- If the client is evaluating a draw offer and receives a `state` with a higher `moveCount`, the evaluation MUST be discarded and no response should be sent for the expired offer.
-- Offers are advisory: they cannot block, pause, or delay play.
+### Draw
 
-#### `draw-offer`
+1. Opponent offers draw
+2. Server sends `request` with `kind: "draw"` and `offeredBy`
+3. Client responds with `accept-draw` or `decline-draw`
+4. Server responds with `ack` (or `nack` on invalid/stale)
 
-```json
-{
-  "type": "draw-offer",
-  "serverTime": 1735264000123,
-  "offerId": "...",
-  "offeredBy": 2,
-  "moveCount": 12
-}
-```
+### Rematch
 
-### Takebacks (server-only)
-
-Takebacks are not exposed to custom bot clients.
-
-- If a takeback is requested against a bot-controlled seat:
-  - if `state.config.rated === false` (unrated), the server automatically accepts the takeback.
-  - if `state.config.rated === true` (rated), the server automatically rejects the takeback.
-- No takeback messages are sent to the bot connection.
-- If a takeback is accepted, the bot will observe the resulting position change via a normal `state` update.
-
-### `rematch-offer`
-
-```json
-{
-  "type": "rematch-offer",
-  "serverTime": 1735264000123,
-  "offerId": "...",
-  "offeredBy": 2,
-  "gameId": "abcd1234"
-}
-```
-
-### `rematch-started`
-
-Sent when a rematch game is created within the same match. The existing custom-bot WebSocket connection remains attached to the seat and continues into the new game.
-
-```json
-{
-  "type": "rematch-started",
-  "serverTime": 1735264000999,
-  "matchId": "...",
-  "newGameId": "wxyz9876",
-  "seat": { "role": "host", "playerId": 2 }
-}
-```
-
-After `rematch-started`, the server MUST send a fresh `match-status` and initial `state` for the new game, and MAY immediately send `turn` if it is the bot's turn.
-
-### `ack` / `nack`
-
-The server acknowledges client requests with:
-
-```json
-{ "type": "ack", "requestId": "...", "serverTime": 1735264000789 }
-```
-
-Or rejects them with:
-
-```json
-{
-  "type": "nack",
-  "requestId": "...",
-  "code": "ILLEGAL_MOVE",
-  "message": "Move blocked by wall",
-  "retryable": false,
-  "serverTime": 1735264000789
-}
-```
-
-`code` values:
-
-- `NOT_ATTACHED`
-- `INVALID_MESSAGE`
-- `RATE_LIMITED`
-- `NOT_YOUR_TURN`
-- `STALE_STATE`
-- `ILLEGAL_MOVE`
-- `OFFER_UNKNOWN`
-- `OFFER_EXPIRED`
-- `GAME_NOT_PLAYING`
-- `INTERNAL_ERROR`
-
-## Client -> Server Messages
-
-Bots MUST NOT initiate meta-actions (offer draw, offer rematch). They may only:
-
-- submit a move when prompted by `turn`
-- resign when prompted by `turn`
-- optionally accept/decline incoming draw offers
-- accept/decline incoming rematch offers
-
-All client requests MUST include a unique `requestId` for correlation with `ack` / `nack`.
-
-### `bot-action`
-
-```json
-{
-  "type": "bot-action",
-  "requestId": "...",
-  "expectedMoveCount": 12,
-  "action": { "kind": "move", "turnRequestId": "...", "moveNotation": "Ce4.Md5.>f3" }
-}
-```
-
-#### Action kinds
-
-##### Move
-
-```json
-{
-  "kind": "move",
-  "turnRequestId": "...",
-  "moveNotation": "---"
-}
-```
-
-Rules:
-
-- `turnRequestId` MUST match the latest server `turn.turnRequestId` for the current game.
-- `expectedMoveCount` MUST equal the server's current `state.moveCount`.
-- `moveNotation` MUST follow standard move notation (see above).
-
-##### Resign
-
-```json
-{ "kind": "resign", "turnRequestId": "..." }
-```
-
-Rules:
-
-- `turnRequestId` MUST match the latest server `turn.turnRequestId` for the current game.
-- `expectedMoveCount` MUST equal the server's current `state.moveCount`.
-
-##### Respond to draw offer
-
-```json
-{
-  "kind": "draw",
-  "offerId": "...",
-  "decision": "accept"
-}
-```
-
-Rules:
-
-- Bots can only respond to draw offers when they are NOT the active seat.
-- `expectedMoveCount` MUST equal the server's current `state.moveCount`.
-- If the offer is expired or unknown, the server replies with `nack` using `OFFER_EXPIRED` or `OFFER_UNKNOWN`.
-
-##### Respond to rematch offer
-
-```json
-{
-  "kind": "rematch",
-  "offerId": "...",
-  "decision": "accept",
-  "gameId": "abcd1234"
-}
-```
-
-For rematch responses, `gameId` is required to avoid accepting an offer for an old game after a rematch transition.
-
-## Abuse Controls (Normative)
-
-Servers MUST defend against untrusted clients:
-
-- **Rate limit:** at most 1 client message per 200ms per socket.
-- **Invalid message limit:** after 10 invalid/stale messages, the server SHOULD close the socket and treat the bot seat as resigned.
-- **Schema validation:** servers MUST validate message shape and field types.
-- **Seat exclusivity:** only one active connection per seat; a second attach attempt MUST be rejected.
-- **Disconnect handling:** if the custom bot socket disconnects while the game is `playing`, the server SHOULD immediately end the game and mark the bot seat as resigned.
-
-## Example Flow (Happy Path)
-
-1. Client opens WebSocket to `/ws/custom-bot`.
-2. Client sends `attach`.
-3. Server sends `attached`, then `match-status`, then `state`.
-4. When it is the bot's turn:
-   - server sends `turn`
-   - client responds with `bot-action` kind `move`
-   - server sends `ack`, then sends updated `state`
+1. Opponent offers rematch
+2. Server sends `request` with `kind: "rematch"`
+3. Client responds with `accept-rematch`
+4. Server sends `ack`, then `rematch-started`
+5. Server sends a new `request` if it needs a decision in the rematch game

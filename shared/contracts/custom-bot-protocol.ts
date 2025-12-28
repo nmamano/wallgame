@@ -69,7 +69,8 @@ export interface AttachMessage {
   protocolVersion: number;
   seatToken: string;
   supportedGame: CustomBotSupportedGame;
-  client?: CustomBotClientInfo;
+  /** Required client identification (used for logging/debugging). */
+  client: CustomBotClientInfo;
 }
 
 /**
@@ -109,6 +110,10 @@ export interface AttachedMessage {
     gameId: string;
     seat: CustomBotSeatIdentity;
   };
+  /** Initial game state at time of attachment */
+  state: SerializedGameState;
+  /** Match metadata at time of attachment */
+  snapshot: GameSnapshot;
   limits: CustomBotServerLimits;
 }
 
@@ -119,6 +124,7 @@ export type AttachRejectedCode =
   | "SEAT_ALREADY_CONNECTED"
   | "UNSUPPORTED_GAME_CONFIG"
   | "PROTOCOL_UNSUPPORTED"
+  | "INVALID_MESSAGE"
   | "INTERNAL_ERROR";
 
 export interface AttachRejectedMessage {
