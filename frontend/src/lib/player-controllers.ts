@@ -1,7 +1,7 @@
 import type { PlayerType } from "@/lib/gameViewModel";
-import { getAiMove } from "./dumb-ai";
 import type { PlayerId, Move } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import { computeDummyAiMove } from "../../../shared/domain/dummy-ai";
 import type {
   ControllerActionKind,
   RematchDecision,
@@ -344,7 +344,7 @@ class EasyBotController implements AutomatedPlayerController {
     ];
 
     await delay(2000);
-    return getAiMove(state.grid.clone(), aiCatPos, opponentMousePos);
+    return computeDummyAiMove(state.grid.clone(), aiCatPos, opponentMousePos);
   }
 
   async respondToDrawOffer(): Promise<DrawDecision> {
