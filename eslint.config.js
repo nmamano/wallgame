@@ -19,6 +19,9 @@ export default tseslint.config(
       "**/.tanstack/tmp/**",
       "server/db/schema/**",
       "scripts/**",
+      // Bot client is standalone (downloaded separately via sparse checkout)
+      // It has its own tsconfig and is type-checked with `bun run typecheck`
+      "official-custom-bot-client/**",
     ],
   },
 
