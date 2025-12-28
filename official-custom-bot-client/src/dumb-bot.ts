@@ -12,6 +12,7 @@ import type {
 } from "../../shared/domain/game-types";
 import { Grid } from "../../shared/domain/grid";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
+import { computeDummyAiMove } from "../../shared/domain/dummy-ai";
 import type { EngineRequest, EngineResponse } from "./engine-api";
 import { ENGINE_API_VERSION } from "./engine-api";
 import { logger } from "./logger";
@@ -61,78 +62,6 @@ function getCatGoal(state: SerializedGameState, myPlayerId: PlayerId): Cell {
 }
 
 /**
- * Simple AI that walks towards the goal. Does not build walls.
- */
-function computeMove(
-  grid: Grid,
-  aiCatPos: Cell,
-  goalPos: Cell,
-): { actions: { type: "cat"; target: Cell }[] } {
-  const curDist = grid.distance(aiCatPos, goalPos);
-
-  // Try to find a cell at distance 2 that is 2 steps closer
-  const dist2offsets = [
-    [0, 2],
-    [1, 1],
-    [2, 0],
-    [1, -1],
-    [0, -2],
-    [-1, -1],
-    [-2, 0],
-    [-1, 1],
-  ];
-
-  for (const [or, oc] of dist2offsets) {
-    const candidatePos: Cell = [aiCatPos[0] + or, aiCatPos[1] + oc];
-
-    if (
-      grid.inBounds(candidatePos) &&
-      grid.distance(aiCatPos, candidatePos) === 2 &&
-      grid.distance(candidatePos, goalPos) === curDist - 2
-    ) {
-      return { actions: [{ type: "cat", target: candidatePos }] };
-    }
-  }
-
-  // If no distance-2 cell gets us closer, try distance-1 cells
-  const dist1offsets = [
-    [0, 1],
-    [1, 0],
-    [0, -1],
-    [-1, 0],
-  ];
-
-  for (const [or, oc] of dist1offsets) {
-    const candidatePos: Cell = [aiCatPos[0] + or, aiCatPos[1] + oc];
-
-    if (
-      grid.inBounds(candidatePos) &&
-      grid.distance(aiCatPos, candidatePos) === 1 &&
-      grid.distance(candidatePos, goalPos) === curDist - 1
-    ) {
-      return { actions: [{ type: "cat", target: candidatePos }] };
-    }
-  }
-
-  // If at distance 1, move to the goal
-  if (curDist === 1) {
-    return { actions: [{ type: "cat", target: goalPos }] };
-  }
-
-  // Fallback: just try any reachable neighbor that gets us closer
-  const neighbors = grid.accessibleNeighbors(aiCatPos);
-  for (const nbr of neighbors) {
-    const nbrDist = grid.distance(nbr, goalPos);
-    if (nbrDist < curDist) {
-      return { actions: [{ type: "cat", target: nbr }] };
-    }
-  }
-
-  // If stuck, make an empty move
-  return { actions: [] };
-}
-
-/**
  * Handle a request from the official client
  */
 export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
@@ -161,7 +90,7 @@ export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
     variant: state.config.variant,
   });
 
-  const move = computeMove(grid, myCatPos, goalPos);
+  const move = computeDummyAiMove(grid, myCatPos, goalPos);
   const moveNotation = moveToStandardNotation(move, state.config.boardHeight);
 
   logger.debug("Dumb bot chose move:", moveNotation);
