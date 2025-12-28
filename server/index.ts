@@ -7,6 +7,7 @@ import { settingsRoute } from "./routes/settings";
 import { gamesRoute } from "./routes/games";
 import { rankingRoute } from "./routes/ranking";
 import { registerGameSocketRoute } from "./routes/game-socket";
+import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 export function createApp() {
   const app = new Hono();
   app.use(logger());
@@ -28,6 +29,7 @@ export function createApp() {
     .route("/", authRoute); // /api/login, /api/register, etc.
 
   const websocket = registerGameSocketRoute(app);
+  registerCustomBotSocketRoute(app);
 
   // When users go to the main website (or any route that doesn't match an API
   // route), serve the frontend.
