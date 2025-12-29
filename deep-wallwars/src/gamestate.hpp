@@ -83,8 +83,13 @@ struct Move {
     Action first;
     Action second;
 
-    std::string standard_notation(Cell start) const;
+    std::string standard_notation(Cell start, int rows) const;
 };
+
+// Helper functions for official notation output with row coordinate flipping
+// (internal rows grow downward, official rows grow upward)
+std::string cell_notation(Cell cell, int rows);
+std::string wall_notation(Wall wall, int rows);
 
 struct Turn {
     Player player;
