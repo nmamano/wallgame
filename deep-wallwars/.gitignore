@@ -1,0 +1,15 @@
+/build*/
+/scripts/.ipynb_checkpoints
+/scripts/__pycache__
+/data/
+/models/
+/trained_models/
+/.venv
+/compile_commands.json
+.cache
+.cursor/
+settings.json
+ignore/
+/src/gui/font.hpp
+CMakeUserPresets.json
+scripts/log.txt
