@@ -41,8 +41,10 @@ std::string GameRecorder::to_json() const {
 
     Player player = Player::Red;
 
+    int rows = m_board_states.front().rows();
     for (std::size_t i = 0; i < m_moves.size(); ++i) {
-        result << i + 1 << ". " << m_moves[i].standard_notation(m_board_states[i].position(player));
+        result << i + 1 << ". "
+               << m_moves[i].standard_notation(m_board_states[i].position(player), rows);
         player = other_player(player);
 
         if (i + 1 < m_moves.size()) {

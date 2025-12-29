@@ -47,7 +47,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
                 break;
             }
 
-            std::cout << ai_move->standard_notation(ai_cell) << "\n";
+            std::cout << ai_move->standard_notation(ai_cell, mcts.current_board().rows()) << "\n";
             if (auto winner = mcts.current_board().winner(); winner != Winner::Undecided) {
                 recorder.record_winner(winner);
                 break;

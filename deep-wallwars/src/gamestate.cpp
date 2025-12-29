@@ -126,29 +126,92 @@ Turn Turn::prev() const {
     }
 }
 
-std::string Move::standard_notation(Cell start) const {
+std::string cell_notation(Cell cell, int rows) {
+    // Flip row: internal row 0 is at top, official row 1 is at bottom
+    // For a board with R rows: internal row r -> official row (R - r)
+    int official_row = rows - cell.row;
+    if (official_row < 1 || official_row > int(kRowLabels.size()) || cell.column < 0 ||
+        cell.column >= int(kColumnLabels.size())) {
+        throw std::runtime_error(std::format(
+            "Cell coordinates ({}, {}) cannot be expressed as standard notation for {} rows",
+            cell.column, cell.row, rows));
+    }
     std::stringstream out;
-    // Whew, what ugly formatting by clang-format...
+    out << kColumnLabels[cell.column] << kRowLabels[official_row - 1];
+    return out.str();
+}
+
+std::string wall_notation(Wall wall, int rows) {
+    std::stringstream out;
+    if (wall.type == Wall::Right) {
+        // Vertical wall: > followed by cell to the left
+        // The reference cell is the wall's stored cell
+        out << '>' << cell_notation(wall.cell, rows);
+    } else {
+        // Horizontal wall: ^ followed by cell below
+        // Wall::Down at cell (c, r) is between rows r and r+1 (internal)
+        // After row flip: between official rows (R-r) and (R-r-1)
+        // The cell below (lower official row) is at internal row r+1
+        Cell cell_below = wall.cell.step(Direction::Down);
+        out << '^' << cell_notation(cell_below, rows);
+    }
+    return out.str();
+}
+
+std::string Move::standard_notation(Cell start, int rows) const {
+    std::stringstream out;
+
+    // Collect direction and wall actions separately
+    std::optional<Cell> cat_destination;
+    std::vector<Wall> walls;
+
+    // Process first action
     folly::variant_match(
         first,
         [&](Direction dir) {
-            Cell cell = start.step(dir);
-
-            folly::variant_match(
-                second, [&](Direction dir2) { out << cell.step(dir2); },
-                [&](Wall wall) { out << cell << ' ' << wall; });
+            cat_destination = start.step(dir);
         },
         [&](Wall wall) {
-            folly::variant_match(
-                second, [&](Direction dir) { out << start.step(dir) << ' ' << wall; },
-                [&](Wall wall2) {
-                    if (wall < wall2) {
-                        out << wall << ' ' << wall2;
-                    } else {
-                        out << wall2 << ' ' << wall;
-                    }
-                });
+            walls.push_back(wall);
         });
+
+    // Process second action
+    folly::variant_match(
+        second,
+        [&](Direction dir) {
+            if (cat_destination) {
+                // Two consecutive directions: update to final destination
+                cat_destination = cat_destination->step(dir);
+            } else {
+                cat_destination = start.step(dir);
+            }
+        },
+        [&](Wall wall) {
+            walls.push_back(wall);
+        });
+
+    // Sort walls: vertical (Right/>) before horizontal (Down/^), then by column, then by row
+    // Note: sorting uses internal coordinates which works because we only care about ordering
+    std::sort(walls.begin(), walls.end(), [](Wall const& a, Wall const& b) {
+        if (a.type != b.type) {
+            return a.type == Wall::Right;  // Right (>) comes before Down (^)
+        }
+        return a.cell < b.cell;  // Then by cell position
+    });
+
+    // Output in order: cat move first, then walls, separated by periods
+    bool first_action = true;
+    if (cat_destination) {
+        out << 'C' << cell_notation(*cat_destination, rows);
+        first_action = false;
+    }
+    for (Wall const& wall : walls) {
+        if (!first_action) {
+            out << '.';
+        }
+        out << wall_notation(wall, rows);
+        first_action = false;
+    }
 
     return out.str();
 }
@@ -203,7 +266,7 @@ std::ostream& operator<<(std::ostream& out, Cell cell) {
 }
 
 std::ostream& operator<<(std::ostream& out, Wall wall) {
-    out << wall.cell << (wall.type == Wall::Right ? '>' : 'v');
+    out << (wall.type == Wall::Right ? '>' : '^') << wall.cell;
     return out;
 }
 
@@ -249,10 +312,10 @@ std::istream& operator>>(std::istream& in, Cell& cell) {
 
 std::istream& operator>>(std::istream& in, Wall& wall) {
     char dir;
-    in >> wall.cell >> dir;
+    in >> dir >> wall.cell;
 
     switch (dir) {
-        case 'v':
+        case '^':
             wall.type = Wall::Down;
             break;
         case '>':
