@@ -757,7 +757,7 @@ function GameSetup() {
               {playerConfigs.length > 0 && (
                 <div>
                   <PlayerConfiguration
-                    label="Player A"
+                    label="Seat A"
                     value={playerConfigs[0]}
                     onChange={(value) => {
                       const newConfigs = [...playerConfigs];
@@ -819,7 +819,7 @@ function GameSetup() {
               {playerConfigs.length > 1 && (
                 <div>
                   <PlayerConfiguration
-                    label="Player B"
+                    label="Seat B"
                     value={playerConfigs[1]}
                     onChange={(value) => {
                       const newConfigs = [...playerConfigs];
