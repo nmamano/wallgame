@@ -358,9 +358,10 @@ export class GameState {
           [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
           [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
         ];
+        // Wall legality: each cat must keep a path to the opponent's mouse.
         const mice: [Cell, Cell] = [
-          [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
           [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
+          [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
         ];
 
         if (!nextGrid.canBuildWall(cats, mice, wall)) {

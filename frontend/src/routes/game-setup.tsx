@@ -426,11 +426,12 @@ function GameSetup() {
     setCreateGameError(null);
     const isFriendGame = playerConfigs.includes("friend");
     const isMatchmakingGame = playerConfigs.includes("matched-user");
+    const isCustomBotGame = playerBType === "custom-bot";
 
-    if (isFriendGame || isMatchmakingGame) {
+    if (isFriendGame || isMatchmakingGame || isCustomBotGame) {
       setIsCreatingGame(true);
       try {
-        const matchType = isFriendGame ? "friend" : "matchmaking";
+        const matchType = isMatchmakingGame ? "matchmaking" : "friend";
         const response = await createGameSession({
           config: gameConfig,
           matchType,
@@ -441,6 +442,7 @@ function GameSetup() {
             mouseSkin: settings.mousePawn,
             homeSkin: settings.homePawn,
           },
+          joinerConfig: isCustomBotGame ? { type: "custom-bot" } : undefined,
         });
         // Get host's playerId from the snapshot (server randomly assigns Player 1 or 2)
         const hostPlayer = response.snapshot.players.find(
@@ -454,6 +456,7 @@ function GameSetup() {
           role: "host",
           playerId: hostPlayerId,
           shareUrl: response.shareUrl,
+          customBotSeatToken: response.customBotSeatToken,
         });
         void navigate({ to: `/game/${response.gameId}` });
       } catch (error) {
@@ -680,6 +683,7 @@ function GameSetup() {
         role: response.role,
         playerId: response.playerId,
         shareUrl: response.shareUrl,
+        customBotSeatToken: null,
       });
 
       void navigate({ to: `/game/${gameId}` });

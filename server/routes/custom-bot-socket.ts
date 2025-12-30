@@ -845,6 +845,16 @@ const handleRematchAcceptResponse = (
       newPlayerId,
     );
 
+    const botSocketToken =
+      connection.role === "host"
+        ? newSession.players.host.socketToken
+        : newSession.players.joiner.socketToken;
+    updateConnectionState({
+      id: newSession.id,
+      socketToken: botSocketToken,
+      connected: true,
+    });
+
     // Clear pending request (was cleared by transition, but be explicit)
     clearPendingRequest(socket.seatToken!);
     resetInvalidMessageCount(socket.seatToken!);

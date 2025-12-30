@@ -313,6 +313,7 @@ export const getReplayGame = async (
         displayName,
         connected: false,
         ready: true,
+        configType: "human",
         appearance: {
           pawnColor,
           catSkin: pawnShapes.cat,

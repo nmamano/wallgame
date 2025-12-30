@@ -403,6 +403,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
         displayName: player.displayName,
         connected: player.connected,
         ready: player.ready,
+        configType: resolveSeatConfigType(player),
         appearance: player.appearance,
         elo: player.elo,
       }),
@@ -433,6 +434,11 @@ export type SessionAccessResolution =
   | { kind: "waiting"; session: GameSession; reason?: GameAccessWaitingReason }
   | { kind: "spectator"; session: GameSession }
   | { kind: "replay"; session: GameSession };
+
+const resolveSeatConfigType = (
+  player: SessionPlayer,
+): GamePlayerSummary["configType"] =>
+  player.configType === "custom-bot" ? "custom-bot" : "human";
 
 export const resolveGameAccess = (args: {
   id: string;
@@ -523,6 +529,7 @@ export const listSessions = (): GameSnapshot[] => {
         displayName: player.displayName,
         connected: player.connected,
         ready: player.ready,
+        configType: resolveSeatConfigType(player),
         appearance: player.appearance,
         elo: player.elo,
       }),
@@ -554,6 +561,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
           displayName: player.displayName,
           connected: player.connected,
           ready: player.ready,
+          configType: resolveSeatConfigType(player),
           appearance: player.appearance,
           elo: player.elo,
         }),

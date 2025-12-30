@@ -8,6 +8,7 @@ export interface StoredGameHandshake {
   role: GameRole;
   playerId: PlayerId;
   shareUrl?: string;
+  customBotSeatToken: string | null;
 }
 
 const STORAGE_PREFIX = "game-handshake";
@@ -26,7 +27,11 @@ export const getGameHandshake = (
   const raw = sessionStorage.getItem(buildKey(gameId));
   if (!raw) return null;
   try {
-    return JSON.parse(raw) as StoredGameHandshake;
+    const parsed = JSON.parse(raw) as StoredGameHandshake;
+    return {
+      ...parsed,
+      customBotSeatToken: parsed.customBotSeatToken ?? null,
+    };
   } catch {
     sessionStorage.removeItem(buildKey(gameId));
     return null;

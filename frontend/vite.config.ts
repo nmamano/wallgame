@@ -25,6 +25,7 @@ export default defineConfig({
   // backend (due to how we bundle it). But what matters is that, in both,
   // there is a single origin).
   server: {
+    host: true,
     proxy: {
       "/api": {
         target: "http://127.0.0.1:3000",

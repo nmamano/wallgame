@@ -40,6 +40,7 @@ export const appearanceSchema = z
 export const matchTypeValues = ["friend", "matchmaking"] as const;
 export const boardSizeValues = ["small", "medium", "large"] as const;
 export const playerConfigTypeValues = ["friend", "custom-bot"] as const;
+export type PlayerConfigType = (typeof playerConfigTypeValues)[number];
 
 export const createGameSchema = z.object({
   config: z.object({
@@ -80,9 +81,9 @@ export interface GameCreateResponse {
   snapshot: GameSnapshot;
   /**
    * Seat token for custom bot attachment.
-   * Only present when joinerConfig.type === "custom-bot".
+   * Null when joinerConfig.type is not "custom-bot".
    */
-  customBotSeatToken?: string;
+  customBotSeatToken: string | null;
 }
 
 export interface GameSessionDetails {
@@ -150,6 +151,7 @@ export type ResolveGameAccessResponse =
         token: string;
         socketToken: string;
       };
+      customBotSeatToken: string | null;
       matchStatus: GameSnapshot;
       state: SerializedGameState;
       shareUrl?: string;

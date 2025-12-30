@@ -16,6 +16,7 @@ import type {
   GameSessionDetails,
   JoinGameResponse,
   MatchmakingGamesResponse,
+  PlayerConfigType,
   ReadyGameResponse,
   ResolveGameAccessResponse,
 } from "../../../shared/contracts/games";
@@ -136,6 +137,10 @@ export const createGameSession = async (args: {
   matchType: MatchType;
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
+  joinerConfig?: {
+    type: PlayerConfigType;
+    displayName?: string;
+  };
 }): Promise<GameCreateResponse> => {
   // Normalize timeControl: handle legacy localStorage format where it was just a string
   let timeControl: TimeControlConfig;
@@ -164,6 +169,7 @@ export const createGameSession = async (args: {
         matchType: args.matchType,
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
+        joinerConfig: args.joinerConfig,
         // Let server randomly decide who is Player 1
       },
     }),
