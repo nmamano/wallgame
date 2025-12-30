@@ -82,6 +82,8 @@ export class BotClient {
   // Active request tracking
   private activeRequestId: string | null = null;
   private lastRequest: RequestMessage | null = null;
+  private lastRequestById = new Map<string, RequestMessage>();
+  private lastResponseById = new Map<string, BotResponseMessage["response"]>();
   private nackRetryCount: number = 0;
   private static readonly MAX_NACK_RETRIES = 1;
 
@@ -332,6 +334,7 @@ export class BotClient {
     // Update active request ID (newer requests invalidate older ones)
     this.activeRequestId = message.requestId;
     this.lastRequest = message;
+    this.lastRequestById.set(message.requestId, message);
     this.nackRetryCount = 0;
     this.state = "processing";
 
@@ -411,8 +414,15 @@ export class BotClient {
     // Calculate timeout based on remaining time
     // Note: JSON keys are strings, so we need to access with string key
     const myPlayerId = this.seat!.playerId;
-    const timeLeftMs =
+    const timeLeftRaw =
       serverMessage.state.timeLeft[String(myPlayerId) as `${PlayerId}`];
+    // Server timeLeft is in seconds; normalize to ms for engine timeouts.
+    const initialSeconds =
+      serverMessage.state.config.timeControl.initialSeconds ?? 0;
+    const timeLeftMs =
+      initialSeconds > 0 && timeLeftRaw <= initialSeconds * 100
+        ? timeLeftRaw * 1000
+        : timeLeftRaw;
     const timeoutMs = calculateEngineTimeout(timeLeftMs);
 
     const engineOptions: EngineRunnerOptions = {
@@ -458,6 +468,7 @@ export class BotClient {
       response,
     };
 
+    this.lastResponseById.set(requestId, response);
     this.send(message);
     this.state = "waiting";
   }
@@ -482,6 +493,8 @@ export class BotClient {
    */
   private handleAck(message: AckMessage): void {
     logger.debug(`Response ${message.requestId} acknowledged`);
+    this.lastRequestById.delete(message.requestId);
+    this.lastResponseById.delete(message.requestId);
   }
 
   /**
@@ -491,9 +504,12 @@ export class BotClient {
     logger.warn(
       `Response ${message.requestId} rejected: ${message.code} - ${message.message}`,
     );
+    this.logNackContext(message);
 
     if (!message.retryable) {
       logger.error("Non-retryable error, response rejected permanently");
+      this.lastRequestById.delete(message.requestId);
+      this.lastResponseById.delete(message.requestId);
       return;
     }
 
@@ -512,8 +528,36 @@ export class BotClient {
       await this.processRequest(this.lastRequest);
     } else if (this.nackRetryCount >= BotClient.MAX_NACK_RETRIES) {
       logger.error("Max NACK retries exceeded, resigning");
+      this.lastRequestById.delete(message.requestId);
+      this.lastResponseById.delete(message.requestId);
       this.sendResponse(message.requestId, { action: "resign" });
     }
+  }
+
+  private logNackContext(message: NackMessage): void {
+    if (message.code !== "ILLEGAL_MOVE") {
+      return;
+    }
+
+    const request =
+      this.lastRequestById.get(message.requestId) ?? this.lastRequest ?? null;
+    const response = this.lastResponseById.get(message.requestId) ?? null;
+
+    logger.error("Illegal move context:", {
+      requestId: message.requestId,
+      serverMessage: message.message,
+      retryable: message.retryable,
+      response,
+      request: request
+        ? {
+            kind: request.kind,
+            serverTime: request.serverTime,
+            seat: this.seat,
+            state: request.state,
+            snapshot: request.snapshot,
+          }
+        : null,
+    });
   }
 
   /**

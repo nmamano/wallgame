@@ -12,18 +12,27 @@ find_package(CUDAToolkit REQUIRED)
 find_package(gflags REQUIRED)
 find_package(glog REQUIRED)
 find_package(folly REQUIRED)
+find_package(nlohmann_json 3.2.0 REQUIRED)
 # TODO: find TensorRT with CMake
 
-# Convert ONNX model to TensorRT format
+# Convert ONNX models to TensorRT format
 add_custom_command(
     OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt
-    COMMAND trtexec --onnx=${CMAKE_CURRENT_SOURCE_DIR}/assets/models/5x5_60000.onnx 
+    COMMAND trtexec --onnx=${CMAKE_CURRENT_SOURCE_DIR}/assets/models/5x5_60000.onnx
             --saveEngine=${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt --fp16
     DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/5x5_60000.onnx
-    COMMENT "Converting ONNX model to TensorRT format"
+    COMMENT "Converting 5x5 ONNX model to TensorRT format"
 )
 
-add_custom_target(model_trt ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/8x8_750000.trt
+    COMMAND trtexec --onnx=${CMAKE_CURRENT_SOURCE_DIR}/assets/models/8x8_750000.onnx
+            --saveEngine=${CMAKE_CURRENT_BINARY_DIR}/8x8_750000.trt --fp16
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/8x8_750000.onnx
+    COMMENT "Converting 8x8 ONNX model to TensorRT format"
+)
+
+add_custom_target(model_trt ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt ${CMAKE_CURRENT_BINARY_DIR}/8x8_750000.trt)
 
 add_library(core OBJECT
     src/batched_model.cpp
@@ -38,14 +47,21 @@ add_library(core OBJECT
     src/simple_policy.cpp
     src/state_conversions.cpp
     src/tensorrt_model.cpp
+    src/engine_adapter.cpp
 )
 
-target_link_libraries(core PUBLIC Folly::folly CUDA::cudart nvinfer nvonnxparser atomic)
+target_link_libraries(core PUBLIC Folly::folly CUDA::cudart nvinfer nvonnxparser atomic nlohmann_json::nlohmann_json)
 
 add_executable(deep_ww
     src/main.cpp
 )
 target_link_libraries(deep_ww PRIVATE core)
+
+# Engine adapter executable for official custom-bot client
+add_executable(deep_ww_engine
+    src/engine_main.cpp
+)
+target_link_libraries(deep_ww_engine PRIVATE core gflags)
 
 # Unit tests (optional)
 find_package(Catch2 3)

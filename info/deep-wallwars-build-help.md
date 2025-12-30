@@ -9,7 +9,29 @@ wsl -d Ubuntu
 cd /mnt/c/Users/Nilo/repos/Deep-Wallwars
 ```
 
-2. Build the C++ Self-Play Core
+2. Install Required System Packages
+
+The project requires some additional libraries that need to be installed via apt. Run these commands in your WSL Ubuntu terminal:
+
+```bash
+# Update package lists
+sudo apt update
+
+# Install nlohmann-json (required for engine adapter)
+sudo apt install -y nlohmann-json3-dev
+
+# Install SFML (optional, only needed for --gui flag)
+sudo apt install -y libsfml-dev
+```
+
+**What these packages do:**
+
+- **nlohmann-json3-dev**: Modern C++ JSON library used by the engine adapter (`deep_ww_engine`) to parse and generate JSON requests/responses for the official custom-bot client.
+- **libsfml-dev**: Simple and Fast Multimedia Library, enables the optional GUI for interactive play with the `--gui` flag.
+
+**Note:** These only need to be installed once. After installation, they'll be available for all future builds.
+
+3. Build the C++ Self-Play Core
 
 The C++ project uses CUDA, TensorRT, and Folly. Since Folly and its dependencies were installed in a persistent custom location, you must provide the paths to CMake.
 
@@ -25,20 +47,9 @@ $HOME/deepwallwars_folly_deps/folly_build_scratch/installed/glog-Or4_YcKCBYmwhzp
 
 # 3. Build the project using all CPU cores
 make -j$(nproc)
-
-### GUI Support (Optional)
-
-If you want to use the `--gui` flag, you need to install SFML before running CMake:
-
-```bash
-sudo apt update
-sudo apt install libsfml-dev
 ```
 
-Then rebuild with CMake. The build system will automatically detect SFML and enable `GUI_ENABLED`.
-```
-
-3. Run C++ Tests and Executables
+4. Run C++ Tests and Executables
 
 Verify the build works correctly:
 
@@ -57,7 +68,7 @@ The build now produces two executables:
 - `deep_ww` - The original self-play and interactive executable
 - `deep_ww_engine` - Engine adapter for the official custom-bot client (see [ENGINE_ADAPTER.md](../deep-wallwars/ENGINE_ADAPTER.md))
 
-4. Run Python Training
+5. Run Python Training
 
 To run the AlphaGo-inspired training loop, you must use the Python virtual environment where PyTorch and fastai are installed.
 
@@ -83,6 +94,22 @@ python3 training.py --generations 1 --games 20 --training-games 20 --samples 100
 
 ## Troubleshooting
 
+### WSL2 Networking for the Custom-Bot Client
+
+If the official custom-bot client runs inside WSL2 while Vite/backend run on Windows, `localhost` inside WSL2 does **not** point to Windows. You must connect to a Windows-reachable IP.
+
+**Checklist:**
+- Start Vite with `server.host = true` (or `bun run dev -- --host 0.0.0.0`) so it binds to a non-loopback address.
+- Use one of the "Network" URLs printed by Vite (example: `http://172.27.160.1:5173/`).
+- Run the bot client with `--server` set to that address, e.g.:
+
+```bash
+WIN_HOST=172.27.160.1
+bun run start --server "http://$WIN_HOST:5173" --token cbt_...
+```
+
+If the connection still fails, check Windows Firewall for inbound rules on port 5173.
+
 ### CMake Path Conflicts (WSL vs Windows)
 
 If you see an error like:
@@ -92,8 +119,27 @@ This happens because CMake is seeing the project through two different path styl
 
 **Solution:**
 Delete the `build` directory and start fresh from within WSL:
+
 ```bash
 rm -rf build
 mkdir build && cd build
-# Re-run the cmake command from Step 2
+# Re-run the cmake command from Step 3
 ```
+
+### Missing Package Errors
+
+If CMake fails with errors like:
+
+```
+Could not find a package configuration file provided by "nlohmann_json"
+```
+
+**Solution:**
+Install the missing package (see Step 2). For nlohmann_json specifically:
+
+```bash
+sudo apt update
+sudo apt install -y nlohmann-json3-dev
+```
+
+Then re-run the cmake configuration command from the build directory.

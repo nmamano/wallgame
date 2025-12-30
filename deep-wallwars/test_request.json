@@ -1,0 +1,72 @@
+{
+  "engineApiVersion": 1,
+  "kind": "move",
+  "requestId": "test-001",
+  "server": {
+    "matchId": "match-123",
+    "gameId": "game-456",
+    "serverTime": 1735264000456
+  },
+  "seat": {
+    "role": "host",
+    "playerId": 1
+  },
+  "state": {
+    "status": "playing",
+    "turn": 1,
+    "moveCount": 0,
+    "timeLeft": { "1": 300000, "2": 300000 },
+    "lastMoveTime": 1735264000000,
+    "pawns": {
+      "1": { "cat": [7, 0], "mouse": [7, 1] },
+      "2": { "cat": [0, 7], "mouse": [0, 6] }
+    },
+    "walls": [],
+    "initialState": {
+      "pawns": {
+        "1": { "cat": [7, 0], "mouse": [7, 1] },
+        "2": { "cat": [0, 7], "mouse": [0, 6] }
+      },
+      "walls": []
+    },
+    "history": [],
+    "config": {
+      "variant": "classic",
+      "timeControl": { "initialSeconds": 300, "incrementSeconds": 0 },
+      "rated": false,
+      "boardWidth": 8,
+      "boardHeight": 8
+    }
+  },
+  "snapshot": {
+    "id": "game-456",
+    "status": "in-progress",
+    "config": {
+      "variant": "classic",
+      "timeControl": { "initialSeconds": 300, "incrementSeconds": 0 },
+      "rated": false,
+      "boardWidth": 8,
+      "boardHeight": 8
+    },
+    "matchType": "friend",
+    "createdAt": 1735264000000,
+    "updatedAt": 1735264000000,
+    "players": [
+      {
+        "role": "host",
+        "playerId": 1,
+        "displayName": "Test Bot",
+        "connected": true,
+        "ready": true
+      },
+      {
+        "role": "joiner",
+        "playerId": 2,
+        "displayName": "Opponent",
+        "connected": true,
+        "ready": true
+      }
+    ],
+    "matchScore": { "1": 0, "2": 0 }
+  }
+}
