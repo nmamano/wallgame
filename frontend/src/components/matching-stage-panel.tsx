@@ -21,6 +21,7 @@ export interface MatchingPlayer {
   name: string;
   isReady: boolean;
   isYou: boolean;
+  customBotSeatToken: string | null;
   isConnected?: boolean;
   role?: GameRole;
   statusOverride?: "aborted";
@@ -61,6 +62,7 @@ export function MatchingStagePanel({
   waitingReason,
 }: MatchingStagePanelProps) {
   const [copied, setCopied] = useState(false);
+  const [copiedToken, setCopiedToken] = useState<string | null>(null);
   const resolvedShareUrl =
     shareUrl ??
     (typeof window !== "undefined" ? window.location.href : undefined);
@@ -70,6 +72,16 @@ export function MatchingStagePanel({
     void navigator.clipboard.writeText(resolvedShareUrl);
     setCopied(true);
     setTimeout(() => setCopied(false), 2000);
+  };
+
+  const handleCopyToken = (token: string) => {
+    if (typeof navigator === "undefined") return;
+    void navigator.clipboard.writeText(token);
+    setCopiedToken(token);
+    setTimeout(
+      () => setCopiedToken((prev) => (prev === token ? null : prev)),
+      2000,
+    );
   };
 
   const getPlayerIcon = (type: PlayerType) => {
@@ -162,6 +174,41 @@ export function MatchingStagePanel({
     );
   };
 
+  const renderCustomBotInstructions = (player: MatchingPlayer) => {
+    if (!player.customBotSeatToken) {
+      return (
+        <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
+          <Loader2 className="h-3 w-3 animate-spin" />
+          Generating access token...
+        </div>
+      );
+    }
+    return (
+      <div className="mt-2 space-y-2">
+        <p className="text-sm text-muted-foreground">
+          Use this token in your engine:
+        </p>
+        <div className="flex items-center gap-2">
+          <code className="flex-1 bg-muted p-2 rounded text-xs truncate">
+            {player.customBotSeatToken}
+          </code>
+          <Button
+            size="icon"
+            variant="outline"
+            className="h-8 w-8 shrink-0"
+            onClick={() => handleCopyToken(player.customBotSeatToken)}
+          >
+            {copiedToken === player.customBotSeatToken ? (
+              <Check className="h-4 w-4 text-green-500" />
+            ) : (
+              <Copy className="h-4 w-4" />
+            )}
+          </Button>
+        </div>
+      </div>
+    );
+  };
+
   const renderInstructions = (player: MatchingPlayer) => {
     if (player.isReady) return null;
 
@@ -170,14 +217,7 @@ export function MatchingStagePanel({
     }
 
     if (player.type === "custom-bot") {
-      return (
-        <div className="mt-2">
-          <p className="text-sm text-muted-foreground">
-            Access token:{" "}
-            <code className="bg-muted px-1 rounded">bot_token_123</code>
-          </p>
-        </div>
-      );
+      return renderCustomBotInstructions(player);
     }
 
     return null;

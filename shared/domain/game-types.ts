@@ -78,12 +78,15 @@ export interface PlayerAppearance {
   homeSkin?: string;
 }
 
+export type SeatConfigType = "human" | "custom-bot";
+
 export interface GamePlayerSummary {
   role: "host" | "joiner"; // Creator vs joiner
   playerId: PlayerId;
   displayName: string;
   connected: boolean; // Whether player is currently connected via WebSocket
   ready: boolean; // Whether player has clicked "ready" in the matching stage. Both players must be ready before game starts.
+  configType: SeatConfigType;
   appearance?: PlayerAppearance;
   elo?: number; // Player's ELO rating for this game's variant/time control (undefined for guests)
 }

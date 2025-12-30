@@ -20,15 +20,5 @@ export function getCatGoal(
   myPlayerId: PlayerId,
 ): Cell {
   const opponentId: PlayerId = myPlayerId === 1 ? 2 : 1;
-  const variant = state.config.variant;
-
-  if (variant === "classic") {
-    const cols = state.config.boardWidth;
-    if (myPlayerId === 1) {
-      return [0, cols - 1];
-    }
-    return [0, 0];
-  }
-
   return state.pawns[opponentId].mouse;
 }

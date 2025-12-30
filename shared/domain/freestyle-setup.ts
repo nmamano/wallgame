@@ -75,7 +75,8 @@ export const generateFreestyleInitialState = (
     "freestyle",
   );
   const cats: [Cell, Cell] = [pawns[1].cat, pawns[2].cat];
-  const mice: [Cell, Cell] = [pawns[1].mouse, pawns[2].mouse];
+  // Wall legality uses opponent mice as the path targets.
+  const mice: [Cell, Cell] = [pawns[2].mouse, pawns[1].mouse];
 
   const walls: WallPosition[] = [];
   const wallCount = randomInt(rng, WALL_COUNT_MIN, WALL_COUNT_MAX);

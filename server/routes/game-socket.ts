@@ -1098,6 +1098,13 @@ const handleActionRequest = async (
         type: "rematch-offer",
         playerId,
       });
+      const session = getSession(socket.sessionId);
+      const opponentRole = socket.role === "host" ? "joiner" : "host";
+      const opponent =
+        opponentRole === "host" ? session.players.host : session.players.joiner;
+      if (opponent.configType === "custom-bot") {
+        sendBotRequest(socket.sessionId, opponentRole, "rematch", playerId);
+      }
       sendActionAck(socket, message);
       console.info("[ws] action-offerRematch processed", {
         sessionId: socket.sessionId,
