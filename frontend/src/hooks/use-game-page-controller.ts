@@ -648,14 +648,10 @@ export function useGamePageController(gameId: string) {
       colors[playerId] = value;
     });
 
-    // Handle color collision: apply tinting if both players have the same color
+    // Handle color collision: fall back to defaults if both players match.
     if (colors[1] === colors[2]) {
-      const baseColor = colors[1];
-      // Only apply tinting if it's a base color (not already a variant)
-      if (!baseColor.endsWith("-dark") && !baseColor.endsWith("-light")) {
-        colors[1] = `${baseColor}-dark` as PlayerColor;
-        colors[2] = `${baseColor}-light` as PlayerColor;
-      }
+      colors[1] = DEFAULT_PLAYER_COLORS[1];
+      colors[2] = DEFAULT_PLAYER_COLORS[2];
     }
 
     return colors;
