@@ -28,9 +28,6 @@ const PLAYER_TYPE_INFO: Record<
   "matched-user": {
     text: "You'll be paired with a random player with compatible settings and similar rating.",
   },
-  "easy-bot": { text: "You'll play against an easy AI bot." },
-  "medium-bot": { text: "You'll play against a medium AI bot." },
-  "hard-bot": { text: "You'll play against a hard AI bot." },
   "custom-bot": {
     text: "You'll get an access token so that you can connect your own bot.",
     hasLink: true,
@@ -52,9 +49,6 @@ export function PlayerConfiguration({
     { value: "you", label: "You" },
     { value: "friend", label: "Friend" },
     { value: "matched-user", label: "Matched user" },
-    { value: "easy-bot", label: "Easy Bot" },
-    { value: "medium-bot", label: "Medium Bot" },
-    { value: "hard-bot", label: "Hard Bot" },
     { value: "custom-bot", label: "Custom bot" },
   ];
 

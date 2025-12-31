@@ -21,7 +21,6 @@ interface PlayerTimerCardProps {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
-  isThinking?: boolean;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
 }
@@ -36,7 +35,6 @@ export function PlayerTimerCard({
   player,
   isActive,
   timeLeft,
-  isThinking = false,
   score = null,
   gameStatus = "playing",
 }: PlayerTimerCardProps) {
@@ -117,17 +115,8 @@ export function PlayerTimerCard({
         )}
       </div>
 
-      {/* Right side: "Bot is thinking" message, Timer */}
+      {/* Right side: Timer */}
       <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">
-        {/* "Bot is thinking" info message */}
-        {isThinking && (
-          <div className="flex items-center gap-1 lg:gap-1.5 text-[10px] lg:text-xs text-muted-foreground">
-            <Bot className="w-3 h-3" />
-            <span>{`Thinking...`}</span>
-          </div>
-        )}
-
-        {/* Timer */}
         <div
           className={`text-md lg:text-xl font-mono font-bold whitespace-nowrap ${
             shouldShowActiveState

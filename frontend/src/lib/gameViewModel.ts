@@ -11,14 +11,7 @@ import { GameState } from "../../../shared/domain/game-state";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 
-export type PlayerType =
-  | "you"
-  | "friend"
-  | "matched-user"
-  | "easy-bot"
-  | "medium-bot"
-  | "hard-bot"
-  | "custom-bot";
+export type PlayerType = "you" | "friend" | "matched-user" | "custom-bot";
 
 // ============================================================================
 // View Model Architecture
@@ -201,12 +194,6 @@ export function buildPlayerName(
       return "Friend";
     case "matched-user":
       return "Matched Player";
-    case "easy-bot":
-      return "Easy Bot";
-    case "medium-bot":
-      return "Medium Bot";
-    case "hard-bot":
-      return "Hard Bot";
     case "custom-bot":
       return "Custom Bot";
     default:
@@ -299,7 +286,7 @@ export function sanitizePlayerList(
     }
   }
   while (list.length < 2) {
-    list.push("easy-bot");
+    list.push("you");
   }
   if (forceYouFirst && list.indexOf("you") === 1) {
     [list[0], list[1]] = [list[1], list[0]];

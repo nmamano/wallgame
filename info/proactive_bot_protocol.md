@@ -755,3 +755,22 @@ Engines SHOULD fail fast and clearly:
 
 - If the request is unsupported, write a valid JSON response with a deterministic safe default (for example `resign` on `kind: "move"`, or `decline-draw`).
 - Write human-readable diagnostics to stderr.
+
+---
+
+# Implementation prompt
+
+We need to migrate the current monorepo from the "seat-based bot protocol" (V1), to the new V2 "proactive bot protocol" (V2).
+
+Important: we don't need to maintain backward compatibility with V1. That's dead code that needs to be deleted.
+
+V2 is described entirely in @info/proactive_bot_protocol.md 
+
+We need to update:
+
+1. The server backend logic (I believe no DB changes are needed).
+2. The frontend UI.
+3. The official bot client.
+4. The dummy engine
+5. The Deep Wallwars adaptor.
+6. The integration tests.

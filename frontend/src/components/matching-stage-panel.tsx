@@ -110,12 +110,6 @@ export function MatchingStagePanel({
       case "friend":
       case "matched-user":
         return player.name || resolveOnlineOpponentLabel();
-      case "easy-bot":
-        return "Easy Bot";
-      case "medium-bot":
-        return "Medium Bot";
-      case "hard-bot":
-        return "Hard Bot";
       case "custom-bot":
         return "Custom Bot";
       default:
@@ -175,7 +169,8 @@ export function MatchingStagePanel({
   };
 
   const renderCustomBotInstructions = (player: MatchingPlayer) => {
-    if (!player.customBotSeatToken) {
+    const token = player.customBotSeatToken;
+    if (!token) {
       return (
         <div className="mt-2 flex items-center gap-2 text-sm text-muted-foreground">
           <Loader2 className="h-3 w-3 animate-spin" />
@@ -190,15 +185,15 @@ export function MatchingStagePanel({
         </p>
         <div className="flex items-center gap-2">
           <code className="flex-1 bg-muted p-2 rounded text-xs truncate">
-            {player.customBotSeatToken}
+            {token}
           </code>
           <Button
             size="icon"
             variant="outline"
             className="h-8 w-8 shrink-0"
-            onClick={() => handleCopyToken(player.customBotSeatToken)}
+            onClick={() => handleCopyToken(token)}
           >
-            {copiedToken === player.customBotSeatToken ? (
+            {copiedToken === token ? (
               <Check className="h-4 w-4 text-green-500" />
             ) : (
               <Copy className="h-4 w-4" />
