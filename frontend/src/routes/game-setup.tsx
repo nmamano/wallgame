@@ -78,6 +78,20 @@ function getDefaultOtherPlayerType(mode?: string): PlayerType {
   }
 }
 
+function buildDefaultPlayerConfigs(
+  variant: Variant,
+  mode?: string,
+): PlayerType[] {
+  const playerCount = getPlayerCountForVariant(variant);
+  const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
+  const newConfigs: PlayerType[] = Array.from(
+    { length: playerCount },
+    () => defaultOtherPlayerType,
+  );
+  newConfigs[0] = "you";
+  return newConfigs;
+}
+
 const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
   "friend",
   "matched-user",
@@ -85,6 +99,11 @@ const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
   "medium-bot",
   "hard-bot",
   "custom-bot",
+];
+
+const PLAYER_B_ALLOWED_OPTIONS: PlayerType[] = [
+  "you",
+  ...PLAYER_B_BASE_OPTIONS,
 ];
 
 const BOARD_SIZE_MIN = 4;
@@ -223,54 +242,20 @@ function GameSetup() {
   }, [gameConfig.boardHeight]);
 
   // Player configurations state
-  const [playerConfigs, setPlayerConfigs] = useState<PlayerType[]>([]);
+  const [playerConfigs, setPlayerConfigs] = useState<PlayerType[]>(() =>
+    buildDefaultPlayerConfigs(gameConfig.variant, mode),
+  );
 
   // Initialize player configs based on variant and mode
   useEffect(() => {
-    const playerCount = getPlayerCountForVariant(gameConfig.variant);
-    const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
-    const newConfigs: PlayerType[] = Array.from(
-      { length: playerCount },
-      () => defaultOtherPlayerType,
-    );
-    newConfigs[0] = "you"; // Player A defaults to "You"
-    setPlayerConfigs(newConfigs);
+    setPlayerConfigs(buildDefaultPlayerConfigs(gameConfig.variant, mode));
   }, [gameConfig.variant, mode]);
 
-  const playerAType = playerConfigs[0];
   const playerBType = playerConfigs[1];
+  const playerBLabelOverrides = { you: "Also you" } as const;
 
-  const playerBAllowedOptions = useMemo(() => {
-    if (playerAType === "you") {
-      return (["you", ...PLAYER_B_BASE_OPTIONS] as PlayerType[]).filter(
-        (value, index, array) => array.indexOf(value) === index,
-      );
-    }
-    return PLAYER_B_BASE_OPTIONS;
-  }, [playerAType]);
-
-  useEffect(() => {
-    if (playerConfigs.length < 2) return;
-    if (!playerBType) return;
-    if (playerBAllowedOptions.includes(playerBType)) return;
-    const fallback = playerBAllowedOptions[0];
-    if (!fallback) return;
-    setPlayerConfigs((prev) => {
-      if (prev.length < 2) {
-        return prev;
-      }
-      const next = [...prev];
-      next[1] = fallback;
-      return next;
-    });
-  }, [playerBAllowedOptions, playerBType, playerConfigs.length]);
-
-  const playerBLabelOverrides =
-    playerAType === "you" ? ({ you: "Also you" } as const) : undefined;
-
-  // Check if rated games are allowed (only if one player is "you" and the other is "friend" or "matched-user")
+  // Check if rated games are allowed (only vs friend/matched user, no bots)
   const canRatedGame = useMemo(() => {
-    const hasYou = playerConfigs.includes("you");
     const hasFriend = playerConfigs.includes("friend");
     const hasMatchedUser = playerConfigs.includes("matched-user");
     const hasOnlyBots = playerConfigs.every(
@@ -282,30 +267,13 @@ function GameSetup() {
     );
 
     // Rated games are only allowed if:
-    // - One player is "you"
     // - The other player is "friend" or "matched-user"
     // - No bots are involved
     return (
-      hasYou &&
       (hasFriend || hasMatchedUser) &&
       !hasOnlyBots &&
       playerConfigs.length === 2
     );
-  }, [playerConfigs]);
-
-  // Check if create game button should be disabled
-  // Friend and Matched User can only appear against You
-  const canCreateGame = useMemo(() => {
-    const hasYou = playerConfigs.includes("you");
-    const hasFriend = playerConfigs.includes("friend");
-    const hasMatchedUser = playerConfigs.includes("matched-user");
-
-    // If Friend or Matched User is selected, "You" must also be selected
-    if ((hasFriend || hasMatchedUser) && !hasYou) {
-      return false;
-    }
-
-    return true;
   }, [playerConfigs]);
 
   // Update rated status when player configs change or when not logged in
@@ -327,14 +295,9 @@ function GameSetup() {
 
     // If variant changed, reset player configs (preserving mode-based defaults)
     if (normalizedConfig.variant !== gameConfig.variant) {
-      const playerCount = getPlayerCountForVariant(normalizedConfig.variant);
-      const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
-      const newConfigs: PlayerType[] = Array.from(
-        { length: playerCount },
-        () => defaultOtherPlayerType,
+      setPlayerConfigs(
+        buildDefaultPlayerConfigs(normalizedConfig.variant, mode),
       );
-      newConfigs[0] = "you";
-      setPlayerConfigs(newConfigs);
     }
   };
 
@@ -754,20 +717,19 @@ function GameSetup() {
               </div>
 
               {/* Row 2: Player A */}
-              {playerConfigs.length > 0 && (
-                <div>
-                  <PlayerConfiguration
-                    label="Seat A"
-                    value={playerConfigs[0]}
-                    onChange={(value) => {
-                      const newConfigs = [...playerConfigs];
-                      newConfigs[0] = value;
-                      setPlayerConfigs(newConfigs);
-                    }}
-                    excludeOptions={["friend", "matched-user"]}
-                  />
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label className="min-w-[100px]">Seat A</Label>
+                  <div className="flex h-10 w-[200px] items-center rounded-md border border-input bg-background px-3 text-sm text-foreground">
+                    You
+                  </div>
                 </div>
-              )}
+                <div className="min-h-[3rem]">
+                  <p className="text-sm text-muted-foreground">
+                    {"You'll make the moves."}
+                  </p>
+                </div>
+              </div>
 
               {/* Row 2: Time Control */}
               <div className="space-y-2">
@@ -816,21 +778,19 @@ function GameSetup() {
               </div>
 
               {/* Row 3: Player B */}
-              {playerConfigs.length > 1 && (
-                <div>
-                  <PlayerConfiguration
-                    label="Seat B"
-                    value={playerConfigs[1]}
-                    onChange={(value) => {
-                      const newConfigs = [...playerConfigs];
-                      newConfigs[1] = value;
-                      setPlayerConfigs(newConfigs);
-                    }}
-                    allowedOptions={playerBAllowedOptions}
-                    optionLabelOverrides={playerBLabelOverrides}
-                  />
-                </div>
-              )}
+              <div>
+                <PlayerConfiguration
+                  label="Seat B"
+                  value={playerConfigs[1]}
+                  onChange={(value) => {
+                    const newConfigs = [...playerConfigs];
+                    newConfigs[1] = value;
+                    setPlayerConfigs(newConfigs);
+                  }}
+                  allowedOptions={PLAYER_B_ALLOWED_OPTIONS}
+                  optionLabelOverrides={playerBLabelOverrides}
+                />
+              </div>
 
               {/* Row 3: Variant */}
               <div className="space-y-2">
@@ -916,7 +876,7 @@ function GameSetup() {
                 onClick={() => void handleCreateGame()}
                 className="max-w-xs"
                 size="lg"
-                disabled={!canCreateGame || isCreatingGame}
+                disabled={isCreatingGame}
               >
                 {isCreatingGame ? (
                   <>
@@ -930,14 +890,6 @@ function GameSetup() {
             </div>
 
             {/* Error message about invalid player configuration */}
-            {!canCreateGame && (
-              <div className="mt-1 text-center">
-                <p className="text-sm text-destructive">
-                  Friend and Matched User can only be selected when
-                  &quot;You&quot; is also selected as a player.
-                </p>
-              </div>
-            )}
             {createGameError && (
               <div className="mt-2 text-center">
                 <p className="text-sm text-destructive">{createGameError}</p>
