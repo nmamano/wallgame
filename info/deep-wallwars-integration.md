@@ -1,19 +1,9 @@
 # Deep-Wallwars integration notes
 
-## What this is
-
 Deep-Wallwars, created by [Thorben Tröbst](https://github.com/t-troebst), is integrated into this monorepo as **vendored source code** using
 **git subtree with squash**, and is treated as **authoritative local code**.
 
 There is **no ongoing relationship with upstream**.
-
-## Directory layout
-
-- `deep-wallwars/`
-  - Contains a snapshot of the Deep-Wallwars engine source
-  - All engine modifications live here
-  - There is NO nested git repository
-  - Files are tracked directly by the monorepo
 
 ## Git model (important)
 
@@ -26,7 +16,15 @@ Conceptually:
 
 > Deep-Wallwars is vendored code, not an external dependency.
 
-## Upstream policy (explicit)
+### Directory layout
+
+- `deep-wallwars/`
+  - Contains a snapshot of the Deep-Wallwars engine source
+  - All engine modifications live here
+  - There is NO nested git repository
+  - Files are tracked directly by the monorepo
+
+### Upstream policy (explicit)
 
 - We do NOT pull from upstream
 - We do NOT attempt to keep in sync
@@ -36,14 +34,14 @@ If upstream contributions are ever desired:
 - Changes will be manually ported from the monorepo into a clean fork
 - There are no plans to keep the fork (https://github.com/nmamano/Deep-Wallwars) up to date with the monorepo.
 
-## Development workflow
+### Development workflow
 
 - Edit engine code and platform code in the same editor / monorepo.
 - Single commits may touch both engine and server/wrapper code
 - Engine evolution is driven entirely by this project's needs
 - There is no special tooling, no submodules, no subtree pulls
 
-## Rationale
+### Rationale
 
 This setup was chosen because:
 - We want a single-repo, low-friction dev loop
@@ -53,26 +51,31 @@ This setup was chosen because:
 
 This is an intentional, irreversible choice.
 
-# Prompt for the integration
+# Adapter
 
-Adapt deep-wallwars/ to work as an engine for the official custom-bot client.
+Deep wallwars is adapted to work as an engine for the official custom-bot client.
 
-- API description, to be implemented exactly: @info/official_custom_bot_client_api.md
-- More context: @info/custom_bots_feature.md
+- This adapter integrates the Deep-Wallwars engine with the official Wall Game custom-bot client. Currently, it implements the Engine API v1 ("strict request/response protocol").
+- More context: @info/proactive_bot_protocol.md
 - Example of a dummy engine: dummy-engine/
 
-Notes:
+The adapter is a new binary build along with the normal deep wallwars binary. This binary is designed to evaluate a single decision (what move to make or whether to accept a draw).
 
-1. Deep wallwars only supports the Classic variant (not the Standard one). That's why the codebase doesn't mentions cats and mice, only pawns (the cats) and home corners. If asked for a move / draw decision for an unsupported variant, the adapter should resign / decline the draw and log the reason.
-2. Deep wallwars models are trained for specific board dimensions. For now, we only have access to a 8x8 model. That's the only dimension we can support. Let the model be a flag to the CLI which the client sets. If asked for a move / draw decision for an unsupported board dimension, the adapter should resign / decline the draw and log the reason.
-3. Most important: clean code; secondary: keep the adaptor separate from the existing code.
-4. Maybe you can add a new CLI flag for this new use case, which is to evaluate a single decision (what move to make or whether to accept a draw).
-5. For draws requests, the adapter should run the engine to evaluate the position and then accept the draw if it is worse for the engine side.
-6. For simplicity, make the amount of thinking time, in seconds, a flag. We'll later make the client set it.
+Design principle for the adapter: clean code is the most important; a secondary goal is to keep it separate from the existing code.
 
-# Implementation Comments
+## Key Features
 
-### New Files
+- **JSON API**: The engine reads a JSON request from stdin and writes a JSON response to stdout.
+- **Variants**: Classic only (reach opponent's corner first). That's why the codebase doesn't mentions cats and mice, only pawns (the cats) and home corners.
+- **Board dimensions**: Deep wallwars models are trained for specific board dimensions. For now, we only have access to a 8x8 model. That's the only dimension we can support. The model is a flag passed to the deep wallwars binary, and it is set from the parameters to the bot client CLI.
+  - Requires 8x8 trained model (`assets/models/8x8_750000.onnx` → `8x8_750000.trt`)
+- **Draws**: For draws requests, the adapter runs the engine to evaluate the position and then accepts the draw if it is worse for the engine side.
+- **Error handling**:
+  - Proper logging to stderr.
+  - The engine will automatically resign or decline draws for unsupported configurations (variant or board dimension).
+- **CLI flags**: Configurable model, samples, seed, cache size. There is also a thinking time flag, but it is not used for now.
+
+## Files
 
 1. **[deep-wallwars/src/engine_adapter.hpp](../deep-wallwars/src/engine_adapter.hpp)**
    - API types and function declarations
@@ -90,42 +93,290 @@ Notes:
    - Model loading (TensorRT or simple policy)
    - stdin/stdout JSON processing
 
-4. **[deep-wallwars/ENGINE_ADAPTER.md](../deep-wallwars/ENGINE_ADAPTER.md)**
-   - Complete usage documentation
-   - Build instructions
-   - Testing examples
+## Build System Changes
 
-### Build System Updates
+Changes to [deep-wallwars/CMakeLists.txt](../deep-wallwars/CMakeLists.txt):
+- New nlohmann_json dependency
+- New `engine_adapter.cpp` in the core library
+- New `deep_ww_engine` executable target
+- New 8x8 model conversion to TensorRT
 
-Modified [deep-wallwars/CMakeLists.txt](../deep-wallwars/CMakeLists.txt):
-- Added nlohmann_json dependency
-- Added engine_adapter.cpp to core library
-- Created new `deep_ww_engine` executable target
-- Added 8x8 model conversion to TensorRT
+## Engine Behavior
 
-### Key Features
+### Move Generation
 
-- **Model flexibility**: Supports both TensorRT models and simple policy
-- **MCTS integration**: Uses existing deep-wallwars MCTS for move generation
-- **Draw evaluation**: Evaluates position and accepts when losing
-- **Error handling**: Proper logging to stderr, JSON responses to stdout
-- **CLI flags**: Configurable model, thinking time, samples, seed, cache size
+- Uses MCTS with the specified model to find the best move
+- Returns moves in standard notation (e.g., `"Ca8.Mb7.>c5"`)
+- Resigns if no legal move is available
 
-### Usage Example
+### Draw Requests
+
+- Evaluates the position using MCTS
+- Accepts draws when the engine's evaluation is negative (losing position)
+- Declines draws when the engine's evaluation is positive or neutral
+
+### Error Handling
+
+The engine writes:
+
+- **stdout**: JSON response only
+- **stderr**: Logs and error messages (use `--log-level` in client to control)
+
+If a request cannot be fulfilled (unsupported variant/size, invalid JSON, etc.), the engine:
+
+- Returns `"action": "resign"` for move requests
+- Returns `"action": "decline-draw"` for draw requests
+- Logs the reason to stderr
+
+## Coordinate System Notes
+
+### Deep-Wallwars Internal Coordinates
+
+- Origin (0, 0) is top-left
+- Rows increase downward (row 0 = top)
+- Columns increase rightward (col 0 = left)
+- Format: `Cell{column, row}`
+
+### Official API Coordinates
+
+- Origin (0, 0) is top-left
+- Rows increase downward (row 0 = top)
+- Columns increase rightward (col 0 = left)
+- Format: `[row, col]`
+
+### Wall Mappings
+
+**Vertical Walls:**
+
+- API: `{cell: [r, c], orientation: "vertical"}` - blocks right of cell
+- Deep-Wallwars: `Wall{Cell{c, r}, Wall::Right}`
+
+**Horizontal Walls:**
+
+- API: `{cell: [r, c], orientation: "horizontal"}` - blocks above cell
+- Deep-Wallwars: `Wall{Cell{c, r-1}, Wall::Down}`
+
+## Limitations
+
+1. **Variant Support**: Classic only (no Standard or Freestyle)
+2. **Board Size**: 8x8 only (models are trained for specific dimensions)
+3. **Model Dependency**: Requires pre-converted TensorRT model for 8x8 boards
+
+These limitations are intentional to match the available trained models and the classic variant rules implemented in Deep-Wallwars.
+
+# Build Help (notes for myself)
+
+### Prerequisites
+
+- CMake 3.26+
+- CUDA Toolkit
+- TensorRT
+- folly
+- gflags, glog
+- nlohmann_json (3.2.0+)
+
+### Build Commands
+
+```bash
+cd deep-wallwars
+mkdir -p build && cd build
+cmake ..
+make deep_ww_engine
+```
+
+This creates the `deep_ww_engine` executable in `build/deep_ww_engine`.
+
+## Complete guide
+
+Here is the complete guide to building and running the Deep-Wallwars project on your Windows machine using the WSL2 Ubuntu environment.
+
+### 1. Enter the WSL Environment
+
+Open your Git Bash or Windows terminal and enter your Ubuntu distribution:
+
+```bash
+wsl -d Ubuntu
+cd /mnt/c/Users/Nilo/repos/Deep-Wallwars
+```
+
+### 2. Install Required System Packages
+
+The project requires some additional libraries that need to be installed via apt. Run these commands in your WSL Ubuntu terminal:
+
+```bash
+# Update package lists
+sudo apt update
+
+# Install nlohmann-json (required for engine adapter)
+sudo apt install -y nlohmann-json3-dev
+
+# Install SFML (optional, only needed for --gui flag)
+sudo apt install -y libsfml-dev
+```
+
+#### What these packages do:
+
+- **nlohmann-json3-dev**: Modern C++ JSON library used by the engine adapter (`deep_ww_engine`) to parse and generate JSON requests/responses for the official custom-bot client.
+- **libsfml-dev**: Simple and Fast Multimedia Library, enables the optional GUI for interactive play with the `--gui` flag.
+
+**Note:** These only need to be installed once. After installation, they'll be available for all future builds.
+
+### 3. Build the C++ Self-Play Core
+
+The C++ project uses CUDA, TensorRT, and Folly. Since Folly and its dependencies were installed in a persistent custom location, you must provide the paths to CMake.
+
+```bash
+# 1. Enter the build directory (create it if it doesn't exist)
+mkdir -p build && cd build
+
+# 2. Configure CMake with the persistent dependency paths
+# Note: These paths point to your persistent Folly installation
+cmake -DCMAKE_PREFIX_PATH="$HOME/deepwallwars_folly_deps/folly_build_scratch/installed/folly;\
+$HOME/deepwallwars_folly_deps/folly_build_scratch/installed/fmt-ay0yhNJPNTdY1lqD870fK2TOdV0tMIrf-S0qJs5-yLw;\
+$HOME/deepwallwars_folly_deps/folly_build_scratch/installed/glog-Or4_YcKCBYmwhzpCKzU3rxBin97HeIDv_8yQYRg7CTk" ..
+
+# 3. Build the project using all CPU cores
+make -j$(nproc)
+```
+
+### 4. Run C++ Tests and Executables
+
+Verify the build works correctly:
+
+```bash
+# Run unit tests
+./unit_tests
+
+# View help for the main executable
+./deep_ww --help
+
+# View help for the engine adapter (for custom-bot client integration)
+./deep_ww_engine --help
+```
+
+The build now produces two executables:
+- `deep_ww` - The original self-play and interactive executable
+- `deep_ww_engine` - Engine adapter for the official custom-bot client
+
+### 5. Run Python Training
+
+To run the AlphaGo-inspired training loop, you must use the Python virtual environment where PyTorch and fastai are installed.
+
+```bash
+# 1. Activate the virtual environment (from project root)
+cd /mnt/c/Users/Nilo/repos/Deep-Wallwars
+source .venv/bin/activate
+
+# 2. Navigate to the scripts directory
+cd scripts
+
+# 3. Run a test training generation
+# (This performs self-play via the C++ core and trains a new ResNet model)
+python3 training.py --generations 1 --games 20 --training-games 20 --samples 100 --threads 4
+```
+
+## Environment Notes
+
+- Persistent Dependencies: Folly and its specific `fmt` and `glog` versions are stored in `~/deepwallwars_folly_deps/`.
+- TensorRT SDK: The native `trtexec` tool is located in `~/opt/TensorRT-10.11.0.33/bin/` and is already added to your WSL `$PATH` via `~/.bashrc`.
+- GPU Support: PyTorch and the C++ core are both configured to use your NVIDIA RTX 4090 via CUDA 12.8 and cuDNN 9.7.
+- Git Strategy: You are currently set up to push to your fork (`origin`) and fetch updates from the original repository (`upstream`), with direct pushes to `upstream` disabled for safety.
+
+## Troubleshooting
+
+### WSL2 Networking for the Custom-Bot Client
+
+If the official custom-bot client runs inside WSL2 while Vite/backend run on Windows, `localhost` inside WSL2 does **not** point to Windows. You must connect to a Windows-reachable IP.
+
+**Checklist:**
+- Start Vite with `server.host = true` (or `bun run dev -- --host 0.0.0.0`) so it binds to a non-loopback address.
+- Use one of the "Network" URLs printed by Vite (example: `http://172.27.160.1:5173/`).
+- Run the bot client with `--server` set to that address, e.g.:
+
+```bash
+WIN_HOST=172.27.160.1
+bun run start --server "http://$WIN_HOST:5173" --token cbt_...
+```
+
+If the connection still fails, check Windows Firewall for inbound rules on port 5173.
+
+### CMake Path Conflicts (WSL vs Windows)
+
+If you see an error like:
+`CMake Error: The current CMakeCache.txt directory ... is different than the directory ... where CMakeCache.txt was created`
+
+This happens because CMake is seeing the project through two different path styles (Windows `C:\...` vs WSL `/mnt/c/...`). 
+
+**Solution:**
+Delete the `build` directory and start fresh from within WSL:
+
+```bash
+rm -rf build
+mkdir build && cd build
+# Re-run the cmake command from Step 3
+```
+
+### Missing Package Errors
+
+If CMake fails with errors like:
+
+```
+Could not find a package configuration file provided by "nlohmann_json"
+```
+
+**Solution:**
+Install the missing package (see Step 2). For nlohmann_json specifically:
+
+```bash
+sudo apt update
+sudo apt install -y nlohmann-json3-dev
+```
+
+Then re-run the cmake configuration command from the build directory.
+
+# Usage
+
+## Example
 
 ```bash
 # Build the engine
 cd deep-wallwars/build
 cmake .. && make deep_ww_engine
 
-# Use with official client
+# Running with the Official Client
+# From the official client directory
 ./wallgame-bot-client \
   --server https://wallgame.example \
-  --token <seat-token> \
-  --engine "./deep-wallwars/build/deep_ww_engine --model ./deep-wallwars/build/8x8_750000.trt --think_time 10"
+  --token <your-seat-token> \
+  --engine "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt"
 ```
 
-### Testing
+## Command-Line Flags
+
+**Required:**
+
+- `--model PATH`: Path to TensorRT model file (.trt) or 'simple' for simple policy
+
+**Optional:**
+
+- `--think_time N`: Thinking time in seconds (default: 5)
+- `--samples N`: MCTS samples per move (default: 500)
+- `--seed N`: Random seed for MCTS (default: 42)
+- `--cache_size N`: MCTS evaluation cache size (default: 100000)
+
+**Simple Policy Options** (when `--model=simple`):
+
+- `--move_prior N`: Likelihood of choosing a pawn move (default: 0.3)
+- `--good_move N`: Bias for pawn moves closer to goal (default: 1.5)
+- `--bad_move N`: Bias for pawn moves farther from goal (default: 0.75)
+
+## Example with Simple Policy
+
+```bash
+./deep_ww_engine --model simple < request.json
+```
+
+## Testing Manually
 
 Can be tested standalone with sample JSON requests:
 
@@ -133,150 +384,98 @@ Can be tested standalone with sample JSON requests:
 echo '{"engineApiVersion":1,"kind":"move",...}' | ./deep_ww_engine --model simple
 ```
 
-See [ENGINE_ADAPTER.md](../deep-wallwars/ENGINE_ADAPTER.md) for detailed testing examples.
+Or create a test request file (`request.json`):
 
-## Next Steps (Optional)
-
-- [ ] Integration testing with actual official client
-- [ ] Performance tuning (sample count, cache size)
-- [ ] Support for time-based move generation (use remaining clock time)
-- [ ] Multi-board size support (requires training models for other sizes)
-
-# Appendix: Invalid move bug log
- 
-This is a bug that happens sometimes that makes Deep Wallwars return an illegal move.
-
-Client debug logs:
-
-[2025-12-29T12:37:43.178Z] [INFO] Received move request (req_XoxK0r24ZYA3)
-[2025-12-29T12:37:43.178Z] [DEBUG] Running engine: ../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt --think_time 3
-[2025-12-29T12:37:43.178Z] [DEBUG] Request: {"engineApiVersion":1,"kind":"move","requestId":"req_XoxK0r24ZYA3","server":{"matchId":"h5j_Yr3e","gameId":"-23j8QB5","serverTime":1767011863109},"seat":{"role":"joiner","playerId":1},"state":{"status":"playing","turn":1,"moveCount":20,"timeLeft":{"1":1792.471,"2":1752.27},"lastMoveTime":1767011863106,"pawns":{"1":{"cat":[1,4],"mouse":[7,0]},"2":{"cat":[0,2],"mouse":[7,7]}},"walls":[{"cell":[0,3],"orientation":"vertical","playerId":1},{"cell":[1,1],"orientation":"vertical","playerId":2},{"cell":[1,4],"orientation":"horizontal","playerId":1},{"cell":[1,5],"orientation":"vertical","playerId":1},{"cell":[2,0],"orientation":"vertical","playerId":1},{"cell":[2,1],"orientation":"horizontal","playerId":1},{"cell":[2,2],"orientation":"horizontal","playerId":2},{"cell":[2,3],"orientation":"horizontal","playerId":1},{"cell":[2,4],"orientation":"horizontal","playerId":1},{"cell":[2,5],"orientation":"horizontal","playerId":1},{"cell":[2,6],"orientation":"horizontal","playerId":1},{"cell":[2,7],"orientation":"horizontal","playerId":2},{"cell":[3,1],"orientation":"vertical","playerId":1},{"cell":[3,2],"orientation":"horizontal","playerId":1},{"cell":[3,3],"orientation":"vertical","playerId":2},{"cell":[4,0],"orientation":"horizontal","playerId":1},{"cell":[4,1],"orientation":"horizontal","playerId":1},{"cell":[4,2],"orientation":"vertical","playerId":2},{"cell":[4,3],"orientation":"horizontal","playerId":2},{"cell":[5,2],"orientation":"vertical","playerId":2},{"cell":[6,2],"orientation":"vertical","playerId":2},{"cell":[7,0],"orientation":"horizontal","playerId":1},{"cell":[7,1],"orientation":"horizontal","playerId":1},{"cell":[7,2],"orientation":"vertical","playerId":2}],"initialState":{"pawns":{"1":{"cat":[0,0],"mouse":[7,0]},"2":{"cat":[0,7],"mouse":[7,7]}},"walls":[]},"history":[{"index":1,"notation":"Cc8"},{"index":2,"notation":"Cg8.Cg7"},{"index":3,"notation":">f7.^g6"},{"index":4,"notation":"Cg8.^h6"},{"index":5,"notation":"Cc7.^f6"},{"index":6,"notation":"Cf8.Ce8"},{"index":7,"notation":">d8.^e7"},{"index":8,"notation":"Cf8.Cf7"},{"index":9,"notation":"^d6.^e6"},{"index":10,"notation":">b7.^c6"},{"index":11,"notation":"Cd7.^a1"},{"index":12,"notation":">c2.>c1"},{"index":13,"notation":"^b6.^b1"},{"index":14,"notation":"Ce7.Cd7"},{"index":15,"notation":"^a4.^b4"},{"index":16,"notation":">c4.>c3"},{"index":17,"notation":">b5.^c5"},{"index":18,"notation":">d5.^d4"},{"index":19,"notation":"Ce7.>a6"},{"index":20,"notation":"Cc7.Cc8"}],"config":{"boardWidth":8,"boardHeight":8,"variant":"classic","rated":false,"timeControl":{"initialSeconds":1800,"incrementSeconds":0,"preset":"classical"}}},"snapshot":{"id":"-23j8QB5","status":"in-progress","config":{"timeControl":{"initialSeconds":1800,"incrementSeconds":0,"preset":"classical"},"rated":false,"variant":"classic","boardWidth":8,"boardHeight":8},"matchType":"friend","createdAt":1767011806962,"updatedAt":1767011863106,"players":[{"role":"host","playerId":2,"displayName":"Beana","connected":true,"ready":true,"configType":"human","appearance":{"pawnColor":"red","catSkin":"cat121.svg","mouseSkin":"mouse25.svg","homeSkin":"home2.svg"}},{"role":"joiner","playerId":1,"displayName":"Custom Bot","connected":true,"ready":true,"configType":"custom-bot","appearance":{}}],"matchScore":{"1":0.5,"2":0.5}}}
-[2025-12-29T12:37:43.972Z] [DEBUG] Engine stderr: I1229 04:37:43.438395 36353 engine_main.cpp:80] Loading TensorRT engine from: ../deep-wallwars/build/8x8_750000.trt
-I1229 04:37:43.473149 36353 tensorrt_model.cpp:66] Loaded engine size: 13.238155364990234 MiB
-I1229 04:37:43.473195 36353 engine_main.cpp:48] Loaded engine size: 13 MiB
-I1229 04:37:43.489972 36353 engine_main.cpp:48] [MS] Running engine with multi stream info
-I1229 04:37:43.489997 36353 engine_main.cpp:48] [MS] Number of aux streams is 1
-I1229 04:37:43.490000 36353 engine_main.cpp:48] [MS] Number of total worker streams is 2
-I1229 04:37:43.490003 36353 engine_main.cpp:48] [MS] The main stream provided by execute/enqueue calls is the first worker stream
-I1229 04:37:43.493097 36353 engine_main.cpp:48] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +12, now: CPU 0, GPU 24 (MiB)
-I1229 04:37:43.497832 36353 engine_adapter.cpp:242] Handling move request (id: req_XoxK0r24ZYA3)
-I1229 04:37:43.942077 36353 engine_adapter.cpp:170] Best move: Cf7.>d7
-
-[2025-12-29T12:37:43.975Z] [DEBUG] Engine exit code: 0
-[2025-12-29T12:37:43.975Z] [DEBUG] Sending: {"type":"response","requestId":"req_XoxK0r24ZYA3","response":{"action":"move","moveNotation":"Cf7.>d7"}}
-[2025-12-29T12:37:43.977Z] [DEBUG] Received: {"type":"nack","requestId":"req_XoxK0r24ZYA3","code":"ILLEGAL_MOVE","message":"Illegal wall placement","retryable":true,"serverTime":1767011863907}
-[2025-12-29T12:37:43.978Z] [WARN] Response req_XoxK0r24ZYA3 rejected: ILLEGAL_MOVE - Illegal wall placement
-[2025-12-29T12:37:43.978Z] [ERROR] Illegal move context: {
-  requestId: "req_XoxK0r24ZYA3",
-  serverMessage: "Illegal wall placement",
-  retryable: true,
-  response: {
-    action: "move",
-    moveNotation: "Cf7.>d7",
+```json
+{
+  "engineApiVersion": 1,
+  "kind": "move",
+  "requestId": "test-001",
+  "server": {
+    "matchId": "match-123",
+    "gameId": "game-456",
+    "serverTime": 1735264000456
   },
-  request: {
-    kind: "move",
-    serverTime: 1767011863109,
-    seat: {
-      role: "joiner",
-      playerId: 1,
-    },
-    state: {
-      status: "playing",
-      turn: 1,
-      moveCount: 20,
-      timeLeft: [Object ...],
-      lastMoveTime: 1767011863106,
-      pawns: [Object ...],
-      walls: [
-        [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...]
-      ],
-      initialState: [Object ...],
-      history: [
-        [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...]
-      ],
-      config: [Object ...],
-    },
-    snapshot: {
-      id: "-23j8QB5",
-      status: "in-progress",
-      config: [Object ...],
-      matchType: "friend",
-      createdAt: 1767011806962,
-      updatedAt: 1767011863106,
-      players: [
-        [Object ...], [Object ...]
-      ],
-      matchScore: [Object ...],
-    },
+  "seat": {
+    "role": "host",
+    "playerId": 1
   },
+  "state": {
+    "status": "playing",
+    "turn": 1,
+    "moveCount": 0,
+    "timeLeft": { "1": 300000, "2": 300000 },
+    "lastMoveTime": 1735264000000,
+    "pawns": {
+      "1": { "cat": [7, 0], "mouse": [7, 1] },
+      "2": { "cat": [0, 7], "mouse": [0, 6] }
+    },
+    "walls": [],
+    "initialState": {
+      "pawns": {
+        "1": { "cat": [7, 0], "mouse": [7, 1] },
+        "2": { "cat": [0, 7], "mouse": [0, 6] }
+      },
+      "walls": []
+    },
+    "history": [],
+    "config": {
+      "variant": "classic",
+      "timeControl": { "initialSeconds": 300, "incrementSeconds": 0 },
+      "rated": false,
+      "boardWidth": 8,
+      "boardHeight": 8
+    }
+  },
+  "snapshot": {
+    "id": "game-456",
+    "status": "in-progress",
+    "config": {
+      "variant": "classic",
+      "timeControl": { "initialSeconds": 300, "incrementSeconds": 0 },
+      "rated": false,
+      "boardWidth": 8,
+      "boardHeight": 8
+    },
+    "matchType": "friend",
+    "createdAt": 1735264000000,
+    "updatedAt": 1735264000000,
+    "players": [
+      {
+        "role": "host",
+        "playerId": 1,
+        "displayName": "Test Bot",
+        "connected": true,
+        "ready": true
+      },
+      {
+        "role": "joiner",
+        "playerId": 2,
+        "displayName": "Opponent",
+        "connected": true,
+        "ready": true
+      }
+    ],
+    "matchScore": { "1": 0, "2": 0 }
+  }
 }
-[2025-12-29T12:37:43.978Z] [INFO] Retryable NACK - retrying (attempt 1/1)
-[2025-12-29T12:37:43.978Z] [DEBUG] Running engine: ../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt --think_time 3
-[2025-12-29T12:37:43.978Z] [DEBUG] Request: {"engineApiVersion":1,"kind":"move","requestId":"req_XoxK0r24ZYA3","server":{"matchId":"h5j_Yr3e","gameId":"-23j8QB5","serverTime":1767011863109},"seat":{"role":"joiner","playerId":1},"state":{"status":"playing","turn":1,"moveCount":20,"timeLeft":{"1":1792.471,"2":1752.27},"lastMoveTime":1767011863106,"pawns":{"1":{"cat":[1,4],"mouse":[7,0]},"2":{"cat":[0,2],"mouse":[7,7]}},"walls":[{"cell":[0,3],"orientation":"vertical","playerId":1},{"cell":[1,1],"orientation":"vertical","playerId":2},{"cell":[1,4],"orientation":"horizontal","playerId":1},{"cell":[1,5],"orientation":"vertical","playerId":1},{"cell":[2,0],"orientation":"vertical","playerId":1},{"cell":[2,1],"orientation":"horizontal","playerId":1},{"cell":[2,2],"orientation":"horizontal","playerId":2},{"cell":[2,3],"orientation":"horizontal","playerId":1},{"cell":[2,4],"orientation":"horizontal","playerId":1},{"cell":[2,5],"orientation":"horizontal","playerId":1},{"cell":[2,6],"orientation":"horizontal","playerId":1},{"cell":[2,7],"orientation":"horizontal","playerId":2},{"cell":[3,1],"orientation":"vertical","playerId":1},{"cell":[3,2],"orientation":"horizontal","playerId":1},{"cell":[3,3],"orientation":"vertical","playerId":2},{"cell":[4,0],"orientation":"horizontal","playerId":1},{"cell":[4,1],"orientation":"horizontal","playerId":1},{"cell":[4,2],"orientation":"vertical","playerId":2},{"cell":[4,3],"orientation":"horizontal","playerId":2},{"cell":[5,2],"orientation":"vertical","playerId":2},{"cell":[6,2],"orientation":"vertical","playerId":2},{"cell":[7,0],"orientation":"horizontal","playerId":1},{"cell":[7,1],"orientation":"horizontal","playerId":1},{"cell":[7,2],"orientation":"vertical","playerId":2}],"initialState":{"pawns":{"1":{"cat":[0,0],"mouse":[7,0]},"2":{"cat":[0,7],"mouse":[7,7]}},"walls":[]},"history":[{"index":1,"notation":"Cc8"},{"index":2,"notation":"Cg8.Cg7"},{"index":3,"notation":">f7.^g6"},{"index":4,"notation":"Cg8.^h6"},{"index":5,"notation":"Cc7.^f6"},{"index":6,"notation":"Cf8.Ce8"},{"index":7,"notation":">d8.^e7"},{"index":8,"notation":"Cf8.Cf7"},{"index":9,"notation":"^d6.^e6"},{"index":10,"notation":">b7.^c6"},{"index":11,"notation":"Cd7.^a1"},{"index":12,"notation":">c2.>c1"},{"index":13,"notation":"^b6.^b1"},{"index":14,"notation":"Ce7.Cd7"},{"index":15,"notation":"^a4.^b4"},{"index":16,"notation":">c4.>c3"},{"index":17,"notation":">b5.^c5"},{"index":18,"notation":">d5.^d4"},{"index":19,"notation":"Ce7.>a6"},{"index":20,"notation":"Cc7.Cc8"}],"config":{"boardWidth":8,"boardHeight":8,"variant":"classic","rated":false,"timeControl":{"initialSeconds":1800,"incrementSeconds":0,"preset":"classical"}}},"snapshot":{"id":"-23j8QB5","status":"in-progress","config":{"timeControl":{"initialSeconds":1800,"incrementSeconds":0,"preset":"classical"},"rated":false,"variant":"classic","boardWidth":8,"boardHeight":8},"matchType":"friend","createdAt":1767011806962,"updatedAt":1767011863106,"players":[{"role":"host","playerId":2,"displayName":"Beana","connected":true,"ready":true,"configType":"human","appearance":{"pawnColor":"red","catSkin":"cat121.svg","mouseSkin":"mouse25.svg","homeSkin":"home2.svg"}},{"role":"joiner","playerId":1,"displayName":"Custom Bot","connected":true,"ready":true,"configType":"custom-bot","appearance":{}}],"matchScore":{"1":0.5,"2":0.5}}}
-[2025-12-29T12:37:44.739Z] [DEBUG] Engine stderr: I1229 04:37:44.210302 36362 engine_main.cpp:80] Loading TensorRT engine from: ../deep-wallwars/build/8x8_750000.trt
-I1229 04:37:44.248116 36362 tensorrt_model.cpp:66] Loaded engine size: 13.238155364990234 MiB
-I1229 04:37:44.248167 36362 engine_main.cpp:48] Loaded engine size: 13 MiB
-I1229 04:37:44.262092 36362 engine_main.cpp:48] [MS] Running engine with multi stream info
-I1229 04:37:44.262121 36362 engine_main.cpp:48] [MS] Number of aux streams is 1
-I1229 04:37:44.262125 36362 engine_main.cpp:48] [MS] Number of total worker streams is 2
-I1229 04:37:44.262127 36362 engine_main.cpp:48] [MS] The main stream provided by execute/enqueue calls is the first worker stream
-I1229 04:37:44.265215 36362 engine_main.cpp:48] [MemUsageChange] TensorRT-managed allocation in IExecutionContext creation: CPU +0, GPU +12, now: CPU 0, GPU 24 (MiB)
-I1229 04:37:44.269779 36362 engine_adapter.cpp:242] Handling move request (id: req_XoxK0r24ZYA3)
-I1229 04:37:44.711989 36362 engine_adapter.cpp:170] Best move: Cf7.>d7
+```
 
-[2025-12-29T12:37:44.743Z] [DEBUG] Engine exit code: 0
-[2025-12-29T12:37:44.743Z] [DEBUG] Sending: {"type":"response","requestId":"req_XoxK0r24ZYA3","response":{"action":"move","moveNotation":"Cf7.>d7"}}
-[2025-12-29T12:37:44.745Z] [DEBUG] Received: {"type":"nack","requestId":"req_XoxK0r24ZYA3","code":"ILLEGAL_MOVE","message":"Illegal wall placement","retryable":true,"serverTime":1767011864672}
-[2025-12-29T12:37:44.745Z] [WARN] Response req_XoxK0r24ZYA3 rejected: ILLEGAL_MOVE - Illegal wall placement
-[2025-12-29T12:37:44.745Z] [ERROR] Illegal move context: {
-  requestId: "req_XoxK0r24ZYA3",
-  serverMessage: "Illegal wall placement",
-  retryable: true,
-  response: {
-    action: "move",
-    moveNotation: "Cf7.>d7",
-  },
-  request: {
-    kind: "move",
-    serverTime: 1767011863109,
-    seat: {
-      role: "joiner",
-      playerId: 1,
-    },
-    state: {
-      status: "playing",
-      turn: 1,
-      moveCount: 20,
-      timeLeft: [Object ...],
-      lastMoveTime: 1767011863106,
-      pawns: [Object ...],
-      walls: [
-        [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...]
-      ],
-      initialState: [Object ...],
-      history: [
-        [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...], [Object ...]
-      ],
-      config: [Object ...],
-    },
-    snapshot: {
-      id: "-23j8QB5",
-      status: "in-progress",
-      config: [Object ...],
-      matchType: "friend",
-      createdAt: 1767011806962,
-      updatedAt: 1767011863106,
-      players: [
-        [Object ...], [Object ...]
-      ],
-      matchScore: [Object ...],
-    },
-  },
+Run:
+
+```bash
+cat request.json | ./deep_ww_engine --model simple
+```
+
+Expected output (JSON to stdout):
+
+```json
+{
+  "engineApiVersion": 1,
+  "requestId": "test-001",
+  "response": {
+    "action": "move",
+    "moveNotation": "Ca8"
+  }
 }
-[2025-12-29T12:37:44.745Z] [ERROR] Max NACK retries exceeded, resigning
-[2025-12-29T12:37:44.745Z] [DEBUG] Rate limiting: waiting 198ms before send
-[2025-12-29T12:37:44.944Z] [DEBUG] Sending: {"type":"response","requestId":"req_XoxK0r24ZYA3","response":{"action":"resign"}}
-[2025-12-29T12:37:44.955Z] [DEBUG] Received: {"type":"ack","requestId":"req_XoxK0r24ZYA3","serverTime":1767011864877}
-[2025-12-29T12:37:44.955Z] [DEBUG] Response req_XoxK0r24ZYA3 acknowledged
-
+```

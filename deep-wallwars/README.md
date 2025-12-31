@@ -1,3 +1,5 @@
+This is the old README by Thorben Tröbst. For the Wall Game adapter, see @info/deep-wallwars-integration.md.
+
 # MCTS with Neural Nets for Wallwars
 
 ## Overview
