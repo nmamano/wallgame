@@ -235,10 +235,6 @@ function GamePage() {
                     timeLeft={
                       timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
                     }
-                    isThinking={
-                      timers.thinkingPlayer?.playerId ===
-                      timers.topPlayer.playerId
-                    }
                     score={timers.getPlayerMatchScore(timers.topPlayer)}
                     gameStatus={board.gameStatus}
                   />
@@ -298,10 +294,6 @@ function GamePage() {
                     timeLeft={
                       timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??
                       0
-                    }
-                    isThinking={
-                      timers.thinkingPlayer?.playerId ===
-                      timers.bottomPlayer.playerId
                     }
                     score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                     gameStatus={board.gameStatus}

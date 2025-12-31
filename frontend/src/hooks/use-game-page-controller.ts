@@ -44,7 +44,6 @@ import { useSound } from "@/components/sound-provider";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
 import {
   createPlayerController,
-  isAutomatedController,
   isLocalController,
   isRemoteController,
   isSupportedController,
@@ -170,14 +169,11 @@ const DEFAULT_CONFIG: GameConfiguration = {
   boardHeight: 9,
 };
 
-const DEFAULT_PLAYERS: PlayerType[] = ["you", "easy-bot"];
+const DEFAULT_PLAYERS: PlayerType[] = ["you", "you"];
 
 const PLACEHOLDER_COPY: Partial<Record<PlayerType, string>> = {
   friend: "Inviting a friend requires the server backend. Coming soon.",
-  "matched-user":
-    "Live matchmaking isn't wired up yet. Try an AI opponent for now.",
-  "medium-bot": "The medium AI is still training. The easy bot is available.",
-  "hard-bot": "Hard AI support will arrive after the evaluation server ships.",
+  "matched-user": "Be matched with other players.",
   "custom-bot":
     "Uploading your own bot needs an API token from the server (not yet available).",
 };
@@ -720,7 +716,6 @@ export function useGamePageController(gameId: string) {
       setStagedActions([]);
       setPremovedActions([]);
       setActiveLocalPlayerId(null);
-      setAutomatedPlayerId(null);
       pendingTurnRequestRef.current = null;
 
       Object.values(seatActionsRef.current).forEach((controller) =>
@@ -1301,9 +1296,6 @@ export function useGamePageController(gameId: string) {
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeLocalPlayerId, setActiveLocalPlayerId] =
     useState<PlayerId | null>(null);
-  const [automatedPlayerId, setAutomatedPlayerId] = useState<PlayerId | null>(
-    null,
-  );
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [clockTick, setClockTick] = useState(() => Date.now());
@@ -1340,7 +1332,7 @@ export function useGamePageController(gameId: string) {
   );
 
   const unsupportedPlayers = useMemo(
-    () => playerTypes.filter((type) => type !== "you" && type !== "easy-bot"),
+    () => playerTypes.filter((type) => type !== "you"),
     [playerTypes],
   );
   const matchReadyForPlay =
@@ -2335,18 +2327,8 @@ export function useGamePageController(gameId: string) {
       });
       const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
       updateGameState(nextState, { lastMoves });
-      // Only play sound for bot moves - human moves already played during staging
-      const controller = seatActionsRef.current[playerId];
-      if (
-        sfxEnabledRef.current &&
-        controller &&
-        isAutomatedController(controller)
-      ) {
-        const hasWall = move.actions.some((a) => a.type === "wall");
-        play(hasWall ? sounds.wall : sounds.pawn);
-      }
     },
-    [updateGameState, playerColorsForBoard, sfxEnabledRef],
+    [updateGameState, playerColorsForBoard],
   );
 
   const clearStagedActions = useCallback(() => {
@@ -2730,7 +2712,7 @@ export function useGamePageController(gameId: string) {
         }
       } else {
         setHasLocalConfig(false);
-        setLoadError("No saved game found. We'll start a new easy bot game.");
+        setLoadError("No saved game found. We'll start a local game.");
       }
     } else {
       setHasLocalConfig(false);
@@ -2777,7 +2759,6 @@ export function useGamePageController(gameId: string) {
       pendingTurnRequestRef.current = null;
       gameStateRef.current = null;
       setActiveLocalPlayerId(null);
-      setAutomatedPlayerId(null);
       // Meta game actions will be reset via useEffect in the hook when game finishes
       resetViewModel();
     };
@@ -2898,13 +2879,7 @@ export function useGamePageController(gameId: string) {
       if (playerId === primaryLocalPlayerId) return;
       const controller = seatActionsRef.current[playerId];
       if (!controller) return;
-      if (isAutomatedController(controller)) {
-        const timeoutId = window.setTimeout(
-          () => respondToRematch(playerId, "accepted"),
-          800,
-        );
-        timers.push(timeoutId);
-      } else if (
+      if (
         isLocalController(controller) &&
         autoAcceptingLocalIds.includes(playerId)
       ) {
@@ -3169,8 +3144,6 @@ export function useGamePageController(gameId: string) {
 
       if (isLocalController(controller)) {
         setActiveLocalPlayerId(playerId);
-      } else if (isAutomatedController(controller)) {
-        setAutomatedPlayerId(playerId);
       }
 
       controller
@@ -3209,8 +3182,6 @@ export function useGamePageController(gameId: string) {
           }
           if (isLocalController(controller)) {
             setActiveLocalPlayerId((prev) => (prev === playerId ? null : prev));
-          } else if (isAutomatedController(controller)) {
-            setAutomatedPlayerId((prev) => (prev === playerId ? null : prev));
           }
         });
     },
@@ -3553,11 +3524,6 @@ export function useGamePageController(gameId: string) {
     ? stagedActions.length
     : premovedActions.length;
   const boardPendingActionsCount = viewingHistory ? 0 : pendingActionsCount;
-
-  const thinkingPlayer =
-    automatedPlayerId != null
-      ? (players.find((p) => p.playerId === automatedPlayerId) ?? null)
-      : null;
 
   const bottomTimerPlayer =
     (primaryLocalPlayerId &&
@@ -3917,7 +3883,6 @@ export function useGamePageController(gameId: string) {
     bottomPlayer: bottomTimerDisplayPlayer,
     displayedTimeLeft,
     gameTurn,
-    thinkingPlayer,
     getPlayerMatchScore,
   };
 

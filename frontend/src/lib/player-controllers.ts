@@ -1,7 +1,6 @@
 import type { PlayerType } from "@/lib/gameViewModel";
 import type { PlayerId, Move } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
-import { computeDummyAiMove } from "../../../shared/domain/dummy-ai";
 import type {
   ControllerActionKind,
   RematchDecision,
@@ -16,7 +15,6 @@ export type ActionChannel = "local-state" | "remote-controller";
 export type PlayerControllerKind =
   | "local-human"
   | "remote-human"
-  | "easy-bot"
   | "unsupported";
 
 export type DrawDecision = "accept" | "reject";
@@ -148,10 +146,6 @@ export interface RemoteHumanController extends ManualPlayerController {
   isConnected(): boolean;
 }
 
-export interface AutomatedPlayerController extends BasePlayerController {
-  kind: "easy-bot";
-}
-
 export interface UnsupportedPlayerController extends BasePlayerController {
   kind: "unsupported";
 }
@@ -159,7 +153,6 @@ export interface UnsupportedPlayerController extends BasePlayerController {
 export type GamePlayerController =
   | LocalPlayerController
   | RemoteHumanController
-  | AutomatedPlayerController
   | UnsupportedPlayerController;
 
 export function createPlayerController(args: {
@@ -170,8 +163,6 @@ export function createPlayerController(args: {
   switch (playerType) {
     case "you":
       return new LocalHumanController(playerId, playerType);
-    case "easy-bot":
-      return new EasyBotController(playerId, playerType);
     default:
       return new UnsupportedController(playerId, playerType);
   }
@@ -185,18 +176,9 @@ export function isLocalController(
   );
 }
 
-export function isAutomatedController(
-  controller: GamePlayerController,
-): controller is AutomatedPlayerController {
-  return controller.kind === "easy-bot";
-}
-
 export function isSupportedController(
   controller: GamePlayerController,
-): controller is
-  | LocalPlayerController
-  | RemoteHumanController
-  | AutomatedPlayerController {
+): controller is LocalPlayerController | RemoteHumanController {
   return controller.kind !== "unsupported";
 }
 
@@ -319,55 +301,6 @@ export class LocalHumanController implements LocalPlayerController {
   }
 }
 
-class EasyBotController implements AutomatedPlayerController {
-  kind = "easy-bot" as const;
-  actionChannel = "local-state" as const;
-  readonly capabilities = getCapabilitiesForType("easy-bot");
-
-  constructor(
-    public playerId: PlayerId,
-    public playerType: PlayerType,
-  ) {}
-
-  async makeMove({
-    state,
-    playerId,
-    opponentId,
-  }: PlayerControllerContext): Promise<Move> {
-    const aiCatPos: [number, number] = [
-      state.pawns[playerId].cat[0],
-      state.pawns[playerId].cat[1],
-    ];
-    const opponentMousePos: [number, number] = [
-      state.pawns[opponentId].mouse[0],
-      state.pawns[opponentId].mouse[1],
-    ];
-
-    await delay(2000);
-    return computeDummyAiMove(state.grid.clone(), aiCatPos, opponentMousePos);
-  }
-
-  async respondToDrawOffer(): Promise<DrawDecision> {
-    await delay(4000);
-    return "accept";
-  }
-
-  async respondToTakebackRequest(): Promise<TakebackDecision> {
-    await delay(4000);
-    return "allow";
-  }
-
-  cancel(): void {
-    // Nothing to cancel for deterministic bots right now.
-  }
-
-  performVoluntaryAction(): never {
-    throw new Error(
-      "Bots do not initiate voluntary actions through MetaActionExecutor.",
-    );
-  }
-}
-
 class UnsupportedController implements UnsupportedPlayerController {
   kind = "unsupported" as const;
   actionChannel = "local-state" as const;
@@ -407,10 +340,6 @@ class UnsupportedController implements UnsupportedPlayerController {
   }
 }
 
-function delay(ms: number): Promise<void> {
-  return new Promise((resolve) => setTimeout(resolve, ms));
-}
-
 const BASE_CAPABILITIES: ControllerCapabilities = {
   canMove: false,
   canOfferDraw: false,
@@ -433,17 +362,6 @@ const CAPABILITIES_BY_TYPE: Record<PlayerType, ControllerCapabilities> = {
   },
   friend: BASE_CAPABILITIES,
   "matched-user": BASE_CAPABILITIES,
-  "easy-bot": {
-    canMove: true,
-    canOfferDraw: true,
-    canRespondToDraw: true,
-    canRequestTakeback: true,
-    canRespondToTakeback: true,
-    canOfferRematch: true,
-    canUseChat: false,
-  },
-  "medium-bot": BASE_CAPABILITIES,
-  "hard-bot": BASE_CAPABILITIES,
   "custom-bot": BASE_CAPABILITIES,
 };
 

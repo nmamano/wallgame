@@ -68,13 +68,13 @@ function getPlayerCountForVariant(variant: Variant): number {
 function getDefaultOtherPlayerType(mode?: string): PlayerType {
   switch (mode) {
     case "vs-ai":
-      return "easy-bot";
+      return "custom-bot";
     case "with-others":
       return "matched-user";
     case "invite-friend":
       return "friend";
     default:
-      return "easy-bot";
+      return "you";
   }
 }
 
@@ -95,9 +95,6 @@ function buildDefaultPlayerConfigs(
 const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
   "friend",
   "matched-user",
-  "easy-bot",
-  "medium-bot",
-  "hard-bot",
   "custom-bot",
 ];
 
@@ -258,22 +255,10 @@ function GameSetup() {
   const canRatedGame = useMemo(() => {
     const hasFriend = playerConfigs.includes("friend");
     const hasMatchedUser = playerConfigs.includes("matched-user");
-    const hasOnlyBots = playerConfigs.every(
-      (p) =>
-        p === "easy-bot" ||
-        p === "medium-bot" ||
-        p === "hard-bot" ||
-        p === "custom-bot",
-    );
 
     // Rated games are only allowed if:
     // - The other player is "friend" or "matched-user"
-    // - No bots are involved
-    return (
-      (hasFriend || hasMatchedUser) &&
-      !hasOnlyBots &&
-      playerConfigs.length === 2
-    );
+    return (hasFriend || hasMatchedUser) && playerConfigs.length === 2;
   }, [playerConfigs]);
 
   // Update rated status when player configs change or when not logged in
