@@ -299,6 +299,16 @@ Key fields:
 
 Clients SHOULD ignore unknown fields.
 
+### Request lifetime
+
+A request is active from the moment it is sent until exactly one of:
+
+- the server sends `ack` or non-retryable `nack`
+- the server sends a newer `request` to the same client
+- the client disconnects
+
+While a request is active, the client should send only one response for the same requestId, it MUST NOT send a response for any other requestId.
+
 ### `ack`
 
 Indicates the response was accepted and applied.
@@ -590,16 +600,28 @@ The same client is allowed to attach multiple bots. All the bots connected share
 
 # Official Bot Client
 
-The official bot client is a CLI with flags:
+The official bot client is a CLI:
+
+```plaintext
+wallgame-bot-client \
+  --config config.json \
+  --log-level info \
+  --client-id 1234567890 \
+  --official-token abc1234567890
+```
+
+Flags:
 
 - `--config <file_path>`
-- `--log-level <level>`
+- `--log-level <level>`: optional (`debug|info|warn|error`). Defaults to `info`.
 - `--client-id <client-id>`
 - `--official-token <official-token>`
 
 The config file is a JSON file including:
+  - The server to connect to. It's the base URL used to derive the WebSocket URL (default: `http://localhost:5173` in dev).
   - The JSON for the `attach` message, except for the `clientId` and `officialToken` fields, which are filled dynamically by the client from the flags.
   - The command to run the engine for each (bot, supported variant) combination.
+    - If omitted, the Official Client runs a built-in "dumb bot" for testing purposes.
 
 ## Responsibilities
 
@@ -614,12 +636,6 @@ The config file is a JSON file including:
   - Client -> Engine: turn or draw request (draw request is not used for V2 but it's fine to leave it in the API for now)
   - Engine -> Client: chosen move or draw response
 - The engine does not implement networking.
-
-## Client vs Engine Life Cycle
-
-- The client lives potentially forever.
-- The engine is launched and killed for every request.
-- The client treats the engine as a standalone, stateless command that expects a single JSON message on stdin and produces a single JSON message on stdout.
 
 ---
 
@@ -651,3 +667,91 @@ In the proactive bot protocol, the engine is stateless and spawn-per-decision.
 This is clean but can be costly for ML-backed engines.
 
 Long-lived engines are out of scope for now, but may be added in the future.
+
+---
+
+# Official Custom-Bot Client Engine API (v2)
+
+This section specifies the public, language-agnostic interface between the **official custom-bot client** (networking + orchestration) and a **bot engine** (decision making).
+
+It is directed at Wall Game engine developers who want to leverage the Official Client (see above).
+
+## Terminology
+
+- **Server**: Wallgame backend.
+- **Custom-bot client**: a user-run program that connects to the server.
+- **Official Client**: the custom-bot client provided by the Wall Game team.
+- **Engine**: a local executable/script that makes decisions given a request.
+  - does **not** speak WebSocket / HTTP
+  - reads a single JSON request from stdin
+  - writes a single JSON response to stdout
+  - may write logs to stderr
+- **Request**: one decision prompt (move or draw decision).
+
+The Official Client exposes a CLI which handles networking and makes calls to the engine. See above for details on the CLI.
+
+## Engine Execution Model
+
+For each decision prompt, the Official Client starts the engine as a new process:
+
+1. spawn engine process
+2. write exactly one JSON object to engine stdin
+3. close engine stdin
+4. read engine stdout until EOF
+5. parse exactly one JSON object from stdout
+6. kill the engine if it exceeds a client-defined timeout (based on clock time left)
+
+Engines MUST be treated as untrusted.
+
+## Official Client behavior
+
+- The Official Client automatically accepts rematch offers from the server without consulting the engine.
+- If the Official Client receives a retryable `nack` response from the server, it re-runs the engine once with the same request payload. If it gets a `nack` again, it treats it as resignation.
+- The Official Client automatically rejects draw offers from the server without consulting the engine. (There is existing engine logic for draw evaluation; this code can stay for now.)
+- The Official Client treats it as resignation if the engine crashes, times out, or produces invalid output.
+
+## Wire format (Official Client <-> Engine)
+
+- Encoding: UTF-8.
+- Engine stdin: exactly one JSON object.
+- Engine stdout: exactly one JSON object (whitespace allowed around it).
+- Engines SHOULD write logs to stderr, not stdout.
+
+If the engine writes invalid JSON or no JSON to stdout, the Official Client treats it as resignation.
+
+## Engine API Version
+
+The engine API is versioned independently. The current version is `2`.
+
+- `engineApiVersion: 2`
+
+The Official Client includes `engineApiVersion` in requests. Engines MUST reject unknown versions.
+
+## Requests
+
+Request message: see above.
+
+- `requestId` comes from the triggering server `request` message and MUST be echoed back in the response.
+- `server.serverTime` is the server's time in ms since epoch from the triggering server message (useful for clock math).
+
+### Move requests
+
+- For `kind: "move"`, the engine may return either `response.action: "move"` or `response.action: "resign"`.
+- The server protocol is request/response: if a newer server `request` arrives, the previous `requestId` is invalidated and the engine result for the old request MUST be discarded.
+
+### Draw requests
+
+- If a newer server `request` arrives while the engine is evaluating this request, the Official Client kills the engine and doesn't send any response for the `requestId`, which is now invalid. The engine doesn't need to know about this.
+
+## Responses
+
+- All responses MUST include `engineApiVersion` and MUST echo `requestId`.
+- The response MUST be valid for the request `kind`.
+- See above for move, resign, and draw decision responses.
+
+## Error handling (Engine-side)
+
+Engines SHOULD fail fast and clearly:
+
+- If the request is unsupported, write a valid JSON response with a deterministic safe default (for example `resign` on `kind: "move"`, or `decline-draw`).
+- Write human-readable diagnostics to stderr.
