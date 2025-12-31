@@ -1,3 +1,5 @@
+OBSOLETE: REPLACED BY THE PROACTIVE BOT PROTOCOL: info/proactive_bot_protocol.md
+
 # Community Bots Feature Design
 
 ## Goal
@@ -6,14 +8,14 @@ Let any user plug their own locally-run bot into a specific game seat, without t
 
 ## Core UX
 
-### Create Game
+### OBSOLETE: Create Game
 
 The Create Game screen has a "Custom bot" option for the player seat, which needs to be wired correctly as part of this feature.
 
 - UI text: "You'll get an access token so that you can connect your own bot. See here for more information."
 - Links to a blog post (to be written as part of this feature) describing the flow and the local engine protocol.
 
-### Game Setup
+### OBSOLOETE: Game Setup
 
 When a game is created with one or more Custom Bot seats:
 
@@ -21,7 +23,7 @@ When a game is created with one or more Custom Bot seats:
 - The token is intended to be used by exactly one local client connection.
 - The UI also shows a sample command line to run the client with the token.
 
-## High-Level Architecture
+## OBSOLETE: High-Level Architecture
 
 - Existing: browser players and spectators connect to the server via WebSockets.
 - New: a user-run "custom-bot client" connects outbound to the server via WebSocket using the seat token.
@@ -36,7 +38,7 @@ When a game is created with one or more Custom Bot seats:
 - The server is the source of truth for game state and legality.
 - The custom bot client and engine are untrusted and can only propose actions.
 
-## Token Model (Seat-Scoped Tokens)
+## OBSOLETE: Token Model (Seat-Scoped Tokens)
 
 - Each Custom Bot seat gets a seatToken generated at game creation time.
 - seatToken encodes or maps to:
@@ -47,7 +49,7 @@ When a game is created with one or more Custom Bot seats:
 
 ## Server Components
 
-### 1. Seat Token Issuance
+### OBSOLETE: 1. Seat Token Issuance
 
 - When creating a game:
 
@@ -55,7 +57,7 @@ When a game is created with one or more Custom Bot seats:
   - Persist mapping: seatToken -> (gameId, seatId, status).
   - Return seatTokens in the game setup response.
 
-### 2. Custom Bot WebSocket Gateway
+### OBSOLETE: 2. Custom Bot WebSocket Gateway
 
 A dedicated WS endpoint for custom bot clients.
 
@@ -103,9 +105,9 @@ Takebacks vs bots (server-only):
   - not stale (responses must match the currently active `requestId`)
 - Invalid responses produce a server `nack`; retryable errors allow re-responding to the same request (see `info/custom_bot_protocol.md`).
 
-## Client Components (Go, Source-Distributed)
+## Client Components (TS, Source-Distributed)
 
-### Custom Bot Client Responsibilities
+### OBSOLETE: Custom Bot Client Responsibilities
 
 - CLI that accepts:
   - --token <seatToken>
@@ -123,13 +125,13 @@ Takebacks vs bots (server-only):
   - Engine -> Client: chosen move or meta-action response
 - The engine does not implement networking.
 
-### Client vs Engine Life Cycle
+### OBSOLETE: Client vs Engine Life Cycle
 
 - The client lives for the duration of the game, including rematches.
 - The engine is launched and killed for every move.
 - The client treats the engine as a standalone, stateless command that expects a single JSON message on stdin and produces a single JSON message on stdout.
 
-## Protocol Overview (Server <-> Bot Client)
+## OBSOLETE: Protocol Overview (Server <-> Bot Client)
 
 This is intentionally high-level. For the full public protocol spec, see `info/custom_bot_protocol.md`.
 
