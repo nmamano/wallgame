@@ -13,7 +13,6 @@ interface PlayerConfigurationProps {
   onChange: (value: PlayerType) => void;
   customBotBlogUrl?: string;
   label?: string;
-  excludeOptions?: PlayerType[]; // Options to exclude from the dropdown
   allowedOptions?: PlayerType[];
   optionLabelOverrides?: Partial<Record<PlayerType, string>>;
 }
@@ -43,7 +42,6 @@ export function PlayerConfiguration({
   onChange,
   customBotBlogUrl = "#",
   label = "Player Configuration",
-  excludeOptions = [],
   allowedOptions,
   optionLabelOverrides,
 }: PlayerConfigurationProps) {
@@ -71,12 +69,10 @@ export function PlayerConfiguration({
           )
       : allOptions;
 
-  const availableOptions = resolvedOptions
-    .filter((option) => !excludeOptions.includes(option.value))
-    .map((option) => ({
-      value: option.value,
-      label: optionLabelOverrides?.[option.value] ?? option.label,
-    }));
+  const availableOptions = resolvedOptions.map((option) => ({
+    value: option.value,
+    label: optionLabelOverrides?.[option.value] ?? option.label,
+  }));
 
   return (
     <div className="space-y-2">
