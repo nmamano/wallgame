@@ -1,0 +1,27 @@
+{
+  "server": "https://wallgame.fly.dev",
+  "bots": [
+    {
+      "botId": "deep-wallwars",
+      "name": "Deep Wallwars",
+      "username": null,
+      "appearance": {
+        "color": "gray",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "timeControls": ["bullet", "blitz", "rapid", "classical"],
+          "boardWidth": { "min": 8, "max": 8 },
+          "boardHeight": { "min": 8, "max": 8 },
+          "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
+        }
+      }
+    }
+  ],
+  "engineCommands": {
+    "deep-wallwars": "../deep-wallwars/build/deep_ww_engine  --model ../deep-wallwars/build/8x8_750000.trt"
+  }
+}
