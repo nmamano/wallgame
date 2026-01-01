@@ -532,7 +532,7 @@ function createTestBotConfig(botId: string, name: string): BotConfig {
         timeControls: ["bullet", "blitz", "rapid"],
         boardWidth: { min: 3, max: 15 },
         boardHeight: { min: 3, max: 15 },
-        recommended: [],
+        recommended: [{ boardWidth: 5, boardHeight: 5 }],
       },
     },
   };

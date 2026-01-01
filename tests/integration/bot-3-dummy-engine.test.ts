@@ -324,9 +324,29 @@ interface BotConfigFile {
   cleanup: () => Promise<void>;
 }
 
+const defaultVariants = {
+  standard: {
+    timeControls: ["bullet", "blitz", "rapid", "classical"],
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [{ boardWidth: 5, boardHeight: 5 }],
+  },
+  classic: {
+    timeControls: ["bullet", "blitz", "rapid", "classical"],
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [{ boardWidth: 5, boardHeight: 5 }],
+  },
+  freestyle: {
+    timeControls: ["bullet", "blitz", "rapid", "classical"],
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [],
+  },
+};
+
 async function createBotConfigFile(args: {
   serverUrl: string;
-  clientId: string;
   botId: string;
   botName: string;
   engine?: string;
@@ -335,14 +355,15 @@ async function createBotConfigFile(args: {
   const path = join(dir, "bot-config.json");
   const config = {
     server: args.serverUrl,
-    clientId: args.clientId,
     bots: [
       {
         botId: args.botId,
         name: args.botName,
-        engine: args.engine,
+        username: null,
+        variants: defaultVariants,
       },
     ],
+    engineCommands: args.engine ? { [args.botId]: args.engine } : {},
   };
 
   await writeFile(path, JSON.stringify(config, null, 2));
@@ -356,12 +377,17 @@ async function createBotConfigFile(args: {
 /**
  * V2: Spawns bot client using a config file.
  */
-function spawnBotClient(configPath: string): BotClientProcess {
+function spawnBotClient(
+  configPath: string,
+  clientId: string,
+): BotClientProcess {
   const proc = spawn({
     cmd: [
       "bun",
       "run",
       "src/index.ts",
+      "--client-id",
+      clientId,
       "--config",
       configPath,
       "--log-level",
@@ -430,9 +456,12 @@ async function waitForTurn(
   ) {
     return currentState;
   }
+  if (currentState && currentState.state.status !== "playing") {
+    return currentState;
+  }
   return humanSocket.waitForState(
     (state) =>
-      state.state.status === "playing" && state.state.turn === playerId,
+      state.state.status !== "playing" || state.state.turn === playerId,
     { timeoutMs },
   );
 }
@@ -498,12 +527,11 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
       // V2: Start bot client first (proactive connection)
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
-        clientId,
         botId,
         botName: botId,
         engine: "bun ../dummy-engine/src/index.ts",
       });
-      botClient = spawnBotClient(configFile.path);
+      botClient = spawnBotClient(configFile.path, clientId);
 
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {
@@ -583,12 +611,11 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
       // Start bot client
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
-        clientId,
         botId,
         botName: botId,
         engine: "bun ../dummy-engine/src/index.ts",
       });
-      botClient = spawnBotClient(configFile.path);
+      botClient = spawnBotClient(configFile.path, clientId);
 
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {

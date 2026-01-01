@@ -328,9 +328,17 @@ interface BotConfigFile {
   cleanup: () => Promise<void>;
 }
 
+const deepWallwarsVariants = {
+  classic: {
+    timeControls: ["bullet", "blitz", "rapid", "classical"],
+    boardWidth: { min: 8, max: 8 },
+    boardHeight: { min: 8, max: 8 },
+    recommended: [{ boardWidth: 8, boardHeight: 8 }],
+  },
+};
+
 async function createBotConfigFile(args: {
   serverUrl: string;
-  clientId: string;
   botId: string;
   botName: string;
   engine?: string;
@@ -339,14 +347,15 @@ async function createBotConfigFile(args: {
   const configPath = path.join(dir, "bot-config.json");
   const config = {
     server: args.serverUrl,
-    clientId: args.clientId,
     bots: [
       {
         botId: args.botId,
         name: args.botName,
-        engine: args.engine,
+        username: null,
+        variants: deepWallwarsVariants,
       },
     ],
+    engineCommands: args.engine ? { [args.botId]: args.engine } : {},
   };
 
   await writeFile(configPath, JSON.stringify(config, null, 2));
@@ -360,12 +369,17 @@ async function createBotConfigFile(args: {
 /**
  * V2: Spawns bot client with clientId, bot configuration, and engine command.
  */
-function spawnBotClient(configPath: string): BotClientProcess {
+function spawnBotClient(
+  configPath: string,
+  clientId: string,
+): BotClientProcess {
   const proc = spawn({
     cmd: [
       "bun",
       "run",
       "src/index.ts",
+      "--client-id",
+      clientId,
       "--config",
       configPath,
       "--log-level",
@@ -596,12 +610,11 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       // V2: Start bot client first (proactive connection)
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
-        clientId,
         botId,
         botName: botId,
         engine: engineCommand,
       });
-      botClient = spawnBotClient(configFile.path);
+      botClient = spawnBotClient(configFile.path, clientId);
 
       // Wait for bot to register
       await waitForBotRegistration(
@@ -733,16 +746,15 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       // Start bot client
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
-        clientId,
         botId,
         botName: botId,
         engine: engineCommand,
       });
-      botClient = spawnBotClient(configFile.path);
+      botClient = spawnBotClient(configFile.path, clientId);
 
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {
-        variant: "standard",
+        variant: "classic",
         timeControl: "rapid",
       });
 
@@ -811,12 +823,11 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       // Start bot client
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
-        clientId,
         botId,
         botName: botId,
         engine: engineCommand,
       });
-      botClient = spawnBotClient(configFile.path);
+      botClient = spawnBotClient(configFile.path, clientId);
 
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {

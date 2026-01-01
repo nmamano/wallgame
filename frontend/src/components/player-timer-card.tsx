@@ -1,6 +1,7 @@
 import { Badge } from "@/components/ui/badge";
 import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
+import { resolvePawnStyleSrc } from "@/lib/pawn-style";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/lib/gameViewModel";
@@ -41,7 +42,9 @@ export function PlayerTimerCard({
   // Determine if we should show cat SVG for this player
   const shouldShowCatSvg =
     player.catSkin && player.catSkin !== "default" && player.catSkin.length > 0;
-  const catSvgPath = shouldShowCatSvg ? `/pawns/cat/${player.catSkin}` : null;
+  const catSvgPath = shouldShowCatSvg
+    ? resolvePawnStyleSrc(player.catSkin, "cat")
+    : null;
   const colorFilter = colorFilterMap[player.color]
     ? { filter: colorFilterMap[player.color] }
     : undefined;
