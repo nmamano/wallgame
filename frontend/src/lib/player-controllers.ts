@@ -362,7 +362,6 @@ const CAPABILITIES_BY_TYPE: Record<PlayerType, ControllerCapabilities> = {
   },
   friend: BASE_CAPABILITIES,
   "matched-user": BASE_CAPABILITIES,
-  "custom-bot": BASE_CAPABILITIES,
 };
 
 export function getCapabilitiesForType(

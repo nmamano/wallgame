@@ -235,16 +235,16 @@ json handle_engine_request(
     std::string request_id = request["requestId"].get<std::string>();
     std::string kind = request["kind"].get<std::string>();
     json const& state_json = request["state"];
-    int my_player_id = request["seat"]["playerId"].get<int>();
+    int my_player_id = request["playerId"].get<int>();
 
     XLOGF(INFO, "Handling {} request (id: {})", kind, request_id);
 
     // Validate version
-    if (engine_api_version != 1) {
+    if (engine_api_version != 2) {
         XLOGF(ERR, "Unsupported engine API version: {}", engine_api_version);
         std::cerr << "Error: Unsupported engine API version " << engine_api_version << "\n";
         return json{
-            {"engineApiVersion", 1},
+            {"engineApiVersion", 2},
             {"requestId", request_id},
             {"response", {{"action", "resign"}}}
         };
@@ -259,13 +259,13 @@ json handle_engine_request(
         // Return appropriate response based on request kind
         if (kind == "move") {
             return json{
-                {"engineApiVersion", 1},
+                {"engineApiVersion", 2},
                 {"requestId", request_id},
                 {"response", {{"action", "resign"}}}
             };
         } else {
             return json{
-                {"engineApiVersion", 1},
+                {"engineApiVersion", 2},
                 {"requestId", request_id},
                 {"response", {{"action", "decline-draw"}}}
             };
@@ -283,14 +283,14 @@ json handle_engine_request(
             XLOG(WARN, "No legal move found, resigning");
             std::cerr << "Warning: No legal move found\n";
             return json{
-                {"engineApiVersion", 1},
+                {"engineApiVersion", 2},
                 {"requestId", request_id},
                 {"response", {{"action", "resign"}}}
             };
         }
 
         return json{
-            {"engineApiVersion", 1},
+            {"engineApiVersion", 2},
             {"requestId", request_id},
             {"response", {
                 {"action", "move"},
@@ -298,10 +298,11 @@ json handle_engine_request(
             }}
         };
     } else if (kind == "draw") {
+        // Note: In V2, draws are auto-declined by the client, but we handle them anyway
         bool accept = should_accept_draw(board, turn, my_player_id, eval_fn, config);
 
         return json{
-            {"engineApiVersion", 1},
+            {"engineApiVersion", 2},
             {"requestId", request_id},
             {"response", {
                 {"action", accept ? "accept-draw" : "decline-draw"}
@@ -311,7 +312,7 @@ json handle_engine_request(
         XLOGF(ERR, "Unknown request kind: {}", kind);
         std::cerr << "Error: Unknown request kind '" << kind << "'\n";
         return json{
-            {"engineApiVersion", 1},
+            {"engineApiVersion", 2},
             {"requestId", request_id},
             {"response", {{"action", "resign"}}}
         };

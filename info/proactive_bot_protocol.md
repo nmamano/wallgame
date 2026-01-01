@@ -617,7 +617,7 @@ Flags:
 - `--client-id <client-id>`
 - `--official-token <official-token>`
 
-The config file is a JSON file including:
+The config file is a MANDATORY JSON file including:
   - The server to connect to. It's the base URL used to derive the WebSocket URL (default: `http://localhost:5173` in dev).
   - The JSON for the `attach` message, except for the `clientId` and `officialToken` fields, which are filled dynamically by the client from the flags.
   - The command to run the engine for each (bot, supported variant) combination.
@@ -758,7 +758,9 @@ Engines SHOULD fail fast and clearly:
 
 ---
 
-# Implementation prompt
+# Implementation
+
+## Prompt
 
 We need to migrate the current monorepo from the "seat-based bot protocol" (V1), to the new V2 "proactive bot protocol" (V2).
 
@@ -774,3 +776,284 @@ We need to update:
 4. The dummy engine
 5. The Deep Wallwars adaptor.
 6. The integration tests.
+
+## Claude's plan
+
+
+# Migration Plan: V1 to V2 Proactive Bot Protocol
+
+## Overview
+
+Migrate from the "seat-based bot protocol" (V1) to the new V2 "proactive bot protocol". All V1 code is to be deleted. Key changes in V2:
+
+- Bots connect proactively using a `clientId` (no per-game tokens)
+- A single client may serve multiple bots
+- Bots are discoverable and listed in the frontend UI table (in the game setup route), so users can browse and play
+- The server queues game requests (one outstanding at a time per client)
+- Draw offers are always auto-declined at the client side (engines are never consulted)
+- Rematches are handled transparently—bots just receive new requests as for any game
+
+**Migration is phased in the following order:**  
+Contracts → Server → Bot Client → Engines → Frontend → Tests → Cleanup  
+**Prerequisite:** The official bot token secret must already be present in `.env` files.
+
+---
+
+## Phase 1: Shared Contracts & Types
+
+### 1.1 Protocol Types (`custom-bot-protocol.ts`)
+
+- Set `CUSTOM_BOT_PROTOCOL_VERSION` to 2
+- Replace all V1 message types with V2 types:
+  - **Client→Server**:  
+    - `attach` (includes `clientId`, `bots` array)  
+    - `response`
+  - **Server→Client**:  
+    - `attached`  
+    - `attach-rejected`  
+    - `request`  
+    - `ack`  
+    - `nack`
+- Delete V1-specific fields/types (e.g. `RematchStartedMessage`, `seatToken`)
+- Add fields:
+  - `botId` in relevant requests
+  - `clientId` in attach
+- Define a `BotConfig` type:  
+  `botId`, `name`, `officialToken`, `username`, `appearance`, `variants`
+
+### 1.2 Engine API (`engine-api.ts`)
+
+- Set `ENGINE_API_VERSION` = 2
+- Update request types to match V2 protocol (remove rematch handling)
+- Add `botId` to requests
+
+### 1.3 Game Contracts (`games.ts`)
+
+- Remove `customBotSeatToken` from API responses
+- Remove `"custom-bot"` from `PlayerConfigType` (bots are no longer a seatType)
+- Add new types for bot-listing API endpoints
+
+---
+
+## Phase 2: Server Backend
+
+### 2.1 Bot Store (`custom-bot-store.ts`)
+
+Rebuild the store from scratch according to V2 spec:
+
+**Data structures:**  
+- `clients: Map<clientId, ClientConnection>`
+- `botRegistry: Map<clientId:botId, BotRegistration>`
+- `requestQueues: Map<clientId, RequestQueue>`
+
+**Functions:**  
+- `registerClient(clientId, bots, ws)` — register all bots for a client
+- `unregisterClient(clientId)` — cleanup on disconnect
+- `getBotsByFilter(variant, timeControl, boardSize)` — for UI discovery/filtering
+- `getRecommendedBots(variant, timeControl)` — for "Recommended" tab
+- `enqueueRequest(clientId, request)` — add a request to a client's FIFO queue
+- `dequeueRequest(clientId)` — get the next request for dispatch
+
+### 2.2 WebSocket Handler (`custom-bot-socket.ts`)
+
+Rewrite handler to follow V2:
+
+**Attach handling:**  
+- Require `protocolVersion = 2`
+- Validate that bots array is non-empty with unique `botIds`
+- Check official tokens vs environment secrets
+- If a client with this `clientId` is already connected, disconnect the existing connection
+- Register all bots (store in registry)
+- Send `attached` response
+
+**Request dispatch:**  
+- When a move is needed, enqueue a request with `botId`
+- Send to client (only one outstanding request per client at a time)
+
+**Response handling:**  
+- Validate `requestId` matches the current active request
+- Ensure action is valid for the request kind
+- Apply move or process resign/draw response
+- Reply with either `ack` or `nack`
+
+**Disconnect handling:**  
+- Resign all active games for all bots belonging to the client
+- Remove client and bots from registry
+
+### 2.3 Game Socket Integration (`game-socket.ts`)
+
+- Remove all references to seat tokens
+- Update bot detection: check if opponent is a registered bot
+- Channel move requests through the new bot store request queue
+- Remove rematch-started emission to bots
+
+### 2.4 Game Store (`store.ts`)
+
+- Delete `customBotSeatToken` from SessionPlayer
+- Remove handling for `configType: "custom-bot"`
+- Add `botId` field for bot games
+
+### 2.5 Bot Listing API (`games.ts` or new file)
+
+Add endpoints:
+
+- `GET /api/bots` — list bots, filtered by requested settings
+- `GET /api/bots/recommended` — list recommended bots for a given variant & control
+- `POST /api/games/vs-bot` — create a game versus a bot
+
+---
+
+## Phase 3: Official Bot Client
+
+### 3.1 CLI (`index.ts`)
+
+- Remove `--token` flag
+- Add `--client-id` flag (required)
+- Add `--official-token` flag (optional)
+- Add `--config` flag for JSON config file
+- Config specifies: server, bots array, engine command map
+
+### 3.2 WebSocket Client (`ws-client.ts`)
+
+- Send a V2 `attach` message with `clientId` and `bots`
+- Handle V2 `attached` response
+- Handle V2 `request` messages (`botId` included)
+- Remove V1 `RematchStartedMessage` handling
+- Auto-decline draw offers in the client (don't send to engine)
+- Implement automatic reconnection (backoff + jitter)
+
+### 3.3 Engine Runner (`engine-runner.ts`)
+
+- Always use `engineApiVersion: 2`
+- Remove all draw offer consultation (decline in client directly)
+
+### 3.4 Config File Support (`official-custom-bot-client/src/config.ts`)
+
+- Parse config from JSON file
+- Structure:  
+  ```json
+  {
+    "server": "...",
+    "bots": [...],
+    "engineCommands": {
+      "botId": "..."
+    }
+  }
+  ```
+
+---
+
+## Phase 4: Engines
+
+### 4.1 Dummy Engine (`index.ts`)
+
+- Set `ENGINE_API_VERSION` = 2
+- Update request/response types for V2
+- Remove engine-side draw handling (draws are always auto-declined in client)
+
+### 4.2 Deep Wallwars Adapter (`engine_adapter.cpp`, `engine_adapter.hpp`)
+
+- Set `ENGINE_API_VERSION` = 2
+- Update request parsing for V2
+- Remove draw evaluation logic
+
+---
+
+## Phase 5: Frontend UI
+
+### 5.1 Bots Table Component (`frontend/src/components/bots-table.tsx`)
+
+- Tabs: "Recommended" and "Matching settings"
+- Columns: Name, Type (official/custom), Board size (if applicable), Play button
+- Filtering by current game settings
+
+### 5.2 Game Setup Flow (`frontend/src/routes/game-setup.tsx`)
+
+- Remove "Custom bot" option from player dropdown
+- Display bots table beneath game config
+- When "Play" is clicked on a bot:  
+  - Create game via `/api/games/vs-bot`
+  - Navigate directly to new game (bypass old setup modal)
+
+### 5.3 Matching Stage Panel (`matching-stage-panel.tsx`)
+
+- Remove any custom bot token display logic (`renderCustomBotInstructions`)
+- Remove `customBotSeatToken` from `MatchingPlayer` interface
+
+### 5.4 Player Configuration (`player-configuration.tsx`)
+
+- Remove "custom-bot" choice
+- Keep: "you", "friend", "matched-user"
+
+### 5.5 Player Types (`player-controllers.ts`)
+
+- Remove "custom-bot" from `PlayerType`
+- Update player capability logic accordingly
+
+### 5.6 Hooks/Queries for Bots (`frontend/src/hooks/use-bots.ts`)
+
+Add hooks:
+
+- `useBotsQuery(settings)`: fetches bots matching the settings
+- `useRecommendedBotsQuery(variant, timeControl)`: fetches recommended bots
+- `usePlayVsBotMutation()`: creates a new game against a bot
+
+---
+
+## Phase 6: Integration Tests
+
+### 6.1 Bot Integration Tests (`custom-bot-client-dummy-engine.integration.test.ts`)
+
+- Port tests to V2 protocol
+- Test flow:
+   1. Start client with `clientId` and bots config
+   2. Confirm presence in bot listing API
+   3. Create game vs bot via API
+   4. Play moves and verify bot responses
+   5. Test disconnection and reconnection
+
+### 6.2 New Test Cases
+
+- Bot discovery (listing, filters)
+- Multiple bots per client
+- Distinction between official and custom bots
+- Request queueing and invalidation behavior
+- Force-disconnects when duplicate `clientId` connects
+
+---
+
+## Phase 7: Cleanup
+
+- Delete all V1 code related to:
+  - Seat tokens (`cbt_*`)
+  - RematchStartedMessage handling
+  - `customBotSeatToken` everywhere
+  - Any V1 protocol version handling
+
+---
+
+## File Change Summary
+
+| File                                             | Action   |
+|--------------------------------------------------|----------|
+| shared/contracts/custom-bot-protocol.ts          | Rewrite  |
+| shared/custom-bot/engine-api.ts                  | Update   |
+| shared/contracts/games.ts                        | Update   |
+| server/games/custom-bot-store.ts                 | Rewrite  |
+| server/routes/custom-bot-socket.ts               | Rewrite  |
+| server/routes/game-socket.ts                     | Update   |
+| server/games/store.ts                            | Update   |
+| server/routes/games.ts                           | Update   |
+| frontend/src/components/bots-table.tsx           | New      |
+| frontend/src/routes/game-setup.tsx               | Update   |
+| frontend/src/components/matching-stage-panel.tsx | Update   |
+| frontend/src/components/player-configuration.tsx | Update   |
+| frontend/src/lib/player-controllers.ts           | Update   |
+| frontend/src/hooks/use-bots.ts                   | New      |
+| official-custom-bot-client/src/index.ts          | Rewrite  |
+| official-custom-bot-client/src/ws-client.ts      | Rewrite  |
+| official-custom-bot-client/src/config.ts         | New      |
+| dummy-engine/src/index.ts                        | Update   |
+| deep-wallwars/src/engine_adapter.*               | Update   |
+| tests/integration/*.test.ts                      | Rewrite  |
+

@@ -1,20 +1,18 @@
 /**
- * Engine API Types (v1)
+ * Engine API Types (v2)
  *
  * The engine:
  * - Reads a single JSON request from stdin
  * - Writes a single JSON response to stdout
  * - May write logs to stderr
+ *
+ * Note: In V2, the Official Client auto-declines draw offers without consulting
+ * the engine. Draw request types are kept for potential future use.
  */
 
-import type {
-  GameSnapshot,
-  PlayerId,
-  SerializedGameState,
-} from "../domain/game-types";
-import type { CustomBotSeatIdentity } from "../contracts/custom-bot-protocol";
+import type { PlayerId, SerializedGameState } from "../domain/game-types";
 
-export const ENGINE_API_VERSION = 1;
+export const ENGINE_API_VERSION = 2;
 
 // ============================================================================
 // Request Types
@@ -23,14 +21,15 @@ export const ENGINE_API_VERSION = 1;
 interface EngineRequestBase {
   engineApiVersion: number;
   requestId: string;
+  /** Which bot this request is for */
+  botId: string;
   server: {
-    matchId: string;
     gameId: string;
     serverTime: number;
   };
-  seat: CustomBotSeatIdentity;
+  /** The PlayerId the bot is playing as (1 or 2) */
+  playerId: PlayerId;
   state: SerializedGameState;
-  snapshot: GameSnapshot;
 }
 
 export interface EngineMoveRequest extends EngineRequestBase {
@@ -69,42 +68,40 @@ export type EngineResponse = EngineMoveResponse | EngineDrawResponse;
 
 export function createMoveRequest(
   requestId: string,
-  matchId: string,
+  botId: string,
   gameId: string,
   serverTime: number,
-  seat: CustomBotSeatIdentity,
+  playerId: PlayerId,
   state: SerializedGameState,
-  snapshot: GameSnapshot,
 ): EngineMoveRequest {
   return {
     engineApiVersion: ENGINE_API_VERSION,
     kind: "move",
     requestId,
-    server: { matchId, gameId, serverTime },
-    seat,
+    botId,
+    server: { gameId, serverTime },
+    playerId,
     state,
-    snapshot,
   };
 }
 
 export function createDrawRequest(
   requestId: string,
-  matchId: string,
+  botId: string,
   gameId: string,
   serverTime: number,
-  seat: CustomBotSeatIdentity,
+  playerId: PlayerId,
   offeredBy: PlayerId,
   state: SerializedGameState,
-  snapshot: GameSnapshot,
 ): EngineDrawRequest {
   return {
     engineApiVersion: ENGINE_API_VERSION,
     kind: "draw",
     requestId,
-    server: { matchId, gameId, serverTime },
-    seat,
+    botId,
+    server: { gameId, serverTime },
+    playerId,
     offeredBy,
     state,
-    snapshot,
   };
 }

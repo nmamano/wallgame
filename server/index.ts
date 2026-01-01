@@ -4,7 +4,7 @@ import { logger } from "hono/logger";
 import { puzzlesRoute } from "./routes/puzzles";
 import { authRoute } from "./routes/auth";
 import { settingsRoute } from "./routes/settings";
-import { gamesRoute } from "./routes/games";
+import { gamesRoute, botsRoute } from "./routes/games";
 import { rankingRoute } from "./routes/ranking";
 import { registerGameSocketRoute } from "./routes/game-socket";
 import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
@@ -25,6 +25,7 @@ export function createApp() {
     .route("/puzzles", puzzlesRoute)
     .route("/settings", settingsRoute)
     .route("/games", gamesRoute)
+    .route("/bots", botsRoute)
     .route("/ranking", rankingRoute)
     .route("/", authRoute); // /api/login, /api/register, etc.
 

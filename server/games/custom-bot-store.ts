@@ -1,237 +1,595 @@
 /**
- * Custom Bot Store
+ * Bot Store (Proactive Bot Protocol v2)
  *
- * Manages seat tokens for custom bot connections and tracks active bot connections.
- * A seat token uniquely identifies a custom bot seat within a game session.
+ * Manages bot client connections and their registered bots.
+ * Bot clients connect proactively and register bots; users discover and play against them.
  *
- * The protocol uses a single pending request model - only one request is valid at a time.
+ * Key concepts:
+ * - A bot client (identified by clientId) can serve multiple bots
+ * - Each bot has a unique botId within its client
+ * - The server maintains a FIFO request queue per client
+ * - Only one request is active at a time per client
  */
 
 import { nanoid } from "nanoid";
-import type { PlayerId } from "../../shared/domain/game-types";
+import type { ServerWebSocket } from "bun";
 import type {
-  CustomBotSupportedGame,
+  PlayerId,
+  Variant,
+  TimeControlPreset,
+} from "../../shared/domain/game-types";
+import type {
+  BotConfig,
+  BotAppearance,
+  VariantConfig,
   BotRequestKind,
+  ListedBot,
+  RecommendedBotEntry,
 } from "../../shared/contracts/custom-bot-protocol";
-import type { GameSession } from "./store";
 
 // ============================================================================
 // Types
 // ============================================================================
 
-export interface SeatTokenMapping {
-  gameId: string;
-  role: "host" | "joiner";
-  createdAt: number;
-  usedAt?: number; // Set when token is successfully used for attach
-}
-
 export interface PendingRequest {
   requestId: string;
   kind: BotRequestKind;
+  botId: string;
+  gameId: string;
   createdAt: number;
 }
 
-export interface CustomBotConnection {
-  gameId: string;
-  role: "host" | "joiner";
+export interface QueuedRequest extends PendingRequest {
   playerId: PlayerId;
-  seatToken: string;
-  attachedAt: number;
-  matchId: string;
+  opponentName: string;
+  offeredBy?: PlayerId; // For draw requests
+}
 
-  // Abuse tracking
+export interface BotClientConnection {
+  clientId: string;
+  ws: ServerWebSocket<unknown>;
+  bots: Map<string, RegisteredBot>;
+  attachedAt: number;
   lastMessageAt: number;
   invalidMessageCount: number;
+  /** Currently active request (if any) */
+  activeRequest?: PendingRequest;
+  /** FIFO queue of pending requests */
+  requestQueue: QueuedRequest[];
+}
 
-  // Single pending request (only one valid at a time)
-  pendingRequest?: PendingRequest;
+export interface RegisteredBot {
+  botId: string;
+  clientId: string;
+  name: string;
+  isOfficial: boolean;
+  username: string | null; // null = public bot
+  appearance: BotAppearance;
+  variants: Partial<Record<Variant, VariantConfig>>;
+  /** Active games this bot is playing */
+  activeGames: Map<string, ActiveBotGame>;
+}
+
+export interface ActiveBotGame {
+  gameId: string;
+  playerId: PlayerId;
+  opponentName: string;
+  startedAt: number;
 }
 
 // ============================================================================
 // Storage
 // ============================================================================
 
-// Map from seatToken -> token info
-const seatTokens = new Map<string, SeatTokenMapping>();
+/** Map from clientId -> client connection */
+const clients = new Map<string, BotClientConnection>();
 
-// Map from seatToken -> active connection
-const activeConnections = new Map<string, CustomBotConnection>();
+/** Index: compositeId (clientId:botId) -> RegisteredBot */
+const botIndex = new Map<string, RegisteredBot>();
 
-// Reverse lookup: gameId + role -> seatToken (for finding bot connection by seat)
-const seatToTokenMap = new Map<string, string>();
+/** Maximum number of connected clients */
+const MAX_CLIENTS = 10;
 
-const makeSeatKey = (gameId: string, role: "host" | "joiner"): string =>
-  `${gameId}:${role}`;
+/** Maximum queue length before hiding bots from UI */
+const MAX_QUEUE_LENGTH = 10;
+
+const makeCompositeId = (clientId: string, botId: string): string =>
+  `${clientId}:${botId}`;
 
 // ============================================================================
-// Seat Token Management
+// Client Management
 // ============================================================================
 
 /**
- * Generate a new seat token for a custom bot seat.
- * Called when creating a game with a custom bot player.
+ * Register a new client and its bots.
+ * Returns the existing client if clientId is already connected (for force-disconnect).
  */
-export const generateSeatToken = (
-  gameId: string,
-  role: "host" | "joiner",
-): string => {
-  const token = `cbt_${nanoid(24)}`; // Prefix for easy identification
-  seatTokens.set(token, {
-    gameId,
-    role,
-    createdAt: Date.now(),
-  });
-  seatToTokenMap.set(makeSeatKey(gameId, role), token);
-  console.info("[custom-bot] generated seat token", { gameId, role });
-  return token;
-};
-
-/**
- * Validate a seat token and return the mapping if valid.
- */
-export const validateSeatToken = (token: string): SeatTokenMapping | null => {
-  return seatTokens.get(token) ?? null;
-};
-
-/**
- * Check if a seat token has already been used.
- */
-export const isSeatTokenUsed = (token: string): boolean => {
-  const mapping = seatTokens.get(token);
-  return mapping?.usedAt !== undefined;
-};
-
-/**
- * Mark a seat token as used (after successful attach).
- */
-export const markSeatTokenUsed = (token: string): void => {
-  const mapping = seatTokens.get(token);
-  if (mapping) {
-    mapping.usedAt = Date.now();
+export const registerClient = (
+  clientId: string,
+  bots: BotConfig[],
+  ws: ServerWebSocket<unknown>,
+  officialToken: string | undefined,
+):
+  | { success: true; client: BotClientConnection }
+  | { success: false; existingClient: BotClientConnection } => {
+  // Check if client already exists
+  const existing = clients.get(clientId);
+  if (existing) {
+    return { success: false, existingClient: existing };
   }
-};
 
-/**
- * Get the seat token for a game seat (if one exists).
- */
-export const getSeatToken = (
-  gameId: string,
-  role: "host" | "joiner",
-): string | undefined => {
-  return seatToTokenMap.get(makeSeatKey(gameId, role));
-};
-
-// ============================================================================
-// Connection Management
-// ============================================================================
-
-/**
- * Create a new custom bot connection after successful attach.
- */
-export const createConnection = (
-  seatToken: string,
-  gameId: string,
-  role: "host" | "joiner",
-  playerId: PlayerId,
-  matchId: string,
-): CustomBotConnection => {
-  const connection: CustomBotConnection = {
-    gameId,
-    role,
-    playerId,
-    seatToken,
+  const connection: BotClientConnection = {
+    clientId,
+    ws,
+    bots: new Map(),
     attachedAt: Date.now(),
-    matchId,
     lastMessageAt: Date.now(),
     invalidMessageCount: 0,
+    requestQueue: [],
   };
-  activeConnections.set(seatToken, connection);
-  console.info("[custom-bot] connection created", {
-    gameId,
-    role,
-    playerId,
-    matchId,
+
+  // Register each bot
+  for (const botConfig of bots) {
+    const isOfficial =
+      botConfig.officialToken === officialToken && !!officialToken;
+    const registeredBot: RegisteredBot = {
+      botId: botConfig.botId,
+      clientId,
+      name: botConfig.name,
+      isOfficial,
+      username: botConfig.username,
+      appearance: botConfig.appearance ?? {},
+      variants: botConfig.variants,
+      activeGames: new Map(),
+    };
+
+    connection.bots.set(botConfig.botId, registeredBot);
+    botIndex.set(makeCompositeId(clientId, botConfig.botId), registeredBot);
+  }
+
+  clients.set(clientId, connection);
+  console.info("[bot-store] client registered", {
+    clientId,
+    botCount: bots.length,
+    botNames: bots.map((b) => b.name),
   });
-  return connection;
+
+  return { success: true, client: connection };
 };
 
 /**
- * Get an active connection by seat token.
+ * Force-replace an existing client connection.
+ * Used when a new connection arrives with the same clientId.
  */
-export const getConnection = (
-  seatToken: string,
-): CustomBotConnection | undefined => {
-  return activeConnections.get(seatToken);
+export const replaceClient = (
+  clientId: string,
+  bots: BotConfig[],
+  ws: ServerWebSocket<unknown>,
+  officialToken: string | undefined,
+): BotClientConnection => {
+  // First unregister old bots
+  const existing = clients.get(clientId);
+  if (existing) {
+    for (const [botId] of existing.bots) {
+      botIndex.delete(makeCompositeId(clientId, botId));
+    }
+    clients.delete(clientId);
+  }
+
+  // Then register new client
+  const result = registerClient(clientId, bots, ws, officialToken);
+  if (result.success) {
+    return result.client;
+  }
+  // Should never happen since we just deleted the old one
+  throw new Error("Failed to register client after replacement");
 };
 
 /**
- * Get an active connection by game ID and role.
+ * Unregister a client and all its bots.
  */
-export const getConnectionByGameSeat = (
-  gameId: string,
-  role: "host" | "joiner",
-): CustomBotConnection | undefined => {
-  const token = seatToTokenMap.get(makeSeatKey(gameId, role));
-  if (!token) return undefined;
-  return activeConnections.get(token);
+export const unregisterClient = (clientId: string): RegisteredBot[] | null => {
+  const client = clients.get(clientId);
+  if (!client) return null;
+
+  const bots: RegisteredBot[] = [];
+  for (const [botId, bot] of client.bots) {
+    bots.push(bot);
+    botIndex.delete(makeCompositeId(clientId, botId));
+  }
+
+  clients.delete(clientId);
+  console.info("[bot-store] client unregistered", {
+    clientId,
+    botCount: bots.length,
+  });
+
+  return bots;
 };
 
 /**
- * Check if a seat already has an active connection.
+ * Get client by clientId.
  */
-export const isSeatConnected = (
-  gameId: string,
-  role: "host" | "joiner",
-): boolean => {
-  const token = seatToTokenMap.get(makeSeatKey(gameId, role));
-  if (!token) return false;
-  return activeConnections.has(token);
+export const getClient = (
+  clientId: string,
+): BotClientConnection | undefined => {
+  return clients.get(clientId);
 };
 
 /**
- * Remove a connection (on disconnect or resignation).
+ * Get the number of connected clients.
  */
-export const removeConnection = (seatToken: string): void => {
-  const connection = activeConnections.get(seatToken);
-  if (connection) {
-    activeConnections.delete(seatToken);
-    console.info("[custom-bot] connection removed", {
-      gameId: connection.gameId,
-      role: connection.role,
+export const getClientCount = (): number => {
+  return clients.size;
+};
+
+/**
+ * Check if we've reached the maximum client limit.
+ */
+export const isAtClientLimit = (): boolean => {
+  return clients.size >= MAX_CLIENTS;
+};
+
+// ============================================================================
+// Bot Lookup
+// ============================================================================
+
+/**
+ * Get a bot by composite ID (clientId:botId).
+ */
+export const getBotByCompositeId = (
+  compositeId: string,
+): RegisteredBot | undefined => {
+  return botIndex.get(compositeId);
+};
+
+/**
+ * Get a bot by clientId and botId.
+ */
+export const getBot = (
+  clientId: string,
+  botId: string,
+): RegisteredBot | undefined => {
+  return botIndex.get(makeCompositeId(clientId, botId));
+};
+
+/**
+ * Get the client that owns a bot.
+ */
+export const getClientForBot = (
+  compositeId: string,
+): BotClientConnection | undefined => {
+  const bot = botIndex.get(compositeId);
+  if (!bot) return undefined;
+  return clients.get(bot.clientId);
+};
+
+// ============================================================================
+// Bot Discovery
+// ============================================================================
+
+/**
+ * Get all bots that support the given game configuration.
+ * Filters by variant, time control, and optionally board size.
+ * Also filters out bots whose queue is too long.
+ */
+export const getMatchingBots = (
+  variant: Variant,
+  timeControl: TimeControlPreset,
+  boardWidth?: number,
+  boardHeight?: number,
+  username?: string,
+): ListedBot[] => {
+  const results: ListedBot[] = [];
+
+  for (const [compositeId, bot] of botIndex) {
+    // Check visibility
+    if (bot.username !== null) {
+      if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {
+        continue; // Private bot, user doesn't match
+      }
+    }
+
+    // Check if bot supports this variant
+    const variantConfig = bot.variants[variant];
+    if (!variantConfig) continue;
+
+    // Check time control
+    if (!variantConfig.timeControls.includes(timeControl)) continue;
+
+    // Check board dimensions if specified
+    if (boardWidth !== undefined) {
+      if (
+        boardWidth < variantConfig.boardWidth.min ||
+        boardWidth > variantConfig.boardWidth.max
+      ) {
+        continue;
+      }
+    }
+    if (boardHeight !== undefined) {
+      if (
+        boardHeight < variantConfig.boardHeight.min ||
+        boardHeight > variantConfig.boardHeight.max
+      ) {
+        continue;
+      }
+    }
+
+    // Check queue length
+    const client = clients.get(bot.clientId);
+    if (client && client.requestQueue.length >= MAX_QUEUE_LENGTH) {
+      continue; // Queue too long, hide from UI
+    }
+
+    results.push({
+      id: compositeId,
+      clientId: bot.clientId,
+      botId: bot.botId,
+      name: bot.name,
+      isOfficial: bot.isOfficial,
+      appearance: bot.appearance,
+      variants: bot.variants,
     });
+  }
+
+  // Sort: official first, then by name
+  results.sort((a, b) => {
+    if (a.isOfficial !== b.isOfficial) {
+      return a.isOfficial ? -1 : 1;
+    }
+    return a.name.localeCompare(b.name);
+  });
+
+  return results;
+};
+
+/**
+ * Get recommended bot entries for the given variant and time control.
+ * Returns bots with their recommended settings.
+ */
+export const getRecommendedBots = (
+  variant: Variant,
+  timeControl: TimeControlPreset,
+  username?: string,
+): RecommendedBotEntry[] => {
+  const results: RecommendedBotEntry[] = [];
+
+  for (const [compositeId, bot] of botIndex) {
+    // Check visibility
+    if (bot.username !== null) {
+      if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {
+        continue;
+      }
+    }
+
+    // Check if bot supports this variant
+    const variantConfig = bot.variants[variant];
+    if (!variantConfig) continue;
+
+    // Check time control
+    if (!variantConfig.timeControls.includes(timeControl)) continue;
+
+    // Check queue length
+    const client = clients.get(bot.clientId);
+    if (client && client.requestQueue.length >= MAX_QUEUE_LENGTH) {
+      continue;
+    }
+
+    // Add an entry for each recommended setting
+    for (const rec of variantConfig.recommended) {
+      results.push({
+        bot: {
+          id: compositeId,
+          clientId: bot.clientId,
+          botId: bot.botId,
+          name: bot.name,
+          isOfficial: bot.isOfficial,
+          appearance: bot.appearance,
+          variants: bot.variants,
+        },
+        boardWidth: rec.boardWidth,
+        boardHeight: rec.boardHeight,
+      });
+    }
+  }
+
+  // Sort: official first, then by name, then by board size
+  results.sort((a, b) => {
+    if (a.bot.isOfficial !== b.bot.isOfficial) {
+      return a.bot.isOfficial ? -1 : 1;
+    }
+    const nameCompare = a.bot.name.localeCompare(b.bot.name);
+    if (nameCompare !== 0) return nameCompare;
+    // Sort by board size (smaller first)
+    const sizeA = a.boardWidth * a.boardHeight;
+    const sizeB = b.boardWidth * b.boardHeight;
+    return sizeA - sizeB;
+  });
+
+  return results;
+};
+
+// ============================================================================
+// Active Game Management
+// ============================================================================
+
+/**
+ * Register an active game for a bot.
+ */
+export const addActiveGame = (
+  compositeId: string,
+  gameId: string,
+  playerId: PlayerId,
+  opponentName: string,
+): void => {
+  const bot = botIndex.get(compositeId);
+  if (!bot) return;
+
+  bot.activeGames.set(gameId, {
+    gameId,
+    playerId,
+    opponentName,
+    startedAt: Date.now(),
+  });
+
+  console.info("[bot-store] active game added", {
+    compositeId,
+    gameId,
+    playerId,
+  });
+};
+
+/**
+ * Remove an active game from a bot.
+ */
+export const removeActiveGame = (compositeId: string, gameId: string): void => {
+  const bot = botIndex.get(compositeId);
+  if (!bot) return;
+
+  bot.activeGames.delete(gameId);
+  console.info("[bot-store] active game removed", { compositeId, gameId });
+};
+
+/**
+ * Get the active game for a bot in a specific game.
+ */
+export const getActiveGame = (
+  compositeId: string,
+  gameId: string,
+): ActiveBotGame | undefined => {
+  const bot = botIndex.get(compositeId);
+  if (!bot) return undefined;
+  return bot.activeGames.get(gameId);
+};
+
+/**
+ * Get all active games for a client's bots.
+ */
+export const getActiveGamesForClient = (
+  clientId: string,
+): { compositeId: string; game: ActiveBotGame }[] => {
+  const client = clients.get(clientId);
+  if (!client) return [];
+
+  const games: { compositeId: string; game: ActiveBotGame }[] = [];
+  for (const [botId, bot] of client.bots) {
+    const compositeId = makeCompositeId(clientId, botId);
+    for (const game of bot.activeGames.values()) {
+      games.push({ compositeId, game });
+    }
+  }
+  return games;
+};
+
+// ============================================================================
+// Request Queue Management
+// ============================================================================
+
+/**
+ * Generate a new request ID.
+ */
+export const generateRequestId = (): string => {
+  return `req_${nanoid(16)}`;
+};
+
+/**
+ * Enqueue a request for a client.
+ */
+export const enqueueRequest = (
+  clientId: string,
+  request: QueuedRequest,
+): void => {
+  const client = clients.get(clientId);
+  if (!client) return;
+
+  client.requestQueue.push(request);
+  console.info("[bot-store] request enqueued", {
+    clientId,
+    requestId: request.requestId,
+    kind: request.kind,
+    queueLength: client.requestQueue.length,
+  });
+};
+
+/**
+ * Try to send the next request to the client.
+ * Returns the request if one was sent, undefined otherwise.
+ */
+export const tryProcessNextRequest = (
+  clientId: string,
+): QueuedRequest | undefined => {
+  const client = clients.get(clientId);
+  if (!client) return undefined;
+
+  // Can only process if no active request
+  if (client.activeRequest) return undefined;
+
+  // Get next request from queue
+  const request = client.requestQueue.shift();
+  if (!request) return undefined;
+
+  // Set as active
+  client.activeRequest = {
+    requestId: request.requestId,
+    kind: request.kind,
+    botId: request.botId,
+    gameId: request.gameId,
+    createdAt: Date.now(),
+  };
+
+  return request;
+};
+
+/**
+ * Get the active request for a client.
+ */
+export const getActiveRequest = (
+  clientId: string,
+): PendingRequest | undefined => {
+  const client = clients.get(clientId);
+  return client?.activeRequest;
+};
+
+/**
+ * Clear the active request.
+ */
+export const clearActiveRequest = (clientId: string): void => {
+  const client = clients.get(clientId);
+  if (client) {
+    client.activeRequest = undefined;
   }
 };
 
 /**
- * Update the connection for a rematch transition.
- * The same WebSocket connection persists across rematches within a match.
+ * Validate that a request ID matches the active request.
  */
-export const transitionConnectionToRematch = (
-  seatToken: string,
-  newGameId: string,
-  newPlayerId: PlayerId,
+export const validateRequestId = (
+  clientId: string,
+  requestId: string,
+): boolean => {
+  const client = clients.get(clientId);
+  if (!client?.activeRequest) return false;
+  return client.activeRequest.requestId === requestId;
+};
+
+/**
+ * Remove all pending requests for a specific game.
+ * Used when a game ends.
+ */
+export const removeRequestsForGame = (
+  clientId: string,
+  gameId: string,
 ): void => {
-  const connection = activeConnections.get(seatToken);
-  if (!connection) return;
+  const client = clients.get(clientId);
+  if (!client) return;
 
-  // Remove old seat mapping
-  seatToTokenMap.delete(makeSeatKey(connection.gameId, connection.role));
+  // Remove from queue
+  client.requestQueue = client.requestQueue.filter((r) => r.gameId !== gameId);
 
-  // Update connection
-  connection.gameId = newGameId;
-  connection.playerId = newPlayerId;
-  connection.pendingRequest = undefined; // Clear any pending request
-
-  // Add new seat mapping
-  seatToTokenMap.set(makeSeatKey(newGameId, connection.role), seatToken);
-
-  console.info("[custom-bot] connection transitioned to rematch", {
-    matchId: connection.matchId,
-    newGameId,
-    role: connection.role,
-    newPlayerId,
-  });
+  // Clear active if it's for this game
+  if (client.activeRequest?.gameId === gameId) {
+    client.activeRequest = undefined;
+  }
 };
 
 // ============================================================================
@@ -243,147 +601,43 @@ export const transitionConnectionToRematch = (
  * Returns true if the message should be processed, false if rate limited.
  */
 export const checkRateLimit = (
-  seatToken: string,
+  clientId: string,
   minIntervalMs: number,
 ): boolean => {
-  const connection = activeConnections.get(seatToken);
-  if (!connection) return false;
+  const client = clients.get(clientId);
+  if (!client) return false;
 
   const now = Date.now();
-  const timeSinceLastMessage = now - connection.lastMessageAt;
+  const timeSinceLastMessage = now - client.lastMessageAt;
 
   if (timeSinceLastMessage < minIntervalMs) {
     return false;
   }
 
-  connection.lastMessageAt = now;
+  client.lastMessageAt = now;
   return true;
 };
 
 /**
- * Increment invalid message count.
+ * Increment invalid message count for a game.
  * Returns the new count.
  */
-export const incrementInvalidMessageCount = (seatToken: string): number => {
-  const connection = activeConnections.get(seatToken);
-  if (!connection) return 0;
+export const incrementInvalidMessageCount = (clientId: string): number => {
+  const client = clients.get(clientId);
+  if (!client) return 0;
 
-  connection.invalidMessageCount += 1;
-  return connection.invalidMessageCount;
+  client.invalidMessageCount += 1;
+  return client.invalidMessageCount;
 };
 
 /**
- * Reset invalid message count (e.g., after a valid message).
+ * Reset invalid message count.
  */
-export const resetInvalidMessageCount = (seatToken: string): void => {
-  const connection = activeConnections.get(seatToken);
-  if (connection) {
-    connection.invalidMessageCount = 0;
+export const resetInvalidMessageCount = (clientId: string): void => {
+  const client = clients.get(clientId);
+  if (client) {
+    client.invalidMessageCount = 0;
   }
-};
-
-// ============================================================================
-// Pending Request Management
-// ============================================================================
-
-/**
- * Set the pending request for a connection.
- * Any prior pending request is automatically invalidated.
- */
-export const setPendingRequest = (
-  seatToken: string,
-  requestId: string,
-  kind: BotRequestKind,
-): void => {
-  const connection = activeConnections.get(seatToken);
-  if (connection) {
-    connection.pendingRequest = {
-      requestId,
-      kind,
-      createdAt: Date.now(),
-    };
-  }
-};
-
-/**
- * Get the pending request for a connection.
- */
-export const getPendingRequest = (
-  seatToken: string,
-): PendingRequest | undefined => {
-  const connection = activeConnections.get(seatToken);
-  return connection?.pendingRequest;
-};
-
-/**
- * Clear the pending request.
- */
-export const clearPendingRequest = (seatToken: string): void => {
-  const connection = activeConnections.get(seatToken);
-  if (connection) {
-    connection.pendingRequest = undefined;
-  }
-};
-
-/**
- * Validate that a request ID matches the pending one.
- */
-export const validateRequestId = (
-  seatToken: string,
-  requestId: string,
-): boolean => {
-  const connection = activeConnections.get(seatToken);
-  if (!connection?.pendingRequest) return false;
-  return connection.pendingRequest.requestId === requestId;
-};
-
-/**
- * Get the pending request kind (if any).
- */
-export const getPendingRequestKind = (
-  seatToken: string,
-): BotRequestKind | undefined => {
-  const connection = activeConnections.get(seatToken);
-  return connection?.pendingRequest?.kind;
-};
-
-// ============================================================================
-// Game Compatibility Checking
-// ============================================================================
-
-/**
- * Check if a bot client supports the game configuration.
- */
-export const checkGameCompatibility = (
-  session: GameSession,
-  supportedGame: CustomBotSupportedGame,
-): { compatible: boolean; reason?: string } => {
-  const config = session.config;
-
-  // Check variant support
-  if (!supportedGame.variants.includes(config.variant)) {
-    return {
-      compatible: false,
-      reason: `Unsupported variant: ${config.variant}. Client supports: ${supportedGame.variants.join(", ")}`,
-    };
-  }
-
-  // Check board dimensions
-  if (config.boardWidth > supportedGame.maxBoardWidth) {
-    return {
-      compatible: false,
-      reason: `Board width ${config.boardWidth} exceeds client max ${supportedGame.maxBoardWidth}`,
-    };
-  }
-
-  if (config.boardHeight > supportedGame.maxBoardHeight) {
-    return {
-      compatible: false,
-      reason: `Board height ${config.boardHeight} exceeds client max ${supportedGame.maxBoardHeight}`,
-    };
-  }
-
-  return { compatible: true };
 };
 
 // ============================================================================
@@ -391,37 +645,49 @@ export const checkGameCompatibility = (
 // ============================================================================
 
 /**
- * Clean up stale tokens and connections.
- * Should be called periodically or on server startup.
+ * Clean up stale connections.
+ * Should be called periodically.
  */
 export const cleanupStaleEntries = (
   maxAgeMs: number = 24 * 60 * 60 * 1000,
 ): void => {
   const now = Date.now();
-  let tokensCleaned = 0;
-  let connectionsCleaned = 0;
+  let clientsCleaned = 0;
 
-  // Clean up old unused tokens
-  for (const [token, mapping] of seatTokens.entries()) {
-    if (!mapping.usedAt && now - mapping.createdAt > maxAgeMs) {
-      seatTokens.delete(token);
-      seatToTokenMap.delete(makeSeatKey(mapping.gameId, mapping.role));
-      tokensCleaned++;
+  for (const [clientId, client] of clients.entries()) {
+    if (now - client.attachedAt > maxAgeMs) {
+      unregisterClient(clientId);
+      clientsCleaned++;
     }
   }
 
-  // Clean up stale connections (shouldn't happen normally, but safety net)
-  for (const [token, connection] of activeConnections.entries()) {
-    if (now - connection.attachedAt > maxAgeMs) {
-      activeConnections.delete(token);
-      connectionsCleaned++;
-    }
+  if (clientsCleaned > 0) {
+    console.info("[bot-store] cleanup completed", { clientsCleaned });
   }
+};
 
-  if (tokensCleaned > 0 || connectionsCleaned > 0) {
-    console.info("[custom-bot] cleanup completed", {
-      tokensCleaned,
-      connectionsCleaned,
-    });
-  }
+// ============================================================================
+// Debug / Testing
+// ============================================================================
+
+/**
+ * Clear all data (for testing).
+ */
+export const clearAll = (): void => {
+  clients.clear();
+  botIndex.clear();
+};
+
+/**
+ * Get all clients (for debugging).
+ */
+export const getAllClients = (): BotClientConnection[] => {
+  return Array.from(clients.values());
+};
+
+/**
+ * Get all bots (for debugging).
+ */
+export const getAllBots = (): RegisteredBot[] => {
+  return Array.from(botIndex.values());
 };

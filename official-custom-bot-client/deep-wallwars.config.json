@@ -1,0 +1,13 @@
+{
+  "server": "http://172.27.160.1:5173",
+  "clientId": "deep-wallwars-client",
+  "bots": [
+    {
+      "botId": "deep-wallwars",
+      "name": "Deep Wallwars",
+      "engine": "../deep-wallwars/build/deep_ww_engine  --model ../deep-wallwars/build/8x8_750000.trt",
+      "variants": ["classic"],
+      "boardSizes": [{ "width": 8, "height": 8 }]
+    }
+  ]
+}

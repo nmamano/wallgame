@@ -11,7 +11,7 @@ import { GameState } from "../../../shared/domain/game-state";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
 
-export type PlayerType = "you" | "friend" | "matched-user" | "custom-bot";
+export type PlayerType = "you" | "friend" | "matched-user";
 
 // ============================================================================
 // View Model Architecture
@@ -194,8 +194,6 @@ export function buildPlayerName(
       return "Friend";
     case "matched-user":
       return "Matched Player";
-    case "custom-bot":
-      return "Custom Bot";
     default:
       return `Player ${index + 1}`;
   }

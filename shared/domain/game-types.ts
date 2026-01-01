@@ -78,7 +78,7 @@ export interface PlayerAppearance {
   homeSkin?: string;
 }
 
-export type SeatConfigType = "human" | "custom-bot";
+export type SeatConfigType = "human" | "bot";
 
 export interface GamePlayerSummary {
   role: "host" | "joiner"; // Creator vs joiner

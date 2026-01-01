@@ -12,7 +12,7 @@ namespace engine_adapter {
 using json = nlohmann::json;
 
 // ============================================================================
-// Types matching the official custom-bot client Engine API v1
+// Types matching the official custom-bot client Engine API v2
 // ============================================================================
 
 struct EngineConfig {

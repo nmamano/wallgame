@@ -73,8 +73,7 @@ export function useOnlineGameSession({
         a.socketToken === b.socketToken &&
         a.role === b.role &&
         a.playerId === b.playerId &&
-        a.shareUrl === b.shareUrl &&
-        a.customBotSeatToken === b.customBotSeatToken
+        a.shareUrl === b.shareUrl
       );
     },
     [],
@@ -221,7 +220,6 @@ export function useOnlineGameSession({
             role: response.seat.role,
             playerId: response.seat.playerId,
             shareUrl: response.shareUrl,
-            customBotSeatToken: response.customBotSeatToken,
           };
           const handshakeChanged =
             !gameHandshake ||
@@ -343,7 +341,6 @@ export function useOnlineGameSession({
         role: result.role,
         playerId: result.playerId,
         shareUrl: result.shareUrl,
-        customBotSeatToken: null,
       };
       updateGameHandshake(handshake);
       setMatchShareUrl(result.shareUrl);

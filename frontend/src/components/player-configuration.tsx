@@ -11,16 +11,12 @@ import type { PlayerType } from "@/lib/gameViewModel";
 interface PlayerConfigurationProps {
   value?: PlayerType;
   onChange: (value: PlayerType) => void;
-  customBotBlogUrl?: string;
   label?: string;
   allowedOptions?: PlayerType[];
   optionLabelOverrides?: Partial<Record<PlayerType, string>>;
 }
 
-const PLAYER_TYPE_INFO: Record<
-  PlayerType,
-  { text: string; hasLink?: boolean }
-> = {
+const PLAYER_TYPE_INFO: Record<PlayerType, { text: string }> = {
   you: { text: "You'll make the moves." },
   friend: {
     text: "You'll get a link to share with a friend to join the game.",
@@ -28,16 +24,11 @@ const PLAYER_TYPE_INFO: Record<
   "matched-user": {
     text: "You'll be paired with a random player with compatible settings and similar rating.",
   },
-  "custom-bot": {
-    text: "You'll get an access token so that you can connect your own bot.",
-    hasLink: true,
-  },
 };
 
 export function PlayerConfiguration({
   value,
   onChange,
-  customBotBlogUrl = "#",
   label = "Player Configuration",
   allowedOptions,
   optionLabelOverrides,
@@ -49,7 +40,6 @@ export function PlayerConfiguration({
     { value: "you", label: "You" },
     { value: "friend", label: "Friend" },
     { value: "matched-user", label: "Matched user" },
-    { value: "custom-bot", label: "Custom bot" },
   ];
 
   const resolvedOptions =
@@ -91,23 +81,7 @@ export function PlayerConfiguration({
       {/* min-h accommodates up to 2 lines of text-sm (text-sm line-height ~1.5, so 2 lines ≈ 3rem) */}
       <div className="min-h-[3rem]">
         {selectedInfo && (
-          <p className="text-sm text-muted-foreground">
-            {selectedInfo.text}
-            {selectedInfo.hasLink && (
-              <>
-                {" "}
-                <a
-                  href={customBotBlogUrl}
-                  target="_blank"
-                  rel="noopener noreferrer"
-                  className="text-primary underline hover:text-primary/80"
-                >
-                  See here
-                </a>
-                {" for more information."}
-              </>
-            )}
-          </p>
+          <p className="text-sm text-muted-foreground">{selectedInfo.text}</p>
         )}
       </div>
     </div>

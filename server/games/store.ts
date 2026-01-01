@@ -40,8 +40,7 @@ export type PlayerConfigType =
   | "you" // Human playing locally
   | "friend" // Human friend joining via link
   | "matched-user" // Matchmaking opponent
-  | "bot" // Built-in bot
-  | "custom-bot"; // Custom bot (user-provided)
+  | "bot"; // Built-in bot (proactive bot protocol v2)
 
 export interface SessionPlayer {
   role: "host" | "joiner";
@@ -57,7 +56,7 @@ export interface SessionPlayer {
   ratingAtStart?: number; // Rating at game start, captured before updates
   elo?: number; // Looked up from DB based on authenticated user
   configType?: PlayerConfigType; // How this player seat was configured
-  customBotSeatToken?: string; // Seat token for custom bot attachment (only for custom-bot)
+  botCompositeId?: string; // Bot composite ID (clientId:botId) for proactive bot protocol v2
 }
 
 export interface RematchSeatCredentials {
@@ -111,34 +110,32 @@ const refreshSeatCredential = (player: SessionPlayer) => {
 };
 
 /**
- * Set the custom bot seat token for a player.
- * Called after session creation when configuring a custom bot seat.
+ * Set the bot composite ID for a player.
+ * Called when creating a game against a bot.
  */
-export const setCustomBotSeatToken = (
+export const setBotCompositeId = (
   sessionId: string,
   role: "host" | "joiner",
-  seatToken: string,
+  compositeId: string,
 ): void => {
   const session = ensureSession(sessionId);
   const player =
     role === "host" ? session.players.host : session.players.joiner;
-  if (player.configType !== "custom-bot") {
-    throw new Error(`Seat ${role} is not configured as a custom bot`);
-  }
-  player.customBotSeatToken = seatToken;
+  player.botCompositeId = compositeId;
+  player.configType = "bot";
 };
 
 /**
- * Get the custom bot seat token for a player.
+ * Get the bot composite ID for a player.
  */
-export const getCustomBotSeatToken = (
+export const getBotCompositeId = (
   sessionId: string,
   role: "host" | "joiner",
 ): string | undefined => {
   const session = ensureSession(sessionId);
   const player =
     role === "host" ? session.players.host : session.players.joiner;
-  return player.customBotSeatToken;
+  return player.botCompositeId;
 };
 
 export type JoinGameSessionResult =
@@ -255,14 +252,10 @@ export const createGameSession = (args: {
   const joinerConfigType = args.joinerConfig?.type ?? "friend";
   const joinerDisplayName =
     args.joinerConfig?.displayName ??
-    (joinerConfigType === "custom-bot"
-      ? "Custom Bot"
-      : args.matchType === "friend"
-        ? "Friend"
-        : `Player ${joinerPlayerId}`);
+    (args.matchType === "friend" ? "Friend" : `Player ${joinerPlayerId}`);
 
-  // For custom bot seats, the seat is immediately ready (waiting for bot to connect)
-  const joinerReady = joinerConfigType === "custom-bot";
+  // Joiner starts not ready (will be set ready when they join or for bot games)
+  const joinerReady = false;
 
   const session: GameSession = {
     id,
@@ -437,8 +430,7 @@ export type SessionAccessResolution =
 
 const resolveSeatConfigType = (
   player: SessionPlayer,
-): GamePlayerSummary["configType"] =>
-  player.configType === "custom-bot" ? "custom-bot" : "human";
+): GamePlayerSummary["configType"] => (player.botCompositeId ? "bot" : "human");
 
 export const resolveGameAccess = (args: {
   id: string;

@@ -19,7 +19,12 @@ import type {
   PlayerConfigType,
   ReadyGameResponse,
   ResolveGameAccessResponse,
+  CreateBotGameResponse,
 } from "../../../shared/contracts/games";
+import type {
+  ListedBot,
+  RecommendedBotEntry,
+} from "../../../shared/contracts/custom-bot-protocol";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -272,4 +277,71 @@ export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
     api.games.matchmaking.$get(),
   );
   return data.games;
+};
+
+export const fetchBots = async (args: {
+  variant: Variant;
+  timeControl: TimeControlPreset;
+  boardWidth?: number;
+  boardHeight?: number;
+}): Promise<{ bots: ListedBot[] }> => {
+  return handleResponse<{ bots: ListedBot[] }>(
+    api.bots.$get({
+      query: {
+        variant: args.variant,
+        timeControl: args.timeControl,
+        boardWidth:
+          args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
+        boardHeight:
+          args.boardHeight !== undefined ? String(args.boardHeight) : undefined,
+      },
+    }),
+  );
+};
+
+export const fetchRecommendedBots = async (args: {
+  variant: Variant;
+  timeControl: TimeControlPreset;
+}): Promise<{ bots: RecommendedBotEntry[] }> => {
+  return handleResponse<{ bots: RecommendedBotEntry[] }>(
+    api.bots.recommended.$get({
+      query: {
+        variant: args.variant,
+        timeControl: args.timeControl,
+      },
+    }),
+  );
+};
+
+export const playVsBot = async (args: {
+  botId: string;
+  config: GameConfiguration;
+  hostDisplayName?: string;
+  hostAppearance?: PlayerAppearance;
+}): Promise<CreateBotGameResponse> => {
+  let timeControl: TimeControlConfig;
+  const rawTimeControl = args.config.timeControl as unknown;
+  if (typeof rawTimeControl === "string") {
+    timeControl = timeControlConfigFromPreset(
+      rawTimeControl as TimeControlPreset,
+    );
+  } else {
+    timeControl = args.config.timeControl;
+  }
+
+  return handleResponse<CreateBotGameResponse>(
+    api.bots.play.$post({
+      json: {
+        botId: args.botId,
+        config: {
+          timeControl,
+          variant: args.config.variant,
+          boardWidth: args.config.boardWidth,
+          boardHeight: args.config.boardHeight,
+        },
+        hostDisplayName: args.hostDisplayName,
+        hostAppearance: args.hostAppearance,
+      },
+    }),
+  );
 };
