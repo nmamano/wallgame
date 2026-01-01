@@ -23,7 +23,9 @@
       "Bash(wsl -d Ubuntu bash -c \"cd /mnt/c/Users/Nilo/repos/wallgame && ls -lh deep-wallwars/build/deep_ww_engine 2>&1\")",
       "Bash(wsl:*)",
       "Bash(npx tsc:*)",
-      "Bash(bun tsc:*)"
+      "Bash(bun tsc:*)",
+      "Bash(bun run lint)",
+      "Bash(bun x tsc:*)"
     ]
   },
   "outputStyle": "Explanatory"

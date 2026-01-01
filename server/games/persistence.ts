@@ -26,10 +26,21 @@ const buildPlayerConfigType = (
   session: GameSession,
   player: SessionPlayer,
 ): string => {
+  if (player.configType === "bot") {
+    return "bot";
+  }
   if (player.role === "host") {
     return "you";
   }
   return session.matchType === "friend" ? "friend" : "matched user";
+};
+
+/**
+ * Returns the bot's composite ID (clientId:botId) for storage.
+ * The composite ID uniquely identifies a bot across different clients.
+ */
+const getBotId = (compositeId: string | undefined): string | null => {
+  return compositeId ?? null;
 };
 
 const buildOutcomeRank = (
@@ -114,7 +125,7 @@ export const persistCompletedGame = async (
         playerRole: session.players.host.role,
         playerConfigType: buildPlayerConfigType(session, session.players.host),
         userId: hostUserId,
-        botId: null,
+        botId: getBotId(session.players.host.botCompositeId),
         ratingAtStart: normalizeRating(session.players.host.ratingAtStart),
         outcomeRank: buildOutcomeRank(winner, session.players.host.playerId),
         outcomeReason,
@@ -128,7 +139,7 @@ export const persistCompletedGame = async (
           session.players.joiner,
         ),
         userId: joinerUserId,
-        botId: null,
+        botId: getBotId(session.players.joiner.botCompositeId),
         ratingAtStart: normalizeRating(session.players.joiner.ratingAtStart),
         outcomeRank: buildOutcomeRank(winner, session.players.joiner.playerId),
         outcomeReason,

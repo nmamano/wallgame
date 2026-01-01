@@ -1,0 +1,1 @@
+ALTER TABLE "built_in_bots" ADD COLUMN "is_official" boolean DEFAULT false NOT NULL;

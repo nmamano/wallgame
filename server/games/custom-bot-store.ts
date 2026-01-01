@@ -26,6 +26,8 @@ import type {
   ListedBot,
   RecommendedBotEntry,
 } from "../../shared/contracts/custom-bot-protocol";
+import { db } from "../db";
+import { builtInBotsTable } from "../db/schema/built-in-bots";
 
 // ============================================================================
 // Types
@@ -101,6 +103,50 @@ const makeCompositeId = (clientId: string, botId: string): string =>
 // ============================================================================
 
 /**
+ * Persist bots to the built_in_bots table for game history tracking.
+ * This is fire-and-forget - we don't wait for it to complete.
+ * The botId stored is the composite ID (clientId:botId) to uniquely identify bots across clients.
+ */
+const persistBotsToDatabase = async (
+  clientId: string,
+  bots: BotConfig[],
+  officialToken: string | undefined,
+): Promise<void> => {
+  if (bots.length === 0) return;
+
+  try {
+    for (const bot of bots) {
+      const compositeId = makeCompositeId(clientId, bot.botId);
+      const isOfficial = bot.officialToken === officialToken && !!officialToken;
+      await db
+        .insert(builtInBotsTable)
+        .values({
+          botId: compositeId,
+          displayName: bot.name,
+          isOfficial,
+          metadata: { username: bot.username, appearance: bot.appearance },
+        })
+        .onConflictDoUpdate({
+          target: builtInBotsTable.botId,
+          set: {
+            displayName: bot.name,
+            isOfficial,
+            metadata: { username: bot.username, appearance: bot.appearance },
+          },
+        });
+    }
+    console.info("[bot-store] bots persisted to database", {
+      compositeIds: bots.map((b) => makeCompositeId(clientId, b.botId)),
+    });
+  } catch (error) {
+    console.error("[bot-store] failed to persist bots to database", {
+      error,
+      compositeIds: bots.map((b) => makeCompositeId(clientId, b.botId)),
+    });
+  }
+};
+
+/**
  * Register a new client and its bots.
  * Returns the existing client if clientId is already connected (for force-disconnect).
  */
@@ -153,6 +199,9 @@ export const registerClient = (
     botCount: bots.length,
     botNames: bots.map((b) => b.name),
   });
+
+  // Persist bots to database (fire-and-forget)
+  void persistBotsToDatabase(clientId, bots, officialToken);
 
   return { success: true, client: connection };
 };

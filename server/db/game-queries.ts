@@ -3,6 +3,7 @@ import { gamesTable } from "./schema/games";
 import { gameDetailsTable } from "./schema/game-details";
 import { gamePlayersTable } from "./schema/game-players";
 import { usersTable } from "./schema/users";
+import { builtInBotsTable } from "./schema/built-in-bots";
 import {
   userPawnSettingsTable,
   userSettingsTable,
@@ -156,12 +157,32 @@ export const getReplayGame = async (
       playerOrder: gamePlayersTable.playerOrder,
       playerRole: gamePlayersTable.playerRole,
       userId: gamePlayersTable.userId,
+      botId: gamePlayersTable.botId,
       ratingAtStart: gamePlayersTable.ratingAtStart,
       outcomeRank: gamePlayersTable.outcomeRank,
       outcomeReason: gamePlayersTable.outcomeReason,
     })
     .from(gamePlayersTable)
     .where(eq(gamePlayersTable.gameId, gameId));
+
+  const botIds = players
+    .map((player) => player.botId)
+    .filter((botId): botId is string => typeof botId === "string");
+
+  const botRows =
+    botIds.length > 0
+      ? await db
+          .select({
+            botId: builtInBotsTable.botId,
+            displayName: builtInBotsTable.displayName,
+          })
+          .from(builtInBotsTable)
+          .where(inArray(builtInBotsTable.botId, botIds))
+      : [];
+
+  const botNameMap = new Map(
+    botRows.map((row) => [row.botId, row.displayName]),
+  );
 
   const userIds = players
     .map((player) => player.userId)
@@ -298,9 +319,11 @@ export const getReplayGame = async (
     updatedAt: startTimestamp,
     players: orderedPlayers.map((player) => {
       const displayName =
-        player.userId != null
-          ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
-          : `Guest ${player.playerOrder}`;
+        player.botId != null
+          ? (botNameMap.get(player.botId) ?? `Bot ${player.playerOrder}`)
+          : player.userId != null
+            ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
+            : `Guest ${player.playerOrder}`;
       const pawnColor =
         player.userId != null
           ? (pawnColorMap.get(player.userId) ?? "default")
@@ -445,6 +468,7 @@ export const queryPastGames = async (args: {
             gameId: gamePlayersTable.gameId,
             playerOrder: gamePlayersTable.playerOrder,
             userId: gamePlayersTable.userId,
+            botId: gamePlayersTable.botId,
             ratingAtStart: gamePlayersTable.ratingAtStart,
             outcomeRank: gamePlayersTable.outcomeRank,
             outcomeReason: gamePlayersTable.outcomeReason,
@@ -474,6 +498,23 @@ export const queryPastGames = async (args: {
     ]),
   );
 
+  const botIds = players
+    .map((player) => player.botId)
+    .filter((botId): botId is string => typeof botId === "string");
+  const botRows =
+    botIds.length > 0
+      ? await db
+          .select({
+            botId: builtInBotsTable.botId,
+            displayName: builtInBotsTable.displayName,
+          })
+          .from(builtInBotsTable)
+          .where(inArray(builtInBotsTable.botId, botIds))
+      : [];
+  const botNameMap = new Map(
+    botRows.map((row) => [row.botId, row.displayName]),
+  );
+
   const playersByGame = new Map<
     string,
     {
@@ -487,9 +528,11 @@ export const queryPastGames = async (args: {
 
   players.forEach((player) => {
     const displayName =
-      player.userId != null
-        ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
-        : `Guest ${player.playerOrder}`;
+      player.botId != null
+        ? (botNameMap.get(player.botId) ?? `Bot ${player.playerOrder}`)
+        : player.userId != null
+          ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
+          : `Guest ${player.playerOrder}`;
     const entry = {
       playerOrder: player.playerOrder,
       displayName,
