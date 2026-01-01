@@ -10,30 +10,18 @@
  */
 
 import { parseArgs } from "util";
+import { z } from "zod";
 import { BotClient } from "./ws-client";
 import { setLogLevel, logger, type LogLevel } from "./logger";
-import type {
-  BotConfig,
-  VariantConfig,
-} from "../../shared/contracts/custom-bot-protocol";
-import type {
-  Variant,
-  TimeControlPreset,
-} from "../../shared/domain/game-types";
+import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
+import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
 
 const VERSION = "2.0.0";
 
 interface ConfigFile {
   server?: string;
-  clientId?: string;
-  officialToken?: string;
-  bots: Array<{
-    botId: string;
-    name: string;
-    engine?: string;
-    variants?: string[];
-    boardSizes?: Array<{ width: number; height: number }>;
-  }>;
+  bots: BotConfig[];
+  engineCommands?: Record<string, string>;
 }
 
 function printUsage(): void {
@@ -48,7 +36,7 @@ REQUIRED:
 
 OPTIONS:
   --config <path>      Path to JSON config file (for multi-bot setups)
-  --official-token     Mark bots as official (requires valid OFFICIAL_BOT_TOKEN)
+  --official-token <token> Official token (requires valid OFFICIAL_BOT_TOKEN)
   --log-level <level>  Log level: debug, info, warn, error (default: info)
   --help               Show this help message
   --version            Show version
@@ -56,25 +44,40 @@ OPTIONS:
 CONFIG FILE FORMAT:
   {
     "server": "http://localhost:5173",
-    "clientId": "my-client",
-    "officialToken": "secret",
     "bots": [
       {
         "botId": "bot-1",
         "name": "My First Bot",
-        "engine": "python my_engine.py",
-        "variants": ["standard", "classic"],
-        "boardSizes": [{ "width": 9, "height": 9 }]
+        "username": null,
+        "appearance": {
+          "color": "#ff6b6b",
+          "catStyle": "cat1",
+          "mouseStyle": "mouse1",
+          "homeStyle": "home1"
+        },
+        "variants": {
+          "classic": {
+            "timeControls": ["bullet", "blitz", "rapid"],
+            "boardWidth": { "min": 5, "max": 12 },
+            "boardHeight": { "min": 5, "max": 12 },
+            "recommended": [
+              { "boardWidth": 8, "boardHeight": 8 }
+            ]
+          }
+        }
       }
-    ]
+    ],
+    "engineCommands": {
+      "bot-1": "python my_engine.py"
+    }
   }
 
 EXAMPLES:
   # Multi-bot setup from config file
-  wallgame-bot-client --config bots.json
+  wallgame-bot-client --client-id my-client --config bots.json
 
   # Official bot (requires token)
-  wallgame-bot-client --config bots.json --official-token
+  wallgame-bot-client --client-id my-client --config bots.json --official-token abc123
 
 ENGINE INTERFACE:
   Your engine receives a JSON request on stdin and must write a JSON response to stdout.
@@ -93,41 +96,28 @@ function printVersion(): void {
   console.log(`wallgame-bot-client v${VERSION}`);
 }
 
-/** Default variant config supporting all time controls and board sizes */
-function createDefaultVariantConfig(): VariantConfig {
-  return {
-    timeControls: [
-      "bullet",
-      "blitz",
-      "rapid",
-      "classical",
-    ] as TimeControlPreset[],
-    boardWidth: { min: 3, max: 20 },
-    boardHeight: { min: 3, max: 20 },
-    recommended: [],
-  };
-}
-
-/** Build variants object from string array or use defaults for all variants */
-function buildVariantsConfig(
-  variantNames?: string[],
-): Partial<Record<Variant, VariantConfig>> {
-  const allVariants: Variant[] = ["standard", "classic", "freestyle"];
-  const targetVariants = variantNames ?? allVariants;
-
-  const result: Partial<Record<Variant, VariantConfig>> = {};
-  for (const v of targetVariants) {
-    if (allVariants.includes(v as Variant)) {
-      result[v as Variant] = createDefaultVariantConfig();
-    }
-  }
-  return result;
-}
+const configFileSchema = z
+  .object({
+    server: z.string().optional(),
+    bots: z
+      .array(botConfigSchema.omit({ officialToken: true }).strict())
+      .min(1),
+    engineCommands: z.record(z.string(), z.string().trim().min(1)).optional(),
+  })
+  .strict();
 
 async function loadConfig(path: string): Promise<ConfigFile> {
   const file = Bun.file(path);
   const text = await file.text();
-  return JSON.parse(text) as ConfigFile;
+  const parsed = configFileSchema.safeParse(JSON.parse(text));
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((issue) => {
+      const pathLabel = issue.path.length > 0 ? issue.path.join(".") : "config";
+      return `${pathLabel}: ${issue.message}`;
+    });
+    throw new Error(details.join("; "));
+  }
+  return parsed.data;
 }
 
 async function main(): Promise<void> {
@@ -136,7 +126,7 @@ async function main(): Promise<void> {
     options: {
       "client-id": { type: "string" },
       config: { type: "string" },
-      "official-token": { type: "boolean", default: false },
+      "official-token": { type: "string" },
       "log-level": { type: "string", default: "info" },
       help: { type: "boolean", default: false },
       version: { type: "boolean", default: false },
@@ -176,33 +166,29 @@ async function main(): Promise<void> {
     process.exit(1);
   }
 
+  if (!values["client-id"]) {
+    console.error("Error: --client-id is required");
+    console.error("Use --help for usage information");
+    process.exit(1);
+  }
+
   try {
     const config = await loadConfig(values.config);
-    clientId = config.clientId ?? values["client-id"]!;
+    clientId = values["client-id"]!;
     serverUrl = config.server ?? "http://localhost:5173";
-    officialToken = config.officialToken;
-
-    if (!clientId) {
-      console.error("Error: clientId required in config file or --client-id");
-      process.exit(1);
-    }
-
-    if (!config.bots || config.bots.length === 0) {
-      console.error("Error: At least one bot required in config file");
-      process.exit(1);
-    }
+    officialToken = values["official-token"];
 
     engineCommands = new Map();
-    bots = config.bots.map((b) => {
-      engineCommands.set(b.botId, b.engine);
-      return {
-        botId: b.botId,
-        name: b.name,
-        officialToken: officialToken,
-        username: null, // Public bot
-        variants: buildVariantsConfig(b.variants),
-      };
-    });
+    for (const [botId, command] of Object.entries(
+      config.engineCommands ?? {},
+    )) {
+      engineCommands.set(botId, command);
+    }
+
+    bots = config.bots.map((bot) => ({
+      ...bot,
+      officialToken,
+    }));
   } catch (error) {
     console.error(`Error loading config file: ${error}`);
     process.exit(1);

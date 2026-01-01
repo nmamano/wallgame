@@ -26,6 +26,7 @@ import {
   type AttachRejectedCode,
   type BotConfig,
 } from "../../shared/contracts/custom-bot-protocol";
+import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
 
 import {
   getSession,
@@ -239,19 +240,16 @@ const trySendNextRequest = (clientId: string): void => {
 const validateBotConfig = (
   bot: BotConfig,
 ): { valid: true } | { valid: false; reason: string } => {
-  if (!bot.botId || typeof bot.botId !== "string" || bot.botId.trim() === "") {
-    return { valid: false, reason: "botId is required and must be non-empty" };
-  }
-  if (!bot.name || typeof bot.name !== "string" || bot.name.trim() === "") {
-    return { valid: false, reason: "name is required and must be non-empty" };
-  }
-  if (!bot.variants || typeof bot.variants !== "object") {
-    return { valid: false, reason: "variants is required" };
-  }
-  // Check at least one variant is configured
-  const variantKeys = Object.keys(bot.variants);
-  if (variantKeys.length === 0) {
-    return { valid: false, reason: "at least one variant must be configured" };
+  const parsed = botConfigSchema.safeParse(bot);
+  if (!parsed.success) {
+    const details = parsed.error.issues.map((issue) => {
+      const path = issue.path.length > 0 ? issue.path.join(".") : "bot";
+      return `${path}: ${issue.message}`;
+    });
+    return {
+      valid: false,
+      reason: details.join("; "),
+    };
   }
   return { valid: true };
 };

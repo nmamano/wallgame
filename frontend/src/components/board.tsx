@@ -17,6 +17,7 @@ import {
   colorFilterMap,
   colorHexMap,
 } from "@/lib/player-colors";
+import { resolvePawnStyleSrc } from "@/lib/pawn-style";
 import { Grid } from "../../../shared/domain/grid";
 import type {
   PlayerId,
@@ -1011,15 +1012,7 @@ export function Board({
   const resolvePawnVisual = (pawn: BoardPawn) => {
     const pawnStyle = pawn.pawnStyle;
     const visualType = pawn.visualType ?? pawn.type;
-    const src = pawnStyle
-      ? visualType === "cat"
-        ? `/pawns/cat/${pawnStyle}`
-        : visualType === "mouse"
-          ? `/pawns/mouse/${pawnStyle}`
-          : visualType === "home"
-            ? `/pawns/home/${pawnStyle}`
-            : null
-      : null;
+    const src = resolvePawnStyleSrc(pawnStyle, visualType);
 
     const Icon =
       visualType === "mouse" ? Rat : visualType === "home" ? House : Cat;

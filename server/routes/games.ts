@@ -24,6 +24,8 @@ import {
   botsQuerySchema,
   createBotGameSchema,
 } from "../../shared/contracts/games";
+import type { PlayerAppearance } from "../../shared/domain/game-types";
+import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
@@ -461,6 +463,8 @@ export const botsRoute = new Hono()
           );
         }
 
+        const joinerAppearance = mapBotAppearance(bot.appearance);
+
         // Create game session with bot as joiner
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: {
@@ -478,6 +482,8 @@ export const botsRoute = new Hono()
             displayName: bot.name,
           },
         });
+
+        session.players.joiner.appearance = joinerAppearance;
 
         // Set bot composite ID on joiner seat
         setBotCompositeId(session.id, "joiner", parsed.botId);
@@ -530,3 +536,24 @@ export const botsRoute = new Hono()
       }
     },
   );
+
+const mapBotAppearance = (
+  appearance: BotAppearance | undefined,
+): PlayerAppearance => {
+  if (!appearance) {
+    return {};
+  }
+
+  const result: PlayerAppearance = {};
+  const color = appearance.color?.trim();
+  const catSkin = appearance.catStyle?.trim();
+  const mouseSkin = appearance.mouseStyle?.trim();
+  const homeSkin = appearance.homeStyle?.trim();
+
+  if (color) result.pawnColor = color;
+  if (catSkin) result.catSkin = catSkin;
+  if (mouseSkin) result.mouseSkin = mouseSkin;
+  if (homeSkin) result.homeSkin = homeSkin;
+
+  return result;
+};
