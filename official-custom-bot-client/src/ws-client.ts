@@ -1,8 +1,8 @@
 /**
- * WebSocket Client for Custom Bot Protocol
+ * WebSocket Client for Custom Bot Protocol V2
  *
  * Handles the WebSocket connection to the Wall Game server
- * and implements the custom bot protocol.
+ * and implements the proactive bot protocol.
  */
 
 import type {
@@ -10,28 +10,24 @@ import type {
   AttachedMessage,
   AttachRejectedMessage,
   RequestMessage,
-  RematchStartedMessage,
   AckMessage,
   NackMessage,
   BotResponseMessage,
   CustomBotServerMessage,
-  CustomBotSeatIdentity,
-  CustomBotServerLimits,
+  BotConfig,
 } from "../../shared/contracts/custom-bot-protocol";
 import {
   CUSTOM_BOT_PROTOCOL_VERSION,
   DEFAULT_BOT_LIMITS,
+  type CustomBotServerLimits,
 } from "../../shared/contracts/custom-bot-protocol";
-import type { Variant, PlayerId } from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
 import { logger } from "./logger";
 import type {
   EngineRequest,
   EngineResponse,
 } from "../../shared/custom-bot/engine-api";
-import {
-  createMoveRequest,
-  createDrawRequest,
-} from "../../shared/custom-bot/engine-api";
+import { createMoveRequest } from "../../shared/custom-bot/engine-api";
 import { handleDumbBotRequest } from "./dumb-bot";
 import {
   runEngine,
@@ -41,11 +37,9 @@ import {
 
 export interface BotClientOptions {
   serverUrl: string;
-  seatToken: string;
-  engineCommand?: string;
-  supportedVariants?: Variant[];
-  maxBoardWidth?: number;
-  maxBoardHeight?: number;
+  clientId: string;
+  bots: BotConfig[];
+  engineCommands: Map<string, string | undefined>;
   clientName?: string;
   clientVersion?: string;
 }
@@ -59,24 +53,24 @@ type ClientState =
 
 interface ResolvedBotClientOptions {
   serverUrl: string;
-  seatToken: string;
-  engineCommand: string | undefined;
-  supportedVariants: Variant[];
-  maxBoardWidth: number;
-  maxBoardHeight: number;
+  clientId: string;
+  bots: BotConfig[];
+  engineCommands: Map<string, string | undefined>;
   clientName: string;
   clientVersion: string;
 }
+
+// Reconnection configuration
+const RECONNECT_BASE_DELAY_MS = 1000;
+const RECONNECT_MAX_DELAY_MS = 60000;
+const RECONNECT_JITTER_MAX_MS = 2000;
 
 export class BotClient {
   private ws: WebSocket | null = null;
   private state: ClientState = "connecting";
   private options: ResolvedBotClientOptions;
 
-  // Current session info
-  private matchId: string | null = null;
-  private gameId: string | null = null;
-  private seat: CustomBotSeatIdentity | null = null;
+  // Server limits
   private limits: CustomBotServerLimits = DEFAULT_BOT_LIMITS;
 
   // Active request tracking
@@ -90,24 +84,23 @@ export class BotClient {
   // Rate limiting
   private lastSendTime: number = 0;
 
+  // Reconnection state
+  private reconnectAttempts: number = 0;
+  private shouldReconnect: boolean = true;
+
   // Connection promise callbacks (for resolving on attached/rejected)
   private connectResolve: (() => void) | null = null;
   private connectReject: ((error: Error) => void) | null = null;
+  private runResolve: (() => void) | null = null;
 
   constructor(options: BotClientOptions) {
     this.options = {
       serverUrl: options.serverUrl,
-      seatToken: options.seatToken,
-      engineCommand: options.engineCommand,
-      supportedVariants: options.supportedVariants ?? [
-        "standard",
-        "classic",
-        "freestyle",
-      ],
-      maxBoardWidth: options.maxBoardWidth ?? 20,
-      maxBoardHeight: options.maxBoardHeight ?? 20,
+      clientId: options.clientId,
+      bots: options.bots,
+      engineCommands: options.engineCommands,
       clientName: options.clientName ?? "wallgame-bot-client",
-      clientVersion: options.clientVersion ?? "1.0.0",
+      clientVersion: options.clientVersion ?? "2.0.0",
     };
   }
 
@@ -148,26 +141,69 @@ export class BotClient {
       this.ws.onclose = (event) => {
         logger.info("WebSocket closed:", event.code, event.reason);
         const wasConnecting = this.state === "connecting";
+        const wasAttached =
+          this.state === "attached" ||
+          this.state === "waiting" ||
+          this.state === "processing";
         this.state = "disconnected";
+
         if (wasConnecting && this.connectReject) {
           this.connectReject(new Error("WebSocket closed during connection"));
           this.connectResolve = null;
           this.connectReject = null;
+        } else if (wasAttached && this.shouldReconnect) {
+          // Attempt reconnection
+          this.scheduleReconnect();
         }
       };
     });
   }
 
   /**
-   * Run the bot until disconnection
+   * Schedule a reconnection attempt with exponential backoff + jitter
+   */
+  private scheduleReconnect(): void {
+    if (!this.shouldReconnect) return;
+
+    const baseDelay = Math.min(
+      RECONNECT_BASE_DELAY_MS * Math.pow(2, this.reconnectAttempts),
+      RECONNECT_MAX_DELAY_MS,
+    );
+    const jitter = Math.random() * RECONNECT_JITTER_MAX_MS;
+    const delay = baseDelay + jitter;
+
+    this.reconnectAttempts++;
+    logger.info(
+      `Scheduling reconnect attempt ${this.reconnectAttempts} in ${Math.round(
+        delay,
+      )}ms`,
+    );
+
+    setTimeout(async () => {
+      if (!this.shouldReconnect) return;
+
+      try {
+        await this.connect();
+        // Reset reconnect attempts on successful connection
+        this.reconnectAttempts = 0;
+      } catch (error) {
+        logger.error("Reconnection failed:", error);
+        // Will schedule another reconnect via onclose handler
+      }
+    }, delay);
+  }
+
+  /**
+   * Run the bot until explicitly closed
    */
   async run(): Promise<void> {
     await this.connect();
 
-    // Keep running until disconnected
+    // Keep running until shouldReconnect is false
     return new Promise((resolve) => {
+      this.runResolve = resolve;
       const checkInterval = setInterval(() => {
-        if (this.state === "disconnected") {
+        if (this.state === "disconnected" && !this.shouldReconnect) {
           clearInterval(checkInterval);
           resolve();
         }
@@ -191,12 +227,8 @@ export class BotClient {
     const message: AttachMessage = {
       type: "attach",
       protocolVersion: CUSTOM_BOT_PROTOCOL_VERSION,
-      seatToken: this.options.seatToken,
-      supportedGame: {
-        variants: this.options.supportedVariants,
-        maxBoardWidth: this.options.maxBoardWidth,
-        maxBoardHeight: this.options.maxBoardHeight,
-      },
+      clientId: this.options.clientId,
+      bots: this.options.bots,
       client: {
         name: this.options.clientName,
         version: this.options.clientVersion,
@@ -259,9 +291,6 @@ export class BotClient {
       case "request":
         this.handleRequest(message);
         break;
-      case "rematch-started":
-        this.handleRematchStarted(message);
-        break;
       case "ack":
         this.handleAck(message);
         break;
@@ -280,22 +309,19 @@ export class BotClient {
    * Handle successful attachment
    */
   private handleAttached(message: AttachedMessage): void {
-    logger.info("Successfully attached to game");
-    logger.info(`  Match: ${message.match.matchId}`);
-    logger.info(`  Game: ${message.match.gameId}`);
-    logger.info(
-      `  Seat: ${message.match.seat.role} (player ${message.match.seat.playerId})`,
-    );
+    const botCount = this.options.bots.length;
+    logger.info(`Successfully attached with ${botCount} bot(s)`);
     logger.info(`  Server: ${message.server.name} v${message.server.version}`);
+    logger.info(`  Protocol: v${message.protocolVersion}`);
+
+    for (const bot of this.options.bots) {
+      logger.info(`  Bot: ${bot.botId} (${bot.name})`);
+    }
 
     this.state = "waiting";
-    this.matchId = message.match.matchId;
-    this.gameId = message.match.gameId;
-    this.seat = message.match.seat;
     this.limits = message.limits;
 
     logger.debug("Limits:", message.limits);
-    logger.debug("Initial state:", message.state);
 
     // Resolve the connect() promise
     if (this.connectResolve) {
@@ -311,6 +337,17 @@ export class BotClient {
   private handleAttachRejected(message: AttachRejectedMessage): void {
     logger.error(`Attachment rejected: ${message.code}`);
     logger.error(`  Message: ${message.message}`);
+
+    // Don't reconnect on permanent failures
+    if (
+      message.code === "INVALID_OFFICIAL_TOKEN" ||
+      message.code === "PROTOCOL_UNSUPPORTED" ||
+      message.code === "INVALID_BOT_CONFIG" ||
+      message.code === "NO_BOTS"
+    ) {
+      this.shouldReconnect = false;
+    }
+
     this.state = "disconnected";
 
     // Reject the connect() promise
@@ -329,7 +366,16 @@ export class BotClient {
    * Handle a decision request from the server
    */
   private async handleRequest(message: RequestMessage): Promise<void> {
-    logger.info(`Received ${message.kind} request (${message.requestId})`);
+    logger.info(
+      `Received ${message.kind} request for bot ${message.botId} (${message.requestId})`,
+    );
+
+    // V2: Draw requests are auto-declined by client
+    if (message.kind === "draw") {
+      logger.info("Auto-declining draw offer");
+      this.sendResponse(message.requestId, { action: "decline-draw" });
+      return;
+    }
 
     // Update active request ID (newer requests invalidate older ones)
     this.activeRequestId = message.requestId;
@@ -345,38 +391,20 @@ export class BotClient {
    * Process a request (used by both handleRequest and NACK retry)
    */
   private async processRequest(message: RequestMessage): Promise<void> {
-    // Build engine request
-    let engineRequest: EngineRequest;
-    if (message.kind === "move") {
-      engineRequest = createMoveRequest(
-        message.requestId,
-        this.matchId!,
-        this.gameId!,
-        message.serverTime,
-        this.seat!,
-        message.state,
-        message.snapshot,
-      );
-    } else if (message.kind === "draw") {
-      engineRequest = createDrawRequest(
-        message.requestId,
-        this.matchId!,
-        this.gameId!,
-        message.serverTime,
-        this.seat!,
-        message.offeredBy!,
-        message.state,
-        message.snapshot,
-      );
-    } else if (message.kind === "rematch") {
-      // Auto-accept rematches per spec
-      logger.info("Auto-accepting rematch offer");
-      this.sendResponse(message.requestId, { action: "accept-rematch" });
-      return;
-    } else {
+    if (message.kind !== "move") {
       logger.warn("Unknown request kind:", message.kind);
       return;
     }
+
+    // Build engine request
+    const engineRequest = createMoveRequest(
+      message.requestId,
+      message.botId,
+      message.gameId,
+      message.serverTime,
+      message.playerId,
+      message.state,
+    );
 
     // Get response from engine (or dumb bot)
     const response = await this.getEngineResponse(engineRequest, message);
@@ -405,15 +433,16 @@ export class BotClient {
     request: EngineRequest,
     serverMessage: RequestMessage,
   ): Promise<EngineResponse | null> {
-    if (!this.options.engineCommand) {
+    const engineCommand = this.options.engineCommands.get(serverMessage.botId);
+
+    if (!engineCommand) {
       // Use dumb bot
       logger.debug("Using built-in dumb bot");
       return handleDumbBotRequest(request);
     }
 
     // Calculate timeout based on remaining time
-    // Note: JSON keys are strings, so we need to access with string key
-    const myPlayerId = this.seat!.playerId;
+    const myPlayerId = serverMessage.playerId;
     const timeLeftRaw =
       serverMessage.state.timeLeft[String(myPlayerId) as `${PlayerId}`];
     // Server timeLeft is in seconds; normalize to ms for engine timeouts.
@@ -426,7 +455,7 @@ export class BotClient {
     const timeoutMs = calculateEngineTimeout(timeLeftMs);
 
     const engineOptions: EngineRunnerOptions = {
-      engineCommand: this.options.engineCommand,
+      engineCommand,
       timeoutMs,
     };
 
@@ -458,9 +487,7 @@ export class BotClient {
       | { action: "move"; moveNotation: string }
       | { action: "resign" }
       | { action: "accept-draw" }
-      | { action: "decline-draw" }
-      | { action: "accept-rematch" }
-      | { action: "decline-rematch" },
+      | { action: "decline-draw" },
   ): void {
     const message: BotResponseMessage = {
       type: "response",
@@ -470,21 +497,6 @@ export class BotClient {
 
     this.lastResponseById.set(requestId, response);
     this.send(message);
-    this.state = "waiting";
-  }
-
-  /**
-   * Handle rematch started notification
-   */
-  private handleRematchStarted(message: RematchStartedMessage): void {
-    logger.info("Rematch started!");
-    logger.info(`  New game: ${message.newGameId}`);
-    logger.info(
-      `  Seat: ${message.seat.role} (player ${message.seat.playerId})`,
-    );
-
-    this.gameId = message.newGameId;
-    this.seat = message.seat;
     this.state = "waiting";
   }
 
@@ -551,23 +563,27 @@ export class BotClient {
       request: request
         ? {
             kind: request.kind,
-            serverTime: request.serverTime,
-            seat: this.seat,
+            botId: request.botId,
+            playerId: request.playerId,
             state: request.state,
-            snapshot: request.snapshot,
           }
         : null,
     });
   }
 
   /**
-   * Close the connection
+   * Close the connection and stop reconnecting
    */
   close(): void {
+    this.shouldReconnect = false;
     if (this.ws) {
       this.ws.close();
       this.ws = null;
     }
     this.state = "disconnected";
+    if (this.runResolve) {
+      this.runResolve();
+      this.runResolve = null;
+    }
   }
 }

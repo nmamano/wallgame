@@ -1,5 +1,21 @@
 /**
+ * This is the third of 4 tests for the proactive bot protocol (V2):
+ *
+ * 1. bot-1-mock-client.test.ts: Mocks the bot client's WS messages.
+ *    It tests the server-client protocol.
+ * 2. bot-2-official-client.test.ts: Uses the official bot client with no engine
+ *    so that it defaults to making a dummy AI move. It tests the official
+ *    client.
+ * 3. bot-3-dummy-engine.test.ts: Uses the official bot client with the dummy
+ *    engine. It tests the engine API.
+ * 4. bot-4-deep-wallwars-engine.test.ts: Usese the official bot client with the
+ *    C++ deep-wallwars engine. It tests the Deep Wallwars adapter.
+ *    Note that this may require C++ recompilation and environment setup.
+ */
+
+/**
  * Integration test for the official custom bot client CLI using the dummy engine.
+ * V2: Bots use proactive protocol with clientId and bots array.
  *
  * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
  * Spawns the actual CLI client process with --engine and verifies moves.
@@ -7,12 +23,17 @@
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { spawn, type Subprocess } from "bun";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
+import { join } from "node:path";
 import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
-import type { GameCreateResponse } from "../../shared/contracts/games";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
-import type { GameConfiguration } from "../../shared/domain/game-types";
+import type {
+  GameConfiguration,
+  PlayerId,
+} from "../../shared/domain/game-types";
 
 // ================================
 // --- Test Harness ---
@@ -50,31 +71,33 @@ async function stopTestServer() {
 // --- HTTP Client Helpers ---
 // ================================
 
+interface PlayVsBotResponse {
+  gameId: string;
+  token: string;
+  socketToken: string;
+  role: "host" | "joiner";
+  playerId: 1 | 2;
+  shareUrl?: string;
+}
+
 /**
- * Creates a game with a custom bot as the joiner.
+ * V2: Creates a game against a registered bot via /api/bots/play.
  */
-async function createGameWithCustomBot(
+async function createGameVsBot(
   userId: string,
+  botId: string,
   config: GameConfiguration,
-  options?: {
-    hostIsPlayer1?: boolean;
-  },
-): Promise<GameCreateResponse> {
-  const res = await fetch(`${baseUrl}/api/games`, {
+): Promise<PlayVsBotResponse> {
+  const res = await fetch(`${baseUrl}/api/bots/play`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-test-user-id": userId,
     },
     body: JSON.stringify({
+      botId,
       config,
-      matchType: "friend",
       hostDisplayName: `Player ${userId}`,
-      hostIsPlayer1: options?.hostIsPlayer1,
-      joinerConfig: {
-        type: "custom-bot",
-        displayName: "Dumb Bot",
-      },
     }),
   });
 
@@ -84,32 +107,38 @@ async function createGameWithCustomBot(
       `Expected status 201 but got ${res.status}. Error: ${text}`,
     );
   }
-  return (await res.json()) as GameCreateResponse;
+  return (await res.json()) as PlayVsBotResponse;
 }
 
 /**
- * Marks the host as ready (required before game starts).
+ * V2: Lists available bots matching game settings.
+ * Both variant and timeControl are required by the API.
  */
-async function markHostReady(
-  userId: string,
-  gameId: string,
-  hostToken: string,
-): Promise<void> {
-  const res = await fetch(`${baseUrl}/api/games/${gameId}/ready`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-test-user-id": userId,
-    },
-    body: JSON.stringify({ token: hostToken }),
-  });
+async function listBots(filters: {
+  variant: string;
+  timeControl: string;
+  boardWidth?: number;
+  boardHeight?: number;
+}): Promise<{
+  bots: { id: string; botId: string; name: string; clientId: string }[];
+}> {
+  const params = new URLSearchParams();
+  params.set("variant", filters.variant);
+  params.set("timeControl", filters.timeControl);
+  if (filters.boardWidth) params.set("boardWidth", String(filters.boardWidth));
+  if (filters.boardHeight)
+    params.set("boardHeight", String(filters.boardHeight));
 
+  const res = await fetch(`${baseUrl}/api/bots?${params.toString()}`);
   if (res.status !== 200) {
     const text = await res.text();
     throw new Error(
       `Expected status 200 but got ${res.status}. Error: ${text}`,
     );
   }
+  return (await res.json()) as {
+    bots: { id: string; botId: string; name: string; clientId: string }[];
+  };
 }
 
 // ================================
@@ -290,24 +319,53 @@ interface BotClientProcess {
   waitForExit: () => Promise<number>;
 }
 
-function spawnBotClient(
-  seatToken: string,
-  serverUrl: string,
-  engineCommand: string,
-): BotClientProcess {
+interface BotConfigFile {
+  path: string;
+  cleanup: () => Promise<void>;
+}
+
+async function createBotConfigFile(args: {
+  serverUrl: string;
+  clientId: string;
+  botId: string;
+  botName: string;
+  engine?: string;
+}): Promise<BotConfigFile> {
+  const dir = await mkdtemp(join(tmpdir(), "wallgame-bot-"));
+  const path = join(dir, "bot-config.json");
+  const config = {
+    server: args.serverUrl,
+    clientId: args.clientId,
+    bots: [
+      {
+        botId: args.botId,
+        name: args.botName,
+        engine: args.engine,
+      },
+    ],
+  };
+
+  await writeFile(path, JSON.stringify(config, null, 2));
+
+  return {
+    path,
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * V2: Spawns bot client using a config file.
+ */
+function spawnBotClient(configPath: string): BotClientProcess {
   const proc = spawn({
     cmd: [
       "bun",
       "run",
       "src/index.ts",
-      "--server",
-      serverUrl,
-      "--token",
-      seatToken,
+      "--config",
+      configPath,
       "--log-level",
       "debug",
-      "--engine",
-      engineCommand,
     ],
     cwd: "./official-custom-bot-client",
     stdout: "pipe",
@@ -360,23 +418,49 @@ async function submitHumanMove(
   humanSocket.ws.send(JSON.stringify({ type: "submit-move", move }));
 }
 
-/**
- * Wait for the game to reach a specific move count.
- */
-async function waitForMoveCount(
+async function waitForTurn(
   humanSocket: HumanSocket,
-  moveCount: number,
+  playerId: PlayerId,
+  currentState?: Extract<ServerMessage, { type: "state" }>,
+  timeoutMs?: number,
 ): Promise<Extract<ServerMessage, { type: "state" }>> {
+  if (
+    currentState?.state.status === "playing" &&
+    currentState.state.turn === playerId
+  ) {
+    return currentState;
+  }
   return humanSocket.waitForState(
-    (state) => state.state.moveCount >= moveCount,
+    (state) =>
+      state.state.status === "playing" && state.state.turn === playerId,
+    { timeoutMs },
   );
+}
+
+/**
+ * Wait for bot to appear in the bot listing.
+ */
+async function waitForBotRegistration(
+  botId: string,
+  filters: { variant: string; timeControl: string },
+  timeoutMs = 10000,
+): Promise<void> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const { bots } = await listBots(filters);
+    if (bots.some((b) => b.id === botId)) {
+      return;
+    }
+    await new Promise((r) => setTimeout(r, 100));
+  }
+  throw new Error(`Bot ${botId} did not register within ${timeoutMs}ms`);
 }
 
 // ================================
 // --- Main Test ---
 // ================================
 
-describe("custom bot client CLI integration (dummy engine)", () => {
+describe("custom bot client CLI integration V2 (dummy engine)", () => {
   beforeAll(async () => {
     const handle = await setupEphemeralDb();
     container = handle.container;
@@ -389,8 +473,14 @@ describe("custom bot client CLI integration (dummy engine)", () => {
     await teardownEphemeralDb(container);
   }, 60_000);
 
-  it("plays a game using the actual CLI client with the dummy engine", async () => {
-    const hostUserId = "host-user-engine";
+  it("plays a game using the V2 proactive bot protocol with dummy engine", async () => {
+    const hostUserId = "host-user-v2";
+    const clientId = "test-client-v2";
+    const botId = "dummy-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
 
     const gameConfig: GameConfiguration = {
       timeControl: {
@@ -404,53 +494,129 @@ describe("custom bot client CLI integration (dummy engine)", () => {
       boardHeight: 5,
     };
 
-    const {
-      gameId,
-      socketToken: hostSocketToken,
-      hostToken,
-      customBotSeatToken,
-    } = await createGameWithCustomBot(hostUserId, gameConfig, {
-      hostIsPlayer1: true,
-    });
+    try {
+      // V2: Start bot client first (proactive connection)
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        clientId,
+        botId,
+        botName: botId,
+        engine: "bun ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(configFile.path);
 
-    expect(gameId).toBeDefined();
-    expect(customBotSeatToken).toBeDefined();
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "standard",
+        timeControl: "rapid",
+      });
 
-    await markHostReady(hostUserId, gameId, hostToken);
+      // Verify bot appears in listing
+      const { bots } = await listBots({
+        variant: "standard",
+        timeControl: "rapid",
+      });
+      expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-    const humanSocket = await openHumanSocket(
-      hostUserId,
-      gameId,
-      hostSocketToken,
-    );
+      // V2: Create game via /api/bots/play
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
 
-    const initialState = await humanSocket.waitForMessage("state");
-    expect(initialState.state.status).toBe("playing");
+      expect(gameId).toBeDefined();
 
-    const botClient = spawnBotClient(
-      customBotSeatToken!,
-      baseUrl,
-      "bun ../dummy-engine/src/index.ts",
-    );
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
-    await humanSocket.waitForMessage("match-status");
+      // Wait for initial state (game should start immediately since bot is connected)
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(initialState.state.status).toBe("playing");
 
-    await submitHumanMove(humanSocket, "Cb4", 5);
-    await waitForMoveCount(humanSocket, 2);
+      const botPlayerId = playerId === 1 ? 2 : 1;
+      let currentState = initialState;
 
-    await submitHumanMove(humanSocket, "Cc3", 5);
-    await waitForMoveCount(humanSocket, 4);
+      const playNoopRound = async () => {
+        currentState = await waitForTurn(humanSocket, playerId, currentState);
+        await submitHumanMove(humanSocket, "---", 5);
+        currentState = await waitForTurn(
+          humanSocket,
+          botPlayerId,
+          currentState,
+        );
+        currentState = await waitForTurn(humanSocket, playerId, currentState);
+      };
 
-    humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await playNoopRound();
+      await playNoopRound();
 
-    const finalState = await humanSocket.waitForState(
-      (state) => state.state.status === "finished",
-    );
-    expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(2);
+      // Human resigns
+      humanSocket.ws.send(JSON.stringify({ type: "resign" }));
 
-    humanSocket.close();
-    botClient.kill();
-    await botClient.waitForExit();
+      const finalState = await humanSocket.waitForState(
+        (state) => state.state.status === "finished",
+      );
+      expect(finalState.state.result?.reason).toBe("resignation");
+      expect(finalState.state.result?.winner).toBe(botPlayerId);
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
   }, 60000);
+
+  it("bot discovery works with variant filtering", async () => {
+    const clientId = "test-client-filter";
+    const botId = "filter-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    try {
+      // Start bot client
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        clientId,
+        botId,
+        botName: botId,
+        engine: "bun ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(configFile.path);
+
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "standard",
+        timeControl: "rapid",
+      });
+
+      // Verify bot appears in listing with standard variant
+      const { bots: standardBots } = await listBots({
+        variant: "standard",
+        timeControl: "rapid",
+      });
+      expect(standardBots.some((b) => b.id === compositeId)).toBe(true);
+
+      // Verify filtering works with different time controls
+      const { bots: blitzBots } = await listBots({
+        variant: "standard",
+        timeControl: "blitz",
+      });
+      expect(blitzBots.some((b) => b.id === compositeId)).toBe(true);
+    } finally {
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 30000);
 });

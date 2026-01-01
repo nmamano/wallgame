@@ -21,7 +21,9 @@
       "Bash(bun test:*)",
       "Bash(wsl bash -c 'cd /mnt/c/Users/Nilo/repos/wallgame && bun test tests/integration/custom-bot-client.integration.test.ts 2>&1')",
       "Bash(wsl -d Ubuntu bash -c \"cd /mnt/c/Users/Nilo/repos/wallgame && ls -lh deep-wallwars/build/deep_ww_engine 2>&1\")",
-      "Bash(wsl:*)"
+      "Bash(wsl:*)",
+      "Bash(npx tsc:*)",
+      "Bash(bun tsc:*)"
     ]
   },
   "outputStyle": "Explanatory"

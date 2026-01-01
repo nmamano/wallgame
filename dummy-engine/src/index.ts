@@ -19,6 +19,7 @@ import {
 } from "../../shared/custom-bot/dummy-engine-utils";
 
 function handleRequest(request: EngineRequest): EngineResponse {
+  // In V2, draw requests are auto-declined by the client, but we handle them anyway
   if (request.kind === "draw") {
     return {
       engineApiVersion: ENGINE_API_VERSION,
@@ -28,7 +29,7 @@ function handleRequest(request: EngineRequest): EngineResponse {
   }
 
   const state = request.state;
-  const myPlayerId = request.seat.playerId;
+  const myPlayerId = request.playerId;
 
   const grid = reconstructGrid(state);
   const myCatPos = state.pawns[myPlayerId].cat;

@@ -8,12 +8,11 @@ import {
   getSerializedState,
   joinGameSession,
   markHostReady,
-  getCustomBotSeatToken,
   resolveGameAccess,
   resolveSessionForToken,
   listMatchmakingGames,
   listLiveGames,
-  setCustomBotSeatToken,
+  setBotCompositeId,
   type PlayerConfigType,
 } from "../games/store";
 import {
@@ -22,12 +21,20 @@ import {
   readySchema,
   getGameSessionQuerySchema,
   pastGamesQuerySchema,
+  botsQuerySchema,
+  createBotGameSchema,
 } from "../../shared/contracts/games";
 import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
 import { getReplayGame, queryPastGames } from "../db/game-queries";
-import { generateSeatToken } from "../games/custom-bot-store";
+import {
+  getMatchingBots,
+  getRecommendedBots,
+  getBotByCompositeId,
+  addActiveGame,
+} from "../games/custom-bot-store";
+import { queueBotMoveRequest } from "./custom-bot-socket";
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -143,18 +150,10 @@ export const gamesRoute = new Hono()
           joinerConfig,
         });
 
-        // Generate and store seat token for custom bot seats
-        let customBotSeatToken: string | undefined;
-        if (joinerConfig?.type === "custom-bot") {
-          customBotSeatToken = generateSeatToken(session.id, "joiner");
-          setCustomBotSeatToken(session.id, "joiner", customBotSeatToken);
-        }
-
         console.info("[games] created session", {
           gameId: session.id,
           storedMatchType: session.matchType,
           requestedMatchType: parsed.matchType,
-          hasCustomBot: !!customBotSeatToken,
         });
         // The FRONTEND_URL environment variable is used for creating shareable
         // links. It is only needed in dev mode because the proxied URL is not
@@ -174,7 +173,6 @@ export const gamesRoute = new Hono()
             socketToken: hostSocketToken,
             shareUrl,
             snapshot: getSessionSnapshot(session.id),
-            customBotSeatToken: customBotSeatToken ?? null,
           },
           201,
         );
@@ -255,7 +253,6 @@ export const gamesRoute = new Hono()
               token: access.player.token,
               socketToken: access.player.socketToken,
             },
-            customBotSeatToken: getCustomBotSeatToken(id, "joiner") ?? null,
             matchStatus,
             state: getSerializedState(id),
             shareUrl,
@@ -403,3 +400,133 @@ export const gamesRoute = new Hono()
       return c.json({ error: "Internal server error" }, 500);
     }
   });
+
+// ============================================================================
+// Bot Listing API (Proactive Bot Protocol v2)
+// ============================================================================
+
+export const botsRoute = new Hono()
+  // Get list of available bots matching game settings
+  .get("/", zValidator("query", botsQuerySchema), (c) => {
+    try {
+      const query = c.req.valid("query");
+      const bots = getMatchingBots(
+        query.variant,
+        query.timeControl,
+        query.boardWidth,
+        query.boardHeight,
+      );
+      return c.json({ bots });
+    } catch (error) {
+      console.error("Failed to list bots:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  // Get recommended bots for current settings
+  .get("/recommended", zValidator("query", botsQuerySchema), (c) => {
+    try {
+      const query = c.req.valid("query");
+      // getRecommendedBots takes variant and timeControl (username is optional for private bots)
+      const bots = getRecommendedBots(query.variant, query.timeControl);
+      return c.json({ bots });
+    } catch (error) {
+      console.error("Failed to list recommended bots:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  // Create a game against a specific bot
+  .post(
+    "/play",
+    getOptionalUserMiddleware,
+    zValidator("json", createBotGameSchema),
+    async (c) => {
+      try {
+        const parsed = c.req.valid("json");
+        const user = c.get("user");
+
+        // Verify bot exists and is connected
+        const bot = getBotByCompositeId(parsed.botId);
+        if (!bot) {
+          return c.json({ error: "Bot not found or not connected" }, 404);
+        }
+
+        // Look up host ELO if authenticated
+        let hostElo: number | undefined;
+        if (user?.id) {
+          const timeControlPreset = parsed.config.timeControl.preset ?? "rapid";
+          hostElo = await getRatingForAuthUser(
+            user.id,
+            parsed.config.variant,
+            timeControlPreset,
+          );
+        }
+
+        // Create game session with bot as joiner
+        const { session, hostToken, hostSocketToken } = createGameSession({
+          config: {
+            ...parsed.config,
+            rated: false, // Bot games are unrated
+          },
+          matchType: "friend",
+          hostDisplayName: parsed.hostDisplayName,
+          hostAppearance: parsed.hostAppearance,
+          hostIsPlayer1: Math.random() < 0.5,
+          hostAuthUserId: user?.id,
+          hostElo,
+          joinerConfig: {
+            type: "bot",
+            displayName: bot.name,
+          },
+        });
+
+        // Set bot composite ID on joiner seat
+        setBotCompositeId(session.id, "joiner", parsed.botId);
+
+        // Mark joiner as ready (bot is always ready)
+        session.players.joiner.ready = true;
+        session.status = "ready";
+
+        // Track active bot game for response validation and disconnect handling
+        addActiveGame(
+          parsed.botId,
+          session.id,
+          session.players.joiner.playerId,
+          session.players.host.displayName,
+        );
+
+        console.info("[games] created bot game", {
+          gameId: session.id,
+          botId: parsed.botId,
+          botName: bot.name,
+        });
+
+        // If bot is Player 1 (goes first), queue move request
+        if (session.players.joiner.playerId === 1) {
+          queueBotMoveRequest(
+            parsed.botId,
+            session.id,
+            session.players.joiner.playerId,
+            session.players.host.displayName,
+          );
+        }
+
+        const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
+        const shareUrl = `${origin}/game/${session.id}`;
+
+        return c.json(
+          {
+            gameId: session.id,
+            token: hostToken,
+            socketToken: hostSocketToken,
+            role: "host" as const,
+            playerId: session.players.host.playerId,
+            shareUrl,
+          },
+          201,
+        );
+      } catch (error) {
+        console.error("Failed to create bot game:", error);
+        return c.json({ error: "Internal server error" }, 500);
+      }
+    },
+  );

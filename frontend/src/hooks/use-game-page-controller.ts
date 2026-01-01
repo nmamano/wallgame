@@ -174,8 +174,6 @@ const DEFAULT_PLAYERS: PlayerType[] = ["you", "you"];
 const PLACEHOLDER_COPY: Partial<Record<PlayerType, string>> = {
   friend: "Inviting a friend requires the server backend. Coming soon.",
   "matched-user": "Be matched with other players.",
-  "custom-bot":
-    "Uploading your own bot needs an API token from the server (not yet available).",
 };
 
 const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
@@ -767,9 +765,8 @@ export function useGamePageController(gameId: string) {
         id: player.id,
         type: player.type,
         name: player.name,
-        isReady: player.type === "you" || player.type.includes("bot"),
+        isReady: player.type === "you",
         isYou: player.type === "you",
-        customBotSeatToken: null,
       }));
       setMatchingPlayers(matchingList);
 
@@ -1499,7 +1496,6 @@ export function useGamePageController(gameId: string) {
           role: currentHandshake.role,
           playerId: nextPlayerId,
           shareUrl: inferredShareUrl,
-          customBotSeatToken: currentHandshake.customBotSeatToken,
         };
         saveGameHandshake(nextHandshake);
         updateGameHandshake(null);
@@ -1557,7 +1553,6 @@ export function useGamePageController(gameId: string) {
   const resolvedShareUrl = isRemoteFlow
     ? (matchShareUrl ?? defaultShareUrl)
     : defaultShareUrl;
-  const customBotSeatToken = gameHandshake?.customBotSeatToken ?? null;
   const authoritativeMatchStatus = useMemo<GameSnapshot | null>(() => {
     if (matchSnapshot) {
       return matchSnapshot;
@@ -1584,17 +1579,14 @@ export function useGamePageController(gameId: string) {
   const remoteFallbackPlayers = useMemo<MatchingPlayer[]>(() => {
     if (!isRemoteFlow) return [];
     const youName = localPreferences.displayName || "You";
-    const hasCustomBot = Boolean(customBotSeatToken);
-    const opponentType: PlayerType = hasCustomBot
-      ? "custom-bot"
-      : resolvedMatchType === "friend"
+    const opponentType: PlayerType =
+      resolvedMatchType === "friend"
         ? "friend"
         : resolvedMatchType === "matchmaking"
           ? "matched-user"
           : "matched-user";
-    const opponentLabel = hasCustomBot
-      ? "Custom Bot"
-      : resolvedMatchType === "friend"
+    const opponentLabel =
+      resolvedMatchType === "friend"
         ? "Friend"
         : resolvedMatchType === "matchmaking"
           ? "Matched Player"
@@ -1606,7 +1598,6 @@ export function useGamePageController(gameId: string) {
         name: youName,
         isReady: true,
         isYou: true,
-        customBotSeatToken: null,
         role: "host",
       },
       {
@@ -1615,16 +1606,10 @@ export function useGamePageController(gameId: string) {
         name: opponentLabel,
         isReady: false,
         isYou: false,
-        customBotSeatToken: hasCustomBot ? customBotSeatToken : null,
         role: "joiner",
       },
     ];
-  }, [
-    isRemoteFlow,
-    localPreferences.displayName,
-    resolvedMatchType,
-    customBotSeatToken,
-  ]);
+  }, [isRemoteFlow, localPreferences.displayName, resolvedMatchType]);
   const hostAbortedLatch = waitingAccessReason === "host-aborted";
 
   const matchingPanelPlayers: MatchingPlayer[] = useMemo(() => {
@@ -1637,22 +1622,15 @@ export function useGamePageController(gameId: string) {
       return authoritativeMatchStatus.players.map((player) => {
         const isYou =
           localPlayerId != null && player.playerId === localPlayerId;
-        const isCustomBotSeat = player.configType === "custom-bot";
-        const type: PlayerType = isYou
-          ? "you"
-          : isCustomBotSeat
-            ? "custom-bot"
-            : resolvedOpponentType;
-        const isReady = isCustomBotSeat ? player.connected : player.ready;
+        const type: PlayerType = isYou ? "you" : resolvedOpponentType;
         return {
           id: `player-${player.playerId}`,
           type,
           name: player.displayName,
-          isReady,
+          isReady: player.ready,
           isYou,
           isConnected: player.connected,
           role: player.role,
-          customBotSeatToken: isCustomBotSeat ? customBotSeatToken : null,
           statusOverride:
             hostAbortedLatch && player.role === "host" ? "aborted" : undefined,
         };
@@ -1669,32 +1647,18 @@ export function useGamePageController(gameId: string) {
     remoteFallbackPlayers,
     matchingPlayers,
     hostAbortedLatch,
-    customBotSeatToken,
   ]);
-  const hasCustomBotWaiting = useMemo(
-    () =>
-      matchingPanelPlayers.some(
-        (player) => player.type === "custom-bot" && !player.isReady,
-      ),
-    [matchingPanelPlayers],
-  );
   const isAuthoritativeWaiting =
     isRemoteFlow &&
     !isReadOnlySession &&
-    (authoritativeLifecycle === "waiting" ||
-      authoritativeLifecycle == null ||
-      hasCustomBotWaiting);
+    (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null);
   const matchingPanelOpen = isRemoteFlow
     ? !isReadOnlySession &&
-      (authoritativeLifecycle === "waiting" ||
-        authoritativeLifecycle == null ||
-        hasCustomBotWaiting)
+      (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null)
     : matchingPlayers.some((entry) => !entry.isReady);
   const matchingCanAbort = isRemoteFlow
     ? isCreator &&
-      (authoritativeLifecycle === "waiting" ||
-        authoritativeLifecycle == null ||
-        hasCustomBotWaiting)
+      (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null)
     : true;
   const matchingStatusMessage = useMemo(() => {
     if (!isRemoteFlow) return undefined;
@@ -1703,9 +1667,6 @@ export function useGamePageController(gameId: string) {
     if (isClaimingSeat) return "Joining game...";
     if (waitingAccessReason === "host-aborted") {
       return "The creator aborted this game.";
-    }
-    if (hasCustomBotWaiting) {
-      return "Waiting for the custom bot to connect...";
     }
     switch (authoritativeLifecycle) {
       case "waiting":
@@ -1730,7 +1691,6 @@ export function useGamePageController(gameId: string) {
     authoritativeLifecycle,
     access,
     waitingAccessReason,
-    hasCustomBotWaiting,
   ]);
 
   const pendingTurnRequestRef = useRef<PlayerId | null>(null);

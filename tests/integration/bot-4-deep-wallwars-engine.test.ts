@@ -1,7 +1,23 @@
 /**
+ * This is the fourth of 4 tests for the proactive bot protocol (V2):
+ *
+ * 1. bot-1-mock-client.test.ts: Mocks the bot client's WS messages.
+ *    It tests the server-client protocol.
+ * 2. bot-2-official-client.test.ts: Uses the official bot client with no engine
+ *    so that it defaults to making a dummy AI move. It tests the official
+ *    client.
+ * 3. bot-3-dummy-engine.test.ts: Uses the official bot client with the dummy
+ *    engine. It tests the engine API.
+ * 4. bot-4-deep-wallwars-engine.test.ts: Usese the official bot client with the
+ *    C++ deep-wallwars engine. It tests the Deep Wallwars adapter.
+ *    Note that this may require C++ recompilation and environment setup.
+ */
+
+/**
  * IMPORTANT: This test tests the actual GPU model, not the simple policy.
  *
  * Integration test for the official custom bot client CLI using the deep-wallwars engine.
+ * V2: Bots use proactive protocol with clientId and bots array.
  *
  * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
  * Spawns the actual CLI client process with --engine and verifies moves.
@@ -13,10 +29,11 @@
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { spawn, type Subprocess } from "bun";
+import { mkdtemp, writeFile, rm } from "node:fs/promises";
+import { tmpdir } from "node:os";
 import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
-import type { GameCreateResponse } from "../../shared/contracts/games";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
 import type { GameConfiguration } from "../../shared/domain/game-types";
 import * as fs from "fs";
@@ -58,31 +75,33 @@ async function stopTestServer() {
 // --- HTTP Client Helpers ---
 // ================================
 
+interface PlayVsBotResponse {
+  gameId: string;
+  token: string;
+  socketToken: string;
+  role: "host" | "joiner";
+  playerId: 1 | 2;
+  shareUrl?: string;
+}
+
 /**
- * Creates a game with a custom bot as the joiner.
+ * V2: Creates a game against a registered bot via /api/bots/play.
  */
-async function createGameWithCustomBot(
+async function createGameVsBot(
   userId: string,
+  botId: string,
   config: GameConfiguration,
-  options?: {
-    hostIsPlayer1?: boolean;
-  },
-): Promise<GameCreateResponse> {
-  const res = await fetch(`${baseUrl}/api/games`, {
+): Promise<PlayVsBotResponse> {
+  const res = await fetch(`${baseUrl}/api/bots/play`, {
     method: "POST",
     headers: {
       "Content-Type": "application/json",
       "x-test-user-id": userId,
     },
     body: JSON.stringify({
+      botId,
       config,
-      matchType: "friend",
       hostDisplayName: `Player ${userId}`,
-      hostIsPlayer1: options?.hostIsPlayer1,
-      joinerConfig: {
-        type: "custom-bot",
-        displayName: "Deep WallWars Bot",
-      },
     }),
   });
 
@@ -92,32 +111,38 @@ async function createGameWithCustomBot(
       `Expected status 201 but got ${res.status}. Error: ${text}`,
     );
   }
-  return (await res.json()) as GameCreateResponse;
+  return (await res.json()) as PlayVsBotResponse;
 }
 
 /**
- * Marks the host as ready (required before game starts).
+ * V2: Lists available bots matching game settings.
+ * Both variant and timeControl are required by the API.
  */
-async function markHostReady(
-  userId: string,
-  gameId: string,
-  hostToken: string,
-): Promise<void> {
-  const res = await fetch(`${baseUrl}/api/games/${gameId}/ready`, {
-    method: "POST",
-    headers: {
-      "Content-Type": "application/json",
-      "x-test-user-id": userId,
-    },
-    body: JSON.stringify({ token: hostToken }),
-  });
+async function listBots(filters: {
+  variant: string;
+  timeControl: string;
+  boardWidth?: number;
+  boardHeight?: number;
+}): Promise<{
+  bots: { id: string; botId: string; name: string; clientId: string }[];
+}> {
+  const params = new URLSearchParams();
+  params.set("variant", filters.variant);
+  params.set("timeControl", filters.timeControl);
+  if (filters.boardWidth) params.set("boardWidth", String(filters.boardWidth));
+  if (filters.boardHeight)
+    params.set("boardHeight", String(filters.boardHeight));
 
+  const res = await fetch(`${baseUrl}/api/bots?${params.toString()}`);
   if (res.status !== 200) {
     const text = await res.text();
     throw new Error(
       `Expected status 200 but got ${res.status}. Error: ${text}`,
     );
   }
+  return (await res.json()) as {
+    bots: { id: string; botId: string; name: string; clientId: string }[];
+  };
 }
 
 // ================================
@@ -298,24 +323,53 @@ interface BotClientProcess {
   waitForExit: () => Promise<number>;
 }
 
-function spawnBotClient(
-  seatToken: string,
-  serverUrl: string,
-  engineCommand: string,
-): BotClientProcess {
+interface BotConfigFile {
+  path: string;
+  cleanup: () => Promise<void>;
+}
+
+async function createBotConfigFile(args: {
+  serverUrl: string;
+  clientId: string;
+  botId: string;
+  botName: string;
+  engine?: string;
+}): Promise<BotConfigFile> {
+  const dir = await mkdtemp(path.join(tmpdir(), "wallgame-bot-"));
+  const configPath = path.join(dir, "bot-config.json");
+  const config = {
+    server: args.serverUrl,
+    clientId: args.clientId,
+    bots: [
+      {
+        botId: args.botId,
+        name: args.botName,
+        engine: args.engine,
+      },
+    ],
+  };
+
+  await writeFile(configPath, JSON.stringify(config, null, 2));
+
+  return {
+    path: configPath,
+    cleanup: () => rm(dir, { recursive: true, force: true }),
+  };
+}
+
+/**
+ * V2: Spawns bot client with clientId, bot configuration, and engine command.
+ */
+function spawnBotClient(configPath: string): BotClientProcess {
   const proc = spawn({
     cmd: [
       "bun",
       "run",
       "src/index.ts",
-      "--server",
-      serverUrl,
-      "--token",
-      seatToken,
+      "--config",
+      configPath,
       "--log-level",
       "debug",
-      "--engine",
-      engineCommand,
     ],
     cwd: "./official-custom-bot-client",
     stdout: "pipe",
@@ -354,6 +408,14 @@ function spawnBotClient(
 // --- Test Helpers ---
 // ================================
 
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
+
+const DEEP_WW_TIMEOUT_MS = (() => {
+  const raw = Number(process.env.DEEP_WW_TIMEOUT_MS ?? "30000");
+  return Number.isFinite(raw) ? raw : 30000;
+})();
+
 /**
  * Plays a move for the human player (does not wait for response).
  */
@@ -380,6 +442,25 @@ async function waitForMoveCount(
     (state) => state.state.moveCount >= moveCount,
     options,
   );
+}
+
+/**
+ * Wait for bot to appear in the bot listing.
+ */
+async function waitForBotRegistration(
+  compositeId: string,
+  filters: { variant: string; timeControl: string },
+  timeoutMs = 10000,
+): Promise<void> {
+  const startTime = Date.now();
+  while (Date.now() - startTime < timeoutMs) {
+    const { bots } = await listBots(filters);
+    if (bots.some((b) => b.id === compositeId)) {
+      return;
+    }
+    await sleep(100);
+  }
+  throw new Error(`Bot ${compositeId} did not register within ${timeoutMs}ms`);
 }
 
 /**
@@ -418,7 +499,9 @@ function findDeepWallWarsEngine(): string {
 
   throw new Error(
     `Deep-wallwars engine binary not found. Please compile deep-wallwars first.\n` +
-      `Expected locations:\n${candidates.map((c) => `  - ${c}`).join("\n")}\n\n` +
+      `Expected locations:\n${candidates
+        .map((c) => `  - ${c}`)
+        .join("\n")}\n\n` +
       `To compile:\n` +
       `  cd deep-wallwars\n` +
       `  mkdir -p build && cd build\n` +
@@ -457,7 +540,7 @@ function findTensorRTModel(): string | null {
 // --- Main Test ---
 // ================================
 
-describe("custom bot client CLI integration (deep-wallwars engine)", () => {
+describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
   beforeAll(async () => {
     const handle = await setupEphemeralDb();
     container = handle.container;
@@ -486,7 +569,13 @@ describe("custom bot client CLI integration (deep-wallwars engine)", () => {
     console.log(`Using TensorRT model: ${tensorRTModel}`);
     console.log(`Engine command: ${engineCommand}`);
 
-    const hostUserId = "host-user-deepww";
+    const hostUserId = "host-user-deepww-v2";
+    const clientId = "deepww-client-v2";
+    const botId = "deepww-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
 
     // Deep-wallwars only supports:
     // - Classic variant (reach opponent's corner)
@@ -503,81 +592,129 @@ describe("custom bot client CLI integration (deep-wallwars engine)", () => {
       boardHeight: 8, // Required for deep-wallwars
     };
 
-    const {
-      gameId,
-      socketToken: hostSocketToken,
-      hostToken,
-      customBotSeatToken,
-    } = await createGameWithCustomBot(hostUserId, gameConfig, {
-      hostIsPlayer1: true,
-    });
+    try {
+      // V2: Start bot client first (proactive connection)
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        clientId,
+        botId,
+        botName: botId,
+        engine: engineCommand,
+      });
+      botClient = spawnBotClient(configFile.path);
 
-    expect(gameId).toBeDefined();
-    expect(customBotSeatToken).toBeDefined();
+      // Wait for bot to register
+      await waitForBotRegistration(
+        compositeId,
+        { variant: "classic", timeControl: "rapid" },
+        DEEP_WW_TIMEOUT_MS,
+      );
 
-    await markHostReady(hostUserId, gameId, hostToken);
+      // Verify bot appears in listing
+      const { bots } = await listBots({
+        variant: "classic",
+        timeControl: "rapid",
+      });
+      expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-    const humanSocket = await openHumanSocket(
-      hostUserId,
-      gameId,
-      hostSocketToken,
-    );
+      // V2: Create game via /api/bots/play
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
 
-    const initialState = await humanSocket.waitForMessage("state");
-    expect(initialState.state.status).toBe("playing");
-    expect(initialState.state.config.variant).toBe("classic");
-    expect(initialState.state.config.boardWidth).toBe(8);
-    expect(initialState.state.config.boardHeight).toBe(8);
+      expect(gameId).toBeDefined();
 
-    // Spawn the bot client with deep-wallwars engine
-    // Uses TensorRT model if available, otherwise simple policy
-    const botClient = spawnBotClient(
-      customBotSeatToken!,
-      baseUrl,
-      engineCommand,
-    );
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
-    // Wait for bot to connect
-    await humanSocket.waitForMessage("match-status", { timeoutMs: 120000 });
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+        timeoutMs: DEEP_WW_TIMEOUT_MS,
+      });
+      expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.config.variant).toBe("classic");
+      expect(initialState.state.config.boardWidth).toBe(8);
+      expect(initialState.state.config.boardHeight).toBe(8);
 
-    // Human (Player 1) makes first move
-    // In classic variant, cat starts at bottom-left corner and needs to reach top-right
-    await submitHumanMove(humanSocket, "---", 8);
-    await waitForMoveCount(humanSocket, 1, { timeoutMs: 120000 });
+      const humanGoesFirst = playerId === 1;
 
-    // Bot (Player 2) should respond - wait for move count to increment
-    await waitForMoveCount(humanSocket, 2, { timeoutMs: 120000 });
+      // In classic variant, cat starts at bottom-left corner and needs to reach top-right
+      if (humanGoesFirst) {
+        await submitHumanMove(humanSocket, "---", 8);
+        await waitForMoveCount(humanSocket, 1, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
 
-    // Human makes second move
-    await submitHumanMove(humanSocket, "---", 8);
-    await waitForMoveCount(humanSocket, 3, { timeoutMs: 120000 });
+        await waitForMoveCount(humanSocket, 2, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
 
-    // Bot should respond again
-    const midGameState = await waitForMoveCount(humanSocket, 4, {
-      timeoutMs: 120000,
-    });
+        await submitHumanMove(humanSocket, "---", 8);
+        await waitForMoveCount(humanSocket, 3, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
 
-    // Verify the game is still in progress
-    expect(midGameState.state.status).toBe("playing");
+        await waitForMoveCount(humanSocket, 4, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
+      } else {
+        await waitForMoveCount(humanSocket, 1, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
 
-    // Human resigns to end the test
-    humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+        await submitHumanMove(humanSocket, "---", 8);
+        await waitForMoveCount(humanSocket, 2, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
+        await waitForMoveCount(humanSocket, 3, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
 
-    const finalState = await humanSocket.waitForState(
-      (state) => state.state.status === "finished",
-    );
-    expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(2); // Bot wins
+        await submitHumanMove(humanSocket, "---", 8);
+        await waitForMoveCount(humanSocket, 4, {
+          timeoutMs: DEEP_WW_TIMEOUT_MS,
+        });
+      }
 
-    humanSocket.close();
-    botClient.kill();
-    await botClient.waitForExit();
-  }, 120000);
+      const midGameState = await waitForMoveCount(humanSocket, 4, {
+        timeoutMs: DEEP_WW_TIMEOUT_MS,
+      });
+
+      // Verify the game is still in progress
+      expect(midGameState.state.status).toBe("playing");
+
+      // Human resigns to end the test
+      humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+
+      const finalState = await humanSocket.waitForState(
+        (state) => state.state.status === "finished",
+      );
+      expect(finalState.state.result?.reason).toBe("resignation");
+      const botPlayerId = humanGoesFirst ? 2 : 1;
+      expect(finalState.state.result?.winner).toBe(botPlayerId);
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 300000); // 5 minutes timeout for GPU model loading
 
   it("handles unsupported variant gracefully (resigns)", async () => {
     const engineBinary = findDeepWallWarsEngine();
     const engineCommand = `${engineBinary} --model simple`;
-    const hostUserId = "host-user-unsupported-variant";
+    const hostUserId = "host-user-unsupported-variant-v2";
+    const clientId = "deepww-unsupported-variant-v2";
+    const botId = "unsupported-variant-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
 
     // Try to use "standard" variant (not supported by deep-wallwars)
     const gameConfig: GameConfiguration = {
@@ -592,54 +729,70 @@ describe("custom bot client CLI integration (deep-wallwars engine)", () => {
       boardHeight: 8,
     };
 
-    const {
-      gameId,
-      socketToken: hostSocketToken,
-      hostToken,
-      customBotSeatToken,
-    } = await createGameWithCustomBot(hostUserId, gameConfig, {
-      hostIsPlayer1: true,
-    });
+    try {
+      // Start bot client
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        clientId,
+        botId,
+        botName: botId,
+        engine: engineCommand,
+      });
+      botClient = spawnBotClient(configFile.path);
 
-    await markHostReady(hostUserId, gameId, hostToken);
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "standard",
+        timeControl: "rapid",
+      });
 
-    const humanSocket = await openHumanSocket(
-      hostUserId,
-      gameId,
-      hostSocketToken,
-    );
+      // Create game
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
 
-    await humanSocket.waitForMessage("state");
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
-    const botClient = spawnBotClient(
-      customBotSeatToken!,
-      baseUrl,
-      engineCommand,
-    );
+      await humanSocket.waitForMessage("state", { ignore: ["match-status"] });
 
-    await humanSocket.waitForMessage("match-status");
+      const humanGoesFirst = playerId === 1;
 
-    // Human makes a move
-    await submitHumanMove(humanSocket, "---", 8);
-    await waitForMoveCount(humanSocket, 1);
+      if (humanGoesFirst) {
+        await submitHumanMove(humanSocket, "---", 8);
+        await waitForMoveCount(humanSocket, 1);
+      }
 
-    // Bot should resign because variant is not supported
-    const finalState = await humanSocket.waitForState(
-      (state) => state.state.status === "finished",
-      { timeoutMs: 10000 },
-    );
-    expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(1); // Human wins (bot resigned)
-
-    humanSocket.close();
-    botClient.kill();
-    await botClient.waitForExit();
-  }, 30000);
+      // Bot should resign because variant is not supported
+      const finalState = await humanSocket.waitForState(
+        (state) => state.state.status === "finished",
+        { timeoutMs: 10000 },
+      );
+      expect(finalState.state.result?.reason).toBe("resignation");
+      expect(finalState.state.result?.winner).toBe(playerId);
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
 
   it("handles unsupported board size gracefully (resigns)", async () => {
     const engineBinary = findDeepWallWarsEngine();
     const engineCommand = `${engineBinary} --model simple`;
-    const hostUserId = "host-user-unsupported-size";
+    const hostUserId = "host-user-unsupported-size-v2";
+    const clientId = "deepww-unsupported-size-v2";
+    const botId = "unsupported-size-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
 
     // Try to use 5x5 board (not supported by deep-wallwars 8x8 model)
     const gameConfig: GameConfiguration = {
@@ -654,47 +807,57 @@ describe("custom bot client CLI integration (deep-wallwars engine)", () => {
       boardHeight: 5, // Not supported
     };
 
-    const {
-      gameId,
-      socketToken: hostSocketToken,
-      hostToken,
-      customBotSeatToken,
-    } = await createGameWithCustomBot(hostUserId, gameConfig, {
-      hostIsPlayer1: true,
-    });
+    try {
+      // Start bot client
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        clientId,
+        botId,
+        botName: botId,
+        engine: engineCommand,
+      });
+      botClient = spawnBotClient(configFile.path);
 
-    await markHostReady(hostUserId, gameId, hostToken);
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "classic",
+        timeControl: "rapid",
+      });
 
-    const humanSocket = await openHumanSocket(
-      hostUserId,
-      gameId,
-      hostSocketToken,
-    );
+      // Create game
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
 
-    await humanSocket.waitForMessage("state");
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
-    const botClient = spawnBotClient(
-      customBotSeatToken!,
-      baseUrl,
-      engineCommand,
-    );
+      await humanSocket.waitForMessage("state", { ignore: ["match-status"] });
 
-    await humanSocket.waitForMessage("match-status");
+      const humanGoesFirst = playerId === 1;
 
-    // Human makes a move
-    await submitHumanMove(humanSocket, "---", 5);
-    await waitForMoveCount(humanSocket, 1);
+      if (humanGoesFirst) {
+        await submitHumanMove(humanSocket, "---", 5);
+        await waitForMoveCount(humanSocket, 1);
+      }
 
-    // Bot should resign because board size is not supported
-    const finalState = await humanSocket.waitForState(
-      (state) => state.state.status === "finished",
-      { timeoutMs: 10000 },
-    );
-    expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(1); // Human wins (bot resigned)
-
-    humanSocket.close();
-    botClient.kill();
-    await botClient.waitForExit();
-  }, 30000);
+      // Bot should resign because board size is not supported
+      const finalState = await humanSocket.waitForState(
+        (state) => state.state.status === "finished",
+        { timeoutMs: 10000 },
+      );
+      expect(finalState.state.result?.reason).toBe("resignation");
+      expect(finalState.state.result?.winner).toBe(playerId);
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
 });

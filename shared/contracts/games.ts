@@ -39,7 +39,7 @@ export const appearanceSchema = z
 
 export const matchTypeValues = ["friend", "matchmaking"] as const;
 export const boardSizeValues = ["small", "medium", "large"] as const;
-export const playerConfigTypeValues = ["friend", "custom-bot"] as const;
+export const playerConfigTypeValues = ["friend"] as const;
 export type PlayerConfigType = (typeof playerConfigTypeValues)[number];
 
 export const createGameSchema = z.object({
@@ -79,11 +79,6 @@ export interface GameCreateResponse {
   socketToken: string;
   shareUrl: string;
   snapshot: GameSnapshot;
-  /**
-   * Seat token for custom bot attachment.
-   * Null when joinerConfig.type is not "custom-bot".
-   */
-  customBotSeatToken: string | null;
 }
 
 export interface GameSessionDetails {
@@ -151,7 +146,6 @@ export type ResolveGameAccessResponse =
         token: string;
         socketToken: string;
       };
-      customBotSeatToken: string | null;
       matchStatus: GameSnapshot;
       state: SerializedGameState;
       shareUrl?: string;
@@ -261,4 +255,37 @@ export interface PastGamesResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+
+// ============================================================================
+// Bot API Types (Proactive Bot Protocol v2)
+// ============================================================================
+
+export const botsQuerySchema = z.object({
+  variant: z.enum(variantValues),
+  timeControl: z.enum(timeControlValues),
+  boardWidth: z.coerce.number().int().min(3).max(20).optional(),
+  boardHeight: z.coerce.number().int().min(3).max(20).optional(),
+});
+
+export const createBotGameSchema = z.object({
+  /** Composite bot ID: clientId:botId */
+  botId: z.string(),
+  config: z.object({
+    timeControl: timeControlSchema,
+    variant: z.enum(variantValues),
+    boardWidth: z.number().int().min(3).max(20),
+    boardHeight: z.number().int().min(3).max(20),
+  }),
+  hostDisplayName: z.string().max(50).optional(),
+  hostAppearance: appearanceSchema,
+});
+
+export interface CreateBotGameResponse {
+  gameId: string;
+  token: string;
+  socketToken: string;
+  role: GameRole;
+  playerId: PlayerId;
+  shareUrl?: string;
 }

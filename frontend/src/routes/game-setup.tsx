@@ -11,6 +11,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { PlayerConfiguration } from "@/components/player-configuration";
+import { BotsTable } from "@/components/bots-table";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
@@ -45,6 +46,7 @@ import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { createGameSession, joinGameSession } from "@/lib/api";
 import { saveGameHandshake, clearGameHandshake } from "@/lib/game-session";
+import { usePlayVsBotMutation } from "@/hooks/use-bots";
 
 export const Route = createFileRoute("/game-setup")({
   component: GameSetup,
@@ -68,7 +70,8 @@ function getPlayerCountForVariant(variant: Variant): number {
 function getDefaultOtherPlayerType(mode?: string): PlayerType {
   switch (mode) {
     case "vs-ai":
-      return "custom-bot";
+      // In V2, bots are selected from the bots table, not as a player type
+      return "you";
     case "with-others":
       return "matched-user";
     case "invite-friend":
@@ -92,11 +95,7 @@ function buildDefaultPlayerConfigs(
   return newConfigs;
 }
 
-const PLAYER_B_BASE_OPTIONS: PlayerType[] = [
-  "friend",
-  "matched-user",
-  "custom-bot",
-];
+const PLAYER_B_BASE_OPTIONS: PlayerType[] = ["friend", "matched-user"];
 
 const PLAYER_B_ALLOWED_OPTIONS: PlayerType[] = [
   "you",
@@ -201,6 +200,8 @@ function GameSetup() {
   const settings = useSettings(isLoggedIn, userPending);
   const [isCreatingGame, setIsCreatingGame] = useState(false);
   const [createGameError, setCreateGameError] = useState<string | null>(null);
+  const [botGameError, setBotGameError] = useState<string | null>(null);
+  const playVsBotMutation = usePlayVsBotMutation();
 
   // TODO: Get user rating from API when backend is ready
   // Ratings are variant and time control specific, so we'll need to fetch the appropriate rating
@@ -248,7 +249,6 @@ function GameSetup() {
     setPlayerConfigs(buildDefaultPlayerConfigs(gameConfig.variant, mode));
   }, [gameConfig.variant, mode]);
 
-  const playerBType = playerConfigs[1];
   const playerBLabelOverrides = { you: "Also you" } as const;
 
   // Check if rated games are allowed (only vs friend/matched user, no bots)
@@ -372,11 +372,11 @@ function GameSetup() {
 
   const handleCreateGame = async () => {
     setCreateGameError(null);
+    setBotGameError(null);
     const isFriendGame = playerConfigs.includes("friend");
     const isMatchmakingGame = playerConfigs.includes("matched-user");
-    const isCustomBotGame = playerBType === "custom-bot";
 
-    if (isFriendGame || isMatchmakingGame || isCustomBotGame) {
+    if (isFriendGame || isMatchmakingGame) {
       setIsCreatingGame(true);
       try {
         const matchType = isMatchmakingGame ? "matchmaking" : "friend";
@@ -390,7 +390,6 @@ function GameSetup() {
             mouseSkin: settings.mousePawn,
             homeSkin: settings.homePawn,
           },
-          joinerConfig: isCustomBotGame ? { type: "custom-bot" } : undefined,
         });
         // Get host's playerId from the snapshot (server randomly assigns Player 1 or 2)
         const hostPlayer = response.snapshot.players.find(
@@ -404,7 +403,6 @@ function GameSetup() {
           role: "host",
           playerId: hostPlayerId,
           shareUrl: response.shareUrl,
-          customBotSeatToken: response.customBotSeatToken,
         });
         void navigate({ to: `/game/${response.gameId}` });
       } catch (error) {
@@ -419,6 +417,7 @@ function GameSetup() {
       return;
     }
 
+    // Local games (you vs you, etc.)
     const gameId = Math.random().toString(36).substring(2, 15);
     if (typeof window !== "undefined") {
       sessionStorage.setItem(
@@ -606,6 +605,7 @@ function GameSetup() {
     if (isJoiningGame) return;
     setIsJoiningGame(gameId);
     setCreateGameError(null);
+    setBotGameError(null);
 
     try {
       const response = await joinGameSession({
@@ -631,7 +631,6 @@ function GameSetup() {
         role: response.role,
         playerId: response.playerId,
         shareUrl: response.shareUrl,
-        customBotSeatToken: null,
       });
 
       void navigate({ to: `/game/${gameId}` });
@@ -643,6 +642,43 @@ function GameSetup() {
       );
     } finally {
       setIsJoiningGame(null);
+    }
+  };
+
+  const handlePlayBot = async (args: {
+    botId: string;
+    config: GameConfiguration;
+  }) => {
+    if (playVsBotMutation.isPending) return;
+    setBotGameError(null);
+    try {
+      const response = await playVsBotMutation.mutateAsync({
+        botId: args.botId,
+        config: args.config,
+        hostDisplayName: settings.displayName,
+        hostAppearance: {
+          pawnColor: settings.pawnColor,
+          catSkin: settings.catPawn,
+          mouseSkin: settings.mousePawn,
+          homeSkin: settings.homePawn,
+        },
+      });
+
+      saveGameHandshake({
+        gameId: response.gameId,
+        token: response.token,
+        socketToken: response.socketToken,
+        role: response.role,
+        playerId: response.playerId,
+        shareUrl: response.shareUrl,
+      });
+      void navigate({ to: `/game/${response.gameId}` });
+    } catch (error) {
+      setBotGameError(
+        error instanceof Error
+          ? error.message
+          : "Unable to start a bot game right now.",
+      );
     }
   };
 
@@ -881,6 +917,22 @@ function GameSetup() {
               </div>
             )}
           </Card>
+
+          <BotsTable
+            config={gameConfig}
+            onPlayBot={(args) => {
+              void handlePlayBot(args);
+            }}
+            onRecommendedSelect={(boardWidth, boardHeight) =>
+              handleGameConfigChange({
+                ...gameConfig,
+                boardWidth,
+                boardHeight,
+              })
+            }
+            isPlaying={playVsBotMutation.isPending}
+            errorMessage={botGameError}
+          />
 
           {/* Join Game Section */}
           <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">

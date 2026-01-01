@@ -1,50 +1,91 @@
 /**
- * Custom Bot Server <-> Client Protocol
+ * Proactive Bot Protocol (v2)
  *
- * This protocol follows a strict REQUEST → RESPONSE model:
+ * Bot clients connect proactively to the server without needing a per-game token.
+ * Upon connection, the client registers one or more bots with their supported
+ * game configurations. Connected bots are listed in the UI for users to play against.
+ *
+ * This protocol follows a strict REQUEST -> RESPONSE model:
  * - The server sends requests when it needs a decision from the bot
  * - The client is idle unless there is an outstanding request
  * - Each request represents a single decision window
- * - Only one request is valid at a time; new requests invalidate prior ones
+ * - Only one request is valid at a time per client; new requests invalidate prior ones
  */
 
 import type {
   SerializedGameState,
-  GameSnapshot,
   PlayerId,
   Variant,
+  TimeControlPreset,
 } from "../domain/game-types";
 
 // ============================================================================
 // Protocol Version
 // ============================================================================
 
-export const CUSTOM_BOT_PROTOCOL_VERSION = 1;
+export const CUSTOM_BOT_PROTOCOL_VERSION = 2;
+
+// ============================================================================
+// Bot Configuration Types
+// ============================================================================
+
+/** Range of supported board dimensions */
+export interface BoardDimensionRange {
+  min: number;
+  max: number;
+}
+
+/** Recommended settings for a variant (shown in UI "Recommended" tab) */
+export interface RecommendedSettings {
+  boardWidth: number;
+  boardHeight: number;
+}
+
+/** Configuration for a specific variant */
+export interface VariantConfig {
+  timeControls: TimeControlPreset[];
+  boardWidth: BoardDimensionRange;
+  boardHeight: BoardDimensionRange;
+  /** 1-3 recommended settings for this variant. Empty for variants without variant-specific settings. */
+  recommended: RecommendedSettings[];
+}
+
+/** Visual appearance of a bot */
+export interface BotAppearance {
+  color?: string;
+  catStyle?: string;
+  mouseStyle?: string;
+  homeStyle?: string;
+}
+
+/** Configuration for a single bot */
+export interface BotConfig {
+  /** Unique identifier for this bot within the client */
+  botId: string;
+  /** Display name shown to users */
+  name: string;
+  /** If set, identifies this as an official bot. Omit for non-official bots. */
+  officialToken?: string;
+  /** If set, this bot is only visible to this user (case-insensitive). Null for public bots. */
+  username: string | null;
+  /** Visual appearance preferences */
+  appearance?: BotAppearance;
+  /** Supported variants and their configurations */
+  variants: Partial<Record<Variant, VariantConfig>>;
+}
 
 // ============================================================================
 // Shared Types
 // ============================================================================
 
-export interface CustomBotSeatIdentity {
-  role: "host" | "joiner";
-  playerId: PlayerId;
-}
-
 export interface CustomBotServerLimits {
   maxMessageBytes: number;
   minClientMessageIntervalMs: number;
-  maxInvalidMessages: number;
 }
 
 export interface CustomBotClientInfo {
   name: string;
   version: string;
-}
-
-export interface CustomBotSupportedGame {
-  variants: Variant[];
-  maxBoardWidth: number;
-  maxBoardHeight: number;
 }
 
 // ============================================================================
@@ -55,10 +96,9 @@ export interface CustomBotSupportedGame {
  * Request kinds determine what actions are valid in the response.
  *
  * - "move": Bot must make a move or resign. It's the bot's turn.
- * - "draw": Opponent offered a draw. Bot can accept or decline.
- * - "rematch": Game is over. Opponent offered a rematch. Bot can accept or decline.
+ * - "draw": Opponent offered a draw. Bot must accept or decline.
  */
-export type BotRequestKind = "move" | "draw" | "rematch";
+export type BotRequestKind = "move" | "draw";
 
 // ============================================================================
 // Client -> Server Messages
@@ -67,9 +107,11 @@ export type BotRequestKind = "move" | "draw" | "rematch";
 export interface AttachMessage {
   type: "attach";
   protocolVersion: number;
-  seatToken: string;
-  supportedGame: CustomBotSupportedGame;
-  /** Required client identification (used for logging/debugging). */
+  /** Client-chosen identifier. If another client connects with the same ID, this connection is force-closed. */
+  clientId: string;
+  /** Array of bots served by this client. Cannot be empty. */
+  bots: BotConfig[];
+  /** Client identification for logging/debugging */
   client: CustomBotClientInfo;
 }
 
@@ -78,15 +120,12 @@ export interface AttachMessage {
  * The valid actions depend on the request kind:
  * - "move" request: action must be "move" or "resign"
  * - "draw" request: action must be "accept-draw" or "decline-draw"
- * - "rematch" request: action must be "accept-rematch" or "decline-rematch"
  */
 export type BotResponseAction =
   | { action: "move"; moveNotation: string }
   | { action: "resign" }
   | { action: "accept-draw" }
-  | { action: "decline-draw" }
-  | { action: "accept-rematch" }
-  | { action: "decline-rematch" };
+  | { action: "decline-draw" };
 
 export interface BotResponseMessage {
   type: "response";
@@ -105,24 +144,15 @@ export interface AttachedMessage {
   protocolVersion: number;
   serverTime: number;
   server: { name: string; version: string };
-  match: {
-    matchId: string;
-    gameId: string;
-    seat: CustomBotSeatIdentity;
-  };
-  /** Initial game state at time of attachment */
-  state: SerializedGameState;
-  /** Match metadata at time of attachment */
-  snapshot: GameSnapshot;
   limits: CustomBotServerLimits;
 }
 
 export type AttachRejectedCode =
-  | "INVALID_TOKEN"
-  | "TOKEN_ALREADY_USED"
-  | "SEAT_NOT_CUSTOM_BOT"
-  | "SEAT_ALREADY_CONNECTED"
-  | "UNSUPPORTED_GAME_CONFIG"
+  | "NO_BOTS"
+  | "INVALID_BOT_CONFIG"
+  | "INVALID_OFFICIAL_TOKEN"
+  | "DUPLICATE_BOT_ID"
+  | "TOO_MANY_CLIENTS"
   | "PROTOCOL_UNSUPPORTED"
   | "INVALID_MESSAGE"
   | "INTERNAL_ERROR";
@@ -133,37 +163,36 @@ export interface AttachRejectedMessage {
   message: string;
 }
 
-/**
- * Server request for a decision from the bot.
- * The bot must respond with a matching action type.
- */
-export interface RequestMessage {
+/** Base fields for all request messages */
+interface RequestMessageBase {
   type: "request";
   requestId: string;
+  /** Which bot this request is for (matches botId from attachment) */
+  botId: string;
+  /** The game this request is for */
+  gameId: string;
   serverTime: number;
-  kind: BotRequestKind;
+  /** The PlayerId the bot is playing as in this game (1 or 2) */
+  playerId: PlayerId;
+  /** Opponent's display name (for logging) */
+  opponentName: string;
   /** Current game state - always included */
   state: SerializedGameState;
-  /** Match metadata */
-  snapshot: GameSnapshot;
-  /** For draw requests: who offered the draw */
-  offeredBy?: PlayerId;
 }
 
-/**
- * Sent when a rematch game starts.
- * After this, the bot should wait for a new request if it's their turn.
- */
-export interface RematchStartedMessage {
-  type: "rematch-started";
-  serverTime: number;
-  matchId: string;
-  newGameId: string;
-  seat: CustomBotSeatIdentity;
-  /** Initial state of the new game */
-  state: SerializedGameState;
-  snapshot: GameSnapshot;
+/** Request for the bot to make a move */
+export interface MoveRequestMessage extends RequestMessageBase {
+  kind: "move";
 }
+
+/** Request for the bot to respond to a draw offer */
+export interface DrawRequestMessage extends RequestMessageBase {
+  kind: "draw";
+  /** Who offered the draw */
+  offeredBy: PlayerId;
+}
+
+export type RequestMessage = MoveRequestMessage | DrawRequestMessage;
 
 export type NackCode =
   | "NOT_ATTACHED"
@@ -194,7 +223,6 @@ export type CustomBotServerMessage =
   | AttachedMessage
   | AttachRejectedMessage
   | RequestMessage
-  | RematchStartedMessage
   | AckMessage
   | NackMessage;
 
@@ -205,5 +233,27 @@ export type CustomBotServerMessage =
 export const DEFAULT_BOT_LIMITS: CustomBotServerLimits = {
   maxMessageBytes: 65536, // 64 KiB
   minClientMessageIntervalMs: 200, // 1 message per 200ms
-  maxInvalidMessages: 10,
 };
+
+// ============================================================================
+// Bot Listing Types (for API responses)
+// ============================================================================
+
+/** Bot info as returned by the listing API */
+export interface ListedBot {
+  /** Composite ID: clientId:botId */
+  id: string;
+  clientId: string;
+  botId: string;
+  name: string;
+  isOfficial: boolean;
+  appearance: BotAppearance;
+  variants: Partial<Record<Variant, VariantConfig>>;
+}
+
+/** A recommended bot entry (bot + specific settings) */
+export interface RecommendedBotEntry {
+  bot: ListedBot;
+  boardWidth: number;
+  boardHeight: number;
+}

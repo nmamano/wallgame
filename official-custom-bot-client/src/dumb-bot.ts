@@ -36,7 +36,7 @@ export function handleDumbBotRequest(request: EngineRequest): EngineResponse {
 
   // kind === "move"
   const state = request.state;
-  const myPlayerId = request.seat.playerId;
+  const myPlayerId = request.playerId;
 
   const grid = reconstructGrid(state);
   const myCatPos = state.pawns[myPlayerId].cat as Cell;
