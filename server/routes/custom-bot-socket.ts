@@ -969,6 +969,18 @@ export const notifyBotGameEnded = (
   trySendNextRequest(clientId);
 };
 
+/**
+ * Clear pending bot requests for a game without ending it.
+ */
+export const cancelBotRequestsForGame = (
+  compositeId: string,
+  gameId: string,
+): void => {
+  const [clientId] = compositeId.split(":");
+  removeRequestsForGame(clientId, gameId);
+  trySendNextRequest(clientId);
+};
+
 // ============================================================================
 // Message Parsing and Handling
 // ============================================================================
