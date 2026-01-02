@@ -235,6 +235,9 @@ function GamePage() {
                     timeLeft={
                       timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
                     }
+                    goalDistance={
+                      timers.goalDistances[timers.topPlayer.playerId] ?? null
+                    }
                     score={timers.getPlayerMatchScore(timers.topPlayer)}
                     gameStatus={board.gameStatus}
                   />
@@ -294,6 +297,9 @@ function GamePage() {
                     timeLeft={
                       timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??
                       0
+                    }
+                    goalDistance={
+                      timers.goalDistances[timers.bottomPlayer.playerId] ?? null
                     }
                     score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                     gameStatus={board.gameStatus}
