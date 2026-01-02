@@ -1366,7 +1366,7 @@ export function Board({
 
   return (
     <div
-      className={`flex items-center justify-center ${className} ${maxWidth}`}
+      className={`flex items-center justify-center w-full ${className} ${maxWidth}`}
     >
       <div
         className="rounded-lg p-2.5 lg:p-4 bg-amber-100 dark:bg-card w-full h-auto"
