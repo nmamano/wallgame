@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Bot, User } from "lucide-react";
+import { Bot, Flag, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
 import { resolvePawnStyleSrc } from "@/lib/pawn-style";
 import type { PlayerId } from "../../../shared/domain/game-types";
@@ -22,6 +22,7 @@ interface PlayerTimerCardProps {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
+  goalDistance: number | null;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
 }
@@ -36,6 +37,7 @@ export function PlayerTimerCard({
   player,
   isActive,
   timeLeft,
+  goalDistance,
   score = null,
   gameStatus = "playing",
 }: PlayerTimerCardProps) {
@@ -51,6 +53,16 @@ export function PlayerTimerCard({
 
   // Suppress active highlighting when game is finished (nobody's turn)
   const shouldShowActiveState = gameStatus !== "finished" && isActive;
+  const goalDistanceLabel =
+    goalDistance == null
+      ? "--"
+      : goalDistance < 0
+        ? "No path"
+        : `${goalDistance}`;
+  const scoreLabel = typeof score === "number" ? `${score}` : "--";
+  const middleBadgeClass = shouldShowActiveState
+    ? "border-accent/60 bg-accent/20 text-foreground/80"
+    : "border-border/60 bg-muted/40 text-muted-foreground";
 
   return (
     <div
@@ -60,8 +72,8 @@ export function PlayerTimerCard({
           : "bg-card/50 backdrop-blur border border-border"
       }`}
     >
-      {/* Left side: Profile pic, Name/Rating/Online, Score card */}
-      <div className="flex items-center gap-2 lg:gap-3 min-w-0 flex-1">
+      {/* Left side: Profile pic, Name/Rating/Online */}
+      <div className="flex items-center gap-2 lg:gap-3 min-w-0">
         {/* Profile pic */}
         <div
           className="w-8 h-8 lg:w-10 lg:h-10 rounded-full flex items-center justify-center flex-shrink-0"
@@ -106,16 +118,30 @@ export function PlayerTimerCard({
             {player.isOnline ? "Online" : "Offline"}
           </div>
         </div>
+      </div>
 
-        {/* Match score card */}
-        {typeof score === "number" && (
-          <Badge
-            variant="outline"
-            className="text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 flex-shrink-0 bg-card/50 border-border h-5 lg:h-auto"
-          >
-            Score {score}
-          </Badge>
-        )}
+      {/* Middle: Match score and distance */}
+      <div className="flex-1 min-w-0 px-1 lg:px-2">
+        <div className="grid grid-cols-2 gap-2 lg:gap-3">
+          <div className="flex items-center justify-center">
+            <Badge
+              variant="outline"
+              className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
+            >
+              Match Score: {scoreLabel}
+            </Badge>
+          </div>
+          <div className="flex items-center justify-center">
+            <Badge
+              variant="outline"
+              className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
+              title="Distance to goal"
+            >
+              <Flag className="w-3 h-3 mr-1" />
+              Distance {goalDistanceLabel}
+            </Badge>
+          </div>
+        </div>
       </div>
 
       {/* Right side: Timer */}

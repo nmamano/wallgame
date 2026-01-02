@@ -3456,6 +3456,31 @@ export function useGamePageController(gameId: string) {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [gameState, clockTick]);
 
+  const goalDistances = useMemo(() => {
+    const base: Record<PlayerId, number | null> = {
+      1: null,
+      2: null,
+    };
+    const sourceState =
+      viewingHistory || !previewState
+        ? (historyState ?? gameState)
+        : previewState;
+    if (!sourceState) {
+      return base;
+    }
+    const goalFor = (playerId: PlayerId) => {
+      const opponentId: PlayerId = playerId === 1 ? 2 : 1;
+      return sourceState.grid.distance(
+        sourceState.pawns[playerId].cat,
+        sourceState.pawns[opponentId].mouse,
+      );
+    };
+    return {
+      1: goalFor(1),
+      2: goalFor(2),
+    };
+  }, [gameState, historyState, previewState, viewingHistory]);
+
   const winnerPlayer =
     gameResult?.winner != null
       ? (players.find((p) => p.playerId === gameResult.winner) ?? null)
@@ -3877,6 +3902,7 @@ export function useGamePageController(gameId: string) {
     displayedTimeLeft,
     gameTurn,
     getPlayerMatchScore,
+    goalDistances,
   };
 
   const actionsSection = {
