@@ -778,8 +778,15 @@ export function useMetaGameActions({
       setActionError("Game is still loading.");
       return;
     }
-    if (currentState.history.length === 0) {
+    const historyLength = currentState.history.length;
+    if (historyLength === 0) {
       setActionError("There are no moves to take back yet.");
+      return;
+    }
+    const hasRequesterMove =
+      requesterId === 1 ? historyLength >= 1 : historyLength >= 2;
+    if (!hasRequesterMove) {
+      setActionError("You need to make a move before requesting a takeback.");
       return;
     }
     if (pendingTakebackRequest) {
@@ -787,7 +794,7 @@ export function useMetaGameActions({
       return;
     }
     const responderId: PlayerId = requesterId === 1 ? 2 : 1;
-    const historyLengthAtRequest = currentState.history.length;
+    const historyLengthAtRequest = historyLength;
     const requesterController = getSeatController(requesterId);
     if (!requesterController) {
       setActionError(

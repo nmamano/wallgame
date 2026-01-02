@@ -3508,7 +3508,13 @@ export function useGamePageController(gameId: string) {
     pendingTakebackRequest?.status === "pending" &&
     actionPanelPlayerId != null &&
     pendingTakebackRequest.actorSeatId === actionPanelPlayerId;
-  const hasTakebackHistory = (gameState?.history.length ?? 0) > 0;
+  const takebackHistoryLength = gameState?.history.length ?? 0;
+  const hasTakebackHistory =
+    actionPanelPlayerId != null
+      ? actionPanelPlayerId === 1
+        ? takebackHistoryLength >= 1
+        : takebackHistoryLength >= 2
+      : false;
   const actionPanelLocked =
     Boolean(metaGameActions.resignFlowPlayerId) ||
     Boolean(metaGameActions.drawDecisionPrompt) ||

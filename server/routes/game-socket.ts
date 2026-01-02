@@ -45,6 +45,7 @@ import {
   queueBotMoveRequest,
   queueBotDrawRequest,
   notifyBotGameEnded,
+  cancelBotRequestsForGame,
 } from "./custom-bot-socket";
 import { addActiveGame } from "../games/custom-bot-store";
 
@@ -90,6 +91,18 @@ const notifyBotsGameEnded = (sessionId: string): void => {
   }
   if (joiner.botCompositeId) {
     notifyBotGameEnded(joiner.botCompositeId, sessionId);
+  }
+};
+
+const cancelBotRequestsForSession = (sessionId: string): void => {
+  const session = getSession(sessionId);
+  const { host, joiner } = session.players;
+
+  if (host.botCompositeId) {
+    cancelBotRequestsForGame(host.botCompositeId, sessionId);
+  }
+  if (joiner.botCompositeId) {
+    cancelBotRequestsForGame(joiner.botCompositeId, sessionId);
   }
 };
 
@@ -621,6 +634,29 @@ const handleTakebackOffer = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "takeback-offer");
   if (playerId === null || socket.socketToken === null) return;
 
+  const session = getSession(socket.sessionId);
+  const opponentRole = socket.role === "host" ? "joiner" : "host";
+  const opponent =
+    opponentRole === "host" ? session.players.host : session.players.joiner;
+
+  if (opponent.botCompositeId) {
+    acceptTakeback({
+      id: socket.sessionId,
+      playerId: opponent.playerId,
+    });
+    cancelBotRequestsForSession(socket.sessionId);
+    console.info("[ws] takeback-offer auto-accepted (bot opponent)", {
+      sessionId: socket.sessionId,
+      playerId,
+      botCompositeId: opponent.botCompositeId,
+    });
+    broadcast(socket.sessionId, {
+      type: "state",
+      state: getSerializedState(socket.sessionId),
+    });
+    return;
+  }
+
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "takeback-offer",
     playerId,
@@ -639,6 +675,7 @@ const handleTakebackAccept = (socket: SessionSocket) => {
     id: socket.sessionId,
     playerId,
   });
+  cancelBotRequestsForSession(socket.sessionId);
   console.info("[ws] takeback-accept processed", {
     sessionId: socket.sessionId,
     playerId,
@@ -1209,6 +1246,31 @@ const handleActionRequest = async (
       const playerId = ensureAuthorizedPlayer(socket, "takeback-offer");
       if (playerId === null || socket.socketToken === null) {
         sendActionNack(socket, message, "UNAUTHORIZED");
+        return;
+      }
+      const session = getSession(socket.sessionId);
+      const opponentRole = socket.role === "host" ? "joiner" : "host";
+      const opponent =
+        opponentRole === "host" ? session.players.host : session.players.joiner;
+      if (opponent.botCompositeId) {
+        acceptTakeback({
+          id: socket.sessionId,
+          playerId: opponent.playerId,
+        });
+        cancelBotRequestsForSession(socket.sessionId);
+        sendActionAck(socket, message);
+        console.info(
+          "[ws] action-requestTakeback auto-accepted (bot opponent)",
+          {
+            sessionId: socket.sessionId,
+            playerId,
+            botCompositeId: opponent.botCompositeId,
+          },
+        );
+        broadcast(socket.sessionId, {
+          type: "state",
+          state: getSerializedState(socket.sessionId),
+        });
         return;
       }
       sendToOpponent(socket.sessionId, socket.socketToken, {
