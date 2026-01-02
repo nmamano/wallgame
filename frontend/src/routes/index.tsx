@@ -197,9 +197,16 @@ function Index() {
         <div className="container mx-auto px-4 py-12">
           <div className="text-center text-sm text-muted-foreground">
             <p className="mb-2">
-              Wall Game is inspired by Quoridor and Blockade
+              Created by{" "}
+              <a
+                href="https://nilmamano.com"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-primary transition-colors"
+              >
+                Nil Mamano.
+              </a>
             </p>
-            <p>Built with strategy, played with elegance</p>
           </div>
         </div>
       </footer>
