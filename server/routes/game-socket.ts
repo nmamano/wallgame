@@ -24,6 +24,7 @@ import {
   processRatingUpdate,
   type SessionPlayer,
   assignChatGuestIndex,
+  registerTimeoutCallback,
 } from "../games/store";
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
@@ -473,6 +474,39 @@ const parseMessage = (raw: string | ArrayBuffer) => {
   }
   return JSON.parse(raw) as ClientMessage;
 };
+
+/**
+ * Handle timeout when the server-side timer fires.
+ * Registered as a callback with the store module.
+ */
+const handleTimeoutFromTimer = async (sessionId: string): Promise<void> => {
+  // Process rating update
+  await processRatingUpdate(sessionId);
+  try {
+    await persistCompletedGame(getSession(sessionId));
+  } catch (error) {
+    console.error("[persistence] failed after timeout", {
+      error,
+      sessionId,
+    });
+  }
+
+  // Broadcast removal from live games list
+  broadcastLiveGamesRemove(sessionId);
+
+  // Notify any bot players that the game ended
+  notifyBotsGameEnded(sessionId);
+
+  // Broadcast final state and match status to all connected clients
+  broadcast(sessionId, {
+    type: "state",
+    state: getSerializedState(sessionId),
+  });
+  sendMatchStatus(sessionId);
+};
+
+// Register the timeout callback so timers can trigger broadcasts
+registerTimeoutCallback(handleTimeoutFromTimer);
 
 const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (message.type !== "submit-move") return;

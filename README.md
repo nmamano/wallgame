@@ -64,6 +64,7 @@ fly deploy
 ```
 
 This builds the Docker image automatically.
+Migrations run automatically on deploy via `release_command = "bun run migrate"` in `fly.toml`.
 
 Upload secrets to fly (you need to redeploy after updating the secrets):
 
