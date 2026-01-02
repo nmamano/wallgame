@@ -214,6 +214,11 @@ export interface LiveGamesResponse {
 // Past Games Types
 // ============================================================================
 
+export interface GameShowcaseResponse {
+  matchStatus: GameSnapshot;
+  state: SerializedGameState;
+}
+
 export const pastGamesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),
   pageSize: z.coerce.number().int().min(1).max(100).default(100),

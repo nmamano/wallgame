@@ -29,7 +29,11 @@ import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
-import { getReplayGame, queryPastGames } from "../db/game-queries";
+import {
+  getRandomShowcaseGame,
+  getReplayGame,
+  queryPastGames,
+} from "../db/game-queries";
 import {
   getMatchingBots,
   getRecommendedBots,
@@ -81,6 +85,21 @@ export const gamesRoute = new Hono()
       return c.json({ games });
     } catch (error) {
       console.error("Failed to list live games:", error);
+      return c.json({ error: "Internal server error" }, 500);
+    }
+  })
+  .get("/showcase", async (c) => {
+    try {
+      const replay = await getRandomShowcaseGame();
+      if (!replay) {
+        return c.json({ error: "No showcase games available" }, 404);
+      }
+      return c.json({
+        matchStatus: replay.matchStatus,
+        state: replay.state,
+      });
+    } catch (error) {
+      console.error("Failed to fetch showcase game:", error);
       return c.json({ error: "Internal server error" }, 500);
     }
   })

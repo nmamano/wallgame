@@ -85,6 +85,20 @@
       "when": 1767304257512,
       "tag": "0011_stormy_the_anarchist",
       "breakpoints": true
+    },
+    {
+      "idx": 12,
+      "version": "7",
+      "when": 1767304257513,
+      "tag": "0012_showcase_player_snapshots",
+      "breakpoints": true
+    },
+    {
+      "idx": 13,
+      "version": "7",
+      "when": 1767304257514,
+      "tag": "0013_backfill_showcase_player_snapshots",
+      "breakpoints": true
     }
   ]
 }

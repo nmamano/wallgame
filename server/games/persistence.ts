@@ -6,7 +6,10 @@ import { userAuthTable } from "../db/schema/users";
 import { eq } from "drizzle-orm";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type { GameSession, SessionPlayer } from "./store";
-import type { PlayerId } from "../../shared/domain/game-types";
+import type {
+  PlayerAppearance,
+  PlayerId,
+} from "../../shared/domain/game-types";
 
 const resolveUserId = async (
   authUserId: string | undefined,
@@ -58,6 +61,27 @@ const normalizeRating = (rating: number | undefined): number | null => {
     return null;
   }
   return Math.round(rating);
+};
+
+const normalizeAppearance = (
+  appearance: PlayerAppearance | undefined,
+): {
+  pawnColor: string;
+  catSkin: string;
+  mouseSkin: string;
+  homeSkin: string;
+} => {
+  const pawnColor = appearance?.pawnColor?.trim();
+  const catSkin = appearance?.catSkin?.trim();
+  const mouseSkin = appearance?.mouseSkin?.trim();
+  const homeSkin = appearance?.homeSkin?.trim();
+
+  return {
+    pawnColor: pawnColor && pawnColor.length > 0 ? pawnColor : "default",
+    catSkin: catSkin && catSkin.length > 0 ? catSkin : "default",
+    mouseSkin: mouseSkin && mouseSkin.length > 0 ? mouseSkin : "default",
+    homeSkin: homeSkin && homeSkin.length > 0 ? homeSkin : "default",
+  };
 };
 
 export const persistCompletedGame = async (
@@ -124,9 +148,11 @@ export const persistCompletedGame = async (
         playerOrder: session.players.host.playerId,
         playerRole: session.players.host.role,
         playerConfigType: buildPlayerConfigType(session, session.players.host),
+        displayName: session.players.host.displayName,
         userId: hostUserId,
         botId: getBotId(session.players.host.botCompositeId),
         ratingAtStart: normalizeRating(session.players.host.ratingAtStart),
+        ...normalizeAppearance(session.players.host.appearance),
         outcomeRank: buildOutcomeRank(winner, session.players.host.playerId),
         outcomeReason,
       },
@@ -138,9 +164,11 @@ export const persistCompletedGame = async (
           session,
           session.players.joiner,
         ),
+        displayName: session.players.joiner.displayName,
         userId: joinerUserId,
         botId: getBotId(session.players.joiner.botCompositeId),
         ratingAtStart: normalizeRating(session.players.joiner.ratingAtStart),
+        ...normalizeAppearance(session.players.joiner.appearance),
         outcomeRank: buildOutcomeRank(winner, session.players.joiner.playerId),
         outcomeReason,
       },
