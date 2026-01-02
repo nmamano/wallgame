@@ -1,6 +1,6 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
-import { useNavigate } from "@tanstack/react-router";
+import { useNavigate, useRouterState } from "@tanstack/react-router";
 import {
   type BoardProps,
   type Arrow,
@@ -76,6 +76,7 @@ import {
 import { SpectatorSession } from "@/lib/spectator-controller";
 import { describeControllerError } from "@/lib/controller-errors";
 import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
+import { parseReplayNavState } from "@/lib/navigation-state";
 import {
   canEnqueue,
   enqueueToggle,
@@ -246,6 +247,11 @@ export function useGamePageController(gameId: string) {
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
   const navigate = useNavigate();
+  const router = useRouterState();
+  const replayPlyIndex = useMemo(
+    () => parseReplayNavState(router.location.state),
+    [router.location.state],
+  );
 
   // Sound settings from global provider (persisted to localStorage)
   const {
@@ -660,6 +666,10 @@ export function useGamePageController(gameId: string) {
   const latestStagedActionsRef = useRef<Action[]>([]);
   const previousHistoryCursorRef = useRef<number | null>(null);
   const previousHistoryLengthRef = useRef(0);
+  const replayCursorAppliedRef = useRef<{
+    gameInstanceId: number;
+    applied: boolean;
+  }>({ gameInstanceId: -1, applied: false });
 
   const getSeatController = useCallback((playerId: PlayerId | null) => {
     if (playerId == null) return null;
@@ -1706,7 +1716,30 @@ export function useGamePageController(gameId: string) {
     stagedActionsSnapshotRef.current = null;
     previousHistoryCursorRef.current = null;
     previousHistoryLengthRef.current = 0;
+    replayCursorAppliedRef.current = {
+      gameInstanceId,
+      applied: false,
+    };
   }, [gameInstanceId]);
+
+  useEffect(() => {
+    if (replayPlyIndex == null) return;
+    if (!isReplaySession) return;
+    if (
+      replayCursorAppliedRef.current.applied &&
+      replayCursorAppliedRef.current.gameInstanceId === gameInstanceId
+    ) {
+      return;
+    }
+    if (historyEntryCount === 0 && replayPlyIndex > -1) {
+      return;
+    }
+    setHistoryCursor(replayPlyIndex);
+    replayCursorAppliedRef.current = {
+      gameInstanceId,
+      applied: true,
+    };
+  }, [replayPlyIndex, isReplaySession, historyEntryCount, gameInstanceId]);
 
   const prevMatchingPanelOpenRef = useRef<boolean | null>(null);
   useEffect(() => {

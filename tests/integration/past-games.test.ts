@@ -152,6 +152,8 @@ const buildOpeningMove = (
 
 async function createCompletedGame(args: {
   config: GameConfiguration;
+  hostDisplayName?: string;
+  joinerDisplayName?: string;
   hostAuthUserId?: string;
   joinerAuthUserId?: string;
   startedAt?: number;
@@ -159,14 +161,14 @@ async function createCompletedGame(args: {
   const { session } = createGameSession({
     config: args.config,
     matchType: "friend",
-    hostDisplayName: "host",
+    hostDisplayName: args.hostDisplayName ?? "host",
     hostIsPlayer1: true,
     hostAuthUserId: args.hostAuthUserId,
   });
 
   joinGameSession({
     id: session.id,
-    displayName: "joiner",
+    displayName: args.joinerDisplayName ?? "joiner",
     authUserId: args.joinerAuthUserId,
   });
 
@@ -382,6 +384,8 @@ describe("past games persistence", () => {
       },
       hostAuthUserId: alphaAuth,
       joinerAuthUserId: betaAuth,
+      hostDisplayName: "alpha",
+      joinerDisplayName: "beta",
       startedAt: baseTime,
     });
 
@@ -398,6 +402,7 @@ describe("past games persistence", () => {
         boardHeight: 6,
       },
       hostAuthUserId: alphaAuth,
+      hostDisplayName: "alpha",
       startedAt: baseTime + 1000,
     });
 
@@ -414,6 +419,7 @@ describe("past games persistence", () => {
         boardHeight: 10,
       },
       hostAuthUserId: betaAuth,
+      hostDisplayName: "beta",
       startedAt: baseTime + 2000,
     });
 

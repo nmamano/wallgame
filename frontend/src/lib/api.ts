@@ -20,6 +20,7 @@ import type {
   ReadyGameResponse,
   ResolveGameAccessResponse,
   CreateBotGameResponse,
+  GameShowcaseResponse,
 } from "../../../shared/contracts/games";
 import type {
   ListedBot,
@@ -277,6 +278,10 @@ export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
     api.games.matchmaking.$get(),
   );
   return data.games;
+};
+
+export const fetchShowcaseGame = async (): Promise<GameShowcaseResponse> => {
+  return handleResponse<GameShowcaseResponse>(api.games.showcase.$get());
 };
 
 export const fetchBots = async (args: {

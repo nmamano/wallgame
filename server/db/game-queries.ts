@@ -2,12 +2,6 @@ import { db } from "./index";
 import { gamesTable } from "./schema/games";
 import { gameDetailsTable } from "./schema/game-details";
 import { gamePlayersTable } from "./schema/game-players";
-import { usersTable } from "./schema/users";
-import { builtInBotsTable } from "./schema/built-in-bots";
-import {
-  userPawnSettingsTable,
-  userSettingsTable,
-} from "./schema/user-settings";
 import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
 import { GameState } from "../../shared/domain/game-state";
 import type {
@@ -117,127 +111,60 @@ export interface ReplayGameData {
   views: number;
 }
 
-export const getReplayGame = async (
-  gameId: string,
-): Promise<ReplayGameData | null> => {
-  const [game] = await db
-    .update(gamesTable)
-    .set({
-      views: sql`${gamesTable.views} + 1`,
-    })
-    .where(eq(gamesTable.gameId, gameId))
-    .returning({
-      gameId: gamesTable.gameId,
-      variant: gamesTable.variant,
-      timeControl: gamesTable.timeControl,
-      rated: gamesTable.rated,
-      matchType: gamesTable.matchType,
-      boardWidth: gamesTable.boardWidth,
-      boardHeight: gamesTable.boardHeight,
-      startedAt: gamesTable.startedAt,
-      views: gamesTable.views,
-      movesCount: gamesTable.movesCount,
-    });
+const replayGameSelect = {
+  gameId: gamesTable.gameId,
+  variant: gamesTable.variant,
+  timeControl: gamesTable.timeControl,
+  rated: gamesTable.rated,
+  matchType: gamesTable.matchType,
+  boardWidth: gamesTable.boardWidth,
+  boardHeight: gamesTable.boardHeight,
+  startedAt: gamesTable.startedAt,
+  views: gamesTable.views,
+  movesCount: gamesTable.movesCount,
+};
 
-  if (!game) {
-    return null;
-  }
+interface ReplayGameRow {
+  gameId: string;
+  variant: string;
+  timeControl: string;
+  rated: boolean;
+  matchType: string;
+  boardWidth: number;
+  boardHeight: number;
+  startedAt: Date;
+  views: number;
+  movesCount: number;
+}
 
+const buildReplayGameFromRow = async (
+  game: ReplayGameRow,
+): Promise<ReplayGameData> => {
   const [details] = await db
     .select({
       configParameters: gameDetailsTable.configParameters,
       moves: gameDetailsTable.moves,
     })
     .from(gameDetailsTable)
-    .where(eq(gameDetailsTable.gameId, gameId))
+    .where(eq(gameDetailsTable.gameId, game.gameId))
     .limit(1);
 
   const players = await db
     .select({
       playerOrder: gamePlayersTable.playerOrder,
       playerRole: gamePlayersTable.playerRole,
-      userId: gamePlayersTable.userId,
-      botId: gamePlayersTable.botId,
+      playerConfigType: gamePlayersTable.playerConfigType,
+      displayName: gamePlayersTable.displayName,
       ratingAtStart: gamePlayersTable.ratingAtStart,
+      pawnColor: gamePlayersTable.pawnColor,
+      catSkin: gamePlayersTable.catSkin,
+      mouseSkin: gamePlayersTable.mouseSkin,
+      homeSkin: gamePlayersTable.homeSkin,
       outcomeRank: gamePlayersTable.outcomeRank,
       outcomeReason: gamePlayersTable.outcomeReason,
     })
     .from(gamePlayersTable)
-    .where(eq(gamePlayersTable.gameId, gameId));
-
-  const botIds = players
-    .map((player) => player.botId)
-    .filter((botId): botId is string => typeof botId === "string");
-
-  const botRows =
-    botIds.length > 0
-      ? await db
-          .select({
-            botId: builtInBotsTable.botId,
-            displayName: builtInBotsTable.displayName,
-          })
-          .from(builtInBotsTable)
-          .where(inArray(builtInBotsTable.botId, botIds))
-      : [];
-
-  const botNameMap = new Map(
-    botRows.map((row) => [row.botId, row.displayName]),
-  );
-
-  const userIds = players
-    .map((player) => player.userId)
-    .filter((userId): userId is number => typeof userId === "number");
-
-  const userRows =
-    userIds.length > 0
-      ? await db
-          .select({
-            userId: usersTable.userId,
-            displayName: usersTable.displayName,
-            capitalizedDisplayName: usersTable.capitalizedDisplayName,
-          })
-          .from(usersTable)
-          .where(inArray(usersTable.userId, userIds))
-      : [];
-
-  const settingsRows =
-    userIds.length > 0
-      ? await db
-          .select({
-            userId: userSettingsTable.userId,
-            pawnColor: userSettingsTable.pawnColor,
-          })
-          .from(userSettingsTable)
-          .where(inArray(userSettingsTable.userId, userIds))
-      : [];
-
-  const pawnRows =
-    userIds.length > 0
-      ? await db
-          .select({
-            userId: userPawnSettingsTable.userId,
-            pawnType: userPawnSettingsTable.pawnType,
-            pawnShape: userPawnSettingsTable.pawnShape,
-          })
-          .from(userPawnSettingsTable)
-          .where(inArray(userPawnSettingsTable.userId, userIds))
-      : [];
-
-  const userNameMap = new Map(
-    userRows.map((row) => [
-      row.userId,
-      row.capitalizedDisplayName ?? row.displayName,
-    ]),
-  );
-  const pawnColorMap = new Map(
-    settingsRows.map((row) => [row.userId, row.pawnColor]),
-  );
-  const pawnShapeMap = new Map<number, Record<string, string>>();
-  pawnRows.forEach((row) => {
-    const existing = pawnShapeMap.get(row.userId) ?? {};
-    existing[row.pawnType] = row.pawnShape;
-    pawnShapeMap.set(row.userId, existing);
-  });
+    .where(eq(gamePlayersTable.gameId, game.gameId));
 
   const result = resolveResultFromPlayers(players);
   const matchScore = buildMatchScore(result);
@@ -318,30 +245,22 @@ export const getReplayGame = async (
     createdAt: startTimestamp,
     updatedAt: startTimestamp,
     players: orderedPlayers.map((player) => {
-      const displayName =
-        player.botId != null
-          ? (botNameMap.get(player.botId) ?? `Bot ${player.playerOrder}`)
-          : player.userId != null
-            ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
-            : `Guest ${player.playerOrder}`;
-      const pawnColor =
-        player.userId != null
-          ? (pawnColorMap.get(player.userId) ?? "default")
-          : "default";
-      const pawnShapes =
-        player.userId != null ? (pawnShapeMap.get(player.userId) ?? {}) : {};
+      const pawnColor = player.pawnColor ?? "default";
+      const catSkin = player.catSkin ?? "default";
+      const mouseSkin = player.mouseSkin ?? "default";
+      const homeSkin = player.homeSkin ?? "default";
       return {
         role: player.playerRole as "host" | "joiner",
         playerId: player.playerOrder as PlayerId,
-        displayName,
+        displayName: player.displayName,
         connected: false,
         ready: true,
-        configType: "human",
+        configType: player.playerConfigType === "bot" ? "bot" : "human",
         appearance: {
           pawnColor,
-          catSkin: pawnShapes.cat,
-          mouseSkin: pawnShapes.mouse,
-          homeSkin: pawnShapes.home,
+          catSkin,
+          mouseSkin,
+          homeSkin,
         },
         elo: player.ratingAtStart ?? undefined,
       };
@@ -355,6 +274,40 @@ export const getReplayGame = async (
     views: game.views,
   };
 };
+
+export const getReplayGame = async (
+  gameId: string,
+): Promise<ReplayGameData | null> => {
+  const [game] = await db
+    .update(gamesTable)
+    .set({
+      views: sql`${gamesTable.views} + 1`,
+    })
+    .where(eq(gamesTable.gameId, gameId))
+    .returning(replayGameSelect);
+
+  if (!game) {
+    return null;
+  }
+
+  return buildReplayGameFromRow(game);
+};
+
+export const getRandomShowcaseGame =
+  async (): Promise<ReplayGameData | null> => {
+    const [game] = await db
+      .select(replayGameSelect)
+      .from(gamesTable)
+      .where(gte(gamesTable.movesCount, 10))
+      .orderBy(sql`random()`)
+      .limit(1);
+
+    if (!game) {
+      return null;
+    }
+
+    return buildReplayGameFromRow(game);
+  };
 
 export const queryPastGames = async (args: {
   page: number;
@@ -422,9 +375,8 @@ export const queryPastGames = async (args: {
   const playerFilter = (playerName: string) =>
     sql`EXISTS (
       SELECT 1 FROM ${gamePlayersTable} gp_filter
-      JOIN ${usersTable} u_filter ON gp_filter.user_id = u_filter.user_id
       WHERE gp_filter.game_id = ${gamesTable.gameId}
-        AND u_filter.display_name = ${playerName}
+        AND lower(gp_filter.display_name) = ${playerName}
     )`;
 
   if (args.player1) {
@@ -467,8 +419,7 @@ export const queryPastGames = async (args: {
           .select({
             gameId: gamePlayersTable.gameId,
             playerOrder: gamePlayersTable.playerOrder,
-            userId: gamePlayersTable.userId,
-            botId: gamePlayersTable.botId,
+            displayName: gamePlayersTable.displayName,
             ratingAtStart: gamePlayersTable.ratingAtStart,
             outcomeRank: gamePlayersTable.outcomeRank,
             outcomeReason: gamePlayersTable.outcomeReason,
@@ -476,44 +427,6 @@ export const queryPastGames = async (args: {
           .from(gamePlayersTable)
           .where(inArray(gamePlayersTable.gameId, gameIds))
       : [];
-
-  const userIds = players
-    .map((player) => player.userId)
-    .filter((userId): userId is number => typeof userId === "number");
-  const userRows =
-    userIds.length > 0
-      ? await db
-          .select({
-            userId: usersTable.userId,
-            displayName: usersTable.displayName,
-            capitalizedDisplayName: usersTable.capitalizedDisplayName,
-          })
-          .from(usersTable)
-          .where(inArray(usersTable.userId, userIds))
-      : [];
-  const userNameMap = new Map(
-    userRows.map((row) => [
-      row.userId,
-      row.capitalizedDisplayName ?? row.displayName,
-    ]),
-  );
-
-  const botIds = players
-    .map((player) => player.botId)
-    .filter((botId): botId is string => typeof botId === "string");
-  const botRows =
-    botIds.length > 0
-      ? await db
-          .select({
-            botId: builtInBotsTable.botId,
-            displayName: builtInBotsTable.displayName,
-          })
-          .from(builtInBotsTable)
-          .where(inArray(builtInBotsTable.botId, botIds))
-      : [];
-  const botNameMap = new Map(
-    botRows.map((row) => [row.botId, row.displayName]),
-  );
 
   const playersByGame = new Map<
     string,
@@ -527,15 +440,9 @@ export const queryPastGames = async (args: {
   >();
 
   players.forEach((player) => {
-    const displayName =
-      player.botId != null
-        ? (botNameMap.get(player.botId) ?? `Bot ${player.playerOrder}`)
-        : player.userId != null
-          ? (userNameMap.get(player.userId) ?? `Guest ${player.playerOrder}`)
-          : `Guest ${player.playerOrder}`;
     const entry = {
       playerOrder: player.playerOrder,
-      displayName,
+      displayName: player.displayName,
       ratingAtStart: player.ratingAtStart,
       outcomeRank: player.outcomeRank,
       outcomeReason: player.outcomeReason,

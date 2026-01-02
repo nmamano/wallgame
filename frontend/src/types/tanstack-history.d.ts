@@ -17,5 +17,6 @@ declare module "@tanstack/history" {
       timeControl?: "bullet" | "blitz" | "rapid" | "classical";
       player?: string;
     };
+    replayPlyIndex?: number;
   }
 }

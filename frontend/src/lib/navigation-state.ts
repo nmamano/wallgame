@@ -56,3 +56,21 @@ export const parseRankingNavState = (
   }
   return parsed.data.rankingFilters;
 };
+
+const replayNavStateSchema = z
+  .object({
+    replayPlyIndex: z.number().int().min(-1).optional(),
+  })
+  .passthrough();
+
+export type ReplayNavState = z.infer<typeof replayNavStateSchema>;
+
+export const parseReplayNavState = (
+  state: unknown,
+): ReplayNavState["replayPlyIndex"] => {
+  const parsed = replayNavStateSchema.safeParse(state);
+  if (!parsed.success) {
+    return undefined;
+  }
+  return parsed.data.replayPlyIndex;
+};
