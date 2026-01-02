@@ -155,6 +155,8 @@ const sessions = new Map<string, GameSession>();
 // Timeout Timer Management
 // ============================================================================
 
+const TIMEOUT_FLOOR_MS = 100;
+
 // Map of session ID to timeout timer
 const timeoutTimers = new Map<string, Timer>();
 
@@ -184,6 +186,37 @@ export const clearTimeoutTimer = (sessionId: string): void => {
   }
 };
 
+const getRemainingMs = (state: GameState, playerId: PlayerId): number => {
+  const timeLeftMs = state.timeLeft[playerId] * 1000;
+  const elapsedMs = Date.now() - state.lastMoveTime;
+  return Math.max(0, timeLeftMs - elapsedMs);
+};
+
+const applyTimeoutToSession = (
+  sessionId: string,
+  session: GameSession,
+): void => {
+  const timedOutPlayer = session.gameState.turn;
+  const newState = applyActionToSession(session, {
+    kind: "timeout",
+    playerId: timedOutPlayer,
+    timestamp: Date.now(),
+  });
+
+  console.info("[timeout-timer] timeout applied", {
+    sessionId,
+    timedOutPlayer,
+    result: newState.result,
+  });
+
+  // Invoke the registered callback to handle broadcasts, ratings, etc.
+  if (onTimeoutCallback) {
+    onTimeoutCallback(sessionId, newState).catch((err: unknown) => {
+      console.error("[timeout-timer] callback error", { sessionId, err });
+    });
+  }
+};
+
 /**
  * Set a timeout timer for the current player's remaining time.
  * Called after moves to schedule the next potential timeout.
@@ -205,9 +238,22 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
   }
 
   const currentPlayer = state.turn;
-  const timeLeftMs = state.timeLeft[currentPlayer] * 1000;
-  const elapsedMs = Date.now() - state.lastMoveTime;
-  const remainingMs = Math.max(0, timeLeftMs - elapsedMs);
+  const remainingMs = getRemainingMs(state, currentPlayer);
+
+  // Don't schedule timers for very short durations to avoid race conditions.
+  // If the remaining time is already at/below the floor, time out immediately.
+  if (remainingMs <= TIMEOUT_FLOOR_MS) {
+    console.info(
+      "[timeout-timer] immediate timeout - remaining time too short",
+      {
+        sessionId,
+        player: currentPlayer,
+        remainingMs,
+      },
+    );
+    applyTimeoutToSession(sessionId, session);
+    return;
+  }
 
   // Schedule the timeout
   const timer = setTimeout(() => {
@@ -219,28 +265,26 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
       return;
     }
 
-    // Apply the timeout
-    const newState = applyActionToSession(currentSession, {
-      kind: "timeout",
-      playerId: currentSession.gameState.turn,
-      timestamp: Date.now(),
-    });
+    const currentState = currentSession.gameState;
+    const activePlayer = currentState.turn;
+    const remainingMs = getRemainingMs(currentState, activePlayer);
 
-    console.info("[timeout-timer] timeout applied", {
-      sessionId,
-      timedOutPlayer: currentSession.gameState.turn,
-      result: newState.result,
-    });
-
-    // Invoke the registered callback to handle broadcasts, ratings, etc.
-    if (onTimeoutCallback) {
-      void onTimeoutCallback(sessionId, newState);
+    if (remainingMs > TIMEOUT_FLOOR_MS) {
+      console.info("[timeout-timer] timer fired early - rescheduling", {
+        sessionId,
+        player: activePlayer,
+        remainingMs,
+      });
+      scheduleTimeoutTimer(sessionId);
+      return;
     }
+
+    applyTimeoutToSession(sessionId, currentSession);
   }, remainingMs);
 
   timeoutTimers.set(sessionId, timer);
 
-  console.debug("[timeout-timer] scheduled", {
+  console.info("[timeout-timer] scheduled", {
     sessionId,
     player: currentPlayer,
     remainingMs,
@@ -829,9 +873,9 @@ export const applyPlayerMove = (args: {
   // Check if the player's time has already expired before allowing the move
   const state = session.gameState;
   if (state.moveCount > 0) {
-    const elapsed = (args.timestamp - state.lastMoveTime) / 1000;
-    const currentTimeLeft = state.timeLeft[args.playerId] - elapsed;
-    if (currentTimeLeft <= 0) {
+    const elapsedMs = args.timestamp - state.lastMoveTime;
+    const currentTimeLeftMs = state.timeLeft[args.playerId] * 1000 - elapsedMs;
+    if (currentTimeLeftMs <= TIMEOUT_FLOOR_MS) {
       // Player's time has expired - apply timeout instead of move
       return applyActionToSession(session, {
         kind: "timeout",
