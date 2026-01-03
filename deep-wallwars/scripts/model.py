@@ -5,8 +5,9 @@ input_channels = 8
 
 
 class ResNet(nn.Module):
-    def __init__(self, columns, rows, hidden_channels, layers):
+    def __init__(self, columns, rows, hidden_channels, layers, move_channels=4):
         super().__init__()
+        self.move_channels = move_channels
 
         self.start = nn.Sequential(
             nn.Conv2d(
@@ -23,7 +24,7 @@ class ResNet(nn.Module):
             nn.BatchNorm2d(32),
             nn.ReLU(),
             nn.Flatten(),
-            nn.Linear(32 * columns * rows, 2 * columns * rows + 4),
+            nn.Linear(32 * columns * rows, 2 * columns * rows + move_channels),
         )
 
         self.log_output = True
