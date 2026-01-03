@@ -2,27 +2,15 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import {
-  Table,
-  TableBody,
-  TableCell,
-  TableHead,
-  TableHeader,
-  TableRow,
-} from "@/components/ui/table";
 import { PlayerConfiguration } from "@/components/player-configuration";
-import { BotsTable } from "@/components/bots-table";
+import { ReadyToJoinTable } from "@/components/ready-to-join-table";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
   Variant,
-  TimeControlConfig,
   GameSnapshot,
 } from "../../../shared/domain/game-types";
-import {
-  timeControlConfigFromPreset,
-  formatTimeControl as formatTimeControlUtil,
-} from "../../../shared/domain/game-utils";
+import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import {
   FREESTYLE_BOARD_HEIGHT,
   FREESTYLE_BOARD_WIDTH,
@@ -40,7 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Info, Loader2, RefreshCw } from "lucide-react";
+import { Info, Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
@@ -121,48 +109,6 @@ const isBoardSizeDraft = (value: string): boolean => {
 
 const clampBoardSize = (value: number): number =>
   Math.min(Math.max(value, BOARD_SIZE_MIN), BOARD_SIZE_MAX);
-
-// Helper function to format time control
-function formatTimeControl(timeControl: TimeControlConfig): string {
-  if (timeControl.preset) {
-    const formats: Record<TimeControlPreset, string> = {
-      bullet: "bullet (1+0)",
-      blitz: "blitz (3+2)",
-      rapid: "rapid (10+2)",
-      classical: "classical (30+0)",
-    };
-    return formats[timeControl.preset];
-  }
-  return formatTimeControlUtil(timeControl);
-}
-
-// Helper function to get time control icon path
-function getTimeControlIcon(timeControl: TimeControlConfig): string {
-  if (!timeControl.preset) return "";
-  const iconMap: Record<TimeControlPreset, string> = {
-    bullet: "/time_control_icons/activity.lichess-bullet.webp",
-    blitz: "/time_control_icons/activity.lichess-blitz.webp",
-    rapid: "/time_control_icons/activity.lichess-rapid.webp",
-    classical: "/time_control_icons/activity.lichess-classical.webp",
-  };
-  return iconMap[timeControl.preset] || "";
-}
-
-// Helper function to format board size
-function formatBoardSize(width: number, height: number): string {
-  const totalCells = width * height;
-  let sizeName = "custom";
-
-  if (totalCells <= 36) {
-    sizeName = "small";
-  } else if (totalCells <= 81) {
-    sizeName = "medium";
-  } else if (totalCells <= 144) {
-    sizeName = "large";
-  }
-
-  return `${sizeName} (${width}x${height})`;
-}
 
 // Type for tracking which fields don't match
 interface GameMatchStatus {
@@ -594,13 +540,6 @@ function GameSetup() {
     return gamesWithStatus;
   }, [matchmakingGames, gameConfig]);
 
-  const formatPlayers = (players: GameSnapshot["players"]): string => {
-    return players
-      .filter((p) => p.ready || p.role === "host")
-      .map((p) => p.displayName)
-      .join(" & ");
-  };
-
   const handleJoinGame = async (gameId: string) => {
     if (isJoiningGame) return;
     setIsJoiningGame(gameId);
@@ -918,11 +857,14 @@ function GameSetup() {
             )}
           </Card>
 
-          <BotsTable
+          <ReadyToJoinTable
             config={gameConfig}
-            onPlayBot={(args) => {
-              void handlePlayBot(args);
-            }}
+            mode={mode}
+            matchmakingGames={filteredAndSortedGames}
+            isLoadingGames={isLoadingGames}
+            isJoiningGame={isJoiningGame}
+            onJoinGame={(gameId) => void handleJoinGame(gameId)}
+            onPlayBot={(args) => void handlePlayBot(args)}
             onRecommendedSelect={(boardWidth, boardHeight) =>
               handleGameConfigChange({
                 ...gameConfig,
@@ -933,113 +875,6 @@ function GameSetup() {
             isPlaying={playVsBotMutation.isPending}
             errorMessage={botGameError}
           />
-
-          {/* Join Game Section */}
-          <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
-            <div className="flex items-center justify-between mb-4">
-              <h2 className="text-2xl font-semibold">Join game</h2>
-              {isLoadingGames && (
-                <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
-              )}
-            </div>
-            {filteredAndSortedGames.length === 0 ? (
-              <p className="text-muted-foreground">
-                {isLoadingGames
-                  ? "Loading available games..."
-                  : "No games available to join. Create one or wait for someone to start matchmaking."}
-              </p>
-            ) : (
-              <div className="overflow-x-auto">
-                <Table>
-                  <TableHeader>
-                    <TableRow>
-                      <TableHead className="text-center">Variant</TableHead>
-                      <TableHead className="text-center">Rated</TableHead>
-                      <TableHead className="text-center">
-                        Time control
-                      </TableHead>
-                      <TableHead className="text-center">Board size</TableHead>
-                      <TableHead className="text-center">Player</TableHead>
-                    </TableRow>
-                  </TableHeader>
-                  <TableBody>
-                    {filteredAndSortedGames.map((game) => (
-                      <TableRow
-                        key={game.id}
-                        onClick={() => void handleJoinGame(game.id)}
-                        className={`cursor-pointer hover:bg-muted/50 transition-colors ${
-                          isJoiningGame === game.id ? "opacity-50" : ""
-                        }`}
-                      >
-                        <TableCell className="capitalize text-center">
-                          <span
-                            className={`inline-block px-2 py-1 ${
-                              !game.matchStatus.variant
-                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
-                                : ""
-                            }`}
-                          >
-                            {game.config.variant}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span
-                            className={`inline-block px-2 py-1 ${
-                              !game.matchStatus.rated
-                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
-                                : ""
-                            }`}
-                          >
-                            {game.config.rated ? "Yes" : "No"}
-                          </span>
-                        </TableCell>
-                        <TableCell className="capitalize text-center">
-                          <span
-                            className={`inline-flex items-center gap-2 px-2 py-1 ${
-                              !game.matchStatus.timeControl
-                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
-                                : ""
-                            }`}
-                          >
-                            {getTimeControlIcon(game.config.timeControl) && (
-                              <img
-                                src={getTimeControlIcon(
-                                  game.config.timeControl,
-                                )}
-                                alt={
-                                  game.config.timeControl.preset ??
-                                  formatTimeControl(game.config.timeControl)
-                                }
-                                className="w-5 h-5"
-                              />
-                            )}
-                            {formatTimeControl(game.config.timeControl)}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          <span
-                            className={`inline-block px-2 py-1 ${
-                              !game.matchStatus.boardSize
-                                ? "bg-red-100 dark:bg-red-900/50 rounded-md"
-                                : ""
-                            }`}
-                          >
-                            {formatBoardSize(
-                              game.config.boardWidth,
-                              game.config.boardHeight,
-                            )}
-                          </span>
-                        </TableCell>
-                        <TableCell className="text-center">
-                          {formatPlayers(game.players)}
-                        </TableCell>
-                      </TableRow>
-                    ))}
-                  </TableBody>
-                </Table>
-              </div>
-            )}
-          </Card>
         </div>
       </div>
     </div>

@@ -25,7 +25,8 @@
       "Bash(npx tsc:*)",
       "Bash(bun tsc:*)",
       "Bash(bun run lint)",
-      "Bash(bun x tsc:*)"
+      "Bash(bun x tsc:*)",
+      "Bash(bun run build)"
     ]
   },
   "outputStyle": "Explanatory"
