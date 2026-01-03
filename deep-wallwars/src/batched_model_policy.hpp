@@ -8,7 +8,7 @@ public:
     BatchedModelPolicy(std::shared_ptr<BatchedModel> model);
 
     folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
-                                             std::optional<Cell> previous_position);
+                                             std::optional<PreviousPosition> previous_position);
 
     // Expose statistics through the policy interface
     uint64_t total_inferences() const {

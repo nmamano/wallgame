@@ -178,9 +178,9 @@ void GameGUI::handle_mouse_click(sf::Vector2i mouse_pos, Board& board, MCTS& mct
                 auto dirs = board.legal_directions(m_human_player);
                 for (Direction dir : dirs) {
                     if (current_pos.step(dir) == target) {
-                        mcts.force_action(dir);
-                        m_human_actions.push_back(dir);  // Store for move recording
-                        board.do_action(m_human_player, dir);
+                        mcts.force_action(PawnMove{Pawn::Cat, dir});
+                        m_human_actions.push_back(PawnMove{Pawn::Cat, dir});  // Store for move recording
+                        board.do_action(m_human_player, PawnMove{Pawn::Cat, dir});
                         advance_action();
                         // Check if we completed a full move (2 actions)
                         if (m_actions_left == 2) {
@@ -248,9 +248,9 @@ void GameGUI::handle_key_press(sf::Keyboard::Key key, Board& board, MCTS& mcts,
         auto legal_dirs = board.legal_directions(m_human_player);
         for (Direction dir : legal_dirs) {
             if (dir == *direction) {
-                mcts.force_action(dir);
-                board.do_action(m_human_player, dir);
-                m_human_actions.push_back(dir);  // Store for move recording
+                mcts.force_action(PawnMove{Pawn::Cat, dir});
+                board.do_action(m_human_player, PawnMove{Pawn::Cat, dir});
+                m_human_actions.push_back(PawnMove{Pawn::Cat, dir});  // Store for move recording
                 advance_action();
                 // Check if we completed a full move (2 actions)
                 if (m_actions_left == 2) {

@@ -7,6 +7,7 @@
 #include <optional>
 #include <set>
 #include <span>
+#include <string_view>
 #include <variant>
 #include <vector>
 
@@ -26,6 +27,14 @@ enum class Player {
     Red,
     Blue
 };
+
+enum class Variant {
+    Classic,
+    Standard
+};
+
+std::optional<Variant> parse_variant(std::string_view variant);
+std::string_view variant_name(Variant variant);
 
 enum class Winner {
     Red,
@@ -64,6 +73,27 @@ struct Wall {
     bool operator==(Wall const& other) const = default;
 };
 
+enum class Pawn {
+    Cat,
+    Mouse
+};
+
+struct PawnMove {
+    Pawn pawn;
+    Direction dir;
+
+    bool operator==(PawnMove const& other) const = default;
+};
+
+[[nodiscard]] PawnMove flip_horizontal(PawnMove move);
+
+struct PreviousPosition {
+    Pawn pawn;
+    Cell cell;
+
+    bool operator==(PreviousPosition const& other) const = default;
+};
+
 namespace std {
 template <>
 struct hash<Cell> {
@@ -77,13 +107,13 @@ struct hash<Wall> {
 
 }  // namespace std
 
-using Action = std::variant<Direction, Wall>;
+using Action = std::variant<PawnMove, Wall>;
 
 struct Move {
     Action first;
     Action second;
 
-    std::string standard_notation(Cell start, int rows) const;
+    std::string standard_notation(Cell cat_start, Cell mouse_start, int rows) const;
 };
 
 // Helper functions for official notation output with row coordinate flipping
@@ -106,8 +136,10 @@ struct Turn {
 
 std::ostream& operator<<(std::ostream& out, Direction dir);
 std::ostream& operator<<(std::ostream& out, Player player);
+std::ostream& operator<<(std::ostream& out, Pawn pawn);
 std::ostream& operator<<(std::ostream& out, Cell cell);
 std::ostream& operator<<(std::ostream& out, Wall wall);
+std::ostream& operator<<(std::ostream& out, PawnMove const& move);
 std::ostream& operator<<(std::ostream& out, Action const& action);
 std::ostream& operator<<(std::ostream& out, Move const& move);
 std::ostream& operator<<(std::ostream& out, Turn turn);
@@ -118,19 +150,21 @@ std::istream& operator>>(std::istream& in, Direction& dir);
 
 class Board {
 public:
-    Board(int columns, int rows);
-    Board(int columns, int rows, Cell red_start, Cell red_goal);
-    Board(int columns, int rows, Cell red_start, Cell red_goal, Cell blue_start, Cell blue_goal);
+    Board(int columns, int rows, Variant variant = Variant::Classic);
+    Board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat, Cell blue_mouse,
+          Variant variant = Variant::Classic);
 
     bool operator==(Board const& other) const = default;
 
     bool is_blocked(Wall wall) const;
 
     std::vector<Direction> legal_directions(Player player) const;
+    std::vector<Direction> legal_directions(Player player, Pawn pawn) const;
     std::vector<Wall> legal_walls() const;
     std::vector<Action> legal_actions(Player player) const;
 
     void take_step(Player player, Direction direction);
+    void take_step(Player player, Pawn pawn, Direction direction);
     void place_wall(Player player, Wall wall);
 
     void do_action(Player player, Action action);
@@ -139,7 +173,12 @@ public:
     double score_for(Player player) const;
 
     Cell position(Player player) const;
+    Cell mouse(Player player) const;
     Cell goal(Player player) const;
+    Cell pawn_position(Player player, Pawn pawn) const;
+    Variant variant() const;
+    bool allows_mouse_moves() const;
+    int move_prior_size() const;
 
     int distance(Cell start, Cell target) const;
 
@@ -169,21 +208,21 @@ public:
 
 private:
     struct State {
-        bool has_red_player : 1 = false;
-        bool has_blue_player : 1 = false;
+        bool has_red_cat : 1 = false;
+        bool has_blue_cat : 1 = false;
         bool has_red_right_wall : 1 = false;
         bool has_red_down_wall : 1 = false;
         bool has_blue_right_wall : 1 = false;
         bool has_blue_down_wall : 1 = false;
-        bool has_red_goal : 1 = false;
-        bool has_blue_goal : 1 = false;
+        bool has_red_mouse : 1 = false;
+        bool has_blue_mouse : 1 = false;
 
         bool operator==(State const& other) const = default;
     };
 
     struct PlayerState {
-        Cell position;
-        Cell goal;
+        Cell cat;
+        Cell mouse;
 
         bool operator==(PlayerState const& other) const = default;
     } m_red, m_blue;
@@ -192,6 +231,7 @@ private:
 
     int m_columns;
     int m_rows;
+    Variant m_variant;
 
     std::vector<State> m_board;
 

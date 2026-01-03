@@ -39,6 +39,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
     while (true) {
         if (take_turn) {
             Cell ai_cell = mcts.current_board().position(ai_player);
+            Cell ai_mouse = mcts.current_board().mouse(ai_player);
             auto ai_move = co_await mcts.sample_and_commit_to_move(opts.samples);
             if (ai_move) {
                 recorder.record_move(ai_player, *ai_move);
@@ -47,7 +48,8 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
                 break;
             }
 
-            std::cout << ai_move->standard_notation(ai_cell, mcts.current_board().rows()) << "\n";
+            std::cout << ai_move->standard_notation(ai_cell, ai_mouse, mcts.current_board().rows())
+                      << "\n";
             if (auto winner = mcts.current_board().winner(); winner != Winner::Undecided) {
                 recorder.record_winner(winner);
                 break;
@@ -67,7 +69,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
             if (action_type == "step") {
                 Direction dir;
                 std::cin >> dir;
-                actions[i] = dir;
+                actions[i] = PawnMove{Pawn::Cat, dir};
             } else if (action_type == "wall") {
                 Wall wall;
                 std::cin >> wall;

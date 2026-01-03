@@ -32,6 +32,7 @@ DEFINE_uint64(cache_size, 100'000, "Size of the internal evaluation cache");
 
 DEFINE_int32(columns, 5, "Number of columns");
 DEFINE_int32(rows, 5, "Number of rows");
+DEFINE_string(variant, "classic", "Game variant: classic or standard");
 
 DEFINE_int32(games, 100, "Number of games to play");
 DEFINE_int32(samples, 500, "Number of MCTS samples per action");
@@ -118,6 +119,7 @@ std::string get_usage_message() {
         << "    --games N             # Number of games to play (default 100)\n"
         << "    --samples N           # MCTS samples per action (default 500)\n"
         << "    --columns N --rows N  # Board size (default 5x5)\n"
+        << "    --variant NAME        # classic or standard (default classic)\n"
         << "    --j N                 # Thread count (default 8)\n"
         << "    --seed N              # Random seed (default 42)\n"
         << "    --cache_size N        # MCTS cache size (default 100k)\n"
@@ -149,8 +151,8 @@ struct Logger : nv::ILogger {
     }
 };
 
-void train(EvaluationFunction const& eval_fn) {
-    Board board{FLAGS_columns, FLAGS_rows};
+void train(EvaluationFunction const& eval_fn, Variant variant) {
+    Board board{FLAGS_columns, FLAGS_rows, variant};
     TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
 
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
@@ -183,8 +185,9 @@ void train(EvaluationFunction const& eval_fn) {
     }
 }
 
-void evaluate(EvaluationFunction const& eval_fn1, EvaluationFunction const& eval_fn2) {
-    Board board{FLAGS_columns, FLAGS_rows};
+void evaluate(EvaluationFunction const& eval_fn1, EvaluationFunction const& eval_fn2,
+              Variant variant) {
+    Board board{FLAGS_columns, FLAGS_rows, variant};
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
 
     auto recorders = folly::coro::blockingWait(evaluation_play(board, FLAGS_games,
@@ -216,8 +219,8 @@ void evaluate(EvaluationFunction const& eval_fn1, EvaluationFunction const& eval
     }
 }
 
-void interactive(EvaluationFunction const& eval_fn) {
-    Board board{FLAGS_columns, FLAGS_rows};
+void interactive(EvaluationFunction const& eval_fn, Variant variant) {
+    Board board{FLAGS_columns, FLAGS_rows, variant};
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
     InteractivePlayOptions opts = {
         .model = eval_fn,
@@ -234,7 +237,7 @@ void interactive(EvaluationFunction const& eval_fn) {
     folly::coro::blockingWait(interactive_play(board, opts).scheduleOn(&thread_pool));
 }
 
-void ranking(nv::IRuntime& runtime) {
+void ranking(nv::IRuntime& runtime, Variant variant) {
     std::filesystem::path ranking_folder(FLAGS_ranking);
     std::map<std::filesystem::file_time_type, std::filesystem::path> model_paths;
     for (auto const& dir_entry : std::filesystem::directory_iterator{ranking_folder}) {
@@ -251,7 +254,7 @@ void ranking(nv::IRuntime& runtime) {
         models.push_back(NamedModel{std::move(cached_policy), model_path.filename().string()});
     }
 
-    Board board{FLAGS_columns, FLAGS_rows};
+    Board board{FLAGS_columns, FLAGS_rows, variant};
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
     XLOGF(INFO, "Collected {} models. Starting ranking now.", models.size());
 
@@ -277,6 +280,13 @@ int main(int argc, char** argv) {
 
     gflags::SetUsageMessage(get_usage_message());
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    auto parsed_variant = parse_variant(FLAGS_variant);
+    if (!parsed_variant) {
+        XLOGF(ERR, "Unsupported variant: {}", FLAGS_variant);
+        return 1;
+    }
+    Variant variant = *parsed_variant;
 
     Logger logger;
     std::unique_ptr<nv::IRuntime> runtime{nv::createInferRuntime(logger)};
@@ -342,13 +352,13 @@ int main(int argc, char** argv) {
     auto start = std::chrono::high_resolution_clock::now();
 
     if (mode == Mode::Ranking) {
-        ranking(*runtime);
+        ranking(*runtime, variant);
     } else if (mode == Mode::Interactive) {
-        interactive(eval_fn1);
+        interactive(eval_fn1, variant);
     } else if (mode == Mode::Evaluate) {
-        evaluate(eval_fn1, eval_fn2);
+        evaluate(eval_fn1, eval_fn2, variant);
     } else if (mode == Mode::Train) {
-        train(eval_fn1);
+        train(eval_fn1, variant);
     }
 
     auto stop = std::chrono::high_resolution_clock::now();

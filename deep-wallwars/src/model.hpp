@@ -14,6 +14,8 @@ public:
     int batch_size() const;
     int state_size() const;
     int wall_prior_size() const;
+    int move_prior_size() const;
+    int prior_size() const;
 
     Model(Model const& other) = delete;
     Model(Model&& other) = delete;
@@ -27,7 +29,8 @@ protected:
     int m_batch_size;
     int m_state_size;
     int m_wall_prior_size;
+    int m_move_prior_size;
 
     Model() = default;
-    Model(int batch_size, int channels, int columns, int rows);
+    Model(int batch_size, int channels, int columns, int rows, int move_prior_size = 4);
 };

@@ -8,7 +8,9 @@
 ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_red,
                                     float winner_contribution) {
     std::size_t board_size = node_info.board.columns() * node_info.board.rows();
-    std::vector<float> priors(2 * board_size + 4);
+    std::size_t wall_prior_size = 2 * board_size;
+    std::size_t move_prior_size = node_info.board.move_prior_size();
+    std::vector<float> priors(wall_prior_size + move_prior_size);
 
     // Note: the sum of samples in the children is not equal to the sum of samples in the parent
     // because some samples *end* in the parent. *Typically* only one sample does but due to the
@@ -26,10 +28,14 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
         float prior = float(edge_info.num_samples) / total_samples;
 
         folly::variant_match(
-            edge_info.action, [&](Direction dir) { priors[2 * board_size + int(dir)] = prior; },
+            edge_info.action,
+            [&](PawnMove move) {
+                int pawn_offset = move.pawn == Pawn::Cat ? 0 : 4;
+                priors[wall_prior_size + pawn_offset + int(move.dir)] = prior;
+            },
             [&](Wall wall) {
-                priors[int(wall.type) * board_size + node_info.board.index_from_cell(wall.cell)] =
-                    prior;
+                priors[int(wall.type) * board_size +
+                       node_info.board.index_from_cell(wall.cell)] = prior;
             });
     }
 

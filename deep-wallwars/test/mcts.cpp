@@ -16,12 +16,13 @@
 struct DownPolicy {
     std::shared_ptr<int> samples = std::make_shared<int>(0);
 
-    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn, std::optional<Cell>) {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
         ++*samples;
         if (board.is_blocked(Wall{board.position(turn.player), Direction::Down})) {
             co_return Evaluation{0, {}};
         }
-        co_return Evaluation{0, {TreeEdge(Direction::Down, 1.0)}};
+        co_return Evaluation{0, {TreeEdge(PawnMove{Pawn::Cat, Direction::Down}, 1.0)}};
     };
 };
 
@@ -55,7 +56,7 @@ TEST_CASE("Commit to action", "[MCTS]") {
     folly::coro::blockingWait(mcts.sample(1));
 
     auto action = mcts.commit_to_action();
-    CHECK(std::get<Direction>(*action) == Direction::Down);
+    CHECK(std::get<PawnMove>(*action).dir == Direction::Down);
     CHECK(mcts.current_board().position(Player::Red) == Cell{0, 1});
 }
 
@@ -68,7 +69,7 @@ TEST_CASE("Force action", "[MCTS]") {
         folly::coro::blockingWait(mcts.sample(1));
     }
 
-    mcts.force_action(Direction::Down);
+    mcts.force_action(PawnMove{Pawn::Cat, Direction::Down});
     CHECK(mcts.root_samples() == 1);
     CHECK(mcts.current_board().position(Player::Red) == Cell{0, 1});
 }
@@ -88,7 +89,8 @@ TEST_CASE("Sample many", "[MCTS]") {
 struct SlowDownPolicy {
     std::shared_ptr<std::atomic<int>> samples = std::make_shared<std::atomic<int>>(0);
 
-    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn, std::optional<Cell>) {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
         ++*samples;
         co_await folly::coro::sleep(std::chrono::milliseconds{250});
         Evaluation result;
@@ -96,7 +98,7 @@ struct SlowDownPolicy {
         if (board.is_blocked(Wall{board.position(turn.player), Direction::Down})) {
             result = Evaluation{0, {}};
         } else {
-            result = Evaluation{0, {TreeEdge(Direction::Down, 1.0)}};
+            result = Evaluation{0, {TreeEdge(PawnMove{Pawn::Cat, Direction::Down}, 1.0)}};
         }
         co_return result;
     };

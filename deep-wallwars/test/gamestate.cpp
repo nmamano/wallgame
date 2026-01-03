@@ -66,19 +66,19 @@ TEST_CASE("Big board", "[Game State]") {
 TEST_CASE("Big board 2", "[Game State]") {
     Board board{8, 8};
 
-    board.do_action(Player::Red, Direction::Right);
-    board.do_action(Player::Red, Direction::Down);
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Down});
 
     board.do_action(Player::Blue, Wall{{2, 0}, Direction::Down});
     board.do_action(Player::Blue, Wall{{4, 2}, Direction::Down});
 
-    board.do_action(Player::Red, Direction::Right);
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
     board.do_action(Player::Red, Wall{{1, 1}, Direction::Right});
 
     board.do_action(Player::Blue, Wall{{2, 0}, Direction::Right});
     board.do_action(Player::Blue, Wall{{1, 3}, Direction::Right});
 
-    board.do_action(Player::Red, Direction::Right);
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
     board.do_action(Player::Red, Wall{{2, 1}, Direction::Right});
 
     board.do_action(Player::Blue, Wall{{3, 1}, Direction::Right});
@@ -89,7 +89,7 @@ TEST_CASE("Big board 2", "[Game State]") {
 }
 
 TEST_CASE("Advance to win", "[Game State]") {
-    Board board{3, 3, {0, 0}, {2, 2}, {2, 0}, {0, 2}};
+    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
 
     board.take_step(Player::Red, Direction::Right);
     REQUIRE(board.winner() == Winner::Undecided);
@@ -103,14 +103,14 @@ TEST_CASE("Advance to win", "[Game State]") {
 }
 
 TEST_CASE("Block walls", "[Game State]") {
-    Board board{3, 3, {0, 0}, {2, 2}, {2, 0}, {0, 2}};
+    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
     board.place_wall(Player::Blue, {{0, 0}, Direction::Right});
     REQUIRE(board.is_blocked({{0, 0}, Direction::Right}));
     REQUIRE(board.legal_directions(Player::Red).size() == 1);
 }
 
 TEST_CASE("Distance", "[Game State]") {
-    Board board{3, 3, {0, 0}, {2, 2}, {2, 0}, {0, 2}};
+    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
     REQUIRE(board.distance({0, 0}, {2, 2}) == 4);
     REQUIRE(board.distance({2, 1}, {2, 2}) == 1);
 }

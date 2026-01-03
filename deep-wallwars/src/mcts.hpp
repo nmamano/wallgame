@@ -62,7 +62,8 @@ struct Evaluation {
 // heuristic or ML model. The last argument is the previous position of the current player, which is
 // needed because we may not return to that position in the same move.
 using EvaluationFunction =
-    std::function<folly::coro::Task<Evaluation>(Board const&, Turn, std::optional<Cell>)>;
+    std::function<folly::coro::Task<Evaluation>(Board const&, Turn,
+                                                std::optional<PreviousPosition>)>;
 
 class MCTS {
 public:
@@ -127,6 +128,6 @@ private:
     void move_root(TreeEdge const& edge);
 
     folly::coro::Task<TreeNode*> create_tree_node(Board board, Turn turn,
-                                                  std::optional<Cell> previous_position,
+                                                  std::optional<PreviousPosition> previous_position,
                                                   TreeNode* parent);
 };
