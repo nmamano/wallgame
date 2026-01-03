@@ -88,6 +88,36 @@ TEST_CASE("Big board 2", "[Game State]") {
     board.do_action(Player::Red, Wall{{1, 6}, Direction::Right});
 }
 
+TEST_CASE("Standard variant basics", "[Game State]") {
+    Board board{3, 3, Variant::Standard};
+
+    REQUIRE(board.variant() == Variant::Standard);
+    REQUIRE(board.allows_mouse_moves());
+    REQUIRE(board.move_prior_size() == 8);
+
+    REQUIRE(board.goal(Player::Red) == board.mouse(Player::Blue));
+    REQUIRE(board.goal(Player::Blue) == board.mouse(Player::Red));
+
+    REQUIRE(board.legal_directions(Player::Red, Pawn::Mouse).size() == 2);
+
+    auto const actions = board.legal_actions(Player::Red);
+    CHECK(actions.size() ==
+          board.legal_walls().size() + board.legal_directions(Player::Red, Pawn::Cat).size() +
+              board.legal_directions(Player::Red, Pawn::Mouse).size());
+
+    board.take_step(Player::Blue, Pawn::Mouse, Direction::Left);
+    CHECK(board.goal(Player::Red) == Cell{1, 2});
+}
+
+TEST_CASE("Standard variant mouse capture ends game", "[Game State]") {
+    Board board{3, 3, {0, 0}, {1, 0}, {2, 0}, {2, 2}, Variant::Standard};
+
+    board.take_step(Player::Red, Pawn::Mouse, Direction::Right);
+
+    REQUIRE(board.mouse(Player::Red) == Cell{2, 0});
+    REQUIRE(board.winner() == Winner::Blue);
+}
+
 TEST_CASE("Advance to win", "[Game State]") {
     Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
 
