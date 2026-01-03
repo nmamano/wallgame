@@ -32,6 +32,11 @@ parser.add_argument(
     default="classic",
 )
 parser.add_argument(
+    "--warm-start",
+    help="Path to a classic .pt model to warm-start standard training",
+    default="",
+)
+parser.add_argument(
     "--generations",
     help="Number of generations to train for",
     default=40,
@@ -166,6 +171,55 @@ def load_model(name, device):
     return torch.load(f"{args.models}/{name}.pt", weights_only=False).to(device)
 
 
+def warm_start_model(path, device, expected_priors):
+    wall_prior_size = 2 * args.columns * args.rows
+    print(f"Warm-starting from {path}...")
+    base_model = torch.load(path, weights_only=False, map_location=device)
+    base_state = base_model.state_dict()
+
+    model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
+    state = model.state_dict()
+
+    for key, value in base_state.items():
+        if key in state and state[key].shape == value.shape:
+            state[key] = value
+
+    if "priors.4.weight" not in base_state or "priors.4.bias" not in base_state:
+        print("Error: Warm-start model is missing the priors head.")
+        exit(1)
+
+    old_weight = base_state["priors.4.weight"]
+    old_bias = base_state["priors.4.bias"]
+    old_out = old_weight.shape[0]
+
+    if old_out != wall_prior_size + 4:
+        print("Error: Warm-start model does not look like a classic model.")
+        print(f"Expected priors size {wall_prior_size + 4}, found {old_out}.")
+        exit(1)
+
+    if expected_priors == old_out:
+        state["priors.4.weight"] = old_weight
+        state["priors.4.bias"] = old_bias
+    else:
+        new_weight = state["priors.4.weight"]
+        new_bias = state["priors.4.bias"]
+        new_weight.zero_()
+        new_bias.zero_()
+        new_weight[:old_out] = old_weight
+        new_bias[:old_out] = old_bias
+
+        if move_channels > 4:
+            cat_start = wall_prior_size
+            cat_end = wall_prior_size + 4
+            mouse_start = wall_prior_size + 4
+            mouse_end = wall_prior_size + move_channels
+
+            nn.init.normal_(new_weight[mouse_start:mouse_end], mean=0.0, std=0.01)
+
+    model.load_state_dict(state)
+    return model.to(device)
+
+
 def run_self_play(model1, model2, generation):
     os.makedirs(args.data, exist_ok=True)
     print(f"Running self play (generation {generation})...")
@@ -292,12 +346,18 @@ def init():
         print("Bootstrap generation 0 data with simple model")
         print("Running self play for generation 0...")
         run_self_play("simple", "", 0)
-        model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
+        if args.warm_start:
+            model = warm_start_model(args.warm_start, device, expected_priors)
+        else:
+            model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
         start_generation = 2
         train_model(model, 1, bootstrap_epochs, device)
         save_model(model, "model_1", device)
         gc.collect()
     else:
+        if args.warm_start:
+            print("Error: --warm-start requires --initial_generation 0.")
+            exit(1)
         print(f"Loading model from generation {args.initial_generation}...")
         model = load_model(f"model_{args.initial_generation}", device)
         if model.priors[-1].out_features != expected_priors:
