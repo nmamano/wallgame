@@ -27,6 +27,11 @@ parser.add_argument("--data", help="Path to store training data", default="../da
 parser.add_argument("-c", "--columns", help="Number of columns", default=6, type=int)
 parser.add_argument("-r", "--rows", help="Number of rows", default=6, type=int)
 parser.add_argument(
+    "--variant",
+    help="Game variant (classic or standard)",
+    default="classic",
+)
+parser.add_argument(
     "--generations",
     help="Number of generations to train for",
     default=40,
@@ -107,6 +112,12 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
+variant_move_channels = {"classic": 4, "standard": 8}
+if args.variant not in variant_move_channels:
+    print(f"Error: Unsupported variant '{args.variant}'. Use 'classic' or 'standard'.")
+    exit(1)
+move_channels = variant_move_channels[args.variant]
+
 
 def get_training_paths(generation):
     lb = max(generation - args.max_training_window, (generation - 1) // 2)
@@ -170,6 +181,8 @@ def run_self_play(model1, model2, generation):
         str(args.columns),
         "-rows", 
         str(args.rows),
+        "-variant",
+        args.variant,
         "-j",
         str(args.threads),
         "-games",
@@ -231,7 +244,12 @@ def train_model(model, generation, epochs, device):
     training_paths = get_training_paths(generation)
     print(f"Training paths: {training_paths}")
     training_data, valid_data = get_datasets(
-        training_paths, args.training_games, input_channels, args.columns, args.rows
+        training_paths,
+        args.training_games,
+        input_channels,
+        args.columns,
+        args.rows,
+        move_channels,
     )
 
     if not training_data:
@@ -266,13 +284,15 @@ def train_model(model, generation, epochs, device):
 
 def init():
     device = torch.device(default_cuda_device)
+    expected_priors = 2 * args.columns * args.rows + move_channels
 
     print("Starting training...")
+    print(f"Variant: {args.variant} (move channels: {move_channels})")
     if args.initial_generation == 0:
         print("Bootstrap generation 0 data with simple model")
         print("Running self play for generation 0...")
         run_self_play("simple", "", 0)
-        model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers)
+        model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
         start_generation = 2
         train_model(model, 1, bootstrap_epochs, device)
         save_model(model, "model_1", device)
@@ -280,6 +300,13 @@ def init():
     else:
         print(f"Loading model from generation {args.initial_generation}...")
         model = load_model(f"model_{args.initial_generation}", device)
+        if model.priors[-1].out_features != expected_priors:
+            print("Error: Loaded model does not match expected output size.")
+            print(
+                f"Expected {expected_priors} priors for {args.columns}x{args.rows} "
+                f"{args.variant}, found {model.priors[-1].out_features}."
+            )
+            exit(1)
         save_model(model, f"model_{args.initial_generation}", device)
         start_generation = args.initial_generation + 1
 
@@ -292,4 +319,3 @@ def init():
 
 if __name__ == "__main__":
     init()
-

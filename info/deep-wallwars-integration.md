@@ -479,3 +479,126 @@ Expected output (JSON to stdout):
   }
 }
 ```
+
+## Appendix: Thorben deep wallwars training notes (8x8)
+
+This appendix summarizes training-related details captured in `info/thorben.txt` that are useful when running or tuning Deep-Wallwars training runs.
+
+### Latest 8x8 runs (Thorben)
+
+- Thorben: ran an 8x8 training run “overnight / work day” and reached ~150k self-play games.
+- Later: checked in a trained model snapshot after ~750k games (~100 hours).
+- Standard 8x8 setup mentioned: player 1 starts top-left, player 2 top-right.
+
+### Parameters used / implied
+
+- Thorben’s guidance: his `scripts/training.py` run used defaults, except `--rows 8 --columns 8` (defaults otherwise correspond to the script defaults).
+- Default self-play count mentioned as 5k games (suggested that this can be reduced for quicker runs).
+- Warm-start detail: generation 1 was trained from 5000 games of MCTS guided by a heuristic (instead of the neural net).
+- What he considers the primary “progress” metric: Elo (valuation accuracy is an “okay proxy”).
+- Validation metrics he referenced at one point: ~91% valuation accuracy and >75% move accuracy (when using a proper train/validation split).
+
+### Terminal commands captured
+
+Build (WSL) example:
+
+```bash
+cd .. && rm -rf build && mkdir build && cd build
+cmake -DCMAKE_PREFIX_PATH="...folly...;...fmt...;...glog..." ..
+make clean && make -j32
+```
+
+Run (interactive GUI) example:
+
+```bash
+./deep_ww --interactive --model1 ../ignore/models_trained/model_40.trt --samples 5000 --rows 6 --columns 6 --gui &> ../out.txt
+```
+
+8x8 training invocation that was pasted in the notes (this is the only fully-expanded 8x8 `training.py` command present):
+
+```bash
+python training.py --rows 8 --columns 8 --epochs 2 --generations 10 --games 3000 --samples 1200 --threads 20
+```
+
+Threading/debug invocation:
+
+```bash
+./deep_ww --model1 simple --samples 50000 --rows 6 --columns 6 -j 20
+```
+
+### Recommended settings if you run a similar 8x8 training
+
+- Closest to Thorben’s approach: run `scripts/training.py` with `--rows 8 --columns 8` and otherwise keep defaults (then let it run long enough to accumulate substantial total games).
+- Don’t max out CPU threads: leave headroom for CPU work that feeds the GPU; the notes show worse GPU utilization when saturating all cores.
+- Avoid accidentally limiting MCTS sampling parallelism: one observed slowdown came from setting “max parallel samples” to 4 instead of the default 256.
+
+### Other valuable training notes / pitfalls
+
+- Small boards can have huge cache-hit rates; that can make training CPU-limited even when you have a strong GPU.
+- Increasing “GPU workers” (multiple model instances) can sometimes improve utilization; Thorben suggested 2 is usually enough.
+- Data hygiene pitfall: mixing CSVs from different board sizes in the same generation folder can poison training because the loader reads all CSVs present (not just `--games` count).
+- Performance work mentioned: using pinned memory for GPU transfers improved utilization; profiling indicated BFS/tensor-prep as a CPU bottleneck in some setups.
+- Validation split pitfall: split by whole games, not by individual positions, to avoid leakage from adjacent positions between train/val.
+- Windows-specific gotchas: default stack size on Windows is much smaller (~1MB vs ~8MB on Linux), and stack overflows can happen sooner with recursion/coroutine-heavy code; compiling without optimizations can also make this worse (even for debugging).
+- Practical note: most of the discussed build + training workflow in the notes is done under WSL (not native Windows).
+- The logs show training happening on a Windows machine via WSL paths (e.g. `/mnt/c/...`) and a Python virtual environment prompt `(.venv)`, not a native Windows Python/package-manager workflow.
+- The notes do not identify a Python package manager (`pip`/`conda`/`poetry`/etc.); only `(.venv)` is shown.
+
+## Appendix: Standard 8x8 training run setup (WSL sanity check)
+
+This captures the exact setup steps and decisions used to get a Standard 8x8 sanity run working.
+
+### Decisions made
+
+- Run under WSL (not native Windows) because a library (folly IIRC) is not compatible. Also to avoid Windows stack-size issues and match prior logs.
+- Use a Python venv inside `deep-wallwars/` (`deep-wallwars/.venv`) to keep ML deps isolated.
+- Use GPU training (confirmed `nvidia-smi` and `torch.cuda.is_available()`).
+- Keep Standard data/models/logs in separate folders to avoid mixing variants:
+  - models: `deep-wallwars/models_8x8_standard`
+  - data: `deep-wallwars/data_8x8_standard`
+  - log: `deep-wallwars/logs/standard_8x8.log`
+
+### Commands used (sanity check)
+
+Create venv and upgrade pip (from `deep-wallwars/`):
+
+```bash
+python3 -m venv .venv
+source .venv/bin/activate
+pip install --upgrade pip
+```
+
+Install GPU deps (in venv):
+
+```bash
+pip install torch torchvision torchaudio --index-url https://download.pytorch.org/whl/cu121
+pip install fastai
+pip install ipython
+pip install onnx
+```
+
+Verify GPU in PyTorch:
+
+```bash
+python3 -c "import torch; print(torch.cuda.is_available(), torch.version.cuda)"
+```
+
+Run Standard 8x8 sanity training (from `deep-wallwars/scripts`):
+
+```bash
+mkdir -p ../logs
+python3 training.py \
+  --rows 8 --columns 8 --variant standard \
+  --generations 1 --games 20 --training-games 20 \
+  --samples 100 --threads 8 \
+  --models ../models_8x8_standard --data ../data_8x8_standard \
+  --log ../logs/standard_8x8.log
+```
+
+### Outcomes / checks
+
+- Training completed and produced:
+  - `deep-wallwars/models_8x8_standard/model_1.pt`
+  - `deep-wallwars/models_8x8_standard/model_1.onnx`
+  - `deep-wallwars/models_8x8_standard/model_1.trt`
+- `standard_8x8.log` ends with `&&&& PASSED TensorRT.trtexec ...` which confirms the TRT build.

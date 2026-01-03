@@ -6,8 +6,9 @@ def tensor_from_csv_line(line):
     return tensor([float(x) for x in line.split(", ")])
 
 
-def parse_file(file, input_channels, columns, rows):
+def parse_file(file, input_channels, columns, rows, move_channels):
     expected_num_values = input_channels * columns * rows
+    expected_priors = 2 * columns * rows + move_channels
     result = []
     with open(file) as f:
         lines = f.readlines()
@@ -20,24 +21,39 @@ def parse_file(file, input_channels, columns, rows):
                 print(f"Found {actual_num_values} values.")
                 print("This probably means you are trying to load training data from an older run with different board dimensions.")
                 exit(1)
+            priors = tensor_from_csv_line(lines[i + 1])
+            values = tensor_from_csv_line(lines[i + 2])
+            if len(priors) != expected_priors:
+                print(f"ERROR in file {file}, line index {i + 1}: Prior size mismatch.")
+                print(f"Expected {expected_priors} priors (walls + moves).")
+                print(f"Found {len(priors)} values.")
+                print("This probably means you are trying to load training data from a different variant.")
+                exit(1)
+            if len(values) != 1:
+                print(f"ERROR in file {file}, line index {i + 2}: Value size mismatch.")
+                print("Expected 1 value.")
+                print(f"Found {len(values)} values.")
+                exit(1)
             result.append(
                 (
                     parsed_tensor_line.view(input_channels, columns, rows),
-                    tuple(tensor_from_csv_line(lines[i + j]) for j in range(1, 3)),
+                    (priors, values),
                 )
             )
     return result
 
 
-def parse_files(files, input_channels, columns, rows):
-    return [entry for file in files for entry in parse_file(file, input_channels, columns, rows)]
+def parse_files(files, input_channels, columns, rows, move_channels):
+    return [
+        entry for file in files for entry in parse_file(file, input_channels, columns, rows, move_channels)
+    ]
 
 
-def get_datasets(paths, games, input_channels, columns, rows, splitter=RandomSplitter()):
+def get_datasets(paths, games, input_channels, columns, rows, move_channels, splitter=RandomSplitter()):
     files = [file for path in paths for file in get_files(path)]
     if games < len(files):
         files = sample(files, games)
     training_files, valid_files = splitter(files)
-    return parse_files((files[i] for i in training_files), input_channels, columns, rows), parse_files(
-        (files[i] for i in valid_files), input_channels, columns, rows
+    return parse_files((files[i] for i in training_files), input_channels, columns, rows, move_channels), parse_files(
+        (files[i] for i in valid_files), input_channels, columns, rows, move_channels
     )
