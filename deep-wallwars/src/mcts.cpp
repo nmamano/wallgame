@@ -108,9 +108,14 @@ TreeEdge& MCTS::get_best_edge(TreeNode& current) const {
 folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edge) {
     Board next_board{current.board};
     next_board.do_action(current.turn.player, edge.action);
-    auto previous_position = current.turn.action == Turn::First
-                                 ? std::optional<Cell>{current.board.position(current.turn.player)}
-                                 : std::nullopt;
+    std::optional<PreviousPosition> previous_position;
+    if (current.turn.action == Turn::First) {
+        if (auto* pawn_move = std::get_if<PawnMove>(&edge.action)) {
+            previous_position = PreviousPosition{
+                pawn_move->pawn,
+                current.board.pawn_position(current.turn.player, pawn_move->pawn)};
+        }
+    }
 
     TreeNode* new_node = co_await create_tree_node(std::move(next_board), current.turn.next(),
                                                    previous_position, &current);
@@ -273,12 +278,17 @@ void MCTS::force_action(Action const& action) {
 
     if (!te_it->child) {
         Board board = m_root->board;
-        auto current_position = m_root->turn.action == Turn::First
-                                    ? std::optional<Cell>{board.position(m_root->turn.player)}
-                                    : std::nullopt;
+        std::optional<PreviousPosition> previous_position;
+        if (m_root->turn.action == Turn::First) {
+            if (auto* pawn_move = std::get_if<PawnMove>(&action)) {
+                previous_position = PreviousPosition{
+                    pawn_move->pawn,
+                    board.pawn_position(m_root->turn.player, pawn_move->pawn)};
+            }
+        }
         board.do_action(m_root->turn.player, action);
         te_it->child = folly::coro::blockingWait(
-            create_tree_node(std::move(board), m_root->turn.next(), current_position, m_root));
+            create_tree_node(std::move(board), m_root->turn.next(), previous_position, m_root));
     }
 
     move_root(*te_it);
@@ -307,9 +317,11 @@ void MCTS::add_root_noise() {
     }
 }
 
-folly::coro::Task<TreeNode*> MCTS::create_tree_node(Board board, Turn turn,
-                                                    std::optional<Cell> previous_position,
-                                                    TreeNode* parent) {
+folly::coro::Task<TreeNode*> MCTS::create_tree_node(
+    Board board,
+    Turn turn,
+    std::optional<PreviousPosition> previous_position,
+    TreeNode* parent) {
     Evaluation eval = co_await m_evaluate(board, turn, previous_position);
     TreeNode* result = new TreeNode{parent,
                                     std::move(board),

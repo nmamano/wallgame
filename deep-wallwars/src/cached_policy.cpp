@@ -15,8 +15,12 @@ std::size_t folly::HeterogeneousAccessHash<CacheEntry>::operator()(
 }
 
 std::size_t folly::HeterogeneousAccessHash<CacheEntry>::operator()(CacheEntryView ce_view) const {
-    return folly::hash::hash_combine(ce_view.board, ce_view.turn.action, ce_view.turn.player,
-                                     ce_view.previous_position);
+    auto hash = folly::hash::hash_combine(ce_view.board, ce_view.turn.action, ce_view.turn.player);
+    if (ce_view.previous_position) {
+        hash = folly::hash::hash_combine(hash, ce_view.previous_position->pawn,
+                                         ce_view.previous_position->cell);
+    }
+    return hash;
 }
 
 bool folly::HeterogeneousAccessEqualTo<CacheEntry>::operator()(CacheEntry const& lhs,
@@ -64,13 +68,14 @@ int CachedPolicy::cache_misses() const {
 void flip_evaluation(Board const& board, Evaluation& eval) {
     for (TreeEdge& edge : eval.edges) {
         folly::variant_match(
-            edge.action, [&](Direction dir) { edge.action = flip_horizontal(dir); },
+            edge.action, [&](PawnMove move) { edge.action = flip_horizontal(move); },
             [&](Wall wall) { edge.action = board.flip_horizontal(wall); });
     }
 }
 
 folly::coro::Task<Evaluation> CachedPolicy::operator()(Board const& board, Turn turn,
-                                                       std::optional<Cell> previous_position) {
+                                                       std::optional<PreviousPosition>
+                                                           previous_position) {
     CacheEntryView ce_view{board, turn, previous_position};
 
     // TODO: its a bit annoying that we always compute the hash twice

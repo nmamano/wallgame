@@ -20,6 +20,26 @@ static constexpr std::array<char, 13> kColumnLabels = {'a', 'b', 'c', 'd', 'e', 
 static constexpr std::array<char, 10> kRowLabels = {'1', '2', '3', '4', '5',
                                                     '6', '7', '8', '9', 'X'};
 
+std::optional<Variant> parse_variant(std::string_view variant) {
+    if (variant == "classic") {
+        return Variant::Classic;
+    }
+    if (variant == "standard") {
+        return Variant::Standard;
+    }
+    return std::nullopt;
+}
+
+std::string_view variant_name(Variant variant) {
+    switch (variant) {
+        case Variant::Classic:
+            return "classic";
+        case Variant::Standard:
+            return "standard";
+    }
+    return "unknown";
+}
+
 Direction flip_horizontal(Direction dir) {
     switch (dir) {
         case Direction::Right:
@@ -32,6 +52,10 @@ Direction flip_horizontal(Direction dir) {
     }
 
     throw std::runtime_error("Unreachable: invalid direction (flip)!");
+}
+
+PawnMove flip_horizontal(PawnMove move) {
+    return PawnMove{move.pawn, flip_horizontal(move.dir)};
 }
 
 Winner winner_from_player(Player player) {
@@ -158,37 +182,37 @@ std::string wall_notation(Wall wall, int rows) {
     return out.str();
 }
 
-std::string Move::standard_notation(Cell start, int rows) const {
+std::string Move::standard_notation(Cell cat_start, Cell mouse_start, int rows) const {
     std::stringstream out;
 
     // Collect direction and wall actions separately
     std::optional<Cell> cat_destination;
+    std::optional<Cell> mouse_destination;
     std::vector<Wall> walls;
+
+    auto apply_pawn_move = [&](PawnMove move) {
+        std::optional<Cell>& destination = move.pawn == Pawn::Cat ? cat_destination
+                                                                  : mouse_destination;
+        Cell start = move.pawn == Pawn::Cat ? cat_start : mouse_start;
+
+        if (destination) {
+            destination = destination->step(move.dir);
+        } else {
+            destination = start.step(move.dir);
+        }
+    };
 
     // Process first action
     folly::variant_match(
         first,
-        [&](Direction dir) {
-            cat_destination = start.step(dir);
-        },
-        [&](Wall wall) {
-            walls.push_back(wall);
-        });
+        [&](PawnMove move) { apply_pawn_move(move); },
+        [&](Wall wall) { walls.push_back(wall); });
 
     // Process second action
     folly::variant_match(
         second,
-        [&](Direction dir) {
-            if (cat_destination) {
-                // Two consecutive directions: update to final destination
-                cat_destination = cat_destination->step(dir);
-            } else {
-                cat_destination = start.step(dir);
-            }
-        },
-        [&](Wall wall) {
-            walls.push_back(wall);
-        });
+        [&](PawnMove move) { apply_pawn_move(move); },
+        [&](Wall wall) { walls.push_back(wall); });
 
     // Sort walls: vertical (Right/>) before horizontal (Down/^), then by column, then by row
     // Note: sorting uses internal coordinates which works because we only care about ordering
@@ -199,10 +223,17 @@ std::string Move::standard_notation(Cell start, int rows) const {
         return a.cell < b.cell;  // Then by cell position
     });
 
-    // Output in order: cat move first, then walls, separated by periods
+    // Output in order: cat move, mouse move, then walls, separated by periods
     bool first_action = true;
     if (cat_destination) {
         out << 'C' << cell_notation(*cat_destination, rows);
+        first_action = false;
+    }
+    if (mouse_destination) {
+        if (!first_action) {
+            out << '.';
+        }
+        out << 'M' << cell_notation(*mouse_destination, rows);
         first_action = false;
     }
     for (Wall const& wall : walls) {
@@ -252,6 +283,21 @@ std::ostream& operator<<(std::ostream& out, Player player) {
     return out;
 }
 
+std::ostream& operator<<(std::ostream& out, Pawn pawn) {
+    switch (pawn) {
+        case Pawn::Cat:
+            out << "Cat";
+            break;
+        case Pawn::Mouse:
+            out << "Mouse";
+            break;
+        default:
+            out << "??";
+    }
+
+    return out;
+}
+
 std::ostream& operator<<(std::ostream& out, Cell cell) {
     if (cell.row < 0 || cell.row >= int(kRowLabels.size()) || cell.column < 0 ||
         cell.column >= int(kColumnLabels.size())) {
@@ -267,6 +313,11 @@ std::ostream& operator<<(std::ostream& out, Cell cell) {
 
 std::ostream& operator<<(std::ostream& out, Wall wall) {
     out << (wall.type == Wall::Right ? '>' : '^') << wall.cell;
+    return out;
+}
+
+std::ostream& operator<<(std::ostream& out, PawnMove const& move) {
+    out << move.pawn << ":" << move.dir;
     return out;
 }
 
@@ -347,27 +398,28 @@ std::istream& operator>>(std::istream& in, Direction& dir) {
     return in;
 }
 
-Board::Board(int columns, int rows, Cell red_start, Cell red_goal, Cell blue_start, Cell blue_goal)
-    : m_red{red_start, red_goal},
-      m_blue{blue_start, blue_goal},
+Board::Board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat, Cell blue_mouse,
+             Variant variant)
+    : m_red{red_cat, red_mouse},
+      m_blue{blue_cat, blue_mouse},
       m_columns{columns},
       m_rows{rows},
+      m_variant{variant},
       m_board(columns * rows) {
-    state_at(red_start).has_red_player = true;
-    state_at(blue_start).has_blue_player = true;
-    state_at(red_goal).has_red_goal = true;
-    state_at(blue_goal).has_blue_goal = true;
+    state_at(red_cat).has_red_cat = true;
+    state_at(blue_cat).has_blue_cat = true;
+    state_at(red_mouse).has_red_mouse = true;
+    state_at(blue_mouse).has_blue_mouse = true;
 }
 
-Board::Board(int columns, int rows, Cell red_start, Cell red_goal)
+Board::Board(int columns, int rows, Variant variant)
     : Board{columns,
             rows,
-            red_start,
-            red_goal,
-            {columns - 1 - red_start.column, red_start.row},
-            {columns - 1 - red_goal.column, red_goal.row}} {}
-
-Board::Board(int columns, int rows) : Board{columns, rows, {0, 0}, {columns - 1, rows - 1}} {}
+            {0, 0},
+            {0, rows - 1},
+            {columns - 1, 0},
+            {columns - 1, rows - 1},
+            variant} {}
 
 bool Board::is_blocked(Wall wall) const {
     if (wall.cell.column < 0 || wall.cell.row < 0 || wall.cell.column >= m_columns ||
@@ -401,7 +453,14 @@ bool Board::is_blocked(Wall wall) const {
 }
 
 std::vector<Direction> Board::legal_directions(Player player) const {
-    Cell const pos = player == Player::Red ? m_red.position : m_blue.position;
+    return legal_directions(player, Pawn::Cat);
+}
+
+std::vector<Direction> Board::legal_directions(Player player, Pawn pawn) const {
+    if (pawn == Pawn::Mouse && !allows_mouse_moves()) {
+        return {};
+    }
+    Cell const pos = pawn_position(player, pawn);
     auto dirs = kDirections | views::filter([&](Direction dir) { return !is_blocked({pos, dir}); });
     return {dirs.begin(), dirs.end()};
 }
@@ -468,9 +527,9 @@ std::vector<Wall> Board::legal_walls() const {
     std::set<Wall> illegal_walls;
     std::vector<int> levels(m_columns * m_rows, -1);
     std::vector<StackFrame> stack(m_columns * m_rows);
-    find_bridges(m_blue.position, m_blue.goal, levels, illegal_walls, stack);
+    find_bridges(position(Player::Blue), goal(Player::Blue), levels, illegal_walls, stack);
     ranges::fill(levels, -1);
-    find_bridges(m_red.position, m_red.goal, levels, illegal_walls, stack);
+    find_bridges(position(Player::Red), goal(Player::Red), levels, illegal_walls, stack);
 
     std::vector<Wall> result;
 
@@ -491,19 +550,31 @@ std::vector<Wall> Board::legal_walls() const {
 
 std::vector<Action> Board::legal_actions(Player player) const {
     // Inefficient but whatever for now
-    auto const dirs = legal_directions(player);
+    auto const cat_dirs = legal_directions(player, Pawn::Cat);
+    auto const mouse_dirs =
+        allows_mouse_moves() ? legal_directions(player, Pawn::Mouse) : std::vector<Direction>{};
     auto const walls = legal_walls();
 
     std::vector<Action> result;
-    result.reserve(dirs.size() + walls.size());
-    result.insert(result.end(), dirs.begin(), dirs.end());
+    result.reserve(cat_dirs.size() + mouse_dirs.size() + walls.size());
+    for (Direction dir : cat_dirs) {
+        result.emplace_back(PawnMove{Pawn::Cat, dir});
+    }
+    for (Direction dir : mouse_dirs) {
+        result.emplace_back(PawnMove{Pawn::Mouse, dir});
+    }
     result.insert(result.end(), walls.begin(), walls.end());
 
     return result;
 }
 
 void Board::take_step(Player player, Direction dir) {
-    Cell& position = player == Player::Red ? m_red.position : m_blue.position;
+    take_step(player, Pawn::Cat, dir);
+}
+
+void Board::take_step(Player player, Pawn pawn, Direction dir) {
+    PlayerState& player_state = player == Player::Red ? m_red : m_blue;
+    Cell& position = pawn == Pawn::Cat ? player_state.cat : player_state.mouse;
 
     if (is_blocked({position, dir})) {
         throw std::runtime_error("Trying to move through blocked wall!");
@@ -512,13 +583,29 @@ void Board::take_step(Player player, Direction dir) {
     State& state = state_at(position);
 
     if (player == Player::Red) {
-        state.has_red_player = false;
+        if (pawn == Pawn::Cat) {
+            state.has_red_cat = false;
+        } else {
+            state.has_red_mouse = false;
+        }
         position = position.step(dir);
-        state_at(position).has_red_player = true;
+        if (pawn == Pawn::Cat) {
+            state_at(position).has_red_cat = true;
+        } else {
+            state_at(position).has_red_mouse = true;
+        }
     } else {
-        state.has_blue_player = false;
+        if (pawn == Pawn::Cat) {
+            state.has_blue_cat = false;
+        } else {
+            state.has_blue_mouse = false;
+        }
         position = position.step(dir);
-        state_at(position).has_blue_player = true;
+        if (pawn == Pawn::Cat) {
+            state_at(position).has_blue_cat = true;
+        } else {
+            state_at(position).has_blue_mouse = true;
+        }
     }
 }
 
@@ -548,19 +635,26 @@ void Board::place_wall(Player player, Wall wall) {
 
 void Board::do_action(Player player, Action action) {
     folly::variant_match(
-        action, [&](Direction dir) { take_step(player, dir); },
+        action,
+        [&](PawnMove move) {
+            if (move.pawn == Pawn::Mouse && !allows_mouse_moves()) {
+                throw std::runtime_error("Mouse cannot move in classic variant");
+            }
+            take_step(player, move.pawn, move.dir);
+        },
         [&](Wall wall) { place_wall(player, wall); });
 }
 
 Winner Board::winner() const {
-    if (m_red.position == m_red.goal) {
-        if (distance(m_blue.position, m_blue.goal) <= 2) {
+    if (m_red.cat == m_blue.mouse) {
+        int dist = distance(m_blue.cat, m_red.mouse);
+        if (dist <= 2 && dist != -1) {
             return Winner::Draw;
         }
         return Winner::Red;
     }
 
-    if (m_blue.position == m_blue.goal) {
+    if (m_blue.cat == m_red.mouse) {
         return Winner::Blue;
     }
 
@@ -689,11 +783,34 @@ int Board::index_from_cell(Cell cell) const {
 }
 
 Cell Board::position(Player player) const {
-    return player == Player::Red ? m_red.position : m_blue.position;
+    return player == Player::Red ? m_red.cat : m_blue.cat;
+}
+
+Cell Board::mouse(Player player) const {
+    return player == Player::Red ? m_red.mouse : m_blue.mouse;
 }
 
 Cell Board::goal(Player player) const {
-    return player == Player::Red ? m_red.goal : m_blue.goal;
+    return mouse(other_player(player));
+}
+
+Cell Board::pawn_position(Player player, Pawn pawn) const {
+    if (pawn == Pawn::Cat) {
+        return position(player);
+    }
+    return mouse(player);
+}
+
+Variant Board::variant() const {
+    return m_variant;
+}
+
+bool Board::allows_mouse_moves() const {
+    return m_variant == Variant::Standard;
+}
+
+int Board::move_prior_size() const {
+    return allows_mouse_moves() ? 8 : 4;
 }
 
 int Board::columns() const {
@@ -723,7 +840,8 @@ Wall Board::flip_horizontal(Wall wall) const {
 std::uint64_t std::hash<Board>::operator()(Board const& board) const {
     std::uint64_t position_hash =
         folly::hash::hash_combine(board.position(Player::Red), board.position(Player::Blue),
-                                  board.goal(Player::Red), board.goal(Player::Blue));
+                                  board.mouse(Player::Red), board.mouse(Player::Blue),
+                                  board.variant());
 
     return folly::hash::hash_range(
         board.m_board.begin(), board.m_board.end(), position_hash,

@@ -46,14 +46,25 @@ std::size_t BatchedModel::total_batches() const {
     return m_batches;
 }
 
+int BatchedModel::wall_prior_size() const {
+    return m_models.front()->wall_prior_size();
+}
+
+int BatchedModel::move_prior_size() const {
+    return m_models.front()->move_prior_size();
+}
+
+int BatchedModel::prior_size() const {
+    return m_models.front()->prior_size();
+}
+
 void BatchedModel::run_worker(std::size_t idx) {
     std::vector<folly::Promise<ModelOutput>> dequeued_promises;
 
     // This substantially improves GPU memory transfer times but feels a bit hacky to use
     // cuda-specific code here...
     PinnedBuffer<float> states(m_models[idx]->batch_size() * m_models[idx]->state_size());
-    PinnedBuffer<float> priors(m_models[idx]->batch_size() *
-                               (m_models[idx]->wall_prior_size() + 4));
+    PinnedBuffer<float> priors(m_models[idx]->batch_size() * m_models[idx]->prior_size());
     PinnedBuffer<float> values(m_models[idx]->batch_size());
 
     while (true) {
@@ -77,9 +88,8 @@ void BatchedModel::run_worker(std::size_t idx) {
         m_models[idx]->inference(states, {priors, values});
 
         for (std::size_t i = 0; i < dequeued_promises.size(); ++i) {
-            std::vector<float> prior{
-                priors.data() + (m_models[idx]->wall_prior_size() + 4) * i,
-                priors.data() + (m_models[idx]->wall_prior_size() + 4) * (i + 1)};
+            std::vector<float> prior{priors.data() + m_models[idx]->prior_size() * i,
+                                     priors.data() + m_models[idx]->prior_size() * (i + 1)};
 
             dequeued_promises[i].setValue(ModelOutput{std::move(prior), values[i]});
         }

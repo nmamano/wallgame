@@ -50,6 +50,7 @@ TEST_CASE("TensorRT 5x5 model", "[tensorrt]") {
     REQUIRE(model->batch_size() == 256);
     REQUIRE(model->wall_prior_size() == 50);
     REQUIRE(model->state_size() == 200);
+    REQUIRE(model->move_prior_size() == 4);
 
     SECTION("Run inference on empty board") {
         Board board(5, 5);
@@ -59,7 +60,7 @@ TEST_CASE("TensorRT 5x5 model", "[tensorrt]") {
         std::vector<float> batched_input(model->batch_size() * model->state_size(), 0.0f);
         std::copy(single_input.begin(), single_input.end(), batched_input.begin());
 
-        std::vector<float> priors(model->batch_size() * (model->wall_prior_size() + 4));
+        std::vector<float> priors(model->batch_size() * model->prior_size());
         std::vector<float> values(model->batch_size());
         Model::Output out{priors, values};
 
@@ -90,7 +91,7 @@ TEST_CASE("TensorRT 5x5 model", "[tensorrt]") {
         std::copy(single_input.begin(), single_input.end(),
                   batched_input.begin() + (model->batch_size() - 1) * model->state_size());
 
-        std::vector<float> priors(model->batch_size() * (model->wall_prior_size() + 4));
+        std::vector<float> priors(model->batch_size() * model->prior_size());
         std::vector<float> values(model->batch_size());
         Model::Output out{priors, values};
 
@@ -100,9 +101,8 @@ TEST_CASE("TensorRT 5x5 model", "[tensorrt]") {
         REQUIRE(values[last_batch_idx] >= -1.0f);
         REQUIRE(values[last_batch_idx] <= 1.0f);
 
-        auto last_batch_priors =
-            std::span<float>(priors.begin() + last_batch_idx * (model->wall_prior_size() + 4),
-                             model->wall_prior_size());
+        auto last_batch_priors = std::span<float>(
+            priors.begin() + last_batch_idx * model->prior_size(), model->prior_size());
 
         float wall_prior = last_batch_priors[0];
         REQUIRE(wall_prior < 0.01f);

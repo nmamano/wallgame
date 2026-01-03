@@ -32,7 +32,7 @@ struct ValidationResult {
 // ============================================================================
 
 // Validates that the request is compatible with deep-wallwars capabilities
-// - Only supports Classic variant
+// - Supports Classic and Standard variants
 // - Only supports 8x8 boards
 ValidationResult validate_request(json const& state_json);
 

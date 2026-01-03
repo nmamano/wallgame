@@ -25,9 +25,12 @@ TensorRTModel::TensorRTModel(std::shared_ptr<nv::ICudaEngine> engine)
 
     auto const wall_priors_dims = m_engine->getTensorShape("Priors");
 
-    if (wall_priors_dims.nbDims != 2 || wall_priors_dims.d[0] != m_batch_size ||
-        wall_priors_dims.d[1] != m_wall_prior_size + 4) {
+    if (wall_priors_dims.nbDims != 2 || wall_priors_dims.d[0] != m_batch_size) {
         throw std::runtime_error("Invalid input shape for \"Priors\" tensor!");
+    }
+    m_move_prior_size = wall_priors_dims.d[1] - m_wall_prior_size;
+    if (m_move_prior_size != 4 && m_move_prior_size != 8) {
+        throw std::runtime_error("Invalid \"Priors\" size (expected 4 or 8 move channels)");
     }
 
     auto values_dims = m_engine->getTensorShape("Values");
@@ -37,7 +40,7 @@ TensorRTModel::TensorRTModel(std::shared_ptr<nv::ICudaEngine> engine)
     }
 
     m_states = CudaBuffer<float>(m_state_size * m_batch_size);
-    m_priors = CudaBuffer<float>((m_wall_prior_size + 4) * m_batch_size);
+    m_priors = CudaBuffer<float>((m_wall_prior_size + m_move_prior_size) * m_batch_size);
     m_values = CudaBuffer<float>(m_batch_size);
 
     m_context->setTensorAddress("States", m_states.device_ptr());

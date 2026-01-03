@@ -75,7 +75,7 @@ int main(int argc, char** argv) {
         "  --good_move N     Bias for pawn moves closer to goal (default: 1.5)\n"
         "  --bad_move N      Bias for pawn moves farther from goal (default: 0.75)\n\n"
         "Supported Configurations:\n"
-        "  - Variant: Classic only\n"
+        "  - Variant: Classic or Standard\n"
         "  - Board size: 8x8 only\n");
 
     gflags::ParseCommandLineFlags(&argc, &argv, true);

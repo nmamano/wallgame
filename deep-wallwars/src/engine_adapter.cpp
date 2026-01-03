@@ -16,10 +16,14 @@ namespace engine_adapter {
 // ============================================================================
 
 ValidationResult validate_request(json const& state_json) {
-    // Check variant (only Classic supported)
+    // Check variant (classic and standard supported)
     std::string variant = state_json["config"]["variant"].get<std::string>();
-    if (variant != "classic") {
-        return {false, "Deep-wallwars only supports the 'classic' variant (not '" + variant + "')"};
+    auto parsed_variant = parse_variant(variant);
+    if (!parsed_variant || (*parsed_variant != Variant::Classic &&
+                            *parsed_variant != Variant::Standard)) {
+        return {false,
+                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
+                    variant + "')"};
     }
 
     // Check board dimensions (only 8x8 supported)
@@ -72,6 +76,9 @@ Wall parse_wall(json const& wall_json, int rows) {
 std::pair<Board, Turn> convert_state_to_board(json const& state_json) {
     int width = state_json["config"]["boardWidth"].get<int>();
     int height = state_json["config"]["boardHeight"].get<int>();
+    std::string variant_str = state_json["config"]["variant"].get<std::string>();
+    auto parsed_variant = parse_variant(variant_str);
+    Variant variant = parsed_variant.value_or(Variant::Classic);
 
     // Parse pawn positions
     // API uses PlayerId (1 or 2), deep-wallwars uses Player (Red or Blue)
@@ -80,14 +87,11 @@ std::pair<Board, Turn> convert_state_to_board(json const& state_json) {
 
     Cell red_cat = parse_cell(pawns["1"]["cat"], height);
     Cell blue_cat = parse_cell(pawns["2"]["cat"], height);
-
-    // Classic variant: mice are stationary, so the opponent's mouse is the goal.
-    json const& initial_pawns = state_json["initialState"]["pawns"];
-    Cell red_goal = parse_cell(initial_pawns["2"]["mouse"], height);
-    Cell blue_goal = parse_cell(initial_pawns["1"]["mouse"], height);
+    Cell red_mouse = parse_cell(pawns["1"]["mouse"], height);
+    Cell blue_mouse = parse_cell(pawns["2"]["mouse"], height);
 
     // Create the board
-    Board board(width, height, red_cat, red_goal, blue_cat, blue_goal);
+    Board board(width, height, red_cat, red_mouse, blue_cat, blue_mouse, variant);
 
     // Place walls
     json const& walls_array = state_json["walls"];
@@ -161,9 +165,11 @@ std::optional<std::string> find_best_move(
 
     // Get current position of the player's pawn
     Cell current_pos = board.position(turn.player);
+    Cell current_mouse = board.mouse(turn.player);
 
     // Convert to standard notation
-    std::string notation = move_opt->standard_notation(current_pos, board.rows());
+    std::string notation =
+        move_opt->standard_notation(current_pos, current_mouse, board.rows());
 
     XLOGF(INFO, "Best move: {}", notation);
     return notation;

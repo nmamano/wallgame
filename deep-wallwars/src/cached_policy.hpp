@@ -12,13 +12,13 @@
 struct CacheEntry {
     Board board;
     Turn turn;
-    std::optional<Cell> previous_position;
+    std::optional<PreviousPosition> previous_position;
 };
 
 struct CacheEntryView {
     Board const& board;
     Turn const& turn;
-    std::optional<Cell> const& previous_position;
+    std::optional<PreviousPosition> const& previous_position;
 };
 
 template <>
@@ -45,7 +45,7 @@ public:
                  unsigned shards = std::thread::hardware_concurrency());
 
     folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
-                                             std::optional<Cell> previous_position);
+                                             std::optional<PreviousPosition> previous_position);
 
     int cache_hits() const;
     int cache_misses() const;
