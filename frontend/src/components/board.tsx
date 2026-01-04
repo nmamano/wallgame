@@ -1312,7 +1312,7 @@ export function Board({
             src={src}
             alt="pawn"
             draggable={false}
-            className="w-full h-full object-contain drop-shadow-md"
+            className="w-full h-full object-contain drop-shadow-md select-none"
             style={
               colorFilterMap[pawnColor]
                 ? { filter: colorFilterMap[pawnColor] }
@@ -1329,7 +1329,7 @@ export function Board({
           strokeWidth={2.5}
           className={`${
             colorClassMap[pawnColor] || "text-red-600"
-          } w-full h-full`}
+          } w-full h-full select-none`}
         />
       );
     })();
@@ -1347,7 +1347,7 @@ export function Board({
     return (
       <div
         key={pawn.id}
-        className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses} ${touchDragOpacity}`}
+        className={`${dimensionClass} transform ${hoverClass} transition-transform ${cursorClass} relative ${previewClasses} ${touchDragOpacity} select-none`}
         style={paddingStyle}
         onContextMenu={handleContextMenu}
         onClick={handleClick}
