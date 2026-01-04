@@ -44,9 +44,9 @@ parser.add_argument(
 )
 parser.add_argument(
     "--initial_generation",
-    help="Initial generation to start from (to continue previous run)",
-    default=0,
-    type=int,
+    help="Initial generation to start from (to continue previous run). You can use 'latest' to start from the latest generation in the models directory.",
+    default="0",
+    type=str,
 )
 parser.add_argument(
     "--training-batch-size",
@@ -122,6 +122,43 @@ if args.variant not in variant_move_channels:
     print(f"Error: Unsupported variant '{args.variant}'. Use 'classic' or 'standard'.")
     exit(1)
 move_channels = variant_move_channels[args.variant]
+
+def resolve_initial_generation(value: str) -> int:
+    value = value.strip()
+    if value == "latest":
+        models_dir = args.models
+        if not os.path.isdir(models_dir):
+            print(f"Error: Models directory does not exist: {models_dir}")
+            exit(1)
+
+        latest = -1
+        for filename in os.listdir(models_dir):
+            if not filename.startswith("model_") or not filename.endswith(".pt"):
+                continue
+            stem = filename[len("model_") : -len(".pt")]
+            if not stem.isdigit():
+                continue
+            latest = max(latest, int(stem))
+
+        if latest < 0:
+            print(
+                "Error: --initial_generation latest requires at least one "
+                f"'model_<N>.pt' in {models_dir}"
+            )
+            exit(1)
+
+        return latest
+
+    if not value.isdigit():
+        print(
+            f"Error: Invalid --initial_generation '{value}'. Use an integer or 'latest'."
+        )
+        exit(1)
+
+    return int(value)
+
+
+args.initial_generation = resolve_initial_generation(args.initial_generation)
 
 
 def get_training_paths(generation):
