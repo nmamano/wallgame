@@ -190,6 +190,10 @@ TEST_CASE("place_padding_walls - Standard variant blocks bottom and right", "[Pa
         CHECK(board.is_blocked(Wall{Cell{4, row}, Wall::Right}));
     }
 
+    // Padding area walls should be blocked
+    CHECK(board.is_blocked(Wall{Cell{6, 6}, Wall::Down}));
+    CHECK(board.is_blocked(Wall{Cell{6, 6}, Wall::Right}));
+
     // Inside game area should not be blocked by padding
     CHECK_FALSE(board.is_blocked(Wall{Cell{2, 2}, Wall::Down}));
     CHECK_FALSE(board.is_blocked(Wall{Cell{2, 2}, Wall::Right}));
@@ -214,6 +218,46 @@ TEST_CASE("place_padding_walls - Classic variant leaves bottom row vertical wall
     for (int col = 1; col < 6; ++col) {
         CHECK(board.is_blocked(Wall{Cell{col, 2}, Wall::Down}));
     }
+}
+
+TEST_CASE("place_padding_walls - Classic variant blocks top padding vertical walls", "[Padding]") {
+    auto config = create_padding_config(8, 8, 6, 6, Variant::Classic);
+
+    Board board(8, 8, Variant::Classic);
+    place_padding_walls(board, config);
+
+    // Padding wall (>a8) should be blocked.
+    CHECK(board.is_blocked(Wall{Cell{0, 0}, Wall::Right}));
+}
+
+TEST_CASE("place_padding_walls - Classic variant blocks padding column horizontal walls", "[Padding]") {
+    auto config = create_padding_config(8, 8, 6, 6, Variant::Classic);
+
+    Board board(8, 8, Variant::Classic);
+    place_padding_walls(board, config);
+
+    // Padding wall (^a5) should be blocked.
+    CHECK(board.is_blocked(Wall{Cell{0, 2}, Wall::Down}));
+}
+
+TEST_CASE("convert_state_to_board - Classic uses model corner goals", "[Padding]") {
+    json state;
+    state["config"]["variant"] = "classic";
+    state["config"]["boardWidth"] = 6;
+    state["config"]["boardHeight"] = 6;
+    state["turn"] = 1;
+    state["pawns"]["1"]["cat"] = {0, 0};
+    state["pawns"]["1"]["mouse"] = {5, 0};
+    state["pawns"]["2"]["cat"] = {0, 5};
+    state["pawns"]["2"]["mouse"] = {5, 5};
+    state["walls"] = json::array();
+
+    auto [board, turn, padding_config] = convert_state_to_board(state, 8, 8);
+
+    CHECK(board.mouse(Player::Red) == Cell{0, 7});
+    CHECK(board.mouse(Player::Blue) == Cell{7, 7});
+    CHECK(board.position(Player::Red) == Cell{1, 2});
+    CHECK(board.position(Player::Blue) == Cell{6, 2});
 }
 
 TEST_CASE("place_padding_walls - no walls placed when no padding needed", "[Padding]") {
@@ -281,6 +325,20 @@ TEST_CASE("transform_move_notation - Classic variant with offset", "[Padding]") 
     CHECK(result == "Cc5");
 }
 
+TEST_CASE("transform_move_notation - Classic bottom row outside column maps to goal", "[Padding]") {
+    // 6x6 game on 8x8 model: row_offset=2, col_offset=1
+    // A pawn one away from the right embedded corner can move two steps right to model h1.
+    // This should map back to the 6x6 corner (f1), effectively ignoring the extra step.
+    auto config = create_padding_config(8, 8, 6, 6, Variant::Classic);
+
+    std::string notation = "Ch1";
+    Cell cat_pos{5, 7};    // Model: f1 (one away from embedded right corner)
+    Cell mouse_pos{0, 7};
+
+    std::string result = transform_move_notation(notation, cat_pos, mouse_pos, config);
+    CHECK(result == "Cf1");
+}
+
 TEST_CASE("transform_move_notation - wall notation", "[Padding]") {
     // 5x5 game on 8x8 model: row_offset=3, col_offset=1
     auto config = create_padding_config(8, 8, 5, 5, Variant::Classic);
@@ -295,6 +353,20 @@ TEST_CASE("transform_move_notation - wall notation", "[Padding]") {
 
     std::string result = transform_move_notation(notation, cat_pos, mouse_pos, config);
     CHECK(result == ">c5");
+}
+
+TEST_CASE("transform_move_notation - horizontal wall notation", "[Padding]") {
+    // 6x6 game on 8x8 model, Standard variant: no offset
+    auto config = create_padding_config(8, 8, 6, 6, Variant::Standard);
+
+    // In 8x8 model: ^c7 -> col 2, internal row 1
+    // In 6x6 game: internal row 1 => official row 5
+    std::string notation = "^c7";
+    Cell cat_pos{0, 0};
+    Cell mouse_pos{0, 0};
+
+    std::string result = transform_move_notation(notation, cat_pos, mouse_pos, config);
+    CHECK(result == "^c5");
 }
 
 TEST_CASE("transform_move_notation - compound move", "[Padding]") {
