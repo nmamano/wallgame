@@ -19,6 +19,8 @@ TensorRTModel::TensorRTModel(std::shared_ptr<nv::ICudaEngine> engine)
 
     int const columns = states_dims.d[2];
     int const rows = states_dims.d[3];
+    m_columns = columns;
+    m_rows = rows;
     m_batch_size = states_dims.d[0];
     m_state_size = states_dims.d[1] * columns * rows;
     m_wall_prior_size = 2 * columns * rows;
@@ -54,6 +56,14 @@ void TensorRTModel::inference(std::span<float> states, Output const& out) {
     m_priors.to_host(out.priors, m_stream);
     m_values.to_host(out.values, m_stream);
     m_stream.synchronize();
+}
+
+int TensorRTModel::rows() const {
+    return m_rows;
+}
+
+int TensorRTModel::columns() const {
+    return m_columns;
 }
 
 std::shared_ptr<nv::ICudaEngine> load_serialized_engine(nv::IRuntime& runtime,

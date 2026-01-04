@@ -12,10 +12,304 @@
 namespace engine_adapter {
 
 // ============================================================================
+// Padding Support
+// ============================================================================
+
+PaddingConfig create_padding_config(
+    int model_rows, int model_columns,
+    int game_rows, int game_columns,
+    Variant variant) {
+
+    PaddingConfig config;
+    config.model_rows = model_rows;
+    config.model_columns = model_columns;
+    config.game_rows = game_rows;
+    config.game_columns = game_columns;
+    config.variant = variant;
+
+    if (variant == Variant::Standard) {
+        // Standard: embed at top-left
+        config.row_offset = 0;
+        config.col_offset = 0;
+    } else {
+        // Classic: embed at bottom, centered horizontally (left-biased)
+        config.row_offset = model_rows - game_rows;
+        config.col_offset = (model_columns - game_columns) / 2;  // Floor division (left-biased)
+    }
+
+    return config;
+}
+
+Cell transform_to_model(Cell game_cell, PaddingConfig const& config) {
+    return Cell{
+        game_cell.column + config.col_offset,
+        game_cell.row + config.row_offset
+    };
+}
+
+Wall transform_to_model(Wall game_wall, PaddingConfig const& config) {
+    return Wall{
+        transform_to_model(game_wall.cell, config),
+        game_wall.type
+    };
+}
+
+std::optional<Cell> transform_to_game(Cell model_cell, PaddingConfig const& config) {
+    int game_col = model_cell.column - config.col_offset;
+    int game_row = model_cell.row - config.row_offset;
+
+    // Check if the cell is within the game area
+    if (game_col < 0 || game_col >= config.game_columns ||
+        game_row < 0 || game_row >= config.game_rows) {
+        return std::nullopt;
+    }
+
+    return Cell{game_col, game_row};
+}
+
+void place_padding_walls(Board& board, PaddingConfig const& config) {
+    if (!config.needs_padding()) {
+        return;
+    }
+
+    // For Standard variant: embed at top-left
+    // Block right and bottom boundaries of the game area
+    if (config.variant == Variant::Standard) {
+        // Block bottom boundary (horizontal walls below game area)
+        for (int col = 0; col < config.game_columns; ++col) {
+            Wall wall{Cell{col, config.game_rows - 1}, Wall::Down};
+            if (!board.is_blocked(wall)) {
+                board.place_wall(Player::Red, wall);
+            }
+        }
+
+        // Block right boundary (vertical walls right of game area)
+        for (int row = 0; row < config.game_rows; ++row) {
+            Wall wall{Cell{config.game_columns - 1, row}, Wall::Right};
+            if (!board.is_blocked(wall)) {
+                board.place_wall(Player::Red, wall);
+            }
+        }
+
+        // Block walls in padding area so MCTS can't place out-of-bounds walls.
+        for (int row = 0; row < config.model_rows; ++row) {
+            for (int col = 0; col < config.model_columns; ++col) {
+                if (row < config.game_rows && col < config.game_columns) {
+                    continue;
+                }
+                Wall right_wall{Cell{col, row}, Wall::Right};
+                if (!board.is_blocked(right_wall)) {
+                    board.place_wall(Player::Red, right_wall);
+                }
+                Wall down_wall{Cell{col, row}, Wall::Down};
+                if (!board.is_blocked(down_wall)) {
+                    board.place_wall(Player::Red, down_wall);
+                }
+            }
+        }
+    } else {
+        // Classic variant: embed at bottom, centered
+        // Need to block:
+        // 1. Top of game area (horizontal wall at row_offset - 1 if row_offset > 0)
+        // 2. Left of game area (vertical walls)
+        // 3. Right of game area (vertical walls)
+        // 4. Horizontal walls in padding rows
+
+        // Block all cells in the top padding area
+        for (int row = 0; row < config.row_offset; ++row) {
+            for (int col = 0; col < config.model_columns; ++col) {
+                // Block horizontal walls (Down direction)
+                if (row < config.model_rows - 1) {
+                    Wall wall{Cell{col, row}, Wall::Down};
+                    if (!board.is_blocked(wall)) {
+                        board.place_wall(Player::Red, wall);
+                    }
+                }
+                // Block vertical walls (Right direction)
+                Wall right_wall{Cell{col, row}, Wall::Right};
+                if (!board.is_blocked(right_wall)) {
+                    board.place_wall(Player::Red, right_wall);
+                }
+            }
+        }
+
+        // Block top boundary of game area
+        if (config.row_offset > 0) {
+            for (int col = config.col_offset; col < config.col_offset + config.game_columns; ++col) {
+                Wall wall{Cell{col, config.row_offset - 1}, Wall::Down};
+                if (!board.is_blocked(wall)) {
+                    board.place_wall(Player::Red, wall);
+                }
+            }
+        }
+
+        // Block left boundary (vertical walls) - EXCEPT bottom row for Classic
+        if (config.col_offset > 0) {
+            for (int row = config.row_offset; row < config.model_rows; ++row) {
+                if (row == config.model_rows - 1) {
+                    continue;
+                }
+                Wall wall{Cell{config.col_offset - 1, row}, Wall::Right};
+                if (!board.is_blocked(wall)) {
+                    board.place_wall(Player::Red, wall);
+                }
+            }
+        }
+
+        // Block right boundary (vertical walls) - EXCEPT bottom row for Classic
+        int right_boundary_col = config.col_offset + config.game_columns - 1;
+        if (right_boundary_col < config.model_columns - 1) {
+            for (int row = config.row_offset; row < config.model_rows; ++row) {
+                if (row == config.model_rows - 1) {
+                    continue;
+                }
+                Wall wall{Cell{right_boundary_col, row}, Wall::Right};
+                if (!board.is_blocked(wall)) {
+                    board.place_wall(Player::Red, wall);
+                }
+            }
+        }
+
+        // Block walls in padding columns within game rows to prevent out-of-bounds walls.
+        int game_col_start = config.col_offset;
+        int game_col_end = config.col_offset + config.game_columns;  // exclusive
+        for (int row = config.row_offset; row < config.model_rows; ++row) {
+            for (int col = 0; col < config.model_columns; ++col) {
+                if (col >= game_col_start && col < game_col_end) {
+                    continue;
+                }
+                Wall down_wall{Cell{col, row}, Wall::Down};
+                if (!board.is_blocked(down_wall)) {
+                    board.place_wall(Player::Red, down_wall);
+                }
+                if (row == config.model_rows - 1) {
+                    continue;
+                }
+                Wall right_wall{Cell{col, row}, Wall::Right};
+                if (!board.is_blocked(right_wall)) {
+                    board.place_wall(Player::Red, right_wall);
+                }
+            }
+        }
+    }
+}
+
+// Helper to parse a coordinate from notation (e.g., "e4" -> col 4, row based on board size)
+static std::pair<int, int> parse_notation_coords(std::string const& notation, int model_rows) {
+    // Column is the letter (a=0, b=1, etc.)
+    int col = notation[0] - 'a';
+    // Row is the number (1-indexed from bottom in chess notation)
+    int official_row = std::stoi(notation.substr(1));
+    // Convert to internal row (0-indexed from top)
+    int internal_row = model_rows - official_row;
+    return {col, internal_row};
+}
+
+// Helper to format a coordinate as notation
+static std::string format_notation_coords(int col, int row, int game_rows) {
+    char col_char = 'a' + col;
+    int official_row = game_rows - row;
+    return std::string(1, col_char) + std::to_string(official_row);
+}
+
+std::string transform_move_notation(
+    std::string const& model_notation,
+    Cell cat_pos,
+    Cell mouse_pos,
+    PaddingConfig const& config) {
+
+    if (!config.needs_padding()) {
+        return model_notation;
+    }
+
+    std::string result;
+    std::string remaining = model_notation;
+
+    while (!remaining.empty()) {
+        // Add separator if not first component
+        if (!result.empty()) {
+            result += '.';
+        }
+
+        // Find the next component (separated by '.')
+        size_t dot_pos = remaining.find('.');
+        std::string component = (dot_pos == std::string::npos)
+            ? remaining
+            : remaining.substr(0, dot_pos);
+        remaining = (dot_pos == std::string::npos)
+            ? ""
+            : remaining.substr(dot_pos + 1);
+
+        // Parse the component type and coordinates
+        if (component[0] == 'C' || component[0] == 'M') {
+            // Pawn move: C/M followed by coordinates
+            char pawn_type = component[0];
+            std::string coords = component.substr(1);
+
+            auto [model_col, model_row] = parse_notation_coords(coords, config.model_rows);
+
+            // Transform to game coordinates
+            auto game_cell = transform_to_game(Cell{model_col, model_row}, config);
+
+            if (game_cell) {
+                result += pawn_type;
+                result += format_notation_coords(game_cell->column, game_cell->row, config.game_rows);
+            } else {
+                // Cell is in padding area - this can happen for Classic variant
+                // when a pawn moves toward the goal corner outside the game area
+                // In this case, we keep the notation but map to the game boundary
+                // Actually, for Classic variant, the goals are at the model corners,
+                // so we need to map to the game corner
+                if (config.variant == Variant::Classic) {
+                    // Map to the appropriate game corner
+                    int game_col, game_row;
+                    if (model_col < config.col_offset) {
+                        game_col = 0;
+                    } else if (model_col >= config.col_offset + config.game_columns) {
+                        game_col = config.game_columns - 1;
+                    } else {
+                        game_col = model_col - config.col_offset;
+                    }
+                    game_row = config.game_rows - 1;  // Bottom row of game
+
+                    result += pawn_type;
+                    result += format_notation_coords(game_col, game_row, config.game_rows);
+                } else {
+                    // For Standard, this shouldn't happen
+                    result += component;
+                }
+            }
+        } else if (component[0] == '>' || component[0] == '^') {
+            // Wall placement: > for vertical, ^ for horizontal
+            char wall_type = component[0];
+            std::string coords = component.substr(1);
+
+            auto [model_col, model_row] = parse_notation_coords(coords, config.model_rows);
+
+            // Transform to game coordinates
+            auto game_cell = transform_to_game(Cell{model_col, model_row}, config);
+
+            if (game_cell) {
+                result += wall_type;
+                result += format_notation_coords(game_cell->column, game_cell->row, config.game_rows);
+            } else {
+                // Wall in padding area - keep original (shouldn't happen in valid games)
+                result += component;
+            }
+        } else {
+            // Unknown format, keep as-is
+            result += component;
+        }
+    }
+
+    return result;
+}
+
+// ============================================================================
 // Validation
 // ============================================================================
 
-ValidationResult validate_request(json const& state_json) {
+ValidationResult validate_request(json const& state_json, int model_rows, int model_columns) {
     // Check variant (classic and standard supported)
     std::string variant = state_json["config"]["variant"].get<std::string>();
     auto parsed_variant = parse_variant(variant);
@@ -26,13 +320,19 @@ ValidationResult validate_request(json const& state_json) {
                     variant + "')"};
     }
 
-    // Check board dimensions (only 8x8 supported)
+    // Check board dimensions (must be at least 4x4 and at most model dimensions)
     int width = state_json["config"]["boardWidth"].get<int>();
     int height = state_json["config"]["boardHeight"].get<int>();
 
-    if (width != 8 || height != 8) {
-        return {false, "Deep-wallwars only supports 8x8 boards (got " +
+    if (width < 4 || height < 4) {
+        return {false, "Board dimensions must be at least 4x4 (got " +
                 std::to_string(width) + "x" + std::to_string(height) + ")"};
+    }
+
+    if (width > model_columns || height > model_rows) {
+        return {false, "This engine supports boards up to " +
+                std::to_string(model_columns) + "x" + std::to_string(model_rows) +
+                " (got " + std::to_string(width) + "x" + std::to_string(height) + ")"};
     }
 
     return {true, ""};
@@ -73,60 +373,70 @@ Wall parse_wall(json const& wall_json, int rows) {
     }
 }
 
-std::pair<Board, Turn> convert_state_to_board(json const& state_json) {
-    int width = state_json["config"]["boardWidth"].get<int>();
-    int height = state_json["config"]["boardHeight"].get<int>();
+std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
+    json const& state_json,
+    int model_rows,
+    int model_columns) {
+
+    int game_width = state_json["config"]["boardWidth"].get<int>();
+    int game_height = state_json["config"]["boardHeight"].get<int>();
     std::string variant_str = state_json["config"]["variant"].get<std::string>();
     auto parsed_variant = parse_variant(variant_str);
     Variant variant = parsed_variant.value_or(Variant::Classic);
 
-    // Parse pawn positions
+    // Create padding configuration
+    PaddingConfig padding_config = create_padding_config(
+        model_rows, model_columns, game_height, game_width, variant);
+
+    // Parse pawn positions (in game coordinates)
     // API uses PlayerId (1 or 2), deep-wallwars uses Player (Red or Blue)
     // We map Player 1 -> Red, Player 2 -> Blue
     json const& pawns = state_json["pawns"];
 
-    Cell red_cat = parse_cell(pawns["1"]["cat"], height);
-    Cell blue_cat = parse_cell(pawns["2"]["cat"], height);
-    Cell red_mouse = parse_cell(pawns["1"]["mouse"], height);
-    Cell blue_mouse = parse_cell(pawns["2"]["mouse"], height);
+    Cell red_cat_game = parse_cell(pawns["1"]["cat"], game_height);
+    Cell blue_cat_game = parse_cell(pawns["2"]["cat"], game_height);
+    Cell red_mouse_game = parse_cell(pawns["1"]["mouse"], game_height);
+    Cell blue_mouse_game = parse_cell(pawns["2"]["mouse"], game_height);
 
-    // Create the board
-    Board board(width, height, red_cat, red_mouse, blue_cat, blue_mouse, variant);
+    // Transform to model coordinates
+    Cell red_cat = transform_to_model(red_cat_game, padding_config);
+    Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
+    Cell red_mouse;
+    Cell blue_mouse;
+    if (variant == Variant::Classic) {
+        // Classic goals are at the model corners.
+        red_mouse = Cell{0, model_rows - 1};
+        blue_mouse = Cell{model_columns - 1, model_rows - 1};
+    } else {
+        red_mouse = transform_to_model(red_mouse_game, padding_config);
+        blue_mouse = transform_to_model(blue_mouse_game, padding_config);
+    }
 
-    // Place walls
+    // Create the board with model dimensions
+    Board board(model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant);
+
+    // Place padding walls
+    place_padding_walls(board, padding_config);
+
+    // Place game walls (transformed to model coordinates)
     json const& walls_array = state_json["walls"];
     for (auto const& wall_json : walls_array) {
-        Wall wall = parse_wall(wall_json, height);
+        Wall game_wall = parse_wall(wall_json, game_height);
+        Wall model_wall = transform_to_model(game_wall, padding_config);
         int player_id = wall_json.value("playerId", 0);
         Player wall_owner = (player_id == 1) ? Player::Red : Player::Blue;
-        board.place_wall(wall_owner, wall);
+        board.place_wall(wall_owner, model_wall);
     }
 
     // Determine current turn
     int current_player_id = state_json["turn"].get<int>();
-    int move_count = state_json["moveCount"].get<int>();
 
     Player current_player = (current_player_id == 1) ? Player::Red : Player::Blue;
 
-    // Each "move" in the API is a full move (two actions)
-    // The turn has two parts: First and Second
-    // If we've completed N moves, we're on move N+1
-    // The moveCount tells us how many moves are complete
-    // If it's odd, we're on the second action; if even, on the first action
-    // Actually, looking at the API more carefully:
-    // - Each player makes a full move (potentially two actions)
-    // - moveCount is the number of completed full moves
-    // - So if moveCount=0, we're on the first player's first action
-    // - After the first player's move, moveCount=1
-    //
-    // Actually, I need to look at the history to understand this better.
-    // Let me simplify: since deep-wallwars tracks Turn (player + action),
-    // and the API tells us whose turn it is, I'll assume we're at the start
-    // of that player's turn (First action).
-
+    // Assume we're at the start of that player's turn (First action)
     Turn turn{current_player, Turn::First};
 
-    return {board, turn};
+    return {board, turn, padding_config};
 }
 
 // ============================================================================
@@ -137,7 +447,8 @@ std::optional<std::string> find_best_move(
     Board const& board,
     Turn turn,
     EvaluationFunction const& eval_fn,
-    EngineConfig const& config) {
+    EngineConfig const& config,
+    PaddingConfig const& padding_config) {
 
     XLOGF(DBG, "Finding best move for player {} at turn action {}",
           turn.player == Player::Red ? "Red" : "Blue",
@@ -163,15 +474,19 @@ std::optional<std::string> find_best_move(
         return std::nullopt;
     }
 
-    // Get current position of the player's pawn
+    // Get current position of the player's pawn (in model coordinates)
     Cell current_pos = board.position(turn.player);
     Cell current_mouse = board.mouse(turn.player);
 
-    // Convert to standard notation
-    std::string notation =
+    // Convert to standard notation (in model coordinates)
+    std::string model_notation =
         move_opt->standard_notation(current_pos, current_mouse, board.rows());
 
-    XLOGF(INFO, "Best move: {}", notation);
+    // Transform notation from model coordinates to game coordinates
+    std::string notation = transform_move_notation(
+        model_notation, current_pos, current_mouse, padding_config);
+
+    XLOGF(INFO, "Best move: {} (model: {})", notation, model_notation);
     return notation;
 }
 
@@ -256,8 +571,12 @@ json handle_engine_request(
         };
     }
 
+    int model_rows = config.model_rows;
+    int model_columns = config.model_columns;
+
     // Validate request compatibility
-    ValidationResult validation = validate_request(state_json);
+    ValidationResult validation = validate_request(
+        state_json, model_rows, model_columns);
     if (!validation.valid) {
         XLOGF(WARN, "Request validation failed: {}", validation.error_message);
         std::cerr << "Error: " << validation.error_message << "\n";
@@ -278,12 +597,13 @@ json handle_engine_request(
         }
     }
 
-    // Convert state
-    auto [board, turn] = convert_state_to_board(state_json);
+    // Convert state (with padding support)
+    auto [board, turn, padding_config] = convert_state_to_board(
+        state_json, model_rows, model_columns);
 
     // Handle request based on kind
     if (kind == "move") {
-        auto move_notation = find_best_move(board, turn, eval_fn, config);
+        auto move_notation = find_best_move(board, turn, eval_fn, config, padding_config);
 
         if (!move_notation) {
             XLOG(WARN, "No legal move found, resigning");

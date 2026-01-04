@@ -17,10 +17,14 @@ public:
     TensorRTModel(std::shared_ptr<nvinfer1::ICudaEngine> engine);
 
     void inference(std::span<float> states, Output const& out) override;
+    int rows() const;
+    int columns() const;
 
 private:
     std::shared_ptr<nvinfer1::ICudaEngine> m_engine;  // Keep engine alive
     std::unique_ptr<nvinfer1::IExecutionContext> m_context;
+    int m_rows = 0;
+    int m_columns = 0;
 
     CudaStream m_stream;
     CudaBuffer<float> m_states;

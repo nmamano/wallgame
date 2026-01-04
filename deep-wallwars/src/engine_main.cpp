@@ -25,6 +25,8 @@ DEFINE_int32(think_time, 5, "Thinking time in seconds");
 DEFINE_int32(samples, 500, "Number of MCTS samples per move (overrides think time)");
 DEFINE_uint32(seed, 42, "Random seed for MCTS");
 DEFINE_uint64(cache_size, 100'000, "Size of the MCTS evaluation cache");
+DEFINE_int32(model_rows, 8, "Model rows for --model=simple");
+DEFINE_int32(model_columns, 8, "Model columns for --model=simple");
 
 DEFINE_double(move_prior, 0.3, "Move prior of simple agent");
 DEFINE_double(good_move, 1.5, "Good move bias of simple agent");
@@ -73,16 +75,20 @@ int main(int argc, char** argv) {
         "Simple Policy Options (when --model=simple):\n"
         "  --move_prior N    Likelihood of choosing a pawn move (default: 0.3)\n"
         "  --good_move N     Bias for pawn moves closer to goal (default: 1.5)\n"
-        "  --bad_move N      Bias for pawn moves farther from goal (default: 0.75)\n\n"
+        "  --bad_move N      Bias for pawn moves farther from goal (default: 0.75)\n"
+        "  --model_rows N    Model rows for padding (default: 8)\n"
+        "  --model_columns N Model columns for padding (default: 8)\n\n"
         "Supported Configurations:\n"
         "  - Variant: Classic or Standard\n"
-        "  - Board size: 8x8 only\n");
+        "  - Board size: 4x4 up to model dimensions (padding for smaller boards)\n");
 
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     try {
         // Create evaluation function
         EvaluationFunction eval_fn;
+        int model_rows = FLAGS_model_rows;
+        int model_columns = FLAGS_model_columns;
 
         if (FLAGS_model == "simple") {
             // Simple policy doesn't need TensorRT
@@ -133,7 +139,10 @@ int main(int argc, char** argv) {
 
             // Create model (single instance for engine mode)
             std::vector<std::unique_ptr<Model>> models;
-            models.push_back(std::make_unique<TensorRTModel>(engine));
+            auto tensor_model = std::make_unique<TensorRTModel>(engine);
+            model_rows = tensor_model->rows();
+            model_columns = tensor_model->columns();
+            models.push_back(std::move(tensor_model));
 
             constexpr int kBatchedModelQueueSize = 4096;
             auto batched_model = std::make_shared<BatchedModel>(
@@ -150,6 +159,8 @@ int main(int argc, char** argv) {
         config.think_time_seconds = FLAGS_think_time;
         config.samples = FLAGS_samples;
         config.seed = FLAGS_seed;
+        config.model_rows = model_rows;
+        config.model_columns = model_columns;
 
         // Read request from stdin
         std::string input;
