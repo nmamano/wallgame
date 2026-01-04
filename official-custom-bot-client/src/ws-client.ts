@@ -39,10 +39,12 @@ export interface BotClientOptions {
   serverUrl: string;
   clientId: string;
   bots: BotConfig[];
-  engineCommands: Map<string, string | undefined>;
+  engineCommands: Map<string, EngineCommandConfig>;
   clientName?: string;
   clientVersion?: string;
 }
+
+export type EngineCommandConfig = Record<string, string>;
 
 type ClientState =
   | "connecting"
@@ -55,7 +57,7 @@ interface ResolvedBotClientOptions {
   serverUrl: string;
   clientId: string;
   bots: BotConfig[];
-  engineCommands: Map<string, string | undefined>;
+  engineCommands: Map<string, EngineCommandConfig>;
   clientName: string;
   clientVersion: string;
 }
@@ -433,7 +435,13 @@ export class BotClient {
     request: EngineRequest,
     serverMessage: RequestMessage,
   ): Promise<EngineResponse | null> {
-    const engineCommand = this.options.engineCommands.get(serverMessage.botId);
+    const engineCommandConfig = this.options.engineCommands.get(
+      serverMessage.botId,
+    );
+    const engineCommand = resolveEngineCommand(
+      engineCommandConfig,
+      serverMessage.state.config.variant,
+    );
 
     if (!engineCommand) {
       // Use dumb bot
@@ -586,4 +594,12 @@ export class BotClient {
       this.runResolve = null;
     }
   }
+}
+
+function resolveEngineCommand(
+  config: EngineCommandConfig | undefined,
+  variant: string,
+): string | undefined {
+  if (!config) return undefined;
+  return config[variant] ?? config.default;
 }
