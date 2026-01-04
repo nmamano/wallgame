@@ -1,5 +1,5 @@
 import { Badge } from "@/components/ui/badge";
-import { Bot, Flag, User } from "lucide-react";
+import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
 import { resolvePawnStyleSrc } from "@/lib/pawn-style";
 import type { PlayerId } from "../../../shared/domain/game-types";
@@ -23,6 +23,7 @@ interface PlayerTimerCardProps {
   isActive: boolean;
   timeLeft: number;
   goalDistance: number | null;
+  minWidthRem: number;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
 }
@@ -38,9 +39,16 @@ export function PlayerTimerCard({
   isActive,
   timeLeft,
   goalDistance,
+  minWidthRem,
   score = null,
   gameStatus = "playing",
 }: PlayerTimerCardProps) {
+  const nameSuffixRegex = /\s*\((?:also\s+you|you)\)\s*$/i;
+  const nameSuffixMatch = nameSuffixRegex.exec(player.name);
+  const nameSuffixLabel = nameSuffixMatch ? nameSuffixMatch[0].trim() : null;
+  const baseName = player.name.replace(nameSuffixRegex, "").trim();
+  const trimmedBaseName =
+    baseName.length > 10 ? `${baseName.slice(0, 8)}..` : baseName;
   // Determine if we should show cat SVG for this player
   const shouldShowCatSvg =
     player.catSkin && player.catSkin !== "default" && player.catSkin.length > 0;
@@ -66,11 +74,12 @@ export function PlayerTimerCard({
 
   return (
     <div
-      className={`flex items-center justify-between gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg transition-colors shadow-sm min-w-[400px] ${
+      className={`flex items-center justify-between gap-2 lg:gap-3 p-2 lg:p-3 rounded-lg transition-colors shadow-sm ${
         shouldShowActiveState
           ? "bg-accent/50 border border-accent"
           : "bg-card/50 backdrop-blur border border-border"
       }`}
+      style={{ minWidth: `${minWidthRem}rem` }}
     >
       {/* Left side: Profile pic, Name/Rating/Online */}
       <div className="flex items-center gap-2 lg:gap-3 min-w-0">
@@ -100,7 +109,10 @@ export function PlayerTimerCard({
         <div className="min-w-0">
           <div className="flex items-center gap-1.5 lg:gap-2">
             <span className="font-semibold truncate text-sm lg:text-base">
-              {player.name}
+              {trimmedBaseName || player.name}
+              {nameSuffixLabel && (
+                <span className="hidden lg:inline"> {nameSuffixLabel}</span>
+              )}
             </span>
             <Badge
               variant="outline"
@@ -128,7 +140,8 @@ export function PlayerTimerCard({
               variant="outline"
               className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
             >
-              Match Score: {scoreLabel}
+              Match<span className="hidden lg:inline"> Score</span>:{" "}
+              {scoreLabel}
             </Badge>
           </div>
           <div className="flex items-center justify-center">
@@ -137,7 +150,6 @@ export function PlayerTimerCard({
               className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
               title="Distance to goal"
             >
-              <Flag className="w-3 h-3 mr-1" />
               Distance {goalDistanceLabel}
             </Badge>
           </div>

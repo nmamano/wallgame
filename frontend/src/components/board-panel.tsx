@@ -13,6 +13,7 @@ type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];
 interface BoardPanelProps {
   // Container styling
   adjustedBoardContainerHeight: number;
+  minWidthRem: number;
 
   // Game state
   gameState: {
@@ -74,6 +75,7 @@ interface BoardPanelProps {
 
 export function BoardPanel({
   adjustedBoardContainerHeight,
+  minWidthRem,
   gameState,
   isLoadingConfig,
   loadError,
@@ -122,10 +124,11 @@ export function BoardPanel({
 
   return (
     <div
-      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)] min-w-[400px]"
+      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
       style={
         {
           "--board-panel-height": `${adjustedBoardContainerHeight}rem`,
+          minWidth: `${minWidthRem}rem`,
         } as React.CSSProperties
       }
     >
