@@ -104,13 +104,18 @@ function GamePage() {
   const boardWidth = cols * maxCellSize + (cols - 1) * gapSize + boardPadding;
   const boardHeight = rows * maxCellSize + (rows - 1) * gapSize + boardPadding;
 
-  // Calculate board container dimensions (board + margin)
-  // Ensure minimum width of 25rem (400px) to accommodate button text and timer cards
-  const minBoardContainerWidth = 25;
-  const boardContainerWidth = Math.max(
+  // Minimum panel widths (rem)
+  const minTimerPanelWidth = isLargeScreen ? 36 : 23;
+  const minBoardPanelWidth = isLargeScreen ? 36 : 23;
+
+  // Board width is based on board dimensions, with a minimum for action text.
+  const minBoardContainerWidth = Math.max(
     boardWidth + containerMargin * 2,
-    minBoardContainerWidth,
+    minBoardPanelWidth,
   );
+
+  // Timers and board share the same width: max of their minimums.
+  const leftColumnWidth = Math.max(minBoardContainerWidth, minTimerPanelWidth);
 
   // Fixed component heights
   const timerHeight = 4;
@@ -213,7 +218,7 @@ function GamePage() {
         <div
           className="flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit"
           style={{
-            gridTemplateColumns: `${boardContainerWidth}rem ${rightColumnMaxWidth}rem`,
+            gridTemplateColumns: `${leftColumnWidth}rem ${rightColumnMaxWidth}rem`,
             gap: `${gap}rem`,
           }}
         >
@@ -221,7 +226,7 @@ function GamePage() {
           <div
             className="flex flex-col w-full"
             style={{
-              maxWidth: `${boardContainerWidth}rem`,
+              maxWidth: `${leftColumnWidth}rem`,
               gap: `${gap}rem`,
             }}
           >
@@ -235,6 +240,7 @@ function GamePage() {
                     timeLeft={
                       timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
                     }
+                    minWidthRem={minTimerPanelWidth}
                     goalDistance={
                       timers.goalDistances[timers.topPlayer.playerId] ?? null
                     }
@@ -246,6 +252,7 @@ function GamePage() {
                 {/* Board Container */}
                 <BoardPanel
                   adjustedBoardContainerHeight={adjustedBoardContainerHeight}
+                  minWidthRem={minBoardContainerWidth}
                   gameState={board.gameState}
                   isLoadingConfig={board.isLoadingConfig}
                   loadError={board.loadError}
@@ -298,6 +305,7 @@ function GamePage() {
                       timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??
                       0
                     }
+                    minWidthRem={minTimerPanelWidth}
                     goalDistance={
                       timers.goalDistances[timers.bottomPlayer.playerId] ?? null
                     }
