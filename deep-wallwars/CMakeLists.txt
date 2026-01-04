@@ -32,7 +32,19 @@ add_custom_command(
     COMMENT "Converting 8x8 ONNX model to TensorRT format"
 )
 
-add_custom_target(model_trt ALL DEPENDS ${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt ${CMAKE_CURRENT_BINARY_DIR}/8x8_750000.trt)
+add_custom_command(
+    OUTPUT ${CMAKE_CURRENT_BINARY_DIR}/8x8_standard_54000.trt
+    COMMAND trtexec --onnx=${CMAKE_CURRENT_SOURCE_DIR}/assets/models/8x8_standard_54000.onnx
+            --saveEngine=${CMAKE_CURRENT_BINARY_DIR}/8x8_standard_54000.trt --fp16
+    DEPENDS ${CMAKE_CURRENT_SOURCE_DIR}/assets/models/8x8_standard_54000.onnx
+    COMMENT "Converting 8x8 Standard ONNX model to TensorRT format"
+)
+
+add_custom_target(model_trt ALL DEPENDS
+    ${CMAKE_CURRENT_BINARY_DIR}/5x5_60000.trt
+    ${CMAKE_CURRENT_BINARY_DIR}/8x8_750000.trt
+    ${CMAKE_CURRENT_BINARY_DIR}/8x8_standard_54000.trt
+)
 
 add_library(core OBJECT
     src/batched_model.cpp
@@ -62,6 +74,7 @@ add_executable(deep_ww_engine
     src/engine_main.cpp
 )
 target_link_libraries(deep_ww_engine PRIVATE core gflags)
+add_dependencies(deep_ww_engine model_trt)
 
 # Unit tests (optional)
 find_package(Catch2 3)
