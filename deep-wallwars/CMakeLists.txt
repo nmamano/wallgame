@@ -71,6 +71,7 @@ if (Catch2_FOUND)
         test/gamestate.cpp
         test/main.cpp
         test/mcts.cpp
+        test/engine_adapter.cpp
         test/tensorrt_model.cpp
     )
 
