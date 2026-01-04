@@ -10,3 +10,4 @@ ignore
 frontend/src/components/ui/
 frontend/src/components/unused-components/
 frontend/src/routeTree.gen.ts
+deep-wallwars/

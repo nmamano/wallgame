@@ -14,14 +14,29 @@
       "variants": {
         "classic": {
           "timeControls": ["bullet", "blitz", "rapid", "classical"],
-          "boardWidth": { "min": 8, "max": 8 },
-          "boardHeight": { "min": 8, "max": 8 },
-          "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
+          "boardWidth": { "min": 4, "max": 8 },
+          "boardHeight": { "min": 4, "max": 8 },
+          "recommended": [
+            { "boardWidth": 8, "boardHeight": 8 },
+            { "boardWidth": 6, "boardHeight": 6 }
+          ]
+        },
+        "standard": {
+          "timeControls": ["bullet", "blitz", "rapid", "classical"],
+          "boardWidth": { "min": 4, "max": 8 },
+          "boardHeight": { "min": 4, "max": 8 },
+          "recommended": [
+            { "boardWidth": 8, "boardHeight": 8 },
+            { "boardWidth": 6, "boardHeight": 6 }
+          ]
         }
       }
     }
   ],
   "engineCommands": {
-    "deep-wallwars": "../deep-wallwars/build/deep_ww_engine  --model ../deep-wallwars/build/8x8_750000.trt"
+    "deep-wallwars": {
+      "classic": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt",
+      "standard": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_standard_54000.trt"
+    }
   }
 }
