@@ -355,7 +355,9 @@ async function createBotConfigFile(args: {
         variants: deepWallwarsVariants,
       },
     ],
-    engineCommands: args.engine ? { [args.botId]: args.engine } : {},
+    engineCommands: args.engine
+      ? { [args.botId]: { default: args.engine } }
+      : {},
   };
 
   await writeFile(configPath, JSON.stringify(config, null, 2));
@@ -729,14 +731,14 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
     let humanSocket: HumanSocket | null = null;
     let configFile: BotConfigFile | null = null;
 
-    // Try to use "standard" variant (not supported by deep-wallwars)
+    // Try to use "freestyle" variant (not supported by deep-wallwars)
     const gameConfig: GameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,
         preset: "rapid",
       },
-      variant: "standard", // Not supported
+      variant: "freestyle", // Not supported
       rated: false,
       boardWidth: 8,
       boardHeight: 8,
@@ -806,7 +808,7 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
     let humanSocket: HumanSocket | null = null;
     let configFile: BotConfigFile | null = null;
 
-    // Try to use 5x5 board (not supported by deep-wallwars 8x8 model)
+    // Try to use 15x15 board (not supported by deep-wallwars 8x8 model)
     const gameConfig: GameConfiguration = {
       timeControl: {
         initialSeconds: 600,
@@ -815,8 +817,8 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       },
       variant: "classic",
       rated: false,
-      boardWidth: 5, // Not supported
-      boardHeight: 5, // Not supported
+      boardWidth: 15, // Not supported
+      boardHeight: 15, // Not supported
     };
 
     try {
@@ -849,7 +851,7 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       const humanGoesFirst = playerId === 1;
 
       if (humanGoesFirst) {
-        await submitHumanMove(humanSocket, "---", 5);
+        await submitHumanMove(humanSocket, "---", 15);
         await waitForMoveCount(humanSocket, 1);
       }
 
