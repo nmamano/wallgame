@@ -364,3 +364,29 @@ export const playVsBot = async (args: {
     }),
   );
 };
+
+// Campaign progress API
+import type {
+  CampaignProgressResponse,
+  CompleteLevelResponse,
+} from "../../../shared/contracts/campaign";
+
+export const campaignProgressQueryOptions = queryOptions({
+  queryKey: ["campaign-progress"],
+  queryFn: async (): Promise<CampaignProgressResponse> => {
+    return handleResponse<CampaignProgressResponse>(
+      api.campaign.progress.$get(),
+    );
+  },
+  staleTime: 5 * 60 * 1000,
+});
+
+export const completeLevel = async (
+  levelId: string,
+): Promise<CompleteLevelResponse> => {
+  return handleResponse<CompleteLevelResponse>(
+    api.campaign.complete.$post({
+      json: { levelId },
+    }),
+  );
+};

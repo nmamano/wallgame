@@ -26,7 +26,8 @@
       "Bash(bun tsc:*)",
       "Bash(bun run lint)",
       "Bash(bun x tsc:*)",
-      "Bash(bun run build)"
+      "Bash(bun run build)",
+      "Bash(bun:*)"
     ]
   },
   "outputStyle": "Explanatory"

@@ -47,6 +47,11 @@ export interface SurvivalVariantSettings {
   initialWalls: WallPosition[];
   turnsToSurvive: number;
   mouseCanMove: boolean;
+  /** Optional custom starting positions. If not provided, uses default corner positions. */
+  initialPawns?: {
+    p1Cat?: Cell;
+    p2Mouse?: Cell;
+  };
 }
 
 export type TimeControlPreset =

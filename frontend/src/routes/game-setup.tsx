@@ -761,7 +761,10 @@ function GameSetup() {
                   <Select
                     value={gameConfig.variant}
                     onValueChange={(value: Variant) =>
-                      handleGameConfigChange({ ...gameConfig, variant: value })
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        variant: value,
+                      } as GameConfiguration)
                     }
                   >
                     <SelectTrigger
