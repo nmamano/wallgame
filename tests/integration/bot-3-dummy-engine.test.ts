@@ -363,7 +363,9 @@ async function createBotConfigFile(args: {
         variants: defaultVariants,
       },
     ],
-    engineCommands: args.engine ? { [args.botId]: args.engine } : {},
+    engineCommands: args.engine
+      ? { [args.botId]: { default: args.engine } }
+      : {},
   };
 
   await writeFile(path, JSON.stringify(config, null, 2));
