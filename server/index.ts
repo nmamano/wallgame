@@ -6,6 +6,7 @@ import { authRoute } from "./routes/auth";
 import { settingsRoute } from "./routes/settings";
 import { gamesRoute, botsRoute } from "./routes/games";
 import { rankingRoute } from "./routes/ranking";
+import { campaignRoute } from "./routes/campaign";
 import { registerGameSocketRoute } from "./routes/game-socket";
 import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 export function createApp() {
@@ -27,6 +28,7 @@ export function createApp() {
     .route("/games", gamesRoute)
     .route("/bots", botsRoute)
     .route("/ranking", rankingRoute)
+    .route("/campaign", campaignRoute)
     .route("/", authRoute); // /api/login, /api/register, etc.
 
   const websocket = registerGameSocketRoute(app);

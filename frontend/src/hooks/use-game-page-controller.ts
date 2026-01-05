@@ -2700,7 +2700,7 @@ export function useGamePageController(gameId: string) {
           resolvedConfig = normalizeFreestyleConfig({
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
-          });
+          } as GameConfiguration);
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;

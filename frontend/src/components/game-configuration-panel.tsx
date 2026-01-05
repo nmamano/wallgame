@@ -83,7 +83,7 @@ export function GameConfigurationPanel({
     if ((!isLoggedIn || ratedDisabled) && updates.rated === true) {
       return;
     }
-    onChange({ ...config, ...updates });
+    onChange({ ...config, ...updates } as GameConfiguration);
   };
 
   const handleBoardWidthChange = (nextValue: string) => {
@@ -251,7 +251,7 @@ export function GameConfigurationPanel({
               onChange({
                 ...config,
                 variant: value,
-              });
+              } as GameConfiguration);
             }}
           >
             <SelectTrigger id="variant" className="bg-background w-[200px]">

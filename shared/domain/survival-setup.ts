@@ -14,14 +14,16 @@ export const buildSurvivalInitialState = (
   const rows = config.boardHeight;
   const cols = config.boardWidth;
 
+  // Use custom positions if provided, otherwise use default corners
+  const customPawns = config.survival.initialPawns;
   const pawns: GameInitialState["pawns"] = {
     1: {
-      cat: [0, 0],
-      mouse: [rows - 1, 0],
+      cat: customPawns?.p1Cat ?? [0, 0],
+      mouse: [rows - 1, 0], // Not used in survival (only P1 cat is active)
     },
     2: {
-      cat: [0, cols - 1],
-      mouse: [rows - 1, cols - 1],
+      cat: [0, cols - 1], // Not used in survival (only P2 mouse is active)
+      mouse: customPawns?.p2Mouse ?? [rows - 1, cols - 1],
     },
   };
 

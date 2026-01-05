@@ -205,7 +205,7 @@ const buildReplayGameFromRow = async (
           rated: game.rated,
           boardWidth: game.boardWidth,
           boardHeight: game.boardHeight,
-          survival: survivalSettings,
+          survival: survivalSettings!,
         }
       : {
           variant,

@@ -42,7 +42,7 @@ export const hydrateGameStateFromSerialized = (
           variant: "survival",
           timeControl,
           rated,
-          survival: survivalSettings,
+          survival: survivalSettings!,
         }
       : {
           boardWidth: serialized.config.boardWidth,
