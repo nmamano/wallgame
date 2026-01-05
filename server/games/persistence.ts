@@ -133,12 +133,17 @@ export const persistCompletedGame = async (
       return;
     }
 
+    const configParameters = {
+      timeControl: session.config.timeControl,
+      initialState: state.getInitialState(),
+      ...(session.config.variant === "survival"
+        ? { survival: session.config.survival }
+        : {}),
+    };
+
     await tx.insert(gameDetailsTable).values({
       gameId: session.id,
-      configParameters: {
-        timeControl: session.config.timeControl,
-        initialState: state.getInitialState(),
-      },
+      configParameters,
       moves: moveNotations,
     });
 

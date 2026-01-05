@@ -265,6 +265,8 @@ export function formatWinReason(reason?: GameResult["reason"]): string {
       return "draw";
     case "one-move-rule":
       return "one-move rule";
+    case "survival":
+      return "survival";
     default:
       return "unknown reason";
   }

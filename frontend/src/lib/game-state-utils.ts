@@ -18,13 +18,39 @@ export const hydrateGameStateFromSerialized = (
   serialized: SerializedGameState,
   baseConfig: GameConfiguration,
 ): GameState => {
-  const config: GameConfiguration = {
-    boardWidth: serialized.config.boardWidth,
-    boardHeight: serialized.config.boardHeight,
-    variant: serialized.config.variant ?? baseConfig.variant ?? "standard",
-    timeControl: serialized.config.timeControl,
-    rated: baseConfig.rated,
-  };
+  const resolvedVariant =
+    serialized.config.variant ?? baseConfig.variant ?? "standard";
+  const rated = baseConfig.rated;
+  const timeControl = serialized.config.timeControl;
+  const survivalSettings =
+    resolvedVariant === "survival"
+      ? "survival" in serialized.config
+        ? serialized.config.survival
+        : baseConfig.variant === "survival"
+          ? baseConfig.survival
+          : undefined
+      : undefined;
+  if (resolvedVariant === "survival" && !survivalSettings) {
+    throw new Error("Missing survival settings in serialized state.");
+  }
+
+  const config: GameConfiguration =
+    resolvedVariant === "survival"
+      ? {
+          boardWidth: serialized.config.boardWidth,
+          boardHeight: serialized.config.boardHeight,
+          variant: "survival",
+          timeControl,
+          rated,
+          survival: survivalSettings,
+        }
+      : {
+          boardWidth: serialized.config.boardWidth,
+          boardHeight: serialized.config.boardHeight,
+          variant: resolvedVariant,
+          timeControl,
+          rated,
+        };
   const normalizedConfig = normalizeFreestyleConfig(config);
 
   const state = new GameState(

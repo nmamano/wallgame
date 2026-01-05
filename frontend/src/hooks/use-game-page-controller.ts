@@ -13,6 +13,7 @@ import {
   generateFreestyleInitialState,
   normalizeFreestyleConfig,
 } from "../../../shared/domain/freestyle-setup";
+import { buildSurvivalInitialState } from "../../../shared/domain/survival-setup";
 import type {
   PlayerId,
   Cell,
@@ -2235,6 +2236,14 @@ export function useGamePageController(gameId: string) {
   const gameStatus = gameState?.status ?? "playing";
   const isGamePlaying = gameState?.status === "playing";
   const isClassicVariant = gameState?.config.variant === "classic";
+  const survivalSettings =
+    gameState?.config.variant === "survival" ? gameState.config.survival : null;
+  const mouseMoveLocked =
+    isClassicVariant ||
+    (survivalSettings ? !survivalSettings.mouseCanMove : false);
+  const mouseMoveLockedMessage = isClassicVariant
+    ? "Goal is fixed."
+    : "Mouse cannot move.";
   const gameTurn = gameState?.turn ?? 1;
   const gameResult = gameState?.result;
 
@@ -2753,7 +2762,9 @@ export function useGamePageController(gameId: string) {
     const initialState =
       resolvedConfig.variant === "freestyle"
         ? generateFreestyleInitialState()
-        : undefined;
+        : resolvedConfig.variant === "survival"
+          ? buildSurvivalInitialState(resolvedConfig)
+          : undefined;
     initializeGame(resolvedConfig, playersForGame, {
       forceYouFirst: false,
       initialState,
@@ -2941,8 +2952,8 @@ export function useGamePageController(gameId: string) {
       if (pawn.type !== "cat" && pawn.type !== "mouse") return;
       const pawnType = pawn.type;
       if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
-      if (isClassicVariant && pawnType === "mouse") {
-        setActionError("Goal is fixed.");
+      if (mouseMoveLocked && pawnType === "mouse") {
+        setActionError(mouseMoveLockedMessage);
         setSelectedPawnId(null);
         setDraggingPawnId(null);
         return;
@@ -3056,7 +3067,8 @@ export function useGamePageController(gameId: string) {
       commitStagedActions,
       enqueueLocalAction,
       gameState,
-      isClassicVariant,
+      mouseMoveLocked,
+      mouseMoveLockedMessage,
       interactionLocked,
       isGamePlaying,
       premovedActions,
@@ -3240,8 +3252,8 @@ export function useGamePageController(gameId: string) {
       if (!ownerId) return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== ownerId) return;
-      if (isClassicVariant && pawn.type === "mouse") {
-        setActionError("Goal is fixed.");
+      if (mouseMoveLocked && pawn.type === "mouse") {
+        setActionError(mouseMoveLockedMessage);
         setSelectedPawnId(null);
         setDraggingPawnId(null);
         return;
@@ -3279,7 +3291,8 @@ export function useGamePageController(gameId: string) {
       canBufferPremoves,
       isGamePlaying,
       premovedActions,
-      isClassicVariant,
+      mouseMoveLocked,
+      mouseMoveLockedMessage,
       selectedPawnId,
       setActionError,
       setDraggingPawnId,
@@ -3310,8 +3323,8 @@ export function useGamePageController(gameId: string) {
             p.playerId === ownerId && p.cell[0] === row && p.cell[1] === col,
         );
         if (pawn) {
-          if (isClassicVariant && pawn.type === "mouse") {
-            setActionError("Goal is fixed.");
+          if (mouseMoveLocked && pawn.type === "mouse") {
+            setActionError(mouseMoveLockedMessage);
             return;
           }
           setSelectedPawnId(pawn.id);
@@ -3326,7 +3339,8 @@ export function useGamePageController(gameId: string) {
       boardPawns,
       canActNow,
       canBufferPremoves,
-      isClassicVariant,
+      mouseMoveLocked,
+      mouseMoveLockedMessage,
       selectedPawnId,
       setActionError,
       stagePawnAction,
@@ -3348,8 +3362,8 @@ export function useGamePageController(gameId: string) {
       if (!ownerId) return;
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== ownerId) return;
-      if (isClassicVariant && pawn?.type === "mouse") {
-        setActionError("Goal is fixed.");
+      if (mouseMoveLocked && pawn?.type === "mouse") {
+        setActionError(mouseMoveLockedMessage);
         setSelectedPawnId(null);
         setDraggingPawnId(null);
         return;
@@ -3363,7 +3377,8 @@ export function useGamePageController(gameId: string) {
       boardPawns,
       canActNow,
       canBufferPremoves,
-      isClassicVariant,
+      mouseMoveLocked,
+      mouseMoveLockedMessage,
       setDraggingPawnId,
       setSelectedPawnId,
       setActionError,
@@ -3899,7 +3914,7 @@ export function useGamePageController(gameId: string) {
     lastMove,
     draggingPawnId,
     selectedPawnId,
-    disableMousePawnInteraction: isClassicVariant,
+    disableMousePawnInteraction: mouseMoveLocked,
     actionablePlayerId: boardActionablePlayerId,
     onCellClick: handleCellClick,
     onWallClick: handleWallClick,
