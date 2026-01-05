@@ -268,11 +268,12 @@ export function useGamePageController(gameId: string) {
   // ============================================================================
   const musicControllerRef = useRef<MusicController | null>(null);
 
-  // Create and start music controller on mount, teardown on unmount
+  // Create music controller on mount, teardown on unmount.
+  // Note: Music is NOT started here - it's controlled by the matchingPanelOpen effect
+  // to avoid playing music when the "waiting for players" modal is blocking sound controls.
   useEffect(() => {
     const controller = new MusicController(musicEnabledRef);
     musicControllerRef.current = controller;
-    controller.start();
 
     return () => {
       controller.teardown();
@@ -1752,6 +1753,21 @@ export function useGamePageController(gameId: string) {
       }
     }
   }, [matchingPanelOpen, sfxEnabled, isReadOnlySession]);
+
+  // Control music based on matching panel state:
+  // - Don't play music when "waiting for players" modal is open (can't dismiss to reach controls)
+  // - Start/resume music when the game actually begins (panel closes)
+  useEffect(() => {
+    const controller = musicControllerRef.current;
+    if (!controller) return;
+
+    if (matchingPanelOpen) {
+      controller.pause();
+    } else {
+      // Use resume() - it handles both first-time start and resuming paused music
+      controller.resume();
+    }
+  }, [matchingPanelOpen]);
 
   useEffect(() => {
     if (historyCursor === null) return;
