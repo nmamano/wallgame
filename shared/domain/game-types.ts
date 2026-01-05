@@ -38,7 +38,16 @@ export type PlayerId = 1 | 2;
 export type Variant =
   | "standard" // Catch the mouse first
   | "classic" // Reach the opposite corner first
-  | "freestyle"; // Randomized setup with starting walls
+  | "freestyle" // Randomized setup with starting walls
+  | "survival"; // Player 2 wins by surviving a set number of turns
+
+export type NonSurvivalVariant = Exclude<Variant, "survival">;
+
+export interface SurvivalVariantSettings {
+  initialWalls: WallPosition[];
+  turnsToSurvive: number;
+  mouseCanMove: boolean;
+}
 
 export type TimeControlPreset =
   | "bullet" // 1+0
@@ -46,13 +55,20 @@ export type TimeControlPreset =
   | "rapid" // 10+2
   | "classical"; // 30+0
 
-export interface GameConfiguration {
+export interface BaseGameConfiguration {
   variant: Variant;
   timeControl: TimeControlConfig;
   rated: boolean;
   boardWidth: number;
   boardHeight: number;
 }
+
+export type GameConfiguration =
+  | (BaseGameConfiguration & { variant: NonSurvivalVariant })
+  | (BaseGameConfiguration & {
+      variant: "survival";
+      survival: SurvivalVariantSettings;
+    });
 
 // SessionStatus tracks the lifecycle of a game session/matchmaking
 // - "waiting": waiting for players to join
@@ -137,7 +153,8 @@ export type WinReason =
   | "timeout"
   | "resignation"
   | "draw-agreement"
-  | "one-move-rule"; // First-mover handicap rule
+  | "one-move-rule" // First-mover handicap rule
+  | "survival"; // Player 2 survived the required turns
 
 export interface GameResult {
   winner?: PlayerId;

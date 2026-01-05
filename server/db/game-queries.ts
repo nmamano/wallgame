@@ -15,6 +15,7 @@ import type {
   TimeControlConfig,
   TimeControlPreset,
   Variant,
+  SurvivalVariantSettings,
   WinReason,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
@@ -38,6 +39,7 @@ const winReasonValues: WinReason[] = [
   "resignation",
   "draw-agreement",
   "one-move-rule",
+  "survival",
 ];
 
 const normalizeWinReason = (value?: string | null): WinReason => {
@@ -50,7 +52,12 @@ const normalizeWinReason = (value?: string | null): WinReason => {
 };
 
 const normalizeVariant = (value: string): Variant => {
-  if (value === "standard" || value === "classic" || value === "freestyle") {
+  if (
+    value === "standard" ||
+    value === "classic" ||
+    value === "freestyle" ||
+    value === "survival"
+  ) {
     return value;
   }
   return "standard";
@@ -103,6 +110,15 @@ const resolveInitialState = (
 ): GameInitialState | undefined => {
   const parameters = configParameters as { initialState?: GameInitialState };
   return parameters?.initialState;
+};
+
+const resolveSurvivalSettings = (
+  configParameters: unknown,
+): SurvivalVariantSettings | undefined => {
+  const parameters = configParameters as {
+    survival?: SurvivalVariantSettings;
+  };
+  return parameters?.survival;
 };
 
 export interface ReplayGameData {
@@ -174,13 +190,30 @@ const buildReplayGameFromRow = async (
     details?.configParameters,
   );
   const variant = normalizeVariant(game.variant);
-  const config: GameConfiguration = {
-    variant,
-    timeControl,
-    rated: game.rated,
-    boardWidth: game.boardWidth,
-    boardHeight: game.boardHeight,
-  };
+  const survivalSettings =
+    variant === "survival"
+      ? resolveSurvivalSettings(details?.configParameters)
+      : undefined;
+  if (variant === "survival" && !survivalSettings) {
+    throw new Error("Missing survival settings for replay.");
+  }
+  const config: GameConfiguration =
+    variant === "survival"
+      ? {
+          variant: "survival",
+          timeControl,
+          rated: game.rated,
+          boardWidth: game.boardWidth,
+          boardHeight: game.boardHeight,
+          survival: survivalSettings,
+        }
+      : {
+          variant,
+          timeControl,
+          rated: game.rated,
+          boardWidth: game.boardWidth,
+          boardHeight: game.boardHeight,
+        };
   const initialState = resolveInitialState(details?.configParameters);
 
   const startTimestamp = game.startedAt.getTime();

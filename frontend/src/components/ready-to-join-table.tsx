@@ -94,7 +94,7 @@ const formatBoardSizeFull = (width: number, height: number): string => {
 };
 
 const usesBoardSize = (variant: Variant): boolean =>
-  variant === "standard" || variant === "classic";
+  variant === "standard" || variant === "classic" || variant === "survival";
 
 function formatTimeControl(timeControl: TimeControlConfig): string {
   if (timeControl.preset) {

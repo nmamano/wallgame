@@ -10,6 +10,7 @@ import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type {
   TimeControlPreset,
   Variant,
+  NonSurvivalVariant,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { normalizeFreestyleConfig } from "../../../shared/domain/freestyle-setup";
@@ -99,7 +100,7 @@ const defaultGameConfig: GameConfiguration = {
 };
 
 const DEFAULT_TIME_CONTROL_PRESET: TimeControlPreset = "rapid";
-const DEFAULT_VARIANT: Variant = "standard";
+const DEFAULT_VARIANT: NonSurvivalVariant = "standard";
 
 /**
  * Unified settings hook that always calls the same hooks in the same order
@@ -356,13 +357,15 @@ function useSettingsInternal(
     if (!isLoggedIn) return null;
     if (!dbSettings) return null;
     const currentVariant = dbSettings.defaultVariant ?? DEFAULT_VARIANT;
-    const currentVariantParams = variantSettingsFromDb[currentVariant];
+    const resolvedVariant =
+      currentVariant === "survival" ? DEFAULT_VARIANT : currentVariant;
+    const currentVariantParams = variantSettingsFromDb[resolvedVariant];
     return normalizeFreestyleConfig({
       timeControl: timeControlConfigFromPreset(
         dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,
       ),
       rated: dbSettings.defaultRatedStatus ?? false,
-      variant: currentVariant,
+      variant: resolvedVariant,
       boardWidth: currentVariantParams?.boardWidth ?? 8,
       boardHeight: currentVariantParams?.boardHeight ?? 8,
     });

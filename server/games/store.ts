@@ -4,6 +4,7 @@ import {
   generateFreestyleInitialState,
   normalizeFreestyleConfig,
 } from "../../shared/domain/freestyle-setup";
+import { buildSurvivalInitialState } from "../../shared/domain/survival-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type {
@@ -306,6 +307,9 @@ export const getSession = (id: string): GameSession => ensureSession(id);
 const createGameState = (config: GameConfiguration): GameState => {
   if (config.variant === "freestyle") {
     return new GameState(config, Date.now(), generateFreestyleInitialState());
+  }
+  if (config.variant === "survival") {
+    return new GameState(config, Date.now(), buildSurvivalInitialState(config));
   }
   return new GameState(config, Date.now());
 };
@@ -1017,13 +1021,23 @@ export const serializeGameState = (
       index: entry.index,
       notation: moveToStandardNotation(entry.move, historyRows),
     })),
-    config: {
-      boardWidth: state.config.boardWidth,
-      boardHeight: state.config.boardHeight,
-      variant: state.config.variant,
-      rated: session.config.rated,
-      timeControl: session.config.timeControl,
-    },
+    config:
+      state.config.variant === "survival"
+        ? {
+            boardWidth: state.config.boardWidth,
+            boardHeight: state.config.boardHeight,
+            variant: "survival",
+            rated: session.config.rated,
+            timeControl: session.config.timeControl,
+            survival: state.config.survival,
+          }
+        : {
+            boardWidth: state.config.boardWidth,
+            boardHeight: state.config.boardHeight,
+            variant: state.config.variant,
+            rated: session.config.rated,
+            timeControl: session.config.timeControl,
+          },
   };
 };
 

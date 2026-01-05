@@ -7,6 +7,7 @@ import type {
   Move,
   TimeControlConfig,
   GameConfiguration,
+  GamePawnType,
   Pawn,
   GameAction,
   GameInitialState,
@@ -111,6 +112,16 @@ export class GameState {
     this.lastMoveTime = startTime;
   }
 
+  private isPawnActive(playerId: PlayerId, pawnType: GamePawnType): boolean {
+    if (this.config.variant !== "survival") {
+      return true;
+    }
+    if (playerId === 1) {
+      return pawnType === "cat";
+    }
+    return pawnType === "mouse";
+  }
+
   clone(): GameState {
     const newGame = new GameState(this.config, this.lastMoveTime);
     newGame.grid = this.grid.clone();
@@ -210,10 +221,21 @@ export class GameState {
     const isClassic = this.config.variant === "classic";
 
     for (const action of move.actions) {
-      if (isClassic && action.type === "mouse") {
-        throw new Error("Mouse cannot move in classic variant");
-      }
       if (action.type === "cat" || action.type === "mouse") {
+        if (!this.isPawnActive(player, action.type)) {
+          throw new Error("Pawn not available for this player");
+        }
+        if (action.type === "mouse") {
+          if (isClassic) {
+            throw new Error("Mouse cannot move in classic variant");
+          }
+          if (
+            this.config.variant === "survival" &&
+            !this.config.survival.mouseCanMove
+          ) {
+            throw new Error("Mouse cannot move in survival variant");
+          }
+        }
         const currentPos =
           action.type === "cat" ? nextMyPawns.cat : nextMyPawns.mouse;
         const targetPos = action.target;
@@ -354,15 +376,27 @@ export class GameState {
           1: player === 1 ? nextMyPawns : opPawns,
           2: player === 2 ? nextMyPawns : opPawns,
         };
-        const cats: [Cell, Cell] = [
-          [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
-          [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
-        ];
+        const cats: [Cell, Cell] =
+          this.config.variant === "survival"
+            ? [
+                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
+                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
+              ]
+            : [
+                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
+                [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
+              ];
         // Wall legality: each cat must keep a path to the opponent's mouse.
-        const mice: [Cell, Cell] = [
-          [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
-          [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
-        ];
+        const mice: [Cell, Cell] =
+          this.config.variant === "survival"
+            ? [
+                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
+                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
+              ]
+            : [
+                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
+                [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
+              ];
 
         if (!nextGrid.canBuildWall(cats, mice, wall)) {
           throw new Error("Illegal wall placement");
@@ -377,8 +411,14 @@ export class GameState {
       }
     }
 
-    const myCatCaught = cellEq(nextMyPawns.cat, opPawns.mouse);
-    const opCatCaught = cellEq(opPawns.cat, nextMyPawns.mouse);
+    const myCatCaught =
+      this.isPawnActive(player, "cat") &&
+      this.isPawnActive(opponent, "mouse") &&
+      cellEq(nextMyPawns.cat, opPawns.mouse);
+    const opCatCaught =
+      this.isPawnActive(opponent, "cat") &&
+      this.isPawnActive(player, "mouse") &&
+      cellEq(opPawns.cat, nextMyPawns.mouse);
 
     // Update timeLeft with increment
     const nextTimeLeft = { ...this.timeLeft };
@@ -414,7 +454,12 @@ export class GameState {
     this.lastMoveTime = timestamp;
 
     if (myCatCaught) {
-      if (player === 1) {
+      if (
+        player === 1 &&
+        this.config.variant !== "survival" &&
+        this.isPawnActive(opponent, "cat") &&
+        this.isPawnActive(player, "mouse")
+      ) {
         const dist = this.grid.distance(
           [opPawns.cat[0], opPawns.cat[1]],
           [nextMyPawns.mouse[0], nextMyPawns.mouse[1]],
@@ -441,6 +486,22 @@ export class GameState {
         reason: "capture",
       };
       return;
+    }
+
+    if (this.config.variant === "survival" && player === 1) {
+      const turnsToSurvive = this.config.survival.turnsToSurvive;
+      if (!Number.isInteger(turnsToSurvive) || turnsToSurvive < 1) {
+        throw new Error("Survival turns must be a positive integer.");
+      }
+      const catMoves = Math.ceil(nextMoveIndex / 2);
+      if (catMoves >= turnsToSurvive) {
+        this.status = "finished";
+        this.result = {
+          winner: 2,
+          reason: "survival",
+        };
+        return;
+      }
     }
 
     this.turn = opponent;
@@ -519,12 +580,20 @@ export class GameState {
   }
 
   getPawns(): Pawn[] {
-    return [
-      { playerId: 1, type: "cat", cell: this.pawns[1].cat },
-      { playerId: 1, type: "mouse", cell: this.pawns[1].mouse },
-      { playerId: 2, type: "cat", cell: this.pawns[2].cat },
-      { playerId: 2, type: "mouse", cell: this.pawns[2].mouse },
-    ];
+    const pawns: Pawn[] = [];
+    if (this.isPawnActive(1, "cat")) {
+      pawns.push({ playerId: 1, type: "cat", cell: this.pawns[1].cat });
+    }
+    if (this.isPawnActive(1, "mouse")) {
+      pawns.push({ playerId: 1, type: "mouse", cell: this.pawns[1].mouse });
+    }
+    if (this.isPawnActive(2, "cat")) {
+      pawns.push({ playerId: 2, type: "cat", cell: this.pawns[2].cat });
+    }
+    if (this.isPawnActive(2, "mouse")) {
+      pawns.push({ playerId: 2, type: "mouse", cell: this.pawns[2].mouse });
+    }
+    return pawns;
   }
 
   getInitialSnapshot(): {

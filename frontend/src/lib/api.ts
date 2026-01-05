@@ -8,6 +8,7 @@ import type {
   TimeControlPreset,
   TimeControlConfig,
   Variant,
+  NonSurvivalVariant,
   MatchType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
@@ -55,6 +56,13 @@ async function handleResponse<T>(
   }
   return res.json() as Promise<T>;
 }
+
+const assertNonSurvivalVariant = (variant: Variant): NonSurvivalVariant => {
+  if (variant === "survival") {
+    throw new Error("Survival games are not supported by this endpoint.");
+  }
+  return variant;
+};
 
 export const userQueryOptions = queryOptions({
   queryKey: ["get-current-user"],
@@ -109,14 +117,16 @@ export const settingsMutations = {
 
   updateDefaultVariant: (variant: Variant) =>
     handleResponse<SuccessResponse>(
-      api.settings["default-variant"].$put({ json: { variant } }),
+      api.settings["default-variant"].$put({
+        json: { variant: assertNonSurvivalVariant(variant) },
+      }),
     ),
 
   updateVariantParameters: (variant: Variant, parameters: VariantParameters) =>
     handleResponse<SuccessResponse>(
       api.settings["variant-parameters"].$put({
         json: {
-          variant,
+          variant: assertNonSurvivalVariant(variant),
           parameters: {
             boardWidth: parameters.boardWidth,
             boardHeight: parameters.boardHeight,
@@ -159,6 +169,7 @@ export const createGameSession = async (args: {
   } else {
     timeControl = args.config.timeControl;
   }
+  const variant = assertNonSurvivalVariant(args.config.variant);
 
   return handleResponse<GameCreateResponse>(
     // We can hover over api.games.$post or response objects in the frontend to
@@ -168,7 +179,7 @@ export const createGameSession = async (args: {
         config: {
           timeControl,
           rated: args.config.rated,
-          variant: args.config.variant,
+          variant,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
         },
@@ -290,10 +301,11 @@ export const fetchBots = async (args: {
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{ bots: ListedBot[] }> => {
+  const variant = assertNonSurvivalVariant(args.variant);
   return handleResponse<{ bots: ListedBot[] }>(
     api.bots.$get({
       query: {
-        variant: args.variant,
+        variant,
         timeControl: args.timeControl,
         boardWidth:
           args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
@@ -308,10 +320,11 @@ export const fetchRecommendedBots = async (args: {
   variant: Variant;
   timeControl: TimeControlPreset;
 }): Promise<{ bots: RecommendedBotEntry[] }> => {
+  const variant = assertNonSurvivalVariant(args.variant);
   return handleResponse<{ bots: RecommendedBotEntry[] }>(
     api.bots.recommended.$get({
       query: {
-        variant: args.variant,
+        variant,
         timeControl: args.timeControl,
       },
     }),
@@ -333,6 +346,7 @@ export const playVsBot = async (args: {
   } else {
     timeControl = args.config.timeControl;
   }
+  const variant = assertNonSurvivalVariant(args.config.variant);
 
   return handleResponse<CreateBotGameResponse>(
     api.bots.play.$post({
@@ -340,7 +354,7 @@ export const playVsBot = async (args: {
         botId: args.botId,
         config: {
           timeControl,
-          variant: args.config.variant,
+          variant,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
         },
