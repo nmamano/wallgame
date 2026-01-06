@@ -255,7 +255,7 @@ export function ReadyToJoinTable({
     <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
       <div className="flex flex-col gap-4">
         <div className="flex flex-wrap items-center justify-between gap-3">
-          <h2 className="text-2xl font-semibold">Ready to Join</h2>
+          <h2 className="text-2xl font-serif font-semibold">Ready to Join</h2>
           {isLoadingGames && (
             <RefreshCw className="h-4 w-4 animate-spin text-muted-foreground" />
           )}

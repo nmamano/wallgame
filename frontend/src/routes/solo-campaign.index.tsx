@@ -77,7 +77,7 @@ function SoloCampaign() {
                   </div>
 
                   <div className="flex-1">
-                    <h3 className="text-xl font-semibold text-foreground mb-2">
+                    <h3 className="text-xl font-serif font-semibold text-foreground mb-2">
                       {levelId}. {level.name}
                     </h3>
                     <div className="flex gap-2">

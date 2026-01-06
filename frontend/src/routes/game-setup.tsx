@@ -633,7 +633,9 @@ function GameSetup() {
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
               {/* Row 1: Title */}
               <div>
-                <h2 className="text-2xl font-semibold">Create game</h2>
+                <h2 className="text-2xl font-serif font-semibold">
+                  Create game
+                </h2>
               </div>
 
               {/* Row 1: Rated Status */}
