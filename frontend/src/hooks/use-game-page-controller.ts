@@ -1,11 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import {
-  type BoardProps,
-  type Arrow,
-  type BoardPawn,
-} from "@/components/board";
+import { type BoardProps, type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import { type GameAction } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
@@ -16,8 +12,6 @@ import {
 import { buildSurvivalInitialState } from "../../../shared/domain/survival-setup";
 import type {
   PlayerId,
-  Cell,
-  WallOrientation,
   WallPosition,
   Move,
   Action,
@@ -78,20 +72,14 @@ import { SpectatorSession } from "@/lib/spectator-controller";
 import { describeControllerError } from "@/lib/controller-errors";
 import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 import { parseReplayNavState } from "@/lib/navigation-state";
-import {
-  canEnqueue,
-  enqueueToggle,
-  promote,
-  resolveDoubleStep,
-  cloneQueue as cloneLocalActionQueue,
-  MAX_LOCAL_ACTIONS,
-} from "@/game/local-actions";
+import { cloneQueue as cloneLocalActionQueue } from "@/game/local-actions";
 import {
   canActNow as selectCanActNow,
   shouldQueueAsPremove,
   isViewingHistory as selectIsViewingHistory,
   type ControllerSelectorState,
 } from "@/game/controller-selectors";
+import { useBoardInteractions } from "@/hooks/use-board-interactions";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
@@ -1300,16 +1288,12 @@ export function useGamePageController(gameId: string) {
     }
   }, [isSpectatorSession]);
 
-  const [selectedPawnId, setSelectedPawnId] = useState<string | null>(null);
-  const [draggingPawnId, setDraggingPawnId] = useState<string | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
   const [activeLocalPlayerId, setActiveLocalPlayerId] =
     useState<PlayerId | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
   const [clockTick, setClockTick] = useState(() => Date.now());
-  const [stagedActions, setStagedActions] = useState<Action[]>([]);
-  const [premovedActions, setPremovedActions] = useState<Action[]>([]);
   const [matchParticipants, setMatchParticipants] = useState<PlayerType[]>([]);
   const [localMatchScore, setLocalMatchScore] = useState<number[]>([]);
   const [matchDraws, setMatchDraws] = useState(0);
@@ -1382,99 +1366,13 @@ export function useGamePageController(gameId: string) {
 
   const actionablePlayerId = resolveBoardControlPlayerId();
 
-  const commitStagedActions = useCallback(
-    (actions?: Action[]) => {
-      if (historyCursor !== null) return;
-      const moveActions = actions ?? stagedActions;
+  // Note: commitStagedActions and enqueueLocalAction are now handled by
+  // useBoardInteractions hook. The hook's onMoveReady callback handles
+  // auto-commits, and we define commitStagedActions after the hook call
+  // for manual commits from UI.
 
-      const currentState = gameStateRef.current;
-      if (!currentState) {
-        setActionError("Game is still loading");
-        return;
-      }
-
-      const currentTurn = currentState.turn;
-      const controller = seatActionsRef.current[currentTurn];
-      if (!controller || !isLocalController(controller)) {
-        setActionError("This player can't submit moves manually right now.");
-        return;
-      }
-
-      try {
-        controller.submitMove({ actions: moveActions });
-        setStagedActions([]);
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-        setActionError(null);
-      } catch (error) {
-        console.error(error);
-        setActionError(
-          error instanceof Error ? error.message : "Move could not be applied.",
-        );
-      }
-    },
-    [historyCursor, stagedActions, setDraggingPawnId, setSelectedPawnId],
-  );
-
-  const enqueueLocalAction = useCallback(
-    (
-      action: Action,
-      mode: "staged" | "premove",
-      options?: { errorMessage?: string },
-    ): "added" | "removed" | "rejected" => {
-      const queue = mode === "staged" ? stagedActions : premovedActions;
-      const setQueue =
-        mode === "staged" ? setStagedActions : setPremovedActions;
-      const ownerId =
-        mode === "staged" ? activeLocalPlayerId : actionablePlayerId;
-      if (!gameState || !ownerId) {
-        setActionError("Game is still loading");
-        return "rejected";
-      }
-      const nextQueue = enqueueToggle(queue, action);
-      const removed = nextQueue.length < queue.length;
-      if (removed) {
-        setQueue(nextQueue);
-        setActionError(null);
-        if (sfxEnabled) {
-          play(action.type === "wall" ? sounds.wallUndo : sounds.pawnUndo);
-        }
-        return "removed";
-      }
-      if (
-        !canEnqueue({
-          state: gameState,
-          playerId: ownerId,
-          queue,
-          action,
-        })
-      ) {
-        setActionError(options?.errorMessage ?? "Illegal move.");
-        return "rejected";
-      }
-      setQueue(nextQueue);
-      setActionError(null);
-      if (sfxEnabled) {
-        play(action.type === "wall" ? sounds.wall : sounds.pawn);
-      }
-      if (mode === "staged" && nextQueue.length === MAX_LOCAL_ACTIONS) {
-        commitStagedActions(nextQueue);
-      }
-      return "added";
-    },
-    [
-      actionablePlayerId,
-      activeLocalPlayerId,
-      commitStagedActions,
-      gameState,
-      premovedActions,
-      setActionError,
-      setPremovedActions,
-      setStagedActions,
-      sfxEnabled,
-      stagedActions,
-    ],
-  );
+  // Ref for the board interactions clear function (used by useMetaGameActions)
+  const clearStagingRef = useRef<() => void>(NOOP);
 
   const rematchStartedHandlerRef = useRef<
     | ((payload: {
@@ -1816,7 +1714,124 @@ export function useGamePageController(gameId: string) {
   const viewingHistory = selectIsViewingHistory(controllerSelectorState);
   const canActNow = selectCanActNow(controllerSelectorState);
   const canBufferPremoves = shouldQueueAsPremove(controllerSelectorState);
-  const prevCanActNowRef = useRef(canActNow);
+
+  // Compute values needed for board interactions hook
+  const isClassicVariant = gameState?.config.variant === "classic";
+  const survivalSettings =
+    gameState?.config.variant === "survival" ? gameState.config.survival : null;
+  const mouseMoveLocked =
+    isClassicVariant ||
+    (survivalSettings ? !survivalSettings.mouseCanMove : false);
+  const mouseMoveLockedMessage = isClassicVariant
+    ? "Goal is fixed."
+    : "Mouse cannot move.";
+
+  // Basic board pawns for hook (positions from historyState when viewing history)
+  const baseBoardPawns = useMemo((): BoardPawn[] => {
+    const boardState = historyState ?? gameState;
+    if (!boardState) return [];
+    return boardState.getPawns().map((pawn) => ({
+      ...pawn,
+      id: pawnId(pawn),
+    }));
+  }, [gameState, historyState]);
+
+  // Submit move to the seat controller (used by both onMoveReady and manual commit)
+  const submitMoveToController = useCallback(
+    (actions: Action[]): boolean => {
+      const currentState = gameStateRef.current;
+      if (!currentState) {
+        setActionError("Game is still loading");
+        return false;
+      }
+
+      const currentTurn = currentState.turn;
+      const controller = seatActionsRef.current[currentTurn];
+      if (!controller || !isLocalController(controller)) {
+        setActionError("This player can't submit moves manually right now.");
+        return false;
+      }
+
+      try {
+        controller.submitMove({ actions });
+        setActionError(null);
+        return true;
+      } catch (error) {
+        console.error(error);
+        setActionError(
+          error instanceof Error ? error.message : "Move could not be applied.",
+        );
+        return false;
+      }
+    },
+    [setActionError],
+  );
+
+  // Board interactions hook - manages staged/premoved actions, selection, and handlers
+  const boardInteractions = useBoardInteractions({
+    gameState,
+    boardPawns: baseBoardPawns,
+    controllablePlayerId: actionablePlayerId,
+    canStage: canActNow && !viewingHistory && !interactionLocked,
+    canPremove: canBufferPremoves && !viewingHistory,
+    mouseMoveLocked,
+    mouseMoveLockedMessage,
+    sfxEnabled,
+    onMoveReady: submitMoveToController,
+    onError: setActionError,
+  });
+
+  // Update the ref so useMetaGameActions can clear staging
+  clearStagingRef.current = boardInteractions.clearAllActions;
+
+  // Extract values from hook for convenience
+  const {
+    stagedActions,
+    premovedActions,
+    selectedPawnId,
+    draggingPawnId,
+    handlePawnClick,
+    handleCellClick,
+    handleWallClick,
+    handlePawnDragStart,
+    handlePawnDragEnd,
+    handleCellDrop,
+    arrows: boardInteractionArrows,
+    clearStagedActions: clearBoardStagedActions,
+    clearAllActions,
+    setStagedActions,
+    setPremovedActions,
+    setSelectedPawnId,
+    setDraggingPawnId,
+    // Annotation handlers and state (for board right-click interactions)
+    onWallSlotRightClick,
+    onCellRightClickDragStart,
+    onCellRightClickDragMove,
+    onCellRightClickDragEnd,
+    onArrowDragFinalize,
+    arrowDragStateRef,
+    annotations,
+    previewAnnotation,
+    clearAnnotations,
+  } = boardInteractions;
+
+  // Manual commit for when user clicks commit button (fewer than 2 actions)
+  const commitStagedActions = useCallback(
+    (actions?: Action[]) => {
+      if (historyCursor !== null) return;
+      const moveActions = actions ?? stagedActions;
+      if (moveActions.length === 0) return;
+      if (submitMoveToController(moveActions)) {
+        clearBoardStagedActions();
+      }
+    },
+    [
+      historyCursor,
+      stagedActions,
+      submitMoveToController,
+      clearBoardStagedActions,
+    ],
+  );
 
   const performGameActionRef = useRef<(action: GameAction) => GameState>(() => {
     throw new Error("performGameAction not initialized");
@@ -1864,12 +1879,7 @@ export function useGamePageController(gameId: string) {
     getPlayerName,
     setActionError,
     resolvePrimaryActionPlayerId,
-    clearStaging: () => {
-      setStagedActions([]);
-      setPremovedActions([]);
-      setSelectedPawnId(null);
-      setDraggingPawnId(null);
-    },
+    clearStaging: () => clearStagingRef.current(),
   });
   metaGameActionsRef.current = metaGameActions;
 
@@ -2160,90 +2170,10 @@ export function useGamePageController(gameId: string) {
     viewingHistory,
   ]);
 
-  const buildArrowsForQueue = useCallback(
-    (queue: Action[], ownerId: PlayerId | null, arrowType: Arrow["type"]) => {
-      if (!gameState || queue.length === 0 || !ownerId) return [];
-      const pawns = gameState.pawns[ownerId];
-      if (!pawns) return [];
-      const workingPositions = {
-        cat: [pawns.cat[0], pawns.cat[1]] as Cell,
-        mouse: [pawns.mouse[0], pawns.mouse[1]] as Cell,
-      };
-
-      const moveActions = queue.filter(
-        (action) => action.type === "cat" || action.type === "mouse",
-      );
-      if (
-        queue.length === 2 &&
-        moveActions.length === 2 &&
-        moveActions.every((action) => action.type === moveActions[0].type)
-      ) {
-        const pawnType = moveActions[0].type as "cat" | "mouse";
-        const fromCell = workingPositions[pawnType];
-        const toCell = moveActions[1].target;
-        const from: Cell = [fromCell[0], fromCell[1]];
-        const to: Cell = [toCell[0], toCell[1]];
-        return [
-          {
-            from,
-            to,
-            type: arrowType,
-          },
-        ];
-      }
-
-      const arrows: Arrow[] = [];
-      queue.forEach((action) => {
-        if (action.type !== "cat" && action.type !== "mouse") {
-          return;
-        }
-        const fromCell = workingPositions[action.type];
-        const toCell = action.target;
-        const from: Cell = [fromCell[0], fromCell[1]];
-        const to: Cell = [toCell[0], toCell[1]];
-        arrows.push({
-          from,
-          to,
-          type: arrowType,
-        });
-        workingPositions[action.type] = [toCell[0], toCell[1]];
-      });
-      return arrows;
-    },
-    [gameState],
-  );
-
-  const stagedArrowOwnerId =
-    gameState?.turn ?? activeLocalPlayerId ?? primaryLocalPlayerId ?? null;
-  const stagedMoveArrows = useMemo(
-    () => buildArrowsForQueue(stagedActions, stagedArrowOwnerId, "staged"),
-    [buildArrowsForQueue, stagedActions, stagedArrowOwnerId],
-  );
-
-  const premoveArrowOwnerId =
-    actionablePlayerId ?? activeLocalPlayerId ?? primaryLocalPlayerId ?? null;
-  const premoveArrows = useMemo(
-    () => buildArrowsForQueue(premovedActions, premoveArrowOwnerId, "premoved"),
-    [buildArrowsForQueue, premovedActions, premoveArrowOwnerId],
-  );
-
-  const pendingArrows = useMemo(
-    () => [...stagedMoveArrows, ...premoveArrows],
-    [stagedMoveArrows, premoveArrows],
-  );
-  const boardArrows = viewingHistory ? [] : pendingArrows;
+  // Arrows from the board interactions hook (staged and premoved move arrows)
+  const boardArrows = viewingHistory ? [] : boardInteractionArrows;
 
   const gameStatus = gameState?.status ?? "playing";
-  const isGamePlaying = gameState?.status === "playing";
-  const isClassicVariant = gameState?.config.variant === "classic";
-  const survivalSettings =
-    gameState?.config.variant === "survival" ? gameState.config.survival : null;
-  const mouseMoveLocked =
-    isClassicVariant ||
-    (survivalSettings ? !survivalSettings.mouseCanMove : false);
-  const mouseMoveLockedMessage = isClassicVariant
-    ? "Goal is fixed."
-    : "Mouse cannot move.";
   const gameTurn = gameState?.turn ?? 1;
   const gameResult = gameState?.result;
 
@@ -2351,12 +2281,9 @@ export function useGamePageController(gameId: string) {
 
   const clearStagedActions = useCallback(() => {
     if (viewingHistory) return;
-    setStagedActions([]);
-    setPremovedActions([]);
+    clearAllActions();
     setActionError(null);
-    setSelectedPawnId(null);
-    setDraggingPawnId(null);
-  }, [viewingHistory]);
+  }, [viewingHistory, clearAllActions]);
 
   const openRematchWindow = useCallback(
     (offerer?: PlayerId) => {
@@ -2933,223 +2860,6 @@ export function useGamePageController(gameId: string) {
     navigateToLocalRematch,
   ]);
 
-  const stagePawnAction = useCallback(
-    (pawnId: string, targetRow: number, targetCol: number) => {
-      if (interactionLocked) return;
-      if (!isGamePlaying) return;
-      const queueMode = canActNow
-        ? "staged"
-        : canBufferPremoves
-          ? "premove"
-          : null;
-      if (!queueMode) return;
-      const ownerId =
-        queueMode === "staged" ? activeLocalPlayerId : actionablePlayerId;
-      if (!ownerId) return;
-
-      const pawn = boardPawns.find((p) => p.id === pawnId);
-      if (!pawn || pawn.playerId !== ownerId) return;
-      if (pawn.type !== "cat" && pawn.type !== "mouse") return;
-      const pawnType = pawn.type;
-      if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
-      if (mouseMoveLocked && pawnType === "mouse") {
-        setActionError(mouseMoveLockedMessage);
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-        return;
-      }
-
-      const queue = queueMode === "staged" ? stagedActions : premovedActions;
-      const setQueue =
-        queueMode === "staged" ? setStagedActions : setPremovedActions;
-
-      // Check if there's already a staged action for this pawn type
-      const existingStagedPawnAction = queue.find(
-        (action) => action.type === pawnType,
-      );
-
-      if (existingStagedPawnAction && gameState) {
-        // Get the pawn's ORIGINAL position from gameState
-        const originalCell =
-          pawnType === "cat"
-            ? gameState.pawns[ownerId].cat
-            : gameState.pawns[ownerId].mouse;
-
-        // Case 1: Dragging back to original position = undo the staged action
-        if (originalCell[0] === targetRow && originalCell[1] === targetCol) {
-          setQueue((prev) => prev.filter((a) => a.type !== pawnType));
-          setSelectedPawnId(null);
-          setDraggingPawnId(null);
-          setActionError(null);
-          if (sfxEnabled) {
-            play(sounds.pawnUndo);
-          }
-          return;
-        }
-
-        // Case 2: Moving from staged position - only allow distance 1 (single move)
-        // Calculate distance from STAGED position (pawn.cell) to target
-        const distanceFromStaged =
-          Math.abs(pawn.cell[0] - targetRow) +
-          Math.abs(pawn.cell[1] - targetCol);
-
-        if (distanceFromStaged > 1) {
-          setActionError(
-            "You can only move 1 cell when you already have a staged action.",
-          );
-          return;
-        }
-
-        const baseAction: Action = {
-          type: pawnType,
-          target: [targetRow, targetCol],
-        };
-        const outcome = enqueueLocalAction(baseAction, queueMode, {
-          errorMessage:
-            queueMode === "premove" ? "Premove is illegal." : "Illegal move.",
-        });
-        if (outcome !== "rejected") {
-          setSelectedPawnId(null);
-          setDraggingPawnId(null);
-        }
-        return;
-      }
-
-      // No existing staged action for this pawn - original logic
-      const baseAction: Action = {
-        type: pawnType,
-        target: [targetRow, targetCol],
-      };
-      const doubleStepSequence = resolveDoubleStep({
-        state: gameState,
-        playerId: ownerId,
-        action: baseAction,
-      });
-      if (doubleStepSequence) {
-        if (queue.length > 0) {
-          setActionError(
-            "You can't make a double move after staging another action.",
-          );
-          return;
-        }
-        if (queueMode === "staged") {
-          if (sfxEnabled) {
-            play(sounds.pawn);
-          }
-          commitStagedActions(doubleStepSequence);
-        } else {
-          setPremovedActions(doubleStepSequence);
-          setActionError(null);
-          if (sfxEnabled) {
-            play(sounds.pawn);
-          }
-        }
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-        return;
-      }
-
-      const outcome = enqueueLocalAction(baseAction, queueMode, {
-        errorMessage:
-          queueMode === "premove" ? "Premove is illegal." : "Illegal move.",
-      });
-      if (outcome !== "rejected") {
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-      }
-    },
-    [
-      actionablePlayerId,
-      activeLocalPlayerId,
-      boardPawns,
-      canActNow,
-      canBufferPremoves,
-      commitStagedActions,
-      enqueueLocalAction,
-      gameState,
-      mouseMoveLocked,
-      mouseMoveLockedMessage,
-      interactionLocked,
-      isGamePlaying,
-      premovedActions,
-      setActionError,
-      setDraggingPawnId,
-      setPremovedActions,
-      setSelectedPawnId,
-      setStagedActions,
-      sfxEnabled,
-      stagedActions,
-    ],
-  );
-
-  const handleWallClick = useCallback(
-    (row: number, col: number, orientation: WallOrientation) => {
-      if (interactionLocked) return;
-      if (!isGamePlaying) return;
-      const queueMode = canActNow
-        ? "staged"
-        : canBufferPremoves
-          ? "premove"
-          : null;
-      if (!queueMode) return;
-
-      const newAction: Action = {
-        type: "wall",
-        target: [row, col],
-        wallOrientation: orientation,
-      };
-      enqueueLocalAction(newAction, queueMode, {
-        errorMessage:
-          queueMode === "premove"
-            ? "Premove wall placement is illegal."
-            : "Illegal wall placement.",
-      });
-    },
-    [
-      canActNow,
-      canBufferPremoves,
-      enqueueLocalAction,
-      interactionLocked,
-      isGamePlaying,
-    ],
-  );
-
-  useEffect(() => {
-    if (!canActNow || premovedActions.length === 0) {
-      prevCanActNowRef.current = canActNow;
-      return;
-    }
-    const promotion = promote({
-      state: gameState ?? null,
-      playerId: actionablePlayerId ?? activeLocalPlayerId ?? null,
-      current: stagedActions,
-      pending: premovedActions,
-    });
-    if (promotion.accepted.length) {
-      setStagedActions(promotion.stagedNext);
-      setPremovedActions([]);
-      setActionError(null);
-      if (promotion.stagedNext.length === MAX_LOCAL_ACTIONS) {
-        commitStagedActions(promotion.stagedNext);
-      }
-    } else if (promotion.premoveCleared) {
-      setPremovedActions([]);
-      if (promotion.dropped.length) {
-        setActionError("Queued premove was cleared because it was illegal.");
-      }
-    }
-    prevCanActNowRef.current = canActNow;
-  }, [
-    actionablePlayerId,
-    activeLocalPlayerId,
-    canActNow,
-    commitStagedActions,
-    gameState,
-    premovedActions,
-    setActionError,
-    stagedActions,
-  ]);
-
   const requestMoveForPlayer = useCallback(
     (playerId: PlayerId) => {
       if (interactionLocked) return;
@@ -3237,169 +2947,19 @@ export function useGamePageController(gameId: string) {
     }
   }, [gameState, addSystemMessage, sfxEnabledRef]);
 
-  const handlePawnClick = useCallback(
-    (pawnId: string) => {
-      if (viewingHistory) return;
-      if (!isGamePlaying && !canBufferPremoves) return;
-      const queueMode = canActNow
-        ? "staged"
-        : canBufferPremoves
-          ? "premove"
-          : null;
-      if (!queueMode) return;
-      const ownerId =
-        queueMode === "staged" ? activeLocalPlayerId : actionablePlayerId;
-      if (!ownerId) return;
-      const pawn = boardPawns.find((p) => p.id === pawnId);
-      if (!pawn || pawn.playerId !== ownerId) return;
-      if (mouseMoveLocked && pawn.type === "mouse") {
-        setActionError(mouseMoveLockedMessage);
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-        return;
-      }
-
-      const targetQueue =
-        queueMode === "staged" ? stagedActions : premovedActions;
-      const hasActions = targetQueue.some(
-        (action) => action.type === pawn.type,
-      );
-      if (hasActions) {
-        const setter =
-          queueMode === "staged" ? setStagedActions : setPremovedActions;
-        setter((prev) => prev.filter((action) => action.type !== pawn.type));
-        setSelectedPawnId(null);
-        setActionError(null);
-        if (sfxEnabled) {
-          play(sounds.pawnUndo);
-        }
-        return;
-      }
-
-      if (selectedPawnId === pawnId) {
-        setSelectedPawnId(null);
-      } else {
-        setSelectedPawnId(pawn.id);
-      }
-      setActionError(null);
-    },
-    [
-      actionablePlayerId,
-      activeLocalPlayerId,
-      boardPawns,
-      canActNow,
-      canBufferPremoves,
-      isGamePlaying,
-      premovedActions,
-      mouseMoveLocked,
-      mouseMoveLockedMessage,
-      selectedPawnId,
-      setActionError,
-      setDraggingPawnId,
-      setPremovedActions,
-      setSelectedPawnId,
-      setStagedActions,
-      sfxEnabled,
-      stagedActions,
-      viewingHistory,
-    ],
-  );
-
-  const handleCellClick = useCallback(
-    (row: number, col: number) => {
-      if (viewingHistory) return;
-      const queueMode = canActNow
-        ? "staged"
-        : canBufferPremoves
-          ? "premove"
-          : null;
-      if (!queueMode) return;
-      const ownerId =
-        queueMode === "staged" ? activeLocalPlayerId : actionablePlayerId;
-      if (!ownerId) return;
-      if (!selectedPawnId) {
-        const pawn = boardPawns.find(
-          (p) =>
-            p.playerId === ownerId && p.cell[0] === row && p.cell[1] === col,
-        );
-        if (pawn) {
-          if (mouseMoveLocked && pawn.type === "mouse") {
-            setActionError(mouseMoveLockedMessage);
-            return;
-          }
-          setSelectedPawnId(pawn.id);
-        }
-        return;
-      }
-      stagePawnAction(selectedPawnId, row, col);
-    },
-    [
-      actionablePlayerId,
-      activeLocalPlayerId,
-      boardPawns,
-      canActNow,
-      canBufferPremoves,
-      mouseMoveLocked,
-      mouseMoveLockedMessage,
-      selectedPawnId,
-      setActionError,
-      stagePawnAction,
-      viewingHistory,
-    ],
-  );
-
-  const handlePawnDragStart = useCallback(
-    (pawnId: string) => {
-      if (viewingHistory) return;
-      const queueMode = canActNow
-        ? "staged"
-        : canBufferPremoves
-          ? "premove"
-          : null;
-      if (!queueMode) return;
-      const ownerId =
-        queueMode === "staged" ? activeLocalPlayerId : actionablePlayerId;
-      if (!ownerId) return;
-      const pawn = boardPawns.find((p) => p.id === pawnId);
-      if (pawn?.playerId !== ownerId) return;
-      if (mouseMoveLocked && pawn?.type === "mouse") {
-        setActionError(mouseMoveLockedMessage);
-        setSelectedPawnId(null);
-        setDraggingPawnId(null);
-        return;
-      }
-      setDraggingPawnId(pawnId);
-      setSelectedPawnId(pawnId);
-    },
-    [
-      actionablePlayerId,
-      activeLocalPlayerId,
-      boardPawns,
-      canActNow,
-      canBufferPremoves,
-      mouseMoveLocked,
-      mouseMoveLockedMessage,
-      setDraggingPawnId,
-      setSelectedPawnId,
-      setActionError,
-      viewingHistory,
-    ],
-  );
-
-  const handlePawnDragEnd = useCallback(() => {
-    if (viewingHistory) return;
-    setDraggingPawnId(null);
-  }, [viewingHistory]);
-
-  const handleCellDrop = useCallback(
-    (pawnId: string, targetRow: number, targetCol: number) => {
-      if (viewingHistory) return;
-      if (!draggingPawnId) return;
-      stagePawnAction(pawnId, targetRow, targetCol);
-      setDraggingPawnId(null);
-    },
-    [draggingPawnId, stagePawnAction, viewingHistory],
-  );
+  // Clear annotations when turn changes (move is committed)
+  const prevTurnRef = useRef(gameState?.turn);
+  useEffect(() => {
+    const currentTurn = gameState?.turn;
+    if (
+      prevTurnRef.current !== undefined &&
+      currentTurn !== prevTurnRef.current &&
+      annotations.length > 0
+    ) {
+      clearAnnotations();
+    }
+    prevTurnRef.current = currentTurn;
+  }, [gameState?.turn, annotations.length, clearAnnotations]);
 
   const handleSendMessage = (event: React.FormEvent) => {
     event.preventDefault();
@@ -3931,6 +3491,15 @@ export function useGamePageController(gameId: string) {
     actionStatusText,
     clearStagedActions,
     commitStagedActions,
+    // Annotation handlers and state (for board right-click interactions)
+    annotations,
+    previewAnnotation,
+    arrowDragStateRef,
+    onWallSlotRightClick,
+    onCellRightClickDragStart,
+    onCellRightClickDragMove,
+    onCellRightClickDragEnd,
+    onArrowDragFinalize,
   };
 
   const timerSection = {

@@ -1,5 +1,4 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useCallback, useEffect, useRef } from "react";
 import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
@@ -8,7 +7,6 @@ import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { useAnnotations } from "@/hooks/use-annotations";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -33,62 +31,8 @@ function GamePage() {
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
 
-  // Annotations (only for non-touch devices)
-  const {
-    annotations,
-    hasAnnotations,
-    previewAnnotation,
-    toggleWallAnnotation,
-    clearAnnotations,
-    startArrowDrag,
-    updateArrowDrag,
-    endArrowDrag,
-    finalizeArrowDrag,
-    dragStateRef,
-  } = useAnnotations();
-
-  // Clear annotations when a move is committed (detected by turn change)
-  const prevTurnRef = useRef(board.gameState?.turn);
-  useEffect(() => {
-    const currentTurn = board.gameState?.turn;
-    if (
-      prevTurnRef.current !== undefined &&
-      currentTurn !== prevTurnRef.current &&
-      hasAnnotations
-    ) {
-      clearAnnotations();
-    }
-    prevTurnRef.current = currentTurn;
-  }, [board.gameState?.turn, hasAnnotations, clearAnnotations]);
-
-  // Annotation handlers
-  const handleWallSlotRightClick = useCallback(
-    (row: number, col: number, orientation: "horizontal" | "vertical") => {
-      toggleWallAnnotation(row, col, orientation);
-    },
-    [toggleWallAnnotation],
-  );
-
-  const handleCellRightClickDragStart = useCallback(
-    (row: number, col: number) => {
-      startArrowDrag(row, col);
-    },
-    [startArrowDrag],
-  );
-
-  const handleCellRightClickDragMove = useCallback(
-    (row: number, col: number) => {
-      updateArrowDrag(row, col);
-    },
-    [updateArrowDrag],
-  );
-
-  const handleCellRightClickDragEnd = useCallback(
-    (row: number, col: number) => {
-      endArrowDrag(row, col);
-    },
-    [endArrowDrag],
-  );
+  // Note: Annotations are now managed by the controller (via useBoardInteractions hook)
+  // and passed through board.annotations, board.previewAnnotation, etc.
 
   // ============================================================================
   // Layout Calculations
@@ -286,14 +230,14 @@ function GamePage() {
                   actionStatusText={board.actionStatusText}
                   clearStagedActions={board.clearStagedActions}
                   commitStagedActions={board.commitStagedActions}
-                  annotations={annotations}
-                  previewAnnotation={previewAnnotation}
-                  arrowDragStateRef={dragStateRef}
-                  onWallSlotRightClick={handleWallSlotRightClick}
-                  onCellRightClickDragStart={handleCellRightClickDragStart}
-                  onCellRightClickDragMove={handleCellRightClickDragMove}
-                  onCellRightClickDragEnd={handleCellRightClickDragEnd}
-                  onArrowDragFinalize={finalizeArrowDrag}
+                  annotations={board.annotations}
+                  previewAnnotation={board.previewAnnotation}
+                  arrowDragStateRef={board.arrowDragStateRef}
+                  onWallSlotRightClick={board.onWallSlotRightClick}
+                  onCellRightClickDragStart={board.onCellRightClickDragStart}
+                  onCellRightClickDragMove={board.onCellRightClickDragMove}
+                  onCellRightClickDragEnd={board.onCellRightClickDragEnd}
+                  onArrowDragFinalize={board.onArrowDragFinalize}
                 />
 
                 {/* Bottom Player (You) Timer */}
