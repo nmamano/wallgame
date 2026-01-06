@@ -158,7 +158,7 @@ function Profile() {
 
           <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardHeader>
-              <CardTitle className="text-2xl">Activity</CardTitle>
+              <CardTitle className="text-2xl font-serif">Activity</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3 justify-around">
               <Button
@@ -189,7 +189,7 @@ function Profile() {
 
           <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardHeader>
-              <CardTitle className="text-2xl">Account</CardTitle>
+              <CardTitle className="text-2xl font-serif">Account</CardTitle>
             </CardHeader>
             <CardContent className="flex flex-wrap gap-3 justify-around">
               <Button variant="outline" asChild className="w-40">
