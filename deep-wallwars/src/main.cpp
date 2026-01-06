@@ -29,6 +29,7 @@ DEFINE_string(model2, "", "Serialized TensorRT Model 2");
 DEFINE_string(output, "data", "Folder to print training data to");
 DEFINE_uint32(seed, 42, "Random seed");
 DEFINE_uint64(cache_size, 100'000, "Size of the internal evaluation cache");
+DEFINE_bool(boost_mouse_priors, false, "Boost mouse move priors to encourage exploration");
 
 DEFINE_int32(columns, 5, "Number of columns");
 DEFINE_int32(rows, 5, "Number of rows");
@@ -93,7 +94,7 @@ EvaluationFunction create_and_validate_model(nv::IRuntime& runtime, std::string 
     }
     auto batched_model =
         std::make_shared<BatchedModel>(std::move(tensor_rt_models), kBatchedModelQueueSize);
-    BatchedModelPolicy batched_model_policy(std::move(batched_model));
+    BatchedModelPolicy batched_model_policy(std::move(batched_model), FLAGS_boost_mouse_priors);
     return CachedPolicy(std::move(batched_model_policy), FLAGS_cache_size);
 }
 
