@@ -4,7 +4,6 @@ import type { PlayerColor } from "@/lib/player-colors";
 import { GameState } from "../../../shared/domain/game-state";
 import type { SoloCampaignLevel } from "../../../shared/domain/solo-campaign-levels";
 import { buildLevelConfig } from "../../../shared/domain/solo-campaign-levels";
-import { buildSurvivalInitialState } from "../../../shared/domain/survival-setup";
 import { SoloCampaignAIController } from "@/lib/solo-campaign-controller";
 import { LocalHumanController } from "@/lib/player-controllers";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
@@ -222,8 +221,7 @@ export function useSoloCampaignGame(
   // Initialize game
   const initializeGame = useCallback(() => {
     const config = buildLevelConfig(level);
-    const initialState = buildSurvivalInitialState(config);
-    const newGameState = new GameState(config, Date.now(), initialState);
+    const newGameState = new GameState(config, Date.now());
 
     gameStateRef.current = newGameState;
     setGameState(newGameState);

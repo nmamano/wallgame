@@ -9,7 +9,12 @@ import {
   generateFreestyleInitialState,
   normalizeFreestyleConfig,
 } from "../../../shared/domain/freestyle-setup";
-import { buildSurvivalInitialState } from "../../../shared/domain/survival-setup";
+import {
+  buildSurvivalInitialState,
+  type SurvivalSetupInput,
+} from "../../../shared/domain/survival-setup";
+import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
+import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
 import type {
   PlayerId,
   WallPosition,
@@ -18,6 +23,7 @@ import type {
   MatchType,
   GameSnapshot,
   GameInitialState,
+  SurvivalInitialState,
 } from "../../../shared/domain/game-types";
 import {
   moveToStandardNotation,
@@ -157,6 +163,7 @@ const DEFAULT_CONFIG: GameConfiguration = {
   variant: "standard",
   boardWidth: 9,
   boardHeight: 9,
+  variantConfig: buildStandardInitialState(9, 9),
 };
 
 const DEFAULT_PLAYERS: PlayerType[] = ["you", "you"];
@@ -676,7 +683,7 @@ export function useGamePageController(gameId: string) {
     (
       incomingConfig: GameConfiguration,
       incomingPlayers: PlayerType[],
-      options?: { forceYouFirst?: boolean; initialState?: GameInitialState },
+      options?: { forceYouFirst?: boolean },
     ) => {
       const nextGameId = currentGameIdRef.current + 1;
       currentGameIdRef.current = nextGameId;
@@ -689,11 +696,7 @@ export function useGamePageController(gameId: string) {
         const idx = sanitizedPlayers.findIndex((type) => type === "you");
         return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
       })();
-      const state = new GameState(
-        normalizedConfig,
-        Date.now(),
-        options?.initialState,
-      );
+      const state = new GameState(normalizedConfig, Date.now());
 
       // Update view model with new game state
       applyServerUpdate({
@@ -970,7 +973,6 @@ export function useGamePageController(gameId: string) {
       config,
       historyEntries,
       cursor: historyCursor,
-      initialSnapshot: gameState.getInitialSnapshot(),
     });
   }, [historyCursor, gameState, config, historyEntries]);
   const historyLastMoves = useMemo(() => {
@@ -1718,7 +1720,9 @@ export function useGamePageController(gameId: string) {
   // Compute values needed for board interactions hook
   const isClassicVariant = gameState?.config.variant === "classic";
   const survivalSettings =
-    gameState?.config.variant === "survival" ? gameState.config.survival : null;
+    gameState?.config.variant === "survival"
+      ? (gameState.config.variantConfig as SurvivalInitialState)
+      : null;
   const mouseMoveLocked =
     isClassicVariant ||
     (survivalSettings ? !survivalSettings.mouseCanMove : false);
@@ -2686,15 +2690,42 @@ export function useGamePageController(gameId: string) {
       (participantIndex) => participants[participantIndex],
     );
 
-    const initialState =
-      resolvedConfig.variant === "freestyle"
-        ? generateFreestyleInitialState()
-        : resolvedConfig.variant === "survival"
-          ? buildSurvivalInitialState(resolvedConfig)
-          : undefined;
-    initializeGame(resolvedConfig, playersForGame, {
+    // Build variantConfig based on variant
+    const variantConfig: GameInitialState = (() => {
+      if (resolvedConfig.variant === "freestyle") {
+        return generateFreestyleInitialState();
+      }
+      if (resolvedConfig.variant === "survival") {
+        // The game setup UI would need survival-specific controls to let users
+        // configure these settings.
+        const survivalInput: SurvivalSetupInput = {
+          boardWidth: resolvedConfig.boardWidth,
+          boardHeight: resolvedConfig.boardHeight,
+          turnsToSurvive: 10, // Default; should come from config
+          mouseCanMove: true, // Default; should come from config
+        };
+        return buildSurvivalInitialState(survivalInput);
+      }
+      if (resolvedConfig.variant === "classic") {
+        return buildClassicInitialState(
+          resolvedConfig.boardWidth,
+          resolvedConfig.boardHeight,
+        );
+      }
+      // Standard variant
+      return buildStandardInitialState(
+        resolvedConfig.boardWidth,
+        resolvedConfig.boardHeight,
+      );
+    })();
+
+    const configWithVariant: GameConfiguration = {
+      ...resolvedConfig,
+      variantConfig,
+    };
+
+    initializeGame(configWithVariant, playersForGame, {
       forceYouFirst: false,
-      initialState,
     });
     setIsLoadingConfig(false);
 

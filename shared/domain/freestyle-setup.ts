@@ -1,7 +1,7 @@
 import type {
   Cell,
   GameConfiguration,
-  GameInitialState,
+  StandardInitialState,
   WallPosition,
 } from "./game-types";
 import { Grid } from "./grid";
@@ -47,7 +47,7 @@ const normalizeCatMouseOrder = (cat: Cell, mouse: Cell): [Cell, Cell] => {
 
 export const generateFreestyleInitialState = (
   rng: () => number = Math.random,
-): GameInitialState => {
+): StandardInitialState => {
   const catCell: Cell = [
     randomInt(rng, 0, FREESTYLE_BOARD_HEIGHT - 1),
     randomChoice(rng, LEFT_PAWN_COLUMNS),
@@ -58,7 +58,7 @@ export const generateFreestyleInitialState = (
   ];
   const [orderedCat, orderedMouse] = normalizeCatMouseOrder(catCell, mouseCell);
 
-  const pawns: GameInitialState["pawns"] = {
+  const pawns: StandardInitialState["pawns"] = {
     1: {
       cat: orderedCat,
       mouse: orderedMouse,

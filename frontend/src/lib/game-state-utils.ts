@@ -22,42 +22,22 @@ export const hydrateGameStateFromSerialized = (
     serialized.config.variant ?? baseConfig.variant ?? "standard";
   const rated = baseConfig.rated;
   const timeControl = serialized.config.timeControl;
-  const survivalSettings =
-    resolvedVariant === "survival"
-      ? "survival" in serialized.config
-        ? serialized.config.survival
-        : baseConfig.variant === "survival"
-          ? baseConfig.survival
-          : undefined
-      : undefined;
-  if (resolvedVariant === "survival" && !survivalSettings) {
-    throw new Error("Missing survival settings in serialized state.");
-  }
 
-  const config: GameConfiguration =
-    resolvedVariant === "survival"
-      ? {
-          boardWidth: serialized.config.boardWidth,
-          boardHeight: serialized.config.boardHeight,
-          variant: "survival",
-          timeControl,
-          rated,
-          survival: survivalSettings!,
-        }
-      : {
-          boardWidth: serialized.config.boardWidth,
-          boardHeight: serialized.config.boardHeight,
-          variant: resolvedVariant,
-          timeControl,
-          rated,
-        };
+  // Use variantConfig from serialized state, falling back to baseConfig
+  const variantConfig =
+    serialized.config.variantConfig ?? baseConfig.variantConfig;
+
+  const config: GameConfiguration = {
+    boardWidth: serialized.config.boardWidth,
+    boardHeight: serialized.config.boardHeight,
+    variant: resolvedVariant,
+    timeControl,
+    rated,
+    variantConfig,
+  };
   const normalizedConfig = normalizeFreestyleConfig(config);
 
-  const state = new GameState(
-    normalizedConfig,
-    Date.now(),
-    serialized.initialState,
-  );
+  const state = new GameState(normalizedConfig, Date.now());
   state.turn = serialized.turn;
   state.moveCount = serialized.moveCount;
   state.status = serialized.status;
@@ -93,11 +73,7 @@ export const hydrateGameStateFromSerialized = (
     const orderedHistory = [...serialized.history].sort(
       (a, b) => a.index - b.index,
     );
-    let replayState: GameState = new GameState(
-      normalizedConfig,
-      Date.now(),
-      serialized.initialState,
-    );
+    let replayState: GameState = new GameState(normalizedConfig, Date.now());
     state.history = orderedHistory.map((entry) => {
       const move = moveFromStandardNotation(
         entry.notation,

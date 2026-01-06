@@ -135,10 +135,7 @@ export const persistCompletedGame = async (
 
     const configParameters = {
       timeControl: session.config.timeControl,
-      initialState: state.getInitialState(),
-      ...(session.config.variant === "survival"
-        ? { survival: session.config.survival }
-        : {}),
+      initialState: state.getInitialState(), // Contains all variant-specific config
     };
 
     await tx.insert(gameDetailsTable).values({

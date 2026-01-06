@@ -129,8 +129,11 @@ const buildOpeningMove = (
 ): Move => {
   const rows = config.boardHeight;
   const cols = config.boardWidth;
-  const includeMouse = config.variant !== "classic";
+  const isClassic = config.variant === "classic";
+  const includeMouse = !isClassic;
+
   if (playerId === 1) {
+    // P1 cat starts at (0, 0) for all variants
     return {
       actions: includeMouse
         ? [
@@ -140,13 +143,21 @@ const buildOpeningMove = (
         : [{ type: "cat", target: [0, 1] }],
     };
   }
+
+  // P2 cat starts at (0, cols-1) for standard/freestyle, (rows-1, cols-1) for classic
+  if (isClassic) {
+    // Classic: P2 cat moves from (rows-1, cols-1) to (rows-2, cols-1)
+    return {
+      actions: [{ type: "cat", target: [rows - 2, cols - 1] }],
+    };
+  }
+
+  // Standard/Freestyle: P2 cat moves from (0, cols-1) to (0, cols-2)
   return {
-    actions: includeMouse
-      ? [
-          { type: "cat", target: [0, cols - 2] },
-          { type: "mouse", target: [rows - 2, cols - 1] },
-        ]
-      : [{ type: "cat", target: [0, cols - 2] }],
+    actions: [
+      { type: "cat", target: [0, cols - 2] },
+      { type: "mouse", target: [rows - 2, cols - 1] },
+    ],
   };
 };
 

@@ -12,7 +12,6 @@ interface BuildHistoryStateOptions {
   config: GameConfiguration;
   historyEntries: MoveInHistory[];
   cursor: number;
-  initialSnapshot: ReturnType<GameState["getInitialSnapshot"]>;
 }
 
 const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
@@ -26,7 +25,6 @@ export function buildHistoryState({
   config,
   historyEntries,
   cursor,
-  initialSnapshot,
 }: BuildHistoryStateOptions): GameState | null {
   if (cursor === null || cursor < -1) {
     return null;
@@ -36,10 +34,7 @@ export function buildHistoryState({
     return null;
   }
 
-  const snapshot = new GameState(config, 0, {
-    pawns: initialSnapshot.pawns,
-    walls: initialSnapshot.grid.getWalls(),
-  });
+  const snapshot = new GameState(config, 0);
 
   if (cursor === -1) {
     snapshot.history = [];

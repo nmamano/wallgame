@@ -43,16 +43,40 @@ export type Variant =
 
 export type NonSurvivalVariant = Exclude<Variant, "survival">;
 
-export interface SurvivalVariantSettings {
-  initialWalls: WallPosition[];
+/**
+ * Variant-specific initial state types.
+ * Each variant has its own configuration structure stored in `variantConfig`.
+ */
+
+/** Initial state for Standard and Freestyle variants (cat chases mouse) */
+export interface StandardInitialState {
+  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  walls: WallPosition[];
+}
+
+/** Initial state for Classic variant (cat races to home) */
+export interface ClassicInitialState {
+  pawns: Record<PlayerId, { cat: Cell; home: Cell }>;
+  walls: WallPosition[];
+}
+
+/** Initial state for Survival variant (cat chases mouse with turn limit) */
+export interface SurvivalInitialState {
+  cat: Cell;
+  mouse: Cell;
   turnsToSurvive: number;
   mouseCanMove: boolean;
-  /** Optional custom starting positions. If not provided, uses default corner positions. */
-  initialPawns?: {
-    p1Cat?: Cell;
-    p2Mouse?: Cell;
-  };
+  walls: WallPosition[];
 }
+
+/** Union of all variant-specific initial states */
+export type GameInitialState =
+  | StandardInitialState
+  | ClassicInitialState
+  | SurvivalInitialState;
+
+/** @deprecated Use SurvivalInitialState instead */
+export type SurvivalVariantSettings = SurvivalInitialState;
 
 export type TimeControlPreset =
   | "bullet" // 1+0
@@ -60,20 +84,14 @@ export type TimeControlPreset =
   | "rapid" // 10+2
   | "classical"; // 30+0
 
-export interface BaseGameConfiguration {
+export interface GameConfiguration {
   variant: Variant;
   timeControl: TimeControlConfig;
   rated: boolean;
   boardWidth: number;
   boardHeight: number;
+  variantConfig: GameInitialState;
 }
-
-export type GameConfiguration =
-  | (BaseGameConfiguration & { variant: NonSurvivalVariant })
-  | (BaseGameConfiguration & {
-      variant: "survival";
-      survival: SurvivalVariantSettings;
-    });
 
 // SessionStatus tracks the lifecycle of a game session/matchmaking
 // - "waiting": waiting for players to join
@@ -212,11 +230,6 @@ export interface Pawn {
   type: PawnType;
   cell: Cell;
   pawnStyle?: string;
-}
-
-export interface GameInitialState {
-  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
-  walls: WallPosition[];
 }
 
 export type GameAction =

@@ -13,7 +13,12 @@ import type {
   NonSurvivalVariant,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
-import { normalizeFreestyleConfig } from "../../../shared/domain/freestyle-setup";
+import {
+  normalizeFreestyleConfig,
+  generateFreestyleInitialState,
+} from "../../../shared/domain/freestyle-setup";
+import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
+import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -97,6 +102,7 @@ const defaultGameConfig: GameConfiguration = {
   variant: "standard",
   boardWidth: 8,
   boardHeight: 8,
+  variantConfig: buildStandardInitialState(8, 8),
 };
 
 const DEFAULT_TIME_CONTROL_PRESET: TimeControlPreset = "rapid";
@@ -360,14 +366,26 @@ function useSettingsInternal(
     const resolvedVariant =
       currentVariant === "survival" ? DEFAULT_VARIANT : currentVariant;
     const currentVariantParams = variantSettingsFromDb[resolvedVariant];
+
+    // Note: For freestyle, dimensions are normalized to 12x10 by
+    // normalizeFreestyleConfig()
+    const boardWidth = currentVariantParams?.boardWidth ?? 8;
+    const boardHeight = currentVariantParams?.boardHeight ?? 8;
+    const variantConfig =
+      resolvedVariant === "freestyle"
+        ? generateFreestyleInitialState()
+        : resolvedVariant === "classic"
+          ? buildClassicInitialState(boardWidth, boardHeight)
+          : buildStandardInitialState(boardWidth, boardHeight);
     return normalizeFreestyleConfig({
       timeControl: timeControlConfigFromPreset(
         dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,
       ),
       rated: dbSettings.defaultRatedStatus ?? false,
       variant: resolvedVariant,
-      boardWidth: currentVariantParams?.boardWidth ?? 8,
-      boardHeight: currentVariantParams?.boardHeight ?? 8,
+      boardWidth,
+      boardHeight,
+      variantConfig,
     });
   }, [isLoggedIn, dbSettings, variantSettingsFromDb]);
 
