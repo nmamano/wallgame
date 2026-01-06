@@ -257,7 +257,7 @@ def warm_start_model(path, device, expected_priors):
     return model.to(device)
 
 
-def run_self_play(model1, model2, generation):
+def run_self_play(model1, model2, generation, boost_mouse_priors=False):
     os.makedirs(args.data, exist_ok=True)
     print(f"Running self play (generation {generation})...")
     cmd = [
@@ -281,6 +281,9 @@ def run_self_play(model1, model2, generation):
         "-samples",
         str(args.samples),
     ]
+
+    if boost_mouse_priors:
+        cmd.append("--boost_mouse_priors")
     
     # Open log file in append mode
     with open(args.log, "a") as f:
@@ -408,7 +411,10 @@ def init():
         start_generation = args.initial_generation + 1
 
     for generation in range(start_generation, start_generation + args.generations - 1):
-        run_self_play(f"{args.models}/model_{generation - 1}.trt", "", generation - 1)
+        # One-off hack to boost mouse priors for specific generations
+        # TODO: remove it.
+        boost = (generation - 1) in [37, 38, 39]
+        run_self_play(f"{args.models}/model_{generation - 1}.trt", "", generation - 1, boost_mouse_priors=boost)
         train_model(model, generation, args.epochs, device)
         save_model(model, f"model_{generation}", device)
         gc.collect()

@@ -5,7 +5,7 @@
 
 class BatchedModelPolicy {
 public:
-    BatchedModelPolicy(std::shared_ptr<BatchedModel> model);
+    BatchedModelPolicy(std::shared_ptr<BatchedModel> model, bool boost_mouse_priors = false);
 
     folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
                                              std::optional<PreviousPosition> previous_position);
@@ -20,4 +20,5 @@ public:
 
 private:
     std::shared_ptr<BatchedModel> m_model;
+    bool m_boost_mouse_priors;
 };

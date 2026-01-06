@@ -2,8 +2,9 @@
 
 #include <stdexcept>
 
-BatchedModelPolicy::BatchedModelPolicy(std::shared_ptr<BatchedModel> model)
-    : m_model{std::move(model)} {}
+BatchedModelPolicy::BatchedModelPolicy(std::shared_ptr<BatchedModel> model,
+                                         bool boost_mouse_priors)
+    : m_model{std::move(model)}, m_boost_mouse_priors{boost_mouse_priors} {}
 
 folly::coro::Task<Evaluation> BatchedModelPolicy::operator()(
     Board const& board, Turn turn, std::optional<PreviousPosition> previous_position) {
@@ -42,7 +43,19 @@ folly::coro::Task<Evaluation> BatchedModelPolicy::operator()(
 
     add_pawn_moves(Pawn::Cat, board.position(turn.player), int(wall_prior_size));
     if (board.allows_mouse_moves()) {
-        add_pawn_moves(Pawn::Mouse, board.mouse(turn.player), int(wall_prior_size + 4));
+        int offset = int(wall_prior_size + 4);
+        for (Direction dir : board.legal_directions(turn.player, Pawn::Mouse)) {
+            Cell next = board.mouse(turn.player).step(dir);
+            if (is_backtrack(Pawn::Mouse, next)) {
+                continue;
+            }
+            float prior = inference_result.prior[offset + int(dir)];
+            if (m_boost_mouse_priors) {
+                prior += 0.2f;
+            }
+            eval.edges.emplace_back(PawnMove{Pawn::Mouse, dir}, prior);
+            total_prior += prior;
+        }
     }
 
     auto const legal_walls = board.legal_walls();
