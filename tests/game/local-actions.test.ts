@@ -12,6 +12,7 @@ import {
   resolveDoubleStep,
   type LocalQueue,
 } from "../../frontend/src/game/local-actions";
+import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 
 const TEST_CONFIG: GameConfiguration = {
   boardHeight: 9,
@@ -23,6 +24,7 @@ const TEST_CONFIG: GameConfiguration = {
     incrementSeconds: 2,
     preset: "blitz",
   },
+  variantConfig: buildStandardInitialState(9, 9),
 };
 
 const buildState = () => new GameState(TEST_CONFIG, 0);

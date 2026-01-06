@@ -1,5 +1,16 @@
 /.git
 /node_modules
+/deep_wallwars
+/.claude
+/.cursor
+/.husky
+/.vscode
+/assets
+/dummy-engine
+/ignore
+/info
+/official-custom-bot-client
+/tests
 .dockerignore
 .env
 Dockerfile

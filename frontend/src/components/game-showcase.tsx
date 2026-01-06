@@ -140,7 +140,6 @@ export function GameShowcase() {
         config: showcase.gameState.config,
         historyEntries: showcase.gameState.history,
         cursor: historyCursor,
-        initialSnapshot: showcase.gameState.getInitialSnapshot(),
       }) ?? showcase.gameState
     );
   }, [showcase, historyCursor]);

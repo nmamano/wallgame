@@ -1,45 +1,75 @@
-import type { Cell, GameInitialState, GameConfiguration } from "./game-types";
+import type { Cell, SurvivalInitialState, WallPosition } from "./game-types";
 import { Grid } from "./grid";
 
+export interface SurvivalSetupInput {
+  boardWidth: number;
+  boardHeight: number;
+  turnsToSurvive: number;
+  mouseCanMove: boolean;
+  walls?: WallPosition[];
+  catPosition?: Cell;
+  mousePosition?: Cell;
+}
+
+/**
+ * Build and validate a SurvivalInitialState.
+ * Validates that walls don't block the cat from reaching the mouse.
+ *
+ * Default positions (for an 8x8 board):
+ * - Cat at top-left (0, 0)
+ * - Mouse at bottom-right (7, 7)
+ */
 export const buildSurvivalInitialState = (
-  config: Extract<GameConfiguration, { variant: "survival" }>,
-): GameInitialState => {
-  if (
-    !Number.isInteger(config.survival.turnsToSurvive) ||
-    config.survival.turnsToSurvive < 1
-  ) {
+  input: SurvivalSetupInput,
+): SurvivalInitialState => {
+  const { boardWidth, boardHeight, turnsToSurvive, mouseCanMove } = input;
+
+  if (!Number.isInteger(turnsToSurvive) || turnsToSurvive < 1) {
     throw new Error("Survival turns must be a positive integer.");
   }
 
-  const rows = config.boardHeight;
-  const cols = config.boardWidth;
+  const lastRow = boardHeight - 1;
+  const lastCol = boardWidth - 1;
 
-  // Use custom positions if provided, otherwise use default corners
-  const customPawns = config.survival.initialPawns;
-  const pawns: GameInitialState["pawns"] = {
-    1: {
-      cat: customPawns?.p1Cat ?? [0, 0],
-      mouse: [rows - 1, 0], // Not used in survival (only P1 cat is active)
-    },
-    2: {
-      cat: [0, cols - 1], // Not used in survival (only P2 mouse is active)
-      mouse: customPawns?.p2Mouse ?? [rows - 1, cols - 1],
-    },
-  };
+  const cat: Cell = input.catPosition ?? [0, 0];
+  const mouse: Cell = input.mousePosition ?? [lastRow, lastCol];
+  const inputWalls = input.walls ?? [];
 
-  const grid = new Grid(cols, rows, config.variant);
-  const cats: [Cell, Cell] = [pawns[1].cat, pawns[1].cat];
-  const mice: [Cell, Cell] = [pawns[2].mouse, pawns[2].mouse];
+  // Validate walls don't block cat from reaching mouse
+  const grid = new Grid(boardWidth, boardHeight, "survival");
+  const cats: [Cell, Cell] = [cat, cat];
+  const mice: [Cell, Cell] = [mouse, mouse];
 
-  config.survival.initialWalls.forEach((wall) => {
+  for (const wall of inputWalls) {
     if (!grid.canBuildWall(cats, mice, wall)) {
       throw new Error("Invalid survival wall layout.");
     }
     grid.addWall(wall);
-  });
+  }
 
   return {
-    pawns,
+    cat,
+    mouse,
+    turnsToSurvive,
+    mouseCanMove,
     walls: grid.getWalls(),
   };
+};
+
+/**
+ * Build a default SurvivalInitialState with standard corner positions.
+ */
+export const buildDefaultSurvivalInitialState = (
+  boardWidth: number,
+  boardHeight: number,
+  turnsToSurvive: number,
+  mouseCanMove: boolean,
+): SurvivalInitialState => {
+  return buildSurvivalInitialState({
+    boardWidth,
+    boardHeight,
+    turnsToSurvive,
+    mouseCanMove,
+    walls: [],
+  });
 };

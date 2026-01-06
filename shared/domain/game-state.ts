@@ -11,9 +11,33 @@ import type {
   Pawn,
   GameAction,
   GameInitialState,
+  StandardInitialState,
+  ClassicInitialState,
+  SurvivalInitialState,
 } from "./game-types";
 import { Grid } from "./grid";
 import { cellEq } from "./game-utils";
+
+// Type guards for variant-specific initial states
+export function isStandardInitialState(
+  state: GameInitialState,
+): state is StandardInitialState {
+  return (
+    "pawns" in state && "mouse" in (state as StandardInitialState).pawns[1]
+  );
+}
+
+export function isClassicInitialState(
+  state: GameInitialState,
+): state is ClassicInitialState {
+  return "pawns" in state && "home" in (state as ClassicInitialState).pawns[1];
+}
+
+export function isSurvivalInitialState(
+  state: GameInitialState,
+): state is SurvivalInitialState {
+  return "turnsToSurvive" in state;
+}
 
 export interface MoveInHistory {
   index: number;
@@ -46,51 +70,69 @@ export class GameState {
   private initialGrid: Grid;
   private initialPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
 
-  constructor(
-    config: GameConfiguration,
-    startTime: number,
-    initialState?: GameInitialState,
-  ) {
+  constructor(config: GameConfiguration, startTime: number) {
     this.config = config;
     this.grid = new Grid(config.boardWidth, config.boardHeight, config.variant);
 
-    const rows = config.boardHeight;
-    const cols = config.boardWidth;
+    const variantConfig = config.variantConfig;
 
-    if (initialState) {
+    // Initialize pawns based on variant type
+    if (isSurvivalInitialState(variantConfig)) {
+      // Survival has flat cat/mouse structure
+      const rows = config.boardHeight;
+      const cols = config.boardWidth;
       this.pawns = {
         1: {
-          cat: [initialState.pawns[1].cat[0], initialState.pawns[1].cat[1]],
+          cat: [variantConfig.cat[0], variantConfig.cat[1]],
+          mouse: [rows - 1, 0], // P1 mouse not used in survival
+        },
+        2: {
+          cat: [0, cols - 1], // P2 cat not used in survival
+          mouse: [variantConfig.mouse[0], variantConfig.mouse[1]],
+        },
+      };
+    } else if (isClassicInitialState(variantConfig)) {
+      // Classic has cat/home structure - store home in mouse slot for now
+      this.pawns = {
+        1: {
+          cat: [variantConfig.pawns[1].cat[0], variantConfig.pawns[1].cat[1]],
           mouse: [
-            initialState.pawns[1].mouse[0],
-            initialState.pawns[1].mouse[1],
+            variantConfig.pawns[1].home[0],
+            variantConfig.pawns[1].home[1],
           ],
         },
         2: {
-          cat: [initialState.pawns[2].cat[0], initialState.pawns[2].cat[1]],
+          cat: [variantConfig.pawns[2].cat[0], variantConfig.pawns[2].cat[1]],
           mouse: [
-            initialState.pawns[2].mouse[0],
-            initialState.pawns[2].mouse[1],
+            variantConfig.pawns[2].home[0],
+            variantConfig.pawns[2].home[1],
           ],
         },
       };
-      initialState.walls.forEach((wall) => {
-        this.grid.addWall(wall);
-      });
     } else {
-      // Always use default starting positions
-      // Cats start at top (row 0), mice start at bottom (row rows-1)
+      // Standard/Freestyle have cat/mouse structure
       this.pawns = {
         1: {
-          cat: [0, 0],
-          mouse: [rows - 1, 0],
+          cat: [variantConfig.pawns[1].cat[0], variantConfig.pawns[1].cat[1]],
+          mouse: [
+            variantConfig.pawns[1].mouse[0],
+            variantConfig.pawns[1].mouse[1],
+          ],
         },
         2: {
-          cat: [0, cols - 1],
-          mouse: [rows - 1, cols - 1],
+          cat: [variantConfig.pawns[2].cat[0], variantConfig.pawns[2].cat[1]],
+          mouse: [
+            variantConfig.pawns[2].mouse[0],
+            variantConfig.pawns[2].mouse[1],
+          ],
         },
       };
     }
+
+    // Add initial walls
+    variantConfig.walls.forEach((wall) => {
+      this.grid.addWall(wall);
+    });
 
     // Save initial state
     this.initialGrid = this.grid.clone();
@@ -231,7 +273,7 @@ export class GameState {
           }
           if (
             this.config.variant === "survival" &&
-            !this.config.survival.mouseCanMove
+            !(this.config.variantConfig as SurvivalInitialState).mouseCanMove
           ) {
             throw new Error("Mouse cannot move in survival variant");
           }
@@ -411,14 +453,28 @@ export class GameState {
       }
     }
 
-    const myCatCaught =
-      this.isPawnActive(player, "cat") &&
-      this.isPawnActive(opponent, "mouse") &&
-      cellEq(nextMyPawns.cat, opPawns.mouse);
-    const opCatCaught =
-      this.isPawnActive(opponent, "cat") &&
-      this.isPawnActive(player, "mouse") &&
-      cellEq(opPawns.cat, nextMyPawns.mouse);
+    // Win condition depends on variant:
+    // - Standard/Freestyle: cat captures opponent's mouse
+    // - Classic: cat reaches its own home (stored in mouse slot)
+    const isClassicVariant = this.config.variant === "classic";
+    let myCatCaught: boolean;
+    let opCatCaught: boolean;
+
+    if (isClassicVariant) {
+      // Classic: cat reaches its own home (home is stored in mouse slot)
+      myCatCaught = cellEq(nextMyPawns.cat, nextMyPawns.mouse);
+      opCatCaught = cellEq(opPawns.cat, opPawns.mouse);
+    } else {
+      // Standard/Freestyle/Survival: cat captures opponent's mouse
+      myCatCaught =
+        this.isPawnActive(player, "cat") &&
+        this.isPawnActive(opponent, "mouse") &&
+        cellEq(nextMyPawns.cat, opPawns.mouse);
+      opCatCaught =
+        this.isPawnActive(opponent, "cat") &&
+        this.isPawnActive(player, "mouse") &&
+        cellEq(opPawns.cat, nextMyPawns.mouse);
+    }
 
     // Update timeLeft with increment
     const nextTimeLeft = { ...this.timeLeft };
@@ -454,8 +510,10 @@ export class GameState {
     this.lastMoveTime = timestamp;
 
     if (myCatCaught) {
+      // One-move-rule only applies to standard/freestyle (not survival or classic)
       if (
         player === 1 &&
+        !isClassicVariant &&
         this.config.variant !== "survival" &&
         this.isPawnActive(opponent, "cat") &&
         this.isPawnActive(player, "mouse")
@@ -489,7 +547,8 @@ export class GameState {
     }
 
     if (this.config.variant === "survival" && player === 1) {
-      const turnsToSurvive = this.config.survival.turnsToSurvive;
+      const turnsToSurvive = (this.config.variantConfig as SurvivalInitialState)
+        .turnsToSurvive;
       if (!Number.isInteger(turnsToSurvive) || turnsToSurvive < 1) {
         throw new Error("Survival turns must be a positive integer.");
       }
@@ -616,10 +675,7 @@ export class GameState {
   }
 
   getInitialState(): GameInitialState {
-    const snapshot = this.getInitialSnapshot();
-    return {
-      pawns: snapshot.pawns,
-      walls: snapshot.grid.getWalls(),
-    };
+    // Return the original variant config which contains the correct structure
+    return this.config.variantConfig;
   }
 }

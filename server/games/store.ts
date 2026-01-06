@@ -4,7 +4,12 @@ import {
   generateFreestyleInitialState,
   normalizeFreestyleConfig,
 } from "../../shared/domain/freestyle-setup";
-import { buildSurvivalInitialState } from "../../shared/domain/survival-setup";
+import {
+  buildSurvivalInitialState,
+  type SurvivalSetupInput,
+} from "../../shared/domain/survival-setup";
+import { buildStandardInitialState } from "../../shared/domain/standard-setup";
+import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import type {
@@ -304,14 +309,71 @@ const ensureSession = (id: string): GameSession => {
 
 export const getSession = (id: string): GameSession => ensureSession(id);
 
-const createGameState = (config: GameConfiguration): GameState => {
-  if (config.variant === "freestyle") {
-    return new GameState(config, Date.now(), generateFreestyleInitialState());
+/** Partial config type for API requests that may not include variantConfig */
+export type PartialGameConfiguration = Omit<
+  GameConfiguration,
+  "variantConfig"
+> & {
+  variantConfig?: GameConfiguration["variantConfig"];
+  // Legacy survival field for backward compatibility
+  survival?: SurvivalSetupInput;
+};
+
+/**
+ * Build a complete GameConfiguration with variantConfig populated.
+ * Handles configs that may not yet have variantConfig (backward compatibility).
+ */
+export const buildCompleteConfig = (
+  baseConfig: PartialGameConfiguration,
+): GameConfiguration => {
+  // If variantConfig already exists, use it
+  if (baseConfig.variantConfig) {
+    return baseConfig as GameConfiguration;
   }
-  if (config.variant === "survival") {
-    return new GameState(config, Date.now(), buildSurvivalInitialState(config));
+
+  const { boardWidth, boardHeight, variant } = baseConfig;
+
+  // Build variantConfig based on variant
+  if (variant === "freestyle") {
+    return {
+      ...baseConfig,
+      variantConfig: generateFreestyleInitialState(),
+    };
   }
-  return new GameState(config, Date.now());
+
+  if (variant === "survival" && baseConfig.survival) {
+    const survivalInput: SurvivalSetupInput = {
+      boardWidth,
+      boardHeight,
+      turnsToSurvive: baseConfig.survival.turnsToSurvive,
+      mouseCanMove: baseConfig.survival.mouseCanMove,
+      walls: baseConfig.survival.walls,
+      catPosition: baseConfig.survival.catPosition,
+      mousePosition: baseConfig.survival.mousePosition,
+    };
+    return {
+      ...baseConfig,
+      variantConfig: buildSurvivalInitialState(survivalInput),
+    };
+  }
+
+  if (variant === "classic") {
+    return {
+      ...baseConfig,
+      variantConfig: buildClassicInitialState(boardWidth, boardHeight),
+    };
+  }
+
+  // Standard variant (default)
+  return {
+    ...baseConfig,
+    variantConfig: buildStandardInitialState(boardWidth, boardHeight),
+  };
+};
+
+const createGameState = (config: PartialGameConfiguration): GameState => {
+  const completeConfig = buildCompleteConfig(config);
+  return new GameState(completeConfig, Date.now());
 };
 
 const buildMatchScoreSnapshot = (session: GameSession): MatchScore => {
@@ -367,7 +429,7 @@ const finalizeMatchScore = (
  * @param joinerConfig - Configuration for the joiner seat (custom bot, etc.)
  */
 export const createGameSession = (args: {
-  config: GameConfiguration;
+  config: PartialGameConfiguration;
   matchType: MatchType;
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
@@ -379,7 +441,9 @@ export const createGameSession = (args: {
     displayName?: string;
   };
 }): GameCreationResult => {
-  const normalizedConfig = normalizeFreestyleConfig(args.config);
+  // First build complete config with variantConfig, then normalize freestyle
+  const completeConfig = buildCompleteConfig(args.config);
+  const normalizedConfig = normalizeFreestyleConfig(completeConfig);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
   // No invite code needed - the game ID itself is secure enough
   const hostToken = nanoid(); // 21 chars by default for security
@@ -1021,23 +1085,14 @@ export const serializeGameState = (
       index: entry.index,
       notation: moveToStandardNotation(entry.move, historyRows),
     })),
-    config:
-      state.config.variant === "survival"
-        ? {
-            boardWidth: state.config.boardWidth,
-            boardHeight: state.config.boardHeight,
-            variant: "survival",
-            rated: session.config.rated,
-            timeControl: session.config.timeControl,
-            survival: state.config.survival,
-          }
-        : {
-            boardWidth: state.config.boardWidth,
-            boardHeight: state.config.boardHeight,
-            variant: state.config.variant,
-            rated: session.config.rated,
-            timeControl: session.config.timeControl,
-          },
+    config: {
+      boardWidth: state.config.boardWidth,
+      boardHeight: state.config.boardHeight,
+      variant: state.config.variant,
+      rated: session.config.rated,
+      timeControl: session.config.timeControl,
+      variantConfig: state.config.variantConfig,
+    },
   };
 };
 

@@ -126,20 +126,19 @@ export function getNextLevelId(currentId: string): string | null {
 }
 
 /** Build a GameConfiguration from a level definition */
-export function buildLevelConfig(
-  level: SoloCampaignLevel,
-): Extract<GameConfiguration, { variant: "survival" }> {
+export function buildLevelConfig(level: SoloCampaignLevel): GameConfiguration {
   return {
     variant: "survival",
     timeControl: SOLO_TIME_CONTROL,
     rated: false,
     boardWidth: level.boardWidth,
     boardHeight: level.boardHeight,
-    survival: {
-      initialWalls: level.initialWalls,
+    variantConfig: {
+      cat: level.initialPawns.p1Cat,
+      mouse: level.initialPawns.p2Mouse,
       turnsToSurvive: level.turnsToSurvive,
       mouseCanMove: level.mouseCanMove,
-      initialPawns: level.initialPawns,
+      walls: level.initialWalls,
     },
   };
 }

@@ -15,9 +15,12 @@ import type {
   TimeControlConfig,
   TimeControlPreset,
   Variant,
-  SurvivalVariantSettings,
   WinReason,
+  SurvivalInitialState,
+  StandardInitialState,
 } from "../../shared/domain/game-types";
+import { buildStandardInitialState } from "../../shared/domain/standard-setup";
+import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
@@ -105,20 +108,57 @@ const resolveTimeControl = (
   return timeControlConfigFromPreset("rapid");
 };
 
-const resolveInitialState = (
+/**
+ * Resolve variant config from DB configParameters.
+ * Handles backward compatibility with old data format.
+ */
+const resolveVariantConfig = (
   configParameters: unknown,
-): GameInitialState | undefined => {
-  const parameters = configParameters as { initialState?: GameInitialState };
-  return parameters?.initialState;
-};
-
-const resolveSurvivalSettings = (
-  configParameters: unknown,
-): SurvivalVariantSettings | undefined => {
+  variant: Variant,
+  boardWidth: number,
+  boardHeight: number,
+): GameInitialState => {
   const parameters = configParameters as {
-    survival?: SurvivalVariantSettings;
+    initialState?: GameInitialState;
+    // Legacy format: survival settings stored separately
+    survival?: {
+      turnsToSurvive: number;
+      mouseCanMove: boolean;
+      initialWalls?: { cell: readonly [number, number]; orientation: string }[];
+      initialPawns?: {
+        p1Cat?: readonly [number, number];
+        p2Mouse?: readonly [number, number];
+      };
+    };
   };
-  return parameters?.survival;
+
+  // If initialState exists and is the new unified format, use it directly
+  if (parameters?.initialState) {
+    // Check if this is old StandardInitialState format for survival variant
+    // (old format had pawns structure, new format has flat cat/mouse)
+    if (variant === "survival" && "pawns" in parameters.initialState) {
+      // Old format - need to merge with survival settings
+      const oldState = parameters.initialState as StandardInitialState;
+      const survival = parameters.survival;
+      if (survival) {
+        const survivalConfig: SurvivalInitialState = {
+          cat: survival.initialPawns?.p1Cat ?? oldState.pawns[1].cat,
+          mouse: survival.initialPawns?.p2Mouse ?? oldState.pawns[2].mouse,
+          turnsToSurvive: survival.turnsToSurvive,
+          mouseCanMove: survival.mouseCanMove,
+          walls: oldState.walls,
+        };
+        return survivalConfig;
+      }
+    }
+    return parameters.initialState;
+  }
+
+  // No initialState - build defaults based on variant
+  if (variant === "classic") {
+    return buildClassicInitialState(boardWidth, boardHeight);
+  }
+  return buildStandardInitialState(boardWidth, boardHeight);
 };
 
 export interface ReplayGameData {
@@ -190,35 +230,25 @@ const buildReplayGameFromRow = async (
     details?.configParameters,
   );
   const variant = normalizeVariant(game.variant);
-  const survivalSettings =
-    variant === "survival"
-      ? resolveSurvivalSettings(details?.configParameters)
-      : undefined;
-  if (variant === "survival" && !survivalSettings) {
-    throw new Error("Missing survival settings for replay.");
-  }
-  const config: GameConfiguration =
-    variant === "survival"
-      ? {
-          variant: "survival",
-          timeControl,
-          rated: game.rated,
-          boardWidth: game.boardWidth,
-          boardHeight: game.boardHeight,
-          survival: survivalSettings!,
-        }
-      : {
-          variant,
-          timeControl,
-          rated: game.rated,
-          boardWidth: game.boardWidth,
-          boardHeight: game.boardHeight,
-        };
-  const initialState = resolveInitialState(details?.configParameters);
+  const variantConfig = resolveVariantConfig(
+    details?.configParameters,
+    variant,
+    game.boardWidth,
+    game.boardHeight,
+  );
+
+  const config: GameConfiguration = {
+    variant,
+    timeControl,
+    rated: game.rated,
+    boardWidth: game.boardWidth,
+    boardHeight: game.boardHeight,
+    variantConfig,
+  };
 
   const startTimestamp = game.startedAt.getTime();
   const moves = Array.isArray(details?.moves) ? details.moves : [];
-  let replayState = new GameState(config, startTimestamp, initialState);
+  let replayState = new GameState(config, startTimestamp);
   moves.forEach((notation, index) => {
     const move = moveFromStandardNotation(String(notation), config.boardHeight);
     const playerId = (index % 2 === 0 ? 1 : 2) as PlayerId;

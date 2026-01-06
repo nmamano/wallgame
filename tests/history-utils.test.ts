@@ -6,6 +6,7 @@ import type {
   PlayerId,
 } from "../shared/domain/game-types";
 import { buildHistoryState } from "../frontend/src/lib/history-utils";
+import { buildStandardInitialState } from "../shared/domain/standard-setup";
 
 const TEST_CONFIG: GameConfiguration = {
   boardHeight: 9,
@@ -17,6 +18,7 @@ const TEST_CONFIG: GameConfiguration = {
     incrementSeconds: 2,
     preset: "blitz",
   },
+  variantConfig: buildStandardInitialState(9, 9),
 };
 
 const catAdvance: Move = {
@@ -59,7 +61,6 @@ describe("buildHistoryState", () => {
       config: TEST_CONFIG,
       historyEntries,
       cursor: -1,
-      initialSnapshot: baseState.getInitialSnapshot(),
     });
     expect(snapshot).not.toBeNull();
     expect(snapshot?.history.length).toBe(0);
@@ -74,7 +75,6 @@ describe("buildHistoryState", () => {
       config: TEST_CONFIG,
       historyEntries,
       cursor,
-      initialSnapshot: baseState.getInitialSnapshot(),
     });
     expect(snapshot).not.toBeNull();
     expect(snapshot?.pawns[1].cat).toEqual(historyEntries[cursor].catPos[0]);
@@ -89,7 +89,6 @@ describe("buildHistoryState", () => {
       config: TEST_CONFIG,
       historyEntries,
       cursor,
-      initialSnapshot: baseState.getInitialSnapshot(),
     });
     expect(snapshot).not.toBeNull();
     expect(
@@ -103,7 +102,6 @@ describe("buildHistoryState", () => {
       config: TEST_CONFIG,
       historyEntries,
       cursor: historyEntries.length + 1,
-      initialSnapshot: baseState.getInitialSnapshot(),
     });
     expect(snapshot).toBeNull();
   });
