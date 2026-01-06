@@ -224,6 +224,9 @@ function GameSetup() {
     });
     setGameConfig(normalizedConfig);
 
+    // Persist to settings (saves to server for logged-in users, localStorage for guests)
+    settings.setGameConfig(normalizedConfig);
+
     // If variant changed, reset player configs (preserving mode-based defaults)
     if (normalizedConfig.variant !== gameConfig.variant) {
       setPlayerConfigs(
