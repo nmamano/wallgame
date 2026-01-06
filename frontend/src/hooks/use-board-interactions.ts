@@ -485,9 +485,12 @@ export function useBoardInteractions(
         }
 
         // Case 2: Moving from staged position - only allow distance 1
+        // Use the staged action's target position, not pawn.cell, since
+        // boardPawns might have original positions when passed from parent
+        const stagedPosition = existingStagedPawnAction.target;
         const distanceFromStaged =
-          Math.abs(pawn.cell[0] - targetRow) +
-          Math.abs(pawn.cell[1] - targetCol);
+          Math.abs(stagedPosition[0] - targetRow) +
+          Math.abs(stagedPosition[1] - targetCol);
 
         if (distanceFromStaged > 1) {
           setError(
