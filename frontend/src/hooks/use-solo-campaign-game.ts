@@ -1,17 +1,16 @@
-import { useState, useCallback, useRef, useEffect } from "react";
-import type {
-  PlayerId,
-  Move,
-  Action,
-  Cell,
-  WallOrientation,
-} from "../../../shared/domain/game-types";
+import { useState, useCallback, useRef, useEffect, useMemo } from "react";
+import type { PlayerId, Move } from "../../../shared/domain/game-types";
+import type { PlayerColor } from "@/lib/player-colors";
 import { GameState } from "../../../shared/domain/game-state";
 import type { SoloCampaignLevel } from "../../../shared/domain/solo-campaign-levels";
 import { buildLevelConfig } from "../../../shared/domain/solo-campaign-levels";
 import { buildSurvivalInitialState } from "../../../shared/domain/survival-setup";
 import { SoloCampaignAIController } from "@/lib/solo-campaign-controller";
 import { LocalHumanController } from "@/lib/player-controllers";
+import { useBoardInteractions } from "@/hooks/use-board-interactions";
+import type { BoardPawn, BoardProps } from "@/components/board";
+import { computeLastMoves } from "@/lib/gameViewModel";
+import { pawnId } from "../../../shared/domain/game-utils";
 
 export interface UseSoloCampaignGameResult {
   // Game state
@@ -27,24 +26,64 @@ export interface UseSoloCampaignGameResult {
   gameEnded: boolean;
   playerWon: boolean | null;
 
-  // Staged actions
-  stagedActions: Action[];
+  // Board interactions (from useBoardInteractions)
+  stagedActions: ReturnType<typeof useBoardInteractions>["stagedActions"];
+  premovedActions: ReturnType<typeof useBoardInteractions>["premovedActions"];
+  selectedPawnId: ReturnType<typeof useBoardInteractions>["selectedPawnId"];
+  draggingPawnId: ReturnType<typeof useBoardInteractions>["draggingPawnId"];
+  handleCellClick: ReturnType<typeof useBoardInteractions>["handleCellClick"];
+  handleWallClick: ReturnType<typeof useBoardInteractions>["handleWallClick"];
+  handlePawnClick: ReturnType<typeof useBoardInteractions>["handlePawnClick"];
+  handlePawnDragStart: ReturnType<
+    typeof useBoardInteractions
+  >["handlePawnDragStart"];
+  handlePawnDragEnd: ReturnType<
+    typeof useBoardInteractions
+  >["handlePawnDragEnd"];
+  handleCellDrop: ReturnType<typeof useBoardInteractions>["handleCellDrop"];
+  canCommit: ReturnType<typeof useBoardInteractions>["canCommit"];
+  canUndo: ReturnType<typeof useBoardInteractions>["canUndo"];
+
+  // Arrows for Board
+  arrows: ReturnType<typeof useBoardInteractions>["arrows"];
+
+  // Annotation handlers and state
+  onWallSlotRightClick: ReturnType<
+    typeof useBoardInteractions
+  >["onWallSlotRightClick"];
+  onCellRightClickDragStart: ReturnType<
+    typeof useBoardInteractions
+  >["onCellRightClickDragStart"];
+  onCellRightClickDragMove: ReturnType<
+    typeof useBoardInteractions
+  >["onCellRightClickDragMove"];
+  onCellRightClickDragEnd: ReturnType<
+    typeof useBoardInteractions
+  >["onCellRightClickDragEnd"];
+  onArrowDragFinalize: ReturnType<
+    typeof useBoardInteractions
+  >["onArrowDragFinalize"];
+  arrowDragStateRef: ReturnType<
+    typeof useBoardInteractions
+  >["arrowDragStateRef"];
+  annotations: ReturnType<typeof useBoardInteractions>["annotations"];
+  previewAnnotation: ReturnType<
+    typeof useBoardInteractions
+  >["previewAnnotation"];
 
   // Actions
   resetLevel: () => void;
-
-  // Board interaction handlers
-  handleCellClick: (row: number, col: number) => void;
-  handleWallClick: (
-    row: number,
-    col: number,
-    orientation: WallOrientation,
-  ) => void;
-  handlePawnClick: (playerId: PlayerId) => void;
   handleCommit: () => void;
   handleUndo: () => void;
-  canCommit: boolean;
-  canUndo: boolean;
+
+  // Board pawns (with staged/premoved positions applied)
+  boardPawns: BoardPawn[];
+
+  // Last moves for showing opponent's last move
+  lastMoves: BoardProps["lastMoves"] | null;
+
+  // Error state
+  actionError: string | null;
 }
 
 export function useSoloCampaignGame(
@@ -52,8 +91,8 @@ export function useSoloCampaignGame(
 ): UseSoloCampaignGameResult {
   const [gameState, setGameState] = useState<GameState | null>(null);
   const [isLoading, setIsLoading] = useState(true);
-  const [stagedActions, setStagedActions] = useState<Action[]>([]);
   const [isAiThinking, setIsAiThinking] = useState(false);
+  const [actionError, setActionError] = useState<string | null>(null);
 
   const gameStateRef = useRef<GameState | null>(null);
   const aiControllerRef = useRef<SoloCampaignAIController | null>(null);
@@ -63,6 +102,123 @@ export function useSoloCampaignGame(
   const humanPlayerId = level.userPlaysAs;
   const aiPlayerId: PlayerId = humanPlayerId === 1 ? 2 : 1;
 
+  // Check if it's player's turn
+  const isPlayerTurn =
+    gameState?.status === "playing" && gameState.turn === humanPlayerId;
+
+  // Apply a move to the game state
+  const applyMove = useCallback((playerId: PlayerId, move: Move) => {
+    const current = gameStateRef.current;
+    if (!current) return;
+
+    const nextState = current.applyGameAction({
+      kind: "move",
+      move,
+      playerId,
+      timestamp: Date.now(),
+    });
+
+    gameStateRef.current = nextState;
+    setGameState(nextState);
+  }, []);
+
+  // Compute board pawns with staged positions
+  const boardPawns = useMemo((): BoardPawn[] => {
+    if (!gameState) return [];
+
+    const pawns = gameState.getPawns();
+    return pawns.map((pawn) => ({
+      ...pawn,
+      id: pawnId(pawn),
+    }));
+  }, [gameState]);
+
+  // Game is playing and not ended
+  const isGamePlaying = gameState?.status === "playing";
+
+  // Use the board interactions hook
+  const boardInteractions = useBoardInteractions({
+    gameState,
+    boardPawns,
+    controllablePlayerId: humanPlayerId,
+    // Can stage when it's player's turn
+    canStage: isPlayerTurn && !isAiThinking,
+    // Can premove when AI is thinking (so player can queue moves while waiting)
+    canPremove: isGamePlaying && !isPlayerTurn,
+    mouseMoveLocked: !level.mouseCanMove,
+    mouseMoveLockedMessage: "Mouse movement is disabled for this level.",
+    sfxEnabled: false, // TODO: integrate with sound settings
+    onMoveReady: (actions) => {
+      if (!isPlayerTurn) return;
+      const move: Move = { actions };
+      try {
+        applyMove(humanPlayerId, move);
+      } catch (error) {
+        console.error("Invalid move:", error);
+        setActionError(error instanceof Error ? error.message : "Invalid move");
+      }
+    },
+    onError: setActionError,
+  });
+
+  // Compute board pawns with staged/premoved preview positions
+  const boardPawnsWithPreview = useMemo((): BoardPawn[] => {
+    if (!gameState) return [];
+
+    // Get staged and premoved pawn moves
+    const stagedPawnMoves = boardInteractions.stagedActions.filter(
+      (a) => a.type === "cat" || a.type === "mouse",
+    );
+    const premovedPawnMoves = boardInteractions.premovedActions.filter(
+      (a) => a.type === "cat" || a.type === "mouse",
+    );
+
+    // Build pawns with preview positions in a single pass
+    return gameState.getPawns().map((pawn) => {
+      const basePawn = {
+        ...pawn,
+        id: pawnId(pawn),
+      };
+
+      if (pawn.playerId !== humanPlayerId) return basePawn;
+
+      // Check for staged move (amber/yellow) - takes priority
+      const stagedMove = stagedPawnMoves.find((a) => a.type === pawn.type);
+      if (stagedMove) {
+        return {
+          ...basePawn,
+          cell: stagedMove.target,
+          previewState: "staged" as const,
+        };
+      }
+
+      // Check for premoved move (blue) - use the LAST move for double-walks
+      const premovedMovesForPawn = premovedPawnMoves.filter(
+        (a) => a.type === pawn.type,
+      );
+      if (premovedMovesForPawn.length > 0) {
+        const lastPremovedMove =
+          premovedMovesForPawn[premovedMovesForPawn.length - 1];
+        return {
+          ...basePawn,
+          cell: lastPremovedMove.target,
+          previewState: "premoved" as const,
+        };
+      }
+
+      return basePawn;
+    });
+  }, [
+    gameState,
+    boardInteractions.stagedActions,
+    boardInteractions.premovedActions,
+    humanPlayerId,
+  ]);
+
+  // Store clearAllActions in a ref to avoid dependency issues
+  const clearAllActionsRef = useRef(boardInteractions.clearAllActions);
+  clearAllActionsRef.current = boardInteractions.clearAllActions;
+
   // Initialize game
   const initializeGame = useCallback(() => {
     const config = buildLevelConfig(level);
@@ -71,9 +227,10 @@ export function useSoloCampaignGame(
 
     gameStateRef.current = newGameState;
     setGameState(newGameState);
-    setStagedActions([]);
     setIsLoading(false);
     setIsAiThinking(false);
+    setActionError(null);
+    clearAllActionsRef.current();
 
     // Create controllers
     aiControllerRef.current = new SoloCampaignAIController({
@@ -94,22 +251,6 @@ export function useSoloCampaignGame(
       aiControllerRef.current?.cancel();
     };
   }, [initializeGame]);
-
-  // Apply a move to the game state
-  const applyMove = useCallback((playerId: PlayerId, move: Move) => {
-    const current = gameStateRef.current;
-    if (!current) return;
-
-    const nextState = current.applyGameAction({
-      kind: "move",
-      move,
-      playerId,
-      timestamp: Date.now(),
-    });
-
-    gameStateRef.current = nextState;
-    setGameState(nextState);
-  }, []);
 
   // Handle AI turn
   const handleAiTurn = useCallback(async () => {
@@ -153,92 +294,20 @@ export function useSoloCampaignGame(
     ? gameState?.result?.winner === humanPlayerId
     : null;
 
-  // Check if it's player's turn
-  const isPlayerTurn =
-    gameState?.status === "playing" && gameState.turn === humanPlayerId;
-
-  // Handle cell click (for pawn movement)
-  const handleCellClick = useCallback(
-    (row: number, col: number) => {
-      if (!isPlayerTurn || isAiThinking) return;
-
-      const target: Cell = [row, col];
-
-      // Determine what pawn type the human controls
-      // In survival: P1 controls cat, P2 controls mouse
-      const pawnType = humanPlayerId === 1 ? "cat" : "mouse";
-
-      // Check if mouse can move (Level 2 restriction)
-      if (pawnType === "mouse" && !level.mouseCanMove) {
-        return;
-      }
-
-      // Add pawn move action
-      const action: Action = { type: pawnType, target };
-      setStagedActions((prev) => {
-        // Check if we already have 2 actions
-        if (prev.length >= 2) return prev;
-        return [...prev, action];
-      });
-    },
-    [isPlayerTurn, isAiThinking, humanPlayerId, level.mouseCanMove],
-  );
-
-  // Handle wall click
-  const handleWallClick = useCallback(
-    (row: number, col: number, orientation: WallOrientation) => {
-      if (!isPlayerTurn || isAiThinking) return;
-
-      const target: Cell = [row, col];
-      const action: Action = {
-        type: "wall",
-        target,
-        wallOrientation: orientation,
-      };
-
-      setStagedActions((prev) => {
-        // Check if we already have 2 actions
-        if (prev.length >= 2) return prev;
-        return [...prev, action];
-      });
-    },
-    [isPlayerTurn, isAiThinking],
-  );
-
-  // Handle pawn click (for selection - currently just triggers cell click)
-  const handlePawnClick = useCallback(
-    (playerId: PlayerId) => {
-      // In solo campaign, clicking your own pawn doesn't do anything special
-      // Movement is handled by clicking destination cells
-      if (playerId !== humanPlayerId) return;
-    },
-    [humanPlayerId],
-  );
-
-  // Commit staged actions
+  // Manual commit (for when user wants to commit with fewer than 2 actions)
   const handleCommit = useCallback(() => {
-    if (!isPlayerTurn || stagedActions.length === 0) return;
+    if (!isPlayerTurn || boardInteractions.stagedActions.length === 0) return;
 
-    const move: Move = { actions: stagedActions };
-
-    const current = gameStateRef.current;
-    if (!current) return;
-
+    const move: Move = { actions: boardInteractions.stagedActions };
     try {
-      // Try to apply - applyGameAction will throw if invalid
       applyMove(humanPlayerId, move);
-      setStagedActions([]);
+      boardInteractions.clearStagedActions();
     } catch (error) {
       console.error("Invalid move:", error);
-      // Clear staged actions on error
-      setStagedActions([]);
+      setActionError(error instanceof Error ? error.message : "Invalid move");
+      boardInteractions.clearStagedActions();
     }
-  }, [isPlayerTurn, stagedActions, humanPlayerId, applyMove]);
-
-  // Undo last staged action
-  const handleUndo = useCallback(() => {
-    setStagedActions((prev) => prev.slice(0, -1));
-  }, []);
+  }, [isPlayerTurn, boardInteractions, humanPlayerId, applyMove]);
 
   // Reset level
   const resetLevel = useCallback(() => {
@@ -246,8 +315,20 @@ export function useSoloCampaignGame(
     initializeGame();
   }, [initializeGame]);
 
-  const canCommit = stagedActions.length > 0 && isPlayerTurn && !isAiThinking;
-  const canUndo = stagedActions.length > 0 && isPlayerTurn && !isAiThinking;
+  // Compute player colors (human is red, AI is blue)
+  const playerColorsForBoard: Record<PlayerId, PlayerColor> = useMemo(
+    () => ({
+      1: humanPlayerId === 1 ? "red" : "blue",
+      2: humanPlayerId === 2 ? "red" : "blue",
+    }),
+    [humanPlayerId],
+  );
+
+  // Compute last moves to show opponent's last move
+  const lastMoves = useMemo(
+    () => computeLastMoves(gameState, playerColorsForBoard),
+    [gameState, playerColorsForBoard],
+  );
 
   return {
     gameState,
@@ -257,14 +338,34 @@ export function useSoloCampaignGame(
     isAiThinking,
     gameEnded,
     playerWon,
-    stagedActions,
+    stagedActions: boardInteractions.stagedActions,
+    premovedActions: boardInteractions.premovedActions,
+    selectedPawnId: boardInteractions.selectedPawnId,
+    draggingPawnId: boardInteractions.draggingPawnId,
     resetLevel,
-    handleCellClick,
-    handleWallClick,
-    handlePawnClick,
+    handleCellClick: boardInteractions.handleCellClick,
+    handleWallClick: boardInteractions.handleWallClick,
+    handlePawnClick: boardInteractions.handlePawnClick,
+    handlePawnDragStart: boardInteractions.handlePawnDragStart,
+    handlePawnDragEnd: boardInteractions.handlePawnDragEnd,
+    handleCellDrop: boardInteractions.handleCellDrop,
+    // Arrows
+    arrows: boardInteractions.arrows,
+    // Annotation handlers
+    onWallSlotRightClick: boardInteractions.onWallSlotRightClick,
+    onCellRightClickDragStart: boardInteractions.onCellRightClickDragStart,
+    onCellRightClickDragMove: boardInteractions.onCellRightClickDragMove,
+    onCellRightClickDragEnd: boardInteractions.onCellRightClickDragEnd,
+    onArrowDragFinalize: boardInteractions.onArrowDragFinalize,
+    arrowDragStateRef: boardInteractions.arrowDragStateRef,
+    annotations: boardInteractions.annotations,
+    previewAnnotation: boardInteractions.previewAnnotation,
     handleCommit,
-    handleUndo,
-    canCommit,
-    canUndo,
+    handleUndo: boardInteractions.undoLastAction,
+    canCommit: boardInteractions.canCommit,
+    canUndo: boardInteractions.canUndo,
+    boardPawns: boardPawnsWithPreview,
+    lastMoves,
+    actionError,
   };
 }
