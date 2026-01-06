@@ -1,7 +1,7 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useCallback } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Board, type BoardPawn } from "@/components/board";
+import { Board } from "@/components/board";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { SoloCampaignInfoPanel } from "@/components/solo-campaign-info-panel";
@@ -11,7 +11,6 @@ import {
   SOLO_CAMPAIGN_LEVELS,
   getNextLevelId,
 } from "../../../shared/domain/solo-campaign-levels";
-import { pawnId } from "../../../shared/domain/game-utils";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { userQueryOptions, completeLevel } from "@/lib/api";
@@ -90,13 +89,34 @@ function SoloCampaignLevelContent({
     gameEnded,
     playerWon,
     stagedActions,
+    premovedActions,
+    selectedPawnId,
+    draggingPawnId,
+    boardPawns,
     resetLevel,
     handleCellClick,
     handleWallClick,
+    handlePawnClick,
+    handlePawnDragStart,
+    handlePawnDragEnd,
+    handleCellDrop,
     handleCommit,
     handleUndo,
     canCommit,
     canUndo,
+    // Arrows
+    arrows,
+    // Last moves
+    lastMoves,
+    // Annotations
+    onWallSlotRightClick,
+    onCellRightClickDragStart,
+    onCellRightClickDragMove,
+    onCellRightClickDragEnd,
+    onArrowDragFinalize,
+    arrowDragStateRef,
+    annotations,
+    previewAnnotation,
   } = useSoloCampaignGame(level);
 
   // Track if we've reported completion to prevent duplicate calls
@@ -110,37 +130,39 @@ function SoloCampaignLevelContent({
     }
   }, [playerWon, isLoggedIn, onComplete]);
 
-  // Convert game state to board props
-  const boardPawns: BoardPawn[] = useMemo(() => {
+  // boardPawns is now provided by useSoloCampaignGame with staged positions applied
+
+  const boardWalls: (WallPosition & {
+    state?: "placed" | "staged" | "premoved";
+  })[] = useMemo(() => {
     if (!gameState) return [];
 
-    const pawns = gameState.getPawns();
-    return pawns.map((pawn) => ({
-      ...pawn,
-      id: pawnId(pawn),
-    }));
-  }, [gameState]);
+    const walls = gameState.grid.getWalls();
 
-  const boardWalls: (WallPosition & { state?: "placed" | "staged" })[] =
-    useMemo(() => {
-      if (!gameState) return [];
+    // Add staged wall actions
+    const stagedWalls = stagedActions
+      .filter((a) => a.type === "wall")
+      .map((a) => ({
+        cell: a.target,
+        orientation: a.wallOrientation!,
+        state: "staged" as const,
+      }));
 
-      const walls = gameState.grid.getWalls();
+    // Add premoved wall actions
+    const premovedWalls = premovedActions
+      .filter((a) => a.type === "wall")
+      .map((a) => ({
+        cell: a.target,
+        orientation: a.wallOrientation!,
+        state: "premoved" as const,
+      }));
 
-      // Add staged wall actions
-      const stagedWalls = stagedActions
-        .filter((a) => a.type === "wall")
-        .map((a) => ({
-          cell: a.target,
-          orientation: a.wallOrientation!,
-          state: "staged" as const,
-        }));
-
-      return [
-        ...walls.map((w: WallPosition) => ({ ...w, state: "placed" as const })),
-        ...stagedWalls,
-      ];
-    }, [gameState, stagedActions]);
+    return [
+      ...walls.map((w: WallPosition) => ({ ...w, state: "placed" as const })),
+      ...stagedWalls,
+      ...premovedWalls,
+    ];
+  }, [gameState, stagedActions, premovedActions]);
 
   // Player colors: user is always red, AI is always blue
   const playerColorsForBoard: Record<PlayerId, PlayerColor> = useMemo(() => {
@@ -201,9 +223,28 @@ function SoloCampaignLevelContent({
           playerColors={playerColorsForBoard}
           onCellClick={handleCellClick}
           onWallClick={handleWallClick}
+          onPawnClick={handlePawnClick}
+          onPawnDragStart={handlePawnDragStart}
+          onPawnDragEnd={handlePawnDragEnd}
+          onCellDrop={handleCellDrop}
+          selectedPawnId={selectedPawnId}
+          draggingPawnId={draggingPawnId}
           controllablePlayerId={level.userPlaysAs}
-          forceReadOnly={gameEnded || isAiThinking}
+          forceReadOnly={gameEnded}
           stagedActionsCount={stagedActions.length}
+          // Arrows for staged/premoved moves
+          arrows={arrows}
+          // Last moves (to show opponent's last move)
+          lastMoves={lastMoves ?? undefined}
+          // Annotations
+          annotations={annotations}
+          previewAnnotation={previewAnnotation}
+          onWallSlotRightClick={onWallSlotRightClick}
+          onCellRightClickDragStart={onCellRightClickDragStart}
+          onCellRightClickDragMove={onCellRightClickDragMove}
+          onCellRightClickDragEnd={onCellRightClickDragEnd}
+          arrowDragStateRef={arrowDragStateRef}
+          onArrowDragFinalize={onArrowDragFinalize}
         />
       </Card>
 
