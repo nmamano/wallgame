@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
+import { Card, CardContent } from "@/components/ui/card";
 import { Label } from "@/components/ui/label";
 import { Input } from "@/components/ui/input";
 import {
@@ -14,10 +14,7 @@ import {
   SelectValue,
 } from "@/components/ui/select";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { Switch } from "@/components/ui/switch";
 import { Info, Loader2 } from "lucide-react";
-import { useSound } from "@/components/sound-provider";
-import { GameConfigurationPanel } from "@/components/game-configuration-panel";
 import { PawnSelector } from "@/components/pawn-selector";
 import { CAT_PAWNS } from "@/lib/cat-pawns";
 import { HOME_PAWNS } from "@/lib/home-pawns";
@@ -50,8 +47,6 @@ function Settings() {
     setMousePawn,
     homePawn,
     setHomePawn,
-    gameConfig,
-    setGameConfig,
     displayName,
     setDisplayName,
     displayNameError,
@@ -61,14 +56,9 @@ function Settings() {
     isLoadingSettings,
     isSavingName,
     isSavingVisualStyle,
-    isSavingGameParameters,
     loadError,
     saveError,
   } = useSettings(isLoggedIn, userPending);
-
-  // Sound settings from global provider
-  const { sfxEnabled, setSfxEnabled, musicEnabled, setMusicEnabled } =
-    useSound();
 
   return (
     <div className="min-h-screen bg-background">
@@ -110,139 +100,99 @@ function Settings() {
             </Alert>
           )}
 
-          {/* 1. User Settings */}
           <Card className="border-border/50 bg-card/50 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                User Settings
-                {isSavingName && isLoggedIn && (
-                  <span className="text-sm font-normal text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Saving...
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-4">
-              <div className="space-y-2">
-                <Label htmlFor="display-name">Display Name</Label>
-                <div className="flex gap-2">
-                  {userPending || (isLoggedIn && isLoadingSettings) ? (
-                    <Input
-                      id="display-name"
-                      value=""
-                      disabled
-                      className="bg-background opacity-50"
-                      placeholder="Loading..."
-                    />
-                  ) : (
-                    <Input
-                      id="display-name"
-                      value={isLoggedIn ? displayName : "Guest"}
-                      onChange={(e) => {
-                        if (isLoggedIn) {
-                          setDisplayName(e.target.value);
-                        }
-                      }}
-                      disabled={!isLoggedIn}
-                      className={`bg-background ${!isLoggedIn ? "opacity-50 cursor-not-allowed" : ""}`}
-                      placeholder={isLoggedIn ? "Enter display name" : ""}
-                    />
-                  )}
-                  {isLoggedIn && !userPending && !isLoadingSettings && (
-                    <Button
-                      onClick={handleChangeDisplayName}
-                      disabled={!canChangeName || isSavingName}
-                      variant="outline"
-                    >
-                      {isSavingName ? (
-                        <>
-                          <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                          Saving...
-                        </>
-                      ) : (
-                        "Change if available"
-                      )}
-                    </Button>
-                  )}
-                </div>
-                {(displayNameValidationError ?? displayNameError) && (
-                  <p className="text-sm text-destructive">
-                    {displayNameValidationError ?? displayNameError}
-                  </p>
-                )}
-                {userPending ? (
-                  <p className="text-sm text-muted-foreground">
-                    Checking authentication status...
-                  </p>
-                ) : isLoggedIn ? (
-                  <p className="text-sm text-muted-foreground">
-                    Names must be unique across the site (case insensitive). You
-                    can only switch to another name not already in use.
-                  </p>
-                ) : (
-                  <div className="space-y-2">
-                    <p className="text-sm text-muted-foreground">
-                      You need to be logged in to change your display name.
-                    </p>
-                    <Button
-                      variant="outline"
-                      onClick={() => {
-                        void navigate({ to: "/profile" });
-                      }}
-                    >
-                      Go to Profile
-                    </Button>
+            <CardContent className="pt-0">
+              {/* Saving/Loading indicator - inline with content */}
+              {(isSavingName || isSavingVisualStyle || isLoadingSettings) &&
+                isLoggedIn && (
+                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
+                    <Loader2 className="h-4 w-4 animate-spin" />
+                    <span>
+                      {isLoadingSettings
+                        ? "Loading your settings..."
+                        : "Saving..."}
+                    </span>
                   </div>
                 )}
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* 2. Style */}
-          <Card className="border-border/50 bg-card/50 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                Style
-                {isSavingVisualStyle && isLoggedIn && (
-                  <span className="text-sm font-normal text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Saving...
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {/* SFX Toggle */}
-              <div className="flex items-center justify-between">
-                <Label htmlFor="sfx-toggle">Sound Effects</Label>
-                <Switch
-                  id="sfx-toggle"
-                  checked={sfxEnabled}
-                  onCheckedChange={setSfxEnabled}
-                />
-              </div>
-
-              {/* Music Toggle */}
-              <div className="flex items-center justify-between">
-                <Label htmlFor="music-toggle">Music</Label>
-                <Switch
-                  id="music-toggle"
-                  checked={musicEnabled}
-                  onCheckedChange={setMusicEnabled}
-                />
-              </div>
-
-              {isLoadingSettings && isLoggedIn && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading your settings...</span>
-                </div>
-              )}
 
               <div
                 className={`space-y-6 ${isLoadingSettings && isLoggedIn ? "opacity-50 pointer-events-none" : ""}`}
               >
+                {/* Display Name */}
+                <div className="space-y-2">
+                  <Label htmlFor="display-name">Display Name</Label>
+                  <div className="flex gap-2">
+                    {userPending || (isLoggedIn && isLoadingSettings) ? (
+                      <Input
+                        id="display-name"
+                        value=""
+                        disabled
+                        className="bg-background opacity-50"
+                        placeholder="Loading..."
+                      />
+                    ) : (
+                      <Input
+                        id="display-name"
+                        value={isLoggedIn ? displayName : "Guest"}
+                        onChange={(e) => {
+                          if (isLoggedIn) {
+                            setDisplayName(e.target.value);
+                          }
+                        }}
+                        disabled={!isLoggedIn}
+                        className={`bg-background ${!isLoggedIn ? "opacity-50 cursor-not-allowed" : ""}`}
+                        placeholder={isLoggedIn ? "Enter display name" : ""}
+                      />
+                    )}
+                    {isLoggedIn && !userPending && !isLoadingSettings && (
+                      <Button
+                        onClick={handleChangeDisplayName}
+                        disabled={!canChangeName || isSavingName}
+                        variant="outline"
+                      >
+                        {isSavingName ? (
+                          <>
+                            <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                            Saving...
+                          </>
+                        ) : (
+                          "Change if available"
+                        )}
+                      </Button>
+                    )}
+                  </div>
+                  {(displayNameValidationError ?? displayNameError) && (
+                    <p className="text-sm text-destructive">
+                      {displayNameValidationError ?? displayNameError}
+                    </p>
+                  )}
+                  {userPending ? (
+                    <p className="text-sm text-muted-foreground">
+                      Checking authentication status...
+                    </p>
+                  ) : isLoggedIn ? (
+                    <p className="text-sm text-muted-foreground">
+                      Names must be unique across the site (case insensitive).
+                      You can only switch to another name not already in use.
+                    </p>
+                  ) : (
+                    <div className="space-y-2">
+                      <p className="text-sm text-muted-foreground">
+                        You need to be logged in to change your display name.
+                      </p>
+                      <Button
+                        variant="outline"
+                        onClick={() => {
+                          void navigate({ to: "/profile" });
+                        }}
+                      >
+                        Go to Profile
+                      </Button>
+                    </div>
+                  )}
+                </div>
+
+                {/* Board Theme */}
                 <div className="space-y-2">
                   <Label htmlFor="board-theme">Board Theme</Label>
                   <Select
@@ -260,6 +210,7 @@ function Settings() {
                   </Select>
                 </div>
 
+                {/* Player Color */}
                 <div className="space-y-2">
                   <Label htmlFor="pawn-color">Player Color</Label>
                   <Select
@@ -286,6 +237,7 @@ function Settings() {
                   </Select>
                 </div>
 
+                {/* Cat Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="cat-pawn">Cat Pawn</Label>
                   <PawnSelector
@@ -299,6 +251,7 @@ function Settings() {
                   />
                 </div>
 
+                {/* Mouse Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="mouse-pawn">Mouse Pawn</Label>
                   <PawnSelector
@@ -312,6 +265,7 @@ function Settings() {
                   />
                 </div>
 
+                {/* Home Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="home-pawn">Home Pawn</Label>
                   <PawnSelector
@@ -328,53 +282,13 @@ function Settings() {
             </CardContent>
           </Card>
 
-          {/* 3. Default Game Parameters */}
-          <Card className="border-border/50 bg-card/50 backdrop-blur">
-            <CardHeader>
-              <CardTitle className="text-2xl flex items-center gap-2">
-                Default Game Parameters
-                {isSavingGameParameters && isLoggedIn && (
-                  <span className="text-sm font-normal text-muted-foreground flex items-center gap-1.5">
-                    <Loader2 className="h-3.5 w-3.5 animate-spin" />
-                    Saving...
-                  </span>
-                )}
-              </CardTitle>
-            </CardHeader>
-            <CardContent className="space-y-6">
-              {isLoadingSettings && isLoggedIn && (
-                <div className="flex items-center gap-2 text-sm text-muted-foreground">
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  <span>Loading your settings...</span>
-                </div>
-              )}
-
-              <div
-                className={`space-y-6 ${isLoadingSettings && isLoggedIn ? "opacity-50 pointer-events-none" : ""}`}
-              >
-                <p className="text-sm text-muted-foreground">
-                  When setting up a game, these parameters will be used as
-                  default.
-                </p>
-
-                <GameConfigurationPanel
-                  config={gameConfig}
-                  onChange={setGameConfig}
-                  isLoggedIn={isLoggedIn}
-                  showRatedInfo={true}
-                />
-              </div>
-            </CardContent>
-          </Card>
-
-          {/* Info Panel */}
-          <Alert>
-            <Info className="h-4 w-4" />
-            <AlertDescription>
+          <p className="text-sm text-muted-foreground flex items-start gap-2">
+            <Info className="h-4 w-4 mt-0.5 shrink-0" />
+            <span>
               For guests, settings are saved locally in your web browser. If you
               log in, settings are saved to your account.
-            </AlertDescription>
-          </Alert>
+            </span>
+          </p>
         </div>
       </main>
     </div>
