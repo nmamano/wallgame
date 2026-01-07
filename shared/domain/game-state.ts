@@ -408,12 +408,6 @@ export class GameState {
           playerId: player,
         };
 
-        console.info("[debug-wall] before addWall", {
-          playerId: player,
-          wall: wallWithPlayer,
-          wallsBefore: nextGrid.getWalls(),
-        });
-
         const pendingPawns = {
           1: player === 1 ? nextMyPawns : opPawns,
           2: player === 2 ? nextMyPawns : opPawns,
@@ -445,11 +439,6 @@ export class GameState {
         }
 
         nextGrid.addWall(wallWithPlayer);
-
-        console.info("[debug-wall] after addWall", {
-          playerId: player,
-          wallsAfter: nextGrid.getWalls(),
-        });
       }
     }
 

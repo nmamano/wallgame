@@ -1,0 +1,2 @@
+- Sometimes the showcase page doesn't show a game for a while.
+- Sometimes rematching a bot fails and gets in an invalid state.
