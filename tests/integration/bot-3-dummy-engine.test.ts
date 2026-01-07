@@ -86,11 +86,13 @@ interface PlayVsBotResponse {
 
 /**
  * V2: Creates a game against a registered bot via /api/bots/play.
+ * @param hostIsPlayer1 - If true, host is Player 1 (moves first). If false, bot is Player 1. If undefined, random.
  */
 async function createGameVsBot(
   userId: string,
   botId: string,
   config: GameConfiguration,
+  hostIsPlayer1?: boolean,
 ): Promise<PlayVsBotResponse> {
   const res = await fetch(`${baseUrl}/api/bots/play`, {
     method: "POST",
@@ -102,6 +104,7 @@ async function createGameVsBot(
       botId,
       config,
       hostDisplayName: `Player ${userId}`,
+      hostIsPlayer1,
     }),
   });
 
@@ -561,14 +564,15 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
       });
       expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-      // V2: Create game via /api/bots/play
+      // V2: Create game via /api/bots/play (human is Player 1, moves first)
       const {
         gameId,
         socketToken: hostSocketToken,
         playerId,
-      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
 
       expect(gameId).toBeDefined();
+      expect(playerId).toBe(1); // Human is Player 1
 
       humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
@@ -577,17 +581,23 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
         ignore: ["match-status"],
       });
       expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.turn).toBe(1); // Human's turn first
 
-      const botPlayerId = playerId === 1 ? 2 : 1;
+      const humanPlayerId = 1;
+      const botPlayerId = 2;
       let currentState = initialState;
 
       const playNoopRound = async () => {
-        currentState = await waitForTurn(humanSocket, playerId, currentState);
+        currentState = await waitForTurn(
+          humanSocket!,
+          humanPlayerId,
+          currentState,
+        );
         const moveCountBeforeHumanMove = currentState.state.moveCount;
-        await submitHumanMove(humanSocket, "---", 5);
+        await submitHumanMove(humanSocket!, "---", 5);
         // Wait for bot to move - state after bot move will have evaluation
         // We wait for a state where evaluation is a number (only bot moves include evaluation)
-        const stateAfterBotMove = await humanSocket.waitForState(
+        const stateAfterBotMove = await humanSocket!.waitForState(
           (state) =>
             (typeof state.evaluation === "number" &&
               state.state.moveCount > moveCountBeforeHumanMove) ||

@@ -41,7 +41,7 @@ function handleRequest(request: EngineRequest): EngineResponse {
   return {
     engineApiVersion: ENGINE_API_VERSION,
     requestId: request.requestId,
-    response: { action: "move", moveNotation },
+    response: { action: "move", moveNotation, evaluation: 0 },
   };
 }
 

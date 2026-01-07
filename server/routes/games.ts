@@ -493,7 +493,7 @@ export const botsRoute = new Hono()
           matchType: "friend",
           hostDisplayName: parsed.hostDisplayName,
           hostAppearance: parsed.hostAppearance,
-          hostIsPlayer1: Math.random() < 0.5,
+          hostIsPlayer1: parsed.hostIsPlayer1 ?? Math.random() < 0.5,
           hostAuthUserId: user?.id,
           hostElo,
           joinerConfig: {
