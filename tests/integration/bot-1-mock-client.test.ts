@@ -112,11 +112,13 @@ interface PlayVsBotResponse {
 
 /**
  * Creates a game against a registered bot via /api/bots/play.
+ * @param hostIsPlayer1 - If true, host is Player 1 (moves first). If false, bot is Player 1. If undefined, random.
  */
 async function createGameVsBot(
   userId: string,
   botId: string,
   config: GameConfiguration,
+  hostIsPlayer1?: boolean,
 ): Promise<PlayVsBotResponse> {
   const res = await fetch(`${baseUrl}/api/bots/play`, {
     method: "POST",
@@ -128,6 +130,7 @@ async function createGameVsBot(
       botId,
       config,
       hostDisplayName: `Player ${userId}`,
+      hostIsPlayer1,
     }),
   });
 
@@ -627,14 +630,15 @@ describe("custom bot WebSocket integration V2", () => {
       });
       expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-      // 3. Create game against the bot via V2 API
+      // 3. Create game against the bot via V2 API (human is Player 1, moves first)
       const {
         gameId,
         socketToken: hostSocketToken,
         playerId,
-      } = await createGameVsBot(hostUserId, compositeId, gameConfig);
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
 
       expect(gameId).toBeDefined();
+      expect(playerId).toBe(1); // Human is Player 1
 
       // 4. Connect human player
       humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
@@ -642,22 +646,10 @@ describe("custom bot WebSocket integration V2", () => {
       // Wait for initial state
       const initialState = await humanSocket.waitForMessage("state");
       expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.turn).toBe(1); // Human's turn first
 
-      const humanPlayerId = playerId;
-      const botPlayerId = humanPlayerId === 1 ? 2 : 1;
-
-      // If bot starts, handle its move first.
-      if (initialState.state.turn === botPlayerId) {
-        await botMoveNoop(botSocket, 0.3);
-        const stateAfterBotMove = await waitForTurn(humanSocket, humanPlayerId);
-        // Verify evaluation is included in state broadcast
-        assertValidEvaluation(
-          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
-        );
-        expect(
-          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
-        ).toBe(0.3);
-      }
+      const humanPlayerId = 1;
+      const botPlayerId = 2;
 
       // 5. Play a couple of noop moves ("---") to advance turns.
       const afterHumanMove = await humanMove(humanSocket, "---", 3);
@@ -789,12 +781,14 @@ describe("custom bot WebSocket integration V2", () => {
       timeControl: "rapid",
     });
 
-    // Create game
+    // Create game (human is Player 1, moves first)
     const {
       gameId,
       socketToken: hostSocketToken,
       playerId,
-    } = await createGameVsBot(hostUserId, compositeId, gameConfig);
+    } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
+
+    expect(playerId).toBe(1); // Human is Player 1
 
     const humanSocket = await openHumanSocket(
       hostUserId,
@@ -803,12 +797,8 @@ describe("custom bot WebSocket integration V2", () => {
     );
     await humanSocket.waitForMessage("state");
 
-    const humanGoesFirst = playerId === 1;
-
-    if (humanGoesFirst) {
-      // Human moves first
-      await humanMove(humanSocket, "---", 3);
-    }
+    // Human moves first
+    await humanMove(humanSocket, "---", 3);
 
     // Bot receives move request but resigns instead
     const request = await botSocket.waitForMessage("request");
@@ -820,13 +810,13 @@ describe("custom bot WebSocket integration V2", () => {
     const ack = await botSocket.waitForMessage("ack");
     expect(ack.requestId).toBe(request.requestId);
 
-    // Game should end with human winning
+    // Game should end with human winning (human is Player 1)
     const finalState = await humanSocket.waitForMessage("state", {
       ignore: ["match-status"],
     });
     expect(finalState.state.status).toBe("finished");
     expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(humanGoesFirst ? 1 : 2);
+    expect(finalState.state.result?.winner).toBe(1);
 
     humanSocket.close();
     botSocket.close();

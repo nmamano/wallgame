@@ -360,6 +360,9 @@ Board const& MCTS::current_board() const {
 
 float MCTS::root_value() const {
     TreeNode::Value val = m_root->value;
+    if (val.total_samples == 0) {
+        return 0.0f;
+    }
     return val.total_weight / val.total_samples;
 }
 
