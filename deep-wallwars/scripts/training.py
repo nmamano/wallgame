@@ -15,7 +15,7 @@ from model import ResNet
 from data import get_datasets
 
 default_cuda_device = "cuda:0"
-input_channels = 8
+input_channels = 9
 bootstrap_epochs = 10
 
 parser = argparse.ArgumentParser()
@@ -28,7 +28,7 @@ parser.add_argument("-c", "--columns", help="Number of columns", default=6, type
 parser.add_argument("-r", "--rows", help="Number of rows", default=6, type=int)
 parser.add_argument(
     "--variant",
-    help="Game variant (classic or standard)",
+    help="Game variant (classic, standard, or universal)",
     default="classic",
 )
 parser.add_argument(
@@ -117,9 +117,9 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-variant_move_channels = {"classic": 4, "standard": 8}
+variant_move_channels = {"classic": 4, "standard": 8, "universal": 8}
 if args.variant not in variant_move_channels:
-    print(f"Error: Unsupported variant '{args.variant}'. Use 'classic' or 'standard'.")
+    print(f"Error: Unsupported variant '{args.variant}'. Use 'classic', 'standard' or 'universal'.")
     exit(1)
 move_channels = variant_move_channels[args.variant]
 
@@ -220,6 +220,10 @@ def warm_start_model(path, device, expected_priors):
     for key, value in base_state.items():
         if key in state and state[key].shape == value.shape:
             state[key] = value
+        elif key == "start.0.weight" and state[key].shape[1] == input_channels and value.shape[1] == input_channels - 1:
+            print(f"Expanding {key} from {value.shape[1]} to {state[key].shape[1]} channels")
+            state[key].zero_()
+            state[key][:, :value.shape[1], :, :] = value
 
     if "priors.4.weight" not in base_state or "priors.4.bias" not in base_state:
         print("Error: Warm-start model is missing the priors head.")
@@ -229,9 +233,9 @@ def warm_start_model(path, device, expected_priors):
     old_bias = base_state["priors.4.bias"]
     old_out = old_weight.shape[0]
 
-    if old_out != wall_prior_size + 4:
-        print("Error: Warm-start model does not look like a classic model.")
-        print(f"Expected priors size {wall_prior_size + 4}, found {old_out}.")
+    if old_out != wall_prior_size + 4 and old_out != wall_prior_size + 8:
+        print("Error: Warm-start model does not look like a valid model.")
+        print(f"Expected priors size {wall_prior_size + 4} or {wall_prior_size + 8}, found {old_out}.")
         exit(1)
 
     if expected_priors == old_out:
@@ -245,7 +249,7 @@ def warm_start_model(path, device, expected_priors):
         new_weight[:old_out] = old_weight
         new_bias[:old_out] = old_bias
 
-        if move_channels > 4:
+        if move_channels > 4 and old_out == wall_prior_size + 4:
             cat_start = wall_prior_size
             cat_end = wall_prior_size + 4
             mouse_start = wall_prior_size + 4
@@ -257,9 +261,9 @@ def warm_start_model(path, device, expected_priors):
     return model.to(device)
 
 
-def run_self_play(model1, model2, generation, boost_mouse_priors=False):
+def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False):
     os.makedirs(args.data, exist_ok=True)
-    print(f"Running self play (generation {generation})...")
+    print(f"Running self play (generation {generation}, variant {variant})...")
     cmd = [
         args.deep_ww,
         "-model1",
@@ -273,7 +277,7 @@ def run_self_play(model1, model2, generation, boost_mouse_priors=False):
         "-rows", 
         str(args.rows),
         "-variant",
-        args.variant,
+        variant,
         "-j",
         str(args.threads),
         "-games",
@@ -383,13 +387,20 @@ def init():
     print("Starting training...")
     print(f"Variant: {args.variant} (move channels: {move_channels})")
     if args.initial_generation == 0:
-        print("Bootstrap generation 0 data with simple model")
-        print("Running self play for generation 0...")
-        run_self_play("simple", "", 0)
         if args.warm_start:
             model = warm_start_model(args.warm_start, device, expected_priors)
+            # Use the warm-started model for generation 0 instead of simple policy
+            save_model(model, "model_0", device)
+            print("Bootstrap generation 0 data with warm-started model")
+            variant = "standard" if args.variant == "universal" else args.variant
+            run_self_play(f"{args.models}/model_0.trt", "", 0, variant)
         else:
+            print("Bootstrap generation 0 data with simple model")
+            variant = "standard" if args.variant == "universal" else args.variant
+            print(f"Running self play for generation 0 (variant: {variant})...")
+            run_self_play("simple", "", 0, variant)
             model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
+        
         start_generation = 2
         train_model(model, 1, bootstrap_epochs, device)
         save_model(model, "model_1", device)
@@ -414,7 +425,13 @@ def init():
         # One-off hack to boost mouse priors for specific generations
         # TODO: remove it.
         boost = (generation - 1) in [37, 38, 39]
-        run_self_play(f"{args.models}/model_{generation - 1}.trt", "", generation - 1, boost_mouse_priors=boost)
+        
+        variant = args.variant
+        if variant == "universal":
+            # Alternate variants: even gens Standard, odd gens Classic
+            variant = "standard" if (generation - 1) % 2 == 0 else "classic"
+            
+        run_self_play(f"{args.models}/model_{generation - 1}.trt", "", generation - 1, variant, boost_mouse_priors=boost)
         train_model(model, generation, args.epochs, device)
         save_model(model, f"model_{generation}", device)
         gc.collect()

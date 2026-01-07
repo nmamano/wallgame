@@ -1,7 +1,7 @@
 import torch.nn as nn
 import torch.nn.functional as fn
 
-input_channels = 8
+input_channels = 9
 
 
 class ResNet(nn.Module):

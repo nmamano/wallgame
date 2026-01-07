@@ -8,6 +8,7 @@ This is a vertical integration feature.
 
 - Reorganize the info panel in the game page to put the variant and time control next to each other in the same row.
 - Use the space where the time control was to add a new toggle: evaluation bar.
+- Overall height and width of the info panel should be the same as before.
 
 The evaluation bar is grayed out when:
 
