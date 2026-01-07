@@ -41,6 +41,10 @@ import type {
   BotResponseAction,
   BotConfig,
 } from "../../shared/contracts/custom-bot-protocol";
+import {
+  EVALUATION_MIN,
+  EVALUATION_MAX,
+} from "../../shared/custom-bot/engine-api";
 
 // ================================
 // --- Test Harness ---
@@ -470,11 +474,13 @@ async function waitForTurn(
 
 /**
  * Bot receives a request and responds with a move.
+ * Returns the evaluation sent with the move for verification.
  */
 async function botMove(
   botSocket: BotSocket,
   moveNotation: string,
-): Promise<void> {
+  evaluation = 0.5,
+): Promise<number> {
   const request = await botSocket.waitForMessage("request");
   expect(request.kind).toBe("move");
 
@@ -484,14 +490,29 @@ async function botMove(
   botSocket.sendResponse(request.requestId, {
     action: "move",
     moveNotation,
+    evaluation,
   });
 
   const ack = await botSocket.waitForMessage("ack");
   expect(ack.requestId).toBe(request.requestId);
+
+  return evaluation;
 }
 
-async function botMoveNoop(botSocket: BotSocket): Promise<void> {
-  await botMove(botSocket, "---");
+async function botMoveNoop(
+  botSocket: BotSocket,
+  evaluation = 0,
+): Promise<void> {
+  await botMove(botSocket, "---", evaluation);
+}
+
+/**
+ * Verifies that an evaluation value is within the valid range [-1, +1].
+ */
+function assertValidEvaluation(evaluation: unknown): void {
+  expect(typeof evaluation).toBe("number");
+  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
+  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
 }
 
 /**
@@ -627,15 +648,29 @@ describe("custom bot WebSocket integration V2", () => {
 
       // If bot starts, handle its move first.
       if (initialState.state.turn === botPlayerId) {
-        await botMoveNoop(botSocket);
-        await waitForTurn(humanSocket, humanPlayerId);
+        await botMoveNoop(botSocket, 0.3);
+        const stateAfterBotMove = await waitForTurn(humanSocket, humanPlayerId);
+        // Verify evaluation is included in state broadcast
+        assertValidEvaluation(
+          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
+        );
+        expect(
+          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
+        ).toBe(0.3);
       }
 
       // 5. Play a couple of noop moves ("---") to advance turns.
       const afterHumanMove = await humanMove(humanSocket, "---", 3);
       expect(afterHumanMove.state.turn).toBe(botPlayerId);
-      await botMoveNoop(botSocket);
-      await waitForTurn(humanSocket, humanPlayerId);
+      await botMoveNoop(botSocket, -0.2);
+      const stateAfterBotNoop = await waitForTurn(humanSocket, humanPlayerId);
+      // Verify evaluation is included in state broadcast after bot move
+      assertValidEvaluation(
+        (stateAfterBotNoop as unknown as { evaluation: number }).evaluation,
+      );
+      expect(
+        (stateAfterBotNoop as unknown as { evaluation: number }).evaluation,
+      ).toBe(-0.2);
 
       // 6. Human offers a draw, bot rejects it
       humanSocket.ws.send(JSON.stringify({ type: "draw-offer" }));

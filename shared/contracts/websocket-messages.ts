@@ -90,7 +90,7 @@ export interface ActionNackMessage {
 }
 
 export type ServerMessage =
-  | { type: "state"; state: SerializedGameState }
+  | { type: "state"; state: SerializedGameState; evaluation?: number }
   | { type: "match-status"; snapshot: GameSnapshot }
   | { type: "welcome"; socketId: string }
   | { type: "error"; message: string }

@@ -34,6 +34,10 @@ import type {
   GameConfiguration,
   PlayerId,
 } from "../../shared/domain/game-types";
+import {
+  EVALUATION_MIN,
+  EVALUATION_MAX,
+} from "../../shared/custom-bot/engine-api";
 
 // ================================
 // --- Test Harness ---
@@ -433,6 +437,15 @@ function spawnBotClient(
 // ================================
 
 /**
+ * Verifies that an evaluation value is within the valid range [-1, +1].
+ */
+function assertValidEvaluation(evaluation: unknown): void {
+  expect(typeof evaluation).toBe("number");
+  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
+  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
+}
+
+/**
  * Plays a move for the human player (does not wait for response).
  */
 async function submitHumanMove(
@@ -570,13 +583,20 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
 
       const playNoopRound = async () => {
         currentState = await waitForTurn(humanSocket, playerId, currentState);
+        const moveCountBeforeHumanMove = currentState.state.moveCount;
         await submitHumanMove(humanSocket, "---", 5);
-        currentState = await waitForTurn(
-          humanSocket,
-          botPlayerId,
-          currentState,
+        // Wait for bot to move - state after bot move will have evaluation
+        // We wait for a state where evaluation is a number (only bot moves include evaluation)
+        const stateAfterBotMove = await humanSocket.waitForState(
+          (state) =>
+            (typeof state.evaluation === "number" &&
+              state.state.moveCount > moveCountBeforeHumanMove) ||
+            state.state.status !== "playing",
         );
-        currentState = await waitForTurn(humanSocket, playerId, currentState);
+        // Verify evaluation is included in state broadcast (dummy engine returns 0)
+        assertValidEvaluation(stateAfterBotMove.evaluation);
+        expect(stateAfterBotMove.evaluation).toBe(0);
+        currentState = stateAfterBotMove;
       };
 
       await playNoopRound();

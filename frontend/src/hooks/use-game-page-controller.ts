@@ -781,15 +781,11 @@ export function useGamePageController(gameId: string) {
         decliner: undefined,
       }));
     },
-    [
-      applyServerUpdate,
-      localPreferences,
-      seatActionsRef,
-      setDraggingPawnId,
-      setPremovedActions,
-      setSelectedPawnId,
-      setStagedActions,
-    ],
+    // Note: setDraggingPawnId, setPremovedActions, setSelectedPawnId, setStagedActions are
+    // stable setters from useBoardInteractions, so they don't need to be in the dependency array.
+    // They're accessed via closure and are guaranteed stable by React's useState.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+    [applyServerUpdate, localPreferences, seatActionsRef],
   );
 
   useEffect(() => {

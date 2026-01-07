@@ -443,7 +443,7 @@ std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
 // Move Generation
 // ============================================================================
 
-std::optional<std::string> find_best_move(
+std::optional<MoveResult> find_best_move(
     Board const& board,
     Turn turn,
     EvaluationFunction const& eval_fn,
@@ -474,6 +474,9 @@ std::optional<std::string> find_best_move(
         return std::nullopt;
     }
 
+    // Get the evaluation from MCTS root value and clamp to [-1, +1]
+    float evaluation = std::clamp(mcts.root_value(), -1.0f, 1.0f);
+
     // Get current position of the player's pawn (in model coordinates)
     Cell current_pos = board.position(turn.player);
     Cell current_mouse = board.mouse(turn.player);
@@ -486,8 +489,8 @@ std::optional<std::string> find_best_move(
     std::string notation = transform_move_notation(
         model_notation, current_pos, current_mouse, padding_config);
 
-    XLOGF(INFO, "Best move: {} (model: {})", notation, model_notation);
-    return notation;
+    XLOGF(INFO, "Best move: {} (model: {}), evaluation: {}", notation, model_notation, evaluation);
+    return MoveResult{notation, evaluation};
 }
 
 // ============================================================================
@@ -603,9 +606,9 @@ json handle_engine_request(
 
     // Handle request based on kind
     if (kind == "move") {
-        auto move_notation = find_best_move(board, turn, eval_fn, config, padding_config);
+        auto move_result = find_best_move(board, turn, eval_fn, config, padding_config);
 
-        if (!move_notation) {
+        if (!move_result) {
             XLOG(WARN, "No legal move found, resigning");
             std::cerr << "Warning: No legal move found\n";
             return json{
@@ -620,7 +623,8 @@ json handle_engine_request(
             {"requestId", request_id},
             {"response", {
                 {"action", "move"},
-                {"moveNotation", *move_notation}
+                {"moveNotation", move_result->notation},
+                {"evaluation", move_result->evaluation}
             }}
         };
     } else if (kind == "draw") {
