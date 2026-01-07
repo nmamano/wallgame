@@ -45,6 +45,10 @@ import type {
   GameConfiguration,
   PlayerId,
 } from "../../shared/domain/game-types";
+import {
+  EVALUATION_MIN,
+  EVALUATION_MAX,
+} from "../../shared/custom-bot/engine-api";
 
 // ================================
 // --- Test Harness ---
@@ -459,6 +463,15 @@ const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
+ * Verifies that an evaluation value is within the valid range [-1, +1].
+ */
+function assertValidEvaluation(evaluation: unknown): void {
+  expect(typeof evaluation).toBe("number");
+  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
+  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
+}
+
+/**
  * Plays a move for the human player and waits for the next state.
  */
 async function submitHumanMove(
@@ -609,7 +622,20 @@ describe("custom bot client CLI integration V2", () => {
           currentState,
         );
         if (currentState.state.status !== "playing") return false;
-        currentState = await waitForTurn(humanSocket, playerId, currentState);
+        // Wait for bot to move and receive state with evaluation
+        const stateAfterBotMove = await waitForTurn(
+          humanSocket,
+          playerId,
+          currentState,
+        );
+        // Verify evaluation is included in state broadcast (dumb bot returns 0)
+        assertValidEvaluation(
+          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
+        );
+        expect(
+          (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
+        ).toBe(0);
+        currentState = stateAfterBotMove;
         return currentState.state.status === "playing";
       };
 

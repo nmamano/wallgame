@@ -657,10 +657,11 @@ const handleMoveResponse = async (
     // Send ack
     sendAck(ctx, message.requestId);
 
-    // Broadcast state to all players
+    // Broadcast state to all players (include evaluation from engine)
     broadcast(session.id, {
       type: "state",
       state: serializeGameState(session),
+      evaluation: response.evaluation,
     });
 
     // Handle game end
@@ -689,6 +690,7 @@ const handleMoveResponse = async (
       playerId,
       notation: response.moveNotation,
       moveCount: newState.moveCount,
+      evaluation: response.evaluation,
     });
 
     // Process next request

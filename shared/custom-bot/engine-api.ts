@@ -15,6 +15,27 @@ import type { PlayerId, SerializedGameState } from "../domain/game-types";
 export const ENGINE_API_VERSION = 2;
 
 // ============================================================================
+// Evaluation Range
+// ============================================================================
+
+/**
+ * Evaluation values represent the engine's assessment of the position.
+ * Range: [-1.0, +1.0]
+ *   +1.0 = Engine expects to win (winning position)
+ *    0.0 = Even position
+ *   -1.0 = Engine expects to lose (losing position)
+ *
+ * Values outside this range will be clamped by the bot client.
+ */
+export const EVALUATION_MIN = -1.0;
+export const EVALUATION_MAX = 1.0;
+
+/** Clamp evaluation to valid range [-1, +1] */
+export function clampEvaluation(value: number): number {
+  return Math.max(EVALUATION_MIN, Math.min(EVALUATION_MAX, value));
+}
+
+// ============================================================================
 // Request Types
 // ============================================================================
 
@@ -53,7 +74,14 @@ interface EngineResponseBase {
 }
 
 export interface EngineMoveResponse extends EngineResponseBase {
-  response: { action: "move"; moveNotation: string } | { action: "resign" };
+  response:
+    | {
+        action: "move";
+        moveNotation: string;
+        /** Position evaluation in range [-1, +1]. See EVALUATION_MIN/MAX. */
+        evaluation: number;
+      }
+    | { action: "resign" };
 }
 
 export interface EngineDrawResponse extends EngineResponseBase {

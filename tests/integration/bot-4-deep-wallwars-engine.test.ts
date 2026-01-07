@@ -36,6 +36,10 @@ import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
 import type { GameConfiguration } from "../../shared/domain/game-types";
+import {
+  EVALUATION_MIN,
+  EVALUATION_MAX,
+} from "../../shared/custom-bot/engine-api";
 import * as fs from "fs";
 import * as path from "path";
 
@@ -424,6 +428,15 @@ function spawnBotClient(
 // --- Test Helpers ---
 // ================================
 
+/**
+ * Verifies that an evaluation value is within the valid range [-1, +1].
+ */
+function assertValidEvaluation(evaluation: unknown): void {
+  expect(typeof evaluation).toBe("number");
+  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
+  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
+}
+
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -653,39 +666,50 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
       expect(initialState.state.config.boardHeight).toBe(8);
 
       const humanGoesFirst = playerId === 1;
+      let stateAfterBotMove: Extract<ServerMessage, { type: "state" }>;
 
       // In classic variant, cat starts at bottom-left corner and needs to reach top-right
+      // Track state after bot move to verify evaluation
       if (humanGoesFirst) {
+        // Human move 1
         await submitHumanMove(humanSocket, "---", 8);
         await waitForMoveCount(humanSocket, 1, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
 
-        await waitForMoveCount(humanSocket, 2, {
+        // Bot move 2 - capture state for evaluation check
+        stateAfterBotMove = await waitForMoveCount(humanSocket, 2, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
 
+        // Human move 3
         await submitHumanMove(humanSocket, "---", 8);
         await waitForMoveCount(humanSocket, 3, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
 
+        // Bot move 4
         await waitForMoveCount(humanSocket, 4, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
       } else {
-        await waitForMoveCount(humanSocket, 1, {
+        // Bot move 1 - capture state for evaluation check
+        stateAfterBotMove = await waitForMoveCount(humanSocket, 1, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
 
+        // Human move 2
         await submitHumanMove(humanSocket, "---", 8);
         await waitForMoveCount(humanSocket, 2, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
+
+        // Bot move 3
         await waitForMoveCount(humanSocket, 3, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
         });
 
+        // Human move 4
         await submitHumanMove(humanSocket, "---", 8);
         await waitForMoveCount(humanSocket, 4, {
           timeoutMs: DEEP_WW_TIMEOUT_MS,
@@ -698,6 +722,13 @@ describe("custom bot client CLI integration V2 (deep-wallwars engine)", () => {
 
       // Verify the game is still in progress
       expect(midGameState.state.status).toBe("playing");
+
+      // Verify evaluation is included in state broadcast from deep-wallwars engine
+      // Note: Deep-wallwars returns real MCTS evaluation, so we only verify it's in valid range
+      // We check stateAfterBotMove which is guaranteed to be from a bot move
+      assertValidEvaluation(
+        (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
+      );
 
       // Human resigns to end the test
       humanSocket.ws.send(JSON.stringify({ type: "resign" }));

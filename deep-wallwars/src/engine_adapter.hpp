@@ -98,11 +98,17 @@ std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
 // Engine Functions
 // ============================================================================
 
+// Result of finding the best move: (move notation, evaluation)
+struct MoveResult {
+    std::string notation;
+    float evaluation;
+};
+
 // Runs MCTS to find the best move for the current position
-// Returns the move in standard notation (e.g., "Ce4.Md5.>f3")
+// Returns the move in standard notation (e.g., "Ce4.Md5.>f3") and position evaluation
 // The notation is transformed from model coordinates to game coordinates using padding_config
 // Returns std::nullopt if no legal move is available
-std::optional<std::string> find_best_move(
+std::optional<MoveResult> find_best_move(
     Board const& board,
     Turn turn,
     EvaluationFunction const& eval_fn,

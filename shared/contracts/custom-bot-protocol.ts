@@ -122,7 +122,15 @@ export interface AttachMessage {
  * - "draw" request: action must be "accept-draw" or "decline-draw"
  */
 export type BotResponseAction =
-  | { action: "move"; moveNotation: string }
+  | {
+      action: "move";
+      moveNotation: string;
+      /**
+       * Position evaluation from the bot's perspective.
+       * Range: [-1, +1] where +1 = winning, 0 = even, -1 = losing.
+       */
+      evaluation: number;
+    }
   | { action: "resign" }
   | { action: "accept-draw" }
   | { action: "decline-draw" };

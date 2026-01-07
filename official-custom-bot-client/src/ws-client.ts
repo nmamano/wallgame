@@ -27,7 +27,10 @@ import type {
   EngineRequest,
   EngineResponse,
 } from "../../shared/custom-bot/engine-api";
-import { createMoveRequest } from "../../shared/custom-bot/engine-api";
+import {
+  createMoveRequest,
+  clampEvaluation,
+} from "../../shared/custom-bot/engine-api";
 import { handleDumbBotRequest } from "./dumb-bot";
 import {
   runEngine,
@@ -492,18 +495,24 @@ export class BotClient {
   private sendResponse(
     requestId: string,
     response:
-      | { action: "move"; moveNotation: string }
+      | { action: "move"; moveNotation: string; evaluation: number }
       | { action: "resign" }
       | { action: "accept-draw" }
       | { action: "decline-draw" },
   ): void {
+    // Clamp evaluation to valid range [-1, +1] for move responses
+    const normalizedResponse =
+      response.action === "move"
+        ? { ...response, evaluation: clampEvaluation(response.evaluation) }
+        : response;
+
     const message: BotResponseMessage = {
       type: "response",
       requestId,
-      response,
+      response: normalizedResponse,
     };
 
-    this.lastResponseById.set(requestId, response);
+    this.lastResponseById.set(requestId, normalizedResponse);
     this.send(message);
     this.state = "waiting";
   }
