@@ -1,6 +1,7 @@
 /.git
-/node_modules
-/deep_wallwars
+**/node_modules
+**/dist
+/deep-wallwars
 /.claude
 /.cursor
 /.husky

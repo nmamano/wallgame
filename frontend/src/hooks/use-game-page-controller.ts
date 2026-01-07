@@ -781,7 +781,15 @@ export function useGamePageController(gameId: string) {
         decliner: undefined,
       }));
     },
-    [applyServerUpdate, localPreferences, seatActionsRef],
+    [
+      applyServerUpdate,
+      localPreferences,
+      seatActionsRef,
+      setDraggingPawnId,
+      setPremovedActions,
+      setSelectedPawnId,
+      setStagedActions,
+    ],
   );
 
   useEffect(() => {
@@ -2761,7 +2769,7 @@ export function useGamePageController(gameId: string) {
     if (stagedActions.length > 0 && gameState.turn !== activeLocalPlayerId) {
       setStagedActions([]);
     }
-  }, [gameState, activeLocalPlayerId, stagedActions.length]);
+  }, [gameState, activeLocalPlayerId, stagedActions.length, setStagedActions]);
 
   useEffect(() => {
     latestStagedActionsRef.current = stagedActions;

@@ -16,8 +16,6 @@ import type {
   TimeControlPreset,
   Variant,
   WinReason,
-  SurvivalInitialState,
-  StandardInitialState,
 } from "../../shared/domain/game-types";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { buildClassicInitialState } from "../../shared/domain/classic-setup";
@@ -110,7 +108,6 @@ const resolveTimeControl = (
 
 /**
  * Resolve variant config from DB configParameters.
- * Handles backward compatibility with old data format.
  */
 const resolveVariantConfig = (
   configParameters: unknown,
@@ -120,37 +117,9 @@ const resolveVariantConfig = (
 ): GameInitialState => {
   const parameters = configParameters as {
     initialState?: GameInitialState;
-    // Legacy format: survival settings stored separately
-    survival?: {
-      turnsToSurvive: number;
-      mouseCanMove: boolean;
-      initialWalls?: { cell: readonly [number, number]; orientation: string }[];
-      initialPawns?: {
-        p1Cat?: readonly [number, number];
-        p2Mouse?: readonly [number, number];
-      };
-    };
   };
 
-  // If initialState exists and is the new unified format, use it directly
   if (parameters?.initialState) {
-    // Check if this is old StandardInitialState format for survival variant
-    // (old format had pawns structure, new format has flat cat/mouse)
-    if (variant === "survival" && "pawns" in parameters.initialState) {
-      // Old format - need to merge with survival settings
-      const oldState = parameters.initialState as StandardInitialState;
-      const survival = parameters.survival;
-      if (survival) {
-        const survivalConfig: SurvivalInitialState = {
-          cat: survival.initialPawns?.p1Cat ?? oldState.pawns[1].cat,
-          mouse: survival.initialPawns?.p2Mouse ?? oldState.pawns[2].mouse,
-          turnsToSurvive: survival.turnsToSurvive,
-          mouseCanMove: survival.mouseCanMove,
-          walls: oldState.walls,
-        };
-        return survivalConfig;
-      }
-    }
     return parameters.initialState;
   }
 
