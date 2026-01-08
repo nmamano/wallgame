@@ -1,12 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
+import { useMemo } from "react";
 import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
-import { BoardPanel } from "@/components/board-panel";
+import { BoardPanel, type EvalBarProps } from "@/components/board-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { useEvalBar } from "@/hooks/use-eval-bar";
+import type { PlayerId } from "../../../shared/domain/game-types";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -27,6 +30,45 @@ function GamePage() {
   } = controller;
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
+
+  // Eval bar state
+  const isActivePlayer =
+    accessKind !== "spectator" &&
+    accessKind !== "replay" &&
+    board.gameStatus === "playing";
+
+  const evalBar = useEvalBar({
+    gameId: id,
+    config: info.config,
+    historyCursor: chat.historyNav.cursor,
+    currentState: board.currentGameState,
+    historyState: board.historyGameState,
+    isRatedGame: info.config?.rated ?? false,
+    isActivePlayer,
+    isPuzzle: false,
+  });
+
+  // Build eval bar props for BoardPanel
+  const evalBarProps = useMemo((): EvalBarProps | undefined => {
+    // Only show eval bar when toggle is on or loading
+    const isVisible = evalBar.toggleState === "on";
+    // Get player colors from board
+    const player1Color = board.playerColorsForBoard[1 as PlayerId] ?? "red";
+    const player2Color = board.playerColorsForBoard[2 as PlayerId] ?? "blue";
+
+    return {
+      evaluation: evalBar.evaluation,
+      isPending: evalBar.isPending,
+      isVisible,
+      player1Color,
+      player2Color,
+    };
+  }, [
+    evalBar.toggleState,
+    evalBar.evaluation,
+    evalBar.isPending,
+    board.playerColorsForBoard,
+  ]);
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
@@ -238,6 +280,7 @@ function GamePage() {
                   onCellRightClickDragMove={board.onCellRightClickDragMove}
                   onCellRightClickDragEnd={board.onCellRightClickDragEnd}
                   onArrowDragFinalize={board.onArrowDragFinalize}
+                  evalBarProps={evalBarProps}
                 />
 
                 {/* Bottom Player (You) Timer */}
@@ -291,6 +334,16 @@ function GamePage() {
                 isMultiplayerMatch={info.isMultiplayerMatch}
                 unsupportedPlayers={info.unsupportedPlayers}
                 placeholderCopy={info.placeholderCopy}
+                evalToggleState={evalBar.toggleState}
+                evalToggleDisabled={evalBar.isDisabled}
+                evalToggleDisabledReason={evalBar.disabledReason}
+                onEvalToggle={
+                  evalBar.toggleState === "on" ||
+                  evalBar.toggleState === "loading"
+                    ? evalBar.toggleOff
+                    : evalBar.toggleOn
+                }
+                evalErrorMessage={evalBar.errorMessage}
               />
             </div>
 

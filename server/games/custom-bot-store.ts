@@ -458,6 +458,48 @@ export const getRecommendedBots = (
   return results;
 };
 
+/**
+ * Find an official bot that can evaluate positions for the given game.
+ * Returns the first matching official bot, or null if none available.
+ * Used by the evaluation bar feature.
+ */
+export const findEvalBot = (
+  variant: Variant,
+  boardWidth: number,
+  boardHeight: number,
+): { compositeId: string; bot: RegisteredBot } | null => {
+  for (const [compositeId, bot] of botIndex) {
+    // Only official bots can provide evaluations
+    if (!bot.isOfficial) continue;
+
+    // Check if bot supports this variant
+    const variantConfig = bot.variants[variant];
+    if (!variantConfig) continue;
+
+    // Check board dimensions
+    if (
+      boardWidth < variantConfig.boardWidth.min ||
+      boardWidth > variantConfig.boardWidth.max
+    ) {
+      continue;
+    }
+    if (
+      boardHeight < variantConfig.boardHeight.min ||
+      boardHeight > variantConfig.boardHeight.max
+    ) {
+      continue;
+    }
+
+    // Check that the client is still connected
+    const client = clients.get(bot.clientId);
+    if (!client) continue;
+
+    return { compositeId, bot };
+  }
+
+  return null;
+};
+
 // ============================================================================
 // Active Game Management
 // ============================================================================
@@ -563,9 +605,15 @@ export const enqueueRequest = (
 /**
  * Try to send the next request to the client.
  * Returns the request if one was sent, undefined otherwise.
+ *
+ * @param clientId - The client ID
+ * @param expectedKinds - Optional filter for request kinds. If provided, only
+ *   dequeues requests matching one of the specified kinds. This prevents
+ *   move/draw handlers from accidentally dequeuing eval requests (and vice versa).
  */
 export const tryProcessNextRequest = (
   clientId: string,
+  expectedKinds?: BotRequestKind[],
 ): QueuedRequest | undefined => {
   const client = clients.get(clientId);
   if (!client) return undefined;
@@ -573,8 +621,20 @@ export const tryProcessNextRequest = (
   // Can only process if no active request
   if (client.activeRequest) return undefined;
 
-  // Get next request from queue
-  const request = client.requestQueue.shift();
+  // Find the next request matching the expected kinds (or any if not specified)
+  let requestIndex = -1;
+  if (expectedKinds && expectedKinds.length > 0) {
+    requestIndex = client.requestQueue.findIndex((r) =>
+      expectedKinds.includes(r.kind),
+    );
+  } else {
+    requestIndex = client.requestQueue.length > 0 ? 0 : -1;
+  }
+
+  if (requestIndex === -1) return undefined;
+
+  // Remove the request from the queue
+  const [request] = client.requestQueue.splice(requestIndex, 1);
   if (!request) return undefined;
 
   // Set as active

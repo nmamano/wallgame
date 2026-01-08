@@ -13,6 +13,8 @@ import {
 } from "lucide-react";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { PlayerType } from "@/lib/gameViewModel";
+import { EvalToggle } from "@/components/eval-toggle";
+import type { EvalToggleState } from "@/hooks/use-eval-bar";
 
 interface GameInfoPanelProps {
   config: GameConfiguration | null;
@@ -26,6 +28,12 @@ interface GameInfoPanelProps {
   isMultiplayerMatch: boolean;
   unsupportedPlayers: PlayerType[];
   placeholderCopy: Partial<Record<PlayerType, string>>;
+  // Eval bar props
+  evalToggleState: EvalToggleState;
+  evalToggleDisabled: boolean;
+  evalToggleDisabledReason?: string;
+  onEvalToggle: () => void;
+  evalErrorMessage?: string | null;
 }
 
 export function GameInfoPanel({
@@ -40,16 +48,32 @@ export function GameInfoPanel({
   isMultiplayerMatch,
   unsupportedPlayers,
   placeholderCopy,
+  evalToggleState,
+  evalToggleDisabled,
+  evalToggleDisabledReason,
+  onEvalToggle,
+  evalErrorMessage,
 }: GameInfoPanelProps) {
   return (
     <>
       <Card className="p-2 lg:p-4 space-y-2 lg:space-y-3 bg-card/50 backdrop-blur">
+        {/* Row 1: Variant + Time Control + Rated badge */}
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 lg:gap-2">
-            <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
-            <span className="font-medium capitalize text-sm lg:text-base">
-              {config?.variant ?? defaultVariant}
-            </span>
+          <div className="flex items-center gap-3 lg:gap-4">
+            <div className="flex items-center gap-1.5 lg:gap-2">
+              <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
+              <span className="font-medium capitalize text-sm lg:text-base">
+                {config?.variant ?? defaultVariant}
+              </span>
+            </div>
+            <div className="flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm text-muted-foreground">
+              <Clock className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              <span className="capitalize">
+                {config?.timeControl.preset ??
+                  defaultTimeControlPreset ??
+                  "blitz"}
+              </span>
+            </div>
           </div>
           <Badge
             variant={config?.rated ? "default" : "secondary"}
@@ -58,14 +82,24 @@ export function GameInfoPanel({
             {config?.rated ? "Rated" : "Casual"}
           </Badge>
         </div>
+
+        {/* Row 2: Eval toggle (with error) + Audio toggles */}
         <div className="flex items-center justify-between text-xs lg:text-sm text-muted-foreground">
-          <div className="flex items-center gap-1.5 lg:gap-2">
-            <Clock className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
-            <span className="capitalize">
-              {config?.timeControl.preset ??
-                defaultTimeControlPreset ??
-                "blitz"}
-            </span>
+          <div className="flex items-center gap-2">
+            <EvalToggle
+              state={evalToggleState}
+              isDisabled={evalToggleDisabled}
+              disabledReason={evalToggleDisabledReason}
+              onToggle={onEvalToggle}
+            />
+            {evalErrorMessage && (
+              <span
+                className="text-red-500 text-[10px] lg:text-xs max-w-[100px] lg:max-w-[150px] truncate"
+                title={evalErrorMessage}
+              >
+                {evalErrorMessage}
+              </span>
+            )}
           </div>
           <div className="flex items-center gap-1">
             <Button

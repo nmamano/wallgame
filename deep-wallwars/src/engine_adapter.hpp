@@ -107,6 +107,7 @@ struct MoveResult {
 // Runs MCTS to find the best move for the current position
 // Returns the move in standard notation (e.g., "Ce4.Md5.>f3") and position evaluation
 // The notation is transformed from model coordinates to game coordinates using padding_config
+// Evaluation is returned from P1's perspective (+1 = P1 winning, -1 = P2 winning)
 // Returns std::nullopt if no legal move is available
 std::optional<MoveResult> find_best_move(
     Board const& board,

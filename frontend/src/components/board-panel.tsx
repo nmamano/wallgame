@@ -1,6 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
 import { Board, type BoardProps, type BoardPawn } from "@/components/board";
+import { EvaluationBar } from "@/components/evaluation-bar";
 import type {
   PlayerId,
   WallOrientation,
@@ -9,6 +10,14 @@ import type { PlayerColor } from "@/lib/player-colors";
 import type { Annotation } from "@/hooks/use-annotations";
 
 type WallPositionWithState = NonNullable<BoardProps["walls"]>[number];
+
+export interface EvalBarProps {
+  evaluation: number | null;
+  isPending: boolean;
+  isVisible: boolean;
+  player1Color: PlayerColor;
+  player2Color: PlayerColor;
+}
 
 interface BoardPanelProps {
   // Container styling
@@ -71,6 +80,9 @@ interface BoardPanelProps {
   onCellRightClickDragMove?: (row: number, col: number) => void;
   onCellRightClickDragEnd?: (row: number, col: number) => void;
   onArrowDragFinalize?: () => void;
+
+  // Evaluation bar (optional)
+  evalBarProps?: EvalBarProps;
 }
 
 export function BoardPanel({
@@ -115,6 +127,7 @@ export function BoardPanel({
   onCellRightClickDragMove,
   onCellRightClickDragEnd,
   onArrowDragFinalize,
+  evalBarProps,
 }: BoardPanelProps) {
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const showStagedActionControls = hasLocalPlayer;
@@ -146,6 +159,17 @@ export function BoardPanel({
           </div>
         )}
       </div>
+
+      {/* Evaluation bar - always rendered for space allocation */}
+      {evalBarProps && (
+        <EvaluationBar
+          evaluation={evalBarProps.evaluation}
+          isPending={evalBarProps.isPending}
+          isVisible={evalBarProps.isVisible}
+          player1Color={evalBarProps.player1Color}
+          player2Color={evalBarProps.player2Color}
+        />
+      )}
 
       <Board
         rows={rows}

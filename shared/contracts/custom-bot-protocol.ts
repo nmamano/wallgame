@@ -97,8 +97,9 @@ export interface CustomBotClientInfo {
  *
  * - "move": Bot must make a move or resign. It's the bot's turn.
  * - "draw": Opponent offered a draw. Bot must accept or decline.
+ * - "eval": Evaluate a position (used by evaluation bar feature).
  */
-export type BotRequestKind = "move" | "draw";
+export type BotRequestKind = "move" | "draw" | "eval";
 
 // ============================================================================
 // Client -> Server Messages
@@ -120,6 +121,7 @@ export interface AttachMessage {
  * The valid actions depend on the request kind:
  * - "move" request: action must be "move" or "resign"
  * - "draw" request: action must be "accept-draw" or "decline-draw"
+ * - "eval" request: action must be "eval"
  */
 export type BotResponseAction =
   | {
@@ -133,7 +135,17 @@ export type BotResponseAction =
     }
   | { action: "resign" }
   | { action: "accept-draw" }
-  | { action: "decline-draw" };
+  | { action: "decline-draw" }
+  | {
+      action: "eval";
+      /**
+       * Position evaluation from P1's perspective.
+       * Range: [-1, +1] where +1 = P1 winning, 0 = even, -1 = P2 winning.
+       */
+      evaluation: number;
+      /** Best move in standard notation */
+      bestMove?: string;
+    };
 
 export interface BotResponseMessage {
   type: "response";
@@ -200,7 +212,17 @@ export interface DrawRequestMessage extends RequestMessageBase {
   offeredBy: PlayerId;
 }
 
-export type RequestMessage = MoveRequestMessage | DrawRequestMessage;
+/** Request for the bot to evaluate a position (for eval bar feature) */
+export interface EvalRequestMessage extends RequestMessageBase {
+  kind: "eval";
+  /** ID of the eval WebSocket client that requested this evaluation */
+  evalSocketId: string;
+}
+
+export type RequestMessage =
+  | MoveRequestMessage
+  | DrawRequestMessage
+  | EvalRequestMessage;
 
 export type NackCode =
   | "NOT_ATTACHED"
