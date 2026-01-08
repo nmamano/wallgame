@@ -70,6 +70,12 @@ import {
   broadcastLiveGamesUpsert,
 } from "./game-socket";
 
+import {
+  handleBotEvalResponse,
+  handleBotClientDisconnectForEval,
+  trySendNextEvalRequest,
+} from "./eval-socket";
+
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 // Official bot token from environment
@@ -94,6 +100,14 @@ const rawSocketMap = new WeakMap<object, BotSocket>();
 
 // Map from clientId to WSContext for sending messages
 const clientIdToContext = new Map<string, WSContext>();
+
+/**
+ * Get the WSContext for a client by clientId.
+ * Used by eval-socket.ts to send eval requests to bots.
+ */
+export const getClientContext = (clientId: string): WSContext | undefined => {
+  return clientIdToContext.get(clientId);
+};
 
 const mapSocketContext = (ctx: WSContext, socket: BotSocket) => {
   contextToSocket.set(ctx, socket);
@@ -175,12 +189,14 @@ const sendAttachRejected = (
 
 /**
  * Send the next queued request to a client if possible.
+ * Only processes move and draw requests (eval requests are handled by eval-socket).
  */
 const trySendNextRequest = (clientId: string): void => {
   const client = getClient(clientId);
   if (!client) return;
 
-  const request = tryProcessNextRequest(clientId);
+  // Only process move/draw requests - eval requests are handled by eval-socket
+  const request = tryProcessNextRequest(clientId, ["move", "draw"]);
   if (!request) return;
 
   const ctx = clientIdToContext.get(clientId);
@@ -484,6 +500,28 @@ const handleBotResponse = async (
     return;
   }
 
+  const response = message.response;
+
+  // Validate the action matches the request kind
+  if (!isValidActionForRequest(activeRequest.kind, response.action)) {
+    sendNack(
+      ctx,
+      message.requestId,
+      "INVALID_ACTION",
+      `Action "${response.action}" is not valid for "${activeRequest.kind}" request.`,
+      true,
+    );
+    incrementInvalidMessageCount(socket.clientId);
+    return;
+  }
+
+  // Handle eval responses separately (they don't need game session)
+  if (response.action === "eval") {
+    handleEvalResponse(ctx, socket, message, activeRequest);
+    return;
+  }
+
+  // For move/draw requests, we need the game session
   let session: GameSession;
   try {
     session = getSession(activeRequest.gameId);
@@ -497,21 +535,6 @@ const handleBotResponse = async (
     );
     clearActiveRequest(socket.clientId);
     trySendNextRequest(socket.clientId);
-    return;
-  }
-
-  const response = message.response;
-
-  // Validate the action matches the request kind
-  if (!isValidActionForRequest(activeRequest.kind, response.action)) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      `Action "${response.action}" is not valid for "${activeRequest.kind}" request.`,
-      true,
-    );
-    incrementInvalidMessageCount(socket.clientId);
     return;
   }
 
@@ -582,6 +605,8 @@ const isValidActionForRequest = (kind: string, action: string): boolean => {
       return action === "move" || action === "resign";
     case "draw":
       return action === "accept-draw" || action === "decline-draw";
+    case "eval":
+      return action === "eval";
     default:
       return false;
   }
@@ -693,8 +718,9 @@ const handleMoveResponse = async (
       evaluation: response.evaluation,
     });
 
-    // Process next request
+    // Process next requests (both move/draw and eval)
     trySendNextRequest(socket.clientId!);
+    trySendNextEvalRequest(socket.clientId!);
   } catch (error) {
     sendNack(
       ctx,
@@ -771,8 +797,9 @@ const handleResignResponse = async (
       playerId,
     });
 
-    // Process next request
+    // Process next requests (both move/draw and eval)
     trySendNextRequest(socket.clientId!);
+    trySendNextEvalRequest(socket.clientId!);
   } catch (error) {
     sendNack(
       ctx,
@@ -847,8 +874,9 @@ const handleDrawAcceptResponse = async (
       playerId,
     });
 
-    // Process next request
+    // Process next requests (both move/draw and eval)
     trySendNextRequest(socket.clientId!);
+    trySendNextEvalRequest(socket.clientId!);
   } catch (error) {
     sendNack(
       ctx,
@@ -892,8 +920,46 @@ const handleDrawDeclineResponse = (
     playerId,
   });
 
-  // Process next request
+  // Process next requests (both move/draw and eval)
   trySendNextRequest(socket.clientId!);
+  trySendNextEvalRequest(socket.clientId!);
+};
+
+/**
+ * Handle an eval response from the bot.
+ * Forwards the evaluation to the eval socket client.
+ */
+const handleEvalResponse = (
+  ctx: WSContext,
+  socket: BotSocket,
+  message: BotResponseMessage,
+  activeRequest: { gameId: string; botId: string; requestId: string },
+): void => {
+  const response = message.response;
+  if (response.action !== "eval") return;
+
+  // Clear active request
+  clearActiveRequest(socket.clientId!);
+  resetInvalidMessageCount(socket.clientId!);
+
+  // Send ack to the bot
+  sendAck(ctx, message.requestId);
+
+  // Forward the eval response to the eval socket client
+  handleBotEvalResponse(
+    activeRequest.requestId,
+    response.evaluation,
+    response.bestMove,
+  );
+
+  console.info("[custom-bot-ws] eval response handled", {
+    requestId: activeRequest.requestId,
+    evaluation: response.evaluation,
+  });
+
+  // Process next requests (both move/draw and eval)
+  trySendNextRequest(socket.clientId!);
+  trySendNextEvalRequest(socket.clientId!);
 };
 
 // ============================================================================
@@ -1105,6 +1171,9 @@ const handleBotClientDisconnect = (clientId: string): void => {
       });
     }
   }
+
+  // Notify eval socket clients that the bot disconnected
+  handleBotClientDisconnectForEval();
 
   // Unregister client
   unregisterClient(clientId);

@@ -26,6 +26,7 @@ import { logger } from "./logger";
 import type {
   EngineRequest,
   EngineResponse,
+  EngineEvalResponse,
 } from "../../shared/custom-bot/engine-api";
 import {
   createMoveRequest,
@@ -396,39 +397,104 @@ export class BotClient {
    * Process a request (used by both handleRequest and NACK retry)
    */
   private async processRequest(message: RequestMessage): Promise<void> {
-    if (message.kind !== "move") {
-      logger.warn("Unknown request kind:", message.kind);
-      return;
-    }
-
-    // Build engine request
-    const engineRequest = createMoveRequest(
-      message.requestId,
-      message.botId,
-      message.gameId,
-      message.serverTime,
-      message.playerId,
-      message.state,
-    );
-
-    // Get response from engine (or dumb bot)
-    const response = await this.getEngineResponse(engineRequest, message);
-
-    // Check if request is still active (not invalidated by a newer request)
-    if (this.activeRequestId !== message.requestId) {
-      logger.debug(
-        `Request ${message.requestId} was invalidated, discarding response`,
+    if (message.kind === "move") {
+      // Build engine request for move
+      const engineRequest = createMoveRequest(
+        message.requestId,
+        message.botId,
+        message.gameId,
+        message.serverTime,
+        message.playerId,
+        message.state,
       );
-      return;
+
+      // Get response from engine (or dumb bot)
+      const response = await this.getEngineResponse(engineRequest, message);
+
+      // Check if request is still active (not invalidated by a newer request)
+      if (this.activeRequestId !== message.requestId) {
+        logger.debug(
+          `Request ${message.requestId} was invalidated, discarding response`,
+        );
+        return;
+      }
+
+      if (response) {
+        this.sendResponse(message.requestId, response.response);
+      } else {
+        // Engine failed - resign
+        logger.error("Engine failed, resigning");
+        this.sendResponse(message.requestId, { action: "resign" });
+      }
+    } else if (message.kind === "eval") {
+      // For eval requests, send a move request to the engine and convert response
+      const engineRequest = createMoveRequest(
+        message.requestId,
+        message.botId,
+        message.gameId,
+        message.serverTime,
+        message.playerId,
+        message.state,
+      );
+
+      // Get response from engine
+      const response = await this.getEngineResponse(engineRequest, message);
+
+      // Check if request is still active (not invalidated by a newer request)
+      if (this.activeRequestId !== message.requestId) {
+        logger.debug(
+          `Request ${message.requestId} was invalidated, discarding response`,
+        );
+        return;
+      }
+
+      if (response) {
+        // Convert engine response to eval response format
+        // Engine returns evaluation from P1's perspective (positive = P1 winning)
+        const evalResponse = this.convertToEvalResponse(response);
+        if (evalResponse) {
+          this.sendResponse(message.requestId, evalResponse);
+        } else {
+          logger.error("Engine returned non-eval response for eval request");
+        }
+      } else {
+        // Engine failed - we can't resign for eval, just don't respond
+        logger.error("Engine failed for eval request");
+      }
+    } else {
+      logger.warn("Unknown request kind:", message.kind);
+    }
+  }
+
+  /**
+   * Convert an engine response to eval format.
+   * For move responses, extract the evaluation. For eval responses, use directly.
+   * Engine returns evaluation from P1's perspective (positive = P1 winning).
+   */
+  private convertToEvalResponse(
+    response: EngineResponse,
+  ): EngineEvalResponse["response"] | null {
+    const action = response.response.action;
+
+    if (action === "eval") {
+      return response.response as EngineEvalResponse["response"];
     }
 
-    if (response) {
-      this.sendResponse(message.requestId, response.response);
-    } else {
-      // Engine failed - resign
-      logger.error("Engine failed, resigning");
-      this.sendResponse(message.requestId, { action: "resign" });
+    if (action === "move") {
+      const moveResp = response.response as {
+        action: "move";
+        moveNotation: string;
+        evaluation: number;
+      };
+      return {
+        action: "eval",
+        evaluation: moveResp.evaluation,
+        bestMove: moveResp.moveNotation,
+      };
     }
+
+    // Can't convert resign/draw responses to eval
+    return null;
   }
 
   /**
@@ -465,12 +531,12 @@ export class BotClient {
         : timeLeftRaw;
     const timeoutMs = calculateEngineTimeout(timeLeftMs);
 
-    const engineOptions: EngineRunnerOptions = {
+    const runnerOptions: EngineRunnerOptions = {
       engineCommand,
       timeoutMs,
     };
 
-    const result = await runEngine(engineOptions, request);
+    const result = await runEngine(runnerOptions, request);
 
     if (result.success && result.response) {
       return result.response;
@@ -479,7 +545,7 @@ export class BotClient {
     // First attempt failed - retry once for retryable errors
     logger.warn(`Engine failed: ${result.error}, retrying once...`);
 
-    const retryResult = await runEngine(engineOptions, request);
+    const retryResult = await runEngine(runnerOptions, request);
 
     if (retryResult.success && retryResult.response) {
       return retryResult.response;
@@ -498,13 +564,16 @@ export class BotClient {
       | { action: "move"; moveNotation: string; evaluation: number }
       | { action: "resign" }
       | { action: "accept-draw" }
-      | { action: "decline-draw" },
+      | { action: "decline-draw" }
+      | { action: "eval"; evaluation: number; bestMove?: string },
   ): void {
-    // Clamp evaluation to valid range [-1, +1] for move responses
+    // Clamp evaluation to valid range [-1, +1] for move and eval responses
     const normalizedResponse =
       response.action === "move"
         ? { ...response, evaluation: clampEvaluation(response.evaluation) }
-        : response;
+        : response.action === "eval"
+          ? { ...response, evaluation: clampEvaluation(response.evaluation) }
+          : response;
 
     const message: BotResponseMessage = {
       type: "response",

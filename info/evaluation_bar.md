@@ -9,178 +9,99 @@ This is a vertical integration feature.
 - Reorganize the info panel in the game page to put the variant and time control next to each other in the same row.
 - Use the space where the time control was to add a new toggle: evaluation bar.
 - Overall height and width of the info panel should be the same as before.
-
-The evaluation bar is grayed out when:
-
-1. The game is active, the user is a player, AND the game is rated
-
-OR
-
-2. There is no official bot that supports the game variant/time control/variant-specific configuration.
-  - If there is more than one candidate, pick any.
-
-This means: as long as there is an official bot, the toggle is not grayed out for spectators, replays, games vs bots, unrated games between two humans.
+- The toggle always starts in the OFF position for a game.
+  - It must be turned on manually by the user for every game.
+  - It doesn't persist in any way.
+  - Refresh turns it off.
+- The evaluation bar is grayed out when (1) the game is active, (2) the user is a player, AND (3) the game is rated.
+  - This means: the toggle is not grayed out for spectators, replays, games vs bots, unrated games between two humans.
+  - Not available for puzzles.
+- The toggle should have a "getting ready"/"loading" visual indicator when it is turned on, which appears during the evaluation handshake.
+- If the evaluation handshake fails, the toggle should be turned off automatically, and we should show an error message to the user.
+  - The error message should be contained within the info panel, and not modify its size.
 
 ### Evaluation bar
 
 - The bar only displayed when the toggle is ON.
 - The bar is horizontal and thin.
 - It appears on the board panel, **above** the board.
-- Preallocate the necessary space for it. Turning the toggle ON shouldn't change thei height of the board panel.
-- Follow styling of a site like Lichess, but with the bar being horizontal, and using the players' colors instead of black and white.
+- Preallocate the necessary space for it. Turning the toggle ON shouldn't change the height of the board panel.
+  - This means the empty space is always visible when toggle is OFF.
+- Follow styling of a site like Lichess, but with the bar being horizontal, and using the players' colors (P1 left, P2 right) instead of black and white.
+  - I don't care if it transitions smoothly or not. Either is fine.
+  - Eval goes from +1 (P1 is completely winning) to -1 (P2 is completely winning), with 0 being the position is equal. If eval is 1, the bar should be completely the color of P1. If eval is -1, the bar should be completely the color of P2. If eval is 0, the bar should be half the color of P1 (left) and half the color of P2 (right).
+  - The actual eval number can be displayed next to the bar (without increasing vertical space).
+  - It doesn't matter if the user is P1 or P2. It's not about seats, it's about P1 (the player starting first) and P2.
+- The bar should indicate visually (without text) when the evaluation hasn't been received yet.
+  - Show last value with a "pending" overlay.
+  - The initial pending state (no last value yet) should show a neutral split (50/50) plus the overlay.
 
-## Logic
+## Protocol for getting evaluations
 
-### Evaluation computation
+### Handshake
 
-- Positive means P1 is winning.
-- Negative means P2 is winning.
-- 0 means the position is equal.
+Evaluation handshake starts when the user turns the toggle ON (which must not be grayed out in the first place).
 
-It doesn't matter if the user is P1 or P2. It's not about seats, it's about P1 (the player starting first) and P2.
+This attempts to establish a new WS connection between the user's client and the server. We'll call this the "eval connection" or "eval WS".
 
-### Finding a matching bot
+1. The client asks the server: "Is there an official bot that can provide evaluations for this game?"
+2. The server looks at attached official bots and finds a matching one.
+  - If it cannot find any, returns an error.
+  - If it finds more than one (shouldn't happen since I decide which bots are attached, but not technically impossible), picks any and allows the eval connection.
+  - The server must reject evaluation requests for rated in-progress players (spectators are allowed, even if it's an easy loophole).
+  - Server doesn't expose bot identity.
+ 
+Notes:
 
-The user's client is already querying for available bots for the "Ready to join" table. We need to do something similar to find a matching bot for the evaluation bar.
+- User clients are already querying for available bots for the "Ready to join" table. We need to do something similar to find a matching bot for the evaluation bar, but server side.
+- Eval WS can happen over modes that usually didn't need WS, like watching replays or "local" games (like You vs Also You; as soon as you click the toggle, it's not technically purely local anymore).
 
-### Requesting an evaluation
+### Eval WS Closing
+
+Eval WS closes when:
+
+- Toggle is turned OFF.
+- Game ends.
+- User navigates away.
+
+### When eval requests happpen
 
 This happens whenever the board position changes.
 
-- When a move is made.
-- When looking at the history.
+- When a move is made (and the game is still active (ready or in-progress)).
+- When looking at the move history.
+  - When looking a history move, wait 1s before requesting the evaluation. This will help with the situation where the user is scrubbing through history quickly.
 
 It doesn't happen for:
 
-- Premoveed actions.
+- Premoved actions.
 - Staged actions.
-
-The bar should indicate visually (without text) when the evaluation hasn't been received yet.
-
-### WS connection
-
-"Requesting an evaluation" goes through a WS connection. That means switching the toggle to ON should create a WS connection if there isn't one yet.
-
-- For players in server-managed games, and spectators, the WS connection is already established.
-- For replays, and local games, the WS connection needs to be established.
+- Ended games.
 
 ## Bot protocol
 
-- The current bot protocol only asks the AI for a move.
-- We need to extend it to return a tuple: best move and evaluation.
+- The current server <-> bot client protocol always returns a tuple: best move and evaluation.
+- For the eval connection, we will use the same protocol, and we will return the tuple as is to the user's client. The client then uses the evaluation to update the evaluation bar and discards the move (for now; we may use it later).
 
-### Client changes
+### Load handling
 
-The move and the evaluation make it all the way from the engine to the client. It is the client who decides when to use each:
+- Bots currently have a move request queue. Evaluation requests go into the same queue.
+- Even if the queue is full, we still add any evaluation requests to it (we'll improve this later).
 
-- When playing vs a bot and the bot makes a move and the toggle is ON, we use both.
-- When playing vs a bot and the bot makes a move and the toggle is OFF, we only use the move and discard the evaluation.
-- When the toggle is ON and the opponent is not a bot making a move, we only use the evaluation and discard the move.
+### Correctness
 
-### Server changes
+- Eval requests include an ID and are only valid on the position that was requested.
+- If the position changes before the evaluation is received, the request is discarded.
+- If the toggle is turned OFF, any requests are discarded.
 
-- We need to support WS connections for new modes, like watching replays or local games that require engine evaluation (toggle is ON). This is just a subset of existing connections.
-- Requesting evaluation is forwarded to the official bot client, just like in games vs bots.
+### Error handling
 
-### Server-bot client protocol
+- Any error from the server's side (timeout, bot disconnect, network failure, etc.) should turn off the toggle and be reported to the user's client inside the info panel.
 
-- We change the API for requesting moves to also return an evaluation.
+### Optimization
 
-### Bot client changes
+- For now, we don't do eval caching.
 
-- We need to request evaluations from the engine and return it.
+# Alternatives considered
 
-### Dummy engine changes
-
-- We need to return an evaluation, which can be computed as P2 distance - P1 distance.
-- Distances are to goals or mice, depending on the variant.
-
-### Deep Wallwars adaptor changes
-
-- We need to return the evaluation computed by the engine.
-
-
-# Claude feedback
-
-Based on the codebase architecture, here's my feedback:
-
-## Hard to Implement
-
-1. **WS connection for replays/local games (lines 58-63)**  
-   Currently you have:
-   - **GameClient** – authenticated player connection
-   - **SpectatorClient** – read-only viewer connection
-   - **Replay mode** – no WebSocket at all, just REST-fetched snapshots
-
-   Creating an "evaluation-only" WebSocket connection for replays and local games is new infrastructure. The server's `game-socket.ts` expects either a player token or spectator mode – there's no concept of a "detached evaluation consumer."
-
-2. **Evaluation on history navigation (lines 45-50)**  
-   When a user scrubs through history quickly, you'll fire dozens of evaluation requests. You need:
-   - Debouncing/throttling
-   - Request cancellation (what if position changes before response arrives?)
-   - Handling out-of-order responses (request for move 5 arrives after request for move 7)
-
-3. **Bot protocol change is invasive (lines 64-68)**  
-   Changing the protocol to return (move, evaluation) touches:
-   - `custom-bot-socket.ts` message schema
-   - Both bot clients (dummy engine, deep wallwars)
-   - Any external bot clients (backwards compatibility?)
-
-## Easier to Do Differently
-
-1. **Separate evaluation endpoint instead of piggybacking on moves**
-
-   The design couples evaluation with move responses, but for "evaluate current position" (when it's not the bot's turn), you need a separate request type anyway. Consider:
-
-   - Always use a dedicated "evaluate" request
-   - Move responses can optionally include evaluation as a bonus
-   - Cleaner protocol, easier to test each piece independently
-
-2. **Preallocating bar space (line 26)**  
-   "Preallocate the necessary space for it. Turning the toggle ON shouldn't change the height of the board panel."
-   - This means the empty space is always visible when toggle is OFF.
-   - Alternative: animate the height change smoothly (CSS transition). Less wasted space, still no jarring layout shift.
-
-## Underspecified
-
-| Topic                      | Question                                                                                          |
-|----------------------------|---------------------------------------------------------------------------------------------------|
-| Bot availability           | What happens when the official bot is offline? Gray out toggle? Show error? How is availability detected – real-time or cached? |
-| Evaluation scale           | What's the numeric range? How does the bar map values? What about forced wins (mate-equivalent)? |
-| "Pick any" (line 17)       | If multiple official bots qualify, different engines may give different evaluations. Inconsistent UX. |
-| Rate limiting              | How often can we request evaluations? What if the bot queue backs up?                            |
-| Error handling             | Timeout? Bot disconnects? Network failure?                                                       |
-| Toggle persistence         | Per-game? Per-session? Saved to user preferences?                                                |
-| "Variant-specific configuration" (line 16) | What counts? Board size? Mouse count? Goal positions?                                   |
-| Evaluation caching         | Cache evaluations for positions already seen? History browsing revisits positions.               |
-| Bar at 0                   | How does equal position display? Split 50/50? Special indicator?                                 |
-| Animation                  | Transitions when evaluation changes? Instant snap or smooth interpolation?                       |
-
-**Biggest risk:** The WS connection architecture. I'd suggest scoping an MVP where evaluation bar only works for modes that already have a WebSocket (online games, spectating), and defer replay/local game support.
-
-# Codex feedback
-
-## Hard To Implement
-
-- Reusing the existing `/ws/games/:id` socket for players/spectators while also supporting replays/local games (which currently don’t need a game WS) without violating “one WS per (gameId, role)” lifecycle rules.
-- Making evaluation requests fit the current custom-bot protocol, which is designed around “bot is a seat in a real game” (gameId/playerId/opponentName), not “analyze an arbitrary position”.
-- Coordinating a cross-cutting protocol change (`shared contracts` + server + bot client + dummy engine + deep wallwars adapter + integration tests).
-- Avoiding evaluation spam: “whenever board position changes” + history scrubbing needs debouncing, cancellation, stale-response handling, and server-side rate limits/quotas.
-- Anti-cheat enforcement: greying out the toggle is not enough; the server must reject evaluation requests for rated in-progress players (and you should explicitly decide whether spectators are allowed, since that’s an easy loophole).
-- “Preallocate space above the board” is easy to state but fiddly with the current fixed height calculations and the existing absolute “loading/error” overlay at the top of `BoardPanel`.
-
-## Easier To Do Differently
-
-- Use an HTTP endpoint for evaluation (client→server), while keeping server→bot as WS; this removes the need to invent “WS for local/replay” semantics and makes request/response/caching simpler.
-- Add an explicit analyze request kind in the bot protocol that returns `{ evaluation, bestMove? }` instead of always asking for a move and discarding it.
-- Standardize evaluation to a UI-friendly value (e.g. `p1WinProbability: 0..1` or `p1Advantage: -1..1`) and map engine-specific scores server-side; otherwise the bar mapping/clamping will be a recurring problem.
-- Relax matching rules (e.g., don’t key on time control, or allow a best-available official fallback) to reduce “toggle disabled” cases.
-
-## Underspecified
-
-- What exactly counts as “active” (waiting/ready/in-progress/finished/aborted), and what happens if the toggle is ON but becomes disallowed (auto-off? keep state but block rendering?).
-- Evaluation semantics: units/range/clamping, terminal positions, and whether the score is always from P1’s perspective vs “side to move” (especially important for “use eval returned with bot move”).
-- Position identity and ordering: what payload you send (full `SerializedGameState` vs hash/ply), and how you ignore out-of-order responses when the user moves/scrubs.
-- UX for “pending/no eval yet” and for failure: do you show last value with a “pending” overlay, show neutral, retry/backoff, etc. (also accessibility if you require “no text”).
-- Bot selection when multiple candidates: needs a deterministic/stable rule, and “variant-specific configuration” should be explicitly enumerated (board size only? more?).
-- Whether the toggle should persist as a user setting across games (seems likely, but not specified).
+- Use an HTTP endpoint for evaluation. Makes request/response/caching simpler.

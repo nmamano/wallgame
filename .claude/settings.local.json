@@ -30,7 +30,8 @@
       "Bash(bun:*)",
       "Bash(grep:*)",
       "Bash(bun --cwd=frontend run build)",
-      "Bash(wsl.exe -d Ubuntu -- bash -lc 'cd \"\"$PWD\"\" && env PATH=\"\"$HOME/.bun/bin:/usr/bin:/bin\"\" bun test tests/integration/bot-3-dummy-engine.test.ts')"
+      "Bash(wsl.exe -d Ubuntu -- bash -lc 'cd \"\"$PWD\"\" && env PATH=\"\"$HOME/.bun/bin:/usr/bin:/bin\"\" bun test tests/integration/bot-3-dummy-engine.test.ts')",
+      "Bash(bun run tsc:server:check:*)"
     ]
   },
   "outputStyle": "Explanatory"

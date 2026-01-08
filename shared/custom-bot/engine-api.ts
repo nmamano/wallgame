@@ -19,11 +19,15 @@ export const ENGINE_API_VERSION = 2;
 // ============================================================================
 
 /**
- * Evaluation values represent the engine's assessment of the position.
+ * Evaluation values represent the position assessment from P1's perspective.
  * Range: [-1.0, +1.0]
- *   +1.0 = Engine expects to win (winning position)
+ *   +1.0 = P1 is winning
  *    0.0 = Even position
- *   -1.0 = Engine expects to lose (losing position)
+ *   -1.0 = P2 is winning (P1 is losing)
+ *
+ * IMPORTANT: All evaluations must be from P1's perspective, regardless of
+ * which player the engine is playing as. This ensures consistent display
+ * in the UI evaluation bar.
  *
  * Values outside this range will be clamped by the bot client.
  */
@@ -78,7 +82,7 @@ export interface EngineMoveResponse extends EngineResponseBase {
     | {
         action: "move";
         moveNotation: string;
-        /** Position evaluation in range [-1, +1]. See EVALUATION_MIN/MAX. */
+        /** Position evaluation from P1's perspective. Range: [-1, +1]. +1 = P1 winning. */
         evaluation: number;
       }
     | { action: "resign" };
@@ -88,7 +92,20 @@ export interface EngineDrawResponse extends EngineResponseBase {
   response: { action: "accept-draw" } | { action: "decline-draw" };
 }
 
-export type EngineResponse = EngineMoveResponse | EngineDrawResponse;
+export interface EngineEvalResponse extends EngineResponseBase {
+  response: {
+    action: "eval";
+    /** Position evaluation from P1's perspective. Range: [-1, +1]. */
+    evaluation: number;
+    /** Best move in standard notation (optional). */
+    bestMove?: string;
+  };
+}
+
+export type EngineResponse =
+  | EngineMoveResponse
+  | EngineDrawResponse
+  | EngineEvalResponse;
 
 // ============================================================================
 // Helper functions

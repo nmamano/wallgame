@@ -475,7 +475,11 @@ std::optional<MoveResult> find_best_move(
     }
 
     // Get the evaluation from MCTS root value and clamp to [-1, +1]
-    float evaluation = std::clamp(mcts.root_value(), -1.0f, 1.0f);
+    // MCTS returns value from current turn player's perspective (turn.player).
+    // Engine API requires P1's perspective, so negate if it's P2's turn.
+    float raw_evaluation = mcts.root_value();
+    float evaluation = (turn.player == Player::Red) ? raw_evaluation : -raw_evaluation;
+    evaluation = std::clamp(evaluation, -1.0f, 1.0f);
 
     // Get current position of the player's pawn (in model coordinates)
     Cell current_pos = board.position(turn.player);

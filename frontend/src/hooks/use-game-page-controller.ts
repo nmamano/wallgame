@@ -3481,6 +3481,9 @@ export function useGamePageController(gameId: string) {
     isReadOnly: isReadOnlySession,
     gameStatus,
     gameState: viewingHistory ? (historyState ?? gameState) : gameState,
+    // For eval bar - expose both states separately
+    currentGameState: gameState,
+    historyGameState: historyState,
     isLoadingConfig: boardIsLoading,
     loadError: boardLoadError,
     winnerPlayer,
