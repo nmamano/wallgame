@@ -61,6 +61,13 @@ export interface LastMove {
   playerColor?: PlayerColor;
 }
 
+export interface LastWall {
+  row: number;
+  col: number;
+  orientation: WallOrientation;
+  playerColor?: PlayerColor;
+}
+
 export interface BoardProps {
   rows?: number;
   cols?: number;
@@ -69,6 +76,7 @@ export interface BoardProps {
   arrows?: Arrow[];
   lastMove?: LastMove;
   lastMoves?: LastMove[];
+  lastWalls?: LastWall[];
   maxWidth?: string;
   playerColors?: Record<PlayerId, PlayerColor>;
   onCellClick?: (row: number, col: number) => void;
@@ -188,6 +196,7 @@ export function Board({
   arrows = [],
   lastMove,
   lastMoves,
+  lastWalls = [],
   maxWidth = "max-w-4xl",
   playerColors = { 1: "red", 2: "blue" },
   onCellClick,
@@ -413,6 +422,24 @@ export function Board({
     rows,
     cols,
   ]);
+
+  // Create a Set of last wall keys for efficient lookup
+  const lastWallsSet = useMemo(() => {
+    const set = new Set<string>();
+    for (const wall of lastWalls) {
+      set.add(`${wall.row}-${wall.col}-${wall.orientation}`);
+    }
+    return set;
+  }, [lastWalls]);
+
+  const isLastWall = useCallback(
+    (wall: WallPositionWithState): boolean => {
+      return lastWallsSet.has(
+        `${wall.cell[0]}-${wall.cell[1]}-${wall.orientation}`,
+      );
+    },
+    [lastWallsSet],
+  );
 
   const getArrowScale = (
     fromRow: number,
@@ -1609,6 +1636,13 @@ export function Board({
                 pWall.state === "staged" || pWall.state === "premoved"
                   ? "border-2 border-dashed border-gray-600"
                   : "";
+
+              // Add highlight glow for last-placed walls
+              const isLastPlacedWall =
+                pWall.state === "placed" && isLastWall(pWall);
+              if (isLastPlacedWall) {
+                style.boxShadow = "0 0 8px 3px rgba(251, 191, 36, 0.7)";
+              }
 
               return (
                 <div

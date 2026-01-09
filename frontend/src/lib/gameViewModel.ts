@@ -1,4 +1,4 @@
-import type { BoardProps } from "@/components/board";
+import type { BoardProps, LastWall } from "@/components/board";
 import type {
   PlayerId,
   GameResult,
@@ -29,6 +29,8 @@ export interface GameViewModel {
   match: GameSnapshot | null;
   // Last move arrows to display on the board
   lastMoves: BoardProps["lastMoves"] | null;
+  // Last placed walls to highlight on the board
+  lastWalls: LastWall[] | null;
   // Whether the game has been initialized
   initialized: boolean;
 }
@@ -47,6 +49,7 @@ export const DEFAULT_VIEW_MODEL: GameViewModel = {
   gameState: null,
   match: null,
   lastMoves: null,
+  lastWalls: null,
   initialized: false,
 };
 
@@ -143,6 +146,40 @@ export function computeLastMoves(
 }
 
 /**
+ * Computes last-placed walls from the authoritative move history.
+ * After a takeback, the history is truncated, so highlights disappear naturally.
+ */
+export function computeLastWalls(
+  current: GameState | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): LastWall[] | null {
+  if (!current || current.history.length === 0) {
+    return null;
+  }
+
+  const lastEntry = current.history[current.history.length - 1];
+  const wallActions = lastEntry.move.actions.filter(
+    (action) => action.type === "wall" && action.wallOrientation,
+  );
+
+  if (wallActions.length === 0) {
+    return null;
+  }
+
+  // Determine the player who made the last move
+  // The move at index N was made by player ((N % 2) + 1) since P1 moves first
+  const playerWhoMoved = ((lastEntry.index % 2) + 1) as PlayerId;
+  const playerColor = playerColorsForBoard[playerWhoMoved];
+
+  return wallActions.map((action) => ({
+    row: action.target[0],
+    col: action.target[1],
+    orientation: action.wallOrientation!,
+    playerColor,
+  }));
+}
+
+/**
  * Applies a server update to the view model.
  * This is the single entry point for all server-controlled state updates.
  */
@@ -153,8 +190,12 @@ export function applyServerUpdate(
 ): GameViewModel {
   switch (update.type) {
     case "game-state": {
-      // Compute last moves solely from the new state's history
+      // Compute last moves and walls solely from the new state's history
       const lastMoves = computeLastMoves(
+        update.gameState,
+        playerColorsForBoard,
+      );
+      const lastWalls = computeLastWalls(
         update.gameState,
         playerColorsForBoard,
       );
@@ -163,6 +204,7 @@ export function applyServerUpdate(
         config: update.config,
         gameState: update.gameState,
         lastMoves,
+        lastWalls,
         initialized: prev.initialized || update.isInitial,
       };
     }

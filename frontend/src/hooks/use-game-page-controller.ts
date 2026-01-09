@@ -69,6 +69,7 @@ import type { HistoryNav } from "@/types/history";
 import {
   type PlayerType,
   computeLastMoves,
+  computeLastWalls,
   buildPlayerName,
   formatWinReason,
   sanitizePlayerList,
@@ -983,11 +984,19 @@ export function useGamePageController(gameId: string) {
     if (!historyState) return null;
     return computeLastMoves(historyState, playerColorsForBoard);
   }, [historyState, playerColorsForBoard]);
+  const historyLastWalls = useMemo(() => {
+    if (!historyState) return null;
+    return computeLastWalls(historyState, playerColorsForBoard);
+  }, [historyState, playerColorsForBoard]);
   const resolvedLastMoves = historyState
     ? historyLastMoves
     : viewModel.lastMoves;
+  const resolvedLastWalls = historyState
+    ? historyLastWalls
+    : viewModel.lastWalls;
   // Convert null to undefined for Board component compatibility
   const lastMove = resolvedLastMoves ?? undefined;
+  const lastWalls = resolvedLastWalls ?? undefined;
   // Refs for synchronous access in callbacks
   const gameStateRef = useRef<GameState | null>(null);
   useEffect(() => {
@@ -3507,6 +3516,7 @@ export function useGamePageController(gameId: string) {
     playerColorsForBoard,
     interactionLocked,
     lastMove,
+    lastWalls,
     draggingPawnId,
     selectedPawnId,
     disableMousePawnInteraction: mouseMoveLocked,

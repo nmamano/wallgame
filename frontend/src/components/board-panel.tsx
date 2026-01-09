@@ -1,6 +1,11 @@
 import { Button } from "@/components/ui/button";
 import { AlertCircle } from "lucide-react";
-import { Board, type BoardProps, type BoardPawn } from "@/components/board";
+import {
+  Board,
+  type BoardProps,
+  type BoardPawn,
+  type LastWall,
+} from "@/components/board";
 import { EvaluationBar } from "@/components/evaluation-bar";
 import type {
   PlayerId,
@@ -43,6 +48,7 @@ interface BoardPanelProps {
   playerColorsForBoard: Record<PlayerId, PlayerColor>;
   interactionLocked: boolean;
   lastMove: BoardProps["lastMove"] | BoardProps["lastMoves"];
+  lastWalls?: LastWall[];
   draggingPawnId: string | null;
   selectedPawnId: string | null;
   disableMousePawnInteraction: boolean;
@@ -100,6 +106,7 @@ export function BoardPanel({
   playerColorsForBoard,
   interactionLocked,
   lastMove,
+  lastWalls,
   draggingPawnId,
   selectedPawnId,
   disableMousePawnInteraction,
@@ -188,6 +195,7 @@ export function BoardPanel({
         onCellDrop={interactionLocked ? undefined : onCellDrop}
         lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
         lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
+        lastWalls={lastWalls}
         draggingPawnId={draggingPawnId}
         selectedPawnId={selectedPawnId}
         disableMousePawnInteraction={disableMousePawnInteraction}
