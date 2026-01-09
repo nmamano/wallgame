@@ -11,9 +11,7 @@ ignore/
 .cursor/debug.log
 .eslintcache
 diff.txt
-deep-wallwars/data_8x8_standard/
-deep-wallwars/data_8x8_universal/
+deep-wallwars/data_*/
 deep-wallwars/logs/
-deep-wallwars/models_8x8_standard/
-deep-wallwars/models_8x8_universal/
+deep-wallwars/models_*/
 bot-4-debug.log
