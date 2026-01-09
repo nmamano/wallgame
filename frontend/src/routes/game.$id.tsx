@@ -251,6 +251,7 @@ function GamePage() {
                   playerColorsForBoard={board.playerColorsForBoard}
                   interactionLocked={board.interactionLocked}
                   lastMove={board.lastMove}
+                  lastWalls={board.lastWalls}
                   draggingPawnId={board.draggingPawnId}
                   selectedPawnId={board.selectedPawnId}
                   disableMousePawnInteraction={

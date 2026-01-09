@@ -13,7 +13,11 @@ import { Pause, Play } from "lucide-react";
 import { Board, type BoardPawn } from "@/components/board";
 import { fetchShowcaseGame } from "@/lib/api";
 import { buildHistoryState } from "@/lib/history-utils";
-import { computeLastMoves, resolvePlayerColor } from "@/lib/gameViewModel";
+import {
+  computeLastMoves,
+  computeLastWalls,
+  resolvePlayerColor,
+} from "@/lib/gameViewModel";
 import { type PlayerColor } from "@/lib/player-colors";
 import {
   buildGameConfigurationFromSerialized,
@@ -208,6 +212,11 @@ export function GameShowcase() {
     return computeLastMoves(displayState, playerColors);
   }, [displayState, playerColors]);
 
+  const lastWalls = useMemo(() => {
+    if (!displayState) return null;
+    return computeLastWalls(displayState, playerColors);
+  }, [displayState, playerColors]);
+
   const boardRows = displayState?.config.boardHeight ?? 8;
   const boardCols = displayState?.config.boardWidth ?? 8;
 
@@ -284,6 +293,7 @@ export function GameShowcase() {
             pawns={boardPawns}
             walls={boardWalls}
             lastMoves={lastMoves ?? undefined}
+            lastWalls={lastWalls ?? undefined}
             playerColors={playerColors}
           />
         </div>

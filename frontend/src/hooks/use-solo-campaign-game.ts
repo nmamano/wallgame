@@ -7,8 +7,8 @@ import { buildLevelConfig } from "../../../shared/domain/solo-campaign-levels";
 import { SoloCampaignAIController } from "@/lib/solo-campaign-controller";
 import { LocalHumanController } from "@/lib/player-controllers";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
-import type { BoardPawn, BoardProps } from "@/components/board";
-import { computeLastMoves } from "@/lib/gameViewModel";
+import type { BoardPawn, BoardProps, LastWall } from "@/components/board";
+import { computeLastMoves, computeLastWalls } from "@/lib/gameViewModel";
 import { pawnId } from "../../../shared/domain/game-utils";
 
 export interface UseSoloCampaignGameResult {
@@ -80,6 +80,9 @@ export interface UseSoloCampaignGameResult {
 
   // Last moves for showing opponent's last move
   lastMoves: BoardProps["lastMoves"] | null;
+
+  // Last walls for highlighting recently placed walls
+  lastWalls: LastWall[] | null;
 
   // Error state
   actionError: string | null;
@@ -328,6 +331,12 @@ export function useSoloCampaignGame(
     [gameState, playerColorsForBoard],
   );
 
+  // Compute last walls to highlight recently placed walls
+  const lastWalls = useMemo(
+    () => computeLastWalls(gameState, playerColorsForBoard),
+    [gameState, playerColorsForBoard],
+  );
+
   return {
     gameState,
     isLoading,
@@ -364,6 +373,7 @@ export function useSoloCampaignGame(
     canUndo: boardInteractions.canUndo,
     boardPawns: boardPawnsWithPreview,
     lastMoves,
+    lastWalls,
     actionError,
   };
 }

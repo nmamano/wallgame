@@ -106,8 +106,9 @@ function SoloCampaignLevelContent({
     canUndo,
     // Arrows
     arrows,
-    // Last moves
+    // Last moves/walls
     lastMoves,
+    lastWalls,
     // Annotations
     onWallSlotRightClick,
     onCellRightClickDragStart,
@@ -234,8 +235,9 @@ function SoloCampaignLevelContent({
           stagedActionsCount={stagedActions.length}
           // Arrows for staged/premoved moves
           arrows={arrows}
-          // Last moves (to show opponent's last move)
+          // Last moves/walls (to show opponent's last move/wall)
           lastMoves={lastMoves ?? undefined}
+          lastWalls={lastWalls ?? undefined}
           // Annotations
           annotations={annotations}
           previewAnnotation={previewAnnotation}
