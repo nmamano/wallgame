@@ -17,8 +17,6 @@ import type {
   Variant,
   WinReason,
 } from "../../shared/domain/game-types";
-import { buildStandardInitialState } from "../../shared/domain/standard-setup";
-import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
@@ -108,26 +106,23 @@ const resolveTimeControl = (
 
 /**
  * Resolve variant config from DB configParameters.
+ * Throws if initialState is missing - all games must have their initial state saved.
  */
 const resolveVariantConfig = (
   configParameters: unknown,
-  variant: Variant,
-  boardWidth: number,
-  boardHeight: number,
+  gameId: string,
 ): GameInitialState => {
   const parameters = configParameters as {
     initialState?: GameInitialState;
   };
 
-  if (parameters?.initialState) {
-    return parameters.initialState;
+  if (!parameters?.initialState) {
+    throw new Error(
+      `Game ${gameId} is missing initialState in configParameters. Run backfill migration.`,
+    );
   }
 
-  // No initialState - build defaults based on variant
-  if (variant === "classic") {
-    return buildClassicInitialState(boardWidth, boardHeight);
-  }
-  return buildStandardInitialState(boardWidth, boardHeight);
+  return parameters.initialState;
 };
 
 export interface ReplayGameData {
@@ -201,9 +196,7 @@ const buildReplayGameFromRow = async (
   const variant = normalizeVariant(game.variant);
   const variantConfig = resolveVariantConfig(
     details?.configParameters,
-    variant,
-    game.boardWidth,
-    game.boardHeight,
+    game.gameId,
   );
 
   const config: GameConfiguration = {
@@ -218,16 +211,29 @@ const buildReplayGameFromRow = async (
   const startTimestamp = game.startedAt.getTime();
   const moves = Array.isArray(details?.moves) ? details.moves : [];
   let replayState = new GameState(config, startTimestamp);
-  moves.forEach((notation, index) => {
-    const move = moveFromStandardNotation(String(notation), config.boardHeight);
-    const playerId = (index % 2 === 0 ? 1 : 2) as PlayerId;
-    replayState = replayState.applyGameAction({
-      kind: "move",
-      move,
-      playerId,
-      timestamp: startTimestamp + index,
+  try {
+    moves.forEach((notation, index) => {
+      const move = moveFromStandardNotation(
+        String(notation),
+        config.boardHeight,
+      );
+      const playerId = (index % 2 === 0 ? 1 : 2) as PlayerId;
+      replayState = replayState.applyGameAction({
+        kind: "move",
+        move,
+        playerId,
+        timestamp: startTimestamp + index,
+      });
     });
-  });
+  } catch (error) {
+    console.error(
+      `Failed to replay game ${game.gameId} (variant: ${game.variant}):`,
+      error,
+    );
+    console.error(`Moves: ${JSON.stringify(moves)}`);
+    console.error(`Initial state: ${JSON.stringify(variantConfig)}`);
+    throw error;
+  }
 
   if (result) {
     replayState.status = "finished";
