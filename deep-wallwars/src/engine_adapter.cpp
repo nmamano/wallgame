@@ -465,19 +465,45 @@ std::optional<MoveResult> find_best_move(
     // We need a thread pool to run the coroutine
     folly::CPUThreadPoolExecutor thread_pool(4);
 
-    // Run MCTS sampling and get the best move
-    auto move_opt = folly::coro::blockingWait(
-        mcts.sample_and_commit_to_move(config.samples).scheduleOn(&thread_pool));
+    // Run MCTS sampling
+    folly::coro::blockingWait(mcts.sample(config.samples).scheduleOn(&thread_pool));
 
-    if (!move_opt) {
-        XLOG(ERR, "MCTS returned no move - no legal moves available");
+    // IMPORTANT: Capture evaluation BEFORE committing!
+    // commit_to_action() advances the root to a child node, which changes
+    // whose perspective root_value() returns from. We must capture it while
+    // the root is still at the original position (current player's perspective).
+    float raw_evaluation = mcts.root_value();
+
+    // Now commit to actions to get the move
+    auto action_1 = mcts.commit_to_action();
+    if (!action_1) {
+        XLOG(ERR, "MCTS returned no first action - no legal moves available");
         return std::nullopt;
+    }
+
+    std::optional<Move> move_opt;
+    if (mcts.current_board().winner() != Winner::Undecided) {
+        // First action won the game, just pick any legal wall for second action
+        auto legal_walls = mcts.current_board().legal_walls();
+        if (legal_walls.empty()) {
+            XLOG(ERR, "Game won but no legal walls available");
+            return std::nullopt;
+        }
+        move_opt = Move{*action_1, legal_walls[0]};
+    } else {
+        // Sample and commit for second action
+        folly::coro::blockingWait(mcts.sample(config.samples).scheduleOn(&thread_pool));
+        auto action_2 = mcts.commit_to_action();
+        if (!action_2) {
+            XLOG(ERR, "MCTS returned no second action");
+            return std::nullopt;
+        }
+        move_opt = Move{*action_1, *action_2};
     }
 
     // Get the evaluation from MCTS root value and clamp to [-1, +1]
     // MCTS returns value from current turn player's perspective (turn.player).
     // Engine API requires P1's perspective, so negate if it's P2's turn.
-    float raw_evaluation = mcts.root_value();
     float evaluation = (turn.player == Player::Red) ? raw_evaluation : -raw_evaluation;
     evaluation = std::clamp(evaluation, -1.0f, 1.0f);
 

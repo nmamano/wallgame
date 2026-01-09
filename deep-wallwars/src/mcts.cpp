@@ -117,10 +117,12 @@ folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edg
         }
     }
 
-    TreeNode* new_node = co_await create_tree_node(std::move(next_board), current.turn.next(),
+    Turn child_turn = current.turn.next();
+    TreeNode* new_node = co_await create_tree_node(std::move(next_board), child_turn,
                                                    previous_position, &current);
 
     float value = new_node->value.load().total_weight;
+
     TreeNode* child = nullptr;
 
     if (!edge.child.compare_exchange_strong(child, new_node)) {
@@ -173,6 +175,7 @@ folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
     }
 
     current.add_sample(value);
+
     --te.active_samples;
     co_return value;
 }
