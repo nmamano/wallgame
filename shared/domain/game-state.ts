@@ -422,17 +422,25 @@ export class GameState {
                 [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
                 [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
               ];
-        // Wall legality: each cat must keep a path to the opponent's mouse.
+        // Wall legality: each cat must keep a path to its target.
+        // - Standard/Freestyle: cat chases opponent's mouse
+        // - Classic: cat reaches its own home (stored in mouse slot)
+        // - Survival: single cat chases single mouse
         const mice: [Cell, Cell] =
           this.config.variant === "survival"
             ? [
                 [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
                 [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
               ]
-            : [
-                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
-                [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]],
-              ];
+            : this.config.variant === "classic"
+              ? [
+                  [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]], // P1's home for P1's cat
+                  [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]], // P2's home for P2's cat
+                ]
+              : [
+                  [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]], // P2's mouse for P1's cat
+                  [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]], // P1's mouse for P2's cat
+                ];
 
         if (!nextGrid.canBuildWall(cats, mice, wall)) {
           throw new Error("Illegal wall placement");
