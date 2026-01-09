@@ -2075,11 +2075,8 @@ export function useGamePageController(gameId: string) {
     const basePawns = sourceState.getPawns().map((pawn) => {
       const isClassicGoal = isClassicVariant && pawn.type === "mouse";
       const visualType = isClassicGoal ? "home" : pawn.type;
-      const visualPlayerId = isClassicGoal
-        ? pawn.playerId === 1
-          ? 2
-          : 1
-        : pawn.playerId;
+      // In Classic, the home should display in the owning player's color (their destination)
+      const visualPlayerId = pawn.playerId;
       const player = players.find((p) => p.playerId === visualPlayerId);
 
       let pawnStyle: string | undefined;

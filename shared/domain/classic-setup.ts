@@ -2,11 +2,11 @@ import type { ClassicInitialState } from "./game-types";
 
 /**
  * Build the default initial state for Classic variant.
- * Places cats at diagonal corners with homes at opposite corners.
+ * Places cats at top corners (same as Standard) with homes at diagonally opposite corners.
  *
  * Default positions (for an 8x8 board):
  * - Player 1: cat at top-left (0, 0), home at bottom-right (7, 7)
- * - Player 2: cat at bottom-right (7, 7), home at top-left (0, 0)
+ * - Player 2: cat at top-right (0, 7), home at bottom-left (7, 0)
  */
 export const buildClassicInitialState = (
   boardWidth: number,
@@ -22,8 +22,8 @@ export const buildClassicInitialState = (
         home: [lastRow, lastCol],
       },
       2: {
-        cat: [lastRow, lastCol],
-        home: [0, 0],
+        cat: [0, lastCol],
+        home: [lastRow, 0],
       },
     },
     walls: [],

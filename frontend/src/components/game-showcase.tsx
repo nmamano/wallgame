@@ -168,11 +168,8 @@ export function GameShowcase() {
     return displayState.getPawns().map((pawn) => {
       const isClassicGoal = isClassicVariant && pawn.type === "mouse";
       const visualType = isClassicGoal ? "home" : pawn.type;
-      const visualPlayerId = isClassicGoal
-        ? pawn.playerId === 1
-          ? 2
-          : 1
-        : pawn.playerId;
+      // In Classic, homes display in the owning player's color (their destination)
+      const visualPlayerId = pawn.playerId;
       const player = playersById.get(visualPlayerId);
 
       const pawnStyle = (() => {

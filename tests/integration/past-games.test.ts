@@ -144,20 +144,15 @@ const buildOpeningMove = (
     };
   }
 
-  // P2 cat starts at (0, cols-1) for standard/freestyle, (rows-1, cols-1) for classic
-  if (isClassic) {
-    // Classic: P2 cat moves from (rows-1, cols-1) to (rows-2, cols-1)
-    return {
-      actions: [{ type: "cat", target: [rows - 2, cols - 1] }],
-    };
-  }
-
-  // Standard/Freestyle: P2 cat moves from (0, cols-1) to (0, cols-2)
+  // P2 cat starts at (0, cols-1) for all variants
+  // Classic doesn't have mouse moves
   return {
-    actions: [
-      { type: "cat", target: [0, cols - 2] },
-      { type: "mouse", target: [rows - 2, cols - 1] },
-    ],
+    actions: includeMouse
+      ? [
+          { type: "cat", target: [0, cols - 2] },
+          { type: "mouse", target: [rows - 2, cols - 1] },
+        ]
+      : [{ type: "cat", target: [0, cols - 2] }],
   };
 };
 
