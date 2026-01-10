@@ -499,7 +499,7 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         print(f"Self-play (generation {generation}, {variant}): {existing_games} games already exist, skipping.")
         return
 
-    # Find the max existing file number to continue numbering from
+    # Find max file number to continue numbering (games finish out of order, so may have gaps)
     max_file_num = 0
     for f in existing_files:
         try:
@@ -510,7 +510,7 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
     start_game = max_file_num + 1
 
     if existing_games > 0:
-        print(f"Self-play (generation {generation}, {variant}): {existing_games} games exist (up to game_{max_file_num}.csv), generating {remaining_games} more starting at game_{start_game}.csv...")
+        print(f"Self-play (generation {generation}, {variant}): {existing_games} files exist (max: game_{max_file_num}.csv), generating {remaining_games} more starting at game_{start_game}.csv...")
     else:
         print(f"Running self play (generation {generation}, variant {variant}, games {games})...")
 
