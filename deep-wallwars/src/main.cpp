@@ -36,6 +36,7 @@ DEFINE_int32(rows, 5, "Number of rows");
 DEFINE_string(variant, "classic", "Game variant: classic or standard");
 
 DEFINE_int32(games, 100, "Number of games to play");
+DEFINE_int32(start_game, 1, "Starting game number for output file naming (for resuming)");
 DEFINE_int32(samples, 500, "Number of MCTS samples per action");
 DEFINE_int32(j, 8, "Number of threads");
 
@@ -166,6 +167,7 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
                                                 .model1 = eval_fn,
                                                 .model2 = eval_fn,
                                                 .samples = FLAGS_samples,
+                                                .start_game = FLAGS_start_game,
                                                 .on_complete = training_data_printer,
                                                 .seed = FLAGS_seed,
                                             })

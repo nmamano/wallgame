@@ -36,6 +36,7 @@ struct TrainingPlayOptions {
     int max_parallel_samples = 16;
     int move_limit = 100;
     double temperature = 1;
+    int start_game = 1;  // Starting index for output file numbering
 
     CompletionCallback on_complete = [](MCTS const&, int) {};
 
