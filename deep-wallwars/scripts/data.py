@@ -1,4 +1,5 @@
 from fastai.data.all import RandomSplitter, get_files
+import torch
 from torch import tensor
 from random import sample
 
@@ -9,6 +10,8 @@ def tensor_from_csv_line(line):
 def parse_file(file, input_channels, columns, rows, move_channels):
     expected_num_values = input_channels * columns * rows
     expected_priors = 2 * columns * rows + move_channels
+    # For universal training: classic data has 4 move channels, we need 8
+    classic_priors = 2 * columns * rows + 4
     result = []
     with open(file) as f:
         lines = f.readlines()
@@ -23,7 +26,12 @@ def parse_file(file, input_channels, columns, rows, move_channels):
                 exit(1)
             priors = tensor_from_csv_line(lines[i + 1])
             values = tensor_from_csv_line(lines[i + 2])
-            if len(priors) != expected_priors:
+
+            # Pad classic data (4 move channels) to universal format (8 move channels)
+            if len(priors) == classic_priors and move_channels == 8:
+                # Append 4 zeros for mouse move channels (unused in classic)
+                priors = torch.cat([priors, torch.zeros(4)])
+            elif len(priors) != expected_priors:
                 print(f"ERROR in file {file}, line index {i + 1}: Prior size mismatch.")
                 print(f"Expected {expected_priors} priors (walls + moves).")
                 print(f"Found {len(priors)} values.")
