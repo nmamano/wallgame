@@ -114,6 +114,71 @@ Generation 0 uses the simple policy (walks toward goal) instead of the warm-star
 - Random pawn moves on 12x10 board = games never end
 - Simple policy ensures games complete and provides clear "move toward goal" signal
 
+**Performance note**: Use `--samples 1` for simple policy games (automatic). Higher sample counts dramatically slow down generation 0 with no benefit since simple policy doesn't use MCTS.
+
+### Separate Output Directories per Variant
+
+For universal training, each variant writes to its own directory to avoid overwriting:
+
+```
+data_12x10_universal/
+  generation_0_standard/   # game_1.csv ... game_N.csv
+  generation_0_classic/    # game_1.csv ... game_N.csv
+  generation_1_standard/
+  generation_1_classic/
+  ...
+```
+
+The training data loader automatically aggregates both variant directories when loading.
+
+## Freeze-Then-Fine-Tune Strategy
+
+### The Problem
+
+When warm-starting with board resize, the head layers (`priors.4`, `value.4`) have:
+- Good transferred weights for the embedded 8x8 region
+- Random weights for boundary positions
+
+If we train the full model immediately:
+1. `lr_find()` sees high loss from random head weights + low-quality simple policy data
+2. It suggests an aggressive learning rate
+3. Large gradients backpropagate through the entire network
+4. **Catastrophic forgetting**: valuable conv layer weights get destroyed
+
+### The Solution: Progressive Unfreezing
+
+Freeze the conv body during early generations, only training the head Linear layers:
+
+| Generation | Body Status | Learning Rate | Data Quality |
+|------------|-------------|---------------|--------------|
+| 1 | **Frozen** | Fixed 1e-3 | Simple policy (low) |
+| 2 | **Frozen** | Fixed 1e-3 | Early MCTS |
+| 3 | **Frozen** | Fixed 1e-3 | Early MCTS |
+| 4+ | Unfrozen | lr_find() | Good MCTS |
+
+### What Gets Frozen
+
+```
+ResNet:
+├── start (Conv→BN→ReLU)           ← FROZEN (transferred)
+├── layers (20 ResLayers)          ← FROZEN (transferred)
+├── priors:
+│   ├── [0-3] Conv→BN→ReLU→Flatten ← FROZEN (transferred)
+│   └── [4] Linear                  ← TRAINABLE (has random boundary weights)
+└── value:
+    ├── [0-3] Conv→BN→ReLU→Flatten ← FROZEN (transferred)
+    └── [4] Linear                  ← TRAINABLE (has random boundary weights)
+```
+
+For 12x10: ~960K / ~2.3M params trainable during freeze period (~42%).
+
+### Why This Works
+
+- **Conv layers are translation-invariant**: The 8x8 patterns (wall blocking, spatial reasoning) apply anywhere on the 12x10 board
+- **Only the head needs to learn new geometry**: Which boundary positions are valid, how to weight them in softmax
+- **Conservative LR protects transferred knowledge**: Fixed 1e-3 instead of potentially aggressive lr_find() result
+- **By generation 4**: Head is calibrated, data quality is good, safe to fine-tune everything
+
 ## Parameter Scaling for 12x10
 
 The board grows from 64 cells (8x8) to 120 cells (12x10), roughly 1.9x larger.
@@ -144,9 +209,14 @@ python3 training.py \
   --models ../models_12x10_universal \
   --data ../data_12x10_universal \
   --log ../logs/universal_12x10.log \
-  --generations 40 \
-  --games 8000
+  --generations 200 \
+  --games 4000 \
+  --samples 1200 \
+  --threads 28 \
+  --training-games 20000
 ```
+
+**Note**: Generation 0 automatically uses `--samples 1` for simple policy games regardless of the `--samples` flag. The flag only affects generations 1+ which use the neural network.
 
 ## Expected Output During Warm-Start
 
@@ -175,8 +245,34 @@ Key metrics to watch:
 - **move_accuracy**: May start lower, will improve as model learns new board geometry
 - **Game completion**: Ensure games are finishing (check log for average game length)
 
+Commands:
+
+```bash
+# Count finished games (both variants):
+ls deep-wallwars/data_12x10_universal/generation_0_standard/ | wc -l
+ls deep-wallwars/data_12x10_universal/generation_0_classic/ | wc -l
+
+# Check log for game progress
+tail -20 deep-wallwars/logs/universal_12x10.log
+
+# Watch games complete in real-time
+watch -n 5 'ls deep-wallwars/data_12x10_universal/generation_0_standard/ | wc -l'
+```
+
+### Expected Training Output
+
+```
+Resize warm-start: will freeze body until generation 4
+Loading training data (generation 1)...
+Training paths: ['../data_12x10_universal/generation_0_standard', '../data_12x10_universal/generation_0_classic']
+  Froze body: 960,248 / 2,340,489 params trainable (41.0%)
+Training generation 1 with fixed LR 0.001 (body frozen)...
+```
+
 ## Potential Issues
 
 1. **Games not ending**: If pawn moves are too random, increase bootstrap generations or games
 2. **Variant confusion**: If model plays wrong variant, check plane 8 is being set correctly
 3. **Boundary walls never selected**: Check weight_std calibration is working
+4. **Catastrophic forgetting**: If accuracy drops dramatically after generation 1, the body wasn't frozen properly - check `freeze_until_gen` is set
+5. **Data overwriting** (fixed): Previously, both variants wrote to the same directory. Now uses `generation_N_standard/` and `generation_N_classic/` separately

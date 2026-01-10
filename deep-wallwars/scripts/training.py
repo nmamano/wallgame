@@ -2,6 +2,7 @@ import subprocess
 import argparse
 import gc
 import os
+from pathlib import Path
 print("Importing torch...")  # Print because it takes a while
 import torch
 import torch.onnx
@@ -175,6 +176,13 @@ args.initial_generation = resolve_initial_generation(args.initial_generation)
 
 def get_training_paths(generation):
     lb = max(generation - args.max_training_window, (generation - 1) // 2)
+    if args.variant == "universal":
+        # Include both variant directories for each generation
+        paths = []
+        for i in range(lb, generation):
+            paths.append(f"{args.data}/generation_{i}_standard")
+            paths.append(f"{args.data}/generation_{i}_classic")
+        return paths
     return [f"{args.data}/generation_{i}" for i in range(lb, generation)]
 
 
@@ -475,7 +483,30 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
     if games is None:
         games = args.games
     os.makedirs(args.data, exist_ok=True)
-    print(f"Running self play (generation {generation}, variant {variant}, games {games})...")
+
+    # For universal variant, separate output dirs per variant to avoid overwriting
+    output_dir = f"{args.data}/generation_{generation}"
+    if args.variant == "universal":
+        output_dir = f"{args.data}/generation_{generation}_{variant}"
+
+    # Check how many games already exist (resume partial generations)
+    existing_games = len(list(Path(output_dir).glob("*.csv"))) if Path(output_dir).exists() else 0
+    remaining_games = games - existing_games
+
+    if remaining_games <= 0:
+        print(f"Self-play (generation {generation}, {variant}): {existing_games} games already exist, skipping.")
+        return
+
+    if existing_games > 0:
+        print(f"Self-play (generation {generation}, {variant}): {existing_games} games exist, generating {remaining_games} more...")
+    else:
+        print(f"Running self play (generation {generation}, variant {variant}, games {games})...")
+
+    # When using simple policy (no neural network), skip MCTS samples entirely
+    # Simple policy just walks toward the goal - no search needed
+    is_simple_policy = (model1 == "simple")
+    samples = 1 if is_simple_policy else args.samples
+
     cmd = [
         args.deep_ww,
         "-model1",
@@ -483,7 +514,7 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         "-model2",
         model2,
         "-output",
-        f"{args.data}/generation_{generation}",
+        output_dir,
         "-columns",
         str(args.columns),
         "-rows",
@@ -493,9 +524,9 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         "-j",
         str(args.threads),
         "-games",
-        str(games),
+        str(remaining_games),
         "-samples",
-        str(args.samples),
+        str(samples),
     ]
 
     if boost_mouse_priors:
@@ -549,7 +580,35 @@ def loss(out, label):
     return kl_div(priors_out, priors_label) + mse(values_out, values_label)
 
 
-def train_model(model, generation, epochs, device):
+def freeze_body(model):
+    """Freeze conv body layers, leaving only head Linear layers trainable."""
+    # Freeze start block
+    for param in model.start.parameters():
+        param.requires_grad = False
+    # Freeze all ResNet layers
+    for layer in model.layers:
+        for param in layer.parameters():
+            param.requires_grad = False
+    # Freeze head conv layers (priors[0-3], value[0-3]), keep Linear trainable
+    for i in range(4):
+        for param in model.priors[i].parameters():
+            param.requires_grad = False
+        for param in model.value[i].parameters():
+            param.requires_grad = False
+
+    trainable = sum(p.numel() for p in model.parameters() if p.requires_grad)
+    total = sum(p.numel() for p in model.parameters())
+    print(f"  Froze body: {trainable:,} / {total:,} params trainable ({100*trainable/total:.1f}%)")
+
+
+def unfreeze_all(model):
+    """Unfreeze all model parameters."""
+    for param in model.parameters():
+        param.requires_grad = True
+    print("  Unfroze all layers")
+
+
+def train_model(model, generation, epochs, device, freeze_until_gen=0):
     print(f"Loading training data (generation {generation})...")
     training_paths = get_training_paths(generation)
     print(f"Training paths: {training_paths}")
@@ -585,16 +644,35 @@ def train_model(model, generation, epochs, device):
     )
     loaders = DataLoaders(training_loader, valid_loader)
 
+    # Freeze body for early generations to protect transferred weights
+    is_frozen = generation < freeze_until_gen
+    if is_frozen:
+        freeze_body(model)
+    elif freeze_until_gen > 0 and generation == freeze_until_gen:
+        unfreeze_all(model)
+
     learner = Learner(
         loaders, model, loss_func=loss, metrics=[valuation_accuracy, move_accuracy]
     )
-    learning_rate = learner.lr_find(show_plot=False)[0]
-    print(f"Training generation {generation} with learning rate {learning_rate}...")
+
+    if is_frozen:
+        # Use conservative fixed LR when frozen - don't trust lr_find with junk data
+        learning_rate = 1e-3
+        print(f"Training generation {generation} with fixed LR {learning_rate} (body frozen)...")
+    else:
+        learning_rate = learner.lr_find(show_plot=False)[0]
+        print(f"Training generation {generation} with learning rate {learning_rate}...")
+
     learner.fit(epochs, learning_rate)
 
 def init():
     device = torch.device(default_cuda_device)
     expected_priors = 2 * args.columns * args.rows + move_channels
+
+    # For resize warm-start, freeze body for first few generations to protect transferred weights
+    # Generation 1 uses simple policy data (low quality), gen 2-3 uses early MCTS data
+    # By gen 4, data quality is good enough to fine-tune the full model
+    freeze_until_gen = 0
 
     print("Starting training...")
     print(f"Variant: {args.variant} (move channels: {move_channels})")
@@ -606,6 +684,8 @@ def init():
             is_resize = (old_cols != args.columns or old_rows != args.rows)
 
             if is_resize:
+                freeze_until_gen = 4
+                print(f"Resize warm-start: will freeze body until generation {freeze_until_gen}")
                 model = warm_start_model_resize(
                     args.warm_start, device,
                     old_cols, old_rows,
@@ -647,7 +727,7 @@ def init():
             model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
         
         start_generation = 2
-        train_model(model, 1, bootstrap_epochs, device)
+        train_model(model, 1, bootstrap_epochs, device, freeze_until_gen)
         save_model(model, "model_1", device)
         gc.collect()
     else:
@@ -680,7 +760,7 @@ def init():
         else:
             run_self_play(model_path, "", generation - 1, args.variant, boost_mouse_priors=boost)
 
-        train_model(model, generation, args.epochs, device)
+        train_model(model, generation, args.epochs, device, freeze_until_gen)
         save_model(model, f"model_{generation}", device)
         gc.collect()
 
