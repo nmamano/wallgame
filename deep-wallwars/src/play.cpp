@@ -227,7 +227,7 @@ folly::coro::Task<> training_play(Board board, int games, TrainingPlayOptions op
     XLOGF(INFO, "Creating {} game tasks with max_parallel_games = {}", games,
           opts.max_parallel_games);
 
-    auto game_tasks = views::iota(1, games + 1) | views::transform([&](int i) {
+    auto game_tasks = views::iota(opts.start_game, opts.start_game + games) | views::transform([&](int i) {
                           return training_play_single(board, opts.model1, opts.model2, i, opts)
                               .scheduleOn(executor);
                       });

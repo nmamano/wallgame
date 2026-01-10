@@ -490,15 +490,27 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         output_dir = f"{args.data}/generation_{generation}_{variant}"
 
     # Check how many games already exist (resume partial generations)
-    existing_games = len(list(Path(output_dir).glob("*.csv"))) if Path(output_dir).exists() else 0
+    output_path = Path(output_dir)
+    existing_files = list(output_path.glob("*.csv")) if output_path.exists() else []
+    existing_games = len(existing_files)
     remaining_games = games - existing_games
 
     if remaining_games <= 0:
         print(f"Self-play (generation {generation}, {variant}): {existing_games} games already exist, skipping.")
         return
 
+    # Find the max existing file number to continue numbering from
+    max_file_num = 0
+    for f in existing_files:
+        try:
+            num = int(f.stem.split("_")[1])  # game_123.csv -> 123
+            max_file_num = max(max_file_num, num)
+        except (IndexError, ValueError):
+            pass
+    start_game = max_file_num + 1
+
     if existing_games > 0:
-        print(f"Self-play (generation {generation}, {variant}): {existing_games} games exist, generating {remaining_games} more...")
+        print(f"Self-play (generation {generation}, {variant}): {existing_games} games exist (up to game_{max_file_num}.csv), generating {remaining_games} more starting at game_{start_game}.csv...")
     else:
         print(f"Running self play (generation {generation}, variant {variant}, games {games})...")
 
@@ -525,6 +537,8 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         str(args.threads),
         "-games",
         str(remaining_games),
+        "-start_game",
+        str(start_game),
         "-samples",
         str(samples),
     ]
