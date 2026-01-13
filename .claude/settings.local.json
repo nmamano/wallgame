@@ -31,7 +31,11 @@
       "Bash(grep:*)",
       "Bash(bun --cwd=frontend run build)",
       "Bash(wsl.exe -d Ubuntu -- bash -lc 'cd \"\"$PWD\"\" && env PATH=\"\"$HOME/.bun/bin:/usr/bin:/bin\"\" bun test tests/integration/bot-3-dummy-engine.test.ts')",
-      "Bash(bun run tsc:server:check:*)"
+      "Bash(bun run tsc:server:check:*)",
+      "Bash(find:*)",
+      "Bash(xargs:*)",
+      "Bash(magick:*)",
+      "Bash(fc-list:*)"
     ]
   },
   "outputStyle": "Explanatory"
