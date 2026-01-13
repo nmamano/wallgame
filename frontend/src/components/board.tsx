@@ -1188,12 +1188,14 @@ export function Board({
           continue;
         }
 
+        // Round positions to whole pixels to prevent sub-pixel rendering artifacts
+        // that cause 1-pixel misalignment between pillars and walls
         const style: CSSProperties = {
           position: "absolute",
           width: `${gapWidth}px`,
           height: `${gapHeight}px`,
-          top: `${anchorRect.bottom}px`,
-          left: `${anchorRect.right}px`,
+          top: `${Math.round(anchorRect.bottom)}px`,
+          left: `${Math.round(anchorRect.right)}px`,
           pointerEvents: "none",
           zIndex: 12,
         };
@@ -1599,15 +1601,17 @@ export function Board({
                 if (!rect) {
                   return null;
                 }
-                const wallCenterX =
-                  rect.left + rect.width + gridMetrics.gapX / 2;
+                // Round positions to whole pixels to prevent sub-pixel artifacts
+                const wallCenterX = Math.round(
+                  rect.left + rect.width + gridMetrics.gapX / 2,
+                );
                 const thickness = Math.max(gridMetrics.gapX, 2);
 
                 style = {
                   ...style,
-                  height: `${rect.height + 2}px`, // Extend slightly to prevent gaps
+                  height: `${Math.round(rect.height) + 2}px`, // Extend slightly to prevent gaps
                   width: `${thickness}px`,
-                  top: `${rect.top - 1}px`,
+                  top: `${Math.round(rect.top) - 1}px`,
                   left: `${wallCenterX}px`,
                   transform: "translateX(-50%)",
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
@@ -1615,15 +1619,18 @@ export function Board({
               } else {
                 // Horizontal wall: separates cells vertically (between rows)
                 const minRow = Math.min(row1, row2);
-                const wallCenterY =
+                // Round positions to whole pixels to prevent sub-pixel artifacts
+                const wallCenterY = Math.round(
                   (minRow + 1) * (cellHeightPx + gridMetrics.gapY) -
-                  gridMetrics.gapY / 2;
+                    gridMetrics.gapY / 2,
+                );
                 const thickness = Math.max(gridMetrics.gapY, 2);
-                const left = col1 * (cellWidthPx + gridMetrics.gapX) - 1;
+                const left =
+                  Math.round(col1 * (cellWidthPx + gridMetrics.gapX)) - 1;
 
                 style = {
                   ...style,
-                  width: `${cellWidthPx + 2}px`, // Extend slightly to prevent gaps
+                  width: `${Math.round(cellWidthPx) + 2}px`, // Extend slightly to prevent gaps
                   height: `${thickness}px`,
                   left: `${left}px`,
                   top: `${wallCenterY}px`,
