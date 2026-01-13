@@ -37,4 +37,3 @@ at <anonymous> (C:\Users\Nilo\repos\wallgame\server\db\game-queries.ts:221:9)
 <-- GET /api/games/showcase
 
 - Sometimes rematching a bot fails and gets in an invalid state.
-- You vs Also You classic games look messed up now, the pawns are not in the right corners.
