@@ -1601,40 +1601,38 @@ export function Board({
                 if (!rect) {
                   return null;
                 }
-                // Round positions to whole pixels to prevent sub-pixel artifacts
-                const wallCenterX = Math.round(
-                  rect.left + rect.width + gridMetrics.gapX / 2,
-                );
                 const thickness = Math.max(gridMetrics.gapX, 2);
+                // Calculate wall left edge directly (no CSS transform) to match pillar positioning
+                // Wall should start at rect.right and span the gap width
+                const wallLeft = Math.round(rect.right);
 
                 style = {
                   ...style,
                   height: `${Math.round(rect.height) + 2}px`, // Extend slightly to prevent gaps
                   width: `${thickness}px`,
                   top: `${Math.round(rect.top) - 1}px`,
-                  left: `${wallCenterX}px`,
-                  transform: "translateX(-50%)",
+                  left: `${wallLeft}px`,
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
                 // Horizontal wall: separates cells vertically (between rows)
                 const minRow = Math.min(row1, row2);
-                // Round positions to whole pixels to prevent sub-pixel artifacts
-                const wallCenterY = Math.round(
-                  (minRow + 1) * (cellHeightPx + gridMetrics.gapY) -
-                    gridMetrics.gapY / 2,
-                );
+                const rect = getCellRect(minRow, col1);
+                if (!rect) {
+                  return null;
+                }
                 const thickness = Math.max(gridMetrics.gapY, 2);
-                const left =
-                  Math.round(col1 * (cellWidthPx + gridMetrics.gapX)) - 1;
+                // Calculate wall top edge directly (no CSS transform) to match pillar positioning
+                // Wall should start at rect.bottom and span the gap height
+                const wallTop = Math.round(rect.bottom);
+                const wallLeft = Math.round(rect.left) - 1;
 
                 style = {
                   ...style,
-                  width: `${Math.round(cellWidthPx) + 2}px`, // Extend slightly to prevent gaps
+                  width: `${Math.round(rect.width) + 2}px`, // Extend slightly to prevent gaps
                   height: `${thickness}px`,
-                  left: `${left}px`,
-                  top: `${wallCenterY}px`,
-                  transform: "translateY(-50%)",
+                  left: `${wallLeft}px`,
+                  top: `${wallTop}px`,
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               }
@@ -1648,7 +1646,7 @@ export function Board({
               const isLastPlacedWall =
                 pWall.state === "placed" && isLastWall(pWall);
               if (isLastPlacedWall) {
-                style.boxShadow = "0 0 8px 3px rgba(251, 191, 36, 0.7)";
+                style.boxShadow = "0 0 8px 3px var(--wall-highlight-glow)";
               }
 
               return (
