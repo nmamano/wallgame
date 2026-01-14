@@ -1,0 +1,42 @@
+{
+  "server": "http://localhost:5173",
+  "bots": [
+    {
+      "botId": "deep-wallwars-12x10",
+      "name": "Deep Wallwars 12x10",
+      "username": null,
+      "appearance": {
+        "color": "gray",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "timeControls": ["bullet", "blitz", "rapid", "classical"],
+          "boardWidth": { "min": 5, "max": 12 },
+          "boardHeight": { "min": 5, "max": 10 },
+          "recommended": [
+            { "boardWidth": 12, "boardHeight": 10 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        },
+        "standard": {
+          "timeControls": ["bullet", "blitz", "rapid", "classical"],
+          "boardWidth": { "min": 5, "max": 12 },
+          "boardHeight": { "min": 5, "max": 10 },
+          "recommended": [
+            { "boardWidth": 12, "boardHeight": 10 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        }
+      }
+    }
+  ],
+  "engineCommands": {
+    "deep-wallwars-12x10": {
+      "classic": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_12x10_universal/model_34.trt --columns 12 --rows 10",
+      "standard": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_12x10_universal/model_34.trt --columns 12 --rows 10"
+    }
+  }
+}

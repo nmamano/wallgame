@@ -36,7 +36,8 @@
       "Bash(xargs:*)",
       "Bash(magick:*)",
       "Bash(fc-list:*)",
-      "Bash(fly version:*)"
+      "Bash(fly version:*)",
+      "Bash(./bayeselo)"
     ]
   },
   "outputStyle": "Explanatory"
