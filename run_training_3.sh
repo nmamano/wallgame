@@ -13,6 +13,6 @@ python3 training.py \
   --games 4000 \
   --samples 2400 \
   --threads 26 \
-  --training-games 32000 \
+  --training-games 32000 
   --epochs 3 \
   --initial_generation latest
