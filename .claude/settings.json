@@ -24,8 +24,22 @@
     "ask": [
       "Bash(git push *)",
       "Bash(git push)"
-    ]
+    ],
+    "defaultMode": "acceptEdits"
   },
+  "hooks": {                                                                                        
+    "PreToolUse": [                                                                                 
+      {                                                                                             
+        "matcher": "Bash",                                                                          
+        "hooks": [                                                                                  
+          {                                                                                         
+            "type": "command",                                                                      
+            "command": "$CLAUDE_PROJECT_DIR/.claude/hooks/git_safety_guard.py"                      
+          }                                                                                         
+        ]                                                                                           
+      }                                                                                             
+    ]                                                                                               
+  }, 
   "sandbox": {
     "enabled": true,
     "autoAllowBashIfSandboxed": true,
