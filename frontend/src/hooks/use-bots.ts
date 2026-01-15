@@ -1,6 +1,5 @@
 import { useMutation, useQuery } from "@tanstack/react-query";
 import type {
-  TimeControlPreset,
   Variant,
   GameConfiguration,
   PlayerAppearance,
@@ -12,9 +11,9 @@ import type {
 import type { CreateBotGameResponse } from "../../../shared/contracts/games";
 import { fetchBots, fetchRecommendedBots, playVsBot } from "@/lib/api";
 
+/** V3: Bot query settings - no timeControl (bot games are untimed) */
 export interface BotsQuerySettings {
   variant: Variant;
-  timeControl: TimeControlPreset;
   boardWidth?: number;
   boardHeight?: number;
 }
@@ -24,7 +23,6 @@ export const useBotsQuery = (settings: BotsQuerySettings) => {
     queryKey: [
       "bots",
       settings.variant,
-      settings.timeControl,
       settings.boardWidth ?? null,
       settings.boardHeight ?? null,
     ],
@@ -32,13 +30,11 @@ export const useBotsQuery = (settings: BotsQuerySettings) => {
   });
 };
 
-export const useRecommendedBotsQuery = (
-  variant: Variant,
-  timeControl: TimeControlPreset,
-) => {
+/** V3: Recommended bots query - no timeControl (bot games are untimed) */
+export const useRecommendedBotsQuery = (variant: Variant) => {
   return useQuery<{ bots: RecommendedBotEntry[] }>({
-    queryKey: ["bots", "recommended", variant, timeControl],
-    queryFn: () => fetchRecommendedBots({ variant, timeControl }),
+    queryKey: ["bots", "recommended", variant],
+    queryFn: () => fetchRecommendedBots({ variant }),
   });
 };
 
