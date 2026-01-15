@@ -1,5 +1,7 @@
 # Proactive Bot Protocol (v2)
 
+Parts of this protocol are being replaced by the `game_session_bot_protocol.md` (V3) protocol.
+
 ## Goal
 
 Let any user plug their own locally-run bot, without the server running untrusted code or paying compute. The bot's availability is broadcasted to other users for easy discovery.
