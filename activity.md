@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 12/18
-**Current Task:** Phase 8 - Design Deep Wallwars BGS adapter interface
+**Tasks Completed:** 13/18
+**Current Task:** Phase 9 - Update game-setup.tsx to hide time control for bot games
 
 ---
 
@@ -468,4 +468,40 @@
 - The engine always returns evaluation 0 (neutral) - a more sophisticated engine would compute real evaluations
 - Type guards (`isStandardInitialState`, `isClassicInitialState`, `isSurvivalInitialState`) are duplicated from `game-state.ts` since the dummy engine is a standalone binary
 - The `readLines()` implementation handles partial reads and buffers incomplete lines correctly
+
+### 2026-01-15: Design Deep Wallwars BGS adapter interface
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Created `info/bgs_engine.md` - comprehensive design document for the Deep Wallwars BGS engine adapter
+- Documented `BgsSession` struct with fields: `bgs_id`, `board`, `variant`, `current_turn`, `ply`, `mcts` tree, `padding` config, `samples_per_eval`
+- Documented shared resources architecture:
+  - **Thread pool**: ~12 threads shared across all sessions, up to 4 threads per session for MCTS parallelism
+  - **Batched models**: TensorRT models loaded to GPU at startup, shared via `BatchedModel` instances
+  - **Evaluation cache**: Sharded LRU cache (100k entries) per variant for position evaluations
+- Defined JSON-lines protocol for stdin/stdout communication:
+  - Request types: `start_game_session`, `evaluate_position`, `apply_move`, `end_game_session`
+  - Response types with `success`/`error` fields for all messages
+  - Evaluation semantics: `[-1.0, +1.0]` range, always from P1's perspective
+- Documented MCTS tree reuse strategy:
+  - On `apply_move`: find child node for played move, promote to root, delete siblings
+  - Preserves search work from previous turns
+  - Handles both pre-searched and unexplored opponent moves
+- Documented capacity limits: max 256 concurrent sessions (matches self-play capacity)
+- Included architecture diagrams, initialization sequence, and future extensions
+
+**Files Modified:**
+- `info/bgs_engine.md` - New file (~350 lines)
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed (no TypeScript changes)
+- `bun run lint` - Passed
+
+**Notes:**
+- This is a design/documentation task, not a code implementation task
+- The design builds on the existing Deep Wallwars architecture: Folly coroutines, BatchedModel for GPU inference, sharded LRU cache, MCTS with tree persistence
+- The BGS engine will leverage existing components: `Board`, `MCTS`, `BatchedModelPolicy`, `CachedPolicy`, `PaddingConfig`
+- Key insight: MCTS tree pruning via `force_move()` is already implemented in the existing codebase for self-play; the BGS adapter will reuse this functionality
+- The document serves as the specification for future C++ implementation of `bgs_engine.cpp`
 

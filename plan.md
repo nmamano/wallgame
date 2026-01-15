@@ -179,7 +179,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Define JSON protocol for stdin/stdout",
       "Document MCTS tree reuse strategy for apply_move"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase9-frontend",
