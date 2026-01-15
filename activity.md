@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 15/18
-**Current Task:** Phase 9 - Update eval-client.ts for V3 history-based protocol
+**Tasks Completed:** 16/18
+**Current Task:** Phase 10 - Delete V2 stateless engine code
 
 ---
 
@@ -592,4 +592,40 @@
 - The task steps related to `use-bots.ts` and API filtering were already completed as part of the previous phase9-frontend task (game-setup.tsx)
 - This task primarily completes the removal of `timeControls` from the Zod validation schema and bot config files
 - The schema change affects both client-side config file validation and server-side bot attachment validation
+
+### 2026-01-15: Update eval-client.ts for V3 history-based protocol
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Updated `frontend/src/lib/eval-client.ts` for V3 BGS-based eval protocol:
+  - Added V3 handler callbacks to `EvalClientHandlers` interface:
+    - `onEvalHistory` - receives full evaluation history on connect
+    - `onEvalUpdate` - receives streaming updates for new moves
+    - `onEvalPending` - notifies when BGS initialization is in progress
+  - Added message handlers in switch statement for `eval-history`, `eval-update`, `eval-pending`
+  - Marked V2 `requestEval()` method as `@deprecated`
+  - Re-exported `EvalHistoryEntry` type for consumers
+- Rewrote `frontend/src/hooks/use-eval-bar.ts` for V3 history-based protocol:
+  - Changed from single `evaluation` state to `evalHistory: EvalHistoryEntry[]` array
+  - Evaluation lookup is now instant (from local history) instead of per-request
+  - Removed V2 debouncing logic (no longer needed - history scrubbing is instant)
+  - Added handlers for all V3 messages (`onEvalHistory`, `onEvalUpdate`, `onEvalPending`)
+  - Kept V2 `onEvalResponse` handler as fallback during migration
+  - Simplified hook by removing `requestEvalForCurrentPosition`, debounce refs, position key tracking
+
+**Files Modified:**
+- `frontend/src/lib/eval-client.ts` - V3 message handlers and callback interface
+- `frontend/src/hooks/use-eval-bar.ts` - Complete rewrite for history-based protocol
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun x eslint frontend/src/lib/eval-client.ts frontend/src/hooks/use-eval-bar.ts --fix` - Passed
+
+**Notes:**
+- V3 eliminates the "request per position" model: server sends full history upfront, then streams updates
+- History scrubbing is now instant (O(n) array lookup) vs V2's debounced network requests
+- The `eval-pending` message allows UI to show loading state during BGS initialization for long games
+- V2 `onEvalResponse` handler is kept for migration compatibility but will be removed in Phase 10 cleanup
+- The hook's public interface (`EvalBarState`) is unchanged - consumers don't need updates
 

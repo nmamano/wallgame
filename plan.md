@@ -213,7 +213,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Show pending state during BGS initialization",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase10-cleanup",
