@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 10/18
-**Current Task:** Phase 6 - Rewrite engine-runner.ts for long-lived process
+**Tasks Completed:** 11/18
+**Current Task:** Phase 7 - Rewrite dummy-engine for V3 stateful protocol
 
 ---
 
@@ -395,4 +395,36 @@
 - Dumb bot fallback is provided for bots without engine commands (used for testing)
 - Evaluation values are clamped to [-1, +1] range before sending to server
 - The `EngineProcess` class tracks pending requests by bgsId and resolves them when responses arrive
+
+### 2026-01-15: Rewrite engine-runner.ts for long-lived process
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Verified that `engine-runner.ts` was already rewritten as part of the previous ws-client.ts task
+- Confirmed all task requirements are implemented:
+  - `EngineProcess` class with static `spawn()` factory method
+  - JSON-lines communication over stdin/stdout (one JSON message per line)
+  - `send()` method with `pendingRequests` Map tracking by bgsId
+  - `kill()` method for cleanup (closes stdin, kills process, rejects pending requests)
+- The implementation includes:
+  - Private constructor pattern with public static `spawn()` factory
+  - `readResponses()` for async stdout reading with line buffering
+  - `handleResponse()` for JSON parsing and request resolution
+  - Proper error handling for process exit and stderr logging
+  - `alive` getter for checking process status
+
+**Files Modified:**
+- `official-custom-bot-client/src/engine-runner.ts` - Previously rewritten (265 lines)
+
+**Verification:**
+- `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- This task was actually completed as part of the previous "Update ws-client.ts for long-lived engine" task, as the ws-client.ts rewrite required the EngineProcess class to be available
+- The implementation follows a factory pattern (private constructor + static spawn) to ensure proper initialization
+- Request tracking uses bgsId as the key, supporting multiple concurrent BGS sessions per engine
+- The JSON-lines protocol (one JSON object per newline) is simple and debuggable
 
