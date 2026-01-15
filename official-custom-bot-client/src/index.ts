@@ -1,9 +1,14 @@
 #!/usr/bin/env bun
 /**
- * Wall Game Official Custom Bot Client - V2 Proactive Protocol
+ * Wall Game Official Custom Bot Client - V3 Bot Game Session Protocol
  *
  * This CLI connects proactively to the Wall Game server and registers
- * one or more bots that can serve game requests.
+ * one or more bots that can serve game requests via Bot Game Sessions (BGS).
+ *
+ * V3 Key Changes:
+ * - Engine processes are long-lived (started once at startup)
+ * - Communication via JSON-lines over stdin/stdout
+ * - Engine maintains state across messages (game sessions, MCTS trees)
  *
  * Usage:
  *   wallgame-bot-client --client-id <id> --config <path> [OPTIONS]
@@ -16,7 +21,7 @@ import { setLogLevel, logger, type LogLevel } from "./logger";
 import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
 import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
 
-const VERSION = "2.0.0";
+const VERSION = "3.0.0";
 
 interface ConfigFile {
   server?: string;
@@ -26,7 +31,7 @@ interface ConfigFile {
 
 function printUsage(): void {
   console.log(`
-Wall Game Custom Bot Client v${VERSION} (Protocol V2)
+Wall Game Custom Bot Client v${VERSION} (Protocol V3 - Bot Game Sessions)
 
 USAGE:
   wallgame-bot-client --client-id <id> --config <path> [OPTIONS]
@@ -57,7 +62,6 @@ CONFIG FILE FORMAT:
         },
         "variants": {
           "classic": {
-            "timeControls": ["bullet", "blitz", "rapid"],
             "boardWidth": { "min": 5, "max": 12 },
             "boardHeight": { "min": 5, "max": 12 },
             "recommended": [
@@ -69,11 +73,10 @@ CONFIG FILE FORMAT:
     ],
     "engineCommands": {
       "bot-1": {
-        "default": "python my_engine.py"
+        "default": "./my_engine"
       },
       "bot-2": {
-        "classic": "python classic_engine.py",
-        "standard": "python standard_engine.py"
+        "default": "./another_engine"
       }
     }
   }
@@ -85,16 +88,25 @@ EXAMPLES:
   # Official bot (requires token)
   wallgame-bot-client --client-id my-client --config bots.json --official-token abc123
 
-ENGINE INTERFACE:
-  Your engine receives a JSON request on stdin and must write a JSON response to stdout.
-  See the Wall Game documentation for the full engine API specification (V2).
+ENGINE INTERFACE (V3 - JSON-Lines Protocol):
+  Your engine is started ONCE at startup and communicates via stdin/stdout.
+  Each message is a single line of JSON.
 
-PROTOCOL V2 CHANGES:
-  - Bots connect proactively (no per-game seat tokens)
-  - One client can serve multiple bots
-  - Server queues requests (one at a time per client)
-  - Draw offers are auto-declined (no engine consultation)
-  - Rematches are transparent (just new game requests)
+  Messages from client to engine:
+  - start_game_session: Create a new game session
+  - evaluate_position:  Evaluate current position and return best move
+  - apply_move:         Apply a move to the game state
+  - end_game_session:   End a game session
+
+  Engine maintains game state and MCTS trees across moves within each session.
+  See the Wall Game documentation for the full V3 engine API specification.
+
+PROTOCOL V3 CHANGES (from V2):
+  - Engine is long-lived (started once, not per-move)
+  - JSON-lines communication (one JSON per line on stdin/stdout)
+  - Bot games have no time control (unlimited thinking time)
+  - Draw offers are auto-rejected by server (no message to bot)
+  - Engine maintains MCTS trees for tree reuse across moves
 `);
 }
 
