@@ -1,43 +1,39 @@
 /**
- * WebSocket Client for Custom Bot Protocol V2
+ * WebSocket Client for Custom Bot Protocol V3
  *
  * Handles the WebSocket connection to the Wall Game server
- * and implements the proactive bot protocol.
+ * and implements the proactive bot protocol with Bot Game Sessions (BGS).
+ *
+ * V3 Key Changes:
+ * - Engine process is started once at startup (long-lived)
+ * - Server sends BGS messages (start_game_session, evaluate_position, apply_move, end_game_session)
+ * - Client passes messages through to engine and returns responses
  */
 
 import type {
   AttachMessage,
   AttachedMessage,
   AttachRejectedMessage,
-  RequestMessage,
-  AckMessage,
-  NackMessage,
-  BotResponseMessage,
   CustomBotServerMessage,
   BotConfig,
+  StartGameSessionMessage,
+  EndGameSessionMessage,
+  EvaluatePositionMessage,
+  ApplyMoveMessage,
+  GameSessionStartedMessage,
+  GameSessionEndedMessage,
+  EvaluateResponseMessage,
+  MoveAppliedMessage,
 } from "../../shared/contracts/custom-bot-protocol";
 import {
   CUSTOM_BOT_PROTOCOL_VERSION,
   DEFAULT_BOT_LIMITS,
   type CustomBotServerLimits,
 } from "../../shared/contracts/custom-bot-protocol";
-import type { PlayerId } from "../../shared/domain/game-types";
 import { logger } from "./logger";
-import type {
-  EngineRequest,
-  EngineResponse,
-  EngineEvalResponse,
-} from "../../shared/custom-bot/engine-api";
-import {
-  createMoveRequest,
-  clampEvaluation,
-} from "../../shared/custom-bot/engine-api";
-import { handleDumbBotRequest } from "./dumb-bot";
-import {
-  runEngine,
-  calculateEngineTimeout,
-  type EngineRunnerOptions,
-} from "./engine-runner";
+import { clampEvaluation } from "../../shared/custom-bot/engine-api";
+import type { EngineProcess } from "./engine-runner";
+import { spawnEngine } from "./engine-runner";
 
 export interface BotClientOptions {
   serverUrl: string;
@@ -71,6 +67,13 @@ const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 60000;
 const RECONNECT_JITTER_MAX_MS = 2000;
 
+// V3 BGS client response type
+type BgsClientResponse =
+  | GameSessionStartedMessage
+  | GameSessionEndedMessage
+  | EvaluateResponseMessage
+  | MoveAppliedMessage;
+
 export class BotClient {
   private ws: WebSocket | null = null;
   private state: ClientState = "connecting";
@@ -79,13 +82,8 @@ export class BotClient {
   // Server limits
   private limits: CustomBotServerLimits = DEFAULT_BOT_LIMITS;
 
-  // Active request tracking
-  private activeRequestId: string | null = null;
-  private lastRequest: RequestMessage | null = null;
-  private lastRequestById = new Map<string, RequestMessage>();
-  private lastResponseById = new Map<string, BotResponseMessage["response"]>();
-  private nackRetryCount: number = 0;
-  private static readonly MAX_NACK_RETRIES = 1;
+  // V3: Long-lived engine processes (one per bot)
+  private engines: Map<string, EngineProcess> = new Map();
 
   // Rate limiting
   private lastSendTime: number = 0;
@@ -106,15 +104,19 @@ export class BotClient {
       bots: options.bots,
       engineCommands: options.engineCommands,
       clientName: options.clientName ?? "wallgame-bot-client",
-      clientVersion: options.clientVersion ?? "2.0.0",
+      clientVersion: options.clientVersion ?? "3.0.0",
     };
   }
 
   /**
    * Connect to the server and start the bot client.
+   * V3: Starts engine processes before connecting to WebSocket.
    * Resolves when attached, rejects on attach-rejected or connection failure.
    */
   async connect(): Promise<void> {
+    // V3: Start engine processes first
+    await this.startEngines();
+
     const wsUrl = this.deriveWebSocketUrl(this.options.serverUrl);
     logger.info(`Connecting to ${wsUrl}`);
 
@@ -158,11 +160,49 @@ export class BotClient {
           this.connectResolve = null;
           this.connectReject = null;
         } else if (wasAttached && this.shouldReconnect) {
-          // Attempt reconnection
+          // Attempt reconnection (engines stay running)
           this.scheduleReconnect();
         }
       };
     });
+  }
+
+  /**
+   * V3: Start engine processes for each bot
+   */
+  private async startEngines(): Promise<void> {
+    for (const bot of this.options.bots) {
+      const engineCommandConfig = this.options.engineCommands.get(bot.botId);
+      if (!engineCommandConfig) {
+        logger.info(`Bot ${bot.botId}: No engine command, will use built-in dumb bot`);
+        continue;
+      }
+
+      // V3: Use the default engine command for all variants
+      // The engine handles multiple variants internally
+      const engineCommand = engineCommandConfig.default;
+      if (!engineCommand) {
+        logger.warn(`Bot ${bot.botId}: No default engine command, will use built-in dumb bot`);
+        continue;
+      }
+
+      try {
+        logger.info(`Starting engine for bot ${bot.botId}: ${engineCommand}`);
+        const engine = await spawnEngine(engineCommand);
+        this.engines.set(bot.botId, engine);
+        logger.info(`Engine started for bot ${bot.botId}`);
+      } catch (error) {
+        logger.error(`Failed to start engine for bot ${bot.botId}:`, error);
+        // Continue without this engine - will use dumb bot fallback
+      }
+    }
+  }
+
+  /**
+   * V3: Get engine for a bot (or undefined for dumb bot fallback)
+   */
+  private getEngine(botId: string): EngineProcess | undefined {
+    return this.engines.get(botId);
   }
 
   /**
@@ -189,7 +229,53 @@ export class BotClient {
       if (!this.shouldReconnect) return;
 
       try {
-        await this.connect();
+        // V3: Engines stay running, just reconnect WebSocket
+        const wsUrl = this.deriveWebSocketUrl(this.options.serverUrl);
+        logger.info(`Reconnecting to ${wsUrl}`);
+
+        await new Promise<void>((resolve, reject) => {
+          this.connectResolve = resolve;
+          this.connectReject = reject;
+
+          this.ws = new WebSocket(wsUrl);
+
+          this.ws.onopen = () => {
+            logger.info("WebSocket reconnected, sending attach...");
+            this.sendAttach();
+          };
+
+          this.ws.onmessage = (event) => {
+            this.handleMessage(event.data as string);
+          };
+
+          this.ws.onerror = (event) => {
+            logger.error("WebSocket error:", event);
+            if (this.state === "connecting" && this.connectReject) {
+              this.connectReject(new Error("WebSocket connection failed"));
+              this.connectResolve = null;
+              this.connectReject = null;
+            }
+          };
+
+          this.ws.onclose = (event) => {
+            logger.info("WebSocket closed:", event.code, event.reason);
+            const wasConnecting = this.state === "connecting";
+            const wasAttached =
+              this.state === "attached" ||
+              this.state === "waiting" ||
+              this.state === "processing";
+            this.state = "disconnected";
+
+            if (wasConnecting && this.connectReject) {
+              this.connectReject(new Error("WebSocket closed during reconnection"));
+              this.connectResolve = null;
+              this.connectReject = null;
+            } else if (wasAttached && this.shouldReconnect) {
+              this.scheduleReconnect();
+            }
+          };
+        });
+
         // Reset reconnect attempts on successful connection
         this.reconnectAttempts = 0;
       } catch (error) {
@@ -248,9 +334,7 @@ export class BotClient {
   /**
    * Send a message to the server with rate limiting
    */
-  private async send(
-    message: AttachMessage | BotResponseMessage,
-  ): Promise<void> {
+  private async send(message: AttachMessage | BgsClientResponse): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.error("Cannot send: WebSocket not connected");
       return;
@@ -294,14 +378,18 @@ export class BotClient {
       case "attach-rejected":
         this.handleAttachRejected(message);
         break;
-      case "request":
-        this.handleRequest(message);
+      // V3 BGS messages
+      case "start_game_session":
+        void this.handleStartGameSession(message);
         break;
-      case "ack":
-        this.handleAck(message);
+      case "end_game_session":
+        void this.handleEndGameSession(message);
         break;
-      case "nack":
-        this.handleNack(message);
+      case "evaluate_position":
+        void this.handleEvaluatePosition(message);
+        break;
+      case "apply_move":
+        void this.handleApplyMove(message);
         break;
       default:
         logger.warn(
@@ -321,7 +409,8 @@ export class BotClient {
     logger.info(`  Protocol: v${message.protocolVersion}`);
 
     for (const bot of this.options.bots) {
-      logger.info(`  Bot: ${bot.botId} (${bot.name})`);
+      const hasEngine = this.engines.has(bot.botId);
+      logger.info(`  Bot: ${bot.botId} (${bot.name}) - Engine: ${hasEngine ? "external" : "dumb-bot"}`);
     }
 
     this.state = "waiting";
@@ -368,293 +457,192 @@ export class BotClient {
     this.ws?.close();
   }
 
-  /**
-   * Handle a decision request from the server
-   */
-  private async handleRequest(message: RequestMessage): Promise<void> {
-    logger.info(
-      `Received ${message.kind} request for bot ${message.botId} (${message.requestId})`,
-    );
+  // ===========================================================================
+  // V3 BGS Message Handlers
+  // ===========================================================================
 
-    // V2: Draw requests are auto-declined by client
-    if (message.kind === "draw") {
-      logger.info("Auto-declining draw offer");
-      this.sendResponse(message.requestId, { action: "decline-draw" });
+  /**
+   * V3: Handle start_game_session - pass through to engine
+   */
+  private async handleStartGameSession(message: StartGameSessionMessage): Promise<void> {
+    logger.info(`Starting game session ${message.bgsId} for bot ${message.botId}`);
+    this.state = "processing";
+
+    // Extract botId from bgsId if not directly provided
+    // Server may send composite bgsId like "gameId" but botId indicates which bot
+    const engine = this.getEngine(message.botId);
+
+    if (!engine) {
+      // Dumb bot fallback - always succeeds
+      logger.debug(`Using dumb bot for session ${message.bgsId}`);
+      const response: GameSessionStartedMessage = {
+        type: "game_session_started",
+        bgsId: message.bgsId,
+        success: true,
+        error: "",
+      };
+      await this.send(response);
+      this.state = "waiting";
       return;
     }
 
-    // Update active request ID (newer requests invalidate older ones)
-    this.activeRequestId = message.requestId;
-    this.lastRequest = message;
-    this.lastRequestById.set(message.requestId, message);
-    this.nackRetryCount = 0;
-    this.state = "processing";
-
-    await this.processRequest(message);
-  }
-
-  /**
-   * Process a request (used by both handleRequest and NACK retry)
-   */
-  private async processRequest(message: RequestMessage): Promise<void> {
-    if (message.kind === "move") {
-      // Build engine request for move
-      const engineRequest = createMoveRequest(
-        message.requestId,
-        message.botId,
-        message.gameId,
-        message.serverTime,
-        message.playerId,
-        message.state,
-      );
-
-      // Get response from engine (or dumb bot)
-      const response = await this.getEngineResponse(engineRequest, message);
-
-      // Check if request is still active (not invalidated by a newer request)
-      if (this.activeRequestId !== message.requestId) {
-        logger.debug(
-          `Request ${message.requestId} was invalidated, discarding response`,
-        );
-        return;
-      }
-
-      if (response) {
-        this.sendResponse(message.requestId, response.response);
+    try {
+      const response = await engine.send(message);
+      // Validate response type
+      if (response.type !== "game_session_started") {
+        logger.error(`Unexpected response type: ${response.type}`);
+        const errorResponse: GameSessionStartedMessage = {
+          type: "game_session_started",
+          bgsId: message.bgsId,
+          success: false,
+          error: `Unexpected response type: ${response.type}`,
+        };
+        await this.send(errorResponse);
       } else {
-        // Engine failed - resign
-        logger.error("Engine failed, resigning");
-        this.sendResponse(message.requestId, { action: "resign" });
+        await this.send(response as GameSessionStartedMessage);
       }
-    } else if (message.kind === "eval") {
-      // For eval requests, send a move request to the engine and convert response
-      const engineRequest = createMoveRequest(
-        message.requestId,
-        message.botId,
-        message.gameId,
-        message.serverTime,
-        message.playerId,
-        message.state,
-      );
-
-      // Get response from engine
-      const response = await this.getEngineResponse(engineRequest, message);
-
-      // Check if request is still active (not invalidated by a newer request)
-      if (this.activeRequestId !== message.requestId) {
-        logger.debug(
-          `Request ${message.requestId} was invalidated, discarding response`,
-        );
-        return;
-      }
-
-      if (response) {
-        // Convert engine response to eval response format
-        // Engine returns evaluation from P1's perspective (positive = P1 winning)
-        const evalResponse = this.convertToEvalResponse(response);
-        if (evalResponse) {
-          this.sendResponse(message.requestId, evalResponse);
-        } else {
-          logger.error("Engine returned non-eval response for eval request");
-        }
-      } else {
-        // Engine failed - we can't resign for eval, just don't respond
-        logger.error("Engine failed for eval request");
-      }
-    } else {
-      logger.warn("Unknown request kind:", message.kind);
-    }
-  }
-
-  /**
-   * Convert an engine response to eval format.
-   * For move responses, extract the evaluation. For eval responses, use directly.
-   * Engine returns evaluation from P1's perspective (positive = P1 winning).
-   */
-  private convertToEvalResponse(
-    response: EngineResponse,
-  ): EngineEvalResponse["response"] | null {
-    const action = response.response.action;
-
-    if (action === "eval") {
-      return response.response as EngineEvalResponse["response"];
-    }
-
-    if (action === "move") {
-      const moveResp = response.response as {
-        action: "move";
-        moveNotation: string;
-        evaluation: number;
+    } catch (error) {
+      logger.error(`Engine error for start_game_session:`, error);
+      const errorResponse: GameSessionStartedMessage = {
+        type: "game_session_started",
+        bgsId: message.bgsId,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
       };
-      return {
-        action: "eval",
-        evaluation: moveResp.evaluation,
-        bestMove: moveResp.moveNotation,
-      };
+      await this.send(errorResponse);
     }
 
-    // Can't convert resign/draw responses to eval
-    return null;
-  }
-
-  /**
-   * Get response from engine or dumb bot
-   */
-  private async getEngineResponse(
-    request: EngineRequest,
-    serverMessage: RequestMessage,
-  ): Promise<EngineResponse | null> {
-    const engineCommandConfig = this.options.engineCommands.get(
-      serverMessage.botId,
-    );
-    const engineCommand = resolveEngineCommand(
-      engineCommandConfig,
-      serverMessage.state.config.variant,
-    );
-
-    if (!engineCommand) {
-      // Use dumb bot
-      logger.debug("Using built-in dumb bot");
-      return handleDumbBotRequest(request);
-    }
-
-    // Calculate timeout based on remaining time
-    const myPlayerId = serverMessage.playerId;
-    const timeLeftRaw =
-      serverMessage.state.timeLeft[String(myPlayerId) as `${PlayerId}`];
-    // Server timeLeft is in seconds; normalize to ms for engine timeouts.
-    const initialSeconds =
-      serverMessage.state.config.timeControl.initialSeconds ?? 0;
-    const timeLeftMs =
-      initialSeconds > 0 && timeLeftRaw <= initialSeconds * 100
-        ? timeLeftRaw * 1000
-        : timeLeftRaw;
-    const timeoutMs = calculateEngineTimeout(timeLeftMs);
-
-    const runnerOptions: EngineRunnerOptions = {
-      engineCommand,
-      timeoutMs,
-    };
-
-    const result = await runEngine(runnerOptions, request);
-
-    if (result.success && result.response) {
-      return result.response;
-    }
-
-    // First attempt failed - retry once for retryable errors
-    logger.warn(`Engine failed: ${result.error}, retrying once...`);
-
-    const retryResult = await runEngine(runnerOptions, request);
-
-    if (retryResult.success && retryResult.response) {
-      return retryResult.response;
-    }
-
-    logger.error(`Engine retry failed: ${retryResult.error}`);
-    return null;
-  }
-
-  /**
-   * Send a response to the server
-   */
-  private sendResponse(
-    requestId: string,
-    response:
-      | { action: "move"; moveNotation: string; evaluation: number }
-      | { action: "resign" }
-      | { action: "accept-draw" }
-      | { action: "decline-draw" }
-      | { action: "eval"; evaluation: number; bestMove?: string },
-  ): void {
-    // Clamp evaluation to valid range [-1, +1] for move and eval responses
-    const normalizedResponse =
-      response.action === "move"
-        ? { ...response, evaluation: clampEvaluation(response.evaluation) }
-        : response.action === "eval"
-          ? { ...response, evaluation: clampEvaluation(response.evaluation) }
-          : response;
-
-    const message: BotResponseMessage = {
-      type: "response",
-      requestId,
-      response: normalizedResponse,
-    };
-
-    this.lastResponseById.set(requestId, normalizedResponse);
-    this.send(message);
     this.state = "waiting";
   }
 
   /**
-   * Handle acknowledgment of a response
+   * V3: Handle end_game_session - pass through to engine
    */
-  private handleAck(message: AckMessage): void {
-    logger.debug(`Response ${message.requestId} acknowledged`);
-    this.lastRequestById.delete(message.requestId);
-    this.lastResponseById.delete(message.requestId);
+  private async handleEndGameSession(message: EndGameSessionMessage): Promise<void> {
+    logger.info(`Ending game session ${message.bgsId}`);
+    this.state = "processing";
+
+    // Find which bot owns this session by checking all engines
+    // In V3, bgsId typically equals gameId, so we need to track which bot has the session
+    // For simplicity, we'll try all engines and use the one that responds
+    // TODO: Track bgsId -> botId mapping for efficiency
+
+    // Try to find an engine that has this session
+    let responded = false;
+    for (const [botId, engine] of this.engines) {
+      try {
+        const response = await engine.send(message);
+        if (response.type === "game_session_ended") {
+          await this.send(response as GameSessionEndedMessage);
+          responded = true;
+          break;
+        }
+      } catch {
+        // Engine doesn't have this session, try next
+        continue;
+      }
+    }
+
+    if (!responded) {
+      // Dumb bot fallback or session not found - just confirm
+      logger.debug(`Session ${message.bgsId} ended (dumb bot or not found)`);
+      const response: GameSessionEndedMessage = {
+        type: "game_session_ended",
+        bgsId: message.bgsId,
+        success: true,
+        error: "",
+      };
+      await this.send(response);
+    }
+
+    this.state = "waiting";
   }
 
   /**
-   * Handle rejection of a response
+   * V3: Handle evaluate_position - pass through to engine
    */
-  private async handleNack(message: NackMessage): Promise<void> {
-    logger.warn(
-      `Response ${message.requestId} rejected: ${message.code} - ${message.message}`,
-    );
-    this.logNackContext(message);
+  private async handleEvaluatePosition(message: EvaluatePositionMessage): Promise<void> {
+    logger.info(`Evaluating position for session ${message.bgsId} at ply ${message.expectedPly}`);
+    this.state = "processing";
 
-    if (!message.retryable) {
-      logger.error("Non-retryable error, response rejected permanently");
-      this.lastRequestById.delete(message.requestId);
-      this.lastResponseById.delete(message.requestId);
-      return;
+    // Track bgsId -> botId mapping for this session
+    // For now, try all engines
+    let responded = false;
+    for (const [botId, engine] of this.engines) {
+      try {
+        const response = await engine.send(message);
+        if (response.type === "evaluate_response") {
+          // Clamp evaluation to valid range
+          const evalResponse = response as EvaluateResponseMessage;
+          const normalizedResponse: EvaluateResponseMessage = {
+            ...evalResponse,
+            evaluation: clampEvaluation(evalResponse.evaluation),
+          };
+          await this.send(normalizedResponse);
+          responded = true;
+          break;
+        }
+      } catch {
+        // Engine doesn't have this session, try next
+        continue;
+      }
     }
 
-    // Check if this is for the current active request and we have retries left
-    if (
-      message.requestId === this.activeRequestId &&
-      this.lastRequest &&
-      this.nackRetryCount < BotClient.MAX_NACK_RETRIES
-    ) {
-      this.nackRetryCount++;
-      logger.info(
-        `Retryable NACK - retrying (attempt ${this.nackRetryCount}/${BotClient.MAX_NACK_RETRIES})`,
-      );
-
-      // Re-run the engine with the same request (don't reset nackRetryCount)
-      await this.processRequest(this.lastRequest);
-    } else if (this.nackRetryCount >= BotClient.MAX_NACK_RETRIES) {
-      logger.error("Max NACK retries exceeded, resigning");
-      this.lastRequestById.delete(message.requestId);
-      this.lastResponseById.delete(message.requestId);
-      this.sendResponse(message.requestId, { action: "resign" });
+    if (!responded) {
+      // Dumb bot fallback
+      logger.debug(`Using dumb bot for evaluation ${message.bgsId}`);
+      const response: EvaluateResponseMessage = {
+        type: "evaluate_response",
+        bgsId: message.bgsId,
+        ply: message.expectedPly,
+        bestMove: "", // Dumb bot doesn't track state, can't provide move
+        evaluation: 0, // Neutral evaluation
+        success: false,
+        error: "No engine available for this session",
+      };
+      await this.send(response);
     }
+
+    this.state = "waiting";
   }
 
-  private logNackContext(message: NackMessage): void {
-    if (message.code !== "ILLEGAL_MOVE") {
-      return;
+  /**
+   * V3: Handle apply_move - pass through to engine
+   */
+  private async handleApplyMove(message: ApplyMoveMessage): Promise<void> {
+    logger.info(`Applying move ${message.move} to session ${message.bgsId} at ply ${message.expectedPly}`);
+    this.state = "processing";
+
+    // Try all engines
+    let responded = false;
+    for (const [botId, engine] of this.engines) {
+      try {
+        const response = await engine.send(message);
+        if (response.type === "move_applied") {
+          await this.send(response as MoveAppliedMessage);
+          responded = true;
+          break;
+        }
+      } catch {
+        // Engine doesn't have this session, try next
+        continue;
+      }
     }
 
-    const request =
-      this.lastRequestById.get(message.requestId) ?? this.lastRequest ?? null;
-    const response = this.lastResponseById.get(message.requestId) ?? null;
+    if (!responded) {
+      // Dumb bot fallback
+      logger.debug(`Dumb bot: move ${message.move} applied to session ${message.bgsId}`);
+      const response: MoveAppliedMessage = {
+        type: "move_applied",
+        bgsId: message.bgsId,
+        ply: message.expectedPly + 1,
+        success: true,
+        error: "",
+      };
+      await this.send(response);
+    }
 
-    logger.error("Illegal move context:", {
-      requestId: message.requestId,
-      serverMessage: message.message,
-      retryable: message.retryable,
-      response,
-      request: request
-        ? {
-            kind: request.kind,
-            botId: request.botId,
-            playerId: request.playerId,
-            state: request.state,
-          }
-        : null,
-    });
+    this.state = "waiting";
   }
 
   /**
@@ -662,6 +650,14 @@ export class BotClient {
    */
   close(): void {
     this.shouldReconnect = false;
+
+    // V3: Kill all engine processes
+    for (const [botId, engine] of this.engines) {
+      logger.info(`Killing engine for bot ${botId}`);
+      engine.kill();
+    }
+    this.engines.clear();
+
     if (this.ws) {
       this.ws.close();
       this.ws = null;
@@ -672,12 +668,4 @@ export class BotClient {
       this.runResolve = null;
     }
   }
-}
-
-function resolveEngineCommand(
-  config: EngineCommandConfig | undefined,
-  variant: string,
-): string | undefined {
-  if (!config) return undefined;
-  return config[variant] ?? config.default;
 }

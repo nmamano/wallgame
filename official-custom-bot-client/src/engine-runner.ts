@@ -1,187 +1,18 @@
 /**
- * Engine Runner
+ * Engine Runner (V3)
  *
  * Handles spawning and communicating with external engine processes.
- * Each decision prompt spawns a new process that reads JSON from stdin
- * and writes JSON to stdout.
+ *
+ * V3 Key Changes:
+ * - Engine is a long-lived process (started once at startup)
+ * - Communication via JSON-lines over stdin/stdout
+ * - Each JSON message is on a single line
+ * - Engine maintains state across messages (game sessions, MCTS trees)
  */
 
 import { spawn } from "bun";
-import type {
-  EngineRequest,
-  EngineResponse,
-} from "../../shared/custom-bot/engine-api";
+import type { EngineRequestV3, EngineResponseV3 } from "../../shared/custom-bot/engine-api";
 import { logger } from "./logger";
-
-export interface EngineRunnerOptions {
-  engineCommand: string;
-  /** Timeout in milliseconds for engine execution */
-  timeoutMs?: number;
-}
-
-export interface EngineResult {
-  success: boolean;
-  response?: EngineResponse;
-  error?: string;
-}
-
-/**
- * Run the engine with the given request
- *
- * The engine is spawned as a new process:
- * 1. Write JSON request to stdin
- * 2. Close stdin
- * 3. Read JSON response from stdout
- * 4. Kill if timeout exceeded
- */
-export async function runEngine(
-  options: EngineRunnerOptions,
-  request: EngineRequest,
-): Promise<EngineResult> {
-  const { engineCommand, timeoutMs = 30000 } = options;
-  const requestJson = JSON.stringify(request);
-
-  logger.debug("Running engine:", engineCommand);
-  logger.debug("Request:", requestJson);
-
-  // Parse the command - handle shell-style quoting
-  const args = parseCommand(engineCommand);
-  if (args.length === 0) {
-    return { success: false, error: "Empty engine command" };
-  }
-
-  const cmd = args[0];
-  const cmdArgs = args.slice(1);
-
-  let proc: ReturnType<typeof spawn> | undefined;
-
-  try {
-    proc = spawn({
-      cmd: [cmd, ...cmdArgs],
-      stdin: "pipe",
-      stdout: "pipe",
-      stderr: "pipe",
-    });
-
-    const stdinPipe = proc.stdin as import("bun").FileSink;
-    const stdoutStream = proc.stdout as ReadableStream<Uint8Array>;
-    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-
-    // Write request to stdin and close
-    const encoder = new TextEncoder();
-    const requestBytes = encoder.encode(requestJson);
-    stdinPipe.write(requestBytes);
-    stdinPipe.end();
-
-    // Set up timeout with cleanup
-    let timeoutId: ReturnType<typeof setTimeout> | undefined;
-    const timeoutPromise = new Promise<never>((_, reject) => {
-      timeoutId = setTimeout(() => {
-        reject(new Error(`Engine timeout after ${timeoutMs}ms`));
-      }, timeoutMs);
-    });
-
-    // Read stdout
-    const outputPromise = (async () => {
-      const chunks: Uint8Array[] = [];
-      const reader = stdoutStream.getReader();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-      }
-
-      return Buffer.concat(chunks).toString("utf-8");
-    })();
-
-    // Read stderr for logging
-    const stderrPromise = (async () => {
-      const chunks: Uint8Array[] = [];
-      const reader = stderrStream.getReader();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) chunks.push(value);
-      }
-
-      return Buffer.concat(chunks).toString("utf-8");
-    })();
-
-    // Wait for output or timeout
-    let output: string;
-    try {
-      output = await Promise.race([outputPromise, timeoutPromise]);
-    } finally {
-      // Clear the timeout to prevent timer leak
-      if (timeoutId !== undefined) {
-        clearTimeout(timeoutId);
-      }
-    }
-
-    const stderrOutput = await Promise.race([
-      stderrPromise,
-      new Promise<string>((resolve) => setTimeout(() => resolve(""), 100)),
-    ]);
-
-    if (stderrOutput) {
-      logger.debug("Engine stderr:", stderrOutput);
-    }
-
-    // Wait for process to exit
-    const exitCode = await proc.exited;
-    logger.debug("Engine exit code:", exitCode);
-
-    if (!output.trim()) {
-      return { success: false, error: "Engine produced no output" };
-    }
-
-    // Parse JSON response
-    let response: EngineResponse;
-    try {
-      response = JSON.parse(output.trim());
-    } catch (parseError) {
-      return {
-        success: false,
-        error: `Failed to parse engine output: ${parseError}`,
-      };
-    }
-
-    // Validate response structure
-    if (
-      !response.engineApiVersion ||
-      !response.requestId ||
-      !response.response
-    ) {
-      return {
-        success: false,
-        error: "Invalid engine response structure",
-      };
-    }
-
-    if (response.requestId !== request.requestId) {
-      return {
-        success: false,
-        error: `Request ID mismatch: expected ${request.requestId}, got ${response.requestId}`,
-      };
-    }
-
-    return { success: true, response };
-  } catch (error) {
-    // Kill the process on error
-    if (proc) {
-      try {
-        proc.kill();
-      } catch {
-        // Ignore kill errors
-      }
-    }
-
-    const message = error instanceof Error ? error.message : String(error);
-    return { success: false, error: message };
-  }
-}
 
 /**
  * Parse a command string into arguments, handling quotes
@@ -220,14 +51,214 @@ function parseCommand(command: string): string[] {
 }
 
 /**
- * Calculate timeout based on remaining clock time
+ * V3: Long-lived engine process that communicates via JSON-lines.
+ *
+ * The EngineProcess maintains a subprocess and handles async message passing.
+ * Multiple BGS (Bot Game Sessions) can be handled by a single engine process.
  */
-export function calculateEngineTimeout(
-  timeLeftMs: number,
-  minTimeoutMs: number = 1000,
-  bufferMs: number = 500,
-): number {
-  // Leave some buffer for network latency
-  const available = Math.max(minTimeoutMs, timeLeftMs - bufferMs);
-  return available;
+export class EngineProcess {
+  private proc: ReturnType<typeof spawn<{ cmd: string[]; stdin: "pipe"; stdout: "pipe"; stderr: "pipe" }>>;
+  private stdin: import("bun").FileSink;
+  private pendingRequests: Map<string, {
+    resolve: (response: EngineResponseV3) => void;
+    reject: (error: Error) => void;
+  }> = new Map();
+  private isAlive: boolean = true;
+  private lineBuffer: string = "";
+
+  private constructor(proc: ReturnType<typeof spawn<{ cmd: string[]; stdin: "pipe"; stdout: "pipe"; stderr: "pipe" }>>) {
+    this.proc = proc;
+    this.stdin = proc.stdin;
+
+    // Start reading stdout for responses
+    this.readResponses();
+
+    // Handle process exit
+    proc.exited.then((exitCode) => {
+      logger.info(`Engine process exited with code ${exitCode}`);
+      this.isAlive = false;
+      // Reject all pending requests
+      for (const [bgsId, resolver] of this.pendingRequests) {
+        resolver.reject(new Error(`Engine process exited with code ${exitCode}`));
+      }
+      this.pendingRequests.clear();
+    });
+  }
+
+  /**
+   * Spawn a new engine process.
+   */
+  static async spawn(engineCommand: string): Promise<EngineProcess> {
+    const args = parseCommand(engineCommand);
+    if (args.length === 0) {
+      throw new Error("Empty engine command");
+    }
+
+    const cmd = args[0];
+    const cmdArgs = args.slice(1);
+
+    logger.debug(`Spawning engine: ${cmd} ${cmdArgs.join(" ")}`);
+
+    const proc = spawn({
+      cmd: [cmd, ...cmdArgs],
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "pipe",
+    });
+
+    // Log stderr output
+    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
+    (async () => {
+      const reader = stderrStream.getReader();
+      const decoder = new TextDecoder();
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          const text = decoder.decode(value);
+          logger.debug(`Engine stderr: ${text.trim()}`);
+        }
+      }
+    })();
+
+    return new EngineProcess(proc);
+  }
+
+  /**
+   * Read JSON-lines responses from stdout.
+   */
+  private async readResponses(): Promise<void> {
+    const stdoutStream = this.proc.stdout as ReadableStream<Uint8Array>;
+    const reader = stdoutStream.getReader();
+    const decoder = new TextDecoder();
+
+    try {
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (value) {
+          this.lineBuffer += decoder.decode(value);
+
+          // Process complete lines
+          let newlineIndex: number;
+          while ((newlineIndex = this.lineBuffer.indexOf("\n")) !== -1) {
+            const line = this.lineBuffer.slice(0, newlineIndex).trim();
+            this.lineBuffer = this.lineBuffer.slice(newlineIndex + 1);
+
+            if (line) {
+              this.handleResponse(line);
+            }
+          }
+        }
+      }
+    } catch (error) {
+      logger.error("Error reading engine stdout:", error);
+      this.isAlive = false;
+    }
+  }
+
+  /**
+   * Handle a JSON response line from the engine.
+   */
+  private handleResponse(line: string): void {
+    logger.debug(`Engine response: ${line}`);
+
+    let response: EngineResponseV3;
+    try {
+      response = JSON.parse(line);
+    } catch (error) {
+      logger.error(`Failed to parse engine response: ${line}`, error);
+      return;
+    }
+
+    // Extract bgsId from response
+    const bgsId = response.bgsId;
+    if (!bgsId) {
+      logger.error(`Response missing bgsId: ${line}`);
+      return;
+    }
+
+    // Find and resolve the pending request
+    const resolver = this.pendingRequests.get(bgsId);
+    if (resolver) {
+      this.pendingRequests.delete(bgsId);
+      resolver.resolve(response);
+    } else {
+      logger.warn(`No pending request for bgsId: ${bgsId}`);
+    }
+  }
+
+  /**
+   * Send a request to the engine and wait for a response.
+   */
+  async send(request: EngineRequestV3): Promise<EngineResponseV3> {
+    if (!this.isAlive) {
+      throw new Error("Engine process is not running");
+    }
+
+    // Extract bgsId from request
+    const bgsId = request.bgsId;
+    if (!bgsId) {
+      throw new Error("Request missing bgsId");
+    }
+
+    // Check for duplicate pending request
+    if (this.pendingRequests.has(bgsId)) {
+      throw new Error(`Already have pending request for bgsId: ${bgsId}`);
+    }
+
+    // Create promise for response
+    const responsePromise = new Promise<EngineResponseV3>((resolve, reject) => {
+      this.pendingRequests.set(bgsId, { resolve, reject });
+    });
+
+    // Write JSON line to stdin
+    const json = JSON.stringify(request) + "\n";
+    logger.debug(`Sending to engine: ${json.trim()}`);
+
+    const encoder = new TextEncoder();
+    this.stdin.write(encoder.encode(json));
+
+    return responsePromise;
+  }
+
+  /**
+   * Kill the engine process.
+   */
+  kill(): void {
+    if (this.isAlive) {
+      logger.debug("Killing engine process");
+      this.isAlive = false;
+      try {
+        this.stdin.end();
+      } catch {
+        // Ignore stdin close errors
+      }
+      try {
+        this.proc.kill();
+      } catch {
+        // Ignore kill errors
+      }
+      // Reject all pending requests
+      for (const [bgsId, resolver] of this.pendingRequests) {
+        resolver.reject(new Error("Engine process killed"));
+      }
+      this.pendingRequests.clear();
+    }
+  }
+
+  /**
+   * Check if the engine process is still alive.
+   */
+  get alive(): boolean {
+    return this.isAlive;
+  }
+}
+
+/**
+ * Spawn a new engine process.
+ * Convenience function that delegates to EngineProcess.spawn().
+ */
+export async function spawnEngine(engineCommand: string): Promise<EngineProcess> {
+  return EngineProcess.spawn(engineCommand);
 }

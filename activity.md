@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 9/18
-**Current Task:** Phase 6 - Update ws-client.ts for long-lived engine
+**Tasks Completed:** 10/18
+**Current Task:** Phase 6 - Rewrite engine-runner.ts for long-lived process
 
 ---
 
@@ -355,4 +355,44 @@
 - Replays create ephemeral BGS that is closed immediately after sending the full history to minimize server resource usage.
 - The `SharedEvalBgs` pattern handles concurrent initialization requests - first viewer starts BGS init, subsequent viewers wait for it to complete.
 - Exported `notifyEvalBarMove()` and `handleEvalBarGameEnd()` need to be wired up in game-socket.ts in a future update.
+
+### 2026-01-15: Update ws-client.ts for long-lived engine
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Complete rewrite of `official-custom-bot-client/src/ws-client.ts` for V3 Bot Game Session protocol
+- Removed all V2 request/response handling (`request`, `response`, `ack`, `nack` message types)
+- Added V3 BGS message handlers:
+  - `handleStartGameSession()` - Creates engine session, passes through to engine
+  - `handleEndGameSession()` - Ends engine session, passes through to engine
+  - `handleEvaluatePosition()` - Passes evaluation request to engine, clamps response
+  - `handleApplyMove()` - Passes move to engine for state update
+- Added `startEngines()` method to spawn long-lived engine processes at startup
+- Engine processes are stored in a Map keyed by botId
+- Engines stay running during WebSocket reconnections
+- Added `EngineProcess` class to `engine-runner.ts`:
+  - Long-lived process communicating via JSON-lines (stdin/stdout)
+  - Handles async request/response with pending request tracking
+  - Supports multiple concurrent BGS sessions per engine
+- Updated version strings from "2.0.0" to "3.0.0"
+- Updated CLI help text to describe V3 JSON-lines protocol
+
+**Files Modified:**
+- `official-custom-bot-client/src/ws-client.ts` - Complete rewrite for V3 BGS protocol
+- `official-custom-bot-client/src/engine-runner.ts` - Complete rewrite for long-lived EngineProcess
+- `official-custom-bot-client/src/index.ts` - Updated version and help text
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- V3 engines are started once at startup and remain running for the lifetime of the client
+- The JSON-lines protocol allows multiple BGS sessions to be multiplexed over a single engine process
+- When WebSocket reconnects, engines stay running - only the WebSocket connection is re-established
+- Dumb bot fallback is provided for bots without engine commands (used for testing)
+- Evaluation values are clamped to [-1, +1] range before sending to server
+- The `EngineProcess` class tracks pending requests by bgsId and resolves them when responses arrive
 
