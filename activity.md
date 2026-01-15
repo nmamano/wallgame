@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 6/18
-**Current Task:** Phase 4 - Game Socket Bot Integration
+**Tasks Completed:** 7/18
+**Current Task:** Phase 5 - Eval Protocol Message Types
 
 ---
 
@@ -219,3 +219,55 @@
 - The `pendingResolvers` Map tracks outstanding requests by bgsId, enabling proper timeout handling
 - Eval socket is temporarily disabled during migration (Phase 5 will rewrite it for V3 BGS-based eval bar)
 - V2 deprecated functions in `custom-bot-store.ts` (now throwing errors) are no longer called
+
+### 2026-01-15: Update game-socket.ts for V3 bot game flow
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Complete V3 BGS integration in `server/routes/game-socket.ts` for bot game flow
+- Added BGS helper functions:
+  - `buildBgsConfig()` - Extracts variant config from session for BGS creation
+  - `startBotGameSession()` - Creates and starts a BGS for a bot player
+  - `getInitialEvaluation()` - Gets the initial position evaluation (ply 0)
+  - `applyMoveAndEvaluate()` - Core V3 flow: applies move then evaluates new position
+  - `resignBotOnFailure()` - Handles bot resignation when BGS operations fail
+  - `initializeBotGameSession()` - Combined BGS start + initial evaluation
+- Replaced V2 `notifyBotIfActive()` with V3 `executeBotTurnV3()`:
+  - Gets best move from BGS history (already computed from previous evaluation)
+  - Applies move to game state and broadcasts to clients
+  - Updates BGS with `applyMoveAndEvaluate()` for next turn
+- Added `initializeBotGameOnStart()` - Initializes BGS when player connects to bot game
+- Replaced V2 `registerRematchBotGames()` with V3 `registerRematchBotGamesV3()`:
+  - Creates BGS and initializes for rematch games
+  - Executes first bot turn if needed
+- Added `handleTakebackBgsReset()` for V3 takeback handling:
+  - Ends current BGS
+  - Creates new BGS with same ID
+  - Replays all moves from game history to rebuild BGS state
+  - Triggers bot turn if needed
+- Updated draw handling:
+  - V3 policy: server auto-rejects all draws in bot games (no message to bot)
+  - Removed V2 `queueBotDrawRequest()` calls
+- Updated game end handling:
+  - `notifyBotsGameEnded()` now calls V3 async `notifyBotGameEnded()`
+- Updated human move handling in bot games:
+  - After human move, applies move to BGS and triggers bot turn
+- Removed unused imports (`getClient`, `getClientForBot`, `cancelBotRequestsForGame`)
+- Fixed minor lint issues (nullish coalescing in custom-bot-socket.ts)
+
+**Files Modified:**
+- `server/routes/game-socket.ts` - Complete V3 integration (~200 lines added)
+- `server/routes/games.ts` - Removed V2 bot move queueing at game creation
+- `server/routes/custom-bot-socket.ts` - Fixed `||` to `??` for lint compliance
+
+**Verification:**
+- `bunx tsc --noEmit` - Passed (only pre-existing auth.ts URL type error)
+- `bun run lint` - Passed
+
+**Notes:**
+- BGS initialization is now lazy (on player connect) rather than eager (at game creation). This simplifies error handling and ensures the human player is present when BGS starts.
+- Bot turn execution uses the `bestMove` from the latest BGS history entry, which was computed during the previous `evaluate_position` call. This enables the "pre-compute next move" pattern described in the V3 spec.
+- The takeback flow rebuilds BGS from scratch by replaying all moves. This ensures the MCTS tree can be properly rebuilt from the new game state.
+- `ensureRematchSession()` is now synchronous since BGS initialization is done asynchronously via `void registerRematchBotGamesV3()`.
+- Draw offers in bot games are now silently rejected server-side (V3 policy) instead of being sent to the bot client.

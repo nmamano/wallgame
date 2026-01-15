@@ -23,6 +23,7 @@ import {
   type RematchSessionResult,
   processRatingUpdate,
   type SessionPlayer,
+  type GameSession,
   assignChatGuestIndex,
   registerTimeoutCallback,
 } from "../games/store";
@@ -42,12 +43,20 @@ import type {
   RematchDecision,
 } from "../../shared/contracts/controller-actions";
 import {
-  queueBotMoveRequest,
-  queueBotDrawRequest,
+  startBgsSession,
+  endBgsSession,
+  requestEvaluation,
+  applyBgsMove,
   notifyBotGameEnded,
-  cancelBotRequestsForGame,
 } from "./custom-bot-socket";
 import { addActiveGame } from "../games/custom-bot-store";
+import {
+  getBgs,
+  getLatestHistoryEntry,
+  type BgsHistoryEntry,
+} from "../games/bgs-store";
+import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
+import { moveToStandardNotation, moveFromStandardNotation } from "../../shared/domain/standard-notation";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -87,79 +96,522 @@ const notifyBotsGameEnded = (sessionId: string): void => {
   const { host, joiner } = session.players;
 
   if (host.botCompositeId) {
-    notifyBotGameEnded(host.botCompositeId, sessionId);
+    void notifyBotGameEnded(host.botCompositeId, sessionId);
   }
   if (joiner.botCompositeId) {
-    notifyBotGameEnded(joiner.botCompositeId, sessionId);
+    void notifyBotGameEnded(joiner.botCompositeId, sessionId);
   }
 };
 
-const cancelBotRequestsForSession = (sessionId: string): void => {
-  const session = getSession(sessionId);
-  const { host, joiner } = session.players;
+// ============================================================================
+// V3 Bot Game Session (BGS) Management
+// ============================================================================
 
-  if (host.botCompositeId) {
-    cancelBotRequestsForGame(host.botCompositeId, sessionId);
-  }
-  if (joiner.botCompositeId) {
-    cancelBotRequestsForGame(joiner.botCompositeId, sessionId);
+/**
+ * Build BgsConfig from a game session.
+ * Extracts variant, board dimensions, and initial state.
+ */
+const buildBgsConfig = (session: GameSession): BgsConfig => {
+  return {
+    variant: session.config.variant,
+    boardWidth: session.config.boardWidth,
+    boardHeight: session.config.boardHeight,
+    initialState: session.config.variantConfig,
+  };
+};
+
+/**
+ * Start a Bot Game Session for a bot player.
+ * Called when a game is created with a bot participant.
+ */
+const startBotGameSession = async (
+  botCompositeId: string,
+  session: GameSession,
+): Promise<boolean> => {
+  const bgsId = session.id; // Use gameId as bgsId
+  const config = buildBgsConfig(session);
+
+  try {
+    await startBgsSession(botCompositeId, bgsId, session.id, config);
+    console.info("[ws] BGS started for bot game", {
+      gameId: session.id,
+      bgsId,
+      botCompositeId,
+    });
+    return true;
+  } catch (error) {
+    console.error("[ws] failed to start BGS", {
+      error,
+      gameId: session.id,
+      botCompositeId,
+    });
+    return false;
   }
 };
 
 /**
- * Check if the current active player is a bot and queue a move request.
- * Called after any state change that might change whose turn it is.
+ * Get the initial evaluation for a bot game session.
+ * Called after BGS is started to get the first position evaluation.
  */
-const notifyBotIfActive = (sessionId: string): void => {
+const getInitialEvaluation = async (
+  botCompositeId: string,
+  bgsId: string,
+): Promise<BgsHistoryEntry | null> => {
+  try {
+    const response = await requestEvaluation(botCompositeId, bgsId, 0);
+    return {
+      ply: response.ply,
+      evaluation: response.evaluation,
+      bestMove: response.bestMove,
+    };
+  } catch (error) {
+    console.error("[ws] failed to get initial evaluation", {
+      error,
+      bgsId,
+      botCompositeId,
+    });
+    return null;
+  }
+};
+
+/**
+ * Apply a move to the BGS and get the new evaluation.
+ * This is the core V3 flow: apply_move + evaluate_position.
+ */
+const applyMoveAndEvaluate = async (
+  botCompositeId: string,
+  bgsId: string,
+  currentPly: number,
+  moveNotation: string,
+): Promise<BgsHistoryEntry | null> => {
+  try {
+    // Apply the move
+    await applyBgsMove(botCompositeId, bgsId, currentPly, moveNotation);
+
+    // Get evaluation for the new position
+    const newPly = currentPly + 1;
+    const response = await requestEvaluation(botCompositeId, bgsId, newPly);
+    return {
+      ply: response.ply,
+      evaluation: response.evaluation,
+      bestMove: response.bestMove,
+    };
+  } catch (error) {
+    console.error("[ws] failed to apply move and evaluate", {
+      error,
+      bgsId,
+      botCompositeId,
+      currentPly,
+      moveNotation,
+    });
+    return null;
+  }
+};
+
+/**
+ * Handle bot resignation on BGS failure.
+ * Called when BGS operations fail - server resigns on behalf of bot.
+ */
+const resignBotOnFailure = async (
+  session: GameSession,
+  botPlayerId: PlayerId,
+): Promise<void> => {
+  if (session.gameState.status !== "playing") return;
+
+  const newState = resignGame({
+    id: session.id,
+    playerId: botPlayerId,
+    timestamp: Date.now(),
+  });
+
+  console.info("[ws] bot resigned due to BGS failure", {
+    gameId: session.id,
+    botPlayerId,
+  });
+
+  // Process rating update if game ended
+  if (newState.status === "finished") {
+    await processRatingUpdate(session.id);
+    try {
+      await persistCompletedGame(getSession(session.id));
+    } catch (error) {
+      console.error("[persistence] failed after bot resignation", {
+        error,
+        sessionId: session.id,
+      });
+    }
+    broadcastLiveGamesRemove(session.id);
+  }
+
+  broadcast(session.id, {
+    type: "state",
+    state: getSerializedState(session.id),
+  });
+  sendMatchStatus(session.id);
+};
+
+/**
+ * Initialize BGS for a bot game and get initial evaluation.
+ * Called when a game with a bot starts.
+ */
+const initializeBotGameSession = async (
+  session: GameSession,
+  botPlayer: SessionPlayer,
+): Promise<boolean> => {
+  if (!botPlayer.botCompositeId) return false;
+
+  // Start BGS
+  const success = await startBotGameSession(botPlayer.botCompositeId, session);
+  if (!success) {
+    return false;
+  }
+
+  // Get initial evaluation (ply 0)
+  const initialEval = await getInitialEvaluation(
+    botPlayer.botCompositeId,
+    session.id,
+  );
+
+  if (!initialEval) {
+    // Clean up and fail
+    try {
+      await endBgsSession(botPlayer.botCompositeId, session.id);
+    } catch {
+      // Ignore cleanup errors
+    }
+    return false;
+  }
+
+  console.info("[ws] BGS initialized with evaluation", {
+    gameId: session.id,
+    initialEval,
+  });
+
+  return true;
+};
+
+/**
+ * V3: Execute bot's turn using BGS history.
+ * The best move is already computed in the BGS history from the previous evaluation.
+ * This function: 1) Gets best move from history, 2) Applies it to game, 3) Updates BGS.
+ */
+const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
   const session = getSession(sessionId);
   if (session.gameState.status !== "playing") return;
 
   const activeTurn = session.gameState.turn;
 
-  // Find which player is active and their opponent
+  // Find which player is active
   const isHostActive = session.players.host.playerId === activeTurn;
   const activePlayer = isHostActive
     ? session.players.host
     : session.players.joiner;
-  const opponent = isHostActive ? session.players.joiner : session.players.host;
 
-  // If the active player is a bot, queue a move request
-  if (activePlayer.botCompositeId) {
-    queueBotMoveRequest(
-      activePlayer.botCompositeId,
+  // Only proceed if active player is a bot
+  if (!activePlayer.botCompositeId) return;
+
+  const bgsId = sessionId;
+  const bgs = getBgs(bgsId);
+
+  if (!bgs) {
+    console.error("[ws] BGS not found for bot turn", {
       sessionId,
-      activePlayer.playerId,
-      opponent.displayName,
-    );
+      botCompositeId: activePlayer.botCompositeId,
+    });
+    await resignBotOnFailure(session, activePlayer.playerId);
+    return;
+  }
+
+  // Get the best move from BGS history (already computed from previous evaluation)
+  const latestEntry = getLatestHistoryEntry(bgsId);
+  if (!latestEntry) {
+    console.error("[ws] No history entry for bot turn", {
+      sessionId,
+      bgsId,
+      currentPly: bgs.currentPly,
+    });
+    await resignBotOnFailure(session, activePlayer.playerId);
+    return;
+  }
+
+  const bestMoveNotation = latestEntry.bestMove;
+  const totalRows = session.config.boardHeight;
+
+  // Parse the move and apply to game state
+  const move = moveFromStandardNotation(bestMoveNotation, totalRows);
+  const newState = applyPlayerMove({
+    id: sessionId,
+    playerId: activePlayer.playerId,
+    move,
+    timestamp: Date.now(),
+  });
+
+  console.info("[ws] bot move applied", {
+    sessionId,
+    playerId: activePlayer.playerId,
+    move: bestMoveNotation,
+    ply: bgs.currentPly,
+  });
+
+  // Broadcast state update
+  broadcast(sessionId, {
+    type: "state",
+    state: getSerializedState(sessionId),
+  });
+
+  // Handle game end
+  if (newState.status === "finished") {
+    await processRatingUpdate(sessionId);
+    try {
+      await persistCompletedGame(getSession(sessionId));
+    } catch (error) {
+      console.error("[persistence] failed after bot move", {
+        error,
+        sessionId,
+      });
+    }
+    broadcastLiveGamesRemove(sessionId);
+    notifyBotsGameEnded(sessionId);
+    sendMatchStatus(sessionId);
+    return;
+  }
+
+  // Game continues - update BGS and evaluate new position
+  broadcastLiveGamesUpsert(sessionId);
+
+  // Apply move to BGS and get new evaluation
+  const evalResult = await applyMoveAndEvaluate(
+    activePlayer.botCompositeId,
+    bgsId,
+    bgs.currentPly,
+    bestMoveNotation,
+  );
+
+  if (!evalResult) {
+    console.error("[ws] failed to update BGS after bot move", {
+      sessionId,
+      botCompositeId: activePlayer.botCompositeId,
+    });
+    await resignBotOnFailure(session, activePlayer.playerId);
+    return;
+  }
+
+  // If it's still the bot's turn (shouldn't happen in normal flow), recurse
+  // This handles edge cases like "pass" moves
+  const updatedSession = getSession(sessionId);
+  if (
+    updatedSession.gameState.status === "playing" &&
+    updatedSession.gameState.turn === activePlayer.playerId
+  ) {
+    // Schedule next bot move asynchronously to avoid stack overflow
+    setImmediate(() => {
+      void executeBotTurnV3(sessionId);
+    });
   }
 };
 
-const registerRematchBotGames = (
+/**
+ * V3: Handle takeback by ending current BGS, starting a new one, and replaying moves.
+ * Called when a takeback is accepted in a bot game.
+ */
+const handleTakebackBgsReset = async (
+  sessionId: string,
+  botCompositeId: string,
+): Promise<void> => {
+  const bgsId = sessionId;
+
+  // End the current BGS
+  try {
+    await endBgsSession(botCompositeId, bgsId);
+  } catch (error) {
+    console.error("[ws] failed to end BGS for takeback", {
+      error,
+      sessionId,
+      botCompositeId,
+    });
+    // Continue anyway - we need to start fresh
+  }
+
+  // Get the current session state (after takeback)
+  const session = getSession(sessionId);
+
+  // Find the bot player
+  const botPlayer = session.players.host.botCompositeId
+    ? session.players.host
+    : session.players.joiner;
+
+  if (!botPlayer.botCompositeId) return;
+
+  // Start a new BGS with the same ID
+  const config = buildBgsConfig(session);
+  try {
+    await startBgsSession(botCompositeId, bgsId, sessionId, config);
+  } catch (error) {
+    console.error("[ws] failed to restart BGS after takeback", {
+      error,
+      sessionId,
+      botCompositeId,
+    });
+    await resignBotOnFailure(session, botPlayer.playerId);
+    return;
+  }
+
+  // Get initial evaluation
+  const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
+  if (!initialEval) {
+    console.error("[ws] failed to get initial eval after takeback", {
+      sessionId,
+      botCompositeId,
+    });
+    await resignBotOnFailure(session, botPlayer.playerId);
+    return;
+  }
+
+  // Replay all moves from the game history
+  // Note: history contains MoveInHistory objects with a single `move` property
+  // Each entry is one ply (half-move)
+  const totalRows = session.config.boardHeight;
+  const history = session.gameState.history;
+
+  for (let i = 0; i < history.length; i++) {
+    const historyEntry = history[i];
+    const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
+    const evalResult = await applyMoveAndEvaluate(
+      botCompositeId,
+      bgsId,
+      i,
+      moveNotation,
+    );
+    if (!evalResult) {
+      console.error("[ws] failed to replay move during takeback", {
+        sessionId,
+        moveIndex: i,
+        move: moveNotation,
+      });
+      await resignBotOnFailure(session, botPlayer.playerId);
+      return;
+    }
+  }
+
+  console.info("[ws] BGS reset after takeback complete", {
+    sessionId,
+    botCompositeId,
+    movesReplayed: history.length,
+  });
+
+  // If it's the bot's turn, execute it
+  if (session.gameState.turn === botPlayer.playerId) {
+    void executeBotTurnV3(sessionId);
+  }
+};
+
+/**
+ * V3: Register bot games for rematch and initialize BGS.
+ * This replaces the V2 registerRematchBotGames function.
+ */
+const registerRematchBotGamesV3 = async (
   session: RematchSessionResult["newSession"],
-  queueIfBotTurn: boolean,
-): void => {
+  startBotTurn: boolean,
+): Promise<void> => {
   if (session.gameState.status !== "playing") return;
 
-  const addBotGame = (bot: SessionPlayer, opponent: SessionPlayer) => {
-    if (!bot.botCompositeId) return;
-    addActiveGame(
-      bot.botCompositeId,
-      session.id,
-      bot.playerId,
-      opponent.displayName,
-    );
-    if (queueIfBotTurn && session.gameState.turn === bot.playerId) {
-      queueBotMoveRequest(
-        bot.botCompositeId,
-        session.id,
-        bot.playerId,
-        opponent.displayName,
-      );
-    }
-  };
+  const { host, joiner } = session.players;
 
-  addBotGame(session.players.host, session.players.joiner);
-  addBotGame(session.players.joiner, session.players.host);
+  // Find which player is the bot (if any)
+  const botPlayer = host.botCompositeId
+    ? host
+    : joiner.botCompositeId
+      ? joiner
+      : null;
+
+  if (!botPlayer?.botCompositeId) return;
+
+  const opponent = botPlayer === host ? joiner : host;
+
+  // Track active bot game
+  addActiveGame(
+    botPlayer.botCompositeId,
+    session.id,
+    botPlayer.playerId,
+    opponent.displayName,
+  );
+
+  // Initialize BGS for the new game
+  const success = await initializeBotGameSession(session, botPlayer);
+  if (!success) {
+    console.error("[ws] failed to initialize BGS for rematch", {
+      gameId: session.id,
+      botCompositeId: botPlayer.botCompositeId,
+    });
+    await resignBotOnFailure(session, botPlayer.playerId);
+    return;
+  }
+
+  // If it's the bot's turn and we should start, execute the turn
+  if (startBotTurn && session.gameState.turn === botPlayer.playerId) {
+    void executeBotTurnV3(session.id);
+  }
+};
+
+/**
+ * V3: Initialize BGS when a player connects to a bot game.
+ * This is called on WebSocket connection to ensure BGS is ready.
+ */
+const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
+  const session = getSession(sessionId);
+
+  // Only initialize for games that are ready or just started
+  if (session.status !== "ready" && session.status !== "in-progress") {
+    return;
+  }
+
+  const { host, joiner } = session.players;
+
+  // Find the bot player (if any)
+  const botPlayer = host.botCompositeId
+    ? host
+    : joiner.botCompositeId
+      ? joiner
+      : null;
+
+  if (!botPlayer?.botCompositeId) {
+    return; // Not a bot game
+  }
+
+  // Check if BGS already exists
+  const existingBgs = getBgs(sessionId);
+  if (existingBgs) {
+    // BGS already initialized, but check if bot needs to move
+    if (
+      session.gameState.status === "playing" &&
+      session.gameState.turn === botPlayer.playerId &&
+      existingBgs.status === "ready"
+    ) {
+      void executeBotTurnV3(sessionId);
+    }
+    return;
+  }
+
+  // Initialize BGS for this bot game
+  console.info("[ws] initializing BGS on player connect", {
+    sessionId,
+    botCompositeId: botPlayer.botCompositeId,
+  });
+
+  const success = await initializeBotGameSession(session, botPlayer);
+  if (!success) {
+    console.error("[ws] failed to initialize BGS on connect", {
+      sessionId,
+      botCompositeId: botPlayer.botCompositeId,
+    });
+    await resignBotOnFailure(session, botPlayer.playerId);
+    return;
+  }
+
+  // If it's the bot's turn, execute the first move
+  if (session.gameState.turn === botPlayer.playerId) {
+    void executeBotTurnV3(sessionId);
+  }
 };
 
 const ensureAuthorizedPlayer = (
@@ -372,11 +824,13 @@ const ensureRematchSession = (
       newSession: getSession(session.nextGameId),
       seatCredentials: session.nextGameSeatCredentials,
     };
-    registerRematchBotGames(existingResult.newSession, false);
+    // V3: Register bot games asynchronously
+    void registerRematchBotGamesV3(existingResult.newSession, false);
     return { kind: "already-started", result: existingResult };
   }
   const result = createRematchSession(sessionId);
-  registerRematchBotGames(result.newSession, true);
+  // V3: Initialize BGS and execute first bot turn if needed
+  void registerRematchBotGamesV3(result.newSession, true);
   return { kind: "started", result };
 };
 
@@ -526,6 +980,9 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   const playerId = ensureAuthorizedPlayer(socket, "submit-move");
   if (playerId === null) return;
 
+  const session = getSession(socket.sessionId);
+  const totalRows = session.config.boardHeight;
+
   const newState = applyPlayerMove({
     id: socket.sessionId,
     playerId,
@@ -567,8 +1024,46 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
   if (newState.status === "finished") {
     sendMatchStatus(socket.sessionId);
   } else {
-    // If game is still playing, check if next player is a bot
-    notifyBotIfActive(socket.sessionId);
+    // V3: If game has a bot opponent, update BGS and trigger bot's turn
+    const updatedSession = getSession(socket.sessionId);
+    const { host, joiner } = updatedSession.players;
+
+    // Find the bot player (if any)
+    const botPlayer = host.botCompositeId
+      ? host
+      : joiner.botCompositeId
+        ? joiner
+        : null;
+
+    if (botPlayer?.botCompositeId) {
+      const bgsId = socket.sessionId;
+      const bgs = getBgs(bgsId);
+
+      if (bgs) {
+        // Apply human's move to BGS
+        const moveNotation = moveToStandardNotation(message.move, totalRows);
+        const evalResult = await applyMoveAndEvaluate(
+          botPlayer.botCompositeId,
+          bgsId,
+          bgs.currentPly,
+          moveNotation,
+        );
+
+        if (evalResult) {
+          // If it's now the bot's turn, execute it
+          if (updatedSession.gameState.turn === botPlayer.playerId) {
+            void executeBotTurnV3(socket.sessionId);
+          }
+        } else {
+          // BGS update failed - resign bot
+          console.error("[ws] BGS update failed after human move", {
+            sessionId: socket.sessionId,
+            botCompositeId: botPlayer.botCompositeId,
+          });
+          await resignBotOnFailure(updatedSession, botPlayer.playerId);
+        }
+      }
+    }
   }
 };
 
@@ -639,12 +1134,14 @@ const handleTakebackOffer = (socket: SessionSocket) => {
   const opponent =
     opponentRole === "host" ? session.players.host : session.players.joiner;
 
+  // V3: Takeback auto-accepted by bot
   if (opponent.botCompositeId) {
     acceptTakeback({
       id: socket.sessionId,
       playerId: opponent.playerId,
     });
-    cancelBotRequestsForSession(socket.sessionId);
+    // V3: Handle takeback by ending BGS and starting new one
+    void handleTakebackBgsReset(socket.sessionId, opponent.botCompositeId);
     console.info("[ws] takeback-offer auto-accepted (bot opponent)", {
       sessionId: socket.sessionId,
       playerId,
@@ -675,7 +1172,18 @@ const handleTakebackAccept = (socket: SessionSocket) => {
     id: socket.sessionId,
     playerId,
   });
-  cancelBotRequestsForSession(socket.sessionId);
+
+  // V3: If game has a bot, handle BGS reset
+  const session = getSession(socket.sessionId);
+  const botPlayer = session.players.host.botCompositeId
+    ? session.players.host
+    : session.players.joiner.botCompositeId
+      ? session.players.joiner
+      : null;
+  if (botPlayer?.botCompositeId) {
+    void handleTakebackBgsReset(socket.sessionId, botPlayer.botCompositeId);
+  }
+
   console.info("[ws] takeback-accept processed", {
     sessionId: socket.sessionId,
     playerId,
@@ -712,34 +1220,16 @@ const handleDrawOffer = (socket: SessionSocket) => {
   const opponentRole = socket.role === "host" ? "joiner" : "host";
   const opponent =
     opponentRole === "host" ? session.players.host : session.players.joiner;
-  const offeringPlayer =
-    socket.role === "host" ? session.players.host : session.players.joiner;
 
-  // V2 bot protocol: send draw request to bot (client auto-declines)
+  // V3: Server auto-rejects draw offers in bot games (no message to bot)
   if (opponent.botCompositeId) {
-    if (session.gameState.turn === opponent.playerId) {
-      socket.ctx.send(
-        JSON.stringify({
-          type: "draw-rejected",
-          playerId: opponent.playerId,
-        }),
-      );
-      console.info("[ws] draw-offer auto-declined (bot to move)", {
-        sessionId: socket.sessionId,
-        playerId,
-        botCompositeId: opponent.botCompositeId,
-      });
-      return;
-    }
-
-    queueBotDrawRequest(
-      opponent.botCompositeId,
-      session.id,
-      opponent.playerId,
-      offeringPlayer.displayName,
-      playerId,
+    socket.ctx.send(
+      JSON.stringify({
+        type: "draw-rejected",
+        playerId: opponent.playerId,
+      }),
     );
-    console.info("[ws] draw-offer queued for bot", {
+    console.info("[ws] draw-offer auto-rejected (bot game, V3 policy)", {
       sessionId: socket.sessionId,
       playerId,
       botCompositeId: opponent.botCompositeId,
@@ -823,7 +1313,7 @@ const handleRematchOffer = (socket: SessionSocket) => {
   const opponent =
     opponentRole === "host" ? session.players.host : session.players.joiner;
 
-  // V2 bot protocol: server auto-accepts rematches for bots
+  // V3: server auto-accepts rematches for bots
   if (opponent.botCompositeId) {
     try {
       const outcome = ensureRematchSession(socket.sessionId);
@@ -1196,35 +1686,17 @@ const handleActionRequest = async (
       const opponentRole = socket.role === "host" ? "joiner" : "host";
       const opponent =
         opponentRole === "host" ? session.players.host : session.players.joiner;
-      const offeringPlayer =
-        socket.role === "host" ? session.players.host : session.players.joiner;
 
+      // V3: Server auto-rejects draw offers in bot games (no message to bot)
       if (opponent.botCompositeId) {
-        if (session.gameState.turn === opponent.playerId) {
-          socket.ctx.send(
-            JSON.stringify({
-              type: "draw-rejected",
-              playerId: opponent.playerId,
-            }),
-          );
-          sendActionAck(socket, message);
-          console.info("[ws] action-offerDraw auto-declined (bot to move)", {
-            sessionId: socket.sessionId,
-            playerId,
-            botCompositeId: opponent.botCompositeId,
-          });
-          return;
-        }
-
-        queueBotDrawRequest(
-          opponent.botCompositeId,
-          session.id,
-          opponent.playerId,
-          offeringPlayer.displayName,
-          playerId,
+        socket.ctx.send(
+          JSON.stringify({
+            type: "draw-rejected",
+            playerId: opponent.playerId,
+          }),
         );
         sendActionAck(socket, message);
-        console.info("[ws] action-offerDraw queued for bot", {
+        console.info("[ws] action-offerDraw auto-rejected (bot game, V3 policy)", {
           sessionId: socket.sessionId,
           playerId,
           botCompositeId: opponent.botCompositeId,
@@ -1253,12 +1725,14 @@ const handleActionRequest = async (
       const opponentRole = socket.role === "host" ? "joiner" : "host";
       const opponent =
         opponentRole === "host" ? session.players.host : session.players.joiner;
+      // V3: Takeback auto-accepted by bot, need to handle BGS
       if (opponent.botCompositeId) {
         acceptTakeback({
           id: socket.sessionId,
           playerId: opponent.playerId,
         });
-        cancelBotRequestsForSession(socket.sessionId);
+        // V3: Handle takeback by ending BGS and starting new one
+        void handleTakebackBgsReset(socket.sessionId, opponent.botCompositeId);
         sendActionAck(socket, message);
         console.info(
           "[ws] action-requestTakeback auto-accepted (bot opponent)",
@@ -1337,7 +1811,7 @@ const handleActionRequest = async (
       const opponent =
         opponentRole === "host" ? session.players.host : session.players.joiner;
 
-      // V2 bot protocol: server auto-accepts rematches for bots
+      // V3: server auto-accepts rematches for bots
       if (opponent.botCompositeId) {
         try {
           const outcome = ensureRematchSession(socket.sessionId);
@@ -1660,6 +2134,9 @@ export const registerGameSocketRoute = (app: Hono) => {
             sendWelcome(entry);
             sendStateOnce(entry);
             sendMatchStatus(sessionId);
+
+            // V3: Initialize BGS for bot games on first player connection
+            void initializeBotGameOnStart(sessionId);
           }
         },
         onMessage(event: MessageEvent, ws: WSContext) {

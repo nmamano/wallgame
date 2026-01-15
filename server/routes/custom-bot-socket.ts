@@ -703,7 +703,7 @@ export const startBgsSession = async (
       createdAt: Date.now(),
       resolve: (success: boolean, error?: string) => {
         if (!success) {
-          reject(new Error(error || "Session start failed"));
+          reject(new Error(error ?? "Session start failed"));
         }
       },
     });
@@ -822,7 +822,7 @@ export const requestEvaluation = async (
       createdAt: Date.now(),
       resolve: (success: boolean, error?: string) => {
         if (!success) {
-          reject(new Error(error || "Evaluation failed"));
+          reject(new Error(error ?? "Evaluation failed"));
         }
       },
     });
@@ -883,7 +883,7 @@ export const applyBgsMove = async (
       createdAt: Date.now(),
       resolve: (success: boolean, error?: string) => {
         if (!success) {
-          reject(new Error(error || "Move application failed"));
+          reject(new Error(error ?? "Move application failed"));
         }
       },
     });
@@ -903,7 +903,7 @@ export const notifyBotGameEnded = async (
 
   // End any BGS for this game
   const bgs = getBgs(gameId);
-  if (bgs && bgs.botCompositeId === compositeId) {
+  if (bgs?.botCompositeId === compositeId) {
     try {
       await endBgsSession(compositeId, gameId);
     } catch (error) {
