@@ -1,5 +1,5 @@
 /**
- * This is the first of 4 tests for the proactive bot protocol (V2):
+ * This is the first of 4 tests for the proactive bot protocol (V3):
  *
  * 1. bot-1-mock-client.test.ts: Mocks the bot client's WS messages.
  *    It tests the server-client protocol.
@@ -14,19 +14,21 @@
  */
 
 /**
- * Integration tests for custom bot WebSocket functionality (V2 Proactive Protocol).
+ * Integration tests for custom bot WebSocket functionality (V3 Bot Game Session Protocol).
  *
  * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
  * No manual database setup required - just Docker.
  *
- * V2 Protocol Flow:
+ * V3 Protocol Flow:
  * 1. Bot connects via /ws/custom-bot and sends attach with clientId and bots array
  * 2. Server responds with attached (bot is now registered and visible in UI)
  * 3. User creates game via /api/bots/play endpoint
  * 4. Human connects via regular game WebSocket
- * 5. Server sends request to bot when it's bot's turn
- * 6. Bot responds with moves
- * 7. Draw offers: Server sends draw request, bot accepts/declines
+ * 5. Server sends start_game_session to bot
+ * 6. Bot responds with game_session_started
+ * 7. Server sends evaluate_position requests, bot responds with evaluate_response
+ * 8. Server sends apply_move messages, bot responds with move_applied
+ * 9. Draw handling: Server auto-rejects draws in V3 (no message to bot)
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
@@ -38,8 +40,11 @@ import type { GameConfiguration } from "../../shared/domain/game-types";
 import type {
   CustomBotServerMessage,
   CustomBotClientMessage,
-  BotResponseAction,
   BotConfig,
+  GameSessionStartedMessage,
+  GameSessionEndedMessage,
+  EvaluateResponseMessage,
+  MoveAppliedMessage,
 } from "../../shared/contracts/custom-bot-protocol";
 import {
   EVALUATION_MIN,
@@ -144,12 +149,12 @@ async function createGameVsBot(
 }
 
 /**
- * V2: Lists available bots matching game settings.
- * Both variant and timeControl are required by the API.
+ * V3: Lists available bots matching game settings.
+ * TimeControl is ignored in V3 (bot games are untimed) but may still be accepted by API for compatibility.
  */
 async function listBots(filters: {
   variant: string;
-  timeControl: string;
+  timeControl?: string;
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{
@@ -157,7 +162,7 @@ async function listBots(filters: {
 }> {
   const params = new URLSearchParams();
   params.set("variant", filters.variant);
-  params.set("timeControl", filters.timeControl);
+  if (filters.timeControl) params.set("timeControl", filters.timeControl);
   if (filters.boardWidth) params.set("boardWidth", String(filters.boardWidth));
   if (filters.boardHeight)
     params.set("boardHeight", String(filters.boardHeight));
@@ -286,7 +291,7 @@ async function openHumanSocket(
 }
 
 // ================================
-// --- Custom Bot WebSocket (V2) ---
+// --- Custom Bot WebSocket (V3) ---
 // ================================
 
 interface BotSocket {
@@ -300,7 +305,11 @@ interface BotSocket {
     bots: BotConfig[],
     options?: { protocolVersion?: number },
   ) => void;
-  sendResponse: (requestId: string, response: BotResponseAction) => void;
+  // V3 BGS response methods
+  sendGameSessionStarted: (bgsId: string, success: boolean, error?: string) => void;
+  sendGameSessionEnded: (bgsId: string, success: boolean, error?: string) => void;
+  sendEvaluateResponse: (bgsId: string, ply: number, bestMove: string, evaluation: number, success?: boolean, error?: string) => void;
+  sendMoveApplied: (bgsId: string, ply: number, success?: boolean, error?: string) => void;
   close: () => void;
 }
 
@@ -340,22 +349,57 @@ async function openBotSocket(): Promise<BotSocket> {
         ) => {
           const msg: CustomBotClientMessage = {
             type: "attach",
-            protocolVersion: options?.protocolVersion ?? 2,
+            protocolVersion: options?.protocolVersion ?? 3,
             clientId,
             bots,
             client: {
               name: "test-bot",
-              version: "1.0.0",
+              version: "3.0.0",
             },
           };
           ws.send(JSON.stringify(msg));
         },
 
-        sendResponse: (requestId: string, response: BotResponseAction) => {
-          const msg: CustomBotClientMessage = {
-            type: "response",
-            requestId,
-            response,
+        sendGameSessionStarted: (bgsId: string, success: boolean, error = "") => {
+          const msg: GameSessionStartedMessage = {
+            type: "game_session_started",
+            bgsId,
+            success,
+            error,
+          };
+          ws.send(JSON.stringify(msg));
+        },
+
+        sendGameSessionEnded: (bgsId: string, success: boolean, error = "") => {
+          const msg: GameSessionEndedMessage = {
+            type: "game_session_ended",
+            bgsId,
+            success,
+            error,
+          };
+          ws.send(JSON.stringify(msg));
+        },
+
+        sendEvaluateResponse: (bgsId: string, ply: number, bestMove: string, evaluation: number, success = true, error = "") => {
+          const msg: EvaluateResponseMessage = {
+            type: "evaluate_response",
+            bgsId,
+            ply,
+            bestMove,
+            evaluation,
+            success,
+            error,
+          };
+          ws.send(JSON.stringify(msg));
+        },
+
+        sendMoveApplied: (bgsId: string, ply: number, success = true, error = "") => {
+          const msg: MoveAppliedMessage = {
+            type: "move_applied",
+            bgsId,
+            ply,
+            success,
+            error,
           };
           ws.send(JSON.stringify(msg));
         },
@@ -476,40 +520,6 @@ async function waitForTurn(
 }
 
 /**
- * Bot receives a request and responds with a move.
- * Returns the evaluation sent with the move for verification.
- */
-async function botMove(
-  botSocket: BotSocket,
-  moveNotation: string,
-  evaluation = 0.5,
-): Promise<number> {
-  const request = await botSocket.waitForMessage("request");
-  expect(request.kind).toBe("move");
-
-  // Wait to avoid rate limiting
-  await sleep(RATE_LIMIT_DELAY_MS);
-
-  botSocket.sendResponse(request.requestId, {
-    action: "move",
-    moveNotation,
-    evaluation,
-  });
-
-  const ack = await botSocket.waitForMessage("ack");
-  expect(ack.requestId).toBe(request.requestId);
-
-  return evaluation;
-}
-
-async function botMoveNoop(
-  botSocket: BotSocket,
-  evaluation = 0,
-): Promise<void> {
-  await botMove(botSocket, "---", evaluation);
-}
-
-/**
  * Verifies that an evaluation value is within the valid range [-1, +1].
  */
 function assertValidEvaluation(evaluation: unknown): void {
@@ -523,7 +533,7 @@ function assertValidEvaluation(evaluation: unknown): void {
  */
 async function waitForBotRegistration(
   compositeId: string,
-  filters: { variant: string; timeControl: string },
+  filters: { variant: string; timeControl?: string },
   timeoutMs = 10000,
 ): Promise<void> {
   const startTime = Date.now();
@@ -538,9 +548,8 @@ async function waitForBotRegistration(
 }
 
 /**
- * Creates a standard bot config for testing.
+ * V3: Creates a standard bot config for testing (no timeControls - bot games are untimed)
  */
-/** V3: Creates a standard bot config for testing (no timeControls - bot games are untimed) */
 function createTestBotConfig(botId: string, name: string): BotConfig {
   return {
     botId,
@@ -565,7 +574,7 @@ function createTestBotConfig(botId: string, name: string): BotConfig {
 // --- Main Tests ---
 // ================================
 
-describe("custom bot WebSocket integration V2", () => {
+describe("custom bot WebSocket integration V3", () => {
   beforeAll(async () => {
     const handle = await setupEphemeralDb();
     container = handle.container;
@@ -588,8 +597,8 @@ describe("custom bot WebSocket integration V2", () => {
     );
   }, 60_000);
 
-  it("allows a custom bot to connect, play moves, and handle draws", async () => {
-    const hostUserId = "host-user-v2";
+  it("allows a custom bot to connect and play using V3 BGS protocol", async () => {
+    const hostUserId = "host-user-v3";
     const clientId = "test-client-ws";
     const botId = "test-bot";
     const compositeId = `${clientId}:${botId}`;
@@ -609,27 +618,25 @@ describe("custom bot WebSocket integration V2", () => {
     };
 
     try {
-      // 1. Connect bot and attach with V2 protocol
+      // 1. Connect bot and attach with V3 protocol
       botSocket = await openBotSocket();
       botSocket.sendAttach(clientId, [createTestBotConfig(botId, "Test Bot")]);
 
       const attached = await botSocket.waitForMessage("attached");
-      expect(attached.protocolVersion).toBe(2);
+      expect(attached.protocolVersion).toBe(3);
 
       // 2. Wait for bot to appear in listing
       await waitForBotRegistration(compositeId, {
         variant: "standard",
-        timeControl: "rapid",
       });
 
       // Verify bot appears in listing
       const { bots } = await listBots({
         variant: "standard",
-        timeControl: "rapid",
       });
       expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-      // 3. Create game against the bot via V2 API (human is Player 1, moves first)
+      // 3. Create game against the bot (human is Player 1, moves first)
       const {
         gameId,
         socketToken: hostSocketToken,
@@ -642,6 +649,24 @@ describe("custom bot WebSocket integration V2", () => {
       // 4. Connect human player
       humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
+      // 5. Bot receives start_game_session
+      const startSession = await botSocket.waitForMessage("start_game_session");
+      expect(startSession.bgsId).toBeDefined();
+      expect(startSession.botId).toBe(botId);
+
+      // Bot confirms session started
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendGameSessionStarted(startSession.bgsId, true);
+
+      // 6. Bot receives initial evaluate_position request (ply 0)
+      const initialEval = await botSocket.waitForMessage("evaluate_position");
+      expect(initialEval.bgsId).toBe(startSession.bgsId);
+      expect(initialEval.expectedPly).toBe(0);
+
+      // Bot responds with evaluation and best move
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendEvaluateResponse(initialEval.bgsId, 0, "---", 0.0);
+
       // Wait for initial state
       const initialState = await humanSocket.waitForMessage("state");
       expect(initialState.state.status).toBe("playing");
@@ -650,65 +675,54 @@ describe("custom bot WebSocket integration V2", () => {
       const humanPlayerId = 1;
       const botPlayerId = 2;
 
-      // 5. Play a couple of noop moves ("---") to advance turns.
+      // 7. Human makes a noop move ("---")
       const afterHumanMove = await humanMove(humanSocket, "---", 3);
       expect(afterHumanMove.state.turn).toBe(botPlayerId);
-      await botMoveNoop(botSocket, -0.2);
-      const stateAfterBotNoop = await waitForTurn(humanSocket, humanPlayerId);
+
+      // 8. Bot receives apply_move for human's move
+      const applyHumanMove = await botSocket.waitForMessage("apply_move");
+      expect(applyHumanMove.bgsId).toBe(startSession.bgsId);
+      expect(applyHumanMove.expectedPly).toBe(0);
+      expect(applyHumanMove.move).toBe("---");
+
+      // Bot confirms move applied (new ply is 1)
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendMoveApplied(applyHumanMove.bgsId, 1);
+
+      // 9. Bot receives evaluate_position for position after human move
+      const evalAfterHuman = await botSocket.waitForMessage("evaluate_position");
+      expect(evalAfterHuman.bgsId).toBe(startSession.bgsId);
+      expect(evalAfterHuman.expectedPly).toBe(1);
+
+      // Bot responds with evaluation - this becomes the bot's move
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendEvaluateResponse(evalAfterHuman.bgsId, 1, "---", -0.2);
+
+      // Wait for bot's turn to complete
+      const stateAfterBotMove = await waitForTurn(humanSocket, humanPlayerId);
       // Verify evaluation is included in state broadcast after bot move
       assertValidEvaluation(
-        (stateAfterBotNoop as unknown as { evaluation: number }).evaluation,
+        (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
       );
-      expect(
-        (stateAfterBotNoop as unknown as { evaluation: number }).evaluation,
-      ).toBe(-0.2);
 
-      // 6. Human offers a draw, bot rejects it
-      humanSocket.ws.send(JSON.stringify({ type: "draw-offer" }));
+      // 10. Human resigns to end game
+      humanSocket.ws.send(JSON.stringify({ type: "resign" }));
 
-      // Bot receives draw request
-      const drawRequest = await botSocket.waitForMessage("request");
-      expect(drawRequest.kind).toBe("draw");
-
-      // Bot declines (wait to avoid rate limiting)
-      await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendResponse(drawRequest.requestId, { action: "decline-draw" });
-
-      const drawDeclineAck = await botSocket.waitForMessage("ack");
-      expect(drawDeclineAck.requestId).toBe(drawRequest.requestId);
-
-      // Human receives draw-rejected
-      const drawRejected = await humanSocket.waitForMessage("draw-rejected", {
-        ignore: ["state", "match-status"],
-      });
-      expect(drawRejected.playerId).toBe(botPlayerId);
-
-      // 7. Make more moves - after draw decline, it's still human's turn
-      const afterHumanMove2 = await humanMove(humanSocket, "---", 3);
-      expect(afterHumanMove2.state.turn).toBe(botPlayerId);
-      await botMoveNoop(botSocket);
-      await waitForTurn(humanSocket, humanPlayerId);
-
-      // 8. Human offers another draw, bot accepts
-      humanSocket.ws.send(JSON.stringify({ type: "draw-offer" }));
-
-      // Bot receives draw request
-      const drawRequest2 = await botSocket.waitForMessage("request");
-      expect(drawRequest2.kind).toBe("draw");
-
-      // Bot accepts (wait to avoid rate limiting)
-      await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendResponse(drawRequest2.requestId, { action: "accept-draw" });
-
-      const drawAcceptAck = await botSocket.waitForMessage("ack");
-      expect(drawAcceptAck.requestId).toBe(drawRequest2.requestId);
-
-      // Game should end in draw
-      const drawState = await humanSocket.waitForMessage("state", {
+      // Wait for game to end
+      const finalState = await humanSocket.waitForMessage("state", {
         ignore: ["match-status"],
       });
-      expect(drawState.state.status).toBe("finished");
-      expect(drawState.state.result?.reason).toBe("draw-agreement");
+      expect(finalState.state.status).toBe("finished");
+      expect(finalState.state.result?.reason).toBe("resignation");
+      expect(finalState.state.result?.winner).toBe(botPlayerId);
+
+      // 11. Bot receives end_game_session
+      const endSession = await botSocket.waitForMessage("end_game_session");
+      expect(endSession.bgsId).toBe(startSession.bgsId);
+
+      // Bot confirms session ended
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendGameSessionEnded(endSession.bgsId, true);
     } finally {
       humanSocket?.close();
       botSocket?.close();
@@ -731,18 +745,34 @@ describe("custom bot WebSocket integration V2", () => {
     botSocket.close();
   }, 10000);
 
+  it("rejects attach with V2 protocol version", async () => {
+    const botSocket = await openBotSocket();
+
+    // Send attach with protocol version 2 (no longer supported)
+    botSocket.sendAttach(
+      "test-client-v2",
+      [createTestBotConfig("test-bot", "Test Bot")],
+      { protocolVersion: 2 },
+    );
+
+    const rejected = await botSocket.waitForMessage("attach-rejected");
+    expect(rejected.code).toBe("PROTOCOL_UNSUPPORTED");
+
+    botSocket.close();
+  }, 10000);
+
   it("rejects attach with empty bots array", async () => {
     const botSocket = await openBotSocket();
 
     // Send attach with no bots
     const msg: CustomBotClientMessage = {
       type: "attach",
-      protocolVersion: 2,
+      protocolVersion: 3,
       clientId: "empty-bots-client",
       bots: [],
       client: {
         name: "test-bot",
-        version: "1.0.0",
+        version: "3.0.0",
       },
     };
     botSocket.ws.send(JSON.stringify(msg));
@@ -752,74 +782,6 @@ describe("custom bot WebSocket integration V2", () => {
 
     botSocket.close();
   }, 10000);
-
-  it("handles bot resign action", async () => {
-    const hostUserId = "host-user-resign";
-    const clientId = "test-client-resign";
-    const botId = "resign-bot";
-    const compositeId = `${clientId}:${botId}`;
-
-    const gameConfig: GameConfiguration = {
-      timeControl: {
-        initialSeconds: 600,
-        incrementSeconds: 0,
-        preset: "rapid",
-      },
-      variant: "standard",
-      rated: false,
-      boardWidth: 3,
-      boardHeight: 3,
-    };
-
-    // Connect bot
-    const botSocket = await openBotSocket();
-    botSocket.sendAttach(clientId, [createTestBotConfig(botId, "Resign Bot")]);
-    await botSocket.waitForMessage("attached");
-    await waitForBotRegistration(compositeId, {
-      variant: "standard",
-      timeControl: "rapid",
-    });
-
-    // Create game (human is Player 1, moves first)
-    const {
-      gameId,
-      socketToken: hostSocketToken,
-      playerId,
-    } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
-
-    expect(playerId).toBe(1); // Human is Player 1
-
-    const humanSocket = await openHumanSocket(
-      hostUserId,
-      gameId,
-      hostSocketToken,
-    );
-    await humanSocket.waitForMessage("state");
-
-    // Human moves first
-    await humanMove(humanSocket, "---", 3);
-
-    // Bot receives move request but resigns instead
-    const request = await botSocket.waitForMessage("request");
-    expect(request.kind).toBe("move");
-
-    await sleep(RATE_LIMIT_DELAY_MS);
-    botSocket.sendResponse(request.requestId, { action: "resign" });
-
-    const ack = await botSocket.waitForMessage("ack");
-    expect(ack.requestId).toBe(request.requestId);
-
-    // Game should end with human winning (human is Player 1)
-    const finalState = await humanSocket.waitForMessage("state", {
-      ignore: ["match-status"],
-    });
-    expect(finalState.state.status).toBe("finished");
-    expect(finalState.state.result?.reason).toBe("resignation");
-    expect(finalState.state.result?.winner).toBe(1);
-
-    humanSocket.close();
-    botSocket.close();
-  }, 30000);
 
   it("supports multiple bots per client", async () => {
     const clientId = "multi-bot-client";
@@ -838,7 +800,7 @@ describe("custom bot WebSocket integration V2", () => {
     await botSocket.waitForMessage("attached");
 
     // Wait for both bots to appear in listing
-    const filters = { variant: "standard", timeControl: "rapid" };
+    const filters = { variant: "standard" };
     await waitForBotRegistration(compositeId1, filters);
     await waitForBotRegistration(compositeId2, filters);
 
