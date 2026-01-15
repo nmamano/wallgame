@@ -2,7 +2,7 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 3/18
+**Tasks Completed:** 4/18
 **Current Task:** Phase 2 - Server BGS Infrastructure
 
 ---
@@ -99,3 +99,50 @@
 - V2 types are kept because consumers (`dummy-engine`, `official-custom-bot-client`, tests) still use them. These will be migrated in Phase 6 (client) and Phase 7 (dummy engine), then cleaned up in Phase 10.
 - The V3 engine API uses JSON-lines protocol: long-lived engine processes that read/write one JSON message per line, enabling stateful sessions with MCTS tree persistence.
 - `EngineRequestV3` and `EngineResponseV3` are the new primary types; `EngineRequest` and `EngineResponse` are deprecated V2 aliases kept for migration.
+
+### 2026-01-15: Create bgs-store.ts for BGS state management
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Created `server/games/bgs-store.ts` - new file for BGS state management
+- Implemented `BgsHistoryEntry` interface for tracking position evaluations
+- Implemented `BotGameSession` interface with:
+  - Session metadata (bgsId, botCompositeId, gameId, config)
+  - Lifecycle status ("initializing" | "ready" | "ended")
+  - Evaluation history and current ply tracking
+  - Pending request tracking for timeout management
+- Implemented core lifecycle functions:
+  - `createBgs()` - Create new BGS with capacity check (max 256 sessions)
+  - `getBgs()` - Retrieve BGS by ID
+  - `endBgs()` - End session and clean up
+  - `markBgsReady()` - Transition from initializing to ready
+- Implemented history management:
+  - `addHistoryEntry()` - Add evaluation entry with ply validation
+  - `getBgsHistory()` - Get copy of history array
+  - `getLatestHistoryEntry()` - Get most recent evaluation
+- Implemented pending request management:
+  - `setPendingRequest()` - Set pending request with conflict check
+  - `getPendingRequest()` / `clearPendingRequest()` - Request lifecycle
+- Implemented query functions:
+  - `getBgsForBot()` - Get all BGS for a specific bot
+  - `getBgsForGame()` - Get BGS for a game
+  - `getBgsCount()` / `isAtCapacity()` - Capacity checking
+- Implemented cleanup functions:
+  - `endAllBgsForBot()` - End all BGS when bot disconnects
+  - `cleanupStaleBgs()` - Periodic cleanup for stale sessions
+- Added debug/testing utilities: `clearAll()`, `getAllBgs()`
+
+**Files Modified:**
+- `server/games/bgs-store.ts` - New file (485 lines)
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- The BGS store follows the same patterns as `custom-bot-store.ts` (Map-based storage, similar API style)
+- `BgsHistoryEntry` is defined independently here (not imported from `engine-api.ts`) as the server may need additional fields in the future
+- The 256 session limit matches Deep Wallwars' self-play capacity
+- Pending request tracking supports the 10-second timeout policy specified in the V3 migration plan
+- Used `Array.from(sessions.values())` instead of direct iteration to ensure compatibility with TypeScript's downlevelIteration requirements
