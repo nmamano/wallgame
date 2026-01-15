@@ -23,14 +23,14 @@ export function isStandardInitialState(
   state: GameInitialState,
 ): state is StandardInitialState {
   return (
-    "pawns" in state && "mouse" in (state as StandardInitialState).pawns[1]
+    "pawns" in state && "mouse" in (state as StandardInitialState).pawns.p1
   );
 }
 
 export function isClassicInitialState(
   state: GameInitialState,
 ): state is ClassicInitialState {
-  return "pawns" in state && "home" in (state as ClassicInitialState).pawns[1];
+  return "pawns" in state && "home" in (state as ClassicInitialState).pawns.p1;
 }
 
 export function isSurvivalInitialState(
@@ -95,17 +95,17 @@ export class GameState {
       // Classic has cat/home structure - store home in mouse slot for now
       this.pawns = {
         1: {
-          cat: [variantConfig.pawns[1].cat[0], variantConfig.pawns[1].cat[1]],
+          cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
           mouse: [
-            variantConfig.pawns[1].home[0],
-            variantConfig.pawns[1].home[1],
+            variantConfig.pawns.p1.home[0],
+            variantConfig.pawns.p1.home[1],
           ],
         },
         2: {
-          cat: [variantConfig.pawns[2].cat[0], variantConfig.pawns[2].cat[1]],
+          cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
           mouse: [
-            variantConfig.pawns[2].home[0],
-            variantConfig.pawns[2].home[1],
+            variantConfig.pawns.p2.home[0],
+            variantConfig.pawns.p2.home[1],
           ],
         },
       };
@@ -113,17 +113,17 @@ export class GameState {
       // Standard/Freestyle have cat/mouse structure
       this.pawns = {
         1: {
-          cat: [variantConfig.pawns[1].cat[0], variantConfig.pawns[1].cat[1]],
+          cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
           mouse: [
-            variantConfig.pawns[1].mouse[0],
-            variantConfig.pawns[1].mouse[1],
+            variantConfig.pawns.p1.mouse[0],
+            variantConfig.pawns.p1.mouse[1],
           ],
         },
         2: {
-          cat: [variantConfig.pawns[2].cat[0], variantConfig.pawns[2].cat[1]],
+          cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
           mouse: [
-            variantConfig.pawns[2].mouse[0],
-            variantConfig.pawns[2].mouse[1],
+            variantConfig.pawns.p2.mouse[0],
+            variantConfig.pawns.p2.mouse[1],
           ],
         },
       };

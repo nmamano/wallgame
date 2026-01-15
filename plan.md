@@ -21,7 +21,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Update SurvivalInitialState similarly",
       "Verify with tsc that no type errors introduced"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase1-types",

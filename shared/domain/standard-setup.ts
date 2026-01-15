@@ -17,11 +17,11 @@ export const buildStandardInitialState = (
 
   return {
     pawns: {
-      1: {
+      p1: {
         cat: [0, 0],
         mouse: [lastRow, 0],
       },
-      2: {
+      p2: {
         cat: [0, lastCol],
         mouse: [lastRow, lastCol],
       },

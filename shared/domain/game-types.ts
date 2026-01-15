@@ -50,13 +50,19 @@ export type NonSurvivalVariant = Exclude<Variant, "survival">;
 
 /** Initial state for Standard and Freestyle variants (cat chases mouse) */
 export interface StandardInitialState {
-  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  pawns: {
+    p1: { cat: Cell; mouse: Cell };
+    p2: { cat: Cell; mouse: Cell };
+  };
   walls: WallPosition[];
 }
 
 /** Initial state for Classic variant (cat races to home) */
 export interface ClassicInitialState {
-  pawns: Record<PlayerId, { cat: Cell; home: Cell }>;
+  pawns: {
+    p1: { cat: Cell; home: Cell };
+    p2: { cat: Cell; home: Cell };
+  };
   walls: WallPosition[];
 }
 

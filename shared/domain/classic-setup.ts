@@ -17,11 +17,11 @@ export const buildClassicInitialState = (
 
   return {
     pawns: {
-      1: {
+      p1: {
         cat: [0, 0],
         home: [lastRow, lastCol],
       },
-      2: {
+      p2: {
         cat: [0, lastCol],
         home: [lastRow, 0],
       },

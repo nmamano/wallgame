@@ -59,11 +59,11 @@ export const generateFreestyleInitialState = (
   const [orderedCat, orderedMouse] = normalizeCatMouseOrder(catCell, mouseCell);
 
   const pawns: StandardInitialState["pawns"] = {
-    1: {
+    p1: {
       cat: orderedCat,
       mouse: orderedMouse,
     },
-    2: {
+    p2: {
       cat: mirrorCell(orderedCat),
       mouse: mirrorCell(orderedMouse),
     },
@@ -74,9 +74,9 @@ export const generateFreestyleInitialState = (
     FREESTYLE_BOARD_HEIGHT,
     "freestyle",
   );
-  const cats: [Cell, Cell] = [pawns[1].cat, pawns[2].cat];
+  const cats: [Cell, Cell] = [pawns.p1.cat, pawns.p2.cat];
   // Wall legality uses opponent mice as the path targets.
-  const mice: [Cell, Cell] = [pawns[2].mouse, pawns[1].mouse];
+  const mice: [Cell, Cell] = [pawns.p2.mouse, pawns.p1.mouse];
 
   const walls: WallPosition[] = [];
   const wallCount = randomInt(rng, WALL_COUNT_MIN, WALL_COUNT_MAX);
