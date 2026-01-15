@@ -37,7 +37,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Remove V2 request/response types (MoveRequestMessage, DrawRequestMessage, etc.)",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase1-types",
