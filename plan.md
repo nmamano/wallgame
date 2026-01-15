@@ -88,7 +88,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Implement abuse protection (64KB limit, unexpected message tracking)",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase4-game",

@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 5/18
-**Current Task:** Phase 3 - WebSocket V3 Handler
+**Tasks Completed:** 6/18
+**Current Task:** Phase 4 - Game Socket Bot Integration
 
 ---
 
@@ -178,3 +178,44 @@
 - V2 functions kept as deprecated stubs because consumers (`custom-bot-socket.ts`, `eval-socket.ts`) still import them. These will be removed in Phase 3 (WebSocket handler rewrite) and Phase 5 (Eval socket rewrite).
 - The `MAX_QUEUE_LENGTH` constant was removed since V3 doesn't use request queues.
 - Time control filtering removed from bot discovery - in V3, bot games are untimed. The `botsQuerySchema` still accepts `timeControl` for backward compatibility but it's ignored.
+
+### 2026-01-15: Rewrite custom-bot-socket.ts for V3 BGS handlers
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Complete rewrite of `custom-bot-socket.ts` from V2 stateless request/response to V3 stateful Bot Game Sessions (BGS)
+- Attach handling now requires exactly `protocolVersion === 3` (V2 clients rejected)
+- Removed all V2 message handling (`request`, `response`, `ack`, `nack`)
+- Added V3 BGS response handlers:
+  - `handleGameSessionStarted()` - Marks BGS as ready on success
+  - `handleGameSessionEnded()` - Cleans up BGS tracking
+  - `handleEvaluateResponse()` - Validates ply, stores result in BGS history
+  - `handleMoveApplied()` - Updates BGS ply tracking
+- Implemented V3 public API for game integration (Promise-based):
+  - `startBgsSession()` - Creates BGS and waits for bot confirmation
+  - `endBgsSession()` - Ends BGS and waits for bot confirmation
+  - `requestEvaluation()` - Requests position evaluation from bot
+  - `applyBgsMove()` - Applies move to BGS and waits for confirmation
+  - `notifyBotGameEnded()` - Handles game end (cleans up BGS)
+- Implemented 10-second timeout policy for all BGS requests
+- Implemented abuse protection:
+  - 64KB message size limit (incoming and outgoing)
+  - Unexpected message tracking (disconnect after 100 unexpected messages)
+- Stubbed out `eval-socket.ts` temporarily (returns "not available" for eval requests)
+  - Full V3 BGS-based eval bar will be implemented in Phase 5
+
+**Files Modified:**
+- `server/routes/custom-bot-socket.ts` - Complete rewrite (1173 lines → 1173 lines)
+- `server/routes/eval-socket.ts` - Temporary stub (501 lines → 196 lines)
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- The V3 protocol uses Promise-based async/await for all BGS operations, replacing V2's fire-and-forget queue model
+- Timeouts are enforced via `setTimeout` with cleanup on response or timeout
+- The `pendingResolvers` Map tracks outstanding requests by bgsId, enabling proper timeout handling
+- Eval socket is temporarily disabled during migration (Phase 5 will rewrite it for V3 BGS-based eval bar)
+- V2 deprecated functions in `custom-bot-store.ts` (now throwing errors) are no longer called
