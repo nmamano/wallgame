@@ -128,7 +128,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Implement shared BGS for human vs human with pending state",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase6-client",
