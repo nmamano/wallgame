@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 11/18
-**Current Task:** Phase 7 - Rewrite dummy-engine for V3 stateful protocol
+**Tasks Completed:** 12/18
+**Current Task:** Phase 8 - Design Deep Wallwars BGS adapter interface
 
 ---
 
@@ -427,4 +427,45 @@
 - The implementation follows a factory pattern (private constructor + static spawn) to ensure proper initialization
 - Request tracking uses bgsId as the key, supporting multiple concurrent BGS sessions per engine
 - The JSON-lines protocol (one JSON object per newline) is simple and debuggable
+
+### 2026-01-15: Rewrite dummy-engine for V3 stateful protocol
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Complete rewrite of `dummy-engine/src/index.ts` from V2 stateless single-request mode to V3 stateful Bot Game Session protocol
+- Converted from single-request stdin/stdout to long-lived JSON-lines protocol:
+  - Engine now reads JSON lines continuously from stdin
+  - Each line is a complete JSON message, responses written as single JSON lines to stdout
+  - Engine stays running for the lifetime of the bot client
+- Implemented session state management:
+  - `DummyBgsState` interface tracks per-session game state (grid, pawns, ply)
+  - `sessions` Map stores multiple concurrent BGS sessions keyed by bgsId
+- Implemented V3 message handlers:
+  - `handleStartGameSession()` - Creates new BGS from BgsConfig, initializes grid and pawns
+  - `handleEndGameSession()` - Removes BGS from sessions Map
+  - `handleEvaluatePosition()` - Computes best move using dummy AI, returns evaluation
+  - `handleApplyMove()` - Applies move to session state, increments ply
+- Added variant-aware initialization:
+  - Standard/Freestyle: cat/mouse structure with p1/p2 pawns
+  - Classic: cat/home structure (home stored in mouse slot)
+  - Survival: flat cat/mouse structure (single cat vs single mouse)
+- Added `readLines()` async generator for line-buffered stdin reading
+- Added ply validation to detect stale/out-of-order requests
+
+**Files Modified:**
+- `dummy-engine/src/index.ts` - Complete rewrite (~430 lines)
+
+**Verification:**
+- `cd dummy-engine && bunx tsc --noEmit` - Passed
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- The dummy engine now supports multiple concurrent BGS sessions, matching the V3 protocol specification
+- Session state includes: grid with walls, pawn positions for both players, current ply counter
+- Move computation uses the existing `computeDummyAiMove()` function which walks the cat toward its goal
+- The engine always returns evaluation 0 (neutral) - a more sophisticated engine would compute real evaluations
+- Type guards (`isStandardInitialState`, `isClassicInitialState`, `isSurvivalInitialState`) are duplicated from `game-state.ts` since the dummy engine is a standalone binary
+- The `readLines()` implementation handles partial reads and buffers incomplete lines correctly
 
