@@ -684,6 +684,18 @@ def train_model(model, generation, epochs, device, freeze_until_gen=0):
 
     learner.fit(epochs, learning_rate)
 
+    # Free memory after training - these are no longer needed
+    # Model weights are stored in `model` (passed by reference), not in these objects
+    del learner
+    del loaders
+    del training_loader
+    del valid_loader
+    del training_data
+    del valid_data
+    gc.collect()
+    torch.cuda.empty_cache()
+    print("Training memory freed.")
+
 def init():
     device = torch.device(default_cuda_device)
     expected_priors = 2 * args.columns * args.rows + move_channels
