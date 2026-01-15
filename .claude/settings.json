@@ -1,0 +1,37 @@
+{
+  "env": {
+    "XDG_CACHE_HOME": ".cache",
+    "npm_config_cache": ".cache/npm",
+    "BUN_INSTALL_CACHE_DIR": ".cache/bun"
+  },
+  "permissions": {
+    "allow": [
+      "WebFetch(domain:registry.npmjs.org)",
+      "WebFetch(domain:github.com)",
+      "WebFetch(domain:bun.sh)"
+    ],
+    "deny": [
+      "Bash(sudo *)",
+      "Bash(docker *)",
+      "Bash(fly deploy *)",
+      "Bash(fly secrets *)",
+      "Read(./.env)",
+      "Read(./.env.*)",
+      "Read(~/.ssh/**)",
+      "Read(~/.aws/**)",
+      "Read(~/.kube/**)"
+    ],
+    "ask": [
+      "Bash(git push *)",
+      "Bash(git push)"
+    ]
+  },
+  "sandbox": {
+    "enabled": true,
+    "autoAllowBashIfSandboxed": true,
+    "allowUnsandboxedCommands": false,
+    "network": {
+      "allowLocalBinding": true
+    }
+  }
+}

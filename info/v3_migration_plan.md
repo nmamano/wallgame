@@ -1,5 +1,14 @@
 # Bot Protocol V2 → V3 Migration Plan
 
+## Context
+
+- `info/v3_migration_plan.md`: this doc.
+- `info/proactive_bot_protocol.md`: the V2 protocol.
+- `info/game_session_bot_protocol.md`: the V3 protocol.
+- `info/evaluation_bar.md`: the eval bar feature design.
+- `info/deep-wallwars-integration.md`: Deep Wallwars (engine) details.
+- `info/generalized_variants.md`: game initial state types.
+
 ## Overview
 
 Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". The key architectural change is from **stateless per-move engine spawning** to **stateful Bot Game Sessions (BGS)** with persistent engine processes.
