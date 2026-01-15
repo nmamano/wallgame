@@ -103,7 +103,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "On game end: send end_game_session",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase5-eval",

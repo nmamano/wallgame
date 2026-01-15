@@ -40,7 +40,9 @@ import {
   getBotByCompositeId,
   addActiveGame,
 } from "../games/custom-bot-store";
-import { queueBotMoveRequest } from "./custom-bot-socket";
+// Note: V3 BGS initialization is handled asynchronously when the player connects
+// via game-socket.ts initializeBotGameOnStart(). These imports were removed as
+// game creation no longer initializes BGS synchronously.
 
 // Lobby websocket connections for real-time matchmaking updates
 const lobbyConnections = new Set<WebSocket>();
@@ -525,15 +527,10 @@ export const botsRoute = new Hono()
           botName: bot.name,
         });
 
-        // If bot is Player 1 (goes first), queue move request
-        if (session.players.joiner.playerId === 1) {
-          queueBotMoveRequest(
-            parsed.botId,
-            session.id,
-            session.players.joiner.playerId,
-            session.players.host.displayName,
-          );
-        }
+        // V3: Initialize BGS asynchronously (don't block the HTTP response)
+        // The BGS initialization and first bot move (if bot goes first) are handled
+        // when the human player connects via WebSocket and the game starts.
+        // This is done via initializeBotGameOnStart in game-socket.ts.
 
         const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
         const shareUrl = `${origin}/game/${session.id}`;
