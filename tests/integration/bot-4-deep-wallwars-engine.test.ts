@@ -335,9 +335,9 @@ interface BotConfigFile {
   cleanup: () => Promise<void>;
 }
 
+/** V3: Bot variant configs - no timeControls (bot games are untimed) */
 const deepWallwarsVariants = {
   classic: {
-    timeControls: ["bullet", "blitz", "rapid", "classical"],
     boardWidth: { min: 8, max: 8 },
     boardHeight: { min: 8, max: 8 },
     recommended: [{ boardWidth: 8, boardHeight: 8 }],

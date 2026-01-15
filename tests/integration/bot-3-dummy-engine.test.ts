@@ -331,21 +331,19 @@ interface BotConfigFile {
   cleanup: () => Promise<void>;
 }
 
+/** V3: Bot variant configs - no timeControls (bot games are untimed) */
 const defaultVariants = {
   standard: {
-    timeControls: ["bullet", "blitz", "rapid", "classical"],
     boardWidth: { min: 3, max: 15 },
     boardHeight: { min: 3, max: 15 },
     recommended: [{ boardWidth: 5, boardHeight: 5 }],
   },
   classic: {
-    timeControls: ["bullet", "blitz", "rapid", "classical"],
     boardWidth: { min: 3, max: 15 },
     boardHeight: { min: 3, max: 15 },
     recommended: [{ boardWidth: 5, boardHeight: 5 }],
   },
   freestyle: {
-    timeControls: ["bullet", "blitz", "rapid", "classical"],
     boardWidth: { min: 3, max: 15 },
     boardHeight: { min: 3, max: 15 },
     recommended: [],
