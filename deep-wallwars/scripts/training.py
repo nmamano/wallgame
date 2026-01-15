@@ -2,7 +2,12 @@ import subprocess
 import argparse
 import gc
 import os
+import functools
 from pathlib import Path
+
+# Force all prints to flush immediately for real-time logging
+print = functools.partial(print, flush=True)
+
 print("Importing torch...")  # Print because it takes a while
 import torch
 import torch.onnx
