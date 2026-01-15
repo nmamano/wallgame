@@ -1,42 +1,43 @@
 /**
- * Custom Bot WebSocket Route (Proactive Bot Protocol v2)
+ * Custom Bot WebSocket Route (Bot Game Session Protocol v3)
  *
  * Bot clients connect proactively and register bots for users to play against.
  *
- * Protocol: Strict REQUEST -> RESPONSE model
- * - Server sends requests when it needs a decision from the bot
- * - Client is idle unless there is an outstanding request
- * - Only one request is active at a time per client; new requests invalidate prior ones
+ * V3 Protocol: Bot Game Sessions (BGS)
+ * - Server creates BGS when game starts: start_game_session
+ * - Server requests evaluations: evaluate_position
+ * - Server applies moves: apply_move
+ * - Server ends session: end_game_session
+ *
+ * All BGS messages follow request/response pattern with expectedPly for ordering.
+ * The engine maintains game state internally - no state sent per request.
  */
 
 import type { Hono } from "hono";
 import { createBunWebSocket } from "hono/bun";
 import type { WSContext } from "hono/ws";
 
-import type { PlayerId } from "../../shared/domain/game-types";
-import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
   CUSTOM_BOT_PROTOCOL_VERSION,
   DEFAULT_BOT_LIMITS,
   type CustomBotClientMessage,
   type CustomBotServerMessage,
   type AttachMessage,
-  type BotResponseMessage,
-  type NackCode,
   type AttachRejectedCode,
   type BotConfig,
+  type BgsConfig,
+  type GameSessionStartedMessage,
+  type GameSessionEndedMessage,
+  type EvaluateResponseMessage,
+  type MoveAppliedMessage,
 } from "../../shared/contracts/custom-bot-protocol";
 import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
 
 import {
-  getSession,
-  applyPlayerMove,
   resignGame,
-  acceptDraw,
-  rejectDraw,
-  processRatingUpdate,
   serializeGameState,
   type GameSession,
+  getSession,
 } from "../games/store";
 
 import {
@@ -45,41 +46,49 @@ import {
   unregisterClient,
   getClient,
   getClientForBot,
-  getActiveGame,
   getActiveGamesForClient,
   removeActiveGame,
   isAtClientLimit,
-  generateRequestId,
-  enqueueRequest,
-  tryProcessNextRequest,
-  getActiveRequest,
-  clearActiveRequest,
-  validateRequestId,
-  checkRateLimit,
   incrementInvalidMessageCount,
   resetInvalidMessageCount,
-  removeRequestsForGame,
-  type QueuedRequest,
+  addClientBgsSession,
+  removeClientBgsSession,
 } from "../games/custom-bot-store";
+
+import {
+  createBgs,
+  getBgs,
+  endBgs,
+  markBgsReady,
+  addHistoryEntry,
+  updateCurrentPly,
+  setPendingRequest,
+  clearPendingRequest,
+  endAllBgsForBot,
+  type BgsHistoryEntry,
+} from "../games/bgs-store";
 
 import { persistCompletedGame } from "../games/persistence";
 import {
   sendMatchStatus,
   broadcast,
   broadcastLiveGamesRemove,
-  broadcastLiveGamesUpsert,
 } from "./game-socket";
-
-import {
-  handleBotEvalResponse,
-  handleBotClientDisconnectForEval,
-  trySendNextEvalRequest,
-} from "./eval-socket";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
 // Official bot token from environment
 const OFFICIAL_BOT_TOKEN = process.env.OFFICIAL_BOT_TOKEN;
+
+// ============================================================================
+// Constants
+// ============================================================================
+
+/** Timeout for BGS requests (10 seconds as per V3 spec) */
+const BGS_REQUEST_TIMEOUT_MS = 10_000;
+
+/** Maximum unexpected messages before disconnect */
+const MAX_UNEXPECTED_MESSAGES = 100;
 
 // ============================================================================
 // Types
@@ -89,7 +98,18 @@ interface BotSocket {
   ctx: WSContext;
   clientId: string | null; // null until attached
   attached: boolean;
+  unexpectedMessageCount: number;
 }
+
+/** Resolver for pending BGS requests */
+interface BgsRequestResolver<T> {
+  resolve: (result: T) => void;
+  reject: (error: Error) => void;
+  timeoutId: ReturnType<typeof setTimeout>;
+}
+
+/** Pending request resolvers by bgsId */
+const pendingResolvers = new Map<string, BgsRequestResolver<unknown>>();
 
 // ============================================================================
 // Socket Tracking
@@ -103,7 +123,7 @@ const clientIdToContext = new Map<string, WSContext>();
 
 /**
  * Get the WSContext for a client by clientId.
- * Used by eval-socket.ts to send eval requests to bots.
+ * Used by external modules to send messages to bots.
  */
 export const getClientContext = (clientId: string): WSContext | undefined => {
   return clientIdToContext.get(clientId);
@@ -141,38 +161,23 @@ const cleanupSocket = (ctx: WSContext, socket: BotSocket) => {
 
 const send = (ctx: WSContext, message: CustomBotServerMessage): void => {
   try {
-    ctx.send(JSON.stringify(message));
+    const msgStr = JSON.stringify(message);
+    // Check message size limit (64KB)
+    if (msgStr.length > DEFAULT_BOT_LIMITS.maxMessageBytes) {
+      console.error("[custom-bot-ws] message too large to send", {
+        type: message.type,
+        size: msgStr.length,
+        limit: DEFAULT_BOT_LIMITS.maxMessageBytes,
+      });
+      return;
+    }
+    ctx.send(msgStr);
   } catch (error) {
     console.error("[custom-bot-ws] failed to send message", {
       type: message.type,
       error,
     });
   }
-};
-
-const sendAck = (ctx: WSContext, requestId: string): void => {
-  send(ctx, {
-    type: "ack",
-    requestId,
-    serverTime: Date.now(),
-  });
-};
-
-const sendNack = (
-  ctx: WSContext,
-  requestId: string,
-  code: NackCode,
-  message: string,
-  retryable = false,
-): void => {
-  send(ctx, {
-    type: "nack",
-    requestId,
-    code,
-    message,
-    retryable,
-    serverTime: Date.now(),
-  });
 };
 
 const sendAttachRejected = (
@@ -184,68 +189,6 @@ const sendAttachRejected = (
     type: "attach-rejected",
     code,
     message,
-  });
-};
-
-/**
- * Send the next queued request to a client if possible.
- * Only processes move and draw requests (eval requests are handled by eval-socket).
- */
-const trySendNextRequest = (clientId: string): void => {
-  const client = getClient(clientId);
-  if (!client) return;
-
-  // Only process move/draw requests - eval requests are handled by eval-socket
-  const request = tryProcessNextRequest(clientId, ["move", "draw"]);
-  if (!request) return;
-
-  const ctx = clientIdToContext.get(clientId);
-  if (!ctx) return;
-
-  let session: GameSession;
-  try {
-    session = getSession(request.gameId);
-  } catch {
-    // Game no longer exists, clear and try next
-    clearActiveRequest(clientId);
-    trySendNextRequest(clientId);
-    return;
-  }
-
-  // Build and send request message
-  if (request.kind === "move") {
-    send(ctx, {
-      type: "request",
-      requestId: request.requestId,
-      botId: request.botId,
-      gameId: request.gameId,
-      serverTime: Date.now(),
-      kind: "move",
-      playerId: request.playerId,
-      opponentName: request.opponentName,
-      state: serializeGameState(session),
-    });
-  } else if (request.kind === "draw") {
-    send(ctx, {
-      type: "request",
-      requestId: request.requestId,
-      botId: request.botId,
-      gameId: request.gameId,
-      serverTime: Date.now(),
-      kind: "draw",
-      playerId: request.playerId,
-      opponentName: request.opponentName,
-      offeredBy: request.offeredBy!,
-      state: serializeGameState(session),
-    });
-  }
-
-  console.info("[custom-bot-ws] sent request", {
-    clientId,
-    botId: request.botId,
-    gameId: request.gameId,
-    kind: request.kind,
-    requestId: request.requestId,
   });
 };
 
@@ -271,7 +214,7 @@ const validateBotConfig = (
 };
 
 // ============================================================================
-// Attach Handling
+// Attach Handling (V3: Require protocol version 3)
 // ============================================================================
 
 const handleAttach = (
@@ -279,12 +222,12 @@ const handleAttach = (
   socket: BotSocket,
   message: AttachMessage,
 ): boolean => {
-  // Validate protocol version
+  // V3: Require exactly protocol version 3
   if (message.protocolVersion !== CUSTOM_BOT_PROTOCOL_VERSION) {
     sendAttachRejected(
       ctx,
       "PROTOCOL_UNSUPPORTED",
-      `Protocol version ${message.protocolVersion} not supported. Server supports version ${CUSTOM_BOT_PROTOCOL_VERSION}.`,
+      `Protocol version ${message.protocolVersion} not supported. Server requires version ${CUSTOM_BOT_PROTOCOL_VERSION}.`,
     );
     return false;
   }
@@ -428,538 +371,270 @@ const handleAttach = (
     botNames: message.bots.map((b) => b.name),
     clientName: message.client.name,
     clientVersion: message.client.version,
+    protocolVersion: message.protocolVersion,
   });
 
   return true;
 };
 
 // ============================================================================
-// Response Handling
+// V3 BGS Message Handlers
 // ============================================================================
 
-const handleBotResponse = async (
-  ctx: WSContext,
+/**
+ * Handle game_session_started response from bot.
+ */
+const handleGameSessionStarted = (
   socket: BotSocket,
-  message: BotResponseMessage,
-): Promise<void> => {
-  if (!socket.attached || !socket.clientId) {
-    sendNack(ctx, message.requestId, "NOT_ATTACHED", "Not attached.", false);
-    return;
-  }
-
-  const client = getClient(socket.clientId);
-  if (!client) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "NOT_ATTACHED",
-      "Client not found.",
-      false,
-    );
-    return;
-  }
-
-  // Rate limiting
-  if (
-    !checkRateLimit(
-      socket.clientId,
-      DEFAULT_BOT_LIMITS.minClientMessageIntervalMs,
-    )
-  ) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "RATE_LIMITED",
-      "Too many messages. Please wait before sending another.",
-      true,
-    );
-    return;
-  }
-
-  // Validate request ID matches the active request
-  if (!validateRequestId(socket.clientId, message.requestId)) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "STALE_REQUEST",
-      "Request ID does not match the current active request.",
-      false,
-    );
-    return;
-  }
-
-  const activeRequest = getActiveRequest(socket.clientId);
-  if (!activeRequest) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "STALE_REQUEST",
-      "No active request.",
-      false,
-    );
-    return;
-  }
-
-  const response = message.response;
-
-  // Validate the action matches the request kind
-  if (!isValidActionForRequest(activeRequest.kind, response.action)) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      `Action "${response.action}" is not valid for "${activeRequest.kind}" request.`,
-      true,
-    );
-    incrementInvalidMessageCount(socket.clientId);
-    return;
-  }
-
-  // Handle eval responses separately (they don't need game session)
-  if (response.action === "eval") {
-    handleEvalResponse(ctx, socket, message, activeRequest);
-    return;
-  }
-
-  // For move/draw requests, we need the game session
-  let session: GameSession;
-  try {
-    session = getSession(activeRequest.gameId);
-  } catch {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INTERNAL_ERROR",
-      "Game session not found.",
-      false,
-    );
-    clearActiveRequest(socket.clientId);
-    trySendNextRequest(socket.clientId);
-    return;
-  }
-
-  // Get compositeId for this bot
-  const compositeId = `${socket.clientId}:${activeRequest.botId}`;
-  const activeGame = getActiveGame(compositeId, activeRequest.gameId);
-  if (!activeGame) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INTERNAL_ERROR",
-      "Bot is not active in this game.",
-      false,
-    );
-    clearActiveRequest(socket.clientId);
-    trySendNextRequest(socket.clientId);
-    return;
-  }
-
-  // Handle based on the action
-  switch (response.action) {
-    case "move":
-      await handleMoveResponse(
-        ctx,
-        socket,
-        message,
-        activeRequest,
-        activeGame.playerId,
-        session,
-      );
-      break;
-    case "resign":
-      await handleResignResponse(
-        ctx,
-        socket,
-        message,
-        activeRequest,
-        activeGame.playerId,
-        session,
-      );
-      break;
-    case "accept-draw":
-      await handleDrawAcceptResponse(
-        ctx,
-        socket,
-        message,
-        activeRequest,
-        activeGame.playerId,
-        session,
-      );
-      break;
-    case "decline-draw":
-      handleDrawDeclineResponse(
-        ctx,
-        socket,
-        message,
-        activeRequest,
-        activeGame.playerId,
-        session,
-      );
-      break;
-  }
-};
-
-const isValidActionForRequest = (kind: string, action: string): boolean => {
-  switch (kind) {
-    case "move":
-      return action === "move" || action === "resign";
-    case "draw":
-      return action === "accept-draw" || action === "decline-draw";
-    case "eval":
-      return action === "eval";
-    default:
-      return false;
-  }
-};
-
-const handleMoveResponse = async (
-  ctx: WSContext,
-  socket: BotSocket,
-  message: BotResponseMessage,
-  activeRequest: { gameId: string; botId: string; requestId: string },
-  playerId: PlayerId,
-  session: GameSession,
-): Promise<void> => {
-  const response = message.response;
-  if (response.action !== "move") return;
-
-  // Validate game is playing
-  if (session.gameState.status !== "playing") {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      "Game is not in playing state.",
-      false,
-    );
-    return;
-  }
-
-  // Validate it's the bot's turn
-  if (session.gameState.turn !== playerId) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      "It is not your turn.",
-      false,
-    );
-    return;
-  }
-
-  // Parse the move notation
-  let move;
-  try {
-    move = moveFromStandardNotation(
-      response.moveNotation,
-      session.config.boardHeight,
-    );
-  } catch (error) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "ILLEGAL_MOVE",
-      `Invalid move notation: ${(error as Error).message}`,
-      true,
-    );
-    incrementInvalidMessageCount(socket.clientId!);
-    return;
-  }
-
-  // Apply the move
-  try {
-    const newState = applyPlayerMove({
-      id: session.id,
-      playerId,
-      move,
-      timestamp: Date.now(),
-    });
-
-    // Clear active request and process next
-    clearActiveRequest(socket.clientId!);
-    resetInvalidMessageCount(socket.clientId!);
-
-    // Send ack
-    sendAck(ctx, message.requestId);
-
-    // Broadcast state to all players (include evaluation from engine)
-    broadcast(session.id, {
-      type: "state",
-      state: serializeGameState(session),
-      evaluation: response.evaluation,
-    });
-
-    // Handle game end
-    if (newState.status === "finished") {
-      const compositeId = `${socket.clientId}:${activeRequest.botId}`;
-      removeActiveGame(compositeId, session.id);
-      removeRequestsForGame(socket.clientId!, session.id);
-
-      await processRatingUpdate(session.id);
-      try {
-        await persistCompletedGame(session);
-      } catch (error) {
-        console.error("[custom-bot-ws] failed to persist game", {
-          error,
-          gameId: session.id,
-        });
-      }
-      broadcastLiveGamesRemove(session.id);
-      sendMatchStatus(session.id);
-    } else {
-      broadcastLiveGamesUpsert(session.id);
-    }
-
-    console.info("[custom-bot-ws] move applied", {
-      gameId: session.id,
-      playerId,
-      notation: response.moveNotation,
-      moveCount: newState.moveCount,
-      evaluation: response.evaluation,
-    });
-
-    // Process next requests (both move/draw and eval)
-    trySendNextRequest(socket.clientId!);
-    trySendNextEvalRequest(socket.clientId!);
-  } catch (error) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "ILLEGAL_MOVE",
-      (error as Error).message ?? "Move could not be applied.",
-      true,
-    );
-    incrementInvalidMessageCount(socket.clientId!);
-  }
-};
-
-const handleResignResponse = async (
-  ctx: WSContext,
-  socket: BotSocket,
-  message: BotResponseMessage,
-  activeRequest: { gameId: string; botId: string; requestId: string },
-  playerId: PlayerId,
-  session: GameSession,
-): Promise<void> => {
-  // Validate game is playing
-  if (session.gameState.status !== "playing") {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      "Game is not in playing state.",
-      false,
-    );
-    return;
-  }
-
-  try {
-    const newState = resignGame({
-      id: session.id,
-      playerId,
-      timestamp: Date.now(),
-    });
-
-    // Clear active request
-    clearActiveRequest(socket.clientId!);
-    resetInvalidMessageCount(socket.clientId!);
-
-    // Send ack
-    sendAck(ctx, message.requestId);
-
-    // Broadcast state
-    broadcast(session.id, {
-      type: "state",
-      state: serializeGameState(session),
-    });
-
-    // Handle game end
-    if (newState.status === "finished") {
-      const compositeId = `${socket.clientId}:${activeRequest.botId}`;
-      removeActiveGame(compositeId, session.id);
-      removeRequestsForGame(socket.clientId!, session.id);
-
-      await processRatingUpdate(session.id);
-      try {
-        await persistCompletedGame(session);
-      } catch (error) {
-        console.error("[custom-bot-ws] failed to persist game after resign", {
-          error,
-          gameId: session.id,
-        });
-      }
-      broadcastLiveGamesRemove(session.id);
-      sendMatchStatus(session.id);
-    }
-
-    console.info("[custom-bot-ws] resignation processed", {
-      gameId: session.id,
-      playerId,
-    });
-
-    // Process next requests (both move/draw and eval)
-    trySendNextRequest(socket.clientId!);
-    trySendNextEvalRequest(socket.clientId!);
-  } catch (error) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INTERNAL_ERROR",
-      (error as Error).message ?? "Resignation failed.",
-      false,
-    );
-  }
-};
-
-const handleDrawAcceptResponse = async (
-  ctx: WSContext,
-  socket: BotSocket,
-  message: BotResponseMessage,
-  activeRequest: { gameId: string; botId: string; requestId: string },
-  playerId: PlayerId,
-  session: GameSession,
-): Promise<void> => {
-  // Validate game is playing
-  if (session.gameState.status !== "playing") {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INVALID_ACTION",
-      "Game is not in playing state.",
-      false,
-    );
-    return;
-  }
-
-  try {
-    const newState = acceptDraw({
-      id: session.id,
-      playerId,
-    });
-
-    // Clear active request
-    clearActiveRequest(socket.clientId!);
-    resetInvalidMessageCount(socket.clientId!);
-
-    // Send ack
-    sendAck(ctx, message.requestId);
-
-    // Broadcast state
-    broadcast(session.id, {
-      type: "state",
-      state: serializeGameState(session),
-    });
-
-    // Handle game end
-    if (newState.status === "finished") {
-      const compositeId = `${socket.clientId}:${activeRequest.botId}`;
-      removeActiveGame(compositeId, session.id);
-      removeRequestsForGame(socket.clientId!, session.id);
-
-      await processRatingUpdate(session.id);
-      try {
-        await persistCompletedGame(session);
-      } catch (error) {
-        console.error("[custom-bot-ws] failed to persist game after draw", {
-          error,
-          gameId: session.id,
-        });
-      }
-      broadcastLiveGamesRemove(session.id);
-      sendMatchStatus(session.id);
-    }
-
-    console.info("[custom-bot-ws] draw accepted", {
-      gameId: session.id,
-      playerId,
-    });
-
-    // Process next requests (both move/draw and eval)
-    trySendNextRequest(socket.clientId!);
-    trySendNextEvalRequest(socket.clientId!);
-  } catch (error) {
-    sendNack(
-      ctx,
-      message.requestId,
-      "INTERNAL_ERROR",
-      (error as Error).message ?? "Draw acceptance failed.",
-      false,
-    );
-  }
-};
-
-const handleDrawDeclineResponse = (
-  ctx: WSContext,
-  socket: BotSocket,
-  message: BotResponseMessage,
-  _activeRequest: { gameId: string; botId: string; requestId: string },
-  playerId: PlayerId,
-  session: GameSession,
+  message: GameSessionStartedMessage,
 ): void => {
-  // Clear active request
-  clearActiveRequest(socket.clientId!);
-  resetInvalidMessageCount(socket.clientId!);
+  const { bgsId, success, error } = message;
 
-  // Reject the draw on the server side
-  rejectDraw({
-    id: session.id,
-    playerId,
+  // Validate BGS exists
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    console.warn("[custom-bot-ws] game_session_started for unknown BGS", {
+      bgsId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Validate the bot matches
+  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+    console.warn("[custom-bot-ws] game_session_started from wrong client", {
+      bgsId,
+      expectedBot: bgs.botCompositeId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Resolve the pending request
+  const resolver = pendingResolvers.get(bgsId);
+  if (resolver) {
+    clearTimeout(resolver.timeoutId);
+    pendingResolvers.delete(bgsId);
+    clearPendingRequest(bgsId);
+
+    if (success) {
+      markBgsReady(bgsId);
+      resolver.resolve({ success: true });
+    } else {
+      resolver.reject(new Error(error || "Session start failed"));
+    }
+  } else {
+    // Late response after timeout - silently discard
+    console.debug("[custom-bot-ws] late game_session_started response", {
+      bgsId,
+    });
+  }
+
+  console.info("[custom-bot-ws] game_session_started handled", {
+    bgsId,
+    success,
+    error: error || undefined,
   });
-
-  // Send ack
-  sendAck(ctx, message.requestId);
-
-  // Broadcast draw rejection
-  broadcast(session.id, {
-    type: "draw-rejected",
-    playerId,
-  });
-
-  console.info("[custom-bot-ws] draw declined", {
-    gameId: session.id,
-    playerId,
-  });
-
-  // Process next requests (both move/draw and eval)
-  trySendNextRequest(socket.clientId!);
-  trySendNextEvalRequest(socket.clientId!);
 };
 
 /**
- * Handle an eval response from the bot.
- * Forwards the evaluation to the eval socket client.
+ * Handle game_session_ended response from bot.
  */
-const handleEvalResponse = (
-  ctx: WSContext,
+const handleGameSessionEnded = (
   socket: BotSocket,
-  message: BotResponseMessage,
-  activeRequest: { gameId: string; botId: string; requestId: string },
+  message: GameSessionEndedMessage,
 ): void => {
-  const response = message.response;
-  if (response.action !== "eval") return;
+  const { bgsId, success, error } = message;
 
-  // Clear active request
-  clearActiveRequest(socket.clientId!);
-  resetInvalidMessageCount(socket.clientId!);
+  // Resolve the pending request (if any)
+  const resolver = pendingResolvers.get(bgsId);
+  if (resolver) {
+    clearTimeout(resolver.timeoutId);
+    pendingResolvers.delete(bgsId);
+    clearPendingRequest(bgsId);
 
-  // Send ack to the bot
-  sendAck(ctx, message.requestId);
+    if (success) {
+      resolver.resolve({ success: true });
+    } else {
+      // Even on error, session is considered ended
+      resolver.resolve({ success: false, error });
+    }
+  }
 
-  // Forward the eval response to the eval socket client
-  handleBotEvalResponse(
-    activeRequest.requestId,
-    response.evaluation,
-    response.bestMove,
-  );
+  // Clean up BGS tracking on client
+  if (socket.clientId) {
+    removeClientBgsSession(socket.clientId, bgsId);
+  }
 
-  console.info("[custom-bot-ws] eval response handled", {
-    requestId: activeRequest.requestId,
-    evaluation: response.evaluation,
+  console.info("[custom-bot-ws] game_session_ended handled", {
+    bgsId,
+    success,
+    error: error || undefined,
   });
+};
 
-  // Process next requests (both move/draw and eval)
-  trySendNextRequest(socket.clientId!);
-  trySendNextEvalRequest(socket.clientId!);
+/**
+ * Handle evaluate_response from bot.
+ * Validates ply and stores result in BGS history.
+ */
+const handleEvaluateResponse = (
+  socket: BotSocket,
+  message: EvaluateResponseMessage,
+): void => {
+  const { bgsId, ply, bestMove, evaluation, success, error } = message;
+
+  // Validate BGS exists
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    console.warn("[custom-bot-ws] evaluate_response for unknown BGS", {
+      bgsId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Validate the bot matches
+  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+    console.warn("[custom-bot-ws] evaluate_response from wrong client", {
+      bgsId,
+      expectedBot: bgs.botCompositeId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Resolve the pending request
+  const resolver = pendingResolvers.get(bgsId) as
+    | BgsRequestResolver<EvaluateResponseMessage>
+    | undefined;
+  if (resolver) {
+    clearTimeout(resolver.timeoutId);
+    pendingResolvers.delete(bgsId);
+    clearPendingRequest(bgsId);
+
+    if (success) {
+      // Validate ply matches expected
+      const pending = bgs.pendingRequest;
+      if (pending && pending.expectedPly !== ply) {
+        console.warn("[custom-bot-ws] evaluate_response ply mismatch", {
+          bgsId,
+          expectedPly: pending.expectedPly,
+          receivedPly: ply,
+        });
+        // Still process it, but log the warning
+      }
+
+      // Add to history
+      const historyEntry: BgsHistoryEntry = {
+        ply,
+        evaluation,
+        bestMove,
+      };
+      addHistoryEntry(bgsId, historyEntry);
+
+      resolver.resolve(message);
+    } else {
+      resolver.reject(new Error(error || "Evaluation failed"));
+    }
+  } else {
+    // Late response after timeout - silently discard
+    console.debug("[custom-bot-ws] late evaluate_response", { bgsId, ply });
+  }
+
+  console.info("[custom-bot-ws] evaluate_response handled", {
+    bgsId,
+    ply,
+    evaluation,
+    bestMove,
+    success,
+  });
+};
+
+/**
+ * Handle move_applied response from bot.
+ * Updates BGS ply tracking.
+ */
+const handleMoveApplied = (
+  socket: BotSocket,
+  message: MoveAppliedMessage,
+): void => {
+  const { bgsId, ply, success, error } = message;
+
+  // Validate BGS exists
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    console.warn("[custom-bot-ws] move_applied for unknown BGS", {
+      bgsId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Validate the bot matches
+  if (!socket.clientId || !bgs.botCompositeId.startsWith(socket.clientId)) {
+    console.warn("[custom-bot-ws] move_applied from wrong client", {
+      bgsId,
+      expectedBot: bgs.botCompositeId,
+      clientId: socket.clientId,
+    });
+    incrementUnexpectedMessage(socket);
+    return;
+  }
+
+  // Resolve the pending request
+  const resolver = pendingResolvers.get(bgsId) as
+    | BgsRequestResolver<MoveAppliedMessage>
+    | undefined;
+  if (resolver) {
+    clearTimeout(resolver.timeoutId);
+    pendingResolvers.delete(bgsId);
+    clearPendingRequest(bgsId);
+
+    if (success) {
+      // Update current ply in BGS
+      updateCurrentPly(bgsId, ply);
+      resolver.resolve(message);
+    } else {
+      resolver.reject(new Error(error || "Move application failed"));
+    }
+  } else {
+    // Late response after timeout - silently discard
+    console.debug("[custom-bot-ws] late move_applied", { bgsId, ply });
+  }
+
+  console.info("[custom-bot-ws] move_applied handled", {
+    bgsId,
+    ply,
+    success,
+    error: error || undefined,
+  });
+};
+
+// ============================================================================
+// Unexpected Message Tracking
+// ============================================================================
+
+const incrementUnexpectedMessage = (socket: BotSocket): void => {
+  socket.unexpectedMessageCount += 1;
+  if (socket.unexpectedMessageCount >= MAX_UNEXPECTED_MESSAGES) {
+    console.warn(
+      "[custom-bot-ws] disconnecting client due to too many unexpected messages",
+      {
+        clientId: socket.clientId,
+        count: socket.unexpectedMessageCount,
+      },
+    );
+    try {
+      socket.ctx.close(1008, "Too many unexpected messages");
+    } catch {
+      // Ignore close errors
+    }
+  }
 };
 
 // ============================================================================
@@ -967,86 +642,282 @@ const handleEvalResponse = (
 // ============================================================================
 
 /**
- * Queue a move request for a bot.
+ * Start a new Bot Game Session.
+ * Returns a promise that resolves when the bot confirms session started.
  */
-export const queueBotMoveRequest = (
+export const startBgsSession = async (
   compositeId: string,
+  bgsId: string,
   gameId: string,
-  playerId: PlayerId,
-  opponentName: string,
-): void => {
+  config: BgsConfig,
+): Promise<{ success: boolean }> => {
   const client = getClientForBot(compositeId);
-  if (!client) return;
+  if (!client) {
+    throw new Error(`Bot client not found: ${compositeId}`);
+  }
 
   const [clientId, botId] = compositeId.split(":");
+  const ctx = clientIdToContext.get(clientId);
+  if (!ctx) {
+    throw new Error(`No connection for client: ${clientId}`);
+  }
 
-  const request: QueuedRequest = {
-    requestId: generateRequestId(),
-    kind: "move",
+  // Create BGS
+  const bgs = createBgs(bgsId, compositeId, gameId, config);
+  if (!bgs) {
+    throw new Error("Failed to create BGS - at capacity or duplicate ID");
+  }
+
+  // Track BGS on client
+  addClientBgsSession(clientId, bgsId);
+
+  // Send start_game_session message
+  send(ctx, {
+    type: "start_game_session",
+    bgsId,
     botId,
-    gameId,
-    playerId,
-    opponentName,
-    createdAt: Date.now(),
-  };
+    config,
+  });
 
-  enqueueRequest(clientId, request);
-  trySendNextRequest(clientId);
+  // Wait for response with timeout
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      pendingResolvers.delete(bgsId);
+      clearPendingRequest(bgsId);
+      endBgs(bgsId);
+      removeClientBgsSession(clientId, bgsId);
+      reject(new Error("start_game_session timeout"));
+    }, BGS_REQUEST_TIMEOUT_MS);
+
+    pendingResolvers.set(bgsId, {
+      resolve: resolve as (result: unknown) => void,
+      reject,
+      timeoutId,
+    });
+
+    // Track pending request in BGS
+    setPendingRequest(bgsId, {
+      type: "start_game_session",
+      bgsId,
+      expectedPly: 0,
+      createdAt: Date.now(),
+      resolve: (success: boolean, error?: string) => {
+        if (!success) {
+          reject(new Error(error || "Session start failed"));
+        }
+      },
+    });
+  });
 };
 
 /**
- * Queue a draw request for a bot.
+ * End a Bot Game Session.
+ * Returns a promise that resolves when the bot confirms session ended.
  */
-export const queueBotDrawRequest = (
+export const endBgsSession = async (
   compositeId: string,
-  gameId: string,
-  playerId: PlayerId,
-  opponentName: string,
-  offeredBy: PlayerId,
-): void => {
-  const client = getClientForBot(compositeId);
-  if (!client) return;
+  bgsId: string,
+): Promise<void> => {
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    // Already ended - that's fine
+    return;
+  }
 
-  const [clientId, botId] = compositeId.split(":");
+  const [clientId] = compositeId.split(":");
+  const ctx = clientIdToContext.get(clientId);
+  if (!ctx) {
+    // Client disconnected - just clean up locally
+    endBgs(bgsId);
+    removeClientBgsSession(clientId, bgsId);
+    return;
+  }
 
-  const request: QueuedRequest = {
-    requestId: generateRequestId(),
-    kind: "draw",
-    botId,
-    gameId,
-    playerId,
-    opponentName,
-    offeredBy,
-    createdAt: Date.now(),
-  };
+  // Send end_game_session message
+  send(ctx, {
+    type: "end_game_session",
+    bgsId,
+  });
 
-  enqueueRequest(clientId, request);
-  trySendNextRequest(clientId);
+  // Wait for response with timeout
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      pendingResolvers.delete(bgsId);
+      clearPendingRequest(bgsId);
+      // Clean up even on timeout
+      endBgs(bgsId);
+      removeClientBgsSession(clientId, bgsId);
+      resolve(); // Don't reject - session is ended regardless
+    }, BGS_REQUEST_TIMEOUT_MS);
+
+    pendingResolvers.set(bgsId, {
+      resolve: () => {
+        endBgs(bgsId);
+        removeClientBgsSession(clientId, bgsId);
+        resolve();
+      },
+      reject,
+      timeoutId,
+    });
+
+    setPendingRequest(bgsId, {
+      type: "end_game_session",
+      bgsId,
+      expectedPly: bgs.currentPly,
+      createdAt: Date.now(),
+      resolve: () => resolve(),
+    });
+  });
+};
+
+/**
+ * Request position evaluation from the bot.
+ * Returns a promise with the evaluation result.
+ */
+export const requestEvaluation = async (
+  compositeId: string,
+  bgsId: string,
+  expectedPly: number,
+): Promise<EvaluateResponseMessage> => {
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    throw new Error(`BGS not found: ${bgsId}`);
+  }
+
+  if (bgs.status !== "ready") {
+    throw new Error(`BGS not ready: ${bgsId}, status: ${bgs.status}`);
+  }
+
+  const [clientId] = compositeId.split(":");
+  const ctx = clientIdToContext.get(clientId);
+  if (!ctx) {
+    throw new Error(`No connection for client: ${clientId}`);
+  }
+
+  // Send evaluate_position message
+  send(ctx, {
+    type: "evaluate_position",
+    bgsId,
+    expectedPly,
+  });
+
+  // Wait for response with timeout
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      pendingResolvers.delete(bgsId);
+      clearPendingRequest(bgsId);
+      reject(new Error("evaluate_position timeout"));
+    }, BGS_REQUEST_TIMEOUT_MS);
+
+    pendingResolvers.set(bgsId, {
+      resolve: resolve as (result: unknown) => void,
+      reject,
+      timeoutId,
+    });
+
+    setPendingRequest(bgsId, {
+      type: "evaluate_position",
+      bgsId,
+      expectedPly,
+      createdAt: Date.now(),
+      resolve: (success: boolean, error?: string) => {
+        if (!success) {
+          reject(new Error(error || "Evaluation failed"));
+        }
+      },
+    });
+  });
+};
+
+/**
+ * Apply a move to the BGS.
+ * Returns a promise that resolves when the bot confirms the move.
+ */
+export const applyBgsMove = async (
+  compositeId: string,
+  bgsId: string,
+  expectedPly: number,
+  move: string,
+): Promise<MoveAppliedMessage> => {
+  const bgs = getBgs(bgsId);
+  if (!bgs) {
+    throw new Error(`BGS not found: ${bgsId}`);
+  }
+
+  if (bgs.status !== "ready") {
+    throw new Error(`BGS not ready: ${bgsId}, status: ${bgs.status}`);
+  }
+
+  const [clientId] = compositeId.split(":");
+  const ctx = clientIdToContext.get(clientId);
+  if (!ctx) {
+    throw new Error(`No connection for client: ${clientId}`);
+  }
+
+  // Send apply_move message
+  send(ctx, {
+    type: "apply_move",
+    bgsId,
+    expectedPly,
+    move,
+  });
+
+  // Wait for response with timeout
+  return new Promise((resolve, reject) => {
+    const timeoutId = setTimeout(() => {
+      pendingResolvers.delete(bgsId);
+      clearPendingRequest(bgsId);
+      reject(new Error("apply_move timeout"));
+    }, BGS_REQUEST_TIMEOUT_MS);
+
+    pendingResolvers.set(bgsId, {
+      resolve: resolve as (result: unknown) => void,
+      reject,
+      timeoutId,
+    });
+
+    setPendingRequest(bgsId, {
+      type: "apply_move",
+      bgsId,
+      expectedPly,
+      createdAt: Date.now(),
+      resolve: (success: boolean, error?: string) => {
+        if (!success) {
+          reject(new Error(error || "Move application failed"));
+        }
+      },
+    });
+  });
 };
 
 /**
  * Handle bot resignation when game ends externally (e.g., opponent wins).
+ * Called by game-socket when the game ends for any reason.
  */
-export const notifyBotGameEnded = (
+export const notifyBotGameEnded = async (
   compositeId: string,
   gameId: string,
-): void => {
-  const [clientId] = compositeId.split(":");
+): Promise<void> => {
+  // Remove active game tracking
   removeActiveGame(compositeId, gameId);
-  removeRequestsForGame(clientId, gameId);
-  trySendNextRequest(clientId);
-};
 
-/**
- * Clear pending bot requests for a game without ending it.
- */
-export const cancelBotRequestsForGame = (
-  compositeId: string,
-  gameId: string,
-): void => {
-  const [clientId] = compositeId.split(":");
-  removeRequestsForGame(clientId, gameId);
-  trySendNextRequest(clientId);
+  // End any BGS for this game
+  const bgs = getBgs(gameId);
+  if (bgs && bgs.botCompositeId === compositeId) {
+    try {
+      await endBgsSession(compositeId, gameId);
+    } catch (error) {
+      console.error("[custom-bot-ws] failed to end BGS on game end", {
+        error,
+        compositeId,
+        gameId,
+      });
+      // Clean up locally anyway
+      endBgs(gameId);
+      const [clientId] = compositeId.split(":");
+      removeClientBgsSession(clientId, gameId);
+    }
+  }
 };
 
 // ============================================================================
@@ -1059,6 +930,16 @@ const parseMessage = (
   if (typeof raw !== "string") {
     return null;
   }
+
+  // Check message size limit (64KB)
+  if (raw.length > DEFAULT_BOT_LIMITS.maxMessageBytes) {
+    console.warn("[custom-bot-ws] message too large", {
+      size: raw.length,
+      limit: DEFAULT_BOT_LIMITS.maxMessageBytes,
+    });
+    return null;
+  }
+
   try {
     return JSON.parse(raw) as CustomBotClientMessage;
   } catch {
@@ -1066,17 +947,18 @@ const parseMessage = (
   }
 };
 
-const handleMessage = async (
+const handleMessage = (
   ctx: WSContext,
   socket: BotSocket,
   raw: string | ArrayBuffer,
-): Promise<void> => {
+): void => {
   const message = parseMessage(raw);
 
   if (!message) {
     if (socket.clientId) {
       incrementInvalidMessageCount(socket.clientId);
     }
+    incrementUnexpectedMessage(socket);
     return;
   }
 
@@ -1098,24 +980,49 @@ const handleMessage = async (
       break;
     }
 
-    case "response":
+    case "game_session_started":
       if (!socket.attached) {
-        sendNack(
-          ctx,
-          message.requestId,
-          "NOT_ATTACHED",
-          "Must attach before sending responses.",
-          false,
-        );
+        incrementUnexpectedMessage(socket);
         return;
       }
-      await handleBotResponse(ctx, socket, message);
+      handleGameSessionStarted(socket, message);
+      break;
+
+    case "game_session_ended":
+      if (!socket.attached) {
+        incrementUnexpectedMessage(socket);
+        return;
+      }
+      handleGameSessionEnded(socket, message);
+      break;
+
+    case "evaluate_response":
+      if (!socket.attached) {
+        incrementUnexpectedMessage(socket);
+        return;
+      }
+      handleEvaluateResponse(socket, message);
+      break;
+
+    case "move_applied":
+      if (!socket.attached) {
+        incrementUnexpectedMessage(socket);
+        return;
+      }
+      handleMoveApplied(socket, message);
       break;
 
     default:
+      // Unknown message type
       if (socket.clientId) {
         incrementInvalidMessageCount(socket.clientId);
       }
+      incrementUnexpectedMessage(socket);
+  }
+
+  // Reset invalid message count on valid response
+  if (socket.clientId && message.type !== "attach") {
+    resetInvalidMessageCount(socket.clientId);
   }
 };
 
@@ -1123,14 +1030,21 @@ const handleMessage = async (
 // Disconnect Handling
 // ============================================================================
 
-const handleBotClientDisconnect = (clientId: string): void => {
+const handleBotClientDisconnect = async (clientId: string): Promise<void> => {
   // Get all active games for this client's bots
   const activeGames = getActiveGamesForClient(clientId);
 
   // Resign all active games
   for (const { compositeId, game } of activeGames) {
     try {
-      const session = getSession(game.gameId);
+      let session: GameSession;
+      try {
+        session = getSession(game.gameId);
+      } catch {
+        // Game not found - skip
+        continue;
+      }
+
       if (session.gameState.status === "playing") {
         const newState = resignGame({
           id: session.id,
@@ -1152,14 +1066,14 @@ const handleBotClientDisconnect = (clientId: string): void => {
 
         // Handle game end
         if (newState.status === "finished") {
-          processRatingUpdate(session.id)
-            .then(() => persistCompletedGame(session))
-            .catch((error: unknown) => {
-              console.error("[custom-bot-ws] failed to process game end", {
-                error,
-                gameId: session.id,
-              });
+          try {
+            await persistCompletedGame(session);
+          } catch (error) {
+            console.error("[custom-bot-ws] failed to persist game", {
+              error,
+              gameId: session.id,
             });
+          }
           broadcastLiveGamesRemove(session.id);
           sendMatchStatus(session.id);
         }
@@ -1172,8 +1086,25 @@ const handleBotClientDisconnect = (clientId: string): void => {
     }
   }
 
-  // Notify eval socket clients that the bot disconnected
-  handleBotClientDisconnectForEval();
+  // End all BGS for this client's bots
+  // Get all composite IDs for this client
+  const client = getClient(clientId);
+  if (client) {
+    for (const [botId] of client.bots) {
+      const compositeId = `${clientId}:${botId}`;
+      const endedSessions = endAllBgsForBot(compositeId);
+
+      // Cancel any pending resolvers for ended sessions
+      for (const session of endedSessions) {
+        const resolver = pendingResolvers.get(session.bgsId);
+        if (resolver) {
+          clearTimeout(resolver.timeoutId);
+          pendingResolvers.delete(session.bgsId);
+          resolver.reject(new Error("Bot client disconnected"));
+        }
+      }
+    }
+  }
 
   // Unregister client
   unregisterClient(clientId);
@@ -1193,6 +1124,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             ctx: ws,
             clientId: null,
             attached: false,
+            unexpectedMessageCount: 0,
           };
           mapSocketContext(ws, socket);
           console.info("[custom-bot-ws] connection opened");
@@ -1205,13 +1137,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             return;
           }
 
-          void handleMessage(
-            ws,
-            socket,
-            event.data as string | ArrayBuffer,
-          ).catch((error: unknown) => {
-            console.error("[custom-bot-ws] error handling message", { error });
-          });
+          handleMessage(ws, socket, event.data as string | ArrayBuffer);
         },
 
         onClose(_event: CloseEvent, ws: WSContext) {
@@ -1226,7 +1152,14 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
           });
 
           if (socket.clientId) {
-            handleBotClientDisconnect(socket.clientId);
+            void handleBotClientDisconnect(socket.clientId).catch(
+              (error: unknown) => {
+                console.error(
+                  "[custom-bot-ws] error handling disconnect",
+                  error,
+                );
+              },
+            );
           }
 
           cleanupSocket(ws, socket);
