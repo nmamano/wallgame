@@ -1,29 +1,36 @@
 /**
- * Proactive Bot Protocol (v2)
+ * Bot Game Session Protocol (v3)
  *
  * Bot clients connect proactively to the server without needing a per-game token.
  * Upon connection, the client registers one or more bots with their supported
  * game configurations. Connected bots are listed in the UI for users to play against.
  *
- * This protocol follows a strict REQUEST -> RESPONSE model:
- * - The server sends requests when it needs a decision from the bot
- * - The client is idle unless there is an outstanding request
- * - Each request represents a single decision window
- * - Only one request is valid at a time per client; new requests invalidate prior ones
+ * Key change from V2: Instead of stateless per-move requests, V3 uses stateful
+ * Bot Game Sessions (BGS) with persistent engine processes. The engine maintains
+ * game state and MCTS trees across moves within a session.
+ *
+ * V3 Protocol Flow:
+ * 1. Client connects and sends "attach" with bot configurations
+ * 2. Server creates BGS when game starts: "start_game_session"
+ * 3. Server requests evaluations: "evaluate_position"
+ * 4. Server applies moves: "apply_move"
+ * 5. Server ends session: "end_game_session"
+ *
+ * All BGS messages follow request/response pattern with expectedPly for ordering.
  */
 
 import type {
+  Variant,
+  GameInitialState,
   SerializedGameState,
   PlayerId,
-  Variant,
-  TimeControlPreset,
 } from "../domain/game-types";
 
 // ============================================================================
 // Protocol Version
 // ============================================================================
 
-export const CUSTOM_BOT_PROTOCOL_VERSION = 2;
+export const CUSTOM_BOT_PROTOCOL_VERSION = 3;
 
 // ============================================================================
 // Bot Configuration Types
@@ -41,9 +48,8 @@ export interface RecommendedSettings {
   boardHeight: number;
 }
 
-/** Configuration for a specific variant */
+/** Configuration for a specific variant (V3: no timeControls) */
 export interface VariantConfig {
-  timeControls: TimeControlPreset[];
   boardWidth: BoardDimensionRange;
   boardHeight: BoardDimensionRange;
   /** 1-3 recommended settings for this variant. Empty for variants without variant-specific settings. */
@@ -75,6 +81,21 @@ export interface BotConfig {
 }
 
 // ============================================================================
+// Bot Game Session (BGS) Types
+// ============================================================================
+
+/**
+ * Configuration for a Bot Game Session.
+ * Reuses existing GameInitialState types for JSON-safe serialization.
+ */
+export interface BgsConfig {
+  variant: Variant;
+  boardWidth: number;
+  boardHeight: number;
+  initialState: GameInitialState;
+}
+
+// ============================================================================
 // Shared Types
 // ============================================================================
 
@@ -87,19 +108,6 @@ export interface CustomBotClientInfo {
   name: string;
   version: string;
 }
-
-// ============================================================================
-// Request Kinds
-// ============================================================================
-
-/**
- * Request kinds determine what actions are valid in the response.
- *
- * - "move": Bot must make a move or resign. It's the bot's turn.
- * - "draw": Opponent offered a draw. Bot must accept or decline.
- * - "eval": Evaluate a position (used by evaluation bar feature).
- */
-export type BotRequestKind = "move" | "draw" | "eval";
 
 // ============================================================================
 // Client -> Server Messages
@@ -116,44 +124,55 @@ export interface AttachMessage {
   client: CustomBotClientInfo;
 }
 
-/**
- * Response to a server request.
- * The valid actions depend on the request kind:
- * - "move" request: action must be "move" or "resign"
- * - "draw" request: action must be "accept-draw" or "decline-draw"
- * - "eval" request: action must be "eval"
- */
-export type BotResponseAction =
-  | {
-      action: "move";
-      moveNotation: string;
-      /**
-       * Position evaluation from the bot's perspective.
-       * Range: [-1, +1] where +1 = winning, 0 = even, -1 = losing.
-       */
-      evaluation: number;
-    }
-  | { action: "resign" }
-  | { action: "accept-draw" }
-  | { action: "decline-draw" }
-  | {
-      action: "eval";
-      /**
-       * Position evaluation from P1's perspective.
-       * Range: [-1, +1] where +1 = P1 winning, 0 = even, -1 = P2 winning.
-       */
-      evaluation: number;
-      /** Best move in standard notation */
-      bestMove?: string;
-    };
-
-export interface BotResponseMessage {
-  type: "response";
-  requestId: string;
-  response: BotResponseAction;
+/** Response to start_game_session */
+export interface GameSessionStartedMessage {
+  type: "game_session_started";
+  bgsId: string;
+  success: boolean;
+  error: string;
 }
 
-export type CustomBotClientMessage = AttachMessage | BotResponseMessage;
+/** Response to end_game_session */
+export interface GameSessionEndedMessage {
+  type: "game_session_ended";
+  bgsId: string;
+  success: boolean;
+  error: string;
+}
+
+/**
+ * Response to evaluate_position.
+ * Contains the evaluation and best move for the current position.
+ */
+export interface EvaluateResponseMessage {
+  type: "evaluate_response";
+  bgsId: string;
+  /** Echo back ply for correlation with request */
+  ply: number;
+  /** Best move for the side-to-move in standard notation */
+  bestMove: string;
+  /** Position evaluation from P1's perspective: +1 = P1 winning, 0 = even, -1 = P2 winning */
+  evaluation: number;
+  success: boolean;
+  error: string;
+}
+
+/** Response to apply_move */
+export interface MoveAppliedMessage {
+  type: "move_applied";
+  bgsId: string;
+  /** New ply after move applied */
+  ply: number;
+  success: boolean;
+  error: string;
+}
+
+export type CustomBotClientMessage =
+  | AttachMessage
+  | GameSessionStartedMessage
+  | GameSessionEndedMessage
+  | EvaluateResponseMessage
+  | MoveAppliedMessage;
 
 // ============================================================================
 // Server -> Client Messages
@@ -183,78 +202,55 @@ export interface AttachRejectedMessage {
   message: string;
 }
 
-/** Base fields for all request messages */
-interface RequestMessageBase {
-  type: "request";
-  requestId: string;
-  /** Which bot this request is for (matches botId from attachment) */
+/** Request to start a new Bot Game Session */
+export interface StartGameSessionMessage {
+  type: "start_game_session";
+  bgsId: string;
   botId: string;
-  /** The game this request is for */
-  gameId: string;
-  serverTime: number;
-  /** The PlayerId the bot is playing as in this game (1 or 2) */
-  playerId: PlayerId;
-  /** Opponent's display name (for logging) */
-  opponentName: string;
-  /** Current game state - always included */
-  state: SerializedGameState;
+  config: BgsConfig;
 }
 
-/** Request for the bot to make a move */
-export interface MoveRequestMessage extends RequestMessageBase {
-  kind: "move";
+/** Request to end a Bot Game Session */
+export interface EndGameSessionMessage {
+  type: "end_game_session";
+  bgsId: string;
 }
 
-/** Request for the bot to respond to a draw offer */
-export interface DrawRequestMessage extends RequestMessageBase {
-  kind: "draw";
-  /** Who offered the draw */
-  offeredBy: PlayerId;
+/**
+ * Request to evaluate the current position.
+ * Engine should return best move and evaluation.
+ */
+export interface EvaluatePositionMessage {
+  type: "evaluate_position";
+  bgsId: string;
+  /** Expected ply for ordering/staleness detection */
+  expectedPly: number;
 }
 
-/** Request for the bot to evaluate a position (for eval bar feature) */
-export interface EvalRequestMessage extends RequestMessageBase {
-  kind: "eval";
-  /** ID of the eval WebSocket client that requested this evaluation */
-  evalSocketId: string;
+/**
+ * Request to apply a move to the game state.
+ * Engine should update its internal state.
+ */
+export interface ApplyMoveMessage {
+  type: "apply_move";
+  bgsId: string;
+  /** Expected ply for ordering/staleness detection */
+  expectedPly: number;
+  /** Move in standard notation */
+  move: string;
 }
 
-export type RequestMessage =
-  | MoveRequestMessage
-  | DrawRequestMessage
-  | EvalRequestMessage;
-
-export type NackCode =
-  | "NOT_ATTACHED"
-  | "INVALID_MESSAGE"
-  | "RATE_LIMITED"
-  | "STALE_REQUEST"
-  | "ILLEGAL_MOVE"
-  | "INVALID_ACTION"
-  | "INTERNAL_ERROR";
-
-export interface AckMessage {
-  type: "ack";
-  requestId: string;
-  serverTime: number;
-}
-
-export interface NackMessage {
-  type: "nack";
-  requestId: string;
-  code: NackCode;
-  message: string;
-  /** If true, the same request is still active and can be retried */
-  retryable: boolean;
-  serverTime: number;
-}
+/** Server messages for BGS protocol */
+export type BgsServerMessage =
+  | StartGameSessionMessage
+  | EndGameSessionMessage
+  | EvaluatePositionMessage
+  | ApplyMoveMessage;
 
 export type CustomBotServerMessage =
   | AttachedMessage
   | AttachRejectedMessage
-  | RequestMessage
-  | AckMessage
-  | NackMessage;
+  | BgsServerMessage;
 
 // ============================================================================
 // Default limits
@@ -287,3 +283,114 @@ export interface RecommendedBotEntry {
   boardWidth: number;
   boardHeight: number;
 }
+
+// ============================================================================
+// V2 Legacy Types (Deprecated - will be removed in Phase 10)
+// ============================================================================
+// These types are kept temporarily for backward compatibility during migration.
+// They will be removed once all consumers are updated to V3.
+
+/**
+ * @deprecated V2 request kinds - use BGS messages instead
+ */
+export type BotRequestKind = "move" | "draw" | "eval";
+
+/**
+ * @deprecated V2 response actions - use BGS response messages instead
+ */
+export type BotResponseAction =
+  | {
+      action: "move";
+      moveNotation: string;
+      evaluation: number;
+    }
+  | { action: "resign" }
+  | { action: "accept-draw" }
+  | { action: "decline-draw" }
+  | {
+      action: "eval";
+      evaluation: number;
+      bestMove?: string;
+    };
+
+/**
+ * @deprecated V2 response message - use BGS response messages instead
+ */
+export interface BotResponseMessage {
+  type: "response";
+  requestId: string;
+  response: BotResponseAction;
+}
+
+/** @deprecated V2 base request message */
+interface RequestMessageBase {
+  type: "request";
+  requestId: string;
+  botId: string;
+  gameId: string;
+  serverTime: number;
+  playerId: PlayerId;
+  opponentName: string;
+  state: SerializedGameState;
+}
+
+/** @deprecated V2 move request */
+export interface MoveRequestMessage extends RequestMessageBase {
+  kind: "move";
+}
+
+/** @deprecated V2 draw request */
+export interface DrawRequestMessage extends RequestMessageBase {
+  kind: "draw";
+  offeredBy: PlayerId;
+}
+
+/** @deprecated V2 eval request */
+export interface EvalRequestMessage extends RequestMessageBase {
+  kind: "eval";
+  evalSocketId: string;
+}
+
+/** @deprecated V2 request message union */
+export type RequestMessage =
+  | MoveRequestMessage
+  | DrawRequestMessage
+  | EvalRequestMessage;
+
+/** @deprecated V2 nack codes */
+export type NackCode =
+  | "NOT_ATTACHED"
+  | "INVALID_MESSAGE"
+  | "RATE_LIMITED"
+  | "STALE_REQUEST"
+  | "ILLEGAL_MOVE"
+  | "INVALID_ACTION"
+  | "INTERNAL_ERROR";
+
+/** @deprecated V2 ack message */
+export interface AckMessage {
+  type: "ack";
+  requestId: string;
+  serverTime: number;
+}
+
+/** @deprecated V2 nack message */
+export interface NackMessage {
+  type: "nack";
+  requestId: string;
+  code: NackCode;
+  message: string;
+  retryable: boolean;
+  serverTime: number;
+}
+
+// Update CustomBotClientMessage to include V2 types during migration
+export type CustomBotClientMessageV2 = AttachMessage | BotResponseMessage;
+
+// Update CustomBotServerMessage to include V2 types during migration
+export type CustomBotServerMessageV2 =
+  | AttachedMessage
+  | AttachRejectedMessage
+  | RequestMessage
+  | AckMessage
+  | NackMessage;
