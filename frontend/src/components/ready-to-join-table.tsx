@@ -24,6 +24,8 @@ import type {
 import { useBotsQuery, useRecommendedBotsQuery } from "@/hooks/use-bots";
 import { formatTimeControl as formatTimeControlUtil } from "../../../shared/domain/game-utils";
 
+// V3: These formatters are only used for human matchmaking games, not bot games
+
 type TabKey = "humans" | "bots-recommended" | "bots-filtered";
 
 // Type for tracking which fields don't match
@@ -64,16 +66,6 @@ interface ReadyToJoinTableProps {
 
 const formatVariantLabel = (variant: Variant): string =>
   variant.charAt(0).toUpperCase() + variant.slice(1);
-
-const formatTimeControlLabel = (preset: TimeControlPreset): string => {
-  const labels: Record<TimeControlPreset, string> = {
-    bullet: "Bullet",
-    blitz: "Blitz",
-    rapid: "Rapid",
-    classical: "Classical",
-  };
-  return labels[preset];
-};
 
 const formatBoardSizeShort = (width: number, height: number): string =>
   `${width}x${height}`;
@@ -132,19 +124,17 @@ export function ReadyToJoinTable({
   isPlaying = false,
   errorMessage,
 }: ReadyToJoinTableProps) {
-  const timeControlPreset = config.timeControl.preset ?? "rapid";
   const includeBoardSize = usesBoardSize(config.variant);
 
-  // Bot queries
+  // Bot queries - V3: no timeControl (bot games are untimed)
   const { data: matchingData, isLoading: matchingLoading } = useBotsQuery({
     variant: config.variant,
-    timeControl: timeControlPreset,
     boardWidth: includeBoardSize ? config.boardWidth : undefined,
     boardHeight: includeBoardSize ? config.boardHeight : undefined,
   });
 
   const { data: recommendedData, isLoading: recommendedLoading } =
-    useRecommendedBotsQuery(config.variant, timeControlPreset);
+    useRecommendedBotsQuery(config.variant);
 
   const recommendedRows = useMemo<RecommendedBotEntry[]>(() => {
     return recommendedData?.bots ?? [];
@@ -381,8 +371,7 @@ export function ReadyToJoinTable({
         {activeTab === "bots-recommended" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing recommended bots for: {formatVariantLabel(config.variant)}{" "}
-              / {formatTimeControlLabel(timeControlPreset)}
+              Showing recommended bots for: {formatVariantLabel(config.variant)}
             </p>
             <Table>
               <TableHeader>
@@ -441,8 +430,7 @@ export function ReadyToJoinTable({
         {activeTab === "bots-filtered" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing bots matching: {formatVariantLabel(config.variant)} /{" "}
-              {formatTimeControlLabel(timeControlPreset)}
+              Showing bots matching: {formatVariantLabel(config.variant)}
               {includeBoardSize &&
                 ` / ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
             </p>

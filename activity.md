@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 13/18
-**Current Task:** Phase 9 - Update game-setup.tsx to hide time control for bot games
+**Tasks Completed:** 14/18
+**Current Task:** Phase 9 - Update use-bots.ts and bots-table.tsx
 
 ---
 
@@ -504,4 +504,50 @@
 - The BGS engine will leverage existing components: `Board`, `MCTS`, `BatchedModelPolicy`, `CachedPolicy`, `PaddingConfig`
 - Key insight: MCTS tree pruning via `force_move()` is already implemented in the existing codebase for self-play; the BGS adapter will reuse this functionality
 - The document serves as the specification for future C++ implementation of `bgs_engine.cpp`
+
+### 2026-01-15: Update game-setup.tsx to hide time control for bot games
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Updated `frontend/src/routes/game-setup.tsx` to conditionally hide the time control selector when `mode === 'vs-ai'` (V3: bot games are untimed)
+- Updated `shared/contracts/games.ts`:
+  - Removed `timeControl` from `botsQuerySchema` - bot discovery no longer filters by time control
+  - Removed `timeControl` from `createBotGameSchema.config` - bot game creation doesn't require time control
+  - Updated comment headers to reflect V3 Bot Game Session Protocol
+- Updated `frontend/src/hooks/use-bots.ts`:
+  - Removed `timeControl` from `BotsQuerySettings` interface
+  - Updated `useRecommendedBotsQuery` to not require timeControl parameter
+- Updated `frontend/src/lib/api.ts`:
+  - Removed `timeControl` from `fetchBots` and `fetchRecommendedBots` parameters
+  - Removed `timeControl` handling from `playVsBot` (V3 bot games are untimed)
+- Updated `frontend/src/components/ready-to-join-table.tsx`:
+  - Removed `timeControl` from bot query calls
+  - Removed unused `formatTimeControlLabel` function
+  - Updated display text to not mention time control for bot tabs
+- Updated `shared/domain/game-utils.ts`:
+  - Added `BOT_GAME_TIME_CONTROL` constant (24-hour placeholder for untimed bot games)
+- Updated `server/routes/games.ts`:
+  - Updated bot game creation to use `BOT_GAME_TIME_CONTROL` constant
+  - Removed ELO lookup for bot games (V3: bot games are unrated)
+  - Removed async from bot game creation handler (no longer awaits)
+
+**Files Modified:**
+- `frontend/src/routes/game-setup.tsx` - Hide time control for vs-ai mode
+- `frontend/src/hooks/use-bots.ts` - Remove timeControl from query settings
+- `frontend/src/lib/api.ts` - Remove timeControl from bot API calls
+- `frontend/src/components/ready-to-join-table.tsx` - Update bot query calls
+- `shared/contracts/games.ts` - Remove timeControl from bot schemas
+- `shared/domain/game-utils.ts` - Add BOT_GAME_TIME_CONTROL constant
+- `server/routes/games.ts` - Use placeholder time control for bot games
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` on modified files - Passed (pre-existing errors in unmodified code)
+
+**Notes:**
+- V3 bot games are untimed - this removes the time control concept entirely for human vs bot games
+- The `BOT_GAME_TIME_CONTROL` constant uses 24 hours (86400 seconds) as a placeholder to satisfy type requirements while indicating effectively unlimited time
+- Bot games enforce `rated: false` server-side regardless of client input
+- The UI no longer shows time control selection when entering the game setup page in "vs-ai" mode
 

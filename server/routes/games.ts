@@ -25,9 +25,9 @@ import {
   createBotGameSchema,
 } from "../../shared/contracts/games";
 import type { PlayerAppearance } from "../../shared/domain/game-types";
+import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
 import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
-import { getRatingForAuthUser } from "../db/rating-helpers";
 import { sendMatchStatus } from "./game-socket";
 import {
   getRandomShowcaseGame,
@@ -462,7 +462,7 @@ export const botsRoute = new Hono()
     "/play",
     getOptionalUserMiddleware,
     zValidator("json", createBotGameSchema),
-    async (c) => {
+    (c) => {
       try {
         const parsed = c.req.valid("json");
         const user = c.get("user");
@@ -473,23 +473,17 @@ export const botsRoute = new Hono()
           return c.json({ error: "Bot not found or not connected" }, 404);
         }
 
-        // Look up host ELO if authenticated
-        let hostElo: number | undefined;
-        if (user?.id) {
-          const timeControlPreset = parsed.config.timeControl.preset ?? "rapid";
-          hostElo = await getRatingForAuthUser(
-            user.id,
-            parsed.config.variant,
-            timeControlPreset,
-          );
-        }
+        // V3: Bot games are unrated and don't affect ELO, so we don't look up ratings
+        const hostElo: number | undefined = undefined;
 
         const joinerAppearance = mapBotAppearance(bot.appearance);
 
         // Create game session with bot as joiner
+        // V3: Bot games are untimed - use placeholder time control
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: {
             ...parsed.config,
+            timeControl: BOT_GAME_TIME_CONTROL,
             rated: false, // Bot games are unrated
           },
           matchType: "friend",

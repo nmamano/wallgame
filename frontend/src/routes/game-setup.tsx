@@ -696,51 +696,53 @@ function GameSetup() {
                 </div>
               </div>
 
-              {/* Row 2: Time Control */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="time-control" className="min-w-[120px]">
-                    Time Control
-                  </Label>
-                  <Select
-                    value={gameConfig.timeControl.preset ?? "blitz"}
-                    onValueChange={(value: TimeControlPreset) =>
-                      handleGameConfigChange({
-                        ...gameConfig,
-                        timeControl: timeControlConfigFromPreset(value),
-                      })
-                    }
-                  >
-                    <SelectTrigger
-                      id="time-control"
-                      className="bg-background w-[200px]"
+              {/* Row 2: Time Control - Hidden for bot games (V3: bot games are untimed) */}
+              {mode !== "vs-ai" && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="time-control" className="min-w-[120px]">
+                      Time Control
+                    </Label>
+                    <Select
+                      value={gameConfig.timeControl.preset ?? "blitz"}
+                      onValueChange={(value: TimeControlPreset) =>
+                        handleGameConfigChange({
+                          ...gameConfig,
+                          timeControl: timeControlConfigFromPreset(value),
+                        })
+                      }
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      <SelectItem value="bullet">Bullet (1+0)</SelectItem>
-                      <SelectItem value="blitz">Blitz (3+2)</SelectItem>
-                      <SelectItem value="rapid">Rapid (10+2)</SelectItem>
-                      <SelectItem value="classical">
-                        Classical (30+0)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      <SelectTrigger
+                        id="time-control"
+                        className="bg-background w-[200px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        <SelectItem value="bullet">Bullet (1+0)</SelectItem>
+                        <SelectItem value="blitz">Blitz (3+2)</SelectItem>
+                        <SelectItem value="rapid">Rapid (10+2)</SelectItem>
+                        <SelectItem value="classical">
+                          Classical (30+0)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  {/* Always render text container to prevent layout shift */}
+                  <div className="min-h-[3rem]">
+                    <p className="text-sm text-muted-foreground">
+                      {gameConfig.timeControl.preset === "bullet" &&
+                        "1 minute, no increment."}
+                      {gameConfig.timeControl.preset === "blitz" &&
+                        "3 minutes, 2 second increment."}
+                      {gameConfig.timeControl.preset === "rapid" &&
+                        "10 minutes, 2 second increment."}
+                      {gameConfig.timeControl.preset === "classical" &&
+                        "30 minutes, no increment."}
+                    </p>
+                  </div>
                 </div>
-                {/* Always render text container to prevent layout shift */}
-                <div className="min-h-[3rem]">
-                  <p className="text-sm text-muted-foreground">
-                    {gameConfig.timeControl.preset === "bullet" &&
-                      "1 minute, no increment."}
-                    {gameConfig.timeControl.preset === "blitz" &&
-                      "3 minutes, 2 second increment."}
-                    {gameConfig.timeControl.preset === "rapid" &&
-                      "10 minutes, 2 second increment."}
-                    {gameConfig.timeControl.preset === "classical" &&
-                      "30 minutes, no increment."}
-                  </p>
-                </div>
-              </div>
+              )}
 
               {/* Row 3: Player B */}
               <div>

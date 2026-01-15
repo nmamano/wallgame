@@ -37,6 +37,17 @@ export function timeControlConfigFromPreset(
   }
 }
 
+/**
+ * V3: Bot games are untimed. This constant provides a placeholder time control
+ * config for bot games where time control is not applicable.
+ * Uses very large values to effectively mean "no time limit".
+ */
+export const BOT_GAME_TIME_CONTROL: TimeControlConfig = {
+  initialSeconds: 86400, // 24 hours - effectively unlimited
+  incrementSeconds: 0,
+  // No preset - indicates this is a special untimed game
+};
+
 export function formatTimeControl(timeControl: TimeControlConfig): string {
   return `${timeControl.initialSeconds}+${timeControl.incrementSeconds}`;
 }

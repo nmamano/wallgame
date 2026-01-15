@@ -190,7 +190,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Verify rated: false for bot games",
       "Verify with tsc and manual testing"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase9-frontend",

@@ -263,12 +263,12 @@ export interface PastGamesResponse {
 }
 
 // ============================================================================
-// Bot API Types (Proactive Bot Protocol v2)
+// Bot API Types (V3 Bot Game Session Protocol)
 // ============================================================================
 
 export const botsQuerySchema = z.object({
   variant: z.enum(variantValues),
-  timeControl: z.enum(timeControlValues),
+  // V3: timeControl removed - bot games are untimed
   boardWidth: z.coerce.number().int().min(3).max(20).optional(),
   boardHeight: z.coerce.number().int().min(3).max(20).optional(),
 });
@@ -276,8 +276,8 @@ export const botsQuerySchema = z.object({
 export const createBotGameSchema = z.object({
   /** Composite bot ID: clientId:botId */
   botId: z.string(),
+  /** V3: Bot game config has no timeControl - bot games are untimed */
   config: z.object({
-    timeControl: timeControlSchema,
     variant: z.enum(variantValues),
     boardWidth: z.number().int().min(3).max(20),
     boardHeight: z.number().int().min(3).max(20),

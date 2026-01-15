@@ -295,9 +295,9 @@ export const fetchShowcaseGame = async (): Promise<GameShowcaseResponse> => {
   return handleResponse<GameShowcaseResponse>(api.games.showcase.$get());
 };
 
+/** V3: Bot listing - no timeControl (bot games are untimed) */
 export const fetchBots = async (args: {
   variant: Variant;
-  timeControl: TimeControlPreset;
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{ bots: ListedBot[] }> => {
@@ -306,7 +306,6 @@ export const fetchBots = async (args: {
     api.bots.$get({
       query: {
         variant,
-        timeControl: args.timeControl,
         boardWidth:
           args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
         boardHeight:
@@ -316,16 +315,15 @@ export const fetchBots = async (args: {
   );
 };
 
+/** V3: Recommended bots - no timeControl (bot games are untimed) */
 export const fetchRecommendedBots = async (args: {
   variant: Variant;
-  timeControl: TimeControlPreset;
 }): Promise<{ bots: RecommendedBotEntry[] }> => {
   const variant = assertNonSurvivalVariant(args.variant);
   return handleResponse<{ bots: RecommendedBotEntry[] }>(
     api.bots.recommended.$get({
       query: {
         variant,
-        timeControl: args.timeControl,
       },
     }),
   );
@@ -337,15 +335,7 @@ export const playVsBot = async (args: {
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
 }): Promise<CreateBotGameResponse> => {
-  let timeControl: TimeControlConfig;
-  const rawTimeControl = args.config.timeControl as unknown;
-  if (typeof rawTimeControl === "string") {
-    timeControl = timeControlConfigFromPreset(
-      rawTimeControl as TimeControlPreset,
-    );
-  } else {
-    timeControl = args.config.timeControl;
-  }
+  // V3: Bot games are untimed - no timeControl in config
   const variant = assertNonSurvivalVariant(args.config.variant);
 
   return handleResponse<CreateBotGameResponse>(
@@ -353,7 +343,6 @@ export const playVsBot = async (args: {
       json: {
         botId: args.botId,
         config: {
-          timeControl,
           variant,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
