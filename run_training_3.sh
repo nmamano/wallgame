@@ -15,4 +15,5 @@ python3 training.py \
   --threads 26 \
   --training-games 32000 \
   --epochs 3 \
-  --initial_generation latest
+  --initial_generation latest \
+  --max-training-window 10
