@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 7/18
-**Current Task:** Phase 5 - Eval Protocol Message Types
+**Tasks Completed:** 8/18
+**Current Task:** Phase 5 - Rewrite eval-socket.ts for BGS-based eval bar
 
 ---
 
@@ -271,3 +271,38 @@
 - The takeback flow rebuilds BGS from scratch by replaying all moves. This ensures the MCTS tree can be properly rebuilt from the new game state.
 - `ensureRematchSession()` is now synchronous since BGS initialization is done asynchronously via `void registerRematchBotGamesV3()`.
 - Draw offers in bot games are now silently rejected server-side (V3 policy) instead of being sent to the bot client.
+
+### 2026-01-15: Add V3 eval protocol message types
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Updated file header documentation in `shared/contracts/eval-protocol.ts` to describe V3 BGS-based connection flow
+- Added `EvalHistoryEntry` interface for evaluation history entries:
+  - `ply: number` - Position in game (0 = initial)
+  - `evaluation: number` - Position score from P1's perspective [-1, +1]
+  - `bestMove: string` - Recommended move for side-to-move
+- Added `EvalHistoryMessage` interface:
+  - V3 message sent when eval bar is enabled
+  - Contains full evaluation history from ply 0 to current position
+- Added `EvalUpdateMessage` interface:
+  - V3 streaming message for live games
+  - Sent when new moves are made, containing evaluation of new position
+- Added `EvalPendingMessage` interface:
+  - V3 message sent during BGS initialization
+  - Allows client to show loading state while moves are being replayed
+- Updated `EvalServerMessage` union type to include all V3 message types
+
+**Files Modified:**
+- `shared/contracts/eval-protocol.ts` - V3 eval protocol message types
+
+**Verification:**
+- `bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- V2 eval protocol types (EvalPositionRequest, EvalResponse) are preserved for backward compatibility during migration
+- The `EvalPendingMessage` was added beyond the spec to improve UX during initialization of long games
+- `EvalHistoryEntry` mirrors the server-side `BgsHistoryEntry` structure for consistency
+- V3 uses a push model (server streams updates) vs V2's pull model (client requests evaluations)
+
