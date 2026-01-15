@@ -540,6 +540,7 @@ async function waitForBotRegistration(
 /**
  * Creates a standard bot config for testing.
  */
+/** V3: Creates a standard bot config for testing (no timeControls - bot games are untimed) */
 function createTestBotConfig(botId: string, name: string): BotConfig {
   return {
     botId,
@@ -547,13 +548,11 @@ function createTestBotConfig(botId: string, name: string): BotConfig {
     username: null, // Public bot
     variants: {
       standard: {
-        timeControls: ["bullet", "blitz", "rapid"],
         boardWidth: { min: 3, max: 15 },
         boardHeight: { min: 3, max: 15 },
         recommended: [{ boardWidth: 5, boardHeight: 5 }],
       },
       classic: {
-        timeControls: ["bullet", "blitz", "rapid"],
         boardWidth: { min: 3, max: 15 },
         boardHeight: { min: 3, max: 15 },
         recommended: [{ boardWidth: 5, boardHeight: 5 }],

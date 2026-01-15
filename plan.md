@@ -202,7 +202,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Update filtering logic",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase9-frontend",

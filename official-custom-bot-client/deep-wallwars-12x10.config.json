@@ -13,7 +13,6 @@
       },
       "variants": {
         "classic": {
-          "timeControls": ["bullet", "blitz", "rapid", "classical"],
           "boardWidth": { "min": 5, "max": 12 },
           "boardHeight": { "min": 5, "max": 10 },
           "recommended": [
@@ -22,7 +21,6 @@
           ]
         },
         "standard": {
-          "timeControls": ["bullet", "blitz", "rapid", "classical"],
           "boardWidth": { "min": 5, "max": 12 },
           "boardHeight": { "min": 5, "max": 10 },
           "recommended": [

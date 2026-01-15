@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 14/18
-**Current Task:** Phase 9 - Update use-bots.ts and bots-table.tsx
+**Tasks Completed:** 15/18
+**Current Task:** Phase 9 - Update eval-client.ts for V3 history-based protocol
 
 ---
 
@@ -550,4 +550,46 @@
 - The `BOT_GAME_TIME_CONTROL` constant uses 24 hours (86400 seconds) as a placeholder to satisfy type requirements while indicating effectively unlimited time
 - Bot games enforce `rated: false` server-side regardless of client input
 - The UI no longer shows time control selection when entering the game setup page in "vs-ai" mode
+
+### 2026-01-15: Update use-bots.ts and bots-table.tsx
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Verified `use-bots.ts` was already updated in previous phase (no `timeControl` in `BotsQuerySettings`)
+- Verified `api.ts` bot functions already remove timeControl filtering
+- Removed `timeControls` from `variantConfigSchema` in `shared/contracts/custom-bot-config-schema.ts`
+- Removed unused `timeControlValues` import from the schema file
+- Added V3 documentation header to `custom-bot-config-schema.ts`
+- Updated all bot configuration JSON files to remove `timeControls`:
+  - `official-custom-bot-client/deep-wallwars.config.json`
+  - `official-custom-bot-client/deep-wallwars-12x10.config.json`
+  - `official-custom-bot-client/deep-wallwars.config.prod.json`
+- Updated integration test bot configs to remove `timeControls`:
+  - `tests/integration/bot-1-mock-client.test.ts`
+  - `tests/integration/bot-2-official-client.test.ts`
+  - `tests/integration/bot-3-dummy-engine.test.ts`
+  - `tests/integration/bot-4-deep-wallwars-engine.test.ts`
+
+**Files Modified:**
+- `shared/contracts/custom-bot-config-schema.ts` - Remove timeControls from schema
+- `official-custom-bot-client/deep-wallwars.config.json` - Remove timeControls from variants
+- `official-custom-bot-client/deep-wallwars-12x10.config.json` - Remove timeControls from variants
+- `official-custom-bot-client/deep-wallwars.config.prod.json` - Remove timeControls from variants
+- `tests/integration/bot-1-mock-client.test.ts` - Remove timeControls from test configs
+- `tests/integration/bot-2-official-client.test.ts` - Remove timeControls from test configs
+- `tests/integration/bot-3-dummy-engine.test.ts` - Remove timeControls from test configs
+- `tests/integration/bot-4-deep-wallwars-engine.test.ts` - Remove timeControls from test configs
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
+- `cd dummy-engine && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed for modified files (pre-existing errors in unrelated code)
+
+**Notes:**
+- The `bots-table.tsx` file mentioned in the task description doesn't exist in this codebase - bot listing is handled within `ready-to-join-table.tsx` and other components
+- The task steps related to `use-bots.ts` and API filtering were already completed as part of the previous phase9-frontend task (game-setup.tsx)
+- This task primarily completes the removal of `timeControls` from the Zod validation schema and bot config files
+- The schema change affects both client-side config file validation and server-side bot attachment validation
 

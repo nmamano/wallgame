@@ -1,5 +1,10 @@
+/**
+ * Bot Configuration Schema (V3)
+ *
+ * Validates bot configuration JSON files for the custom bot client.
+ * V3: timeControls removed - bot games are untimed.
+ */
 import { z } from "zod";
-import { timeControlValues } from "./games";
 import type { Variant } from "../domain/game-types";
 
 const boardDimensionRangeSchemaBase = z.object({
@@ -22,9 +27,9 @@ export const recommendedSettingsSchema = z.object({
   boardHeight: z.number().int().min(3).max(20),
 });
 
+/** V3: timeControls removed - bot games are untimed */
 export const variantConfigSchema = z
   .object({
-    timeControls: z.array(z.enum(timeControlValues)).min(1),
     boardWidth: boardDimensionRangeSchema,
     boardHeight: boardDimensionRangeSchema,
     recommended: z.array(recommendedSettingsSchema).max(3),
