@@ -167,7 +167,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Implement end_game_session handler",
       "Verify with tsc and test manually"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase8-engine",
