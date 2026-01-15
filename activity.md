@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 16/18
-**Current Task:** Phase 10 - Delete V2 stateless engine code
+**Tasks Completed:** 17/18
+**Current Task:** Phase 10 - Run full test suite and fix issues
 
 ---
 
@@ -628,4 +628,51 @@
 - The `eval-pending` message allows UI to show loading state during BGS initialization for long games
 - V2 `onEvalResponse` handler is kept for migration compatibility but will be removed in Phase 10 cleanup
 - The hook's public interface (`EvalBarState`) is unchanged - consumers don't need updates
+
+### 2026-01-15: Delete V2 stateless engine code
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Removed all deprecated V2 types from `shared/contracts/custom-bot-protocol.ts`:
+  - `BotRequestKind`, `BotResponseAction`, `BotResponseMessage`
+  - `RequestMessageBase`, `MoveRequestMessage`, `DrawRequestMessage`, `EvalRequestMessage`
+  - `RequestMessage` union type
+  - `NackCode`, `AckMessage`, `NackMessage`
+  - `CustomBotClientMessageV2`, `CustomBotServerMessageV2`
+  - Removed `SerializedGameState` and `PlayerId` imports (no longer needed)
+- Removed all deprecated V2 types from `shared/custom-bot/engine-api.ts`:
+  - `ENGINE_API_VERSION_V2` constant
+  - `EngineRequestBaseV2`, `EngineMoveRequest`, `EngineDrawRequest`, `EngineRequest`
+  - `EngineResponseBaseV2`, `EngineMoveResponse`, `EngineDrawResponse`, `EngineEvalResponse`, `EngineResponse`
+  - `createMoveRequest()`, `createDrawRequest()` helper functions
+  - Removed unused `PlayerId` and `SerializedGameState` imports
+- Removed deprecated V2 queue functions from `server/games/custom-bot-store.ts`:
+  - `PendingRequest`, `QueuedRequest` interfaces
+  - `generateRequestId`, `enqueueRequest`, `tryProcessNextRequest`
+  - `getActiveRequest`, `clearActiveRequest`, `validateRequestId`, `removeRequestsForGame`
+  - Removed unused `nanoid` import (was only used for `generateRequestId`)
+- Updated `tests/integration/bot-1-mock-client.test.ts` for V3 protocol:
+  - Changed from V2 `request`/`response` flow to V3 BGS flow
+  - Updated BotSocket to use V3 message types: `sendGameSessionStarted`, `sendGameSessionEnded`, `sendEvaluateResponse`, `sendMoveApplied`
+  - Updated tests to expect `start_game_session`, `evaluate_position`, `apply_move`, `end_game_session` messages
+  - Changed protocol version from 2 to 3
+  - Added test for V2 protocol rejection (V2 is no longer supported)
+  - Removed V2-specific tests for draw handling (V3 auto-rejects draws server-side)
+
+**Files Modified:**
+- `shared/contracts/custom-bot-protocol.ts` - Removed V2 legacy types (~115 lines removed)
+- `shared/custom-bot/engine-api.ts` - Removed V2 legacy types (~120 lines removed)
+- `server/games/custom-bot-store.ts` - Removed deprecated queue functions (~115 lines removed)
+- `tests/integration/bot-1-mock-client.test.ts` - Complete rewrite for V3 protocol
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun x eslint shared/contracts/custom-bot-protocol.ts shared/custom-bot/engine-api.ts server/games/custom-bot-store.ts tests/integration/bot-1-mock-client.test.ts --fix` - Passed
+
+**Notes:**
+- The V2 "spawn per move" engine model is now completely removed - all engines use long-lived BGS protocol
+- `SerializedGameState` type still exists in `game-types.ts` for WebSocket game state updates - only its usage in V2 bot request messages is removed
+- Other bot integration tests (bot-2, bot-3, bot-4) still reference V2 patterns and will need updates in the testing phase
+- Pre-existing lint errors in `server/routes/games.ts` are unrelated to these changes
 

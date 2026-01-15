@@ -11,7 +11,6 @@
  * - V3: No request queue - BGS uses direct request/response per session
  */
 
-import { nanoid } from "nanoid";
 import type { ServerWebSocket } from "bun";
 import type { PlayerId, Variant } from "../../shared/domain/game-types";
 import type {
@@ -595,118 +594,6 @@ export const getClientBgsSessions = (clientId: string): string[] => {
   return Array.from(client.activeBgsSessions);
 };
 
-// ============================================================================
-// V2 Request Queue (DEPRECATED - Will be removed in Phase 3/5)
-// These exports exist only for backward compatibility during migration.
-// They throw errors if called - consumers must be updated before use.
-// ============================================================================
-
-import type { BotRequestKind } from "../../shared/contracts/custom-bot-protocol";
-
-/**
- * @deprecated V2 type - Remove in Phase 3
- */
-export interface PendingRequest {
-  requestId: string;
-  kind: BotRequestKind;
-  botId: string;
-  gameId: string;
-  createdAt: number;
-}
-
-/**
- * @deprecated V2 type - Remove in Phase 3
- */
-export interface QueuedRequest extends PendingRequest {
-  playerId: PlayerId;
-  opponentName: string;
-  offeredBy?: PlayerId;
-}
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const generateRequestId = (): string => {
-  return `req_${nanoid(16)}`;
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const enqueueRequest = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  request: QueuedRequest,
-): void => {
-  throw new Error(
-    "[bot-store] enqueueRequest is deprecated in V3 - use BGS sessions instead",
-  );
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const tryProcessNextRequest = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  expectedKinds?: BotRequestKind[],
-): QueuedRequest | undefined => {
-  throw new Error(
-    "[bot-store] tryProcessNextRequest is deprecated in V3 - use BGS sessions instead",
-  );
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const getActiveRequest = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientId: string,
-): PendingRequest | undefined => {
-  throw new Error(
-    "[bot-store] getActiveRequest is deprecated in V3 - use BGS sessions instead",
-  );
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-// eslint-disable-next-line @typescript-eslint/no-unused-vars
-export const clearActiveRequest = (clientId: string): void => {
-  throw new Error(
-    "[bot-store] clearActiveRequest is deprecated in V3 - use BGS sessions instead",
-  );
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const validateRequestId = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  requestId: string,
-): boolean => {
-  throw new Error(
-    "[bot-store] validateRequestId is deprecated in V3 - use BGS sessions instead",
-  );
-};
-
-/**
- * @deprecated V2 function - Remove in Phase 3
- */
-export const removeRequestsForGame = (
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  clientId: string,
-  // eslint-disable-next-line @typescript-eslint/no-unused-vars
-  gameId: string,
-): void => {
-  throw new Error(
-    "[bot-store] removeRequestsForGame is deprecated in V3 - use BGS sessions instead",
-  );
-};
 
 // ============================================================================
 // Abuse Tracking

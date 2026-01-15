@@ -226,7 +226,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Remove per-request queue logic from custom-bot-store.ts",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase10-testing",
