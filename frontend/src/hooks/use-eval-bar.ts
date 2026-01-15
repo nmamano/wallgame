@@ -1,11 +1,7 @@
-import { useState, useRef, useEffect, useCallback, useMemo } from "react";
-import { EvalClient } from "@/lib/eval-client";
+import { useState, useRef, useEffect, useCallback } from "react";
+import { EvalClient, type EvalHistoryEntry } from "@/lib/eval-client";
 import type { GameState } from "../../../shared/domain/game-state";
-import type {
-  SerializedGameState,
-  GameConfiguration,
-} from "../../../shared/domain/game-types";
-import { moveToStandardNotation } from "../../../shared/domain/standard-notation";
+import type { GameConfiguration } from "../../../shared/domain/game-types";
 
 // ============================================================================
 // Types
@@ -50,54 +46,18 @@ export interface EvalBarState {
 }
 
 // ============================================================================
-// Serialization Helper
-// ============================================================================
-
-const serializeGameStateForEval = (
-  state: GameState,
-  config: GameConfiguration,
-): SerializedGameState => {
-  const historyRows = state.config.boardHeight;
-  return {
-    status: state.status,
-    result: state.result,
-    turn: state.turn,
-    moveCount: state.moveCount,
-    timeLeft: { ...state.timeLeft },
-    lastMoveTime: state.lastMoveTime,
-    pawns: {
-      1: {
-        cat: state.pawns[1].cat,
-        mouse: state.pawns[1].mouse,
-      },
-      2: {
-        cat: state.pawns[2].cat,
-        mouse: state.pawns[2].mouse,
-      },
-    },
-    walls: state.grid.getWalls(),
-    initialState: state.getInitialState(),
-    history: state.history.map((entry) => ({
-      index: entry.index,
-      notation: moveToStandardNotation(entry.move, historyRows),
-    })),
-    config: {
-      boardWidth: state.config.boardWidth,
-      boardHeight: state.config.boardHeight,
-      variant: state.config.variant,
-      rated: config.rated,
-      timeControl: config.timeControl,
-      variantConfig: state.config.variantConfig,
-    },
-  };
-};
-
-// ============================================================================
 // Hook Implementation
 // ============================================================================
 
-const HISTORY_DEBOUNCE_MS = 1000;
-
+/**
+ * V3 evaluation bar hook using BGS-based history protocol.
+ *
+ * Key changes from V2:
+ * - Server sends full evaluation history on connect (eval-history message)
+ * - Server streams updates when new moves are made (eval-update message)
+ * - Client looks up evaluation from history by ply instead of requesting per-position
+ * - No debouncing needed - history scrubbing is instant
+ */
 export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
   const {
     gameId,
@@ -113,22 +73,12 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
 
   // State
   const [toggleState, setToggleState] = useState<EvalToggleState>("off");
-  const [evaluation, setEvaluation] = useState<number | null>(null);
+  const [evalHistory, setEvalHistory] = useState<EvalHistoryEntry[]>([]);
   const [isPending, setIsPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
 
   // Refs
   const evalClientRef = useRef<EvalClient | null>(null);
-  const debounceTimerRef = useRef<number | null>(null);
-  // Track position key (gameId:moveCount) we're waiting for, not full requestId with timestamp
-  const pendingPositionKeyRef = useRef<string | null>(null);
-  const prevPositionKeyRef = useRef<string | null>(null);
-
-  // Helper to extract position key from requestId (gameId:moveCount:timestamp -> gameId:moveCount)
-  const extractPositionKey = (requestId: string): string => {
-    const parts = requestId.split(":");
-    return `${parts[0]}:${parts[1]}`;
-  };
 
   // Computed: is toggle disabled?
   const isDisabled = isPuzzle || (isRatedGame && isActivePlayer);
@@ -141,34 +91,16 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
   // Computed: the current display state (live or history)
   const displayState = historyCursor !== null ? historyState : currentState;
 
-  // Generate a unique key for the current position
-  const positionKey = useMemo(() => {
-    if (!displayState) return null;
-    return `${gameId}:${displayState.moveCount}:${historyCursor ?? "live"}`;
-  }, [gameId, displayState, historyCursor]);
+  // Computed: current ply (moveCount) to look up in history
+  const currentPly = displayState?.moveCount ?? null;
 
-  // Request eval for the current position
-  const requestEvalForCurrentPosition = useCallback(() => {
-    const client = evalClientRef.current;
-    const state = historyCursor !== null ? historyState : currentState;
-
-    if (!client?.isReady() || !state || !config) {
-      return;
-    }
-
-    // Don't request for ended games (but allow for history viewing)
-    if (historyCursor === null && state.status !== "playing") {
-      return;
-    }
-
-    const requestId = `${gameId}:${state.moveCount}:${Date.now()}`;
-    // Track the position key (gameId:moveCount) we're waiting for
-    pendingPositionKeyRef.current = `${gameId}:${state.moveCount}`;
-    setIsPending(true);
-
-    const serialized = serializeGameStateForEval(state, config);
-    client.requestEval(requestId, serialized);
-  }, [gameId, config, currentState, historyState, historyCursor]);
+  // V3: Look up evaluation from history by ply
+  // This is instant - no network request needed when scrubbing through history
+  const evaluation =
+    currentPly !== null
+      ? (evalHistory.find((entry) => entry.ply === currentPly)?.evaluation ??
+        null)
+      : null;
 
   // Connect to eval service
   const connect = useCallback(() => {
@@ -180,6 +112,8 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
 
     setToggleState("loading");
     setErrorMessage(null);
+    setEvalHistory([]);
+    setIsPending(true);
 
     const client = new EvalClient(gameId);
     evalClientRef.current = client;
@@ -187,31 +121,79 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     client.connect(
       {
         onHandshakeAccepted: () => {
-          setToggleState("on");
-          // Request eval for current position immediately
-          requestEvalForCurrentPosition();
+          // V3: Stay in loading state until we receive eval-history
+          // The server will send eval-pending followed by eval-history
+          console.debug("[useEvalBar] Handshake accepted, waiting for history");
         },
         onHandshakeRejected: (_code, message) => {
           setToggleState("error");
           setErrorMessage(message);
+          setIsPending(false);
           evalClientRef.current = null;
         },
-        onEvalResponse: (requestId, evalValue) => {
-          // Check if response is for the current position (ignore timestamp, compare gameId:moveCount)
-          const responsePositionKey = extractPositionKey(requestId);
-          if (responsePositionKey !== pendingPositionKeyRef.current) {
-            // Stale response for a different position - ignore it
-            console.log(
-              `[useEvalBar] Ignoring stale eval response for ${responsePositionKey}, waiting for ${pendingPositionKeyRef.current}`,
-            );
-            return;
-          }
-          setEvaluation(evalValue);
+        // V3: Handle pending state during BGS initialization
+        onEvalPending: (totalMoves) => {
+          console.debug(
+            `[useEvalBar] BGS initialization pending, ${totalMoves} moves to replay`,
+          );
+          setIsPending(true);
+        },
+        // V3: Receive full evaluation history
+        onEvalHistory: (entries) => {
+          console.debug(
+            `[useEvalBar] Received eval history with ${entries.length} entries`,
+          );
+          setEvalHistory(entries);
           setIsPending(false);
+          setToggleState("on");
+        },
+        // V3: Streaming update when new move is made in live game
+        onEvalUpdate: (ply, evalValue, bestMove) => {
+          console.debug(`[useEvalBar] Received eval update for ply ${ply}`);
+          setEvalHistory((prev) => {
+            // Check if we already have this ply (shouldn't happen, but be safe)
+            const existing = prev.find((e) => e.ply === ply);
+            if (existing) {
+              // Update existing entry
+              return prev.map((e) =>
+                e.ply === ply ? { ply, evaluation: evalValue, bestMove } : e,
+              );
+            }
+            // Append new entry
+            return [...prev, { ply, evaluation: evalValue, bestMove }];
+          });
+        },
+        // V2 fallback: handle legacy eval-response (deprecated, kept for migration)
+        onEvalResponse: (requestId, evalValue, bestMove) => {
+          console.debug(
+            `[useEvalBar] Received V2 eval response for ${requestId}`,
+          );
+          // Extract ply from requestId (gameId:moveCount:timestamp)
+          const parts = requestId.split(":");
+          const ply = parseInt(parts[1], 10);
+          if (!isNaN(ply)) {
+            setEvalHistory((prev) => {
+              const existing = prev.find((e) => e.ply === ply);
+              if (existing) {
+                return prev.map((e) =>
+                  e.ply === ply
+                    ? { ply, evaluation: evalValue, bestMove: bestMove ?? "" }
+                    : e,
+                );
+              }
+              return [
+                ...prev,
+                { ply, evaluation: evalValue, bestMove: bestMove ?? "" },
+              ];
+            });
+          }
+          setIsPending(false);
+          setToggleState("on");
         },
         onError: (message) => {
           setToggleState("error");
           setErrorMessage(message);
+          setIsPending(false);
           evalClientRef.current = null;
         },
         onClose: () => {
@@ -224,57 +206,17 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
       config.boardHeight,
       socketToken,
     );
-  }, [
-    config,
-    currentState,
-    gameId,
-    socketToken,
-    requestEvalForCurrentPosition,
-  ]);
+  }, [config, currentState, gameId, socketToken]);
 
   // Disconnect from eval service
   const disconnect = useCallback(() => {
-    if (debounceTimerRef.current !== null) {
-      window.clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
     evalClientRef.current?.close();
     evalClientRef.current = null;
     setToggleState("off");
-    setEvaluation(null);
+    setEvalHistory([]);
     setIsPending(false);
     setErrorMessage(null);
-    pendingPositionKeyRef.current = null;
-    prevPositionKeyRef.current = null;
   }, []);
-
-  // Effect: Request eval when position changes
-  useEffect(() => {
-    if (toggleState !== "on") return;
-    if (!positionKey || positionKey === prevPositionKeyRef.current) return;
-
-    prevPositionKeyRef.current = positionKey;
-
-    // Clear any pending debounce timer
-    if (debounceTimerRef.current !== null) {
-      window.clearTimeout(debounceTimerRef.current);
-      debounceTimerRef.current = null;
-    }
-
-    // Set pending state immediately
-    setIsPending(true);
-
-    if (historyCursor !== null) {
-      // Viewing history - debounce to avoid spam when scrubbing
-      debounceTimerRef.current = window.setTimeout(() => {
-        debounceTimerRef.current = null;
-        requestEvalForCurrentPosition();
-      }, HISTORY_DEBOUNCE_MS);
-    } else {
-      // Live game - request immediately
-      requestEvalForCurrentPosition();
-    }
-  }, [toggleState, positionKey, historyCursor, requestEvalForCurrentPosition]);
 
   // Effect: Cleanup on unmount
   useEffect(() => {

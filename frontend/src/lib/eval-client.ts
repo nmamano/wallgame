@@ -5,16 +5,27 @@ import type {
 import type {
   EvalClientMessage,
   EvalServerMessage,
+  EvalHistoryEntry,
 } from "../../../shared/contracts/eval-protocol";
+
+// Re-export for consumers
+export type { EvalHistoryEntry } from "../../../shared/contracts/eval-protocol";
 
 export interface EvalClientHandlers {
   onHandshakeAccepted?: () => void;
   onHandshakeRejected?: (code: string, message: string) => void;
+  // V2 (deprecated): per-request eval response
   onEvalResponse?: (
     requestId: string,
     evaluation: number,
     bestMove?: string,
   ) => void;
+  // V3: full evaluation history received (after BGS initialization)
+  onEvalHistory?: (entries: EvalHistoryEntry[]) => void;
+  // V3: streaming update when new move is made in live game
+  onEvalUpdate?: (ply: number, evaluation: number, bestMove: string) => void;
+  // V3: BGS initialization in progress (for showing loading state)
+  onEvalPending?: (totalMoves: number) => void;
   onError?: (message: string) => void;
   onClose?: () => void;
   onOpen?: () => void;
@@ -132,6 +143,36 @@ export class EvalClient {
           case "pong":
             // Ignore pong responses
             break;
+
+          // V3 BGS-based messages
+          case "eval-pending":
+            console.debug("[eval-client] BGS initialization pending", {
+              gameId: this.gameId,
+              totalMoves: payload.totalMoves,
+            });
+            this.handlers.onEvalPending?.(payload.totalMoves);
+            break;
+
+          case "eval-history":
+            console.debug("[eval-client] received eval history", {
+              gameId: this.gameId,
+              entryCount: payload.entries.length,
+            });
+            this.handlers.onEvalHistory?.(payload.entries);
+            break;
+
+          case "eval-update":
+            console.debug("[eval-client] received eval update", {
+              gameId: this.gameId,
+              ply: payload.ply,
+              evaluation: payload.evaluation,
+            });
+            this.handlers.onEvalUpdate?.(
+              payload.ply,
+              payload.evaluation,
+              payload.bestMove,
+            );
+            break;
         }
       } catch (error) {
         console.error("Failed to parse eval websocket message", error);
@@ -174,6 +215,10 @@ export class EvalClient {
   /**
    * Request an evaluation for the given game state.
    * Returns the request ID for matching the response.
+   *
+   * @deprecated V2 protocol - in V3, evaluations are pushed from server via
+   * onEvalHistory (initial) and onEvalUpdate (streaming). This method is kept
+   * for backward compatibility during migration.
    */
   requestEval(requestId: string, state: SerializedGameState): void {
     if (!this.handshakeCompleted) {
