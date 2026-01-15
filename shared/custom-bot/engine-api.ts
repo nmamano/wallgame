@@ -1,18 +1,52 @@
 /**
- * Engine API Types (v2)
+ * Engine API Types (v3)
  *
- * The engine:
- * - Reads a single JSON request from stdin
- * - Writes a single JSON response to stdout
- * - May write logs to stderr
+ * V3 engines are long-lived processes that communicate via JSON-lines over stdin/stdout.
+ * Each line is a complete JSON message.
  *
- * Note: In V2, the Official Client auto-declines draw offers without consulting
- * the engine. Draw request types are kept for potential future use.
+ * V3 Protocol Flow:
+ * 1. Engine starts and waits for messages on stdin
+ * 2. Client sends start_game_session → engine responds with game_session_started
+ * 3. Client sends evaluate_position → engine responds with evaluate_response
+ * 4. Client sends apply_move → engine responds with move_applied
+ * 5. Client sends end_game_session → engine responds with game_session_ended
+ * 6. Engine may handle multiple concurrent sessions (identified by bgsId)
+ *
+ * The engine maintains game state and MCTS trees across moves within each session.
+ * This enables tree reuse: when apply_move is called, the engine prunes the MCTS
+ * tree to the subtree rooted at the played move, preserving search work.
  */
 
 import type { PlayerId, SerializedGameState } from "../domain/game-types";
 
-export const ENGINE_API_VERSION = 2;
+// Re-export V3 BGS types from custom-bot-protocol
+// These are the same types used for server ↔ client communication
+export {
+  // Protocol version
+  CUSTOM_BOT_PROTOCOL_VERSION,
+
+  // BGS Configuration
+  type BgsConfig,
+
+  // Server → Engine messages (requests)
+  type StartGameSessionMessage,
+  type EndGameSessionMessage,
+  type EvaluatePositionMessage,
+  type ApplyMoveMessage,
+  type BgsServerMessage,
+
+  // Engine → Server messages (responses)
+  type GameSessionStartedMessage,
+  type GameSessionEndedMessage,
+  type EvaluateResponseMessage,
+  type MoveAppliedMessage,
+} from "../contracts/custom-bot-protocol";
+
+// ============================================================================
+// Engine API Version
+// ============================================================================
+
+export const ENGINE_API_VERSION = 3;
 
 // ============================================================================
 // Evaluation Range
@@ -40,10 +74,133 @@ export function clampEvaluation(value: number): number {
 }
 
 // ============================================================================
-// Request Types
+// V3 Engine Message Types
 // ============================================================================
 
-interface EngineRequestBase {
+/**
+ * Messages the engine receives from the client (via stdin).
+ * These are requests that the engine must respond to.
+ */
+export type EngineRequestV3 =
+  | import("../contracts/custom-bot-protocol").StartGameSessionMessage
+  | import("../contracts/custom-bot-protocol").EndGameSessionMessage
+  | import("../contracts/custom-bot-protocol").EvaluatePositionMessage
+  | import("../contracts/custom-bot-protocol").ApplyMoveMessage;
+
+/**
+ * Messages the engine sends to the client (via stdout).
+ * These are responses to client requests.
+ */
+export type EngineResponseV3 =
+  | import("../contracts/custom-bot-protocol").GameSessionStartedMessage
+  | import("../contracts/custom-bot-protocol").GameSessionEndedMessage
+  | import("../contracts/custom-bot-protocol").EvaluateResponseMessage
+  | import("../contracts/custom-bot-protocol").MoveAppliedMessage;
+
+// ============================================================================
+// BGS History Entry (for engine-side tracking)
+// ============================================================================
+
+/**
+ * History entry for a position in a Bot Game Session.
+ * Engines may maintain this internally to track evaluations.
+ */
+export interface BgsHistoryEntry {
+  /** Ply number: 0 = initial position, increments after each move */
+  ply: number;
+  /** Position evaluation from P1's perspective: +1 = P1 winning, 0 = even, -1 = P2 winning */
+  evaluation: number;
+  /** Best move for the side-to-move at this ply (standard notation) */
+  bestMove: string;
+}
+
+// ============================================================================
+// V3 Helper Functions
+// ============================================================================
+
+/**
+ * Create a game_session_started response message.
+ */
+export function createGameSessionStartedResponse(
+  bgsId: string,
+  success: boolean,
+  error = "",
+): import("../contracts/custom-bot-protocol").GameSessionStartedMessage {
+  return {
+    type: "game_session_started",
+    bgsId,
+    success,
+    error,
+  };
+}
+
+/**
+ * Create a game_session_ended response message.
+ */
+export function createGameSessionEndedResponse(
+  bgsId: string,
+  success: boolean,
+  error = "",
+): import("../contracts/custom-bot-protocol").GameSessionEndedMessage {
+  return {
+    type: "game_session_ended",
+    bgsId,
+    success,
+    error,
+  };
+}
+
+/**
+ * Create an evaluate_response message.
+ */
+export function createEvaluateResponse(
+  bgsId: string,
+  ply: number,
+  bestMove: string,
+  evaluation: number,
+  success = true,
+  error = "",
+): import("../contracts/custom-bot-protocol").EvaluateResponseMessage {
+  return {
+    type: "evaluate_response",
+    bgsId,
+    ply,
+    bestMove,
+    evaluation: clampEvaluation(evaluation),
+    success,
+    error,
+  };
+}
+
+/**
+ * Create a move_applied response message.
+ */
+export function createMoveAppliedResponse(
+  bgsId: string,
+  ply: number,
+  success = true,
+  error = "",
+): import("../contracts/custom-bot-protocol").MoveAppliedMessage {
+  return {
+    type: "move_applied",
+    bgsId,
+    ply,
+    success,
+    error,
+  };
+}
+
+// ============================================================================
+// V2 Legacy Types (Deprecated - will be removed in Phase 10)
+// ============================================================================
+// These types are kept temporarily for backward compatibility during migration.
+// They will be removed once all consumers are updated to V3 (Phase 6, 7).
+
+/** @deprecated V2 engine API version */
+export const ENGINE_API_VERSION_V2 = 2;
+
+/** @deprecated V2 request base interface */
+interface EngineRequestBaseV2 {
   engineApiVersion: number;
   requestId: string;
   /** Which bot this request is for */
@@ -57,27 +214,28 @@ interface EngineRequestBase {
   state: SerializedGameState;
 }
 
-export interface EngineMoveRequest extends EngineRequestBase {
+/** @deprecated V2 move request */
+export interface EngineMoveRequest extends EngineRequestBaseV2 {
   kind: "move";
 }
 
-export interface EngineDrawRequest extends EngineRequestBase {
+/** @deprecated V2 draw request */
+export interface EngineDrawRequest extends EngineRequestBaseV2 {
   kind: "draw";
   offeredBy: PlayerId;
 }
 
+/** @deprecated V2 request union - use EngineRequestV3 instead */
 export type EngineRequest = EngineMoveRequest | EngineDrawRequest;
 
-// ============================================================================
-// Response Types
-// ============================================================================
-
-interface EngineResponseBase {
+/** @deprecated V2 response base interface */
+interface EngineResponseBaseV2 {
   engineApiVersion: number;
   requestId: string;
 }
 
-export interface EngineMoveResponse extends EngineResponseBase {
+/** @deprecated V2 move response */
+export interface EngineMoveResponse extends EngineResponseBaseV2 {
   response:
     | {
         action: "move";
@@ -88,11 +246,13 @@ export interface EngineMoveResponse extends EngineResponseBase {
     | { action: "resign" };
 }
 
-export interface EngineDrawResponse extends EngineResponseBase {
+/** @deprecated V2 draw response */
+export interface EngineDrawResponse extends EngineResponseBaseV2 {
   response: { action: "accept-draw" } | { action: "decline-draw" };
 }
 
-export interface EngineEvalResponse extends EngineResponseBase {
+/** @deprecated V2 eval response */
+export interface EngineEvalResponse extends EngineResponseBaseV2 {
   response: {
     action: "eval";
     /** Position evaluation from P1's perspective. Range: [-1, +1]. */
@@ -102,15 +262,13 @@ export interface EngineEvalResponse extends EngineResponseBase {
   };
 }
 
+/** @deprecated V2 response union - use EngineResponseV3 instead */
 export type EngineResponse =
   | EngineMoveResponse
   | EngineDrawResponse
   | EngineEvalResponse;
 
-// ============================================================================
-// Helper functions
-// ============================================================================
-
+/** @deprecated V2 helper - creates a V2 move request */
 export function createMoveRequest(
   requestId: string,
   botId: string,
@@ -120,7 +278,7 @@ export function createMoveRequest(
   state: SerializedGameState,
 ): EngineMoveRequest {
   return {
-    engineApiVersion: ENGINE_API_VERSION,
+    engineApiVersion: ENGINE_API_VERSION_V2,
     kind: "move",
     requestId,
     botId,
@@ -130,6 +288,7 @@ export function createMoveRequest(
   };
 }
 
+/** @deprecated V2 helper - creates a V2 draw request */
 export function createDrawRequest(
   requestId: string,
   botId: string,
@@ -140,7 +299,7 @@ export function createDrawRequest(
   state: SerializedGameState,
 ): EngineDrawRequest {
   return {
-    engineApiVersion: ENGINE_API_VERSION,
+    engineApiVersion: ENGINE_API_VERSION_V2,
     kind: "draw",
     requestId,
     botId,
