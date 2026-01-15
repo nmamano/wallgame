@@ -423,7 +423,7 @@ export const gamesRoute = new Hono()
   });
 
 // ============================================================================
-// Bot Listing API (Proactive Bot Protocol v2)
+// Bot Listing API (V3 - time control removed)
 // ============================================================================
 
 export const botsRoute = new Hono()
@@ -431,9 +431,9 @@ export const botsRoute = new Hono()
   .get("/", zValidator("query", botsQuerySchema), (c) => {
     try {
       const query = c.req.valid("query");
+      // V3: timeControl is ignored - bot games have no time control
       const bots = getMatchingBots(
         query.variant,
-        query.timeControl,
         query.boardWidth,
         query.boardHeight,
       );
@@ -447,8 +447,8 @@ export const botsRoute = new Hono()
   .get("/recommended", zValidator("query", botsQuerySchema), (c) => {
     try {
       const query = c.req.valid("query");
-      // getRecommendedBots takes variant and timeControl (username is optional for private bots)
-      const bots = getRecommendedBots(query.variant, query.timeControl);
+      // V3: timeControl is ignored - bot games have no time control
+      const bots = getRecommendedBots(query.variant);
       return c.json({ bots });
     } catch (error) {
       console.error("Failed to list recommended bots:", error);

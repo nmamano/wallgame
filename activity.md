@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 4/18
-**Current Task:** Phase 2 - Server BGS Infrastructure
+**Tasks Completed:** 5/18
+**Current Task:** Phase 3 - WebSocket V3 Handler
 
 ---
 
@@ -146,3 +146,35 @@
 - The 256 session limit matches Deep Wallwars' self-play capacity
 - Pending request tracking supports the 10-second timeout policy specified in the V3 migration plan
 - Used `Array.from(sessions.values())` instead of direct iteration to ensure compatibility with TypeScript's downlevelIteration requirements
+
+### 2026-01-15: Rewrite custom-bot-store.ts for V3
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Updated `BotClientConnection` interface: removed `activeRequest` and `requestQueue`, added `activeBgsSessions: Set<string>`
+- Removed V2 request queue infrastructure (types and storage)
+- Added V3 BGS session tracking functions:
+  - `addClientBgsSession()` - Track active BGS on client
+  - `removeClientBgsSession()` - Remove BGS from client
+  - `hasClientBgsSession()` - Check if client has BGS
+  - `getClientBgsSessions()` - Get all active BGS for client
+- Updated `getMatchingBots()`: removed `timeControl` parameter (V3 bot games have no time control)
+- Updated `getRecommendedBots()`: removed `timeControl` parameter
+- Deprecated V2 queue functions with `@deprecated` annotations and throwing implementations:
+  - `enqueueRequest`, `tryProcessNextRequest`, `getActiveRequest`, `clearActiveRequest`, `validateRequestId`, `removeRequestsForGame`
+  - These throw errors if called, ensuring V2 code paths are caught early
+- Updated `server/routes/games.ts` to use new function signatures
+
+**Files Modified:**
+- `server/games/custom-bot-store.ts` - Main store rewrite
+- `server/routes/games.ts` - Updated bot listing API calls
+
+**Verification:**
+- `cd frontend && bunx tsc --noEmit` - Passed
+- `bun run lint` - Passed
+
+**Notes:**
+- V2 functions kept as deprecated stubs because consumers (`custom-bot-socket.ts`, `eval-socket.ts`) still import them. These will be removed in Phase 3 (WebSocket handler rewrite) and Phase 5 (Eval socket rewrite).
+- The `MAX_QUEUE_LENGTH` constant was removed since V3 doesn't use request queues.
+- Time control filtering removed from bot discovery - in V3, bot games are untimed. The `botsQuerySchema` still accepts `timeControl` for backward compatibility but it's ignored.

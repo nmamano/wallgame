@@ -1,5 +1,5 @@
 /**
- * Bot Store (Proactive Bot Protocol v2)
+ * Bot Store (Proactive Bot Protocol V3)
  *
  * Manages bot client connections and their registered bots.
  * Bot clients connect proactively and register bots; users discover and play against them.
@@ -7,22 +7,17 @@
  * Key concepts:
  * - A bot client (identified by clientId) can serve multiple bots
  * - Each bot has a unique botId within its client
- * - The server maintains a FIFO request queue per client
- * - Only one request is active at a time per client
+ * - V3: Game sessions are managed by bgs-store.ts (Bot Game Sessions)
+ * - V3: No request queue - BGS uses direct request/response per session
  */
 
 import { nanoid } from "nanoid";
 import type { ServerWebSocket } from "bun";
-import type {
-  PlayerId,
-  Variant,
-  TimeControlPreset,
-} from "../../shared/domain/game-types";
+import type { PlayerId, Variant } from "../../shared/domain/game-types";
 import type {
   BotConfig,
   BotAppearance,
   VariantConfig,
-  BotRequestKind,
   ListedBot,
   RecommendedBotEntry,
 } from "../../shared/contracts/custom-bot-protocol";
@@ -33,20 +28,10 @@ import { builtInBotsTable } from "../db/schema/built-in-bots";
 // Types
 // ============================================================================
 
-export interface PendingRequest {
-  requestId: string;
-  kind: BotRequestKind;
-  botId: string;
-  gameId: string;
-  createdAt: number;
-}
-
-export interface QueuedRequest extends PendingRequest {
-  playerId: PlayerId;
-  opponentName: string;
-  offeredBy?: PlayerId; // For draw requests
-}
-
+/**
+ * V3: Bot client connection.
+ * Request queues are removed - BGS sessions handle request/response directly.
+ */
 export interface BotClientConnection {
   clientId: string;
   ws: ServerWebSocket<unknown>;
@@ -54,10 +39,8 @@ export interface BotClientConnection {
   attachedAt: number;
   lastMessageAt: number;
   invalidMessageCount: number;
-  /** Currently active request (if any) */
-  activeRequest?: PendingRequest;
-  /** FIFO queue of pending requests */
-  requestQueue: QueuedRequest[];
+  /** V3: Set of active BGS IDs this client is handling */
+  activeBgsSessions: Set<string>;
 }
 
 export interface RegisteredBot {
@@ -91,9 +74,6 @@ const botIndex = new Map<string, RegisteredBot>();
 
 /** Maximum number of connected clients */
 const MAX_CLIENTS = 10;
-
-/** Maximum queue length before hiding bots from UI */
-const MAX_QUEUE_LENGTH = 10;
 
 const makeCompositeId = (clientId: string, botId: string): string =>
   `${clientId}:${botId}`;
@@ -171,7 +151,7 @@ export const registerClient = (
     attachedAt: Date.now(),
     lastMessageAt: Date.now(),
     invalidMessageCount: 0,
-    requestQueue: [],
+    activeBgsSessions: new Set(),
   };
 
   // Register each bot
@@ -319,12 +299,11 @@ export const getClientForBot = (
 
 /**
  * Get all bots that support the given game configuration.
- * Filters by variant, time control, and optionally board size.
- * Also filters out bots whose queue is too long.
+ * V3: Filters by variant and optionally board size.
+ * Time control filtering removed - bot games have no time control in V3.
  */
 export const getMatchingBots = (
   variant: Variant,
-  timeControl: TimeControlPreset,
   boardWidth?: number,
   boardHeight?: number,
   username?: string,
@@ -342,9 +321,6 @@ export const getMatchingBots = (
     // Check if bot supports this variant
     const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
-
-    // Check time control
-    if (!variantConfig.timeControls.includes(timeControl)) continue;
 
     // Check board dimensions if specified
     if (boardWidth !== undefined) {
@@ -364,10 +340,10 @@ export const getMatchingBots = (
       }
     }
 
-    // Check queue length
+    // V3: Check client is still connected
     const client = clients.get(bot.clientId);
-    if (client && client.requestQueue.length >= MAX_QUEUE_LENGTH) {
-      continue; // Queue too long, hide from UI
+    if (!client) {
+      continue;
     }
 
     results.push({
@@ -393,12 +369,12 @@ export const getMatchingBots = (
 };
 
 /**
- * Get recommended bot entries for the given variant and time control.
+ * Get recommended bot entries for the given variant.
+ * V3: Time control filtering removed - bot games have no time control.
  * Returns bots with their recommended settings.
  */
 export const getRecommendedBots = (
   variant: Variant,
-  timeControl: TimeControlPreset,
   username?: string,
 ): RecommendedBotEntry[] => {
   const results: RecommendedBotEntry[] = [];
@@ -415,12 +391,9 @@ export const getRecommendedBots = (
     const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
 
-    // Check time control
-    if (!variantConfig.timeControls.includes(timeControl)) continue;
-
-    // Check queue length
+    // V3: Check client is still connected
     const client = clients.get(bot.clientId);
-    if (client && client.requestQueue.length >= MAX_QUEUE_LENGTH) {
+    if (!client) {
       continue;
     }
 
@@ -573,132 +546,166 @@ export const getActiveGamesForClient = (
 };
 
 // ============================================================================
-// Request Queue Management
+// V3 BGS Session Tracking
 // ============================================================================
 
 /**
- * Generate a new request ID.
+ * Add a BGS to a client's active sessions.
+ */
+export const addClientBgsSession = (
+  clientId: string,
+  bgsId: string,
+): boolean => {
+  const client = clients.get(clientId);
+  if (!client) return false;
+  client.activeBgsSessions.add(bgsId);
+  return true;
+};
+
+/**
+ * Remove a BGS from a client's active sessions.
+ */
+export const removeClientBgsSession = (
+  clientId: string,
+  bgsId: string,
+): boolean => {
+  const client = clients.get(clientId);
+  if (!client) return false;
+  return client.activeBgsSessions.delete(bgsId);
+};
+
+/**
+ * Check if a client has an active BGS.
+ */
+export const hasClientBgsSession = (
+  clientId: string,
+  bgsId: string,
+): boolean => {
+  const client = clients.get(clientId);
+  if (!client) return false;
+  return client.activeBgsSessions.has(bgsId);
+};
+
+/**
+ * Get all active BGS IDs for a client.
+ */
+export const getClientBgsSessions = (clientId: string): string[] => {
+  const client = clients.get(clientId);
+  if (!client) return [];
+  return Array.from(client.activeBgsSessions);
+};
+
+// ============================================================================
+// V2 Request Queue (DEPRECATED - Will be removed in Phase 3/5)
+// These exports exist only for backward compatibility during migration.
+// They throw errors if called - consumers must be updated before use.
+// ============================================================================
+
+import type { BotRequestKind } from "../../shared/contracts/custom-bot-protocol";
+
+/**
+ * @deprecated V2 type - Remove in Phase 3
+ */
+export interface PendingRequest {
+  requestId: string;
+  kind: BotRequestKind;
+  botId: string;
+  gameId: string;
+  createdAt: number;
+}
+
+/**
+ * @deprecated V2 type - Remove in Phase 3
+ */
+export interface QueuedRequest extends PendingRequest {
+  playerId: PlayerId;
+  opponentName: string;
+  offeredBy?: PlayerId;
+}
+
+/**
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const generateRequestId = (): string => {
   return `req_${nanoid(16)}`;
 };
 
 /**
- * Enqueue a request for a client.
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const enqueueRequest = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   request: QueuedRequest,
 ): void => {
-  const client = clients.get(clientId);
-  if (!client) return;
-
-  client.requestQueue.push(request);
-  console.info("[bot-store] request enqueued", {
-    clientId,
-    requestId: request.requestId,
-    kind: request.kind,
-    queueLength: client.requestQueue.length,
-  });
+  throw new Error(
+    "[bot-store] enqueueRequest is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 /**
- * Try to send the next request to the client.
- * Returns the request if one was sent, undefined otherwise.
- *
- * @param clientId - The client ID
- * @param expectedKinds - Optional filter for request kinds. If provided, only
- *   dequeues requests matching one of the specified kinds. This prevents
- *   move/draw handlers from accidentally dequeuing eval requests (and vice versa).
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const tryProcessNextRequest = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   expectedKinds?: BotRequestKind[],
 ): QueuedRequest | undefined => {
-  const client = clients.get(clientId);
-  if (!client) return undefined;
-
-  // Can only process if no active request
-  if (client.activeRequest) return undefined;
-
-  // Find the next request matching the expected kinds (or any if not specified)
-  let requestIndex = -1;
-  if (expectedKinds && expectedKinds.length > 0) {
-    requestIndex = client.requestQueue.findIndex((r) =>
-      expectedKinds.includes(r.kind),
-    );
-  } else {
-    requestIndex = client.requestQueue.length > 0 ? 0 : -1;
-  }
-
-  if (requestIndex === -1) return undefined;
-
-  // Remove the request from the queue
-  const [request] = client.requestQueue.splice(requestIndex, 1);
-  if (!request) return undefined;
-
-  // Set as active
-  client.activeRequest = {
-    requestId: request.requestId,
-    kind: request.kind,
-    botId: request.botId,
-    gameId: request.gameId,
-    createdAt: Date.now(),
-  };
-
-  return request;
+  throw new Error(
+    "[bot-store] tryProcessNextRequest is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 /**
- * Get the active request for a client.
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const getActiveRequest = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId: string,
 ): PendingRequest | undefined => {
-  const client = clients.get(clientId);
-  return client?.activeRequest;
+  throw new Error(
+    "[bot-store] getActiveRequest is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 /**
- * Clear the active request.
+ * @deprecated V2 function - Remove in Phase 3
  */
+// eslint-disable-next-line @typescript-eslint/no-unused-vars
 export const clearActiveRequest = (clientId: string): void => {
-  const client = clients.get(clientId);
-  if (client) {
-    client.activeRequest = undefined;
-  }
+  throw new Error(
+    "[bot-store] clearActiveRequest is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 /**
- * Validate that a request ID matches the active request.
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const validateRequestId = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   requestId: string,
 ): boolean => {
-  const client = clients.get(clientId);
-  if (!client?.activeRequest) return false;
-  return client.activeRequest.requestId === requestId;
+  throw new Error(
+    "[bot-store] validateRequestId is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 /**
- * Remove all pending requests for a specific game.
- * Used when a game ends.
+ * @deprecated V2 function - Remove in Phase 3
  */
 export const removeRequestsForGame = (
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   clientId: string,
+  // eslint-disable-next-line @typescript-eslint/no-unused-vars
   gameId: string,
 ): void => {
-  const client = clients.get(clientId);
-  if (!client) return;
-
-  // Remove from queue
-  client.requestQueue = client.requestQueue.filter((r) => r.gameId !== gameId);
-
-  // Clear active if it's for this game
-  if (client.activeRequest?.gameId === gameId) {
-    client.activeRequest = undefined;
-  }
+  throw new Error(
+    "[bot-store] removeRequestsForGame is deprecated in V3 - use BGS sessions instead",
+  );
 };
 
 // ============================================================================

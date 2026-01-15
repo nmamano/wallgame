@@ -72,7 +72,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Keep client registry, bot registry, connection management",
       "Verify with tsc"
     ],
-    "passes": false
+    "passes": true
   },
   {
     "category": "phase3-websocket",
