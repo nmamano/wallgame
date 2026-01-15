@@ -2,8 +2,8 @@
 
 ## Current Status
 **Last Updated:** 2026-01-15
-**Tasks Completed:** 8/18
-**Current Task:** Phase 5 - Rewrite eval-socket.ts for BGS-based eval bar
+**Tasks Completed:** 9/18
+**Current Task:** Phase 6 - Update ws-client.ts for long-lived engine
 
 ---
 
@@ -305,4 +305,54 @@
 - The `EvalPendingMessage` was added beyond the spec to improve UX during initialization of long games
 - `EvalHistoryEntry` mirrors the server-side `BgsHistoryEntry` structure for consistency
 - V3 uses a push model (server streams updates) vs V2's pull model (client requests evaluations)
+
+### 2026-01-15: Rewrite eval-socket.ts for BGS-based eval bar
+
+**Status:** ✅ Complete
+
+**Changes:**
+- Complete rewrite of `server/routes/eval-socket.ts` for V3 BGS-based evaluation bar
+- Implemented BGS creation logic for different game types:
+  - **Bot games (live):** Reuses the existing bot game BGS for eval bar
+  - **Human vs human (live):** Creates shared eval BGS with ID `${gameId}_eval`
+  - **Past game replays:** Creates ephemeral BGS, closes immediately after sending history
+- Implemented `initializeBgsHistory()` - Core V3 flow:
+  - Creates BGS via `startBgsSession()`
+  - Gets initial position evaluation (ply 0)
+  - Replays all moves sequentially with `applyBgsMove()` + `requestEvaluation()`
+  - Validates ply values match expected sequence
+  - Returns full `EvalHistoryEntry[]` array on success
+- Implemented `handleHandshake()` for eval bar connection:
+  - Validates game exists and variant is supported
+  - Finds official eval bot via `findEvalBot()`
+  - Handles pending state with `eval-pending` message during initialization
+  - Supports multiple viewers sharing the same BGS (human vs human games)
+- Added streaming update support:
+  - Exported `notifyEvalBarMove()` - Called from game-socket.ts when moves are made
+  - Broadcasts `eval-update` messages to all connected eval sockets
+- Added game end handling:
+  - Exported `handleEvalBarGameEnd()` - Called when games end
+  - Closes shared BGS and cleans up state (clients retain history client-side)
+- Implemented `SharedEvalBgs` interface for tracking shared BGS state:
+  - Tracks `status` ("initializing" | "ready" | "error")
+  - Manages `pendingSocketIds` for sockets waiting on initialization
+  - Caches `cachedHistory` for quick access by subsequent viewers
+  - Tracks `viewerCount` (BGS stays open until game ends, not viewer disconnect)
+- Added `INTERNAL_ERROR` to `EvalHandshakeRejectedCode` type for edge cases
+
+**Files Modified:**
+- `server/routes/eval-socket.ts` - Complete rewrite (~815 lines)
+- `shared/contracts/eval-protocol.ts` - Added `INTERNAL_ERROR` to rejection codes
+
+**Verification:**
+- `bunx tsc --noEmit` - Passed (only pre-existing errors in unrelated files)
+- `bun run lint` - Passed
+
+**Notes:**
+- The V3 eval bar uses a push model: server initializes BGS, then streams updates. V2 used a pull model where client requested evals per-position.
+- Bot game eval bars reuse the existing bot game BGS (ID = gameId). This means eval history is already populated from the bot's turn calculations.
+- Human vs human games create a separate eval BGS (ID = `${gameId}_eval`) that is shared across all viewers.
+- Replays create ephemeral BGS that is closed immediately after sending the full history to minimize server resource usage.
+- The `SharedEvalBgs` pattern handles concurrent initialization requests - first viewer starts BGS init, subsequent viewers wait for it to complete.
+- Exported `notifyEvalBarMove()` and `handleEvalBarGameEnd()` need to be wired up in game-socket.ts in a future update.
 

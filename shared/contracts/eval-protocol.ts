@@ -72,7 +72,8 @@ export type EvalHandshakeRejectedCode =
   | "NO_BOT"
   | "RATED_PLAYER"
   | "UNSUPPORTED_VARIANT"
-  | "GAME_NOT_FOUND";
+  | "GAME_NOT_FOUND"
+  | "INTERNAL_ERROR";
 
 /** Handshake was rejected */
 export interface EvalHandshakeRejected {
