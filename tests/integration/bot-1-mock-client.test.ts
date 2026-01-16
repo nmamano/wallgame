@@ -37,6 +37,7 @@ import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
 import type { GameConfiguration } from "../../shared/domain/game-types";
+import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import type {
   CustomBotServerMessage,
   CustomBotClientMessage,
@@ -615,6 +616,7 @@ describe("custom bot WebSocket integration V3", () => {
       rated: false,
       boardWidth: 3,
       boardHeight: 3,
+      variantConfig: buildStandardInitialState(3, 3),
     };
 
     try {

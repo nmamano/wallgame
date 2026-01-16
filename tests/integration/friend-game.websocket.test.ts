@@ -284,7 +284,7 @@ interface TestSocket {
   /** Wait for the next message of the expected type. Skips messages of ignored types. Fails immediately if an unexpected type arrives. */
   waitForMessage: <T extends ServerMessage["type"]>(
     expectedType: T,
-    options?: { ignore?: ServerMessage["type"][] },
+    options?: { ignore?: ServerMessage["type"][]; preserveIgnored?: boolean },
   ) => Promise<Extract<ServerMessage, { type: T }>>;
   /** Consume and ignore any buffered messages of the given type (useful for match-status messages). */
   drainMessages: (type: ServerMessage["type"]) => void;
