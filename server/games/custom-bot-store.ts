@@ -36,7 +36,6 @@ export interface BotClientConnection {
   ws: ServerWebSocket<unknown>;
   bots: Map<string, RegisteredBot>;
   attachedAt: number;
-  lastMessageAt: number;
   invalidMessageCount: number;
   /** V3: Set of active BGS IDs this client is handling */
   activeBgsSessions: Set<string>;
@@ -148,7 +147,6 @@ export const registerClient = (
     ws,
     bots: new Map(),
     attachedAt: Date.now(),
-    lastMessageAt: Date.now(),
     invalidMessageCount: 0,
     activeBgsSessions: new Set(),
   };
@@ -597,28 +595,6 @@ export const getClientBgsSessions = (clientId: string): string[] => {
 // ============================================================================
 // Abuse Tracking
 // ============================================================================
-
-/**
- * Update last message time and check rate limit.
- * Returns true if the message should be processed, false if rate limited.
- */
-export const checkRateLimit = (
-  clientId: string,
-  minIntervalMs: number,
-): boolean => {
-  const client = clients.get(clientId);
-  if (!client) return false;
-
-  const now = Date.now();
-  const timeSinceLastMessage = now - client.lastMessageAt;
-
-  if (timeSinceLastMessage < minIntervalMs) {
-    return false;
-  }
-
-  client.lastMessageAt = now;
-  return true;
-};
 
 /**
  * Increment invalid message count for a game.
