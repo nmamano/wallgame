@@ -7,6 +7,7 @@
     "dev": "FRONTEND_URL=http://localhost:5173 bun run --hot server/index.ts",
     "migrate": "bun scripts/migrate.ts",
     "test": "wsl.exe -d Ubuntu -- bash -lc 'cd \"$PWD\" && env PATH=\"$HOME/.bun/bin:/usr/bin:/bin\" bun scripts/run-tests.ts'",
+    "test:mac": "bun scripts/run-tests.ts",
     "build": "bun --cwd=frontend run build",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",

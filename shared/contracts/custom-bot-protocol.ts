@@ -278,4 +278,3 @@ export interface RecommendedBotEntry {
   boardWidth: number;
   boardHeight: number;
 }
-

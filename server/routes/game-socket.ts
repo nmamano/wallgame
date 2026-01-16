@@ -56,7 +56,10 @@ import {
   type BgsHistoryEntry,
 } from "../games/bgs-store";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
-import { moveToStandardNotation, moveFromStandardNotation } from "../../shared/domain/standard-notation";
+import {
+  moveToStandardNotation,
+  moveFromStandardNotation,
+} from "../../shared/domain/standard-notation";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
 
@@ -1696,11 +1699,14 @@ const handleActionRequest = async (
           }),
         );
         sendActionAck(socket, message);
-        console.info("[ws] action-offerDraw auto-rejected (bot game, V3 policy)", {
-          sessionId: socket.sessionId,
-          playerId,
-          botCompositeId: opponent.botCompositeId,
-        });
+        console.info(
+          "[ws] action-offerDraw auto-rejected (bot game, V3 policy)",
+          {
+            sessionId: socket.sessionId,
+            playerId,
+            botCompositeId: opponent.botCompositeId,
+          },
+        );
         return;
       }
 

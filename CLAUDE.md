@@ -7,6 +7,7 @@ See `.cursor/rules/` for general agent rules and `/info/` for detailed design do
 ## Project Overview
 
 Wallgame is a real-time multiplayer strategy board game with:
+
 - Local play, online multiplayer with matchmaking, spectator mode, game replay
 - Rankings, puzzle challenges, and solo campaigns
 - Advanced AI powered by MCTS + neural networks (Deep-Wallwars engine)
@@ -73,6 +74,7 @@ frontend/src/
 ```
 
 **Key files:**
+
 - `src/main.tsx` - Application entry point
 - `src/hooks/use-game-page-controller.ts` - Main game orchestrator
 - `src/hooks/use-online-game-session.ts` - WebSocket handshake
@@ -221,6 +223,7 @@ Server (Hono)
 ## Documentation
 
 See `/info/` for detailed design docs including:
+
 - `architecture.md` - System design overview
 - `deep-wallwars-integration.md` - AI engine integration
 - `bot_protocol_3.md` - Custom bot communication protocol

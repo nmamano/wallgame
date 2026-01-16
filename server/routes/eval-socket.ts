@@ -178,7 +178,10 @@ const initializeBgsHistory = async (
   gameId: string,
   config: BgsConfig,
   moves: { notation: string }[],
-): Promise<{ success: true; history: EvalHistoryEntry[] } | { success: false; error: string }> => {
+): Promise<
+  | { success: true; history: EvalHistoryEntry[] }
+  | { success: false; error: string }
+> => {
   // Create and start the BGS
   try {
     await startBgsSession(botCompositeId, bgsId, gameId, config);
@@ -205,7 +208,10 @@ const initializeBgsHistory = async (
     history.push(entry);
     addHistoryEntry(bgsId, entry);
   } catch (error) {
-    const msg = error instanceof Error ? error.message : "Failed to get initial evaluation";
+    const msg =
+      error instanceof Error
+        ? error.message
+        : "Failed to get initial evaluation";
     console.error("[eval-ws] failed to get initial evaluation", {
       error,
       bgsId,
@@ -252,7 +258,8 @@ const initializeBgsHistory = async (
       history.push(entry);
       addHistoryEntry(bgsId, entry);
     } catch (error) {
-      const msg = error instanceof Error ? error.message : `Failed at move ${i + 1}`;
+      const msg =
+        error instanceof Error ? error.message : `Failed at move ${i + 1}`;
       console.error("[eval-ws] failed during move replay", {
         error,
         bgsId,
@@ -422,7 +429,10 @@ const handleHandshake = async (
       existingShared.viewerCount++;
 
       send(ctx, { type: "eval-handshake-accepted" });
-      send(ctx, { type: "eval-history", entries: existingShared.cachedHistory });
+      send(ctx, {
+        type: "eval-history",
+        entries: existingShared.cachedHistory,
+      });
 
       console.info("[eval-ws] eval bar connected (using shared BGS)", {
         socketId: socket.id,
@@ -733,10 +743,7 @@ const handleMessage = async (
 // Socket Cleanup
 // ============================================================================
 
-const handleSocketClose = (
-  ctx: WSContext,
-  socketId: string,
-): void => {
+const handleSocketClose = (ctx: WSContext, socketId: string): void => {
   const socket = evalSockets.get(socketId);
   if (!socket) return;
 

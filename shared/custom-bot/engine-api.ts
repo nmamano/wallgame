@@ -17,7 +17,6 @@
  * tree to the subtree rooted at the played move, preserving search work.
  */
 
-
 // Re-export V3 BGS types from custom-bot-protocol
 // These are the same types used for server ↔ client communication
 export {
@@ -188,4 +187,3 @@ export function createMoveAppliedResponse(
     error,
   };
 }
-

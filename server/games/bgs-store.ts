@@ -467,7 +467,9 @@ export const cleanupStaleBgs = (
   }
 
   if (staleIds.length > 0) {
-    console.info("[bgs-store] cleanup completed", { cleanedCount: staleIds.length });
+    console.info("[bgs-store] cleanup completed", {
+      cleanedCount: staleIds.length,
+    });
   }
   return staleIds.length;
 };

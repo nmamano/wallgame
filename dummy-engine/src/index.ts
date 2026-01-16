@@ -349,11 +349,7 @@ function handleRequest(request: EngineRequestV3): EngineResponseV3 {
       return handleEvaluatePosition(request.bgsId, request.expectedPly);
 
     case "apply_move":
-      return handleApplyMove(
-        request.bgsId,
-        request.expectedPly,
-        request.move,
-      );
+      return handleApplyMove(request.bgsId, request.expectedPly, request.move);
 
     default: {
       // TypeScript exhaustiveness check - this should never happen
