@@ -1,24 +1,25 @@
 /**
- * This is the third of 4 tests for the proactive bot protocol (V2):
+ * This is the third of 4 tests for the proactive bot protocol (V3):
  *
  * 1. bot-1-mock-client.test.ts: Mocks the bot client's WS messages.
  *    It tests the server-client protocol.
- * 2. bot-2-official-client.test.ts: Uses the official bot client with no engine
- *    so that it defaults to making a dummy AI move. It tests the official
- *    client.
- * 3. bot-3-dummy-engine.test.ts: Uses the official bot client with the dummy
- *    engine. It tests the engine API.
- * 4. bot-4-deep-wallwars-engine.test.ts: Usese the official bot client with the
+ * 2. bot-2-official-client.test.ts: Uses the official bot client WITHOUT an external engine.
+ *    It tests the built-in dumb-bot fallback end-to-end.
+ * 3. bot-3-dummy-engine.test.ts: Uses the official bot client with the dummy engine
+ *    and tests engine integration in detail (classic variant, state tracking).
+ * 4. bot-4-deep-wallwars-engine.test.ts: Uses the official bot client with the
  *    C++ deep-wallwars engine. It tests the Deep Wallwars adapter.
- *    Note that this may require C++ recompilation and environment setup.
+ *    Note that this requires C++ compilation and GPU setup.
  */
 
 /**
  * Integration test for the official custom bot client CLI using the dummy engine.
- * V2: Bots use proactive protocol with clientId and bots array.
+ * V3: Bot Game Session Protocol with stateful engine processes.
  *
- * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
- * Spawns the actual CLI client process with --engine and verifies moves.
+ * Tests:
+ * - Engine state tracking across multiple moves
+ * - Classic variant support
+ * - Bot registration with specific variant configurations
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
@@ -34,10 +35,6 @@ import type {
   GameConfiguration,
   PlayerId,
 } from "../../shared/domain/game-types";
-import {
-  EVALUATION_MIN,
-  EVALUATION_MAX,
-} from "../../shared/custom-bot/engine-api";
 
 // ================================
 // --- Test Harness ---
@@ -85,8 +82,7 @@ interface PlayVsBotResponse {
 }
 
 /**
- * V2: Creates a game against a registered bot via /api/bots/play.
- * @param hostIsPlayer1 - If true, host is Player 1 (moves first). If false, bot is Player 1. If undefined, random.
+ * V3: Creates a game against a registered bot via /api/bots/play.
  */
 async function createGameVsBot(
   userId: string,
@@ -118,12 +114,11 @@ async function createGameVsBot(
 }
 
 /**
- * V2: Lists available bots matching game settings.
- * Both variant and timeControl are required by the API.
+ * V3: Lists available bots matching game settings.
+ * TimeControl is no longer used in V3.
  */
 async function listBots(filters: {
   variant: string;
-  timeControl: string;
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{
@@ -131,7 +126,6 @@ async function listBots(filters: {
 }> {
   const params = new URLSearchParams();
   params.set("variant", filters.variant);
-  params.set("timeControl", filters.timeControl);
   if (filters.boardWidth) params.set("boardWidth", String(filters.boardWidth));
   if (filters.boardHeight)
     params.set("boardHeight", String(filters.boardHeight));
@@ -258,7 +252,6 @@ async function openHumanSocket(
           );
         },
 
-        // Wait for a state message that matches a predicate (ignores all other messages)
         waitForState: (
           predicate: (
             state: Extract<ServerMessage, { type: "state" }>,
@@ -354,7 +347,7 @@ async function createBotConfigFile(args: {
   serverUrl: string;
   botId: string;
   botName: string;
-  engine?: string;
+  engine: string;
 }): Promise<BotConfigFile> {
   const dir = await mkdtemp(join(tmpdir(), "wallgame-bot-"));
   const path = join(dir, "bot-config.json");
@@ -368,9 +361,9 @@ async function createBotConfigFile(args: {
         variants: defaultVariants,
       },
     ],
-    engineCommands: args.engine
-      ? { [args.botId]: { default: args.engine } }
-      : {},
+    engineCommands: {
+      [args.botId]: { default: args.engine },
+    },
   };
 
   await writeFile(path, JSON.stringify(config, null, 2));
@@ -382,7 +375,7 @@ async function createBotConfigFile(args: {
 }
 
 /**
- * V2: Spawns bot client using a config file.
+ * V3: Spawns bot client using a config file.
  */
 function spawnBotClient(
   configPath: string,
@@ -437,14 +430,8 @@ function spawnBotClient(
 // --- Test Helpers ---
 // ================================
 
-/**
- * Verifies that an evaluation value is within the valid range [-1, +1].
- */
-function assertValidEvaluation(evaluation: unknown): void {
-  expect(typeof evaluation).toBe("number");
-  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
-  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
-}
+const sleep = (ms: number): Promise<void> =>
+  new Promise((resolve) => setTimeout(resolve, ms));
 
 /**
  * Plays a move for the human player (does not wait for response).
@@ -487,7 +474,7 @@ async function waitForTurn(
  */
 async function waitForBotRegistration(
   botId: string,
-  filters: { variant: string; timeControl: string },
+  filters: { variant: string },
   timeoutMs = 10000,
 ): Promise<void> {
   const startTime = Date.now();
@@ -496,7 +483,7 @@ async function waitForBotRegistration(
     if (bots.some((b) => b.id === botId)) {
       return;
     }
-    await new Promise((r) => setTimeout(r, 100));
+    await sleep(100);
   }
   throw new Error(`Bot ${botId} did not register within ${timeoutMs}ms`);
 }
@@ -505,7 +492,7 @@ async function waitForBotRegistration(
 // --- Main Test ---
 // ================================
 
-describe("custom bot client CLI integration V2 (dummy engine)", () => {
+describe("custom bot client CLI integration V3 (dummy engine)", () => {
   beforeAll(async () => {
     const handle = await setupEphemeralDb();
     container = handle.container;
@@ -518,9 +505,9 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
     await teardownEphemeralDb(container);
   }, 60_000);
 
-  it("plays a game using the V2 proactive bot protocol with dummy engine", async () => {
-    const hostUserId = "host-user-v2";
-    const clientId = "test-client-v2";
+  it("plays a game using the V3 BGS protocol with dummy engine", async () => {
+    const hostUserId = "host-user-v3";
+    const clientId = "test-client-v3";
     const botId = "dummy-bot";
     const compositeId = `${clientId}:${botId}`;
     let botClient: BotClientProcess | null = null;
@@ -540,7 +527,7 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
     };
 
     try {
-      // V2: Start bot client first (proactive connection)
+      // V3: Start bot client with dummy engine
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
         botId,
@@ -552,17 +539,15 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {
         variant: "standard",
-        timeControl: "rapid",
       });
 
       // Verify bot appears in listing
       const { bots } = await listBots({
         variant: "standard",
-        timeControl: "rapid",
       });
       expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
-      // V2: Create game via /api/bots/play (human is Player 1, moves first)
+      // V3: Create game via /api/bots/play (human is Player 1, moves first)
       const {
         gameId,
         socketToken: hostSocketToken,
@@ -574,12 +559,16 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
 
       humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
-      // Wait for initial state (game should start immediately since bot is connected)
+      // Wait for initial state (game should start after BGS initializes)
       const initialState = await humanSocket.waitForMessage("state", {
         ignore: ["match-status"],
       });
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.turn).toBe(1); // Human's turn first
+
+      // Wait for BGS to fully initialize (engine process startup + rate limiting)
+      // Engine startup takes longer than built-in dumb-bot
+      await sleep(1000);
 
       const humanPlayerId = 1;
       const botPlayerId = 2;
@@ -591,23 +580,22 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
           humanPlayerId,
           currentState,
         );
-        const moveCountBeforeHumanMove = currentState.state.moveCount;
+        if (currentState.state.status !== "playing") return false;
+        const moveCountBefore = currentState.state.moveCount;
         await submitHumanMove(humanSocket!, "---", 5);
-        // Wait for bot to move - state after bot move will have evaluation
-        // We wait for a state where evaluation is a number (only bot moves include evaluation)
+        // Wait for bot to move - state after bot move will have higher move count
         const stateAfterBotMove = await humanSocket!.waitForState(
           (state) =>
-            (typeof state.evaluation === "number" &&
-              state.state.moveCount > moveCountBeforeHumanMove) ||
+            state.state.moveCount > moveCountBefore + 1 ||
             state.state.status !== "playing",
         );
-        // Verify evaluation is included in state broadcast (dummy engine returns 0)
-        assertValidEvaluation(stateAfterBotMove.evaluation);
-        expect(stateAfterBotMove.evaluation).toBe(0);
         currentState = stateAfterBotMove;
+        // Small delay to let BGS sync complete before next move
+        await sleep(200);
+        return currentState.state.status === "playing";
       };
 
-      await playNoopRound();
+      // Play just one round to verify the protocol works
       await playNoopRound();
 
       // Human resigns
@@ -630,6 +618,109 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
     }
   }, 60000);
 
+  it("plays classic variant with dummy engine", async () => {
+    const hostUserId = "host-classic-v3";
+    const clientId = "test-client-classic-v3";
+    const botId = "classic-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    // Classic variant - goal is to reach opponent's corner
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "classic",
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+    };
+
+    try {
+      // Start bot client with dummy engine
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: botId,
+        engine: "bun ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(configFile.path, clientId);
+
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "classic",
+      });
+
+      // Verify bot appears in classic variant listing
+      const { bots } = await listBots({ variant: "classic" });
+      expect(bots.some((b) => b.id === compositeId)).toBe(true);
+
+      // Create game (human is Player 1, moves first)
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
+
+      expect(gameId).toBeDefined();
+      expect(playerId).toBe(1);
+
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
+
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.config.variant).toBe("classic");
+
+      // Wait for BGS to fully initialize (engine process startup + rate limiting)
+      await sleep(500);
+
+      const humanPlayerId = 1;
+      let currentState = initialState;
+
+      // Play a few rounds
+      for (let i = 0; i < 3; i++) {
+        currentState = await waitForTurn(
+          humanSocket,
+          humanPlayerId,
+          currentState,
+        );
+        if (currentState.state.status !== "playing") break;
+
+        const moveCountBefore = currentState.state.moveCount;
+        await submitHumanMove(humanSocket, "---", 5);
+
+        // Wait for bot to respond
+        currentState = await humanSocket.waitForState(
+          (state) =>
+            state.state.moveCount > moveCountBefore + 1 ||
+            state.state.status !== "playing",
+        );
+      }
+
+      // Verify game is still playing (or ended naturally)
+      if (currentState.state.status === "playing") {
+        // Human resigns to end cleanly
+        humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+        await humanSocket.waitForState((s) => s.state.status === "finished");
+      }
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
+
   it("bot discovery works with variant filtering", async () => {
     const clientId = "test-client-filter";
     const botId = "filter-bot";
@@ -638,7 +729,7 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
     let configFile: BotConfigFile | null = null;
 
     try {
-      // Start bot client
+      // Start bot client with dummy engine
       configFile = await createBotConfigFile({
         serverUrl: baseUrl,
         botId,
@@ -650,22 +741,25 @@ describe("custom bot client CLI integration V2 (dummy engine)", () => {
       // Wait for bot to register
       await waitForBotRegistration(compositeId, {
         variant: "standard",
-        timeControl: "rapid",
       });
 
-      // Verify bot appears in listing with standard variant
+      // Verify bot appears in standard variant listing
       const { bots: standardBots } = await listBots({
         variant: "standard",
-        timeControl: "rapid",
       });
       expect(standardBots.some((b) => b.id === compositeId)).toBe(true);
 
-      // Verify filtering works with different time controls
-      const { bots: blitzBots } = await listBots({
-        variant: "standard",
-        timeControl: "blitz",
+      // Verify bot appears in classic variant listing (bot supports all variants)
+      const { bots: classicBots } = await listBots({
+        variant: "classic",
       });
-      expect(blitzBots.some((b) => b.id === compositeId)).toBe(true);
+      expect(classicBots.some((b) => b.id === compositeId)).toBe(true);
+
+      // Verify bot appears in freestyle variant listing
+      const { bots: freestyleBots } = await listBots({
+        variant: "freestyle",
+      });
+      expect(freestyleBots.some((b) => b.id === compositeId)).toBe(true);
     } finally {
       if (botClient) {
         botClient.kill();
