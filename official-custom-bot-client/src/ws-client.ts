@@ -34,6 +34,12 @@ import { logger } from "./logger";
 import { clampEvaluation } from "../../shared/custom-bot/engine-api";
 import type { EngineProcess } from "./engine-runner";
 import { spawnEngine } from "./engine-runner";
+import {
+  handleStartGameSession as dumbBotStartSession,
+  handleEndGameSession as dumbBotEndSession,
+  handleEvaluatePosition as dumbBotEvaluate,
+  handleApplyMove as dumbBotApplyMove,
+} from "./dumb-bot";
 
 export interface BotClientOptions {
   serverUrl: string;
@@ -174,7 +180,9 @@ export class BotClient {
     for (const bot of this.options.bots) {
       const engineCommandConfig = this.options.engineCommands.get(bot.botId);
       if (!engineCommandConfig) {
-        logger.info(`Bot ${bot.botId}: No engine command, will use built-in dumb bot`);
+        logger.info(
+          `Bot ${bot.botId}: No engine command, will use built-in dumb bot`,
+        );
         continue;
       }
 
@@ -182,7 +190,9 @@ export class BotClient {
       // The engine handles multiple variants internally
       const engineCommand = engineCommandConfig.default;
       if (!engineCommand) {
-        logger.warn(`Bot ${bot.botId}: No default engine command, will use built-in dumb bot`);
+        logger.warn(
+          `Bot ${bot.botId}: No default engine command, will use built-in dumb bot`,
+        );
         continue;
       }
 
@@ -267,7 +277,9 @@ export class BotClient {
             this.state = "disconnected";
 
             if (wasConnecting && this.connectReject) {
-              this.connectReject(new Error("WebSocket closed during reconnection"));
+              this.connectReject(
+                new Error("WebSocket closed during reconnection"),
+              );
               this.connectResolve = null;
               this.connectReject = null;
             } else if (wasAttached && this.shouldReconnect) {
@@ -334,7 +346,9 @@ export class BotClient {
   /**
    * Send a message to the server with rate limiting
    */
-  private async send(message: AttachMessage | BgsClientResponse): Promise<void> {
+  private async send(
+    message: AttachMessage | BgsClientResponse,
+  ): Promise<void> {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.error("Cannot send: WebSocket not connected");
       return;
@@ -410,7 +424,9 @@ export class BotClient {
 
     for (const bot of this.options.bots) {
       const hasEngine = this.engines.has(bot.botId);
-      logger.info(`  Bot: ${bot.botId} (${bot.name}) - Engine: ${hasEngine ? "external" : "dumb-bot"}`);
+      logger.info(
+        `  Bot: ${bot.botId} (${bot.name}) - Engine: ${hasEngine ? "external" : "dumb-bot"}`,
+      );
     }
 
     this.state = "waiting";
@@ -464,8 +480,12 @@ export class BotClient {
   /**
    * V3: Handle start_game_session - pass through to engine
    */
-  private async handleStartGameSession(message: StartGameSessionMessage): Promise<void> {
-    logger.info(`Starting game session ${message.bgsId} for bot ${message.botId}`);
+  private async handleStartGameSession(
+    message: StartGameSessionMessage,
+  ): Promise<void> {
+    logger.info(
+      `Starting game session ${message.bgsId} for bot ${message.botId}`,
+    );
     this.state = "processing";
 
     // Extract botId from bgsId if not directly provided
@@ -473,14 +493,9 @@ export class BotClient {
     const engine = this.getEngine(message.botId);
 
     if (!engine) {
-      // Dumb bot fallback - always succeeds
+      // Dumb bot fallback - stateful session tracking
       logger.debug(`Using dumb bot for session ${message.bgsId}`);
-      const response: GameSessionStartedMessage = {
-        type: "game_session_started",
-        bgsId: message.bgsId,
-        success: true,
-        error: "",
-      };
+      const response = dumbBotStartSession(message);
       await this.send(response);
       this.state = "waiting";
       return;
@@ -518,7 +533,9 @@ export class BotClient {
   /**
    * V3: Handle end_game_session - pass through to engine
    */
-  private async handleEndGameSession(message: EndGameSessionMessage): Promise<void> {
+  private async handleEndGameSession(
+    message: EndGameSessionMessage,
+  ): Promise<void> {
     logger.info(`Ending game session ${message.bgsId}`);
     this.state = "processing";
 
@@ -544,14 +561,9 @@ export class BotClient {
     }
 
     if (!responded) {
-      // Dumb bot fallback or session not found - just confirm
-      logger.debug(`Session ${message.bgsId} ended (dumb bot or not found)`);
-      const response: GameSessionEndedMessage = {
-        type: "game_session_ended",
-        bgsId: message.bgsId,
-        success: true,
-        error: "",
-      };
+      // Dumb bot fallback
+      logger.debug(`Using dumb bot for end session ${message.bgsId}`);
+      const response = dumbBotEndSession(message);
       await this.send(response);
     }
 
@@ -561,8 +573,12 @@ export class BotClient {
   /**
    * V3: Handle evaluate_position - pass through to engine
    */
-  private async handleEvaluatePosition(message: EvaluatePositionMessage): Promise<void> {
-    logger.info(`Evaluating position for session ${message.bgsId} at ply ${message.expectedPly}`);
+  private async handleEvaluatePosition(
+    message: EvaluatePositionMessage,
+  ): Promise<void> {
+    logger.info(
+      `Evaluating position for session ${message.bgsId} at ply ${message.expectedPly}`,
+    );
     this.state = "processing";
 
     // Track bgsId -> botId mapping for this session
@@ -589,17 +605,9 @@ export class BotClient {
     }
 
     if (!responded) {
-      // Dumb bot fallback
+      // Dumb bot fallback - uses stateful session tracking
       logger.debug(`Using dumb bot for evaluation ${message.bgsId}`);
-      const response: EvaluateResponseMessage = {
-        type: "evaluate_response",
-        bgsId: message.bgsId,
-        ply: message.expectedPly,
-        bestMove: "", // Dumb bot doesn't track state, can't provide move
-        evaluation: 0, // Neutral evaluation
-        success: false,
-        error: "No engine available for this session",
-      };
+      const response = dumbBotEvaluate(message);
       await this.send(response);
     }
 
@@ -610,7 +618,9 @@ export class BotClient {
    * V3: Handle apply_move - pass through to engine
    */
   private async handleApplyMove(message: ApplyMoveMessage): Promise<void> {
-    logger.info(`Applying move ${message.move} to session ${message.bgsId} at ply ${message.expectedPly}`);
+    logger.info(
+      `Applying move ${message.move} to session ${message.bgsId} at ply ${message.expectedPly}`,
+    );
     this.state = "processing";
 
     // Try all engines
@@ -630,15 +640,9 @@ export class BotClient {
     }
 
     if (!responded) {
-      // Dumb bot fallback
-      logger.debug(`Dumb bot: move ${message.move} applied to session ${message.bgsId}`);
-      const response: MoveAppliedMessage = {
-        type: "move_applied",
-        bgsId: message.bgsId,
-        ply: message.expectedPly + 1,
-        success: true,
-        error: "",
-      };
+      // Dumb bot fallback - uses stateful session tracking
+      logger.debug(`Using dumb bot for apply_move ${message.bgsId}`);
+      const response = dumbBotApplyMove(message);
       await this.send(response);
     }
 

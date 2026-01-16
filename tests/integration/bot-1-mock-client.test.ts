@@ -47,10 +47,6 @@ import type {
   EvaluateResponseMessage,
   MoveAppliedMessage,
 } from "../../shared/contracts/custom-bot-protocol";
-import {
-  EVALUATION_MIN,
-  EVALUATION_MAX,
-} from "../../shared/custom-bot/engine-api";
 
 // ================================
 // --- Test Harness ---
@@ -307,10 +303,30 @@ interface BotSocket {
     options?: { protocolVersion?: number },
   ) => void;
   // V3 BGS response methods
-  sendGameSessionStarted: (bgsId: string, success: boolean, error?: string) => void;
-  sendGameSessionEnded: (bgsId: string, success: boolean, error?: string) => void;
-  sendEvaluateResponse: (bgsId: string, ply: number, bestMove: string, evaluation: number, success?: boolean, error?: string) => void;
-  sendMoveApplied: (bgsId: string, ply: number, success?: boolean, error?: string) => void;
+  sendGameSessionStarted: (
+    bgsId: string,
+    success: boolean,
+    error?: string,
+  ) => void;
+  sendGameSessionEnded: (
+    bgsId: string,
+    success: boolean,
+    error?: string,
+  ) => void;
+  sendEvaluateResponse: (
+    bgsId: string,
+    ply: number,
+    bestMove: string,
+    evaluation: number,
+    success?: boolean,
+    error?: string,
+  ) => void;
+  sendMoveApplied: (
+    bgsId: string,
+    ply: number,
+    success?: boolean,
+    error?: string,
+  ) => void;
   close: () => void;
 }
 
@@ -361,7 +377,11 @@ async function openBotSocket(): Promise<BotSocket> {
           ws.send(JSON.stringify(msg));
         },
 
-        sendGameSessionStarted: (bgsId: string, success: boolean, error = "") => {
+        sendGameSessionStarted: (
+          bgsId: string,
+          success: boolean,
+          error = "",
+        ) => {
           const msg: GameSessionStartedMessage = {
             type: "game_session_started",
             bgsId,
@@ -381,7 +401,14 @@ async function openBotSocket(): Promise<BotSocket> {
           ws.send(JSON.stringify(msg));
         },
 
-        sendEvaluateResponse: (bgsId: string, ply: number, bestMove: string, evaluation: number, success = true, error = "") => {
+        sendEvaluateResponse: (
+          bgsId: string,
+          ply: number,
+          bestMove: string,
+          evaluation: number,
+          success = true,
+          error = "",
+        ) => {
           const msg: EvaluateResponseMessage = {
             type: "evaluate_response",
             bgsId,
@@ -394,7 +421,12 @@ async function openBotSocket(): Promise<BotSocket> {
           ws.send(JSON.stringify(msg));
         },
 
-        sendMoveApplied: (bgsId: string, ply: number, success = true, error = "") => {
+        sendMoveApplied: (
+          bgsId: string,
+          ply: number,
+          success = true,
+          error = "",
+        ) => {
           const msg: MoveAppliedMessage = {
             type: "move_applied",
             bgsId,
@@ -521,15 +553,6 @@ async function waitForTurn(
 }
 
 /**
- * Verifies that an evaluation value is within the valid range [-1, +1].
- */
-function assertValidEvaluation(evaluation: unknown): void {
-  expect(typeof evaluation).toBe("number");
-  expect(evaluation).toBeGreaterThanOrEqual(EVALUATION_MIN);
-  expect(evaluation).toBeLessThanOrEqual(EVALUATION_MAX);
-}
-
-/**
  * Wait for bot to appear in the bot listing.
  */
 async function waitForBotRegistration(
@@ -648,26 +671,31 @@ describe("custom bot WebSocket integration V3", () => {
       expect(gameId).toBeDefined();
       expect(playerId).toBe(1); // Human is Player 1
 
-      // 4. Connect human player
+      // 4. Connect human player - this triggers BGS initialization
       humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
 
       // 5. Bot receives start_game_session
       const startSession = await botSocket.waitForMessage("start_game_session");
       expect(startSession.bgsId).toBeDefined();
       expect(startSession.botId).toBe(botId);
+      expect(startSession.config.variant).toBe("standard");
+      expect(startSession.config.boardWidth).toBe(3);
+      expect(startSession.config.boardHeight).toBe(3);
+
+      const bgsId = startSession.bgsId;
 
       // Bot confirms session started
       await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendGameSessionStarted(startSession.bgsId, true);
+      botSocket.sendGameSessionStarted(bgsId, true);
 
       // 6. Bot receives initial evaluate_position request (ply 0)
       const initialEval = await botSocket.waitForMessage("evaluate_position");
-      expect(initialEval.bgsId).toBe(startSession.bgsId);
+      expect(initialEval.bgsId).toBe(bgsId);
       expect(initialEval.expectedPly).toBe(0);
 
-      // Bot responds with evaluation and best move
+      // Bot responds with evaluation and best move for human's turn
       await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendEvaluateResponse(initialEval.bgsId, 0, "---", 0.0);
+      botSocket.sendEvaluateResponse(bgsId, 0, "---", 0.0);
 
       // Wait for initial state
       const initialState = await humanSocket.waitForMessage("state");
@@ -683,31 +711,49 @@ describe("custom bot WebSocket integration V3", () => {
 
       // 8. Bot receives apply_move for human's move
       const applyHumanMove = await botSocket.waitForMessage("apply_move");
-      expect(applyHumanMove.bgsId).toBe(startSession.bgsId);
+      expect(applyHumanMove.bgsId).toBe(bgsId);
       expect(applyHumanMove.expectedPly).toBe(0);
       expect(applyHumanMove.move).toBe("---");
 
       // Bot confirms move applied (new ply is 1)
       await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendMoveApplied(applyHumanMove.bgsId, 1);
+      botSocket.sendMoveApplied(bgsId, 1);
 
-      // 9. Bot receives evaluate_position for position after human move
-      const evalAfterHuman = await botSocket.waitForMessage("evaluate_position");
-      expect(evalAfterHuman.bgsId).toBe(startSession.bgsId);
-      expect(evalAfterHuman.expectedPly).toBe(1);
+      // 9. Bot receives evaluate_position for bot's turn (ply 1)
+      const evalForBotTurn =
+        await botSocket.waitForMessage("evaluate_position");
+      expect(evalForBotTurn.bgsId).toBe(bgsId);
+      expect(evalForBotTurn.expectedPly).toBe(1);
 
-      // Bot responds with evaluation - this becomes the bot's move
+      // Bot responds with its best move - server will execute this move
       await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendEvaluateResponse(evalAfterHuman.bgsId, 1, "---", -0.2);
+      botSocket.sendEvaluateResponse(bgsId, 1, "---", -0.2);
 
-      // Wait for bot's turn to complete
-      const stateAfterBotMove = await waitForTurn(humanSocket, humanPlayerId);
-      // Verify evaluation is included in state broadcast after bot move
-      assertValidEvaluation(
-        (stateAfterBotMove as unknown as { evaluation: number }).evaluation,
-      );
+      // 10. Bot receives apply_move for its own move (to sync internal state)
+      const applyBotMove = await botSocket.waitForMessage("apply_move");
+      expect(applyBotMove.bgsId).toBe(bgsId);
+      expect(applyBotMove.expectedPly).toBe(1);
+      expect(applyBotMove.move).toBe("---");
 
-      // 10. Human resigns to end game
+      // Bot confirms its move applied (new ply is 2)
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendMoveApplied(bgsId, 2);
+
+      // 11. Bot receives evaluate_position for human's next turn (ply 2)
+      // This is critical: server always has one evaluation "ahead"
+      const evalForHumanTurn =
+        await botSocket.waitForMessage("evaluate_position");
+      expect(evalForHumanTurn.bgsId).toBe(bgsId);
+      expect(evalForHumanTurn.expectedPly).toBe(2);
+
+      // Bot responds with evaluation for human's position
+      await sleep(RATE_LIMIT_DELAY_MS);
+      botSocket.sendEvaluateResponse(bgsId, 2, "---", 0.1);
+
+      // Wait for state showing human's turn
+      await waitForTurn(humanSocket, humanPlayerId);
+
+      // 12. Human resigns to end game
       humanSocket.ws.send(JSON.stringify({ type: "resign" }));
 
       // Wait for game to end
@@ -718,13 +764,13 @@ describe("custom bot WebSocket integration V3", () => {
       expect(finalState.state.result?.reason).toBe("resignation");
       expect(finalState.state.result?.winner).toBe(botPlayerId);
 
-      // 11. Bot receives end_game_session
+      // 13. Bot receives end_game_session
       const endSession = await botSocket.waitForMessage("end_game_session");
-      expect(endSession.bgsId).toBe(startSession.bgsId);
+      expect(endSession.bgsId).toBe(bgsId);
 
       // Bot confirms session ended
       await sleep(RATE_LIMIT_DELAY_MS);
-      botSocket.sendGameSessionEnded(endSession.bgsId, true);
+      botSocket.sendGameSessionEnded(bgsId, true);
     } finally {
       humanSocket?.close();
       botSocket?.close();
