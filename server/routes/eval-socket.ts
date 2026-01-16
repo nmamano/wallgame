@@ -416,8 +416,9 @@ const handleHandshake = async (
   }
 
   // Human vs human or past game replay
+  // Per spec: Replay uses unique ID per viewer (ephemeral), live human vs human uses gameId (shared)
   const isReplay = session.gameState.status === "finished";
-  const bgsId = isReplay ? `${gameId}_eval` : `${gameId}_eval`;
+  const bgsId = isReplay ? `${gameId}_${nanoid()}` : gameId;
 
   // Check for shared BGS (human vs human live games)
   const existingShared = sharedEvalBgs.get(gameId);
