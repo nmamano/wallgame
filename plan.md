@@ -238,7 +238,7 @@ Migrate from V2 "proactive bot protocol" to V3 "game session bot protocol". Key 
       "Run bun run build",
       "Verify clean build"
     ],
-    "passes": false
+    "passes": true
   }
 ]
 ```

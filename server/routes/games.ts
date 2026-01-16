@@ -34,6 +34,7 @@ import {
   getReplayGame,
   queryPastGames,
 } from "../db/game-queries";
+import { getRatingForAuthUser } from "../db/rating-helpers";
 import {
   getMatchingBots,
   getRecommendedBots,
