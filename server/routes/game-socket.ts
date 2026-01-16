@@ -356,14 +356,12 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     ply: bgs.currentPly,
   });
 
-  // Broadcast state update
-  broadcast(sessionId, {
-    type: "state",
-    state: getSerializedState(sessionId),
-  });
-
-  // Handle game end
+  // Handle game end - can broadcast immediately since no BGS update needed
   if (newState.status === "finished") {
+    broadcast(sessionId, {
+      type: "state",
+      state: getSerializedState(sessionId),
+    });
     await processRatingUpdate(sessionId);
     try {
       await persistCompletedGame(getSession(sessionId));
@@ -379,7 +377,8 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     return;
   }
 
-  // Game continues - update BGS and evaluate new position
+  // Game continues - update BGS BEFORE broadcasting to human
+  // This ensures the BGS is synchronized before human can make their next move
   broadcastLiveGamesUpsert(sessionId);
 
   // Apply move to BGS and get new evaluation
@@ -398,6 +397,12 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     await resignBotOnFailure(session, activePlayer.playerId);
     return;
   }
+
+  // Now broadcast state update to human - BGS is fully synchronized
+  broadcast(sessionId, {
+    type: "state",
+    state: getSerializedState(sessionId),
+  });
 
   // If it's still the bot's turn (shouldn't happen in normal flow), recurse
   // This handles edge cases like "pass" moves
@@ -1040,9 +1045,32 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 
     if (botPlayer?.botCompositeId) {
       const bgsId = socket.sessionId;
-      const bgs = getBgs(bgsId);
+      let bgs = getBgs(bgsId);
 
-      if (bgs) {
+      // Wait for BGS to be ready if it's still initializing
+      if (bgs?.status === "initializing") {
+        const maxWaitMs = 5000;
+        const pollIntervalMs = 50;
+        const startTime = Date.now();
+
+        while (Date.now() - startTime < maxWaitMs) {
+          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
+          bgs = getBgs(bgsId);
+          if (!bgs || bgs.status === "ready") break;
+        }
+
+        if (bgs?.status !== "ready") {
+          console.error("[ws] BGS not ready after waiting", {
+            sessionId: socket.sessionId,
+            botCompositeId: botPlayer.botCompositeId,
+            status: bgs?.status,
+          });
+          await resignBotOnFailure(updatedSession, botPlayer.playerId);
+          return;
+        }
+      }
+
+      if (bgs && bgs.status === "ready") {
         // Apply human's move to BGS
         const moveNotation = moveToStandardNotation(message.move, totalRows);
         const evalResult = await applyMoveAndEvaluate(

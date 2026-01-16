@@ -593,19 +593,11 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.turn).toBe(1); // Human's turn first
 
-      // Wait for BGS to fully initialize (client has 200ms rate limiting)
-      // The BGS initialization sequence is: start_game_session → game_session_started → evaluate_position → evaluate_response
-      // Total delay can be up to 400ms (2 rate-limited messages)
-      await sleep(500);
-
       const humanPlayerId = 1;
       const botPlayerId = 2;
       let currentState = initialState;
 
       // Play a few rounds of noop moves
-      // Note: Add delay between rounds to allow BGS protocol to complete
-      // (server sends apply_move + evaluate_position after each move,
-      // and bot client has 200ms rate limiting between responses)
       const playNoopRound = async () => {
         currentState = await waitForTurn(
           humanSocket!,
@@ -624,10 +616,6 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
           humanPlayerId,
           currentState,
         );
-
-        // Wait for BGS protocol to complete before next round
-        // (prevents race condition with rate-limited bot responses)
-        await sleep(500);
 
         return currentState.state.status === "playing";
       };
@@ -719,25 +707,15 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.turn).toBe(1); // Bot's turn first
 
-      // Wait for BGS to fully initialize AND for bot's first move to complete
-      // When bot is P1, we need extra time because:
-      // 1. BGS init: start_game_session → game_session_started (200ms)
-      // 2. Initial eval: evaluate_position → evaluate_response (200ms)
-      // 3. Bot move: apply_move → move_applied (200ms)
-      // Total: ~600ms minimum, add buffer for processing
-      await sleep(1000);
-
       const humanPlayerId = 2;
 
       // Wait for bot's first move to complete (turn should now be human's)
+      // Server waits for BGS to be synchronized before broadcasting bot's move
       let currentState = await humanSocket.waitForState(
         (state) =>
           state.state.status !== "playing" || state.state.turn === humanPlayerId,
         { timeoutMs: 5000 },
       );
-
-      // Additional delay to ensure BGS has fully processed the bot's move
-      await sleep(500);
 
       const playNoopRound = async () => {
         // Wait for bot to move first
@@ -758,9 +736,6 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
           humanPlayerId,
           currentState,
         );
-
-        // Wait for BGS protocol to complete before next round
-        await sleep(500);
 
         return currentState.state.status === "playing";
       };

@@ -91,9 +91,6 @@ export class BotClient {
   // V3: Long-lived engine processes (one per bot)
   private engines: Map<string, EngineProcess> = new Map();
 
-  // Rate limiting
-  private lastSendTime: number = 0;
-
   // Reconnection state
   private reconnectAttempts: number = 0;
   private shouldReconnect: boolean = true;
@@ -344,31 +341,18 @@ export class BotClient {
   }
 
   /**
-   * Send a message to the server with rate limiting
+   * Send a message to the server.
+   * Note: Rate limiting was removed in V3 - server handles synchronization.
    */
-  private async send(
-    message: AttachMessage | BgsClientResponse,
-  ): Promise<void> {
+  private send(message: AttachMessage | BgsClientResponse): void {
     if (!this.ws || this.ws.readyState !== WebSocket.OPEN) {
       logger.error("Cannot send: WebSocket not connected");
       return;
     }
 
-    // Rate limit: wait if we're sending too fast
-    const now = Date.now();
-    const timeSinceLastSend = now - this.lastSendTime;
-    const minInterval = this.limits.minClientMessageIntervalMs;
-
-    if (timeSinceLastSend < minInterval) {
-      const waitTime = minInterval - timeSinceLastSend;
-      logger.debug(`Rate limiting: waiting ${waitTime}ms before send`);
-      await new Promise((resolve) => setTimeout(resolve, waitTime));
-    }
-
     const json = JSON.stringify(message);
     logger.debug("Sending:", json);
     this.ws.send(json);
-    this.lastSendTime = Date.now();
   }
 
   /**
