@@ -505,8 +505,6 @@ async function openBotSocket(): Promise<BotSocket> {
 // --- Test Helpers ---
 // ================================
 
-const RATE_LIMIT_DELAY_MS = 300; // Slightly more than the 200ms rate limit
-
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
@@ -685,7 +683,6 @@ describe("custom bot WebSocket integration V3", () => {
       const bgsId = startSession.bgsId;
 
       // Bot confirms session started
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendGameSessionStarted(bgsId, true);
 
       // 6. Bot receives initial evaluate_position request (ply 0)
@@ -694,7 +691,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(initialEval.expectedPly).toBe(0);
 
       // Bot responds with evaluation and best move for human's turn
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendEvaluateResponse(bgsId, 0, "---", 0.0);
 
       // Wait for initial state
@@ -716,7 +712,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(applyHumanMove.move).toBe("---");
 
       // Bot confirms move applied (new ply is 1)
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendMoveApplied(bgsId, 1);
 
       // 9. Bot receives evaluate_position for bot's turn (ply 1)
@@ -726,7 +721,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(evalForBotTurn.expectedPly).toBe(1);
 
       // Bot responds with its best move - server will execute this move
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendEvaluateResponse(bgsId, 1, "---", -0.2);
 
       // 10. Bot receives apply_move for its own move (to sync internal state)
@@ -736,7 +730,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(applyBotMove.move).toBe("---");
 
       // Bot confirms its move applied (new ply is 2)
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendMoveApplied(bgsId, 2);
 
       // 11. Bot receives evaluate_position for human's next turn (ply 2)
@@ -747,7 +740,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(evalForHumanTurn.expectedPly).toBe(2);
 
       // Bot responds with evaluation for human's position
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendEvaluateResponse(bgsId, 2, "---", 0.1);
 
       // Wait for state showing human's turn
@@ -769,7 +761,6 @@ describe("custom bot WebSocket integration V3", () => {
       expect(endSession.bgsId).toBe(bgsId);
 
       // Bot confirms session ended
-      await sleep(RATE_LIMIT_DELAY_MS);
       botSocket.sendGameSessionEnded(bgsId, true);
     } finally {
       humanSocket?.close();
