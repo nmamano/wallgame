@@ -594,7 +594,6 @@ export const getClientBgsSessions = (clientId: string): string[] => {
   return Array.from(client.activeBgsSessions);
 };
 
-
 // ============================================================================
 // Abuse Tracking
 // ============================================================================

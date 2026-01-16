@@ -11,7 +11,10 @@
  */
 
 import { spawn } from "bun";
-import type { EngineRequestV3, EngineResponseV3 } from "../../shared/custom-bot/engine-api";
+import type {
+  EngineRequestV3,
+  EngineResponseV3,
+} from "../../shared/custom-bot/engine-api";
 import { logger } from "./logger";
 
 /**
@@ -57,16 +60,35 @@ function parseCommand(command: string): string[] {
  * Multiple BGS (Bot Game Sessions) can be handled by a single engine process.
  */
 export class EngineProcess {
-  private proc: ReturnType<typeof spawn<{ cmd: string[]; stdin: "pipe"; stdout: "pipe"; stderr: "pipe" }>>;
+  private proc: ReturnType<
+    typeof spawn<{
+      cmd: string[];
+      stdin: "pipe";
+      stdout: "pipe";
+      stderr: "pipe";
+    }>
+  >;
   private stdin: import("bun").FileSink;
-  private pendingRequests: Map<string, {
-    resolve: (response: EngineResponseV3) => void;
-    reject: (error: Error) => void;
-  }> = new Map();
+  private pendingRequests: Map<
+    string,
+    {
+      resolve: (response: EngineResponseV3) => void;
+      reject: (error: Error) => void;
+    }
+  > = new Map();
   private isAlive: boolean = true;
   private lineBuffer: string = "";
 
-  private constructor(proc: ReturnType<typeof spawn<{ cmd: string[]; stdin: "pipe"; stdout: "pipe"; stderr: "pipe" }>>) {
+  private constructor(
+    proc: ReturnType<
+      typeof spawn<{
+        cmd: string[];
+        stdin: "pipe";
+        stdout: "pipe";
+        stderr: "pipe";
+      }>
+    >,
+  ) {
     this.proc = proc;
     this.stdin = proc.stdin;
 
@@ -79,7 +101,9 @@ export class EngineProcess {
       this.isAlive = false;
       // Reject all pending requests
       for (const [bgsId, resolver] of this.pendingRequests) {
-        resolver.reject(new Error(`Engine process exited with code ${exitCode}`));
+        resolver.reject(
+          new Error(`Engine process exited with code ${exitCode}`),
+        );
       }
       this.pendingRequests.clear();
     });
@@ -259,6 +283,8 @@ export class EngineProcess {
  * Spawn a new engine process.
  * Convenience function that delegates to EngineProcess.spawn().
  */
-export async function spawnEngine(engineCommand: string): Promise<EngineProcess> {
+export async function spawnEngine(
+  engineCommand: string,
+): Promise<EngineProcess> {
   return EngineProcess.spawn(engineCommand);
 }

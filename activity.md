@@ -1,6 +1,7 @@
 # V3 Bot Protocol Migration - Activity Log
 
 ## Current Status
+
 **Last Updated:** 2026-01-15
 **Tasks Completed:** 18/18
 **Current Task:** Migration Complete!
@@ -16,11 +17,13 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated `StandardInitialState` in `shared/domain/game-types.ts` to use `{ p1: ..., p2: ... }` instead of `Record<PlayerId, ...>`
 - Updated `ClassicInitialState` similarly
 - `SurvivalInitialState` already used flat `cat`/`mouse` fields, no change needed
 
 **Files Modified:**
+
 - `shared/domain/game-types.ts` - Type definitions
 - `shared/domain/standard-setup.ts` - Builder function uses `p1`/`p2` keys
 - `shared/domain/classic-setup.ts` - Builder function uses `p1`/`p2` keys
@@ -28,10 +31,12 @@
 - `shared/domain/game-state.ts` - Type guards and constructor updated to use `.p1`/`.p2`
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - The change from `Record<PlayerId, ...>` to explicit `{ p1, p2 }` improves JSON serialization safety since JSON only supports string keys, not numeric keys like TypeScript's `1 | 2`
 - This change only affects the `*InitialState` types used in game configuration; the runtime `GameState.pawns` still uses `Record<PlayerId, ...>` internally
 
@@ -40,6 +45,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Bumped `CUSTOM_BOT_PROTOCOL_VERSION` from 2 to 3
 - Added V3 BGS (Bot Game Session) types:
   - `BgsConfig` - Configuration for a game session
@@ -53,13 +59,16 @@
 - Updated file header documentation to describe V3 protocol flow
 
 **Files Modified:**
+
 - `shared/contracts/custom-bot-protocol.ts` - Protocol type definitions
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - V2 types (BotRequestKind, BotResponseAction, BotResponseMessage, RequestMessage, etc.) are kept with @deprecated annotations to maintain backward compatibility until later phases update all consumers
 - The V3 protocol uses stateful Bot Game Sessions instead of stateless per-move requests, enabling MCTS tree persistence and better engine efficiency
 - `expectedPly` field added to requests for ordering and staleness detection
@@ -69,6 +78,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated `ENGINE_API_VERSION` from 2 to 3
 - Re-exported all V3 BGS message types from `custom-bot-protocol.ts`:
   - Request types: `StartGameSessionMessage`, `EndGameSessionMessage`, `EvaluatePositionMessage`, `ApplyMoveMessage`
@@ -89,13 +99,16 @@
 - Updated file header documentation to describe V3 JSON-lines protocol flow
 
 **Files Modified:**
+
 - `shared/custom-bot/engine-api.ts` - Engine API type definitions
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - V2 types are kept because consumers (`dummy-engine`, `official-custom-bot-client`, tests) still use them. These will be migrated in Phase 6 (client) and Phase 7 (dummy engine), then cleaned up in Phase 10.
 - The V3 engine API uses JSON-lines protocol: long-lived engine processes that read/write one JSON message per line, enabling stateful sessions with MCTS tree persistence.
 - `EngineRequestV3` and `EngineResponseV3` are the new primary types; `EngineRequest` and `EngineResponse` are deprecated V2 aliases kept for migration.
@@ -105,6 +118,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Created `server/games/bgs-store.ts` - new file for BGS state management
 - Implemented `BgsHistoryEntry` interface for tracking position evaluations
 - Implemented `BotGameSession` interface with:
@@ -134,13 +148,16 @@
 - Added debug/testing utilities: `clearAll()`, `getAllBgs()`
 
 **Files Modified:**
+
 - `server/games/bgs-store.ts` - New file (485 lines)
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - The BGS store follows the same patterns as `custom-bot-store.ts` (Map-based storage, similar API style)
 - `BgsHistoryEntry` is defined independently here (not imported from `engine-api.ts`) as the server may need additional fields in the future
 - The 256 session limit matches Deep Wallwars' self-play capacity
@@ -152,6 +169,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated `BotClientConnection` interface: removed `activeRequest` and `requestQueue`, added `activeBgsSessions: Set<string>`
 - Removed V2 request queue infrastructure (types and storage)
 - Added V3 BGS session tracking functions:
@@ -167,14 +185,17 @@
 - Updated `server/routes/games.ts` to use new function signatures
 
 **Files Modified:**
+
 - `server/games/custom-bot-store.ts` - Main store rewrite
 - `server/routes/games.ts` - Updated bot listing API calls
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - V2 functions kept as deprecated stubs because consumers (`custom-bot-socket.ts`, `eval-socket.ts`) still import them. These will be removed in Phase 3 (WebSocket handler rewrite) and Phase 5 (Eval socket rewrite).
 - The `MAX_QUEUE_LENGTH` constant was removed since V3 doesn't use request queues.
 - Time control filtering removed from bot discovery - in V3, bot games are untimed. The `botsQuerySchema` still accepts `timeControl` for backward compatibility but it's ignored.
@@ -184,6 +205,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Complete rewrite of `custom-bot-socket.ts` from V2 stateless request/response to V3 stateful Bot Game Sessions (BGS)
 - Attach handling now requires exactly `protocolVersion === 3` (V2 clients rejected)
 - Removed all V2 message handling (`request`, `response`, `ack`, `nack`)
@@ -206,14 +228,17 @@
   - Full V3 BGS-based eval bar will be implemented in Phase 5
 
 **Files Modified:**
+
 - `server/routes/custom-bot-socket.ts` - Complete rewrite (1173 lines → 1173 lines)
 - `server/routes/eval-socket.ts` - Temporary stub (501 lines → 196 lines)
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - The V3 protocol uses Promise-based async/await for all BGS operations, replacing V2's fire-and-forget queue model
 - Timeouts are enforced via `setTimeout` with cleanup on response or timeout
 - The `pendingResolvers` Map tracks outstanding requests by bgsId, enabling proper timeout handling
@@ -225,6 +250,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Complete V3 BGS integration in `server/routes/game-socket.ts` for bot game flow
 - Added BGS helper functions:
   - `buildBgsConfig()` - Extracts variant config from session for BGS creation
@@ -257,15 +283,18 @@
 - Fixed minor lint issues (nullish coalescing in custom-bot-socket.ts)
 
 **Files Modified:**
+
 - `server/routes/game-socket.ts` - Complete V3 integration (~200 lines added)
 - `server/routes/games.ts` - Removed V2 bot move queueing at game creation
 - `server/routes/custom-bot-socket.ts` - Fixed `||` to `??` for lint compliance
 
 **Verification:**
+
 - `bunx tsc --noEmit` - Passed (only pre-existing auth.ts URL type error)
 - `bun run lint` - Passed
 
 **Notes:**
+
 - BGS initialization is now lazy (on player connect) rather than eager (at game creation). This simplifies error handling and ensures the human player is present when BGS starts.
 - Bot turn execution uses the `bestMove` from the latest BGS history entry, which was computed during the previous `evaluate_position` call. This enables the "pre-compute next move" pattern described in the V3 spec.
 - The takeback flow rebuilds BGS from scratch by replaying all moves. This ensures the MCTS tree can be properly rebuilt from the new game state.
@@ -277,6 +306,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated file header documentation in `shared/contracts/eval-protocol.ts` to describe V3 BGS-based connection flow
 - Added `EvalHistoryEntry` interface for evaluation history entries:
   - `ply: number` - Position in game (0 = initial)
@@ -294,13 +324,16 @@
 - Updated `EvalServerMessage` union type to include all V3 message types
 
 **Files Modified:**
+
 - `shared/contracts/eval-protocol.ts` - V3 eval protocol message types
 
 **Verification:**
+
 - `bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - V2 eval protocol types (EvalPositionRequest, EvalResponse) are preserved for backward compatibility during migration
 - The `EvalPendingMessage` was added beyond the spec to improve UX during initialization of long games
 - `EvalHistoryEntry` mirrors the server-side `BgsHistoryEntry` structure for consistency
@@ -311,6 +344,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Complete rewrite of `server/routes/eval-socket.ts` for V3 BGS-based evaluation bar
 - Implemented BGS creation logic for different game types:
   - **Bot games (live):** Reuses the existing bot game BGS for eval bar
@@ -341,14 +375,17 @@
 - Added `INTERNAL_ERROR` to `EvalHandshakeRejectedCode` type for edge cases
 
 **Files Modified:**
+
 - `server/routes/eval-socket.ts` - Complete rewrite (~815 lines)
 - `shared/contracts/eval-protocol.ts` - Added `INTERNAL_ERROR` to rejection codes
 
 **Verification:**
+
 - `bunx tsc --noEmit` - Passed (only pre-existing errors in unrelated files)
 - `bun run lint` - Passed
 
 **Notes:**
+
 - The V3 eval bar uses a push model: server initializes BGS, then streams updates. V2 used a pull model where client requested evals per-position.
 - Bot game eval bars reuse the existing bot game BGS (ID = gameId). This means eval history is already populated from the bot's turn calculations.
 - Human vs human games create a separate eval BGS (ID = `${gameId}_eval`) that is shared across all viewers.
@@ -361,6 +398,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Complete rewrite of `official-custom-bot-client/src/ws-client.ts` for V3 Bot Game Session protocol
 - Removed all V2 request/response handling (`request`, `response`, `ack`, `nack` message types)
 - Added V3 BGS message handlers:
@@ -379,16 +417,19 @@
 - Updated CLI help text to describe V3 JSON-lines protocol
 
 **Files Modified:**
+
 - `official-custom-bot-client/src/ws-client.ts` - Complete rewrite for V3 BGS protocol
 - `official-custom-bot-client/src/engine-runner.ts` - Complete rewrite for long-lived EngineProcess
 - `official-custom-bot-client/src/index.ts` - Updated version and help text
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - V3 engines are started once at startup and remain running for the lifetime of the client
 - The JSON-lines protocol allows multiple BGS sessions to be multiplexed over a single engine process
 - When WebSocket reconnects, engines stay running - only the WebSocket connection is re-established
@@ -401,6 +442,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Verified that `engine-runner.ts` was already rewritten as part of the previous ws-client.ts task
 - Confirmed all task requirements are implemented:
   - `EngineProcess` class with static `spawn()` factory method
@@ -415,14 +457,17 @@
   - `alive` getter for checking process status
 
 **Files Modified:**
+
 - `official-custom-bot-client/src/engine-runner.ts` - Previously rewritten (265 lines)
 
 **Verification:**
+
 - `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - This task was actually completed as part of the previous "Update ws-client.ts for long-lived engine" task, as the ws-client.ts rewrite required the EngineProcess class to be available
 - The implementation follows a factory pattern (private constructor + static spawn) to ensure proper initialization
 - Request tracking uses bgsId as the key, supporting multiple concurrent BGS sessions per engine
@@ -433,6 +478,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Complete rewrite of `dummy-engine/src/index.ts` from V2 stateless single-request mode to V3 stateful Bot Game Session protocol
 - Converted from single-request stdin/stdout to long-lived JSON-lines protocol:
   - Engine now reads JSON lines continuously from stdin
@@ -454,14 +500,17 @@
 - Added ply validation to detect stale/out-of-order requests
 
 **Files Modified:**
+
 - `dummy-engine/src/index.ts` - Complete rewrite (~430 lines)
 
 **Verification:**
+
 - `cd dummy-engine && bunx tsc --noEmit` - Passed
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed
 
 **Notes:**
+
 - The dummy engine now supports multiple concurrent BGS sessions, matching the V3 protocol specification
 - Session state includes: grid with walls, pawn positions for both players, current ply counter
 - Move computation uses the existing `computeDummyAiMove()` function which walks the cat toward its goal
@@ -474,6 +523,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Created `info/bgs_engine.md` - comprehensive design document for the Deep Wallwars BGS engine adapter
 - Documented `BgsSession` struct with fields: `bgs_id`, `board`, `variant`, `current_turn`, `ply`, `mcts` tree, `padding` config, `samples_per_eval`
 - Documented shared resources architecture:
@@ -492,13 +542,16 @@
 - Included architecture diagrams, initialization sequence, and future extensions
 
 **Files Modified:**
+
 - `info/bgs_engine.md` - New file (~350 lines)
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed (no TypeScript changes)
 - `bun run lint` - Passed
 
 **Notes:**
+
 - This is a design/documentation task, not a code implementation task
 - The design builds on the existing Deep Wallwars architecture: Folly coroutines, BatchedModel for GPU inference, sharded LRU cache, MCTS with tree persistence
 - The BGS engine will leverage existing components: `Board`, `MCTS`, `BatchedModelPolicy`, `CachedPolicy`, `PaddingConfig`
@@ -510,6 +563,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated `frontend/src/routes/game-setup.tsx` to conditionally hide the time control selector when `mode === 'vs-ai'` (V3: bot games are untimed)
 - Updated `shared/contracts/games.ts`:
   - Removed `timeControl` from `botsQuerySchema` - bot discovery no longer filters by time control
@@ -533,6 +587,7 @@
   - Removed async from bot game creation handler (no longer awaits)
 
 **Files Modified:**
+
 - `frontend/src/routes/game-setup.tsx` - Hide time control for vs-ai mode
 - `frontend/src/hooks/use-bots.ts` - Remove timeControl from query settings
 - `frontend/src/lib/api.ts` - Remove timeControl from bot API calls
@@ -542,10 +597,12 @@
 - `server/routes/games.ts` - Use placeholder time control for bot games
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun run lint` on modified files - Passed (pre-existing errors in unmodified code)
 
 **Notes:**
+
 - V3 bot games are untimed - this removes the time control concept entirely for human vs bot games
 - The `BOT_GAME_TIME_CONTROL` constant uses 24 hours (86400 seconds) as a placeholder to satisfy type requirements while indicating effectively unlimited time
 - Bot games enforce `rated: false` server-side regardless of client input
@@ -556,6 +613,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Verified `use-bots.ts` was already updated in previous phase (no `timeControl` in `BotsQuerySettings`)
 - Verified `api.ts` bot functions already remove timeControl filtering
 - Removed `timeControls` from `variantConfigSchema` in `shared/contracts/custom-bot-config-schema.ts`
@@ -572,6 +630,7 @@
   - `tests/integration/bot-4-deep-wallwars-engine.test.ts`
 
 **Files Modified:**
+
 - `shared/contracts/custom-bot-config-schema.ts` - Remove timeControls from schema
 - `official-custom-bot-client/deep-wallwars.config.json` - Remove timeControls from variants
 - `official-custom-bot-client/deep-wallwars-12x10.config.json` - Remove timeControls from variants
@@ -582,12 +641,14 @@
 - `tests/integration/bot-4-deep-wallwars-engine.test.ts` - Remove timeControls from test configs
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `cd official-custom-bot-client && bunx tsc --noEmit` - Passed
 - `cd dummy-engine && bunx tsc --noEmit` - Passed
 - `bun run lint` - Passed for modified files (pre-existing errors in unrelated code)
 
 **Notes:**
+
 - The `bots-table.tsx` file mentioned in the task description doesn't exist in this codebase - bot listing is handled within `ready-to-join-table.tsx` and other components
 - The task steps related to `use-bots.ts` and API filtering were already completed as part of the previous phase9-frontend task (game-setup.tsx)
 - This task primarily completes the removal of `timeControls` from the Zod validation schema and bot config files
@@ -598,6 +659,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Updated `frontend/src/lib/eval-client.ts` for V3 BGS-based eval protocol:
   - Added V3 handler callbacks to `EvalClientHandlers` interface:
     - `onEvalHistory` - receives full evaluation history on connect
@@ -615,14 +677,17 @@
   - Simplified hook by removing `requestEvalForCurrentPosition`, debounce refs, position key tracking
 
 **Files Modified:**
+
 - `frontend/src/lib/eval-client.ts` - V3 message handlers and callback interface
 - `frontend/src/hooks/use-eval-bar.ts` - Complete rewrite for history-based protocol
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun x eslint frontend/src/lib/eval-client.ts frontend/src/hooks/use-eval-bar.ts --fix` - Passed
 
 **Notes:**
+
 - V3 eliminates the "request per position" model: server sends full history upfront, then streams updates
 - History scrubbing is now instant (O(n) array lookup) vs V2's debounced network requests
 - The `eval-pending` message allows UI to show loading state during BGS initialization for long games
@@ -634,6 +699,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Removed all deprecated V2 types from `shared/contracts/custom-bot-protocol.ts`:
   - `BotRequestKind`, `BotResponseAction`, `BotResponseMessage`
   - `RequestMessageBase`, `MoveRequestMessage`, `DrawRequestMessage`, `EvalRequestMessage`
@@ -661,16 +727,19 @@
   - Removed V2-specific tests for draw handling (V3 auto-rejects draws server-side)
 
 **Files Modified:**
+
 - `shared/contracts/custom-bot-protocol.ts` - Removed V2 legacy types (~115 lines removed)
 - `shared/custom-bot/engine-api.ts` - Removed V2 legacy types (~120 lines removed)
 - `server/games/custom-bot-store.ts` - Removed deprecated queue functions (~115 lines removed)
 - `tests/integration/bot-1-mock-client.test.ts` - Complete rewrite for V3 protocol
 
 **Verification:**
+
 - `cd frontend && bunx tsc --noEmit` - Passed
 - `bun x eslint shared/contracts/custom-bot-protocol.ts shared/custom-bot/engine-api.ts server/games/custom-bot-store.ts tests/integration/bot-1-mock-client.test.ts --fix` - Passed
 
 **Notes:**
+
 - The V2 "spawn per move" engine model is now completely removed - all engines use long-lived BGS protocol
 - `SerializedGameState` type still exists in `game-types.ts` for WebSocket game state updates - only its usage in V2 bot request messages is removed
 - Other bot integration tests (bot-2, bot-3, bot-4) still reference V2 patterns and will need updates in the testing phase
@@ -681,6 +750,7 @@
 **Status:** ✅ Complete
 
 **Changes:**
+
 - Ran `bun run lint` - passed with no issues
 - Ran `bun run build` - passed, frontend built successfully
 - Ran TypeScript type checks for all subprojects
@@ -694,9 +764,11 @@
   - This is expected - the test code itself is correct, just needs Docker to run
 
 **Files Modified:**
+
 - `official-custom-bot-client/src/dumb-bot.ts` - Deleted (unused V2 fallback code)
 
 **Verification:**
+
 - `bun run lint` - Passed
 - `bun run build` - Passed (frontend builds successfully)
 - `cd frontend && bunx tsc --noEmit` - Passed
@@ -704,7 +776,7 @@
 - `cd dummy-engine && bunx tsc --noEmit` - Passed
 
 **Notes:**
+
 - The V3 `ws-client.ts` has inline dumb bot fallback logic for bots without engines, so the deleted `dumb-bot.ts` was no longer used
 - Integration tests are structurally correct but require Docker environment to run
 - All 18/18 migration tasks are now complete
-
