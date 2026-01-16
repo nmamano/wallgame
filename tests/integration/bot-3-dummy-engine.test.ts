@@ -566,8 +566,7 @@ describe("custom bot client CLI integration V3 (dummy engine)", () => {
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.turn).toBe(1); // Human's turn first
 
-      // Wait for BGS to fully initialize (engine process startup + rate limiting)
-      // Engine startup takes longer than built-in dumb-bot
+      // Wait for engine process to start (external process takes longer than built-in dumb-bot)
       await sleep(1000);
 
       const humanPlayerId = 1;
@@ -590,8 +589,6 @@ describe("custom bot client CLI integration V3 (dummy engine)", () => {
             state.state.status !== "playing",
         );
         currentState = stateAfterBotMove;
-        // Small delay to let BGS sync complete before next move
-        await sleep(200);
         return currentState.state.status === "playing";
       };
 
@@ -677,7 +674,7 @@ describe("custom bot client CLI integration V3 (dummy engine)", () => {
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.config.variant).toBe("classic");
 
-      // Wait for BGS to fully initialize (engine process startup + rate limiting)
+      // Wait for engine process to start (external process takes longer than built-in dumb-bot)
       await sleep(500);
 
       const humanPlayerId = 1;
