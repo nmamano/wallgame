@@ -107,6 +107,16 @@ public:
     void force_action(Action const& action);
     void force_move(Move const& move);
 
+    // Returns the best action without modifying the tree.
+    // Use this when you need to know the best move but don't want to commit to it yet.
+    // Returns nullopt if no explored action is available.
+    std::optional<Action> peek_best_action() const;
+
+    // Returns the best move (two actions) without modifying the tree.
+    // If the first action wins the game, the second action will be an arbitrary legal wall.
+    // Returns nullopt if no explored action is available.
+    std::optional<Move> peek_best_move() const;
+
     ~MCTS();
 
 private:

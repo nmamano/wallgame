@@ -305,6 +305,72 @@ void MCTS::force_move(Move const& move) {
     }
 }
 
+std::optional<Action> MCTS::peek_best_action() const {
+    if (m_root->edges.empty()) {
+        return {};
+    }
+
+    // Find the edge with the most samples (same logic as commit_to_action)
+    TreeEdge const& te = *std::ranges::max_element(m_root->edges, {}, [&](TreeEdge const& te) {
+        return te.child ? te.child.load()->value.load().total_samples : 0;
+    });
+
+    if (!te.child) {
+        return {};
+    }
+
+    return te.action;
+}
+
+std::optional<Move> MCTS::peek_best_move() const {
+    // Get the best first action
+    auto action1 = peek_best_action();
+    if (!action1) {
+        return {};
+    }
+
+    // Find the edge for the first action to access its child
+    auto const& first_edge = *std::ranges::find_if(
+        m_root->edges, [&](TreeEdge const& te) { return te.action == *action1; });
+
+    TreeNode* child = first_edge.child.load();
+    if (!child) {
+        return {};
+    }
+
+    // Check if the first action wins the game
+    if (child->board.winner() != Winner::Undecided) {
+        // First action won - return an arbitrary legal wall for second action
+        auto legal_walls = child->board.legal_walls();
+        if (legal_walls.empty()) {
+            return {};
+        }
+        return Move{*action1, legal_walls[0]};
+    }
+
+    // Get the best second action from the child node
+    if (child->edges.empty()) {
+        return {};
+    }
+
+    TreeEdge const& second_edge = *std::ranges::max_element(
+        child->edges, {}, [&](TreeEdge const& te) {
+            return te.child ? te.child.load()->value.load().total_samples : 0;
+        });
+
+    if (!second_edge.child) {
+        // Second action not explored - try to find any explored edge
+        auto explored_it = std::ranges::find_if(
+            child->edges, [](TreeEdge const& te) { return te.child != nullptr; });
+        if (explored_it == child->edges.end()) {
+            return {};
+        }
+        return Move{*action1, explored_it->action};
+    }
+
+    return Move{*action1, second_edge.action};
+}
+
 void MCTS::add_root_noise() {
     float total = 0.0;
 

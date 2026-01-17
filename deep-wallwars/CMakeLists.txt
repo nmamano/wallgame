@@ -49,6 +49,7 @@ add_custom_target(model_trt ALL DEPENDS
 add_library(core OBJECT
     src/batched_model.cpp
     src/batched_model_policy.cpp
+    src/bgs_session.cpp
     src/cached_policy.cpp
     src/cuda_wrappers.cpp
     src/gamestate.cpp
@@ -69,18 +70,26 @@ add_executable(deep_ww
 )
 target_link_libraries(deep_ww PRIVATE core)
 
-# Engine adapter executable for official custom-bot client
+# V2 Engine adapter executable for official custom-bot client
 add_executable(deep_ww_engine
     src/engine_main.cpp
 )
 target_link_libraries(deep_ww_engine PRIVATE core gflags)
 add_dependencies(deep_ww_engine model_trt)
 
+# V3 BGS Engine executable for Bot Game Session protocol
+add_executable(deep_ww_bgs_engine
+    src/bgs_engine_main.cpp
+)
+target_link_libraries(deep_ww_bgs_engine PRIVATE core gflags)
+add_dependencies(deep_ww_bgs_engine model_trt)
+
 # Unit tests (optional)
 find_package(Catch2 3)
 if (Catch2_FOUND)
     add_executable(unit_tests
         test/batched_model.cpp
+        test/bgs_session.cpp
         test/gamestate.cpp
         test/main.cpp
         test/mcts.cpp

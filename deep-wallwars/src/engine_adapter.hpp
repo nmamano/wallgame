@@ -126,7 +126,7 @@ bool should_accept_draw(
     EngineConfig const& config);
 
 // ============================================================================
-// Request Handling
+// Request Handling (V2)
 // ============================================================================
 
 // Processes an engine request (move or draw) and returns the JSON response
@@ -134,5 +134,36 @@ json handle_engine_request(
     json const& request,
     EvaluationFunction const& eval_fn,
     EngineConfig const& config);
+
+// ============================================================================
+// V3 Bot Game Session (BGS) Support
+// ============================================================================
+
+// Validates a V3 BgsConfig for compatibility with deep-wallwars
+// - Supports Classic and Standard variants
+// - Supports boards from 4x4 up to model dimensions
+ValidationResult validate_bgs_config(
+    json const& bgs_config,
+    int model_rows,
+    int model_columns);
+
+// Converts a V3 BgsConfig JSON to a deep-wallwars Board at the initial position
+// BgsConfig format: {variant, boardWidth, boardHeight, initialState}
+// initialState contains pawns and walls in the V3 format
+// Returns: {Board, Turn, PaddingConfig} at ply 0 (P1's turn, First action)
+std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
+    json const& bgs_config,
+    int model_rows,
+    int model_columns);
+
+// Parse a move from standard notation into the internal Move type
+// Transforms coordinates from game space to model space using padding
+// Standard notation format: "Ce4.Md5" or "Ce4.>f3" (pawn moves and walls)
+// Returns nullopt if the notation is invalid
+std::optional<Move> parse_move_notation(
+    std::string const& notation,
+    Board const& board,
+    Turn turn,
+    PaddingConfig const& padding_config);
 
 }  // namespace engine_adapter
