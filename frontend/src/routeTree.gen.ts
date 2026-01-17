@@ -12,7 +12,6 @@ import { Route as rootRouteImport } from './routes/__root'
 import { Route as StudyBoardRouteImport } from './routes/study-board'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RankingRouteImport } from './routes/ranking'
-import { Route as PuzzlesRouteImport } from './routes/puzzles'
 import { Route as ProfileRouteImport } from './routes/profile'
 import { Route as PastGamesRouteImport } from './routes/past-games'
 import { Route as LiveGamesRouteImport } from './routes/live-games'
@@ -21,6 +20,7 @@ import { Route as GameSetupRouteImport } from './routes/game-setup'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
+import { Route as PuzzlesIndexRouteImport } from './routes/puzzles.index'
 import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
 import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
 import { Route as GameIdRouteImport } from './routes/game.$id'
@@ -38,11 +38,6 @@ const SettingsRoute = SettingsRouteImport.update({
 const RankingRoute = RankingRouteImport.update({
   id: '/ranking',
   path: '/ranking',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const PuzzlesRoute = PuzzlesRouteImport.update({
-  id: '/puzzles',
-  path: '/puzzles',
   getParentRoute: () => rootRouteImport,
 } as any)
 const ProfileRoute = ProfileRouteImport.update({
@@ -85,15 +80,20 @@ const SoloCampaignIndexRoute = SoloCampaignIndexRouteImport.update({
   path: '/solo-campaign/',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PuzzlesIndexRoute = PuzzlesIndexRouteImport.update({
+  id: '/puzzles/',
+  path: '/puzzles/',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const SoloCampaignIdRoute = SoloCampaignIdRouteImport.update({
   id: '/solo-campaign/$id',
   path: '/solo-campaign/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PuzzlesIdRoute = PuzzlesIdRouteImport.update({
-  id: '/$id',
-  path: '/$id',
-  getParentRoute: () => PuzzlesRoute,
+  id: '/puzzles/$id',
+  path: '/puzzles/$id',
+  getParentRoute: () => rootRouteImport,
 } as any)
 const GameIdRoute = GameIdRouteImport.update({
   id: '/game/$id',
@@ -109,13 +109,13 @@ export interface FileRoutesByFullPath {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/profile': typeof ProfileRoute
-  '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
+  '/puzzles': typeof PuzzlesIndexRoute
   '/solo-campaign': typeof SoloCampaignIndexRoute
 }
 export interface FileRoutesByTo {
@@ -126,13 +126,13 @@ export interface FileRoutesByTo {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/profile': typeof ProfileRoute
-  '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
+  '/puzzles': typeof PuzzlesIndexRoute
   '/solo-campaign': typeof SoloCampaignIndexRoute
 }
 export interface FileRoutesById {
@@ -144,13 +144,13 @@ export interface FileRoutesById {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/profile': typeof ProfileRoute
-  '/puzzles': typeof PuzzlesRouteWithChildren
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
+  '/puzzles/': typeof PuzzlesIndexRoute
   '/solo-campaign/': typeof SoloCampaignIndexRoute
 }
 export interface FileRouteTypes {
@@ -163,13 +163,13 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/profile'
-    | '/puzzles'
     | '/ranking'
     | '/settings'
     | '/study-board'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
+    | '/puzzles'
     | '/solo-campaign'
   fileRoutesByTo: FileRoutesByTo
   to:
@@ -180,13 +180,13 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/profile'
-    | '/puzzles'
     | '/ranking'
     | '/settings'
     | '/study-board'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
+    | '/puzzles'
     | '/solo-campaign'
   id:
     | '__root__'
@@ -197,13 +197,13 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/profile'
-    | '/puzzles'
     | '/ranking'
     | '/settings'
     | '/study-board'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
+    | '/puzzles/'
     | '/solo-campaign/'
   fileRoutesById: FileRoutesById
 }
@@ -215,12 +215,13 @@ export interface RootRouteChildren {
   LiveGamesRoute: typeof LiveGamesRoute
   PastGamesRoute: typeof PastGamesRoute
   ProfileRoute: typeof ProfileRoute
-  PuzzlesRoute: typeof PuzzlesRouteWithChildren
   RankingRoute: typeof RankingRoute
   SettingsRoute: typeof SettingsRoute
   StudyBoardRoute: typeof StudyBoardRoute
   GameIdRoute: typeof GameIdRoute
+  PuzzlesIdRoute: typeof PuzzlesIdRoute
   SoloCampaignIdRoute: typeof SoloCampaignIdRoute
+  PuzzlesIndexRoute: typeof PuzzlesIndexRoute
   SoloCampaignIndexRoute: typeof SoloCampaignIndexRoute
 }
 
@@ -245,13 +246,6 @@ declare module '@tanstack/react-router' {
       path: '/ranking'
       fullPath: '/ranking'
       preLoaderRoute: typeof RankingRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/puzzles': {
-      id: '/puzzles'
-      path: '/puzzles'
-      fullPath: '/puzzles'
-      preLoaderRoute: typeof PuzzlesRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/profile': {
@@ -310,6 +304,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof SoloCampaignIndexRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/puzzles/': {
+      id: '/puzzles/'
+      path: '/puzzles'
+      fullPath: '/puzzles'
+      preLoaderRoute: typeof PuzzlesIndexRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/solo-campaign/$id': {
       id: '/solo-campaign/$id'
       path: '/solo-campaign/$id'
@@ -319,10 +320,10 @@ declare module '@tanstack/react-router' {
     }
     '/puzzles/$id': {
       id: '/puzzles/$id'
-      path: '/$id'
+      path: '/puzzles/$id'
       fullPath: '/puzzles/$id'
       preLoaderRoute: typeof PuzzlesIdRouteImport
-      parentRoute: typeof PuzzlesRoute
+      parentRoute: typeof rootRouteImport
     }
     '/game/$id': {
       id: '/game/$id'
@@ -334,17 +335,6 @@ declare module '@tanstack/react-router' {
   }
 }
 
-interface PuzzlesRouteChildren {
-  PuzzlesIdRoute: typeof PuzzlesIdRoute
-}
-
-const PuzzlesRouteChildren: PuzzlesRouteChildren = {
-  PuzzlesIdRoute: PuzzlesIdRoute,
-}
-
-const PuzzlesRouteWithChildren =
-  PuzzlesRoute._addFileChildren(PuzzlesRouteChildren)
-
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
@@ -353,12 +343,13 @@ const rootRouteChildren: RootRouteChildren = {
   LiveGamesRoute: LiveGamesRoute,
   PastGamesRoute: PastGamesRoute,
   ProfileRoute: ProfileRoute,
-  PuzzlesRoute: PuzzlesRouteWithChildren,
   RankingRoute: RankingRoute,
   SettingsRoute: SettingsRoute,
   StudyBoardRoute: StudyBoardRoute,
   GameIdRoute: GameIdRoute,
+  PuzzlesIdRoute: PuzzlesIdRoute,
   SoloCampaignIdRoute: SoloCampaignIdRoute,
+  PuzzlesIndexRoute: PuzzlesIndexRoute,
   SoloCampaignIndexRoute: SoloCampaignIndexRoute,
 }
 export const routeTree = rootRouteImport
