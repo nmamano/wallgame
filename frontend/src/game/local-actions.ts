@@ -104,11 +104,30 @@ export const enqueueToggle = (
   queue: LocalQueue,
   action: LocalAction,
 ): LocalQueue => {
-  const index = queue.findIndex((existing) => actionsEqual(existing, action));
-  if (index === -1) {
-    return [...queue, cloneAction(action)];
+  // Check if exact same action exists (toggle off)
+  const exactIndex = queue.findIndex((existing) =>
+    actionsEqual(existing, action)
+  );
+  if (exactIndex !== -1) {
+    return queue.filter((_, idx) => idx !== exactIndex);
   }
-  return queue.filter((_, idx) => idx !== index);
+
+  // For pawn moves (cat/mouse), replace existing move of same type instead of adding
+  // (you can only move each pawn once per turn)
+  if (action.type === "cat" || action.type === "mouse") {
+    const sameTypeIndex = queue.findIndex(
+      (existing) => existing.type === action.type
+    );
+    if (sameTypeIndex !== -1) {
+      // Replace the existing pawn move with the new one
+      return queue.map((existing, idx) =>
+        idx === sameTypeIndex ? cloneAction(action) : existing
+      );
+    }
+  }
+
+  // Otherwise add the action
+  return [...queue, cloneAction(action)];
 };
 
 const resolvePawnCell = (
