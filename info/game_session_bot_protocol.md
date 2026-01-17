@@ -63,6 +63,7 @@ All the following messages are scoped to a BGS. They go all the way from the ser
 - `start_game_session`: starts a new BGS.
   - Fields:
     - BGS ID.
+    - Bot ID: identifier for which bot this session is for.
     - Game variant.
     - Any variant-specific settings: board size, starting pawn positions, starting walls, etc.
   - The following is not included or needed:
@@ -91,9 +92,11 @@ All the following messages are scoped to a BGS. They go all the way from the ser
   - It is based on the current BGS state, which is not part of the `evaluate` message.
   - Fields:
     - BGS ID.
+    - Expected ply: the ply the server expects the session to be at. Used to detect stale requests and synchronization issues.
 - `evaluate_response`: response to `evaluate_position`.
   - Fields:
     - BGS ID.
+    - Ply: echoed back for correlation with the request.
     - Best move (using standard notation).
     - Evaluation (range: [-1, +1] where +1 = P1 winning, 0 = even, -1 = P2 winning).
     - Success: boolean.
@@ -102,12 +105,68 @@ All the following messages are scoped to a BGS. They go all the way from the ser
 - `apply_move`: Applies a move to the BGS state. It is implicit in the request that the move is for the player to move according to the BGS state.
   - Fields:
     - BGS ID.
+    - Expected ply: the ply the server expects the session to be at. Used to detect stale requests and synchronization issues.
     - Move to apply (using standard notation).
 - `move_applied`: response to `apply_move` to confirm the move has been applied.
   - Fields:
     - BGS ID.
+    - Ply: the new ply after the move has been applied.
     - Success: boolean. If false, then the BGS state doesn't change.
     - Error message: string (empty if success is true).
+
+### JSON Field Reference
+
+All messages use JSON with camelCase field names. See `shared/contracts/custom-bot-protocol.ts` for authoritative TypeScript types.
+
+**Requests (Server → Engine):**
+```json
+// start_game_session
+{ "type": "start_game_session", "bgsId": "...", "botId": "...", "config": {...} }
+
+// evaluate_position
+{ "type": "evaluate_position", "bgsId": "...", "expectedPly": 0 }
+
+// apply_move
+{ "type": "apply_move", "bgsId": "...", "expectedPly": 0, "move": "Ca2.>b3" }
+
+// end_game_session
+{ "type": "end_game_session", "bgsId": "..." }
+```
+
+**Responses (Engine → Server):**
+```json
+// game_session_started
+{ "type": "game_session_started", "bgsId": "...", "success": true, "error": "" }
+
+// evaluate_response
+{ "type": "evaluate_response", "bgsId": "...", "ply": 0, "bestMove": "Ca2.>b3", "evaluation": 0.15, "success": true, "error": "" }
+
+// move_applied
+{ "type": "move_applied", "bgsId": "...", "ply": 1, "success": true, "error": "" }
+
+// game_session_ended
+{ "type": "game_session_ended", "bgsId": "...", "success": true, "error": "" }
+```
+
+**BgsConfig structure:**
+```json
+{
+  "variant": "standard",
+  "boardWidth": 8,
+  "boardHeight": 8,
+  "initialState": {
+    "pawns": {
+      "p1": { "cat": [7, 0], "mouse": [7, 7] },
+      "p2": { "cat": [0, 7], "mouse": [0, 0] }
+    },
+    "walls": [
+      { "cell": [3, 2], "orientation": "vertical", "playerId": 1 }
+    ]
+  }
+}
+```
+
+For Classic variant, use `"home"` instead of `"mouse"` in pawn positions.
 
 ### Error handling
 
