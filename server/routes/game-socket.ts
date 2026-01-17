@@ -49,6 +49,10 @@ import {
   applyBgsMove,
   notifyBotGameEnded,
 } from "./custom-bot-socket";
+import {
+  notifyEvalBarMove,
+  handleEvalBarGameEnd,
+} from "./eval-socket";
 import { addActiveGame } from "../games/custom-bot-store";
 import {
   getBgs,
@@ -1018,6 +1022,8 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
     broadcastLiveGamesRemove(socket.sessionId);
     // Notify any bot players that the game ended
     notifyBotsGameEnded(socket.sessionId);
+    // Clean up eval bar state for human vs human games
+    void handleEvalBarGameEnd(socket.sessionId);
   } else {
     // Broadcast upsert for live games list (game became in-progress or move count updated)
     broadcastLiveGamesUpsert(socket.sessionId);
@@ -1094,6 +1100,10 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
           await resignBotOnFailure(updatedSession, botPlayer.playerId);
         }
       }
+    } else {
+      // Human vs human game: notify eval bar if active
+      const moveNotation = moveToStandardNotation(message.move, totalRows);
+      void notifyEvalBarMove(socket.sessionId, moveNotation);
     }
   }
 };

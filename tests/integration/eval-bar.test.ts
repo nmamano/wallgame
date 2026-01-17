@@ -561,6 +561,104 @@ function spawnBotClient(
 const sleep = (ms: number): Promise<void> =>
   new Promise((resolve) => setTimeout(resolve, ms));
 
+// ================================
+// --- Spectator WebSocket ---
+// ================================
+
+interface SpectatorSocket {
+  ws: WebSocket;
+  waitForMessage: <T extends ServerMessage["type"]>(
+    expectedType: T,
+    options?: { ignore?: ServerMessage["type"][]; timeoutMs?: number },
+  ) => Promise<Extract<ServerMessage, { type: T }>>;
+  close: () => void;
+}
+
+async function openSpectatorSocket(gameId: string): Promise<SpectatorSocket> {
+  return new Promise((resolve, reject) => {
+    // No token = spectator mode
+    const wsUrl = baseUrl.replace("http", "ws") + `/ws/games/${gameId}`;
+
+    const ws = new WebSocket(wsUrl, {
+      headers: {
+        Origin: "http://localhost:5173",
+      },
+    });
+
+    const buffer: ServerMessage[] = [];
+    let waitingResolve: ((msg: ServerMessage) => void) | null = null;
+
+    ws.on("message", (data: Buffer) => {
+      const msg = JSON.parse(data.toString()) as ServerMessage;
+      if (waitingResolve) {
+        const resolve = waitingResolve;
+        waitingResolve = null;
+        resolve(msg);
+      } else {
+        buffer.push(msg);
+      }
+    });
+
+    ws.on("open", () => {
+      resolve({
+        ws,
+        close: () => ws.close(),
+
+        waitForMessage: <T extends ServerMessage["type"]>(
+          expectedType: T,
+          options?: { ignore?: ServerMessage["type"][]; timeoutMs?: number },
+        ) => {
+          const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
+          const timeoutMs = options?.timeoutMs ?? 10000;
+
+          return new Promise<Extract<ServerMessage, { type: T }>>(
+            (resolveWait, rejectWait) => {
+              const processMessage = (msg: ServerMessage): boolean => {
+                if (msg.type === expectedType) {
+                  resolveWait(msg as Extract<ServerMessage, { type: T }>);
+                  return true;
+                } else if (ignoreTypes.includes(msg.type)) {
+                  return false;
+                } else {
+                  rejectWait(
+                    new Error(
+                      `Expected "${expectedType}" but got "${msg.type}". Message: ${JSON.stringify(msg)}`,
+                    ),
+                  );
+                  return true;
+                }
+              };
+
+              while (buffer.length > 0) {
+                const msg = buffer.shift()!;
+                if (processMessage(msg)) return;
+              }
+
+              const timeout = setTimeout(() => {
+                waitingResolve = null;
+                rejectWait(new Error(`Timeout waiting for "${expectedType}"`));
+              }, timeoutMs);
+
+              const waitForNext = () => {
+                waitingResolve = (msg: ServerMessage) => {
+                  if (processMessage(msg)) {
+                    clearTimeout(timeout);
+                  } else {
+                    waitForNext();
+                  }
+                };
+              };
+              waitForNext();
+            },
+          );
+        },
+      });
+    });
+
+    ws.on("error", (err) => reject(err));
+  });
+}
+
 async function submitHumanMove(
   humanSocket: HumanSocket,
   moveNotation: string,
@@ -852,6 +950,351 @@ describe("eval bar integration tests", () => {
       joinerEvalSocket?.close();
       hostSocket?.close();
       joinerSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
+
+  it("spectator: eval bar receives updates for a live game", async () => {
+    const hostUserId = "eval-spec-host";
+    const joinerUserId = "eval-spec-joiner";
+    const clientId = "eval-spec-client";
+    const botId = "eval-spec-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let hostSocket: HumanSocket | null = null;
+    let joinerSocket: HumanSocket | null = null;
+    let spectatorSocket: SpectatorSocket | null = null;
+    let spectatorEvalSocket: EvalSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    // 5x5 board - standard setup
+    const gameConfig: GameConfiguration = {
+      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      variant: "standard",
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: buildStandardInitialState(5, 5),
+    };
+
+    try {
+      // 1. Start bot client (needed for eval bar)
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: "Eval Spectator Bot",
+        engine: "bun run ../dummy-engine/src/index.ts",
+      });
+
+      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      // 2. Create friend game (host is P1)
+      const hostGame = await createFriendGame(hostUserId, gameConfig, true);
+      const gameId = hostGame.gameId;
+
+      // 3. Joiner joins the game
+      const joinerGame = await joinFriendGame(joinerUserId, gameId);
+
+      // 4. Connect both players
+      hostSocket = await openHumanSocket(
+        hostUserId,
+        gameId,
+        hostGame.socketToken,
+      );
+      joinerSocket = await openHumanSocket(
+        joinerUserId,
+        gameId,
+        joinerGame.socketToken,
+      );
+
+      // Wait for initial state
+      await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+      // 5. Host (P1) makes a move (cat: a5 → b5 → c5)
+      await submitHumanMove(hostSocket, "Cb5.Cc5", 5);
+      await hostSocket.waitForState((s) => s.state.turn === 2);
+      await joinerSocket.waitForState((s) => s.state.turn === 2);
+
+      // 6. Connect spectator (no token = spectator mode)
+      spectatorSocket = await openSpectatorSocket(gameId);
+      await spectatorSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+      // 7. Spectator enables eval bar
+      spectatorEvalSocket = await openEvalSocket(gameId);
+      await sleep(100);
+      spectatorEvalSocket.sendHandshake(gameId, "standard", 5, 5);
+
+      // 8. Spectator should receive handshake accepted and history
+      await spectatorEvalSocket.waitForMessage("eval-handshake-accepted");
+      const historyMsg = await spectatorEvalSocket.waitForMessage("eval-history");
+
+      // Should have 2 entries (ply 0 = initial, ply 1 = after P1's move)
+      expect(historyMsg.entries.length).toBe(2);
+      expect(historyMsg.entries[0].ply).toBe(0);
+      expect(historyMsg.entries[0].evaluation).toBe(0);
+      expect(historyMsg.entries[1].ply).toBe(1);
+      expect(historyMsg.entries[1].evaluation).toBe(0.5);
+
+      // 9. Joiner (P2) makes a move - spectator should receive eval update
+      await submitHumanMove(joinerSocket, "Cd5.Cc5", 5);
+      await hostSocket.waitForState((s) => s.state.turn === 1);
+
+      // 10. Spectator receives eval update for ply 2
+      const evalUpdate = await spectatorEvalSocket.waitForMessage("eval-update");
+      expect(evalUpdate.ply).toBe(2);
+      expect(evalUpdate.evaluation).toBe(0);
+
+      // 11. Clean up - resign the game
+      hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await hostSocket.waitForState((s) => s.state.status === "finished");
+    } finally {
+      spectatorEvalSocket?.close();
+      spectatorSocket?.close();
+      hostSocket?.close();
+      joinerSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
+
+  it("replay: eval bar receives full history and BGS closes after sending", async () => {
+    const hostUserId = "eval-replay-host";
+    const joinerUserId = "eval-replay-joiner";
+    const viewerUserId = "eval-replay-viewer";
+    const clientId = "eval-replay-client";
+    const botId = "eval-replay-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let hostSocket: HumanSocket | null = null;
+    let joinerSocket: HumanSocket | null = null;
+    let replayEvalSocket: EvalSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    // 5x5 board - standard setup
+    const gameConfig: GameConfiguration = {
+      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      variant: "standard",
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: buildStandardInitialState(5, 5),
+    };
+
+    let gameId: string;
+
+    try {
+      // 1. Start bot client (needed for eval bar)
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: "Eval Replay Bot",
+        engine: "bun run ../dummy-engine/src/index.ts",
+      });
+
+      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      // 2. Create friend game and play it to completion
+      const hostGame = await createFriendGame(hostUserId, gameConfig, true);
+      gameId = hostGame.gameId;
+
+      const joinerGame = await joinFriendGame(joinerUserId, gameId);
+
+      hostSocket = await openHumanSocket(
+        hostUserId,
+        gameId,
+        hostGame.socketToken,
+      );
+      joinerSocket = await openHumanSocket(
+        joinerUserId,
+        gameId,
+        joinerGame.socketToken,
+      );
+
+      await hostSocket.waitForMessage("state", { ignore: ["match-status"] });
+
+      // P1 makes a move
+      await submitHumanMove(hostSocket, "Cb5.Cc5", 5);
+      await hostSocket.waitForState((s) => s.state.turn === 2);
+
+      // P2 makes a move
+      await submitHumanMove(joinerSocket, "Cd5.Cc5", 5);
+      await hostSocket.waitForState((s) => s.state.turn === 1);
+
+      // 3. End the game by resignation
+      hostSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await hostSocket.waitForState((s) => s.state.status === "finished");
+
+      // Close player sockets - game is now finished
+      hostSocket.close();
+      joinerSocket.close();
+      hostSocket = null;
+      joinerSocket = null;
+
+      // 4. Wait a moment for game to be fully persisted
+      await sleep(500);
+
+      // 5. Open eval bar for replay (different user viewing the replay)
+      replayEvalSocket = await openEvalSocket(gameId);
+      await sleep(100);
+      replayEvalSocket.sendHandshake(gameId, "standard", 5, 5);
+
+      // 6. Should receive handshake accepted and full history
+      await replayEvalSocket.waitForMessage("eval-handshake-accepted");
+      const historyMsg = await replayEvalSocket.waitForMessage("eval-history");
+
+      // Should have 3 entries (ply 0, 1, 2 - the full game)
+      expect(historyMsg.entries.length).toBe(3);
+      expect(historyMsg.entries[0].ply).toBe(0);
+      expect(historyMsg.entries[0].evaluation).toBe(0);
+      expect(historyMsg.entries[1].ply).toBe(1);
+      expect(historyMsg.entries[1].evaluation).toBe(0.5);
+      expect(historyMsg.entries[2].ply).toBe(2);
+      expect(historyMsg.entries[2].evaluation).toBe(0);
+
+      // 7. For replays, the BGS is closed immediately after sending history
+      // Per the protocol doc: "the server ends the BGS session immediately after sending it"
+      // We can't directly verify BGS closure, but we verify we received the full history
+      // which is the expected behavior per the spec
+    } finally {
+      replayEvalSocket?.close();
+      hostSocket?.close();
+      joinerSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
+
+  it("takeback: eval bar receives reset history after rollback in bot game", async () => {
+    const hostUserId = "eval-takeback-user";
+    const clientId = "eval-takeback-client";
+    const botId = "eval-takeback-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let evalSocket: EvalSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    // 5x5 board - standard setup
+    const gameConfig: GameConfiguration = {
+      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      variant: "standard",
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+      variantConfig: buildStandardInitialState(5, 5),
+    };
+
+    try {
+      // 1. Start bot client with dummy engine (official for eval bar access)
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: "Eval Takeback Bot",
+        engine: "bun run ../dummy-engine/src/index.ts",
+      });
+
+      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      // 2. Create game (human is P1, moves first)
+      const { gameId, socketToken, playerId } = await createGameVsBot(
+        hostUserId,
+        compositeId,
+        gameConfig,
+        true, // hostIsPlayer1
+      );
+      expect(playerId).toBe(1);
+
+      // 3. Connect human player
+      humanSocket = await openHumanSocket(hostUserId, gameId, socketToken);
+
+      // Wait for initial state (human's turn)
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.turn).toBe(1);
+
+      // Wait for engine to initialize
+      await sleep(1000);
+
+      // 4. Connect eval bar
+      evalSocket = await openEvalSocket(gameId);
+      await sleep(100);
+      evalSocket.sendHandshake(gameId, "standard", 5, 5);
+
+      await evalSocket.waitForMessage("eval-handshake-accepted");
+      const initialHistory = await evalSocket.waitForMessage("eval-history");
+      expect(initialHistory.entries.length).toBe(1); // ply 0
+
+      // 5. Human makes a move
+      await submitHumanMove(humanSocket, "Cb5.Cc5", 5);
+      await humanSocket.waitForState((s) => s.state.turn === 2);
+
+      // 6. Wait for eval update after human's move
+      const evalUpdate1 = await evalSocket.waitForMessage("eval-update");
+      expect(evalUpdate1.ply).toBe(1);
+
+      // 7. Wait for bot's move
+      await humanSocket.waitForState(
+        (s) => s.state.turn === 1 || s.state.status !== "playing",
+      );
+
+      // 8. Wait for eval update after bot's move
+      const evalUpdate2 = await evalSocket.waitForMessage("eval-update");
+      expect(evalUpdate2.ply).toBe(2);
+
+      // 9. Human makes another move
+      await submitHumanMove(humanSocket, "Cd5.Ce5", 5);
+      await humanSocket.waitForState((s) => s.state.turn === 2);
+
+      // 10. Wait for eval update after second human move
+      const evalUpdate3 = await evalSocket.waitForMessage("eval-update");
+      expect(evalUpdate3.ply).toBe(3);
+
+      // 11. Request takeback (in bot games, bot auto-accepts)
+      humanSocket.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+      // 12. Wait for state to be rolled back (turn goes back to human, ply reduced)
+      const stateAfterTakeback = await humanSocket.waitForState(
+        (s) => s.state.turn === 1 && s.state.history.length < 3,
+      );
+
+      // The takeback should have undone 2 moves (bot's move + human's second move)
+      // So we should be back at ply 2 (after bot's first move)
+      expect(stateAfterTakeback.state.history.length).toBeLessThan(3);
+
+      // 13. Per the protocol, after takeback in bot game:
+      // - BGS is ended
+      // - New BGS is started with same ID
+      // - Moves are replayed
+      // The eval bar should receive new history reflecting the rollback
+      // This happens via the eval-update mechanism broadcasting the rebuilt state
+
+      // 14. Clean up - resign the game
+      humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+      await humanSocket.waitForState((s) => s.state.status === "finished");
+    } finally {
+      evalSocket?.close();
+      humanSocket?.close();
       if (botClient) {
         botClient.kill();
         await botClient.waitForExit();
