@@ -59,6 +59,7 @@ function SoloCampaignLevel() {
 
   return (
     <SoloCampaignLevelContent
+      key={id}
       level={level}
       levelId={id}
       isLoggedIn={isLoggedIn}

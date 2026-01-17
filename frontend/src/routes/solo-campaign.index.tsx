@@ -4,7 +4,7 @@ import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, Circle, Play, Info } from "lucide-react";
+import { CheckCircle2, Circle, Play, Info, Clock } from "lucide-react";
 import {
   SOLO_CAMPAIGN_LEVELS,
   getLevelIds,
@@ -107,6 +107,23 @@ function SoloCampaign() {
             </Card>
           );
         })}
+
+        {/* Coming soon placeholder */}
+        <Card className="p-6 border-dashed border-2 border-border/50 bg-card/30">
+          <div className="flex items-center gap-4">
+            <div className="text-muted-foreground">
+              <Clock className="w-6 h-6" />
+            </div>
+            <div>
+              <h3 className="text-xl font-serif font-semibold text-muted-foreground">
+                More coming soon...
+              </h3>
+              <p className="text-sm text-muted-foreground/70 mt-1">
+                Additional levels are in development
+              </p>
+            </div>
+          </div>
+        </Card>
       </div>
     </div>
   );
