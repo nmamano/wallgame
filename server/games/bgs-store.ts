@@ -230,6 +230,29 @@ export const markBgsReady = (bgsId: string): boolean => {
 // ============================================================================
 
 /**
+ * Callback type for eval history update notifications.
+ * Called when a new eval entry is added to a BGS.
+ */
+type EvalUpdateListener = (
+  gameId: string,
+  bgsId: string,
+  entry: BgsHistoryEntry,
+) => void;
+
+/** Listener for eval update notifications (set by eval-socket.ts) */
+let evalUpdateListener: EvalUpdateListener | null = null;
+
+/**
+ * Register a listener for eval history updates.
+ * Used by eval-socket.ts to receive notifications for connected eval bar sockets.
+ */
+export const setEvalUpdateListener = (
+  listener: EvalUpdateListener | null,
+): void => {
+  evalUpdateListener = listener;
+};
+
+/**
  * Add a history entry to a BGS.
  * History entries track evaluations for the eval bar.
  */
@@ -256,6 +279,11 @@ export const addHistoryEntry = (
 
   session.history.push(entry);
   session.updatedAt = Date.now();
+
+  // Notify listener (eval bar sockets)
+  if (evalUpdateListener) {
+    evalUpdateListener(session.gameId, bgsId, entry);
+  }
 
   return true;
 };

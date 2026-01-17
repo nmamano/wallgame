@@ -219,15 +219,53 @@ export function handleEvaluatePosition(
   const move = computeDummyAiMove(session.grid, myCatPos, goalPos);
   const bestMove = moveToStandardNotation(move, session.boardHeight);
 
+  // Compute distance-based evaluation from P1's perspective
+  const evaluation = computeDistanceEvaluation(session);
+
   return {
     type: "evaluate_response",
     bgsId: msg.bgsId,
     ply: session.ply,
     bestMove,
-    evaluation: 0, // Dumb bot always returns neutral evaluation
+    evaluation,
     success: true,
     error: "",
   };
+}
+
+/**
+ * Compute a simple distance-based evaluation.
+ * Returns evaluation from P1's perspective:
+ *   +0.5 if P1 is closer to their goal
+ *    0.0 if both players are equidistant
+ *   -0.5 if P2 is closer to their goal
+ */
+function computeDistanceEvaluation(session: DumbBotSession): number {
+  const p1CatPos = session.pawns.p1.cat;
+  const p2CatPos = session.pawns.p2.cat;
+
+  // Determine goals based on variant
+  let p1Goal: Cell;
+  let p2Goal: Cell;
+  if (session.variant === "classic") {
+    p1Goal = session.pawns.p1.mouse; // Own home
+    p2Goal = session.pawns.p2.mouse; // Own home
+  } else {
+    p1Goal = session.pawns.p2.mouse; // Opponent's mouse
+    p2Goal = session.pawns.p1.mouse; // Opponent's mouse
+  }
+
+  const p1Distance = session.grid.distance(p1CatPos, p1Goal);
+  const p2Distance = session.grid.distance(p2CatPos, p2Goal);
+
+  // Handle unreachable cases
+  if (p1Distance === -1 && p2Distance === -1) return 0;
+  if (p1Distance === -1) return -0.5;
+  if (p2Distance === -1) return 0.5;
+
+  if (p1Distance < p2Distance) return 0.5;
+  if (p2Distance < p1Distance) return -0.5;
+  return 0;
 }
 
 export function handleApplyMove(msg: ApplyMoveMessage): MoveAppliedMessage {
