@@ -46,6 +46,7 @@ import {
   endBgs,
   addHistoryEntry,
   getBgsHistory,
+  setEvalUpdateListener,
 } from "../games/bgs-store";
 import {
   startBgsSession,
@@ -615,26 +616,9 @@ export const notifyEvalBarMove = async (
       evaluation: response.evaluation,
       bestMove: response.bestMove,
     };
+    // addHistoryEntry triggers the listener which broadcasts to eval sockets
     addHistoryEntry(bgsId, entry);
     shared.cachedHistory.push(entry);
-
-    // Broadcast update to all connected eval sockets for this game
-    for (const [, socket] of evalSockets) {
-      if (socket.gameId === gameId && socket.bgsId === bgsId) {
-        send(socket.ctx, {
-          type: "eval-update",
-          ply: entry.ply,
-          evaluation: entry.evaluation,
-          bestMove: entry.bestMove,
-        });
-      }
-    }
-
-    console.debug("[eval-ws] eval update broadcast", {
-      gameId,
-      ply: entry.ply,
-      evaluation: entry.evaluation,
-    });
   } catch (error) {
     console.error("[eval-ws] failed to update eval bar", {
       error,
@@ -819,3 +803,33 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
 
   return websocket;
 };
+
+// ============================================================================
+// Eval Update Listener Registration
+// ============================================================================
+
+/**
+ * Register listener for BGS history updates.
+ * This broadcasts eval updates to connected eval bar sockets when new
+ * evaluations are added to any BGS (both bot games and human vs human).
+ */
+setEvalUpdateListener((gameId, bgsId, entry) => {
+  // Find all eval sockets connected to this game's BGS
+  for (const [, socket] of evalSockets) {
+    if (socket.gameId === gameId && socket.bgsId === bgsId) {
+      send(socket.ctx, {
+        type: "eval-update",
+        ply: entry.ply,
+        evaluation: entry.evaluation,
+        bestMove: entry.bestMove,
+      });
+    }
+  }
+
+  console.debug("[eval-ws] eval update broadcast", {
+    gameId,
+    bgsId,
+    ply: entry.ply,
+    evaluation: entry.evaluation,
+  });
+});

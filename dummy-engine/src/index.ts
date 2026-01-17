@@ -201,30 +201,57 @@ function applyMoveToSession(
 // ============================================================================
 
 /**
+ * Get the goal position for a player based on the variant.
+ */
+function getGoalPos(session: DummyBgsState, player: PlayerId): Cell {
+  const opponent: PlayerId = player === 1 ? 2 : 1;
+  if (session.variant === "classic") {
+    // In classic, the goal is own home (stored in mouse slot)
+    return session.pawns[player].mouse;
+  } else {
+    // In standard/freestyle/survival, the goal is opponent's mouse
+    return session.pawns[opponent].mouse;
+  }
+}
+
+/**
  * Compute the best move for the current position.
  * Uses the dummy AI which walks the cat toward its goal.
  */
 function computeBestMove(session: DummyBgsState): string {
   // Determine whose turn it is
   const currentPlayer: PlayerId = session.ply % 2 === 0 ? 1 : 2;
-  const opponent: PlayerId = currentPlayer === 1 ? 2 : 1;
-
   const myCatPos = session.pawns[currentPlayer].cat;
-
-  // Determine goal based on variant:
-  // - Standard/Freestyle/Survival: chase opponent's mouse
-  // - Classic: reach own home (stored in mouse slot)
-  let goalPos: Cell;
-  if (session.variant === "classic") {
-    // In classic, the goal is our own home (stored in mouse slot)
-    goalPos = session.pawns[currentPlayer].mouse;
-  } else {
-    // In standard/freestyle/survival, the goal is opponent's mouse
-    goalPos = session.pawns[opponent].mouse;
-  }
+  const goalPos = getGoalPos(session, currentPlayer);
 
   const move = computeDummyAiMove(session.grid, myCatPos, goalPos);
   return moveToStandardNotation(move, session.boardHeight);
+}
+
+/**
+ * Compute a simple distance-based evaluation.
+ * Returns evaluation from P1's perspective:
+ *   +0.5 if P1 is closer to their goal
+ *    0.0 if both players are equidistant
+ *   -0.5 if P2 is closer to their goal
+ */
+function computeEvaluation(session: DummyBgsState): number {
+  const p1CatPos = session.pawns[1].cat;
+  const p2CatPos = session.pawns[2].cat;
+  const p1Goal = getGoalPos(session, 1);
+  const p2Goal = getGoalPos(session, 2);
+
+  const p1Distance = session.grid.distance(p1CatPos, p1Goal);
+  const p2Distance = session.grid.distance(p2CatPos, p2Goal);
+
+  // Handle unreachable cases (shouldn't happen in normal games)
+  if (p1Distance === -1 && p2Distance === -1) return 0;
+  if (p1Distance === -1) return -0.5; // P1 can't reach, P2 advantage
+  if (p2Distance === -1) return 0.5; // P2 can't reach, P1 advantage
+
+  if (p1Distance < p2Distance) return 0.5;
+  if (p2Distance < p1Distance) return -0.5;
+  return 0;
 }
 
 // ============================================================================
@@ -289,10 +316,9 @@ function handleEvaluatePosition(
   }
 
   const bestMove = computeBestMove(session);
+  const evaluation = computeEvaluation(session);
 
-  // Dummy engine always returns 0 evaluation (neutral position)
-  // A more sophisticated engine would compute a real evaluation
-  return createEvaluateResponse(bgsId, session.ply, bestMove, 0);
+  return createEvaluateResponse(bgsId, session.ply, bestMove, evaluation);
 }
 
 function handleApplyMove(
