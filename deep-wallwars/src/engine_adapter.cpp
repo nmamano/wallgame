@@ -679,4 +679,207 @@ json handle_engine_request(
     }
 }
 
+// ============================================================================
+// V3 Bot Game Session (BGS) Support
+// ============================================================================
+
+ValidationResult validate_bgs_config(
+    json const& bgs_config,
+    int model_rows,
+    int model_columns) {
+
+    // Check required fields exist
+    if (!bgs_config.contains("variant") ||
+        !bgs_config.contains("boardWidth") ||
+        !bgs_config.contains("boardHeight") ||
+        !bgs_config.contains("initialState")) {
+        return {false, "BgsConfig missing required fields"};
+    }
+
+    // Check variant (classic and standard supported)
+    std::string variant = bgs_config["variant"].get<std::string>();
+    auto parsed_variant = parse_variant(variant);
+    if (!parsed_variant || (*parsed_variant != Variant::Classic &&
+                            *parsed_variant != Variant::Standard)) {
+        return {false,
+                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
+                    variant + "')"};
+    }
+
+    // Check board dimensions (must be at least 4x4 and at most model dimensions)
+    int width = bgs_config["boardWidth"].get<int>();
+    int height = bgs_config["boardHeight"].get<int>();
+
+    if (width < 4 || height < 4) {
+        return {false, "Board dimensions must be at least 4x4"};
+    }
+
+    if (width > model_columns || height > model_rows) {
+        return {false, "Board dimensions (" + std::to_string(width) + "x" +
+                           std::to_string(height) + ") exceed model dimensions (" +
+                           std::to_string(model_columns) + "x" +
+                           std::to_string(model_rows) + ")"};
+    }
+
+    return {true, ""};
+}
+
+std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
+    json const& bgs_config,
+    int model_rows,
+    int model_columns) {
+
+    int game_width = bgs_config["boardWidth"].get<int>();
+    int game_height = bgs_config["boardHeight"].get<int>();
+    std::string variant_str = bgs_config["variant"].get<std::string>();
+    auto parsed_variant = parse_variant(variant_str);
+    Variant variant = parsed_variant.value_or(Variant::Classic);
+
+    // Create padding configuration
+    PaddingConfig padding_config = create_padding_config(
+        model_rows, model_columns, game_height, game_width, variant);
+
+    json const& initial_state = bgs_config["initialState"];
+
+    // Parse pawn positions based on variant
+    // V3 format uses "p1"/"p2" instead of "1"/"2"
+    Cell red_cat_game, blue_cat_game, red_mouse_game, blue_mouse_game;
+
+    if (variant == Variant::Classic) {
+        // Classic has cat and home positions
+        json const& pawns = initial_state["pawns"];
+        red_cat_game = parse_cell(pawns["p1"]["cat"], game_height);
+        blue_cat_game = parse_cell(pawns["p2"]["cat"], game_height);
+        // Home positions stored in "home" field for classic
+        red_mouse_game = parse_cell(pawns["p1"]["home"], game_height);
+        blue_mouse_game = parse_cell(pawns["p2"]["home"], game_height);
+    } else {
+        // Standard has cat and mouse positions
+        json const& pawns = initial_state["pawns"];
+        red_cat_game = parse_cell(pawns["p1"]["cat"], game_height);
+        blue_cat_game = parse_cell(pawns["p2"]["cat"], game_height);
+        red_mouse_game = parse_cell(pawns["p1"]["mouse"], game_height);
+        blue_mouse_game = parse_cell(pawns["p2"]["mouse"], game_height);
+    }
+
+    // Transform to model coordinates
+    Cell red_cat = transform_to_model(red_cat_game, padding_config);
+    Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
+    Cell red_mouse, blue_mouse;
+
+    if (variant == Variant::Classic) {
+        // Classic goals are at the model corners
+        red_mouse = Cell{0, model_rows - 1};
+        blue_mouse = Cell{model_columns - 1, model_rows - 1};
+    } else {
+        red_mouse = transform_to_model(red_mouse_game, padding_config);
+        blue_mouse = transform_to_model(blue_mouse_game, padding_config);
+    }
+
+    // Create the board with model dimensions
+    Board board(model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant);
+
+    // Place padding walls
+    place_padding_walls(board, padding_config);
+
+    // Place initial walls from the config
+    json const& walls_array = initial_state["walls"];
+    for (auto const& wall_json : walls_array) {
+        Wall game_wall = parse_wall(wall_json, game_height);
+        Wall model_wall = transform_to_model(game_wall, padding_config);
+        // V3 walls have playerId field (1 or 2)
+        int player_id = wall_json.value("playerId", 1);
+        Player wall_owner = (player_id == 1) ? Player::Red : Player::Blue;
+        board.place_wall(wall_owner, model_wall);
+    }
+
+    // V3: Always starts at P1's turn (ply 0), First action
+    Turn turn{Player::Red, Turn::First};
+
+    return {board, turn, padding_config};
+}
+
+// Helper to parse a single action from notation (e.g., "Ce4", "Md5", ">f3", "^e4")
+static std::optional<Action> parse_single_action(
+    std::string_view action_str,
+    Board const& board,
+    Player player,
+    PaddingConfig const& padding_config) {
+
+    if (action_str.empty()) {
+        return std::nullopt;
+    }
+
+    char type_char = action_str[0];
+    std::string coords(action_str.substr(1));
+
+    if (coords.size() < 2) {
+        return std::nullopt;
+    }
+
+    // Parse column letter (a-z) and row number
+    char col_char = coords[0];
+    int game_col = col_char - 'a';
+    int game_row = 0;
+    try {
+        game_row = std::stoi(coords.substr(1)) - 1;  // 1-indexed to 0-indexed
+    } catch (...) {
+        return std::nullopt;
+    }
+
+    // Transform game coordinates to model coordinates
+    Cell game_cell{game_col, game_row};
+    Cell model_cell = transform_to_model(game_cell, padding_config);
+
+    if (type_char == 'C') {
+        // Cat move
+        return PawnMove{Pawn::Cat, model_cell};
+    } else if (type_char == 'M') {
+        // Mouse move
+        return PawnMove{Pawn::Mouse, model_cell};
+    } else if (type_char == '>') {
+        // Vertical wall (blocks rightward movement)
+        return Wall{model_cell, Wall::Right};
+    } else if (type_char == '^') {
+        // Horizontal wall (blocks downward movement from row above)
+        // API horizontal wall notation: "^e4" means wall above cell e4
+        // In deep-wallwars, this is a Down wall at (col, row-1)
+        Cell adjusted_cell{model_cell.column, model_cell.row - 1};
+        return Wall{adjusted_cell, Wall::Down};
+    }
+
+    return std::nullopt;
+}
+
+std::optional<Move> parse_move_notation(
+    std::string const& notation,
+    Board const& board,
+    Turn turn,
+    PaddingConfig const& padding_config) {
+
+    // Split notation by '.' to get two actions
+    auto dot_pos = notation.find('.');
+    if (dot_pos == std::string::npos) {
+        XLOGF(ERR, "Invalid move notation (no separator): {}", notation);
+        return std::nullopt;
+    }
+
+    std::string action1_str = notation.substr(0, dot_pos);
+    std::string action2_str = notation.substr(dot_pos + 1);
+
+    auto action1 = parse_single_action(action1_str, board, turn.player, padding_config);
+    if (!action1) {
+        XLOGF(ERR, "Failed to parse first action: {}", action1_str);
+        return std::nullopt;
+    }
+
+    auto action2 = parse_single_action(action2_str, board, turn.player, padding_config);
+    if (!action2) {
+        XLOGF(ERR, "Failed to parse second action: {}", action2_str);
+        return std::nullopt;
+    }
+
+    return Move{*action1, *action2};
+}
+
 }  // namespace engine_adapter
