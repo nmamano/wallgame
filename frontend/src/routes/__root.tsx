@@ -19,6 +19,26 @@ function Root() {
     <ThemeProvider defaultTheme="dark">
       <SoundProvider>
         <div className="min-h-screen bg-background">
+          <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm">
+            🚧 In development.{" "}
+            <a
+              href="https://nilmamano.com/blog/wall-game-intro"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-amber-100"
+            >
+              Learn more
+            </a>
+            {" · "}
+            <a
+              href="https://wallwars.net"
+              target="_blank"
+              rel="noopener noreferrer"
+              className="underline hover:text-amber-100"
+            >
+              Old site
+            </a>
+          </div>
           <Navigation />
           {/* Outlet loads the other routes in the routes/ dir. */}
           <Outlet />
