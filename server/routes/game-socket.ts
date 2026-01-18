@@ -1076,7 +1076,7 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
         }
       }
 
-      if (bgs && bgs.status === "ready") {
+      if (bgs?.status === "ready") {
         // Apply human's move to BGS
         const moveNotation = moveToStandardNotation(message.move, totalRows);
         const evalResult = await applyMoveAndEvaluate(

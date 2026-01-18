@@ -297,9 +297,9 @@ async function openHumanSocket(
               const processMessage = (msg: ServerMessage): boolean => {
                 if (
                   msg.type === "state" &&
-                  predicate(msg as Extract<ServerMessage, { type: "state" }>)
+                  predicate(msg)
                 ) {
-                  resolveWait(msg as Extract<ServerMessage, { type: "state" }>);
+                  resolveWait(msg);
                   return true;
                 }
                 return false;
