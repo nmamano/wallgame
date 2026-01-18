@@ -10,7 +10,6 @@
       "Bash(bun run build:frontend:types:*)",
       "Bash(bun run tsc:*)",
       "Bash(bun run lint:*)",
-      "Bash(ls -la \"c:\\\\Users\\\\Nilo\\\\repos\\\\wallgame\\\\frontend\\\\public\\\\audio\"\" 2>/dev/null || dir \"c:UsersNiloreposwallgamefrontendpublicaudio \")",
       "Bash(bun run tsc:server:*)",
       "Bash(/c/Users/Nilo/.bun/bin/bun x tsc:*)",
       "Bash(bun run test:*)",
