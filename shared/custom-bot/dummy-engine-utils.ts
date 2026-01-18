@@ -54,7 +54,10 @@ export function applyMoveToGrid(
         const [row, col] = action.target;
         // Check bounds
         if (row < 0 || row >= grid.length || col < 0 || col >= grid[0].length) {
-          return { success: false, error: `Wall position out of bounds: ${row},${col}` };
+          return {
+            success: false,
+            error: `Wall position out of bounds: ${row},${col}`,
+          };
         }
         grid[row][col] = true;
       }

@@ -106,7 +106,7 @@ export const enqueueToggle = (
 ): LocalQueue => {
   // Check if exact same action exists (toggle off)
   const exactIndex = queue.findIndex((existing) =>
-    actionsEqual(existing, action)
+    actionsEqual(existing, action),
   );
   if (exactIndex !== -1) {
     return queue.filter((_, idx) => idx !== exactIndex);
@@ -116,12 +116,12 @@ export const enqueueToggle = (
   // (you can only move each pawn once per turn)
   if (action.type === "cat" || action.type === "mouse") {
     const sameTypeIndex = queue.findIndex(
-      (existing) => existing.type === action.type
+      (existing) => existing.type === action.type,
     );
     if (sameTypeIndex !== -1) {
       // Replace the existing pawn move with the new one
       return queue.map((existing, idx) =>
-        idx === sameTypeIndex ? cloneAction(action) : existing
+        idx === sameTypeIndex ? cloneAction(action) : existing,
       );
     }
   }

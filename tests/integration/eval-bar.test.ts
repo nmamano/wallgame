@@ -295,10 +295,7 @@ async function openHumanSocket(
           return new Promise<Extract<ServerMessage, { type: "state" }>>(
             (resolveWait, rejectWait) => {
               const processMessage = (msg: ServerMessage): boolean => {
-                if (
-                  msg.type === "state" &&
-                  predicate(msg)
-                ) {
+                if (msg.type === "state" && predicate(msg)) {
                   resolveWait(msg);
                   return true;
                 }
@@ -664,22 +661,13 @@ async function submitHumanMove(
   moveNotation: string,
   boardHeight: number,
 ): Promise<void> {
-  const { moveFromStandardNotation } = await import(
-    "../../shared/domain/standard-notation"
-  );
+  const { moveFromStandardNotation } =
+    await import("../../shared/domain/standard-notation");
   const move = moveFromStandardNotation(moveNotation, boardHeight);
   humanSocket.ws.send(JSON.stringify({ type: "submit-move", move }));
 }
 
-async function waitForTurn(
-  humanSocket: HumanSocket,
-  playerId: PlayerId,
-): Promise<Extract<ServerMessage, { type: "state" }>> {
-  return humanSocket.waitForState(
-    (state) =>
-      state.state.status !== "playing" || state.state.turn === playerId,
-  );
-}
+// Note: waitForTurn was removed - if needed in the future, re-add it here
 
 async function waitForBotRegistration(
   botId: string,
@@ -726,7 +714,11 @@ describe("eval bar integration tests", () => {
 
     // 5x5 board - standard setup
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "standard",
       rated: false,
       boardWidth: 5,
@@ -743,7 +735,11 @@ describe("eval bar integration tests", () => {
         engine: "bun run ../dummy-engine/src/index.ts",
       });
 
-      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
       await waitForBotRegistration(compositeId, { variant: "standard" });
 
       // 2. Create game (human is P1, moves first)
@@ -841,7 +837,11 @@ describe("eval bar integration tests", () => {
 
     // 5x5 board - standard setup
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "standard",
       rated: false,
       boardWidth: 5,
@@ -858,7 +858,11 @@ describe("eval bar integration tests", () => {
         engine: "bun run ../dummy-engine/src/index.ts",
       });
 
-      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
       await waitForBotRegistration(compositeId, { variant: "standard" });
 
       // 2. Create friend game (host is P1)
@@ -924,11 +928,11 @@ describe("eval bar integration tests", () => {
       expect(hostHistory.entries.length).toBe(3);
       expect(joinerHistory.entries.length).toBe(3);
 
-      // Verify evaluations match expected values
-      const expectedEvals: EvalHistoryEntry[] = [
-        { ply: 0, evaluation: 0, bestMove: expect.any(String) },
-        { ply: 1, evaluation: 0.5, bestMove: expect.any(String) },
-        { ply: 2, evaluation: 0, bestMove: expect.any(String) },
+      // Verify evaluations match expected values (bestMove checked separately)
+      const expectedEvals: Pick<EvalHistoryEntry, "ply" | "evaluation">[] = [
+        { ply: 0, evaluation: 0 },
+        { ply: 1, evaluation: 0.5 },
+        { ply: 2, evaluation: 0 },
       ];
 
       for (let i = 0; i < 3; i++) {
@@ -936,10 +940,12 @@ describe("eval bar integration tests", () => {
         expect(hostHistory.entries[i].evaluation).toBe(
           expectedEvals[i].evaluation,
         );
+        expect(typeof hostHistory.entries[i].bestMove).toBe("string");
         expect(joinerHistory.entries[i].ply).toBe(expectedEvals[i].ply);
         expect(joinerHistory.entries[i].evaluation).toBe(
           expectedEvals[i].evaluation,
         );
+        expect(typeof joinerHistory.entries[i].bestMove).toBe("string");
       }
 
       // 10. Clean up - resign the game
@@ -975,7 +981,11 @@ describe("eval bar integration tests", () => {
 
     // 5x5 board - standard setup
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "standard",
       rated: false,
       boardWidth: 5,
@@ -992,7 +1002,11 @@ describe("eval bar integration tests", () => {
         engine: "bun run ../dummy-engine/src/index.ts",
       });
 
-      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
       await waitForBotRegistration(compositeId, { variant: "standard" });
 
       // 2. Create friend game (host is P1)
@@ -1024,7 +1038,9 @@ describe("eval bar integration tests", () => {
 
       // 6. Connect spectator (no token = spectator mode)
       spectatorSocket = await openSpectatorSocket(gameId);
-      await spectatorSocket.waitForMessage("state", { ignore: ["match-status"] });
+      await spectatorSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
 
       // 7. Spectator enables eval bar
       spectatorEvalSocket = await openEvalSocket(gameId);
@@ -1033,7 +1049,8 @@ describe("eval bar integration tests", () => {
 
       // 8. Spectator should receive handshake accepted and history
       await spectatorEvalSocket.waitForMessage("eval-handshake-accepted");
-      const historyMsg = await spectatorEvalSocket.waitForMessage("eval-history");
+      const historyMsg =
+        await spectatorEvalSocket.waitForMessage("eval-history");
 
       // Should have 2 entries (ply 0 = initial, ply 1 = after P1's move)
       expect(historyMsg.entries.length).toBe(2);
@@ -1047,7 +1064,8 @@ describe("eval bar integration tests", () => {
       await hostSocket.waitForState((s) => s.state.turn === 1);
 
       // 10. Spectator receives eval update for ply 2
-      const evalUpdate = await spectatorEvalSocket.waitForMessage("eval-update");
+      const evalUpdate =
+        await spectatorEvalSocket.waitForMessage("eval-update");
       expect(evalUpdate.ply).toBe(2);
       expect(evalUpdate.evaluation).toBe(0);
 
@@ -1072,7 +1090,6 @@ describe("eval bar integration tests", () => {
   it("replay: eval bar receives full history and BGS closes after sending", async () => {
     const hostUserId = "eval-replay-host";
     const joinerUserId = "eval-replay-joiner";
-    const viewerUserId = "eval-replay-viewer";
     const clientId = "eval-replay-client";
     const botId = "eval-replay-bot";
     const compositeId = `${clientId}:${botId}`;
@@ -1084,7 +1101,11 @@ describe("eval bar integration tests", () => {
 
     // 5x5 board - standard setup
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "standard",
       rated: false,
       boardWidth: 5,
@@ -1103,7 +1124,11 @@ describe("eval bar integration tests", () => {
         engine: "bun run ../dummy-engine/src/index.ts",
       });
 
-      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
       await waitForBotRegistration(compositeId, { variant: "standard" });
 
       // 2. Create friend game and play it to completion
@@ -1194,7 +1219,11 @@ describe("eval bar integration tests", () => {
 
     // 5x5 board - standard setup
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "standard",
       rated: false,
       boardWidth: 5,
@@ -1211,7 +1240,11 @@ describe("eval bar integration tests", () => {
         engine: "bun run ../dummy-engine/src/index.ts",
       });
 
-      botClient = spawnBotClient(configFile.path, clientId, TEST_OFFICIAL_TOKEN);
+      botClient = spawnBotClient(
+        configFile.path,
+        clientId,
+        TEST_OFFICIAL_TOKEN,
+      );
       await waitForBotRegistration(compositeId, { variant: "standard" });
 
       // 2. Create game (human is P1, moves first)
