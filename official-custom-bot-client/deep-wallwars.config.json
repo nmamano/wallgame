@@ -32,9 +32,6 @@
     }
   ],
   "engineCommands": {
-    "deep-wallwars": {
-      "classic": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt",
-      "standard": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_8x8_standard/model_49.trt"
-    }
+    "deep-wallwars": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/build/8x8_750000.trt"
   }
 }

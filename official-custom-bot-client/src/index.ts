@@ -26,7 +26,7 @@ const VERSION = "3.0.0";
 interface ConfigFile {
   server?: string;
   bots: BotConfig[];
-  engineCommands: Record<string, Record<string, string>>;
+  engineCommands: Record<string, string>;
 }
 
 function printUsage(): void {
@@ -72,12 +72,8 @@ CONFIG FILE FORMAT:
       }
     ],
     "engineCommands": {
-      "bot-1": {
-        "default": "./my_engine"
-      },
-      "bot-2": {
-        "default": "./another_engine"
-      }
+      "bot-1": "./my_engine",
+      "bot-2": "./another_engine --model path/to/model"
     }
   }
 
@@ -120,10 +116,7 @@ const configFileSchema = z
     bots: z
       .array(botConfigSchema.omit({ officialToken: true }).strict())
       .min(1),
-    engineCommands: z.record(
-      z.string(),
-      z.record(z.string(), z.string().trim().min(1)),
-    ),
+    engineCommands: z.record(z.string(), z.string().trim().min(1)),
   })
   .strict();
 
@@ -178,7 +171,7 @@ async function main(): Promise<void> {
   let serverUrl: string;
   let bots: BotConfig[];
   let officialToken: string | undefined;
-  let engineCommands: Map<string, Record<string, string>>;
+  let engineCommands: Map<string, string>;
 
   // Load from config file (required)
   if (!values.config) {
@@ -199,10 +192,7 @@ async function main(): Promise<void> {
     serverUrl = config.server ?? "http://localhost:5173";
     officialToken = values["official-token"];
 
-    engineCommands = new Map();
-    for (const [botId, command] of Object.entries(config.engineCommands)) {
-      engineCommands.set(botId, command);
-    }
+    engineCommands = new Map(Object.entries(config.engineCommands));
 
     bots = config.bots.map((bot) => ({
       ...bot,

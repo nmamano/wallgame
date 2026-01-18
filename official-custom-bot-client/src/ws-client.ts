@@ -45,12 +45,10 @@ export interface BotClientOptions {
   serverUrl: string;
   clientId: string;
   bots: BotConfig[];
-  engineCommands: Map<string, EngineCommandConfig>;
+  engineCommands: Map<string, string>;
   clientName?: string;
   clientVersion?: string;
 }
-
-export type EngineCommandConfig = Record<string, string>;
 
 type ClientState =
   | "connecting"
@@ -63,7 +61,7 @@ interface ResolvedBotClientOptions {
   serverUrl: string;
   clientId: string;
   bots: BotConfig[];
-  engineCommands: Map<string, EngineCommandConfig>;
+  engineCommands: Map<string, string>;
   clientName: string;
   clientVersion: string;
 }
@@ -175,20 +173,10 @@ export class BotClient {
    */
   private async startEngines(): Promise<void> {
     for (const bot of this.options.bots) {
-      const engineCommandConfig = this.options.engineCommands.get(bot.botId);
-      if (!engineCommandConfig) {
+      const engineCommand = this.options.engineCommands.get(bot.botId);
+      if (!engineCommand) {
         logger.info(
           `Bot ${bot.botId}: No engine command, will use built-in dumb bot`,
-        );
-        continue;
-      }
-
-      // V3: Use the default engine command for all variants
-      // The engine handles multiple variants internally
-      const engineCommand = engineCommandConfig.default;
-      if (!engineCommand) {
-        logger.warn(
-          `Bot ${bot.botId}: No default engine command, will use built-in dumb bot`,
         );
         continue;
       }

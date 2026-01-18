@@ -383,9 +383,7 @@ async function createBotConfigFile(args: {
       },
     ],
     // Only include engineCommands if an engine is specified
-    engineCommands: args.engine
-      ? { [args.botId]: { default: args.engine } }
-      : {},
+    engineCommands: args.engine ? { [args.botId]: args.engine } : {},
   };
 
   await writeFile(path, JSON.stringify(config, null, 2));
