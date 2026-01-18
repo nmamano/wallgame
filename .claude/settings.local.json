@@ -37,7 +37,8 @@
       "Bash(fc-list:*)",
       "Bash(fly version:*)",
       "Bash(./bayeselo)",
-      "Bash(du -sh:*)"
+      "Bash(du -sh:*)",
+      "Bash(ls:*)"
     ]
   },
   "outputStyle": "Explanatory"
