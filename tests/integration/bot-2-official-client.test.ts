@@ -713,7 +713,8 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
       // Server waits for BGS to be synchronized before broadcasting bot's move
       let currentState = await humanSocket.waitForState(
         (state) =>
-          state.state.status !== "playing" || state.state.turn === humanPlayerId,
+          state.state.status !== "playing" ||
+          state.state.turn === humanPlayerId,
         { timeoutMs: 5000 },
       );
 

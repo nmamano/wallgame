@@ -183,7 +183,9 @@ export function handleEvaluatePosition(
 
   // Validate ply matches expected
   if (session.ply !== msg.expectedPly) {
-    logger.error(`[dumb-bot] Ply mismatch: expected ${msg.expectedPly}, got ${session.ply}`);
+    logger.error(
+      `[dumb-bot] Ply mismatch: expected ${msg.expectedPly}, got ${session.ply}`,
+    );
     return {
       type: "evaluate_response",
       bgsId: msg.bgsId,
@@ -284,7 +286,9 @@ export function handleApplyMove(msg: ApplyMoveMessage): MoveAppliedMessage {
 
   // Validate ply matches expected
   if (session.ply !== msg.expectedPly) {
-    logger.error(`[dumb-bot] Ply mismatch on apply: expected ${msg.expectedPly}, got ${session.ply}`);
+    logger.error(
+      `[dumb-bot] Ply mismatch on apply: expected ${msg.expectedPly}, got ${session.ply}`,
+    );
     return {
       type: "move_applied",
       bgsId: msg.bgsId,

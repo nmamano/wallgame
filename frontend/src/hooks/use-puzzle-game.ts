@@ -100,8 +100,16 @@ function movesMatch(move1: Move, move2: Move): boolean {
   const norm2 = normalizeMove(move2);
 
   if (norm1.walls.length !== norm2.walls.length) return false;
-  if (norm1.catDest?.[0] !== norm2.catDest?.[0] || norm1.catDest?.[1] !== norm2.catDest?.[1]) return false;
-  if (norm1.mouseDest?.[0] !== norm2.mouseDest?.[0] || norm1.mouseDest?.[1] !== norm2.mouseDest?.[1]) return false;
+  if (
+    norm1.catDest?.[0] !== norm2.catDest?.[0] ||
+    norm1.catDest?.[1] !== norm2.catDest?.[1]
+  )
+    return false;
+  if (
+    norm1.mouseDest?.[0] !== norm2.mouseDest?.[0] ||
+    norm1.mouseDest?.[1] !== norm2.mouseDest?.[1]
+  )
+    return false;
 
   // Check walls match (order doesn't matter)
   if (norm1.walls.length === 0) return true;
@@ -110,8 +118,10 @@ function movesMatch(move1: Move, move2: Move): boolean {
   }
   // Two walls - either order
   return (
-    (wallsMatch(norm1.walls[0], norm2.walls[0]) && wallsMatch(norm1.walls[1], norm2.walls[1])) ||
-    (wallsMatch(norm1.walls[0], norm2.walls[1]) && wallsMatch(norm1.walls[1], norm2.walls[0]))
+    (wallsMatch(norm1.walls[0], norm2.walls[0]) &&
+      wallsMatch(norm1.walls[1], norm2.walls[1])) ||
+    (wallsMatch(norm1.walls[0], norm2.walls[1]) &&
+      wallsMatch(norm1.walls[1], norm2.walls[0]))
   );
 }
 
@@ -349,7 +359,7 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
   // Auto-play opponent's response after correct player move
   useEffect(() => {
     if (puzzleStatus !== "playing") return;
-    if (!gameState || gameState.status !== "playing") return;
+    if (gameState?.status !== "playing") return;
     if (gameState.turn !== opponentPlayerId) return;
     // Use ref to prevent re-triggering (state would cause effect to re-run and clear timeout)
     if (isProcessingOpponentMoveRef.current) return;

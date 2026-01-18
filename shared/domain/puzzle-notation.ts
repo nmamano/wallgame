@@ -43,7 +43,10 @@ export function oldPosToCell(pos: string, totalRows: number): Cell {
  * - ">" means wall to the RIGHT of the cell → "vertical" orientation at that cell
  * - "v" means wall BELOW the cell → "horizontal" orientation at the same cell
  */
-export function oldActionToAction(actionStr: string, totalRows: number): Action {
+export function oldActionToAction(
+  actionStr: string,
+  totalRows: number,
+): Action {
   const trimmed = actionStr.trim();
 
   // Length 2 = pure cell reference = cat move
@@ -105,7 +108,10 @@ export function parseSingleMove(moveStr: string, totalRows: number): Move {
  *
  * Returns: Move[][] where moves[turnIndex][alternativeIndex] = Move
  */
-export function parsePuzzleMoves(moveString: string, totalRows: number): Move[][] {
+export function parsePuzzleMoves(
+  moveString: string,
+  totalRows: number,
+): Move[][] {
   const turns = moveString.split(";");
   return turns.map((turnStr) => {
     const alternatives = turnStr.split(",");

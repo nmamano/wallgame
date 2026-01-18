@@ -49,10 +49,7 @@ import {
   applyBgsMove,
   notifyBotGameEnded,
 } from "./custom-bot-socket";
-import {
-  notifyEvalBarMove,
-  handleEvalBarGameEnd,
-} from "./eval-socket";
+import { notifyEvalBarMove, handleEvalBarGameEnd } from "./eval-socket";
 import { addActiveGame } from "../games/custom-bot-store";
 import {
   getBgs,

@@ -9,13 +9,7 @@ import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { PUZZLES, getNextPuzzleId } from "../../../shared/domain/puzzles";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
-import {
-  ArrowLeft,
-  Check,
-  Undo2,
-  RotateCcw,
-  ChevronRight,
-} from "lucide-react";
+import { ArrowLeft, Check, Undo2, RotateCcw, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/puzzles/$id")({
   component: PuzzlePage,
@@ -37,7 +31,9 @@ function PuzzlePage() {
   if (!puzzle) {
     return (
       <div className="container mx-auto py-12 px-4 max-w-4xl text-center">
-        <p className="text-muted-foreground">Puzzle not found. Redirecting...</p>
+        <p className="text-muted-foreground">
+          Puzzle not found. Redirecting...
+        </p>
       </div>
     );
   }
