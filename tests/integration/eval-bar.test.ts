@@ -485,7 +485,7 @@ async function createBotConfigFile(args: {
       },
     ],
     engineCommands: {
-      [args.botId]: { default: args.engine },
+      [args.botId]: args.engine,
     },
   };
 

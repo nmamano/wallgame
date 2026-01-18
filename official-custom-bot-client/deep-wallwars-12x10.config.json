@@ -1,5 +1,5 @@
 {
-  "server": "http://localhost:5173",
+  "server": "http://172.27.160.1:5173",
   "bots": [
     {
       "botId": "deep-wallwars-12x10",
@@ -32,9 +32,6 @@
     }
   ],
   "engineCommands": {
-    "deep-wallwars-12x10": {
-      "classic": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_12x10_universal/model_34.trt --columns 12 --rows 10",
-      "standard": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_12x10_universal/model_34.trt --columns 12 --rows 10"
-    }
+    "deep-wallwars-12x10": "../deep-wallwars/build/deep_ww_engine --model ../deep-wallwars/models_12x10_universal/model_58.trt"
   }
 }
