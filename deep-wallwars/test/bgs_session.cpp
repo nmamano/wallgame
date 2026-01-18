@@ -24,16 +24,12 @@ struct TestPolicy {
         // Get legal actions and return them all with equal prior
         std::vector<TreeEdge> edges;
 
-        // Add pawn moves
+        // Add pawn moves (PawnMove takes direction, not target cell)
         for (auto dir : board.legal_directions(turn.player, Pawn::Cat)) {
-            Cell target = board.position(turn.player);
-            target = target.neighbor(dir);
-            edges.emplace_back(PawnMove{Pawn::Cat, target}, 0.5f);
+            edges.emplace_back(PawnMove{Pawn::Cat, dir}, 0.5f);
         }
         for (auto dir : board.legal_directions(turn.player, Pawn::Mouse)) {
-            Cell target = board.mouse(turn.player);
-            target = target.neighbor(dir);
-            edges.emplace_back(PawnMove{Pawn::Mouse, target}, 0.3f);
+            edges.emplace_back(PawnMove{Pawn::Mouse, dir}, 0.3f);
         }
 
         // Add a few walls
@@ -172,8 +168,9 @@ TEST_CASE("parse_move_notation - Cat and mouse move", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // Standard notation: "Ca2.Mh1" (cat to a2, mouse to h1)
-    auto move = parse_move_notation("Ca2.Mh1", board, turn, padding);
+    // P1 cat starts at a8 [7,0], mouse at h8 [7,7] (standard 8x8 setup)
+    // Valid adjacent moves: cat to a7 (up), mouse to h7 (up)
+    auto move = parse_move_notation("Ca7.Mh7", board, turn, padding);
 
     REQUIRE(move.has_value());
     // First action should be a pawn move (cat)
@@ -186,19 +183,63 @@ TEST_CASE("parse_move_notation - Pawn move and wall", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // Standard notation: "Ca2.>b3" (cat move, then vertical wall)
-    auto move = parse_move_notation("Ca2.>b3", board, turn, padding);
+    // P1 cat starts at a8 [7,0], valid adjacent move is a7 (up)
+    // Then place a vertical wall at b3
+    auto move = parse_move_notation("Ca7.>b3", board, turn, padding);
 
     REQUIRE(move.has_value());
     CHECK(std::holds_alternative<PawnMove>(move->first));
     CHECK(std::holds_alternative<Wall>(move->second));
 }
 
+TEST_CASE("parse_move_notation - Double pawn move (cat moves twice)", "[BGS Move Parsing]") {
+    auto config = make_standard_config(8, 8);
+    auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
+
+    // P1 cat starts at a8 [7,0]. "Cb7" means cat ends at b7 [6,1].
+    // This is 2 steps away (manhattan distance 2), so cat uses both actions.
+    // Path: a8 -> b8 (right) -> b7 (up), or a8 -> a7 (up) -> b7 (right)
+    auto move = parse_move_notation("Cb7", board, turn, padding);
+
+    REQUIRE(move.has_value());
+    // Both actions should be cat pawn moves
+    CHECK(std::holds_alternative<PawnMove>(move->first));
+    CHECK(std::holds_alternative<PawnMove>(move->second));
+
+    auto first_move = std::get<PawnMove>(move->first);
+    auto second_move = std::get<PawnMove>(move->second);
+    CHECK(first_move.pawn == Pawn::Cat);
+    CHECK(second_move.pawn == Pawn::Cat);
+
+    // Verify the directions lead to the correct destination
+    // The path is horizontal-first: Right then Up
+    CHECK(first_move.dir == Direction::Right);
+    CHECK(second_move.dir == Direction::Up);
+}
+
+TEST_CASE("parse_move_notation - Double pawn move straight line", "[BGS Move Parsing]") {
+    auto config = make_standard_config(8, 8);
+    auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
+
+    // P1 cat starts at a8 [7,0]. "Ca6" means cat ends at a6 [5,0].
+    // This is 2 steps up (same column), so cat uses both actions moving up twice.
+    auto move = parse_move_notation("Ca6", board, turn, padding);
+
+    REQUIRE(move.has_value());
+    auto first_move = std::get<PawnMove>(move->first);
+    auto second_move = std::get<PawnMove>(move->second);
+
+    CHECK(first_move.pawn == Pawn::Cat);
+    CHECK(second_move.pawn == Pawn::Cat);
+    CHECK(first_move.dir == Direction::Up);
+    CHECK(second_move.dir == Direction::Up);
+}
+
 TEST_CASE("parse_move_notation - Invalid notation", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // Missing separator
+    // Missing separator (and invalid - would be 3+ actions)
     auto move1 = parse_move_notation("Ca2Mh1", board, turn, padding);
     CHECK_FALSE(move1.has_value());
 

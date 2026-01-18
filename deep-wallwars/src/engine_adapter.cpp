@@ -47,6 +47,42 @@ Cell transform_to_model(Cell game_cell, PaddingConfig const& config) {
     };
 }
 
+// Find directions to move from `from` to `to` (1 or 2 steps)
+// Returns empty vector if unreachable in 1-2 steps
+static std::vector<Direction> find_path(Cell from, Cell to) {
+    int dc = to.column - from.column;
+    int dr = to.row - from.row;
+    int manhattan = std::abs(dc) + std::abs(dr);
+
+    if (manhattan == 0) {
+        return {};  // Same cell - no movement needed
+    }
+
+    if (manhattan == 1) {
+        // 1 step (adjacent)
+        if (dc == 1) return {Direction::Right};
+        if (dc == -1) return {Direction::Left};
+        if (dr == 1) return {Direction::Down};
+        if (dr == -1) return {Direction::Up};
+    }
+
+    if (manhattan == 2) {
+        // 2 steps
+        std::vector<Direction> path;
+        // Horizontal movement first (arbitrary choice for diagonal moves)
+        if (dc > 0) path.push_back(Direction::Right);
+        else if (dc < 0) path.push_back(Direction::Left);
+        // Then vertical movement
+        if (dr > 0) path.push_back(Direction::Down);
+        else if (dr < 0) path.push_back(Direction::Up);
+        // If only moving in one dimension (2 steps same direction)
+        if (path.size() == 1) path.push_back(path[0]);
+        return path;
+    }
+
+    return {};  // Unreachable in 1-2 steps
+}
+
 Wall transform_to_model(Wall game_wall, PaddingConfig const& config) {
     return Wall{
         transform_to_model(game_wall.cell, config),
@@ -799,22 +835,23 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     return {board, turn, padding_config};
 }
 
-// Helper to parse a single action from notation (e.g., "Ce4", "Md5", ">f3", "^e4")
-static std::optional<Action> parse_single_action(
-    std::string_view action_str,
+// Parse a single notation part (e.g., "Ce4", "Md5", ">f3", "^e4")
+// Returns 1 or 2 actions for pawn moves (depending on distance), 1 for walls
+static std::vector<Action> parse_notation_part(
+    std::string_view part_str,
     Board const& board,
     Player player,
     PaddingConfig const& padding_config) {
 
-    if (action_str.empty()) {
-        return std::nullopt;
+    if (part_str.empty()) {
+        return {};
     }
 
-    char type_char = action_str[0];
-    std::string coords(action_str.substr(1));
+    char type_char = part_str[0];
+    std::string coords(part_str.substr(1));
 
     if (coords.size() < 2) {
-        return std::nullopt;
+        return {};
     }
 
     // Parse column letter (a-z) and row number
@@ -824,31 +861,36 @@ static std::optional<Action> parse_single_action(
     try {
         game_row = std::stoi(coords.substr(1)) - 1;  // 1-indexed to 0-indexed
     } catch (...) {
-        return std::nullopt;
+        return {};
     }
 
     // Transform game coordinates to model coordinates
     Cell game_cell{game_col, game_row};
     Cell model_cell = transform_to_model(game_cell, padding_config);
 
-    if (type_char == 'C') {
-        // Cat move
-        return PawnMove{Pawn::Cat, model_cell};
-    } else if (type_char == 'M') {
-        // Mouse move
-        return PawnMove{Pawn::Mouse, model_cell};
+    if (type_char == 'C' || type_char == 'M') {
+        // Pawn move - find path from current position to target (1 or 2 steps)
+        Pawn pawn = (type_char == 'C') ? Pawn::Cat : Pawn::Mouse;
+        Cell current_pos = board.pawn_position(player, pawn);
+        auto path = find_path(current_pos, model_cell);
+
+        std::vector<Action> actions;
+        for (Direction dir : path) {
+            actions.push_back(PawnMove{pawn, dir});
+        }
+        return actions;
     } else if (type_char == '>') {
         // Vertical wall (blocks rightward movement)
-        return Wall{model_cell, Wall::Right};
+        return {Wall{model_cell, Wall::Right}};
     } else if (type_char == '^') {
         // Horizontal wall (blocks downward movement from row above)
         // API horizontal wall notation: "^e4" means wall above cell e4
         // In deep-wallwars, this is a Down wall at (col, row-1)
         Cell adjusted_cell{model_cell.column, model_cell.row - 1};
-        return Wall{adjusted_cell, Wall::Down};
+        return {Wall{adjusted_cell, Wall::Down}};
     }
 
-    return std::nullopt;
+    return {};
 }
 
 std::optional<Move> parse_move_notation(
@@ -857,29 +899,47 @@ std::optional<Move> parse_move_notation(
     Turn turn,
     PaddingConfig const& padding_config) {
 
-    // Split notation by '.' to get two actions
-    auto dot_pos = notation.find('.');
-    if (dot_pos == std::string::npos) {
-        XLOGF(ERR, "Invalid move notation (no separator): {}", notation);
+    // Split notation by '.' to get parts (e.g., "Cb2.Mh7" or "Cb2.>d4")
+    std::vector<std::string> parts;
+    std::string::size_type start = 0;
+    std::string::size_type pos = 0;
+    while ((pos = notation.find('.', start)) != std::string::npos) {
+        parts.push_back(notation.substr(start, pos - start));
+        start = pos + 1;
+    }
+    parts.push_back(notation.substr(start));
+
+    if (parts.empty()) {
+        XLOGF(ERR, "Empty move notation");
         return std::nullopt;
     }
 
-    std::string action1_str = notation.substr(0, dot_pos);
-    std::string action2_str = notation.substr(dot_pos + 1);
+    // Collect all actions from all parts
+    std::vector<Action> all_actions;
+    Board current_board = board;
 
-    auto action1 = parse_single_action(action1_str, board, turn.player, padding_config);
-    if (!action1) {
-        XLOGF(ERR, "Failed to parse first action: {}", action1_str);
+    for (const auto& part : parts) {
+        auto actions = parse_notation_part(part, current_board, turn.player, padding_config);
+        if (actions.empty()) {
+            XLOGF(ERR, "Failed to parse notation part: {}", part);
+            return std::nullopt;
+        }
+
+        for (const auto& action : actions) {
+            all_actions.push_back(action);
+            // Update board state for subsequent parsing
+            current_board.do_action(turn.player, action);
+        }
+    }
+
+    // A Move must have exactly 2 actions
+    if (all_actions.size() != 2) {
+        XLOGF(ERR, "Move notation must result in exactly 2 actions, got {}: {}",
+              all_actions.size(), notation);
         return std::nullopt;
     }
 
-    auto action2 = parse_single_action(action2_str, board, turn.player, padding_config);
-    if (!action2) {
-        XLOGF(ERR, "Failed to parse second action: {}", action2_str);
-        return std::nullopt;
-    }
-
-    return Move{*action1, *action2};
+    return Move{all_actions[0], all_actions[1]};
 }
 
 }  // namespace engine_adapter

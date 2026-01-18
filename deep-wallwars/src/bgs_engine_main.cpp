@@ -5,6 +5,7 @@
 #include <folly/experimental/coro/Collect.h>
 #include <folly/experimental/coro/Task.h>
 #include <folly/io/async/AsyncPipe.h>
+#include <folly/io/async/AsyncSocketException.h>
 #include <folly/io/async/EventBase.h>
 #include <folly/logging/xlog.h>
 #include <gflags/gflags.h>
