@@ -88,7 +88,8 @@ export type TimeControlPreset =
   | "bullet" // 1+0
   | "blitz" // 3+2
   | "rapid" // 10+2
-  | "classical"; // 30+0
+  | "classical" // 30+0
+  | "unlimited"; // No time control (bot games, puzzles, etc.)
 
 export interface GameConfiguration {
   variant: Variant;

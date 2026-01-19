@@ -92,6 +92,7 @@ interface LiveActionsProps {
   handleOfferDraw: () => void;
   handleRequestTakeback: () => void;
   handleGiveTime: () => void;
+  isUnlimited: boolean;
 }
 
 interface EndgameProps {
@@ -150,6 +151,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     manualActionsDisabled,
     hasTakebackHistory,
     handleStartResign,
+    isUnlimited,
   } = live;
 
   const {
@@ -613,7 +615,8 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
           className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
           size="sm"
           onClick={handleGiveTime}
-          disabled={actionsDisabled || manualActionsBlocked}
+          disabled={actionsDisabled || manualActionsBlocked || isUnlimited}
+          title={isUnlimited ? "Not available in untimed games" : undefined}
         >
           <Timer className="w-3.5 h-3.5 lg:w-4 lg:h-4" /> Give time
         </Button>

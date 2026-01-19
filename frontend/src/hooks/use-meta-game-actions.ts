@@ -587,17 +587,19 @@ export function useMetaGameActions({
     };
     setActionError(null);
     if (actorController.actionChannel === "remote-controller") {
+      // Set pending state BEFORE sending action to handle immediate rejections (e.g., bot auto-reject)
+      announceOffer();
       void executor
         .run(actorId, "offerDraw", undefined)
         .then(({ result }) => {
           if (!result.ok) {
+            setPendingDrawOffer(null);
             setActionError(describeControllerError("offerDraw", result.error));
-            return;
           }
-          announceOffer();
         })
         .catch((error) => {
           console.error(error);
+          setPendingDrawOffer(null);
           setActionError(
             error instanceof Error
               ? error.message

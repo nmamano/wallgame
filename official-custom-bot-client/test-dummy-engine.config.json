@@ -1,0 +1,37 @@
+{
+  "server": "http://localhost:5173",
+  "bots": [
+    {
+      "botId": "test-dummy-engine",
+      "name": "Test Dummy Engine",
+      "username": null,
+      "appearance": {
+        "color": "#f97316",
+        "catStyle": "cat2.svg",
+        "mouseStyle": "mouse2.svg",
+        "homeStyle": "home2.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 4, "max": 12 },
+          "boardHeight": { "min": 4, "max": 12 },
+          "recommended": [
+            { "boardWidth": 6, "boardHeight": 6 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        },
+        "standard": {
+          "boardWidth": { "min": 4, "max": 12 },
+          "boardHeight": { "min": 4, "max": 12 },
+          "recommended": [
+            { "boardWidth": 6, "boardHeight": 6 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        }
+      }
+    }
+  ],
+  "engineCommands": {
+    "test-dummy-engine": "bun run ../dummy-engine/src/index.ts"
+  }
+}

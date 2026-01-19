@@ -1,0 +1,35 @@
+{
+  "server": "http://localhost:5173",
+  "bots": [
+    {
+      "botId": "test-dumb-bot",
+      "name": "Test Dumb Bot",
+      "username": null,
+      "appearance": {
+        "color": "#4ade80",
+        "catStyle": "cat1.svg",
+        "mouseStyle": "mouse1.svg",
+        "homeStyle": "home1.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 4, "max": 12 },
+          "boardHeight": { "min": 4, "max": 12 },
+          "recommended": [
+            { "boardWidth": 6, "boardHeight": 6 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        },
+        "standard": {
+          "boardWidth": { "min": 4, "max": 12 },
+          "boardHeight": { "min": 4, "max": 12 },
+          "recommended": [
+            { "boardWidth": 6, "boardHeight": 6 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
+        }
+      }
+    }
+  ],
+  "engineCommands": {}
+}

@@ -3554,6 +3554,7 @@ export function useGamePageController(gameId: string) {
     gameTurn,
     getPlayerMatchScore,
     goalDistances,
+    isUnlimited: config?.timeControl.preset === "unlimited",
   };
 
   const actionsSection = {
@@ -3585,6 +3586,7 @@ export function useGamePageController(gameId: string) {
       handleOfferDraw: handleOfferDrawAction,
       handleRequestTakeback: handleRequestTakebackAction,
       handleGiveTime: handleGiveTimeAction,
+      isUnlimited: config?.timeControl.preset === "unlimited",
     },
     endgame: {
       gameStatus,

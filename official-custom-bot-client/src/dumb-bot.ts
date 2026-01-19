@@ -312,8 +312,12 @@ export function handleApplyMove(msg: ApplyMoveMessage): MoveAppliedMessage {
         pawns.cat = action.target;
       } else if (action.type === "mouse") {
         pawns.mouse = action.target;
-      } else if (action.type === "wall") {
-        session.grid.addWall(action.target);
+      } else if (action.type === "wall" && action.wallOrientation) {
+        session.grid.addWall({
+          cell: action.target,
+          orientation: action.wallOrientation,
+          playerId: playerToMove,
+        });
       }
     }
 

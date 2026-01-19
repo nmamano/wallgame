@@ -12,6 +12,7 @@ import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
+import { isUnlimitedTimeControl } from "../../shared/domain/game-utils";
 import type {
   GameConfiguration,
   GameSnapshot,
@@ -237,6 +238,11 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
   }
 
   const state = session.gameState;
+
+  // Don't schedule timer for unlimited time control games
+  if (isUnlimitedTimeControl(state.timeControl)) {
+    return;
+  }
 
   // Don't schedule timer before first move (clock doesn't run)
   if (state.moveCount === 0) {
@@ -939,8 +945,9 @@ export const applyPlayerMove = (args: {
   }
 
   // Check if the player's time has already expired before allowing the move
+  // (skip for unlimited time control games)
   const state = session.gameState;
-  if (state.moveCount > 0) {
+  if (state.moveCount > 0 && !isUnlimitedTimeControl(state.timeControl)) {
     const elapsedMs = args.timestamp - state.lastMoveTime;
     const currentTimeLeftMs = state.timeLeft[args.playerId] * 1000 - elapsedMs;
     if (currentTimeLeftMs <= TIMEOUT_FLOOR_MS) {

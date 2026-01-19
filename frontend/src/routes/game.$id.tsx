@@ -232,6 +232,7 @@ function GamePage() {
                     }
                     score={timers.getPlayerMatchScore(timers.topPlayer)}
                     gameStatus={board.gameStatus}
+                    isUnlimited={timers.isUnlimited}
                   />
                 )}
 
@@ -299,6 +300,7 @@ function GamePage() {
                     }
                     score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                     gameStatus={board.gameStatus}
+                    isUnlimited={timers.isUnlimited}
                   />
                 )}
               </>

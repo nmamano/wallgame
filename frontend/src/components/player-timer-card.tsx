@@ -26,6 +26,7 @@ interface PlayerTimerCardProps {
   minWidthRem: number;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
+  isUnlimited?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -42,6 +43,7 @@ export function PlayerTimerCard({
   minWidthRem,
   score = null,
   gameStatus = "playing",
+  isUnlimited = false,
 }: PlayerTimerCardProps) {
   const nameSuffixRegex = /\s*\((?:also\s+you|you)\)\s*$/i;
   const nameSuffixMatch = nameSuffixRegex.exec(player.name);
@@ -163,9 +165,13 @@ export function PlayerTimerCard({
             shouldShowActiveState
               ? "text-foreground"
               : "text-muted-foreground/50"
-          } ${timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
+          } ${!isUnlimited && timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
         >
-          {formatTime(Math.max(0, Math.round(timeLeft)))}
+          {isUnlimited ? (
+            <span className="text-xl lg:text-2xl">∞</span>
+          ) : (
+            formatTime(Math.max(0, Math.round(timeLeft)))
+          )}
         </div>
       </div>
     </div>
