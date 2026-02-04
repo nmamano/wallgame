@@ -1,5 +1,7 @@
 #!/usr/bin/env python3
 """
+Note: it used to be in the root folder, it's now in scripts. Paths may need to be updated.
+
 Training Monitor - Check on deep-wallwars training progress
 
 Usage:
@@ -225,7 +227,8 @@ def get_resource_usage():
     """Get system resource usage."""
     try:
         # Memory
-        result = subprocess.run(["free", "-h"], capture_output=True, text=True, timeout=5)
+        result = subprocess.run(
+            ["free", "-h"], capture_output=True, text=True, timeout=5)
         mem_line = result.stdout.strip().split("\n")[1]
         mem_parts = mem_line.split()
         mem_info = {
@@ -269,7 +272,8 @@ def print_report(args):
         info = parse_process_info(training_proc)
         print(f"  {GREEN}training.py is RUNNING{RESET}")
         if info:
-            print(f"    PID: {info['pid']}, CPU: {info['cpu']}%, MEM: {info['mem']}%")
+            print(
+                f"    PID: {info['pid']}, CPU: {info['cpu']}%, MEM: {info['mem']}%")
             print(f"    Started: {info['start']}, CPU Time: {info['time']}")
     else:
         print(f"  {RED}training.py is NOT RUNNING{RESET}")
@@ -278,7 +282,8 @@ def print_report(args):
         info = parse_process_info(deep_ww_proc)
         print(f"  {GREEN}deep_ww (self-play) is RUNNING{RESET}")
         if info:
-            print(f"    PID: {info['pid']}, CPU: {info['cpu']}%, MEM: {info['mem']}%")
+            print(
+                f"    PID: {info['pid']}, CPU: {info['cpu']}%, MEM: {info['mem']}%")
 
             # Extract model info from command
             model_match = re.search(r"model_(\d+)\.trt", deep_ww_proc)
@@ -286,7 +291,8 @@ def print_report(args):
                 print(f"    Using model: generation {model_match.group(1)}")
     else:
         if training_proc:
-            print(f"  {YELLOW}deep_ww not running (may be in training/loading phase){RESET}")
+            print(
+                f"  {YELLOW}deep_ww not running (may be in training/loading phase){RESET}")
 
     # Log status
     print(f"\n{CYAN}[Log Status]{RESET}")
@@ -300,7 +306,8 @@ def print_report(args):
             color = YELLOW
         else:
             color = RED
-        print(f"  Log last updated: {color}{age_str} ago{RESET} ({log_mtime.strftime('%Y-%m-%d %H:%M:%S')})")
+        print(
+            f"  Log last updated: {color}{age_str} ago{RESET} ({log_mtime.strftime('%Y-%m-%d %H:%M:%S')})")
     else:
         print(f"  {RED}Log file not found: {args.log}{RESET}")
 
@@ -345,21 +352,26 @@ def print_report(args):
         if metrics.get("training_results"):
             last = metrics["training_results"][-1]
             print(f"  Last training epoch:")
-            print(f"    Loss: {last['train_loss']:.4f} (train), {last['valid_loss']:.4f} (valid)")
-            print(f"    Accuracy: {last['val_acc']*100:.1f}% (valuation), {last['move_acc']*100:.1f}% (move)")
+            print(
+                f"    Loss: {last['train_loss']:.4f} (train), {last['valid_loss']:.4f} (valid)")
+            print(
+                f"    Accuracy: {last['val_acc']*100:.1f}% (valuation), {last['move_acc']*100:.1f}% (move)")
 
         if metrics.get("selfplay_times"):
             times = metrics["selfplay_times"]
             avg_time = sum(times) / len(times)
-            print(f"  Self-play times: avg {format_duration(int(avg_time))}, last {format_duration(times[-1])}")
+            print(
+                f"  Self-play times: avg {format_duration(int(avg_time))}, last {format_duration(times[-1])}")
 
         if metrics.get("last_wld"):
             # Extract W/L/D
             match = re.search(r"(\d+) / (\d+) / (\d+)", metrics["last_wld"])
             if match:
-                w, l, d = int(match.group(1)), int(match.group(2)), int(match.group(3))
+                w, l, d = int(match.group(1)), int(
+                    match.group(2)), int(match.group(3))
                 total = w + l + d
-                print(f"  Last W/L/D: {w}/{l}/{d} ({100*l/total:.0f}% win rate for new model)")
+                print(
+                    f"  Last W/L/D: {w}/{l}/{d} ({100*l/total:.0f}% win rate for new model)")
     else:
         print(f"  {YELLOW}Could not parse metrics from log{RESET}")
 
