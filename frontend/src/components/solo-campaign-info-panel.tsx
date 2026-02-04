@@ -1,7 +1,7 @@
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
-import { useSound } from "@/components/sound-provider";
-import { Volume2, VolumeX, Music, Music2, RotateCcw } from "lucide-react";
+import { AudioControls } from "@/components/audio-controls";
+import { RotateCcw } from "lucide-react";
 import type { SoloCampaignLevel } from "../../../shared/domain/solo-campaign-levels";
 
 interface SoloCampaignInfoPanelProps {
@@ -81,9 +81,6 @@ export function SoloCampaignInfoPanel({
   onReset,
   isAiThinking,
 }: SoloCampaignInfoPanelProps) {
-  const { sfxEnabled, setSfxEnabled, musicEnabled, setMusicEnabled } =
-    useSound();
-
   return (
     <Card className="p-4 bg-card/80 backdrop-blur border-border/50">
       <div className="flex items-center justify-between mb-3">
@@ -91,42 +88,16 @@ export function SoloCampaignInfoPanel({
           Level {level.id}: {level.name}
         </h2>
         <div className="flex items-center gap-2">
-          {/* Sound toggles */}
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setSfxEnabled(!sfxEnabled)}
-            title={sfxEnabled ? "Mute sound effects" : "Enable sound effects"}
-          >
-            {sfxEnabled ? (
-              <Volume2 className="h-4 w-4" />
-            ) : (
-              <VolumeX className="h-4 w-4 text-muted-foreground" />
-            )}
-          </Button>
-          <Button
-            variant="ghost"
-            size="icon"
-            onClick={() => setMusicEnabled(!musicEnabled)}
-            title={musicEnabled ? "Mute music" : "Enable music"}
-          >
-            {musicEnabled ? (
-              <Music className="h-4 w-4" />
-            ) : (
-              <Music2 className="h-4 w-4 text-muted-foreground" />
-            )}
-          </Button>
-
+          <AudioControls />
           {/* Reset button */}
           <Button
-            variant="outline"
-            size="sm"
+            variant="ghost"
+            size="icon"
             onClick={onReset}
             disabled={isAiThinking}
             title="Reset level"
           >
-            <RotateCcw className="h-4 w-4 mr-1" />
-            Reset
+            <RotateCcw className="h-4 w-4" />
           </Button>
         </div>
       </div>

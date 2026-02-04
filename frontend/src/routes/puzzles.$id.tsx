@@ -9,6 +9,7 @@ import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { PUZZLES, getNextPuzzleId } from "../../../shared/domain/puzzles";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
+import { AudioControls } from "@/components/audio-controls";
 import { ArrowLeft, Check, Undo2, RotateCcw, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/puzzles/$id")({
@@ -205,7 +206,13 @@ function PuzzlePageContent({
               </div>
               <div className="flex items-center gap-2">
                 <Badge variant="outline">Rating: {puzzle.difficulty}</Badge>
-                <Button variant="ghost" size="icon" onClick={resetPuzzle}>
+                <AudioControls />
+                <Button
+                  variant="ghost"
+                  size="icon"
+                  onClick={resetPuzzle}
+                  title="Reset puzzle"
+                >
                   <RotateCcw className="h-4 w-4" />
                 </Button>
               </div>
