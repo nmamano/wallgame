@@ -220,6 +220,24 @@ Server (Hono)
 - Explicit over implicit: avoid race conditions with clear state transitions
 - All frontend-server boundary types go in `shared/contracts/` with Zod schemas
 
+## Fix Quality Rules
+
+When fixing a bug, **always pause before implementing** and ask: "Am I patching a symptom, or
+addressing the root cause?" Follow these rules strictly:
+
+1. **Root-cause over symptom-patch.** If a fix requires adding multiple refs, flags, or guards to
+   work around a design assumption, stop. The assumption is probably what needs changing. A correct
+   fix should feel proportional to the bug — a one-line structural change beats a multi-effect
+   state-machine patch every time.
+
+2. **Present the approach before writing code.** For any non-trivial bug fix, describe the planned
+   approach to the user and get approval BEFORE implementing. Include: (a) why the bug happens,
+   (b) where the fix goes, (c) why this approach is clean vs alternatives. If you catch yourself
+   adding complexity, that's a signal to pause and reconsider.
+
+3. **Never stack hacks.** If a first fix attempt doesn't work, do NOT add more complexity on top.
+   Step back, re-examine the root cause, and consider whether the entire approach is wrong.
+
 ## Documentation
 
 See `/info/` for detailed design docs including:

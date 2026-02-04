@@ -15,7 +15,16 @@ export const Route = createFileRoute("/game/$id")({
   component: GamePage,
 });
 
+// Thin wrapper: key={id} forces React to remount the entire game page when the
+// game ID changes (e.g., rematch). This ensures all hooks (eval bar, game
+// controller, WebSocket connections) get a clean lifecycle per game instead of
+// carrying stale state from the previous game.
 function GamePage() {
+  const { id } = Route.useParams();
+  return <GamePageContent key={id} />;
+}
+
+function GamePageContent() {
   const { id } = Route.useParams();
   const controller = useGamePageController(id);
   const {
@@ -178,12 +187,6 @@ function GamePage() {
         {/* Only show matching panel for players */}
         {!isReadOnly && (
           <>
-            {console.debug("[game-page] matching panel state", {
-              isMultiplayerMatch: info.isMultiplayerMatch,
-              matchTypeHint: matching.matchType,
-              authoritativeLifecycle: matching.lifecycle,
-              accessKind: matching.accessKind,
-            })}
             <MatchingStagePanel
               isOpen={matching.isOpen}
               players={matching.players}
