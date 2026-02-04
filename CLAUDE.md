@@ -54,6 +54,8 @@ For Deep-Wallwars build and training instructions, see `info/deep-wallwars-integ
 
 **Development ports:** Frontend on 5173 proxies API/WebSocket to backend on 3000. Always use port 5173 for development.
 
+**Runtime logs:** If the frontend, server, or bot client are running, all their outputs will be available in the `logs/` folder. If you can't find the logs there, ask the user to reset the scripts with logging enabled.
+
 ## Subprojects
 
 ### Frontend (`frontend/`)

@@ -3102,9 +3102,13 @@ export function useGamePageController(gameId: string) {
     }
     const goalFor = (playerId: PlayerId) => {
       const opponentId: PlayerId = playerId === 1 ? 2 : 1;
+      // Classic: cat races to own home (stored in mouse slot)
+      // Standard/Freestyle/Survival: cat chases opponent's mouse
+      const goalOwner =
+        sourceState.config.variant === "classic" ? playerId : opponentId;
       return sourceState.grid.distance(
         sourceState.pawns[playerId].cat,
-        sourceState.pawns[opponentId].mouse,
+        sourceState.pawns[goalOwner].mouse,
       );
     };
     return {
