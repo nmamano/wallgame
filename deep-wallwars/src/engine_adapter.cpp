@@ -47,9 +47,20 @@ Cell transform_to_model(Cell game_cell, PaddingConfig const& config) {
     };
 }
 
+// Check if movement from a cell in a given direction is blocked by a wall
+static bool is_direction_blocked(Board const& board, Cell from, Direction dir) {
+    switch (dir) {
+        case Direction::Right: return board.is_blocked(Wall{from, Wall::Right});
+        case Direction::Left:  return board.is_blocked(Wall{Cell{from.column - 1, from.row}, Wall::Right});
+        case Direction::Down:  return board.is_blocked(Wall{from, Wall::Down});
+        case Direction::Up:    return board.is_blocked(Wall{Cell{from.column, from.row - 1}, Wall::Down});
+    }
+    return false;
+}
+
 // Find directions to move from `from` to `to` (1 or 2 steps)
 // Returns empty vector if unreachable in 1-2 steps
-static std::vector<Direction> find_path(Cell from, Cell to) {
+static std::vector<Direction> find_path(Cell from, Cell to, Board const& board) {
     int dc = to.column - from.column;
     int dr = to.row - from.row;
     int manhattan = std::abs(dc) + std::abs(dr);
@@ -67,17 +78,30 @@ static std::vector<Direction> find_path(Cell from, Cell to) {
     }
 
     if (manhattan == 2) {
-        // 2 steps
-        std::vector<Direction> path;
-        // Horizontal movement first (arbitrary choice for diagonal moves)
-        if (dc > 0) path.push_back(Direction::Right);
-        else if (dc < 0) path.push_back(Direction::Left);
-        // Then vertical movement
-        if (dr > 0) path.push_back(Direction::Down);
-        else if (dr < 0) path.push_back(Direction::Up);
-        // If only moving in one dimension (2 steps same direction)
-        if (path.size() == 1) path.push_back(path[0]);
-        return path;
+        Direction h_dir = (dc > 0) ? Direction::Right : Direction::Left;
+        Direction v_dir = (dr > 0) ? Direction::Down : Direction::Up;
+
+        if (std::abs(dc) == 2) {
+            // 2 steps in same horizontal direction
+            return {h_dir, h_dir};
+        }
+        if (std::abs(dr) == 2) {
+            // 2 steps in same vertical direction
+            return {v_dir, v_dir};
+        }
+
+        // Diagonal move: try both orderings, pick the one where neither step is blocked
+        Cell after_h = from.step(h_dir);
+        Cell after_v = from.step(v_dir);
+
+        bool h_first_ok = !is_direction_blocked(board, from, h_dir) &&
+                          !is_direction_blocked(board, after_h, v_dir);
+        bool v_first_ok = !is_direction_blocked(board, from, v_dir) &&
+                          !is_direction_blocked(board, after_v, h_dir);
+
+        if (h_first_ok) return {h_dir, v_dir};
+        if (v_first_ok) return {v_dir, h_dir};
+        return {};  // Both paths blocked
     }
 
     return {};  // Unreachable in 1-2 steps
@@ -859,7 +883,7 @@ static std::vector<Action> parse_notation_part(
     int game_col = col_char - 'a';
     int game_row = 0;
     try {
-        game_row = std::stoi(coords.substr(1)) - 1;  // 1-indexed to 0-indexed
+        game_row = padding_config.game_rows - std::stoi(coords.substr(1));
     } catch (...) {
         return {};
     }
@@ -872,7 +896,7 @@ static std::vector<Action> parse_notation_part(
         // Pawn move - find path from current position to target (1 or 2 steps)
         Pawn pawn = (type_char == 'C') ? Pawn::Cat : Pawn::Mouse;
         Cell current_pos = board.pawn_position(player, pawn);
-        auto path = find_path(current_pos, model_cell);
+        auto path = find_path(current_pos, model_cell, board);
 
         std::vector<Action> actions;
         for (Direction dir : path) {
@@ -893,11 +917,16 @@ static std::vector<Action> parse_notation_part(
     return {};
 }
 
-std::optional<Move> parse_move_notation(
+std::optional<std::vector<Action>> parse_move_notation(
     std::string const& notation,
     Board const& board,
     Turn turn,
     PaddingConfig const& padding_config) {
+
+    // Handle empty/pass move notation
+    if (notation == "---") {
+        return std::vector<Action>{};
+    }
 
     // Split notation by '.' to get parts (e.g., "Cb2.Mh7" or "Cb2.>d4")
     std::vector<std::string> parts;
@@ -932,14 +961,7 @@ std::optional<Move> parse_move_notation(
         }
     }
 
-    // A Move must have exactly 2 actions
-    if (all_actions.size() != 2) {
-        XLOGF(ERR, "Move notation must result in exactly 2 actions, got {}: {}",
-              all_actions.size(), notation);
-        return std::nullopt;
-    }
-
-    return Move{all_actions[0], all_actions[1]};
+    return all_actions;
 }
 
 }  // namespace engine_adapter

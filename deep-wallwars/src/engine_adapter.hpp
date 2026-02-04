@@ -156,11 +156,12 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     int model_rows,
     int model_columns);
 
-// Parse a move from standard notation into the internal Move type
+// Parse a move from standard notation into a list of actions
 // Transforms coordinates from game space to model space using padding
 // Standard notation format: "Ce4.Md5" or "Ce4.>f3" (pawn moves and walls)
+// Supports 1 or more actions (standard variant allows single-action moves)
 // Returns nullopt if the notation is invalid
-std::optional<Move> parse_move_notation(
+std::optional<std::vector<Action>> parse_move_notation(
     std::string const& notation,
     Board const& board,
     Turn turn,

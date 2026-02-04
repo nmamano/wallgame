@@ -305,6 +305,13 @@ void MCTS::force_move(Move const& move) {
     }
 }
 
+void MCTS::reset_to_position(Board board, Turn turn) {
+    delete_subtree(*m_root);
+    m_history.clear();
+    m_root = folly::coro::blockingWait(create_tree_node(std::move(board), turn, {}, nullptr));
+    add_root_noise();
+}
+
 std::optional<Action> MCTS::peek_best_action() const {
     if (m_root->edges.empty()) {
         return {};

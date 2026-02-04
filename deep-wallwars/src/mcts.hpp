@@ -107,6 +107,11 @@ public:
     void force_action(Action const& action);
     void force_move(Move const& move);
 
+    // Reset the tree to a new board position and turn.
+    // Destroys the existing tree and creates a fresh root node.
+    // Used when the tree needs to skip ahead (e.g., partial-turn moves).
+    void reset_to_position(Board board, Turn turn);
+
     // Returns the best action without modifying the tree.
     // Use this when you need to know the best move but don't want to commit to it yet.
     // Returns nullopt if no explored action is available.

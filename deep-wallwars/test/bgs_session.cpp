@@ -173,10 +173,11 @@ TEST_CASE("parse_move_notation - Cat and mouse move", "[BGS Move Parsing]") {
     auto move = parse_move_notation("Ca7.Mh7", board, turn, padding);
 
     REQUIRE(move.has_value());
+    REQUIRE(move->size() == 2);
     // First action should be a pawn move (cat)
-    CHECK(std::holds_alternative<PawnMove>(move->first));
+    CHECK(std::holds_alternative<PawnMove>((*move)[0]));
     // Second action should be a pawn move (mouse)
-    CHECK(std::holds_alternative<PawnMove>(move->second));
+    CHECK(std::holds_alternative<PawnMove>((*move)[1]));
 }
 
 TEST_CASE("parse_move_notation - Pawn move and wall", "[BGS Move Parsing]") {
@@ -188,8 +189,9 @@ TEST_CASE("parse_move_notation - Pawn move and wall", "[BGS Move Parsing]") {
     auto move = parse_move_notation("Ca7.>b3", board, turn, padding);
 
     REQUIRE(move.has_value());
-    CHECK(std::holds_alternative<PawnMove>(move->first));
-    CHECK(std::holds_alternative<Wall>(move->second));
+    REQUIRE(move->size() == 2);
+    CHECK(std::holds_alternative<PawnMove>((*move)[0]));
+    CHECK(std::holds_alternative<Wall>((*move)[1]));
 }
 
 TEST_CASE("parse_move_notation - Double pawn move (cat moves twice)", "[BGS Move Parsing]") {
@@ -202,12 +204,13 @@ TEST_CASE("parse_move_notation - Double pawn move (cat moves twice)", "[BGS Move
     auto move = parse_move_notation("Cb7", board, turn, padding);
 
     REQUIRE(move.has_value());
+    REQUIRE(move->size() == 2);
     // Both actions should be cat pawn moves
-    CHECK(std::holds_alternative<PawnMove>(move->first));
-    CHECK(std::holds_alternative<PawnMove>(move->second));
+    CHECK(std::holds_alternative<PawnMove>((*move)[0]));
+    CHECK(std::holds_alternative<PawnMove>((*move)[1]));
 
-    auto first_move = std::get<PawnMove>(move->first);
-    auto second_move = std::get<PawnMove>(move->second);
+    auto first_move = std::get<PawnMove>((*move)[0]);
+    auto second_move = std::get<PawnMove>((*move)[1]);
     CHECK(first_move.pawn == Pawn::Cat);
     CHECK(second_move.pawn == Pawn::Cat);
 
@@ -226,8 +229,9 @@ TEST_CASE("parse_move_notation - Double pawn move straight line", "[BGS Move Par
     auto move = parse_move_notation("Ca6", board, turn, padding);
 
     REQUIRE(move.has_value());
-    auto first_move = std::get<PawnMove>(move->first);
-    auto second_move = std::get<PawnMove>(move->second);
+    REQUIRE(move->size() == 2);
+    auto first_move = std::get<PawnMove>((*move)[0]);
+    auto second_move = std::get<PawnMove>((*move)[1]);
 
     CHECK(first_move.pawn == Pawn::Cat);
     CHECK(second_move.pawn == Pawn::Cat);

@@ -154,14 +154,14 @@ std::string cell_notation(Cell cell, int rows) {
     // Flip row: internal row 0 is at top, official row 1 is at bottom
     // For a board with R rows: internal row r -> official row (R - r)
     int official_row = rows - cell.row;
-    if (official_row < 1 || official_row > int(kRowLabels.size()) || cell.column < 0 ||
+    if (official_row < 1 || cell.column < 0 ||
         cell.column >= int(kColumnLabels.size())) {
         throw std::runtime_error(std::format(
             "Cell coordinates ({}, {}) cannot be expressed as standard notation for {} rows",
             cell.column, cell.row, rows));
     }
     std::stringstream out;
-    out << kColumnLabels[cell.column] << kRowLabels[official_row - 1];
+    out << kColumnLabels[cell.column] << official_row;
     return out.str();
 }
 
