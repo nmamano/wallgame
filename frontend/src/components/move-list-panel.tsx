@@ -112,7 +112,7 @@ export function MoveListPanel({
           ))}
         </div>
       </div>
-      <div className="px-2 py-1 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0 justify-items-center">
+      <div className="px-2 py-1 border-t grid grid-cols-4 gap-1 bg-muted/30 flex-shrink-0 justify-items-center select-none">
         <Button
           variant="ghost"
           size="icon"

@@ -1,3 +1,0 @@
-- Clicking the '>' button on the move history too much ends up selecting the text of the last move. Text selection should not be triggered by these buttons ever.
-- Distance calculations are wrong for classic. it calculates to the wrong pawn.
-- Puzzles don't have music controls like solo campaign does.

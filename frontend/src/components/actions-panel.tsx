@@ -575,7 +575,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
           {incomingSection}
         </div>
       </div>
-      <div className="grid grid-cols-2 gap-1.5 lg:gap-2 h-[64px] lg:h-[84px]">
+      <div className="grid grid-cols-2 gap-1.5 lg:gap-2 h-[64px] lg:h-[84px] select-none">
         <Button
           variant="outline"
           className="w-full justify-start gap-1.5 lg:gap-2 text-xs lg:text-sm h-8 lg:h-9 px-2 lg:px-3"
