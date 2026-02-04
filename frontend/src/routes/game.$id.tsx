@@ -119,7 +119,7 @@ function GamePageContent() {
   const chatTabsHeight = 3;
   const chatInputHeight = 4;
   const chatChannelsHeight = 2.5;
-  const stagedActionsButtonsHeight = 3.5; // Space for buttons below board (mt-4 + button height)
+  const stagedActionsButtonsHeight = 4.5; // Space for buttons below board (mt-4 + button height + mb-2)
 
   // Minimum heights for adjustable components
   const minBoardContainerHeight =

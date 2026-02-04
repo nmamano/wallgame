@@ -214,7 +214,7 @@ export function BoardPanel({
 
       {/* Action messaging + staged action buttons */}
       <div
-        className={`mt-2 lg:mt-4 w-full ${
+        className={`mt-2 lg:mt-4 mb-1 lg:mb-2 w-full ${
           showStagedActionControls
             ? "grid grid-cols-3 items-center gap-2 lg:gap-3"
             : "flex items-center justify-start"
