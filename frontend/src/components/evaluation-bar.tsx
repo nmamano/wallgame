@@ -47,7 +47,7 @@ export function EvaluationBar({
 
   return (
     // Container always renders with fixed height for space allocation
-    <div className="w-full flex items-center gap-2 py-2">
+    <div className="w-full flex items-center py-2">
       {/* The bar itself - always rendered for consistent spacing */}
       <div
         className={cn(
@@ -77,11 +77,13 @@ export function EvaluationBar({
         )}
       </div>
 
-      {/* Eval number display - next to the bar */}
+      {/* Eval number display - always rendered for consistent height, collapses width when hidden */}
       <div
         className={cn(
-          "text-[11px] font-mono font-semibold tabular-nums min-w-[4.5ch] text-right",
-          isVisible ? "text-muted-foreground" : "text-transparent",
+          "text-[11px] font-mono font-semibold tabular-nums text-right overflow-hidden",
+          isVisible
+            ? "ml-2 min-w-[4.5ch] text-muted-foreground"
+            : "w-0 min-w-0",
         )}
       >
         {evaluation !== null ? formatEval(evaluation) : "—"}
