@@ -51,7 +51,9 @@ export const BOT_GAME_TIME_CONTROL: TimeControlConfig = {
 /**
  * Check if a time control config represents unlimited time (no time control).
  */
-export function isUnlimitedTimeControl(timeControl: TimeControlConfig): boolean {
+export function isUnlimitedTimeControl(
+  timeControl: TimeControlConfig,
+): boolean {
   return timeControl.preset === "unlimited";
 }
 

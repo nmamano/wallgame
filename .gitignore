@@ -17,3 +17,4 @@ deep-wallwars/models_*/
 bot-4-debug.log
 .cache/
 .claude/settings.local.json
+logs/*
