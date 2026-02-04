@@ -331,6 +331,26 @@ export const getReplayGame = async (
   return buildReplayGameFromRow(game);
 };
 
+/**
+ * Like getReplayGame but without incrementing the view counter.
+ * Used by the eval bar to load game data without side effects.
+ */
+export const getReplayGameReadonly = async (
+  gameId: string,
+): Promise<ReplayGameData | null> => {
+  const [game] = await db
+    .select(replayGameSelect)
+    .from(gamesTable)
+    .where(eq(gamesTable.gameId, gameId))
+    .limit(1);
+
+  if (!game) {
+    return null;
+  }
+
+  return buildReplayGameFromRow(game);
+};
+
 export const getRandomShowcaseGame =
   async (): Promise<ReplayGameData | null> => {
     const [game] = await db

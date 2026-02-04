@@ -40,6 +40,7 @@ import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 
 import { getSession } from "../games/store";
+import { getReplayGameReadonly } from "../db/game-queries";
 import { findEvalBot } from "../games/custom-bot-store";
 import {
   getBgs,
@@ -291,6 +292,102 @@ const initializeBgsHistory = async (
 // ============================================================================
 
 /**
+ * Handle eval handshake for games only in the database (not in memory).
+ * These are always finished replays, so we use an ephemeral BGS:
+ * create it, replay all moves, send history, then close immediately.
+ */
+const handleDatabaseGameHandshake = async (
+  ctx: WSContext,
+  socket: EvalSocket,
+  message: EvalHandshakeRequest,
+): Promise<void> => {
+  const { gameId, variant, boardWidth, boardHeight } = message;
+
+  // Load the game from the database
+  const replayData = await getReplayGameReadonly(gameId);
+  if (!replayData) {
+    send(ctx, {
+      type: "eval-handshake-rejected",
+      code: "GAME_NOT_FOUND",
+      message: "Game not found",
+    });
+    return;
+  }
+
+  // Find an official eval bot
+  const evalBotResult = findEvalBot(variant, boardWidth, boardHeight);
+  if (!evalBotResult) {
+    send(ctx, {
+      type: "eval-handshake-rejected",
+      code: "NO_BOT",
+      message: "No evaluation bot available for this variant and board size",
+    });
+    return;
+  }
+
+  const { compositeId: botCompositeId } = evalBotResult;
+  socket.botCompositeId = botCompositeId;
+
+  const bgsId = `${gameId}_${nanoid()}`;
+  const { config, history } = replayData.state;
+  const moves = history.map((entry) => ({ notation: entry.notation }));
+
+  // Accept handshake and notify client of pending initialization
+  send(ctx, { type: "eval-handshake-accepted" });
+  send(ctx, { type: "eval-pending", totalMoves: moves.length });
+
+  // Build BGS config from the stored game configuration
+  const bgsConfig: BgsConfig = {
+    variant: config.variant,
+    boardWidth: config.boardWidth,
+    boardHeight: config.boardHeight,
+    initialState: config.variantConfig,
+  };
+
+  // Initialize BGS by replaying all moves
+  const initResult = await initializeBgsHistory(
+    botCompositeId,
+    bgsId,
+    gameId,
+    bgsConfig,
+    moves,
+  );
+
+  if (!initResult.success) {
+    send(ctx, {
+      type: "eval-error",
+      code: "INTERNAL_ERROR",
+      message: initResult.error,
+    });
+    return;
+  }
+
+  // Send the full evaluation history
+  socket.bgsId = bgsId;
+  send(ctx, { type: "eval-history", entries: initResult.history });
+
+  console.info("[eval-ws] database game eval bar initialized", {
+    socketId: socket.id,
+    gameId,
+    bgsId,
+    historyLength: initResult.history.length,
+  });
+
+  // Close BGS immediately — replays don't need streaming updates
+  try {
+    await endBgsSession(botCompositeId, bgsId);
+    endBgs(bgsId);
+    socket.bgsId = null;
+    console.info("[eval-ws] database replay BGS closed", { bgsId, gameId });
+  } catch (error) {
+    console.error("[eval-ws] failed to close database replay BGS", {
+      error,
+      bgsId,
+    });
+  }
+};
+
+/**
  * Handle eval handshake request.
  * This is the main entry point for eval bar connections.
  */
@@ -311,17 +408,17 @@ const handleHandshake = async (
     return;
   }
 
-  // Try to get the game session
-  let session: ReturnType<typeof getSession>;
+  // Try to get the game session (in-memory first, then DB fallback)
+  let session: ReturnType<typeof getSession> | null = null;
   try {
     session = getSession(gameId);
   } catch {
-    send(ctx, {
-      type: "eval-handshake-rejected",
-      code: "GAME_NOT_FOUND",
-      message: "Game not found",
-    });
-    return;
+    // Not in memory — will try DB below
+  }
+
+  if (!session) {
+    // Game not in memory — try loading from database (past game replay)
+    return handleDatabaseGameHandshake(ctx, socket, message);
   }
 
   // Find an official eval bot
@@ -815,13 +912,23 @@ export const registerEvalSocketRoute = (app: Hono): typeof websocket => {
  */
 setEvalUpdateListener((gameId, bgsId, entry) => {
   // Find all eval sockets connected to this game's BGS
-  for (const [, socket] of evalSockets) {
+  let sentCount = 0;
+  for (const [socketId, socket] of evalSockets) {
     if (socket.gameId === gameId && socket.bgsId === bgsId) {
       send(socket.ctx, {
         type: "eval-update",
         ply: entry.ply,
         evaluation: entry.evaluation,
         bestMove: entry.bestMove,
+      });
+      sentCount++;
+    } else {
+      console.debug("[eval-ws] socket skipped (no match)", {
+        socketId,
+        socketGameId: socket.gameId,
+        socketBgsId: socket.bgsId,
+        targetGameId: gameId,
+        targetBgsId: bgsId,
       });
     }
   }
@@ -831,5 +938,7 @@ setEvalUpdateListener((gameId, bgsId, entry) => {
     bgsId,
     ply: entry.ply,
     evaluation: entry.evaluation,
+    sentToSockets: sentCount,
+    totalEvalSockets: evalSockets.size,
   });
 });
