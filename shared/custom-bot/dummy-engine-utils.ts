@@ -1,4 +1,4 @@
-import type { Cell, PlayerId, SerializedGameState } from "../domain/game-types";
+import type { Cell, SerializedGameState } from "../domain/game-types";
 import { Grid } from "../domain/grid";
 import { moveFromStandardNotation } from "../domain/standard-notation";
 
@@ -14,14 +14,6 @@ export function reconstructGrid(state: SerializedGameState): Grid {
   }
 
   return grid;
-}
-
-export function getCatGoal(
-  state: SerializedGameState,
-  myPlayerId: PlayerId,
-): Cell {
-  const opponentId: PlayerId = myPlayerId === 1 ? 2 : 1;
-  return state.pawns[opponentId].mouse;
 }
 
 /**

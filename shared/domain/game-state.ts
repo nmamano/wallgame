@@ -164,6 +164,29 @@ export class GameState {
     return pawnType === "mouse";
   }
 
+  /** Returns the target cell for a player's cat based on game variant.
+   *  - Classic: own home (stored in mouse slot)
+   *  - Survival: the mouse (always player 2's mouse slot)
+   *  - Standard/Freestyle: opponent's mouse
+   *
+   * Optionally accepts pawns to use instead of this.pawns (e.g. for
+   * mid-move wall legality checks where pawn positions are pending).
+   */
+  goalCell(
+    playerId: PlayerId,
+    pawns?: Record<PlayerId, { cat: Cell; mouse: Cell }>,
+  ): Cell {
+    const p = pawns ?? this.pawns;
+    if (this.config.variant === "classic") {
+      return p[playerId].mouse;
+    }
+    if (this.config.variant === "survival") {
+      return p[2].mouse;
+    }
+    const opponent: PlayerId = playerId === 1 ? 2 : 1;
+    return p[opponent].mouse;
+  }
+
   clone(): GameState {
     const newGame = new GameState(this.config, this.lastMoveTime);
     newGame.grid = this.grid.clone();
@@ -422,25 +445,11 @@ export class GameState {
                 [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
                 [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
               ];
-        // Wall legality: each cat must keep a path to its target.
-        // - Standard/Freestyle: cat chases opponent's mouse
-        // - Classic: cat reaches its own home (stored in mouse slot)
-        // - Survival: single cat chases single mouse
-        const mice: [Cell, Cell] =
-          this.config.variant === "survival"
-            ? [
-                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
-                [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]],
-              ]
-            : this.config.variant === "classic"
-              ? [
-                  [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]], // P1's home for P1's cat
-                  [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]], // P2's home for P2's cat
-                ]
-              : [
-                  [pendingPawns[2].mouse[0], pendingPawns[2].mouse[1]], // P2's mouse for P1's cat
-                  [pendingPawns[1].mouse[0], pendingPawns[1].mouse[1]], // P1's mouse for P2's cat
-                ];
+        // Wall legality: each cat must keep a path to its goal.
+        const mice: [Cell, Cell] = [
+          this.goalCell(1, pendingPawns),
+          this.goalCell(2, pendingPawns),
+        ];
 
         if (!nextGrid.canBuildWall(cats, mice, wall)) {
           throw new Error("Illegal wall placement");
@@ -507,17 +516,17 @@ export class GameState {
     this.lastMoveTime = timestamp;
 
     if (myCatCaught) {
-      // One-move-rule only applies to standard/freestyle (not survival or classic)
+      // One-move-rule: if P1 reaches their goal first, P2 gets a draw
+      // when they're within 2 steps of their own goal (not applicable to survival)
       if (
         player === 1 &&
-        !isClassicVariant &&
         this.config.variant !== "survival" &&
         this.isPawnActive(opponent, "cat") &&
         this.isPawnActive(player, "mouse")
       ) {
         const dist = this.grid.distance(
           [opPawns.cat[0], opPawns.cat[1]],
-          [nextMyPawns.mouse[0], nextMyPawns.mouse[1]],
+          this.goalCell(opponent),
         );
         if (dist <= 2 && dist !== -1) {
           this.status = "finished";
