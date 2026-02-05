@@ -1,0 +1,1 @@
+- Finish move with 0 actions doesn't work.

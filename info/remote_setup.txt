@@ -1,0 +1,68 @@
+Me (the human) is connected remotely from a macbook. 
+The dev server/vite frontend runs on a remote windows machine.
+The bot client runs on a WSL running inside windows.
+The mac, windows, and WSL, are all running tailscale and are connected to the same network.
+
+I have a local tmux session:
+
+```
+tmux new -s rembottest
+```
+
+or
+
+```
+tmux attach -t rembottest
+```
+
+I split the session into 4 panels with `Ctrl+a %` and `Ctrl+a "`:
+
+1. Server panel:
+
+I ssh to the windows machine with port forwarding so I can play the game locally.
+I tee the logs to a remote file so remote claude can read them.
+
+```
+ssh -L 3000:localhost:3000 nilo@{WINDOWS_IP}
+cd repos/wallgame
+bun run dev 2>&1 | tee logs/server.log
+```
+
+2. Frontend panel:
+
+Analogous to backend.
+
+```
+ssh -L 5173:localhost:5173 nilo@{WINDOWS_IP}
+cd repos/wallgame/frontend
+bun run dev 2>&1 | tee ../logs/frontend.log
+```
+
+3. Bot client panel:
+
+I connect directly to the WSL running inside windows, since deep-wallwars only runs on linux.
+I run the bot client with deep-wallwars attached as the engine.
+I set up forwarding based on the IP/port created by Vite so it can connect to the server running on the windows machine.
+I tee the logs to a remote file so remote claude can read them.
+
+```
+ssh nilo@{WSL_IP}
+cd /mnt/c/Users/Nilo/repos/wallgame/official-custom-bot-client/
+bun run start --client-id deep-wallwars-test --config deep-wallwars.config.json --log-level debug 2>&1 | tee ../logs/bot-client.log
+```
+
+Notes:
+- IP/Port forwarding for the bot client is setup inside the bot client config file.
+- Vite proxies /api and /ws to port 3000, so the bot connecting to $WINDOWS_IP:5173 works fine.
+- Pass the official token bot to use the bot for the eval bar.
+
+4. Claude panel:
+
+I ssh to the windows machine and run claude. Claude can read all the local log files directly as I play the game remotely.
+
+```
+ssh nilo@{WINDOWS_IP}
+cd repos/wallgame/
+claude
+```
+
