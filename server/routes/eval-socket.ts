@@ -45,7 +45,6 @@ import { findEvalBot } from "../games/custom-bot-store";
 import {
   getBgs,
   endBgs,
-  addHistoryEntry,
   getBgsHistory,
   setEvalUpdateListener,
 } from "../games/bgs-store";
@@ -208,7 +207,8 @@ const initializeBgsHistory = async (
       bestMove: response.bestMove,
     };
     history.push(entry);
-    addHistoryEntry(bgsId, entry);
+    // Note: addHistoryEntry is NOT called here because handleEvaluateResponse
+    // in custom-bot-socket.ts already adds it when the bot responds successfully.
   } catch (error) {
     const msg =
       error instanceof Error
@@ -258,7 +258,8 @@ const initializeBgsHistory = async (
         bestMove: response.bestMove,
       };
       history.push(entry);
-      addHistoryEntry(bgsId, entry);
+      // Note: addHistoryEntry is NOT called here because handleEvaluateResponse
+      // in custom-bot-socket.ts already adds it when the bot responds successfully.
     } catch (error) {
       const msg =
         error instanceof Error ? error.message : `Failed at move ${i + 1}`;
@@ -713,8 +714,8 @@ export const notifyEvalBarMove = async (
       evaluation: response.evaluation,
       bestMove: response.bestMove,
     };
-    // addHistoryEntry triggers the listener which broadcasts to eval sockets
-    addHistoryEntry(bgsId, entry);
+    // Note: addHistoryEntry is NOT called here because handleEvaluateResponse
+    // in custom-bot-socket.ts already adds it (and triggers the broadcast listener).
     shared.cachedHistory.push(entry);
   } catch (error) {
     console.error("[eval-ws] failed to update eval bar", {
