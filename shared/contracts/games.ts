@@ -15,6 +15,7 @@ export const timeControlValues = [
   "blitz",
   "rapid",
   "classical",
+  "unlimited",
 ] as const;
 export const variantValues = ["standard", "classic", "freestyle"] as const;
 
@@ -22,7 +23,7 @@ export const timeControlSchema = z.object({
   initialSeconds: z
     .number()
     .int()
-    .min(10)
+    .min(0) // 0 for unlimited time control
     .max(60 * 60),
   incrementSeconds: z.number().int().min(0).max(60),
   preset: z.enum(timeControlValues).optional(),

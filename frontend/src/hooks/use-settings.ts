@@ -729,7 +729,11 @@ function useSettingsInternal(
           gameConfig.timeControl.incrementSeconds
       ) {
         // Only update preset if it changed, API still uses preset
-        if (newConfig.timeControl.preset) {
+        // Skip "unlimited" since it's not a user-selectable preference
+        if (
+          newConfig.timeControl.preset &&
+          newConfig.timeControl.preset !== "unlimited"
+        ) {
           updateTimeControlMutation.mutate(newConfig.timeControl.preset);
         }
       }

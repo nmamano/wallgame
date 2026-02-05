@@ -105,7 +105,9 @@ export const settingsMutations = {
       api.settings.pawn.$put({ json: { pawnType, pawnShape } }),
     ),
 
-  updateTimeControl: (timeControl: TimeControlPreset) =>
+  updateTimeControl: (
+    timeControl: "bullet" | "blitz" | "rapid" | "classical",
+  ) =>
     handleResponse<SuccessResponse>(
       api.settings["time-control"].$put({ json: { timeControl } }),
     ),

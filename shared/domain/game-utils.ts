@@ -34,6 +34,12 @@ export function timeControlConfigFromPreset(
         incrementSeconds: 0,
         preset: "classical",
       };
+    case "unlimited":
+      return {
+        initialSeconds: 0,
+        incrementSeconds: 0,
+        preset: "unlimited",
+      };
   }
 }
 

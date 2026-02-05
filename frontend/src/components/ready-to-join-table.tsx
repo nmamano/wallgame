@@ -95,6 +95,7 @@ function formatTimeControl(timeControl: TimeControlConfig): string {
       blitz: "blitz (3+2)",
       rapid: "rapid (10+2)",
       classical: "classical (30+0)",
+      unlimited: "unlimited",
     };
     return formats[timeControl.preset];
   }
@@ -108,6 +109,7 @@ function getTimeControlIcon(timeControl: TimeControlConfig): string {
     blitz: "/time_control_icons/activity.lichess-blitz.webp",
     rapid: "/time_control_icons/activity.lichess-rapid.webp",
     classical: "/time_control_icons/activity.lichess-classical.webp",
+    unlimited: "", // No icon for unlimited
   };
   return iconMap[timeControl.preset] || "";
 }
