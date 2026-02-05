@@ -45,7 +45,7 @@ export function EvalToggle({
         {isLoading ? (
           <>
             <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Connecting...</span>
+            <span>Evaluating...</span>
           </>
         ) : (
           <span>Eval</span>

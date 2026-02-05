@@ -229,6 +229,12 @@ export const gamesRoute = new Hono()
     getOptionalUserMiddleware,
     zValidator("query", getGameSessionQuerySchema),
     async (c) => {
+      // Prevent browser caching — this endpoint returns session state that
+      // changes on every join/move.  Without this, Chrome's in-process memory
+      // cache can serve a stale "waiting" response to a second incognito window
+      // that shares the same cache partition as the first.
+      c.header("Cache-Control", "no-store");
+
       try {
         const { id } = c.req.param();
         const { token } = c.req.valid("query");
