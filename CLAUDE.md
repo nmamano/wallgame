@@ -240,6 +240,19 @@ addressing the root cause?" Follow these rules strictly:
 3. **Never stack hacks.** If a first fix attempt doesn't work, do NOT add more complexity on top.
    Step back, re-examine the root cause, and consider whether the entire approach is wrong.
 
+4. **Detect and break thrashing loops.** If you've made 2+ fix attempts for the same bug and are
+   back where you started, STOP. You are thrashing. The problem is not the code — it's that you lack
+   empirical data. Do NOT attempt another code fix. Instead:
+   - **Instrument first:** Add temporary `console.log` statements at every critical junction in the
+     failing code path. Log variable values, not just "got here" messages.
+   - **Inspect the DOM:** If the UI is frozen/broken, check DevTools Elements panel and Computed
+     styles. Is `pointer-events: none` set? Is there an overlay? Is the element even in the DOM?
+   - **Check the Performance tab:** Is the main thread blocked? Is there an infinite loop?
+   - **Verify your assumptions:** You've been theorizing without proof. One empirical observation
+     beats ten code-reading sessions. Get hard data before writing any more fix code.
+
+   Only after you have concrete evidence of what's actually happening should you attempt another fix.
+
 ## Documentation
 
 See `/info/` for detailed design docs including:

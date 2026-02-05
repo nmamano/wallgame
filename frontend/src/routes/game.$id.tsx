@@ -27,16 +27,8 @@ function GamePage() {
 function GamePageContent() {
   const { id } = Route.useParams();
   const controller = useGamePageController(id);
-  const {
-    accessKind,
-    isReadOnly,
-    matching,
-    board,
-    timers,
-    actions,
-    chat,
-    info,
-  } = controller;
+  const { accessKind, matching, board, timers, actions, chat, info } =
+    controller;
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
 
@@ -184,25 +176,21 @@ function GamePageContent() {
           </div>
         )}
 
-        {/* Only show matching panel for players */}
-        {!isReadOnly && (
-          <>
-            <MatchingStagePanel
-              isOpen={matching.isOpen}
-              players={matching.players}
-              shareUrl={matching.shareUrl}
-              statusMessage={matching.statusMessage}
-              canAbort={matching.canAbort}
-              onAbort={matching.onAbort}
-              primaryAction={matching.primaryAction}
-              matchTypeHint={matching.matchType}
-              localRole={matching.localRole}
-              onJoinerDismiss={matching.onJoinerDismiss}
-              showShareInstructions={matching.showShareInstructions}
-              waitingReason={matching.waitingReason}
-            />
-          </>
-        )}
+        {/* Matching panel renders null when isOpen is false */}
+        <MatchingStagePanel
+          isOpen={matching.isOpen}
+          players={matching.players}
+          shareUrl={matching.shareUrl}
+          statusMessage={matching.statusMessage}
+          canAbort={matching.canAbort}
+          onAbort={matching.onAbort}
+          primaryAction={matching.primaryAction}
+          matchTypeHint={matching.matchType}
+          localRole={matching.localRole}
+          onJoinerDismiss={matching.onJoinerDismiss}
+          showShareInstructions={matching.showShareInstructions}
+          waitingReason={matching.waitingReason}
+        />
 
         <div
           className="flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit"
