@@ -2041,7 +2041,7 @@ const checkOrigin = (c: Context): boolean => {
 
   const allowedOrigins = isDev
     ? ["http://localhost:5173"]
-    : ["https://wallgame.fly.dev"];
+    : ["https://wallgame.fly.dev", "https://wallgame.io"];
 
   if (origin && !allowedOrigins.includes(origin)) {
     console.warn("[ws] rejected connection from unauthorized origin", {
