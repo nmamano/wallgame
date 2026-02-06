@@ -31,6 +31,7 @@ namespace nv = nvinfer1;
 
 DEFINE_string(model, "", "Path to TensorRT model file (.trt) or 'simple' for simple policy");
 DEFINE_int32(samples, 1000, "Number of MCTS samples per move");
+DEFINE_int32(parallel_samples, 32, "Max parallel MCTS samples (controls GPU batch utilization)");
 DEFINE_uint32(seed, 42, "Random seed for MCTS");
 DEFINE_uint64(cache_size, 100'000, "Size of the MCTS evaluation cache");
 DEFINE_int32(model_rows, 8, "Model rows (for --model=simple)");
@@ -247,6 +248,7 @@ int main(int argc, char** argv) {
         // Configure BGS engine
         bgs::BgsEngineConfig config;
         config.samples_per_move = FLAGS_samples;
+        config.max_parallel_samples = FLAGS_parallel_samples;
         config.base_seed = FLAGS_seed;
         config.model_rows = model_rows;
         config.model_columns = model_columns;
@@ -313,8 +315,8 @@ int main(int argc, char** argv) {
         stdin_pipe->setReadCB(&stdin_reader);
 
         XLOG(INFO, "Deep Wallwars V3 BGS Engine started");
-        XLOGF(INFO, "Configuration: samples={}, threads={}, cache={}",
-              FLAGS_samples, FLAGS_thread_pool_size, FLAGS_cache_size);
+        XLOGF(INFO, "Configuration: samples={}, parallel={}, threads={}, cache={}",
+              FLAGS_samples, FLAGS_parallel_samples, FLAGS_thread_pool_size, FLAGS_cache_size);
 
         // Run event loop
         evb.loopForever();

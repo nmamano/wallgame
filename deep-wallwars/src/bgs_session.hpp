@@ -22,7 +22,7 @@ using json = nlohmann::json;
 
 struct BgsEngineConfig {
     int samples_per_move = 1000;      // MCTS samples per evaluate_position
-    int max_parallel_samples = 4;     // Parallelism within a single MCTS
+    int max_parallel_samples = 32;    // Parallelism within a single MCTS
     std::uint32_t base_seed = 42;     // Base seed for reproducibility
     int model_rows = 8;
     int model_columns = 8;
