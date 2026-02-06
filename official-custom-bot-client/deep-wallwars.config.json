@@ -69,6 +69,6 @@
   "engineCommands": {
     "dw-classic-8x8": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/build/8x8_750000.trt --samples 1000",
     "dw-standard-8x8": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_8x8_standard/model_27.trt --samples 1000",
-    "dw-universal": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_12x10_universal/model_48.trt --samples 1000"
+    "dw-universal": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_12x10_universal/model_48.trt --samples 10000 --parallel_samples 64"
   }
 }
