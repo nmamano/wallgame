@@ -2,10 +2,13 @@ import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { PlayerConfiguration } from "@/components/player-configuration";
-import { ReadyToJoinTable } from "@/components/ready-to-join-table";
-import type { GameConfiguration } from "../../../shared/domain/game-types";
+import { BotsPanel } from "@/components/game-setup/bots-panel";
+import {
+  HumanGamesPanel,
+  type GameWithMatchStatus,
+} from "@/components/game-setup/human-games-panel";
 import type {
+  GameConfiguration,
   TimeControlPreset,
   Variant,
   GameSnapshot,
@@ -17,9 +20,7 @@ import {
   normalizeFreestyleConfig,
 } from "../../../shared/domain/freestyle-setup";
 import { Input } from "@/components/ui/input";
-import type { PlayerType } from "@/lib/gameViewModel";
 import { Switch } from "@/components/ui/switch";
-import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Label } from "@/components/ui/label";
 import {
   Select,
@@ -28,7 +29,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from "@/components/ui/select";
-import { Info, Loader2 } from "lucide-react";
+import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
@@ -40,55 +41,38 @@ export const Route = createFileRoute("/game-setup")({
   component: GameSetup,
 });
 
-// Helper function to determine number of players based on variant
-function getPlayerCountForVariant(variant: Variant): number {
-  // For now, assume all variants support 2 players
-  // This can be extended later for variants with more players
-  switch (variant) {
-    case "standard":
-    case "classic":
-    case "freestyle":
-      return 2;
-    default:
-      return 2;
-  }
-}
+// --- Tab types and constants ---
 
-// Helper function to get default player type for other players based on mode
-function getDefaultOtherPlayerType(mode?: string): PlayerType {
+type SetupTab = "vs-ai" | "find-others" | "invite-friend" | "local-play";
+
+const TABS: SetupTab[] = [
+  "find-others",
+  "invite-friend",
+  "vs-ai",
+  "local-play",
+];
+
+const TAB_LABELS: Record<SetupTab, string> = {
+  "find-others": "Find Others",
+  "invite-friend": "Invite Friend",
+  "vs-ai": "Play vs AI",
+  "local-play": "Play Locally",
+};
+
+function getDefaultTab(mode?: string): SetupTab {
   switch (mode) {
     case "vs-ai":
-      // In V2, bots are selected from the bots table, not as a player type
-      return "you";
+      return "vs-ai";
     case "with-others":
-      return "matched-user";
+      return "find-others";
     case "invite-friend":
-      return "friend";
+      return "invite-friend";
     default:
-      return "you";
+      return "vs-ai";
   }
 }
 
-function buildDefaultPlayerConfigs(
-  variant: Variant,
-  mode?: string,
-): PlayerType[] {
-  const playerCount = getPlayerCountForVariant(variant);
-  const defaultOtherPlayerType = getDefaultOtherPlayerType(mode);
-  const newConfigs: PlayerType[] = Array.from(
-    { length: playerCount },
-    () => defaultOtherPlayerType,
-  );
-  newConfigs[0] = "you";
-  return newConfigs;
-}
-
-const PLAYER_B_BASE_OPTIONS: PlayerType[] = ["friend", "matched-user"];
-
-const PLAYER_B_ALLOWED_OPTIONS: PlayerType[] = [
-  "you",
-  ...PLAYER_B_BASE_OPTIONS,
-];
+// --- Board size helpers ---
 
 const BOARD_SIZE_MIN = 4;
 const BOARD_SIZE_MAX = 20;
@@ -110,23 +94,10 @@ const isBoardSizeDraft = (value: string): boolean => {
 const clampBoardSize = (value: number): number =>
   Math.min(Math.max(value, BOARD_SIZE_MIN), BOARD_SIZE_MAX);
 
-// Type for tracking which fields don't match
-interface GameMatchStatus {
-  variant: boolean;
-  rated: boolean;
-  timeControl: boolean;
-  boardSize: boolean;
-  allMatch: boolean;
-}
-
-// Extended type with match status
-interface GameWithMatchStatus extends GameSnapshot {
-  matchStatus: GameMatchStatus;
-}
+// --- Main component ---
 
 function GameSetup() {
   // Get mode from sessionStorage (set when navigating from landing page)
-  // This avoids showing it in the URL
   const [mode] = useState<string | undefined>(() => {
     if (typeof window !== "undefined") {
       return sessionStorage.getItem("game-setup-mode") ?? undefined;
@@ -141,6 +112,10 @@ function GameSetup() {
     }
   }, [mode]);
 
+  const [activeTab, setActiveTab] = useState<SetupTab>(() =>
+    getDefaultTab(mode),
+  );
+
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
@@ -149,14 +124,10 @@ function GameSetup() {
   const [botGameError, setBotGameError] = useState<string | null>(null);
   const playVsBotMutation = usePlayVsBotMutation();
 
-  // TODO: Get user rating from API when backend is ready
-  // Ratings are variant and time control specific, so we'll need to fetch the appropriate rating
-
   // Game configuration state - initialize from user settings
-  const [gameConfig, setGameConfig] = useState<GameConfiguration>(() => {
-    // Use settings from useSettings hook, fallback to defaults
-    return settings.gameConfig;
-  });
+  const [gameConfig, setGameConfig] = useState<GameConfiguration>(
+    () => settings.gameConfig,
+  );
 
   // Update game config when settings are loaded (only once on initial load)
   const [hasInitialized, setHasInitialized] = useState(false);
@@ -165,11 +136,10 @@ function GameSetup() {
       setGameConfig(settings.gameConfig);
       setHasInitialized(true);
     }
-    // Only depend on isLoadingSettings and hasInitialized - don't watch settings.gameConfig
-    // to prevent resetting user changes when variant or other settings change
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.isLoadingSettings, hasInitialized]);
 
+  // Board size draft state
   const [boardWidthInput, setBoardWidthInput] = useState(() =>
     String(gameConfig.boardWidth),
   );
@@ -185,60 +155,28 @@ function GameSetup() {
     setBoardHeightInput(String(gameConfig.boardHeight));
   }, [gameConfig.boardHeight]);
 
-  // Player configurations state
-  const [playerConfigs, setPlayerConfigs] = useState<PlayerType[]>(() =>
-    buildDefaultPlayerConfigs(gameConfig.variant, mode),
-  );
+  // Rated games only available on find-others and invite-friend tabs
+  const canRatedGame =
+    activeTab === "find-others" || activeTab === "invite-friend";
 
-  // Initialize player configs based on variant and mode
-  useEffect(() => {
-    setPlayerConfigs(buildDefaultPlayerConfigs(gameConfig.variant, mode));
-  }, [gameConfig.variant, mode]);
-
-  const playerBLabelOverrides = { you: "Also you" } as const;
-
-  // Check if rated games are allowed (only vs friend/matched user, no bots)
-  const canRatedGame = useMemo(() => {
-    const hasFriend = playerConfigs.includes("friend");
-    const hasMatchedUser = playerConfigs.includes("matched-user");
-
-    // Rated games are only allowed if:
-    // - The other player is "friend" or "matched-user"
-    return (hasFriend || hasMatchedUser) && playerConfigs.length === 2;
-  }, [playerConfigs]);
-
-  // Update rated status when player configs change or when not logged in
-  useEffect(() => {
-    if ((!canRatedGame || !isLoggedIn) && gameConfig.rated) {
-      setGameConfig((prev: GameConfiguration) => ({ ...prev, rated: false }));
+  // gameConfig stores the user's raw preferences (never clamped by tab/variant).
+  // getEffectiveConfig() applies contextual overrides for actual game creation.
+  const getEffectiveConfig = (): GameConfiguration => {
+    let config = normalizeFreestyleConfig({ ...gameConfig });
+    if (!canRatedGame || !isLoggedIn) {
+      config = { ...config, rated: false };
     }
-  }, [canRatedGame, isLoggedIn, gameConfig.rated]);
-
-  // Update player configs when variant changes
-  const handleGameConfigChange = (newConfig: GameConfiguration) => {
-    // Prevent setting rated to true if not allowed
-    const finalRated = canRatedGame && isLoggedIn ? newConfig.rated : false;
-    const normalizedConfig = normalizeFreestyleConfig({
-      ...newConfig,
-      rated: finalRated,
-    });
-    setGameConfig(normalizedConfig);
-
-    // Persist to settings (saves to server for logged-in users, localStorage for guests)
-    settings.setGameConfig(normalizedConfig);
-
-    // If variant changed, reset player configs (preserving mode-based defaults)
-    if (normalizedConfig.variant !== gameConfig.variant) {
-      setPlayerConfigs(
-        buildDefaultPlayerConfigs(normalizedConfig.variant, mode),
-      );
-    }
+    return config;
   };
 
+  const handleGameConfigChange = (newConfig: GameConfiguration) => {
+    setGameConfig(newConfig);
+    settings.setGameConfig(newConfig);
+  };
+
+  // Board size change handlers
   const handleBoardWidthChange = (nextValue: string) => {
-    if (!isBoardSizeDraft(nextValue)) {
-      return;
-    }
+    if (!isBoardSizeDraft(nextValue)) return;
 
     if (nextValue === "") {
       setBoardWidthInput(nextValue);
@@ -258,9 +196,7 @@ function GameSetup() {
   };
 
   const handleBoardHeightChange = (nextValue: string) => {
-    if (!isBoardSizeDraft(nextValue)) {
-      return;
-    }
+    if (!isBoardSizeDraft(nextValue)) return;
 
     if (nextValue === "") {
       setBoardHeightInput(nextValue);
@@ -284,13 +220,11 @@ function GameSetup() {
       setBoardWidthInput(String(gameConfig.boardWidth));
       return;
     }
-
     const numeric = Number(boardWidthInput);
     if (!Number.isFinite(numeric)) {
       setBoardWidthInput(String(gameConfig.boardWidth));
       return;
     }
-
     const clamped = clampBoardSize(numeric);
     setBoardWidthInput(String(clamped));
     if (clamped !== gameConfig.boardWidth) {
@@ -303,13 +237,11 @@ function GameSetup() {
       setBoardHeightInput(String(gameConfig.boardHeight));
       return;
     }
-
     const numeric = Number(boardHeightInput);
     if (!Number.isFinite(numeric)) {
       setBoardHeightInput(String(gameConfig.boardHeight));
       return;
     }
-
     const clamped = clampBoardSize(numeric);
     setBoardHeightInput(String(clamped));
     if (clamped !== gameConfig.boardHeight) {
@@ -317,76 +249,77 @@ function GameSetup() {
     }
   };
 
+  // Navigation
   const navigate = Route.useNavigate();
 
+  // Create game handler - match type is determined by the active tab
   const handleCreateGame = async () => {
     setCreateGameError(null);
     setBotGameError(null);
-    const isFriendGame = playerConfigs.includes("friend");
-    const isMatchmakingGame = playerConfigs.includes("matched-user");
+    const effectiveConfig = getEffectiveConfig();
 
-    if (isFriendGame || isMatchmakingGame) {
-      setIsCreatingGame(true);
-      try {
-        const matchType = isMatchmakingGame ? "matchmaking" : "friend";
-        const response = await createGameSession({
-          config: gameConfig,
-          matchType,
-          hostDisplayName: settings.displayName,
-          hostAppearance: {
-            pawnColor: settings.pawnColor,
-            catSkin: settings.catPawn,
-            mouseSkin: settings.mousePawn,
-            homeSkin: settings.homePawn,
-          },
-        });
-        // Get host's playerId from the snapshot (server randomly assigns Player 1 or 2)
-        const hostPlayer = response.snapshot.players.find(
-          (p) => p.role === "host",
+    if (activeTab === "local-play") {
+      const gameId = Math.random().toString(36).substring(2, 15);
+      if (typeof window !== "undefined") {
+        sessionStorage.setItem(
+          `game-config-${gameId}`,
+          JSON.stringify({
+            config: effectiveConfig,
+            players: ["you", "you"],
+          }),
         );
-        const hostPlayerId = hostPlayer?.playerId ?? 1;
-        saveGameHandshake({
-          gameId: response.gameId,
-          token: response.hostToken,
-          socketToken: response.socketToken,
-          role: "host",
-          playerId: hostPlayerId,
-          shareUrl: response.shareUrl,
-        });
-        void navigate({ to: `/game/${response.gameId}` });
-      } catch (error) {
-        setCreateGameError(
-          error instanceof Error
-            ? error.message
-            : "Unable to create game right now.",
-        );
-      } finally {
-        setIsCreatingGame(false);
       }
+      void navigate({ to: `/game/${gameId}` });
       return;
     }
 
-    // Local games (you vs you, etc.)
-    const gameId = Math.random().toString(36).substring(2, 15);
-    if (typeof window !== "undefined") {
-      sessionStorage.setItem(
-        `game-config-${gameId}`,
-        JSON.stringify({
-          config: gameConfig,
-          players: playerConfigs,
-        }),
+    // Online game: find-others or invite-friend
+    const matchType =
+      activeTab === "find-others" ? "matchmaking" : "friend";
+    setIsCreatingGame(true);
+    try {
+      const response = await createGameSession({
+        config: effectiveConfig,
+        matchType,
+        hostDisplayName: settings.displayName,
+        hostAppearance: {
+          pawnColor: settings.pawnColor,
+          catSkin: settings.catPawn,
+          mouseSkin: settings.mousePawn,
+          homeSkin: settings.homePawn,
+        },
+      });
+      const hostPlayer = response.snapshot.players.find(
+        (p) => p.role === "host",
       );
+      const hostPlayerId = hostPlayer?.playerId ?? 1;
+      saveGameHandshake({
+        gameId: response.gameId,
+        token: response.hostToken,
+        socketToken: response.socketToken,
+        role: "host",
+        playerId: hostPlayerId,
+        shareUrl: response.shareUrl,
+      });
+      void navigate({ to: `/game/${response.gameId}` });
+    } catch (error) {
+      setCreateGameError(
+        error instanceof Error
+          ? error.message
+          : "Unable to create game right now.",
+      );
+    } finally {
+      setIsCreatingGame(false);
     }
-    void navigate({ to: `/game/${gameId}` });
   };
 
-  // Matchmaking games state - fetched via WebSocket for real-time updates
+  // --- Matchmaking games (lobby WebSocket) ---
+
   const [matchmakingGames, setMatchmakingGames] = useState<GameSnapshot[]>([]);
   const [isLoadingGames, setIsLoadingGames] = useState(true);
   const lobbySocketRef = useRef<WebSocket | null>(null);
   const [isJoiningGame, setIsJoiningGame] = useState<string | null>(null);
 
-  // Build WebSocket URL for lobby
   const buildLobbySocketUrl = useCallback((): string => {
     const base = new URL(window.location.origin);
     base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
@@ -394,7 +327,6 @@ function GameSetup() {
     return base.toString();
   }, []);
 
-  // Connect to lobby WebSocket for real-time game list updates
   useEffect(() => {
     if (typeof window === "undefined") return;
 
@@ -404,7 +336,6 @@ function GameSetup() {
     const connect = () => {
       if (isCleanedUp) return;
 
-      // Close existing connection if any
       if (lobbySocketRef.current) {
         lobbySocketRef.current.close();
         lobbySocketRef.current = null;
@@ -433,7 +364,10 @@ function GameSetup() {
               setMatchmakingGames(msg.games);
             }
           } catch (error) {
-            console.error("[game-setup] failed to parse lobby message", error);
+            console.error(
+              "[game-setup] failed to parse lobby message",
+              error,
+            );
           }
         });
 
@@ -444,8 +378,6 @@ function GameSetup() {
             wasClean: event.wasClean,
           });
           lobbySocketRef.current = null;
-
-          // Only reconnect if not cleaned up and not a normal closure
           if (!isCleanedUp && event.code !== 1000) {
             reconnectTimeout = setTimeout(connect, 2000);
           }
@@ -454,7 +386,6 @@ function GameSetup() {
         socket.addEventListener("error", (event) => {
           console.error("[game-setup] lobby websocket error", event);
           setIsLoadingGames(false);
-          // Error will be followed by close event, which will handle reconnection
         });
       } catch (error) {
         console.error("[game-setup] failed to create websocket", error);
@@ -465,17 +396,18 @@ function GameSetup() {
       }
     };
 
-    // Small delay to ensure page is fully loaded before connecting
     const initialTimeout = setTimeout(connect, 100);
 
-    // Also fetch initially via REST in case WebSocket is slow
     void fetchMatchmakingGames()
       .then((games) => {
         setMatchmakingGames(games);
         setIsLoadingGames(false);
       })
       .catch((error) => {
-        console.error("[game-setup] failed to fetch matchmaking games", error);
+        console.error(
+          "[game-setup] failed to fetch matchmaking games",
+          error,
+        );
         setIsLoadingGames(false);
       });
 
@@ -492,26 +424,26 @@ function GameSetup() {
     };
   }, [buildLobbySocketUrl]);
 
-  // Check match status and sort games (matching first, then non-matching)
+  // Compute match status for human games using effective config
   const filteredAndSortedGames = useMemo(() => {
-    // Map games to include match status
+    const effective = getEffectiveConfig();
     const gamesWithStatus: GameWithMatchStatus[] = matchmakingGames.map(
       (game) => {
         const variantMatch =
-          !gameConfig.variant || game.config.variant === gameConfig.variant;
+          !effective.variant || game.config.variant === effective.variant;
         const ratedMatch =
-          gameConfig.rated === undefined ||
-          game.config.rated === gameConfig.rated;
+          effective.rated === undefined ||
+          game.config.rated === effective.rated;
         const timeControlMatch = !!(
           game.config.timeControl.preset &&
-          gameConfig.timeControl.preset &&
-          game.config.timeControl.preset === gameConfig.timeControl.preset
+          effective.timeControl.preset &&
+          game.config.timeControl.preset === effective.timeControl.preset
         );
         const boardSizeMatch =
-          !gameConfig.boardWidth ||
-          !gameConfig.boardHeight ||
-          (game.config.boardWidth === gameConfig.boardWidth &&
-            game.config.boardHeight === gameConfig.boardHeight);
+          !effective.boardWidth ||
+          !effective.boardHeight ||
+          (game.config.boardWidth === effective.boardWidth &&
+            game.config.boardHeight === effective.boardHeight);
 
         const allMatch =
           variantMatch && ratedMatch && timeControlMatch && boardSizeMatch;
@@ -529,19 +461,16 @@ function GameSetup() {
       },
     );
 
-    // Sort: matching games first, then by time created (older first)
     gamesWithStatus.sort((a, b) => {
-      // First, prioritize matching games
       if (a.matchStatus.allMatch !== b.matchStatus.allMatch) {
         return a.matchStatus.allMatch ? -1 : 1;
       }
-
-      // Prioritize older games (longer in matching stage)
       return a.createdAt - b.createdAt;
     });
 
     return gamesWithStatus;
-  }, [matchmakingGames, gameConfig]);
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [matchmakingGames, gameConfig, activeTab, isLoggedIn]);
 
   const handleJoinGame = async (gameId: string) => {
     if (isJoiningGame) return;
@@ -624,142 +553,43 @@ function GameSetup() {
     }
   };
 
+  // --- Disabled state flags ---
+  // All settings are always visible, but some are disabled depending on the tab/variant.
+
+  const timeControlDisabled = activeTab === "vs-ai";
+  const ratedDisabled =
+    !isLoggedIn ||
+    activeTab === "vs-ai" ||
+    activeTab === "local-play";
+  const boardSizeDisabled = gameConfig.variant === "freestyle";
+
+  // --- Render ---
+
   return (
     <div className="container mx-auto py-8 px-4">
       <div className="max-w-5xl mx-auto">
-        <div className="space-y-6">
-          {/* Create Game Section */}
-          <Card className="p-5 border-border/50 bg-card/50 backdrop-blur">
-            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-2">
-              {/* Row 1: Title */}
-              <div>
-                <h2 className="text-2xl font-serif font-semibold">
-                  Create game
-                </h2>
-              </div>
+        <Card className="border-border/50 bg-card/50 backdrop-blur">
+          {/* Tab bar */}
+          <div className="flex border-b">
+            {TABS.map((tab) => (
+              <button
+                key={tab}
+                className={`flex-1 py-3 text-sm font-medium transition-colors cursor-pointer ${
+                  activeTab === tab
+                    ? "border-b-2 border-primary text-primary"
+                    : "text-muted-foreground hover:text-foreground"
+                }`}
+                onClick={() => setActiveTab(tab)}
+              >
+                {TAB_LABELS[tab]}
+              </button>
+            ))}
+          </div>
 
-              {/* Row 1: Rated Status */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="rated" className="min-w-[120px]">
-                    Rated Status
-                  </Label>
-                  <Switch
-                    id="rated"
-                    checked={gameConfig.rated}
-                    onCheckedChange={(checked) => {
-                      if ((!isLoggedIn || !canRatedGame) && checked) {
-                        return;
-                      }
-                      handleGameConfigChange({ ...gameConfig, rated: checked });
-                    }}
-                    disabled={!isLoggedIn || !canRatedGame}
-                  />
-                </div>
-                {/* Always render text container to prevent layout shift */}
-                <div className="min-h-[3rem]">
-                  {!isLoggedIn && (
-                    <Alert className="mb-2">
-                      <Info className="h-4 w-4" />
-                      <AlertDescription>
-                        You need to be logged in to play rated games.
-                      </AlertDescription>
-                    </Alert>
-                  )}
-                  {!isLoggedIn || !canRatedGame ? (
-                    <p className="text-sm text-muted-foreground">
-                      Rated games are only available vs friends or matched
-                      players.
-                    </p>
-                  ) : (
-                    <p className="text-sm text-muted-foreground">
-                      {gameConfig.rated
-                        ? "The game will affect your rating."
-                        : "The game will not affect your rating."}
-                    </p>
-                  )}
-                </div>
-              </div>
-
-              {/* Row 2: Player A */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label className="min-w-[100px]">Seat A</Label>
-                  <div className="flex h-10 w-[200px] items-center rounded-md border border-input bg-background px-3 text-sm text-foreground">
-                    You
-                  </div>
-                </div>
-                <div className="min-h-[3rem]">
-                  <p className="text-sm text-muted-foreground">
-                    {"You'll make the moves."}
-                  </p>
-                </div>
-              </div>
-
-              {/* Row 2: Time Control - Hidden for bot games (V3: bot games are untimed) */}
-              {mode !== "vs-ai" && (
-                <div className="space-y-2">
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="time-control" className="min-w-[120px]">
-                      Time Control
-                    </Label>
-                    <Select
-                      value={gameConfig.timeControl.preset ?? "blitz"}
-                      onValueChange={(value: TimeControlPreset) =>
-                        handleGameConfigChange({
-                          ...gameConfig,
-                          timeControl: timeControlConfigFromPreset(value),
-                        })
-                      }
-                    >
-                      <SelectTrigger
-                        id="time-control"
-                        className="bg-background w-[200px]"
-                      >
-                        <SelectValue />
-                      </SelectTrigger>
-                      <SelectContent>
-                        <SelectItem value="bullet">Bullet (1+0)</SelectItem>
-                        <SelectItem value="blitz">Blitz (3+2)</SelectItem>
-                        <SelectItem value="rapid">Rapid (10+2)</SelectItem>
-                        <SelectItem value="classical">
-                          Classical (30+0)
-                        </SelectItem>
-                      </SelectContent>
-                    </Select>
-                  </div>
-                  {/* Always render text container to prevent layout shift */}
-                  <div className="min-h-[3rem]">
-                    <p className="text-sm text-muted-foreground">
-                      {gameConfig.timeControl.preset === "bullet" &&
-                        "1 minute, no increment."}
-                      {gameConfig.timeControl.preset === "blitz" &&
-                        "3 minutes, 2 second increment."}
-                      {gameConfig.timeControl.preset === "rapid" &&
-                        "10 minutes, 2 second increment."}
-                      {gameConfig.timeControl.preset === "classical" &&
-                        "30 minutes, no increment."}
-                    </p>
-                  </div>
-                </div>
-              )}
-
-              {/* Row 3: Player B */}
-              <div>
-                <PlayerConfiguration
-                  label="Seat B"
-                  value={playerConfigs[1]}
-                  onChange={(value) => {
-                    const newConfigs = [...playerConfigs];
-                    newConfigs[1] = value;
-                    setPlayerConfigs(newConfigs);
-                  }}
-                  allowedOptions={PLAYER_B_ALLOWED_OPTIONS}
-                  optionLabelOverrides={playerBLabelOverrides}
-                />
-              </div>
-
-              {/* Row 3: Variant */}
+          <div className="p-5 space-y-4">
+            {/* Config section - settings vary per tab */}
+            <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
+              {/* Variant (all tabs) */}
               <div className="space-y-2">
                 <div className="flex items-center gap-3">
                   <Label htmlFor="variant" className="min-w-[120px]">
@@ -787,105 +617,208 @@ function GameSetup() {
                     </SelectContent>
                   </Select>
                 </div>
-                {/* Always render text container to prevent layout shift */}
-                <div className="min-h-[3rem]">
-                  <p className="text-sm text-muted-foreground">
-                    {gameConfig.variant === "standard" &&
-                      "Catch the mouse first."}
-                    {gameConfig.variant === "classic" &&
-                      "Reach the corner first."}
-                    {gameConfig.variant === "freestyle" &&
-                      `Randomized setup with neutral starting walls (${FREESTYLE_BOARD_WIDTH}x${FREESTYLE_BOARD_HEIGHT}).`}
+                <p className="text-sm text-muted-foreground">
+                  {gameConfig.variant === "standard" &&
+                    "Catch the mouse first."}
+                  {gameConfig.variant === "classic" &&
+                    "Reach the corner first."}
+                  {gameConfig.variant === "freestyle" &&
+                    `Randomized setup with neutral starting walls (${FREESTYLE_BOARD_WIDTH}x${FREESTYLE_BOARD_HEIGHT}).`}
+                </p>
+              </div>
+
+              {/* Time Control (always shown; disabled for bot games) */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="time-control" className="min-w-[120px]">
+                    Time Control
+                  </Label>
+                  <Select
+                    value={timeControlDisabled ? "none" : (gameConfig.timeControl.preset ?? "blitz")}
+                    onValueChange={(value: string) => {
+                      if (timeControlDisabled) return;
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        timeControl: timeControlConfigFromPreset(value as TimeControlPreset),
+                      });
+                    }}
+                    disabled={timeControlDisabled}
+                  >
+                    <SelectTrigger
+                      id="time-control"
+                      className="bg-background w-[200px]"
+                    >
+                      <SelectValue />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {timeControlDisabled && (
+                        <SelectItem value="none">None</SelectItem>
+                      )}
+                      <SelectItem value="bullet">Bullet (1+0)</SelectItem>
+                      <SelectItem value="blitz">Blitz (3+2)</SelectItem>
+                      <SelectItem value="rapid">Rapid (10+2)</SelectItem>
+                      <SelectItem value="classical">
+                        Classical (30+0)
+                      </SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {timeControlDisabled && "Bot games are untimed."}
+                  {!timeControlDisabled &&
+                    gameConfig.timeControl.preset === "bullet" &&
+                    "1 minute, no increment."}
+                  {!timeControlDisabled &&
+                    gameConfig.timeControl.preset === "blitz" &&
+                    "3 minutes, 2 second increment."}
+                  {!timeControlDisabled &&
+                    gameConfig.timeControl.preset === "rapid" &&
+                    "10 minutes, 2 second increment."}
+                  {!timeControlDisabled &&
+                    gameConfig.timeControl.preset === "classical" &&
+                    "30 minutes, no increment."}
+                </p>
+              </div>
+
+              {/* Rated (always shown; disabled for bot/local games or logged-out) */}
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="rated" className="min-w-[120px]">
+                    Rated
+                  </Label>
+                  <Switch
+                    id="rated"
+                    checked={ratedDisabled ? false : gameConfig.rated}
+                    onCheckedChange={(checked) => {
+                      if (ratedDisabled) return;
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        rated: checked,
+                      });
+                    }}
+                    disabled={ratedDisabled}
+                  />
+                </div>
+                <p className="text-sm text-muted-foreground">
+                  {!isLoggedIn &&
+                    "Log in to play rated games."}
+                  {isLoggedIn &&
+                    (activeTab === "vs-ai" || activeTab === "local-play") &&
+                    "Rated games are only available vs other players."}
+                  {isLoggedIn &&
+                    canRatedGame &&
+                    (gameConfig.rated
+                      ? "The game will affect your rating."
+                      : "The game will not affect your rating.")}
+                </p>
+              </div>
+            </div>
+
+            {/* Board size (always shown; disabled for freestyle with fixed values) */}
+            <div className="space-y-3 p-3 border rounded-md bg-muted/30">
+              <div className="grid grid-cols-2 gap-4 max-w-md">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="board-width" className="min-w-[100px]">
+                    Board Width
+                  </Label>
+                  <Input
+                    id="board-width"
+                    type="number"
+                    min="4"
+                    max="20"
+                    value={boardSizeDisabled ? FREESTYLE_BOARD_WIDTH : boardWidthInput}
+                    onChange={(e) => {
+                      if (!boardSizeDisabled) handleBoardWidthChange(e.target.value);
+                    }}
+                    onBlur={() => {
+                      if (!boardSizeDisabled) commitBoardWidth();
+                    }}
+                    disabled={boardSizeDisabled}
+                    className="bg-background max-w-[100px]"
+                  />
+                </div>
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="board-height" className="min-w-[100px]">
+                    Board Height
+                  </Label>
+                  <Input
+                    id="board-height"
+                    type="number"
+                    min="4"
+                    max="20"
+                    value={boardSizeDisabled ? FREESTYLE_BOARD_HEIGHT : boardHeightInput}
+                    onChange={(e) => {
+                      if (!boardSizeDisabled) handleBoardHeightChange(e.target.value);
+                    }}
+                    onBlur={() => {
+                      if (!boardSizeDisabled) commitBoardHeight();
+                    }}
+                    disabled={boardSizeDisabled}
+                    className="bg-background max-w-[100px]"
+                  />
+                </div>
+              </div>
+            </div>
+
+            {/* --- Tab-specific content --- */}
+
+            {activeTab === "vs-ai" && (
+              <BotsPanel
+                config={gameConfig}
+                onPlayBot={(args) => void handlePlayBot(args)}
+                onRecommendedSelect={(boardWidth, boardHeight) =>
+                  handleGameConfigChange({
+                    ...gameConfig,
+                    boardWidth,
+                    boardHeight,
+                  })
+                }
+                isPlaying={playVsBotMutation.isPending}
+                errorMessage={botGameError}
+              />
+            )}
+
+            {(activeTab === "find-others" ||
+              activeTab === "invite-friend" ||
+              activeTab === "local-play") && (
+              <>
+                <div className="flex justify-center pt-2">
+                  <Button
+                    onClick={() => void handleCreateGame()}
+                    className="w-40"
+                    size="lg"
+                    disabled={isCreatingGame}
+                  >
+                    {isCreatingGame ? (
+                      <>
+                        <Loader2 className="mr-2 h-4 w-4 animate-spin" />
+                        Creating...
+                      </>
+                    ) : activeTab === "local-play" ? (
+                      "Start game"
+                    ) : (
+                      "Create game"
+                    )}
+                  </Button>
+                </div>
+                {createGameError && (
+                  <p className="text-sm text-destructive text-center">
+                    {createGameError}
                   </p>
-                </div>
-              </div>
-            </div>
-
-            {/* Variant Settings - Spanning both columns */}
-            {(gameConfig.variant === "standard" ||
-              gameConfig.variant === "classic") && (
-              <div className="mt-3 space-y-3 p-3 border rounded-md bg-muted/30">
-                <div className="grid grid-cols-2 gap-4 max-w-md">
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="board-width" className="min-w-[100px]">
-                      Board Width
-                    </Label>
-                    <Input
-                      id="board-width"
-                      type="number"
-                      min="4"
-                      max="20"
-                      value={boardWidthInput}
-                      onChange={(e) => handleBoardWidthChange(e.target.value)}
-                      onBlur={commitBoardWidth}
-                      className="bg-background max-w-[100px]"
-                    />
-                  </div>
-                  <div className="flex items-center gap-3">
-                    <Label htmlFor="board-height" className="min-w-[100px]">
-                      Board Height
-                    </Label>
-                    <Input
-                      id="board-height"
-                      type="number"
-                      min="4"
-                      max="20"
-                      value={boardHeightInput}
-                      onChange={(e) => handleBoardHeightChange(e.target.value)}
-                      onBlur={commitBoardHeight}
-                      className="bg-background max-w-[100px]"
-                    />
-                  </div>
-                </div>
-              </div>
-            )}
-
-            {/* Create Game Button - Centered */}
-            <div className="mt-3 flex justify-center">
-              <Button
-                onClick={() => void handleCreateGame()}
-                className="max-w-xs"
-                size="lg"
-                disabled={isCreatingGame}
-              >
-                {isCreatingGame ? (
-                  <>
-                    <Loader2 className="mr-2 h-4 w-4 animate-spin" />
-                    Creating...
-                  </>
-                ) : (
-                  "Create game"
                 )}
-              </Button>
-            </div>
-
-            {/* Error message about invalid player configuration */}
-            {createGameError && (
-              <div className="mt-2 text-center">
-                <p className="text-sm text-destructive">{createGameError}</p>
-              </div>
+              </>
             )}
-          </Card>
 
-          <ReadyToJoinTable
-            config={gameConfig}
-            mode={mode}
-            matchmakingGames={filteredAndSortedGames}
-            isLoadingGames={isLoadingGames}
-            isJoiningGame={isJoiningGame}
-            onJoinGame={(gameId) => void handleJoinGame(gameId)}
-            onPlayBot={(args) => void handlePlayBot(args)}
-            onRecommendedSelect={(boardWidth, boardHeight) =>
-              handleGameConfigChange({
-                ...gameConfig,
-                boardWidth,
-                boardHeight,
-              })
-            }
-            isPlaying={playVsBotMutation.isPending}
-            errorMessage={botGameError}
-          />
-        </div>
+            {activeTab === "find-others" && (
+              <HumanGamesPanel
+                matchmakingGames={filteredAndSortedGames}
+                isLoadingGames={isLoadingGames}
+                isJoiningGame={isJoiningGame}
+                onJoinGame={(gameId) => void handleJoinGame(gameId)}
+              />
+            )}
+          </div>
+        </Card>
       </div>
     </div>
   );
