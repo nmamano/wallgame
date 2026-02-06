@@ -283,12 +283,24 @@ python3 plot_elo.py ../tournament_results_universal/classic/elo_ratings.csv \
 3. Build: `cd ../bayeselo/src && make`
 4. Or update `BAYESELO_PATH` in `calculate_elo.sh`
 
-### Out of Memory
+### Segmentation Fault at High Thread Counts
 
-**Symptom:** Tournament crashes with CUDA out of memory
+**Symptom:** Tournament crashes with segfault shortly after starting (e.g., "Starting matchup between...")
+
+**Root Cause:** GPU memory pressure when 59 models are loaded simultaneously and many games run in parallel. The `blockingWait` calls in MCTS constructor combined with high coroutine parallelism can exhaust resources.
 
 **Solutions:**
-1. Reduce parallelism: lower `-j` flag (try `-j 14`)
+1. **Reduce thread count:** Use `-j 12` instead of `-j 28` (the script default is now 12)
+2. Confirmed working: `-j 1`, `-j 8`, `-j 12`
+3. Confirmed crashing: `-j 28`
+4. If crashes persist at `-j 12`, try `-j 8`
+
+### Out of Memory
+
+**Symptom:** Tournament crashes with CUDA out of memory error message
+
+**Solutions:**
+1. Reduce parallelism: lower `-j` flag (try `-j 12` or lower)
 2. Reduce batch size in MCTS (may require code change)
 3. Run variants sequentially instead of parallel
 

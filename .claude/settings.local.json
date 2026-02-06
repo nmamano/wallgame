@@ -38,7 +38,8 @@
       "Bash(fly version:*)",
       "Bash(./bayeselo)",
       "Bash(du -sh:*)",
-      "Bash(ls:*)"
+      "Bash(ls:*)",
+      "Bash(sort:*)"
     ]
   },
   "outputStyle": "Explanatory"

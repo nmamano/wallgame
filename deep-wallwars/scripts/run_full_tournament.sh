@@ -2,7 +2,11 @@
 # Complete Universal Model ELO Tournament Script
 # Runs tournament, calculates ELO with BayesElo, and generates plots
 #
-# Configuration: 18 tournaments × 10 games/matchup = 10,440 games per variant
+# Configuration: 10 tournaments × 10 games/matchup = 5,800 games per variant
+# 
+# USAGE: Run this script from the deep-wallwars/ directory:
+#   cd /mnt/c/Users/Nilo/repos/wallgame/deep-wallwars
+#   ./scripts/run_full_tournament.sh
 
 set -e
 
@@ -10,20 +14,22 @@ set -e
 # CONFIGURATION
 #==============================================================================
 
-MODELS_DIR="../models_12x10_universal"
-OUTPUT_DIR="../tournament_results_universal"
-THREADS=28
-TOURNAMENTS=18
+MODELS_DIR="./models_12x10_universal"
+OUTPUT_DIR="./tournament_results_universal"
+# NOTE: High thread counts cause segfaults due to GPU memory pressure
+# when running 59 models concurrently. 8 threads confirmed stable.
+THREADS=8
+TOURNAMENTS=10
 GAMES_PER_MATCHUP=10
-COLUMNS=12
-ROWS=10
+BOARD_COLS=12
+BOARD_ROWS=10
 SAMPLES=1200  # Match training configuration
 
 # BayesElo location - will check multiple common locations
 BAYESELO_PATHS=(
-    "../../../BayesianElo/src/bayeselo"     # Sibling to wallgame repo (YOUR ACTUAL LOCATION)
-    "../../bayeselo/src/bayeselo"           # Alternative lowercase naming
-    "../../../bayeselo/src/bayeselo"        # Parent directory
+    "../../BayesianElo/src/bayeselo"        # Sibling to wallgame repo
+    "../bayeselo/src/bayeselo"              # Alternative lowercase naming
+    "../../bayeselo/src/bayeselo"           # Parent directory
     "$HOME/bayeselo/src/bayeselo"           # Home directory
     "/usr/local/bin/bayeselo"               # System install
     "bayeselo"                               # In PATH
@@ -87,17 +93,19 @@ run_variant_tournament() {
     # Create output directory
     mkdir -p "$output_dir"
 
-    # Run tournament
-    cd build
-    ./deep_ww --ranking "$MODELS_DIR" \
+    # Run tournament from deep-wallwars/ directory
+    echo "DEBUG: Running command:"
+    echo "./build/deep_ww --ranking $MODELS_DIR --tournaments $TOURNAMENTS --games $GAMES_PER_MATCHUP --columns $BOARD_COLS --rows $BOARD_ROWS --variant $variant --samples $SAMPLES -j $THREADS"
+    echo ""
+
+    ./build/deep_ww --ranking "$MODELS_DIR" \
         --tournaments $TOURNAMENTS \
         --games $GAMES_PER_MATCHUP \
-        --columns $COLUMNS \
-        --rows $ROWS \
+        --columns $BOARD_COLS \
+        --rows $BOARD_ROWS \
         --variant $variant \
         --samples $SAMPLES \
         -j $THREADS
-    cd ..
 
     # Move results to variant-specific directory
     mv "$MODELS_DIR/games.pgn" "$output_dir/" 2>/dev/null || true
@@ -193,15 +201,12 @@ generate_plot() {
     fi
 
     # Run plotting script
-    cd scripts
-    python3 plot_elo.py "$csv_file" \
+    python3 ./scripts/plot_elo.py "$csv_file" \
         --output "$output_png" \
         --games 4000 2>/dev/null || {
         echo "WARNING: Plot generation failed (missing dependencies?)"
-        cd ..
         return 1
     }
-    cd ..
 
     echo "Plot saved: $output_png"
     echo ""
@@ -218,7 +223,7 @@ echo "Models: $(ls $MODELS_DIR/*.trt 2>/dev/null | wc -l) models"
 echo "Tournaments: $TOURNAMENTS"
 echo "Games per matchup: $GAMES_PER_MATCHUP"
 echo "Estimated games per variant: $((TOURNAMENTS * 58 * GAMES_PER_MATCHUP))"
-echo "Board size: ${COLUMNS}x${ROWS}"
+echo "Board size: ${BOARD_COLS}x${BOARD_ROWS}"
 echo "Threads: $THREADS"
 echo "=========================================="
 echo ""
