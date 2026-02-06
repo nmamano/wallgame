@@ -37,7 +37,7 @@ import { createGameSession, joinGameSession } from "@/lib/api";
 import { saveGameHandshake, clearGameHandshake } from "@/lib/game-session";
 import { usePlayVsBotMutation } from "@/hooks/use-bots";
 
-export const Route = createFileRoute("/game-setup")({
+export const Route = createFileRoute("/play")({
   component: GameSetup,
 });
 
@@ -100,7 +100,7 @@ function GameSetup() {
   // Get mode from sessionStorage (set when navigating from landing page)
   const [mode] = useState<string | undefined>(() => {
     if (typeof window !== "undefined") {
-      return sessionStorage.getItem("game-setup-mode") ?? undefined;
+      return sessionStorage.getItem("play-mode") ?? undefined;
     }
     return undefined;
   });
@@ -108,7 +108,7 @@ function GameSetup() {
   // Clear mode from sessionStorage after reading it
   useEffect(() => {
     if (typeof window !== "undefined" && mode) {
-      sessionStorage.removeItem("game-setup-mode");
+      sessionStorage.removeItem("play-mode");
     }
   }, [mode]);
 

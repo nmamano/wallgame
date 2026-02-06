@@ -68,10 +68,10 @@ function Index() {
                 </Link>
 
                 <Link
-                  to="/game-setup"
+                  to="/play"
                   onClick={() => {
                     if (typeof window !== "undefined") {
-                      sessionStorage.setItem("game-setup-mode", "vs-ai");
+                      sessionStorage.setItem("play-mode", "vs-ai");
                     }
                   }}
                   className="group"
@@ -119,10 +119,10 @@ function Index() {
 
               <div className="grid grid-cols-2 gap-6 max-w-2xl mx-auto">
                 <Link
-                  to="/game-setup"
+                  to="/play"
                   onClick={() => {
                     if (typeof window !== "undefined") {
-                      sessionStorage.setItem("game-setup-mode", "with-others");
+                      sessionStorage.setItem("play-mode", "with-others");
                     }
                   }}
                   className="group"
@@ -144,11 +144,11 @@ function Index() {
                 </Link>
 
                 <Link
-                  to="/game-setup"
+                  to="/play"
                   onClick={() => {
                     if (typeof window !== "undefined") {
                       sessionStorage.setItem(
-                        "game-setup-mode",
+                        "play-mode",
                         "invite-friend",
                       );
                     }

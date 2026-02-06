@@ -3030,7 +3030,7 @@ export function useGamePageController(gameId: string) {
 
   const handleAbort = useCallback(() => {
     const exitToHome = () => {
-      void navigate({ to: "/game-setup" });
+      void navigate({ to: "/play" });
     };
     void (async () => {
       if (isRemoteFlow && isCreator && gameHandshake) {
@@ -3060,7 +3060,7 @@ export function useGamePageController(gameId: string) {
   ]);
 
   const handleJoinerDismiss = useCallback(() => {
-    void navigate({ to: "/game-setup" });
+    void navigate({ to: "/play" });
   }, [navigate]);
 
   const rows = config?.boardHeight ?? DEFAULT_CONFIG.boardHeight;

@@ -16,7 +16,7 @@ export function Navigation() {
   const isLoggedIn = !!data?.user;
 
   const navItems = [
-    { label: "Play", href: "/" },
+    { label: "Play", href: "/play" },
     { label: "Ranking", href: "/ranking" },
     { label: "Past Games", href: "/past-games" },
     { label: "Live Games", href: "/live-games" },

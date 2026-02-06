@@ -13,10 +13,10 @@ import { Route as StudyBoardRouteImport } from './routes/study-board'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RankingRouteImport } from './routes/ranking'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PlayRouteImport } from './routes/play'
 import { Route as PastGamesRouteImport } from './routes/past-games'
 import { Route as LiveGamesRouteImport } from './routes/live-games'
 import { Route as LearnRouteImport } from './routes/learn'
-import { Route as GameSetupRouteImport } from './routes/game-setup'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
@@ -45,6 +45,11 @@ const ProfileRoute = ProfileRouteImport.update({
   path: '/profile',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PlayRoute = PlayRouteImport.update({
+  id: '/play',
+  path: '/play',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const PastGamesRoute = PastGamesRouteImport.update({
   id: '/past-games',
   path: '/past-games',
@@ -58,11 +63,6 @@ const LiveGamesRoute = LiveGamesRouteImport.update({
 const LearnRoute = LearnRouteImport.update({
   id: '/learn',
   path: '/learn',
-  getParentRoute: () => rootRouteImport,
-} as any)
-const GameSetupRoute = GameSetupRouteImport.update({
-  id: '/game-setup',
-  path: '/game-setup',
   getParentRoute: () => rootRouteImport,
 } as any)
 const AboutRoute = AboutRouteImport.update({
@@ -104,10 +104,10 @@ const GameIdRoute = GameIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/game-setup': typeof GameSetupRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
+  '/play': typeof PlayRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -121,10 +121,10 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/game-setup': typeof GameSetupRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
+  '/play': typeof PlayRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -139,10 +139,10 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
-  '/game-setup': typeof GameSetupRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
+  '/play': typeof PlayRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
@@ -158,10 +158,10 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
-    | '/game-setup'
     | '/learn'
     | '/live-games'
     | '/past-games'
+    | '/play'
     | '/profile'
     | '/ranking'
     | '/settings'
@@ -175,10 +175,10 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
-    | '/game-setup'
     | '/learn'
     | '/live-games'
     | '/past-games'
+    | '/play'
     | '/profile'
     | '/ranking'
     | '/settings'
@@ -192,10 +192,10 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
-    | '/game-setup'
     | '/learn'
     | '/live-games'
     | '/past-games'
+    | '/play'
     | '/profile'
     | '/ranking'
     | '/settings'
@@ -210,10 +210,10 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
-  GameSetupRoute: typeof GameSetupRoute
   LearnRoute: typeof LearnRoute
   LiveGamesRoute: typeof LiveGamesRoute
   PastGamesRoute: typeof PastGamesRoute
+  PlayRoute: typeof PlayRoute
   ProfileRoute: typeof ProfileRoute
   RankingRoute: typeof RankingRoute
   SettingsRoute: typeof SettingsRoute
@@ -255,6 +255,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ProfileRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/play': {
+      id: '/play'
+      path: '/play'
+      fullPath: '/play'
+      preLoaderRoute: typeof PlayRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/past-games': {
       id: '/past-games'
       path: '/past-games'
@@ -274,13 +281,6 @@ declare module '@tanstack/react-router' {
       path: '/learn'
       fullPath: '/learn'
       preLoaderRoute: typeof LearnRouteImport
-      parentRoute: typeof rootRouteImport
-    }
-    '/game-setup': {
-      id: '/game-setup'
-      path: '/game-setup'
-      fullPath: '/game-setup'
-      preLoaderRoute: typeof GameSetupRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/about': {
@@ -338,10 +338,10 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
-  GameSetupRoute: GameSetupRoute,
   LearnRoute: LearnRoute,
   LiveGamesRoute: LiveGamesRoute,
   PastGamesRoute: PastGamesRoute,
+  PlayRoute: PlayRoute,
   ProfileRoute: ProfileRoute,
   RankingRoute: RankingRoute,
   SettingsRoute: SettingsRoute,
