@@ -274,8 +274,7 @@ function GameSetup() {
     }
 
     // Online game: find-others or invite-friend
-    const matchType =
-      activeTab === "find-others" ? "matchmaking" : "friend";
+    const matchType = activeTab === "find-others" ? "matchmaking" : "friend";
     setIsCreatingGame(true);
     try {
       const response = await createGameSession({
@@ -364,10 +363,7 @@ function GameSetup() {
               setMatchmakingGames(msg.games);
             }
           } catch (error) {
-            console.error(
-              "[game-setup] failed to parse lobby message",
-              error,
-            );
+            console.error("[game-setup] failed to parse lobby message", error);
           }
         });
 
@@ -404,10 +400,7 @@ function GameSetup() {
         setIsLoadingGames(false);
       })
       .catch((error) => {
-        console.error(
-          "[game-setup] failed to fetch matchmaking games",
-          error,
-        );
+        console.error("[game-setup] failed to fetch matchmaking games", error);
         setIsLoadingGames(false);
       });
 
@@ -558,9 +551,7 @@ function GameSetup() {
 
   const timeControlDisabled = activeTab === "vs-ai";
   const ratedDisabled =
-    !isLoggedIn ||
-    activeTab === "vs-ai" ||
-    activeTab === "local-play";
+    !isLoggedIn || activeTab === "vs-ai" || activeTab === "local-play";
   const boardSizeDisabled = gameConfig.variant === "freestyle";
 
   // --- Render ---
@@ -634,12 +625,18 @@ function GameSetup() {
                     Time Control
                   </Label>
                   <Select
-                    value={timeControlDisabled ? "none" : (gameConfig.timeControl.preset ?? "blitz")}
+                    value={
+                      timeControlDisabled
+                        ? "none"
+                        : (gameConfig.timeControl.preset ?? "blitz")
+                    }
                     onValueChange={(value: string) => {
                       if (timeControlDisabled) return;
                       handleGameConfigChange({
                         ...gameConfig,
-                        timeControl: timeControlConfigFromPreset(value as TimeControlPreset),
+                        timeControl: timeControlConfigFromPreset(
+                          value as TimeControlPreset,
+                        ),
                       });
                     }}
                     disabled={timeControlDisabled}
@@ -700,8 +697,7 @@ function GameSetup() {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {!isLoggedIn &&
-                    "Log in to play rated games."}
+                  {!isLoggedIn && "Log in to play rated games."}
                   {isLoggedIn &&
                     (activeTab === "vs-ai" || activeTab === "local-play") &&
                     "Rated games are only available vs other players."}
@@ -726,9 +722,14 @@ function GameSetup() {
                     type="number"
                     min="4"
                     max="20"
-                    value={boardSizeDisabled ? FREESTYLE_BOARD_WIDTH : boardWidthInput}
+                    value={
+                      boardSizeDisabled
+                        ? FREESTYLE_BOARD_WIDTH
+                        : boardWidthInput
+                    }
                     onChange={(e) => {
-                      if (!boardSizeDisabled) handleBoardWidthChange(e.target.value);
+                      if (!boardSizeDisabled)
+                        handleBoardWidthChange(e.target.value);
                     }}
                     onBlur={() => {
                       if (!boardSizeDisabled) commitBoardWidth();
@@ -746,9 +747,14 @@ function GameSetup() {
                     type="number"
                     min="4"
                     max="20"
-                    value={boardSizeDisabled ? FREESTYLE_BOARD_HEIGHT : boardHeightInput}
+                    value={
+                      boardSizeDisabled
+                        ? FREESTYLE_BOARD_HEIGHT
+                        : boardHeightInput
+                    }
                     onChange={(e) => {
-                      if (!boardSizeDisabled) handleBoardHeightChange(e.target.value);
+                      if (!boardSizeDisabled)
+                        handleBoardHeightChange(e.target.value);
                     }}
                     onBlur={() => {
                       if (!boardSizeDisabled) commitBoardHeight();

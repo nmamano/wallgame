@@ -147,10 +147,7 @@ function Index() {
                   to="/play"
                   onClick={() => {
                     if (typeof window !== "undefined") {
-                      sessionStorage.setItem(
-                        "play-mode",
-                        "invite-friend",
-                      );
+                      sessionStorage.setItem("play-mode", "invite-friend");
                     }
                   }}
                   className="group"

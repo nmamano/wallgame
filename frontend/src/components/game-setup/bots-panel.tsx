@@ -79,7 +79,13 @@ export function BotsPanel({
         e.stopPropagation();
         onPlayBot({
           botId,
-          config: { ...config, boardWidth, boardHeight, rated: false, timeControl: BOT_GAME_TIME_CONTROL },
+          config: {
+            ...config,
+            boardWidth,
+            boardHeight,
+            rated: false,
+            timeControl: BOT_GAME_TIME_CONTROL,
+          },
         });
       }}
     >
@@ -136,8 +142,7 @@ export function BotsPanel({
       {activeTab === "recommended" && (
         <div className="overflow-x-auto">
           <p className="text-xs text-muted-foreground mb-2">
-            Showing recommended bots for:{" "}
-            {formatVariantLabel(config.variant)}
+            Showing recommended bots for: {formatVariantLabel(config.variant)}
           </p>
           <Table>
             <TableHeader>
@@ -213,19 +218,14 @@ export function BotsPanel({
                 renderEmptyState("Loading matching bots...", 4)}
               {!matchingLoading &&
                 (matchingRows.length === 0
-                  ? renderEmptyState(
-                      "No bots match your current settings.",
-                      4,
-                    )
+                  ? renderEmptyState("No bots match your current settings.", 4)
                   : matchingRows.map((bot) => (
                       <TableRow
                         key={bot.id}
                         className="hover:bg-muted/40 transition-colors"
                       >
                         <TableCell>{bot.name}</TableCell>
-                        <TableCell>
-                          {renderTypeBadge(bot.isOfficial)}
-                        </TableCell>
+                        <TableCell>{renderTypeBadge(bot.isOfficial)}</TableCell>
                         <TableCell>
                           {includeBoardSize
                             ? formatBoardSizeShort(
