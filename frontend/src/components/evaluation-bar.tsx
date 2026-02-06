@@ -1,3 +1,4 @@
+import { useState } from "react";
 import { cn } from "@/lib/utils";
 import type { PlayerColor } from "@/lib/player-colors";
 
@@ -33,16 +34,20 @@ const formatEval = (evaluation: number): string => {
 
 export function EvaluationBar({
   evaluation,
-  isPending,
   isVisible,
   player1Color,
   player2Color,
 }: EvaluationBarProps) {
-  // Convert evaluation (-1 to +1) to percentage (0 to 100)
-  // +1 = P1 winning = 100% P1 color
-  // -1 = P2 winning = 0% P1 color (100% P2 color)
-  // 0 = even = 50/50 split
-  const displayEval = evaluation ?? 0; // Default to 50/50 when no eval yet
+  // Track last authoritative evaluation to avoid jumping to 50% between moves.
+  // When a new move is made, evaluation becomes null until the engine responds.
+  // Instead of snapping to 50%, we keep the bar at its last position but dimmed.
+  const [lastKnownEval, setLastKnownEval] = useState<number | null>(null);
+  if (evaluation !== null && evaluation !== lastKnownEval) {
+    setLastKnownEval(evaluation);
+  }
+
+  const displayEval = evaluation ?? lastKnownEval ?? 0;
+  const isStale = evaluation === null && lastKnownEval !== null;
   const p1Percentage = ((displayEval + 1) / 2) * 100;
 
   return (
@@ -63,16 +68,20 @@ export function EvaluationBar({
                 "h-full transition-all duration-300 ease-out",
                 bgColorClassMap[player1Color],
               )}
-              style={{ width: `${p1Percentage}%` }}
+              style={{
+                width: `${p1Percentage}%`,
+                opacity: isStale ? 0.4 : 1,
+                transition: "width 300ms ease-out, opacity 200ms ease-out",
+              }}
             />
             {/* P2 side (right) */}
             <div
               className={cn("h-full flex-1", bgColorClassMap[player2Color])}
+              style={{
+                opacity: isStale ? 0.4 : 1,
+                transition: "opacity 200ms ease-out",
+              }}
             />
-            {/* Pending overlay */}
-            {isPending && (
-              <div className="absolute inset-0 bg-black/30 animate-pulse rounded" />
-            )}
           </>
         )}
       </div>

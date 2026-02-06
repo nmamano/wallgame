@@ -1141,6 +1141,17 @@ export const createRematchSession = (
   };
   const normalizedConfig = normalizeFreestyleConfig(previous.config);
 
+  // Freestyle rematch seed pattern: reuse the same initial conditions for 2 games
+  // (so both players experience the same position from each side), then refresh.
+  // Odd rematchNumber = reuse previous layout; even = fresh random layout.
+  const newRematchNumber = previous.rematchNumber + 1;
+  let configForNewGame: PartialGameConfiguration = normalizedConfig;
+  if (normalizedConfig.variant === "freestyle" && newRematchNumber % 2 === 0) {
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    const { variantConfig, ...rest } = normalizedConfig;
+    configForNewGame = rest;
+  }
+
   // Swap player IDs so the other player goes first in the rematch
   const hostPlayerId = previous.players.host.playerId;
   const joinerPlayerId = previous.players.joiner.playerId;
@@ -1149,7 +1160,7 @@ export const createRematchSession = (
     id: newId,
     seriesId: previous.seriesId ?? previous.id,
     rematchParentId: previous.id,
-    rematchNumber: previous.rematchNumber + 1,
+    rematchNumber: newRematchNumber,
     createdAt: now,
     startedAt: null,
     updatedAt: now,
@@ -1185,7 +1196,7 @@ export const createRematchSession = (
     },
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
-    gameState: createGameState(normalizedConfig),
+    gameState: createGameState(configForNewGame),
     chatGuestCounter: 0,
     chatGuestIndexMap: new Map(),
   };
