@@ -394,20 +394,34 @@ export const getRecommendedBots = (
       continue;
     }
 
-    // Add an entry for each recommended setting
-    for (const rec of variantConfig.recommended) {
+    const botEntry: ListedBot = {
+      id: compositeId,
+      clientId: bot.clientId,
+      botId: bot.botId,
+      name: bot.name,
+      isOfficial: bot.isOfficial,
+      appearance: bot.appearance,
+      variants: bot.variants,
+    };
+
+    if (variantConfig.recommended.length > 0) {
+      // Add an entry for each recommended setting
+      for (const rec of variantConfig.recommended) {
+        results.push({
+          bot: botEntry,
+          boardWidth: rec.boardWidth,
+          boardHeight: rec.boardHeight,
+        });
+      }
+    } else if (
+      variantConfig.boardWidth.min === variantConfig.boardWidth.max &&
+      variantConfig.boardHeight.min === variantConfig.boardHeight.max
+    ) {
+      // Fixed board size variant (e.g. freestyle 12x10) — use the only valid size
       results.push({
-        bot: {
-          id: compositeId,
-          clientId: bot.clientId,
-          botId: bot.botId,
-          name: bot.name,
-          isOfficial: bot.isOfficial,
-          appearance: bot.appearance,
-          variants: bot.variants,
-        },
-        boardWidth: rec.boardWidth,
-        boardHeight: rec.boardHeight,
+        bot: botEntry,
+        boardWidth: variantConfig.boardWidth.min,
+        boardHeight: variantConfig.boardHeight.min,
       });
     }
   }

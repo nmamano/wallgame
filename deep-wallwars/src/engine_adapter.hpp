@@ -81,7 +81,7 @@ std::string transform_move_notation(
 // ============================================================================
 
 // Validates that the request is compatible with deep-wallwars capabilities
-// - Supports Classic and Standard variants
+// - Supports Classic, Standard, and Freestyle variants
 // - Supports boards from 4x4 up to model dimensions
 ValidationResult validate_request(json const& state_json, int model_rows, int model_columns);
 
@@ -140,7 +140,7 @@ json handle_engine_request(
 // ============================================================================
 
 // Validates a V3 BgsConfig for compatibility with deep-wallwars
-// - Supports Classic and Standard variants
+// - Supports Classic, Standard, and Freestyle variants
 // - Supports boards from 4x4 up to model dimensions
 ValidationResult validate_bgs_config(
     json const& bgs_config,

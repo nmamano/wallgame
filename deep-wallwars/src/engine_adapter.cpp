@@ -376,7 +376,7 @@ ValidationResult validate_request(json const& state_json, int model_rows, int mo
     if (!parsed_variant || (*parsed_variant != Variant::Classic &&
                             *parsed_variant != Variant::Standard)) {
         return {false,
-                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
+                "Deep-wallwars only supports the 'classic', 'standard', and 'freestyle' variants (not '" +
                     variant + "')"};
     }
 
@@ -762,7 +762,7 @@ ValidationResult validate_bgs_config(
     if (!parsed_variant || (*parsed_variant != Variant::Classic &&
                             *parsed_variant != Variant::Standard)) {
         return {false,
-                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
+                "Deep-wallwars only supports the 'classic', 'standard', and 'freestyle' variants (not '" +
                     variant + "')"};
     }
 

@@ -46,6 +46,10 @@ std::size_t BatchedModel::total_batches() const {
     return m_batches;
 }
 
+int BatchedModel::channels() const {
+    return m_models.front()->channels();
+}
+
 int BatchedModel::wall_prior_size() const {
     return m_models.front()->wall_prior_size();
 }

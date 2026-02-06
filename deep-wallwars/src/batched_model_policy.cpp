@@ -8,7 +8,7 @@ BatchedModelPolicy::BatchedModelPolicy(std::shared_ptr<BatchedModel> model,
 
 folly::coro::Task<Evaluation> BatchedModelPolicy::operator()(
     Board const& board, Turn turn, std::optional<PreviousPosition> previous_position) {
-    auto state = convert_to_model_input(board, turn);
+    auto state = convert_to_model_input(board, turn, m_model->channels());
     auto inference_result = co_await m_model->inference(std::move(state));
 
     Evaluation eval;

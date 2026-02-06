@@ -22,6 +22,7 @@ TensorRTModel::TensorRTModel(std::shared_ptr<nv::ICudaEngine> engine)
     m_columns = columns;
     m_rows = rows;
     m_batch_size = states_dims.d[0];
+    m_channels = states_dims.d[1];
     m_state_size = states_dims.d[1] * columns * rows;
     m_wall_prior_size = 2 * columns * rows;
 

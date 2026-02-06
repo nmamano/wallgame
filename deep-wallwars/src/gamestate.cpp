@@ -24,7 +24,7 @@ std::optional<Variant> parse_variant(std::string_view variant) {
     if (variant == "classic") {
         return Variant::Classic;
     }
-    if (variant == "standard") {
+    if (variant == "standard" || variant == "freestyle") {
         return Variant::Standard;
     }
     return std::nullopt;

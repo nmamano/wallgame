@@ -21,7 +21,8 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
                                     float winner_contribution);
 
 // Converts current board state into a vector of [0, 1] floats so it can be used for ML models.
-ModelInput convert_to_model_input(Board const& board, Turn turn);
+// num_channels: 8 for legacy models (no variant plane), 9 for universal models (plane 8 = variant).
+ModelInput convert_to_model_input(Board const& board, Turn turn, int num_channels = 9);
 
 // Print a single training data point (input, expected output) to `out_stream`. These will be read
 // in from Python for training.

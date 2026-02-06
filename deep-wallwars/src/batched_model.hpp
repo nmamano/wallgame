@@ -31,6 +31,7 @@ public:
 
     std::size_t total_inferences() const;
     std::size_t total_batches() const;
+    int channels() const;
     int wall_prior_size() const;
     int move_prior_size() const;
     int prior_size() const;

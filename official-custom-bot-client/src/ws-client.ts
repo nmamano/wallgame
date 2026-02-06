@@ -89,6 +89,9 @@ export class BotClient {
   // V3: Long-lived engine processes (one per bot)
   private engines: Map<string, EngineProcess> = new Map();
 
+  // V3: Session routing table (bgsId -> botId) for routing messages without botId
+  private sessionRoutes: Map<string, string> = new Map();
+
   // Reconnection state
   private reconnectAttempts: number = 0;
   private shouldReconnect: boolean = true;
@@ -460,8 +463,9 @@ export class BotClient {
     );
     this.state = "processing";
 
-    // Extract botId from bgsId if not directly provided
-    // Server may send composite bgsId like "gameId" but botId indicates which bot
+    // Record session route for subsequent messages (evaluate, apply_move, end)
+    this.sessionRoutes.set(message.bgsId, message.botId);
+
     const engine = this.getEngine(message.botId);
 
     if (!engine) {
@@ -511,32 +515,33 @@ export class BotClient {
     logger.info(`Ending game session ${message.bgsId}`);
     this.state = "processing";
 
-    // Find which bot owns this session by checking all engines
-    // In V3, bgsId typically equals gameId, so we need to track which bot has the session
-    // For simplicity, we'll try all engines and use the one that responds
-    // TODO: Track bgsId -> botId mapping for efficiency
+    const botId = this.sessionRoutes.get(message.bgsId);
+    const engine = botId ? this.getEngine(botId) : undefined;
 
-    // Try to find an engine that has this session
-    let responded = false;
-    for (const [botId, engine] of this.engines) {
-      try {
-        const response = await engine.send(message);
-        if (response.type === "game_session_ended") {
-          await this.send(response as GameSessionEndedMessage);
-          responded = true;
-          break;
-        }
-      } catch {
-        // Engine doesn't have this session, try next
-        continue;
-      }
-    }
+    // Clean up session route
+    this.sessionRoutes.delete(message.bgsId);
 
-    if (!responded) {
+    if (!engine) {
       // Dumb bot fallback
       logger.debug(`Using dumb bot for end session ${message.bgsId}`);
       const response = dumbBotEndSession(message);
       await this.send(response);
+      this.state = "waiting";
+      return;
+    }
+
+    try {
+      const response = await engine.send(message);
+      await this.send(response as GameSessionEndedMessage);
+    } catch (error) {
+      logger.error(`Engine error for end_game_session:`, error);
+      const errorResponse: GameSessionEndedMessage = {
+        type: "game_session_ended",
+        bgsId: message.bgsId,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      await this.send(errorResponse);
     }
 
     this.state = "waiting";
@@ -553,34 +558,39 @@ export class BotClient {
     );
     this.state = "processing";
 
-    // Track bgsId -> botId mapping for this session
-    // For now, try all engines
-    let responded = false;
-    for (const [botId, engine] of this.engines) {
-      try {
-        const response = await engine.send(message);
-        if (response.type === "evaluate_response") {
-          // Clamp evaluation to valid range
-          const evalResponse = response as EvaluateResponseMessage;
-          const normalizedResponse: EvaluateResponseMessage = {
-            ...evalResponse,
-            evaluation: clampEvaluation(evalResponse.evaluation),
-          };
-          await this.send(normalizedResponse);
-          responded = true;
-          break;
-        }
-      } catch {
-        // Engine doesn't have this session, try next
-        continue;
-      }
-    }
+    const botId = this.sessionRoutes.get(message.bgsId);
+    const engine = botId ? this.getEngine(botId) : undefined;
 
-    if (!responded) {
-      // Dumb bot fallback - uses stateful session tracking
+    if (!engine) {
+      // Dumb bot fallback
       logger.debug(`Using dumb bot for evaluation ${message.bgsId}`);
       const response = dumbBotEvaluate(message);
       await this.send(response);
+      this.state = "waiting";
+      return;
+    }
+
+    try {
+      const response = await engine.send(message);
+      // Clamp evaluation to valid range
+      const evalResponse = response as EvaluateResponseMessage;
+      const normalizedResponse: EvaluateResponseMessage = {
+        ...evalResponse,
+        evaluation: clampEvaluation(evalResponse.evaluation),
+      };
+      await this.send(normalizedResponse);
+    } catch (error) {
+      logger.error(`Engine error for evaluate_position:`, error);
+      const errorResponse: EvaluateResponseMessage = {
+        type: "evaluate_response",
+        bgsId: message.bgsId,
+        ply: message.expectedPly,
+        evaluation: 0,
+        bestMove: "",
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      await this.send(errorResponse);
     }
 
     this.state = "waiting";
@@ -595,27 +605,31 @@ export class BotClient {
     );
     this.state = "processing";
 
-    // Try all engines
-    let responded = false;
-    for (const [botId, engine] of this.engines) {
-      try {
-        const response = await engine.send(message);
-        if (response.type === "move_applied") {
-          await this.send(response as MoveAppliedMessage);
-          responded = true;
-          break;
-        }
-      } catch {
-        // Engine doesn't have this session, try next
-        continue;
-      }
-    }
+    const botId = this.sessionRoutes.get(message.bgsId);
+    const engine = botId ? this.getEngine(botId) : undefined;
 
-    if (!responded) {
-      // Dumb bot fallback - uses stateful session tracking
+    if (!engine) {
+      // Dumb bot fallback
       logger.debug(`Using dumb bot for apply_move ${message.bgsId}`);
       const response = dumbBotApplyMove(message);
       await this.send(response);
+      this.state = "waiting";
+      return;
+    }
+
+    try {
+      const response = await engine.send(message);
+      await this.send(response as MoveAppliedMessage);
+    } catch (error) {
+      logger.error(`Engine error for apply_move:`, error);
+      const errorResponse: MoveAppliedMessage = {
+        type: "move_applied",
+        bgsId: message.bgsId,
+        ply: message.expectedPly,
+        success: false,
+        error: error instanceof Error ? error.message : String(error),
+      };
+      await this.send(errorResponse);
     }
 
     this.state = "waiting";

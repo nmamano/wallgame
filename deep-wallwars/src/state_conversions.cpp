@@ -45,9 +45,9 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
     return {std::move(priors), expected_value};
 }
 
-std::vector<float> convert_to_model_input(Board const& board, Turn turn) {
+std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num_channels) {
     std::size_t board_size = board.columns() * board.rows();
-    std::vector<float> state(9 * board_size);
+    std::vector<float> state(num_channels * board_size);
 
     auto blocked_directions = board.blocked_directions();
     std::vector<std::pair<Cell, int>> queue_vec;
@@ -83,8 +83,9 @@ std::vector<float> convert_to_model_input(Board const& board, Turn turn) {
         std::fill(state.begin() + 7 * board_size, state.begin() + 8 * board_size, 1.0);
     }
 
-    if (board.allows_mouse_moves()) {
-        std::fill(state.begin() + 8 * board_size, state.end(), 1.0);
+    // Plane 8: variant indicator (only for 9-channel universal models)
+    if (num_channels >= 9 && board.allows_mouse_moves()) {
+        std::fill(state.begin() + 8 * board_size, state.begin() + 9 * board_size, 1.0);
     }
 
     return state;

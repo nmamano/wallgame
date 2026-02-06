@@ -12,6 +12,7 @@ public:
     virtual void inference(std::span<float> states, Output const& out) = 0;
 
     int batch_size() const;
+    int channels() const;
     int state_size() const;
     int wall_prior_size() const;
     int move_prior_size() const;
@@ -27,6 +28,7 @@ public:
 
 protected:
     int m_batch_size;
+    int m_channels;
     int m_state_size;
     int m_wall_prior_size;
     int m_move_prior_size;
