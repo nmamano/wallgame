@@ -222,6 +222,32 @@ Server (Hono)
 - Explicit over implicit: avoid race conditions with clear state transitions
 - All frontend-server boundary types go in `shared/contracts/` with Zod schemas
 
+## Implementation Quality Rules
+
+When writing new code (features, components, layouts), follow these rules to avoid introducing
+technical debt that requires immediate cleanup:
+
+1. **Measure, don't predict.** Never hardcode pixel/rem constants to guess the rendered size of a
+   component you don't own. If layout depends on another element's dimensions, use CSS flex/grid to
+   let the browser compute it, or use ResizeObserver to measure it. Magic pixel budgets like
+   `viewportHeight - 32 - 40 - 36 - ...` become silently wrong when any component changes.
+
+2. **Import, don't redefine.** If a type or interface already exists in the codebase, import it.
+   Never copy-paste a type definition into a new file — even a "simplified" version. Simplified
+   copies with fewer fields still accept the full type (structural typing), so there's no reason
+   to fork. Use the Explore agent or grep to check before defining a new interface.
+
+3. **Use the type system to express intent.** If a prop is unused in some mode, make it optional
+   (`prop?: Type`) rather than passing a sentinel value (`prop={0}`, `prop=""`, `prop={null}`).
+   Sentinels lie to the reader — they look like real values. Optional props say "not applicable
+   here" explicitly.
+
+4. **Don't fork the render tree if you can branch within it.** Before creating a parallel JSX tree
+   with an early return (like `if (mobile) return <MobileLayout/>; return <DesktopLayout/>`),
+   check if the layouts share structure. Shared elements (matching panel, spectator banners,
+   loading states) should be rendered once, with only the divergent portions gated by conditionals.
+   Duplicated trees mean duplicated bugs.
+
 ## Fix Quality Rules
 
 When fixing a bug, **always pause before implementing** and ask: "Am I patching a symptom, or
