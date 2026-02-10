@@ -81,14 +81,14 @@ export function PlayerTimerCard({
   if (compact) {
     return (
       <div
-        className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-md transition-colors ${
+        className={`flex items-center gap-3 px-2 py-1 rounded-md transition-colors ${
           shouldShowActiveState
             ? "bg-accent/50 border border-accent"
             : "bg-card/50 border border-border"
         }`}
       >
-        {/* Left: avatar + name + rating */}
-        <div className="flex items-center gap-2 min-w-0">
+        {/* Left: avatar + name + rating — flex-1 fills available space, name truncates naturally */}
+        <div className="flex items-center gap-2 flex-1 min-w-0">
           <div
             className="relative w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
             style={{
@@ -116,7 +116,7 @@ export function PlayerTimerCard({
             />
           </div>
           <span className="font-medium truncate text-xs">
-            {trimmedBaseName || player.name}
+            {baseName || player.name}
           </span>
           <span className="text-[9px] text-muted-foreground flex-shrink-0">
             {player.rating}
