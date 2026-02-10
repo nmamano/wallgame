@@ -10,11 +10,14 @@ import {
   Music2,
   Swords,
   AlertCircle,
+  Sun,
+  Moon,
 } from "lucide-react";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { PlayerType } from "@/lib/gameViewModel";
 import { EvalToggle } from "@/components/eval-toggle";
 import type { EvalToggleState } from "@/hooks/use-eval-bar";
+import { useTheme } from "@/components/theme-provider";
 
 interface GameInfoPanelProps {
   config: GameConfiguration | null;
@@ -54,6 +57,7 @@ export function GameInfoPanel({
   onEvalToggle,
   evalErrorMessage,
 }: GameInfoPanelProps) {
+  const { theme, setTheme } = useTheme();
   return (
     <>
       <Card className="p-2 lg:p-4 space-y-2 lg:space-y-3 bg-card/50 backdrop-blur">
@@ -105,7 +109,20 @@ export function GameInfoPanel({
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 lg:h-6 lg:w-6"
+              className="h-5 w-5 lg:h-6 lg:w-6 cursor-pointer"
+              onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
+              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+            >
+              {theme === "dark" ? (
+                <Sun className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              ) : (
+                <Moon className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
+              )}
+            </Button>
+            <Button
+              variant="ghost"
+              size="icon"
+              className="h-5 w-5 lg:h-6 lg:w-6 cursor-pointer"
               onClick={onSfxToggle}
               title={sfxEnabled ? "Mute sound effects" : "Unmute sound effects"}
             >
@@ -118,7 +135,7 @@ export function GameInfoPanel({
             <Button
               variant="ghost"
               size="icon"
-              className="h-5 w-5 lg:h-6 lg:w-6"
+              className="h-5 w-5 lg:h-6 lg:w-6 cursor-pointer"
               onClick={onMusicToggle}
               title={musicEnabled ? "Mute music" : "Unmute music"}
             >

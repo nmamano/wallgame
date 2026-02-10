@@ -11,7 +11,7 @@ import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { EvalToggleState } from "@/hooks/use-eval-bar";
 import type { PlayerType } from "@/lib/gameViewModel";
 
-type DrawerTab = "chat" | "info";
+type DrawerTab = "chat" | "settings";
 
 interface MobileGameDrawerProps {
   chatTabHighlighted: boolean;
@@ -50,7 +50,7 @@ interface MobileGameDrawerProps {
 
 /**
  * Bottom-sheet drawer for mobile game page.
- * Contains two tabs: Chat and Info.
+ * Contains two tabs: Chat and Settings.
  * Move history navigation is handled by MobileMoveBar instead.
  */
 export function MobileGameDrawer(props: MobileGameDrawerProps) {
@@ -78,9 +78,9 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
           <MessageSquare className="w-3.5 h-3.5" />
           Chat
         </button>
-        <button className={tabButtonClass("info", false)} onClick={() => openTab("info")}>
+        <button className={tabButtonClass("settings", false)} onClick={() => openTab("settings")}>
           <Settings2 className="w-3.5 h-3.5" />
-          Info
+          Settings
         </button>
       </div>
 
@@ -88,7 +88,7 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
       <Drawer open={isOpen} onOpenChange={setIsOpen}>
         <DrawerContent className="max-h-[70dvh]">
           <DrawerTitle className="sr-only">
-            {activeTab === "chat" ? "Chat" : "Game Info"}
+            {activeTab === "chat" ? "Chat" : "Settings"}
           </DrawerTitle>
 
           <div className="flex-1 overflow-y-auto min-h-0">
@@ -107,7 +107,7 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
                 isOnlineGame={props.isOnlineGame}
               />
             )}
-            {activeTab === "info" && (
+            {activeTab === "settings" && (
               <div className="p-3">
                 <GameInfoPanel
                   config={props.config}
