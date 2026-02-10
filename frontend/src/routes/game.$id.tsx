@@ -203,12 +203,15 @@ function GamePageContent() {
     // For < 8 columns, use 8 as reference so cells don't grow oversized.
     const mobileGapSizePx = 12;
     const referenceColsForWidth = Math.max(cols, 8);
+    // Chrome within the main content area that reduces available board space:
+    // 2 compact timers (~30px each) + eval bar (~28px) + 3 gaps (12px) + py padding (8px)
+    const mobileChromePx = 108;
     const mobileCellSizePx =
       boardAreaSize.w > 0
         ? Math.max(
             28, // minimum tappable size
             Math.min(
-              (boardAreaSize.h - (rows - 1) * mobileGapSizePx) / rows,
+              (boardAreaSize.h - mobileChromePx - (rows - 1) * mobileGapSizePx) / rows,
               (boardAreaSize.w - (referenceColsForWidth - 1) * mobileGapSizePx) /
                 referenceColsForWidth,
             ),
@@ -261,8 +264,8 @@ function GamePageContent() {
             </div>
           )}
 
-          {/* Main content: timers + eval bar + board */}
-          <div className="flex flex-col flex-1 items-center min-h-0 gap-1 py-1">
+          {/* Main content: timers + eval bar + board — centered as a group */}
+          <div ref={boardAreaRef} className="flex flex-col flex-1 items-center justify-center min-h-0 gap-1 py-1">
             {board.shouldRender ? (
               <>
                 {/* Top compact timer */}
@@ -294,8 +297,8 @@ function GamePageContent() {
                   </div>
                 )}
 
-                {/* Board — flush, edge-to-edge, fills remaining space */}
-                <div ref={boardAreaRef} className="flex-1 flex items-center justify-center w-full min-h-0">
+                {/* Board — flush, edge-to-edge, naturally sized */}
+                <div className="flex items-center justify-center w-full shrink-0">
                   <Board
                     rows={rows}
                     cols={cols}
@@ -326,9 +329,9 @@ function GamePageContent() {
                   />
                 </div>
 
-                {/* Bottom compact timer */}
+                {/* Bottom compact timer — mt-2 balances the eval bar gap above the board */}
                 {timers.bottomPlayer && (
-                  <div className="w-full px-1 shrink-0">
+                  <div className="w-full px-1 shrink-0 mt-2">
                     <PlayerTimerCard
                       player={timers.bottomPlayer}
                       isActive={timers.gameTurn === timers.bottomPlayer.playerId}

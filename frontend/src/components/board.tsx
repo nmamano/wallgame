@@ -1421,7 +1421,7 @@ export function Board({
           maxWidth: maxBoardWidth,
         }}
       >
-        <div className="relative">
+        <div className="relative overflow-hidden">
           {/* Top row labels (column letters) */}
           <div
             className="absolute -top-4 left-0 right-0 flex hidden lg:flex"
