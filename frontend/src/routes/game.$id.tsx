@@ -4,6 +4,8 @@ import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
 import { BoardPanel, type EvalBarProps } from "@/components/board-panel";
+import { Board } from "@/components/board";
+import { EvaluationBar } from "@/components/evaluation-bar";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
@@ -195,31 +197,25 @@ function GamePageContent() {
   }, []);
 
   if (!isLargeScreen) {
-    // BoardPanel internal chrome (stable, small values within our control):
-    // - Eval bar: 28px when visible
-    // - Staged action row: h-6(24px) + mt-1(4px) + mb-0.5(2px) = 30px
-    // - BoardPanel padding: p-1 = 4px * 2 = 8px
-    // - Board inner padding: p-2.5 = 10px * 2 = 20px
-    const boardPanelChromeH =
-      (evalBarProps?.isVisible ? 28 : 0) + 30 + 8 + 20;
-    const boardPanelChromeW = 8 + 20; // BoardPanel p-1 + Board p-2.5 sides
-
-    const availBoardH = Math.max(0, boardAreaSize.h - boardPanelChromeH);
-    const availBoardW = Math.max(0, boardAreaSize.w - boardPanelChromeW);
-
-    const mobileGapSizePx = Math.max(3, Math.min(6, availBoardW * 0.012));
+    // Board renders flush (no padding) — the measured container IS the grid space.
+    // For < 8 columns, use 8 as reference so cells don't grow oversized.
+    const mobileGapSizePx = 8;
+    const referenceColsForWidth = Math.max(cols, 8);
     const mobileCellSizePx =
       boardAreaSize.w > 0
         ? Math.max(
             28, // minimum tappable size
             Math.min(
-              (availBoardH - (rows - 1) * mobileGapSizePx) / rows,
-              (availBoardW - (cols - 1) * mobileGapSizePx) / cols,
+              (boardAreaSize.h - (rows - 1) * mobileGapSizePx) / rows,
+              (boardAreaSize.w - (referenceColsForWidth - 1) * mobileGapSizePx) /
+                referenceColsForWidth,
             ),
           )
         : 2 * 16; // 2rem fallback before first measurement
     const mobileGapSizeRem = mobileGapSizePx / 16;
     const mobileCellSizeRem = mobileCellSizePx / 16;
+
+    const hasLocalPlayer = board.primaryLocalPlayerId != null;
 
     return (
       <>
@@ -255,13 +251,13 @@ function GamePageContent() {
             </div>
           )}
 
-          {/* Main content: timers + board */}
-          <div className="flex flex-col flex-1 items-center px-1 min-h-0 gap-1 pt-1">
+          {/* Main content: timers + eval bar + board */}
+          <div className="flex flex-col flex-1 items-center min-h-0 gap-1 pt-1">
             {board.shouldRender ? (
               <>
                 {/* Top compact timer */}
                 {timers.topPlayer && (
-                  <div className="w-full shrink-0">
+                  <div className="w-full px-1 shrink-0">
                     <PlayerTimerCard
                       player={timers.topPlayer}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
@@ -275,51 +271,54 @@ function GamePageContent() {
                   </div>
                 )}
 
-                {/* Board panel — fills remaining vertical space (measured by ResizeObserver) */}
+                {/* Eval bar — outside the board, as a sibling */}
+                {evalBarProps && (
+                  <div className="w-full shrink-0">
+                    <EvaluationBar
+                      evaluation={evalBarProps.evaluation}
+                      isPending={evalBarProps.isPending}
+                      isVisible={evalBarProps.isVisible}
+                      player1Color={evalBarProps.player1Color}
+                      player2Color={evalBarProps.player2Color}
+                    />
+                  </div>
+                )}
+
+                {/* Board — flush, edge-to-edge, fills remaining space */}
                 <div ref={boardAreaRef} className="flex-1 flex items-center justify-center w-full min-h-0">
-                  <BoardPanel
-                    mobileMode
-                    mobileGapSizeRem={mobileGapSizeRem}
-                    mobileCellSizeRem={mobileCellSizeRem}
-                    gameState={board.gameState}
-                    isLoadingConfig={board.isLoadingConfig}
-                    loadError={board.loadError}
-                    primaryLocalPlayerId={board.primaryLocalPlayerId}
-                    rows={board.rows}
-                    cols={board.cols}
-                    boardPawns={board.boardPawns}
-                    boardWalls={board.boardWalls}
-                    stagedArrows={board.stagedArrows}
-                    playerColorsForBoard={board.playerColorsForBoard}
-                    interactionLocked={board.interactionLocked}
-                    lastMove={board.lastMove}
+                  <Board
+                    rows={rows}
+                    cols={cols}
+                    pawns={board.boardPawns}
+                    walls={board.boardWalls}
+                    arrows={board.stagedArrows}
+                    className="p-0"
+                    maxWidth="max-w-full"
+                    playerColors={board.playerColorsForBoard}
+                    onCellClick={board.onCellClick}
+                    onWallClick={board.onWallClick}
+                    onPawnClick={board.onPawnClick}
+                    onPawnDragStart={board.interactionLocked ? undefined : board.onPawnDragStart}
+                    onPawnDragEnd={board.onPawnDragEnd}
+                    onCellDrop={board.interactionLocked ? undefined : board.onCellDrop}
+                    lastMove={!Array.isArray(board.lastMove) ? board.lastMove : undefined}
+                    lastMoves={Array.isArray(board.lastMove) ? board.lastMove : undefined}
                     lastWalls={board.lastWalls}
                     draggingPawnId={board.draggingPawnId}
                     selectedPawnId={board.selectedPawnId}
                     disableMousePawnInteraction={board.disableMousePawnInteraction}
-                    actionablePlayerId={board.actionablePlayerId}
-                    onCellClick={board.onCellClick}
-                    onWallClick={board.onWallClick}
-                    onPawnClick={board.onPawnClick}
-                    onPawnDragStart={board.onPawnDragStart}
-                    onPawnDragEnd={board.onPawnDragEnd}
-                    onCellDrop={board.onCellDrop}
-                    stagedActions={board.stagedActions}
-                    premovedActions={board.premovedActions}
-                    pendingActionsCount={board.pendingActionsCount}
-                    activeLocalPlayerId={board.activeLocalPlayerId}
-                    hasActionMessage={board.hasActionMessage}
-                    actionError={board.actionError}
-                    actionStatusText={board.actionStatusText}
-                    clearStagedActions={board.clearStagedActions}
-                    commitStagedActions={board.commitStagedActions}
-                    evalBarProps={evalBarProps}
+                    stagedActionsCount={board.pendingActionsCount}
+                    controllablePlayerId={board.actionablePlayerId ?? undefined}
+                    forceReadOnly={!hasLocalPlayer}
+                    gapSizeRem={mobileGapSizeRem}
+                    maxCellSizeRem={mobileCellSizeRem}
+                    flush
                   />
                 </div>
 
                 {/* Bottom compact timer */}
                 {timers.bottomPlayer && (
-                  <div className="w-full shrink-0">
+                  <div className="w-full px-1 shrink-0">
                     <PlayerTimerCard
                       player={timers.bottomPlayer}
                       isActive={timers.gameTurn === timers.bottomPlayer.playerId}

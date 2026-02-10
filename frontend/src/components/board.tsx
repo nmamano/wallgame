@@ -115,6 +115,8 @@ export interface BoardProps {
   gapSizeRem?: number;
   /** Override default max cell size (default: 3rem) */
   maxCellSizeRem?: number;
+  /** Edge-to-edge mode: strips internal padding and border-radius */
+  flush?: boolean;
 }
 
 interface WallMaps {
@@ -228,6 +230,7 @@ export function Board({
   onArrowDragFinalize,
   gapSizeRem: gapSizeRemProp,
   maxCellSizeRem: maxCellSizeRemProp,
+  flush = false,
 }: BoardProps) {
   // Generate IDs for pawns internally
   const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
@@ -246,7 +249,7 @@ export function Board({
   // Calculate cell size for positioning walls (dynamic based on grid size)
   const gapSize = gapSizeRemProp ?? 0.9; // rem
   const maxCellSize = maxCellSizeRemProp ?? 3; // rem
-  const paddingX = 2; // rem (p-4 = 1rem on each side)
+  const paddingX = flush ? 0 : 2; // rem (p-4 = 1rem on each side, 0 in flush mode)
 
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
@@ -1404,7 +1407,11 @@ export function Board({
       className={`flex items-center justify-center w-full ${className} ${maxWidth}`}
     >
       <div
-        className="rounded-lg p-2.5 lg:p-4 bg-amber-100 dark:bg-card w-full h-auto"
+        className={
+          flush
+            ? "bg-amber-100 dark:bg-card w-full h-auto"
+            : "rounded-lg p-2.5 lg:p-4 bg-amber-100 dark:bg-card w-full h-auto"
+        }
         style={{
           maxWidth: maxBoardWidth,
         }}
