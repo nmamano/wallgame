@@ -1239,7 +1239,12 @@ export function Board({
     getCellRect,
   ]);
 
-  const maxBoardWidth = `${cols * maxCellSize + (cols - 1) * gapSize + paddingX}rem`;
+  // In flush mode with 8+ cols, skip maxWidth to avoid px→rem→px rounding that can
+  // clip the last column by 1-2px. The container's w-full handles the constraint.
+  // For < 8 cols we still need maxWidth so small boards don't stretch to full width.
+  const maxBoardWidthRem = cols * maxCellSize + (cols - 1) * gapSize + paddingX;
+  const maxBoardWidth =
+    flush && cols >= 8 ? undefined : `${maxBoardWidthRem}rem`;
 
   const handleCellDrop = (
     event: DragEvent<HTMLDivElement>,
