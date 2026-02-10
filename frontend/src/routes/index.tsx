@@ -16,8 +16,8 @@ export const Route = createFileRoute("/")({
 function Index() {
   const isSmallScreen = useMediaQuery("(max-width: 639px)");
   return (
-    <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-4 md:py-8 lg:py-12">
+    <div className="min-h-screen bg-background flex flex-col">
+      <div className="container mx-auto px-4 py-4 md:py-8 lg:py-12 flex-1">
         <div className="grid xl:grid-cols-2 gap-6 lg:gap-12 xl:gap-16 items-start">
           {/* Left Column */}
           <div className="space-y-6 lg:space-y-20">
