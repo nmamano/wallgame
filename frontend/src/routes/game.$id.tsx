@@ -262,7 +262,7 @@ function GamePageContent() {
           )}
 
           {/* Main content: timers + eval bar + board */}
-          <div className="flex flex-col flex-1 items-center min-h-0 gap-1 pt-1">
+          <div className="flex flex-col flex-1 items-center min-h-0 gap-1 py-1">
             {board.shouldRender ? (
               <>
                 {/* Top compact timer */}
