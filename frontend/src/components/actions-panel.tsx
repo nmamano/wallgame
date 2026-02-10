@@ -9,60 +9,22 @@ import {
   LogOut,
 } from "lucide-react";
 import type { PlayerId } from "../../../shared/domain/game-types";
-import type { ActionChannel } from "@/lib/player-controllers";
 import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 import type {
   GamePlayer,
   ScoreboardEntry,
   RematchState,
 } from "@/hooks/use-game-page-controller";
+import type {
+  DrawDecisionPromptState,
+  TakebackDecisionPromptState,
+  PendingDrawOfferState,
+  PendingTakebackRequestState,
+  PassiveNotice,
+  OutgoingTimeInfo,
+} from "@/hooks/use-meta-game-actions";
 
 type AccessKind = ResolveGameAccessResponse["kind"] | null;
-
-interface DrawDecisionPromptState {
-  from: PlayerId;
-  to: PlayerId;
-}
-
-interface TakebackDecisionPromptState {
-  requester: PlayerId;
-  responder: PlayerId;
-}
-
-interface OutgoingTimeInfo {
-  id: number;
-  message: string;
-  createdAt: number;
-}
-
-interface PassiveNotice {
-  id: number;
-  type:
-    | "opponent-resigned"
-    | "opponent-gave-time"
-    | "draw-offer-declined"
-    | "takeback-request-declined";
-  message: string;
-}
-
-interface PendingDrawOfferState {
-  actorSeatId: PlayerId;
-  opponentSeatId: PlayerId;
-  requestId: number;
-  status: "pending";
-  createdAt: number;
-  channel: ActionChannel;
-}
-
-interface PendingTakebackRequestState {
-  actorSeatId: PlayerId;
-  opponentSeatId: PlayerId;
-  requestId: number;
-  status: "pending";
-  createdAt: number;
-  historyLengthAtRequest: number;
-  channel: ActionChannel;
-}
 
 interface LiveActionsProps {
   drawDecisionPrompt: DrawDecisionPromptState | null;

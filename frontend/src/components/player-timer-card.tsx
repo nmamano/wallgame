@@ -23,7 +23,7 @@ interface PlayerTimerCardProps {
   isActive: boolean;
   timeLeft: number;
   goalDistance: number | null;
-  minWidthRem: number;
+  minWidthRem?: number;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
   isUnlimited?: boolean;
@@ -42,7 +42,7 @@ export function PlayerTimerCard({
   isActive,
   timeLeft,
   goalDistance,
-  minWidthRem,
+  minWidthRem = 0,
   score = null,
   gameStatus = "playing",
   isUnlimited = false,

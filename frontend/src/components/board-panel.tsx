@@ -25,9 +25,9 @@ export interface EvalBarProps {
 }
 
 interface BoardPanelProps {
-  // Container styling
-  adjustedBoardContainerHeight: number;
-  minWidthRem: number;
+  // Container styling (unused in mobileMode)
+  adjustedBoardContainerHeight?: number;
+  minWidthRem?: number;
 
   // Game state
   gameState: {
@@ -99,8 +99,8 @@ interface BoardPanelProps {
 }
 
 export function BoardPanel({
-  adjustedBoardContainerHeight,
-  minWidthRem,
+  adjustedBoardContainerHeight = 0,
+  minWidthRem = 0,
   gameState,
   isLoadingConfig,
   loadError,

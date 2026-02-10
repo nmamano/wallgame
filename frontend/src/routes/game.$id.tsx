@@ -1,5 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { useMemo } from "react";
+import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
@@ -76,7 +76,7 @@ function GamePageContent() {
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
-  const { viewportWidth, viewportHeight } = useMobileViewport();
+  const { viewportHeight } = useMobileViewport();
 
   // Note: Annotations are now managed by the controller (via useBoardInteractions hook)
   // and passed through board.annotations, board.previewAnnotation, etc.
@@ -165,42 +165,59 @@ function GamePageContent() {
     chatInputHeight;
 
   // ============================================================================
-  // Mobile Layout: viewport-derived board sizing
+  // Mobile Layout: measure-then-size board via ResizeObserver
   // ============================================================================
+
+  // Ref + ResizeObserver for the flex-1 board area container.
+  // All external chrome (timers, toolbar, drawer tab bar) is shrink-0,
+  // so the browser handles the height subtraction — no magic pixel constants.
+  const boardAreaRef = useRef<HTMLDivElement>(null);
+  const [boardAreaSize, setBoardAreaSize] = useState({ w: 0, h: 0 });
+
+  useLayoutEffect(() => {
+    const el = boardAreaRef.current;
+    if (!el) return;
+    // Synchronous initial measurement (avoids layout flash)
+    const rect = el.getBoundingClientRect();
+    setBoardAreaSize({ w: rect.width, h: rect.height });
+    // Track subsequent changes (orientation, resize, keyboard)
+    const observer = new ResizeObserver((entries) => {
+      const entry = entries[0];
+      if (entry) {
+        setBoardAreaSize({
+          w: entry.contentRect.width,
+          h: entry.contentRect.height,
+        });
+      }
+    });
+    observer.observe(el);
+    return () => observer.disconnect();
+  }, []);
+
   if (!isLargeScreen) {
-    // Height budget (px): subtract all non-board chrome from viewport
-    const bannerHeight = isSpectator || isReplay ? 24 : 0;
-    const compactTimerHeight = 32;
-    const evalBarHeight = evalBarProps?.isVisible ? 28 : 0;
-    const stagedActionsHeight = 32;
-    const toolbarHeight = 40;
-    const drawerTabBarHeight = 36;
-    const mobileGap = 4;
-    const mobilePadding = 8; // 4px top + 4px bottom
+    // BoardPanel internal chrome (stable, small values within our control):
+    // - Eval bar: 28px when visible
+    // - Staged action row: h-6(24px) + mt-1(4px) + mb-0.5(2px) = 30px
+    // - BoardPanel padding: p-1 = 4px * 2 = 8px
+    // - Board inner padding: p-2.5 = 10px * 2 = 20px
+    const boardPanelChromeH =
+      (evalBarProps?.isVisible ? 28 : 0) + 30 + 8 + 20;
+    const boardPanelChromeW = 8 + 20; // BoardPanel p-1 + Board p-2.5 sides
 
-    const nonBoardHeight =
-      bannerHeight +
-      compactTimerHeight * 2 +
-      mobileGap * 3 +
-      evalBarHeight +
-      stagedActionsHeight +
-      toolbarHeight +
-      drawerTabBarHeight +
-      mobilePadding +
-      // Board panel padding (p-1 = 4px * 2) + border (1px * 2)
-      10;
+    const availBoardH = Math.max(0, boardAreaSize.h - boardPanelChromeH);
+    const availBoardW = Math.max(0, boardAreaSize.w - boardPanelChromeW);
 
-    const availableBoardHeight = viewportHeight - nonBoardHeight;
-    const availableBoardWidth = viewportWidth - mobilePadding * 2 - 10; // board panel padding + border
-
-    const mobileGapSizePx = Math.max(3, Math.min(6, viewportWidth * 0.012));
-    const mobileCellSizePx = Math.max(
-      28, // minimum tappable size
-      Math.min(
-        (availableBoardHeight - (rows - 1) * mobileGapSizePx) / rows,
-        (availableBoardWidth - (cols - 1) * mobileGapSizePx) / cols,
-      ),
-    );
+    const mobileGapSizePx = Math.max(3, Math.min(6, availBoardW * 0.012));
+    const mobileCellSizePx =
+      boardAreaSize.w > 0
+        ? Math.max(
+            28, // minimum tappable size
+            Math.min(
+              (availBoardH - (rows - 1) * mobileGapSizePx) / rows,
+              (availBoardW - (cols - 1) * mobileGapSizePx) / cols,
+            ),
+          )
+        : 2 * 16; // 2rem fallback before first measurement
     const mobileGapSizeRem = mobileGapSizePx / 16;
     const mobileCellSizeRem = mobileCellSizePx / 16;
 
@@ -239,7 +256,7 @@ function GamePageContent() {
           )}
 
           {/* Main content: timers + board */}
-          <div className="flex flex-col flex-1 items-center px-1 min-h-0" style={{ gap: `${mobileGap}px`, paddingTop: `${mobileGap}px` }}>
+          <div className="flex flex-col flex-1 items-center px-1 min-h-0 gap-1 pt-1">
             {board.shouldRender ? (
               <>
                 {/* Top compact timer */}
@@ -249,7 +266,6 @@ function GamePageContent() {
                       player={timers.topPlayer}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
                       timeLeft={timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0}
-                      minWidthRem={0}
                       goalDistance={timers.goalDistances[timers.topPlayer.playerId] ?? null}
                       score={timers.getPlayerMatchScore(timers.topPlayer)}
                       gameStatus={board.gameStatus}
@@ -259,11 +275,9 @@ function GamePageContent() {
                   </div>
                 )}
 
-                {/* Board panel — fills remaining vertical space */}
-                <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                {/* Board panel — fills remaining vertical space (measured by ResizeObserver) */}
+                <div ref={boardAreaRef} className="flex-1 flex items-center justify-center w-full min-h-0">
                   <BoardPanel
-                    adjustedBoardContainerHeight={0}
-                    minWidthRem={0}
                     mobileMode
                     mobileGapSizeRem={mobileGapSizeRem}
                     mobileCellSizeRem={mobileCellSizeRem}
@@ -310,7 +324,6 @@ function GamePageContent() {
                       player={timers.bottomPlayer}
                       isActive={timers.gameTurn === timers.bottomPlayer.playerId}
                       timeLeft={timers.displayedTimeLeft[timers.bottomPlayer.playerId] ?? 0}
-                      minWidthRem={0}
                       goalDistance={timers.goalDistances[timers.bottomPlayer.playerId] ?? null}
                       score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                       gameStatus={board.gameStatus}
