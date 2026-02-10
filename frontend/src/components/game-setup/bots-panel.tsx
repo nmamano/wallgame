@@ -1,5 +1,4 @@
 import { useMemo, useState } from "react";
-import { Button } from "@/components/ui/button";
 import {
   Table,
   TableBody,
@@ -34,7 +33,6 @@ const usesBoardSize = (variant: Variant): boolean =>
 interface BotsPanelProps {
   config: GameConfiguration;
   onPlayBot: (args: { botId: string; config: GameConfiguration }) => void;
-  onRecommendedSelect?: (boardWidth: number, boardHeight: number) => void;
   isPlaying?: boolean;
   errorMessage?: string | null;
 }
@@ -42,7 +40,6 @@ interface BotsPanelProps {
 export function BotsPanel({
   config,
   onPlayBot,
-  onRecommendedSelect,
   isPlaying = false,
   errorMessage,
 }: BotsPanelProps) {
@@ -67,37 +64,23 @@ export function BotsPanel({
 
   const [activeTab, setActiveTab] = useState<BotTabKey>("recommended");
 
-  const renderPlayButton = (
+  const handlePlayBot = (
     botId: string,
     boardWidth: number,
     boardHeight: number,
-  ) => (
-    <Button
-      size="sm"
-      disabled={isPlaying}
-      onClick={(e) => {
-        e.stopPropagation();
-        onPlayBot({
-          botId,
-          config: {
-            ...config,
-            boardWidth,
-            boardHeight,
-            rated: false,
-            timeControl: BOT_GAME_TIME_CONTROL,
-          },
-        });
-      }}
-    >
-      Play
-    </Button>
-  );
-
-  const renderTypeBadge = (isOfficial: boolean) => (
-    <Badge variant={isOfficial ? "default" : "outline"}>
-      {isOfficial ? "official" : "custom"}
-    </Badge>
-  );
+  ) => {
+    if (isPlaying) return;
+    onPlayBot({
+      botId,
+      config: {
+        ...config,
+        boardWidth,
+        boardHeight,
+        rated: false,
+        timeControl: BOT_GAME_TIME_CONTROL,
+      },
+    });
+  };
 
   const renderEmptyState = (label: string, colSpan: number) => (
     <TableRow>
@@ -150,24 +133,24 @@ export function BotsPanel({
                 <TableHead className="text-left">Name</TableHead>
                 <TableHead className="text-left">Type</TableHead>
                 <TableHead className="text-left">Board size</TableHead>
-                <TableHead className="text-right">Play</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {recommendedLoading &&
-                renderEmptyState("Loading recommended bots...", 4)}
+                renderEmptyState("Loading recommended bots...", 3)}
               {!recommendedLoading &&
                 (recommendedRows.length === 0
                   ? renderEmptyState(
                       "No recommended bots for these settings.",
-                      4,
+                      3,
                     )
                   : recommendedRows.map((entry) => (
                       <TableRow
                         key={`${entry.bot.id}-${entry.boardWidth}x${entry.boardHeight}`}
                         className="hover:bg-muted/40 transition-colors cursor-pointer"
                         onClick={() =>
-                          onRecommendedSelect?.(
+                          handlePlayBot(
+                            entry.bot.id,
                             entry.boardWidth,
                             entry.boardHeight,
                           )
@@ -175,17 +158,12 @@ export function BotsPanel({
                       >
                         <TableCell>{entry.bot.name}</TableCell>
                         <TableCell>
-                          {renderTypeBadge(entry.bot.isOfficial)}
+                          <Badge variant={entry.bot.isOfficial ? "default" : "outline"}>
+                            {entry.bot.isOfficial ? "official" : "custom"}
+                          </Badge>
                         </TableCell>
                         <TableCell>
                           {formatBoardSizeShort(
-                            entry.boardWidth,
-                            entry.boardHeight,
-                          )}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {renderPlayButton(
-                            entry.bot.id,
                             entry.boardWidth,
                             entry.boardHeight,
                           )}
@@ -210,22 +188,32 @@ export function BotsPanel({
                 <TableHead className="text-left">Name</TableHead>
                 <TableHead className="text-left">Type</TableHead>
                 <TableHead className="text-left">Board size</TableHead>
-                <TableHead className="text-right">Play</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {matchingLoading &&
-                renderEmptyState("Loading matching bots...", 4)}
+                renderEmptyState("Loading matching bots...", 3)}
               {!matchingLoading &&
                 (matchingRows.length === 0
-                  ? renderEmptyState("No bots match your current settings.", 4)
+                  ? renderEmptyState("No bots match your current settings.", 3)
                   : matchingRows.map((bot) => (
                       <TableRow
                         key={bot.id}
-                        className="hover:bg-muted/40 transition-colors"
+                        className="hover:bg-muted/40 transition-colors cursor-pointer"
+                        onClick={() =>
+                          handlePlayBot(
+                            bot.id,
+                            config.boardWidth,
+                            config.boardHeight,
+                          )
+                        }
                       >
                         <TableCell>{bot.name}</TableCell>
-                        <TableCell>{renderTypeBadge(bot.isOfficial)}</TableCell>
+                        <TableCell>
+                          <Badge variant={bot.isOfficial ? "default" : "outline"}>
+                            {bot.isOfficial ? "official" : "custom"}
+                          </Badge>
+                        </TableCell>
                         <TableCell>
                           {includeBoardSize
                             ? formatBoardSizeShort(
@@ -233,13 +221,6 @@ export function BotsPanel({
                                 config.boardHeight,
                               )
                             : "n/a"}
-                        </TableCell>
-                        <TableCell className="text-right">
-                          {renderPlayButton(
-                            bot.id,
-                            config.boardWidth,
-                            config.boardHeight,
-                          )}
                         </TableCell>
                       </TableRow>
                     )))}

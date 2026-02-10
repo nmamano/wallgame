@@ -31,6 +31,7 @@ import {
 } from "@/components/ui/select";
 import { Loader2 } from "lucide-react";
 import { useQuery } from "@tanstack/react-query";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { userQueryOptions, fetchMatchmakingGames } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { createGameSession, joinGameSession } from "@/lib/api";
@@ -123,6 +124,7 @@ function GameSetup() {
   const [createGameError, setCreateGameError] = useState<string | null>(null);
   const [botGameError, setBotGameError] = useState<string | null>(null);
   const playVsBotMutation = usePlayVsBotMutation();
+  const isSmallScreen = useMediaQuery("(max-width: 639px)");
 
   // Game configuration state - initialize from user settings
   const [gameConfig, setGameConfig] = useState<GameConfiguration>(
@@ -556,10 +558,12 @@ function GameSetup() {
 
   // --- Render ---
 
+  const Wrapper = isSmallScreen ? "div" : Card;
+
   return (
-    <div className="container mx-auto py-8 px-4">
-      <div className="max-w-5xl mx-auto">
-        <Card className="border-border/50 bg-card/50 backdrop-blur">
+    <div className={isSmallScreen ? "py-2" : "container mx-auto py-8 px-4"}>
+      <div className={isSmallScreen ? "" : "max-w-5xl mx-auto"}>
+        <Wrapper className={isSmallScreen ? "" : "border-border/50 bg-card/50 backdrop-blur"}>
           {/* Tab bar */}
           <div className="flex border-b">
             {TABS.map((tab) => (
@@ -577,7 +581,7 @@ function GameSetup() {
             ))}
           </div>
 
-          <div className="p-5 space-y-4">
+          <div className={isSmallScreen ? "px-3 py-3 space-y-4" : "p-5 space-y-4"}>
             {/* Config section - settings vary per tab */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {/* Variant (all tabs) */}
@@ -772,13 +776,6 @@ function GameSetup() {
               <BotsPanel
                 config={gameConfig}
                 onPlayBot={(args) => void handlePlayBot(args)}
-                onRecommendedSelect={(boardWidth, boardHeight) =>
-                  handleGameConfigChange({
-                    ...gameConfig,
-                    boardWidth,
-                    boardHeight,
-                  })
-                }
                 isPlaying={playVsBotMutation.isPending}
                 errorMessage={botGameError}
               />
@@ -824,7 +821,7 @@ function GameSetup() {
               />
             )}
           </div>
-        </Card>
+        </Wrapper>
       </div>
     </div>
   );

@@ -93,11 +93,11 @@ export function HumanGamesPanel({
         <Table>
           <TableHeader>
             <TableRow>
+              <TableHead className="text-center">Player</TableHead>
               <TableHead className="text-center">Variant</TableHead>
               <TableHead className="text-center">Rated</TableHead>
               <TableHead className="text-center">Time control</TableHead>
               <TableHead className="text-center">Board size</TableHead>
-              <TableHead className="text-center">Player</TableHead>
             </TableRow>
           </TableHeader>
           <TableBody>
@@ -121,6 +121,9 @@ export function HumanGamesPanel({
                     isJoiningGame === game.id ? "opacity-50" : ""
                   }`}
                 >
+                  <TableCell className="text-center">
+                    {formatPlayers(game.players)}
+                  </TableCell>
                   <TableCell className="capitalize text-center">
                     <span
                       className={`inline-block px-2 py-1 ${
@@ -177,9 +180,6 @@ export function HumanGamesPanel({
                         game.config.boardHeight,
                       )}
                     </span>
-                  </TableCell>
-                  <TableCell className="text-center">
-                    {formatPlayers(game.players)}
                   </TableCell>
                 </TableRow>
               ))
