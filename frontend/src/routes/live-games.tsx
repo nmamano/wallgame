@@ -21,6 +21,7 @@ import {
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
 import { Eye, Users, Loader2 } from "lucide-react";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import type { LiveGameSummary } from "../../../shared/contracts/games";
 import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
 import { getBoardSizeBucket } from "../../../shared/domain/past-games";
@@ -53,6 +54,8 @@ function getDisplayedMoveCount(game: LiveGameSummary): number {
 
 function LiveGames() {
   const navigate = useNavigate();
+  const isSmallScreen = useMediaQuery("(max-width: 639px)");
+  const Wrapper = isSmallScreen ? "div" : Card;
 
   const [filters, setFilters] = useState({
     variant: "all",
@@ -165,18 +168,18 @@ function LiveGames() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance mb-8">
+      <div className={isSmallScreen ? "py-4 px-3" : "container mx-auto py-8 px-4"}>
+        <h1 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight text-foreground text-balance mb-4 sm:mb-8">
           Live Games
         </h1>
 
         {/* Filters */}
-        <Card className="p-6 mb-6 border-border/50 bg-card/50 backdrop-blur">
-          <h2 className="text-2xl font-serif font-semibold mb-4 text-foreground">
+        <Wrapper className={isSmallScreen ? "mb-4" : "p-6 mb-6 border-border/50 bg-card/50 backdrop-blur"}>
+          <h2 className="text-lg sm:text-2xl font-serif font-semibold mb-3 sm:mb-4 text-foreground">
             Filters
           </h2>
 
-          <div className="grid md:grid-cols-2 lg:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 md:grid-cols-2 lg:grid-cols-3 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label className="text-foreground">Variant</Label>
               <Select
@@ -283,39 +286,43 @@ function LiveGames() {
               />
             </div>
           </div>
-        </Card>
+        </Wrapper>
 
         {/* Games Table */}
-        <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-          {!isConnected && games.length === 0 ? (
-            <div className="flex items-center justify-center py-12">
-              <Loader2 className="w-6 h-6 animate-spin text-muted-foreground mr-2" />
-              <span className="text-muted-foreground">
-                Loading live games...
-              </span>
-            </div>
-          ) : filteredGames.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              {games.length === 0
-                ? "No ongoing games at the moment. Check back later!"
-                : "No games match your filters."}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Watch</TableHead>
-                  <TableHead>Viewers</TableHead>
-                  <TableHead>Variant</TableHead>
-                  <TableHead>Rated</TableHead>
-                  <TableHead>Time Control</TableHead>
-                  <TableHead>Board Size</TableHead>
-                  <TableHead>Players</TableHead>
-                  <TableHead>Moves</TableHead>
+        <Wrapper className={isSmallScreen ? "overflow-x-auto -mx-3" : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"}>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead>Watch</TableHead>
+                <TableHead>Viewers</TableHead>
+                <TableHead>Variant</TableHead>
+                <TableHead>Rated</TableHead>
+                <TableHead>Time Control</TableHead>
+                <TableHead>Board Size</TableHead>
+                <TableHead>Players</TableHead>
+                <TableHead>Moves</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {!isConnected && games.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center">
+                    <div className="flex items-center justify-center text-muted-foreground">
+                      <Loader2 className="w-6 h-6 animate-spin mr-2" />
+                      Loading live games...
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {filteredGames.map((game) => (
+              ) : filteredGames.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={8} className="py-12 text-center text-muted-foreground">
+                    {games.length === 0
+                      ? "No ongoing games at the moment. Check back later!"
+                      : "No games match your filters."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                filteredGames.map((game) => (
                   <TableRow key={game.id} className="hover:bg-muted/30">
                     <TableCell>
                       <Button
@@ -347,11 +354,11 @@ function LiveGames() {
                     <TableCell>{formatPlayers(game)}</TableCell>
                     <TableCell>{getDisplayedMoveCount(game)}</TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
-        </Card>
+                ))
+              )}
+            </TableBody>
+          </Table>
+        </Wrapper>
       </div>
     </div>
   );

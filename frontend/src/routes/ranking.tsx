@@ -25,6 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Trophy, Medal, Award, Loader2 } from "lucide-react";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { api } from "@/lib/api";
 import {
   type PastGamesFiltersState,
@@ -105,6 +106,8 @@ const formatDate = (timestamp: number): string => {
 function Ranking() {
   const navigate = useNavigate();
   const router = useRouterState();
+  const isSmallScreen = useMediaQuery("(max-width: 639px)");
+  const Wrapper = isSmallScreen ? "div" : Card;
 
   const initialFilters = useMemo(
     () => parseRankingNavState(router.location.state),
@@ -167,18 +170,18 @@ function Ranking() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto py-8 px-4">
-        <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground mb-8 text-balance">
+      <div className={isSmallScreen ? "py-4 px-3" : "container mx-auto py-8 px-4"}>
+        <h1 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight text-foreground mb-4 sm:mb-8 text-balance">
           Ranking
         </h1>
 
         {/* Filters */}
-        <Card className="p-6 mb-6 border-border/50 bg-card/50 backdrop-blur">
-          <h2 className="text-2xl font-serif font-semibold mb-4 text-foreground">
+        <Wrapper className={isSmallScreen ? "mb-4" : "p-6 mb-6 border-border/50 bg-card/50 backdrop-blur"}>
+          <h2 className="text-lg sm:text-2xl font-serif font-semibold mb-3 sm:mb-4 text-foreground">
             Filters
           </h2>
 
-          <div className="grid md:grid-cols-3 gap-4">
+          <div className="grid grid-cols-2 sm:grid-cols-3 gap-3 sm:gap-4">
             <div className="space-y-2">
               <Label className="text-foreground">Variant</Label>
               <Select
@@ -230,40 +233,48 @@ function Ranking() {
               />
             </div>
           </div>
-        </Card>
+        </Wrapper>
 
         {/* Rankings Table */}
-        <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-          {isPending ? (
-            <div className="flex items-center justify-center py-12 text-muted-foreground">
-              <Loader2 className="w-5 h-5 animate-spin mr-2" />
-              Loading rankings...
-            </div>
-          ) : error ? (
-            <div className="text-center py-12 text-destructive">
-              {error.message}
-            </div>
-          ) : rankings.length === 0 ? (
-            <div className="text-center py-12 text-muted-foreground">
-              {hasPlayerSearch
-                ? "No player found for that search."
-                : "No ranking data available for these filters."}
-            </div>
-          ) : (
-            <Table>
-              <TableHeader>
-                <TableRow className="bg-muted/50">
-                  <TableHead>Rank</TableHead>
-                  <TableHead>Player</TableHead>
-                  <TableHead>Rating</TableHead>
-                  <TableHead>Peak Rating</TableHead>
-                  <TableHead>Record</TableHead>
-                  <TableHead>Join Date</TableHead>
-                  <TableHead>Last Game</TableHead>
+        <Wrapper className={isSmallScreen ? "overflow-x-auto -mx-3" : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"}>
+          <Table>
+            <TableHeader>
+              <TableRow className="bg-muted/50">
+                <TableHead>Rank</TableHead>
+                <TableHead>Player</TableHead>
+                <TableHead>Rating</TableHead>
+                <TableHead>Peak Rating</TableHead>
+                <TableHead>Record</TableHead>
+                <TableHead>Join Date</TableHead>
+                <TableHead>Last Game</TableHead>
+              </TableRow>
+            </TableHeader>
+            <TableBody>
+              {isPending ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-12 text-center">
+                    <div className="flex items-center justify-center text-muted-foreground">
+                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                      Loading rankings...
+                    </div>
+                  </TableCell>
                 </TableRow>
-              </TableHeader>
-              <TableBody>
-                {rankings.map((ranking) => (
+              ) : error ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-12 text-center text-destructive">
+                    {error.message}
+                  </TableCell>
+                </TableRow>
+              ) : rankings.length === 0 ? (
+                <TableRow>
+                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                    {hasPlayerSearch
+                      ? "No player found for that search."
+                      : "No ranking data available for these filters."}
+                  </TableCell>
+                </TableRow>
+              ) : (
+                rankings.map((ranking) => (
                   <TableRow
                     key={ranking.rank}
                     className="hover:bg-muted/30 cursor-pointer"
@@ -294,10 +305,10 @@ function Ranking() {
                       {formatDate(ranking.lastGameAt)}
                     </TableCell>
                   </TableRow>
-                ))}
-              </TableBody>
-            </Table>
-          )}
+                ))
+              )}
+            </TableBody>
+          </Table>
           <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
             <span className="text-sm text-muted-foreground">
               Page {resolvedPage}
@@ -321,7 +332,7 @@ function Ranking() {
               </Button>
             </div>
           </div>
-        </Card>
+        </Wrapper>
       </div>
     </div>
   );
