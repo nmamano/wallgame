@@ -87,10 +87,10 @@ export function PlayerTimerCard({
             : "bg-card/50 border border-border"
         }`}
       >
-        {/* Left: avatar + name */}
-        <div className="flex items-center gap-1.5 min-w-0">
+        {/* Left: avatar + name + rating */}
+        <div className="flex items-center gap-2 min-w-0">
           <div
-            className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+            className="relative w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
             style={{
               backgroundColor: `${colorHexMap[player.color]}20`,
               color: colorHexMap[player.color],
@@ -108,16 +108,28 @@ export function PlayerTimerCard({
             ) : (
               <User size={12} />
             )}
+            {/* Online presence dot */}
+            <span
+              className={`absolute -bottom-0.5 -right-0.5 w-2 h-2 rounded-full border border-background ${
+                player.isOnline ? "bg-green-500" : "bg-gray-400"
+              }`}
+            />
           </div>
           <span className="font-medium truncate text-xs">
             {trimmedBaseName || player.name}
           </span>
+          <span className="text-[9px] text-muted-foreground flex-shrink-0">
+            {player.rating}
+          </span>
         </div>
 
-        {/* Right: distance + timer */}
-        <div className="flex items-center gap-2 flex-shrink-0">
+        {/* Right: match score + distance + timer */}
+        <div className="flex items-center gap-3 flex-shrink-0">
           <span className="text-[9px] text-muted-foreground tabular-nums">
-            d:{goalDistanceLabel}
+            match: {scoreLabel}
+          </span>
+          <span className="text-[9px] text-muted-foreground tabular-nums">
+            dist: {goalDistanceLabel}
           </span>
           <span
             className={`text-sm font-mono font-bold tabular-nums whitespace-nowrap ${
