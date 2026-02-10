@@ -19,7 +19,7 @@ import {
   FREESTYLE_BOARD_WIDTH,
   normalizeFreestyleConfig,
 } from "../../../shared/domain/freestyle-setup";
-import { Input } from "@/components/ui/input";
+import { BoardSizePicker } from "@/components/game-setup/board-size-picker";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
 import {
@@ -73,28 +73,6 @@ function getDefaultTab(mode?: string): SetupTab {
   }
 }
 
-// --- Board size helpers ---
-
-const BOARD_SIZE_MIN = 4;
-const BOARD_SIZE_MAX = 20;
-
-const isBoardSizeDraft = (value: string): boolean => {
-  if (!/^\d{0,2}$/.test(value)) {
-    return false;
-  }
-  if (value === "") {
-    return true;
-  }
-  const numeric = Number(value);
-  if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
-    return true;
-  }
-  return value.length === 1 && (value === "1" || value === "2");
-};
-
-const clampBoardSize = (value: number): number =>
-  Math.min(Math.max(value, BOARD_SIZE_MIN), BOARD_SIZE_MAX);
-
 // --- Main component ---
 
 function GameSetup() {
@@ -141,22 +119,6 @@ function GameSetup() {
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [settings.isLoadingSettings, hasInitialized]);
 
-  // Board size draft state
-  const [boardWidthInput, setBoardWidthInput] = useState(() =>
-    String(gameConfig.boardWidth),
-  );
-  const [boardHeightInput, setBoardHeightInput] = useState(() =>
-    String(gameConfig.boardHeight),
-  );
-
-  useEffect(() => {
-    setBoardWidthInput(String(gameConfig.boardWidth));
-  }, [gameConfig.boardWidth]);
-
-  useEffect(() => {
-    setBoardHeightInput(String(gameConfig.boardHeight));
-  }, [gameConfig.boardHeight]);
-
   // Rated games only available on find-others and invite-friend tabs
   const canRatedGame =
     activeTab === "find-others" || activeTab === "invite-friend";
@@ -174,81 +136,6 @@ function GameSetup() {
   const handleGameConfigChange = (newConfig: GameConfiguration) => {
     setGameConfig(newConfig);
     settings.setGameConfig(newConfig);
-  };
-
-  // Board size change handlers
-  const handleBoardWidthChange = (nextValue: string) => {
-    if (!isBoardSizeDraft(nextValue)) return;
-
-    if (nextValue === "") {
-      setBoardWidthInput(nextValue);
-      return;
-    }
-
-    const numeric = Number(nextValue);
-    if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
-      setBoardWidthInput(String(numeric));
-      if (numeric !== gameConfig.boardWidth) {
-        handleGameConfigChange({ ...gameConfig, boardWidth: numeric });
-      }
-      return;
-    }
-
-    setBoardWidthInput(nextValue);
-  };
-
-  const handleBoardHeightChange = (nextValue: string) => {
-    if (!isBoardSizeDraft(nextValue)) return;
-
-    if (nextValue === "") {
-      setBoardHeightInput(nextValue);
-      return;
-    }
-
-    const numeric = Number(nextValue);
-    if (numeric >= BOARD_SIZE_MIN && numeric <= BOARD_SIZE_MAX) {
-      setBoardHeightInput(String(numeric));
-      if (numeric !== gameConfig.boardHeight) {
-        handleGameConfigChange({ ...gameConfig, boardHeight: numeric });
-      }
-      return;
-    }
-
-    setBoardHeightInput(nextValue);
-  };
-
-  const commitBoardWidth = () => {
-    if (boardWidthInput === "") {
-      setBoardWidthInput(String(gameConfig.boardWidth));
-      return;
-    }
-    const numeric = Number(boardWidthInput);
-    if (!Number.isFinite(numeric)) {
-      setBoardWidthInput(String(gameConfig.boardWidth));
-      return;
-    }
-    const clamped = clampBoardSize(numeric);
-    setBoardWidthInput(String(clamped));
-    if (clamped !== gameConfig.boardWidth) {
-      handleGameConfigChange({ ...gameConfig, boardWidth: clamped });
-    }
-  };
-
-  const commitBoardHeight = () => {
-    if (boardHeightInput === "") {
-      setBoardHeightInput(String(gameConfig.boardHeight));
-      return;
-    }
-    const numeric = Number(boardHeightInput);
-    if (!Number.isFinite(numeric)) {
-      setBoardHeightInput(String(gameConfig.boardHeight));
-      return;
-    }
-    const clamped = clampBoardSize(numeric);
-    setBoardHeightInput(String(clamped));
-    if (clamped !== gameConfig.boardHeight) {
-      handleGameConfigChange({ ...gameConfig, boardHeight: clamped });
-    }
   };
 
   // Navigation
@@ -712,61 +599,37 @@ function GameSetup() {
                       : "The game will not affect your rating.")}
                 </p>
               </div>
-            </div>
 
-            {/* Board size (always shown; disabled for freestyle with fixed values) */}
-            <div className="space-y-3 p-3 border rounded-md bg-muted/30">
-              <div className="grid grid-cols-2 gap-4 max-w-md">
+              {/* Board size */}
+              <div className="space-y-2">
                 <div className="flex items-center gap-3">
-                  <Label htmlFor="board-width" className="min-w-[100px]">
-                    Board Width
-                  </Label>
-                  <Input
-                    id="board-width"
-                    type="number"
-                    min="4"
-                    max="20"
-                    value={
+                  <Label className="min-w-[120px]">Board Size</Label>
+                  <BoardSizePicker
+                    width={
                       boardSizeDisabled
                         ? FREESTYLE_BOARD_WIDTH
-                        : boardWidthInput
+                        : gameConfig.boardWidth
                     }
-                    onChange={(e) => {
-                      if (!boardSizeDisabled)
-                        handleBoardWidthChange(e.target.value);
-                    }}
-                    onBlur={() => {
-                      if (!boardSizeDisabled) commitBoardWidth();
-                    }}
-                    disabled={boardSizeDisabled}
-                    className="bg-background max-w-[100px]"
-                  />
-                </div>
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="board-height" className="min-w-[100px]">
-                    Board Height
-                  </Label>
-                  <Input
-                    id="board-height"
-                    type="number"
-                    min="4"
-                    max="20"
-                    value={
+                    height={
                       boardSizeDisabled
                         ? FREESTYLE_BOARD_HEIGHT
-                        : boardHeightInput
+                        : gameConfig.boardHeight
                     }
-                    onChange={(e) => {
-                      if (!boardSizeDisabled)
-                        handleBoardHeightChange(e.target.value);
-                    }}
-                    onBlur={() => {
-                      if (!boardSizeDisabled) commitBoardHeight();
-                    }}
+                    onChange={(w, h) =>
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        boardWidth: w,
+                        boardHeight: h,
+                      })
+                    }
                     disabled={boardSizeDisabled}
-                    className="bg-background max-w-[100px]"
                   />
                 </div>
+                {boardSizeDisabled && (
+                  <p className="text-sm text-muted-foreground">
+                    Fixed for freestyle variant.
+                  </p>
+                )}
               </div>
             </div>
 
