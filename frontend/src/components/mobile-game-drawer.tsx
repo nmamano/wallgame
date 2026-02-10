@@ -1,27 +1,19 @@
 import { useState } from "react";
-import { History, MessageSquare, Settings2 } from "lucide-react";
+import { MessageSquare, Settings2 } from "lucide-react";
 import {
   Drawer,
   DrawerContent,
   DrawerTitle,
 } from "@/components/ui/drawer";
-import { MoveListPanel } from "@/components/move-list-panel";
 import { GameChatPanel, type ChatMessage } from "@/components/game-chat-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
-import type { MoveHistoryRow } from "@/components/move-list-panel";
-import type { HistoryNav } from "@/types/history";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { EvalToggleState } from "@/hooks/use-eval-bar";
 import type { PlayerType } from "@/lib/gameViewModel";
 
-type DrawerTab = "moves" | "chat" | "info";
+type DrawerTab = "chat" | "info";
 
 interface MobileGameDrawerProps {
-  // Move list props
-  formattedHistory: MoveHistoryRow[];
-  historyNav: HistoryNav;
-  hasNewMovesWhileRewound: boolean;
-  historyTabHighlighted: boolean;
   chatTabHighlighted: boolean;
 
   // Chat props
@@ -58,12 +50,12 @@ interface MobileGameDrawerProps {
 
 /**
  * Bottom-sheet drawer for mobile game page.
- * Contains three tabs: Moves, Chat, and Info.
- * The tab bar is always visible; tapping a tab opens the drawer.
+ * Contains two tabs: Chat and Info.
+ * Move history navigation is handled by MobileMoveBar instead.
  */
 export function MobileGameDrawer(props: MobileGameDrawerProps) {
   const [isOpen, setIsOpen] = useState(false);
-  const [activeTab, setActiveTab] = useState<DrawerTab>("moves");
+  const [activeTab, setActiveTab] = useState<DrawerTab>("chat");
 
   const openTab = (tab: DrawerTab) => {
     setActiveTab(tab);
@@ -82,10 +74,6 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
     <>
       {/* Tab bar — always visible at the bottom of the mobile layout */}
       <div className="flex items-center justify-center gap-2 w-full py-1 bg-card/90 backdrop-blur border-t border-border">
-        <button className={tabButtonClass("moves", props.historyTabHighlighted)} onClick={() => openTab("moves")}>
-          <History className="w-3.5 h-3.5" />
-          Moves
-        </button>
         <button className={tabButtonClass("chat", props.chatTabHighlighted)} onClick={() => openTab("chat")}>
           <MessageSquare className="w-3.5 h-3.5" />
           Chat
@@ -103,7 +91,7 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
 
           {/* Tab switcher inside drawer */}
           <div className="flex border-b shrink-0">
-            {(["moves", "chat", "info"] as const).map((tab) => (
+            {(["chat", "info"] as const).map((tab) => (
               <button
                 key={tab}
                 className={`flex-1 py-2 text-sm font-medium transition-colors cursor-pointer ${
@@ -113,11 +101,6 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
                 }`}
                 onClick={() => setActiveTab(tab)}
               >
-                {tab === "moves" && (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <History className="w-4 h-4" /> Moves
-                  </span>
-                )}
                 {tab === "chat" && (
                   <span className="flex items-center justify-center gap-1.5">
                     <MessageSquare className="w-4 h-4" /> Chat
@@ -134,13 +117,6 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
 
           {/* Tab content */}
           <div className="flex-1 overflow-y-auto min-h-0">
-            {activeTab === "moves" && (
-              <MoveListPanel
-                formattedHistory={props.formattedHistory}
-                historyNav={props.historyNav}
-                hasNewMovesWhileRewound={props.hasNewMovesWhileRewound}
-              />
-            )}
             {activeTab === "chat" && (
               <GameChatPanel
                 chatChannel={props.chatChannel}

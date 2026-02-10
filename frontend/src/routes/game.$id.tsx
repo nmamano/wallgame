@@ -10,6 +10,7 @@ import { EvaluationBar } from "@/components/evaluation-bar";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
+import { MobileMoveBar } from "@/components/mobile-move-bar";
 import { MobileGameDrawer } from "@/components/mobile-game-drawer";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
@@ -348,6 +349,14 @@ function GamePageContent() {
             )}
           </div>
 
+          {/* Horizontal move bar */}
+          <div className="shrink-0 border-t border-border">
+            <MobileMoveBar
+              formattedHistory={chat.formattedHistory}
+              historyNav={chat.historyNav}
+            />
+          </div>
+
           {/* Floating action toolbar */}
           <div className="shrink-0">
             <MobileActionToolbar live={actions.live} endgame={actions.endgame} />
@@ -356,10 +365,6 @@ function GamePageContent() {
           {/* Bottom drawer tab bar + drawer */}
           <div className="shrink-0">
             <MobileGameDrawer
-              formattedHistory={chat.formattedHistory}
-              historyNav={chat.historyNav}
-              hasNewMovesWhileRewound={chat.hasNewMovesWhileRewound}
-              historyTabHighlighted={chat.historyTabHighlighted}
               chatTabHighlighted={chat.chatTabHighlighted}
               chatChannel={chat.chatChannel}
               messages={chat.messages}
