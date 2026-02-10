@@ -27,7 +27,7 @@ import { pawnId } from "../../../shared/domain/game-utils";
 import type { GameSnapshot, PlayerId } from "../../../shared/domain/game-types";
 import type { GameShowcaseResponse } from "../../../shared/contracts/games";
 
-export function GameShowcase() {
+export function GameShowcase({ flush = false }: { flush?: boolean }) {
   const [isPlaying, setIsPlaying] = useState(true);
   const [showcase, setShowcase] = useState<{
     matchStatus: GameShowcaseResponse["matchStatus"];
@@ -220,6 +220,20 @@ export function GameShowcase() {
   const boardRows = displayState?.config.boardHeight ?? 8;
   const boardCols = displayState?.config.boardWidth ?? 8;
 
+  // In flush mode, compute cell/gap sizes so the board fits the viewport width,
+  // reusing the same logic as the mobile game page.
+  const flushSizing = useMemo(() => {
+    if (!flush) return undefined;
+    const gapPx = 12;
+    const refCols = Math.max(boardCols, 8);
+    const availableW = typeof window !== "undefined" ? window.innerWidth : 390;
+    const cellPx = Math.max(
+      28,
+      (availableW - (refCols - 1) * gapPx) / refCols,
+    );
+    return { gapSizeRem: gapPx / 16, maxCellSizeRem: cellPx / 16 };
+  }, [flush, boardCols]);
+
   const orderedPlayers = useMemo(() => {
     if (!showcase) return [];
     return [...showcase.matchStatus.players].sort(
@@ -233,16 +247,16 @@ export function GameShowcase() {
       const rating = player.elo != null ? ` (${player.elo})` : "";
       return `${player.displayName}${rating}`;
     };
+    const players = `${formatPlayer(orderedPlayers[0])} vs ${formatPlayer(orderedPlayers[1])}`;
+    if (flush) return `Showcase: ${players}`;
     const formatDate = (timestamp: number) =>
       new Date(timestamp).toLocaleDateString(undefined, {
         year: "numeric",
         month: "short",
         day: "2-digit",
       });
-    return `Game showcase: ${formatPlayer(orderedPlayers[0])} vs ${formatPlayer(
-      orderedPlayers[1],
-    )} (${formatDate(showcase.matchStatus.createdAt)})`;
-  }, [showcase, orderedPlayers]);
+    return `Game showcase: ${players} (${formatDate(showcase.matchStatus.createdAt)})`;
+  }, [showcase, orderedPlayers, flush]);
 
   const handleOpenReplay = useCallback(() => {
     if (!showcase) return;
@@ -252,37 +266,82 @@ export function GameShowcase() {
     });
   }, [navigate, showcase, historyCursor]);
 
-  return (
-    <Card
-      className="relative overflow-hidden bg-card border-2 border-border transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] cursor-pointer"
-      onClick={handleOpenReplay}
-      role="button"
+  const playPauseButton = (
+    <Button
+      size="sm"
+      variant="outline"
+      onClick={(e) => {
+        e.stopPropagation();
+        setIsPlaying((prev) => !prev);
+      }}
     >
-      <div className="p-6">
-        <div className="flex items-center justify-between mb-4">
-          <div className="text-sm font-medium text-muted-foreground">
+      {isPlaying ? (
+        <>
+          <Pause className="h-4 w-4 mr-2" />
+          Pause
+        </>
+      ) : (
+        <>
+          <Play className="h-4 w-4 mr-2" />
+          Play
+        </>
+      )}
+    </Button>
+  );
+
+  if (flush) {
+    return (
+      <div onClick={handleOpenReplay} role="button" className="cursor-pointer max-w-[100vw] overflow-hidden">
+        <Board
+          rows={boardRows}
+          cols={boardCols}
+          pawns={boardPawns}
+          walls={boardWalls}
+          lastMoves={lastMoves ?? undefined}
+          lastWalls={lastWalls ?? undefined}
+          playerColors={playerColors}
+          className="p-0"
+          maxWidth="max-w-full"
+          gapSizeRem={flushSizing?.gapSizeRem}
+          maxCellSizeRem={flushSizing?.maxCellSizeRem}
+          flush
+        />
+        <div className="flex items-center justify-between mt-2 px-4 gap-2 overflow-hidden">
+          <div className="text-sm font-medium text-muted-foreground truncate min-w-0">
             {title ?? "Game showcase"}
           </div>
           <Button
             size="sm"
             variant="outline"
+            className="h-6 px-2 text-[10px] shrink-0"
             onClick={(e) => {
               e.stopPropagation();
               setIsPlaying((prev) => !prev);
             }}
           >
             {isPlaying ? (
-              <>
-                <Pause className="h-4 w-4 mr-2" />
-                Pause
-              </>
+              <><Pause className="h-3 w-3 mr-1" />Pause</>
             ) : (
-              <>
-                <Play className="h-4 w-4 mr-2" />
-                Play
-              </>
+              <><Play className="h-3 w-3 mr-1" />Play</>
             )}
           </Button>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <Card
+      className="relative overflow-hidden bg-card border-2 border-border transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-2 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] cursor-pointer"
+      onClick={handleOpenReplay}
+      role="button"
+    >
+      <div className="p-3 sm:p-6">
+        <div className="flex items-center justify-between mb-3 sm:mb-4 gap-2">
+          <div className="text-xs sm:text-sm font-medium text-muted-foreground truncate">
+            {title ?? "Game showcase"}
+          </div>
+          {playPauseButton}
         </div>
 
         {/* Game Board */}

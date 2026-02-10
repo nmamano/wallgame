@@ -6,6 +6,7 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { GameShowcase } from "@/components/game-showcase";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { Sparkles, Brain, Bot, BookOpen, Users, UserPlus } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -13,55 +14,49 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const isSmallScreen = useMediaQuery("(max-width: 639px)");
   return (
     <div className="min-h-screen bg-background">
-      <div className="container mx-auto px-4 py-8 md:py-12">
-        <div className="grid xl:grid-cols-2 gap-12 xl:gap-16 items-start">
+      <div className="container mx-auto px-4 py-4 md:py-8 lg:py-12">
+        <div className="grid xl:grid-cols-2 gap-6 lg:gap-12 xl:gap-16 items-start">
           {/* Left Column */}
-          <div className="space-y-20">
+          <div className="space-y-6 lg:space-y-20">
             {/* Single-player Fun */}
             <section>
-              <div className="text-center mb-12">
-                <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground">
+              <div className="text-center mb-3 lg:mb-12">
+                <h2 className="font-serif text-2xl sm:text-4xl md:text-5xl font-bold text-foreground">
                   Single-player Fun
                 </h2>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 max-w-2xl mx-auto">
-                <Link to="/solo-campaign" className="group">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Sparkles className="h-5 w-5 text-primary" />
+              <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-2xl mx-auto">
+                <Link to="/solo-campaign" className="group min-w-0">
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
-                        <span className="flex items-center gap-2">
-                          Solo Campaign
-                          <span className="inline-flex items-center rounded-full bg-primary/20 px-2 py-0.5 text-xs font-medium text-primary">
-                            Start here!
-                          </span>
-                        </span>
+                        Campaign
                       </CardTitle>
-                      <CardDescription>
-                        Begin your journey with carefully crafted challenges
-                        that teach you the fundamentals
+                      <CardDescription className="text-xs sm:text-sm">
+                        Learn the fundamentals
                       </CardDescription>
                     </CardHeader>
                   </Card>
                 </Link>
 
-                <Link to="/puzzles" className="group">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Brain className="h-5 w-5 text-primary" />
+                <Link to="/puzzles" className="group min-w-0">
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
                         Puzzles
                       </CardTitle>
-                      <CardDescription>
-                        Test your tactical prowess with mind-bending positional
-                        challenges
+                      <CardDescription className="text-xs sm:text-sm">
+                        Solve tactical challenges
                       </CardDescription>
                     </CardHeader>
                   </Card>
@@ -74,34 +69,34 @@ function Index() {
                       sessionStorage.setItem("play-mode", "vs-ai");
                     }
                   }}
-                  className="group"
+                  className="group min-w-0"
                 >
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Bot className="h-5 w-5 text-primary" />
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Bot className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
                         Play vs AI
                       </CardTitle>
-                      <CardDescription>
-                        Challenge our AI opponents from Easy to Hard difficulty
+                      <CardDescription className="text-xs sm:text-sm">
+                        Challenge our AI opponent
                       </CardDescription>
                     </CardHeader>
                   </Card>
                 </Link>
 
-                <Link to="/study-board" className="group">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <BookOpen className="h-5 w-5 text-primary" />
+                <Link to="/study-board" className="group min-w-0">
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
                         Study Board
                       </CardTitle>
-                      <CardDescription>
-                        Analyze positions and experiment with strategies freely
+                      <CardDescription className="text-xs sm:text-sm">
+                        Experiment with strategies
                       </CardDescription>
                     </CardHeader>
                   </Card>
@@ -111,13 +106,13 @@ function Index() {
 
             {/* Play with Others */}
             <section>
-              <div className="text-center mb-12">
-                <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground">
+              <div className="text-center mb-3 lg:mb-12">
+                <h2 className="font-serif text-2xl sm:text-4xl md:text-5xl font-bold text-foreground">
                   Play with Others
                 </h2>
               </div>
 
-              <div className="grid grid-cols-2 gap-6 max-w-2xl mx-auto">
+              <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-2xl mx-auto">
                 <Link
                   to="/play"
                   onClick={() => {
@@ -125,19 +120,18 @@ function Index() {
                       sessionStorage.setItem("play-mode", "with-others");
                     }
                   }}
-                  className="group"
+                  className="group min-w-0"
                 >
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Users className="h-5 w-5 text-primary" />
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Users className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
                         Find Others
                       </CardTitle>
-                      <CardDescription>
-                        Get matched with players of similar skill level for
-                        competitive rated games
+                      <CardDescription className="text-xs sm:text-sm">
+                        Rated competitive matches
                       </CardDescription>
                     </CardHeader>
                   </Card>
@@ -150,19 +144,18 @@ function Index() {
                       sessionStorage.setItem("play-mode", "invite-friend");
                     }
                   }}
-                  className="group"
+                  className="group min-w-0"
                 >
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)]">
-                    <CardHeader>
-                      <CardTitle className="flex items-center gap-3 font-serif text-xl text-card-foreground">
-                        <div className="w-10 h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <UserPlus className="h-5 w-5 text-primary" />
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="px-3 py-1 gap-1 sm:p-6 sm:gap-2">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <UserPlus className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
                         </div>
                         Invite Friend
                       </CardTitle>
-                      <CardDescription>
-                        Share a link and play casual or competitive games with
-                        friends
+                      <CardDescription className="text-xs sm:text-sm">
+                        Play with friends via link
                       </CardDescription>
                     </CardHeader>
                   </Card>
@@ -175,14 +168,14 @@ function Index() {
           <div>
             {/* Game Showcase */}
             <section>
-              <div className="text-center mb-12">
-                <h2 className="font-serif text-4xl md:text-5xl font-bold text-foreground">
+              <div className="text-center mb-3 lg:mb-12">
+                <h2 className="font-serif text-2xl sm:text-4xl md:text-5xl font-bold text-foreground">
                   Watch & Learn
                 </h2>
               </div>
 
-              <div className="max-w-2xl mx-auto xl:max-w-none">
-                <GameShowcase />
+              <div className={isSmallScreen ? "-mx-4 overflow-hidden" : "max-w-2xl mx-auto xl:max-w-none"}>
+                <GameShowcase flush={isSmallScreen} />
               </div>
             </section>
           </div>
@@ -190,10 +183,10 @@ function Index() {
       </div>
 
       {/* Footer */}
-      <footer className="border-t border-border mt-20">
-        <div className="container mx-auto px-4 py-12">
-          <div className="text-center text-sm text-muted-foreground">
-            <p className="mb-2">
+      <footer className="border-t border-border mt-6 lg:mt-20">
+        <div className="container mx-auto px-4 py-3 lg:py-12">
+          <div className="text-center text-xs lg:text-sm text-muted-foreground">
+            <p>
               Created by{" "}
               <a
                 href="https://nilmamano.com"
