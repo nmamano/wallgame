@@ -199,7 +199,7 @@ function GamePageContent() {
   if (!isLargeScreen) {
     // Board renders flush (no padding) — the measured container IS the grid space.
     // For < 8 columns, use 8 as reference so cells don't grow oversized.
-    const mobileGapSizePx = 8;
+    const mobileGapSizePx = 12;
     const referenceColsForWidth = Math.max(cols, 8);
     const mobileCellSizePx =
       boardAreaSize.w > 0
