@@ -87,35 +87,10 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
       {/* Vaul drawer */}
       <Drawer open={isOpen} onOpenChange={setIsOpen}>
         <DrawerContent className="max-h-[70dvh]">
-          <DrawerTitle className="sr-only">Game Details</DrawerTitle>
+          <DrawerTitle className="sr-only">
+            {activeTab === "chat" ? "Chat" : "Game Info"}
+          </DrawerTitle>
 
-          {/* Tab switcher inside drawer */}
-          <div className="flex border-b shrink-0">
-            {(["chat", "info"] as const).map((tab) => (
-              <button
-                key={tab}
-                className={`flex-1 py-2 text-sm font-medium transition-colors cursor-pointer ${
-                  activeTab === tab
-                    ? "border-b-2 border-primary text-primary"
-                    : "text-muted-foreground hover:text-foreground"
-                }`}
-                onClick={() => setActiveTab(tab)}
-              >
-                {tab === "chat" && (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <MessageSquare className="w-4 h-4" /> Chat
-                  </span>
-                )}
-                {tab === "info" && (
-                  <span className="flex items-center justify-center gap-1.5">
-                    <Settings2 className="w-4 h-4" /> Info
-                  </span>
-                )}
-              </button>
-            ))}
-          </div>
-
-          {/* Tab content */}
           <div className="flex-1 overflow-y-auto min-h-0">
             {activeTab === "chat" && (
               <GameChatPanel
