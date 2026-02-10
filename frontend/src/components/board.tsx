@@ -111,6 +111,10 @@ export interface BoardProps {
   onCellRightClickDragMove?: (row: number, col: number) => void;
   onCellRightClickDragEnd?: (row: number, col: number) => void;
   onArrowDragFinalize?: () => void;
+  /** Override default gap between cells (default: 0.9rem) */
+  gapSizeRem?: number;
+  /** Override default max cell size (default: 3rem) */
+  maxCellSizeRem?: number;
 }
 
 interface WallMaps {
@@ -222,6 +226,8 @@ export function Board({
   onCellRightClickDragMove,
   onCellRightClickDragEnd,
   onArrowDragFinalize,
+  gapSizeRem: gapSizeRemProp,
+  maxCellSizeRem: maxCellSizeRemProp,
 }: BoardProps) {
   // Generate IDs for pawns internally
   const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
@@ -238,8 +244,8 @@ export function Board({
   );
 
   // Calculate cell size for positioning walls (dynamic based on grid size)
-  const gapSize = 0.9; // rem
-  const maxCellSize = 3; // rem
+  const gapSize = gapSizeRemProp ?? 0.9; // rem
+  const maxCellSize = maxCellSizeRemProp ?? 3; // rem
   const paddingX = 2; // rem (p-4 = 1rem on each side)
 
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;

@@ -6,9 +6,12 @@ import { ActionsPanel } from "@/components/actions-panel";
 import { BoardPanel, type EvalBarProps } from "@/components/board-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
+import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
+import { MobileGameDrawer } from "@/components/mobile-game-drawer";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useEvalBar } from "@/hooks/use-eval-bar";
+import { useMobileViewport } from "@/hooks/use-mobile-viewport";
 import type { PlayerId } from "../../../shared/domain/game-types";
 
 export const Route = createFileRoute("/game/$id")({
@@ -73,6 +76,7 @@ function GamePageContent() {
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
+  const { viewportWidth, viewportHeight } = useMobileViewport();
 
   // Note: Annotations are now managed by the controller (via useBoardInteractions hook)
   // and passed through board.annotations, board.previewAnnotation, etc.
@@ -160,6 +164,223 @@ function GamePageContent() {
     adjustedChatScrollableHeight +
     chatInputHeight;
 
+  // ============================================================================
+  // Mobile Layout: viewport-derived board sizing
+  // ============================================================================
+  if (!isLargeScreen) {
+    // Height budget (px): subtract all non-board chrome from viewport
+    const bannerHeight = isSpectator || isReplay ? 24 : 0;
+    const compactTimerHeight = 32;
+    const evalBarHeight = evalBarProps?.isVisible ? 28 : 0;
+    const stagedActionsHeight = 32;
+    const toolbarHeight = 40;
+    const drawerTabBarHeight = 36;
+    const mobileGap = 4;
+    const mobilePadding = 8; // 4px top + 4px bottom
+
+    const nonBoardHeight =
+      bannerHeight +
+      compactTimerHeight * 2 +
+      mobileGap * 3 +
+      evalBarHeight +
+      stagedActionsHeight +
+      toolbarHeight +
+      drawerTabBarHeight +
+      mobilePadding +
+      // Board panel padding (p-1 = 4px * 2) + border (1px * 2)
+      10;
+
+    const availableBoardHeight = viewportHeight - nonBoardHeight;
+    const availableBoardWidth = viewportWidth - mobilePadding * 2 - 10; // board panel padding + border
+
+    const mobileGapSizePx = Math.max(3, Math.min(6, viewportWidth * 0.012));
+    const mobileCellSizePx = Math.max(
+      28, // minimum tappable size
+      Math.min(
+        (availableBoardHeight - (rows - 1) * mobileGapSizePx) / rows,
+        (availableBoardWidth - (cols - 1) * mobileGapSizePx) / cols,
+      ),
+    );
+    const mobileGapSizeRem = mobileGapSizePx / 16;
+    const mobileCellSizeRem = mobileCellSizePx / 16;
+
+    return (
+      <>
+        {/* Matching panel renders above everything */}
+        <MatchingStagePanel
+          isOpen={matching.isOpen}
+          players={matching.players}
+          shareUrl={matching.shareUrl}
+          statusMessage={matching.statusMessage}
+          canAbort={matching.canAbort}
+          onAbort={matching.onAbort}
+          primaryAction={matching.primaryAction}
+          matchTypeHint={matching.matchType}
+          localRole={matching.localRole}
+          onJoinerDismiss={matching.onJoinerDismiss}
+          showShareInstructions={matching.showShareInstructions}
+          waitingReason={matching.waitingReason}
+        />
+
+        <div
+          className="flex flex-col bg-background overflow-hidden"
+          style={{ height: `${viewportHeight}px` }}
+        >
+          {/* Slim spectator/replay banner */}
+          {isSpectator && (
+            <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-0.5 text-xs font-medium border-b border-amber-200 dark:border-amber-800 shrink-0">
+              Spectating
+            </div>
+          )}
+          {isReplay && (
+            <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-0.5 text-xs font-medium border-b border-amber-200 dark:border-amber-800 shrink-0">
+              Replay
+            </div>
+          )}
+
+          {/* Main content: timers + board */}
+          <div className="flex flex-col flex-1 items-center px-1 min-h-0" style={{ gap: `${mobileGap}px`, paddingTop: `${mobileGap}px` }}>
+            {board.shouldRender ? (
+              <>
+                {/* Top compact timer */}
+                {timers.topPlayer && (
+                  <div className="w-full shrink-0">
+                    <PlayerTimerCard
+                      player={timers.topPlayer}
+                      isActive={timers.gameTurn === timers.topPlayer.playerId}
+                      timeLeft={timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0}
+                      minWidthRem={0}
+                      goalDistance={timers.goalDistances[timers.topPlayer.playerId] ?? null}
+                      score={timers.getPlayerMatchScore(timers.topPlayer)}
+                      gameStatus={board.gameStatus}
+                      isUnlimited={timers.isUnlimited}
+                      compact
+                    />
+                  </div>
+                )}
+
+                {/* Board panel — fills remaining vertical space */}
+                <div className="flex-1 flex items-center justify-center w-full min-h-0">
+                  <BoardPanel
+                    adjustedBoardContainerHeight={0}
+                    minWidthRem={0}
+                    mobileMode
+                    mobileGapSizeRem={mobileGapSizeRem}
+                    mobileCellSizeRem={mobileCellSizeRem}
+                    gameState={board.gameState}
+                    isLoadingConfig={board.isLoadingConfig}
+                    loadError={board.loadError}
+                    primaryLocalPlayerId={board.primaryLocalPlayerId}
+                    rows={board.rows}
+                    cols={board.cols}
+                    boardPawns={board.boardPawns}
+                    boardWalls={board.boardWalls}
+                    stagedArrows={board.stagedArrows}
+                    playerColorsForBoard={board.playerColorsForBoard}
+                    interactionLocked={board.interactionLocked}
+                    lastMove={board.lastMove}
+                    lastWalls={board.lastWalls}
+                    draggingPawnId={board.draggingPawnId}
+                    selectedPawnId={board.selectedPawnId}
+                    disableMousePawnInteraction={board.disableMousePawnInteraction}
+                    actionablePlayerId={board.actionablePlayerId}
+                    onCellClick={board.onCellClick}
+                    onWallClick={board.onWallClick}
+                    onPawnClick={board.onPawnClick}
+                    onPawnDragStart={board.onPawnDragStart}
+                    onPawnDragEnd={board.onPawnDragEnd}
+                    onCellDrop={board.onCellDrop}
+                    stagedActions={board.stagedActions}
+                    premovedActions={board.premovedActions}
+                    pendingActionsCount={board.pendingActionsCount}
+                    activeLocalPlayerId={board.activeLocalPlayerId}
+                    hasActionMessage={board.hasActionMessage}
+                    actionError={board.actionError}
+                    actionStatusText={board.actionStatusText}
+                    clearStagedActions={board.clearStagedActions}
+                    commitStagedActions={board.commitStagedActions}
+                    evalBarProps={evalBarProps}
+                  />
+                </div>
+
+                {/* Bottom compact timer */}
+                {timers.bottomPlayer && (
+                  <div className="w-full shrink-0">
+                    <PlayerTimerCard
+                      player={timers.bottomPlayer}
+                      isActive={timers.gameTurn === timers.bottomPlayer.playerId}
+                      timeLeft={timers.displayedTimeLeft[timers.bottomPlayer.playerId] ?? 0}
+                      minWidthRem={0}
+                      goalDistance={timers.goalDistances[timers.bottomPlayer.playerId] ?? null}
+                      score={timers.getPlayerMatchScore(timers.bottomPlayer)}
+                      gameStatus={board.gameStatus}
+                      isUnlimited={timers.isUnlimited}
+                      compact
+                    />
+                  </div>
+                )}
+              </>
+            ) : (
+              <div className="flex flex-1 items-center justify-center rounded border border-dashed border-border/50 bg-muted/30 text-center text-sm text-muted-foreground p-6 w-full">
+                {matching.waitingMessage ?? "Waiting for players to join..."}
+              </div>
+            )}
+          </div>
+
+          {/* Floating action toolbar */}
+          <div className="shrink-0">
+            <MobileActionToolbar live={actions.live} endgame={actions.endgame} />
+          </div>
+
+          {/* Bottom drawer tab bar + drawer */}
+          <div className="shrink-0">
+            <MobileGameDrawer
+              formattedHistory={chat.formattedHistory}
+              historyNav={chat.historyNav}
+              hasNewMovesWhileRewound={chat.hasNewMovesWhileRewound}
+              historyTabHighlighted={chat.historyTabHighlighted}
+              chatTabHighlighted={chat.chatTabHighlighted}
+              chatChannel={chat.chatChannel}
+              messages={chat.messages}
+              chatInput={chat.chatInput}
+              onChannelChange={chat.onChannelChange}
+              onInputChange={chat.onInputChange}
+              onSendMessage={chat.onSendMessage}
+              isSpectator={chat.isSpectator}
+              isReplay={chat.isReplay}
+              isTeamVariant={chat.isTeamVariant}
+              isSending={chat.isSending}
+              isOnlineGame={chat.isOnlineGame}
+              config={info.config}
+              defaultVariant={info.defaultVariant}
+              defaultTimeControlPreset={info.defaultTimeControlPreset}
+              sfxEnabled={info.sfxEnabled}
+              onSfxToggle={info.onSfxToggle}
+              musicEnabled={info.musicEnabled}
+              onMusicToggle={info.onMusicToggle}
+              interactionLocked={info.interactionLocked}
+              isMultiplayerMatch={info.isMultiplayerMatch}
+              unsupportedPlayers={info.unsupportedPlayers}
+              placeholderCopy={info.placeholderCopy}
+              evalToggleState={evalBar.toggleState}
+              evalToggleDisabled={evalBar.isDisabled}
+              evalToggleDisabledReason={evalBar.disabledReason}
+              onEvalToggle={
+                evalBar.toggleState === "on" || evalBar.toggleState === "loading"
+                  ? evalBar.toggleOff
+                  : evalBar.toggleOn
+              }
+              evalErrorMessage={evalBar.errorMessage}
+            />
+          </div>
+        </div>
+      </>
+    );
+  }
+
+  // ============================================================================
+  // Desktop Layout (unchanged)
+  // ============================================================================
   return (
     <>
       <div className="min-h-screen bg-background flex flex-col">

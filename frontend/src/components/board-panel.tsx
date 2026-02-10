@@ -89,6 +89,13 @@ interface BoardPanelProps {
 
   // Evaluation bar (optional)
   evalBarProps?: EvalBarProps;
+
+  /** Mobile mode: removes minWidth, uses tighter padding, compacts staged actions */
+  mobileMode?: boolean;
+  /** Override board gap size in mobile mode */
+  mobileGapSizeRem?: number;
+  /** Override board max cell size in mobile mode */
+  mobileCellSizeRem?: number;
 }
 
 export function BoardPanel({
@@ -135,6 +142,9 @@ export function BoardPanel({
   onCellRightClickDragEnd,
   onArrowDragFinalize,
   evalBarProps,
+  mobileMode = false,
+  mobileGapSizeRem,
+  mobileCellSizeRem,
 }: BoardPanelProps) {
   const hasLocalPlayer = primaryLocalPlayerId != null;
   const showStagedActionControls = hasLocalPlayer;
@@ -144,12 +154,18 @@ export function BoardPanel({
 
   return (
     <div
-      className="flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
+      className={
+        mobileMode
+          ? "flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-lg border border-border shadow-sm p-1 relative"
+          : "flex flex-col items-center justify-center bg-card/50 backdrop-blur rounded-xl border border-border shadow-sm p-2 lg:p-4 relative h-auto lg:h-[var(--board-panel-height)]"
+      }
       style={
-        {
-          "--board-panel-height": `${adjustedBoardContainerHeight}rem`,
-          minWidth: `${minWidthRem}rem`,
-        } as React.CSSProperties
+        mobileMode
+          ? undefined
+          : ({
+              "--board-panel-height": `${adjustedBoardContainerHeight}rem`,
+              minWidth: `${minWidthRem}rem`,
+            } as React.CSSProperties)
       }
     >
       <div className="absolute top-2 left-4 right-4 flex flex-col gap-2 text-sm text-muted-foreground">
@@ -210,13 +226,15 @@ export function BoardPanel({
         onCellRightClickDragMove={onCellRightClickDragMove}
         onCellRightClickDragEnd={onCellRightClickDragEnd}
         onArrowDragFinalize={onArrowDragFinalize}
+        gapSizeRem={mobileMode ? mobileGapSizeRem : undefined}
+        maxCellSizeRem={mobileMode ? mobileCellSizeRem : undefined}
       />
 
       {/* Action messaging + staged action buttons */}
       <div
-        className={`mt-2 lg:mt-4 mb-1 lg:mb-2 w-full select-none ${
+        className={`${mobileMode ? "mt-1 mb-0.5" : "mt-2 lg:mt-4 mb-1 lg:mb-2"} w-full select-none ${
           showStagedActionControls
-            ? "grid grid-cols-3 items-center gap-2 lg:gap-3"
+            ? `grid grid-cols-3 items-center ${mobileMode ? "gap-1" : "gap-2 lg:gap-3"}`
             : "flex items-center justify-start"
         }`}
       >
@@ -226,14 +244,14 @@ export function BoardPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)] whitespace-nowrap w-full"
+                className={`${mobileMode ? "h-6 px-1.5 text-[9px]" : "h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)]"} whitespace-nowrap w-full`}
                 onClick={clearStagedActions}
                 disabled={!hasPendingActions}
               >
-                <span className="truncate block">Clear staged actions</span>
+                <span className="truncate block">{mobileMode ? "Clear" : "Clear staged actions"}</span>
               </Button>
             </div>
-            <div className="flex items-center justify-center text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] text-muted-foreground h-[2.2rem] lg:h-[2.4rem] min-w-0 overflow-hidden text-center leading-snug">
+            <div className={`flex items-center justify-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden text-center leading-snug`}>
               {hasActionMessage && (
                 <span
                   className={`min-w-0 block whitespace-normal break-words ${
@@ -249,20 +267,20 @@ export function BoardPanel({
               <Button
                 size="sm"
                 variant="outline"
-                className="h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)] whitespace-nowrap w-full"
+                className={`${mobileMode ? "h-6 px-1.5 text-[9px]" : "h-7 lg:h-9 px-2 lg:px-3 text-[clamp(9px,1.1vw,11px)] lg:text-[clamp(10px,0.9vw,13px)]"} whitespace-nowrap w-full`}
                 onClick={() => commitStagedActions()}
                 disabled={
                   gameState?.status !== "playing" ||
                   gameState?.turn !== activeLocalPlayerId
                 }
               >
-                <span className="truncate block">Finish move</span>
+                <span className="truncate block">{mobileMode ? "Finish" : "Finish move"}</span>
               </Button>
             </div>
           </>
         )}
         {!showStagedActionControls && (
-          <div className="flex items-center text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] text-muted-foreground h-[2.2rem] lg:h-[2.4rem] min-w-0 overflow-hidden leading-snug">
+          <div className={`flex items-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden leading-snug`}>
             {hasActionMessage && (
               <span
                 className={`min-w-0 block whitespace-normal break-words ${

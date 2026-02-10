@@ -27,6 +27,8 @@ interface PlayerTimerCardProps {
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
   isUnlimited?: boolean;
+  /** Thin strip layout for mobile — shows only avatar, name, distance, timer */
+  compact?: boolean;
 }
 
 function formatTime(seconds: number): string {
@@ -44,6 +46,7 @@ export function PlayerTimerCard({
   score = null,
   gameStatus = "playing",
   isUnlimited = false,
+  compact = false,
 }: PlayerTimerCardProps) {
   const nameSuffixRegex = /\s*\((?:also\s+you|you)\)\s*$/i;
   const nameSuffixMatch = nameSuffixRegex.exec(player.name);
@@ -73,6 +76,62 @@ export function PlayerTimerCard({
   const middleBadgeClass = shouldShowActiveState
     ? "border-accent/60 bg-accent/20 text-foreground/80"
     : "border-border/60 bg-muted/40 text-muted-foreground";
+
+  // Compact mode: thin strip for mobile game layout
+  if (compact) {
+    return (
+      <div
+        className={`flex items-center justify-between gap-1.5 px-2 py-1 rounded-md transition-colors ${
+          shouldShowActiveState
+            ? "bg-accent/50 border border-accent"
+            : "bg-card/50 border border-border"
+        }`}
+      >
+        {/* Left: avatar + name */}
+        <div className="flex items-center gap-1.5 min-w-0">
+          <div
+            className="w-5 h-5 rounded-full flex items-center justify-center flex-shrink-0"
+            style={{
+              backgroundColor: `${colorHexMap[player.color]}20`,
+              color: colorHexMap[player.color],
+            }}
+          >
+            {catSvgPath ? (
+              <img
+                src={catSvgPath}
+                alt="avatar"
+                className="w-full h-full object-contain rounded-full"
+                style={colorFilter}
+              />
+            ) : player.type.includes("bot") ? (
+              <Bot size={12} />
+            ) : (
+              <User size={12} />
+            )}
+          </div>
+          <span className="font-medium truncate text-xs">
+            {trimmedBaseName || player.name}
+          </span>
+        </div>
+
+        {/* Right: distance + timer */}
+        <div className="flex items-center gap-2 flex-shrink-0">
+          <span className="text-[9px] text-muted-foreground tabular-nums">
+            d:{goalDistanceLabel}
+          </span>
+          <span
+            className={`text-sm font-mono font-bold tabular-nums whitespace-nowrap ${
+              shouldShowActiveState
+                ? "text-foreground"
+                : "text-muted-foreground/50"
+            } ${!isUnlimited && timeLeft < 30 ? "text-red-500 animate-pulse" : ""}`}
+          >
+            {isUnlimited ? "∞" : formatTime(Math.max(0, Math.round(timeLeft)))}
+          </span>
+        </div>
+      </div>
+    );
+  }
 
   return (
     <div

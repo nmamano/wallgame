@@ -1,10 +1,15 @@
-import { createRootRouteWithContext, Outlet } from "@tanstack/react-router";
+import {
+  createRootRouteWithContext,
+  Outlet,
+  useRouterState,
+} from "@tanstack/react-router";
 // import { TanStackRouterDevtools } from "@tanstack/router-devtools";
 import { type QueryClient } from "@tanstack/react-query";
 import { ThemeProvider } from "@/components/theme-provider";
 import { SoundProvider } from "@/components/sound-provider";
 import { Navigation } from "@/components/navigation";
 import { Toaster } from "@/components/ui/toaster";
+import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface MyRouterContext {
   queryClient: QueryClient;
@@ -15,31 +20,40 @@ export const Route = createRootRouteWithContext<MyRouterContext>()({
 });
 
 function Root() {
+  const router = useRouterState();
+  const pathname = router.location.pathname;
+  const isSmallScreen = useMediaQuery("(max-width: 1023px)");
+  const isGamePage = pathname.startsWith("/game/");
+  // Hide nav and dev banner on mobile game pages to maximize board space
+  const hideChrome = isSmallScreen && isGamePage;
+
   return (
     <ThemeProvider defaultTheme="dark">
       <SoundProvider>
         <div className="min-h-screen bg-background">
-          <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm">
-            🚧 In development.{" "}
-            <a
-              href="https://nilmamano.com/blog/wall-game-intro"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-amber-100"
-            >
-              Learn more
-            </a>
-            {" · "}
-            <a
-              href="https://wallwars.net"
-              target="_blank"
-              rel="noopener noreferrer"
-              className="underline hover:text-amber-100"
-            >
-              Old site
-            </a>
-          </div>
-          <Navigation />
+          {!hideChrome && (
+            <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm">
+              🚧 In development.{" "}
+              <a
+                href="https://nilmamano.com/blog/wall-game-intro"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-amber-100"
+              >
+                Learn more
+              </a>
+              {" · "}
+              <a
+                href="https://wallwars.net"
+                target="_blank"
+                rel="noopener noreferrer"
+                className="underline hover:text-amber-100"
+              >
+                Old site
+              </a>
+            </div>
+          )}
+          {!hideChrome && <Navigation />}
           {/* Outlet loads the other routes in the routes/ dir. */}
           <Outlet />
         </div>
