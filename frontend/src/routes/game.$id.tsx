@@ -245,7 +245,7 @@ function GamePageContent() {
           <div className="flex items-center px-2 py-1 border-b border-border shrink-0">
             <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
               <ArrowLeft className="w-4 h-4" />
-              <span className="text-xs font-medium">wallgame</span>
+              <span className="text-xs font-medium">Wall Game</span>
             </Link>
           </div>
 

@@ -166,14 +166,18 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         : undefined;
 
     return (
-      <div className={`${barClass} gap-2 py-1`} style={{ minHeight: "40px" }}>
-        <Trophy className="w-4 h-4 text-yellow-500 shrink-0" />
-        <span className="text-xs font-medium truncate">
-          {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
-          {winReason ? ` - ${winReason}` : ""}
-        </span>
+      <div className={`${barClass} relative gap-2 py-1`} style={{ minHeight: "40px" }}>
+        {/* Centered result text */}
+        <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
+          <Trophy className="w-4 h-4 text-yellow-500 shrink-0 mr-1.5" />
+          <span className="text-xs font-medium truncate">
+            {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
+            {winReason ? ` - ${winReason}` : ""}
+          </span>
+        </div>
+        {/* Action buttons on the right */}
         <div className="flex-1" />
-        <div className="flex gap-1 shrink-0">
+        <div className="flex gap-1 shrink-0 z-10">
           {isReadOnlyView ? (
             spectatorFollowHandler && spectatorRematchGameId ? (
               <Button size="sm" className="h-7 px-2 text-[10px]" onClick={spectatorFollowHandler}>
