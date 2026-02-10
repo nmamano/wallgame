@@ -1,4 +1,5 @@
-import { createFileRoute } from "@tanstack/react-router";
+import { createFileRoute, Link } from "@tanstack/react-router";
+import { ArrowLeft } from "lucide-react";
 import { useMemo, useRef, useState, useLayoutEffect } from "react";
 import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
@@ -239,6 +240,14 @@ function GamePageContent() {
           className="flex flex-col bg-background overflow-hidden"
           style={{ height: `${viewportHeight}px` }}
         >
+          {/* Slim top nav */}
+          <div className="flex items-center px-2 py-1 border-b border-border shrink-0">
+            <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
+              <ArrowLeft className="w-4 h-4" />
+              <span className="text-xs font-medium">wallgame</span>
+            </Link>
+          </div>
+
           {/* Slim spectator/replay banner */}
           {isSpectator && (
             <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-0.5 text-xs font-medium border-b border-amber-200 dark:border-amber-800 shrink-0">
