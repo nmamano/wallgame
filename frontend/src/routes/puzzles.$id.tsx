@@ -10,6 +10,7 @@ import { PUZZLES, getNextPuzzleId } from "../../../shared/domain/puzzles";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { AudioControls } from "@/components/audio-controls";
+import { useMediaQuery } from "@/hooks/use-media-query";
 import { ArrowLeft, Check, Undo2, RotateCcw, ChevronRight } from "lucide-react";
 
 export const Route = createFileRoute("/puzzles/$id")({
@@ -157,6 +158,7 @@ function PuzzlePageContent({
   }, [puzzle.humanPlaysAs]);
 
   const nextPuzzleId = getNextPuzzleId(puzzleId);
+  const isLargeScreen = useMediaQuery("(min-width: 1024px)");
 
   const handleNextPuzzle = useCallback(() => {
     if (nextPuzzleId) {
@@ -291,40 +293,53 @@ function PuzzlePageContent({
       </Card>
 
       {/* Board */}
-      <Card className="p-2 bg-card/80 backdrop-blur border-border/50 mb-4">
-        <Board
-          rows={puzzle.boardHeight}
-          cols={puzzle.boardWidth}
-          pawns={boardPawns}
-          walls={boardWalls}
-          playerColors={playerColorsForBoard}
-          onCellClick={handleCellClick}
-          onWallClick={handleWallClick}
-          onPawnClick={handlePawnClick}
-          onPawnDragStart={handlePawnDragStart}
-          onPawnDragEnd={handlePawnDragEnd}
-          onCellDrop={handleCellDrop}
-          selectedPawnId={selectedPawnId}
-          draggingPawnId={draggingPawnId}
-          controllablePlayerId={puzzle.humanPlaysAs}
-          forceReadOnly={puzzleStatus !== "playing"}
-          stagedActionsCount={stagedActions.length}
-          // Arrows for staged/premoved moves
-          arrows={arrows}
-          // Last moves/walls (to show opponent's last move/wall)
-          lastMoves={lastMoves ?? undefined}
-          lastWalls={lastWalls ?? undefined}
-          // Annotations
-          annotations={annotations}
-          previewAnnotation={previewAnnotation}
-          onWallSlotRightClick={onWallSlotRightClick}
-          onCellRightClickDragStart={onCellRightClickDragStart}
-          onCellRightClickDragMove={onCellRightClickDragMove}
-          onCellRightClickDragEnd={onCellRightClickDragEnd}
-          arrowDragStateRef={arrowDragStateRef}
-          onArrowDragFinalize={onArrowDragFinalize}
-        />
-      </Card>
+      {(() => {
+        const boardContent = (
+          <Board
+            rows={puzzle.boardHeight}
+            cols={puzzle.boardWidth}
+            pawns={boardPawns}
+            walls={boardWalls}
+            playerColors={playerColorsForBoard}
+            onCellClick={handleCellClick}
+            onWallClick={handleWallClick}
+            onPawnClick={handlePawnClick}
+            onPawnDragStart={handlePawnDragStart}
+            onPawnDragEnd={handlePawnDragEnd}
+            onCellDrop={handleCellDrop}
+            selectedPawnId={selectedPawnId}
+            draggingPawnId={draggingPawnId}
+            controllablePlayerId={puzzle.humanPlaysAs}
+            forceReadOnly={puzzleStatus !== "playing"}
+            stagedActionsCount={stagedActions.length}
+            // Arrows for staged/premoved moves
+            arrows={arrows}
+            // Last moves/walls (to show opponent's last move/wall)
+            lastMoves={lastMoves ?? undefined}
+            lastWalls={lastWalls ?? undefined}
+            // Annotations
+            annotations={annotations}
+            previewAnnotation={previewAnnotation}
+            onWallSlotRightClick={onWallSlotRightClick}
+            onCellRightClickDragStart={onCellRightClickDragStart}
+            onCellRightClickDragMove={onCellRightClickDragMove}
+            onCellRightClickDragEnd={onCellRightClickDragEnd}
+            arrowDragStateRef={arrowDragStateRef}
+            onArrowDragFinalize={onArrowDragFinalize}
+            gapSizeRem={isLargeScreen ? undefined : 0.75}
+            flush={!isLargeScreen}
+            className={isLargeScreen ? undefined : "p-0"}
+            maxWidth={isLargeScreen ? undefined : "max-w-full"}
+          />
+        );
+        return isLargeScreen ? (
+          <Card className="p-2 bg-card/80 backdrop-blur border-border/50 mb-4">
+            {boardContent}
+          </Card>
+        ) : (
+          <div className="-mx-4 mb-4">{boardContent}</div>
+        );
+      })()}
 
       {/* Action buttons */}
       <div className="flex gap-2 justify-center">
