@@ -291,7 +291,7 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
 
   if (flush) {
     return (
-      <div onClick={handleOpenReplay} role="button" className="cursor-pointer max-w-[100vw] overflow-hidden">
+      <div onClick={handleOpenReplay} role="button" className="cursor-pointer max-w-full overflow-hidden">
         <Board
           rows={boardRows}
           cols={boardCols}
