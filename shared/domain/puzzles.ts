@@ -5,6 +5,8 @@
  * The goal is to move your cat to your home before the opponent does the same.
  *
  * These 10 puzzles were ported from the original wallwars repository.
+ * Positions and walls represent the starting state of the puzzle (after any
+ * historical setup moves have been baked in). Walls are neutral (no owner).
  */
 
 import type {
@@ -16,7 +18,7 @@ import type {
   ClassicInitialState,
   TimeControlConfig,
 } from "./game-types";
-import { oldPosToCell, parsePuzzleMoves } from "./puzzle-notation";
+import { parsePuzzleMoves } from "./puzzle-notation";
 
 export interface Puzzle {
   id: string;
@@ -35,26 +37,19 @@ export interface Puzzle {
   p2Cat: Cell;
   p2Home: Cell;
 
-  // Initial walls placed before puzzle starts
+  // Pre-placed neutral walls (no owner, rendered as brown)
   initialWalls: WallPosition[];
 
-  // Game setup
-  p1Starts: boolean;
   /** Which player the human controls */
   humanPlaysAs: PlayerId;
 
   /**
    * Move sequence for the puzzle.
-   * moves[turnIndex] = array of valid alternative moves for that turn
+   * moves[turnIndex] = array of valid alternative moves for that turn.
    * Any move in the alternatives array is considered correct.
+   * The first move (index 0) is always the human's move.
    */
   moves: Move[][];
-
-  /**
-   * Number of turns auto-played at the start before human takes control.
-   * These setup moves establish the puzzle position.
-   */
-  setupMoves: number;
 }
 
 /** Default time control for puzzles (not actively used, but required by config) */
@@ -97,181 +92,296 @@ export function buildPuzzleConfig(puzzle: Puzzle): GameConfiguration {
 // Puzzle Definitions
 // ============================================================================
 
-/**
- * Helper to build a puzzle from old wallwars format.
- * This converts positions and parses the move string automatically.
- */
-function buildPuzzle(params: {
-  id: string;
-  author: string;
-  difficulty: number;
-  dims: [number, number]; // [rows, cols] in old format (also [height, width])
-  startPos: [string, string]; // [p1, p2] starting positions
-  goalPos: [string, string]; // [p1, p2] goal/home positions
-  creatorStarts: boolean;
-  playAsCreator: boolean;
-  moves: string;
-  startIndex: number;
-}): Puzzle {
-  const [height, width] = params.dims;
+// Shorthand helpers for wall definitions
+const v = (row: number, col: number): WallPosition => ({
+  cell: [row, col],
+  orientation: "vertical",
+});
+const h = (row: number, col: number): WallPosition => ({
+  cell: [row, col],
+  orientation: "horizontal",
+});
 
-  return {
-    id: params.id,
-    title: `Puzzle ${params.id}`,
-    author: params.author,
-    difficulty: params.difficulty,
-    boardWidth: width,
-    boardHeight: height,
-    p1Cat: oldPosToCell(params.startPos[0], height),
-    p1Home: oldPosToCell(params.goalPos[0], height),
-    p2Cat: oldPosToCell(params.startPos[1], height),
-    p2Home: oldPosToCell(params.goalPos[1], height),
-    initialWalls: [],
-    p1Starts: params.creatorStarts,
-    humanPlaysAs: params.playAsCreator ? 1 : 2,
-    moves: parsePuzzleMoves(params.moves, height),
-    setupMoves: params.startIndex,
-  };
+/**
+ * Parse a move string in old wallwars notation.
+ * The height parameter is required by the parser for coordinate conversion.
+ */
+function parseMoves(moveString: string, boardHeight: number): Move[][] {
+  return parsePuzzleMoves(moveString, boardHeight);
 }
 
 export const PUZZLES: Record<string, Puzzle> = {
-  "1": buildPuzzle({
+  // 4x4 board. Human plays as P1.
+  "1": {
     id: "1",
+    title: "Puzzle 1",
     author: "Nilo",
     difficulty: 1350,
-    dims: [4, 4],
-    startPos: ["a1", "d1"],
-    goalPos: ["d4", "a4"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "a4> a3>; a2> c3>; d2v c3v; d3v d1v; b1> b2>; c2; b2; b3; b4; b1; d4",
-    startIndex: 4,
-  }),
+    boardWidth: 4,
+    boardHeight: 4,
+    p1Cat: [0, 0],
+    p1Home: [3, 3],
+    p2Cat: [0, 3],
+    p2Home: [3, 0],
+    initialWalls: [
+      v(1, 0),
+      h(1, 3),
+      v(2, 0),
+      v(2, 2),
+      h(2, 3),
+      v(3, 0),
+      h(3, 2),
+      h(3, 3),
+    ],
+    humanPlaysAs: 1,
+    moves: parseMoves("b1> b2>; c2; b2; b3; b4; b1; d4", 4),
+  },
 
-  "2": buildPuzzle({
+  // 3x7 board. Human plays as P2 (P2 moves first in this puzzle).
+  "2": {
     id: "2",
+    title: "Puzzle 2",
     author: "Nilo",
     difficulty: 1400,
-    dims: [3, 7],
-    startPos: ["a1", "g1"],
-    goalPos: ["g3", "a3"],
-    creatorStarts: true,
-    playAsCreator: false,
-    moves:
-      "c1; e1; a1> a2>; f1> f2>; c1v d1v; c2v e1v; d2v e2v; b1v f2v, b1> f2v; e1; f2; f2; d2; d2; b2; b2; a3",
-    startIndex: 7,
-  }),
+    boardWidth: 7,
+    boardHeight: 3,
+    p1Cat: [0, 2],
+    p1Home: [2, 6],
+    p2Cat: [0, 4],
+    p2Home: [2, 0],
+    initialWalls: [
+      v(0, 0),
+      v(0, 5),
+      v(1, 0),
+      h(1, 2),
+      h(1, 3),
+      h(1, 4),
+      v(1, 5),
+      h(2, 2),
+      h(2, 3),
+      h(2, 4),
+    ],
+    humanPlaysAs: 2,
+    moves: parseMoves(
+      "b1v f2v, b1> f2v; e1; f2; f2; d2; d2; b2; b2; a3",
+      3,
+    ),
+  },
 
-  "3": buildPuzzle({
+  // 3x5 board. Human plays as P1.
+  "3": {
     id: "3",
+    title: "Puzzle 3",
     author: "Nilo",
     difficulty: 1430,
-    dims: [3, 5],
-    startPos: ["c1", "c1"],
-    goalPos: ["e3", "a3"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves: "a2> d2>; a3> d3>; b1> c1v; d2; e1; b2; e3",
-    startIndex: 2,
-  }),
+    boardWidth: 5,
+    boardHeight: 3,
+    p1Cat: [0, 2],
+    p1Home: [2, 4],
+    p2Cat: [0, 2],
+    p2Home: [2, 0],
+    initialWalls: [v(1, 0), v(1, 3), v(2, 0), v(2, 3)],
+    humanPlaysAs: 1,
+    moves: parseMoves("b1> c1v; d2; e1; b2; e3", 3),
+  },
 
-  "4": buildPuzzle({
+  // 4x4 board. Human plays as P1.
+  "4": {
     id: "4",
+    title: "Puzzle 4",
     author: "Nilo",
     difficulty: 1450,
-    dims: [4, 4],
-    startPos: ["c2", "c2"],
-    goalPos: ["d4", "a4"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves: "a2v b3>; b3; a3> b3v; c2; c3 c2v; d3; d4",
-    startIndex: 2,
-  }),
+    boardWidth: 4,
+    boardHeight: 4,
+    p1Cat: [1, 2],
+    p1Home: [3, 3],
+    p2Cat: [2, 1],
+    p2Home: [3, 0],
+    initialWalls: [h(2, 0), v(2, 1)],
+    humanPlaysAs: 1,
+    moves: parseMoves("a3> b3v; c2; c3 c2v; d3; d4", 4),
+  },
 
-  "5": buildPuzzle({
+  // 5x5 board. Human plays as P1.
+  "5": {
     id: "5",
+    title: "Puzzle 5",
     author: "Nilo",
     difficulty: 1550,
-    dims: [5, 5],
-    startPos: ["a1", "e1"],
-    goalPos: ["e5", "a5"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "d2> d3>; d4v d4>; b4v c4v; a3> a4>; a2> b1v; b2> b3>; c1> e1v, c1> e2v, c1> e3v, c1> e4v; d2; c2> c3>; d4; a3; c3; a5; c1; c5; a1; e5",
-    startIndex: 6,
-  }),
+    boardWidth: 5,
+    boardHeight: 5,
+    p1Cat: [0, 0],
+    p1Home: [4, 4],
+    p2Cat: [0, 4],
+    p2Home: [4, 0],
+    initialWalls: [
+      v(1, 0),
+      v(1, 1),
+      h(1, 1),
+      v(1, 3),
+      v(2, 0),
+      v(2, 1),
+      v(2, 3),
+      v(3, 0),
+      v(3, 3),
+      h(4, 1),
+      h(4, 2),
+      h(4, 3),
+    ],
+    humanPlaysAs: 1,
+    moves: parseMoves(
+      "c1> e1v, c1> e2v, c1> e3v, c1> e4v; d2; c2> c3>; d4; a3; c3; a5; c1; c5; a1; e5",
+      5,
+    ),
+  },
 
-  "6": buildPuzzle({
+  // 4x5 board. Human plays as P1.
+  "6": {
     id: "6",
+    title: "Puzzle 6",
     author: "Nilo",
     difficulty: 1600,
-    dims: [4, 5],
-    startPos: ["a1", "e1"],
-    goalPos: ["e4", "a4"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "b2; d2; a4> b3v; b2v b2>; d3v d4>; d2v d2>; b4> c4>; a2> c2>; b3> c1>, a3> c1>; e1; c1; e3; c3; c3; e3; c1; e4 d1v, e4 d1>, e4 e1v, e4 e2v, e4 e3v, e4 d3>, e4 c3>, e4 c3v, e4 c2v, e4 c1v, e4 a3>, e4 b3>, e4 b1v",
-    startIndex: 8,
-  }),
+    boardWidth: 5,
+    boardHeight: 4,
+    p1Cat: [1, 1],
+    p1Home: [3, 4],
+    p2Cat: [1, 3],
+    p2Home: [3, 0],
+    initialWalls: [
+      v(1, 0),
+      v(1, 1),
+      v(1, 2),
+      v(1, 3),
+      h(2, 1),
+      h(2, 3),
+      v(3, 0),
+      v(3, 1),
+      h(3, 1),
+      v(3, 2),
+      v(3, 3),
+      h(3, 3),
+    ],
+    humanPlaysAs: 1,
+    moves: parseMoves(
+      "b3> c1>, a3> c1>; e1; c1; e3; c3; c3; e3; c1; e4 d1v, e4 d1>, e4 e1v, e4 e2v, e4 e3v, e4 d3>, e4 c3>, e4 c3v, e4 c2v, e4 c1v, e4 a3>, e4 b3>, e4 b1v",
+      4,
+    ),
+  },
 
-  "7": buildPuzzle({
+  // 6x5 board. Human plays as P1.
+  "7": {
     id: "7",
+    title: "Puzzle 7",
     author: "Nilo",
     difficulty: 1650,
-    dims: [6, 5],
-    startPos: ["e1", "a1"],
-    goalPos: ["a6", "e6"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "d2; b2; c3; c3; b3 b2v; b4v b4>; b5> b6>; a5v c2v; a1v a2v; a1> a2>; c3v d3v; d3 d2v; d5v e5v; e4; a4; d4 d4>, d4 d5>, d4 e4v, d4 c5>; b5; c5; a6",
-    startIndex: 12,
-  }),
+    boardWidth: 5,
+    boardHeight: 6,
+    p1Cat: [2, 1],
+    p1Home: [5, 0],
+    p2Cat: [2, 3],
+    p2Home: [5, 4],
+    initialWalls: [
+      v(0, 0),
+      v(1, 0),
+      h(1, 0),
+      h(2, 0),
+      h(2, 1),
+      h(2, 2),
+      h(2, 3),
+      v(3, 1),
+      h(3, 2),
+      h(3, 3),
+      v(4, 1),
+      h(4, 1),
+      h(5, 0),
+      v(5, 1),
+    ],
+    humanPlaysAs: 1,
+    moves: parseMoves(
+      "d5v e5v; e4; a4; d4 d4>, d4 d5>, d4 e4v, d4 c5>; b5; c5; a6",
+      6,
+    ),
+  },
 
-  "8": buildPuzzle({
+  // 5x5 board. Human plays as P1.
+  "8": {
     id: "8",
+    title: "Puzzle 8",
     author: "Nilo",
     difficulty: 1725,
-    dims: [5, 5],
-    startPos: ["a1", "a1"],
-    goalPos: ["c3", "c3"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "b2v c2v; b2; c3> c4>; b4v a4>; a2> c5>; a1; a3; a3; b3 a3>; a5; c3 a1>, c3 a1v, c3 b1>, c3 b1v, c3 c1>, c3 c1v, c3 d1>, c3 d1v, c3 e1v, c3 a2v, c3 b2>, c3 c2>, c3 d2v, c3 d2>, c3 e2v, c3 a3v, c3 b3v, c3 b3>, c3 c3v, c3 d3v, c3 d3>, c3 e3v, c3 a4v, c3 b4>, c3 d4v, c3 d4>, c3 e4v, c3 d5>",
-    startIndex: 4,
-  }),
+    boardWidth: 5,
+    boardHeight: 5,
+    p1Cat: [0, 0],
+    p1Home: [2, 2],
+    p2Cat: [1, 1],
+    p2Home: [2, 2],
+    initialWalls: [h(2, 1), v(2, 2), h(2, 2), v(3, 0), v(3, 2), h(4, 1)],
+    humanPlaysAs: 1,
+    moves: parseMoves(
+      "a2> c5>; a1; a3; a3; b3 a3>; a5; c3 a1>, c3 a1v, c3 b1>, c3 b1v, c3 c1>, c3 c1v, c3 d1>, c3 d1v, c3 e1v, c3 a2v, c3 b2>, c3 c2>, c3 d2v, c3 d2>, c3 e2v, c3 a3v, c3 b3v, c3 b3>, c3 c3v, c3 d3v, c3 d3>, c3 e3v, c3 a4v, c3 b4>, c3 d4v, c3 d4>, c3 e4v, c3 d5>",
+      5,
+    ),
+  },
 
-  "9": buildPuzzle({
+  // 3x7 board. Human plays as P1. No initial walls.
+  "9": {
     id: "9",
+    title: "Puzzle 9",
     author: "Nilo",
     difficulty: 1750,
-    dims: [3, 7],
-    startPos: ["f2", "b2"],
-    goalPos: ["g3", "a3"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
+    boardWidth: 7,
+    boardHeight: 3,
+    p1Cat: [1, 5],
+    p1Home: [2, 6],
+    p2Cat: [1, 1],
+    p2Home: [2, 0],
+    initialWalls: [],
+    humanPlaysAs: 1,
+    moves: parseMoves(
       "a2> b2v; f2v f2>; a2v c2v, a1v c2v, a1> c2v; e2v g2v; c2> d1v; c2 e2>; e1; d1; d2; e2; e3; d3; g3",
-    startIndex: 0,
-  }),
+      3,
+    ),
+  },
 
-  "10": buildPuzzle({
+  // 6x9 board. Human plays as P1.
+  "10": {
     id: "10",
+    title: "Puzzle 10",
     author: "Tim",
     difficulty: 1850,
-    dims: [6, 9],
-    startPos: ["a1", "i1"],
-    goalPos: ["i6", "a6"],
-    creatorStarts: true,
-    playAsCreator: true,
-    moves:
-      "g3v h3v; b3v c3v; e3v f3v; c4> d3v; f4> f5>; c5> c6>; f1> f6>; c1> c2>; a2 f2>; h2> h3>; b2 a3>; h2; c3; g3; e3; e3; f3 d3>; d2; h4> h5>, h4> h6>, h5> h6>; a4> a5>; g2; c3; h1; b2; a2> b1v; c1; i2; a1; i4; a3; i6",
-    startIndex: 10,
-  }),
+    boardWidth: 9,
+    boardHeight: 6,
+    p1Cat: [1, 0],
+    p1Home: [5, 8],
+    p2Cat: [0, 8],
+    p2Home: [5, 0],
+    initialWalls: [
+      v(0, 2),
+      v(0, 5),
+      v(1, 2),
+      v(1, 5),
+      v(1, 7),
+      v(2, 7),
+      h(3, 1),
+      v(3, 2),
+      h(3, 2),
+      h(3, 3),
+      h(3, 4),
+      v(3, 5),
+      h(3, 5),
+      h(3, 6),
+      h(3, 7),
+      v(4, 2),
+      v(4, 5),
+      v(5, 2),
+      v(5, 5),
+    ],
+    humanPlaysAs: 1,
+    moves: parseMoves(
+      "b2 a3>; h2; c3; g3; e3; e3; f3 d3>; d2; h4> h5>, h4> h6>, h5> h6>; a4> a5>; g2; c3; h1; b2; a2> b1v; c1; i2; a1; i4; a3; i6",
+      6,
+    ),
+  },
 };
 
 /** Get all puzzle IDs in order (sorted numerically) */

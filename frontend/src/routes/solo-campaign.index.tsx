@@ -76,31 +76,24 @@ function SoloCampaign() {
                     )}
                   </div>
 
-                  <div className="flex-1">
-                    <h3 className="text-xl font-serif font-semibold text-foreground mb-2">
+                  <div className="flex-1 min-w-0">
+                    <h3 className="text-xl font-serif font-semibold text-foreground mb-1">
                       {levelId}. {level.name}
                     </h3>
-                    <div className="flex gap-2">
-                      <Badge variant="secondary" className="text-xs">
-                        {level.boardWidth}x{level.boardHeight}
+                    {isCompleted && (
+                      <Badge className="text-xs bg-green-600 dark:bg-green-700">
+                        Completed
                       </Badge>
-                      <Badge variant="secondary" className="text-xs">
-                        {level.turnsToSurvive} turns
-                      </Badge>
-                      {isCompleted && (
-                        <Badge className="text-xs bg-green-600 dark:bg-green-700">
-                          Completed
-                        </Badge>
-                      )}
-                    </div>
+                    )}
                   </div>
                 </div>
 
                 <Button
+                  size="sm"
                   onClick={() => handlePlayPuzzle(levelId)}
-                  className="gap-2"
+                  className="gap-1.5 shrink-0"
                 >
-                  <Play className="w-4 h-4" />
+                  <Play className="w-3.5 h-3.5" />
                   {isCompleted ? "Replay" : "Play"}
                 </Button>
               </div>

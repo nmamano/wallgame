@@ -302,7 +302,7 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     });
   }, [gameState, boardInteractions.stagedActions, humanPlayerId]);
 
-  // Initialize game and play setup moves
+  // Initialize game from puzzle's baked-in starting state
   const initializeGame = useCallback(() => {
     setIsLoading(true);
     setPuzzleStatus("loading");
@@ -310,41 +310,14 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     preWrongMoveStateRef.current = null;
 
     const config = buildPuzzleConfig(puzzle);
-    let newGameState = new GameState(config, Date.now());
+    const newGameState = new GameState(config, Date.now());
 
-    // Play setup moves
-    for (let i = 0; i < puzzle.setupMoves && i < puzzle.moves.length; i++) {
-      const alternatives = puzzle.moves[i];
-      if (alternatives.length === 0) break;
-
-      // Use the first alternative for setup moves
-      const move = alternatives[0];
-      const playerId = newGameState.turn;
-
-      try {
-        newGameState = newGameState.applyGameAction({
-          kind: "move",
-          move,
-          playerId,
-          timestamp: Date.now(),
-        });
-      } catch (error) {
-        console.error(
-          `Puzzle ${puzzle.id}: Setup move ${i} failed`,
-          "Move:",
-          JSON.stringify(move),
-          "Player:",
-          playerId,
-          "Error:",
-          error,
-        );
-        throw error;
-      }
-    }
+    // Set the starting turn — the human always moves first in puzzles
+    newGameState.turn = puzzle.humanPlaysAs;
 
     gameStateRef.current = newGameState;
     setGameState(newGameState);
-    setCurrentMoveIndex(puzzle.setupMoves);
+    setCurrentMoveIndex(0);
     setIsLoading(false);
     setPuzzleStatus("playing");
     setIsOpponentThinking(false);
