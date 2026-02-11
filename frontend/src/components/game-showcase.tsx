@@ -244,7 +244,7 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
   const title = useMemo(() => {
     if (!showcase || orderedPlayers.length < 2) return null;
     const formatPlayer = (player: GameSnapshot["players"][number]) => {
-      const rating = player.elo != null ? ` (${player.elo})` : "";
+      const rating = player.elo != null ? ` (${Math.round(player.elo)})` : "";
       return `${player.displayName}${rating}`;
     };
     const players = `${formatPlayer(orderedPlayers[0])} vs ${formatPlayer(orderedPlayers[1])}`;

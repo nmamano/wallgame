@@ -119,7 +119,7 @@ export function PlayerTimerCard({
             {baseName || player.name}
           </span>
           <span className="text-[9px] text-muted-foreground flex-shrink-0">
-            {player.rating}
+            {Math.round(player.rating)}
           </span>
         </div>
 
@@ -191,7 +191,7 @@ export function PlayerTimerCard({
               variant="outline"
               className="text-[10px] lg:text-xs px-1 lg:px-2 py-0 lg:py-0.5 flex-shrink-0 h-4 lg:h-auto"
             >
-              {player.rating}
+              {Math.round(player.rating)}
             </Badge>
           </div>
           <div className="flex items-center gap-1 text-[10px] lg:text-xs text-muted-foreground">

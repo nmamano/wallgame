@@ -44,7 +44,7 @@ function formatBoardSize(game: LiveGameSummary): string {
 
 function formatPlayers(game: LiveGameSummary): string {
   return game.players
-    .map((p) => `${p.displayName} (${p.elo ?? "?"})`)
+    .map((p) => `${p.displayName} (${p.elo != null ? Math.round(p.elo) : "?"})`)
     .join(" vs ");
 }
 
