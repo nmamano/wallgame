@@ -310,6 +310,7 @@ function PuzzlePageContent({
             selectedPawnId={selectedPawnId}
             draggingPawnId={draggingPawnId}
             controllablePlayerId={puzzle.humanPlaysAs}
+            disableMousePawnInteraction
             forceReadOnly={puzzleStatus !== "playing"}
             stagedActionsCount={stagedActions.length}
             // Arrows for staged/premoved moves

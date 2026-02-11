@@ -235,6 +235,7 @@ function SoloCampaignLevelContent({
             selectedPawnId={selectedPawnId}
             draggingPawnId={draggingPawnId}
             controllablePlayerId={level.userPlaysAs}
+            disableMousePawnInteraction={!level.mouseCanMove}
             forceReadOnly={gameEnded}
             stagedActionsCount={stagedActions.length}
             // Arrows for staged/premoved moves
