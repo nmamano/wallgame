@@ -101,11 +101,20 @@ interface BotSocket {
   unexpectedMessageCount: number;
 }
 
+/** Response types the bot can send */
+type BotResponseType =
+  | "game_session_started"
+  | "game_session_ended"
+  | "evaluate_response"
+  | "move_applied";
+
 /** Resolver for pending BGS requests */
 interface BgsRequestResolver<T> {
   resolve: (result: T) => void;
   reject: (error: Error) => void;
   timeoutId: ReturnType<typeof setTimeout>;
+  /** Expected response type — used to detect stale responses after resolver overwrite */
+  expectedResponseType: BotResponseType;
 }
 
 /** Pending request resolvers by bgsId */
@@ -415,6 +424,17 @@ const handleGameSessionStarted = (
   // Resolve the pending request
   const resolver = pendingResolvers.get(bgsId);
   if (resolver) {
+    // Verify this response matches the expected type — a mismatch means
+    // the resolver was overwritten (e.g., endBgsSession sent while start was pending)
+    if (resolver.expectedResponseType !== "game_session_started") {
+      console.info("[custom-bot-ws] discarding stale game_session_started", {
+        bgsId,
+        resolverExpects: resolver.expectedResponseType,
+      });
+      // Don't consume the resolver — the correct response will arrive later
+      return;
+    }
+
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
     clearPendingRequest(bgsId);
@@ -451,6 +471,15 @@ const handleGameSessionEnded = (
   // Resolve the pending request (if any)
   const resolver = pendingResolvers.get(bgsId);
   if (resolver) {
+    // Verify this response matches the expected type
+    if (resolver.expectedResponseType !== "game_session_ended") {
+      console.info("[custom-bot-ws] discarding stale game_session_ended", {
+        bgsId,
+        resolverExpects: resolver.expectedResponseType,
+      });
+      return;
+    }
+
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
     clearPendingRequest(bgsId);
@@ -512,6 +541,15 @@ const handleEvaluateResponse = (
     | BgsRequestResolver<EvaluateResponseMessage>
     | undefined;
   if (resolver) {
+    // Verify this response matches the expected type
+    if (resolver.expectedResponseType !== "evaluate_response") {
+      console.info("[custom-bot-ws] discarding stale evaluate_response", {
+        bgsId,
+        resolverExpects: resolver.expectedResponseType,
+      });
+      return;
+    }
+
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
     clearPendingRequest(bgsId);
@@ -591,6 +629,15 @@ const handleMoveApplied = (
     | BgsRequestResolver<MoveAppliedMessage>
     | undefined;
   if (resolver) {
+    // Verify this response matches the expected type
+    if (resolver.expectedResponseType !== "move_applied") {
+      console.info("[custom-bot-ws] discarding stale move_applied", {
+        bgsId,
+        resolverExpects: resolver.expectedResponseType,
+      });
+      return;
+    }
+
     clearTimeout(resolver.timeoutId);
     pendingResolvers.delete(bgsId);
     clearPendingRequest(bgsId);
@@ -693,6 +740,7 @@ export const startBgsSession = async (
       resolve: resolve as (result: unknown) => void,
       reject,
       timeoutId,
+      expectedResponseType: "game_session_started",
     });
 
     // Track pending request in BGS
@@ -733,7 +781,47 @@ export const endBgsSession = async (
     return;
   }
 
-  // Send end_game_session message
+  // If there's an in-flight request, wait for the bot's natural response before
+  // sending end_game_session. The bot client enforces one-request-at-a-time:
+  // sending end_game_session while another request is pending is a protocol violation.
+  const existingResolver = pendingResolvers.get(bgsId);
+  if (existingResolver) {
+    // Reject the original caller so they bail out immediately (e.g., executeBotTurnV3
+    // sees the rejection and checks getResetPromise → graceful return).
+    clearTimeout(existingResolver.timeoutId);
+    existingResolver.reject(new Error("Request cancelled - session ending"));
+
+    // Install a drain resolver with the same expectedResponseType so the response
+    // handler consumes the bot's natural response. The drain resolves once the
+    // response arrives, making it safe to send end_game_session.
+    await new Promise<void>((drainResolve) => {
+      const drainTimeoutId = setTimeout(() => {
+        pendingResolvers.delete(bgsId);
+        clearPendingRequest(bgsId);
+        drainResolve();
+      }, BGS_REQUEST_TIMEOUT_MS);
+
+      pendingResolvers.set(bgsId, {
+        resolve: () => {
+          clearTimeout(drainTimeoutId);
+          drainResolve();
+        },
+        reject: () => {
+          clearTimeout(drainTimeoutId);
+          drainResolve(); // Drain completes even on error response
+        },
+        timeoutId: drainTimeoutId,
+        expectedResponseType: existingResolver.expectedResponseType,
+      });
+    });
+
+    console.info("[custom-bot-ws] drained in-flight request before ending BGS", {
+      bgsId,
+      drainedType: existingResolver.expectedResponseType,
+    });
+  }
+
+  // Now safe to send end_game_session — no in-flight request at the bot
   send(ctx, {
     type: "end_game_session",
     bgsId,
@@ -758,6 +846,7 @@ export const endBgsSession = async (
       },
       reject,
       timeoutId,
+      expectedResponseType: "game_session_ended",
     });
 
     setPendingRequest(bgsId, {
@@ -794,6 +883,16 @@ export const requestEvaluation = async (
     throw new Error(`No connection for client: ${clientId}`);
   }
 
+  // Fail loudly if there's already an in-flight request for this BGS.
+  // This enforces the protocol invariant at the server level rather than
+  // silently overwriting the resolver (which would cause the bot client
+  // to reject with "Already have pending request").
+  if (pendingResolvers.has(bgsId)) {
+    throw new Error(
+      `BGS ${bgsId} already has an in-flight request (trying to send evaluate_position)`,
+    );
+  }
+
   // Send evaluate_position message
   send(ctx, {
     type: "evaluate_position",
@@ -813,6 +912,7 @@ export const requestEvaluation = async (
       resolve: resolve as (result: unknown) => void,
       reject,
       timeoutId,
+      expectedResponseType: "evaluate_response",
     });
 
     setPendingRequest(bgsId, {
@@ -854,6 +954,13 @@ export const applyBgsMove = async (
     throw new Error(`No connection for client: ${clientId}`);
   }
 
+  // Fail loudly if there's already an in-flight request for this BGS.
+  if (pendingResolvers.has(bgsId)) {
+    throw new Error(
+      `BGS ${bgsId} already has an in-flight request (trying to send apply_move)`,
+    );
+  }
+
   // Send apply_move message
   send(ctx, {
     type: "apply_move",
@@ -874,6 +981,7 @@ export const applyBgsMove = async (
       resolve: resolve as (result: unknown) => void,
       reject,
       timeoutId,
+      expectedResponseType: "move_applied",
     });
 
     setPendingRequest(bgsId, {

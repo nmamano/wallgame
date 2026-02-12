@@ -85,8 +85,6 @@ export interface BotGameSession {
   currentPly: number;
   /** Currently pending request (if any) */
   pendingRequest: PendingBgsRequest | null;
-  /** Whether a takeback reset (replay) is in progress */
-  resetting: boolean;
   /** When the session was created */
   createdAt: number;
   /** When the session was last updated */
@@ -149,7 +147,6 @@ export const createBgs = (
     history: [],
     currentPly: 0,
     pendingRequest: null,
-    resetting: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -229,26 +226,69 @@ export const markBgsReady = (bgsId: string): boolean => {
 };
 
 /**
- * Mark a BGS as resetting (takeback replay in progress).
- * While resetting, the server should not forward new game moves to the BGS.
+ * Reset promises and their resolvers, keyed by bgsId.
+ *
+ * These live OUTSIDE the BGS objects because a takeback reset spans the
+ * entire lifecycle: end old BGS → create new BGS → replay → done.
+ * The BGS is deleted and recreated during this process, but the promise
+ * must survive the whole thing so awaiters (e.g., the move handler) only
+ * wake up when the reset is truly complete.
  */
-export const markBgsResetting = (bgsId: string): boolean => {
-  const session = sessions.get(bgsId);
-  if (!session) return false;
-  session.resetting = true;
-  session.updatedAt = Date.now();
-  return true;
+const resetPromises = new Map<string, Promise<void>>();
+const resetResolvers = new Map<string, () => void>();
+const resetGenerations = new Map<string, number>();
+
+/**
+ * Mark a bgsId as resetting (takeback replay in progress).
+ * Creates a promise that persists across BGS deletion/recreation.
+ * Returns a generation token — pass it to clearBgsResetting so that
+ * an earlier takeback's finally block doesn't destroy a later one's promise.
+ */
+export const markBgsResetting = (bgsId: string): number => {
+  // Resolve any pre-existing reset promise (e.g., rapid double-takeback)
+  const existing = resetResolvers.get(bgsId);
+  if (existing) existing();
+
+  const generation = (resetGenerations.get(bgsId) ?? 0) + 1;
+  resetGenerations.set(bgsId, generation);
+
+  let resolve: () => void;
+  const promise = new Promise<void>((r) => {
+    resolve = r;
+  });
+  resetPromises.set(bgsId, promise);
+  resetResolvers.set(bgsId, resolve!);
+  return generation;
 };
 
 /**
- * Clear the resetting flag on a BGS (takeback replay complete).
+ * Clear the resetting state for a bgsId (takeback replay complete).
+ * Only clears if the generation matches — prevents an earlier takeback's
+ * finally block from destroying a later takeback's promise.
  */
-export const clearBgsResetting = (bgsId: string): boolean => {
-  const session = sessions.get(bgsId);
-  if (!session) return false;
-  session.resetting = false;
-  session.updatedAt = Date.now();
-  return true;
+export const clearBgsResetting = (bgsId: string, generation: number): void => {
+  if (resetGenerations.get(bgsId) !== generation) return; // stale
+  const resolve = resetResolvers.get(bgsId);
+  if (resolve) resolve();
+  resetResolvers.delete(bgsId);
+  resetPromises.delete(bgsId);
+  resetGenerations.delete(bgsId);
+};
+
+/**
+ * Get the reset promise for a bgsId, or null if not resetting.
+ * Used by the move handler to await reset completion.
+ */
+export const getResetPromise = (bgsId: string): Promise<void> | null => {
+  return resetPromises.get(bgsId) ?? null;
+};
+
+/**
+ * Get the current reset generation for a bgsId.
+ * Used by handleTakebackBgsReset to detect if a newer reset has superseded it.
+ */
+export const getResetGeneration = (bgsId: string): number | undefined => {
+  return resetGenerations.get(bgsId);
 };
 
 // ============================================================================

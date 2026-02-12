@@ -56,6 +56,8 @@ import {
   getLatestHistoryEntry,
   markBgsResetting,
   clearBgsResetting,
+  getResetPromise,
+  getResetGeneration,
   type BgsHistoryEntry,
 } from "../games/bgs-store";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
@@ -172,9 +174,10 @@ const getInitialEvaluation = async (
     };
   } catch (error) {
     console.error("[ws] failed to get initial evaluation", {
-      error,
+      error: error instanceof Error ? error.message : error,
       bgsId,
       botCompositeId,
+      bgsStatus: getBgs(bgsId)?.status,
     });
     return null;
   }
@@ -399,7 +402,7 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     if (
       !currentBgs ||
       currentBgs.status === "initializing" ||
-      currentBgs.resetting
+      getResetPromise(bgsId)
     ) {
       console.info(
         "[ws] BGS operation failed but BGS is resetting/gone (takeback?)",
@@ -445,65 +448,101 @@ const handleTakebackBgsReset = async (
 ): Promise<void> => {
   const bgsId = sessionId;
 
-  // End the current BGS
-  try {
-    await endBgsSession(botCompositeId, bgsId);
-  } catch (error) {
-    console.error("[ws] failed to end BGS for takeback", {
-      error,
-      sessionId,
-      botCompositeId,
-    });
-    // Continue anyway - we need to start fresh
-  }
+  // Snapshot the history BEFORE any async operations. The human's move handler
+  // can apply moves to game state concurrently (it only blocks the BGS update
+  // on the reset promise, not the game state update). We must replay from a
+  // frozen snapshot, not the live history — otherwise moves played during the
+  // reset get replayed AND re-applied by the move handler (double-apply bug).
+  const sessionAtTakeback = getSession(sessionId);
+  const replaySnapshot = [...sessionAtTakeback.gameState.history];
+  const historyLengthAtTakeback = replaySnapshot.length;
+  const totalRows = sessionAtTakeback.config.boardHeight;
 
-  // Get the current session state (after takeback)
-  const session = getSession(sessionId);
-
-  // Find the bot player
-  const botPlayer = session.players.host.botCompositeId
-    ? session.players.host
-    : session.players.joiner;
-
-  if (!botPlayer.botCompositeId) return;
-
-  // Start a new BGS with the same ID
-  const config = buildBgsConfig(session);
-  try {
-    await startBgsSession(botCompositeId, bgsId, sessionId, config);
-  } catch (error) {
-    console.error("[ws] failed to restart BGS after takeback", {
-      error,
-      sessionId,
-      botCompositeId,
-    });
-    await resignBotOnFailure(session, botPlayer.playerId);
-    return;
-  }
-
-  // Block new game moves from being forwarded while we replay history
-  markBgsResetting(bgsId);
+  // Mark as resetting ONCE, before anything else. This promise lives outside
+  // the BGS object (in a standalone map) so it survives the BGS delete+recreate
+  // cycle. It is resolved only in the finally block below.
+  // The generation token ensures that if a second takeback fires, the first
+  // takeback's finally block won't destroy the second's promise.
+  const resetGeneration = markBgsResetting(bgsId);
 
   try {
-    // Get initial evaluation
-    const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
-    if (!initialEval) {
-      console.error("[ws] failed to get initial eval after takeback", {
+    // End the current BGS
+    try {
+      await endBgsSession(botCompositeId, bgsId);
+    } catch (error) {
+      console.error("[ws] failed to end BGS for takeback", {
+        error,
         sessionId,
-        botCompositeId,
+      });
+      // Continue anyway - we need to start fresh
+    }
+
+    // Bail if a newer reset has superseded this one
+    if (getResetGeneration(bgsId) !== resetGeneration) {
+      console.info("[ws] takeback reset superseded by newer reset", {
+        sessionId,
+        resetGeneration,
+      });
+      return;
+    }
+
+    // Get the current session state (for bot player info and config)
+    const session = getSession(sessionId);
+
+    // Find the bot player
+    const botPlayer = session.players.host.botCompositeId
+      ? session.players.host
+      : session.players.joiner;
+
+    if (!botPlayer.botCompositeId) return;
+
+    // Start a new BGS with the same ID
+    const config = buildBgsConfig(session);
+    try {
+      await startBgsSession(botCompositeId, bgsId, sessionId, config);
+    } catch (error) {
+      console.error("[ws] failed to restart BGS after takeback", {
+        error,
+        sessionId,
       });
       await resignBotOnFailure(session, botPlayer.playerId);
       return;
     }
 
-    // Replay all moves from the game history
-    // Note: history contains MoveInHistory objects with a single `move` property
-    // Each entry is one ply (half-move)
-    const totalRows = session.config.boardHeight;
-    const history = session.gameState.history;
+    // Bail if a newer reset has superseded this one
+    if (getResetGeneration(bgsId) !== resetGeneration) {
+      console.info("[ws] takeback reset superseded after BGS start", {
+        sessionId,
+        resetGeneration,
+      });
+      return;
+    }
 
-    for (let i = 0; i < history.length; i++) {
-      const historyEntry = history[i];
+    // Get initial evaluation
+    const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
+    if (!initialEval) {
+      console.error("[ws] failed to get initial eval after takeback", {
+        sessionId,
+      });
+      await resignBotOnFailure(session, botPlayer.playerId);
+      return;
+    }
+
+    // Replay moves from the SNAPSHOT (not the live history).
+    // This prevents moves played during the reset from being included in
+    // the replay — those will be handled by their own move handlers.
+    for (let i = 0; i < replaySnapshot.length; i++) {
+      // Check for superseding reset before each expensive async operation
+      if (getResetGeneration(bgsId) !== resetGeneration) {
+        console.info("[ws] takeback reset superseded during replay", {
+          sessionId,
+          resetGeneration,
+          replayedSoFar: i,
+        });
+        return;
+      }
+
+      const historyEntry = replaySnapshot[i];
       const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
       const evalResult = await applyMoveAndEvaluate(
         botCompositeId,
@@ -515,27 +554,23 @@ const handleTakebackBgsReset = async (
         console.error("[ws] failed to replay move during takeback", {
           sessionId,
           moveIndex: i,
-          move: moveNotation,
         });
         await resignBotOnFailure(session, botPlayer.playerId);
         return;
       }
     }
 
-    console.info("[ws] BGS reset after takeback complete", {
+    console.info("[ws] BGS takeback reset complete", {
       sessionId,
-      botCompositeId,
-      movesReplayed: history.length,
+      movesReplayed: replaySnapshot.length,
     });
 
-    // Check if the human played a move while the replay was in progress.
-    // If so, the move handler (currently polling on the resetting flag)
-    // will apply it and trigger the bot's turn — we must NOT call
-    // executeBotTurnV3 here because the BGS is at the replay position,
-    // not the current game position.
+    // Check if the human played a move while the reset was in progress.
+    // Compare against the snapshot taken BEFORE async operations — this
+    // correctly detects moves played at any point during the reset.
     const currentSession = getSession(sessionId);
     const gameAdvancedDuringReset =
-      currentSession.gameState.history.length > history.length;
+      currentSession.gameState.history.length > historyLengthAtTakeback;
 
     if (
       !gameAdvancedDuringReset &&
@@ -543,13 +578,12 @@ const handleTakebackBgsReset = async (
       currentSession.gameState.turn === botPlayer.playerId
     ) {
       // No new moves during reset, and it's the bot's turn — play it.
-      // Await so resetting stays true until the bot's turn completes,
-      // preventing the human's move handler from racing with BGS updates.
+      // Await so the reset promise stays pending until the bot's turn
+      // completes, preventing the move handler from racing with BGS updates.
       await executeBotTurnV3(sessionId);
     }
   } finally {
-    // Clear resetting flag (no-op if BGS was deleted by resignBotOnFailure)
-    clearBgsResetting(bgsId);
+    clearBgsResetting(bgsId, resetGeneration);
   }
 };
 
@@ -573,6 +607,9 @@ const registerRematchBotGamesV3 = async (
       : null;
 
   if (!botPlayer?.botCompositeId) return;
+
+  // Skip if BGS already exists (e.g., "already-started" rematch path called us redundantly)
+  if (getBgs(session.id)) return;
 
   const opponent = botPlayer === host ? joiner : host;
 
@@ -626,14 +663,17 @@ const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
     return; // Not a bot game
   }
 
-  // Check if BGS already exists
+  // Check if BGS already exists (e.g., rematch flow already created it, or reconnect)
   const existingBgs = getBgs(sessionId);
   if (existingBgs) {
-    // BGS already initialized, but check if bot needs to move
+    // Only trigger bot turn if BGS is fully idle — no pending request (e.g., initial
+    // evaluation still in-flight from registerRematchBotGamesV3) and no reset in progress.
     if (
       session.gameState.status === "playing" &&
       session.gameState.turn === botPlayer.playerId &&
-      existingBgs.status === "ready"
+      existingBgs.status === "ready" &&
+      !existingBgs.pendingRequest &&
+      !getResetPromise(sessionId)
     ) {
       void executeBotTurnV3(sessionId);
     }
@@ -1087,55 +1127,120 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
 
     if (botPlayer?.botCompositeId) {
       const bgsId = socket.sessionId;
+
+      // The target ply after this move is applied to the BGS. Used below
+      // to detect if the takeback replay already handled this move.
+      const targetHistoryLength = updatedSession.gameState.history.length;
+
+      // Wait for BGS to be available if it's resetting (takeback replay),
+      // still initializing (game just started), or has an in-flight request
+      // (e.g., initial evaluation still pending from getInitialEvaluation).
+      const resetPromise = getResetPromise(bgsId);
       let bgs = getBgs(bgsId);
 
-      // Wait for BGS to be ready if it's still initializing or resetting
-      if (bgs?.status === "initializing" || bgs?.resetting) {
-        const maxWaitMs = 5000;
-        const pollIntervalMs = 50;
-        const startTime = Date.now();
-
-        while (Date.now() - startTime < maxWaitMs) {
-          await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-          bgs = getBgs(bgsId);
-          if (!bgs || (bgs.status === "ready" && !bgs.resetting)) break;
-        }
-
-        if (bgs?.status !== "ready" || bgs?.resetting) {
-          console.error("[ws] BGS not ready after waiting", {
+      if (resetPromise || bgs?.status === "initializing" || bgs?.pendingRequest) {
+        if (resetPromise) {
+          // Takeback reset in progress — await the promise with a safety timeout.
+          // The promise resolves when clearBgsResetting is called in the finally
+          // block of handleTakebackBgsReset. The 60s timeout is a safety net only;
+          // the promise should always resolve in normal operation.
+          console.debug("[ws] move handler awaiting BGS reset", {
             sessionId: socket.sessionId,
-            botCompositeId: botPlayer.botCompositeId,
-            status: bgs?.status,
-            resetting: bgs?.resetting,
           });
-          await resignBotOnFailure(updatedSession, botPlayer.playerId);
-          return;
+          let timeoutId: ReturnType<typeof setTimeout>;
+          const timeout = new Promise<"timeout">((r) => {
+            timeoutId = setTimeout(() => r("timeout"), 60_000);
+          });
+          const result = await Promise.race([
+            resetPromise.then(() => "done" as const),
+            timeout,
+          ]);
+          clearTimeout(timeoutId!);
+          if (result === "timeout") {
+            console.error("[ws] BGS reset timed out after 60s", {
+              sessionId: socket.sessionId,
+            });
+            await resignBotOnFailure(updatedSession, botPlayer.playerId);
+            return;
+          }
+        } else {
+          // BGS is initializing or has a pending request (e.g., initial eval) — brief poll.
+          const maxWaitMs = 10_000;
+          const pollIntervalMs = 50;
+          const startTime = Date.now();
+          while (Date.now() - startTime < maxWaitMs) {
+            await new Promise((r) => setTimeout(r, pollIntervalMs));
+            bgs = getBgs(bgsId);
+            if (!bgs || (bgs.status === "ready" && !bgs.pendingRequest)) break;
+          }
         }
+        bgs = getBgs(bgsId);
       }
 
-      if (bgs?.status === "ready" && !bgs?.resetting) {
-        // Apply human's move to BGS
-        const moveNotation = moveToStandardNotation(message.move, totalRows);
-        const evalResult = await applyMoveAndEvaluate(
-          botPlayer.botCompositeId,
-          bgsId,
-          bgs.currentPly,
-          moveNotation,
-        );
-
-        if (evalResult) {
-          // If it's now the bot's turn, execute it
+      if (bgs?.status === "ready" && !getResetPromise(bgsId) && !bgs.pendingRequest) {
+        // Idempotency guard: if the BGS ply is already at or past where this
+        // move would land, the takeback replay already applied it. Skip to
+        // avoid double-applying the same move (which causes engine rejection).
+        if (bgs.currentPly >= targetHistoryLength) {
+          console.info("[ws] BGS already up-to-date — move was replayed during reset", {
+            sessionId: socket.sessionId,
+            bgsPly: bgs.currentPly,
+            targetHistoryLength,
+          });
+          // Still trigger bot turn if needed — the replay may not have done it
+          // (e.g., game advanced during reset so the reset handler skipped it).
           if (updatedSession.gameState.turn === botPlayer.playerId) {
             void executeBotTurnV3(socket.sessionId);
           }
         } else {
-          // BGS update failed - resign bot
-          console.error("[ws] BGS update failed after human move", {
-            sessionId: socket.sessionId,
-            botCompositeId: botPlayer.botCompositeId,
-          });
-          await resignBotOnFailure(updatedSession, botPlayer.playerId);
+          // Apply human's move to BGS
+          const moveNotation = moveToStandardNotation(message.move, totalRows);
+          const evalResult = await applyMoveAndEvaluate(
+            botPlayer.botCompositeId,
+            bgsId,
+            bgs.currentPly,
+            moveNotation,
+          );
+
+          if (evalResult) {
+            // If it's now the bot's turn, execute it
+            if (updatedSession.gameState.turn === botPlayer.playerId) {
+              void executeBotTurnV3(socket.sessionId);
+            }
+          } else {
+            // BGS update failed — check if a takeback started mid-operation.
+            // If so, the failure is expected (the takeback handler cancelled our
+            // pending request). Same graceful bail as executeBotTurnV3.
+            const currentBgs = getBgs(bgsId);
+            if (
+              !currentBgs ||
+              currentBgs.status === "initializing" ||
+              getResetPromise(bgsId)
+            ) {
+              console.info(
+                "[ws] BGS update failed after human move — takeback in progress",
+                { sessionId: socket.sessionId, bgsExists: !!currentBgs },
+              );
+            } else {
+              console.error("[ws] BGS update failed after human move", {
+                sessionId: socket.sessionId,
+                botCompositeId: botPlayer.botCompositeId,
+              });
+              await resignBotOnFailure(updatedSession, botPlayer.playerId);
+            }
+          }
         }
+      } else if (!getResetPromise(bgsId)) {
+        // BGS is missing or not ready, and no reset is in progress.
+        // This can happen if the BGS was deleted by a disconnect, timeout,
+        // or end-session race. Resign rather than silently desyncing.
+        console.error("[ws] BGS unavailable after wait — resigning bot", {
+          sessionId: socket.sessionId,
+          bgsExists: !!bgs,
+          bgsStatus: bgs?.status,
+          hasPendingRequest: !!bgs?.pendingRequest,
+        });
+        await resignBotOnFailure(updatedSession, botPlayer.playerId);
       }
     } else {
       // Human vs human game: notify eval bar if active
