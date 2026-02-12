@@ -39,7 +39,10 @@
       "Bash(./bayeselo)",
       "Bash(du -sh:*)",
       "Bash(ls:*)",
-      "Bash(sort:*)"
+      "Bash(sort:*)",
+      "WebFetch(domain:api.fly.io)",
+      "WebFetch(domain:api.machines.dev)",
+      "WebFetch(domain:flyctl-metrics.fly.dev)"
     ]
   },
   "outputStyle": "Explanatory"
