@@ -45,6 +45,9 @@
       "allowUnixSockets": [
         "/var/run/docker.sock",
         "/Users/nmamano/.docker/run/docker.sock"
+      ],
+      "allowedHosts": [
+        "100.110.68.46"
       ]
     }
   }
