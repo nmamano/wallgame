@@ -85,6 +85,8 @@ export interface BotGameSession {
   currentPly: number;
   /** Currently pending request (if any) */
   pendingRequest: PendingBgsRequest | null;
+  /** Whether a takeback reset (replay) is in progress */
+  resetting: boolean;
   /** When the session was created */
   createdAt: number;
   /** When the session was last updated */
@@ -147,6 +149,7 @@ export const createBgs = (
     history: [],
     currentPly: 0,
     pendingRequest: null,
+    resetting: false,
     createdAt: now,
     updatedAt: now,
   };
@@ -222,6 +225,29 @@ export const markBgsReady = (bgsId: string): boolean => {
   session.status = "ready";
   session.updatedAt = Date.now();
   console.info("[bgs-store] BGS marked ready", { bgsId });
+  return true;
+};
+
+/**
+ * Mark a BGS as resetting (takeback replay in progress).
+ * While resetting, the server should not forward new game moves to the BGS.
+ */
+export const markBgsResetting = (bgsId: string): boolean => {
+  const session = sessions.get(bgsId);
+  if (!session) return false;
+  session.resetting = true;
+  session.updatedAt = Date.now();
+  return true;
+};
+
+/**
+ * Clear the resetting flag on a BGS (takeback replay complete).
+ */
+export const clearBgsResetting = (bgsId: string): boolean => {
+  const session = sessions.get(bgsId);
+  if (!session) return false;
+  session.resetting = false;
+  session.updatedAt = Date.now();
   return true;
 };
 

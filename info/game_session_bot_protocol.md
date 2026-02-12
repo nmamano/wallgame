@@ -204,6 +204,7 @@ If there is a rollback:
   - the server waits for confirmation
   - the server starts a new BGS (with the same BGS ID).
   - the BGS history is updated to the rollback position by replaying the moves with `evaluate_position` and `apply_move` messages, getting evaluations from the bot for both sides.
+  - During the replay, the server blocks new game moves from being forwarded to the BGS. This replay counts as initialization (see "Server BGS history data structure" above); no other BGS requests should be sent during this process.
 
 ### Past game replay with eval bar
 

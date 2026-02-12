@@ -54,6 +54,8 @@ import { addActiveGame } from "../games/custom-bot-store";
 import {
   getBgs,
   getLatestHistoryEntry,
+  markBgsResetting,
+  clearBgsResetting,
   type BgsHistoryEntry,
 } from "../games/bgs-store";
 import type { BgsConfig } from "../../shared/contracts/custom-bot-protocol";
@@ -391,6 +393,20 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
   );
 
   if (!evalResult) {
+    // If the BGS was deleted or replaced (e.g., a takeback arrived mid-turn),
+    // the failure is expected — the takeback handler owns the BGS now.
+    const currentBgs = getBgs(bgsId);
+    if (
+      !currentBgs ||
+      currentBgs.status === "initializing" ||
+      currentBgs.resetting
+    ) {
+      console.info(
+        "[ws] BGS operation failed but BGS is resetting/gone (takeback?)",
+        { sessionId, bgsExists: !!currentBgs },
+      );
+      return;
+    }
     console.error("[ws] failed to update BGS after bot move", {
       sessionId,
       botCompositeId: activePlayer.botCompositeId,
@@ -465,52 +481,75 @@ const handleTakebackBgsReset = async (
     return;
   }
 
-  // Get initial evaluation
-  const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
-  if (!initialEval) {
-    console.error("[ws] failed to get initial eval after takeback", {
-      sessionId,
-      botCompositeId,
-    });
-    await resignBotOnFailure(session, botPlayer.playerId);
-    return;
-  }
+  // Block new game moves from being forwarded while we replay history
+  markBgsResetting(bgsId);
 
-  // Replay all moves from the game history
-  // Note: history contains MoveInHistory objects with a single `move` property
-  // Each entry is one ply (half-move)
-  const totalRows = session.config.boardHeight;
-  const history = session.gameState.history;
-
-  for (let i = 0; i < history.length; i++) {
-    const historyEntry = history[i];
-    const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
-    const evalResult = await applyMoveAndEvaluate(
-      botCompositeId,
-      bgsId,
-      i,
-      moveNotation,
-    );
-    if (!evalResult) {
-      console.error("[ws] failed to replay move during takeback", {
+  try {
+    // Get initial evaluation
+    const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
+    if (!initialEval) {
+      console.error("[ws] failed to get initial eval after takeback", {
         sessionId,
-        moveIndex: i,
-        move: moveNotation,
+        botCompositeId,
       });
       await resignBotOnFailure(session, botPlayer.playerId);
       return;
     }
-  }
 
-  console.info("[ws] BGS reset after takeback complete", {
-    sessionId,
-    botCompositeId,
-    movesReplayed: history.length,
-  });
+    // Replay all moves from the game history
+    // Note: history contains MoveInHistory objects with a single `move` property
+    // Each entry is one ply (half-move)
+    const totalRows = session.config.boardHeight;
+    const history = session.gameState.history;
 
-  // If it's the bot's turn, execute it
-  if (session.gameState.turn === botPlayer.playerId) {
-    void executeBotTurnV3(sessionId);
+    for (let i = 0; i < history.length; i++) {
+      const historyEntry = history[i];
+      const moveNotation = moveToStandardNotation(historyEntry.move, totalRows);
+      const evalResult = await applyMoveAndEvaluate(
+        botCompositeId,
+        bgsId,
+        i,
+        moveNotation,
+      );
+      if (!evalResult) {
+        console.error("[ws] failed to replay move during takeback", {
+          sessionId,
+          moveIndex: i,
+          move: moveNotation,
+        });
+        await resignBotOnFailure(session, botPlayer.playerId);
+        return;
+      }
+    }
+
+    console.info("[ws] BGS reset after takeback complete", {
+      sessionId,
+      botCompositeId,
+      movesReplayed: history.length,
+    });
+
+    // Check if the human played a move while the replay was in progress.
+    // If so, the move handler (currently polling on the resetting flag)
+    // will apply it and trigger the bot's turn — we must NOT call
+    // executeBotTurnV3 here because the BGS is at the replay position,
+    // not the current game position.
+    const currentSession = getSession(sessionId);
+    const gameAdvancedDuringReset =
+      currentSession.gameState.history.length > history.length;
+
+    if (
+      !gameAdvancedDuringReset &&
+      currentSession.gameState.status === "playing" &&
+      currentSession.gameState.turn === botPlayer.playerId
+    ) {
+      // No new moves during reset, and it's the bot's turn — play it.
+      // Await so resetting stays true until the bot's turn completes,
+      // preventing the human's move handler from racing with BGS updates.
+      await executeBotTurnV3(sessionId);
+    }
+  } finally {
+    // Clear resetting flag (no-op if BGS was deleted by resignBotOnFailure)
+    clearBgsResetting(bgsId);
   }
 };
 
@@ -1050,8 +1089,8 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
       const bgsId = socket.sessionId;
       let bgs = getBgs(bgsId);
 
-      // Wait for BGS to be ready if it's still initializing
-      if (bgs?.status === "initializing") {
+      // Wait for BGS to be ready if it's still initializing or resetting
+      if (bgs?.status === "initializing" || bgs?.resetting) {
         const maxWaitMs = 5000;
         const pollIntervalMs = 50;
         const startTime = Date.now();
@@ -1059,21 +1098,22 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
         while (Date.now() - startTime < maxWaitMs) {
           await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
           bgs = getBgs(bgsId);
-          if (!bgs || bgs.status === "ready") break;
+          if (!bgs || (bgs.status === "ready" && !bgs.resetting)) break;
         }
 
-        if (bgs?.status !== "ready") {
+        if (bgs?.status !== "ready" || bgs?.resetting) {
           console.error("[ws] BGS not ready after waiting", {
             sessionId: socket.sessionId,
             botCompositeId: botPlayer.botCompositeId,
             status: bgs?.status,
+            resetting: bgs?.resetting,
           });
           await resignBotOnFailure(updatedSession, botPlayer.playerId);
           return;
         }
       }
 
-      if (bgs?.status === "ready") {
+      if (bgs?.status === "ready" && !bgs?.resetting) {
         // Apply human's move to BGS
         const moveNotation = moveToStandardNotation(message.move, totalRows);
         const evalResult = await applyMoveAndEvaluate(
