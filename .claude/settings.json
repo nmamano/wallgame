@@ -47,7 +47,9 @@
         "/Users/nmamano/.docker/run/docker.sock"
       ],
       "allowedHosts": [
-        "100.110.68.46"
+        "100.110.68.46",
+        "api.fly.io",
+        "flyctl-metrics.fly.dev"
       ]
     }
   }

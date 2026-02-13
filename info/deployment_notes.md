@@ -114,78 +114,77 @@ The cause was that the fly cli was too old. Downloaded the latest version from t
 
 ## Server Logs (Fly.io)
 
-The server runs on Fly.io. Stream logs with:
+The server runs on Fly.io.
 
-```
-fly logs -a wallgame
-```
+**From a terminal (outside Claude Code sandbox):**
 
-Filter by region:
-
-```
-fly logs -a wallgame --region ewr
+```bash
+fly logs -a wallgame              # Stream live logs
+fly logs -a wallgame --region lax # Filter by region
+fly machines list -a wallgame     # List machines
 ```
 
-Run a command on the server machine:
+**From Claude Code sandbox:**
 
-```
-fly ssh console -a wallgame -C "cat /path/to/log"
+The `fly` CLI fails in the sandbox due to TLS certificate interception. Use the Fly REST API
+with `curl -sk` (skip TLS verification) instead:
+
+```bash
+# One-time setup per session: copy fly config to a writable directory
+mkdir -p /tmp/claude/fly-config && cp -r ~/.fly/* /tmp/claude/fly-config/ 2>/dev/null
+
+# Fetch recent server logs
+TOKEN=$(FLY_CONFIG_DIR=/tmp/claude/fly-config fly auth token 2>/dev/null) && \
+curl -sk -H "Authorization: FlyV1 $TOKEN" \
+  "https://api.fly.io/api/v1/apps/wallgame/logs" | \
+python3 -c "
+import json, sys
+for e in json.load(sys.stdin).get('data', []):
+    print(e['attributes']['timestamp'], e['attributes']['message'])
+"
 ```
 
-List running machines:
+Prerequisites:
+- `api.fly.io` and `flyctl-metrics.fly.dev` must be in `allowedHosts` in
+  `.claude/settings.json` under `sandbox.network`
+- `~/.fly/config.yml` must contain a valid access token (run `fly auth login` outside sandbox)
 
-```
-fly machines list -a wallgame
-```
-
-Note: if the machine is stopped (auto-stop is enabled), hit https://wallgame.fly.dev/ first or
-run `fly machine start <MACHINE_ID> -a wallgame` to wake it up.
+Note: if the machine is stopped (auto-stop is enabled), hit https://wallgame.fly.dev/ first to
+wake it up.
 
 ## Bot Client Logs (Home Machine)
 
-The bot client (Deep Wallwars) runs on a home machine, not on Fly.io.
+The bot client (Deep Wallwars) runs on a home machine via Tailscale, not on Fly.io.
 
 **Connection details:**
-- IP: `100.110.68.46`
+- IP: `100.110.68.46` (Tailscale)
 - SSH user: `nilo`
-- Remote logs path: `/mnt/c/Users/Nilo/repos/wallgame/logs/`
-- Key log file: `bot-client.log`
+- SSH password: stored in `~/.claude/ssh-bot-password` (plain text, not checked into repo)
+- Remote logs path: `/mnt/c/Users/Nilo/repos/wallgame/logs/bot-client.log`
 
 **Prerequisites:**
-- The IP must be in `allowedHosts` in `.claude/settings.json` under `sandbox.network`
-- A password file must exist at `~/.claude/ssh-bot-password` (not checked into the repo)
+- `100.110.68.46` must be in `allowedHosts` in `.claude/settings.json` under `sandbox.network`
+- `~/.claude/ssh-bot-password` must contain the SSH password (plain text, no trailing newline)
 
-**Fetching logs (SSH_ASKPASS method):**
-
-The sandbox blocks PTY allocation, so `sshpass` and `expect` don't work. Instead, use
-`SSH_ASKPASS` to provide the password non-interactively:
-
-1. Create the askpass helper (lives in /tmp, must recreate each session):
+**Fetching logs from Claude Code sandbox:**
 
 ```bash
-echo '#!/bin/bash\ncat /Users/nmamano/.claude/ssh-bot-password' > /tmp/claude/ssh-askpass.sh
-chmod +x /tmp/claude/ssh-askpass.sh
+# One-time setup per session: create an askpass helper script
+printf '#!/bin/sh\ncat ~/.claude/ssh-bot-password\n' > /tmp/claude/ssh-askpass && chmod +x /tmp/claude/ssh-askpass
+
+# Fetch recent bot logs (adjust tail count as needed)
+DISPLAY=:0 SSH_ASKPASS="/tmp/claude/ssh-askpass" SSH_ASKPASS_REQUIRE=force \
+  ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+  nilo@100.110.68.46 \
+  "tail -200 /mnt/c/Users/Nilo/repos/wallgame/logs/bot-client.log" 2>&1
+
+# Or: search for a specific game ID
+DISPLAY=:0 SSH_ASKPASS="/tmp/claude/ssh-askpass" SSH_ASKPASS_REQUIRE=force \
+  ssh -o StrictHostKeyChecking=no -o ConnectTimeout=10 \
+  nilo@100.110.68.46 \
+  "grep 'GAME_ID' /mnt/c/Users/Nilo/repos/wallgame/logs/bot-client.log" 2>&1
 ```
 
-2. List remote log files:
-
-```bash
-DISPLAY=:0 SSH_ASKPASS=/tmp/claude/ssh-askpass.sh SSH_ASKPASS_REQUIRE=force \
-  ssh -o StrictHostKeyChecking=no nilo@100.110.68.46 \
-  "ls -la /mnt/c/Users/Nilo/repos/wallgame/logs/" < /dev/null 2>&1
-```
-
-3. Download a log file:
-
-```bash
-DISPLAY=:0 SSH_ASKPASS=/tmp/claude/ssh-askpass.sh SSH_ASKPASS_REQUIRE=force \
-  scp -o StrictHostKeyChecking=no \
-  nilo@100.110.68.46:/mnt/c/Users/Nilo/repos/wallgame/logs/bot-client.log \
-  /tmp/claude/bot-client.log < /dev/null 2>&1
-```
-
-4. Read the downloaded file locally.
-
-**Why SSH_ASKPASS:** SSH normally reads passwords from a TTY. Redirecting stdin from `/dev/null`
-removes the TTY, and `SSH_ASKPASS_REQUIRE=force` makes SSH call the askpass program instead.
-This works within the sandbox without needing PTY allocation.
+**Why this works:** `SSH_ASKPASS_REQUIRE=force` makes SSH use the askpass program for password
+entry instead of a TTY prompt. `DISPLAY=:0` provides a dummy display value so SSH considers askpass eligible
+(some OpenSSH builds require a non-empty `DISPLAY`). The askpass script simply echoes the password to stdout.
