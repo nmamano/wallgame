@@ -2598,6 +2598,11 @@ export function useGamePageController(gameId: string) {
       config: config ?? DEFAULT_CONFIG,
       players: playerTypes.length ? playerTypes : DEFAULT_PLAYERS,
     };
+    // Update stored config with the current game's actual config so that
+    // generated variant state (e.g. freestyle walls/pawns) carries forward.
+    if (config) {
+      payload.config = config;
+    }
     payload.nextSeatOrder = [
       seatOrderIndicesRef.current[1] ?? 0,
       seatOrderIndicesRef.current[0] ?? 1,
