@@ -1197,14 +1197,12 @@ export function Board({
           continue;
         }
 
-        // Round positions to whole pixels to prevent sub-pixel rendering artifacts
-        // that cause 1-pixel misalignment between pillars and walls
         const style: CSSProperties = {
           position: "absolute",
           width: `${gapWidth}px`,
           height: `${gapHeight}px`,
-          top: `${Math.round(anchorRect.bottom)}px`,
-          left: `${Math.round(anchorRect.right)}px`,
+          top: `${anchorRect.bottom}px`,
+          left: `${anchorRect.right}px`,
           pointerEvents: "none",
           zIndex: 12,
         };
@@ -1525,10 +1523,10 @@ export function Board({
                       key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
                       className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
                       style={{
-                        width: `${rect.width}px`,
+                        width: `${rect.width + 2}px`,
                         height: `${gapHeight}px`,
                         top: `${rect.bottom}px`,
-                        left: `${rect.left}px`,
+                        left: `${rect.left - 1}px`,
                         zIndex: 15,
                       }}
                       onClick={() =>
@@ -1567,8 +1565,8 @@ export function Board({
                       className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
                       style={{
                         width: `${gapWidth}px`,
-                        height: `${rect.height}px`,
-                        top: `${rect.top}px`,
+                        height: `${rect.height + 2}px`,
+                        top: `${rect.top - 1}px`,
                         left: `${rect.right}px`,
                         zIndex: 15,
                       }}
@@ -1630,16 +1628,13 @@ export function Board({
                   return null;
                 }
                 const thickness = Math.max(gridMetrics.gapX, 2);
-                // Calculate wall left edge directly (no CSS transform) to match pillar positioning
-                // Wall should start at rect.right and span the gap width
-                const wallLeft = Math.round(rect.right);
 
                 style = {
                   ...style,
-                  height: `${Math.round(rect.height) + 2}px`, // Extend slightly to prevent gaps
+                  height: `${rect.height + 2}px`,
                   width: `${thickness}px`,
-                  top: `${Math.round(rect.top) - 1}px`,
-                  left: `${wallLeft}px`,
+                  top: `${rect.top - 1}px`,
+                  left: `${rect.right}px`,
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
@@ -1650,17 +1645,13 @@ export function Board({
                   return null;
                 }
                 const thickness = Math.max(gridMetrics.gapY, 2);
-                // Calculate wall top edge directly (no CSS transform) to match pillar positioning
-                // Wall should start at rect.bottom and span the gap height
-                const wallTop = Math.round(rect.bottom);
-                const wallLeft = Math.round(rect.left) - 1;
 
                 style = {
                   ...style,
-                  width: `${Math.round(rect.width) + 2}px`, // Extend slightly to prevent gaps
+                  width: `${rect.width + 2}px`,
                   height: `${thickness}px`,
-                  left: `${wallLeft}px`,
-                  top: `${wallTop}px`,
+                  left: `${rect.left - 1}px`,
+                  top: `${rect.bottom}px`,
                   opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               }

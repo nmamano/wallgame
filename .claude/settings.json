@@ -12,7 +12,7 @@
     ],
     "deny": [
       "Bash(sudo:*)",
-      "Bash(fly deploy:*)",
+
       "Bash(fly secrets:*)",
       "Read(./.env)",
       "Read(./.env.*)",
@@ -20,7 +20,7 @@
       "Read(~/.aws/**)",
       "Read(~/.kube/**)"
     ],
-    "ask": ["Bash(git push:*)", "Bash(git push)"],
+    "ask": ["Bash(git push:*)", "Bash(git push)", "Bash(fly deploy:*)"],
     "defaultMode": "acceptEdits"
   },
   "hooks": {
