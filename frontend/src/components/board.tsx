@@ -1279,7 +1279,7 @@ export function Board({
       disableMousePawnInteraction && pawn.type === "mouse";
 
     // Use percentage padding for large pawns to maintain proportions on small screens
-    const dimensionClass = size === "lg" ? "w-full h-full" : "w-6 h-6";
+    const dimensionClass = size === "lg" ? "w-full h-full" : "w-[45%] aspect-square";
     // If pawns are too close to the edge boundaries, increase this padding.
     const paddingStyle = size === "lg" ? { padding: "0%" } : undefined;
 
@@ -1762,7 +1762,7 @@ export function Board({
                         {cellPawns.length === 1 ? (
                           renderPawnWrapper(cellPawns[0], "lg")
                         ) : (
-                          <div className="flex flex-wrap items-center justify-center gap-0.5">
+                          <div className="w-full h-full flex flex-wrap items-center justify-center gap-0.5">
                             {cellPawns.map((pawn) =>
                               renderPawnWrapper(pawn, "sm"),
                             )}
