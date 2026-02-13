@@ -73,6 +73,7 @@ export class GameClient {
   private socket: WebSocket | null = null;
   private handlers: GameClientHandlers = {};
   private readonly inflightRequests = new Map<string, InflightActionRequest>();
+  private pingInterval: number | null = null;
 
   constructor(
     private readonly params: {
@@ -96,6 +97,12 @@ export class GameClient {
       console.debug("[game-client] websocket open", {
         gameId: this.params.gameId,
       });
+      // Start ping interval to keep connection alive (Fly.io has ~60s idle timeout)
+      this.pingInterval = window.setInterval(() => {
+        if (this.socket?.readyState === WebSocket.OPEN) {
+          this.socket.send(JSON.stringify({ type: "ping" }));
+        }
+      }, 30000);
     });
     this.socket.addEventListener("message", (event) => {
       const raw = typeof event.data === "string" ? event.data : null;
@@ -166,6 +173,7 @@ export class GameClient {
       console.debug("[game-client] websocket closed", {
         gameId: this.params.gameId,
       });
+      this.clearPingInterval();
       this.resolveAllInflightAsTransportError("Connection to server closed.");
       this.handlers.onError?.("Connection to server closed.");
     });
@@ -278,6 +286,7 @@ export class GameClient {
   }
 
   close(reason = "unspecified"): void {
+    this.clearPingInterval();
     if (!this.socket) {
       return;
     }
@@ -287,6 +296,13 @@ export class GameClient {
       stack: new Error().stack,
     });
     this.socket.close(1000, "Client closing connection");
+  }
+
+  private clearPingInterval(): void {
+    if (this.pingInterval !== null) {
+      window.clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
   }
 
   private handleActionAck(message: ActionAckMessage): void {
