@@ -311,6 +311,24 @@ export function useGamePageController(gameId: string) {
     return sessionStorage.getItem(`game-config-${gameId}`) != null;
   });
 
+  // Synchronously read the stored local config so that board dimensions
+  // (rows/cols) and other display values are correct from the very first
+  // render — before the async useEffect that fully initialises the game.
+  const [earlyLocalConfig] = useState<GameConfiguration | null>(() => {
+    if (typeof window === "undefined") return null;
+    const stored = sessionStorage.getItem(`game-config-${gameId}`);
+    if (!stored) return null;
+    try {
+      const parsed = JSON.parse(stored) as StoredLocalGameConfig;
+      return normalizeFreestyleConfig({
+        ...DEFAULT_CONFIG,
+        ...(parsed?.config ?? {}),
+      } as GameConfiguration);
+    } catch {
+      return null;
+    }
+  });
+
   useEffect(() => {
     if (typeof window === "undefined") {
       setHasLocalConfig(false);
@@ -968,6 +986,10 @@ export function useGamePageController(gameId: string) {
   // Derived Values from View Model
   // ============================================================================
   const config = viewModel.config;
+  // For display-layer values (board dimensions, time control preset, info panel)
+  // fall back to the synchronously-read local config so the first render is
+  // coherent even before the async game-init effect fires.
+  const effectiveConfig = config ?? earlyLocalConfig;
   const gameState = viewModel.gameState;
   const matchSnapshot = viewModel.match;
   const historyEntries = useMemo(() => gameState?.history ?? [], [gameState]);
@@ -3074,8 +3096,8 @@ export function useGamePageController(gameId: string) {
     void navigate({ to: "/play" });
   }, [navigate]);
 
-  const rows = config?.boardHeight ?? DEFAULT_CONFIG.boardHeight;
-  const cols = config?.boardWidth ?? DEFAULT_CONFIG.boardWidth;
+  const rows = effectiveConfig?.boardHeight ?? DEFAULT_CONFIG.boardHeight;
+  const cols = effectiveConfig?.boardWidth ?? DEFAULT_CONFIG.boardWidth;
 
   const displayedTimeLeft = useMemo(() => {
     const base: Record<PlayerId, number> = {
@@ -3563,7 +3585,7 @@ export function useGamePageController(gameId: string) {
     gameTurn,
     getPlayerMatchScore,
     goalDistances,
-    isUnlimited: config?.timeControl.preset === "unlimited",
+    isUnlimited: effectiveConfig?.timeControl.preset === "unlimited",
   };
 
   const actionsSection = {
@@ -3595,7 +3617,7 @@ export function useGamePageController(gameId: string) {
       handleOfferDraw: handleOfferDrawAction,
       handleRequestTakeback: handleRequestTakebackAction,
       handleGiveTime: handleGiveTimeAction,
-      isUnlimited: config?.timeControl.preset === "unlimited",
+      isUnlimited: effectiveConfig?.timeControl.preset === "unlimited",
     },
     endgame: {
       gameStatus,
@@ -3660,7 +3682,7 @@ export function useGamePageController(gameId: string) {
     actions: actionsSection,
     chat: chatSection,
     info: {
-      config,
+      config: effectiveConfig,
       defaultVariant: DEFAULT_CONFIG.variant,
       defaultTimeControlPreset: DEFAULT_CONFIG.timeControl.preset,
       sfxEnabled,

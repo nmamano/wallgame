@@ -204,8 +204,9 @@ function GamePageContent() {
     const mobileGapSizePx = 12;
     const referenceColsForWidth = Math.max(cols, 8);
     // Chrome within the main content area that reduces available board space:
-    // 2 compact timers (~30px each) + eval bar (~28px) + 3 gaps (12px) + py padding (8px)
-    const mobileChromePx = 108;
+    // 2 compact timers (~30px each) + eval bar (~28px) + 3 flex gaps (12px)
+    // + bottom timer mt-2 margin (8px) + container py-1 padding (8px)
+    const mobileChromePx = 116;
     const mobileCellSizePx =
       boardAreaSize.w > 0
         ? Math.max(

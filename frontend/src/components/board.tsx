@@ -1246,6 +1246,16 @@ export function Board({
   const maxBoardWidth =
     flush && cols >= 8 ? undefined : `${maxBoardWidthRem}rem`;
 
+  // When a maxCellSizeRem is provided (mobile layout), cap each column via
+  // minmax(0, Xrem) so the height constraint is enforced through CSS even in
+  // flush mode where maxBoardWidth is undefined. On most phones the width
+  // constraint dominates (no visual difference), but on edge cases the board
+  // becomes slightly narrower than full-width instead of overflowing vertically.
+  const colTemplate =
+    maxCellSizeRemProp != null
+      ? `repeat(${cols}, minmax(0, ${maxCellSize}rem))`
+      : `repeat(${cols}, 1fr)`;
+
   const handleCellDrop = (
     event: DragEvent<HTMLDivElement>,
     row: number,
@@ -1498,7 +1508,7 @@ export function Board({
             ref={gridRef}
             className="grid w-full relative"
             style={{
-              gridTemplateColumns: `repeat(${cols}, 1fr)`,
+              gridTemplateColumns: colTemplate,
               gap: gapValue,
             }}
           >
