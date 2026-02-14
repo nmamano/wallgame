@@ -1,24 +1,33 @@
-# Training an AlphaZero-Style AI for my Custom Board Game
+# Training AlphaZero-Style AIs for New Board Games
 
 > What does it take to build a superhuman AI for a new board game?
 
-I created [wallgame.io](https://wallgame.io), an online board game. It requires at least two players, so I wanted a human-level AI so that anyone could play at any time.
+I created [wallgame.io](https://wallgame.io), an online board game. It needs two players, so I wanted a human-level AI so anyone could play at any time.
 
-The closest parallels are probably chess and Go. For these games, there's a long history of iterative engine improvements, opening databases, and millions of recorded games to learn from. In our case, we had none of that.
+The closest parallels are chess and Go. Those games have decades of iterative engine improvements, opening databases, and millions of recorded games to learn from. I had none of that.
 
-We built an AlphaZero-inspired system from scratch: a neural network trained entirely through self-play, guided by Monte Carlo Tree Search, running on consumer GPU hardware. Then we integrated it into a live web game where anyone can play against it.
+I built a traditional, Minimax-based engine, while my friend [Thorben](https://github.com/t-troebst) built an AlphaZero-style AI:
 
-This post documents the design so it can serve as a reference for other people wanting to add strong engines to their own games. We'll touch on the architecture, the training journey, the engineering challenges, and takeaways.
+A neural network trained through self-play, guided by Monte Carlo Tree Search, running on a consumer GPU.
 
-### Credits:
+The AlphaZero engine turned out to be much stronger. Based on the experiment, I'd recommend anyone wanting to add a strong engine to their own game to follow the AlphaZero route.
 
-- [Thorben](https://github.com/t-troebst) built the C++ engine ([Deep-Wallwars](https://github.com/t-troebst/Deep-Wallwars)) and ran the initial training that produced a superhuman model.
-- While Thorben built the AlphaZero engine, I built a more traditional Minimax-based C++ engine ([github](https://github.com/nmamano/wallwars/tree/master/AI)), which can be played against in the [old site](https://wallwars.net). We learned that the AlphaZero engine is much stronger for this game (and I believe for most games). From there, I extended the AlphaZero engine to support new game variants, ran subsequent training experiments, and built the integration layer to connect the engine to the server.
-- Claude 4.6 Opus wrote the initial draft of this post.
+This post documents the design and can serve as a reference. We cover the architecture, implementation, training, and server integration.
 
-The game has a [monorepo](https://github.com/nmamano/wallgame) with the [updated engine](https://github.com/nmamano/wallgame/tree/main/deep-wallwars), [ai client](https://github.com/nmamano/wallgame/tree/main/official-custom-bot-client), [server](https://github.com/nmamano/wallgame/tree/main/server), [frontend](https://github.com/nmamano/wallgame/tree/main/frontend), and a [test engine](https://github.com/nmamano/wallgame/tree/main/dummy-engine).
+The AI is live at [wallgame.io](https://wallgame.io).
 
-The game also has a build-in-public blog, [nilmamano.com/blog/category/wallgame](https://nilmamano.com/blog/category/wallgame), with development writeups (including this one).
+### Links
+
+- Thorben's original engine: [Deep-Wallwars](https://github.com/t-troebst/Deep-Wallwars).
+- The game has a [monorepo](https://github.com/nmamano/wallgame) with:
+    - [updated engine](https://github.com/nmamano/wallgame/tree/main/deep-wallwars)
+    - [bot client](https://github.com/nmamano/wallgame/tree/main/official-custom-bot-client)
+    - [server](https://github.com/nmamano/wallgame/tree/main/server)
+    - [frontend](https://github.com/nmamano/wallgame/tree/main/frontend)
+    - a [dummy engine](https://github.com/nmamano/wallgame/tree/main/dummy-engine) for testing
+- The game has a dev blog, [nilmamano.com/blog/category/wallgame](https://nilmamano.com/blog/category/wallgame), with writeups including this one.
+- The [minimax-based C++ engine](https://github.com/nmamano/wallwars/tree/master/AI) can be played against in the [old site](https://wallwars.net).
+- The original [AlphaZero paper](https://arxiv.org/abs/1712.01815) by Silver et al. (2017).
 
 ## The Game
 
@@ -26,42 +35,50 @@ The Wall Game is a two-player, turn-based, strategy board game played on a recta
 
 <!-- ![Starting position](https://wallgame.io/starting-position.png) -->
 
-On each turn, you can make 2 actions. Each action can be either moving your cat, moving your mouse, or placing a wall. Cats and mice move to adjacent cells, but walls can be placed anywhere between two cells on the board. The only restriction is that you cannot completely block the opponent's cat from reaching your mouse.
+On each turn, you take 2 actions. Each action can be moving your cat, moving your mouse, or placing a wall. Cats and mice move to adjacent cells, but walls can be placed between any two cells on the board. The only restriction is that you cannot completely block the opponent's cat from reaching your mouse.
 
 <!-- Image Move Showcase Placeholder -->
 
 
-You can see games in action in the landing page's game showcase ([wallgame.io](https://wallgame.io)) and find the full rules in [wallgame.io/learn](https://wallgame.io/learn).
+To get a feel for the tactics that emerge, see games in action in the landing page's game showcase ([wallgame.io](https://wallgame.io)). The full rules are at [wallgame.io/learn](https://wallgame.io/learn).
 
-### Why Wallwars is Hard for AI
+### Why the Wall Game is Hard for AI
 
-Like chess and Go, decisions like wall placements have long-term consequences. Placing a wall in move 5 might not matter until move 25, when it blocks a critical escape route. This makes it difficult to write a good handcrafted evaluation function - the kind of approach that powered chess engines for decades.
+Like chess and Go, decisions have long-term consequences. A wall placed on move 5 might not matter until move 25, when it blocks a critical escape route. This makes it difficult to write a good handcrafted evaluation function - the kind of approach that powered chess engines for decades.
 
-But what really "killed" my [Minimax engine](https://github.com/nmamano/wallwars/tree/master/AI) is the branching factor. On an `RxC` board, there are about `2*R*C` walls. And you have *two* actions per turn, so the number of possible wall moves is about the square of that. I came up with [clever optimizations](https://nilmamano.com/blog/double-edge-cut-problem), but it just won't scale.
+But what really "killed" my [Minimax engine](https://github.com/nmamano/wallwars/tree/master/AI) is the branching factor. On an `RxC` board, there are about `2*R*C` possible walls. With *two* actions per turn, the number of possible moves is roughly the square of that.
 
-In contrast, our AlphaZero-based engine is superhuman for `8x8` boards, so it handles branching factors of approximately `(2*8*8)^2 = 16384`. We are now training engines for boards of size up to `10x12`. Chess has an average branching factor of about `40`.
+I implemented all the classic techniques - alpha-beta pruning, transposition tables, and even some clever [graph theory algorithms](https://nilmamano.com/blog/double-edge-cut-problem) for efficient move generation - but it doesn't scale.
+
+In contrast, the AlphaZero-based engine is superhuman on `8x8` boards, handling branching factors of approximately `(2*8*8 + 8)^2 = 18496`. I'm now training models for boards up to `10x12`. Chess has an average branching factor `~40`.
 
 This is exactly the kind of problem where Monte Carlo Tree Search (MCTS) with a learned evaluation function through self-play shines.
 
 ## The AlphaZero Recipe
 
-In 2017, DeepMind's AlphaZero showed a different path to the established Minimax approach. Instead of hand-engineering the evaluation function, AlphaZero trains a neural network to learn it from scratch. The network starts knowing nothing about the game except the rules. It improves by playing against itself, thousands of times, gradually learning on its own.
+In 2017, DeepMind's AlphaZero showed a different path. Instead of hand-engineering the evaluation function, AlphaZero trains a neural network to learn it from scratch. The network starts knowing nothing about the game except the rules and improves by playing against itself thousands of times.
 
 It's this flexibility that makes the recipe plug-and-play for new games.
 
-The system has three core components that work together in a loop:
+The system has three components that work together in a loop:
 
 ### Monte Carlo Tree Search (MCTS)
 
-MCTS is the search algorithm. Given a board position, it repeatedly explores possible future moves while building a search tree. At each node, it must decide which move to explore next. This is where the neural network comes in: MCTS uses the network's predictions to focus on the most promising moves rather than searching blindly. After exploring enough positions, MCTS picks the move with the most supporting evidence.
+MCTS is the search algorithm. Given a board position, it repeatedly explores possible future moves, building a search tree of board positions. At each node, it must decide which move to explore next - this is where the neural network comes in. MCTS uses the network's predictions to focus on the most promising moves rather than searching blindly. After exploring enough positions, it picks the move with the most supporting evidence.
 
 Callout Box Start:
 
-AlphaZero's search has to answer a key question: among the possible moves, how much time should it spend exploring each? Should it focus on the best moves found so far, ensuring they're good (exploitation), or look for alternative moves that seem unpromising but could turn out to be good (exploration)? 
+MCTS faces a classic exploration-exploitation tradeoff: among the possible moves, how much time should it spend exploring each? Should it focus on the best moves found so far (exploitation), or try alternatives that seem unpromising but could turn out to be good (exploration)?
 
-AlphaZero uses an elegant solution known as Upper Confidence Bound (UCB). Suppose you have to choose among several options. For each option, you need to know two things: the expected payoff and the expected variance. The option with the highest expected payoff maximizes exploitation, while the option with the most variance maximizes exploration. To balance the two, the key is to pick the option with the highest expected payoff one standard deviation above the mean.
+AlphaZero uses an elegant solution known as Upper Confidence Bound (UCB). For each option, you need two things: the expected payoff and the expected variance. The option with the highest payoff maximizes exploitation; the one with the most variance maximizes exploration.
+
+To balance the two, pick the option maximizing expected payoff + one standard deviation. This way, as MCTS explores a move further and its variance goes down, less explored moves become more attractive.
 
 Callout Box End
+
+The basic MCTS loop starts with an empty tree where the root represents the current position. We then collect a given number of "samples" (usually 1k+).
+
+Each sample walks down the tree, using UCB to choose moves, until it reaches a position that has not been evaluated yet. The neural network evaluates it and the result is backpropagated: for each ancestor position, we update the visit count and the average evaluation. This information refines the UCB of all ancestors.
 
 ### The Neural Network
 
@@ -70,66 +87,76 @@ The neural network takes a board position as input and produces two outputs:
 1. **A policy**: a probability distribution over all legal moves, representing how promising each one looks.
 2. **An evaluation**: a single number between -1 and +1, estimating who's winning.
 
-The policy guides MCTS toward promising moves. The evaluation replaces the classic handcrafted evaluation function. Together, they guide MCTS so that the search time doesn't blow up with the branching factor.
+The policy guides MCTS toward promising moves. The evaluation replaces the classic handcrafted evaluation function. Together, they keep the search time from blowing up with the branching factor.
 
 ### The Self-Play Training Loop
 
-We start with a random neural network (more on the model architecture later). Then, we train it in generations. I'll use some numbers from one of our training runs.
+We start with a random neural network (more on architecture later) and train it in generations. Here are some numbers from one of our training runs.
 
-- Each generation is 4000 self-play games.
-- Each game lasts around 40 moves (80 'plies' or turns).
-- Each player must take 2 actions per turn.
+- Each generation is 4,000 self-play games.
+- Each game lasts around 40 turns (80 moves or 'plies').
+- Each player must take 2 actions per ply.
 - For each action, we collect 1200 MCTS samples.
-- Each sample plays the game forward until it reaches a new position, which is then evaluated with a model inference to get the policy and evaluation.
+- Each sample plays the game forward until it reaches a new position, which is evaluated with a model inference.
 
-That comes out to about `80 * 2 * 1200 = 192k` inferences per game, for a total of `4000 * 192k = 768M` inferences per generation. There's a sharded LRU cache reducing the number of inferences a bit, but the key optimization that makes this possible is batching (more on that later).
+That comes out to about `80 * 2 * 1200 = 192k` inferences per game, for a total of `4000 * 192k = 768M` inferences per generation.
 
-After each game, the moves chosen by MCTS and the game outcome become training data for the network. The network learns to predict which moves MCTS would choose (policy) and who won (value).
+We'll later touch on the optimizations that make this doable: coroutines, batching, and caching.
 
-The idea is that the model slowly converges to the same policy and evaluation computed by MCTS, so that a single model evaluation is as good as 1200 MCTS samples.
+After each self-play game, the moves chosen by MCTS (each based on 1200 samples) and the game outcome become training data. The network learns to predict which moves MCTS would choose (policy) and who won (value).
 
-After each generation, we train the network on the accumulated training data. Then the updated network is used for the next round of self-play, producing better training data, which produces a better network, and so on.
+After each generation, we train the network on the accumulated data from the few latest generations. The updated network is used for the next generation of self-play, producing better data, which produces a better network, and so on.
 
-For the first few generations, we used a simple policy to bootstrap the training data. In the simple policy, the cats simply walked toward the goal, and we also placed walls randomly (so that the model would be aware of walls).
+For the first generation, we used a simple bootstrap policy: cats walked toward the opponent's mouse while placing a few random walls so the model learns that it's an option.
 
-<!-- [Diagram placeholder: the self-play loop - circular diagram showing: Self-Play (MCTS + NN) → Game Data → Train Neural Network → Updated NN → back to Self-Play] -->
+<!-- [Diagram placeholder: the self-play loop - circular diagram showing: Self-Play (MCTS + NN) -> Game Data -> Train Neural Network -> Updated NN -> back to Self-Play] -->
 
 ## Our Neural Network
 
-Our network follows the same architecture as AlphaZero. It has a ResNet core, with 20 residual blocks with 128 hidden channels, for a total of about 2.3 million parameters. Small by modern deep learning standards, but large enough to capture the strategic complexity of an 8x8 board game.
+Our network follows the AlphaZero architecture: a ResNet core with 20 residual blocks and 128 hidden channels, totaling about 2.3 million parameters. Small by modern deep learning standards, but large enough to capture the strategic complexity of an 8x8 board game.
 
-ResNet was originally designed for image classification. It uses convolutions to extract local features from an image. This works well for board games like chess or the Wall Game because (1) the board is a grid, like an image, and (2) local features are also important, like clusters of adjacent walls blocking a path.
+ResNet was designed for image classification, using convolutions to extract local features. This works well for board games like chess or the Wall Game because (1) the board is a grid, like an image, and (2) local features matter - like clusters of adjacent walls blocking a path.
 
 ### Input Encoding
 
-The network sees the board as 9 "planes" (like color channels in an image), each the size of the board grid:
+The network sees the board as 8 "planes" (like color channels in an image), each the size of the board:
 
-| Plane | What it Represents |
-|-------|-------------------|
-| 0 | Distance from your pawn to every cell |
-| 1 | Distance from your goal to every cell |
-| 2 | Distance from opponent's pawn to every cell |
-| 3 | Distance from opponent's goal to every cell |
-| 4 | Vertical walls (which right-edges are blocked) |
-| 5 | Horizontal walls (which bottom-edges are blocked) |
-| 6 | Is this the second action of the turn? |
-| 7 | Is the current player Red? |
-| 8 | Variant indicator (1 for Standard, 0 for Classic) |
+| Plane | What it Represents | Values |
+|-------|-------------------|--------|
+| 0 | Distance from your cat to every cell | 0 at cat's position, increasing with distance; 1 for unreachable cells |
+| 1 | Distance from your mouse to every cell | Same as above, from mouse's position |
+| 2 | Distance from opponent's cat to every cell | Same as above, from opponent's cat |
+| 3 | Distance from opponent's mouse to every cell | Same as above, from opponent's mouse |
+| 4 | Vertical walls | 1 if the right edge of this cell is blocked, 0 otherwise |
+| 5 | Horizontal walls | 1 if the bottom edge of this cell is blocked, 0 otherwise |
+| 6 | Second action indicator | All 0s during first action, all 1s during second action |
+| 7 | Current player indicator | All 1s if current player is P1, all 0s if P2 |
 
-A key design choice here is using *relative distances* rather than raw positions for the first four planes. Instead of a single "1" at the pawn's location, every cell gets a value representing how far it is from the pawn (computed via BFS through the current wall layout). This encoding is more informative - the network immediately "sees" how the wall structure affects reachability - and it generalizes better across board positions.
+A key design choice is using *relative distances* rather than raw positions for the first four planes. Instead of a single "1" at the pawn's location, every cell gets a value representing its distance from the pawn (computed via BFS through the current wall layout). This encoding is more informative - the network immediately "sees" how walls affect reachability - and generalizes better across positions.
 
-The game has two main variants:
+Callout Box Start:
 
-- **Classic**: Each player's pawn starts in one corner and races to the diagonally opposite corner. Clean, symmetric, pure.
-- **Standard**: Each player controls a cat and a mouse. Your cat chases your opponent's mouse, which your opponent can move to evade. This creates an asymmetric dynamic - you're simultaneously attacking and defending.
+Before the residual blocks, an initial convolution lifts from the 8 input planes to 128 hidden channels. Then, each of the 20 residual blocks applies:
+
+1. A `3x3` convolution (128 -> 128 channels), followed by batch normalization and ReLU activation.
+2. Another `3x3` convolution (128 -> 128 channels), followed by batch normalization.
+3. Add the original input of the block back in (the *residual connection*), then apply ReLU.
+
+All convolutions preserve the spatial dimensions - the board stays `rows x cols` through the network. They also omit the bias term, since batch normalization already includes a learnable shift that serves the same purpose.
+
+The residual/skip connection in step 3 is what makes it possible to train 20+ layers deep. As explained in the [classic ResNet paper](https://arxiv.org/abs/1512.03385), by adding the input back, gradients can flow directly through the skip connection during training, preventing the "vanishing gradient" problem.
+
+Callout Box End
 
 ### Output Heads
 
 The network has two output heads branching from the shared ResNet body:
 
-**Policy head**: Outputs a probability for each possible action - one for each wall placement (2 × cols × rows, covering vertical and horizontal walls) plus pawn moves (4 directions for the cat, 4 more for the mouse in Standard variant). This goes through a softmax so all probabilities sum to 1.
+**Policy head**: Outputs a probability for each legal action - one for each wall placement (2 x cols x rows, for vertical and horizontal walls) plus 4 cat move directions (up, down, left, right). A softmax ensures all probabilities sum to 1.
 
-**Value head**: Outputs a single number passed through tanh, giving a value in [-1, +1]. Positive means the current player is winning; negative means they're losing.
+In the initial 8x8 model we trained, there are no outputs for mouse moves - it was trained for the _Classic variant_, where mice are fixed in the corners. This will be relevant later when we discuss adapting the model for other variants.
+
+**Value head**: A single number passed through tanh, giving a value in `[-1, +1]`. Positive means the current player is winning; negative means losing.
 
 ### Training Loss
 
@@ -138,237 +165,310 @@ The loss function has two parts:
 - **KL divergence** between the network's policy output and MCTS's move probabilities (derived from visit counts in the search tree). This teaches the network to predict which moves MCTS would choose.
 - **Mean squared error** between the network's value output and the actual game outcome. This teaches the network to predict who wins.
 
+The idea is that the model slowly converges to match the policy and evaluation computed by MCTS, so a single model evaluation approximates an MCTS search with 1000+ samples.
+
 ### Pseudocode
 
 Here's a simplified view of the architecture:
 
 ```
-ResNet(input: 9 × rows × cols):
-    x = Conv2d(9 → 128, 3×3) → BatchNorm → ReLU
+ResNet(input: 8 x rows x cols):
+    x = Conv2d(8 -> 128, 3x3) -> BatchNorm -> ReLU
 
     for each of 20 residual blocks:
         residual = x
-        x = Conv2d(128 → 128, 3×3) → BatchNorm → ReLU
-        x = Conv2d(128 → 128, 3×3) → BatchNorm
+        x = Conv2d(128 -> 128, 3x3) -> BatchNorm -> ReLU
+        x = Conv2d(128 -> 128, 3x3) -> BatchNorm
         x = ReLU(x + residual)      ← skip connection
 
-    policy = Conv2d(128 → 32, 3×3) → BatchNorm → ReLU → Flatten
-           → Linear(32·rows·cols → 2·rows·cols + move_channels) → Softmax
+    policy = Conv2d(128 -> 32, 3x3) -> BatchNorm -> ReLU -> Flatten
+           -> Linear(32·rows·cols -> 2·rows·cols + 4) -> Softmax
 
-    value = Conv2d(128 → 32, 3×3) → BatchNorm → ReLU → Flatten
-          → Linear(32·rows·cols → 1) → Tanh
+    value = Conv2d(128 -> 32, 3x3) -> BatchNorm -> ReLU -> Flatten
+          -> Linear(32·rows·cols -> 1) -> Tanh
 
     return policy, value
 ```
 
-The skip connections in the residual blocks are critical - they allow gradients to flow through the network during training, making it possible to train 20+ layers deep without degradation.
+## Making MCTS Fast: Coroutines, Batching, Caching
 
-## Making MCTS Fast: Coroutines and Batched GPU Inference
+The self-play phase is the performance bottleneck. Training the network between generations is relatively fast.
 
-The self-play training loop is the performance bottleneck of the entire system. To train a strong model, we need to generate hundreds of thousands of self-play games, each requiring thousands of MCTS iterations. Every MCTS iteration involves a neural network evaluation. Doing this naively would be painfully slow.
+Our superhuman model was trained on 750k self-play games over many generations, taking about 100 hours on a single RTX 5080 - over 1 billion neural network evaluations per hour.
 
-### The GPU Utilization Problem
+### The GPU Utilization Bottleneck
 
-Modern GPUs are massively parallel processors - they're fast when processing large batches of data, but terribly inefficient when processing one item at a time. A single neural network evaluation on an RTX 4090 takes nearly as long as evaluating a batch of 256 positions, because most of the GPU's compute units sit idle with a single input.
+Our goal during self-play is to maximize GPU utilization.
 
-The problem is that standard MCTS is inherently sequential: you traverse the tree, reach a leaf, evaluate it with the neural network, backpropagate the result, then repeat. Each iteration depends on the result of the previous one (because the tree changes after each backpropagation). So naively, you'd evaluate one position at a time, and your expensive GPU would be utilized at roughly 1% capacity.
+TensorRT (NVIDIA's optimized inference runtime) loads the model into GPU memory at initialization time, and then it sits waiting for positions to evaluate.
 
-### The Solution: Coroutine-Based Parallelism
+The GPU can evaluate many positions in parallel, so the key is sending multiple at a time. We found that batches of 256 are enough to reach ~100% GPU utilization. Without batching, GPU I/O becomes the bottleneck.
+
+### Parallel samples
+
+The standard MCTS loop is inherently sequential: traverse the tree, reach a leaf, evaluate it, backpropagate, repeat. Each iteration depends on (or at least benefits from) the previous ones, because the tree becomes more refined after each sample. Naively, we'd evaluate one position at a time - no batching.
+
+During self-play, we can play 256+ games in parallel (using a CPU thread pool - more on that later), which fills the batches without needing parallel samples for the same game.
+
+However, parallel samples for a single game can be valuable:
+
+- When playing against the model, for maximum strength, we'd want good GPU utilization even for a single game.
+- During self-play, having fewer games is better for caching (the cache is shared across games) and for memory utilization (so we don't need to store 256+ MCTS trees).
+
+Therefore, it's worth supporting _parallel samples_. In the ideal case, parallel samples go down different paths, updating different parts of the search tree. However, parallel samples may reach the same leaf node, duplicating work. To avoid this, when a sample goes down a branch, it temporarily and artificially lowers the UCB of nodes along the path, so other samples avoid that branch (this is called "virtual loss").
+
+Since multiple samples update the tree concurrently, node statistics use atomic updates to stay consistent.
+
+### Coroutine-Based Parallelism
 
 Our approach uses C++ coroutines (via Facebook's Folly library) to decouple MCTS traversal from neural network evaluation.
 
-Here's the idea: instead of running one MCTS iteration at a time, we run many in parallel. Each iteration is a coroutine - a lightweight function that can suspend and resume. When a coroutine reaches a leaf node and needs a neural network evaluation, it doesn't block. Instead, it submits its request to a shared queue and *suspends*, freeing its thread to work on other iterations.
+Each sample - whether a parallel sample within one game or across multiple self-play games - is a coroutine: a lightweight function that can suspend and resume. When a coroutine reaches a leaf node and needs a neural network evaluation, it doesn't block. Instead, it submits its request to a shared queue and *suspends*, freeing the thread for other coroutines.
 
-A dedicated batch worker thread monitors the queue. When enough requests accumulate (or a short timeout expires), it collects them into a batch - typically 256 positions - and sends the entire batch to the GPU in a single call via TensorRT (NVIDIA's optimized inference runtime). When the GPU returns results, each waiting coroutine is resumed with its specific result.
+A dedicated batch worker thread monitors the queue. When enough requests accumulate (or a short timeout expires), it collects them into a batch - typically 256 positions - and sends the batch to the GPU in a single TensorRT call. When the GPU returns results, each waiting coroutine resumes with its result.
+
+A relatively small thread pool is enough to keep the GPU at 100% utilization, since the MCTS traversal is computationally lightweight.
 
 ```
-Thread Pool (20+ CPU threads)
+Main
     │
-    ├── MCTS Coroutine 1: traverse tree → reach leaf → [suspend, enqueue request]
-    ├── MCTS Coroutine 2: traverse tree → reach leaf → [suspend, enqueue request]
+    v
+Thread pool (Folly's CPUThreadPoolExecutor)
+    │
+    ├── MCTS Coroutine 1: traverse tree -> reach leaf -> [suspend, enqueue request]
+    ├── MCTS Coroutine 2: traverse tree -> reach leaf -> [suspend, enqueue request]
     ├── MCTS Coroutine 3: backpropagating result (resumed)
     ├── ...
     │
-    ▼
-Lock-Free Queue (Folly MPMC)
+    v
+Inference request queue (Folly's lock-free MPMC)
     │
-    ▼
-Batch Worker Thread
+    v
+Batch worker thread
     │ collects 256 requests
-    ▼
+    v
 GPU (TensorRT)
     │ returns 256 results
-    ▼
+    v
 Resume suspended coroutines with results
 ```
 
-<!-- [Diagram placeholder: coroutine batching diagram - multiple MCTS threads → lock-free queue → batch worker → GPU → results fan out back to coroutines] -->
+<!-- [Diagram placeholder: coroutine batching diagram - multiple MCTS threads -> lock-free queue -> batch worker -> GPU -> results fan out back to coroutines] -->
 
-This design keeps both the CPU and GPU busy simultaneously. Twenty-plus CPU threads are constantly traversing trees and backpropagating results, while the GPU processes large batches of neural network evaluations. The lock-free MPMC (Multi-Producer Multi-Consumer) queue from Folly handles the handoff between CPU and GPU without expensive synchronization.
+This keeps both CPU and GPU busy simultaneously. 20+ CPU threads constantly traverse trees and backpropagate results, while the GPU processes large batches of evaluations. The lock-free MPMC (Multi-Producer Multi-Consumer) queue from Folly handles the handoff without expensive synchronization.
+
+### Caching
+
+All model evaluations go in an LRU cache (`folly::EvictingCacheMap`). Since multiple threads read and write concurrently, the cache is sharded by position hash, with each shard having its own lock. This reduces contention. We keep the number of shards roughly equal to the thread pool size.
+
+### Tree reuse
+
+After each move, we don't discard the MCTS tree. The chosen move has likely been explored to some depth, so we reuse it.
+
+We shift the root down to the chosen move's subtree, and then free memory for all parts of the tree unreachable from the new root.
 
 ### Key MCTS Parameters
 
 A few parameters govern how MCTS explores the game tree:
 
-- **PUCT constant (2.0)**: Controls the exploration-exploitation tradeoff. Higher values make MCTS explore more broadly; lower values make it focus on the most promising moves.
+- **PUCT constant (2.0)**: Controls the exploration-exploitation tradeoff. Higher values explore more broadly; lower values focus on the most promising moves.
 - **Dirichlet noise (α=0.3, factor=0.25)**: Random noise added to the root node's prior probabilities. This ensures self-play games explore diverse strategies rather than always playing the same opening.
-- **Max parallelism (4)**: How many MCTS iterations can run concurrently for a single game session. Too many and they interfere with each other (exploring redundant branches); too few and the GPU goes hungry.
+- **Max parallelism (more = stronger play / faster MCTS exploration)**: How many MCTS samples can run concurrently for a single game session. Too many and they interfere with each other (exploring redundant branches); too few and the GPU may go hungry (if there aren't enough parallel games).
 
-### Performance
+#### Self-play parameters
 
-With this architecture, we can generate thousands of self-play games per hour on a single consumer GPU (RTX 4090 or RTX 5080). The entire 8x8 Classic training run - 750,000 games - took about 100 hours. Without batched inference, it would have taken orders of magnitude longer.
+During self-play, we have to decide how many parallel games to run and how many parallel samples per game. There is a tradeoff:
 
-## The Training Journey
+- Parallel games are bad for caching and memory usage (storing the MCTS for each game, though MCTS trees are relatively small)
+- Parallel samples are bad for MCTS performance, because each sample benefits from previous ones.
 
-### Proof of Concept: 5×5 Classic
+We tweak these parameters to find a good balance that keeps the GPU fully utilized.
 
-We started small. A 5×5 board has a fraction of the state space of 8×8, so training is fast - a good environment for validating that the pipeline works end-to-end before investing serious compute.
+## Training
 
-We generated 60,000 self-play games on 5×5 and trained the network for several generations. Even on this tiny board, the results were encouraging. The model learned non-trivial wall placement strategies: it would build walls to lengthen its opponent's path while keeping its own path clear, and it learned to anticipate wall placements several moves ahead.
+Thorben started small with a 5x5 board to validate the pipeline end-to-end before investing compute.
 
-More importantly, this phase caught several bugs in the data pipeline, coordinate transforms, and training loop that would have been much more expensive to debug on a larger board.
-
-### The Real Thing: 8×8 Classic
-
-With the pipeline validated, we scaled to the full 8x8 board. This is where things got serious.
+With the pipeline validated, he scaled to the 8x8 board.
 
 **Training setup:**
 - **Games per generation**: 5,000
 - **MCTS samples per action**: 1,200
-- **Training window**: last 20 generations (~100,000 most recent games)
-- **Batch size**: 512
-- **Hardware**: NVIDIA RTX 5080
+- **Training window**: last 20 generations (~100k most recent games)
 - **Total training time**: ~100 hours
 
-The first generation used a simple heuristic policy (walk toward goal, place walls randomly) instead of the neural network, to bootstrap initial training data. Starting from random network weights with random self-play would produce games that meander aimlessly - the signal-to-noise ratio would be too low for the network to learn anything useful. The heuristic bootstrap gives the network a foundation: "moving toward your goal is good."
+The first generation used a simple heuristic policy (walk toward goal, place walls randomly) instead of the neural network to bootstrap initial training data. Random self-play would produce games that meander aimlessly - it's hard for a cat to randomly walk into a mouse, so games would drag on and the signal-to-noise ratio would be too low for the network to learn anything useful. The heuristic bootstrap gives it a foundation: "moving toward the opponent's mouse is good."
 
-From generation 2 onward, each generation follows the self-play loop: play 5,000 games using MCTS guided by the current network, train the network on the accumulated data, export the updated model, repeat.
+### Evaluating model strength
 
-<!-- [Diagram placeholder: Elo progression chart showing strength over generations for 8×8 Classic] -->
+How do we know when to stop training?
 
-The model's strength (measured in Elo by playing different generations against each other) grew rapidly in the first 20 generations, then steadily improved through 150+ generations. The early gains come from learning basic strategy: move toward your goal, block your opponent's path. The later improvements are subtler: sacrificing short-term progress for a stronger wall structure, creating "traps" where the opponent's path forks into two equally bad options, and timing wall placements to maximize their impact.
+Decreasing validation loss doesn't necessarily mean the model is getting stronger. It could mean that both the tree search and neural network converged on a suboptimal strategy.
 
-After 750,000 self-play games, the result is a superhuman player - stronger than any human we've tested it against. It plays with a style that's recognizably strategic but often surprising, finding wall placements that look odd at first but turn out to be deeply calculated.
+A good ad-hoc way to test model strength is to play against it.
 
-### New Variant: 8×8 Standard
+A more rigorous way is to make all generations play against each other and use Elo to rank them.
 
-With a strong Classic model in hand, we turned to Standard - the variant where each player also controls a mouse that their opponent's cat chases. Standard has 8 pawn-move channels (4 for the cat, 4 for the mouse) instead of Classic's 4, and the strategic landscape is richer because of the cat-and-mouse dynamics.
+<!-- [Diagram placeholder: Elo progression chart showing strength over generations for 8x8 Classic] -->
 
-Rather than training from scratch, we warm-started from the Classic model. The idea was that wall placement patterns, spatial reasoning, and basic strategy transfer between variants - only the mouse-handling needs to be learned from scratch.
+Elo grew rapidly in the first 20 generations, then steadily improved through the rest. Early gains come from learning basic strategy: move toward your goal, block your opponent's path.
 
-This mostly worked, but we hit a cold-start problem: **the model never moved its mouse.** Classic doesn't have mice, so the warm-started model's mouse-move probabilities were essentially random noise. MCTS, guided by the policy head, would never select mouse moves because their priors were so low relative to cat moves and wall placements. And since MCTS never explored mouse moves, the training data never contained them, so the network never learned that moving mice is valuable. A vicious cycle.
+After 750,000 self-play games, the result is a superhuman player that moves almost instantly. Its style is recognizably strategic but unpredictable to me and other "strong" human players.
 
-Our fix was pragmatic: for a few generations, we directly boosted the mouse-move probabilities in the MCTS policy, forcing the search to explore mouse moves even though the network said they were unlikely. This gave the training data enough mouse-move examples for the network to start learning their value. After a few generations of boosted exploration, the network had learned that mouse moves matter, and we removed the boost.
+### New Variant: 8x8 Standard
 
-The resulting model is strong - it plays both variants competently - but not quite as strong as the pure Classic model. Partly this is because Standard is a harder game with a larger action space, and partly because we invested less training compute.
+As mentioned earlier, this first model was trained for the "Classic" variant, where mice are fixed in the corners.
+
+With a strong Classic model in hand, I turned to Standard - the variant where each player also controls the mouse and can try to run away from the opponent's cat.
+
+Standard needs 8 pawn-move channels (4 for the cat, 4 for the mouse) instead of Classic's 4, so we had to train a new model with a wider policy head.
+
+Rather than training from scratch, I warm-started it with the Classic model's weights. Wall placement patterns, spatial reasoning, and basic strategy transfer between variants - only mouse-handling needs to be learned from scratch.
+
+This mostly worked, but at first the model showed a funny holdover from Classic training: the cat would move to the _corner_ where the mouse spawns instead of the mouse itself. Even if the mouse was right next to it, it'd ignore it and head for the corner.
+
+A bigger issue was a _cold-start_ problem: **the model never moved its mouse.** Mouse move priors started with random values but got stuck so low that MCTS never explored them. Since MCTS never explored mouse moves, the training data never contained them, so the network never learned their value.
+
+Our fix was pragmatic: for a few generations, we boosted mouse-move probabilities in the MCTS policy, forcing the search to explore them even though the network rated them unlikely. Once the training data contained enough mouse-move examples, the network started learning their value on its own, and we removed the boost.
+
+INSERT IMAGE: STANDARD ELO PROGRESSION, MOUSE MOVE FRACTION
+
+The warm-start paid off: the model became strong in far fewer generations.
 
 ### The Universal Model
 
-Our most ambitious training experiment (still in progress) is the universal model: a single network that plays both Classic and Standard on larger boards (12×10).
+Next, I wanted models that could play the standard and classic variants for larger boards (up to 12x10).
 
-This required several innovations:
+Warm-starting across board sizes is possible - the core ResNet convolutions are input-size independent and can still detect wall patterns regardless of board size. The Linear layers in the output heads need remapping, but that's a small fraction of the network.
 
-**Spatial remapping for warm-start:** The universal model's 12×10 board is larger than the 8×8 Standard model we're warm-starting from. Convolutional layers transfer directly (they're translation-invariant), but the Linear layers in the policy and value heads are tied to specific board positions. We spatially embed the 8×8 weights within the 12×10 grid, centering them with an offset of (col=2, row=1), and randomly initialize the weights for the new boundary positions.
+The question is: which models should we warm-start from?
 
-**Progressive unfreezing:** After warm-starting, we freeze the convolutional body for the first few generations, only training the Linear head layers. This prevents catastrophic forgetting - without freezing, the high loss from the randomly-initialized boundary weights would generate large gradients that destroy the valuable features learned on 8×8.
+We could do 8x8 Standard -> 12x10 Standard and 8x8 Classic -> 12x10 Classic, or perhaps 8x8 Classic -> 12x10 Classic -> 12x10 Standard.
 
-**Half-and-half self-play:** Each generation plays half its games as Classic and half as Standard. The variant indicator (input plane 8) tells the network which variant it's playing. This ensures the model learns to use that signal from the start.
+But training multiple models feels wasteful - everything is done twice, once per variant.
 
-The universal model is a work in progress. It plays both variants, but sometimes makes nonsensical moves - a sign that it needs significantly more training compute to match the quality of the dedicated 8×8 Classic model. Training is ongoing.
+My most ambitious training experiment is the universal model: a single network that plays both Classic and Standard on larger boards (12x10), so all compute goes toward improving one model.
 
-## Serving Moves in a Live Web Game
+This required several changes:
 
-Training a strong model is only half the challenge. The other half is making it play games against real people, in real time, in a web browser.
+- **New variant plane:** A new input plane (plane 8) indicates the variant (`0` everywhere for Classic, `1` everywhere for Standard).
+- **Spatial remapping for warm-start:** The 12x10 board is larger than the 8x8 model we're warm-starting from. Convolutional layers transfer directly (input-size independent), but the Linear layers in the output heads are tied to specific board positions. We spatially embedded the 8x8 weights within the 12x10 grid, centering them with an offset of (col=2, row=1), and randomly initialized weights for the new boundary positions.
+- **Progressive unfreezing:** After warm-starting, we froze the convolutional body for the first few generations, training only the linear head layers. This prevents catastrophic forgetting - without freezing, the high loss from randomly-initialized boundary weights would generate large gradients that destroy the features learned on 8x8.
+- **Half-and-half self-play:** Each generation plays half its games as Classic and half as Standard. The variant indicator (plane 8) tells the network which variant it's playing, ensuring the model learns to use that signal from the start.
 
-### The Integration Challenge
-
-The architecture involves three separate systems that need to communicate:
-
-1. **The game server** - a Hono/Bun application running on Fly.io, handling game logic, matchmaking, and WebSocket connections to browser clients. No GPU.
-2. **The bot client** - a TypeScript process running on a Linux machine with an NVIDIA GPU. Manages the connection between the server and the engine.
-3. **The engine** - the C++ Deep-Wallwars binary, running on the same GPU machine. Loads models into GPU memory, maintains MCTS trees, and evaluates positions.
-
-<!-- [Diagram placeholder: integration architecture - Browser (React) ↔ WebSocket ↔ Game Server (Fly.io, Hono/Bun) ↔ WebSocket ↔ Bot Client (TypeScript, GPU machine) ↔ stdin/stdout JSON-lines ↔ Deep-Wallwars Engine (C++, TensorRT)] -->
-
-On top of serving bot moves, the system also powers an **eval bar** - a live position evaluation display (like the ones you see on chess streaming sites) that any player or spectator can toggle during a game.
-
-### The Protocol Evolution
-
-Getting the communication protocol right took three iterations.
-
-**V1 (Seat-based):** Our first attempt was simple: for each move request, spawn a fresh engine process, pipe in a JSON request via stdin, read the response from stdout, kill the process. This works, but it's terrible for performance. Loading a TensorRT model into GPU memory takes several seconds - longer than the actual computation. And since the process dies after each move, there's no way to reuse the MCTS tree between turns.
-
-**V2 (Proactive):** We improved the networking by having the bot client connect proactively to the server (instead of the server spawning connections per game). But the engine was still stateless - invoked as a CLI command for each decision. Better networking, same performance problem.
-
-**V3 (Bot Game Sessions):** The breakthrough was making the engine a long-lived process. It starts once, loads all models into GPU memory once, and then handles requests over a JSON-lines protocol (one JSON object per line on stdin/stdout).
-
-The key concept in V3 is the **Bot Game Session (BGS)**: a stateful context for one game, with its own MCTS tree. When a game starts, the server sends `start_game_session`. The engine creates a new MCTS tree. When the server needs a move, it sends `evaluate_position`, and the engine runs MCTS against its existing tree and returns a move and evaluation. When the opponent plays, `apply_move` updates the tree - and critically, *prunes* it: the subtree rooted at the played move becomes the new root, preserving all the search work that's still relevant. When the game ends, `end_game_session` cleans up.
-
-Multiple BGSs run concurrently (up to 256), sharing the GPU through the same batched inference pipeline used during training. The `expectedPly` field in each request prevents race conditions - if a stale evaluation request arrives after a move has already been applied, the ply mismatch catches it.
-
-### The Bot Client
-
-The bot client is the middleware that ties everything together. It's a TypeScript process running on the GPU machine alongside the engine, with these responsibilities:
-
-- **WebSocket management**: Maintains a persistent connection to the game server with automatic reconnection (exponential backoff with jitter). On startup, it sends an `attach` message registering which bots are available, what variants they support, and what board sizes they can play.
-- **Engine lifecycle**: Spawns the engine process on startup and keeps it running. If the WebSocket disconnects and reconnects, the engine stays alive - all active game sessions continue seamlessly without any interruption from the engine's perspective.
-- **Session multiplexing**: Routes BGS messages between the server and the engine, multiplexing multiple concurrent game sessions over a single engine process.
-
-The bot client is configured via a JSON file that specifies the bot's name, appearance (avatar, colors), supported variants and board sizes, and the command to launch the engine binary.
-
-### The Eval Bar
-
-One of the more interesting integration challenges was the eval bar - a live display showing the engine's position evaluation for every move in the game, similar to what you'd see on a chess broadcast.
-
-The server maintains a **BGS history**: an evaluation and best move for every position from the start of the game. When a player or spectator toggles the eval bar, the server streams this entire history to the frontend, giving them instant evaluations for the full move history.
-
-If the eval bar is toggled on mid-game (say, at move 15), the server replays all 15 moves through the engine - sending `evaluate_position` and `apply_move` for each one - to build the complete history before streaming it. This replay is invisible to the user; they just see evaluations appear.
-
-The eval bar works for bot games, human-vs-human games (unrated), spectators, and even past game replays. Takebacks are handled by ending the current BGS, starting a fresh one, and replaying moves up to the new position. All of this complexity is hidden from the engine - it just sees the same four message types.
+The universal model makes good moves early, but sometimes plays nonsensically later in the game. It's live on the site, but I'm still training it.
 
 ### Board Padding: One Model, Many Board Sizes
 
-Models are trained for a specific board size (e.g., 8×8), but the game supports smaller boards too. Rather than training separate models for every board size, we embed smaller boards inside the model's fixed grid using **padding walls**.
+Models are trained for a specific board size (e.g., 8x8), but the same model can be used for smaller boards too.
 
-For example, to play on a 6×6 board with an 8×8 model, we place the 6×6 game area inside the 8×8 grid and surround the unused border cells with walls. The engine sees an 8×8 board where some areas happen to be walled off. From the model's perspective, the padding walls are just more walls - there's nothing special about them.
+Rather than training separate models for each board size, we embed smaller boards inside the model's fixed grid using **padding walls**.
 
-<!-- [Diagram placeholder: padding example - 6×6 board embedded in 8×8 grid, showing padding walls and the playable area] -->
+For example, to play on a 6x6 board with an 8x8 model, we place the 6x6 game area inside the 8x8 grid and surround the unused border cells with walls. The engine sees an 8x8 board where some areas are walled off - from its perspective, the padding walls are just more walls.
 
-The key question was whether this actually works. A model trained exclusively on 8×8 boards has never seen a position with this specific wall pattern (walls forming a complete border around the playable area). Would it play well?
+<!-- [Diagram placeholder: padding example - 6x6 board embedded in 8x8 grid, showing padding walls and the playable area] -->
 
-The answer is yes, and the reason is that convolutional neural networks are translation-invariant. The model learns local patterns - "if there's a wall here and the opponent is there, blocking this way is good" - and these patterns apply regardless of where they appear on the grid. The padding walls are just more data for the model to reason about.
+The question was whether this works without explicit training on padded boards - walls forming a complete border around a smaller subgrid don't come up in natural gameplay.
 
-Different variants require different padding strategies. In Classic, where goals are in the corners, we embed the smaller board at the bottom-center of the grid to maintain path structure to the goal corners. In Standard, we embed at the top-left. This lets a single 8×8 model serve boards from 4×4 to 8×8 without any retraining.
+Thankfully, the model's pattern recognition is general enough, so this worked out of the box (pun intended).
 
-## Lessons Learned and What's Next
+## Serving Moves in a Live Web Game
 
-### Lessons Learned
+After training a strong model, the next challenge is serving it to players.
 
-**Start small, scale up.** Our 5×5 proof of concept caught bugs in coordinate transforms, data loading, and the training loop. Fixing these on 5×5 (where a full training run takes minutes) saved us from expensive debugging on 8×8 (where a full run takes days). If you're building a similar system, resist the urge to go straight to your target configuration.
+### Deployment strategies
 
-**Warm-starting is powerful but demands care.** Transferring learned weights between board sizes and game variants dramatically reduces training time, but it introduces new failure modes. Without progressive unfreezing, catastrophic forgetting destroyed valuable features. Without careful initialization of new boundary weights, the model couldn't learn to use new board regions. Each of these required specific engineering solutions.
+For the Minimax-based engine, which can be played against on the [old site](https://wallwars.net), I compiled the C++ engine to WebAssembly and shipped  the wasm with the frontend, so it runs on your browser. This has some downsides:
 
-**Cold-start problems are real.** When warm-starting the Standard model from Classic, the model had zero experience with mouse moves. Since the policy head gave mouse moves near-zero probability, MCTS never explored them, and the training data never contained them. We had to break this cycle manually by boosting mouse-move probabilities for a few generations. This felt like a hack, but it was the pragmatic solution to a real bootstrapping problem.
+- Not all browsers support wasm (especially on phones)
+- Transposition tables require quite a bit of memory.
+- Engines that require a GPU - like AlphaZero - aren't an option for the browser.
 
-**Engineering matters as much as ML.** The coroutine-based batched inference system is what made training feasible on consumer hardware. Without it, GPU utilization would have been negligible, and the 750,000-game training run would have taken months instead of days. Similarly, TensorRT compilation (converting ONNX models to optimized GPU code) roughly doubled inference throughput compared to running the PyTorch model directly.
+Another option is to host the server on a machine with a GPU. The downside is that providers offering GPU compute are significantly more expensive than regular servers.
 
-**The integration is its own project.** Connecting a C++ engine to a web game via WebSocket required three protocol iterations and a dedicated bot client layer. The eval bar system, with its move replay, BGS history management, and multi-client streaming, was more complex than we expected. None of this is ML work - it's distributed systems engineering - but it's what turns a trained model into a product.
+I chose a third option: run the engine on my home machine (RTX 4090) and keep a long-lived WebSocket connection to the server.
 
-### What's Next
+The inference batching architecture we described in the self-play section can also be used to batch inference requests for multiple live games vs human players. Thanks to this setup, the server should be able to handle 100 concurrent players easily.
 
-**Universal model:** Our current 12×10 universal model can play both Classic and Standard, but it sometimes makes nonsensical moves. It needs significantly more training compute - likely millions more self-play games - to match the quality of the dedicated 8×8 Classic model. This is our top priority.
+### The Integration Challenge
 
-**Stronger inference:** During live games, the engine uses about 1,000 MCTS samples per move. More samples mean stronger play but slower responses. We're exploring ways to make the engine think longer on critical positions while responding quickly on obvious ones.
+The server and the engine talk through a custom protocol.
+The architecture has three systems that need to communicate:
 
-**Puzzles:** The engine can evaluate any position and identify the best move. We plan to use this to generate tactical puzzles: positions where there's one clearly best move, and all alternatives are significantly worse. These would be integrated into the game as a training mode for players.
+1. The [server](https://github.com/nmamano/wallgame/tree/main/server): a Hono/Bun application running on Fly.io, handling game logic, matchmaking, and WebSocket connections to browser clients. No GPU.
+2. The [bot client](https://github.com/nmamano/wallgame/tree/main/official-custom-bot-client): a TypeScript process running on a Linux machine with a GPU. Manages the connection between the server and the engine.
+3. The [engine](https://github.com/nmamano/wallgame/tree/main/deep-wallwars): the C++ binary. Loads models into GPU memory, maintains MCTS trees, and evaluates positions.
 
-## Try It Yourself
+For now, the server runs on a single machine. This matters because the bot connects to one machine - if players hit a different one, they couldn't reach the bot. (I wrote a [post](https://x.com/Nil053/status/2014103204917813560?s=20) about how Lichess handles multi-server scaling.)
 
-Play against the AI at [wallgame.io](https://wallgame.io). Start with a smaller board if you're new - the AI is forgiving on 5×5 or 6×6, but quite strong on 8×8.
+The bot client automatically reconnects, so the official bots stay available even across server deploys.
 
-Explore the code:
+The bot client is engine-agnostic - it's configured with a CLI command to start the engine, and then communicates via stdin/stdout with JSON objects.
 
-- **[Deep-Wallwars](https://github.com/t-troebst/Deep-Wallwars)** - Thorben's original C++ engine: MCTS, neural network inference, self-play, and training pipeline
-- **[Wallgame](https://github.com/nmamano/wallgame)** - the full game: React frontend, Hono backend, bot client integration, and the vendored (and extended) engine
+Anyone can reuse the bot client and plug in their own engine.
 
-For further reading on the techniques behind this project, the original [AlphaZero paper](https://arxiv.org/abs/1712.01815) by Silver et al. (2017) is remarkably readable and covers the foundational ideas we built on.
+<!-- [Diagram placeholder: integration architecture - Browser (React) ↔ WebSocket ↔ Game Server (Fly.io, Hono/Bun) ↔ WebSocket ↔ Bot Client (TypeScript, GPU machine) ↔ stdin/stdout JSON-lines ↔ Deep-Wallwars Engine (C++, TensorRT)] -->
+
+The system also powers an **evaluation bar** - a live position evaluation display (like those on chess streaming sites) that players and spectators can toggle during a game.
+
+### The Protocol
+
+#### Stateless vs long-lived engines
+
+The first bot protocol was simple: for each move request, spawn a fresh engine process, pipe in a JSON request via stdin, read the response from stdout, kill the process.
+
+This works, but doesn't leverage the strengths of MCTS:
+
+- Loading a TensorRT model into GPU memory takes longer than the computation itself.
+- The MCTS tree and the evaluation cache are not reused between turns.
+
+I moved to a long-lived process: the engine starts once, loads the models into GPU memory once, and handles requests over a JSON-lines protocol (one JSON object per line on stdin/stdout).
+
+The main concept in the protocol is the **Bot Game Session (BGS)**: a stateful context for one game, with its own MCTS tree living in memory.
+
+Multiple BGSs can run concurrently, sharing the GPU through the same batched inference pipeline used during training.
+
+The BGS protocol consists of only 4 messages:
+
+- When a game starts, the server sends `start_game_session`. The engine creates a new MCTS tree.
+- When the server needs a move, it sends `evaluate_position`. The engine runs MCTS against its existing tree and returns a move and evaluation (the search goes two levels deep, since one move consists of two actions).
+- When the server (the authoritative source for game state) determines that a move was made, it sends `apply_move`. The engine updates the MCTS tree - pruning it as during self-play: the subtree rooted at the played move becomes the new root, preserving relevant search work.
+- When the game ends, `end_game_session` cleans up.
+
+The protocol could be extended to support features like draws, but for simplicity we don't yet. The server auto-rejects draw offers on behalf of bots.
+
+Takebacks are also handled by the server. It ends the current BGS, starts a fresh one, and replays the moves up to the new position. This complexity is hidden from the bot client - it sees the same four message types.
+
+An `expectedPly` field in each request prevents race conditions - if a stale evaluation request arrives after a move has been applied, the ply mismatch catches it.
+
+#### Bots as first-class citizens
+
+Originally, starting a game against the AI gave you a token that you'd pass to the bot client to connect it to that specific game. This meant copy-pasting a token and re-running the bot client for every match.
+
+Now, bots connect proactively to the server, and any connected bots appear in a bot table visible to all browser clients. Anyone can play against connected bots (they can also be made private for testing).
+
+I use a special secret token to mark my own bot (running on my machine) as "official", which gets special labeling in the UI and tells the server to use it for the evaluation bar.
+
+### The Bot Client
+
+The bot client is a TS process running on the GPU machine. It handles:
+
+- **WebSocket management**: Maintains a persistent connection to the game server with automatic reconnection (exponential backoff with jitter). On startup, it registers which bots are available, what variants they support, and what board sizes they can play.
+- **Engine lifecycle**: Spawns the engines on startup and keeps them running. If the WebSocket disconnects and reconnects, the engines stay alive - active game sessions continue seamlessly.
+- **Session multiplexing**: Routes BGS messages between server and engines, multiplexing concurrent game sessions over each engine process.
+
+The bot client is configured via a JSON file that specifies the bot's name, appearance (avatar, colors), engine parameters, and a command to launch the binary for each engine. This is what makes it engine-agnostic. Here is the [official bot's config](https://github.com/nmamano/wallgame/blob/c97014e64ef2dc1b6ac55c78a1089905dd69f0a1/official-custom-bot-client/deep-wallwars.prod.config.json). 
+
+### The Eval Bar
+
+The eval bar is a live display showing the engine's position evaluation for every move. It works for bot games, human-vs-human games (unrated), live spectators, and past game replays.
+
+For live games, the server maintains a **BGS history**: an evaluation for every position from game start. When a player or spectator toggles the eval bar, the server sends the full history to the frontend, providing instant evaluations for all past moves.
+
+If a user fetches a past-game replay, or the eval bar is toggled mid-game for a non-bot game, the server replays all moves through the engine - sending `evaluate_position` and `apply_move` for each - to build the complete history before streaming it. This is invisible to the user; evaluations simply appear after a bit of delay.
+
+## What's Next
+
+**Puzzles:** The engine can evaluate any position and identify the best move. We plan to generate tactical puzzles: positions where one move is clearly best and all alternatives are significantly worse, integrated as a training mode for players.
+---
+
+Play against the AI at [wallgame.io](https://wallgame.io).
