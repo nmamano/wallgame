@@ -345,18 +345,20 @@ function useSettingsInternal(
     return map;
   }, [isLoggedIn, dbSettings?.variantSettings]);
 
-  // Derive pawn settings from DB (only for logged-in users)
-  const pawnSettingsFromDb = useMemo<Partial<
-    Record<PawnSkinType, string>
-  > | null>(() => {
-    if (!isLoggedIn) return null;
-    if (!dbSettings?.pawnSettings) return null;
-    const pawnMap: Partial<Record<PawnSkinType, string>> = {};
-    for (const pawn of dbSettings.pawnSettings) {
-      pawnMap[pawn.pawn_type] = pawn.pawn_shape;
-    }
-    return pawnMap;
-  }, [isLoggedIn, dbSettings?.pawnSettings]);
+  // Derive pawn settings from DB (only for logged-in users).
+  // Intentionally NOT memoized: the array has at most 3 entries, and useMemo's
+  // dependency on dbSettings?.pawnSettings can miss re-renders triggered by
+  // optimistic cache updates (setQueryData in onMutate).
+  const pawnSettingsFromDb: Partial<Record<PawnSkinType, string>> | null =
+    (() => {
+      if (!isLoggedIn) return null;
+      if (!dbSettings?.pawnSettings) return null;
+      const pawnMap: Partial<Record<PawnSkinType, string>> = {};
+      for (const pawn of dbSettings.pawnSettings) {
+        pawnMap[pawn.pawn_type] = pawn.pawn_shape;
+      }
+      return pawnMap;
+    })();
 
   // Derive game config from DB (only for logged-in users)
   const gameConfigFromDb = useMemo<GameConfiguration | null>(() => {

@@ -102,18 +102,20 @@ function Settings() {
 
           <Card className="border-border/50 bg-card/50 backdrop-blur">
             <CardContent className="pt-0">
-              {/* Saving/Loading indicator - inline with content */}
-              {(isSavingName || isSavingVisualStyle || isLoadingSettings) &&
-                isLoggedIn && (
-                  <div className="flex items-center gap-2 text-sm text-muted-foreground mb-6">
-                    <Loader2 className="h-4 w-4 animate-spin" />
-                    <span>
-                      {isLoadingSettings
-                        ? "Loading your settings..."
-                        : "Saving..."}
-                    </span>
-                  </div>
-                )}
+              {/* Saving/Loading indicator - fixed-height slot to avoid layout shift */}
+              <div className="h-6 mb-2 flex items-center">
+                {(isSavingName || isSavingVisualStyle || isLoadingSettings) &&
+                  isLoggedIn && (
+                    <div className="flex items-center gap-2 text-sm text-muted-foreground">
+                      <Loader2 className="h-4 w-4 animate-spin" />
+                      <span>
+                        {isLoadingSettings
+                          ? "Loading your settings..."
+                          : "Saving..."}
+                      </span>
+                    </div>
+                  )}
+              </div>
 
               <div
                 className={`space-y-6 ${isLoadingSettings && isLoggedIn ? "opacity-50 pointer-events-none" : ""}`}
