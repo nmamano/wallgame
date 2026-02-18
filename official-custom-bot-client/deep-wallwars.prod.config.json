@@ -3,7 +3,7 @@
   "bots": [
     {
       "botId": "dw-classic-8x8",
-      "name": "Deep Wallwars Classic",
+      "name": "Hard Bot",
       "username": null,
       "appearance": {
         "color": "red",
@@ -21,7 +21,7 @@
     },
     {
       "botId": "dw-standard-8x8",
-      "name": "Deep Wallwars Standard",
+      "name": "Medium Bot",
       "username": null,
       "appearance": {
         "color": "blue",
@@ -39,7 +39,7 @@
     },
     {
       "botId": "dw-universal",
-      "name": "Deep Wallwars Universal",
+      "name": "Easy Bot",
       "username": null,
       "appearance": {
         "color": "gray",
