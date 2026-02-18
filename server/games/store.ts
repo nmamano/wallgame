@@ -39,6 +39,7 @@ import {
   Outcome,
   type RatingState,
 } from "./rating-system";
+import { getClientForBot } from "./custom-bot-store";
 
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
@@ -610,7 +611,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
         role: player.role,
         playerId: player.playerId,
         displayName: player.displayName,
-        connected: player.connected,
+        connected: resolveSeatConnected(player),
         ready: player.ready,
         configType: resolveSeatConfigType(player),
         appearance: player.appearance,
@@ -647,6 +648,12 @@ export type SessionAccessResolution =
 const resolveSeatConfigType = (
   player: SessionPlayer,
 ): GamePlayerSummary["configType"] => (player.botCompositeId ? "bot" : "human");
+
+/** For bots, check if the bot client is still connected; for humans, use the session field. */
+const resolveSeatConnected = (player: SessionPlayer): boolean =>
+  player.botCompositeId
+    ? !!getClientForBot(player.botCompositeId)
+    : player.connected;
 
 export const resolveGameAccess = (args: {
   id: string;
@@ -735,7 +742,7 @@ export const listSessions = (): GameSnapshot[] => {
         role: player.role,
         playerId: player.playerId,
         displayName: player.displayName,
-        connected: player.connected,
+        connected: resolveSeatConnected(player),
         ready: player.ready,
         configType: resolveSeatConfigType(player),
         appearance: player.appearance,
@@ -767,7 +774,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
           role: player.role,
           playerId: player.playerId,
           displayName: player.displayName,
-          connected: player.connected,
+          connected: resolveSeatConnected(player),
           ready: player.ready,
           configType: resolveSeatConfigType(player),
           appearance: player.appearance,
