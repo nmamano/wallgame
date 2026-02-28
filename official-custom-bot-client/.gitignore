@@ -8,6 +8,9 @@ node_modules/
 # Bun
 bun.lockb
 
+# Secrets
+.env.*
+
 # IDE
 .vscode/
 .idea/

@@ -68,7 +68,7 @@ interface ResolvedBotClientOptions {
 
 // Reconnection configuration
 const RECONNECT_BASE_DELAY_MS = 1000;
-const RECONNECT_MAX_DELAY_MS = 60000;
+const RECONNECT_MAX_DELAY_MS = 300000; // 5 minutes
 const RECONNECT_JITTER_MAX_MS = 2000;
 
 // V3 BGS client response type
@@ -248,30 +248,16 @@ export class BotClient {
 
           this.ws.onerror = (event) => {
             logger.error("WebSocket error:", event);
-            if (this.state === "connecting" && this.connectReject) {
-              this.connectReject(new Error("WebSocket connection failed"));
-              this.connectResolve = null;
-              this.connectReject = null;
-            }
           };
 
           this.ws.onclose = (event) => {
             logger.info("WebSocket closed:", event.code, event.reason);
-            const wasConnecting = this.state === "connecting";
-            const wasAttached =
-              this.state === "attached" ||
-              this.state === "waiting" ||
-              this.state === "processing";
             this.state = "disconnected";
 
-            if (wasConnecting && this.connectReject) {
-              this.connectReject(
-                new Error("WebSocket closed during reconnection"),
-              );
-              this.connectResolve = null;
-              this.connectReject = null;
-            } else if (wasAttached && this.shouldReconnect) {
+            if (this.shouldReconnect) {
               this.scheduleReconnect();
+            } else {
+              reject(new Error("WebSocket closed during reconnection"));
             }
           };
         });
@@ -280,7 +266,10 @@ export class BotClient {
         this.reconnectAttempts = 0;
       } catch (error) {
         logger.error("Reconnection failed:", error);
-        // Will schedule another reconnect via onclose handler
+        // Schedule another attempt
+        if (this.shouldReconnect) {
+          this.scheduleReconnect();
+        }
       }
     }, delay);
   }

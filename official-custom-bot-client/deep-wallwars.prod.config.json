@@ -21,7 +21,7 @@
     },
     {
       "botId": "dw-standard-8x8",
-      "name": "Medium Bot",
+      "name": "Normal Bot",
       "username": null,
       "appearance": {
         "color": "blue",
@@ -39,7 +39,7 @@
     },
     {
       "botId": "dw-universal",
-      "name": "Easy Bot",
+      "name": "Experimental Bot",
       "username": null,
       "appearance": {
         "color": "gray",
