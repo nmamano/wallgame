@@ -1,0 +1,8 @@
+[Unit]
+Description=Wallgame bot health check
+After=wallgame-bot.service
+
+[Service]
+Type=oneshot
+EnvironmentFile=/home/ubuntu/repos/wallgame/official-custom-bot-client/.env.prod
+ExecStart=/home/ubuntu/repos/wallgame/scripts/bot-monitor.sh

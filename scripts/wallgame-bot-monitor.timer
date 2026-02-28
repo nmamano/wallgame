@@ -1,0 +1,9 @@
+[Unit]
+Description=Check wallgame bot health every 5 minutes
+
+[Timer]
+OnBootSec=1min
+OnUnitActiveSec=5min
+
+[Install]
+WantedBy=timers.target
