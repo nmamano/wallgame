@@ -46,7 +46,7 @@ fi
 
 # Check heartbeat file staleness (catches zombie WebSocket connections)
 # Skip this check if service started recently (allow time for first pong)
-HEARTBEAT_FILE="/tmp/wallgame-bot-heartbeat"
+HEARTBEAT_FILE="/home/ubuntu/repos/wallgame/.wallgame-bot-heartbeat"
 HEARTBEAT_MAX_AGE=120 # 2 minutes
 STARTUP_GRACE_SECONDS=90
 

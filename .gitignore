@@ -5,6 +5,7 @@ dist/
 
 .env
 .env.prod
+.wallgame-bot-heartbeat
 
 ignore/
 **/.tanstack/tmp/
