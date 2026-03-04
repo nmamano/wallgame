@@ -1060,6 +1060,16 @@ const handleMessage = (
   socket: BotSocket,
   raw: string | ArrayBuffer,
 ): void => {
+  // Handle keepalive ping before typed parse (ping is outside the typed protocol)
+  if (typeof raw === "string" && raw === '{"type":"ping"}') {
+    try {
+      ctx.send('{"type":"pong"}');
+    } catch {
+      // Ignore send errors
+    }
+    return;
+  }
+
   const message = parseMessage(raw);
 
   if (!message) {

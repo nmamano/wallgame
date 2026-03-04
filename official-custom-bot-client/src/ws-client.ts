@@ -71,6 +71,10 @@ const RECONNECT_BASE_DELAY_MS = 1000;
 const RECONNECT_MAX_DELAY_MS = 300000; // 5 minutes
 const RECONNECT_JITTER_MAX_MS = 2000;
 
+// Keepalive ping interval
+const PING_INTERVAL_MS = 30_000;
+const HEARTBEAT_FILE = "/tmp/wallgame-bot-heartbeat";
+
 // V3 BGS client response type
 type BgsClientResponse =
   | GameSessionStartedMessage
@@ -95,6 +99,10 @@ export class BotClient {
   // Reconnection state
   private reconnectAttempts: number = 0;
   private shouldReconnect: boolean = true;
+
+  // Keepalive ping state
+  private pingInterval: ReturnType<typeof setInterval> | null = null;
+  private pongReceived: boolean = true;
 
   // Connection promise callbacks (for resolving on attached/rejected)
   private connectResolve: (() => void) | null = null;
@@ -151,6 +159,7 @@ export class BotClient {
       };
 
       this.ws.onclose = (event) => {
+        this.stopPingLoop();
         logger.info("WebSocket closed:", event.code, event.reason);
         const wasConnecting = this.state === "connecting";
         const wasAttached =
@@ -251,6 +260,7 @@ export class BotClient {
           };
 
           this.ws.onclose = (event) => {
+            this.stopPingLoop();
             logger.info("WebSocket closed:", event.code, event.reason);
             this.state = "disconnected";
 
@@ -341,6 +351,17 @@ export class BotClient {
   private handleMessage(data: string): void {
     logger.debug("Received:", data);
 
+    // Handle keepalive pong before typed parse (pong is outside the typed protocol).
+    // Exact string match — must stay in sync with server's JSON.stringify({type:"pong"}).
+    if (data === '{"type":"pong"}') {
+      this.pongReceived = true;
+      logger.debug("Received pong");
+      Bun.write(HEARTBEAT_FILE, "").catch((e) =>
+        logger.warn("Heartbeat write failed:", e),
+      );
+      return;
+    }
+
     let message: CustomBotServerMessage;
     try {
       message = JSON.parse(data);
@@ -397,6 +418,9 @@ export class BotClient {
     this.limits = message.limits;
 
     logger.debug("Limits:", message.limits);
+
+    // Start keepalive ping loop
+    this.startPingLoop();
 
     // Resolve the connect() promise
     if (this.connectResolve) {
@@ -625,10 +649,51 @@ export class BotClient {
   }
 
   /**
+   * Start the keepalive ping loop.
+   * Sends {"type":"ping"} every PING_INTERVAL_MS. If no pong was received
+   * since the last ping, the connection is considered dead and closed
+   * to trigger reconnect.
+   */
+  private startPingLoop(): void {
+    this.stopPingLoop();
+    this.pongReceived = true;
+
+    this.pingInterval = setInterval(() => {
+      if (!this.pongReceived) {
+        logger.warn("No pong received — closing dead connection");
+        this.ws?.close();
+        return;
+      }
+
+      if (this.ws && this.ws.readyState === WebSocket.OPEN) {
+        try {
+          this.ws.send(JSON.stringify({ type: "ping" }));
+          this.pongReceived = false;
+          logger.debug("Sent ping");
+        } catch (error) {
+          logger.error("Failed to send ping:", error);
+          this.ws?.close();
+        }
+      }
+    }, PING_INTERVAL_MS);
+  }
+
+  /**
+   * Stop the keepalive ping loop.
+   */
+  private stopPingLoop(): void {
+    if (this.pingInterval) {
+      clearInterval(this.pingInterval);
+      this.pingInterval = null;
+    }
+  }
+
+  /**
    * Close the connection and stop reconnecting
    */
   close(): void {
     this.shouldReconnect = false;
+    this.stopPingLoop();
 
     // V3: Kill all engine processes
     for (const [botId, engine] of this.engines) {

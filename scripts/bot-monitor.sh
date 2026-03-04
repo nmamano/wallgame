@@ -44,6 +44,39 @@ if [ -n "$last_error" ] && [ -z "$last_attached" ]; then
     exit 1
 fi
 
+# Check heartbeat file staleness (catches zombie WebSocket connections)
+# Skip this check if service started recently (allow time for first pong)
+HEARTBEAT_FILE="/tmp/wallgame-bot-heartbeat"
+HEARTBEAT_MAX_AGE=120 # 2 minutes
+STARTUP_GRACE_SECONDS=90
+
+service_start_epoch=$(date -d "$(systemctl show "$SERVICE" --property=ActiveEnterTimestamp --value 2>/dev/null)" +%s 2>/dev/null)
+now_epoch=$(date +%s)
+if [ -n "$service_start_epoch" ] && [ "$service_start_epoch" -gt 0 ] 2>/dev/null; then
+    service_uptime_seconds=$(( now_epoch - service_start_epoch ))
+    if [ "$service_uptime_seconds" -lt "$STARTUP_GRACE_SECONDS" ]; then
+        # Service just started — skip heartbeat check
+        :
+    else
+        if [ ! -f "$HEARTBEAT_FILE" ]; then
+            if [ ! -f "$STATE_FILE" ]; then
+                alert "🟡 **Wallgame bot has no heartbeat.** Service is running but no pong received. May be a zombie connection."
+                touch "$STATE_FILE"
+            fi
+            exit 1
+        fi
+
+        heartbeat_age=$(( $(date +%s) - $(stat -c %Y "$HEARTBEAT_FILE") ))
+        if [ "$heartbeat_age" -gt "$HEARTBEAT_MAX_AGE" ]; then
+            if [ ! -f "$STATE_FILE" ]; then
+                alert "🟡 **Wallgame bot heartbeat stale** (${heartbeat_age}s old). WebSocket may be in zombie state."
+                touch "$STATE_FILE"
+            fi
+            exit 1
+        fi
+    fi
+fi
+
 # All good - clear alert state if previously alerted
 if [ -f "$STATE_FILE" ]; then
     rm "$STATE_FILE"
