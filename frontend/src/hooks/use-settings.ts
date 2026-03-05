@@ -396,6 +396,8 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updateBoardTheme,
     onMutate: async (newBoardTheme) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
+      const previousData =
+        queryClient.getQueryData<SettingsResponse>(SETTINGS_QUERY_KEY);
       queryClient.setQueryData<SettingsResponse>(
         SETTINGS_QUERY_KEY,
         (prev: SettingsResponse | undefined) => {
@@ -403,12 +405,15 @@ function useSettingsInternal(
           return { ...prev, boardTheme: newBoardTheme };
         },
       );
+      return { previousData };
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: SETTINGS_QUERY_KEY,
-        refetchType: "none",
-      });
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousData);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
     },
   });
 
@@ -416,6 +421,8 @@ function useSettingsInternal(
     mutationFn: settingsMutations.updatePawnColor,
     onMutate: async (newPawnColor) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
+      const previousData =
+        queryClient.getQueryData<SettingsResponse>(SETTINGS_QUERY_KEY);
       queryClient.setQueryData<SettingsResponse>(
         SETTINGS_QUERY_KEY,
         (prev: SettingsResponse | undefined) => {
@@ -423,12 +430,15 @@ function useSettingsInternal(
           return { ...prev, pawnColor: newPawnColor };
         },
       );
+      return { previousData };
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: SETTINGS_QUERY_KEY,
-        refetchType: "none",
-      });
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousData);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
     },
   });
 
@@ -442,6 +452,8 @@ function useSettingsInternal(
     }) => settingsMutations.updatePawn(pawnType, pawnShape),
     onMutate: async ({ pawnType, pawnShape }) => {
       await queryClient.cancelQueries({ queryKey: SETTINGS_QUERY_KEY });
+      const previousData =
+        queryClient.getQueryData<SettingsResponse>(SETTINGS_QUERY_KEY);
       queryClient.setQueryData<SettingsResponse>(
         SETTINGS_QUERY_KEY,
         (prev: SettingsResponse | undefined) => {
@@ -466,12 +478,15 @@ function useSettingsInternal(
           return { ...prev, pawnSettings };
         },
       );
+      return { previousData };
     },
-    onSuccess: () => {
-      void queryClient.invalidateQueries({
-        queryKey: SETTINGS_QUERY_KEY,
-        refetchType: "none",
-      });
+    onError: (_err, _variables, context) => {
+      if (context?.previousData) {
+        queryClient.setQueryData(SETTINGS_QUERY_KEY, context.previousData);
+      }
+    },
+    onSettled: () => {
+      void queryClient.invalidateQueries({ queryKey: SETTINGS_QUERY_KEY });
     },
   });
 
