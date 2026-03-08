@@ -19,7 +19,7 @@ import { z } from "zod";
 import { BotClient } from "./ws-client";
 import { setLogLevel, logger, type LogLevel } from "./logger";
 import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
-import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
+import { botConfigSchema, botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-schema";
 
 const VERSION = "3.0.0";
 
@@ -114,7 +114,7 @@ const configFileSchema = z
   .object({
     server: z.string().optional(),
     bots: z
-      .array(botConfigSchema.omit({ officialToken: true }).strict())
+      .array(botConfigBaseSchema.omit({ officialToken: true }).strict())
       .min(1),
     engineCommands: z.record(z.string(), z.string().trim().min(1)),
   })

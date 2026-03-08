@@ -82,16 +82,16 @@ const variantsSchema = z
     },
   );
 
-export const botConfigSchema = z
-  .object({
-    botId: z.string().trim().min(1),
-    name: z.string().trim().min(1),
-    officialToken: z.string().trim().min(1).optional(),
-    username: z.string().trim().min(1).nullable(),
-    appearance: botAppearanceSchema.optional(),
-    variants: variantsSchema,
-  })
-  .superRefine((bot, ctx) => {
+export const botConfigBaseSchema = z.object({
+  botId: z.string().trim().min(1),
+  name: z.string().trim().min(1),
+  officialToken: z.string().trim().min(1).optional(),
+  username: z.string().trim().min(1).nullable(),
+  appearance: botAppearanceSchema.optional(),
+  variants: variantsSchema,
+});
+
+export const botConfigSchema = botConfigBaseSchema.superRefine((bot, ctx) => {
     const variantsWithBoardSize = new Set<Variant>(["standard", "classic"]);
     for (const [variant, config] of Object.entries(bot.variants)) {
       if (!config) continue;

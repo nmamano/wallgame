@@ -73,7 +73,7 @@ const RECONNECT_JITTER_MAX_MS = 2000;
 
 // Keepalive ping interval
 const PING_INTERVAL_MS = 30_000;
-const HEARTBEAT_FILE = "/home/ubuntu/repos/wallgame/.wallgame-bot-heartbeat";
+const HEARTBEAT_FILE = "/home/yu/nil/wallgame/.wallgame-bot-heartbeat";
 
 // V3 BGS client response type
 type BgsClientResponse =
