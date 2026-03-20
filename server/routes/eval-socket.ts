@@ -179,6 +179,7 @@ const initializeBgsHistory = async (
   gameId: string,
   config: BgsConfig,
   moves: { notation: string }[],
+  gameResult?: { winner?: number; reason: string },
 ): Promise<
   | { success: true; history: EvalHistoryEntry[] }
   | { success: false; error: string }
@@ -239,24 +240,49 @@ const initializeBgsHistory = async (
 
       // Get evaluation for the new position
       const newPly = expectedPly + 1;
-      const response = await requestEvaluation(botCompositeId, bgsId, newPly);
+      const isLastMove = i === moves.length - 1;
 
-      // Validate ply matches expected
-      if (response.ply !== newPly) {
-        console.warn("[eval-ws] ply mismatch during replay", {
+      let entry: EvalHistoryEntry;
+      try {
+        const response = await requestEvaluation(
+          botCompositeId,
           bgsId,
-          expectedPly: newPly,
-          receivedPly: response.ply,
-          moveIndex: i,
-        });
-        // Continue anyway - the response is still valid
+          newPly,
+        );
+
+        // Validate ply matches expected
+        if (response.ply !== newPly) {
+          console.warn("[eval-ws] ply mismatch during replay", {
+            bgsId,
+            expectedPly: newPly,
+            receivedPly: response.ply,
+            moveIndex: i,
+          });
+        }
+
+        entry = {
+          ply: response.ply,
+          evaluation: response.evaluation,
+          bestMove: response.bestMove,
+        };
+      } catch (evalError) {
+        // Only tolerate eval failure on the last move of a finished game —
+        // the board may be terminal (no legal moves). For mid-game failures,
+        // rethrow so the outer catch aborts initialization.
+        if (!isLastMove || !gameResult) {
+          throw evalError;
+        }
+
+        // Synthesize terminal eval from game result:
+        //   winner=1 → P1 won → +1, winner=2 → P2 won → -1, no winner → draw → 0
+        const terminalEval = gameResult.winner === 1
+          ? 1.0
+          : gameResult.winner === 2
+            ? -1.0
+            : 0.0;
+        entry = { ply: newPly, evaluation: terminalEval, bestMove: "" };
       }
 
-      const entry: EvalHistoryEntry = {
-        ply: response.ply,
-        evaluation: response.evaluation,
-        bestMove: response.bestMove,
-      };
       history.push(entry);
       // Note: addHistoryEntry is NOT called here because handleEvaluateResponse
       // in custom-bot-socket.ts already adds it when the bot responds successfully.
@@ -345,13 +371,14 @@ const handleDatabaseGameHandshake = async (
     initialState: config.variantConfig,
   };
 
-  // Initialize BGS by replaying all moves
+  // Initialize BGS by replaying all moves (database games are always finished)
   const initResult = await initializeBgsHistory(
     botCompositeId,
     bgsId,
     gameId,
     bgsConfig,
     moves,
+    replayData.state.result,
   );
 
   if (!initResult.success) {
@@ -602,6 +629,7 @@ const handleHandshake = async (
     gameId,
     config,
     moves,
+    isReplay ? session.gameState.result : undefined,
   );
 
   if (!initResult.success) {
