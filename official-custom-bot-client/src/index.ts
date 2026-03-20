@@ -23,9 +23,13 @@ import { botConfigSchema, botConfigBaseSchema } from "../../shared/contracts/cus
 
 const VERSION = "3.0.0";
 
+interface ConfigBot extends Omit<BotConfig, "officialToken"> {
+  official?: boolean;
+}
+
 interface ConfigFile {
   server?: string;
-  bots: BotConfig[];
+  bots: ConfigBot[];
   engineCommands: Record<string, string>;
 }
 
@@ -53,6 +57,7 @@ CONFIG FILE FORMAT:
       {
         "botId": "bot-1",
         "name": "My First Bot",
+        "official": false,
         "username": null,
         "appearance": {
           "color": "#ff6b6b",
@@ -110,12 +115,17 @@ function printVersion(): void {
   console.log(`wallgame-bot-client v${VERSION}`);
 }
 
+const configBotSchema = botConfigBaseSchema
+  .omit({ officialToken: true })
+  .extend({
+    official: z.boolean().optional(),
+  })
+  .strict();
+
 const configFileSchema = z
   .object({
     server: z.string().optional(),
-    bots: z
-      .array(botConfigBaseSchema.omit({ officialToken: true }).strict())
-      .min(1),
+    bots: z.array(configBotSchema).min(1),
     engineCommands: z.record(z.string(), z.string().trim().min(1)),
   })
   .strict();
@@ -194,9 +204,9 @@ async function main(): Promise<void> {
 
     engineCommands = new Map(Object.entries(config.engineCommands));
 
-    bots = config.bots.map((bot) => ({
+    bots = config.bots.map(({ official, ...bot }) => ({
       ...bot,
-      officialToken,
+      officialToken: official !== false ? officialToken : undefined,
     }));
   } catch (error) {
     console.error(`Error loading config file: ${error}`);
