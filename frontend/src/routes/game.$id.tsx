@@ -16,6 +16,7 @@ import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useEvalBar } from "@/hooks/use-eval-bar";
 import { useMobileViewport } from "@/hooks/use-mobile-viewport";
+import { parseBestMoveOverlay } from "@/lib/best-move-overlay";
 import type { PlayerId } from "../../../shared/domain/game-types";
 
 export const Route = createFileRoute("/game/$id")({
@@ -58,9 +59,8 @@ function GamePageContent() {
 
   // Build eval bar props for BoardPanel
   const evalBarProps = useMemo((): EvalBarProps | undefined => {
-    // Only show eval bar when toggle is on or loading
-    const isVisible = evalBar.toggleState === "on";
-    // Get player colors from board
+    // Show eval bar when displayMode is not "off"
+    const isVisible = evalBar.displayMode !== "off" && evalBar.toggleState === "on";
     const player1Color = board.playerColorsForBoard[1 as PlayerId] ?? "red";
     const player2Color = board.playerColorsForBoard[2 as PlayerId] ?? "blue";
 
@@ -72,11 +72,22 @@ function GamePageContent() {
       player2Color,
     };
   }, [
+    evalBar.displayMode,
     evalBar.toggleState,
     evalBar.evaluation,
     evalBar.isPending,
     board.playerColorsForBoard,
   ]);
+
+  // Build best-move overlay when in "eval-and-best-move" mode
+  const bestMoveOverlay = useMemo(() => {
+    if (evalBar.displayMode !== "eval-and-best-move" || !evalBar.bestMove) return null;
+    const displayState = chat.historyNav.cursor !== null
+      ? board.historyGameState
+      : board.currentGameState;
+    if (!displayState) return null;
+    return parseBestMoveOverlay(evalBar.bestMove, displayState);
+  }, [evalBar.displayMode, evalBar.bestMove, chat.historyNav.cursor, board.historyGameState, board.currentGameState]);
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
@@ -304,8 +315,8 @@ function GamePageContent() {
                     rows={rows}
                     cols={cols}
                     pawns={board.boardPawns}
-                    walls={board.boardWalls}
-                    arrows={board.stagedArrows}
+                    walls={bestMoveOverlay ? [...board.boardWalls, ...bestMoveOverlay.walls] : board.boardWalls}
+                    arrows={bestMoveOverlay ? [...board.stagedArrows, ...bestMoveOverlay.arrows] : board.stagedArrows}
                     className="p-0"
                     maxWidth="max-w-full"
                     playerColors={board.playerColorsForBoard}
@@ -393,13 +404,10 @@ function GamePageContent() {
               unsupportedPlayers={info.unsupportedPlayers}
               placeholderCopy={info.placeholderCopy}
               evalToggleState={evalBar.toggleState}
+              evalDisplayMode={evalBar.displayMode}
               evalToggleDisabled={evalBar.isDisabled}
               evalToggleDisabledReason={evalBar.disabledReason}
-              onEvalToggle={
-                evalBar.toggleState === "on" || evalBar.toggleState === "loading"
-                  ? evalBar.toggleOff
-                  : evalBar.toggleOn
-              }
+              onEvalCycle={evalBar.cycleToggle}
               evalErrorMessage={evalBar.errorMessage}
             />
           </div>
@@ -489,8 +497,8 @@ function GamePageContent() {
                   rows={board.rows}
                   cols={board.cols}
                   boardPawns={board.boardPawns}
-                  boardWalls={board.boardWalls}
-                  stagedArrows={board.stagedArrows}
+                  boardWalls={bestMoveOverlay ? [...board.boardWalls, ...bestMoveOverlay.walls] : board.boardWalls}
+                  stagedArrows={bestMoveOverlay ? [...board.stagedArrows, ...bestMoveOverlay.arrows] : board.stagedArrows}
                   playerColorsForBoard={board.playerColorsForBoard}
                   interactionLocked={board.interactionLocked}
                   lastMove={board.lastMove}
@@ -580,14 +588,10 @@ function GamePageContent() {
                 unsupportedPlayers={info.unsupportedPlayers}
                 placeholderCopy={info.placeholderCopy}
                 evalToggleState={evalBar.toggleState}
+                evalDisplayMode={evalBar.displayMode}
                 evalToggleDisabled={evalBar.isDisabled}
                 evalToggleDisabledReason={evalBar.disabledReason}
-                onEvalToggle={
-                  evalBar.toggleState === "on" ||
-                  evalBar.toggleState === "loading"
-                    ? evalBar.toggleOff
-                    : evalBar.toggleOn
-                }
+                onEvalCycle={evalBar.cycleToggle}
                 evalErrorMessage={evalBar.errorMessage}
               />
             </div>

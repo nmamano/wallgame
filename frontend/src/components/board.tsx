@@ -34,11 +34,11 @@ import {
 import type { Pawn } from "../../../shared/domain/game-types";
 import { pawnId } from "../../../shared/domain/game-utils";
 
-type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
+type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing" | "best-move";
 
 type WallPositionWithState = WallPosition & { state?: WallState };
 
-export type ArrowType = "staged" | "premoved" | "calculated";
+export type ArrowType = "staged" | "premoved" | "calculated" | "best-move";
 
 export type BoardPawn = Pawn & {
   id: string;
@@ -159,6 +159,7 @@ const getWallColor = (
   if (wall.state === "staged") return "#fbbf24";
   if (wall.state === "premoved") return "#60a5fa";
   if (wall.state === "calculated") return "#94a3b8";
+  if (wall.state === "best-move") return "#10b981";
   return "transparent";
 };
 
@@ -589,6 +590,7 @@ export function Board({
   const getArrowColor = (arrow: Arrow): string => {
     if (arrow.type === "staged") return "#fbbf24"; // Yellow/amber
     if (arrow.type === "premoved") return "#60a5fa"; // Light blue
+    if (arrow.type === "best-move") return "#10b981"; // Emerald
     return "#94a3b8"; // Gray for calculated
   };
 
@@ -608,7 +610,7 @@ export function Board({
 
     const arrowColor = getArrowColor(arrow);
     const { strokeWidth, markerSize, markerRef } = arrowVisuals;
-    const opacity = arrow.type === "calculated" ? 0.5 : 0.8;
+    const opacity = arrow.type === "calculated" ? 0.5 : arrow.type === "best-move" ? 0.7 : 0.8;
     const dashArray = arrow.type === "calculated" ? "4,2" : "none";
     const markerId = `arrowhead-${arrow.type}-${index}`;
 
@@ -616,7 +618,7 @@ export function Board({
       <svg
         key={`arrow-${arrow.from[0]}-${arrow.from[1]}-${arrow.to[0]}-${arrow.to[1]}-${index}`}
         className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: arrow.type === "calculated" ? 1 : 5 }}
+        style={{ zIndex: arrow.type === "calculated" ? 1 : arrow.type === "best-move" ? 4 : 5 }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
           gridMetrics.height,
           1,
@@ -1618,7 +1620,9 @@ export function Board({
                     ? 10
                     : pWall.state === "staged" || pWall.state === "premoved"
                       ? 8
-                      : 2,
+                      : pWall.state === "best-move"
+                        ? 4
+                        : 2,
               };
 
               if (isVertical) {
@@ -1635,7 +1639,7 @@ export function Board({
                   width: `${thickness}px`,
                   top: `${rect.top - 1}px`,
                   left: `${rect.right}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : pWall.state === "best-move" ? 0.7 : 1,
                 };
               } else {
                 // Horizontal wall: separates cells vertically (between rows)
@@ -1652,7 +1656,7 @@ export function Board({
                   height: `${thickness}px`,
                   left: `${rect.left - 1}px`,
                   top: `${rect.bottom}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : pWall.state === "best-move" ? 0.7 : 1,
                 };
               }
 

@@ -1,56 +1,51 @@
-import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type { EvalToggleState } from "@/hooks/use-eval-bar";
+import type {
+  EvalToggleState,
+  EvalDisplayMode,
+} from "@/hooks/use-eval-bar";
 
 interface EvalToggleProps {
   state: EvalToggleState;
+  displayMode: EvalDisplayMode;
   isDisabled: boolean;
   disabledReason?: string;
-  onToggle: () => void;
+  onCycle: () => void;
 }
 
 export function EvalToggle({
   state,
+  displayMode,
   isDisabled,
   disabledReason,
-  onToggle,
+  onCycle,
 }: EvalToggleProps) {
-  const isChecked = state === "on" || state === "loading";
   const isLoading = state === "loading";
+  const isActive = displayMode !== "off";
+
+  const label =
+    isLoading
+      ? "Evaluating..."
+      : displayMode === "eval-and-best-move"
+        ? "Eval + Best"
+        : "Eval";
 
   return (
-    <div
+    <button
+      type="button"
       className={cn(
-        "flex items-center gap-1.5",
+        "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors cursor-pointer",
         isDisabled && "opacity-50 cursor-not-allowed",
+        isActive && !isLoading
+          ? "bg-primary/15 text-primary"
+          : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
       )}
       title={isDisabled ? disabledReason : undefined}
+      disabled={isDisabled || isLoading}
+      onClick={onCycle}
     >
-      <Switch
-        checked={isChecked}
-        disabled={isDisabled || isLoading}
-        onCheckedChange={() => {
-          if (isChecked) {
-            // Already on or loading, turn off
-            onToggle();
-          } else {
-            // Off, turn on
-            onToggle();
-          }
-        }}
-        className={cn(isLoading && "opacity-70")}
-      />
-      <div className="flex items-center gap-1 text-xs text-muted-foreground">
-        {isLoading ? (
-          <>
-            <Loader2 className="w-3 h-3 animate-spin" />
-            <span>Evaluating...</span>
-          </>
-        ) : (
-          <span>Eval</span>
-        )}
-      </div>
-    </div>
+      {isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
+      <span>{label}</span>
+    </button>
   );
 }

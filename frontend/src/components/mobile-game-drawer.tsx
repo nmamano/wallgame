@@ -8,7 +8,7 @@ import {
 import { GameChatPanel, type ChatMessage } from "@/components/game-chat-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
-import type { EvalToggleState } from "@/hooks/use-eval-bar";
+import type { EvalToggleState, EvalDisplayMode } from "@/hooks/use-eval-bar";
 import type { PlayerType } from "@/lib/gameViewModel";
 
 type DrawerTab = "chat" | "settings";
@@ -42,9 +42,10 @@ interface MobileGameDrawerProps {
   unsupportedPlayers: PlayerType[];
   placeholderCopy: Partial<Record<PlayerType, string>>;
   evalToggleState: EvalToggleState;
+  evalDisplayMode: EvalDisplayMode;
   evalToggleDisabled: boolean;
   evalToggleDisabledReason?: string;
-  onEvalToggle: () => void;
+  onEvalCycle: () => void;
   evalErrorMessage?: string | null;
 }
 
@@ -122,9 +123,10 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
                   unsupportedPlayers={props.unsupportedPlayers}
                   placeholderCopy={props.placeholderCopy}
                   evalToggleState={props.evalToggleState}
+                  evalDisplayMode={props.evalDisplayMode}
                   evalToggleDisabled={props.evalToggleDisabled}
                   evalToggleDisabledReason={props.evalToggleDisabledReason}
-                  onEvalToggle={props.onEvalToggle}
+                  onEvalCycle={props.onEvalCycle}
                   evalErrorMessage={props.evalErrorMessage}
                 />
               </div>

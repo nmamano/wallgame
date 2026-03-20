@@ -2068,7 +2068,7 @@ export function useGamePageController(gameId: string) {
   }, [premovedActions, actionablePlayerId, activeLocalPlayerId]);
 
   type WallPositionWithState = WallPosition & {
-    state?: "placed" | "staged" | "premoved" | "calculated" | "missing";
+    state?: "placed" | "staged" | "premoved" | "calculated" | "missing" | "best-move";
   };
 
   const boardWalls = useMemo<WallPositionWithState[]>(() => {

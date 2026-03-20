@@ -8,6 +8,7 @@ import type { GameConfiguration } from "../../../shared/domain/game-types";
 // ============================================================================
 
 export type EvalToggleState = "off" | "loading" | "on" | "error";
+export type EvalDisplayMode = "off" | "eval-only" | "eval-and-best-move";
 
 export interface UseEvalBarOptions {
   gameId: string;
@@ -30,19 +31,20 @@ export interface UseEvalBarOptions {
 export interface EvalBarState {
   // Toggle state
   toggleState: EvalToggleState;
+  displayMode: EvalDisplayMode;
   isDisabled: boolean;
   disabledReason?: string;
 
   // Evaluation state
   evaluation: number | null; // -1 to +1
+  bestMove: string | null;
   isPending: boolean;
 
   // Error display
   errorMessage: string | null;
 
   // Actions
-  toggleOn: () => void;
-  toggleOff: () => void;
+  cycleToggle: () => void;
 }
 
 // ============================================================================
@@ -73,6 +75,7 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
 
   // State
   const [toggleState, setToggleState] = useState<EvalToggleState>("off");
+  const [displayMode, setDisplayMode] = useState<EvalDisplayMode>("off");
   const [evalHistory, setEvalHistory] = useState<EvalHistoryEntry[]>([]);
   const [isPending, setIsPending] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
@@ -96,11 +99,14 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
 
   // V3: Look up evaluation from history by ply
   // This is instant - no network request needed when scrubbing through history
-  const evaluation =
+  const currentEntry =
     currentPly !== null
-      ? (evalHistory.find((entry) => entry.ply === currentPly)?.evaluation ??
-        null)
+      ? (evalHistory.find((entry) => entry.ply === currentPly) ?? null)
       : null;
+  const evaluation = currentEntry?.evaluation ?? null;
+  // Empty bestMove string means no best move available — normalize to null
+  const rawBestMove = currentEntry?.bestMove ?? null;
+  const bestMove = rawBestMove === "" ? null : rawBestMove;
 
   // Connect to eval service
   const connect = useCallback(() => {
@@ -127,6 +133,7 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
         },
         onHandshakeRejected: (_code, message) => {
           setToggleState("error");
+          setDisplayMode("off");
           setErrorMessage(message);
           setIsPending(false);
           evalClientRef.current = null;
@@ -192,12 +199,14 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
         },
         onError: (message) => {
           setToggleState("error");
+          setDisplayMode("off");
           setErrorMessage(message);
           setIsPending(false);
           evalClientRef.current = null;
         },
         onClose: () => {
           setToggleState("off");
+          setDisplayMode("off");
           evalClientRef.current = null;
         },
       },
@@ -213,6 +222,7 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     evalClientRef.current?.close();
     evalClientRef.current = null;
     setToggleState("off");
+    setDisplayMode("off");
     setEvalHistory([]);
     setIsPending(false);
     setErrorMessage(null);
@@ -225,24 +235,32 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     };
   }, [disconnect]);
 
-  // Actions
-  const toggleOn = useCallback(() => {
+  // Actions: 3-state cycle: off → eval-only → eval-and-best-move → off
+  const cycleToggle = useCallback(() => {
     if (isDisabled || toggleState === "loading") return;
-    connect();
-  }, [isDisabled, toggleState, connect]);
 
-  const toggleOff = useCallback(() => {
-    disconnect();
-  }, [disconnect]);
+    if (displayMode === "off") {
+      // off → eval-only: connect WebSocket and start showing eval bar
+      setDisplayMode("eval-only");
+      connect();
+    } else if (displayMode === "eval-only") {
+      // eval-only → eval-and-best-move: just flip the mode, no reconnect
+      setDisplayMode("eval-and-best-move");
+    } else {
+      // eval-and-best-move → off: disconnect and reset
+      disconnect();
+    }
+  }, [isDisabled, toggleState, displayMode, connect, disconnect]);
 
   return {
     toggleState,
+    displayMode,
     isDisabled,
     disabledReason,
     evaluation,
+    bestMove,
     isPending,
     errorMessage,
-    toggleOn,
-    toggleOff,
+    cycleToggle,
   };
 }

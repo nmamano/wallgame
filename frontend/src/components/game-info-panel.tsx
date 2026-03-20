@@ -16,7 +16,7 @@ import {
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import type { PlayerType } from "@/lib/gameViewModel";
 import { EvalToggle } from "@/components/eval-toggle";
-import type { EvalToggleState } from "@/hooks/use-eval-bar";
+import type { EvalToggleState, EvalDisplayMode } from "@/hooks/use-eval-bar";
 import { useTheme } from "@/components/theme-provider";
 
 interface GameInfoPanelProps {
@@ -33,9 +33,10 @@ interface GameInfoPanelProps {
   placeholderCopy: Partial<Record<PlayerType, string>>;
   // Eval bar props
   evalToggleState: EvalToggleState;
+  evalDisplayMode: EvalDisplayMode;
   evalToggleDisabled: boolean;
   evalToggleDisabledReason?: string;
-  onEvalToggle: () => void;
+  onEvalCycle: () => void;
   evalErrorMessage?: string | null;
 }
 
@@ -52,9 +53,10 @@ export function GameInfoPanel({
   unsupportedPlayers,
   placeholderCopy,
   evalToggleState,
+  evalDisplayMode,
   evalToggleDisabled,
   evalToggleDisabledReason,
-  onEvalToggle,
+  onEvalCycle,
   evalErrorMessage,
 }: GameInfoPanelProps) {
   const { theme, setTheme } = useTheme();
@@ -92,9 +94,10 @@ export function GameInfoPanel({
           <div className="flex items-center gap-2">
             <EvalToggle
               state={evalToggleState}
+              displayMode={evalDisplayMode}
               isDisabled={evalToggleDisabled}
               disabledReason={evalToggleDisabledReason}
-              onToggle={onEvalToggle}
+              onCycle={onEvalCycle}
             />
             {evalErrorMessage && (
               <span
