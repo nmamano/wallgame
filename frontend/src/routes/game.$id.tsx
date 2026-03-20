@@ -85,7 +85,7 @@ function GamePageContent() {
     const displayState = chat.historyNav.cursor !== null
       ? board.historyGameState
       : board.currentGameState;
-    if (!displayState) return null;
+    if (displayState?.status !== "playing") return null;
     return parseBestMoveOverlay(evalBar.bestMove, displayState);
   }, [evalBar.displayMode, evalBar.bestMove, chat.historyNav.cursor, board.historyGameState, board.currentGameState]);
 
