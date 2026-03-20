@@ -159,7 +159,7 @@ const getWallColor = (
   if (wall.state === "staged") return "#fbbf24";
   if (wall.state === "premoved") return "#60a5fa";
   if (wall.state === "calculated") return "#94a3b8";
-  if (wall.state === "best-move") return "#10b981";
+  if (wall.state === "best-move") return "#34d399";
   return "transparent";
 };
 
@@ -590,7 +590,7 @@ export function Board({
   const getArrowColor = (arrow: Arrow): string => {
     if (arrow.type === "staged") return "#fbbf24"; // Yellow/amber
     if (arrow.type === "premoved") return "#60a5fa"; // Light blue
-    if (arrow.type === "best-move") return "#10b981"; // Emerald
+    if (arrow.type === "best-move") return "#34d399"; // Emerald-400 (lighter to match wall rendering)
     return "#94a3b8"; // Gray for calculated
   };
 
@@ -610,7 +610,7 @@ export function Board({
 
     const arrowColor = getArrowColor(arrow);
     const { strokeWidth, markerSize, markerRef } = arrowVisuals;
-    const opacity = arrow.type === "calculated" ? 0.5 : arrow.type === "best-move" ? 0.7 : 0.8;
+    const opacity = arrow.type === "calculated" ? 0.5 : 0.8;
     const dashArray = arrow.type === "calculated" ? "4,2" : "none";
     const markerId = `arrowhead-${arrow.type}-${index}`;
 
@@ -1639,7 +1639,7 @@ export function Board({
                   width: `${thickness}px`,
                   top: `${rect.top - 1}px`,
                   left: `${rect.right}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : pWall.state === "best-move" ? 0.7 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               } else {
                 // Horizontal wall: separates cells vertically (between rows)
@@ -1656,7 +1656,7 @@ export function Board({
                   height: `${thickness}px`,
                   left: `${rect.left - 1}px`,
                   top: `${rect.bottom}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : pWall.state === "best-move" ? 0.7 : 1,
+                  opacity: pWall.state === "calculated" ? 0.5 : 1,
                 };
               }
 

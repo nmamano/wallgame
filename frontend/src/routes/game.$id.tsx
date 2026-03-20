@@ -407,7 +407,8 @@ function GamePageContent() {
               evalDisplayMode={evalBar.displayMode}
               evalToggleDisabled={evalBar.isDisabled}
               evalToggleDisabledReason={evalBar.disabledReason}
-              onEvalCycle={evalBar.cycleToggle}
+              onEvalToggle={evalBar.toggleEval}
+              onBestMoveToggle={evalBar.toggleBestMove}
               evalErrorMessage={evalBar.errorMessage}
             />
           </div>
@@ -591,7 +592,8 @@ function GamePageContent() {
                 evalDisplayMode={evalBar.displayMode}
                 evalToggleDisabled={evalBar.isDisabled}
                 evalToggleDisabledReason={evalBar.disabledReason}
-                onEvalCycle={evalBar.cycleToggle}
+                onEvalToggle={evalBar.toggleEval}
+                onBestMoveToggle={evalBar.toggleBestMove}
                 evalErrorMessage={evalBar.errorMessage}
               />
             </div>

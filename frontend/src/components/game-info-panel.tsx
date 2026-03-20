@@ -36,7 +36,8 @@ interface GameInfoPanelProps {
   evalDisplayMode: EvalDisplayMode;
   evalToggleDisabled: boolean;
   evalToggleDisabledReason?: string;
-  onEvalCycle: () => void;
+  onEvalToggle: () => void;
+  onBestMoveToggle: () => void;
   evalErrorMessage?: string | null;
 }
 
@@ -56,7 +57,8 @@ export function GameInfoPanel({
   evalDisplayMode,
   evalToggleDisabled,
   evalToggleDisabledReason,
-  onEvalCycle,
+  onEvalToggle,
+  onBestMoveToggle,
   evalErrorMessage,
 }: GameInfoPanelProps) {
   const { theme, setTheme } = useTheme();
@@ -97,7 +99,8 @@ export function GameInfoPanel({
               displayMode={evalDisplayMode}
               isDisabled={evalToggleDisabled}
               disabledReason={evalToggleDisabledReason}
-              onCycle={onEvalCycle}
+              onEvalToggle={onEvalToggle}
+              onBestMoveToggle={onBestMoveToggle}
             />
             {evalErrorMessage && (
               <span

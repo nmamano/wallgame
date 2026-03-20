@@ -44,7 +44,8 @@ export interface EvalBarState {
   errorMessage: string | null;
 
   // Actions
-  cycleToggle: () => void;
+  toggleEval: () => void;
+  toggleBestMove: () => void;
 }
 
 // ============================================================================
@@ -235,22 +236,26 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     };
   }, [disconnect]);
 
-  // Actions: 3-state cycle: off → eval-only → eval-and-best-move → off
-  const cycleToggle = useCallback(() => {
+  // Toggle eval bar on/off (controls WebSocket connection)
+  const toggleEval = useCallback(() => {
     if (isDisabled || toggleState === "loading") return;
 
     if (displayMode === "off") {
-      // off → eval-only: connect WebSocket and start showing eval bar
       setDisplayMode("eval-only");
       connect();
-    } else if (displayMode === "eval-only") {
-      // eval-only → eval-and-best-move: just flip the mode, no reconnect
-      setDisplayMode("eval-and-best-move");
     } else {
-      // eval-and-best-move → off: disconnect and reset
       disconnect();
     }
   }, [isDisabled, toggleState, displayMode, connect, disconnect]);
+
+  // Toggle best-move overlay (no WebSocket impact, just flips display mode)
+  const toggleBestMove = useCallback(() => {
+    if (displayMode === "eval-only") {
+      setDisplayMode("eval-and-best-move");
+    } else if (displayMode === "eval-and-best-move") {
+      setDisplayMode("eval-only");
+    }
+  }, [displayMode]);
 
   return {
     toggleState,
@@ -261,6 +266,7 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
     bestMove,
     isPending,
     errorMessage,
-    cycleToggle,
+    toggleEval,
+    toggleBestMove,
   };
 }

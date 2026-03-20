@@ -1,3 +1,4 @@
+import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
 import type {
@@ -10,7 +11,8 @@ interface EvalToggleProps {
   displayMode: EvalDisplayMode;
   isDisabled: boolean;
   disabledReason?: string;
-  onCycle: () => void;
+  onEvalToggle: () => void;
+  onBestMoveToggle: () => void;
 }
 
 export function EvalToggle({
@@ -18,34 +20,47 @@ export function EvalToggle({
   displayMode,
   isDisabled,
   disabledReason,
-  onCycle,
+  onEvalToggle,
+  onBestMoveToggle,
 }: EvalToggleProps) {
+  const isEvalOn = displayMode !== "off";
   const isLoading = state === "loading";
-  const isActive = displayMode !== "off";
-
-  const label =
-    isLoading
-      ? "Evaluating..."
-      : displayMode === "eval-and-best-move"
-        ? "Eval + Best"
-        : "Eval";
+  const showBestMoveToggle = isEvalOn && !isLoading;
 
   return (
-    <button
-      type="button"
+    <div
       className={cn(
-        "flex items-center gap-1 px-2 py-0.5 rounded text-xs font-medium transition-colors cursor-pointer",
+        "flex items-center gap-1.5",
         isDisabled && "opacity-50 cursor-not-allowed",
-        isActive && !isLoading
-          ? "bg-primary/15 text-primary"
-          : "text-muted-foreground hover:text-foreground hover:bg-muted/50",
       )}
       title={isDisabled ? disabledReason : undefined}
-      disabled={isDisabled || isLoading}
-      onClick={onCycle}
     >
-      {isLoading && <Loader2 className="w-3 h-3 animate-spin" />}
-      <span>{label}</span>
-    </button>
+      <Switch
+        checked={isEvalOn}
+        disabled={isDisabled || isLoading}
+        onCheckedChange={onEvalToggle}
+        className={cn(isLoading && "opacity-70")}
+      />
+      <div className="flex items-center gap-1 text-xs text-muted-foreground">
+        {isLoading ? (
+          <>
+            <Loader2 className="w-3 h-3 animate-spin" />
+            <span>Evaluating...</span>
+          </>
+        ) : (
+          <span>Eval</span>
+        )}
+      </div>
+      {showBestMoveToggle && (
+        <>
+          <Switch
+            checked={displayMode === "eval-and-best-move"}
+            onCheckedChange={onBestMoveToggle}
+            className="ml-1"
+          />
+          <span className="text-xs text-muted-foreground">Best</span>
+        </>
+      )}
+    </div>
   );
 }

@@ -45,7 +45,8 @@ interface MobileGameDrawerProps {
   evalDisplayMode: EvalDisplayMode;
   evalToggleDisabled: boolean;
   evalToggleDisabledReason?: string;
-  onEvalCycle: () => void;
+  onEvalToggle: () => void;
+  onBestMoveToggle: () => void;
   evalErrorMessage?: string | null;
 }
 
@@ -126,7 +127,8 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
                   evalDisplayMode={props.evalDisplayMode}
                   evalToggleDisabled={props.evalToggleDisabled}
                   evalToggleDisabledReason={props.evalToggleDisabledReason}
-                  onEvalCycle={props.onEvalCycle}
+                  onEvalToggle={props.onEvalToggle}
+                  onBestMoveToggle={props.onBestMoveToggle}
                   evalErrorMessage={props.evalErrorMessage}
                 />
               </div>
