@@ -190,8 +190,10 @@ export class MusicController {
       };
 
       void this.currentAudio.play().catch(() => {
-        // Autoplay blocked, try next track
-        this.advanceTrack();
+        // Autoplay blocked — do NOT call advanceTrack() here, as it would
+        // create an infinite microtask loop (every track will also be blocked).
+        // Instead, pause and let onPolicyChange/resume retry later.
+        this.pause();
       });
 
       // Preload the next one

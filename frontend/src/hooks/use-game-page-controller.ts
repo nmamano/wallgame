@@ -1596,17 +1596,21 @@ export function useGamePageController(gameId: string) {
     matchingPlayers,
     hostAbortedLatch,
   ]);
+  // Treat null lifecycle as "waiting" only when access has resolved — during
+  // initial resolution access is null and lifecycle is null, but we don't yet
+  // know whether the game is waiting, in-progress, or completed.  Opening the
+  // matching panel for that transient null state causes a Dialog open→close
+  // flash (and on fresh page loads the Radix Dialog overlay can get stuck).
+  const lifecycleIsWaiting =
+    authoritativeLifecycle === "waiting" ||
+    (authoritativeLifecycle == null && access != null);
   const isAuthoritativeWaiting =
-    isRemoteFlow &&
-    !isReadOnlySession &&
-    (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null);
+    isRemoteFlow && !isReadOnlySession && lifecycleIsWaiting;
   const matchingPanelOpen = isRemoteFlow
-    ? !isReadOnlySession &&
-      (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null)
+    ? !isReadOnlySession && lifecycleIsWaiting
     : matchingPlayers.some((entry) => !entry.isReady);
   const matchingCanAbort = isRemoteFlow
-    ? isCreator &&
-      (authoritativeLifecycle === "waiting" || authoritativeLifecycle == null)
+    ? isCreator && lifecycleIsWaiting
     : true;
   const matchingStatusMessage = useMemo(() => {
     if (!isRemoteFlow) return undefined;
@@ -1625,7 +1629,7 @@ export function useGamePageController(gameId: string) {
         return "Game finished.";
       case null:
       case undefined:
-        return "Waiting for players...";
+        return access ? "Waiting for players..." : undefined;
       case "in-progress":
         return undefined;
       default:
