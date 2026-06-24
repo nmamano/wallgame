@@ -1,0 +1,69 @@
+{
+  "version": 2,
+  "configurePresets": [
+      {
+          "name": "debug",
+          "displayName": "Debug",
+          "binaryDir": "${sourceDir}/build_debug",
+          "generator": "Unix Makefiles",
+          "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "Debug",
+              "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+              "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic"
+          }
+      },
+      {
+        "name": "release",
+        "displayName": "Release",
+        "binaryDir": "${sourceDir}/build_release",
+        "generator": "Unix Makefiles",
+        "cacheVariables": {
+            "CMAKE_BUILD_TYPE": "Release",
+            "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic -Ofast -march=haswell"
+        }
+    },
+    {
+          "name": "debug-clang",
+          "displayName": "Debug with Clang",
+          "binaryDir": "${sourceDir}/build_debug_clang",
+          "generator": "Unix Makefiles",
+          "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "Debug",
+              "CMAKE_EXPORT_COMPILE_COMMANDS": "ON",
+              "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic"
+          },
+          "environment": {
+              "CC": "clang",
+              "CXX": "clang++"
+          }
+      },
+      {
+          "name": "release-clang",
+          "displayName": "Release with Clang",
+          "binaryDir": "${sourceDir}/build_release_clang",
+          "generator": "Unix Makefiles",
+          "cacheVariables": {
+              "CMAKE_BUILD_TYPE": "Release",
+              "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic -Ofast -march=haswell"
+          },
+          "environment": {
+              "CC": "clang",
+              "CXX": "clang++"
+          }
+      },
+      {
+        "name": "analysis-clang",
+        "displayName": "Static analysis with Clang",
+        "binaryDir": "${sourceDir}/build_analysis_clang",
+        "generator": "Unix Makefiles",
+        "cacheVariables": {
+            "CMAKE_BUILD_TYPE": "Debug",
+            "CMAKE_CXX_FLAGS_INIT": "-Wall -Wextra -Wpedantic --analyze"
+        },
+        "environment": {
+            "CC": "clang",
+            "CXX": "clang++"
+        }
+    }
+  ]
+}
