@@ -28,3 +28,19 @@ add_executable(wallwars_ai
     # External headers (see above)
     "include/external/span.h"
 )
+
+# V3 bot-protocol wrapper: serves the negamax engine over stdin/stdout JSON-lines.
+# See ../plans/minimax-ai-loop.md (slice 1b). Leaves the wallwars_ai target intact.
+add_executable(minimax_bgs_engine
+    "source/bgs_engine_main.cc"
+
+    # Headers (for IDEs)
+    "include/bgs_translation.h"
+    "include/external/json.hpp"
+)
+
+# Targeted translation round-trip tests (slice 1b). Exhaustive coverage is 2a.
+add_executable(minimax_translation_test
+    "source/translation_test.cc"
+    "include/bgs_translation.h"
+)

@@ -31,8 +31,14 @@ class Negamax {
   int ID_depth;
   std::chrono::high_resolution_clock::time_point search_start_timestamp;
   int search_millis;
+  int last_root_eval_ = 0;  // Root eval (side-to-move POV) of the last GetMove.
 
  public:
+  // Root eval (side-to-move perspective) of the most recent GetMove call.
+  // Engine integer scale (LeafEval differential; >= kGameOverEval == winning).
+  int LastRootEval() const { return last_root_eval_; }
+  static constexpr int GameOverEval() { return kGameOverEval; }
+
   Move GetMove(Situation<R, C> sit, int millis) {
     search_start_timestamp = std::chrono::high_resolution_clock::now();
     search_millis = millis;
@@ -41,7 +47,7 @@ class Negamax {
       int alpha = -2 * kGameOverEval;
       int beta = 2 * kGameOverEval;
 
-      std::cout << "Search depth " << ID_depth << " with "
+      std::cerr << "Search depth " << ID_depth << " with "
                 << millis - MillisSince(search_start_timestamp)
                 << " millis left." << std::endl;
 
@@ -49,17 +55,17 @@ class Negamax {
       NegamaxEval(ID_depth, alpha, beta);
 
       TTEntry<R, C>& entry = TT.Entry(TT.Location(sit));
-      std::cout << "Best move: "
+      std::cerr << "Best move: "
                 << sit.MoveToStandardNotation(MoveInTTEntry(entry))
                 << " (eval: " << entry.eval << ")" << std::endl;
 
       if (entry.eval >= kGameOverEval) {
-        std::cout << "Found winning move at depth " << ID_depth << "."
+        std::cerr << "Found winning move at depth " << ID_depth << "."
                   << std::endl;
         break;
       }
       if (entry.eval <= -kGameOverEval) {
-        std::cout << "Position is lost at depth " << ID_depth << "."
+        std::cerr << "Position is lost at depth " << ID_depth << "."
                   << std::endl;
         break;
       }
@@ -70,6 +76,7 @@ class Negamax {
     TTEntry<R, C> entry = TT.Entry(TT.Location(sit));
     assert(entry.alpha_beta_flag == kExactFlag);
     Move move = {entry.token_change, {entry.edge0, entry.edge1}};
+    last_root_eval_ = entry.eval;
     sit.CrashIfMoveIsIllegal(move);
     return move;
   }
@@ -195,7 +202,7 @@ class Negamax {
       // ensure we have at least a move.
       if (ID_depth > 1 && depth == ID_depth &&
           MillisSince(search_start_timestamp) > search_millis) {
-        std::cout << "Did not finish search at depth " << ID_depth << std::endl;
+        std::cerr << "Did not finish search at depth " << ID_depth << std::endl;
         break;
       }
     }

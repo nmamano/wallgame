@@ -25,4 +25,13 @@ wallgame's representation in that wrapper; see the plan's "Resources" and "Traps
 ## Modifications to vendored files
 
 Tracked here as the project progresses:
-- (none yet — vendored verbatim)
+- **slice 1b** — `include/negamax.h`: routed the four search-progress logs in
+  `GetMove` from `std::cout` to `std::cerr` (the wrapper's stdout must be pure
+  JSON-lines), and added `LastRootEval()` / `GameOverEval()` accessors so the
+  wrapper can surface the root evaluation. No search/eval logic changed.
+
+## Added (not in the source repo)
+- `include/external/json.hpp` — nlohmann/json v3.11.3 single-header (MIT),
+  vendored for the wrapper's JSON-lines protocol.
+- `include/bgs_translation.h`, `source/bgs_engine_main.cc` — the V3 BGS wrapper.
+- `source/translation_test.cc`, `scripts/protocol-smoke.sh` — slice-1b gates.

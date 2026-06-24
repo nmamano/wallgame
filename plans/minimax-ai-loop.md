@@ -94,7 +94,7 @@ There are **no env-gated quota-burning gates** in this project (nothing to opt i
 ## Slice plan  (tick the box in the commit that ships the slice)
 
 - [x] **1a — Vendored core builds in-monorepo.** — gate `minimax-engine/scripts/test-gate.sh` + `BUILD.md`; build green, only the known failure quarantined. `minimax-engine/` compiles via documented command; the known 11/12 self-test failure (move ordering) is understood + quarantined (not hidden); reproducible build doc.
-- [ ] **1b — Tracer wrapper (8×8 classic), small *tested* translation subset.** New `minimax_bgs_engine` target speaks V3 JSON-lines (start/evaluate/apply/end), holds per-session `Situation`, **stdout is protocol-only** (engine search logs suppressed/redirected — see Mandatory wrapper gates), returns a **legal** move in standard notation. Ships translation *smoke* tests for the exact wall anchors / pawn deltas any emitted move uses (no opaque notation bridge) + error-path + multi-session smoke. A full 8×8 classic game plays to a legal finish through `bot-5-minimax-engine.test.ts` with **every move asserted**. Does **not** claim wall-bijection/eval are hardened — that is 2a/2b.
+- [x] **1b — Tracer wrapper (8×8 classic), small *tested* translation subset.** — DONE: all gates green incl. a full 8×8 classic game to a natural bot win via `bot-5-minimax-engine.test.ts`. New `minimax_bgs_engine` target speaks V3 JSON-lines (start/evaluate/apply/end), holds per-session `Situation`, **stdout is protocol-only** (engine search logs suppressed/redirected — see Mandatory wrapper gates), returns a **legal** move in standard notation. Ships translation *smoke* tests for the exact wall anchors / pawn deltas any emitted move uses (no opaque notation bridge) + error-path + multi-session smoke. A full 8×8 classic game plays to a legal finish through `bot-5-minimax-engine.test.ts` with **every move asserted**. Does **not** claim wall-bijection/eval are hardened — that is 2a/2b.
 - [ ] **2a — Translation hardening.** Wall↔edge bijection (both directions), pawn deltas, `apply_move` parsing proven by **exhaustive round-trip** tests over all real edges on 8×8 + fake-edge rejection (col `C-1` right, row `R-1` below) + corner anchors. Uses standard-notation helpers to avoid row-number slips.
 - [ ] **2b — Eval + endgame.** Evaluation correct **sign** (P1-perspective) via a root-eval accessor; deterministic squash (`tanh(raw/scale)`, not raw clamp) to [-1,1]; terminal positions driven by `Winner()` (0→+1, 1→−1, 2→0), not a post-game-over search value; golden-position tests (sign + monotonic).
 - [ ] **3 — (parked unless promoted) Multi-size 5×5–8×8** via runtime dispatch over template instantiations.
@@ -213,10 +213,17 @@ A `minimax_bgs_engine` binary that speaks V3 JSON-lines, holds per-`bgsId` `Situ
 ### Acceptance criteria (do not drop)
 (1) stdout protocol-only, asserted by protocol-smoke; (2) mapping shipped WITH targeted smoke tests (no opaque bridge); (3) error-path responses (bad size/variant, unknown `bgsId`, dup/missing session, malformed move); (4) multi-session no-state-bleed smoke; (5) `bot-5` integration test green with **every** `apply_move` asserted server-accepted; (6) `test-gate.sh` still green (engine self-tests unaffected, or `wallwars_ai` target untouched).
 
-### Decide-with-Game-Reviewer (this slice's plan-gate)
-- stderr-routing vs compile-flag guard for the search logs.
-- Vendoring nlohmann/json single header vs a hand-rolled minimal parser.
-- Whether 1b's eval can be "mechanism only" (sign-correct, un-golden) with golden tests deferred to 2b.
+### Plan-gate outcome (Game Reviewer — APPROVED WITH CONDITIONS, on `46c34e8`)
+- **stdout isolation goes beyond `GetMove`.** `situation.h` parse/error paths also `std::cout` (`BuildFromStandardNotationMoves`, `ConsumeToken`, `CrashIfMoveIsIllegal`). → **Do wrapper-side notation parsing** (own parser in `bgs_translation.h`, returns errors, never calls the old printing helpers) **and** route `negamax.h` search logs to `std::cerr`. protocol-smoke MUST feed a malformed `apply_move` and assert stdout stays pure JSON-lines.
+- **JSON:** vendor nlohmann/json single header (no hand-roll), license/provenance note, isolated under `include/external/`.
+- **Eval (mechanism-only) OK**, but 1b smoke asserts: evaluation numeric, finite, in [-1,1]; sign-conversion exercised at least once for turn 0 vs turn 1; terminal handling not left *actively* wrong if reachable (full golden in 2b).
+- **Ply is source of truth.** Session derives side-to-move from `ply`, not an independent mutable. On `evaluate_position`/`apply_move` assert `expectedPly == session.ply`; after apply, `ply++` and `Situation::ApplyMove` flips `turn`.
+- **`start_game_session` rejects duplicate `bgsId`** (don't overwrite).
+- **`evaluate_position` must not mutate state.** A persistent `Negamax` TT-as-cache is fine, but pass `Situation` **by value** so the session position can't change on evaluation.
+- **Notation tests (1b targeted):** at least one vertical and one horizontal wall conversion using the corrected horizontal anchor (`horizontal [r,c] → EdgeBelow(node(r-1,c))`) — prove the off-by-one is absent (exhaustive is 2a).
+- **Integration test is upgraded, not cloned:** `bot-3` is 5×5 with `---` moves then resignation; `bot-5` must be **8×8 classic played to a legal finish/natural draw**, asserting **every** server-applied move from the BGS/client wire (not UI state).
+- **Test-only think-time knob:** a wrapper flag/env (e.g. 50–200ms) for smoke/integration speed while prod defaults to ~3–4s. Document as test tuning, **not** a difficulty tier; test it explicitly.
+- **Re-check trackability** after adding `json.hpp` + scripts (`build*` ignore bit us in 1a). Keep `wallwars_ai` untouched; `test-gate.sh` must still pass.
 
 ### Locked (don't relitigate)
 Server-side serving via V3; 8×8 classic v1; pure-C++17 synchronous wrapper (no Folly); the EXACT wall↔edge bijection in Resources.
