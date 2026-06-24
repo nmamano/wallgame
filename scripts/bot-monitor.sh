@@ -46,7 +46,8 @@ fi
 
 # Check heartbeat file staleness (catches zombie WebSocket connections)
 # Skip this check if service started recently (allow time for first pong)
-HEARTBEAT_FILE="/home/yu/nil/wallgame/.wallgame-bot-heartbeat"
+# Repo-root-relative (this script is in scripts/), env-overridable -- no hardcoded home dir.
+HEARTBEAT_FILE="${WALLGAME_HEARTBEAT_FILE:-$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)/.wallgame-bot-heartbeat}"
 HEARTBEAT_MAX_AGE=120 # 2 minutes
 STARTUP_GRACE_SECONDS=90
 

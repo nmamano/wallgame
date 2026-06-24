@@ -31,6 +31,7 @@ import {
   type CustomBotServerLimits,
 } from "../../shared/contracts/custom-bot-protocol";
 import { logger } from "./logger";
+import { join } from "node:path";
 import { clampEvaluation } from "../../shared/custom-bot/engine-api";
 import type { EngineProcess } from "./engine-runner";
 import { spawnEngine } from "./engine-runner";
@@ -73,7 +74,12 @@ const RECONNECT_JITTER_MAX_MS = 2000;
 
 // Keepalive ping interval
 const PING_INTERVAL_MS = 30_000;
-const HEARTBEAT_FILE = "/home/yu/nil/wallgame/.wallgame-bot-heartbeat";
+// Heartbeat file the monitor (scripts/bot-monitor.sh) polls for liveness.
+// Resolved from the repo root (this file lives at official-custom-bot-client/src/),
+// env-overridable — never tied to a hardcoded home directory.
+const HEARTBEAT_FILE =
+  process.env.WALLGAME_HEARTBEAT_FILE ??
+  join(import.meta.dir, "../../.wallgame-bot-heartbeat");
 
 // V3 BGS client response type
 type BgsClientResponse =
