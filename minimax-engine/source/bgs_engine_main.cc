@@ -20,7 +20,7 @@
 #include <string>
 #include <utility>
 
-#include "external/json.hpp"
+#include <nlohmann/json.hpp>
 
 #include "bgs_translation.h"
 #include "graph.h"

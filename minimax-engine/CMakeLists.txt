@@ -7,6 +7,10 @@ set(CMAKE_CXX_EXTENSIONS OFF)
 include_directories("include")
 include_directories(SYSTEM "external")
 
+# nlohmann/json for the V3 wrapper — uses the SYSTEM package (same as
+# deep-wallwars), not a vendored copy.
+find_package(nlohmann_json 3.2.0 REQUIRED)
+
 add_executable(wallwars_ai
     # Sources (yes you can detect these automatically but you're supposed not to for reasons...)
     "source/main.cc"
@@ -36,8 +40,8 @@ add_executable(minimax_bgs_engine
 
     # Headers (for IDEs)
     "include/bgs_translation.h"
-    "include/external/json.hpp"
 )
+target_link_libraries(minimax_bgs_engine PRIVATE nlohmann_json::nlohmann_json)
 
 # Targeted translation round-trip tests (slice 1b/2a).
 add_executable(minimax_translation_test

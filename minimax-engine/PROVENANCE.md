@@ -33,7 +33,7 @@ Tracked here as the project progresses:
   (not needed here; `benchmark` mode regenerates it). Directory is gitignored.
 
 ## Added (not in the source repo)
-- `include/external/json.hpp` — nlohmann/json v3.11.3 single-header (MIT),
-  vendored for the wrapper's JSON-lines protocol.
+- nlohmann/json: the wrapper uses the **system** package via CMake
+  `find_package(nlohmann_json)` — same as deep-wallwars — not a vendored copy.
 - `include/bgs_translation.h`, `source/bgs_engine_main.cc` — the V3 BGS wrapper.
 - `source/translation_test.cc`, `scripts/protocol-smoke.sh` — slice-1b gates.
