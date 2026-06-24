@@ -24,35 +24,13 @@ function Root() {
   const pathname = router.location.pathname;
   const isSmallScreen = useMediaQuery("(max-width: 1023px)");
   const isGamePage = pathname.startsWith("/game/");
-  // Hide nav and dev banner on mobile game pages to maximize board space
+  // Hide nav on mobile game pages to maximize board space
   const hideChrome = isSmallScreen && isGamePage;
 
   return (
     <ThemeProvider defaultTheme="dark">
       <SoundProvider>
         <div className="min-h-screen bg-background">
-          {!hideChrome && (
-            <div className="bg-amber-600 text-white text-center py-2 px-4 text-sm">
-              🚧 In development.{" "}
-              <a
-                href="https://nilmamano.com/blog/wall-game-intro"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-amber-100"
-              >
-                Learn more
-              </a>
-              {" · "}
-              <a
-                href="https://wallwars.net"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-amber-100"
-              >
-                Old site
-              </a>
-            </div>
-          )}
           {!hideChrome && <Navigation />}
           {/* Outlet loads the other routes in the routes/ dir. */}
           <Outlet />
