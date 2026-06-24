@@ -2,17 +2,20 @@
 //
 // A long-lived process that speaks the wallgame V3 protocol over stdin/stdout
 // as JSON-lines (one JSON object per line). It holds a Situation per bgsId and
-// drives Negamax::GetMove. See plans/minimax-ai-loop.md (slice 1b).
+// drives Negamax::GetMove. See plans/minimax-ai-loop.md.
 //
-// Scope (slice 1b): classic variant, 8x8 only. Synchronous, single-threaded.
+// Scope: classic variant. Board size is fixed per process via --rows/--cols and
+// dispatched to the matching compile-time template instantiation (8x8 or 6x6).
+// Synchronous, single-threaded.
 //
-// stdout is PROTOCOL ONLY. All diagnostics (incl. negamax search logs, now
-// routed to std::cerr) go to stderr. Parse/validation errors become JSON error
-// responses, never stdout text.
+// stdout is PROTOCOL ONLY. All diagnostics (incl. negamax search logs, routed to
+// std::cerr) go to stderr. Parse/validation errors become JSON error responses.
 //
-// Test-only tuning: --think-millis N or env MINIMAX_THINK_MILLIS=N overrides the
-// per-move think time (production default ~3000ms). This is speed tuning for
-// smoke/integration tests, NOT a difficulty tier.
+// Flags / env:
+//   --rows N / --cols N   (env MINIMAX_ROWS / MINIMAX_COLS): board size; the
+//                          process serves exactly this size. Supported: 8x8, 6x6.
+//   --think-millis N      (env MINIMAX_THINK_MILLIS): per-move think budget
+//                          (default 3000ms).
 
 #include <cstdlib>
 #include <iostream>
@@ -33,14 +36,6 @@ using namespace wallwars;
 
 namespace {
 
-constexpr int R = 8;
-constexpr int C = 8;
-
-struct Session {
-  Situation<R, C> sit;
-  int ply = 0;  // source of truth for whose turn it is; sit.turn == ply % 2.
-};
-
 int ThinkMillis(int argc, char** argv) {
   int millis = 3000;  // production default (~3s)
   if (const char* e = std::getenv("MINIMAX_THINK_MILLIS")) millis = std::atoi(e);
@@ -56,8 +51,9 @@ json ErrorResp(const std::string& type, const std::string& bgsId,
   return json{{"type", type}, {"bgsId", bgsId}, {"success", false}, {"error", err}};
 }
 
-// Build the initial Situation from a classic 8x8 start config. Throws on
+// Build the initial Situation from a classic R x C start config. Throws on
 // anything unsupported (variant/size, goals not at the classic corners).
+template <int R, int C>
 Situation<R, C> BuildStart(const json& config) {
   const std::string variant = config.value("variant", "");
   const int bw = config.value("boardWidth", 0);
@@ -65,7 +61,9 @@ Situation<R, C> BuildStart(const json& config) {
   if (variant != "classic")
     throw std::runtime_error("unsupported variant (classic only): '" + variant + "'");
   if (bw != C || bh != R)
-    throw std::runtime_error("unsupported board size (8x8 only)");
+    throw std::runtime_error("board size mismatch: engine is " + std::to_string(C) +
+                             "x" + std::to_string(R) + ", config asked " +
+                             std::to_string(bw) + "x" + std::to_string(bh));
 
   const json& st = config.at("initialState");
   const json& pawns = st.at("pawns");
@@ -108,11 +106,13 @@ const std::string& ResponseTypeFor(const std::string& req_type) {
   return it == m.end() ? kError : it->second;
 }
 
-}  // namespace
-
-int main(int argc, char** argv) {
-  const int think_millis = ThinkMillis(argc, argv);
-  std::cerr << "[minimax-engine] classic 8x8, think_millis=" << think_millis << "\n";
+// The protocol loop for a fixed board size R x C.
+template <int R, int C>
+int run(int think_millis) {
+  struct Session {
+    Situation<R, C> sit;
+    int ply = 0;  // source of truth for whose turn it is; sit.turn == ply % 2.
+  };
 
   std::map<std::string, Session> sessions;
   Negamax<R, C> engine;  // persistent transposition table acts as a search cache.
@@ -139,7 +139,7 @@ int main(int argc, char** argv) {
       if (type == "start_game_session") {
         if (sessions.count(bgsId)) throw std::runtime_error("duplicate bgsId");
         Session s;
-        s.sit = BuildStart(req.at("config"));
+        s.sit = BuildStart<R, C>(req.at("config"));
         s.ply = 0;
         sessions.emplace(bgsId, std::move(s));
         resp = json{{"type", "game_session_started"}, {"bgsId", bgsId},
@@ -201,4 +201,29 @@ int main(int argc, char** argv) {
     std::cout.flush();
   }
   return 0;
+}
+
+}  // namespace
+
+int main(int argc, char** argv) {
+  const int think_millis = ThinkMillis(argc, argv);
+
+  int rows = 8, cols = 8;  // default 8x8 (back-compat)
+  if (const char* e = std::getenv("MINIMAX_ROWS")) rows = std::atoi(e);
+  if (const char* e = std::getenv("MINIMAX_COLS")) cols = std::atoi(e);
+  for (int i = 1; i < argc; ++i) {
+    std::string a = argv[i];
+    if (a == "--rows" && i + 1 < argc) rows = std::atoi(argv[++i]);
+    else if (a == "--cols" && i + 1 < argc) cols = std::atoi(argv[++i]);
+  }
+
+  std::cerr << "[minimax-engine] classic " << cols << "x" << rows
+            << ", think_millis=" << think_millis << "\n";
+
+  if (rows == 8 && cols == 8) return run<8, 8>(think_millis);
+  if (rows == 6 && cols == 6) return run<6, 6>(think_millis);
+
+  std::cerr << "[minimax-engine] FATAL: unsupported board size " << cols << "x"
+            << rows << " (supported: 8x8, 6x6)\n";
+  return 1;
 }

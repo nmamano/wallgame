@@ -125,6 +125,22 @@ TCOUT=$(printf '%s\n%s\n' \
   | "./$ENGINE" --think-millis "$THINK" 2>>/tmp/mm-smoke-err.txt)
 chk "$(printf '%s\n' "$TCOUT" | tail -1)" '.type=="move_applied" and .success==true and .ply==1' "two-cat move (Cb8.Cb7) accepted"
 
+# ---- 6x6 board dispatch (--rows/--cols) ------------------------------------
+echo "== 6x6 board dispatch =="
+START6='{"type":"start_game_session","bgsId":"s6","botId":"b","config":{"variant":"classic","boardWidth":6,"boardHeight":6,"initialState":{"pawns":{"p1":{"cat":[0,0],"home":[5,5]},"p2":{"cat":[0,5],"home":[5,0]}},"walls":[]}}}'
+S6OUT=$(printf '%s\n%s\n%s\n' \
+  "$START6" \
+  '{"type":"evaluate_position","bgsId":"s6","expectedPly":0}' \
+  '{"type":"apply_move","bgsId":"s6","expectedPly":0,"move":"Cb6.Cb5"}' \
+  | "./$ENGINE" --rows 6 --cols 6 --think-millis "$THINK" 2>>/tmp/mm-smoke-err.txt)
+mapfile -t S6 <<<"$S6OUT"
+chk "${S6[0]:-}" '.type=="game_session_started" and .success==true' "6x6 session starts"
+chk "${S6[1]:-}" '.type=="evaluate_response" and .success==true and (.bestMove|length>0) and .evaluation>=-1 and .evaluation<=1' "6x6 evaluate returns a legal move"
+chk "${S6[2]:-}" '.type=="move_applied" and .success==true and .ply==1' "6x6 two-cat move applied"
+# An 8x8 engine process must reject a 6x6 config (size is fixed per process).
+WRONGSZ=$(printf '%s\n' "$START6" | "./$ENGINE" --rows 8 --cols 8 --think-millis "$THINK" 2>/dev/null | tail -1)
+chk "$WRONGSZ" '.type=="game_session_started" and .success==false' "8x8 engine rejects a 6x6 config (size mismatch)"
+
 if [ "$fail" -eq 0 ]; then
   echo "PROTOCOL-SMOKE OK"
   exit 0
