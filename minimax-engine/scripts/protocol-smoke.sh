@@ -19,12 +19,16 @@ TT="build_release/minimax_translation_test"
 
 echo "== build wrapper + translation test =="
 cmake --preset release >/dev/null 2>&1 || { echo "GATE FAIL: cmake configure"; exit 1; }
-( cd build_release && make minimax_bgs_engine minimax_translation_test ) >/tmp/mm-smoke-build.log 2>&1 \
+( cd build_release && make minimax_bgs_engine minimax_translation_test minimax_eval_test ) >/tmp/mm-smoke-build.log 2>&1 \
   || { echo "GATE FAIL: build"; tail -20 /tmp/mm-smoke-build.log; exit 1; }
 
 echo "== translation round-trip test =="
 "./$TT" || { echo "GATE FAIL: translation_test"; exit 1; }
 echo "  translation_test OK"
+
+echo "== eval golden test =="
+./build_release/minimax_eval_test || { echo "GATE FAIL: eval_test"; exit 1; }
+echo "  eval_test OK"
 
 START1='{"type":"start_game_session","bgsId":"s1","botId":"mm","config":{"variant":"classic","boardWidth":8,"boardHeight":8,"initialState":{"pawns":{"p1":{"cat":[0,0],"home":[7,7]},"p2":{"cat":[0,7],"home":[7,0]}},"walls":[]}}}'
 START2=${START1/\"s1\"/\"s2\"}

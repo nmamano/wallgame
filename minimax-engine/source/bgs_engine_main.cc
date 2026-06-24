@@ -155,8 +155,7 @@ int main(int argc, char** argv) {
         std::string best;
         double eval;
         if (s.sit.IsGameOver()) {
-          const int w = s.sit.Winner();
-          eval = (w == 2) ? 0.0 : (w == 0 ? 1.0 : -1.0);
+          eval = bgs::TerminalEvalP1(s.sit.Winner());  // throws on unexpected -> error
           best = "---";
         } else {
           const Move m = engine.GetMove(s.sit, think_millis);  // sit passed by value

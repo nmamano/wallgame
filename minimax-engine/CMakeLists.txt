@@ -39,8 +39,14 @@ add_executable(minimax_bgs_engine
     "include/external/json.hpp"
 )
 
-# Targeted translation round-trip tests (slice 1b). Exhaustive coverage is 2a.
+# Targeted translation round-trip tests (slice 1b/2a).
 add_executable(minimax_translation_test
     "source/translation_test.cc"
+    "include/bgs_translation.h"
+)
+
+# Golden eval tests (slice 2b): pure-conversion + near-forced engine sign bands.
+add_executable(minimax_eval_test
+    "source/eval_test.cc"
     "include/bgs_translation.h"
 )

@@ -219,9 +219,26 @@ std::string MoveToStdNotation(const Move& move, const Situation<R, C>& sit) {
 }
 
 // ---- eval: engine side-to-move score -> P1-perspective [-1, 1] -------------
-// p1Raw = (turn==0) ? rootEval : -rootEval, then deterministic tanh squash.
-// kEvalScale is mechanism-only here; golden-tuned in slice 2b.
-inline double EvalToP1(int root_eval, int turn, double scale = 6.0) {
+// Display scale for the 8x8 eval bar (NOT a centipawn/probability claim):
+//   raw 2 -> ~0.24, 4 -> ~0.46, 6 -> ~0.64, 8 -> ~0.76; forced win (>=999) -> ~1.
+constexpr double kEvalScale = 8.0;
+
+// Terminal eval from the engine's Winner() (P1 == engine player 0):
+//   winner 0 (P1) -> +1 ; 1 (P2) -> -1 ; 2 (draw) -> 0.
+// Throws on any other value so the wrapper returns an error instead of lying.
+inline double TerminalEvalP1(int winner) {
+  switch (winner) {
+    case 0: return 1.0;
+    case 1: return -1.0;
+    case 2: return 0.0;
+    default: throw std::runtime_error("TerminalEvalP1: unexpected winner value");
+  }
+}
+
+// Non-terminal eval -> P1 perspective via deterministic tanh squash.
+// p1Raw = (turn==0) ? rootEval : -rootEval (engine eval is side-to-move-relative).
+inline double EvalToP1(int root_eval, int turn, double scale = kEvalScale) {
+  if (scale <= 0.0) throw std::runtime_error("EvalToP1: scale must be > 0");
   double p1_raw = (turn == 0) ? static_cast<double>(root_eval)
                               : -static_cast<double>(root_eval);
   double v = std::tanh(p1_raw / scale);
