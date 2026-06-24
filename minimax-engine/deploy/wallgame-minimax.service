@@ -1,0 +1,15 @@
+[Unit]
+Description=Wallgame Minimax "Legacy" bot client (classic 6x6 + 8x8)
+After=network-online.target
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=nil
+WorkingDirectory=/home/nil/nil/wallgame/official-custom-bot-client
+ExecStart=/home/nil/.bun/bin/bun run src/index.ts --client-id minimax-prod --config /home/nil/nil/wallgame/minimax-engine/deploy/minimax.prod.config.json --log-level info
+Restart=always
+RestartSec=5
+
+[Install]
+WantedBy=multi-user.target

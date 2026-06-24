@@ -1,0 +1,47 @@
+{
+  "server": "https://wallgame.fly.dev",
+  "bots": [
+    {
+      "botId": "minimax-classic-8x8",
+      "name": "Legacy Bot",
+      "official": false,
+      "username": null,
+      "appearance": {
+        "color": "green",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 8, "max": 8 },
+          "boardHeight": { "min": 8, "max": 8 },
+          "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
+        }
+      }
+    },
+    {
+      "botId": "minimax-classic-6x6",
+      "name": "Legacy Bot",
+      "official": false,
+      "username": null,
+      "appearance": {
+        "color": "green",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 6, "max": 6 },
+          "boardHeight": { "min": 6, "max": 6 },
+          "recommended": [{ "boardWidth": 6, "boardHeight": 6 }]
+        }
+      }
+    }
+  ],
+  "engineCommands": {
+    "minimax-classic-8x8": "/home/nil/nil/wallgame/minimax-engine/build_release/minimax_bgs_engine --rows 8 --cols 8 --think-millis 3000",
+    "minimax-classic-6x6": "/home/nil/nil/wallgame/minimax-engine/build_release/minimax_bgs_engine --rows 6 --cols 6 --think-millis 1500"
+  }
+}

@@ -25,6 +25,12 @@ Gates to re-run anytime: `minimax-engine/scripts/protocol-smoke.sh` (build + tra
 - **Multi-board-size (slice 3):** 5×5–8×8 via runtime dispatch over template instantiations. Parked unless promoted.
 - **Known note (2b diff-gate):** the engine overshoots `--think-millis` by a few seconds (it checks the clock only at coarse search points). Harmless now; revisit for production think-time precision or if CI runtime gets tight.
 
+### Post-launch work (after the first push at `1d9721a`)
+- **Prod two-cat bug fix** (`061275e`) — a real game found that a two-step pawn move arrives as TWO cat actions (`Cb8.Cb7`); the 2a validator wrongly rejected it. Now accepted; bot-5's sim human makes a real move to cover the gap.
+- **Diff slimming** — dropped vendored `benchmark_out/` (`3035087`); switched nlohmann/json to the system package via `find_package` like deep-wallwars (`1d9721a`).
+- **Multi-size 6×6 + 8×8** (`1cdaf60`) — engine `--rows/--cols` startup dispatch (one process per size). The full 5×5–8×8 range is still parked.
+- **Productionize (non-official)** — deploy artifacts under `minimax-engine/deploy/`: two-bot `minimax.prod.config.json` (Legacy Bot 8×8 @ 3s, 6×6 @ 1.5s), `wallgame-minimax.service` (separate from the AZ `wallgame-bot.service`), `DEPLOY.md`. Non-official → not the eval source for human-vs-human games (for **bot** games the eval bar reuses the opponent bot's own session — so vs this bot the bar shows the minimax engine). **The systemd install is the human sudo step.** Live now as a session-tied client until installed.
+
 ---
 
 ## North star
