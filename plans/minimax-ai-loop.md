@@ -64,6 +64,12 @@ sg docker -c 'NODE_ENV=test bun test tests/integration/bot-5-minimax-engine.test
 ```
 > Proven baseline: the equivalent `bot-3-dummy-engine.test.ts` runs **3 pass / 0 fail in ~9s** on auntie.
 
+### Mandatory wrapper gates (from plan-gate — required from slice 1b onward)
+- **stdout is protocol-only.** The old engine logs search progress to `std::cout` ("Search depth…", "Best move…"). That MUST NOT reach the JSON-lines stdout — redirect/suppress the engine's stdout during `GetMove` (to stderr or silenced). The protocol-smoke gate asserts stdout parses as pure JSON-lines. **Slice-1b acceptance criterion, not optional.**
+- **Error paths:** unsupported board size/variant, unknown `bgsId` on apply/evaluate, duplicate start / end-of-missing session, malformed move in `apply_move` → engine returns a well-formed error response, never crashes.
+- **Session isolation:** multi-session smoke (even at 8×8) — two `bgsId`s, apply different moves, evaluate both, assert no state bleed.
+- **Assert every move:** the BGS integration test asserts every `apply_move` is server-accepted and every response is well-formed — not merely that the game finishes.
+
 There are **no env-gated quota-burning gates** in this project (nothing to opt into). If that ever changes, it goes here with a hard-refuse-without-opt-in guard.
 
 ---
@@ -79,11 +85,18 @@ There are **no env-gated quota-burning gates** in this project (nothing to opt i
 
 ---
 
+## Plan-gate log
+
+- **2026-06-23 — Game Reviewer (gpt-5.5): APPROVED WITH CONDITIONS** on baseline `ca401ac`. Conditions folded in below: split slice 2 → 2a/2b; exact wall↔edge bijection (horizontal anchor = `EdgeBelow(node(r-1,c))`, not `node(r,c)`); deterministic eval squash + terminals driven by `Winner()`; **stdout-protocol isolation as a 1b blocker**; error-path + multi-session protocol smoke; precise quarantine of `NegamaxOrderedMovesTest`. Standalone cmake for 1a accepted.
+
+---
+
 ## Slice plan  (tick the box in the commit that ships the slice)
 
 - [ ] **1a — Vendored core builds in-monorepo.** `minimax-engine/` compiles via documented command; the known 11/12 self-test failure (move ordering) is understood + quarantined (not hidden); reproducible build doc.
-- [ ] **1b — Tracer wrapper (8×8 classic).** New `minimax_bgs_engine` target speaks V3 JSON-lines (start/evaluate/apply/end), holds per-session `Situation`, returns a **legal** move in standard notation; a full 8×8 classic game plays to a legal finish through `bot-5-minimax-engine.test.ts`. Evidence = BGS wire + engine stdout.
-- [ ] **2 — Translation + eval hardening.** Wall↔edge bijection and pawn-move mapping proven by round-trip unit tests; evaluation correct **sign** (P1-perspective) and squashed to [-1,1]; golden-position tests. Draw / "one-move rule" mapped correctly.
+- [ ] **1b — Tracer wrapper (8×8 classic), small *tested* translation subset.** New `minimax_bgs_engine` target speaks V3 JSON-lines (start/evaluate/apply/end), holds per-session `Situation`, **stdout is protocol-only** (engine search logs suppressed/redirected — see Mandatory wrapper gates), returns a **legal** move in standard notation. Ships translation *smoke* tests for the exact wall anchors / pawn deltas any emitted move uses (no opaque notation bridge) + error-path + multi-session smoke. A full 8×8 classic game plays to a legal finish through `bot-5-minimax-engine.test.ts` with **every move asserted**. Does **not** claim wall-bijection/eval are hardened — that is 2a/2b.
+- [ ] **2a — Translation hardening.** Wall↔edge bijection (both directions), pawn deltas, `apply_move` parsing proven by **exhaustive round-trip** tests over all real edges on 8×8 + fake-edge rejection (col `C-1` right, row `R-1` below) + corner anchors. Uses standard-notation helpers to avoid row-number slips.
+- [ ] **2b — Eval + endgame.** Evaluation correct **sign** (P1-perspective) via a root-eval accessor; deterministic squash (`tanh(raw/scale)`, not raw clamp) to [-1,1]; terminal positions driven by `Winner()` (0→+1, 1→−1, 2→0), not a post-game-over search value; golden-position tests (sign + monotonic).
 - [ ] **3 — (parked unless promoted) Multi-size 5×5–8×8** via runtime dispatch over template instantiations.
 - [ ] **4 — (HUMAN-ONLY to trigger) Productionize.** Name/appearance/visibility/recommended settings, config + service wiring, monitoring. Both AIs selectable. Only on Nil's go.
 
@@ -103,7 +116,7 @@ There are **no env-gated quota-burning gates** in this project (nothing to opt i
 ### Confirmed mappings (the gold — verified from source)
 - **Players:** wallgame **p1 ↔ old player 0** (start top-left (0,0) → goal bottom-right); **p2 ↔ old player 1** (start top-right (0,C-1) → goal bottom-left). No axis flip.
 - **Cells:** `node = row*C + col`; both systems use (0,0) = top-left, row increases downward.
-- **Eval:** must be **P1-perspective**, range [-1,+1] (+1 = P1 winning) regardless of which side the engine plays. Old negamax eval is **side-to-move-relative** → convert (negate when `sit.turn==1`) then squash. Use `clampEvaluation` semantics from `shared/custom-bot/engine-api.ts`.
+- **Eval:** must be **P1-perspective**, range [-1,+1] (+1 = P1 winning) regardless of which side the engine plays. Old `NegamaxEval` is **side-to-move-relative**: `p1Raw = (sit.turn==0) ? oldEval : -oldEval`. **Squash deterministically** (e.g. `tanh(p1Raw/scale)` with a documented `scale`) — do NOT plain-clamp raw integer scores (saturates to ±1, kills signal); clamp *after* squashing to satisfy `clampEvaluation` (`shared/custom-bot/engine-api.ts`). **Terminal positions:** drive from `Winner()` directly (0→+1, 1→−1, 2→0), not from a post-game-over search value. Surface root eval via a small accessor on the TT entry `GetMove` already fetches with the exact flag.
 
 ### Standard notation (`shared/domain/standard-notation.ts`)
 - Cell: `<col-letter><row>` where col = `a`+col, row = `totalRows - r` (1-based, bottom-up). e.g. (0,0) on 8×8 → `a8`.
@@ -125,7 +138,16 @@ There are **no env-gated quota-burning gates** in this project (nothing to opt i
 - `Negamax<R,C>::GetMove(Situation<R,C> sit, int millis)` → `Move` (time-budgeted iterative deepening). Eval is computed inside; may need a small accessor to surface the root eval for `evaluate_response`.
 - `Situation<R,C>`: `tokens[2]` (player node positions), `turn` (0/1), `G.edges[]` (walls), `ApplyMove`, `UndoMove`, `Winner()` (0/1, or **2 = draw** via one-move rule), `IsGameOver`, `MoveToString`, `SetStartingSituation`, `ParseMove`/`ParsedMoveToMove`.
 - `Move{ token_change /*node delta*/, edges[2] /*walls removed, -1=none*/ }`. Helpers: `DoubleWalkMove`, `WalkAndBuildMove`, `DoubleBuildMove`.
-- Wall↔edge surface (`graph.h`): `EdgeBetweenNeighbors`, `EdgeAbove/Right/Below/Left`, `IsRealEdge`, `NumRealEdges`. **The wall(cell,orientation) ↔ edge-index bijection is the error-prone heart of slice 2 — prove it with round-trip tests.**
+- Wall↔edge surface (`graph.h`): `EdgeBetweenNeighbors`, `EdgeAbove/Right/Below/Left`, `IsRealEdge`, `NumRealEdges`. **The exact bijection is below — it has a high-risk off-by-one; prove both directions with round-trip tests.**
+
+### Wall↔edge bijection (EXACT — from plan-gate; the highest-risk mapping)
+Old engine edge indexing: `EdgeRight(C,v) = 2*v` (even = edge to the **right** of node v); `EdgeBelow(R,C,v) = 2*v+1` (odd = edge **below** node v). Fake right edges live at the rightmost column, fake below edges at the bottom row.
+Wallgame walls: vertical `{cell:[r,c]}` sits to the **right** of the cell (blocks `[r,c]↔[r,c+1]`); horizontal `{cell:[r,c]}` sits **above** the cell (blocks `[r-1,c]↔[r,c]`).
+- **wallgame → old:**
+  - vertical `[r,c]` → `EdgeRight(node(r,c)) = 2*(r*C+c)`. Valid only `c < C-1`.
+  - horizontal `[r,c]` → `EdgeBelow(node(r-1,c)) = 2*((r-1)*C+c)+1`. Valid only `r > 0`.  **⚠ NOT `EdgeBelow(node(r,c))`** — that anchors the wall *below* the cell instead of *above*. This is THE off-by-one.
+- **old → wallgame:** even `e`: base `e/2` → cell `[Row(base),Col(base)]`, vertical. odd `e`: base `(e-1)/2` → cell `[Row(base)+1, Col(base)]`, horizontal.
+- Always `assert IsRealEdge` before converting. Tests: all real edges on 8×8, fake-right (`col C-1`), fake-below (`row R-1`), corner anchors (`>a8`, `^a7`, `^a1`).
 
 ### Evidence surfaces
 - Engine stdin/stdout JSON lines (drive directly via the protocol smoke script).
@@ -137,28 +159,30 @@ Vendored from `github.com/nmamano/wallwars` `/AI` at commit `bb730f1f988d1b4fb2e
 
 ### Traps (each will bite if ignored)
 1. **Compile-time board size** (`<R,C>` template) — v1 = 8×8 only.
-2. **Wall↔edge bijection** — prove both directions with round-trip tests.
-3. **Eval perspective + squash** — side-to-move-relative → P1-relative → [-1,1].
-4. **Draw / one-move rule** — `Winner()==2` → wallgame draw handling.
-5. **Known baseline self-test failure** — `NegamaxOrderedMovesTest` fails 11/12 at baseline ("948: Mismatch", move-ordering heuristic, NOT correctness — `NegamaxGetMoveTest` passes). Understand before relying on `wallwars_ai test`; quarantine explicitly, never silently.
+2. **`std::cout` pollution** — the engine prints search logs to stdout; a JSON-lines engine's stdout must be protocol-only. Redirect/suppress during `GetMove`. (Plan-gate blocker for 1b.)
+3. **Wall↔edge bijection** — see the EXACT mapping above; horizontal-wall anchor is `EdgeBelow(node(r-1,c))`, **not** `node(r,c)`. Round-trip + fake-edge tests.
+4. **Eval** — side-to-move → P1-relative; deterministic squash (not raw clamp); terminals from `Winner()`.
+5. **Draw / one-move rule** — `Winner()==2` → wallgame draw (eval 0).
+6. **Known baseline self-test failure** — `NegamaxOrderedMovesTest` fails 11/12 at baseline ("948: Mismatch", move-ordering heuristic, NOT correctness — `NegamaxGetMoveTest` passes). The build/test gate runs the FULL suite visibly AND separately asserts the only failure is exactly this test name + count; **fail the gate if name/count changes**. `BUILD.md` records compiler/platform + the exact failure. Never delete or silently skip it.
 
 ---
 
 ## SLICE-1a PICKUP — authored now
 
-- **Baseline commit:** this session's commit that vendors `minimax-engine/` + this file. (Record the hash on commit.)
+- **Baseline commit:** `ca401ac` (vendored `minimax-engine/` + this file). The loop's slice 1a builds on this.
 - **Goal:** the vendored engine builds inside the monorepo via a documented, reproducible command, and the one known self-test failure is understood and explicitly quarantined (not hidden, not "fixed" by deleting the test).
 - **Load-bearing mechanics / traps:**
   - It's a single translation unit (`source/main.cc` includes everything as headers) — build is fast; LTO is irrelevant.
   - `NegamaxOrderedMovesTest` fails at baseline. Investigate whether it's platform/compiler-dependent ordering vs. a real bug. Likely benign (move-ordering heuristic, search still correct). Decide: quarantine with a clear comment + keep it visible, OR fix if trivial and clearly a portability issue. Do **not** make `wallwars_ai test` "green" by hiding it.
   - Decide build integration: keep `minimax-engine/` standalone (`cmake --preset release`) for now; do **not** touch root build/CI files (they're on the do-not-touch list).
-- **Acceptance criteria:** `cd minimax-engine && cmake --preset release && (cd build_release && make)` succeeds from a clean checkout; `wallwars_ai test` runs and the only failure is the documented, quarantined one; a short `minimax-engine/BUILD.md` documents the command + the known-failure note.
+- **Acceptance criteria:** `cd minimax-engine && cmake --preset release && (cd build_release && make)` succeeds from a clean checkout; the gate runs the **full** `wallwars_ai test` visibly AND separately asserts the only failure is exactly `NegamaxOrderedMovesTest` (11/12) — failing the gate if that changes; `minimax-engine/BUILD.md` documents the command, compiler/platform (g++ 13.3 / cmake 3.28 / Ubuntu 24.04), and the exact known failure.
 - **Decide-with-Game-Reviewer:** quarantine vs. fix for the failing test; whether to keep standalone build.
 - **Locked (don't relitigate):** server-side serving via V3 protocol; 8×8 classic v1; pure-C++17 light wrapper (no Folly).
 - **Resources:** `minimax-engine/` (vendored), this file's Resources section.
 
 ## SLICE-1b PICKUP — *author after 1a commits*
-(Goal preview: tracer wrapper `minimax_bgs_engine` + `bot-5-minimax-engine.test.ts` green for one full 8×8 classic game. The "what 1a learned" note goes here.)
+(Goal preview: tracer wrapper `minimax_bgs_engine` + `bot-5-minimax-engine.test.ts` green for one full 8×8 classic game.)
+**Hard acceptance criteria carried from plan-gate (do not drop):** (1) stdout protocol-only — engine search logs suppressed/redirected, asserted by protocol-smoke; (2) small *tested* translation subset (smoke tests for the exact wall anchors + pawn deltas the bot can emit); (3) error-path responses (bad size/variant, unknown bgsId, dup/missing session, malformed move); (4) multi-session no-state-bleed smoke; (5) every `apply_move` asserted server-accepted in the integration test. The "what 1a learned" note goes at the top when authored.
 
 ## SLICE-2 PICKUP — *author after 1b commits*
 
