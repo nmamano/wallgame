@@ -228,7 +228,40 @@ A `minimax_bgs_engine` binary that speaks V3 JSON-lines, holds per-`bgsId` `Situ
 ### Locked (don't relitigate)
 Server-side serving via V3; 8×8 classic v1; pure-C++17 synchronous wrapper (no Folly); the EXACT wall↔edge bijection in Resources.
 
-## SLICE-2 PICKUP — *author after 1b commits*
+## SLICE-2a PICKUP — authored after 1b (commit `b2e01e5`)
+
+### What 1b learned (fold forward)
+- A 2-step pawn move = a **single** cat action to a distance-2 cell (confirmed in `dummy-ai.ts`); the server accepts it. No intermediate-step decomposition — keep relying on this.
+- stdout isolation pattern works (wrapper-side parsing + `cout`→`cerr`). Don't reintroduce stdout writes in the engine path.
+- `bot-5` harness is reliable offline (~30–60s at `--think-millis 100`); reuse it.
+- **Engine `ApplyMove` does NOT enforce legality in release builds** (`IsLegalMove` is behind `DBGS`), and the old `IsLegalMove` assumes exactly 2 action points — not wallgame-compatible. (Game Reviewer's 1b residual.)
+
+### Goal
+Make the translation boundary provably correct/robust, and make `apply_move` legality explicit.
+
+### Scope
+- **A. Exhaustive translation tests** — extend `translation_test.cc` with NEGATIVE cases: fake-edge rejection (vertical at col `C-1`, horizontal at row 0), out-of-range/garbage notation rejection, and confirm every real edge round-trips (valid-anchor round-trips already pass from 1b — add the negatives).
+- **B. `apply_move` legality** — a wrapper-side, **wallgame-compatible** validator (handles `---` / 1-action / 2-action) checking pawn reachability (`G.Distance(src,dst) ≤ 2` on the active graph) and wall validity (real edge, currently active, `CanDeactivateEdge` so goals stay reachable) BEFORE `ApplyMove`. Illegal → `success:false`, state unchanged. Never call the printing `CrashIfMoveIsIllegal`.
+- **C. Regression** — add an illegal-apply case to `protocol-smoke.sh` (e.g. rebuild an already-built wall, or pawn jump of 3) asserting `success:false` AND state intact (a follow-up evaluate still succeeds at the same ply).
+
+### Load-bearing mechanics / traps
+- Legality must mirror wallgame rules, NOT the old 2-action-point assumption (a move may be 0/1/2 actions).
+- Validate pawn reachability on the CURRENT (pre-move) graph; validate walls via `CanDeactivateEdge`.
+- Keep eval golden tests OUT of 2a (that's 2b).
+
+### Acceptance criteria
+- `translation_test` extended with negative/fake-edge cases; all pass.
+- `apply_move` rejects a parseable-but-illegal move with `success:false`, session state intact (proven by a follow-up evaluate at the same ply).
+- `protocol-smoke` + `test-gate` + `bot-5` still green.
+
+### Decide-with-Game-Reviewer (plan-gate)
+- The exact legality rule set (pawn dist ≤ 2 on active graph; wall = real+active+`CanDeactivateEdge`) — right wallgame-compatible set, or stricter/looser?
+- Validate the bot's OWN output too (defense in depth), or only `apply_move`?
+
+### Locked (don't relitigate)
+EXACT bijection; 8×8 classic; server-side V3; light synchronous wrapper.
+
+## SLICE-2b PICKUP — *author after 2a commits*
 
 ## SLICE-3 PICKUP — *parked unless promoted by Nil*
 
