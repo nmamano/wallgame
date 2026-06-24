@@ -81,6 +81,92 @@ int main() {
   roundtrip("Cb8.>a8");    // walk + vertical wall (edge 0)
   roundtrip("Cb8.^b7");    // walk + horizontal wall (anchor [1,1], r>0; off-by-one path)
 
+  // --- SYNTAX / fake-edge / structural rejections (ParseActions) ------------
+  auto throws_parse = [&](const std::string& n, const std::string& why) {
+    bool threw = false;
+    try {
+      ParseActions(n, R, C);
+    } catch (const std::exception&) {
+      threw = true;
+    }
+    check(threw, "ParseActions rejects " + why + " ('" + n + "')");
+  };
+  throws_parse(">h8", "vertical wall in last column (fake edge)");
+  throws_parse("^a8", "horizontal wall in top row (fake edge)");
+  throws_parse("Mb8", "mouse action in classic");
+  throws_parse("Cb8.Cc8", "multiple cat actions");
+  throws_parse("Ca8.>a8.^b7", "more than two actions");
+  throws_parse("Zz9", "unknown action");
+  throws_parse("Cz9", "cat column out of range");
+
+  // --- LEGALITY rejections / acceptances (ParseAndValidate) ------------------
+  // sit is the 8x8 classic start: P1 (turn 0) at a8.
+  auto throws_validate = [&](const std::string& n, const std::string& why) {
+    bool threw = false;
+    try {
+      ParseAndValidate(n, sit);
+    } catch (const std::exception&) {
+      threw = true;
+    }
+    check(threw, "ParseAndValidate rejects " + why + " ('" + n + "')");
+  };
+  auto accepts_validate = [&](const std::string& n) {
+    bool ok = true;
+    try {
+      ParseAndValidate(n, sit);
+    } catch (const std::exception& e) {
+      ok = false;
+      std::cerr << "  (unexpected reject: '" << n << "' -> " << e.what() << ")\n";
+    }
+    check(ok, "ParseAndValidate accepts legal '" + n + "'");
+  };
+  throws_validate("Ca8", "explicit cat no-op");
+  throws_validate("Cd8", "pawn jump of 3 from start");
+  throws_validate(">a8.>a8", "duplicate wall in one move");
+  accepts_validate("---");
+  accepts_validate("Cc8");      // 2-step pawn walk
+  accepts_validate("Cb8.>a8");  // walk + vertical wall
+
+  // Blocked two-step: a wall between b8 and c8 makes a8->c8 need >2 steps, so
+  // the otherwise-legal "Cc8" must be rejected (distance is over the ACTIVE graph).
+  {
+    Situation<R, C> blocked = sit;                       // P1 at a8
+    blocked.G.DeactivateEdge(WallToEdge(0, 1, true, R, C));  // vertical wall b8|c8
+    bool threw = false;
+    try {
+      ParseAndValidate("Cc8", blocked);
+    } catch (const std::exception&) {
+      threw = true;
+    }
+    check(threw, "ParseAndValidate rejects a two-step blocked by a wall (Cc8)");
+  }
+
+  // --- edge-index side (the reverse surface MoveToStdNotation emits through) --
+  // Every REAL edge round-trips e -> wall -> e; every FAKE edge in range rejects
+  // (covers fake right-column AND fake bottom-row graph edges).
+  {
+    int real = 0, fake = 0;
+    for (int e = 0; e < NumRealAndFakeEdges(R, C); ++e) {
+      if (IsRealEdge(R, C, e)) {
+        WallRC w = EdgeToWall(e, R, C);
+        check(WallToEdge(w.row, w.col, w.vertical, R, C) == e,
+              "edge round-trip e=" + std::to_string(e));
+        ++real;
+      } else {
+        bool threw = false;
+        try {
+          EdgeToWall(e, R, C);
+        } catch (const std::exception&) {
+          threw = true;
+        }
+        check(threw, "EdgeToWall rejects fake edge e=" + std::to_string(e));
+        ++fake;
+      }
+    }
+    check(real == R * (C - 1) + (R - 1) * C, "real edge count");
+    check(fake > 0, "fake edges exist and were all rejected");
+  }
+
   if (g_fail == 0)
     std::cout << "translation_test: ALL PASS\n";
   else

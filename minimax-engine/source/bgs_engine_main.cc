@@ -161,6 +161,11 @@ int main(int argc, char** argv) {
         } else {
           const Move m = engine.GetMove(s.sit, think_millis);  // sit passed by value
           best = bgs::MoveToStdNotation(m, s.sit);
+          std::cerr << "[minimax-engine] bgs=" << bgsId << " ply=" << s.ply
+                    << " bestMove=" << best << "\n";
+          // Defense in depth: our own emitted move must validate against the
+          // current position (catches translation regressions at the source).
+          bgs::ParseAndValidate(best, s.sit);
           eval = bgs::EvalToP1(engine.LastRootEval(), s.sit.turn);
         }
         resp = json{{"type", "evaluate_response"}, {"bgsId", bgsId}, {"ply", s.ply},
@@ -173,7 +178,9 @@ int main(int argc, char** argv) {
         const int expected = req.value("expectedPly", s.ply);
         if (expected != s.ply) throw std::runtime_error("ply mismatch");
 
-        const Move m = bgs::ParseStdMove(req.at("move").get<std::string>(), s.sit);
+        // Validate legality on a clone BEFORE mutating; throws -> error response
+        // with session state left intact.
+        const Move m = bgs::ParseAndValidate(req.at("move").get<std::string>(), s.sit);
         s.sit.ApplyMove(m);  // flips sit.turn
         s.ply += 1;
         resp = json{{"type", "move_applied"}, {"bgsId", bgsId}, {"ply", s.ply},

@@ -83,6 +83,36 @@ if grep -qiE 'Search depth|Best move' <<<"$OUT"; then
 fi
 grep -qiE 'Search depth|Best move' /tmp/mm-smoke-err.txt || echo "note: no search logs seen on stderr (think time may be tiny)"
 
+# ---- legality / state-integrity (slice 2a) ---------------------------------
+echo "== legality + state-integrity checks =="
+chk() {  # chk <jsonline> <jq-filter> <description>
+  local line="$1" filt="$2" desc="$3"
+  if ! echo "$line" | jq -e . >/dev/null 2>&1; then
+    echo "FAIL [$desc]: not JSON: '$line'"; fail=1; return
+  fi
+  echo "$line" | jq -e "$filt" >/dev/null 2>&1 || { echo "FAIL [$desc]: $filt -> $line"; fail=1; }
+}
+
+LOUT=$(printf '%s\n' \
+  "${START1/\"s1\"/\"s3\"}" \
+  '{"type":"apply_move","bgsId":"s3","expectedPly":0,"move":"Cd8"}' \
+  '{"type":"evaluate_position","bgsId":"s3","expectedPly":0}' \
+  '{"type":"apply_move","bgsId":"s3","expectedPly":0,"move":"Cb8.>a8"}' \
+  '{"type":"apply_move","bgsId":"s3","expectedPly":1,"move":">a8"}' \
+  '{"type":"evaluate_position","bgsId":"s3","expectedPly":1}' \
+  '{"type":"end_game_session","bgsId":"s3"}' \
+  | "./$ENGINE" --think-millis "$THINK" 2>>/tmp/mm-smoke-err.txt)
+mapfile -t LL <<<"$LOUT"
+
+chk "${LL[0]:-}" '.type=="game_session_started" and .success==true'                 "start s3"
+chk "${LL[1]:-}" '.type=="move_applied" and .success==false'                        "illegal pawn jump (Cd8) rejected"
+chk "${LL[2]:-}" '.type=="evaluate_response" and .success==true and .ply==0'        "state intact after illegal apply (evaluate ply0 ok)"
+chk "${LL[3]:-}" '.type=="move_applied" and .success==true and .ply==1'             "legal walk+wall (Cb8.>a8) applied"
+chk "${LL[4]:-}" '.type=="move_applied" and .success==false'                        "rebuild of already-built wall (>a8) rejected"
+chk "${LL[5]:-}" '.type=="evaluate_response" and .success==true and .ply==1'        "state intact after illegal rebuild (evaluate ply1 ok)"
+chk "${LL[6]:-}" '.type=="game_session_ended" and .success==true'                   "end s3"
+grep -qiE 'Search depth|Best move' <<<"$LOUT" && { echo "FAIL: search text leaked to stdout (legality run)"; fail=1; } || true
+
 if [ "$fail" -eq 0 ]; then
   echo "PROTOCOL-SMOKE OK"
   exit 0

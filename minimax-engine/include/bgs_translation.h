@@ -91,32 +91,41 @@ inline WallRC EdgeToWall(int e, int R, int C) {
 
 // ---- standard-notation move <-> engine Move --------------------------------
 
-template <int R, int C>
-Move ParseStdMove(const std::string& notation, const Situation<R, C>& sit) {
-  Move m;
-  m.token_change = 0;
-  m.edges[0] = -1;
-  m.edges[1] = -1;
-  if (notation == "---") return m;  // pass / no-op
+// Structured result of parsing a standard-notation move (SYNTAX only).
+struct ParsedMove {
+  bool has_cat = false;
+  int cat_dst = -1;             // node index, valid iff has_cat
+  std::array<int, 2> walls = {-1, -1};
+  int wall_count = 0;
+};
 
-  const int src = sit.tokens[sit.turn];
-  int n_edges = 0;
+// Parse SYNTAX + STRUCTURE only (no game legality): at most 2 actions, at most
+// one cat action, mouse rejected, cells/walls in range (WallToEdge rejects fake
+// edges). Throws std::runtime_error on malformed input. "---" -> empty.
+inline ParsedMove ParseActions(const std::string& notation, int R, int C) {
+  ParsedMove p;
+  if (notation == "---") return p;
+  int total = 0;
   size_t start = 0;
   while (true) {
     size_t dot = notation.find('.', start);
     std::string tok = (dot == std::string::npos) ? notation.substr(start)
                                                  : notation.substr(start, dot - start);
     if (tok.empty()) throw std::runtime_error("empty action in move: '" + notation + "'");
+    if (++total > 2) throw std::runtime_error("too many actions (max 2): '" + notation + "'");
     char head = tok[0];
     if (head == 'C' || head == 'c') {
+      if (p.has_cat) throw std::runtime_error("multiple cat actions: '" + notation + "'");
       RC rc = CellFromStd(tok.substr(1), R);
       if (rc.row < 0 || rc.row >= R || rc.col < 0 || rc.col >= C)
         throw std::runtime_error("cat target out of bounds: '" + tok + "'");
-      m.token_change = NodeAt(C, rc.row, rc.col) - src;
+      p.has_cat = true;
+      p.cat_dst = NodeAt(C, rc.row, rc.col);
     } else if (head == '>' || head == '^') {
       RC rc = CellFromStd(tok.substr(1), R);
-      if (n_edges >= 2) throw std::runtime_error("too many walls: '" + notation + "'");
-      m.edges[n_edges++] = WallToEdge(rc.row, rc.col, head == '>', R, C);
+      int e = WallToEdge(rc.row, rc.col, head == '>', R, C);  // throws on fake/out-of-range
+      if (p.wall_count >= 2) throw std::runtime_error("too many walls: '" + notation + "'");
+      p.walls[p.wall_count++] = e;
     } else if (head == 'M' || head == 'm') {
       throw std::runtime_error("mouse action not supported in classic: '" + tok + "'");
     } else {
@@ -124,6 +133,54 @@ Move ParseStdMove(const std::string& notation, const Situation<R, C>& sit) {
     }
     if (dot == std::string::npos) break;
     start = dot + 1;
+  }
+  return p;
+}
+
+// SYNTAX-only parse -> engine Move (no legality). Used by notation round-trips.
+template <int R, int C>
+Move ParseStdMove(const std::string& notation, const Situation<R, C>& sit) {
+  ParsedMove p = ParseActions(notation, R, C);
+  Move m;
+  m.token_change = p.has_cat ? (p.cat_dst - sit.tokens[sit.turn]) : 0;
+  m.edges[0] = p.wall_count > 0 ? p.walls[0] : -1;
+  m.edges[1] = p.wall_count > 1 ? p.walls[1] : -1;
+  return m;
+}
+
+// Parse AND validate legality against `sit` (wallgame-compatible: 0/1/2 actions).
+// Validation is SEQUENTIAL on a clone so walls see the post-pawn position and
+// each other. Throws std::runtime_error on any illegal move; never mutates `sit`
+// and never calls the engine's printing helpers. Returns the engine Move.
+template <int R, int C>
+Move ParseAndValidate(const std::string& notation, const Situation<R, C>& sit) {
+  ParsedMove p = ParseActions(notation, R, C);
+  const int turn = sit.turn;
+  const int src = sit.tokens[turn];
+  Situation<R, C> clone = sit;  // validate on a clone
+
+  Move m;
+  m.token_change = 0;
+  m.edges[0] = -1;
+  m.edges[1] = -1;
+
+  if (p.has_cat) {
+    const int dst = p.cat_dst;
+    if (dst == src) throw std::runtime_error("cat no-op (use --- to pass)");
+    int d = clone.G.Distance(src, dst);  // shortest path through ACTIVE edges
+    if (d < 1 || d > 2)
+      throw std::runtime_error("pawn destination not reachable in 1-2 steps");
+    clone.tokens[turn] = static_cast<int8_t>(dst);  // post-pawn for wall checks
+    m.token_change = dst - src;
+  }
+
+  for (int i = 0; i < p.wall_count; ++i) {
+    int e = p.walls[i];
+    if (!clone.G.edges[e]) throw std::runtime_error("wall already built/inactive");
+    if (!clone.CanDeactivateEdge(e))
+      throw std::runtime_error("wall would disconnect a player from goal");
+    clone.G.DeactivateEdge(e);  // sequential: a later wall sees this one applied
+    m.edges[i] = e;
   }
   return m;
 }
