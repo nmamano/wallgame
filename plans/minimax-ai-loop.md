@@ -180,9 +180,46 @@ Vendored from `github.com/nmamano/wallwars` `/AI` at commit `bb730f1f988d1b4fb2e
 - **Locked (don't relitigate):** server-side serving via V3 protocol; 8×8 classic v1; pure-C++17 light wrapper (no Folly).
 - **Resources:** `minimax-engine/` (vendored), this file's Resources section.
 
-## SLICE-1b PICKUP — *author after 1a commits*
-(Goal preview: tracer wrapper `minimax_bgs_engine` + `bot-5-minimax-engine.test.ts` green for one full 8×8 classic game.)
-**Hard acceptance criteria carried from plan-gate (do not drop):** (1) stdout protocol-only — engine search logs suppressed/redirected, asserted by protocol-smoke; (2) small *tested* translation subset (smoke tests for the exact wall anchors + pawn deltas the bot can emit); (3) error-path responses (bad size/variant, unknown bgsId, dup/missing session, malformed move); (4) multi-session no-state-bleed smoke; (5) every `apply_move` asserted server-accepted in the integration test. The "what 1a learned" note goes at the top when authored.
+## SLICE-1b PICKUP — authored after 1a (commit `bbfaf61`)
+
+### What 1a learned (fold forward)
+- **`minimax-engine/.gitignore` is `build*`** → any new path whose name starts with "build" is silently ignored (it bit the gate script). Name new files/targets accordingly; the build output dir is `build_release/` (ignored, good). Verify trackability with `git status --untracked-files=all` before committing.
+- The gate pattern (run full suite visibly + assert exact failing-set) works; reuse it.
+- Diff-gate cadence with Game Reviewer is fast and catches packaging issues; keep using it.
+
+### Goal
+A `minimax_bgs_engine` binary that speaks V3 JSON-lines, holds per-`bgsId` `Situation<8,8>`, returns **legal** classic moves in standard notation, **stdout is protocol-only**, with smoke tests + a green `bot-5-minimax-engine.test.ts` playing a full 8×8 classic game.
+
+### Planned files
+- `minimax-engine/source/bgs_engine_main.cc` — synchronous, single-threaded wrapper: read stdin JSON line → dispatch by `type` → write one JSON line to stdout. Per-`bgsId` map of `Situation<8,8>` + side-to-move.
+- `minimax-engine/include/external/json.hpp` — vendored nlohmann/json single header (MIT). (New external dep; header-only, no build complexity.)
+- `minimax-engine/include/bgs_translation.h` — wallgame ↔ engine translation (cells, walls, notation, eval). 1b implements the mapping per the EXACT bijection in Resources + ships **targeted** smoke tests for the anchors any emitted move uses; 2a proves it exhaustively.
+- `minimax-engine/CMakeLists.txt` — add target `minimax_bgs_engine` (does not disturb the `wallwars_ai` target).
+- `minimax-engine/scripts/protocol-smoke.sh` — pipe canned BGS JSON; assert response `type`s, **stdout parses as pure JSON-lines**, returned move is legal, multi-session no-bleed, and error paths.
+- `tests/integration/bot-5-minimax-engine.test.ts` — copy `bot-3-dummy-engine.test.ts`; `engineCommands` → built binary; variant `classic`, 8×8; assert **every** `apply_move` accepted + game reaches a legal finish.
+
+### Message semantics (match dummy-engine)
+- `start_game_session` → build `Situation<8,8>` from classic 8×8 start; register by `bgsId`. Reject non-classic / non-8×8 with a well-formed error (error-path).
+- `evaluate_position` → `GetMove` on the current `Situation` (bot to move), return `{bestMove (std notation), evaluation, ply}`. **Do not mutate** state.
+- `apply_move` → parse std-notation move → engine `Move` → `ApplyMove`, advance turn. Sent for BOTH players' moves to keep state in sync.
+- `end_game_session` → drop the session.
+
+### Load-bearing mechanics / traps (this slice)
+- **stdout isolation (BLOCKER):** audit every `std::cout` in the wrapper's code path (esp. `negamax.h` `GetMove`: "Search depth…", "Best move…", "Found winning move…"). **Route search-progress logging to `std::cerr`** (or guard off) — Nil authorized editing the vendored engine; log the change in `PROVENANCE.md`. protocol-smoke asserts stdout is pure JSON-lines.
+- **Root eval accessor:** surface the side-to-move root eval from the TT entry `GetMove` already fetches (exact flag), then convert to P1-perspective + squash (mechanism only in 1b; golden-tested in 2b).
+- **Notation:** use the `>`(vertical)/`^`(horizontal) + `C`(pawn) format; rows 1-based bottom-up. Mirror `shared/domain/standard-notation.ts`.
+- Hardcode `Situation<8,8>`; multi-size is parked (slice 3).
+
+### Acceptance criteria (do not drop)
+(1) stdout protocol-only, asserted by protocol-smoke; (2) mapping shipped WITH targeted smoke tests (no opaque bridge); (3) error-path responses (bad size/variant, unknown `bgsId`, dup/missing session, malformed move); (4) multi-session no-state-bleed smoke; (5) `bot-5` integration test green with **every** `apply_move` asserted server-accepted; (6) `test-gate.sh` still green (engine self-tests unaffected, or `wallwars_ai` target untouched).
+
+### Decide-with-Game-Reviewer (this slice's plan-gate)
+- stderr-routing vs compile-flag guard for the search logs.
+- Vendoring nlohmann/json single header vs a hand-rolled minimal parser.
+- Whether 1b's eval can be "mechanism only" (sign-correct, un-golden) with golden tests deferred to 2b.
+
+### Locked (don't relitigate)
+Server-side serving via V3; 8×8 classic v1; pure-C++17 synchronous wrapper (no Folly); the EXACT wall↔edge bijection in Resources.
 
 ## SLICE-2 PICKUP — *author after 1b commits*
 
