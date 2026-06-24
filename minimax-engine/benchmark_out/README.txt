@@ -1,1 +1,0 @@
-Benchmark results are stored automatically in this folder. Do not delete.

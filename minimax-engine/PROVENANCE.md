@@ -29,6 +29,8 @@ Tracked here as the project progresses:
   `GetMove` from `std::cout` to `std::cerr` (the wrapper's stdout must be pure
   JSON-lines), and added `LastRootEval()` / `GameOverEval()` accessors so the
   wrapper can surface the root evaluation. No search/eval logic changed.
+- **dropped** `benchmark_out/` — the source repo's old 2022 benchmark run data
+  (not needed here; `benchmark` mode regenerates it). Directory is gitignored.
 
 ## Added (not in the source repo)
 - `include/external/json.hpp` — nlohmann/json v3.11.3 single-header (MIT),
