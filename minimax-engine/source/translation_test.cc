@@ -94,10 +94,10 @@ int main() {
   throws_parse(">h8", "vertical wall in last column (fake edge)");
   throws_parse("^a8", "horizontal wall in top row (fake edge)");
   throws_parse("Mb8", "mouse action in classic");
-  throws_parse("Cb8.Cc8", "multiple cat actions");
   throws_parse("Ca8.>a8.^b7", "more than two actions");
   throws_parse("Zz9", "unknown action");
   throws_parse("Cz9", "cat column out of range");
+  throws_parse("Ca7.Ca6.Ca5", "three actions (max 2)");
 
   // --- LEGALITY rejections / acceptances (ParseAndValidate) ------------------
   // sit is the 8x8 classic start: P1 (turn 0) at a8.
@@ -124,8 +124,11 @@ int main() {
   throws_validate("Cd8", "pawn jump of 3 from start");
   throws_validate(">a8.>a8", "duplicate wall in one move");
   accepts_validate("---");
-  accepts_validate("Cc8");      // 2-step pawn walk
-  accepts_validate("Cb8.>a8");  // walk + vertical wall
+  accepts_validate("Cc8");       // 2-step pawn walk (single cat to dist-2)
+  accepts_validate("Cb8.>a8");   // walk + vertical wall
+  accepts_validate("Cb8.Cb7");   // two-step walk as TWO cat actions (prod-found case)
+  throws_validate("Cb8.Cb8", "two-cat second step not a single move");
+  throws_validate("Cb8.Ca8", "two-cat net no-op (returns to start)");
 
   // Blocked two-step: a wall between b8 and c8 makes a8->c8 need >2 steps, so
   // the otherwise-legal "Cc8" must be rejected (distance is over the ACTIVE graph).

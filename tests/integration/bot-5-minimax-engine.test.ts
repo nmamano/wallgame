@@ -3,8 +3,9 @@
  * served via the official custom bot client over the V3 BGS protocol.
  *
  * Unlike bot-3 (5x5, a couple of "---" passes, then resignation), this plays an
- * actual 8x8 CLASSIC game to a NATURAL finish: the human (P1) passes every turn
- * while the minimax bot (P2) marches to its goal and wins. Every bot move is
+ * actual 8x8 CLASSIC game to a NATURAL finish: the human (P1) makes one real
+ * two-step move (two cat actions) and then passes, while the minimax bot (P2)
+ * marches to its goal and wins. Every bot move is
  * asserted server-accepted via the authoritative state wire (moveCount/turn/
  * status), not UI rendering. If the bot ever returned an illegal move the server
  * would reject it, moveCount would stall, and the test would time out.
@@ -403,9 +404,13 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
         if (currentState.state.status !== "playing") break;
 
         const moveCountBefore = currentState.state.moveCount;
-        await submitHumanMove(humanSocket, "---", 8); // human passes
+        // The FIRST human turn makes a real two-step move (two cat actions) to
+        // exercise apply_move end-to-end (regression for the prod two-cat bug);
+        // afterwards the human passes so the bot still reaches a natural win.
+        const humanMove = round === 0 ? "Cb8.Cb7" : "---";
+        await submitHumanMove(humanSocket, humanMove, 8);
 
-        // The server must apply BOTH the human pass and the bot's move (or the
+        // The server must apply BOTH the human's move and the bot's move (or the
         // game must finish). If the bot returned an illegal move, moveCount
         // would not advance and this would time out -> a real failure.
         currentState = await humanSocket.waitForState(

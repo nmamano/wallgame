@@ -117,6 +117,14 @@ chk "${LL[5]:-}" '.type=="evaluate_response" and .success==true and .ply==1'    
 chk "${LL[6]:-}" '.type=="game_session_ended" and .success==true'                   "end s3"
 grep -qiE 'Search depth|Best move' <<<"$LOUT" && { echo "FAIL: search text leaked to stdout (legality run)"; fail=1; } || true
 
+# ---- two-step pawn move as TWO cat actions (regression: prod-found) ---------
+echo "== two-cat-action move accepted =="
+TCOUT=$(printf '%s\n%s\n' \
+  "${START1/\"s1\"/\"s5\"}" \
+  '{"type":"apply_move","bgsId":"s5","expectedPly":0,"move":"Cb8.Cb7"}' \
+  | "./$ENGINE" --think-millis "$THINK" 2>>/tmp/mm-smoke-err.txt)
+chk "$(printf '%s\n' "$TCOUT" | tail -1)" '.type=="move_applied" and .success==true and .ply==1' "two-cat move (Cb8.Cb7) accepted"
+
 if [ "$fail" -eq 0 ]; then
   echo "PROTOCOL-SMOKE OK"
   exit 0

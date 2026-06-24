@@ -93,15 +93,18 @@ inline WallRC EdgeToWall(int e, int R, int C) {
 
 // Structured result of parsing a standard-notation move (SYNTAX only).
 struct ParsedMove {
-  bool has_cat = false;
-  int cat_dst = -1;             // node index, valid iff has_cat
+  // Up to TWO cat actions: a two-step pawn walk arrives as "C<mid>.C<dst>" (the
+  // real game UI emits this); a single cat action to a distance-2 cell also occurs.
+  std::array<int, 2> cat_targets = {-1, -1};  // node indices, in order
+  int cat_count = 0;
   std::array<int, 2> walls = {-1, -1};
   int wall_count = 0;
 };
 
 // Parse SYNTAX + STRUCTURE only (no game legality): at most 2 actions, at most
-// one cat action, mouse rejected, cells/walls in range (WallToEdge rejects fake
-// edges). Throws std::runtime_error on malformed input. "---" -> empty.
+// two cat actions (a two-step walk), mouse rejected, cells/walls in range
+// (WallToEdge rejects fake edges). Throws std::runtime_error on malformed input.
+// "---" -> empty.
 inline ParsedMove ParseActions(const std::string& notation, int R, int C) {
   ParsedMove p;
   if (notation == "---") return p;
@@ -115,12 +118,11 @@ inline ParsedMove ParseActions(const std::string& notation, int R, int C) {
     if (++total > 2) throw std::runtime_error("too many actions (max 2): '" + notation + "'");
     char head = tok[0];
     if (head == 'C' || head == 'c') {
-      if (p.has_cat) throw std::runtime_error("multiple cat actions: '" + notation + "'");
+      if (p.cat_count >= 2) throw std::runtime_error("too many cat actions: '" + notation + "'");
       RC rc = CellFromStd(tok.substr(1), R);
       if (rc.row < 0 || rc.row >= R || rc.col < 0 || rc.col >= C)
         throw std::runtime_error("cat target out of bounds: '" + tok + "'");
-      p.has_cat = true;
-      p.cat_dst = NodeAt(C, rc.row, rc.col);
+      p.cat_targets[p.cat_count++] = NodeAt(C, rc.row, rc.col);
     } else if (head == '>' || head == '^') {
       RC rc = CellFromStd(tok.substr(1), R);
       int e = WallToEdge(rc.row, rc.col, head == '>', R, C);  // throws on fake/out-of-range
@@ -142,7 +144,10 @@ template <int R, int C>
 Move ParseStdMove(const std::string& notation, const Situation<R, C>& sit) {
   ParsedMove p = ParseActions(notation, R, C);
   Move m;
-  m.token_change = p.has_cat ? (p.cat_dst - sit.tokens[sit.turn]) : 0;
+  // Pawn destination is the LAST cat action's target (intermediate steps are
+  // path notation; the net delta is all the engine Move needs).
+  m.token_change =
+      p.cat_count > 0 ? (p.cat_targets[p.cat_count - 1] - sit.tokens[sit.turn]) : 0;
   m.edges[0] = p.wall_count > 0 ? p.walls[0] : -1;
   m.edges[1] = p.wall_count > 1 ? p.walls[1] : -1;
   return m;
@@ -164,12 +169,22 @@ Move ParseAndValidate(const std::string& notation, const Situation<R, C>& sit) {
   m.edges[0] = -1;
   m.edges[1] = -1;
 
-  if (p.has_cat) {
-    const int dst = p.cat_dst;
-    if (dst == src) throw std::runtime_error("cat no-op (use --- to pass)");
-    int d = clone.G.Distance(src, dst);  // shortest path through ACTIVE edges
-    if (d < 1 || d > 2)
-      throw std::runtime_error("pawn destination not reachable in 1-2 steps");
+  if (p.cat_count > 0) {
+    const int dst = p.cat_targets[p.cat_count - 1];  // final pawn cell
+    if (dst == src) throw std::runtime_error("cat no-op / returns to start (use --- to pass)");
+    if (p.cat_count == 1) {
+      // One cat action: a single step, or the dist-2 shorthand.
+      int d = clone.G.Distance(src, dst);  // shortest path through ACTIVE edges
+      if (d < 1 || d > 2)
+        throw std::runtime_error("pawn destination not reachable in 1-2 steps");
+    } else {
+      // Two cat actions: each must be a single adjacent step on the active graph.
+      const int mid = p.cat_targets[0];
+      if (clone.G.Distance(src, mid) != 1)
+        throw std::runtime_error("first pawn step is not a single move");
+      if (clone.G.Distance(mid, dst) != 1)
+        throw std::runtime_error("second pawn step is not a single move");
+    }
     clone.tokens[turn] = static_cast<int8_t>(dst);  // post-pawn for wall checks
     m.token_change = dst - src;
   }
