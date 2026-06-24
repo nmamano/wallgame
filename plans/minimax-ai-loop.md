@@ -261,7 +261,37 @@ Make the translation boundary provably correct/robust, and make `apply_move` leg
 ### Locked (don't relitigate)
 EXACT bijection; 8×8 classic; server-side V3; light synchronous wrapper.
 
-## SLICE-2b PICKUP — *author after 2a commits*
+## SLICE-2b PICKUP — authored after 2a (commit `9aa0362`)
+
+### What 2a learned (fold forward)
+- Legality + bot-output validation are in the hot path and a full game still passes — eval changes must not regress that (re-run `bot-5`).
+- Engine `entry.eval`/`LastRootEval` is side-to-move-relative; `p1Raw=(turn==0?eval:-eval)` is correct by construction.
+- A forced win gives searched eval ≥ `kGameOverEval` (999+depth) → tanh saturates to ~±1 (fine).
+
+### Goal
+Finalize eval/endgame: P1-perspective sign, deterministic documented squash, terminals from `Winner()`, with golden-position tests (sign + monotonic).
+
+### Scope
+- **A. Terminal eval helper** — `TerminalEvalP1(winner)` → +1/−1/0 (0→+1, 1→−1, 2→0); use it in `evaluate_position`'s `IsGameOver` branch (replace the inline mapping).
+- **B. Squash** — keep deterministic `tanh(p1Raw/scale)`; pick + DOCUMENT `scale` (candidate ~8) so mid-game edges aren't over-saturated; clamp after.
+- **C. Golden tests** (new `eval_test.cc` target, links negamax): construct decisive `Situation`s, run `GetMove` (fixed low think-millis), convert via `EvalToP1`, assert SIGN (P1 near-win → >0.5; P2 near-win → <−0.5; symmetric start → |eval|<0.5) and rough MONOTONICITY over an ordered set; plus pure `EvalToP1` unit checks (sign turn0/turn1, monotonic in raw, range, terminal mapping).
+- **D. Optional** — assert in `bot-5` that the pre-final eval is strongly signed toward the winner (decide with reviewer; may be flaky).
+
+### Load-bearing mechanics / traps
+- Don't use a post-game-over SEARCH value for terminals — `Winner()` directly.
+- Golden tests must be TOLERANT (sign + ordering, not exact values); search depth/time varies.
+- Low + fixed think-millis in tests for sign determinism.
+
+### Acceptance criteria
+- `eval_test` passes (sign + monotonic + terminal); `protocol-smoke` + `test-gate` + `bot-5` still green; scale documented in code.
+
+### Decide-with-Game-Reviewer (plan-gate)
+- Squash scale value + whether `tanh` is the right curve.
+- Golden tests engine-based vs pure-conversion — how much engine nondeterminism to allow.
+- Add the bot-5 eval assertion (D) or skip as flaky?
+
+### Locked (don't relitigate)
+EXACT bijection; 8×8 classic; P1-perspective eval; light wrapper; one-move-rule stays as the engine computes it (`Winner()==2` → draw 0), no extra adjudication.
 
 ## SLICE-3 PICKUP — *parked unless promoted by Nil*
 
