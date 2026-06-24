@@ -5,6 +5,28 @@
 
 ---
 
+## Status: v1 COMPLETE — 2026-06-23
+
+All v1 slices shipped, each plan-gated + diff-gated by Game Reviewer, one focused commit per slice.
+
+| Slice | Commit | What landed |
+|---|---|---|
+| 1a | `bbfaf61` | Vendored engine builds in-monorepo; `test-gate.sh` quarantines the known 11/12 failure; `BUILD.md`. |
+| 1b | `b2e01e5` | `minimax_bgs_engine` V3 JSON-lines wrapper (per-`bgsId` `Situation<8,8>`); wallgame↔engine translation (exact wall↔edge bijection); vendored nlohmann/json; protocol-smoke + `bot-5` full 8×8 game (bot wins). |
+| 2a | `9aa0362` | wallgame-compatible `apply_move` legality validator (sequential clone) + bot-output validation; exhaustive/negative + edge-index translation tests; legality regression in protocol-smoke. |
+| 2b | `8762d99` | `TerminalEvalP1` + documented `tanh(raw/8.0)` eval; `eval_test` (pure backbone + near-forced engine sign bands) wired into the always-run gate. |
+
+**Outcome:** the classic-Wallwars minimax engine is a working, legality-hardened, eval-correct **server-side bot** in the monorepo, proven end-to-end by a full 8×8 classic game through the real server harness. **Not yet wired into production** — that's parked (HUMAN-ONLY).
+
+Gates to re-run anytime: `minimax-engine/scripts/protocol-smoke.sh` (build + translation_test + eval_test + protocol stream), `minimax-engine/scripts/test-gate.sh`, and `sg docker -c 'NODE_ENV=test bun test tests/integration/bot-5-minimax-engine.test.ts'`.
+
+### Parked for Nil (HUMAN-ONLY — never decided in the loop)
+- **Go-live / productionize (slice 4):** add the bot to a client config + systemd + monitoring + name/appearance/visibility/recommended settings, then restart. Touches the live bot service → your call, your hands.
+- **Multi-board-size (slice 3):** 5×5–8×8 via runtime dispatch over template instantiations. Parked unless promoted.
+- **Known note (2b diff-gate):** the engine overshoots `--think-millis` by a few seconds (it checks the clock only at coarse search points). Harmless now; revisit for production think-time precision or if CI runtime gets tight.
+
+---
+
 ## North star
 
 Players on **wallgame** can choose a second AI opponent — the **classic-Wallwars minimax engine** (negamax + alpha-beta + transposition tables) — served from auntie the same way the Deep-Wallwars bots are, and play a full **classic** game against it to a legal finish.
