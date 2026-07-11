@@ -6,6 +6,35 @@
 
 ---
 
+## Status: COMPLETE — 2026-07-11
+
+All 6 slices shipped (4 core + 2 optional), each plan-gated + diff-gated by Game Reviewer, one focused commit per slice, zero unresolved gate failures.
+
+| Slice | Commit | What landed |
+|---|---|---|
+| S1 | `9baaa61` | `bench_baseline.sh` + baseline numbers: deployed engines are batch-1 serving exports (~3700 pos/sec, launch-bound). |
+| S2 | `441e07d` | `WallgameTransformer` (per-token heads, pointwise/conv stems, 8-10M params) + 14 CPU tests; cell order locked to `gamestate.cpp:781` after reviewer caught the wrong formula. |
+| S3 | `551eb51` | Export path proven: ONNX→TRT fp16 parity 1.8e-5; batch-1 4135 pos/sec (beats deployed ResNet); batch-256 0.436x bar MISS queued; found production ResNet fp16 drift. |
+| S4 | `2def3a0` | `--arch transformer` in training.py + smoke: **C++ deep_ww ran a transformer engine in self-play**; trained parity 1.1e-4; fastai/fastcore pin fix. |
+| S5 | `2c25e4a` | `ConvHeadResNet` control (`--arch convhead`), smoke-proven; isolates size-free-heads from attention for the ablation. |
+| S6 | `87e84f3` | `-game_columns/-game_rows` padded self-play datagen: 8x8-in-12x10 CSVs verified; unlocks distillation from the strong 8x8 models. |
+
+Gates to re-run anytime: `.venv/bin/python -m pytest scripts/tests/ -q` (22), `scripts/cpp-test-gate.sh`, `scripts/s3_run.sh`, `scripts/s4_smoke.sh [transformer|convhead]`, `scripts/s6_smoke.sh`.
+
+**Outcome:** starting a real transformer training run is now one command, e.g.
+`.venv/bin/python training.py --arch transformer --columns 12 --rows 10 --variant universal --models ../models_12x10_transformer --data ../data_12x10_transformer`
+(real-run architecture config and LR policy are PARKED — see below). The distillation seed path: generate data with the strong 8x8 models via `-game_columns 8 -game_rows 8`, train the transformer on it, then continue self-play.
+
+### Parked for Nil (HUMAN-ONLY — never decided in the loop)
+- Accept batch-256 throughput at 0.436x of ResNet and start real training? (WallGamer recommends yes; serving path is faster than deployed.)
+- Production ResNet fp16 policy drift: quantify Elo cost (fp16 vs `--noTF32` tournament) or ignore.
+- Real-run architecture config (d_model/layers/stem) + LR policy.
+- The two pre-existing untracked `.onnx.data` files at deep-wallwars root: gitignore, move, or delete.
+- 6 pre-existing drifted C++ tests (quarantined in `cpp-test-gate.sh`).
+- Parity-harness extension to convhead (future work note from S5).
+
+---
+
 ## North star
 
 The repo can **define, train, export (ONNX → TensorRT fp16), benchmark, and self-play a transformer model end-to-end at 12x10 universal**, with the existing C++ tensor contract untouched, proven by a tiny smoke generation — so that starting a real training run is a one-command human decision.
