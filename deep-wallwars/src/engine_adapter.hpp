@@ -69,6 +69,16 @@ std::optional<Cell> transform_to_game(Cell model_cell, PaddingConfig const& conf
 // For Classic variant, leaves bottom row vertical walls open (path to goal)
 void place_padding_walls(Board& board, PaddingConfig const& config);
 
+// Create a self-play/training board for a smaller effective game embedded in
+// the model frame: cats at the game-space corners transformed to model
+// coordinates, padding walls placed. Goal semantics match serving
+// (convert_bgs_config_to_board): Classic goals sit at the MODEL bottom
+// corners (the padding leaves the bottom row open as the path to them);
+// Standard mice are transformed game-space corners. Equal dims returns the
+// standard board unchanged.
+Board make_padded_training_board(int model_columns, int model_rows, int game_columns,
+                                 int game_rows, Variant variant);
+
 // Transform move notation from model coordinates to game coordinates
 std::string transform_move_notation(
     std::string const& model_notation,

@@ -453,3 +453,68 @@ TEST_CASE("validate_request - rejects freestyle variant", "[Padding]") {
     CHECK_FALSE(result.valid);
     CHECK(result.error_message.find("freestyle") != std::string::npos);
 }
+
+// ============================================================================
+// Padded Training Board Tests (S6, transformer-ready loop)
+// ============================================================================
+
+TEST_CASE("make_padded_training_board - classic 8x8 in 12x10", "[Padding]") {
+    Board board = make_padded_training_board(12, 10, 8, 8, Variant::Classic);
+
+    // Board is at MODEL dims.
+    CHECK(board.columns() == 12);
+    CHECK(board.rows() == 10);
+
+    // Classic embed is bottom-centered: col_offset = 2, row_offset = 2.
+    CHECK(board.position(Player::Red) == Cell{2, 2});
+    CHECK(board.position(Player::Blue) == Cell{9, 2});
+
+    // Classic goals at the MODEL bottom corners (serving semantics).
+    CHECK(board.mouse(Player::Red) == Cell{0, 9});
+    CHECK(board.mouse(Player::Blue) == Cell{11, 9});
+
+    // Movement into padding blocked at boundaries: from padding row 1 into
+    // game row 2, and across the left padding boundary (col 1 <-> col 2).
+    CHECK(board.is_blocked(Wall{Cell{2, 1}, Wall::Down}));
+    CHECK(board.is_blocked(Wall{Cell{1, 5}, Wall::Right}));
+
+    // Interior of the embedded game stays open.
+    CHECK_FALSE(board.is_blocked(Wall{Cell{5, 5}, Wall::Right}));
+    CHECK_FALSE(board.is_blocked(Wall{Cell{5, 5}, Wall::Down}));
+}
+
+TEST_CASE("make_padded_training_board - standard 8x8 in 12x10", "[Padding]") {
+    Board board = make_padded_training_board(12, 10, 8, 8, Variant::Standard);
+
+    CHECK(board.columns() == 12);
+    CHECK(board.rows() == 10);
+
+    // Standard embed is top-left: offsets (0, 0).
+    CHECK(board.position(Player::Red) == Cell{0, 0});
+    CHECK(board.position(Player::Blue) == Cell{7, 0});
+
+    // Standard mice are transformed game-space corners.
+    CHECK(board.mouse(Player::Red) == Cell{0, 7});
+    CHECK(board.mouse(Player::Blue) == Cell{7, 7});
+
+    // Movement into the right/bottom padding blocked at boundaries.
+    CHECK(board.is_blocked(Wall{Cell{7, 3}, Wall::Right}));
+    CHECK(board.is_blocked(Wall{Cell{3, 7}, Wall::Down}));
+
+    // Interior stays open.
+    CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Right}));
+    CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Down}));
+}
+
+TEST_CASE("make_padded_training_board - equal dims is the standard board", "[Padding]") {
+    Board padded = make_padded_training_board(12, 10, 12, 10, Variant::Classic);
+    Board plain{12, 10, Variant::Classic};
+
+    CHECK(padded.position(Player::Red) == plain.position(Player::Red));
+    CHECK(padded.position(Player::Blue) == plain.position(Player::Blue));
+    CHECK(padded.mouse(Player::Red) == plain.mouse(Player::Red));
+    CHECK(padded.mouse(Player::Blue) == plain.mouse(Player::Blue));
+    // No padding walls: a fresh board has no interior walls anywhere.
+    CHECK_FALSE(padded.is_blocked(Wall{Cell{5, 5}, Wall::Right}));
+    CHECK_FALSE(padded.is_blocked(Wall{Cell{0, 0}, Wall::Down}));
+}

@@ -254,6 +254,36 @@ void place_padding_walls(Board& board, PaddingConfig const& config) {
     }
 }
 
+Board make_padded_training_board(int model_columns, int model_rows, int game_columns,
+                                 int game_rows, Variant variant) {
+    if (game_columns == model_columns && game_rows == model_rows) {
+        return Board{model_columns, model_rows, variant};
+    }
+
+    PaddingConfig config =
+        create_padding_config(model_rows, model_columns, game_rows, game_columns, variant);
+
+    Cell red_cat = transform_to_model(Cell{0, 0}, config);
+    Cell blue_cat = transform_to_model(Cell{game_columns - 1, 0}, config);
+
+    Cell red_mouse;
+    Cell blue_mouse;
+    if (variant == Variant::Classic) {
+        // Serving semantics (convert_bgs_config_to_board): classic goals are
+        // at the MODEL bottom corners; place_padding_walls leaves the bottom
+        // row open as the path to them.
+        red_mouse = Cell{0, model_rows - 1};
+        blue_mouse = Cell{model_columns - 1, model_rows - 1};
+    } else {
+        red_mouse = transform_to_model(Cell{0, game_rows - 1}, config);
+        blue_mouse = transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
+    }
+
+    Board board{model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant};
+    place_padding_walls(board, config);
+    return board;
+}
+
 // Helper to parse a coordinate from notation (e.g., "e4" -> col 4, row based on board size)
 static std::pair<int, int> parse_notation_coords(std::string const& notation, int model_rows) {
     // Column is the letter (a=0, b=1, etc.)

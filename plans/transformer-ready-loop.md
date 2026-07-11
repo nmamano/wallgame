@@ -74,7 +74,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - [x] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline. → Transformer parity PASS at b1 and b256 (worst diff 1.8e-5); batch-1 serving bar PASS at 4135 pos/sec (beats deployed ResNet); **batch-256 bar MISSED at 0.436x - queued for Nil, not weakened**; bonus finding: production ResNet fp16 drift (queued). Report: `plans/transformer-export-parity.md`.
 - [x] **S4** — `--arch transformer` in `training.py` (one-cycle warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload. → SMOKE PASSED: C++ deep_ww loaded and ran the transformer engine in gen-1 self-play (evidence in `build-tests/s4/SMOKE_SUMMARY.md`); trained-weight parity 1.1e-4. Environment fix baked into standing orders: fastcore<2 + fastprogress<1.1 pins.
 - [x] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention"). → `ConvHeadResNet` + `--arch convhead`; 22/22 tests; convhead smoke PASSED end-to-end (evidence: `build-tests/s5-convhead/SMOKE_SUMMARY.md`); parity harness extension to convhead noted as future work.
-- [ ] **S6 (optional)** — Study-material generator: `deep_ww` flag for self-play at game size < model frame (C++), so strong 8x8 models can generate frame-embedded distillation data.
+- [x] **S6 (optional)** — Study-material generator: `deep_ww` flag for self-play at game size < model frame (C++), so strong 8x8 models can generate frame-embedded distillation data. → `-game_columns/-game_rows` (default off, byte-identical); `make_padded_training_board` in engine_adapter reusing the serving padding machinery; classic goals at MODEL corners per serving semantics (reviewer correction); 3 new Catch2 tests; smoke: both variants at 8x8-in-12x10, padding walls verified in CSV planes, bad dims rejected. Evidence: `scripts/s6_smoke.sh`.
 
 ## Deferred / parked-for-Nil (HUMAN-ONLY — never decided in the loop)
 
@@ -112,6 +112,24 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - pytest exit codes; `trtexec` reported qps; parity script printed max-abs-diff; CSV files on disk with correct line counts; `git log`/`git status`.
 
 ---
+
+## SLICE-6 PICKUP
+
+- **Baseline commit:** `2c25e4a` (S5 done).
+- **What S5 taught:**
+  - `(B,2,C,R).flatten(1)` natively produces the contract layout; the conv-head control needed no permute.
+  - Exact-type resume checks (`type is`, via ARCH_CLASSES) are stricter than isinstance and cheap.
+  - Smoke parameterization by arch works; each arch gets its own evidence dir.
+- **Goal:** `deep_ww` TRAINING mode can self-play games on a smaller effective board embedded in the model frame (the door to distilling from the strong 8x8 models into the 12x10 frame).
+- **Feasibility facts (Explore recon, verified against source):**
+  - Self-play board created at `main.cpp:157` (`Board board{FLAGS_columns, FLAGS_rows, variant}`), flags at :34-35.
+  - `place_padding_walls(Board&, PaddingConfig const&)` (engine_adapter.cpp:130-255) mutates a Board directly - reusable as-is; `create_padding_config` handles per-variant embedding (standard: top-left; classic: bottom-center).
+  - Working template: `convert_bgs_config_to_board()` (engine_adapter.cpp:787-860) does the full embed for live games.
+  - Board has a 6-arg constructor taking explicit pawn/goal cells (gamestate.hpp:151-155).
+  - CSV output auto-scales to board dims (state_conversions reads board.columns()/rows()); NO changes needed there.
+- **Design:** new flags `-game_columns`/`-game_rows` (default 0 = off, current behavior byte-identical). When set: validate 4 <= game <= model dims; build PaddingConfig; compute embedded start cells (game-space corners transformed via transform_to_model); construct Board with the 6-arg constructor at MODEL dims; place_padding_walls; hand to training_play unchanged.
+- **Gates/evidence:** C++ build + cpp-test-gate.sh green + new Catch2 test (padded training board has expected walls/positions); live evidence: a few simple-policy games at 8x8-in-12x10, CSV state line length = 9*120, wall planes show the padding region blocked (python one-liner check).
+- **Locked:** default behavior byte-identical; no contract changes; nothing written to build/.
 
 ## SLICE-5 PICKUP
 

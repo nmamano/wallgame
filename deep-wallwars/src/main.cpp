@@ -15,6 +15,7 @@
 #include "batched_model.hpp"
 #include "batched_model_policy.hpp"
 #include "cached_policy.hpp"
+#include "engine_adapter.hpp"
 #include "mcts.hpp"
 #include "play.hpp"
 #include "simple_policy.hpp"
@@ -34,6 +35,11 @@ DEFINE_bool(boost_mouse_priors, false, "Boost mouse move priors to encourage exp
 DEFINE_int32(columns, 5, "Number of columns");
 DEFINE_int32(rows, 5, "Number of rows");
 DEFINE_string(variant, "classic", "Game variant: classic or standard");
+
+DEFINE_int32(game_columns, 0,
+             "TRAINING mode only: effective game columns, embedded in the -columns/-rows model "
+             "frame with padding walls (0 = same as -columns)");
+DEFINE_int32(game_rows, 0, "TRAINING mode only: effective game rows (0 = same as -rows)");
 
 DEFINE_int32(games, 100, "Number of games to play");
 DEFINE_int32(start_game, 1, "Starting game number for output file naming (for resuming)");
@@ -154,7 +160,25 @@ struct Logger : nv::ILogger {
 };
 
 void train(EvaluationFunction const& eval_fn, Variant variant) {
-    Board board{FLAGS_columns, FLAGS_rows, variant};
+    if ((FLAGS_game_columns > 0) != (FLAGS_game_rows > 0)) {
+        std::cerr << "Error: -game_columns and -game_rows must be set together.\n";
+        exit(1);
+    }
+    int game_columns = FLAGS_game_columns > 0 ? FLAGS_game_columns : FLAGS_columns;
+    int game_rows = FLAGS_game_rows > 0 ? FLAGS_game_rows : FLAGS_rows;
+    if (game_columns < 4 || game_rows < 4 || game_columns > FLAGS_columns ||
+        game_rows > FLAGS_rows) {
+        std::cerr << "Error: game dims " << game_columns << "x" << game_rows
+                  << " invalid for model frame " << FLAGS_columns << "x" << FLAGS_rows
+                  << " (need 4 <= game <= model).\n";
+        exit(1);
+    }
+    if (game_columns != FLAGS_columns || game_rows != FLAGS_rows) {
+        XLOGF(INFO, "Padded training: game {}x{} embedded in model frame {}x{} ({} variant)",
+              game_columns, game_rows, FLAGS_columns, FLAGS_rows, FLAGS_variant);
+    }
+    Board board = engine_adapter::make_padded_training_board(FLAGS_columns, FLAGS_rows,
+                                                             game_columns, game_rows, variant);
     TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
 
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
