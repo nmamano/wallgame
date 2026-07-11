@@ -17,7 +17,7 @@ print("Importing fastai...")
 from fastai.data.all import DataLoader, DataLoaders
 from fastai.learner import Learner
 from fastai.callback.schedule import lr_find
-from model import ResNet, WallgameTransformer
+from model import ConvHeadResNet, ResNet, WallgameTransformer
 from data import get_datasets
 
 default_cuda_device = "cuda:0"
@@ -80,7 +80,7 @@ parser.add_argument(
 )
 parser.add_argument(
     "--hidden_channels",
-    help="Number of channels to use in the hidden layers of the ResNet",
+    help="Hidden channels of the ResNet/convhead body (unused by transformer)",
     default=128,
     type=int,
 )
@@ -92,8 +92,8 @@ parser.add_argument(
 )
 parser.add_argument(
     "--arch",
-    help="Model architecture",
-    choices=["resnet", "transformer"],
+    help="Model architecture (convhead = ResNet body with size-free heads)",
+    choices=["resnet", "transformer", "convhead"],
     default="resnet",
 )
 parser.add_argument(
@@ -164,10 +164,11 @@ if args.variant not in variant_move_channels:
     exit(1)
 move_channels = variant_move_channels[args.variant]
 
-# Hard error BEFORE any side effects: warm-start helpers are ResNet-specific.
-# Transformer bootstrapping goes through the distillation path (parked for Nil).
-if args.arch == "transformer" and args.warm_start:
-    print("Error: --warm-start is not supported with --arch transformer.")
+# Hard error BEFORE any side effects: warm-start helpers are ResNet-specific
+# (they remap ResNet's priors.4/value.4 Linear layers). Transformer/convhead
+# bootstrapping goes through the distillation path (parked for Nil).
+if args.arch != "resnet" and args.warm_start:
+    print(f"Error: --warm-start is not supported with --arch {args.arch}.")
     exit(1)
 
 def resolve_initial_generation(value: str) -> int:
@@ -263,6 +264,13 @@ def load_model(name, device):
     return torch.load(f"{args.models}/{name}.pt", weights_only=False).to(device)
 
 
+ARCH_CLASSES = {
+    "resnet": ResNet,
+    "transformer": WallgameTransformer,
+    "convhead": ConvHeadResNet,
+}
+
+
 def build_fresh_model():
     if args.arch == "transformer":
         return WallgameTransformer(
@@ -274,12 +282,16 @@ def build_fresh_model():
             stem=args.stem,
             move_channels=move_channels,
         )
+    if args.arch == "convhead":
+        return ConvHeadResNet(
+            args.columns, args.rows, args.hidden_channels, args.layers, move_channels
+        )
     return ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
 
 
 def expected_priors_of(model):
     """Arch-agnostic priors-head width; fatal on unknown model classes."""
-    if isinstance(model, WallgameTransformer):
+    if isinstance(model, (WallgameTransformer, ConvHeadResNet)):
         return 2 * model.columns * model.rows + model.move_channels
     if isinstance(model, ResNet):
         return model.priors[-1].out_features
@@ -288,19 +300,22 @@ def expected_priors_of(model):
 
 
 def check_loaded_model(model):
-    """Resume-path checks: loaded architecture must match --arch; transformer
-    board dims must match args (priors count alone can collide across
-    shapes); priors width must match the target variant/board."""
-    is_transformer = isinstance(model, WallgameTransformer)
-    if is_transformer != (args.arch == "transformer"):
+    """Resume-path checks: loaded architecture must match --arch; for models
+    that store board dims (transformer/convhead), dims must match args
+    (priors count alone can collide across shapes); priors width must match
+    the target variant/board."""
+    expected_class = ARCH_CLASSES[args.arch]
+    if type(model) is not expected_class:
         print(
             f"Error: loaded model is {type(model).__name__} "
             f"but --arch is {args.arch}."
         )
         exit(1)
-    if is_transformer and (model.columns != args.columns or model.rows != args.rows):
+    if isinstance(model, (WallgameTransformer, ConvHeadResNet)) and (
+        model.columns != args.columns or model.rows != args.rows
+    ):
         print(
-            f"Error: loaded transformer is {model.columns}x{model.rows}, "
+            f"Error: loaded model is {model.columns}x{model.rows}, "
             f"args are {args.columns}x{args.rows}."
         )
         exit(1)
@@ -760,6 +775,9 @@ def train_model(model, generation, epochs, device, freeze_until_gen=0):
         loaders, model, loss_func=loss, metrics=[valuation_accuracy, move_accuracy]
     )
 
+    # ConvHeadResNet deliberately uses the ResNet training branch below
+    # (lr_find + fit): it is a conv-body control, so it keeps conv training
+    # behavior. Only the transformer gets the one-cycle branch.
     if isinstance(model, WallgameTransformer):
         # Transformer branch: no lr_find (unreliable for transformers); one-cycle
         # schedule provides LR warmup. SMOKE-ONLY defaults: lr 3e-4, wd=0.01

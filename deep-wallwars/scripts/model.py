@@ -103,6 +103,62 @@ def arrange_policy(wall_logits, move_logits):
     return torch.cat([walls, move_logits], dim=1)
 
 
+class ConvHeadResNet(nn.Module):
+    """Control model: ResNet body + SIZE-FREE heads, no attention.
+
+    Isolates the "size-free per-cell heads" variable from the "attention"
+    variable (WallgameTransformer has both). Same I/O contract as ResNet.
+
+    Wall head: 1x1 conv -> (B, 2, C, R); flatten(1) natively yields the
+    contract layout priors[type * C*R + cell] (type-major blocks, row-major
+    (C, R) cell order = Board::index_from_cell). Move and value heads:
+    global average pool -> Linear. No board-size-tied weights anywhere;
+    columns/rows are stored only for resume-time shape checks.
+    """
+
+    def __init__(self, columns, rows, hidden_channels, layers, move_channels=8,
+                 channels=input_channels):
+        super().__init__()
+        self.columns = columns
+        self.rows = rows
+        self.move_channels = move_channels
+        self.log_output = True
+
+        self.start = nn.Sequential(
+            nn.Conv2d(channels, hidden_channels, kernel_size=3, padding=1, bias=False),
+            nn.BatchNorm2d(hidden_channels),
+            nn.ReLU(),
+        )
+        self.layers = nn.ModuleList(
+            [ResLayer(hidden_channels) for _ in range(layers)]
+        )
+        self.wall_head = nn.Conv2d(hidden_channels, 2, kernel_size=1)
+        self.move_head = nn.Linear(hidden_channels, move_channels)
+        self.value_head = nn.Sequential(
+            nn.Linear(hidden_channels, hidden_channels),
+            nn.ReLU(),
+            nn.Linear(hidden_channels, 1),
+            nn.Tanh(),
+        )
+
+    def forward(self, x):
+        x = self.start(x)
+        for layer in self.layers:
+            x = layer(x)
+
+        wall_logits = self.wall_head(x).flatten(1)  # (B, 2*C*R) contract order
+        pooled = x.mean(dim=(2, 3))  # global average pool over cells
+        move_logits = self.move_head(pooled)
+        priors = torch.cat([wall_logits, move_logits], dim=1)
+        if self.log_output:
+            priors = fn.log_softmax(priors, dim=1)
+        else:
+            priors = fn.softmax(priors, dim=1)
+
+        value = self.value_head(pooled)
+        return priors, value
+
+
 class WallgameTransformer(nn.Module):
     """Transformer with per-token heads; same I/O contract as ResNet.
 

@@ -73,7 +73,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - [x] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability. → 14 CPU tests green; 7.98M/10.3M params (pointwise/conv); cell order locked to `gamestate.cpp:781` (col*rows+row) after reviewer's formula correction; note for S4: training.py exports without `eval()`.
 - [x] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline. → Transformer parity PASS at b1 and b256 (worst diff 1.8e-5); batch-1 serving bar PASS at 4135 pos/sec (beats deployed ResNet); **batch-256 bar MISSED at 0.436x - queued for Nil, not weakened**; bonus finding: production ResNet fp16 drift (queued). Report: `plans/transformer-export-parity.md`.
 - [x] **S4** — `--arch transformer` in `training.py` (one-cycle warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload. → SMOKE PASSED: C++ deep_ww loaded and ran the transformer engine in gen-1 self-play (evidence in `build-tests/s4/SMOKE_SUMMARY.md`); trained-weight parity 1.1e-4. Environment fix baked into standing orders: fastcore<2 + fastprogress<1.1 pins.
-- [ ] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention").
+- [x] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention"). → `ConvHeadResNet` + `--arch convhead`; 22/22 tests; convhead smoke PASSED end-to-end (evidence: `build-tests/s5-convhead/SMOKE_SUMMARY.md`); parity harness extension to convhead noted as future work.
 - [ ] **S6 (optional)** — Study-material generator: `deep_ww` flag for self-play at game size < model frame (C++), so strong 8x8 models can generate frame-embedded distillation data.
 
 ## Deferred / parked-for-Nil (HUMAN-ONLY — never decided in the loop)
@@ -112,6 +112,23 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - pytest exit codes; `trtexec` reported qps; parity script printed max-abs-diff; CSV files on disk with correct line counts; `git log`/`git status`.
 
 ---
+
+## SLICE-5 PICKUP
+
+- **Baseline commit:** `2def3a0` (S4 done; core loop complete).
+- **What S4 taught:**
+  - The C++ engine runs transformer engines with zero changes - the contract strategy worked.
+  - Fresh pip installs are a hazard: fastcore 2.x breaks fastai 2.8.7; torch got silently upgraded to 2.13. Pins recorded in Resources.
+  - The git safety guard also scans message TEXT for destructive-looking strings; phrase reviewer messages accordingly.
+  - Always-print of self-play cmd is cheap and makes evidence collection trivial.
+- **Goal (control experiment):** `ConvHeadResNet` in `scripts/model.py` - ResNet body + size-free heads (1x1 conv wall head, GAP move/value heads), pure CNN, no attention. Isolates "size-free per-cell heads" from "attention" for the future ablation. Wire as `--arch convhead` in training.py and prove with the parameterized smoke.
+- **Load-bearing mechanics:**
+  - Wall head: `Conv2d(hidden, 2, 1)` -> (B,2,C,R) -> `flatten(1)` which IS type-major + row-major cell order = the contract layout, no permute needed (test asserts equivalence with `arrange_policy`).
+  - Move head: global average pool over cells -> `Linear(hidden, move_channels)`. Value: GAP -> MLP -> tanh. Same `log_output` semantics.
+  - No board-size-tied weights anywhere.
+  - training.py: extend `build_fresh_model`/`expected_priors_of`/`check_loaded_model` for the new class; parameterize `s4_smoke.sh` with an optional arch arg (default transformer, unchanged behavior) and run it once with convhead.
+- **Acceptance:** pytest green with new tests (shapes across sizes, order-equivalence vs arrange_policy, log_output, ONNX smoke, param sanity); convhead smoke passes end-to-end; ResNet + transformer paths untouched.
+- **Locked:** contract; existing classes untouched.
 
 ## SLICE-4 PICKUP
 

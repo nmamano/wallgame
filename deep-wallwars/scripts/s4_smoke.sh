@@ -12,7 +12,25 @@ set -euo pipefail
 
 cd "$(dirname "$0")/.."
 PY=.venv/bin/python
-S4="build-tests/s4"
+
+# Optional positional arch arg. Default (transformer) keeps the original S4
+# behavior and evidence path; other arches get their own output dir so S4
+# transformer evidence is never overwritten.
+ARCH="${1:-transformer}"
+case "$ARCH" in
+transformer)
+    S4="build-tests/s4"
+    ARCH_ARGS=(--arch transformer --d-model 32 --layers 2 --heads 4)
+    ;;
+convhead)
+    S4="build-tests/s5-convhead"
+    ARCH_ARGS=(--arch convhead --hidden_channels 32 --layers 2)
+    ;;
+*)
+    echo "FATAL: unsupported smoke arch '$ARCH' (transformer|convhead)" >&2
+    exit 1
+    ;;
+esac
 
 # Fresh, isolated output dir (S4 outputs only; never touches s3/ or models_*).
 rm -rf "${S4:?}"
@@ -21,9 +39,9 @@ mkdir -p "$S4"
 echo "=== 1/4 fresh deep_ww build ==="
 cmake --build build-tests --target deep_ww -j8 >/dev/null
 
-echo "=== 2/4 training loop (--arch transformer, tiny config) ==="
+echo "=== 2/4 training loop (--arch $ARCH, tiny config) ==="
 TRAIN_CMD=(../.venv/bin/python training.py
-    --arch transformer --d-model 32 --layers 2 --heads 4
+    "${ARCH_ARGS[@]}"
     --columns 12 --rows 10 --variant universal
     --games 20 --samples 32 --epochs 1 --generations 2
     --training-batch-size 64 --inference-batch-size 64
@@ -56,18 +74,25 @@ fi
 grep -m2 "Loaded engine size" "$S4/deep_ww_log.txt" | sed 's/^/  engine load: /' || { echo "  no engine-load lines in deep_ww log"; fail=1; }
 [ "$fail" -eq 0 ] || { echo "FATAL: evidence checks failed" >&2; exit 1; }
 
-echo "=== 4/4 trained-weight parity (model_2.pt through the S3 harness) ==="
-$PY scripts/export_transformer.py --outdir "$S4/parity" --seed 999 \
-    --d-model 32 --layers 2 --heads 4 --pt "$S4/models/model_2.pt"
-trtexec --onnx="$S4/parity/transformer_b1.onnx" \
-    --saveEngine="$S4/parity/transformer_b1.trt" --fp16 >/dev/null 2>&1
-$PY scripts/parity_check.py --manifest "$S4/parity/manifest.json" \
-    --engine "$S4/parity/transformer_b1.trt" --kind transformer --batch 1 --samples 16 \
-    | tee "$S4/parity_result.txt"
-[ "${PIPESTATUS[0]}" -eq 0 ] || { echo "FATAL: trained-weight parity failed" >&2; exit 1; }
+if [ "$ARCH" = "transformer" ]; then
+    echo "=== 4/4 trained-weight parity (model_2.pt through the S3 harness) ==="
+    $PY scripts/export_transformer.py --outdir "$S4/parity" --seed 999 \
+        --d-model 32 --layers 2 --heads 4 --pt "$S4/models/model_2.pt"
+    trtexec --onnx="$S4/parity/transformer_b1.onnx" \
+        --saveEngine="$S4/parity/transformer_b1.trt" --fp16 >/dev/null 2>&1
+    $PY scripts/parity_check.py --manifest "$S4/parity/manifest.json" \
+        --engine "$S4/parity/transformer_b1.trt" --kind transformer --batch 1 --samples 16 \
+        | tee "$S4/parity_result.txt"
+    [ "${PIPESTATUS[0]}" -eq 0 ] || { echo "FATAL: trained-weight parity failed" >&2; exit 1; }
+else
+    echo "=== 4/4 parity SKIPPED for arch $ARCH ==="
+    # The S3 parity harness (export_transformer.py/parity_check.py) supports
+    # transformer/resnet kinds only; extending it to convhead is future work.
+    echo "parity: SKIPPED (harness supports transformer/resnet kinds only)" > "$S4/parity_result.txt"
+fi
 
 {
-    echo "# S4 smoke summary ($(date -Iseconds))"
+    echo "# Smoke summary - arch: $ARCH ($(date -Iseconds))"
     echo
     echo "- GPU: $(nvidia-smi --query-gpu=name --format=csv,noheader | head -1)"
     echo "- torch: $($PY -c 'import torch; print(torch.__version__)') | trtexec: $(trtexec --version 2>&1 | grep -oEm1 'TensorRT v[0-9]+' || echo n/a)"
@@ -79,7 +104,7 @@ $PY scripts/parity_check.py --manifest "$S4/parity/manifest.json" \
         echo "- $d: $(ls "$d"/*.csv 2>/dev/null | wc -l) csv files"
     done
     for f in "$S4"/models/model_*.trt; do echo "- $f ($(stat -c%s "$f") bytes)"; done
-    echo "- gen-1 self-play cmd: $(grep -m1 -- '-model1 ../build-tests/s4/models/model_1.trt' "$S4/training_stdout.txt" | sed 's/^ *//')"
+    echo "- gen-1 self-play cmd: $(grep -m1 -- "-model1 ../$S4/models/model_1.trt" "$S4/training_stdout.txt" | sed 's/^ *//')"
     echo "- parity: $(tail -1 "$S4/parity_result.txt")"
     echo
     echo "Limitation: a 2-layer tiny model trained on 40 games does not prove"
@@ -87,4 +112,4 @@ $PY scripts/parity_check.py --manifest "$S4/parity/manifest.json" \
 } > "$S4/SMOKE_SUMMARY.md"
 
 echo
-echo "S4 SMOKE PASSED - summary at $S4/SMOKE_SUMMARY.md"
+echo "SMOKE PASSED (arch $ARCH) - summary at $S4/SMOKE_SUMMARY.md"
