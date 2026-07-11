@@ -71,7 +71,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 
 - [x] **S1** — Bench baseline: script measuring positions/sec of existing `.trt` engines (weak `model_48` 12x10 + strong `model_27` 8x8) + committed numbers report. Sets the throughput bar S3 must meet. → `scripts/bench_baseline.sh` + `plans/transformer-baseline-numbers.md`; both engines are batch-1 serving exports (~3700 pos/sec, launch-bound); serving bar for S3 = 1850 pos/sec, batch-256 bar measured in S3 from regenerated artifacts.
 - [x] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability. → 14 CPU tests green; 7.98M/10.3M params (pointwise/conv); cell order locked to `gamestate.cpp:781` (col*rows+row) after reviewer's formula correction; note for S4: training.py exports without `eval()`.
-- [ ] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline.
+- [x] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline. → Transformer parity PASS at b1 and b256 (worst diff 1.8e-5); batch-1 serving bar PASS at 4135 pos/sec (beats deployed ResNet); **batch-256 bar MISSED at 0.436x - queued for Nil, not weakened**; bonus finding: production ResNet fp16 drift (queued). Report: `plans/transformer-export-parity.md`.
 - [ ] **S4** — `--arch transformer` in `training.py` (AdamW + warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload.
 - [ ] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention").
 - [ ] **S6 (optional)** — Study-material generator: `deep_ww` flag for self-play at game size < model frame (C++), so strong 8x8 models can generate frame-embedded distillation data.
@@ -84,6 +84,8 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - Kicking off real training or the full distillation dataset generation.
 - Anything touching the live bot service or `build/`.
 - Fixing the 6 drifted C++ tests (5x `parse_move_notation`, 1x `validate_request` freestyle) — pre-existing at baseline, out of loop scope.
+- **S3 finding 1:** trained ResNet has always played with fp16 policy drift in production (margin-gated top-1 flips at batch 256; drift VARIES PER ENGINE BUILD - first build margins to 0.56, a rebuild to 0.995; values bit-exact; noTF32 build is clean at 1.6e-4). Quantify Elo cost (fp16 vs noTF32 tournament) or ignore - Nil's call. See `plans/transformer-export-parity.md`.
+- **S3 finding 2:** transformer batch-256 throughput = 84.6k pos/sec = 0.436x the regenerated ResNet (bar was 0.5x); opt-level 5 and batch 1024 do not help. Accept and proceed to S4 (WallGamer's recommendation), or require kernel/config optimization first - Nil's call. Batch-1 serving PASSES and beats the deployed ResNet (4135 vs 3699 pos/sec).
 
 ## Resources
 
@@ -110,6 +112,25 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - pytest exit codes; `trtexec` reported qps; parity script printed max-abs-diff; CSV files on disk with correct line counts; `git log`/`git status`.
 
 ---
+
+## SLICE-3 PICKUP
+
+- **Baseline commit:** `441e07d` (S2 done; note: S2 was amended once pre-push-never-pushed to drop accidentally staged `__pycache__` .pyc files and generalize the `.gitignore` rule to `__pycache__/` - the old rule `/scripts/__pycache__` missed subdirectories).
+- **What S2 taught:**
+  - Cell order is `column * rows + row` (`gamestate.cpp:781`). The recon-derived formula was wrong; always verify contract lines against source.
+  - `nn.TransformerEncoder` cannot run `num_layers=0`; `WallgameTransformer(layers=0)` is the supported mixing-free debug config.
+  - `training.py` exports ONNX without `model.eval()` - matters for BatchNorm (conv stem, ResNet); handle/flag in S4.
+  - `git add <dir>` sweeps generated files; add files explicitly.
+- **Goal:** prove the export path on the GPU: transformer ONNX -> `trtexec --fp16` -> parity vs PyTorch within stated tolerances + throughput vs the S1 bars. All artifacts to `build-tests/` only.
+- **Load-bearing mechanics:**
+  - Export script (standalone, no training.py changes): fresh seeded model (and optional `--pt` checkpoint), `log_output=False`, `eval()`, export at batch 1 and batch 256, input `States`, outputs `Priors`/`Values`.
+  - Parity WITHOUT a Python TensorRT dependency: `trtexec --loadEngine=<e> --loadInputs=States:<raw.bin> --exportOutput=<json>`; compare against PyTorch fp32 outputs on the same seeded inputs.
+  - Proposed tolerances (fp16, post-softmax priors): max-abs-diff <= 1e-2, priors argmax equal per sample, value abs-diff <= 1e-2, over >= 64 seeded random inputs. If exceeded: report, do not weaken silently.
+  - Batch-256 ResNet reference: regenerate from `assets/models/12x10_universal_model_48.pt` (torch.load needs `model.py` importable) into `build-tests/`, bench with `scripts/bench_baseline.sh` (takes engine paths as args).
+  - Bars (from S1 report): transformer batch-1 >= 1850 pos/sec; batch-256 >= 0.5x the regenerated ResNet's measured pos/sec.
+- **Acceptance:** parity report + throughput table committed (extend `plans/transformer-baseline-numbers.md` or a sibling report); scripts re-runnable; existing pytest suite still green.
+- **Locked:** contract tensor names/shapes; no training.py changes; nothing written outside `build-tests/` + `scripts/` + `plans/`.
+- **Decide-with-reviewer:** tolerance values; whether the fp16 parity gate should also check top-5 overlap instead of only argmax.
 
 ## SLICE-2 PICKUP
 
