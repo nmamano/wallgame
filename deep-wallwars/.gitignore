@@ -1,6 +1,6 @@
 /build*/
 /scripts/.ipynb_checkpoints
-/scripts/__pycache__
+__pycache__/
 /data/
 /models/
 /trained_models/
