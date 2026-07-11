@@ -72,7 +72,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - [x] **S1** — Bench baseline: script measuring positions/sec of existing `.trt` engines (weak `model_48` 12x10 + strong `model_27` 8x8) + committed numbers report. Sets the throughput bar S3 must meet. → `scripts/bench_baseline.sh` + `plans/transformer-baseline-numbers.md`; both engines are batch-1 serving exports (~3700 pos/sec, launch-bound); serving bar for S3 = 1850 pos/sec, batch-256 bar measured in S3 from regenerated artifacts.
 - [x] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability. → 14 CPU tests green; 7.98M/10.3M params (pointwise/conv); cell order locked to `gamestate.cpp:781` (col*rows+row) after reviewer's formula correction; note for S4: training.py exports without `eval()`.
 - [x] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline. → Transformer parity PASS at b1 and b256 (worst diff 1.8e-5); batch-1 serving bar PASS at 4135 pos/sec (beats deployed ResNet); **batch-256 bar MISSED at 0.436x - queued for Nil, not weakened**; bonus finding: production ResNet fp16 drift (queued). Report: `plans/transformer-export-parity.md`.
-- [ ] **S4** — `--arch transformer` in `training.py` (AdamW + warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload.
+- [x] **S4** — `--arch transformer` in `training.py` (one-cycle warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload. → SMOKE PASSED: C++ deep_ww loaded and ran the transformer engine in gen-1 self-play (evidence in `build-tests/s4/SMOKE_SUMMARY.md`); trained-weight parity 1.1e-4. Environment fix baked into standing orders: fastcore<2 + fastprogress<1.1 pins.
 - [ ] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention").
 - [ ] **S6 (optional)** — Study-material generator: `deep_ww` flag for self-play at game size < model frame (C++), so strong 8x8 models can generate frame-embedded distillation data.
 
@@ -90,8 +90,8 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 ## Resources
 
 **Environment (probed 2026-07-11, this box = auntie, RTX 5090 32GB):**
-- Python venv: `deep-wallwars/.venv` — python 3.12.3, torch 2.10.0+cu128 (CUDA OK on 5090), onnx 1.20.1, numpy 2.4.2. ⚠ venv shebangs are broken (created under `/home/yu`): ALWAYS `.venv/bin/python -m pip`, never `.venv/bin/pip`.
-- fastai 2.8.7 + pytest 9.1.1: installed into the venv during Phase 2 (verified).
+- Python venv: `deep-wallwars/.venv` — python 3.12.3, torch 2.13.0+cu130 (CUDA OK on 5090; NOTE: the Phase-2 fastai install silently UPGRADED torch from 2.10.0+cu128 — S2 onward all validated under 2.13), onnx 1.20.1, numpy 2.4.2. ⚠ venv shebangs are broken (created under `/home/yu`): ALWAYS `.venv/bin/python -m pip`, never `.venv/bin/pip`.
+- fastai 2.8.7 + pytest 9.1.1: installed into the venv during Phase 2 (verified). ⚠ PIN fastcore<2 and fastprogress<1.1 (verified working: fastcore 1.14.5, fastprogress 1.0.5): unpinned pip pulls fastcore 2.x / fastprogress 1.1+ (which imports fasthtml), and fastai 2.8.7's Optimizer breaks with "'list' object has no attribute 'starmap'". python-fasthtml uninstalled from the venv.
 - C++ suite baseline: 80 cases, 6 pre-existing failures quarantined via `scripts/cpp-test-gate.sh` (exit 0 at baseline). Fixing the drifted tests is parked for Nil.
 - TensorRT: `trtexec` v10.15.01 at `/usr/bin/trtexec`.
 - Catch2 v3.5.4 at `~/nil/tools/catch2` (pass `-DCatch2_DIR=~/nil/tools/catch2/lib/cmake/Catch2`).
@@ -112,6 +112,27 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - pytest exit codes; `trtexec` reported qps; parity script printed max-abs-diff; CSV files on disk with correct line counts; `git log`/`git status`.
 
 ---
+
+## SLICE-4 PICKUP
+
+- **Baseline commit:** `551eb51` (S3 done).
+- **What S3 taught:**
+  - Piping gate output through `tail`/`grep` masks nonzero exits (bit three times). Run gates unpiped or check `PIPESTATUS[0]`.
+  - TRT kernel selection is nondeterministic per build; fp16 drift on trained ResNet varies per engine build (margins up to 0.995). Values stay bit-exact; drift is policy-side.
+  - Containment guards must run BEFORE side effects (reviewer blocker).
+  - `torch.onnx.export` defaults to `TrainingMode.EVAL` internally, so training.py's export without explicit `eval()` was never actually broken - the S2 note is downgraded.
+  - Random weights flatter parity (small logits): trained-weight parity re-check is part of S4's acceptance.
+- **Goal:** `--arch transformer` in `training.py` + end-to-end smoke generation proving the FULL loop with a transformer: self-play -> CSV -> train -> export -> **C++ deep_ww runs the transformer .trt engine** -> next generation.
+- **Load-bearing mechanics (training.py touch points):**
+  - Args: `--arch {resnet,transformer}` (default resnet = zero behavior change), `--d-model`, `--heads`, `--stem`; `--layers` shared between archs.
+  - Fresh-model site (~line 758): branch on arch.
+  - Resume check (~line 770) uses `model.priors[-1].out_features` (ResNet-only attr): replace with an arch-agnostic `expected_priors_of(model)` helper.
+  - `--warm-start` + `--arch transformer`: hard error (v1; transformer bootstraps via distillation later, different mechanism entirely).
+  - Optimizer: ResNet path UNTOUCHED (lr_find + fit). Transformer path: `fit_one_cycle` (built-in warmup) with fixed conservative lr (3e-4) + wd - marked smoke-defaults, real-run LR policy parked for Nil.
+  - Smoke (scripts/s4_smoke.sh): everything under `build-tests/s4/{models,data}`; MUST pass explicit `--models/--data` (training.py defaults are `../models`, `../data`); deep_ww binary built fresh via `cmake --build build-tests --target deep_ww` (executing `build/` binaries is allowed, writing to `build/` is not - fresh build avoids staleness anyway); tiny config (d_model 32, layers 2, heads 4), ~20 games gen-0 simple policy, train, export, gen-1 self-play WITH the transformer engine (few games, low samples), train again. Evidence: CSV counts > 0 per generation dir, `model_*.trt` exist, deep_ww exit 0 while running the transformer engine, trained-weight parity via `export_transformer.py --pt <trained model_N.pt>` + `parity_check.py`.
+- **Acceptance:** s4_smoke.sh exits 0 end-to-end on the 5090 in <= ~15 min; pytest still green; ResNet path provably untouched (default-arch diff inspection).
+- **Locked:** contract; ResNet training behavior byte-identical when `--arch` omitted; no C++ changes.
+- **Decide-with-reviewer:** the arch-agnostic priors-check helper shape; transformer smoke lr/wd defaults.
 
 ## SLICE-3 PICKUP
 

@@ -17,7 +17,7 @@ print("Importing fastai...")
 from fastai.data.all import DataLoader, DataLoaders
 from fastai.learner import Learner
 from fastai.callback.schedule import lr_find
-from model import ResNet
+from model import ResNet, WallgameTransformer
 from data import get_datasets
 
 default_cuda_device = "cuda:0"
@@ -91,6 +91,29 @@ parser.add_argument(
     type=int,
 )
 parser.add_argument(
+    "--arch",
+    help="Model architecture",
+    choices=["resnet", "transformer"],
+    default="resnet",
+)
+parser.add_argument(
+    "--d-model",
+    help="Transformer embedding width (only with --arch transformer)",
+    default=256,
+    type=int,
+)
+parser.add_argument(
+    "--heads",
+    help="Transformer attention heads (only with --arch transformer)",
+    default=8,
+    type=int,
+)
+parser.add_argument(
+    "--stem",
+    help="Transformer input stem: pointwise or conv (only with --arch transformer)",
+    default="pointwise",
+)
+parser.add_argument(
     "--max-training-window",
     help="Determines the maximum number of past generations used for training data",
     default=20,
@@ -140,6 +163,12 @@ if args.variant not in variant_move_channels:
     print(f"Error: Unsupported variant '{args.variant}'. Use 'classic', 'standard' or 'universal'.")
     exit(1)
 move_channels = variant_move_channels[args.variant]
+
+# Hard error BEFORE any side effects: warm-start helpers are ResNet-specific.
+# Transformer bootstrapping goes through the distillation path (parked for Nil).
+if args.arch == "transformer" and args.warm_start:
+    print("Error: --warm-start is not supported with --arch transformer.")
+    exit(1)
 
 def resolve_initial_generation(value: str) -> int:
     value = value.strip()
@@ -205,6 +234,7 @@ def save_model(model, name, device):
     dummy_input = torch.randn(
         args.inference_batch_size, input_channels, args.columns, args.rows
     ).to(device)
+    prev_log_output = model.log_output
     model.log_output = False
     print(f"Exporting ONNX model to {onnx_path}...")
     torch.onnx.export(
@@ -226,11 +256,63 @@ def save_model(model, name, device):
             stdout=f,
             stderr=f,
         )
-    model.log_output = True
+    model.log_output = prev_log_output
 
 
 def load_model(name, device):
     return torch.load(f"{args.models}/{name}.pt", weights_only=False).to(device)
+
+
+def build_fresh_model():
+    if args.arch == "transformer":
+        return WallgameTransformer(
+            args.columns,
+            args.rows,
+            d_model=args.d_model,
+            layers=args.layers,
+            heads=args.heads,
+            stem=args.stem,
+            move_channels=move_channels,
+        )
+    return ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
+
+
+def expected_priors_of(model):
+    """Arch-agnostic priors-head width; fatal on unknown model classes."""
+    if isinstance(model, WallgameTransformer):
+        return 2 * model.columns * model.rows + model.move_channels
+    if isinstance(model, ResNet):
+        return model.priors[-1].out_features
+    print(f"Error: unknown model class {type(model).__name__}.")
+    exit(1)
+
+
+def check_loaded_model(model):
+    """Resume-path checks: loaded architecture must match --arch; transformer
+    board dims must match args (priors count alone can collide across
+    shapes); priors width must match the target variant/board."""
+    is_transformer = isinstance(model, WallgameTransformer)
+    if is_transformer != (args.arch == "transformer"):
+        print(
+            f"Error: loaded model is {type(model).__name__} "
+            f"but --arch is {args.arch}."
+        )
+        exit(1)
+    if is_transformer and (model.columns != args.columns or model.rows != args.rows):
+        print(
+            f"Error: loaded transformer is {model.columns}x{model.rows}, "
+            f"args are {args.columns}x{args.rows}."
+        )
+        exit(1)
+    expected = 2 * args.columns * args.rows + move_channels
+    found = expected_priors_of(model)
+    if found != expected:
+        print("Error: Loaded model does not match expected output size.")
+        print(
+            f"Expected {expected} priors for {args.columns}x{args.rows} "
+            f"{args.variant}, found {found}."
+        )
+        exit(1)
 
 
 def warm_start_model(path, device, expected_priors):
@@ -550,7 +632,11 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
 
     if boost_mouse_priors:
         cmd.append("--boost_mouse_priors")
-    
+
+    # Always print the exact command: evidence of which model played this
+    # generation (e.g. simple vs a specific .trt engine).
+    print("  self-play cmd: " + " ".join(cmd))
+
     # Open log file in append mode
     with open(args.log, "a") as f:
         # Run the process and pipe output directly to the log file
@@ -674,15 +760,23 @@ def train_model(model, generation, epochs, device, freeze_until_gen=0):
         loaders, model, loss_func=loss, metrics=[valuation_accuracy, move_accuracy]
     )
 
-    if is_frozen:
+    if isinstance(model, WallgameTransformer):
+        # Transformer branch: no lr_find (unreliable for transformers); one-cycle
+        # schedule provides LR warmup. SMOKE-ONLY defaults: lr 3e-4, wd=0.01
+        # passed to fastai as-is (not asserting decoupled/AdamW semantics for
+        # whatever optimizer fastai selects). Real-run LR policy: parked for Nil.
+        learning_rate = 3e-4
+        print(f"Training generation {generation} with one-cycle LR {learning_rate} (transformer)...")
+        learner.fit_one_cycle(epochs, learning_rate, wd=0.01)
+    elif is_frozen:
         # Use conservative fixed LR when frozen - don't trust lr_find with junk data
         learning_rate = 1e-3
         print(f"Training generation {generation} with fixed LR {learning_rate} (body frozen)...")
+        learner.fit(epochs, learning_rate)
     else:
         learning_rate = learner.lr_find(show_plot=False)[0]
         print(f"Training generation {generation} with learning rate {learning_rate}...")
-
-    learner.fit(epochs, learning_rate)
+        learner.fit(epochs, learning_rate)
 
     # Free memory after training - these are no longer needed
     # Model weights are stored in `model` (passed by reference), not in these objects
@@ -755,8 +849,8 @@ def init():
                 run_self_play("simple", "", 0, "classic", games=half_games)
             else:
                 run_self_play("simple", "", 0, args.variant)
-            model = ResNet(args.columns, args.rows, args.hidden_channels, args.layers, move_channels)
-        
+            model = build_fresh_model()
+
         start_generation = 2
         train_model(model, 1, bootstrap_epochs, device, freeze_until_gen)
         save_model(model, "model_1", device)
@@ -767,13 +861,7 @@ def init():
             exit(1)
         print(f"Loading model from generation {args.initial_generation}...")
         model = load_model(f"model_{args.initial_generation}", device)
-        if model.priors[-1].out_features != expected_priors:
-            print("Error: Loaded model does not match expected output size.")
-            print(
-                f"Expected {expected_priors} priors for {args.columns}x{args.rows} "
-                f"{args.variant}, found {model.priors[-1].out_features}."
-            )
-            exit(1)
+        check_loaded_model(model)
         save_model(model, f"model_{args.initial_generation}", device)
         start_generation = args.initial_generation + 1
 
