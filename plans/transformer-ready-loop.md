@@ -22,6 +22,11 @@ plan → [Game Reviewer plan-gate] → implement → run gates → self-review
 ```
 
 - Reviewer endpoint: `POST localhost:4000/api/agents/agent-1780864878869-eq7t/messages` (bearer `$ISOMUX_AGENT_TOKEN`).
+- Reviewer protocol (agreed 2026-07-11, iteration 1):
+  - Every diff-gate includes: exact cwd, branch + base commit, and whether unrelated local changes exist.
+  - Tensor work: state expected shapes at each boundary (NCHW/NHWC, row/col indexing, flatten order, policy head ordering) in the plan/diff note.
+  - Parity/export slices: state tolerances and deterministic seeds; call out explicitly if TensorRT can't run locally and gate on what can.
+  - Reviewer reviews and signs off only; never implements. Blockers come back specific.
 - While waiting on the reviewer: end turn with a long fallback wakeup (~20 min); the reply is the real wake signal.
 - Never start slice N+1 with slice N uncommitted. Author SLICE-N+1 PICKUP only after slice N commits, folding in what N taught.
 
@@ -64,7 +69,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 
 ## Slice plan
 
-- [ ] **S1** — Bench baseline: script measuring positions/sec of existing `.trt` engines (weak `model_48` 12x10 + strong `model_27` 8x8) + committed numbers report. Sets the throughput bar S3 must meet.
+- [x] **S1** — Bench baseline: script measuring positions/sec of existing `.trt` engines (weak `model_48` 12x10 + strong `model_27` 8x8) + committed numbers report. Sets the throughput bar S3 must meet. → `scripts/bench_baseline.sh` + `plans/transformer-baseline-numbers.md`; both engines are batch-1 serving exports (~3700 pos/sec, launch-bound); serving bar for S3 = 1850 pos/sec, batch-256 bar measured in S3 from regenerated artifacts.
 - [ ] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability.
 - [ ] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline.
 - [ ] **S4** — `--arch transformer` in `training.py` (AdamW + warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload.
