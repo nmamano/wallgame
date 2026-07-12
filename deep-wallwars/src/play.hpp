@@ -9,9 +9,13 @@
 #include "gamestate.hpp"
 #include "mcts.hpp"
 
-// Called once for each game with the winner after the MCTS has finished. Can be used to output
-// training data.
-using CompletionCallback = std::function<void(MCTS const&, int)>;
+// Called exactly once per training game with the game's decision records.
+// Each NodeInfo comes from the tree that actually SEARCHED that decision
+// (red decisions from red's tree, blue decisions from blue's tree), so every
+// policy label is a true visit distribution - never a fast-forwarded one-hot.
+// final_board is the terminal position (used to derive the game outcome).
+using CompletionCallback =
+    std::function<void(std::vector<NodeInfo> const&, Board const& final_board, int index)>;
 
 struct NamedModel {
     EvaluationFunction model;
@@ -38,7 +42,7 @@ struct TrainingPlayOptions {
     double temperature = 1;
     int start_game = 1;  // Starting index for output file numbering
 
-    CompletionCallback on_complete = [](MCTS const&, int) {};
+    CompletionCallback on_complete = [](std::vector<NodeInfo> const&, Board const&, int) {};
 
     std::uint32_t seed = 42;
 };

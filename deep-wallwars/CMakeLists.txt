@@ -94,6 +94,7 @@ if (Catch2_FOUND)
         test/main.cpp
         test/mcts.cpp
         test/engine_adapter.cpp
+        test/play.cpp
         test/tensorrt_model.cpp
     )
 

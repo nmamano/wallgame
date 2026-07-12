@@ -107,22 +107,20 @@ TrainingDataPrinter::TrainingDataPrinter(std::filesystem::path directory, float 
     std::filesystem::create_directory(m_directory);
 }
 
-void TrainingDataPrinter::operator()(MCTS const& out, int index) const {
-    float score_for_red = out.current_board().score_for(Player::Red);
+void TrainingDataPrinter::operator()(std::vector<NodeInfo> const& records,
+                                     Board const& final_board, int index) const {
+    float score_for_red = final_board.score_for(Player::Red);
 
     std::ofstream output_file{m_directory / ("game_" + std::to_string(index) + ".csv")};
 
-    for (NodeInfo const& node_info : out.history()) {
+    for (NodeInfo const& node_info : records) {
         ModelInput model_input = convert_to_model_input(node_info.board, node_info.turn);
         ModelOutput model_output =
             convert_to_model_output(node_info, score_for_red, m_winner_contribution);
         print_training_data_point(output_file, model_input, model_output);
     }
 
-    // The history does not include the actual winning board state.
-    NodeInfo const& node_info = out.root_info();
-    ModelInput model_input = convert_to_model_input(node_info.board, node_info.turn);
-    ModelOutput model_output =
-        convert_to_model_output(node_info, score_for_red, m_winner_contribution);
-    print_training_data_point(output_file, model_input, model_output);
+    // Note: the terminal position is intentionally NOT emitted. It was never
+    // searched, so it has no meaningful policy label; the game outcome already
+    // reaches every record through the z-value blend in convert_to_model_output.
 }

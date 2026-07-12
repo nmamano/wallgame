@@ -106,14 +106,20 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
 
     XLOGF(INFO, "Starting game {}.", index);
 
+    // One combined chronological record per game. Every decision is recorded
+    // from the tree that SEARCHED it, captured pre-commit while the root still
+    // points at the decision node with its full visit statistics.
+    std::vector<NodeInfo> records;
+
     for (int num_moves = 1; opts.move_limit == 0 || num_moves <= opts.move_limit; ++num_moves) {
         for (int i = 0; i < 2; ++i) {
             co_await mcts1.sample(opts.samples);
+            records.push_back(mcts1.root_info());
             auto action = mcts1.commit_to_action(opts.temperature);
             if (!action) {
+                records.pop_back();  // no action was played from this record
                 XLOGF(INFO, "Blue player won game {} in {} moves.", index, num_moves);
-                opts.on_complete(mcts1, index);
-                opts.on_complete(mcts2, index);
+                opts.on_complete(records, mcts1.current_board(), index);
                 co_return {Winner::Blue, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
             }
 
@@ -126,35 +132,35 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
                     XLOGF(INFO, "Red player drew game {} in {} moves.", index, 2 * num_moves - 1);
                 }
 
-                opts.on_complete(mcts1, index);
-                opts.on_complete(mcts2, index);
+                opts.on_complete(records, mcts1.current_board(), index);
                 co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
             }
         }
 
         for (int i = 0; i < 2; ++i) {
             co_await mcts2.sample(opts.samples);
+            records.push_back(mcts2.root_info());
             auto action = mcts2.commit_to_action(opts.temperature);
             if (!action) {
+                records.pop_back();  // no action was played from this record
+                // Blue has no available action, so RED wins. (The previous
+                // Winner::Blue return value contradicted the log line.)
                 XLOGF(INFO, "Red player won game {} in {} moves.", index, 2 * num_moves);
-                opts.on_complete(mcts1, index);
-                opts.on_complete(mcts2, index);
-                co_return {Winner::Blue, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
+                opts.on_complete(records, mcts2.current_board(), index);
+                co_return {Winner::Red, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
             }
             mcts1.force_action(*action);
 
             if (Winner winner = mcts2.current_board().winner(); winner != Winner::Undecided) {
                 XLOGF(INFO, "Blue player won game {} in {} moves.", index, 2 * num_moves);
-                opts.on_complete(mcts1, index);
-                opts.on_complete(mcts2, index);
+                opts.on_complete(records, mcts2.current_board(), index);
                 co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
             }
         }
     }
 
     XLOGF(INFO, "Game {} was ended because it hit the move limit of {}", index, opts.move_limit);
-    opts.on_complete(mcts1, index);
-    opts.on_complete(mcts2, index);
+    opts.on_complete(records, mcts1.current_board(), index);
     co_return {Winner::Undecided, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
 }
 

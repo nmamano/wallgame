@@ -38,6 +38,19 @@ parser.add_argument(
     default="classic",
 )
 parser.add_argument(
+    "--game-columns",
+    help="Effective game columns for self-play, embedded in the model frame "
+    "with padding walls (0 = same as --columns). Enables curriculum training.",
+    default=0,
+    type=int,
+)
+parser.add_argument(
+    "--game-rows",
+    help="Effective game rows for self-play (0 = same as --rows)",
+    default=0,
+    type=int,
+)
+parser.add_argument(
     "--warm-start",
     help="Path to a .pt model to warm-start training (can be different board size)",
     default="",
@@ -647,6 +660,12 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
 
     if boost_mouse_priors:
         cmd.append("--boost_mouse_priors")
+
+    if args.game_columns > 0 or args.game_rows > 0:
+        cmd += [
+            "-game_columns", str(args.game_columns or args.columns),
+            "-game_rows", str(args.game_rows or args.rows),
+        ]
 
     # Always print the exact command: evidence of which model played this
     # generation (e.g. simple vs a specific .trt engine).
