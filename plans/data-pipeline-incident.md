@@ -96,3 +96,32 @@ curriculum generations, twin-mirror the new model:
    belong in the pipeline permanently, not in post-hoc investigations.
 3. Boundary encodings (board perimeter in wall planes) must be documented -
    two independent analyses tripped over the same 22-wall red herring.
+
+## Addendum (2026-07-12 evening): pre-registered validation battery results
+
+Twin-mirrors at 8x8-in-12x10-frame (the clean model's trained size), standard
+variant, ranking mode, 40 games each. Enabled by commit a7ffaa9
+(-game_columns/-game_rows in evaluation/ranking modes).
+
+| Test | Result |
+|---|---|
+| A. simple-policy mirror (frame control) | 12/7/21 - balanced; the padded frame introduces no seat bias |
+| B. CLEAN model_5 twin (sharpened falsification) | **40/40 draws - zero seat determinism** |
+| C. CORRUPTED model_48 twin, same protocol | **blue wins 40/40** |
+| D. clean gen1 vs gen5 ladder | 39 draws, 1 gen5 win (as red) |
+
+B vs C is the decisive contrast: identical protocol, identical frame - the
+corrupted model shows total blue seat-determinism, the clean model none.
+Combined with the balanced control (A) and the earlier finding that the
+clean model's native-12x10 red-sweep occurred off-distribution, the
+seat-determinism pathology tracks the label corruption and disappears with
+clean data. The corruption hypothesis is validated to the extent this
+protocol can test it; the definitive native-12x10 answer arrives when the
+curriculum reaches phase 3 (12x10 training) and this protocol re-runs there.
+
+Interpretation note (labeled as such): the draw-heavy results (B, D) suggest
+8x8-in-frame standard at these strength levels is draw-prone under greedy
+play within the 100-move limit; the gen1-vs-gen5 ladder signal is therefore
+weakly positive (+1 net for gen5) but compressed. Strength tracking should
+use Elo tournaments across more generations at phase end, and/or the classic
+variant where goals force decisive results.
