@@ -37,9 +37,9 @@ DEFINE_int32(rows, 5, "Number of rows");
 DEFINE_string(variant, "classic", "Game variant: classic or standard");
 
 DEFINE_int32(game_columns, 0,
-             "TRAINING mode only: effective game columns, embedded in the -columns/-rows model "
-             "frame with padding walls (0 = same as -columns)");
-DEFINE_int32(game_rows, 0, "TRAINING mode only: effective game rows (0 = same as -rows)");
+             "Effective game columns, embedded in the -columns/-rows model frame with padding "
+             "walls (0 = same as -columns). Applies to training, evaluation and ranking modes.");
+DEFINE_int32(game_rows, 0, "Effective game rows (0 = same as -rows)");
 
 DEFINE_int32(games, 100, "Number of games to play");
 DEFINE_int32(start_game, 1, "Starting game number for output file naming (for resuming)");
@@ -159,7 +159,10 @@ struct Logger : nv::ILogger {
     }
 };
 
-void train(EvaluationFunction const& eval_fn, Variant variant) {
+// Validates the optional -game_columns/-game_rows flags (both-or-neither,
+// 4 <= game <= model frame). Called from main() BEFORE any model loading so
+// invalid dimensions fail fast in every mode.
+void validate_game_dims() {
     if ((FLAGS_game_columns > 0) != (FLAGS_game_rows > 0)) {
         std::cerr << "Error: -game_columns and -game_rows must be set together.\n";
         exit(1);
@@ -173,12 +176,24 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
                   << " (need 4 <= game <= model).\n";
         exit(1);
     }
+}
+
+// Builds the board for a mode: the plain model-frame board, or, when
+// -game_columns/-game_rows are set, the smaller game embedded in the frame
+// with padding walls (equal dims = plain board, byte-identical behavior).
+Board make_mode_board(Variant variant) {
+    int game_columns = FLAGS_game_columns > 0 ? FLAGS_game_columns : FLAGS_columns;
+    int game_rows = FLAGS_game_rows > 0 ? FLAGS_game_rows : FLAGS_rows;
     if (game_columns != FLAGS_columns || game_rows != FLAGS_rows) {
-        XLOGF(INFO, "Padded training: game {}x{} embedded in model frame {}x{} ({} variant)",
+        XLOGF(INFO, "Padded board: game {}x{} embedded in model frame {}x{} ({} variant)",
               game_columns, game_rows, FLAGS_columns, FLAGS_rows, FLAGS_variant);
     }
-    Board board = engine_adapter::make_padded_training_board(FLAGS_columns, FLAGS_rows,
-                                                             game_columns, game_rows, variant);
+    return engine_adapter::make_padded_training_board(FLAGS_columns, FLAGS_rows, game_columns,
+                                                      game_rows, variant);
+}
+
+void train(EvaluationFunction const& eval_fn, Variant variant) {
+    Board board = make_mode_board(variant);
     TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
 
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
@@ -214,7 +229,7 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
 
 void evaluate(EvaluationFunction const& eval_fn1, EvaluationFunction const& eval_fn2,
               Variant variant) {
-    Board board{FLAGS_columns, FLAGS_rows, variant};
+    Board board = make_mode_board(variant);
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
 
     auto recorders = folly::coro::blockingWait(evaluation_play(board, FLAGS_games,
@@ -281,7 +296,7 @@ void ranking(nv::IRuntime& runtime, Variant variant) {
         models.push_back(NamedModel{std::move(cached_policy), model_path.filename().string()});
     }
 
-    Board board{FLAGS_columns, FLAGS_rows, variant};
+    Board board = make_mode_board(variant);
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
     XLOGF(INFO, "Collected {} models. Starting ranking now.", models.size());
 
@@ -309,6 +324,7 @@ int main(int argc, char** argv) {
     gflags::ParseCommandLineFlags(&argc, &argv, true);
 
     auto parsed_variant = parse_variant(FLAGS_variant);
+    validate_game_dims();
     if (!parsed_variant) {
         XLOGF(ERR, "Unsupported variant: {}", FLAGS_variant);
         return 1;
