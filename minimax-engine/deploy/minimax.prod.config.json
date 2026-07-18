@@ -3,7 +3,7 @@
   "bots": [
     {
       "botId": "minimax-classic-8x8",
-      "name": "Legacy Bot",
+      "name": "Negamax",
       "official": false,
       "username": null,
       "appearance": {
@@ -22,7 +22,7 @@
     },
     {
       "botId": "minimax-classic-6x6",
-      "name": "Legacy Bot",
+      "name": "Negamax",
       "official": false,
       "username": null,
       "appearance": {

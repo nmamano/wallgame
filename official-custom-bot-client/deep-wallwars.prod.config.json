@@ -2,7 +2,7 @@
   "server": "https://wallgame.fly.dev",
   "bots": [
     {
-      "botId": "dw-classic-8x8",
+      "botId": "dw-transformer-hard",
       "name": "Hard Bot",
       "username": null,
       "appearance": {
@@ -16,12 +16,37 @@
           "boardWidth": { "min": 5, "max": 8 },
           "boardHeight": { "min": 5, "max": 8 },
           "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
+        },
+        "standard": {
+          "boardWidth": { "min": 5, "max": 8 },
+          "boardHeight": { "min": 5, "max": 8 },
+          "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
         }
       }
     },
     {
-      "botId": "dw-standard-8x8",
-      "name": "Normal Bot",
+      "botId": "dw-resnet-classic",
+      "name": "ResNet",
+      "official": false,
+      "username": null,
+      "appearance": {
+        "color": "blue",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 5, "max": 8 },
+          "boardHeight": { "min": 5, "max": 8 },
+          "recommended": [{ "boardWidth": 8, "boardHeight": 8 }]
+        }
+      }
+    },
+    {
+      "botId": "dw-resnet-standard",
+      "name": "ResNet",
+      "official": false,
       "username": null,
       "appearance": {
         "color": "blue",
@@ -39,7 +64,7 @@
     },
     {
       "botId": "dw-universal",
-      "name": "Experimental Bot",
+      "name": "Experimental ResNet",
       "official": false,
       "username": null,
       "appearance": {
@@ -68,8 +93,9 @@
     }
   ],
   "engineCommands": {
-    "dw-classic-8x8": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/build/8x8_750000.trt --samples 1000",
-    "dw-standard-8x8": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_8x8_standard/model_27.trt --samples 2000 --parallel_samples 2",
+    "dw-transformer-hard": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_12x10_prod/model_47.trt --samples 1000",
+    "dw-resnet-classic": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/build/8x8_750000.trt --samples 1000",
+    "dw-resnet-standard": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_8x8_standard/model_27.trt --samples 2000 --parallel_samples 2",
     "dw-universal": "../deep-wallwars/build/deep_ww_bgs_engine --model ../deep-wallwars/models_12x10_universal/model_48.trt --samples 40000 --parallel_samples 128"
   }
 }
