@@ -14,3 +14,5 @@ ignore/
 CMakeUserPresets.json
 scripts/log.txt
 tournament_results*/
+assets/models/*.pt
+assets/models/*.onnx
