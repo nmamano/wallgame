@@ -1,4 +1,5 @@
 import subprocess
+import sys
 import argparse
 import gc
 import os
@@ -49,6 +50,13 @@ parser.add_argument(
     help="Effective game rows for self-play (0 = same as --rows)",
     default=0,
     type=int,
+)
+parser.add_argument(
+    "--size-mix",
+    help="Comma-separated game-size mix for self-play, e.g. '8x8=50,8x9=17,9x8=17,9x9=16' "
+    "(COLSxROWS=percent; weights must sum to 100). Each generation splits its games "
+    "across these sizes, per variant. Overrides --game-columns/--game-rows.",
+    default="",
 )
 parser.add_argument(
     "--warm-start",
@@ -222,16 +230,48 @@ def resolve_initial_generation(value: str) -> int:
 args.initial_generation = resolve_initial_generation(args.initial_generation)
 
 
+def parse_size_mix(spec):
+    """Parse '8x8=50,8x9=25,9x9=25' into [((8, 8), 50), ((8, 9), 25), ((9, 9), 25)].
+
+    Weights are percents and must sum to 100. Sizes must fit in the model frame.
+    Returns [] for an empty spec (single-size behavior via --game-columns/--game-rows).
+    """
+    if not spec:
+        return []
+    mix = []
+    for part in spec.split(","):
+        size, weight = part.split("=")
+        cols, rows = size.split("x")
+        mix.append(((int(cols), int(rows)), int(weight)))
+    total = sum(w for _, w in mix)
+    if total != 100:
+        print(f"Error: --size-mix weights sum to {total}, expected 100.")
+        exit(1)
+    for (cols, rows), _ in mix:
+        if not (4 <= cols <= args.columns and 4 <= rows <= args.rows):
+            print(f"Error: --size-mix size {cols}x{rows} outside 4x4..{args.columns}x{args.rows}.")
+            exit(1)
+    return mix
+
+
+size_mix = parse_size_mix(args.size_mix)
+
+
 def get_training_paths(generation):
     lb = max(generation - args.max_training_window, (generation - 1) // 2)
-    if args.variant == "universal":
-        # Include both variant directories for each generation
-        paths = []
-        for i in range(lb, generation):
-            paths.append(f"{args.data}/generation_{i}_standard")
-            paths.append(f"{args.data}/generation_{i}_classic")
-        return paths
-    return [f"{args.data}/generation_{i}" for i in range(lb, generation)]
+    paths = []
+    for i in range(lb, generation):
+        if args.variant == "universal":
+            bases = [f"generation_{i}_standard", f"generation_{i}_classic"]
+        else:
+            bases = [f"generation_{i}"]
+        for base in bases:
+            paths.append(f"{args.data}/{base}")
+            # Size-mix runs write to size-suffixed dirs (e.g. generation_36_standard_8x9).
+            paths.extend(
+                str(p) for p in sorted(Path(args.data).glob(f"{base}_[0-9]*x[0-9]*"))
+            )
+    return paths
 
 
 def save_model(model, name, device):
@@ -589,11 +629,30 @@ def _transfer_value_linear(base_state, new_state,
                 new_w[0, new_idx] = old_w[0, old_idx]
 
 
-def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False, games=None):
+def run_label_audit(output_dir):
+    """Label-corruption gate (see plans/data-pipeline-incident.md).
+
+    Fails the run if either seat's policy labels look one-hot/fast-forwarded
+    (the 2026-07 corruption signature). Skipped for simple-policy data, which
+    is legitimately one-hot (samples=1).
+    """
+    audit_script = Path(__file__).resolve().parent / "audit_labels.py"
+    print(f"Auditing labels in {output_dir}...")
+    result = subprocess.run([sys.executable, str(audit_script), output_dir])
+    if result.returncode != 0:
+        print(f"Error: label audit FAILED for {output_dir} (details above).")
+        print("Training halted so corrupted labels are never trained on.")
+        exit(1)
+
+
+def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False, games=None,
+                  game_size=None):
     """Run self-play to generate training data.
 
     Args:
         games: Number of games to play. If None, uses args.games.
+        game_size: Optional (columns, rows) game size embedded in the model frame.
+            If None, falls back to --game-columns/--game-rows.
     """
     if games is None:
         games = args.games
@@ -603,6 +662,13 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
     output_dir = f"{args.data}/generation_{generation}"
     if args.variant == "universal":
         output_dir = f"{args.data}/generation_{generation}_{variant}"
+    # Size-mix runs get size-suffixed dirs so per-size games never mix resume counters.
+    if game_size is not None:
+        output_dir += f"_{game_size[0]}x{game_size[1]}"
+
+    # When using simple policy (no neural network), skip MCTS samples entirely
+    # Simple policy just walks toward the goal - no search needed
+    is_simple_policy = (model1 == "simple")
 
     # Check how many games already exist (resume partial generations)
     output_path = Path(output_dir)
@@ -612,6 +678,9 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
 
     if remaining_games <= 0:
         print(f"Self-play (generation {generation}, {variant}): {existing_games} games already exist, skipping.")
+        # Still gate on resume: pre-existing data may never have been audited.
+        if not is_simple_policy:
+            run_label_audit(output_dir)
         return
 
     # Find max file number to continue numbering (games finish out of order, so may have gaps)
@@ -629,9 +698,6 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
     else:
         print(f"Running self play (generation {generation}, variant {variant}, games {games})...")
 
-    # When using simple policy (no neural network), skip MCTS samples entirely
-    # Simple policy just walks toward the goal - no search needed
-    is_simple_policy = (model1 == "simple")
     samples = 1 if is_simple_policy else args.samples
 
     cmd = [
@@ -661,7 +727,12 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
     if boost_mouse_priors:
         cmd.append("--boost_mouse_priors")
 
-    if args.game_columns > 0 or args.game_rows > 0:
+    if game_size is not None:
+        cmd += [
+            "-game_columns", str(game_size[0]),
+            "-game_rows", str(game_size[1]),
+        ]
+    elif args.game_columns > 0 or args.game_rows > 0:
         cmd += [
             "-game_columns", str(args.game_columns or args.columns),
             "-game_rows", str(args.game_rows or args.rows),
@@ -691,6 +762,10 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         print(" ".join(cmd))
         print(f"Check the log file at {args.log} for details")
         exit(1)
+
+    # Label-corruption gate: audit fresh self-play data before it is trained on.
+    if not is_simple_policy:
+        run_label_audit(output_dir)
 
 
 def predict_valuation(xs):
@@ -903,18 +978,20 @@ def init():
         start_generation = args.initial_generation + 1
 
     for generation in range(start_generation, start_generation + args.generations - 1):
-        # One-off hack to boost mouse priors for specific generations
-        # TODO: remove it.
-        boost = (generation - 1) in [37, 38, 39]
-
         model_path = f"{args.models}/model_{generation - 1}.trt"
-        if args.variant == "universal":
-            # Run both variants with half the games each
-            half_games = args.games // 2
-            run_self_play(model_path, "", generation - 1, "standard", boost_mouse_priors=boost, games=half_games)
-            run_self_play(model_path, "", generation - 1, "classic", boost_mouse_priors=boost, games=half_games)
-        else:
-            run_self_play(model_path, "", generation - 1, args.variant, boost_mouse_priors=boost)
+        variants = ["standard", "classic"] if args.variant == "universal" else [args.variant]
+        games_per_variant = args.games // len(variants)
+        for variant in variants:
+            if size_mix:
+                # Split this variant's games across sizes (integer floor; a few
+                # games per generation may be dropped to rounding, by design).
+                for (size_cols, size_rows), weight in size_mix:
+                    run_self_play(model_path, "", generation - 1, variant,
+                                  games=games_per_variant * weight // 100,
+                                  game_size=(size_cols, size_rows))
+            else:
+                run_self_play(model_path, "", generation - 1, variant,
+                              games=games_per_variant)
 
         train_model(model, generation, args.epochs, device, freeze_until_gen)
         save_model(model, f"model_{generation}", device)

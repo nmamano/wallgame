@@ -1,0 +1,38 @@
+{
+  "server": "https://wallgame.io",
+  "bots": [
+    {
+      "botId": "dw-transformer",
+      "name": "Transformer Bot (experimental)",
+      "official": false,
+      "username": null,
+      "appearance": {
+        "color": "purple",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": { "min": 5, "max": 12 },
+          "boardHeight": { "min": 5, "max": 10 },
+          "recommended": [
+            { "boardWidth": 8, "boardHeight": 8 },
+            { "boardWidth": 12, "boardHeight": 10 }
+          ]
+        },
+        "standard": {
+          "boardWidth": { "min": 5, "max": 12 },
+          "boardHeight": { "min": 5, "max": 10 },
+          "recommended": [
+            { "boardWidth": 8, "boardHeight": 8 },
+            { "boardWidth": 12, "boardHeight": 10 }
+          ]
+        }
+      }
+    }
+  ],
+  "engineCommands": {
+    "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_63.trt --samples 4000 --parallel_samples 32 --thread_pool_size 4"
+  }
+}
