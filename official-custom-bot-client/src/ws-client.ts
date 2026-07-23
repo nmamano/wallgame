@@ -537,12 +537,10 @@ export class BotClient {
     const botId = this.sessionRoutes.get(message.bgsId);
     const engine = botId ? this.getEngine(botId) : undefined;
 
-    // Clean up session route
-    this.sessionRoutes.delete(message.bgsId);
-
     if (!engine) {
-      // Dumb bot fallback
+      // Dumb bot fallback (no engine-side session to leak)
       logger.debug(`Using dumb bot for end session ${message.bgsId}`);
+      this.sessionRoutes.delete(message.bgsId);
       const response = dumbBotEndSession(message);
       await this.send(response);
       this.state = "waiting";
@@ -561,9 +559,15 @@ export class BotClient {
         error: error instanceof Error ? error.message : String(error),
       };
       await this.send(errorResponse);
+    } finally {
+      // Remove the route only AFTER the engine has been contacted, never before.
+      // Deleting up-front (the old behavior) meant that if engine.send() threw,
+      // a server retry would find no route, silently fall back to the dumb bot,
+      // report success, and never tell the real engine to tear down — a silent
+      // engine-side session leak.
+      this.sessionRoutes.delete(message.bgsId);
+      this.state = "waiting";
     }
-
-    this.state = "waiting";
   }
 
   /**
