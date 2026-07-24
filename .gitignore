@@ -18,3 +18,5 @@ deep-wallwars/models_*/
 bot-4-debug.log
 .cache/
 logs/*
+deep-wallwars/assets/models/*.pt
+deep-wallwars/assets/models/*.onnx

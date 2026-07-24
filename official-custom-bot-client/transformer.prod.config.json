@@ -4,7 +4,7 @@
     {
       "botId": "dw-transformer",
       "name": "Transformer Bot (experimental)",
-      "official": false,
+      "official": true,
       "username": null,
       "appearance": {
         "color": "purple",
@@ -14,25 +14,60 @@
       },
       "variants": {
         "classic": {
-          "boardWidth": { "min": 5, "max": 12 },
-          "boardHeight": { "min": 5, "max": 10 },
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
           "recommended": [
-            { "boardWidth": 8, "boardHeight": 8 },
-            { "boardWidth": 12, "boardHeight": 10 }
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
           ]
         },
         "standard": {
-          "boardWidth": { "min": 5, "max": 12 },
-          "boardHeight": { "min": 5, "max": 10 },
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
           "recommended": [
-            { "boardWidth": 8, "boardHeight": 8 },
-            { "boardWidth": 12, "boardHeight": 10 }
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
           ]
+        },
+        "freestyle": {
+          "boardWidth": {
+            "min": 12,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 10,
+            "max": 10
+          },
+          "recommended": []
         }
       }
     }
   ],
   "engineCommands": {
-    "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_63.trt --samples 4000 --parallel_samples 32 --thread_pool_size 4"
+    "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4"
   }
 }
