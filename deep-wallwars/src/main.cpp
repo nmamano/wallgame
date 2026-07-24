@@ -5,12 +5,17 @@
 #include <folly/logging/xlog.h>
 #include <gflags/gflags.h>
 
+#include <algorithm>
 #include <chrono>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <ranges>
 #include <sstream>
+#include <utility>
+#include <vector>
+
+#include <nlohmann/json.hpp>
 
 #include "batched_model.hpp"
 #include "batched_model_policy.hpp"
@@ -57,6 +62,24 @@ DEFINE_string(ranking, "", "Folder of *.trt models to rank against each other");
 DEFINE_int32(tournaments, 10, "Number of tournaments to run for ranking");
 DEFINE_int32(initial_model, 0, "Index of the initial model to use for ranking");
 
+DEFINE_bool(analyze, false,
+            "Puzzle-gen spike: self-play one game and deeply analyze each start-of-turn "
+            "position (eval-vs-visits trajectory + per-action Q/visits/prior), writing JSONL. "
+            "Requires --model1.");
+DEFINE_int32(analyze_samples, 100'000, "Deep MCTS visits per analyzed position (analyze mode)");
+DEFINE_int32(analyze_chunk, 2'000,
+             "Visit interval for eval-vs-visits trajectory logging (analyze mode)");
+DEFINE_int32(analyze_moves, 60, "Max turns to analyze before stopping the game (analyze mode)");
+DEFINE_string(analyze_output, "puzzle_candidates.jsonl", "Output JSONL path (analyze mode)");
+DEFINE_int32(analyze_play_samples, 1500,
+             "Move-selection search budget when a separate --model2 player is given "
+             "(weakens play to manufacture tactical positions; analysis still uses the "
+             "strong --model1 deep search as the oracle).");
+DEFINE_bool(analyze_asymmetric, false,
+            "In analyze mode with --model2: play Red with the strong --model1 and Blue with "
+            "the weak --model2, so the strong side punishes the weak side's mistakes (hunts "
+            "winning-shot tactics). Default: both sides play the weak --model2 (save-type).");
+
 namespace nv = nvinfer1;
 namespace views = std::ranges::views;
 
@@ -66,7 +89,8 @@ enum class Mode {
     Train,
     Evaluate,
     Interactive,
-    Ranking
+    Ranking,
+    Analyze
 };
 
 // Creates and validates a model, returning it as an EvaluationFunction
@@ -123,6 +147,13 @@ std::string get_usage_message() {
         << "    --output DIR # Output folder (default 'data')\n"
         << "EVALUATION: Evaluate models against each other\n"
         << "    ./deep_ww --model1 <model1.trt | simple> --model2 <model2.trt | simple>\n"
+        << "ANALYZE (puzzle-gen spike): self-play one game, deeply analyze each position\n"
+        << "    ./deep_ww --analyze --model1 <model.trt> --columns 8 --rows 8 --variant standard\n"
+        << "  Options:\n"
+        << "    --analyze_samples N  # Deep MCTS visits per position (default 100000)\n"
+        << "    --analyze_chunk N    # Trajectory logging interval in visits (default 2000)\n"
+        << "    --analyze_moves N    # Max turns to analyze (default 60)\n"
+        << "    --analyze_output F   # Output JSONL path (default puzzle_candidates.jsonl)\n"
         << "COMMON OPTIONS:\n"
         << "    --games N             # Number of games to play (default 100)\n"
         << "    --samples N           # MCTS samples per action (default 500)\n"
@@ -312,6 +343,140 @@ void ranking(nv::IRuntime& runtime, Variant variant) {
     XLOGF(INFO, "Output written to {}.pgn/json.", (ranking_folder / "games").string());
 }
 
+// Puzzle-generation spike (Phase 0a, see info/puzzle-generation.md).
+//
+// Self-plays a single game with `eval_fn` on both sides. Before each turn we run
+// a FRESH deep MCTS at the start-of-turn position (root noise disabled) and record:
+//   - the eval-vs-visits trajectory (to detect the "eval jump" and its N_jump), and
+//   - every legal root action's Q / visits / prior (to compute solution density).
+// One JSONL record is emitted per analyzed position. The engine's best move is then
+// committed to advance the game, so the analyzed positions come from a strong-vs-strong
+// line. This does NOT yet extract/store puzzles; it produces the raw data we eyeball in
+// Phase 0b to decide whether eval-jumps + low density actually correspond to real tactics.
+folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
+                                     EvaluationFunction const& play_fn, bool separate_player,
+                                     Board start_board, std::ostream& out) {
+    Board board = start_board;
+    Turn turn{Player::Red, Turn::First};
+
+    for (int move_index = 0;
+         move_index < FLAGS_analyze_moves && board.winner() == Winner::Undecided; ++move_index) {
+        MCTS::Options opts;
+        opts.starting_turn = turn;
+        opts.noise_factor = 0.0f;  // clean analysis: no root exploration noise
+        opts.seed = FLAGS_seed + move_index;
+        MCTS mcts(analyze_fn, board, opts);
+
+        // Chunked sampling grows a single search; record the trajectory as it grows.
+        // sample() resets samples_done() per call, so track cumulative visits ourselves.
+        std::vector<std::pair<int, float>> trajectory;
+        int visits = 0;
+        while (visits < FLAGS_analyze_samples) {
+            int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
+            co_await mcts.sample(chunk);
+            visits += chunk;
+            trajectory.emplace_back(visits, mcts.root_value());
+        }
+
+        NodeInfo const info = mcts.root_info();
+        Cell const cat = board.position(turn.player);
+
+        nlohmann::json record;
+        record["move_index"] = move_index;
+        record["player"] = turn.player == Player::Red ? "red" : "blue";
+        record["variant"] = std::string(variant_name(board.variant()));
+        record["columns"] = board.columns();
+        record["rows"] = board.rows();
+        record["cat"] = {{"col", cat.column}, {"row", cat.row}};
+        record["root_q"] = info.q_value;
+        record["num_legal_actions"] = static_cast<int>(info.edges.size());
+        record["total_visits"] = mcts.root_samples();
+
+        nlohmann::json traj = nlohmann::json::array();
+        for (auto const& [n, q] : trajectory) {
+            traj.push_back({{"visits", n}, {"q", q}});
+        }
+        record["trajectory"] = std::move(traj);
+
+        nlohmann::json edges = nlohmann::json::array();
+        for (EdgeInfo const& edge : info.edges) {
+            std::ostringstream action_str;
+            action_str << edge.action;
+            edges.push_back({{"action", action_str.str()},
+                             {"visits", edge.num_samples},
+                             {"q", edge.q_value},
+                             {"prior", edge.prior}});
+        }
+        record["edges"] = std::move(edges);
+
+        out << record.dump() << "\n";
+        out.flush();
+
+        // Move selection. With a separate (typically weaker) --model2 player, run a
+        // shallow search with play_fn to advance the game: its mistakes manufacture the
+        // tactical positions the deep analysis above is built to detect. Otherwise commit
+        // from the strong deep search itself (symmetric strong-vs-strong self-play).
+        std::optional<Move> best;
+        if (separate_player) {
+            // Asymmetric mode: Red plays the strong oracle, Blue the weak model, so the
+            // strong side punishes the weak side's blunders (winning-shot tactics).
+            // Symmetric mode: both sides play the weak model (save-type tactics).
+            EvaluationFunction const& mover_fn =
+                (FLAGS_analyze_asymmetric && turn.player == Player::Red) ? analyze_fn : play_fn;
+            MCTS::Options play_opts = opts;
+            play_opts.seed = FLAGS_seed + move_index + 100000;
+            MCTS play_mcts(mover_fn, board, play_opts);
+            co_await play_mcts.sample(FLAGS_analyze_play_samples);
+            best = play_mcts.peek_best_move();
+        } else {
+            best = mcts.peek_best_move();
+        }
+        if (!best) {
+            XLOGF(INFO, "No legal move at move {}; stopping analysis.", move_index);
+            break;
+        }
+        board.do_action(turn.player, best->first);
+        if (board.winner() != Winner::Undecided) {
+            break;  // first action decided the game; skip the (arbitrary) second action
+        }
+        board.do_action(turn.player, best->second);
+        turn = {other_player(turn.player), Turn::First};
+    }
+
+    co_return;
+}
+
+void analyze(EvaluationFunction const& analyze_fn, EvaluationFunction const& play_fn,
+             bool separate_player, Variant variant) {
+    Board board = make_mode_board(variant);
+    folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
+
+    std::ofstream out(FLAGS_analyze_output);
+    if (!out) {
+        XLOGF(ERR, "Failed to open analyze output file: {}", FLAGS_analyze_output);
+        return;
+    }
+
+    if (separate_player) {
+        XLOGF(INFO,
+              "Analyzing game: model1 oracle {} visits/position, model2 player {} visits/move, "
+              "up to {} moves, {} variant -> {}",
+              FLAGS_analyze_samples, FLAGS_analyze_play_samples, FLAGS_analyze_moves, FLAGS_variant,
+              FLAGS_analyze_output);
+    } else {
+        XLOGF(
+            INFO,
+            "Analyzing self-play game: {} visits/position, chunk {}, up to {} moves, {} variant -> {}",
+            FLAGS_analyze_samples, FLAGS_analyze_chunk, FLAGS_analyze_moves, FLAGS_variant,
+            FLAGS_analyze_output);
+    }
+
+    folly::coro::blockingWait(
+        analyze_game(analyze_fn, play_fn, separate_player, board, out).scheduleOn(&thread_pool));
+
+    XLOG(INFO, "Analysis complete.");
+}
+
 int main(int argc, char** argv) {
     // If no arguments are provided (only program name), print usage and exit.
     if (argc == 1) {
@@ -344,6 +509,8 @@ int main(int argc, char** argv) {
         mode = Mode::Ranking;
     } else if (FLAGS_interactive) {
         mode = Mode::Interactive;
+    } else if (FLAGS_analyze) {
+        mode = Mode::Analyze;
     } else if (FLAGS_model2.empty()) {
         // If only one model is provided, generate training data with self-play.
         // This is called from the training script, it is not intended to be used
@@ -382,6 +549,13 @@ int main(int argc, char** argv) {
             return 1;
         }
 #endif
+    } else if (mode == Mode::Analyze) {
+        if (FLAGS_model1.empty()) {
+            XLOG(ERR, "Analyze mode requires --model1 (the strong analysis oracle).");
+            return 1;
+        }
+        // --model2 is optional here: when given, it is the (typically weaker) player used
+        // for move selection, while --model1 stays the deep analysis oracle.
     }
 
     EvaluationFunction eval_fn1, eval_fn2;
@@ -402,6 +576,9 @@ int main(int argc, char** argv) {
         evaluate(eval_fn1, eval_fn2, variant);
     } else if (mode == Mode::Train) {
         train(eval_fn1, variant);
+    } else if (mode == Mode::Analyze) {
+        bool separate_player = !FLAGS_model2.empty();
+        analyze(eval_fn1, separate_player ? eval_fn2 : eval_fn1, separate_player, variant);
     }
 
     auto stop = std::chrono::high_resolution_clock::now();

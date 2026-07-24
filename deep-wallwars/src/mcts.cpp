@@ -454,7 +454,16 @@ NodeInfo MCTS::root_info() const {
 
     for (TreeEdge const& edge : m_root->edges) {
         TreeNode* child = edge.child;
-        result.edges.emplace_back(edge.action, child ? child->value.load().total_samples : 0);
+        int num_samples = 0;
+        float q_value = 0.0f;
+        if (child) {
+            TreeNode::Value const child_val = child->value.load();
+            num_samples = child_val.total_samples;
+            if (num_samples > 0) {
+                q_value = child_val.total_weight / child_val.total_samples;
+            }
+        }
+        result.edges.emplace_back(edge.action, num_samples, q_value, edge.prior);
     }
 
     return result;

@@ -42,6 +42,8 @@ struct TreeNode {
 struct EdgeInfo {
     Action action;
     int num_samples;
+    float q_value;  // child node value (total_weight / total_samples), 0 if unvisited
+    float prior;    // NN prior probability for this edge
 };
 
 struct NodeInfo {
