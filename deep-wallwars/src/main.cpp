@@ -79,6 +79,13 @@ DEFINE_bool(analyze_asymmetric, false,
             "In analyze mode with --model2: play Red with the strong --model1 and Blue with "
             "the weak --model2, so the strong side punishes the weak side's mistakes (hunts "
             "winning-shot tactics). Default: both sides play the weak --model2 (save-type).");
+DEFINE_string(analyze_game_file, "",
+              "Analyze mode: instead of self-playing, ingest external games from this JSONL "
+              "file (e.g. converted wallwars.net human games). Each line: "
+              "{id, rows, columns, variant, firstPlayer, moves} where `moves` is standard "
+              "notation in play order. Each start-of-turn position is analyzed with the "
+              "strong --model1 oracle; the human move is then replayed to advance. "
+              "--columns/--rows set the model frame the game is embedded in.");
 
 namespace nv = nvinfer1;
 namespace views = std::ranges::views;
@@ -353,6 +360,42 @@ void ranking(nv::IRuntime& runtime, Variant variant) {
 // committed to advance the game, so the analyzed positions come from a strong-vs-strong
 // line. This does NOT yet extract/store puzzles; it produces the raw data we eyeball in
 // Phase 0b to decide whether eval-jumps + low density actually correspond to real tactics.
+// Build the per-position JSONL record from a completed deep search. Shared by
+// self-play analysis (analyze_game) and external-game ingest (analyze_external_game).
+nlohmann::json build_position_record(Board const& board, Turn turn, NodeInfo const& info,
+                                     int total_visits,
+                                     std::vector<std::pair<int, float>> const& trajectory) {
+    Cell const cat = board.position(turn.player);
+
+    nlohmann::json record;
+    record["player"] = turn.player == Player::Red ? "red" : "blue";
+    record["variant"] = std::string(variant_name(board.variant()));
+    record["columns"] = board.columns();
+    record["rows"] = board.rows();
+    record["cat"] = {{"col", cat.column}, {"row", cat.row}};
+    record["root_q"] = info.q_value;
+    record["num_legal_actions"] = static_cast<int>(info.edges.size());
+    record["total_visits"] = total_visits;
+
+    nlohmann::json traj = nlohmann::json::array();
+    for (auto const& [n, q] : trajectory) {
+        traj.push_back({{"visits", n}, {"q", q}});
+    }
+    record["trajectory"] = std::move(traj);
+
+    nlohmann::json edges = nlohmann::json::array();
+    for (EdgeInfo const& edge : info.edges) {
+        std::ostringstream action_str;
+        action_str << edge.action;
+        edges.push_back({{"action", action_str.str()},
+                         {"visits", edge.num_samples},
+                         {"q", edge.q_value},
+                         {"prior", edge.prior}});
+    }
+    record["edges"] = std::move(edges);
+    return record;
+}
+
 folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
                                      EvaluationFunction const& play_fn, bool separate_player,
                                      Board start_board, std::ostream& out) {
@@ -378,36 +421,9 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
             trajectory.emplace_back(visits, mcts.root_value());
         }
 
-        NodeInfo const info = mcts.root_info();
-        Cell const cat = board.position(turn.player);
-
-        nlohmann::json record;
+        nlohmann::json record =
+            build_position_record(board, turn, mcts.root_info(), mcts.root_samples(), trajectory);
         record["move_index"] = move_index;
-        record["player"] = turn.player == Player::Red ? "red" : "blue";
-        record["variant"] = std::string(variant_name(board.variant()));
-        record["columns"] = board.columns();
-        record["rows"] = board.rows();
-        record["cat"] = {{"col", cat.column}, {"row", cat.row}};
-        record["root_q"] = info.q_value;
-        record["num_legal_actions"] = static_cast<int>(info.edges.size());
-        record["total_visits"] = mcts.root_samples();
-
-        nlohmann::json traj = nlohmann::json::array();
-        for (auto const& [n, q] : trajectory) {
-            traj.push_back({{"visits", n}, {"q", q}});
-        }
-        record["trajectory"] = std::move(traj);
-
-        nlohmann::json edges = nlohmann::json::array();
-        for (EdgeInfo const& edge : info.edges) {
-            std::ostringstream action_str;
-            action_str << edge.action;
-            edges.push_back({{"action", action_str.str()},
-                             {"visits", edge.num_samples},
-                             {"q", edge.q_value},
-                             {"prior", edge.prior}});
-        }
-        record["edges"] = std::move(edges);
 
         out << record.dump() << "\n";
         out.flush();
@@ -444,6 +460,133 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
     }
 
     co_return;
+}
+
+// External-game ingest (Phase 1, see info/puzzle-generation.md). Instead of the
+// engine self-playing, replay a real recorded game (e.g. a converted wallwars.net
+// human game) and deeply analyze each start-of-turn position with the strong
+// oracle. The position SOURCE is imperfect human play (where hidden tactics exist
+// and get missed); the ANALYSIS is the strong deep search. One JSONL record per
+// analyzed position, tagged with the source game id + move index.
+folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_fn,
+                                              nlohmann::json const& game, std::ostream& out) {
+    int const game_rows = game.at("rows").get<int>();
+    int const game_cols = game.at("columns").get<int>();
+    auto const parsed_variant = parse_variant(game.value("variant", std::string("classic")));
+    if (!parsed_variant) {
+        XLOGF(ERR, "game {}: unsupported variant '{}'", game.value("id", std::string("?")),
+              game.value("variant", std::string("?")));
+        co_return;
+    }
+    Variant const variant = *parsed_variant;
+
+    // Embed the (possibly smaller) game board in the model frame FLAGS_columns x FLAGS_rows.
+    engine_adapter::PaddingConfig const pc = engine_adapter::create_padding_config(
+        FLAGS_rows, FLAGS_columns, game_rows, game_cols, variant);
+    Board board = engine_adapter::make_padded_training_board(FLAGS_columns, FLAGS_rows, game_cols,
+                                                             game_rows, variant);
+
+    int const first = game.value("firstPlayer", 1);
+    Turn turn{first == 1 ? Player::Red : Player::Blue, Turn::First};
+    std::string const id = game.value("id", std::string(""));
+
+    // Tokenize the moves string into per-turn tokens, dropping "N." numbering.
+    std::vector<std::string> tokens;
+    {
+        std::istringstream iss(game.at("moves").get<std::string>());
+        std::string tok;
+        while (iss >> tok) {
+            if (!tok.empty() && tok.back() == '.' &&
+                tok.find_first_not_of("0123456789") == tok.size() - 1) {
+                continue;  // "12." move-number token
+            }
+            tokens.push_back(tok);
+        }
+    }
+
+    for (int mi = 0; mi < static_cast<int>(tokens.size()) && mi < FLAGS_analyze_moves &&
+                     board.winner() == Winner::Undecided;
+         ++mi) {
+        MCTS::Options opts;
+        opts.starting_turn = turn;
+        opts.noise_factor = 0.0f;
+        opts.seed = FLAGS_seed + mi;
+        MCTS mcts(analyze_fn, board, opts);
+
+        std::vector<std::pair<int, float>> trajectory;
+        int visits = 0;
+        while (visits < FLAGS_analyze_samples) {
+            int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
+            co_await mcts.sample(chunk);
+            visits += chunk;
+            trajectory.emplace_back(visits, mcts.root_value());
+        }
+
+        nlohmann::json record =
+            build_position_record(board, turn, mcts.root_info(), mcts.root_samples(), trajectory);
+        record["game_id"] = id;
+        record["move_index"] = mi;
+        // board rows/columns above are the MODEL frame; record the true game size too
+        // (the game is embedded in the frame, cat positions are in model coords).
+        record["game_rows"] = game_rows;
+        record["game_columns"] = game_cols;
+        out << record.dump() << "\n";
+        out.flush();
+
+        // Replay the human move (game-space notation -> model-space actions).
+        auto const actions = engine_adapter::parse_move_notation(tokens[mi], board, turn, pc);
+        if (!actions) {
+            XLOGF(ERR, "game {}: failed to parse move {} ('{}'); stopping this game.", id, mi,
+                  tokens[mi]);
+            break;
+        }
+        for (Action const& action : *actions) {
+            board.do_action(turn.player, action);
+            if (board.winner() != Winner::Undecided) break;
+        }
+        turn = {other_player(turn.player), Turn::First};
+    }
+
+    co_return;
+}
+
+void analyze_external_games(EvaluationFunction const& analyze_fn) {
+    folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
+    std::ofstream out(FLAGS_analyze_output);
+    if (!out) {
+        XLOGF(ERR, "Failed to open analyze output file: {}", FLAGS_analyze_output);
+        return;
+    }
+    std::ifstream in(FLAGS_analyze_game_file);
+    if (!in) {
+        XLOGF(ERR, "Failed to open analyze game file: {}", FLAGS_analyze_game_file);
+        return;
+    }
+    XLOGF(INFO,
+          "Ingesting external games from {}: {} visits/position, model frame {}x{}, up to {} "
+          "moves/game -> {}",
+          FLAGS_analyze_game_file, FLAGS_analyze_samples, FLAGS_columns, FLAGS_rows,
+          FLAGS_analyze_moves, FLAGS_analyze_output);
+
+    std::string line;
+    int game_no = 0;
+    while (std::getline(in, line)) {
+        if (line.find_first_not_of(" \t\r\n") == std::string::npos) continue;
+        nlohmann::json game;
+        try {
+            game = nlohmann::json::parse(line);
+        } catch (std::exception const& e) {
+            XLOGF(ERR, "Skipping malformed JSONL line: {}", e.what());
+            continue;
+        }
+        XLOGF(INFO, "Analyzing game {} (id {}, {}x{})", game_no,
+              game.value("id", std::string("?")), game.value("rows", 0),
+              game.value("columns", 0));
+        folly::coro::blockingWait(
+            analyze_external_game(analyze_fn, game, out).scheduleOn(&thread_pool));
+        ++game_no;
+    }
+    XLOGF(INFO, "External-game analysis complete: {} games.", game_no);
 }
 
 void analyze(EvaluationFunction const& analyze_fn, EvaluationFunction const& play_fn,
@@ -577,8 +720,12 @@ int main(int argc, char** argv) {
     } else if (mode == Mode::Train) {
         train(eval_fn1, variant);
     } else if (mode == Mode::Analyze) {
-        bool separate_player = !FLAGS_model2.empty();
-        analyze(eval_fn1, separate_player ? eval_fn2 : eval_fn1, separate_player, variant);
+        if (!FLAGS_analyze_game_file.empty()) {
+            analyze_external_games(eval_fn1);
+        } else {
+            bool separate_player = !FLAGS_model2.empty();
+            analyze(eval_fn1, separate_player ? eval_fn2 : eval_fn1, separate_player, variant);
+        }
     }
 
     auto stop = std::chrono::high_resolution_clock::now();

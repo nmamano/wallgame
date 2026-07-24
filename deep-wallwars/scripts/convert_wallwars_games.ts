@@ -75,6 +75,7 @@ interface ConvertedGame {
   variant: "classic";
   rows: number; // real board height
   columns: number; // real board width
+  firstPlayer: 1 | 2; // 1 = creator/Red, 2 = joiner/Blue (per creatorStarts)
   players: string[];
   ratings: number[];
   winner: string;
@@ -117,6 +118,9 @@ function convert(raw: RawGame): ConvertedGame {
     .map((mv, i) => `${i + 1}. ${moveToStandardNotation(mv, rows)}`)
     .join(" ");
 
+  // creator = players[0] = Red = p1 (top-left), matching importEngineGame.
+  const firstPlayer: 1 | 2 = raw.creatorStarts ? 1 : 2;
+
   let finalDistsReplayed: [number, number] | null = null;
   let replayError: string | null = null;
   try {
@@ -127,8 +131,6 @@ function convert(raw: RawGame): ConvertedGame {
       columns,
       moves,
     };
-    // creator = players[0] = Red = p1 (top-left), matching importEngineGame.
-    const firstPlayer = raw.creatorStarts ? 1 : 2;
     const imported = importEngineGame(
       record,
       "classic",
@@ -152,6 +154,7 @@ function convert(raw: RawGame): ConvertedGame {
     variant: "classic",
     rows,
     columns,
+    firstPlayer,
     players: raw.players,
     ratings: raw.ratings,
     winner: raw.winner,
@@ -200,6 +203,7 @@ async function main() {
         variant: "classic",
         rows: (raw.dims[0] + 1) / 2,
         columns: (raw.dims[1] + 1) / 2,
+        firstPlayer: raw.creatorStarts ? 1 : 2,
         players: raw.players,
         ratings: raw.ratings,
         winner: raw.winner,
