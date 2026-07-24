@@ -227,6 +227,47 @@ measure.
   quiet, imperfect enough that hidden tactics exist and get missed. This is exactly the
   Lichess model, and it is where Phase 1 should point.
 
+## Phase 1: real human games ingested (wallwars.net export, 2026-07-24)
+
+Acted on the revised methodology's "best position source": real games between
+similar-strength imperfect humans. wallwars.net (the predecessor site, fly app
+`wallwars-backend`, MongoDB Atlas) is that source.
+
+**Export.** The `games` collection has **422 games** (all classic - wallwars has
+no mouse variant). Each doc stores `boardSettings.dims` (a DOUBLED internal grid:
+cells at even/even, walls at even/odd or odd/even), `startPos`/`goalPos` (grid
+coords), `creatorStarts`, `playerNames`, `ratings` (~1300-1560 Elo), `winner`,
+`finishReason`, `finalDists`, and `moveHistory[].actions` (1-2 numeric `[gr,gc]`
+per turn). Helsinki is not Atlas-allowlisted, so the export runs INSIDE the fly
+machine and is pulled out via `fly ssh sftp get` (the PTY drops bytes on large
+streaming stdout - write to a file, sftp it). Raw + converted JSONL live at
+`~/nil/wallwars_games/{games_raw,games_converted}.jsonl`.
+
+**Conversion** (`deep-wallwars/scripts/convert_wallwars_games.ts`): numeric grid
+coord -> wallgame `Action` (even/even = cat destination; even/odd = vertical wall
+right of cell; odd/even = horizontal wall below cell -> wallgame `[r+1,c]`), then
+serialized to engine standard notation and replayed through `importEngineGame`.
+Two generalizations were needed in `engine-game-import.ts`: an optional
+`firstPlayer` param (wallwars games can start with either side per `creatorStarts`;
+engine self-play is always Red-first), which sets `GameState.turn`. A 2-cell cat
+move stored as just its destination maps to ONE `{type:'cat'}` action -
+`game-state.ts` accepts the double-step and finds the mid-square itself.
+
+**Result: 394 of 422 games are true wallgame-classic geometry** (cats top corners,
+homes at opposite bottom corners) and ALL 394 replay cleanly AND match the DB's
+independently-recorded `finalDists` exactly (0 mismatches) - a strong correctness
+check on the format reverse-engineering. The other 28 are wallwars custom setups
+(20 race-to-center with a shared central goal, plus custom cat starts) that fixed
+wallgame.io classic can't express; the converter gates them out via
+`classicGeometry`. Sizes of the 394: 10x12=135, 8x10=93, 5x6=31, 6x8=25, 8x8=19,
+6x6=14, 7x7=12, 5x5=10, tail of smaller boards. ~thousands of start-of-turn
+positions across them. No rated/public filter (matchmaking flags, not quality).
+
+**Next:** extend `deep_ww --analyze` to INGEST an external game file (the converted
+notation + real board size) instead of self-playing, analyze each start-of-turn
+position with the strong oracle (model_78+) -> density + best-move policy-prior,
+then filter. Build/run on the 4090 desktop.
+
 ## Open questions
 
 1. **D6 CPU latency** on 8x8 short search - decides solve-time hosting. (Phase 0b)
