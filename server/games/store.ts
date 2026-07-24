@@ -1159,6 +1159,12 @@ export const createRematchSession = (
     configForNewGame = rest;
   }
 
+  // Build the state first so the session records the config the game is actually
+  // played with. On refresh turns `configForNewGame` has no variantConfig yet —
+  // `createGameState` generates it — and the next rematch reads the layout back
+  // out of `session.config`, so the two must not be allowed to drift apart.
+  const gameState = createGameState(configForNewGame);
+
   // Swap player IDs so the other player goes first in the rematch
   const hostPlayerId = previous.players.host.playerId;
   const joinerPlayerId = previous.players.joiner.playerId;
@@ -1171,7 +1177,7 @@ export const createRematchSession = (
     createdAt: now,
     startedAt: null,
     updatedAt: now,
-    config: normalizedConfig,
+    config: gameState.config,
     status: "ready",
     matchType: previous.matchType,
     cancelled: false,
@@ -1203,7 +1209,7 @@ export const createRematchSession = (
     },
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
-    gameState: createGameState(configForNewGame),
+    gameState,
     chatGuestCounter: 0,
     chatGuestIndexMap: new Map(),
   };
