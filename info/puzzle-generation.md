@@ -5,7 +5,9 @@ using the Deep-WallWars engine as the oracle. Companion to the blog draft
 `nilmamano.com/blog/puzzle-gen.mdx` (which is the public-facing narrative; this file
 is the engineering source of truth).
 
-Status: **scoping / Phase 0**. Last updated 2026-07-24.
+Status: **PAUSED / parked 2026-07-24** (Nil). The pipeline is built and validated up to
+the point of the first detection run; the run itself was never executed. See
+"Parked state" at the bottom for exactly where to resume. Last updated 2026-07-24.
 
 ## Goal
 
@@ -287,3 +289,48 @@ Puzzle app: `shared/domain/puzzles.ts` (rich `Puzzle` type + 10 hardcoded),
 `frontend/src/routes/puzzles.$id.tsx`.
 Game data: `server/db/game-queries.ts` (`queryPastGames`, `buildReplayGameFromRow`),
 `server/db/schema/game-details.ts` (`moves` JSONB, standard notation).
+
+## Parked state (2026-07-24) - how to resume
+
+Nil paused this arc after the ingest was built and validated but BEFORE the first
+detection run. Nothing is half-finished: every piece below is committed and tested.
+
+**Done and committed (local only, NOT pushed - the arc's no-push rule still holds):**
+- `6f05b76` - wallwars.net export + converter. 394 classic games converted and
+  validated (clean replay + exact `finalDists` agreement, 0 mismatches).
+- `49af224` - `deep_ww --analyze --analyze_game_file`: external-game ingest.
+  Built on the 4090 desktop in `deep-wallwars/build-puzzle/` and smoke-tested with
+  model_79 (a 10x12 Red-first game and a padded 8x8 Blue-first game both replay
+  correctly; cat positions match the classic embedding offsets exactly).
+
+**Data on disk:**
+- Helsinki: `~/nil/wallwars_games/games_raw.jsonl` (422 raw), `games_converted.jsonl`
+  (394 converted, with `firstPlayer` + standard-notation `moves`).
+- Desktop: `/tmp/games_converted.jsonl` staged (note: /tmp, may not survive a reboot -
+  re-scp from Helsinki if missing).
+
+**The exact next step (never run):** the first detection run on the free 4090.
+Scope it to the 8x8 bucket first (19 games / 570 positions - the strongest-oracle
+regime), measure real throughput, then decide how wide to go:
+
+```
+# filter the 8x8 subset, then in a tmux (so it survives session release):
+cd ~/nil/wallgame/deep-wallwars/build-puzzle
+./deep_ww --analyze --analyze_game_file /tmp/games_8x8.jsonl \
+  --model1 ../models_12x10_tf_curriculum/model_80.trt \
+  --columns 12 --rows 10 --analyze_samples 10000 --analyze_chunk 2000 \
+  --analyze_moves 60 --analyze_output /tmp/puzzle_8x8.jsonl
+```
+
+Then filter candidates with `scripts/analyze_puzzle_spike.py`: density <= ~0.12
+(unique best move) AND low best-move policy prior (non-obvious) AND decisive eval.
+Classify win/save. After that comes storage (schema migration + writer) and wiring
+into the existing puzzle UI (NOT the replay viewer, per D3).
+
+**Scale note:** 14,021 start-of-turn positions across the 394 games (10x12=5929,
+8x10=3825, 6x8=870, 8x8=570, 5x6=546, ...). A deep pass over everything is a
+multi-day GPU job, so the first run must be scoped and throughput measured before
+committing to a full sweep.
+
+**Do NOT** stop training to run this without Nil's go-ahead - the GPU is training's
+by default.
