@@ -85,9 +85,12 @@
           "recommended": [{ "boardWidth": 12, "boardHeight": 10 }]
         },
         "freestyle": {
-          "boardWidth": { "min": 12, "max": 12 },
-          "boardHeight": { "min": 10, "max": 10 },
-          "recommended": []
+          "boardWidth": { "min": 4, "max": 12 },
+          "boardHeight": { "min": 4, "max": 10 },
+          "recommended": [
+            { "boardWidth": 12, "boardHeight": 10 },
+            { "boardWidth": 8, "boardHeight": 8 }
+          ]
         }
       }
     }

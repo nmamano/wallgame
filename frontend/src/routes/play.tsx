@@ -14,11 +14,6 @@ import type {
   GameSnapshot,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
-import {
-  FREESTYLE_BOARD_HEIGHT,
-  FREESTYLE_BOARD_WIDTH,
-  normalizeFreestyleConfig,
-} from "../../../shared/domain/freestyle-setup";
 import { BoardSizePicker } from "@/components/game-setup/board-size-picker";
 import { Switch } from "@/components/ui/switch";
 import { Label } from "@/components/ui/label";
@@ -126,7 +121,7 @@ function GameSetup() {
   // gameConfig stores the user's raw preferences (never clamped by tab/variant).
   // getEffectiveConfig() applies contextual overrides for actual game creation.
   const getEffectiveConfig = (): GameConfiguration => {
-    let config = normalizeFreestyleConfig({ ...gameConfig });
+    let config: GameConfiguration = { ...gameConfig };
     if (!canRatedGame || !isLoggedIn) {
       config = { ...config, rated: false };
     }
@@ -441,7 +436,6 @@ function GameSetup() {
   const timeControlDisabled = activeTab === "vs-ai";
   const ratedDisabled =
     !isLoggedIn || activeTab === "vs-ai" || activeTab === "local-play";
-  const boardSizeDisabled = gameConfig.variant === "freestyle";
 
   // --- Render ---
 
@@ -505,7 +499,7 @@ function GameSetup() {
                   {gameConfig.variant === "classic" &&
                     "Reach the corner first."}
                   {gameConfig.variant === "freestyle" &&
-                    `Randomized setup with neutral starting walls (${FREESTYLE_BOARD_WIDTH}x${FREESTYLE_BOARD_HEIGHT}).`}
+                    "Randomized setup with neutral starting walls."}
                 </p>
               </div>
 
@@ -605,16 +599,8 @@ function GameSetup() {
                 <div className="flex items-center gap-3">
                   <Label className="min-w-[120px]">Board Size</Label>
                   <BoardSizePicker
-                    width={
-                      boardSizeDisabled
-                        ? FREESTYLE_BOARD_WIDTH
-                        : gameConfig.boardWidth
-                    }
-                    height={
-                      boardSizeDisabled
-                        ? FREESTYLE_BOARD_HEIGHT
-                        : gameConfig.boardHeight
-                    }
+                    width={gameConfig.boardWidth}
+                    height={gameConfig.boardHeight}
                     onChange={(w, h) =>
                       handleGameConfigChange({
                         ...gameConfig,
@@ -622,14 +608,8 @@ function GameSetup() {
                         boardHeight: h,
                       })
                     }
-                    disabled={boardSizeDisabled}
                   />
                 </div>
-                {boardSizeDisabled && (
-                  <p className="text-sm text-muted-foreground">
-                    Fixed for freestyle variant.
-                  </p>
-                )}
               </div>
             </div>
 

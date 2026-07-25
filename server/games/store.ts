@@ -1,9 +1,6 @@
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
-import {
-  generateFreestyleInitialState,
-  normalizeFreestyleConfig,
-} from "../../shared/domain/freestyle-setup";
+import { generateFreestyleInitialState } from "../../shared/domain/freestyle-setup";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
@@ -344,7 +341,7 @@ export const buildCompleteConfig = (
   if (variant === "freestyle") {
     return {
       ...baseConfig,
-      variantConfig: generateFreestyleInitialState(),
+      variantConfig: generateFreestyleInitialState(boardWidth, boardHeight),
     };
   }
 
@@ -448,9 +445,7 @@ export const createGameSession = (args: {
     displayName?: string;
   };
 }): GameCreationResult => {
-  // First build complete config with variantConfig, then normalize freestyle
   const completeConfig = buildCompleteConfig(args.config);
-  const normalizedConfig = normalizeFreestyleConfig(completeConfig);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
   // No invite code needed - the game ID itself is secure enough
   const hostToken = nanoid(); // 21 chars by default for security
@@ -482,7 +477,7 @@ export const createGameSession = (args: {
     createdAt: now,
     startedAt: null,
     updatedAt: now,
-    config: normalizedConfig,
+    config: completeConfig,
     status: joinerReady ? "ready" : "waiting",
     matchType: args.matchType,
     cancelled: false,
@@ -521,7 +516,7 @@ export const createGameSession = (args: {
     },
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
-    gameState: createGameState(normalizedConfig),
+    gameState: createGameState(completeConfig),
     chatGuestCounter: 0,
     chatGuestIndexMap: new Map(),
   };
@@ -1129,16 +1124,14 @@ export const createRematchSession = (
     token: nanoid(),
     socketToken: nanoid(),
   };
-  const normalizedConfig = normalizeFreestyleConfig(previous.config);
-
   // Freestyle rematch seed pattern: reuse the same initial conditions for 2 games
   // (so both players experience the same position from each side), then refresh.
   // Odd rematchNumber = reuse previous layout; even = fresh random layout.
   const newRematchNumber = previous.rematchNumber + 1;
-  let configForNewGame: PartialGameConfiguration = normalizedConfig;
-  if (normalizedConfig.variant === "freestyle" && newRematchNumber % 2 === 0) {
+  let configForNewGame: PartialGameConfiguration = previous.config;
+  if (previous.config.variant === "freestyle" && newRematchNumber % 2 === 0) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
-    const { variantConfig, ...rest } = normalizedConfig;
+    const { variantConfig, ...rest } = previous.config;
     configForNewGame = rest;
   }
 

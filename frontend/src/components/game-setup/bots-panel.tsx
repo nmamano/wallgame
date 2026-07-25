@@ -27,9 +27,6 @@ const formatVariantLabel = (variant: Variant): string =>
 const formatBoardSizeShort = (width: number, height: number): string =>
   `${width}x${height}`;
 
-const usesBoardSize = (variant: Variant): boolean =>
-  variant === "standard" || variant === "classic" || variant === "survival";
-
 interface BotsPanelProps {
   config: GameConfiguration;
   onPlayBot: (args: { botId: string; config: GameConfiguration }) => void;
@@ -43,14 +40,12 @@ export function BotsPanel({
   isPlaying = false,
   errorMessage,
 }: BotsPanelProps) {
-  const includeBoardSize = usesBoardSize(config.variant);
-
   const { data: recommendedData, isLoading: recommendedLoading } =
     useRecommendedBotsQuery(config.variant);
   const { data: matchingData, isLoading: matchingLoading } = useBotsQuery({
     variant: config.variant,
-    boardWidth: includeBoardSize ? config.boardWidth : undefined,
-    boardHeight: includeBoardSize ? config.boardHeight : undefined,
+    boardWidth: config.boardWidth,
+    boardHeight: config.boardHeight,
   });
 
   const recommendedRows = useMemo<RecommendedBotEntry[]>(
@@ -179,8 +174,7 @@ export function BotsPanel({
         <div className="overflow-x-auto">
           <p className="text-xs text-muted-foreground mb-2">
             Showing bots matching: {formatVariantLabel(config.variant)}
-            {includeBoardSize &&
-              ` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
+            {` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
           </p>
           <Table>
             <TableHeader>
@@ -215,12 +209,10 @@ export function BotsPanel({
                           </Badge>
                         </TableCell>
                         <TableCell>
-                          {includeBoardSize
-                            ? formatBoardSizeShort(
-                                config.boardWidth,
-                                config.boardHeight,
-                              )
-                            : "n/a"}
+                          {formatBoardSizeShort(
+                            config.boardWidth,
+                            config.boardHeight,
+                          )}
                         </TableCell>
                       </TableRow>
                     )))}

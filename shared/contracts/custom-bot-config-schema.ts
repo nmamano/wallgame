@@ -5,7 +5,6 @@
  * V3: timeControls removed - bot games are untimed.
  */
 import { z } from "zod";
-import type { Variant } from "../domain/game-types";
 
 const boardDimensionRangeSchemaBase = z.object({
   min: z.number().int().min(3).max(20),
@@ -92,24 +91,17 @@ export const botConfigBaseSchema = z.object({
 });
 
 export const botConfigSchema = botConfigBaseSchema.superRefine((bot, ctx) => {
-    const variantsWithBoardSize = new Set<Variant>(["standard", "classic"]);
-    for (const [variant, config] of Object.entries(bot.variants)) {
-      if (!config) continue;
-      const usesBoardSize = variantsWithBoardSize.has(variant as Variant);
-      if (usesBoardSize && config.recommended.length === 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["variants", variant, "recommended"],
-          message: "recommended must include 1-3 entries for this variant",
-        });
-      }
-      if (!usesBoardSize && config.recommended.length !== 0) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["variants", variant, "recommended"],
-          message:
-            "recommended must be empty for variants without board size settings",
-        });
-      }
+  // Every configurable variant (standard, classic, freestyle) is played on a
+  // board of the user's chosen size, so each one a bot supports must advertise
+  // the sizes it recommends. The upper bound of 3 comes from variantConfigSchema.
+  for (const [variant, config] of Object.entries(bot.variants)) {
+    if (!config) continue;
+    if (config.recommended.length === 0) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["variants", variant, "recommended"],
+        message: "recommended must include 1-3 entries for this variant",
+      });
     }
-  });
+  }
+});

@@ -85,9 +85,6 @@ const formatBoardSizeFull = (width: number, height: number): string => {
   return `${sizeName} (${width}x${height})`;
 };
 
-const usesBoardSize = (variant: Variant): boolean =>
-  variant === "standard" || variant === "classic" || variant === "survival";
-
 function formatTimeControl(timeControl: TimeControlConfig): string {
   if (timeControl.preset) {
     const formats: Record<TimeControlPreset, string> = {
@@ -126,13 +123,11 @@ export function ReadyToJoinTable({
   isPlaying = false,
   errorMessage,
 }: ReadyToJoinTableProps) {
-  const includeBoardSize = usesBoardSize(config.variant);
-
   // Bot queries - V3: no timeControl (bot games are untimed)
   const { data: matchingData, isLoading: matchingLoading } = useBotsQuery({
     variant: config.variant,
-    boardWidth: includeBoardSize ? config.boardWidth : undefined,
-    boardHeight: includeBoardSize ? config.boardHeight : undefined,
+    boardWidth: config.boardWidth,
+    boardHeight: config.boardHeight,
   });
 
   const { data: recommendedData, isLoading: recommendedLoading } =
@@ -433,8 +428,7 @@ export function ReadyToJoinTable({
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
               Showing bots matching: {formatVariantLabel(config.variant)}
-              {includeBoardSize &&
-                ` / ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
+              {` / ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
             </p>
             <Table>
               <TableHeader>
@@ -464,12 +458,10 @@ export function ReadyToJoinTable({
                             {renderTypeBadge(bot.isOfficial)}
                           </TableCell>
                           <TableCell>
-                            {includeBoardSize
-                              ? formatBoardSizeShort(
-                                  config.boardWidth,
-                                  config.boardHeight,
-                                )
-                              : "n/a"}
+                            {formatBoardSizeShort(
+                              config.boardWidth,
+                              config.boardHeight,
+                            )}
                           </TableCell>
                           <TableCell className="text-right">
                             {renderPlayButton(

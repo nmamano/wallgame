@@ -55,14 +55,23 @@
         },
         "freestyle": {
           "boardWidth": {
-            "min": 12,
+            "min": 4,
             "max": 12
           },
           "boardHeight": {
-            "min": 10,
+            "min": 4,
             "max": 10
           },
-          "recommended": []
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
         }
       }
     }

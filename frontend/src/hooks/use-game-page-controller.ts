@@ -5,10 +5,7 @@ import { type BoardProps, type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import { type GameAction } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
-import {
-  generateFreestyleInitialState,
-  normalizeFreestyleConfig,
-} from "../../../shared/domain/freestyle-setup";
+import { generateFreestyleInitialState } from "../../../shared/domain/freestyle-setup";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
@@ -325,10 +322,10 @@ export function useGamePageController(gameId: string) {
     if (!stored) return null;
     try {
       const parsed = JSON.parse(stored) as StoredLocalGameConfig;
-      return normalizeFreestyleConfig({
+      return {
         ...DEFAULT_CONFIG,
         ...(parsed?.config ?? {}),
-      } as GameConfiguration);
+      } as GameConfiguration;
     } catch {
       return null;
     }
@@ -713,7 +710,6 @@ export function useGamePageController(gameId: string) {
       const nextGameId = currentGameIdRef.current + 1;
       currentGameIdRef.current = nextGameId;
       setGameInstanceId(nextGameId);
-      const normalizedConfig = normalizeFreestyleConfig(incomingConfig);
       const sanitizedPlayers = sanitizePlayerList(incomingPlayers, {
         forceYouFirst: options?.forceYouFirst ?? true,
       });
@@ -721,12 +717,12 @@ export function useGamePageController(gameId: string) {
         const idx = sanitizedPlayers.findIndex((type) => type === "you");
         return ((idx === -1 ? 0 : idx) + 1) as PlayerId;
       })();
-      const state = new GameState(normalizedConfig, Date.now());
+      const state = new GameState(incomingConfig, Date.now());
 
       // Update view model with new game state
       applyServerUpdate({
         type: "game-state",
-        config: normalizedConfig,
+        config: incomingConfig,
         gameState: state,
         isInitial: true,
       });
@@ -2677,10 +2673,10 @@ export function useGamePageController(gameId: string) {
         setHasLocalConfig(true);
         try {
           const parsed = JSON.parse(stored) as StoredLocalGameConfig;
-          resolvedConfig = normalizeFreestyleConfig({
+          resolvedConfig = {
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
-          } as GameConfiguration);
+          } as GameConfiguration;
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;
@@ -2750,7 +2746,10 @@ export function useGamePageController(gameId: string) {
         if (localRematchNumber % 2 === 1 && resolvedConfig.variantConfig) {
           return resolvedConfig.variantConfig;
         }
-        return generateFreestyleInitialState();
+        return generateFreestyleInitialState(
+          resolvedConfig.boardWidth,
+          resolvedConfig.boardHeight,
+        );
       }
       if (resolvedConfig.variant === "survival") {
         // The game setup UI would need survival-specific controls to let users
