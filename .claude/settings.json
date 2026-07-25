@@ -20,7 +20,6 @@
       "Read(~/.aws/**)",
       "Read(~/.kube/**)"
     ],
-    "ask": ["Bash(git push:*)", "Bash(git push)", "Bash(fly deploy:*)"],
     "defaultMode": "acceptEdits"
   },
   "hooks": {
