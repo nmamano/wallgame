@@ -11,7 +11,7 @@ import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Pause, Play } from "lucide-react";
 import { Board, type BoardPawn } from "@/components/board";
-import { fetchShowcaseGame } from "@/lib/api";
+import { fetchShowcaseGames } from "@/lib/api";
 import { buildHistoryState } from "@/lib/history-utils";
 import {
   computeLastMoves,
@@ -25,19 +25,56 @@ import {
 } from "@/lib/game-state-utils";
 import { pawnId } from "../../../shared/domain/game-utils";
 import type { GameSnapshot, PlayerId } from "../../../shared/domain/game-types";
-import type { GameShowcaseResponse } from "../../../shared/contracts/games";
+import type { ShowcaseGame } from "../../../shared/contracts/games";
+
+/**
+ * Games fetched per page load. The reel loops this batch instead of fetching a
+ * fresh game every few seconds, which used to keep the database awake for as
+ * long as any tab sat on the home page.
+ *
+ * Raising this is cheap on the server: measured against production, the random
+ * scan is 29ms for 20 rows and 59ms for 50, and the whole request is dominated
+ * by connection warm-up either way. The only real cost is payload -- roughly
+ * 1KB gzipped per game, so ~25KB here and ~60KB at 50, which is what delays the
+ * first frame on a slow connection. 20 is already far past the point where a
+ * visitor would notice the reel repeating.
+ */
+const SHOWCASE_BATCH_SIZE = 20;
 
 export function GameShowcase({ flush = false }: { flush?: boolean }) {
   const [isPlaying, setIsPlaying] = useState(true);
-  const [showcase, setShowcase] = useState<{
-    matchStatus: GameShowcaseResponse["matchStatus"];
-    state: GameShowcaseResponse["state"];
-    gameState: ReturnType<typeof hydrateGameStateFromSerialized>;
-  } | null>(null);
+  const [isTabVisible, setIsTabVisible] = useState(
+    () => typeof document === "undefined" || !document.hidden,
+  );
+  const [games, setGames] = useState<ShowcaseGame[] | null>(null);
+  const [gameIndex, setGameIndex] = useState(0);
   const [historyCursor, setHistoryCursor] = useState(-1);
   const [hasError, setHasError] = useState(false);
   const [isLoading, setIsLoading] = useState(false);
   const navigate = useNavigate();
+
+  // Autoplay stops while the tab is in the background: an unwatched reel should
+  // not burn the visitor's battery, and it never needed to keep running.
+  const isReelRunning = isPlaying && isTabVisible;
+
+  useEffect(() => {
+    const onVisibilityChange = () => setIsTabVisible(!document.hidden);
+    document.addEventListener("visibilitychange", onVisibilityChange);
+    return () =>
+      document.removeEventListener("visibilitychange", onVisibilityChange);
+  }, []);
+
+  // Hydrating replays the game, so only the one on screen is built.
+  const showcase = useMemo(() => {
+    const game = games?.[gameIndex];
+    if (!game) return null;
+    const config = buildGameConfigurationFromSerialized(game.state);
+    return {
+      matchStatus: game.matchStatus,
+      state: game.state,
+      gameState: hydrateGameStateFromSerialized(game.state, config),
+    };
+  }, [games, gameIndex]);
 
   const autoplayTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const endTimeoutRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -63,24 +100,19 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
     return () => clearAllTimers();
   }, [clearAllTimers]);
 
-  const loadShowcaseGame = useCallback(async () => {
+  const loadShowcaseGames = useCallback(async () => {
     if (isLoading) return;
     clearAllTimers();
     setIsLoading(true);
     setHasError(false);
     try {
-      const data = await fetchShowcaseGame();
-      const config = buildGameConfigurationFromSerialized(data.state);
-      const hydrated = hydrateGameStateFromSerialized(data.state, config);
-      setShowcase({
-        matchStatus: data.matchStatus,
-        state: data.state,
-        gameState: hydrated,
-      });
+      const data = await fetchShowcaseGames(SHOWCASE_BATCH_SIZE);
+      setGames(data.games);
+      setGameIndex(0);
       setHistoryCursor(-1);
     } catch (error) {
-      console.error("[game-showcase] Failed to fetch showcase game", error);
-      setShowcase(null);
+      console.error("[game-showcase] Failed to fetch showcase games", error);
+      setGames(null);
       setHasError(true);
       setHistoryCursor(-1);
     } finally {
@@ -88,26 +120,17 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
     }
   }, [clearAllTimers, isLoading]);
 
+  // One fetch per page load. Deliberately not gated on isReelRunning: a visitor
+  // who arrives on a background tab should still find the reel ready.
   useEffect(() => {
-    if (!isPlaying) {
-      clearAllTimers();
-      return;
-    }
-    if (hasError || showcase || isLoading) return;
-    void loadShowcaseGame();
-  }, [
-    isPlaying,
-    hasError,
-    showcase,
-    isLoading,
-    loadShowcaseGame,
-    clearAllTimers,
-  ]);
+    if (hasError || games || isLoading) return;
+    void loadShowcaseGames();
+  }, [hasError, games, isLoading, loadShowcaseGames]);
 
   useEffect(() => {
     clearTimer(autoplayTimeoutRef);
     clearTimer(endTimeoutRef);
-    if (!isPlaying || hasError || !showcase) return;
+    if (!isReelRunning || hasError || !showcase || !games) return;
 
     const maxIndex = showcase.gameState.history.length - 1;
     if (historyCursor < maxIndex) {
@@ -117,25 +140,20 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
       return;
     }
 
+    // Advance within the batch rather than hitting the network again.
     endTimeoutRef.current = setTimeout(() => {
-      void loadShowcaseGame();
+      setGameIndex((prev) => (prev + 1) % games.length);
+      setHistoryCursor(-1);
     }, 3000);
-  }, [
-    isPlaying,
-    hasError,
-    showcase,
-    historyCursor,
-    loadShowcaseGame,
-    clearTimer,
-  ]);
+  }, [isReelRunning, hasError, showcase, games, historyCursor, clearTimer]);
 
   useEffect(() => {
     clearTimer(retryTimeoutRef);
-    if (!isPlaying || !hasError) return;
+    if (!isReelRunning || !hasError) return;
     retryTimeoutRef.current = setTimeout(() => {
-      void loadShowcaseGame();
+      void loadShowcaseGames();
     }, 60000);
-  }, [isPlaying, hasError, loadShowcaseGame, clearTimer]);
+  }, [isReelRunning, hasError, loadShowcaseGames, clearTimer]);
 
   const displayState = useMemo(() => {
     if (!showcase) return null;

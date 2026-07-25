@@ -293,8 +293,12 @@ export const fetchMatchmakingGames = async (): Promise<GameSnapshot[]> => {
   return data.games;
 };
 
-export const fetchShowcaseGame = async (): Promise<GameShowcaseResponse> => {
-  return handleResponse<GameShowcaseResponse>(api.games.showcase.$get());
+export const fetchShowcaseGames = async (
+  count: number,
+): Promise<GameShowcaseResponse> => {
+  return handleResponse<GameShowcaseResponse>(
+    api.games.showcase.$get({ query: { count: String(count) } }),
+  );
 };
 
 /** V3: Bot listing - no timeControl (bot games are untimed) */

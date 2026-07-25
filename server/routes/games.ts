@@ -21,6 +21,7 @@ import {
   readySchema,
   getGameSessionQuerySchema,
   pastGamesQuerySchema,
+  showcaseQuerySchema,
   botsQuerySchema,
   createBotGameSchema,
 } from "../../shared/contracts/games";
@@ -30,7 +31,7 @@ import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { sendMatchStatus } from "./game-socket";
 import {
-  getRandomShowcaseGame,
+  getRandomShowcaseGames,
   getReplayGame,
   queryPastGames,
 } from "../db/game-queries";
@@ -91,18 +92,21 @@ export const gamesRoute = new Hono()
       return c.json({ error: "Internal server error" }, 500);
     }
   })
-  .get("/showcase", async (c) => {
+  .get("/showcase", zValidator("query", showcaseQuerySchema), async (c) => {
     try {
-      const replay = await getRandomShowcaseGame();
-      if (!replay) {
+      const { count } = c.req.valid("query");
+      const replays = await getRandomShowcaseGames(count);
+      if (replays.length === 0) {
         return c.json({ error: "No showcase games available" }, 404);
       }
       return c.json({
-        matchStatus: replay.matchStatus,
-        state: replay.state,
+        games: replays.map((replay) => ({
+          matchStatus: replay.matchStatus,
+          state: replay.state,
+        })),
       });
     } catch (error) {
-      console.error("Failed to fetch showcase game:", error);
+      console.error("Failed to fetch showcase games:", error);
       return c.json({ error: "Internal server error" }, 500);
     }
   })

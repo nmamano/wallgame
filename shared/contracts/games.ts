@@ -215,10 +215,22 @@ export interface LiveGamesResponse {
 // Past Games Types
 // ============================================================================
 
-export interface GameShowcaseResponse {
+export interface ShowcaseGame {
   matchStatus: GameSnapshot;
   state: SerializedGameState;
 }
+
+/**
+ * The home page showcase fetches a batch once per page load and loops it, so an
+ * open tab costs exactly one request instead of one every few seconds forever.
+ */
+export interface GameShowcaseResponse {
+  games: ShowcaseGame[];
+}
+
+export const showcaseQuerySchema = z.object({
+  count: z.coerce.number().int().min(1).max(50).default(20),
+});
 
 export const pastGamesQuerySchema = z.object({
   page: z.coerce.number().int().min(1).default(1),

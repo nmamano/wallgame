@@ -351,21 +351,18 @@ export const getReplayGameReadonly = async (
   return buildReplayGameFromRow(game);
 };
 
-export const getRandomShowcaseGame =
-  async (): Promise<ReplayGameData | null> => {
-    const [game] = await db
-      .select(replayGameSelect)
-      .from(gamesTable)
-      .where(gte(gamesTable.movesCount, 10))
-      .orderBy(sql`random()`)
-      .limit(1);
+export const getRandomShowcaseGames = async (
+  count: number,
+): Promise<ReplayGameData[]> => {
+  const games = await db
+    .select(replayGameSelect)
+    .from(gamesTable)
+    .where(gte(gamesTable.movesCount, 10))
+    .orderBy(sql`random()`)
+    .limit(count);
 
-    if (!game) {
-      return null;
-    }
-
-    return buildReplayGameFromRow(game);
-  };
+  return Promise.all(games.map((game) => buildReplayGameFromRow(game)));
+};
 
 export const queryPastGames = async (args: {
   page: number;
