@@ -5,9 +5,10 @@ using the Deep-WallWars engine as the oracle. Companion to the blog draft
 `nilmamano.com/blog/puzzle-gen.mdx` (which is the public-facing narrative; this file
 is the engineering source of truth).
 
-Status: **PAUSED / parked 2026-07-24** (Nil). The pipeline is built and validated up to
-the point of the first detection run; the run itself was never executed. See
-"Parked state" at the bottom for exactly where to resume. Last updated 2026-07-24.
+Status: **RESUMED 2026-07-25** (Nil). Parked 2026-07-24 for an unrelated bug-fix
+session; picked back up. The pipeline is built and validated; the first detection run
+is the next step and has not been executed yet. See "Parked state" at the bottom for
+the exact resume command. Last updated 2026-07-25.
 
 ## Goal
 
@@ -84,8 +85,11 @@ keep the solve-time tree narrow and make cleaner, well-defined puzzles. This is 
 Lichess puzzles are forcing sequences. Ties puzzle quality and tractability together.
 
 ### D3. Puzzle solving is a SEPARATE feature from replay viewing
-Do **not** mix the two. Replay viewing (`frontend/src/routes/replay-viewer.tsx`) stays for
-engine game replay. Puzzle solving builds on the existing puzzle UI (`use-puzzle-game.ts`,
+Do **not** mix the two. (The old dev-only `frontend/src/routes/replay-viewer.tsx` was
+DELETED 2026-07-25: it was never committed, its route was missing from the generated
+route tree so it broke `tsc`, and its parsing logic - the valuable part - lives on in
+the committed `frontend/src/lib/engine-game-import.ts`.) Puzzle solving builds on the
+existing puzzle UI (`use-puzzle-game.ts`,
 `puzzles.$id.tsx`), extended with a live-engine validation mode. The internal
 candidate-review/curation tool (try a candidate, reveal the engine's line, thumbs up/down)
 belongs with the puzzle-solving feature and reuses its components, not the replay viewer.
@@ -306,17 +310,28 @@ detection run. Nothing is half-finished: every piece below is committed and test
 **Data on disk:**
 - Helsinki: `~/nil/wallwars_games/games_raw.jsonl` (422 raw), `games_converted.jsonl`
   (394 converted, with `firstPlayer` + standard-notation `moves`).
-- Desktop: `/tmp/games_converted.jsonl` staged (note: /tmp, may not survive a reboot -
-  re-scp from Helsinki if missing).
+- Desktop: `~/puzzle_data/games_converted.jsonl` (394). Deliberately NOT in `/tmp` -
+  the first copy was lost to a WSL reboot.
+
+**How the desktop gets engine source (rule, 2026-07-25): via git, never scp.**
+The engine source used to be scp'd to the desktop because its `origin` pointed at a
+stale local mirror that could not deliver commits. That mirror hack is gone (the
+desktop tracks GitHub directly), so the workflow is: commit on Helsinki -> push ->
+`git pull` on the desktop. As of 2026-07-25 the desktop has **zero local source
+edits** (verified: the three formerly-scp'd files are byte-identical to their
+committed versions), so there is nothing for a `git pull`/`checkout` to clobber -
+which is what makes this safe rather than just tidy. If you ever need a source change
+on the desktop, commit and push it; do not scp.
 
 **The exact next step (never run):** the first detection run on the free 4090.
 Scope it to the 8x8 bucket first (19 games / 570 positions - the strongest-oracle
 regime), measure real throughput, then decide how wide to go:
 
 ```
-# filter the 8x8 subset, then in a tmux (so it survives session release):
+# filter the 8x8 subset from ~/puzzle_data/games_converted.jsonl, then in a tmux
+# (so it survives session release):
 cd ~/nil/wallgame/deep-wallwars/build-puzzle
-./deep_ww --analyze --analyze_game_file /tmp/games_8x8.jsonl \
+./deep_ww --analyze --analyze_game_file ~/puzzle_data/games_8x8.jsonl \
   --model1 ../models_12x10_tf_curriculum/model_80.trt \
   --columns 12 --rows 10 --analyze_samples 10000 --analyze_chunk 2000 \
   --analyze_moves 60 --analyze_output /tmp/puzzle_8x8.jsonl
