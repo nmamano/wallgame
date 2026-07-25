@@ -510,6 +510,66 @@ Known gap: when several turns are near-best, only the engine's own is stored, so
 solver playing an equally good move is marked wrong. Storing all near-best turns needs the
 engine to emit their full two-action forms, which it does not yet do.
 
+## PIVOT: a puzzle is a normal game against the oracle (Nil, 2026-07-25)
+
+Nil playtested the 12 filter-v2 candidates and redirected the architecture. This
+supersedes the bespoke puzzle UI and most of the filtering above.
+
+**A puzzle is just a normal game against the official bot (oracle, high samples), from a
+carefully chosen position, on the existing game page.**
+- "Show move" is turning the eval engine on for your turn (`evaluate_position` in the bot
+  protocol already returns best move + eval).
+- Seeing why a wrong move loses is the oracle punishing you by playing on. No wrong-move
+  modal, no retry.
+- Winning is literally winning. This restricts puzzles to positions near the end of a
+  game, which Nil accepts as a real limitation. A later extension can be "hold a winning
+  position for X moves".
+- The payoff is reusing the polished game page instead of maintaining a second board UI.
+
+**Substrate: new variants `custom-setup-classic` / `custom-setup-standard`** taking an
+explicit starting position (pawns + walls), with pre-existing walls rendered NEUTRAL
+(brown, unowned). They need not appear in the public variant picker.
+
+Rejected on the way: seeding the position by replaying the source game's move prefix.
+It works with the current bot protocol but gives no freedom to author positions no real
+game reaches, and it renders the setup walls as player-owned.
+
+### Why the real-game corpus is not the answer for supply
+
+Nil's per-position verdicts on the 12 candidates map onto one measurable thing: **"too
+open ended" is the length of the race.** His one GOOD position had both cats 5 and 4 moves
+from goal; every position he dismissed as open had distances of 9-19 across 140-218 legal
+actions. The two he called promising were the small 6x8 board and the next-shortest race.
+
+Two defects in filter v2 that his playtest exposed, both real:
+1. **Uniqueness was measured on the FIRST action of the turn only.** A turn is two
+   actions, so a candidate could pass with a completely arbitrary second half. `e730 mv41`
+   had a second action with gap **0.001** and four equally-good alternatives ("one of the
+   walls is useless" - correct); `9c8e mv11` was near-indifferent on *both* actions.
+2. The corpus simply lacks endgame conversions: of 12,459 positions only **91** have the
+   mover winning within the recorded 6-turn horizon.
+
+### Phase 3: synthetic generation (Nil's spec)
+
+Supply should come from **generated positions, not real games**. Generate random initial
+positions directly - no self-play needed - on small boards (6x6-ish) with a significant
+number of walls, and use cheap heuristics to nominate candidates. Iterate on the
+heuristics; the starting set:
+
+1. distance-to-goal <= 6 for BOTH players;
+2. the naive bot loses, and maybe a single-sample bot loses to the oracle;
+3. the best move changes distances by <= 1 (so it is not just walking to the goal or an
+   obvious block).
+
+**Asymmetric error costs, deliberately:** generation is cheap, so false negatives are
+free - discarding a position that would have been a good puzzle costs nothing. False
+positives only cost Nil a little time and he flags them as bad. So the heuristics should
+be tuned loose and fast rather than precise. This is the opposite of the v1/v2 filter
+philosophy, which was trying to be right about a fixed, expensive corpus.
+
+**Nil is the filter.** The job is putting good candidates in front of him and making the
+platform pleasant, not building an automated judge of puzzle quality.
+
 ## Open questions
 
 1. **D6 CPU latency** on 8x8 short search - decides solve-time hosting. (Phase 0b)
