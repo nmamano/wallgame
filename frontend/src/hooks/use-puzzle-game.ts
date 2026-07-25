@@ -78,6 +78,11 @@ export interface UsePuzzleGameResult {
   solutionShown: boolean;
   /** Annotations drawing the expected move; empty unless solutionShown. */
   solutionAnnotations: Annotation[];
+  /** Play the expected move, to walk the engine's line turn by turn. */
+  playSolutionMove: () => void;
+  canPlaySolutionMove: boolean;
+  /** Number of turns in the stored line. */
+  lineLength: number;
   handleCommit: () => void;
   handleUndo: () => void;
 
@@ -496,6 +501,50 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
 
   const showSolution = useCallback(() => setSolutionShown(true), []);
 
+  /**
+   * Play the expected move for the human's side, so the engine's whole line can be walked
+   * turn by turn. Seeing a key move on its own is not enough to judge it - the reason a
+   * quiet move is good usually lives several turns later, in the continuation it forces.
+   *
+   * This deliberately reuses the normal move path rather than building a separate replay
+   * of the position: applying the move leaves the puzzle in exactly the state it would be
+   * in had the solver found it, and the existing auto-reply effect plays the opponent's
+   * answer. Stepping backwards is `resetPuzzle` and forward again, which keeps a single
+   * source of truth for the board instead of a second, parallel one.
+   */
+  const playSolutionMove = useCallback(() => {
+    if (!isPlayerTurn || isOpponentThinking) return;
+    const expected = puzzle.moves[currentMoveIndex]?.[0];
+    if (!expected) return;
+
+    try {
+      applyMove(humanPlayerId, expected);
+      clearAllActionsRef.current();
+      setCurrentMoveIndex((i) => i + 1);
+    } catch (error) {
+      console.error("Could not play the expected move:", error);
+      setActionError(
+        error instanceof Error ? error.message : "Could not play that move",
+      );
+    }
+  }, [
+    isPlayerTurn,
+    isOpponentThinking,
+    puzzle.moves,
+    currentMoveIndex,
+    applyMove,
+    humanPlayerId,
+  ]);
+
+  /** Whether there is still a stored turn for the human to step through. */
+  const canPlaySolutionMove =
+    isPlayerTurn &&
+    !isOpponentThinking &&
+    Boolean(puzzle.moves[currentMoveIndex]?.[0]);
+
+  /** Turns of the stored line, so the UI can show how far along the review is. */
+  const lineLength = puzzle.moves.length;
+
   // Re-hide once the turn advances or the puzzle restarts, so a reveal never leaks
   // into the next turn (where the annotation would point at a stale move).
   useEffect(() => {
@@ -535,6 +584,9 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     solutionAnnotations,
     solutionShown,
     showSolution,
+    playSolutionMove,
+    canPlaySolutionMove,
+    lineLength,
     handleCommit,
     handleUndo: boardInteractions.undoLastAction,
     canCommit: boardInteractions.canCommit,

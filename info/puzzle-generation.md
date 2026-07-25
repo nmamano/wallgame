@@ -5,10 +5,11 @@ using the Deep-WallWars engine as the oracle. Companion to the blog draft
 `nilmamano.com/blog/puzzle-gen.mdx` (which is the public-facing narrative; this file
 is the engineering source of truth).
 
-Status: **RESUMED 2026-07-25** (Nil). Parked 2026-07-24 for an unrelated bug-fix
-session; picked back up. The pipeline is built and validated; the first detection run
-is the next step and has not been executed yet. See "Parked state" at the bottom for
-the exact resume command. Last updated 2026-07-25.
+Status: **PHASE 2 DONE, awaiting a direction call** (2026-07-25). The pipeline is built,
+parallelized (~99x), and has been run over the whole 394-game corpus. Filter v2 implements
+the forcing requirement that D2 always called for. The result is a negative one worth
+reading before doing more work here - see "Phase 2 results" below, in particular "the
+payoff never accumulates". Last updated 2026-07-25.
 
 ## Goal
 
@@ -397,6 +398,117 @@ and changed the candidate count from 5 to 4. GPU MCTS is not bit-deterministic
 ~10k visits. Implication: the filter should require the eval **trajectory to have
 converged** (flat over the last chunks), not merely to be decisive at the final
 sample. It also means 10k visits is *barely* enough for this population, not generous.
+
+## Phase 2 results (2026-07-25)
+
+### Throughput: the full corpus is now a coffee break, not a weekend
+
+Both parallelization knobs were fixed at once (`--analyze_parallel_positions`,
+`--analyze_max_parallelism`), and replay was split from search so games are replayed
+and deduped on the CPU up front and only the searches fan out.
+
+| | before | after |
+|---|---|---|
+| 8x8 bucket (517 positions, 10k visits) | 95.7 min | **58 sec** |
+| full corpus (12,459 distinct positions) | ~39 GPU-hours (projected) | **26.8 min** |
+
+Same 10k visits per position (verified: `total_visits` = 10001 on every record). That is
+a ~99x speedup, and it is what made everything below possible - the whole corpus can now
+be re-analyzed with a changed signal in under half an hour, so the filter can be
+developed against 12,459 positions instead of 517.
+
+Dedup before search saved 1,102 of 13,561 positions (8.1%). Zero parse/replay errors
+across all 394 games.
+
+### The engine now emits its principal variation
+
+`MCTS::principal_variation()` walks the most-visited path down from the root and reports
+per step: the acting side, visits, Q, the gap to the runner-up, how many actions are
+within delta of the best (`near_best`), and how many the search took seriously
+(`considered`). The analyze path additionally records **each side's cat distance-to-goal**
+after every action along that line.
+
+Two traps found while building it:
+- A node's value is stored from ITS OWN mover's perspective and the sign flips as the turn
+  passes, so reading a line means negating at every turn boundary.
+- `near_best` alone is not a forcing measure. 393 of 1,203 opponent nodes in the 8x8 run
+  had exactly ONE expanded action, which looks perfectly forced and only means the search
+  never looked elsewhere. **A forcing claim needs `considered >= 3` alongside it** - you
+  need at least three actions weighed to say two are good and one is not.
+
+### Filter v2, and what it costs to be checkable
+
+The v2 bar keeps v1's uniqueness signals and adds the two things v1 lacked: the line must
+be FORCING (the opponent's replies near-unique for the first turns) and the payoff must be
+VISIBLE-BUT-NOT-YET (the key turn must not change the distance count now, and the line
+must change it by the end). Low prior is demoted from a target to a cap.
+
+Two corrections to v1 fell out:
+- **v1's `gap` was largely an artifact.** It measured the best move against *all* edges
+  including unvisited ones, which carry `q = 0`. In a winning position that manufactures a
+  huge gap out of nothing. Measured only against seriously-considered alternatives, just
+  **4.2%** of positions clear `gap >= 0.15` (v1 reported it as a mild filter).
+- **The convergence gate bites hardest exactly where it matters.** It passes 92.8% of all
+  positions but killed 146 -> 18 of the ones that had already cleared the other gates. The
+  positions that look most like puzzles are precisely the ones whose eval has not settled
+  at 10k visits. 10k is not enough for this population.
+
+Full-corpus funnel (12,459 positions):
+
+| gate | alone | cumulative |
+|---|---|---|
+| unique (<=3 near-best actions) | 41.9% | 5215 |
+| gap >= 0.15 vs considered alternatives | 4.2% | 526 |
+| not already decided (\|root_q\| <= 0.85) | 21.5% | 494 |
+| prior cap < 0.60 | 86.1% | 443 |
+| eval converged | 92.8% | 146 |
+| forcing (2+ near-unique replies) | 3.5% | 18 |
+| key turn does not change the count | 27.9% | 13 |
+| the line does change the count | 40.8% | **2** |
+
+**2 candidates out of 12,459.** Relaxing to a ranked shortlist (hard gates + best
+forcing/gap) gives about a dozen worth playtesting, in `~/nil/wallwars_games/puzzles_v2.json`.
+
+### The structural finding: the payoff never accumulates
+
+The obvious suspicion was that the 6-turn horizon is too short and the payoff arrives
+later. It does not. Measuring the distance advantage along the line for the 570 positions
+that clear the hard gates, by turn:
+
+| turn | 1 | 2 | 3 | 4 | 5 | 6 |
+|---|---|---|---|---|---|---|
+| mean change from start | +0.22 | -0.74 | +0.50 | -0.75 | +0.85 | -0.41 |
+
+It **oscillates with turn parity** and does not trend. Each side gains about a move on
+its own turn and hands it back on the next. Of the lines running 3+ turns, 351 are flat or
+falling at the end and only 125 are still rising. Extending the horizon will not help, and
+this is why no re-run was spent testing it.
+
+That is the honest state of the arc: **Wall Game, at these board sizes and this player
+strength, does not contain much of the chess-puzzle archetype** - a quiet move that forces
+a short sequence ending in a countable, decisive gain. A good move's advantage here is
+real in eval terms but accumulates positionally over many turns rather than converting
+inside a verifiable line. Chess forcing lines exist because check and capture constrain
+replies to a handful; Wall Game has no analogue, and with ~80-100 legal actions per
+position the opponent almost always has several equivalent answers (only 3.5% of positions
+have even two near-unique replies in a row).
+
+Open decision for Nil: either accept puzzles whose justification is positional (and find a
+different way to make them explicable - the line-stepper below is a start), or conclude
+that the puzzle concept needs a different definition for this game.
+
+### UI: the stored line is now the puzzle's own move list
+
+The PV is an alternating move sequence, and `Puzzle.moves` is already exactly that shape,
+so the line is stored as the puzzle's moves rather than as a new field. That makes the
+reconstructed candidates multi-turn for free - the existing auto-reply plays the
+opponent's side - and a "Play the line" control steps the human's side forward one turn at
+a time so the continuation can be inspected. Stepping back is reset-and-replay, which
+keeps one source of truth for the board instead of a parallel replay tree.
+
+Known gap: when several turns are near-best, only the engine's own is stored, so a
+solver playing an equally good move is marked wrong. Storing all near-best turns needs the
+engine to emit their full two-action forms, which it does not yet do.
 
 ## Open questions
 

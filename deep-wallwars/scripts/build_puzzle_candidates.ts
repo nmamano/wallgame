@@ -43,6 +43,9 @@ interface Candidate {
   best_action: string;
   /** Full intended turn: BOTH actions (a turn is two actions). */
   best_turn?: [string, string];
+  best_turn_actions?: [string, string];
+  /** The engine's expected continuation, both sides, in play order. */
+  pv_actions?: PvAction[];
   best_prior: number;
   gap: number;
   root_q: number;
@@ -136,14 +139,18 @@ function engineActionToGameAction(
   };
 }
 
-/** Map a full engine turn, threading the cat position through pawn moves. */
+/**
+ * Map a full engine turn, threading the cat position through pawn moves. Returns where
+ * that cat ends up, because a principal variation continues for several turns and each
+ * later "Cat:Left" is relative to wherever the cat stands by then.
+ */
 function engineTurnToMove(
   actions: string[],
   catGame: Cell,
   off: Offsets,
   gameRows: number,
   gameCols: number,
-): Move {
+): { move: Move; cat: Cell } {
   let cat = catGame;
   const mapped: Action[] = [];
   for (const raw of actions) {
@@ -151,7 +158,51 @@ function engineTurnToMove(
     if (action.type === "cat") cat = action.target;
     mapped.push(action);
   }
-  return { actions: mapped };
+  return { move: { actions: mapped }, cat };
+}
+
+interface PvAction {
+  action: string;
+  player: string;
+  second: boolean;
+}
+
+/**
+ * Turn the engine's principal variation into the alternating move sequence a Puzzle
+ * already stores. `Puzzle.moves` is exactly "the human's turn, then the opponent's, then
+ * the human's again", which is the same shape as a PV - so storing the line here costs no
+ * new data model, and the puzzle's existing auto-reply plays the opponent's side for free.
+ *
+ * A turn is TWO actions, so PV actions are consumed in pairs. A trailing half-turn (the
+ * PV was cut off mid-turn by the visit floor) is dropped: half a turn is not playable.
+ */
+function pvToMoves(
+  pv: PvAction[],
+  cats: [Cell, Cell],
+  off: Offsets,
+  gameRows: number,
+  gameCols: number,
+): Move[] {
+  const moves: Move[] = [];
+  const working: [Cell, Cell] = [cats[0], cats[1]];
+
+  for (let i = 0; i + 1 < pv.length; i += 2) {
+    const [first, second] = [pv[i], pv[i + 1]];
+    // Both actions of a turn belong to the same side; anything else means the line is
+    // not the clean alternation we assume, so stop rather than mis-attribute a move.
+    if (first.player !== second.player || first.second || !second.second) break;
+    const idx = first.player === "red" ? 0 : 1;
+    const mapped = engineTurnToMove(
+      [first.action, second.action],
+      working[idx],
+      off,
+      gameRows,
+      gameCols,
+    );
+    working[idx] = mapped.cat;
+    moves.push(mapped.move);
+  }
+  return moves;
 }
 
 async function main() {
@@ -227,8 +278,9 @@ async function main() {
     const frameOk =
       expectModel[0] === c.cat_model[0] && expectModel[1] === c.cat_model[1];
 
-    const turnActions = c.best_turn ?? [c.best_action];
+    const turnActions = c.best_turn_actions ?? c.best_turn ?? [c.best_action];
     let solution: Move | null = null;
+    let line: Move[] = [];
     let mapError = "";
     try {
       solution = engineTurnToMove(
@@ -237,7 +289,18 @@ async function main() {
         off,
         c.game_rows,
         c.game_columns,
-      );
+      ).move;
+      // The whole expected line, when the analyzer recorded one. Its first turn is the
+      // solution turn, so the line supersedes `solution` rather than following it.
+      if (c.pv_actions?.length) {
+        line = pvToMoves(
+          c.pv_actions,
+          [catPos[0], catPos[1]],
+          off,
+          c.game_rows,
+          c.game_columns,
+        );
+      }
     } catch (e) {
       mapError = e instanceof Error ? e.message : String(e);
     }
@@ -249,7 +312,7 @@ async function main() {
 
     console.log(
       `${c.game_id.slice(-4)} mv${c.move_index} ${c.player}: frame=${frameOk ? "OK" : "MISMATCH"} ` +
-        `walls=${walls.length} turn=[${turnActions.join(", ")}] -> ` +
+        `walls=${walls.length} line=${line.length} turns turn=[${turnActions.join(", ")}] -> ` +
         (solution ? solution.actions.map(describe).join(" + ") : `ERR ${mapError}`),
     );
 
@@ -266,7 +329,10 @@ async function main() {
       p2Home: initial.pawns.p2.home,
       initialWalls: walls,
       humanPlaysAs: mover,
-      moves: solution ? [[solution]] : [],
+      // Prefer the full engine line - it makes the puzzle multi-turn and, more to the
+      // point, lets a reviewer walk the continuation instead of taking the first move on
+      // faith. Falls back to the single solution turn when no line was recorded.
+      moves: line.length > 0 ? line.map((m) => [m]) : solution ? [[solution]] : [],
       _meta: {
         source_game: c.game_id,
         move_index: c.move_index,
@@ -274,6 +340,7 @@ async function main() {
         best_prior: c.best_prior,
         gap: c.gap,
         engine_turn_model: turnActions,
+        line_turns: line.length,
         frame_check_ok: frameOk,
         players: game.players,
         ratings: game.ratings,

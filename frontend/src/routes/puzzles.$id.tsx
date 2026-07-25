@@ -18,6 +18,7 @@ import {
   RotateCcw,
   ChevronRight,
   Lightbulb,
+  StepForward,
 } from "lucide-react";
 
 export const Route = createFileRoute("/puzzles/$id")({
@@ -84,6 +85,9 @@ function PuzzlePageContent({
     retryMove,
     showSolution,
     solutionShown,
+    playSolutionMove,
+    canPlaySolutionMove,
+    lineLength,
     solutionAnnotations,
     handleCellClick,
     handleWallClick,
@@ -229,6 +233,20 @@ function PuzzlePageContent({
                   <Lightbulb className="h-4 w-4 mr-1" />
                   {solutionShown ? "Shown" : "Show move"}
                 </Button>
+                {/* Only worth offering when the puzzle actually stores a continuation:
+                    with a single stored turn there is no line to walk. */}
+                {lineLength > 1 && (
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={playSolutionMove}
+                    disabled={!canPlaySolutionMove}
+                    title="Play the expected move and see the opponent's reply"
+                  >
+                    <StepForward className="h-4 w-4 mr-1" />
+                    Play the line
+                  </Button>
+                )}
                 <Button
                   variant="ghost"
                   size="icon"
