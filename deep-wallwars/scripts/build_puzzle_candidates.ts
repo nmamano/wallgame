@@ -5,11 +5,19 @@
 // candidate is (game_id, move_index), and we have the converted game's full move list,
 // so we replay the game in GAME space and snapshot the position just before that move.
 //
-// Coordinate frames: the analyzer runs the 8x8 game embedded in the model's 12x10
-// frame, so its cat cell and best-move notation are in MODEL coords. The replay here is
-// pure game space (the converted records carry the real board size), so the engine's
-// best move has to be mapped back down. We verify the frames agree by checking the
-// replayed cat against the analyzer's recorded cat.
+// NOTATION (verified empirically, see below): the engine's action strings come from
+// operator<<(Action), which prints the RAW INTERNAL cell via
+//   kColumnLabels = a..m, kRowLabels = {'1'..'9','X'}   ('X' = internal row 9)
+// This is NOT the flipped "official row" notation that cell_notation()/the frontend's
+// standard notation use - mixing them up silently produces a legal-but-wrong wall.
+//   ">cell" = Wall::Right  -> frontend vertical   wall at the same cell
+//   "^cell" = Wall::Down   -> frontend horizontal wall at [row + 1, col]
+//   "Cat:Left" etc.        -> pawn move relative to the pawn's CURRENT cell
+// Verified by mapping known human moves forward into engine notation and confirming the
+// exact string appears in that position's edge list (5/5 matched).
+//
+// Frames: the analyzer runs the game embedded in the model's 12x10 frame, so its cat
+// cell and action notation are in MODEL coords and get mapped back down.
 //
 // Usage:
 //   bun deep-wallwars/scripts/build_puzzle_candidates.ts \
@@ -17,12 +25,11 @@
 //     ~/nil/wallwars_games/games_converted.jsonl \
 //     ~/nil/wallwars_games/puzzles_8x8.json
 
-import type { Cell, Move, PlayerId } from "../../shared/domain/game-types";
-import {
-  cellFromStandardNotation,
-  cellToStandardNotation,
-} from "../../shared/domain/standard-notation";
+import type { Action, Cell, Move, PlayerId } from "../../shared/domain/game-types";
 import { importEngineGame } from "../../frontend/src/lib/engine-game-import";
+
+/** Engine kRowLabels: index = internal row, value = printed label. */
+const ROW_LABELS = "123456789X";
 
 interface Candidate {
   game_id: string;
@@ -34,6 +41,8 @@ interface Candidate {
   model_columns: number;
   cat_model: [number, number];
   best_action: string;
+  /** Full intended turn: BOTH actions (a turn is two actions). */
+  best_turn?: [string, string];
   best_prior: number;
   gap: number;
   root_q: number;
@@ -49,31 +58,45 @@ interface ConvertedGame {
   moves: string;
 }
 
+interface Offsets {
+  rowOffset: number;
+  colOffset: number;
+}
+
 /** Classic embeds at the bottom, horizontally centered (left-biased). */
 const classicOffsets = (
   modelRows: number,
   modelCols: number,
   gameRows: number,
   gameCols: number,
-) => ({
+): Offsets => ({
   rowOffset: modelRows - gameRows,
   colOffset: Math.floor((modelCols - gameCols) / 2),
 });
 
+/** Parse the engine's raw-internal-cell notation ("g4", "bX") into a model cell. */
+function parseEngineCell(text: string): Cell {
+  const col = text.charCodeAt(0) - "a".charCodeAt(0);
+  const row = ROW_LABELS.indexOf(text[1]);
+  if (col < 0 || row < 0) {
+    throw new Error(`cannot parse engine cell "${text}"`);
+  }
+  return [row, col];
+}
+
 /**
- * Map an engine action in MODEL space to a game-space Action.
- * Wall/pawn notation ("^g7", ">f8", "Cg7") carries a cell; "Cat:Left" style actions are
- * relative to the cat, so they need the cat's game-space cell to resolve a target.
+ * Map one engine action (MODEL space) to a game-space Action, given where the mover's
+ * cat currently stands (needed for the relative "Cat:Left" form).
  */
-function engineActionToGameMove(
+function engineActionToGameAction(
   action: string,
   catGame: Cell,
-  cfg: { rowOffset: number; colOffset: number },
-  modelRows: number,
+  off: Offsets,
   gameRows: number,
-): Move {
-  const dirMatch = /^(Cat|Mouse):(Up|Down|Left|Right)$/.exec(action);
-  if (dirMatch) {
+  gameCols: number,
+): Action {
+  const dir = /^(Cat|Mouse):(Up|Down|Left|Right)$/.exec(action);
+  if (dir) {
     // Internal rows grow downward, so Down = row + 1.
     const deltas: Record<string, [number, number]> = {
       Up: [-1, 0],
@@ -81,52 +104,54 @@ function engineActionToGameMove(
       Left: [0, -1],
       Right: [0, 1],
     };
-    const [dr, dc] = deltas[dirMatch[2]];
+    const [dr, dc] = deltas[dir[2]];
     return {
-      actions: [
-        {
-          type: dirMatch[1] === "Cat" ? "cat" : "mouse",
-          target: [catGame[0] + dr, catGame[1] + dc],
-        },
-      ],
+      type: dir[1] === "Cat" ? "cat" : "mouse",
+      target: [catGame[0] + dr, catGame[1] + dc],
     };
   }
 
   const sym = action[0];
-  const isWall = sym === ">" || sym === "^";
-  const isPawn = sym === "C" || sym === "M";
-  if (!isWall && !isPawn) {
+  if (sym !== ">" && sym !== "^") {
     throw new Error(`unrecognized engine action: ${action}`);
   }
-  const modelCell = cellFromStandardNotation(action.slice(1), modelRows);
-  const gameCell: Cell = [
-    modelCell[0] - cfg.rowOffset,
-    modelCell[1] - cfg.colOffset,
-  ];
+  const model = parseEngineCell(action.slice(1));
+  // "^" is Wall::Down at `model`, which the frontend stores one row lower.
+  const modelRow = sym === "^" ? model[0] + 1 : model[0];
+  const target: Cell = [modelRow - off.rowOffset, model[1] - off.colOffset];
   if (
-    gameCell[0] < 0 ||
-    gameCell[1] < 0 ||
-    gameCell[0] >= gameRows ||
-    gameCell[1] >= gameRows
+    target[0] < 0 ||
+    target[1] < 0 ||
+    target[0] >= gameRows ||
+    target[1] >= gameCols
   ) {
     throw new Error(
-      `action ${action} maps outside the game area: [${gameCell}] (offsets ${cfg.rowOffset},${cfg.colOffset})`,
+      `action ${action} maps outside the ${gameRows}x${gameCols} game area: [${target}]`,
     );
   }
-  if (isWall) {
-    return {
-      actions: [
-        {
-          type: "wall",
-          target: gameCell,
-          wallOrientation: sym === ">" ? "vertical" : "horizontal",
-        },
-      ],
-    };
-  }
   return {
-    actions: [{ type: sym === "C" ? "cat" : "mouse", target: gameCell }],
+    type: "wall",
+    target,
+    wallOrientation: sym === ">" ? "vertical" : "horizontal",
   };
+}
+
+/** Map a full engine turn, threading the cat position through pawn moves. */
+function engineTurnToMove(
+  actions: string[],
+  catGame: Cell,
+  off: Offsets,
+  gameRows: number,
+  gameCols: number,
+): Move {
+  let cat = catGame;
+  const mapped: Action[] = [];
+  for (const raw of actions) {
+    const action = engineActionToGameAction(raw, cat, off, gameRows, gameCols);
+    if (action.type === "cat") cat = action.target;
+    mapped.push(action);
+  }
+  return { actions: mapped };
 }
 
 async function main() {
@@ -150,98 +175,97 @@ async function main() {
   for (const c of cands) {
     const game = games.get(c.game_id);
     if (!game) {
-      console.error(`! ${c.game_id}: not found in converted games`);
+      console.error(`! ${c.game_id}: not in converted games`);
       continue;
     }
 
-    // Replay in pure game space: the converted record's rows/columns ARE the real size.
     const imported = importEngineGame(
-      { creator: game.players[0], joiner: game.players[1], rows: game.rows, columns: game.columns, moves: game.moves },
+      {
+        creator: game.players[0],
+        joiner: game.players[1],
+        rows: game.rows,
+        columns: game.columns,
+        moves: game.moves,
+      },
       "classic",
       game.rows,
       game.columns,
       game.firstPlayer,
     );
     if (imported.replayError) {
-      console.error(`! ${c.game_id}: replay error: ${imported.replayError}`);
+      console.error(`! ${c.game_id}: ${imported.replayError}`);
       continue;
     }
 
-    // Position just BEFORE the candidate move = snapshot after the previous move.
     const hist = imported.finalState.history;
     const prev = c.move_index - 1;
     if (prev >= hist.length) {
       console.error(`! ${c.game_id} mv${c.move_index}: beyond replay history`);
       continue;
     }
-    const initial = imported.config.variantConfig;
-    const grid = prev >= 0 ? hist[prev].grid : null;
+    const initial = imported.config.variantConfig as {
+      pawns: { p1: { cat: Cell; home: Cell }; p2: { cat: Cell; home: Cell } };
+      walls: { cell: Cell; orientation: "vertical" | "horizontal" }[];
+    };
     const catPos: [Cell, Cell] =
       prev >= 0
         ? hist[prev].catPos
-        : [
-            (initial as { pawns: { p1: { cat: Cell } } }).pawns.p1.cat,
-            (initial as { pawns: { p2: { cat: Cell } } }).pawns.p2.cat,
-          ];
-    const walls = grid ? grid.getWalls() : initial.walls;
+        : [initial.pawns.p1.cat, initial.pawns.p2.cat];
+    const walls = prev >= 0 ? hist[prev].grid.getWalls() : initial.walls;
 
     const mover: PlayerId = c.player === "red" ? 1 : 2;
     const catGame = catPos[mover - 1];
 
-    // Frame cross-check: analyzer cat (model) must equal game cat + embedding offsets.
-    const cfg = classicOffsets(c.model_rows, c.model_columns, c.game_rows, c.game_columns);
-    const expectModel = [catGame[0] + cfg.rowOffset, catGame[1] + cfg.colOffset];
+    // Frame cross-check: analyzer cat (model) == game cat + embedding offsets.
+    const off = classicOffsets(
+      c.model_rows,
+      c.model_columns,
+      c.game_rows,
+      c.game_columns,
+    );
+    const expectModel = [catGame[0] + off.rowOffset, catGame[1] + off.colOffset];
     const frameOk =
       expectModel[0] === c.cat_model[0] && expectModel[1] === c.cat_model[1];
 
+    const turnActions = c.best_turn ?? [c.best_action];
     let solution: Move | null = null;
-    let solutionNotation = "";
     let mapError = "";
     try {
-      solution = engineActionToGameMove(
-        c.best_action,
+      solution = engineTurnToMove(
+        turnActions,
         catGame,
-        cfg,
-        c.model_rows,
+        off,
         c.game_rows,
+        c.game_columns,
       );
-      const a = solution.actions[0];
-      solutionNotation =
-        (a.type === "wall"
-          ? a.wallOrientation === "vertical"
-            ? ">"
-            : "^"
-          : a.type === "cat"
-            ? "C"
-            : "M") + cellToStandardNotation(a.target, game.rows);
     } catch (e) {
       mapError = e instanceof Error ? e.message : String(e);
     }
 
-    const p1 = (initial as { pawns: { p1: { cat: Cell; home: Cell } } }).pawns.p1;
-    const p2 = (initial as { pawns: { p2: { cat: Cell; home: Cell } } }).pawns.p2;
+    const describe = (a: Action) =>
+      a.type === "wall"
+        ? `${a.wallOrientation === "vertical" ? ">" : "^"}[${a.target}]`
+        : `${a.type}->[${a.target}]`;
 
     console.log(
       `${c.game_id.slice(-4)} mv${c.move_index} ${c.player}: frame=${frameOk ? "OK" : "MISMATCH"} ` +
-        `cat_game=[${catGame}] cat_model=[${c.cat_model}] expect=[${expectModel}] ` +
-        `walls=${walls.length} best=${c.best_action}->${solutionNotation || "ERR:" + mapError}`,
+        `walls=${walls.length} turn=[${turnActions.join(", ")}] -> ` +
+        (solution ? solution.actions.map(describe).join(" + ") : `ERR ${mapError}`),
     );
 
     built.push({
       id: `gen-${c.game_id.slice(-6)}-${c.move_index}`,
       title: `Human game ${c.game_id.slice(-4)}, move ${c.move_index}`,
-      author: "auto-generated (deep-wallwars)",
+      author: "deep-wallwars",
       difficulty: 1500,
       boardWidth: game.columns,
       boardHeight: game.rows,
       p1Cat: catPos[0],
-      p1Home: p1.home,
+      p1Home: initial.pawns.p1.home,
       p2Cat: catPos[1],
-      p2Home: p2.home,
+      p2Home: initial.pawns.p2.home,
       initialWalls: walls,
       humanPlaysAs: mover,
-      // NOTE: the engine's root edges are FIRST ACTIONS of a turn, so this is the key
-      // action only, not the complete 2-action turn.
       moves: solution ? [[solution]] : [],
       _meta: {
         source_game: c.game_id,
@@ -249,8 +273,7 @@ async function main() {
         root_q: c.root_q,
         best_prior: c.best_prior,
         gap: c.gap,
-        engine_action_model: c.best_action,
-        solution_notation_game: solutionNotation,
+        engine_turn_model: turnActions,
         frame_check_ok: frameOk,
         players: game.players,
         ratings: game.ratings,
