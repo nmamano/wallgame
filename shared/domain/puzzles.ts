@@ -19,6 +19,7 @@ import type {
   TimeControlConfig,
 } from "./game-types";
 import { parsePuzzleMoves } from "./puzzle-notation";
+import { GENERATED_PUZZLES } from "./generated-puzzles";
 
 export interface Puzzle {
   id: string;
@@ -111,6 +112,10 @@ function parseMoves(moveString: string, boardHeight: number): Move[][] {
 }
 
 export const PUZZLES: Record<string, Puzzle> = {
+  // Auto-generated candidates from real wallwars.net human games (ids 11+).
+  // See generated-puzzles.ts and info/puzzle-generation.md.
+  ...GENERATED_PUZZLES,
+
   // 4x4 board. Human plays as P1.
   "1": {
     id: "1",
