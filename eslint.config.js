@@ -17,6 +17,9 @@ export default tseslint.config(
       "frontend/src/components/unused-components/**",
       "frontend/src/components/ui/**",
       "**/.tanstack/tmp/**",
+      // Bun/tool caches. These are gitignored, but eslint's flat config does
+      // not read .gitignore, so without this it lints thousands of cached files.
+      "**/.cache/**",
       "server/db/schema/**",
       "scripts/**",
       // Bot client is standalone (downloaded separately via sparse checkout)

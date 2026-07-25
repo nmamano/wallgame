@@ -100,7 +100,7 @@ export function parseEngineGameRecords(
         errors.push("top-level JSON is not an array");
       }
     } catch (e) {
-      errors.push(`JSON parse failed: ${e instanceof Error ? e.message : e}`);
+      errors.push(`JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
     }
     return { records, errors };
   }
@@ -112,7 +112,7 @@ export function parseEngineGameRecords(
       pushRecord(JSON.parse(l), `line ${i + 1}`);
     } catch (e) {
       errors.push(
-        `line ${i + 1}: JSON parse failed: ${e instanceof Error ? e.message : e}`,
+        `line ${i + 1}: JSON parse failed: ${e instanceof Error ? e.message : String(e)}`,
       );
     }
   });
@@ -384,7 +384,7 @@ export function importEngineGame(
       });
     } catch (e) {
       replayError = `Replay stopped at move ${i + 1} ("${notation}"): ${
-        e instanceof Error ? e.message : e
+        e instanceof Error ? e.message : String(e)
       }`;
       break;
     }
