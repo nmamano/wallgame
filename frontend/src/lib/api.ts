@@ -310,11 +310,13 @@ export const fetchBots = async (args: {
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{ bots: ListedBot[] }> => {
-  const variant = assertNonSurvivalVariant(args.variant);
+  if (args.variant === "survival") {
+    throw new Error("Survival games are not supported by this endpoint.");
+  }
   return handleResponse<{ bots: ListedBot[] }>(
     api.bots.$get({
       query: {
-        variant,
+        variant: args.variant,
         boardWidth:
           args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
         boardHeight:

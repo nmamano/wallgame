@@ -17,6 +17,7 @@ import { Route as PlayRouteImport } from './routes/play'
 import { Route as PastGamesRouteImport } from './routes/past-games'
 import { Route as LiveGamesRouteImport } from './routes/live-games'
 import { Route as LearnRouteImport } from './routes/learn'
+import { Route as GeneratedCandidatesRouteImport } from './routes/generated-candidates'
 import { Route as AboutRouteImport } from './routes/about'
 import { Route as IndexRouteImport } from './routes/index'
 import { Route as SoloCampaignIndexRouteImport } from './routes/solo-campaign.index'
@@ -65,6 +66,11 @@ const LearnRoute = LearnRouteImport.update({
   path: '/learn',
   getParentRoute: () => rootRouteImport,
 } as any)
+const GeneratedCandidatesRoute = GeneratedCandidatesRouteImport.update({
+  id: '/generated-candidates',
+  path: '/generated-candidates',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const AboutRoute = AboutRouteImport.update({
   id: '/about',
   path: '/about',
@@ -104,6 +110,7 @@ const GameIdRoute = GameIdRouteImport.update({
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/generated-candidates': typeof GeneratedCandidatesRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
@@ -121,6 +128,7 @@ export interface FileRoutesByFullPath {
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/generated-candidates': typeof GeneratedCandidatesRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
@@ -139,6 +147,7 @@ export interface FileRoutesById {
   __root__: typeof rootRouteImport
   '/': typeof IndexRoute
   '/about': typeof AboutRoute
+  '/generated-candidates': typeof GeneratedCandidatesRoute
   '/learn': typeof LearnRoute
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
@@ -158,6 +167,7 @@ export interface FileRouteTypes {
   fullPaths:
     | '/'
     | '/about'
+    | '/generated-candidates'
     | '/learn'
     | '/live-games'
     | '/past-games'
@@ -175,6 +185,7 @@ export interface FileRouteTypes {
   to:
     | '/'
     | '/about'
+    | '/generated-candidates'
     | '/learn'
     | '/live-games'
     | '/past-games'
@@ -192,6 +203,7 @@ export interface FileRouteTypes {
     | '__root__'
     | '/'
     | '/about'
+    | '/generated-candidates'
     | '/learn'
     | '/live-games'
     | '/past-games'
@@ -210,6 +222,7 @@ export interface FileRouteTypes {
 export interface RootRouteChildren {
   IndexRoute: typeof IndexRoute
   AboutRoute: typeof AboutRoute
+  GeneratedCandidatesRoute: typeof GeneratedCandidatesRoute
   LearnRoute: typeof LearnRoute
   LiveGamesRoute: typeof LiveGamesRoute
   PastGamesRoute: typeof PastGamesRoute
@@ -283,6 +296,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof LearnRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/generated-candidates': {
+      id: '/generated-candidates'
+      path: '/generated-candidates'
+      fullPath: '/generated-candidates'
+      preLoaderRoute: typeof GeneratedCandidatesRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/about': {
       id: '/about'
       path: '/about'
@@ -338,6 +358,7 @@ declare module '@tanstack/react-router' {
 const rootRouteChildren: RootRouteChildren = {
   IndexRoute: IndexRoute,
   AboutRoute: AboutRoute,
+  GeneratedCandidatesRoute: GeneratedCandidatesRoute,
   LearnRoute: LearnRoute,
   LiveGamesRoute: LiveGamesRoute,
   PastGamesRoute: PastGamesRoute,
