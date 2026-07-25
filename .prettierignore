@@ -1,6 +1,12 @@
 node_modules
 dist
 build
+# C++ build output (CMake writes non-parseable timestamp/depend files here).
+# "build" above does not match "build_release".
+**/build_release/
+**/build-tests/
+**/build-puzzle/
+.cache
 coverage
 drizzle
 .vscode/settings.json
