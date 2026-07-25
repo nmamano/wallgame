@@ -135,6 +135,21 @@ export function MatchingStagePanel({
         </div>
       );
     }
+    if (waitingReason === "rated-requires-login") {
+      return (
+        <div className="mt-2 text-sm text-muted-foreground">
+          This game is rated, so both players need an account.{" "}
+          <a className="underline" href="/api/register">
+            Sign up
+          </a>{" "}
+          or{" "}
+          <a className="underline" href="/api/login">
+            log in
+          </a>{" "}
+          to take the seat.
+        </div>
+      );
+    }
     if (
       showShareInstructions &&
       matchTypeHint === "friend" &&

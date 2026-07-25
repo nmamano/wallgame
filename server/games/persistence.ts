@@ -10,6 +10,10 @@ import type {
   PlayerAppearance,
   PlayerId,
 } from "../../shared/domain/game-types";
+import {
+  endedBeforeBothPlayersMoved,
+  isCountedResult,
+} from "../../shared/domain/game-utils";
 
 const resolveUserId = async (
   authUserId: string | undefined,
@@ -91,7 +95,10 @@ export const persistCompletedGame = async (
   if (state.status !== "finished") {
     return;
   }
-  if (state.moveCount < 2) {
+  if (endedBeforeBothPlayersMoved(state.moveCount)) {
+    return;
+  }
+  if (!isCountedResult(state.result)) {
     return;
   }
   const startedAt = session.startedAt;

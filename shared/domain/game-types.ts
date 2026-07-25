@@ -185,7 +185,8 @@ export type WinReason =
   | "resignation"
   | "draw-agreement"
   | "one-move-rule" // First-mover handicap rule
-  | "survival"; // Player 2 survived the required turns
+  | "survival" // Player 2 survived the required turns
+  | "aborted"; // Ended before both players had a turn; counts for nothing
 
 export interface GameResult {
   winner?: PlayerId;

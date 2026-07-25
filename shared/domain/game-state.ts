@@ -16,7 +16,7 @@ import type {
   SurvivalInitialState,
 } from "./game-types";
 import { Grid } from "./grid";
-import { cellEq } from "./game-utils";
+import { cellEq, endedBeforeBothPlayersMoved } from "./game-utils";
 
 // Type guards for variant-specific initial states
 export function isStandardInitialState(
@@ -236,29 +236,40 @@ export class GameState {
       );
     }
 
+    // Nobody wins a game that ended before both players had a turn. Quitting
+    // that early aborts the game instead: no winner, and downstream consumers
+    // skip it for ratings, records, match score and past games.
+    const isAbort = endedBeforeBothPlayersMoved(this.moveCount);
+
     switch (action.kind) {
       case "move":
         this.applyMove(action.move, action.timestamp);
         break;
       case "resign":
         this.status = "finished";
-        this.result = {
-          winner: action.playerId === 1 ? 2 : 1,
-          reason: "resignation",
-        };
+        this.result = isAbort
+          ? { reason: "aborted" }
+          : {
+              winner: action.playerId === 1 ? 2 : 1,
+              reason: "resignation",
+            };
         break;
       case "timeout":
         this.status = "finished";
-        this.result = {
-          winner: action.playerId === 1 ? 2 : 1,
-          reason: "timeout",
-        };
+        this.result = isAbort
+          ? { reason: "aborted" }
+          : {
+              winner: action.playerId === 1 ? 2 : 1,
+              reason: "timeout",
+            };
         break;
       case "draw":
         this.status = "finished";
-        this.result = {
-          reason: "draw-agreement",
-        };
+        this.result = isAbort
+          ? { reason: "aborted" }
+          : {
+              reason: "draw-agreement",
+            };
         break;
       case "takeback":
         this.undoTakebackForPlayer(action.playerId);

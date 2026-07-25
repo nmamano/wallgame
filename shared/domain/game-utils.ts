@@ -4,7 +4,37 @@ import type {
   WallPosition,
   TimeControlConfig,
   Pawn,
+  GameResult,
 } from "./game-types";
+
+/**
+ * A game only becomes a real game once both players have had a turn.
+ *
+ * Below this many completed moves, ending the game by resignation, timeout or
+ * draw agreement is an abort rather than a result: there is no winner, ratings
+ * and win/loss records are untouched, the match score is unchanged, and the
+ * game is not written to past games.
+ *
+ * Every consumer must derive its threshold from this constant. The number used
+ * to be written down only in the persistence layer, which is how a rated game
+ * once moved both players' ratings while leaving no trace in the games table.
+ */
+export const MIN_MOVES_FOR_A_COUNTED_GAME = 2;
+
+/** Whether a game ended before both players had a turn. */
+export function endedBeforeBothPlayersMoved(moveCount: number): boolean {
+  return moveCount < MIN_MOVES_FOR_A_COUNTED_GAME;
+}
+
+/**
+ * Whether a finished game's result should affect ratings, win/loss records,
+ * the match score and past games. False for aborted games.
+ */
+export function isCountedResult(
+  result: GameResult | null | undefined,
+): result is GameResult {
+  return result != null && result.reason !== "aborted";
+}
 
 export function cellEq(a: Cell, b: Cell): boolean {
   return a[0] === b[0] && a[1] === b[1];

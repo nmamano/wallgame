@@ -3021,7 +3021,11 @@ export function useGamePageController(gameId: string) {
       play(sounds.gameEnd);
     }
     const result = gameState.result;
-    if (result.winner) {
+    if (result.reason === "aborted") {
+      addSystemMessage(
+        "Game aborted before both players moved. Nothing was recorded.",
+      );
+    } else if (result.winner) {
       const player =
         seatViewsRef.current.find((p) => p.playerId === result.winner) ?? null;
       addSystemMessage(
@@ -3162,6 +3166,19 @@ export function useGamePageController(gameId: string) {
       ? (players.find((p) => p.playerId === gameResult.winner) ?? null)
       : null;
   const winReason = formatWinReason(gameResult?.reason);
+  // An aborted game has no winner, but it is not a draw either - it never
+  // became a game. Formatted here so the panels stay presentation-only.
+  const gameIsAborted = gameResult?.reason === "aborted";
+  const resultHeadline = gameIsAborted
+    ? "Game aborted"
+    : winnerPlayer
+      ? `${winnerPlayer.name} won`
+      : "Draw";
+  const resultDetail = gameIsAborted
+    ? "No rating or record change"
+    : winReason
+      ? winReason.charAt(0).toUpperCase() + winReason.slice(1)
+      : "";
 
   const selectedPawn = selectedPawnId
     ? boardPawns.find((pawn) => pawn.id === selectedPawnId)
@@ -3461,16 +3478,21 @@ export function useGamePageController(gameId: string) {
   const matchingStatusForView = isReadOnlySession
     ? undefined
     : matchingStatusMessage;
+  const ratedGameNeedsAccount =
+    waitingAccessReason === "rated-requires-login";
   const waitingMessage = isAuthoritativeWaiting
     ? waitingAccessReason === "host-aborted"
       ? "The creator aborted this game."
-      : "Waiting for another player to join before the match starts."
+      : ratedGameNeedsAccount
+        ? "This game is rated. Rated games are only played between logged-in players."
+        : "Waiting for another player to join before the match starts."
     : undefined;
   const matchingJoinAction =
     !isReadOnlySession && access?.kind === "waiting"
       ? {
-          label:
-            waitingAccessReason === "host-aborted"
+          label: ratedGameNeedsAccount
+            ? "Create an account"
+            : waitingAccessReason === "host-aborted"
               ? "Join Game"
               : isClaimingSeat
                 ? "Joining…"
@@ -3478,10 +3500,16 @@ export function useGamePageController(gameId: string) {
           description:
             waitingAccessReason === "host-aborted"
               ? "The creator aborted this game."
-              : waitingAccessReason === "seat-not-filled"
-                ? "Seat is open. Join to start playing."
-                : undefined,
-          onClick: handleClaimSeat,
+              : ratedGameNeedsAccount
+                ? "This game is rated. Sign up or log in to take the seat - you can still watch as a spectator."
+                : waitingAccessReason === "seat-not-filled"
+                  ? "Seat is open. Join to start playing."
+                  : undefined,
+          onClick: ratedGameNeedsAccount
+            ? () => {
+                window.location.href = "/api/register";
+              }
+            : handleClaimSeat,
           disabled: isClaimingSeat || waitingAccessReason === "host-aborted",
         }
       : undefined;
@@ -3549,8 +3577,8 @@ export function useGamePageController(gameId: string) {
     historyGameState: historyState,
     isLoadingConfig: boardIsLoading,
     loadError: boardLoadError,
-    winnerPlayer,
-    winReason,
+    resultHeadline,
+    resultDetail,
     scoreboardEntries,
     rematchState,
     rematchStatusText,
@@ -3647,8 +3675,8 @@ export function useGamePageController(gameId: string) {
     },
     endgame: {
       gameStatus,
-      winnerPlayer,
-      winReason,
+      resultHeadline,
+      resultDetail,
       scoreboardEntries,
       rematchState,
       rematchStatusText,

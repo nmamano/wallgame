@@ -11,7 +11,6 @@ import {
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 import type {
-  GamePlayer,
   ScoreboardEntry,
   RematchState,
 } from "@/hooks/use-game-page-controller";
@@ -59,8 +58,10 @@ interface LiveActionsProps {
 
 interface EndgameProps {
   gameStatus: "playing" | "finished" | "aborted";
-  winnerPlayer: GamePlayer | null;
-  winReason: string;
+  /** e.g. "Nil won", "Draw", "Game aborted". Formatted by the controller. */
+  resultHeadline: string;
+  /** e.g. "Capture", "No rating or record change". May be empty. */
+  resultDetail: string;
   scoreboardEntries: ScoreboardEntry[];
   rematchState: RematchState;
   rematchStatusText: string;
@@ -118,8 +119,8 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
 
   const {
     gameStatus,
-    winnerPlayer,
-    winReason,
+    resultHeadline,
+    resultDetail,
     scoreboardEntries,
     rematchState,
     rematchStatusText,
@@ -183,12 +184,10 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
           <Trophy className="w-8 h-8 lg:w-10 lg:h-10 text-yellow-500 shrink-0" />
           <div className="min-w-0">
             <h3 className="text-sm lg:text-base font-bold truncate">
-              {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
+              {resultHeadline}
             </h3>
             <p className="text-[10px] lg:text-xs text-muted-foreground truncate">
-              {winReason
-                ? winReason.charAt(0).toUpperCase() + winReason.slice(1)
-                : ""}
+              {resultDetail}
             </p>
           </div>
         </div>

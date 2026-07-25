@@ -9,7 +9,10 @@ import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
-import { isUnlimitedTimeControl } from "../../shared/domain/game-utils";
+import {
+  isUnlimitedTimeControl,
+  isCountedResult,
+} from "../../shared/domain/game-utils";
 import type {
   GameConfiguration,
   GameSnapshot,
@@ -155,6 +158,23 @@ export type JoinGameSessionResult =
     };
 
 const sessions = new Map<string, GameSession>();
+
+/**
+ * The invariant behind rated games: `config.rated` implies both seats are
+ * authenticated. The host side is enforced when the game is created (a
+ * logged-out creator cannot switch Rated on); this is the joiner side.
+ *
+ * Checked in exactly two places: `resolveGameAccess`, so a guest is told to
+ * make an account instead of being offered a seat, and `joinGameSession`,
+ * which is the only function that seats a second player.
+ */
+const ratedSeatRequiresLogin = (
+  session: GameSession,
+  authUserId?: string,
+): boolean => session.config.rated && !authUserId;
+
+export const RATED_REQUIRES_LOGIN_MESSAGE =
+  "This game is rated. Create an account to join.";
 
 // ============================================================================
 // Timeout Timer Management
@@ -411,7 +431,8 @@ const finalizeMatchScore = (
   if (session.lastScoredGameInstanceId === session.gameInstanceId) {
     return;
   }
-  if (!result) {
+  // An aborted game leaves the series score untouched, not even as a draw.
+  if (!isCountedResult(result)) {
     return;
   }
   if (result.winner === 1 || result.winner === 2) {
@@ -543,6 +564,12 @@ export const joinGameSession = (args: {
   }
 
   const joiner = session.players.joiner;
+
+  // Guests cannot take a seat in a rated game. Without this the game kept
+  // advertising itself as rated while no rating could ever be applied.
+  if (!joiner.ready && ratedSeatRequiresLogin(session, args.authUserId)) {
+    throw new Error(RATED_REQUIRES_LOGIN_MESSAGE);
+  }
 
   // Seat is available – assign it immediately.
   if (!joiner.ready) {
@@ -702,6 +729,9 @@ export const resolveGameAccess = (args: {
   if (session.status === "waiting") {
     if (session.cancelled) {
       return { kind: "waiting", session, reason: "host-aborted" };
+    }
+    if (ratedSeatRequiresLogin(session, args.authUserId)) {
+      return { kind: "waiting", session, reason: "rated-requires-login" };
     }
     return { kind: "waiting", session };
   }
@@ -1295,6 +1325,17 @@ export const processRatingUpdate = async (
   if (!result) {
     console.warn("[ratings] Game finished but no result found", {
       sessionId: id,
+    });
+    return undefined;
+  }
+
+  // Aborted games are not games. Rating them here while persistence threw them
+  // away is what let a rated game move both players' ratings and win/loss
+  // records without ever appearing in past games.
+  if (!isCountedResult(result)) {
+    console.info("[ratings] Skipping update - game was aborted", {
+      sessionId: id,
+      moveCount: gameState.moveCount,
     });
     return undefined;
   }

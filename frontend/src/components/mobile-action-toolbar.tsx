@@ -9,10 +9,7 @@ import {
   X,
 } from "lucide-react";
 import type { PlayerId } from "../../../shared/domain/game-types";
-import type {
-  GamePlayer,
-  RematchState,
-} from "@/hooks/use-game-page-controller";
+import type { RematchState } from "@/hooks/use-game-page-controller";
 import type {
   DrawDecisionPromptState,
   TakebackDecisionPromptState,
@@ -58,8 +55,10 @@ export interface MobileToolbarLiveProps {
 
 export interface MobileToolbarEndgameProps {
   gameStatus: "playing" | "finished" | "aborted";
-  winnerPlayer: GamePlayer | null;
-  winReason: string;
+  /** e.g. "Nil won", "Draw", "Game aborted". Formatted by the controller. */
+  resultHeadline: string;
+  /** e.g. "Capture", "No rating or record change". May be empty. */
+  resultDetail: string;
   rematchState: RematchState;
   rematchStatusText: string;
   userRematchResponse: "pending" | "accepted" | "declined" | null;
@@ -117,8 +116,8 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
 
   const {
     gameStatus,
-    winnerPlayer,
-    winReason,
+    resultHeadline,
+    resultDetail,
     rematchState,
     userRematchResponse,
     handleAcceptRematch,
@@ -171,8 +170,8 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <Trophy className="w-4 h-4 text-yellow-500 shrink-0 mr-1.5" />
           <span className="text-xs font-medium truncate">
-            {winnerPlayer ? `${winnerPlayer.name} won` : "Draw"}
-            {winReason ? ` - ${winReason}` : ""}
+            {resultHeadline}
+            {resultDetail ? ` - ${resultDetail}` : ""}
           </span>
         </div>
         {/* Action buttons on the right */}

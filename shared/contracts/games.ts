@@ -134,7 +134,10 @@ export interface ErrorResponse {
   error: string;
 }
 
-export type GameAccessWaitingReason = "seat-not-filled" | "host-aborted";
+export type GameAccessWaitingReason =
+  | "seat-not-filled"
+  | "host-aborted"
+  | "rated-requires-login";
 
 export type ResolveGameAccessResponse =
   | {
