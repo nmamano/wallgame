@@ -57,6 +57,9 @@ export interface BoardInteractionsOptions {
    */
   canPremove?: boolean;
 
+  /** Number of actions left in the current authored turn. */
+  maxStagedActions?: 1 | 2;
+
   /**
    * If true, the mouse pawn cannot be moved (used in some solo campaign levels).
    */
@@ -212,6 +215,7 @@ export function useBoardInteractions(
     controllablePlayerId,
     canStage,
     canPremove = false,
+    maxStagedActions = MAX_LOCAL_ACTIONS,
     mouseMoveLocked = false,
     mouseMoveLockedMessage = "Mouse movement is disabled for this level.",
     sfxEnabled = false,
@@ -334,6 +338,7 @@ export function useBoardInteractions(
       playerId: controllablePlayerId,
       current: stagedActionsRef.current,
       pending,
+      maxActions: maxStagedActions,
     });
 
     if (promotion.accepted.length) {
@@ -342,7 +347,7 @@ export function useBoardInteractions(
       setError(null);
 
       // Auto-commit if we have enough actions
-      if (promotion.stagedNext.length === MAX_LOCAL_ACTIONS) {
+      if (promotion.stagedNext.length === maxStagedActions) {
         commitStagedActions(promotion.stagedNext);
       }
     } else if (promotion.premoveCleared) {
@@ -355,6 +360,7 @@ export function useBoardInteractions(
     canStage,
     gameState,
     controllablePlayerId,
+    maxStagedActions,
     commitStagedActions,
     setError,
   ]);
@@ -398,6 +404,7 @@ export function useBoardInteractions(
           playerId: controllablePlayerId,
           queue,
           action,
+          maxActions: mode === "staged" ? maxStagedActions : MAX_LOCAL_ACTIONS,
         })
       ) {
         setError(
@@ -413,8 +420,8 @@ export function useBoardInteractions(
         play(action.type === "wall" ? sounds.wall : sounds.pawn);
       }
 
-      // Auto-commit when we have MAX_LOCAL_ACTIONS (only for staged)
-      if (mode === "staged" && nextQueue.length === MAX_LOCAL_ACTIONS) {
+      // Auto-commit when the current turn's remaining action budget is filled.
+      if (mode === "staged" && nextQueue.length === maxStagedActions) {
         commitStagedActions(nextQueue);
       }
 
@@ -423,6 +430,7 @@ export function useBoardInteractions(
     [
       gameState,
       controllablePlayerId,
+      maxStagedActions,
       sfxEnabled,
       setError,
       commitStagedActions,
@@ -527,6 +535,10 @@ export function useBoardInteractions(
       });
 
       if (doubleStepSequence) {
+        if (queueMode === "staged" && maxStagedActions < 2) {
+          setError("Only one action remains in this turn.");
+          return;
+        }
         if (queue.length > 0) {
           setError(
             "You can't make a double move after staging another action.",
@@ -565,6 +577,7 @@ export function useBoardInteractions(
       gameState,
       mouseMoveLocked,
       mouseMoveLockedMessage,
+      maxStagedActions,
       queueMode,
       setError,
       sfxEnabled,

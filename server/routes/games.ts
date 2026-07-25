@@ -25,7 +25,10 @@ import {
   botsQuerySchema,
   createBotGameSchema,
 } from "../../shared/contracts/games";
-import type { PlayerAppearance } from "../../shared/domain/game-types";
+import {
+  isCustomSetupVariant,
+  type PlayerAppearance,
+} from "../../shared/domain/game-types";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
 import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
@@ -482,6 +485,12 @@ export const botsRoute = new Hono()
         const bot = getBotByCompositeId(parsed.botId);
         if (!bot) {
           return c.json({ error: "Bot not found or not connected" }, 404);
+        }
+        if (isCustomSetupVariant(parsed.config.variant) && !bot.isOfficial) {
+          return c.json(
+            { error: "Custom setup games require an official bot" },
+            400,
+          );
         }
 
         // V3: Bot games are unrated and don't affect ELO, so we don't look up ratings

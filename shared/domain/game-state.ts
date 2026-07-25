@@ -56,6 +56,8 @@ export class GameState {
   pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
   turn: PlayerId;
   moveCount: number; // Completed moves count (0 before any moves)
+  actionsRemaining: 1 | 2;
+  previousPawnPosition?: { type: GamePawnType; cell: Cell };
 
   history: MoveInHistory[];
   status: GameStatus;
@@ -70,6 +72,9 @@ export class GameState {
   // Initial state for undoing the first move
   private initialGrid: Grid;
   private initialPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  private initialTurn: PlayerId;
+  private initialActionsRemaining: 1 | 2;
+  private initialPreviousPawnPosition?: { type: GamePawnType; cell: Cell };
 
   constructor(config: GameConfiguration, startTime: number) {
     this.config = config;
@@ -142,7 +147,22 @@ export class GameState {
       2: { ...this.pawns[2] },
     };
 
-    this.turn = 1;
+    const setupTurn = "turn" in variantConfig ? variantConfig.turn : null;
+    const [spentAction] = setupTurn?.actionsTaken ?? [];
+    this.turn = setupTurn?.playerId ?? 1;
+    this.actionsRemaining = spentAction ? 1 : 2;
+    this.previousPawnPosition =
+      spentAction?.type === "cat" || spentAction?.type === "mouse"
+        ? { type: spentAction.type, cell: spentAction.source }
+        : undefined;
+    this.initialTurn = this.turn;
+    this.initialActionsRemaining = this.actionsRemaining;
+    this.initialPreviousPawnPosition = this.previousPawnPosition
+      ? {
+          type: this.previousPawnPosition.type,
+          cell: [...this.previousPawnPosition.cell] as Cell,
+        }
+      : undefined;
     this.moveCount = 0;
     this.history = [];
     this.status = "playing";
@@ -196,6 +216,13 @@ export class GameState {
       2: { ...this.pawns[2] },
     };
     newGame.turn = this.turn;
+    newGame.actionsRemaining = this.actionsRemaining;
+    newGame.previousPawnPosition = this.previousPawnPosition
+      ? {
+          type: this.previousPawnPosition.type,
+          cell: [...this.previousPawnPosition.cell] as Cell,
+        }
+      : undefined;
     newGame.moveCount = this.moveCount;
     newGame.history = [...this.history];
     newGame.status = this.status;
@@ -284,6 +311,12 @@ export class GameState {
   }
 
   private applyMove(move: Move, timestamp: number) {
+    if (move.actions.length > this.actionsRemaining) {
+      throw new Error(
+        `Only ${this.actionsRemaining} action${this.actionsRemaining === 1 ? "" : "s"} remain in this turn`,
+      );
+    }
+
     const player = this.turn;
     const opponent = player === 1 ? 2 : 1;
     const myPawns = this.pawns[player];
@@ -296,8 +329,18 @@ export class GameState {
     };
 
     const isClassic = isClassicVariant(this.config.variant);
+    let actionsUsed = 0;
 
     for (const action of move.actions) {
+      if (
+        this.previousPawnPosition &&
+        action.type === this.previousPawnPosition.type &&
+        cellEq(action.target, this.previousPawnPosition.cell)
+      ) {
+        throw new Error(
+          "A pawn cannot immediately return to its previous cell",
+        );
+      }
       if (action.type === "cat" || action.type === "mouse") {
         if (!this.isPawnActive(player, action.type)) {
           throw new Error("Pawn not available for this player");
@@ -320,6 +363,12 @@ export class GameState {
         const dist =
           Math.abs(currentPos[0] - targetPos[0]) +
           Math.abs(currentPos[1] - targetPos[1]);
+        actionsUsed += dist;
+        if (actionsUsed > this.actionsRemaining) {
+          throw new Error(
+            `Only ${this.actionsRemaining} action${this.actionsRemaining === 1 ? "" : "s"} remain in this turn`,
+          );
+        }
 
         if (dist === 1) {
           // Single step
@@ -433,6 +482,12 @@ export class GameState {
         if (action.type === "cat") nextMyPawns.cat = targetPos;
         else nextMyPawns.mouse = targetPos;
       } else if (action.type === "wall") {
+        actionsUsed += 1;
+        if (actionsUsed > this.actionsRemaining) {
+          throw new Error(
+            `Only ${this.actionsRemaining} action${this.actionsRemaining === 1 ? "" : "s"} remain in this turn`,
+          );
+        }
         const wall: WallPosition = {
           cell: action.target,
           orientation: action.wallOrientation!,
@@ -582,6 +637,8 @@ export class GameState {
     }
 
     this.turn = opponent;
+    this.actionsRemaining = 2;
+    this.previousPawnPosition = undefined;
     this.moveCount = nextMoveIndex;
   }
 
@@ -634,6 +691,8 @@ export class GameState {
         2: last.timeLeftSeconds[1],
       };
       this.moveCount = last.index;
+      this.actionsRemaining = 2;
+      this.previousPawnPosition = undefined;
     } else {
       prevGrid = this.initialGrid.clone();
       prevPawns = {
@@ -645,13 +704,23 @@ export class GameState {
         2: this.config.timeControl.initialSeconds,
       };
       this.moveCount = 0;
+      this.turn = this.initialTurn;
+      this.actionsRemaining = this.initialActionsRemaining;
+      this.previousPawnPosition = this.initialPreviousPawnPosition
+        ? {
+            type: this.initialPreviousPawnPosition.type,
+            cell: [...this.initialPreviousPawnPosition.cell] as Cell,
+          }
+        : undefined;
     }
 
     this.grid = prevGrid;
     this.pawns = prevPawns;
     this.timeLeft = prevTimeLeft;
 
-    this.turn = this.turn === 1 ? 2 : 1;
+    if (this.history.length > 0) {
+      this.turn = this.turn === 1 ? 2 : 1;
+    }
     this.status = "playing";
     this.result = undefined;
   }

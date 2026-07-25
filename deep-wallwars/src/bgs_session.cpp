@@ -54,6 +54,23 @@ std::pair<bool, std::string> SessionManager::create_session(
     // Create MCTS with configured options
     MCTS::Options mcts_opts;
     mcts_opts.starting_turn = turn;
+    json const& initial_state = bgs_config["initialState"];
+    if (turn.action == Turn::Second) {
+        json const& spent_action =
+            initial_state["turn"]["actionsTaken"][0];
+        std::string const action_type =
+            spent_action["type"].get<std::string>();
+        if (action_type == "cat" || action_type == "mouse") {
+            json const& source = spent_action["source"];
+            Cell const game_source{
+                source[1].get<int>(),
+                source[0].get<int>()};
+            mcts_opts.starting_previous_position = PreviousPosition{
+                action_type == "cat" ? Pawn::Cat : Pawn::Mouse,
+                engine_adapter::transform_to_model(
+                    game_source, padding_config)};
+        }
+    }
     mcts_opts.seed = generate_seed(bgs_id);
     mcts_opts.max_parallelism = m_config.max_parallel_samples;
 
@@ -162,6 +179,27 @@ static json create_move_applied_response(
     };
 }
 
+static std::string action_notation(
+    Action const& action,
+    Cell cat_pos,
+    Cell mouse_pos,
+    int rows) {
+    return folly::variant_match(
+        action,
+        [&](PawnMove move) {
+            Cell const start =
+                move.pawn == Pawn::Cat ? cat_pos : mouse_pos;
+            Cell const destination = start.step(move.dir);
+            char const pawn_char =
+                move.pawn == Pawn::Cat ? 'C' : 'M';
+            return std::string(1, pawn_char) +
+                cell_notation(destination, rows);
+        },
+        [&](Wall wall) {
+            return wall_notation(wall, rows);
+        });
+}
+
 // ============================================================================
 // Request Handlers
 // ============================================================================
@@ -214,8 +252,8 @@ folly::coro::Task<json> handle_evaluate_position(
     // root_value() returns from current player's perspective
     float raw_eval = session->mcts->root_value();
 
-    // Determine current player based on ply
-    Player current_player = (session->ply % 2 == 0) ? Player::Red : Player::Blue;
+    Turn const current_turn = session->mcts->current_turn();
+    Player const current_player = current_turn.player;
 
     // Get current pawn positions for notation
     Board const& board = session->mcts->current_board();
@@ -224,46 +262,40 @@ folly::coro::Task<json> handle_evaluate_position(
 
     std::string game_notation;
 
-    // Check if the best first action wins the game (single-action move)
+    // A custom setup may begin after the first action of a turn.
     auto action1_opt = session->mcts->peek_best_action();
     if (!action1_opt) {
         co_return create_evaluate_response(
             bgs_id, session->ply, "", 0.0f, false, "No legal move available");
     }
 
-    // Simulate the first action to check if it wins
-    Board test_board = board;
-    test_board.do_action(current_player, *action1_opt);
+    if (current_turn.action == Turn::Second) {
+        std::string const model_notation = action_notation(
+            *action1_opt, cat_pos, mouse_pos, board.rows());
+        game_notation = engine_adapter::transform_move_notation(
+            model_notation, cat_pos, mouse_pos, session->padding_config);
+    } else {
+        // Simulate the first action to check if it wins.
+        Board test_board = board;
+        test_board.do_action(current_player, *action1_opt);
 
-    if (test_board.winner() != Winner::Undecided) {
-        // First action wins — generate single-action notation
-        auto* pawn_move = std::get_if<PawnMove>(&*action1_opt);
-        if (pawn_move) {
-            Cell start = pawn_move->pawn == Pawn::Cat ? cat_pos : mouse_pos;
-            Cell dest = start.step(pawn_move->dir);
-            char pawn_char = pawn_move->pawn == Pawn::Cat ? 'C' : 'M';
-            std::string model_notation = std::string(1, pawn_char) +
-                cell_notation(dest, board.rows());
+        if (test_board.winner() != Winner::Undecided) {
+            std::string const model_notation = action_notation(
+                *action1_opt, cat_pos, mouse_pos, board.rows());
             game_notation = engine_adapter::transform_move_notation(
                 model_notation, cat_pos, mouse_pos, session->padding_config);
         } else {
-            // A wall can't win the game — shouldn't happen
-            co_return create_evaluate_response(
-                bgs_id, session->ply, "", 0.0f, false,
-                "Unexpected: wall action resulted in game win");
-        }
-    } else {
-        // Regular 2-action move
-        auto move_opt = session->mcts->peek_best_move();
-        if (!move_opt) {
-            co_return create_evaluate_response(
-                bgs_id, session->ply, "", 0.0f, false, "No legal move available");
-        }
+            auto move_opt = session->mcts->peek_best_move();
+            if (!move_opt) {
+                co_return create_evaluate_response(
+                    bgs_id, session->ply, "", 0.0f, false, "No legal move available");
+            }
 
-        std::string model_notation = move_opt->standard_notation(
-            cat_pos, mouse_pos, board.rows());
-        game_notation = engine_adapter::transform_move_notation(
-            model_notation, cat_pos, mouse_pos, session->padding_config);
+            std::string model_notation = move_opt->standard_notation(
+                cat_pos, mouse_pos, board.rows());
+            game_notation = engine_adapter::transform_move_notation(
+                model_notation, cat_pos, mouse_pos, session->padding_config);
+        }
     }
 
     // Convert evaluation to P1's perspective (negate if P2's turn)
@@ -300,9 +332,8 @@ folly::coro::Task<json> handle_apply_move(
                 ", got " + std::to_string(session->ply));
     }
 
-    // Determine current player based on ply
-    Player current_player = (session->ply % 2 == 0) ? Player::Red : Player::Blue;
-    Turn turn{current_player, Turn::First};
+    Turn const turn = session->mcts->current_turn();
+    Player const current_player = turn.player;
 
     // Parse the move notation into a list of actions (supports 1+ actions)
     auto actions_opt = engine_adapter::parse_move_notation(
@@ -314,6 +345,14 @@ folly::coro::Task<json> handle_apply_move(
             "Failed to parse move notation: " + move_notation);
     }
 
+    int const expected_actions =
+        turn.action == Turn::First ? 2 : 1;
+    if (actions_opt->size() > static_cast<size_t>(expected_actions)) {
+        co_return create_move_applied_response(
+            bgs_id, session->ply, false,
+            "Move has too many actions for the current turn state");
+    }
+
     // Apply the actions individually (supports single-action moves)
     try {
         for (const auto& action : *actions_opt) {
@@ -323,10 +362,10 @@ folly::coro::Task<json> handle_apply_move(
             session->mcts->force_action(action);
         }
 
-        // If we applied fewer than 2 actions and the game isn't over,
-        // the tree is at Turn::Second but the ply is complete.
+        // A submitted move always completes the player's turn, even when they
+        // voluntarily use fewer than the available actions.
         // Reset the tree to the next player's Turn::First.
-        if (actions_opt->size() < 2 &&
+        if (actions_opt->size() < static_cast<size_t>(expected_actions) &&
             session->mcts->current_board().winner() == Winner::Undecided) {
             Player next_player = current_player == Player::Red ? Player::Blue : Player::Red;
             session->mcts->reset_to_position(

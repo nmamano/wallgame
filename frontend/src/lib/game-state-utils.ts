@@ -37,6 +37,10 @@ export const hydrateGameStateFromSerialized = (
   const state = new GameState(config, Date.now());
   state.turn = serialized.turn;
   state.moveCount = serialized.moveCount;
+  if (serialized.moveCount > 0) {
+    state.actionsRemaining = 2;
+    state.previousPawnPosition = undefined;
+  }
   state.status = serialized.status;
   state.result = serialized.result;
   state.timeLeft = {

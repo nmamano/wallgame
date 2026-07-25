@@ -95,6 +95,7 @@ public:
         float noise_factor = 0.25;
         float active_sample_penalty = 1.0;
         Turn starting_turn = {Player::Red, Turn::First};
+        std::optional<PreviousPosition> starting_previous_position;
         std::uint32_t seed = 42;
     };
 
@@ -102,6 +103,7 @@ public:
     MCTS(EvaluationFunction evaluate, Board board, Options opts);
 
     Board const& current_board() const;
+    Turn current_turn() const;
     float root_value() const;
     int root_samples() const;
     NodeInfo root_info() const;

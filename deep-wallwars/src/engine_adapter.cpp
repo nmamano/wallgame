@@ -796,6 +796,16 @@ ValidationResult validate_bgs_config(
                     variant + "')"};
     }
 
+    bool const is_custom_setup =
+        variant == "custom-setup-classic" ||
+        variant == "custom-setup-standard";
+    if (is_custom_setup &&
+        (!bgs_config["initialState"].contains("turn") ||
+         !bgs_config["initialState"]["turn"].contains("playerId") ||
+         !bgs_config["initialState"]["turn"].contains("actionsTaken"))) {
+        return {false, "Custom setup is missing explicit turn state"};
+    }
+
     // Check board dimensions (must be at least 4x4 and at most model dimensions)
     int width = bgs_config["boardWidth"].get<int>();
     int height = bgs_config["boardHeight"].get<int>();
@@ -883,6 +893,10 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     for (auto const& wall_json : walls_array) {
         Wall game_wall = parse_wall(wall_json, game_height);
         Wall model_wall = transform_to_model(game_wall, padding_config);
+        if (board.is_blocked(model_wall)) {
+            throw std::runtime_error(
+                "Authored wall overlaps padding or another authored wall");
+        }
         // Board has no neutral owner representation. Ownerless setup walls use
         // Red internally for model input; ownership never leaves this BGS.
         int player_id = wall_json.value("playerId", 1);
@@ -890,8 +904,16 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
         board.place_wall(wall_owner, model_wall);
     }
 
-    // V3: Always starts at P1's turn (ply 0), First action
     Turn turn{Player::Red, Turn::First};
+    if (initial_state.contains("turn")) {
+        json const& setup_turn = initial_state["turn"];
+        turn.player = setup_turn["playerId"].get<int>() == 1
+            ? Player::Red
+            : Player::Blue;
+        turn.action = setup_turn["actionsTaken"].empty()
+            ? Turn::First
+            : Turn::Second;
+    }
 
     return {board, turn, padding_config};
 }

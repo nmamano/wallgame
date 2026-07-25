@@ -9,8 +9,8 @@ import type {
   TimeControlConfig,
   Variant,
   NonSurvivalVariant,
-  ClassicInitialState,
-  StandardInitialState,
+  CustomSetupClassicInitialState,
+  CustomSetupStandardInitialState,
   MatchType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
@@ -356,14 +356,16 @@ export const playVsBot = async (args: {
           variant: args.config.variant,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
-          variantConfig: args.config.variantConfig as ClassicInitialState,
+          variantConfig: args.config
+            .variantConfig as CustomSetupClassicInitialState,
         }
       : args.config.variant === "custom-setup-standard"
         ? {
             variant: args.config.variant,
             boardWidth: args.config.boardWidth,
             boardHeight: args.config.boardHeight,
-            variantConfig: args.config.variantConfig as StandardInitialState,
+            variantConfig: args.config
+              .variantConfig as CustomSetupStandardInitialState,
           }
         : {
             variant: args.config.variant,

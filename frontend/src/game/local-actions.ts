@@ -70,6 +70,8 @@ const simulateActions = (
         : (() => {
             const clone = state.clone();
             clone.turn = playerId;
+            clone.actionsRemaining = MAX_LOCAL_ACTIONS;
+            clone.previousPawnPosition = undefined;
             return clone;
           })();
     return workingState.applyGameAction({

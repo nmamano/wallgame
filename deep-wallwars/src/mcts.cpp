@@ -45,7 +45,8 @@ MCTS::MCTS(EvaluationFunction evaluate, Board board)
 MCTS::MCTS(EvaluationFunction evaluate, Board board, Options options)
     : m_evaluate{std::move(evaluate)},
       m_root{
-          folly::coro::blockingWait(create_tree_node(board, options.starting_turn, {}, nullptr))},
+          folly::coro::blockingWait(create_tree_node(
+              board, options.starting_turn, options.starting_previous_position, nullptr))},
       m_opts{options},
       m_gamma_dist{options.direchlet_alpha, 1.0},
       m_twister{options.seed} {
@@ -54,6 +55,10 @@ MCTS::MCTS(EvaluationFunction evaluate, Board board, Options options)
 
 int MCTS::samples_done() const {
     return m_samples_done;
+}
+
+Turn MCTS::current_turn() const {
+    return m_root->turn;
 }
 
 folly::coro::Task<void> MCTS::single_sample() {

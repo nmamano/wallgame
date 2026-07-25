@@ -1823,6 +1823,7 @@ export function useGamePageController(gameId: string) {
     controllablePlayerId: actionablePlayerId,
     canStage: canActNow && !viewingHistory && !interactionLocked,
     canPremove: canBufferPremoves && !viewingHistory,
+    maxStagedActions: gameState?.actionsRemaining ?? 2,
     mouseMoveLocked,
     mouseMoveLockedMessage,
     sfxEnabled,

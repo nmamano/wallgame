@@ -16,9 +16,12 @@ interface BuildHistoryStateOptions {
 
 const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
 
-const nextTurnAfter = (moveIndex: number): PlayerId => {
+const nextTurnAfter = (
+  moveIndex: number,
+  initialPlayer: PlayerId,
+): PlayerId => {
   // moveIndex is 1-based, matching GameState.moveCount snapshots
-  return moveIndex % 2 === 0 ? 1 : 2;
+  return moveIndex % 2 === 0 ? initialPlayer : initialPlayer === 1 ? 2 : 1;
 };
 
 export function buildHistoryState({
@@ -35,10 +38,10 @@ export function buildHistoryState({
   }
 
   const snapshot = new GameState(config, 0);
+  const initialPlayer = snapshot.turn;
 
   if (cursor === -1) {
     snapshot.history = [];
-    snapshot.turn = 1;
     snapshot.moveCount = 0;
     return snapshot;
   }
@@ -63,7 +66,9 @@ export function buildHistoryState({
     1: entry.timeLeftSeconds[0],
     2: entry.timeLeftSeconds[1],
   };
-  snapshot.turn = nextTurnAfter(entry.index);
+  snapshot.turn = nextTurnAfter(entry.index, initialPlayer);
+  snapshot.actionsRemaining = 2;
+  snapshot.previousPawnPosition = undefined;
   snapshot.moveCount = entry.index;
   snapshot.history = historyEntries.slice(0, cursor + 1);
   snapshot.status = "playing";

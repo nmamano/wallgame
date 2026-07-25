@@ -23,10 +23,9 @@ export const customSetupVariantValues = [
   "custom-setup-classic",
 ] as const;
 
-const cellSchema = z.tuple([
-  z.number().int().min(0).max(19),
-  z.number().int().min(0).max(19),
-]).readonly();
+const cellSchema = z
+  .tuple([z.number().int().min(0).max(19), z.number().int().min(0).max(19)])
+  .readonly();
 
 const neutralWallSchema = z
   .object({
@@ -35,12 +34,31 @@ const neutralWallSchema = z
   })
   .strict();
 
+const setupActionSchema = z.discriminatedUnion("type", [
+  z.object({
+    type: z.enum(["cat", "mouse"]),
+    source: cellSchema,
+    target: cellSchema,
+  }),
+  z.object({
+    type: z.literal("wall"),
+    target: cellSchema,
+    wallOrientation: z.enum(["vertical", "horizontal"]),
+  }),
+]);
+
+const setupTurnSchema = z.object({
+  playerId: z.union([z.literal(1), z.literal(2)]),
+  actionsTaken: z.union([z.tuple([]), z.tuple([setupActionSchema])]),
+});
+
 const standardInitialStateSchema = z.object({
   pawns: z.object({
     p1: z.object({ cat: cellSchema, mouse: cellSchema }),
     p2: z.object({ cat: cellSchema, mouse: cellSchema }),
   }),
   walls: z.array(neutralWallSchema),
+  turn: setupTurnSchema,
 });
 
 const classicInitialStateSchema = z.object({
@@ -49,6 +67,7 @@ const classicInitialStateSchema = z.object({
     p2: z.object({ cat: cellSchema, home: cellSchema }),
   }),
   walls: z.array(neutralWallSchema),
+  turn: setupTurnSchema,
 });
 
 const customSetupConfigSchema = z
@@ -118,6 +137,96 @@ const customSetupConfigSchema = z
         });
       }
       wallKeys.add(key);
+    }
+
+    const [actionTaken] = config.variantConfig.turn.actionsTaken;
+    if (!actionTaken) return;
+
+    if (actionTaken.type === "wall") {
+      const matchingWall = config.variantConfig.walls.some(
+        (wall) =>
+          wall.cell[0] === actionTaken.target[0] &&
+          wall.cell[1] === actionTaken.target[1] &&
+          wall.orientation === actionTaken.wallOrientation,
+      );
+      if (!matchingWall) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["variantConfig", "turn", "actionsTaken", 0],
+          message: "the spent wall action is not present in the position",
+        });
+      }
+      return;
+    }
+
+    const [sourceRow, sourceCol] = actionTaken.source;
+    const sourceInBounds =
+      sourceRow < config.boardHeight && sourceCol < config.boardWidth;
+    const distance =
+      Math.abs(sourceRow - actionTaken.target[0]) +
+      Math.abs(sourceCol - actionTaken.target[1]);
+    if (
+      config.variant === "custom-setup-classic" &&
+      actionTaken.type === "mouse"
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["variantConfig", "turn", "actionsTaken", 0],
+        message: "classic setup turns cannot contain a mouse action",
+      });
+      return;
+    }
+    const playerKey = config.variantConfig.turn.playerId === 1 ? "p1" : "p2";
+    const pawnPosition =
+      actionTaken.type === "cat"
+        ? config.variantConfig.pawns[playerKey].cat
+        : config.variant === "custom-setup-standard"
+          ? config.variantConfig.pawns[playerKey].mouse
+          : actionTaken.target;
+    const targetMatchesPosition =
+      pawnPosition[0] === actionTaken.target[0] &&
+      pawnPosition[1] === actionTaken.target[1];
+    const [targetRow, targetCol] = actionTaken.target;
+    const blockingWall =
+      sourceCol < targetCol
+        ? config.variantConfig.walls.some(
+            (wall) =>
+              wall.orientation === "vertical" &&
+              wall.cell[0] === sourceRow &&
+              wall.cell[1] === sourceCol,
+          )
+        : sourceCol > targetCol
+          ? config.variantConfig.walls.some(
+              (wall) =>
+                wall.orientation === "vertical" &&
+                wall.cell[0] === targetRow &&
+                wall.cell[1] === targetCol,
+            )
+          : sourceRow < targetRow
+            ? config.variantConfig.walls.some(
+                (wall) =>
+                  wall.orientation === "horizontal" &&
+                  wall.cell[0] === targetRow &&
+                  wall.cell[1] === targetCol,
+              )
+            : config.variantConfig.walls.some(
+                (wall) =>
+                  wall.orientation === "horizontal" &&
+                  wall.cell[0] === sourceRow &&
+                  wall.cell[1] === sourceCol,
+              );
+    if (
+      !sourceInBounds ||
+      distance !== 1 ||
+      !targetMatchesPosition ||
+      blockingWall
+    ) {
+      ctx.addIssue({
+        code: z.ZodIssueCode.custom,
+        path: ["variantConfig", "turn", "actionsTaken", 0],
+        message:
+          "the spent pawn action must be one unblocked in-bounds step ending at the authored pawn position",
+      });
     }
   });
 

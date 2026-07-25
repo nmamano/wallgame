@@ -14,6 +14,7 @@
 import type { ServerWebSocket } from "bun";
 import {
   botCapabilityVariant,
+  isCustomSetupVariant,
   type PlayerId,
   type Variant,
 } from "../../shared/domain/game-types";
@@ -312,6 +313,7 @@ export const getMatchingBots = (
   const results: ListedBot[] = [];
 
   for (const [compositeId, bot] of botIndex) {
+    if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
       if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {
@@ -381,6 +383,7 @@ export const getRecommendedBots = (
   const results: RecommendedBotEntry[] = [];
 
   for (const [compositeId, bot] of botIndex) {
+    if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
       if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {

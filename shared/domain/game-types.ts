@@ -55,6 +55,12 @@ export type NonSurvivalVariant = Exclude<
 export const isClassicVariant = (variant: Variant): boolean =>
   variant === "classic" || variant === "custom-setup-classic";
 
+export const isCustomSetupVariant = (
+  variant: Variant,
+): variant is CustomSetupVariant =>
+  variant === "custom-setup-classic" ||
+  variant === "custom-setup-standard";
+
 export const botCapabilityVariant = (
   variant: Variant,
 ): Exclude<Variant, CustomSetupVariant> => {
@@ -86,6 +92,31 @@ export interface ClassicInitialState {
   walls: WallPosition[];
 }
 
+export type SetupAction =
+  | {
+      type: GamePawnType;
+      source: Cell;
+      target: Cell;
+    }
+  | {
+      type: "wall";
+      target: Cell;
+      wallOrientation: WallOrientation;
+    };
+
+export interface SetupTurnState {
+  playerId: PlayerId;
+  actionsTaken: [] | [SetupAction];
+}
+
+export interface CustomSetupStandardInitialState extends StandardInitialState {
+  turn: SetupTurnState;
+}
+
+export interface CustomSetupClassicInitialState extends ClassicInitialState {
+  turn: SetupTurnState;
+}
+
 /** Initial state for Survival variant (cat chases mouse with turn limit) */
 export interface SurvivalInitialState {
   cat: Cell;
@@ -99,6 +130,8 @@ export interface SurvivalInitialState {
 export type GameInitialState =
   | StandardInitialState
   | ClassicInitialState
+  | CustomSetupStandardInitialState
+  | CustomSetupClassicInitialState
   | SurvivalInitialState;
 
 /** @deprecated Use SurvivalInitialState instead */
