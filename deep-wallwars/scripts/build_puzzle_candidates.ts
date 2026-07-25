@@ -49,6 +49,12 @@ interface Candidate {
   best_prior: number;
   gap: number;
   root_q: number;
+  /** Filter v2 signals, for the reviewer's benefit. */
+  forced_turns?: number;
+  adv_before?: number;
+  immediate?: number | null;
+  swing?: number;
+  theme?: string;
 }
 
 interface ConvertedGame {
@@ -341,6 +347,13 @@ async function main() {
         gap: c.gap,
         engine_turn_model: turnActions,
         line_turns: line.length,
+        // Why filter v2 kept this one, carried through so a reviewer can see the claim
+        // being made about each position rather than just the position.
+        forced_turns: c.forced_turns,
+        adv_before: c.adv_before,
+        immediate: c.immediate,
+        swing: c.swing,
+        theme: c.theme,
         frame_check_ok: frameOk,
         players: game.players,
         ratings: game.ratings,
