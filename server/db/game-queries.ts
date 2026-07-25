@@ -157,20 +157,25 @@ interface ReplayGameRow {
   movesCount: number;
 }
 
-const buildReplayGameFromRow = async (
-  game: ReplayGameRow,
-): Promise<ReplayGameData> => {
-  const [details] = await db
+/**
+ * Details and players for a set of games, fetched by id so a batch of N games
+ * costs two queries rather than 2N. Selecting gameId lets the rows be grouped
+ * back onto their game in memory.
+ */
+const fetchReplayDetails = (gameIds: string[]) =>
+  db
     .select({
+      gameId: gameDetailsTable.gameId,
       configParameters: gameDetailsTable.configParameters,
       moves: gameDetailsTable.moves,
     })
     .from(gameDetailsTable)
-    .where(eq(gameDetailsTable.gameId, game.gameId))
-    .limit(1);
+    .where(inArray(gameDetailsTable.gameId, gameIds));
 
-  const players = await db
+const fetchReplayPlayers = (gameIds: string[]) =>
+  db
     .select({
+      gameId: gamePlayersTable.gameId,
       playerOrder: gamePlayersTable.playerOrder,
       playerRole: gamePlayersTable.playerRole,
       playerConfigType: gamePlayersTable.playerConfigType,
@@ -184,8 +189,17 @@ const buildReplayGameFromRow = async (
       outcomeReason: gamePlayersTable.outcomeReason,
     })
     .from(gamePlayersTable)
-    .where(eq(gamePlayersTable.gameId, game.gameId));
+    .where(inArray(gamePlayersTable.gameId, gameIds));
 
+type ReplayDetailsRow = Awaited<ReturnType<typeof fetchReplayDetails>>[number];
+type ReplayPlayerRow = Awaited<ReturnType<typeof fetchReplayPlayers>>[number];
+
+/** Pure assembly: replays the moves and shapes the response. Touches no tables. */
+const assembleReplayGame = (
+  game: ReplayGameRow,
+  details: ReplayDetailsRow | undefined,
+  players: ReplayPlayerRow[],
+): ReplayGameData => {
   const result = resolveResultFromPlayers(players);
   const matchScore = buildMatchScore(result);
 
@@ -313,6 +327,46 @@ const buildReplayGameFromRow = async (
   };
 };
 
+const buildReplayGamesFromRows = async (
+  games: ReplayGameRow[],
+): Promise<ReplayGameData[]> => {
+  if (games.length === 0) {
+    return [];
+  }
+
+  const gameIds = games.map((game) => game.gameId);
+  const [details, players] = await Promise.all([
+    fetchReplayDetails(gameIds),
+    fetchReplayPlayers(gameIds),
+  ]);
+
+  const detailsByGameId = new Map(details.map((row) => [row.gameId, row]));
+  const playersByGameId = new Map<string, ReplayPlayerRow[]>();
+  for (const player of players) {
+    const existing = playersByGameId.get(player.gameId);
+    if (existing) {
+      existing.push(player);
+    } else {
+      playersByGameId.set(player.gameId, [player]);
+    }
+  }
+
+  return games.map((game) =>
+    assembleReplayGame(
+      game,
+      detailsByGameId.get(game.gameId),
+      playersByGameId.get(game.gameId) ?? [],
+    ),
+  );
+};
+
+const buildReplayGameFromRow = async (
+  game: ReplayGameRow,
+): Promise<ReplayGameData> => {
+  const [built] = await buildReplayGamesFromRows([game]);
+  return built;
+};
+
 export const getReplayGame = async (
   gameId: string,
 ): Promise<ReplayGameData | null> => {
@@ -361,7 +415,7 @@ export const getRandomShowcaseGames = async (
     .orderBy(sql`random()`)
     .limit(count);
 
-  return Promise.all(games.map((game) => buildReplayGameFromRow(game)));
+  return buildReplayGamesFromRows(games);
 };
 
 export const queryPastGames = async (args: {
