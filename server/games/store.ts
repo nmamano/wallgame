@@ -606,18 +606,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
 
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    players: [session.players.host, session.players.joiner].map(
-      (player): GamePlayerSummary => ({
-        role: player.role,
-        playerId: player.playerId,
-        displayName: player.displayName,
-        connected: resolveSeatConnected(player),
-        ready: player.ready,
-        configType: resolveSeatConfigType(player),
-        appearance: player.appearance,
-        elo: player.elo,
-      }),
-    ),
+    players: buildPlayerSummaries(session),
     matchScore: buildMatchScoreSnapshot(session),
   };
 };
@@ -654,6 +643,22 @@ const resolveSeatConnected = (player: SessionPlayer): boolean =>
   player.botCompositeId
     ? !!getClientForBot(player.botCompositeId)
     : player.connected;
+
+/** The single place a session's seats are projected onto the wire contract. */
+const buildPlayerSummaries = (session: GameSession): GamePlayerSummary[] =>
+  [session.players.host, session.players.joiner].map(
+    (player): GamePlayerSummary => ({
+      role: player.role,
+      playerId: player.playerId,
+      displayName: player.displayName,
+      connected: resolveSeatConnected(player),
+      ready: player.ready,
+      configType: resolveSeatConfigType(player),
+      appearance: player.appearance,
+      elo: player.elo,
+      ratingAtStart: player.ratingAtStart,
+    }),
+  );
 
 export const resolveGameAccess = (args: {
   id: string;
@@ -737,18 +742,7 @@ export const listSessions = (): GameSnapshot[] => {
 
     createdAt: session.createdAt,
     updatedAt: session.updatedAt,
-    players: [session.players.host, session.players.joiner].map(
-      (player): GamePlayerSummary => ({
-        role: player.role,
-        playerId: player.playerId,
-        displayName: player.displayName,
-        connected: resolveSeatConnected(player),
-        ready: player.ready,
-        configType: resolveSeatConfigType(player),
-        appearance: player.appearance,
-        elo: player.elo,
-      }),
-    ),
+    players: buildPlayerSummaries(session),
     matchScore: buildMatchScoreSnapshot(session),
   }));
 };
@@ -769,18 +763,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
       matchType: session.matchType,
       createdAt: session.createdAt,
       updatedAt: session.updatedAt,
-      players: [session.players.host, session.players.joiner].map(
-        (player): GamePlayerSummary => ({
-          role: player.role,
-          playerId: player.playerId,
-          displayName: player.displayName,
-          connected: resolveSeatConnected(player),
-          ready: player.ready,
-          configType: resolveSeatConfigType(player),
-          appearance: player.appearance,
-          elo: player.elo,
-        }),
-      ),
+      players: buildPlayerSummaries(session),
       matchScore: buildMatchScoreSnapshot(session),
     }));
 };

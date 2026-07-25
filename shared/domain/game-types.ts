@@ -135,6 +135,7 @@ export interface GamePlayerSummary {
   configType: SeatConfigType;
   appearance?: PlayerAppearance;
   elo?: number; // Player's ELO rating for this game's variant/time control (undefined for guests)
+  ratingAtStart?: number; // Rating before this game, so clients can show the gain/loss. Equal to elo until the game ends.
 }
 
 // Match type determines how players join the game

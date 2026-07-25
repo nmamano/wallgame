@@ -101,6 +101,8 @@ export interface GamePlayer {
   playerId: PlayerId;
   name: string;
   rating: number;
+  /** Rating before this game. Absent when the seat is unrated (guests, bots). */
+  ratingAtStart?: number;
   color: PlayerColor;
   type: PlayerType;
   isOnline: boolean;
@@ -113,6 +115,8 @@ export interface ScoreboardEntry {
   id: string | number;
   name: string;
   score: number;
+  /** Rating gained/lost this game. Absent when the game did not move the rating. */
+  ratingDelta?: number;
 }
 
 interface ChatMessage {
@@ -217,6 +221,7 @@ function buildSeatViewsFromSnapshot(
         ? player.displayName || localPreferences.displayName
         : player.displayName,
     rating: player.elo ?? 1500,
+    ratingAtStart: player.ratingAtStart,
     color:
       playerColorsForBoard[player.playerId] ??
       DEFAULT_PLAYER_COLORS[player.playerId],
@@ -3345,12 +3350,25 @@ export function useGamePageController(gameId: string) {
   ]);
 
   const scoreboardEntries = useMemo(() => {
-    return participantSeatInfos.map((seat, index) => ({
-      id: seat.playerId ?? `seat-${index}`,
-      name: seat.label,
-      score: resolvedMatchScore[index] ?? 0,
-    }));
-  }, [participantSeatInfos, resolvedMatchScore]);
+    return participantSeatInfos.map((seat, index): ScoreboardEntry => {
+      const player =
+        seat.playerId == null
+          ? undefined
+          : players.find((candidate) => candidate.playerId === seat.playerId);
+      // Ratings are only shown rounded, so compare the rounded values: an
+      // unrated game leaves them equal and reports no change.
+      const delta =
+        player?.ratingAtStart == null
+          ? 0
+          : Math.round(player.rating) - Math.round(player.ratingAtStart);
+      return {
+        id: seat.playerId ?? `seat-${index}`,
+        name: seat.label,
+        score: resolvedMatchScore[index] ?? 0,
+        ratingDelta: delta === 0 ? undefined : delta,
+      };
+    });
+  }, [participantSeatInfos, players, resolvedMatchScore]);
 
   const scoreByPlayerId = useMemo<Record<PlayerId, number>>(() => {
     const map: Record<PlayerId, number> = { 1: 0, 2: 0 };

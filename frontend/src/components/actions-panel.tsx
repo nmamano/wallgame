@@ -204,8 +204,22 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
                 <div className="text-[10px] lg:text-xs text-muted-foreground truncate">
                   {entry.name}
                 </div>
-                <div className="text-base lg:text-xl font-bold">
-                  {entry.score}
+                <div className="flex items-baseline gap-1.5 min-w-0">
+                  <span className="text-base lg:text-xl font-bold">
+                    {entry.score}
+                  </span>
+                  {entry.ratingDelta !== undefined && (
+                    <span
+                      className={`text-[10px] lg:text-xs font-semibold tabular-nums truncate ${
+                        entry.ratingDelta > 0
+                          ? "text-emerald-500"
+                          : "text-red-500"
+                      }`}
+                    >
+                      {entry.ratingDelta > 0 ? "+" : ""}
+                      {entry.ratingDelta} Elo
+                    </span>
+                  )}
                 </div>
               </div>
             ))
