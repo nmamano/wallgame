@@ -12,6 +12,7 @@
 #include <memory>
 #include <ranges>
 #include <sstream>
+#include <unordered_set>
 #include <utility>
 #include <vector>
 
@@ -468,8 +469,12 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
 // oracle. The position SOURCE is imperfect human play (where hidden tactics exist
 // and get missed); the ANALYSIS is the strong deep search. One JSONL record per
 // analyzed position, tagged with the source game id + move index.
+// `seen_positions` is shared across ALL games in the run so duplicate positions are
+// analyzed once; `skipped_duplicates` counts what that saved.
 folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_fn,
-                                              nlohmann::json const& game, std::ostream& out) {
+                                              nlohmann::json const& game, std::ostream& out,
+                                              std::unordered_set<std::uint64_t>& seen_positions,
+                                              int& skipped_duplicates) {
     int const game_rows = game.at("rows").get<int>();
     int const game_cols = game.at("columns").get<int>();
     auto const parsed_variant = parse_variant(game.value("variant", std::string("classic")));
@@ -507,31 +512,43 @@ folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_
     for (int mi = 0; mi < static_cast<int>(tokens.size()) && mi < FLAGS_analyze_moves &&
                      board.winner() == Winner::Undecided;
          ++mi) {
-        MCTS::Options opts;
-        opts.starting_turn = turn;
-        opts.noise_factor = 0.0f;
-        opts.seed = FLAGS_seed + mi;
-        MCTS mcts(analyze_fn, board, opts);
+        // Position-level dedup ACROSS games, BEFORE the expensive search. Human
+        // opponents reuse openings, so the same board recurs in many games (observed:
+        // one 8x8 position appeared identically in 3 games). Analyzing it more than
+        // once burns GPU for a duplicate record. std::hash<Board> covers pawns, mice,
+        // variant and the full wall state but NOT whose turn it is, so fold the turn in.
+        std::uint64_t const pos_key = std::hash<Board>{}(board) * 4 +
+                                      (turn.player == Player::Red ? 0u : 2u) +
+                                      (turn.action == Turn::First ? 0u : 1u);
+        if (!seen_positions.insert(pos_key).second) {
+            ++skipped_duplicates;
+        } else {
+            MCTS::Options opts;
+            opts.starting_turn = turn;
+            opts.noise_factor = 0.0f;
+            opts.seed = FLAGS_seed + mi;
+            MCTS mcts(analyze_fn, board, opts);
 
-        std::vector<std::pair<int, float>> trajectory;
-        int visits = 0;
-        while (visits < FLAGS_analyze_samples) {
-            int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
-            co_await mcts.sample(chunk);
-            visits += chunk;
-            trajectory.emplace_back(visits, mcts.root_value());
+            std::vector<std::pair<int, float>> trajectory;
+            int visits = 0;
+            while (visits < FLAGS_analyze_samples) {
+                int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
+                co_await mcts.sample(chunk);
+                visits += chunk;
+                trajectory.emplace_back(visits, mcts.root_value());
+            }
+
+            nlohmann::json record = build_position_record(board, turn, mcts.root_info(),
+                                                         mcts.root_samples(), trajectory);
+            record["game_id"] = id;
+            record["move_index"] = mi;
+            // board rows/columns above are the MODEL frame; record the true game size too
+            // (the game is embedded in the frame, cat positions are in model coords).
+            record["game_rows"] = game_rows;
+            record["game_columns"] = game_cols;
+            out << record.dump() << "\n";
+            out.flush();
         }
-
-        nlohmann::json record =
-            build_position_record(board, turn, mcts.root_info(), mcts.root_samples(), trajectory);
-        record["game_id"] = id;
-        record["move_index"] = mi;
-        // board rows/columns above are the MODEL frame; record the true game size too
-        // (the game is embedded in the frame, cat positions are in model coords).
-        record["game_rows"] = game_rows;
-        record["game_columns"] = game_cols;
-        out << record.dump() << "\n";
-        out.flush();
 
         // Replay the human move (game-space notation -> model-space actions).
         auto const actions = engine_adapter::parse_move_notation(tokens[mi], board, turn, pc);
@@ -568,6 +585,8 @@ void analyze_external_games(EvaluationFunction const& analyze_fn) {
           FLAGS_analyze_game_file, FLAGS_analyze_samples, FLAGS_columns, FLAGS_rows,
           FLAGS_analyze_moves, FLAGS_analyze_output);
 
+    std::unordered_set<std::uint64_t> seen_positions;
+    int skipped_duplicates = 0;
     std::string line;
     int game_no = 0;
     while (std::getline(in, line)) {
@@ -583,10 +602,14 @@ void analyze_external_games(EvaluationFunction const& analyze_fn) {
               game.value("id", std::string("?")), game.value("rows", 0),
               game.value("columns", 0));
         folly::coro::blockingWait(
-            analyze_external_game(analyze_fn, game, out).scheduleOn(&thread_pool));
+            analyze_external_game(analyze_fn, game, out, seen_positions, skipped_duplicates)
+                .scheduleOn(&thread_pool));
         ++game_no;
     }
-    XLOGF(INFO, "External-game analysis complete: {} games.", game_no);
+    XLOGF(INFO,
+          "External-game analysis complete: {} games, {} positions analyzed, {} duplicate "
+          "positions skipped (deep search avoided).",
+          game_no, seen_positions.size(), skipped_duplicates);
 }
 
 void analyze(EvaluationFunction const& analyze_fn, EvaluationFunction const& play_fn,
