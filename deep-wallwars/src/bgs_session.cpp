@@ -1,5 +1,6 @@
 #include "bgs_session.hpp"
 
+#include <folly/Overload.h>
 #include <folly/executors/CPUThreadPoolExecutor.h>
 #include <folly/experimental/coro/BlockingWait.h>
 #include <folly/hash/Hash.h>
