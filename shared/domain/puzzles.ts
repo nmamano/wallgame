@@ -19,7 +19,6 @@ import type {
   TimeControlConfig,
 } from "./game-types";
 import { parsePuzzleMoves } from "./puzzle-notation";
-import { GENERATED_PUZZLES } from "./generated-puzzles";
 
 export interface Puzzle {
   id: string;
@@ -112,9 +111,10 @@ function parseMoves(moveString: string, boardHeight: number): Move[][] {
 }
 
 export const PUZZLES: Record<string, Puzzle> = {
-  // Auto-generated candidates from real wallwars.net human games (ids 11+).
-  // See generated-puzzles.ts and info/puzzle-generation.md.
-  ...GENERATED_PUZZLES,
+  // NOTE: generated-puzzles.ts holds auto-generated candidates (ids 11+) from
+  // the puzzle-generation pipeline. They are deliberately NOT spread in here:
+  // playtesting found them technically correct but not human-solvable. See
+  // info/puzzle-generation.md.
 
   // 4x4 board. Human plays as P1.
   "1": {
