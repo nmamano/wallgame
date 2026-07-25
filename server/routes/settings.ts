@@ -49,7 +49,13 @@ export const settingsRoute = new Hono()
 
       const userId = userInfo.userId;
 
-      // Get all settings in a single query with subqueries
+      // Get all settings in a single query with subqueries.
+      //
+      // The sub-selects filter on the bound `userId` rather than correlating to
+      // the outer row. Interpolating `userSettingsTable.userId` here renders an
+      // UNQUALIFIED "user_id", which Postgres resolves against the subquery's
+      // own table -- i.e. `ups.user_id = ups.user_id`, always true, leaking every
+      // user's rows. Bind the value instead; there is no scope to get wrong.
       const settingsResult = await db
         .select({
           boardTheme: userSettingsTable.boardTheme,
@@ -74,7 +80,7 @@ export const settingsRoute = new Hono()
               '[]'::json
             )
             FROM user_pawn_settings AS ups
-            WHERE ups.user_id = ${userSettingsTable.userId}
+            WHERE ups.user_id = ${userId}
           )`,
           variantSettings: sql<
             | {
@@ -93,7 +99,7 @@ export const settingsRoute = new Hono()
               '[]'::json
             )
             FROM user_variant_settings AS uvs
-            WHERE uvs.user_id = ${userSettingsTable.userId}
+            WHERE uvs.user_id = ${userId}
           )`,
         })
         .from(userSettingsTable)
