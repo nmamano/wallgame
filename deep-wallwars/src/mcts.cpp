@@ -5,6 +5,7 @@
 #include <folly/logging/xlog.h>
 
 #include <algorithm>
+#include <limits>
 #include <random>
 #include <ranges>
 
@@ -376,6 +377,107 @@ std::optional<Move> MCTS::peek_best_move() const {
     }
 
     return Move{*action1, second_edge.action};
+}
+
+std::vector<PvStep> MCTS::principal_variation(int max_actions, float delta,
+                                              int min_visits) const {
+    std::vector<PvStep> pv;
+    TreeNode const* node = m_root;
+
+    while (static_cast<int>(pv.size()) < max_actions) {
+        if (node == nullptr || node->edges.empty()) {
+            break;
+        }
+        if (node->board.winner() != Winner::Undecided) {
+            break;
+        }
+
+        int const node_visits = node->value.load().total_samples;
+
+        // A node's value is stored from ITS OWN turn.player's perspective, and the sign
+        // flips as the turn passes to the opponent - the same rule sample_rec applies
+        // when it propagates values back up. So reading a child's value as "how good is
+        // this action for the player choosing it" needs the flip on second actions.
+        bool const flip = node->turn.action == Turn::Second;
+        auto action_q = [&](TreeNode const* child) {
+            TreeNode::Value const val = child->value.load();
+            if (val.total_samples == 0) {
+                return 0.0f;
+            }
+            float const q = val.total_weight / val.total_samples;
+            return flip ? -q : q;
+        };
+
+        // Ignore barely-touched edges. MCTS deliberately starves bad actions, so an edge
+        // with a handful of visits has a Q that is noise, and counting it would make a
+        // forced position look like a wide-open one (or the reverse).
+        int const visit_floor = std::max(1, node_visits / 100);
+
+        TreeEdge const* best = nullptr;
+        int best_visits = -1;
+        int considered = 0;
+        for (TreeEdge const& edge : node->edges) {
+            TreeNode const* child = edge.child.load();
+            if (child == nullptr) {
+                continue;
+            }
+            int const visits = child->value.load().total_samples;
+            if (visits >= visit_floor) {
+                ++considered;
+            }
+            if (visits > best_visits) {
+                best_visits = visits;
+                best = &edge;
+            }
+        }
+
+        if (best == nullptr || best->child.load() == nullptr) {
+            break;
+        }
+        TreeNode const* best_child = best->child.load();
+        if (best_visits < min_visits) {
+            break;  // the tree below here is too thin to say anything about the line
+        }
+
+        float const best_q = action_q(best_child);
+        float runner_up_q = -std::numeric_limits<float>::infinity();
+        int near_best = 0;
+        for (TreeEdge const& edge : node->edges) {
+            TreeNode const* child = edge.child.load();
+            if (child == nullptr || child->value.load().total_samples < visit_floor) {
+                continue;
+            }
+            float const q = action_q(child);
+            // ">= best - delta" rather than a two-sided band: an action scoring ABOVE the
+            // most-visited one is also a live alternative, and excluding it would report
+            // a position as forced when the solver actually has a choice.
+            if (q >= best_q - delta) {
+                ++near_best;
+            }
+            if (&edge != best && q > runner_up_q) {
+                runner_up_q = q;
+            }
+        }
+
+        float const gap =
+            runner_up_q == -std::numeric_limits<float>::infinity() ? 0.0f : best_q - runner_up_q;
+
+        pv.push_back(PvStep{
+            .action = best->action,
+            .player = node->turn.player,
+            .second_action = node->turn.action == Turn::Second,
+            .node_visits = node_visits,
+            .child_visits = best_visits,
+            .q_value = best_q,
+            .gap = gap,
+            .near_best = std::max(1, near_best),
+            .considered = std::max(1, considered),
+        });
+
+        node = best_child;
+    }
+
+    return pv;
 }
 
 void MCTS::add_root_noise() {

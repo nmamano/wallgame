@@ -55,6 +55,24 @@ struct NodeInfo {
     std::vector<EdgeInfo> edges;
 };
 
+// One action along the principal variation, together with the statistics that say how
+// CONSTRAINED that choice was. `near_best` is the forcing measure: when the side to move
+// has exactly one action within delta of the best, the line is forced there, and a human
+// solver can VERIFY a concrete sequence instead of having to trust a positional
+// judgement. That is decision D2 in info/puzzle-generation.md, and skipping it is why the
+// first batch of generated puzzles was unsolvable by a human.
+struct PvStep {
+    Action action;
+    Player player;       // who is acting at this step
+    bool second_action;  // false = first action of the turn, true = second
+    int node_visits;     // visits at the node where this choice was made
+    int child_visits;    // visits below the chosen action
+    float q_value;       // value after the action, from `player`'s perspective
+    float gap;           // best q minus the runner-up's q, same perspective
+    int near_best;       // actions within delta of the best (always >= 1)
+    int considered;      // actions visited enough to be judged at all
+};
+
 struct Evaluation {
     float value;
     std::vector<TreeEdge> edges;
@@ -123,6 +141,17 @@ public:
     // If the first action wins the game, the second action will be an arbitrary legal wall.
     // Returns nullopt if no explored action is available.
     std::optional<Move> peek_best_move() const;
+
+    // Walks the most-visited path down from the root, which is the search's principal
+    // variation - the line it expects both sides to play. Does not modify the tree; the
+    // line is already there, so this costs nothing beyond the walk.
+    //
+    // Stops at `max_actions`, at a decided position, or as soon as the subtree drops
+    // below `min_visits` samples, because past that point the tree is too thin for
+    // "the opponent has only one reply" to mean anything. A SHORT principal variation is
+    // therefore itself a signal - it says the search never committed to a single line.
+    // `delta` is the Q-closeness used for the per-step near_best/gap statistics.
+    std::vector<PvStep> principal_variation(int max_actions, float delta, int min_visits) const;
 
     ~MCTS();
 

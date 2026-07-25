@@ -2,14 +2,17 @@
 #include <NvInferRuntime.h>
 #include <folly/executors/CPUThreadPoolExecutor.h>
 #include <folly/experimental/coro/BlockingWait.h>
+#include <folly/experimental/coro/Collect.h>
 #include <folly/logging/xlog.h>
 #include <gflags/gflags.h>
 
 #include <algorithm>
+#include <atomic>
 #include <chrono>
 #include <fstream>
 #include <iostream>
 #include <memory>
+#include <mutex>
 #include <ranges>
 #include <sstream>
 #include <unordered_set>
@@ -80,6 +83,24 @@ DEFINE_bool(analyze_asymmetric, false,
             "In analyze mode with --model2: play Red with the strong --model1 and Blue with "
             "the weak --model2, so the strong side punishes the weak side's mistakes (hunts "
             "winning-shot tactics). Default: both sides play the weak --model2 (save-type).");
+DEFINE_int32(analyze_max_parallelism, 16,
+             "In-flight NN evaluations WITHIN a single analyzed position. The MCTS default "
+             "is 4, which leaves the GPU's batch queue almost empty; training uses 16.");
+DEFINE_int32(analyze_parallel_positions, 32,
+             "Positions searched CONCURRENTLY (analyze mode with --analyze_game_file). "
+             "Replaying games to collect positions is cheap CPU work and stays serial; "
+             "only the deep searches are fanned out.");
+DEFINE_int32(analyze_pv_actions, 12,
+             "Max actions of the engine's principal variation to record per position "
+             "(2 actions per turn, so 12 = 6 turns). The PV is read out of the existing "
+             "search tree, so recording it costs no extra search.");
+DEFINE_double(analyze_pv_delta, 0.05,
+              "Q-closeness for counting near-best actions at each step of the principal "
+              "variation (the forcing measure).");
+DEFINE_int32(analyze_pv_min_visits, 50,
+             "Stop walking the principal variation once the subtree has fewer visits than "
+             "this - below it, 'the opponent has only one reply' is search thinness, not "
+             "a forced line.");
 DEFINE_string(analyze_game_file, "",
               "Analyze mode: instead of self-playing, ingest external games from this JSONL "
               "file (e.g. converted wallwars.net human games). Each line: "
@@ -162,6 +183,11 @@ std::string get_usage_message() {
         << "    --analyze_chunk N    # Trajectory logging interval in visits (default 2000)\n"
         << "    --analyze_moves N    # Max turns to analyze (default 60)\n"
         << "    --analyze_output F   # Output JSONL path (default puzzle_candidates.jsonl)\n"
+        << "    --analyze_game_file F        # Ingest external games instead of self-playing\n"
+        << "    --analyze_parallel_positions N  # Positions searched at once (default 32)\n"
+        << "    --analyze_max_parallelism N     # NN requests in flight per search (default 16)\n"
+        << "    --analyze_pv_actions N          # Principal-variation actions to record "
+           "(default 12)\n"
         << "COMMON OPTIONS:\n"
         << "    --games N             # Number of games to play (default 100)\n"
         << "    --samples N           # MCTS samples per action (default 500)\n"
@@ -397,6 +423,58 @@ nlohmann::json build_position_record(Board const& board, Turn turn, NodeInfo con
     return record;
 }
 
+// Records the engine's principal variation on the position: the line it expects, with the
+// per-step forcing statistics, plus each side's cat distance-to-goal along the way.
+//
+// Both exist for filter v2 (see info/puzzle-generation.md). Forcing-ness decides whether a
+// human can VERIFY the key move at the board or has to take it on faith - the first batch
+// of candidates failed precisely because nothing constrained the opponent's replies. The
+// distance track separates the two ways a candidate goes wrong: a move that changes the
+// race immediately reads as obvious, and a move that never changes it reads as
+// inscrutable. The target is the band in between - no change now, a forced change soon.
+void add_principal_variation(nlohmann::json& record, Board const& start_board,
+                             std::vector<PvStep> const& pv) {
+    auto distances = [](Board const& b) {
+        return nlohmann::json{{"red", b.distance(b.position(Player::Red), b.goal(Player::Red))},
+                              {"blue", b.distance(b.position(Player::Blue), b.goal(Player::Blue))}};
+    };
+
+    record["dist_before"] = distances(start_board);
+
+    Board board = start_board;
+    nlohmann::json steps = nlohmann::json::array();
+    for (PvStep const& step : pv) {
+        std::ostringstream action_str;
+        action_str << step.action;
+
+        board.do_action(step.player, step.action);
+        bool const decided = board.winner() != Winner::Undecided;
+
+        nlohmann::json entry{
+            {"action", action_str.str()},
+            {"player", step.player == Player::Red ? "red" : "blue"},
+            {"second", step.second_action},
+            {"node_visits", step.node_visits},
+            {"visits", step.child_visits},
+            {"q", step.q_value},
+            {"gap", step.gap},
+            {"near_best", step.near_best},
+            {"considered", step.considered},
+        };
+        // Once a side has reached its goal the position is over and distances stop being
+        // meaningful, so report them only while the game is still running.
+        if (!decided) {
+            entry["dist"] = distances(board);
+        }
+        steps.push_back(std::move(entry));
+
+        if (decided) {
+            break;
+        }
+    }
+    record["pv"] = std::move(steps);
+}
+
 folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
                                      EvaluationFunction const& play_fn, bool separate_player,
                                      Board start_board, std::ostream& out) {
@@ -408,6 +486,7 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
         MCTS::Options opts;
         opts.starting_turn = turn;
         opts.noise_factor = 0.0f;  // clean analysis: no root exploration noise
+        opts.max_parallelism = FLAGS_analyze_max_parallelism;
         opts.seed = FLAGS_seed + move_index;
         MCTS mcts(analyze_fn, board, opts);
 
@@ -425,6 +504,10 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
         nlohmann::json record =
             build_position_record(board, turn, mcts.root_info(), mcts.root_samples(), trajectory);
         record["move_index"] = move_index;
+        add_principal_variation(record, board,
+                                mcts.principal_variation(FLAGS_analyze_pv_actions,
+                                                         static_cast<float>(FLAGS_analyze_pv_delta),
+                                                         FLAGS_analyze_pv_min_visits));
 
         out << record.dump() << "\n";
         out.flush();
@@ -463,25 +546,42 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
     co_return;
 }
 
+// A single start-of-turn position queued for deep analysis.
+//
+// Splitting collection from searching is the whole point: replaying a game to reach its
+// positions is pure CPU and takes milliseconds, while the deep search on one position
+// takes ~10 seconds of GPU. Interleaving them (the original shape) meant the GPU sat idle
+// during every replay and, worse, forced the positions to be searched strictly in order.
+struct AnalysisTask {
+    Board board;
+    Turn turn;
+    std::string game_id;
+    int move_index;
+    int game_rows;
+    int game_columns;
+};
+
 // External-game ingest (Phase 1, see info/puzzle-generation.md). Instead of the
 // engine self-playing, replay a real recorded game (e.g. a converted wallwars.net
-// human game) and deeply analyze each start-of-turn position with the strong
+// human game) and collect each start-of-turn position for analysis with the strong
 // oracle. The position SOURCE is imperfect human play (where hidden tactics exist
-// and get missed); the ANALYSIS is the strong deep search. One JSONL record per
-// analyzed position, tagged with the source game id + move index.
+// and get missed); the ANALYSIS is the strong deep search.
+//
 // `seen_positions` is shared across ALL games in the run so duplicate positions are
-// analyzed once; `skipped_duplicates` counts what that saved.
-folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_fn,
-                                              nlohmann::json const& game, std::ostream& out,
-                                              std::unordered_set<std::uint64_t>& seen_positions,
-                                              int& skipped_duplicates) {
+// searched once; the return value counts the duplicates that saved. Dedup happens HERE,
+// before any GPU work, because these players reuse openings and ~10% of an 8x8 run was
+// the same board recurring across games.
+int collect_external_game_positions(nlohmann::json const& game,
+                                    std::vector<AnalysisTask>& tasks,
+                                    std::unordered_set<std::uint64_t>& seen_positions) {
+    int skipped_duplicates = 0;
     int const game_rows = game.at("rows").get<int>();
     int const game_cols = game.at("columns").get<int>();
     auto const parsed_variant = parse_variant(game.value("variant", std::string("classic")));
     if (!parsed_variant) {
         XLOGF(ERR, "game {}: unsupported variant '{}'", game.value("id", std::string("?")),
               game.value("variant", std::string("?")));
-        co_return;
+        return 0;
     }
     Variant const variant = *parsed_variant;
 
@@ -523,40 +623,12 @@ folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_
         if (!seen_positions.insert(pos_key).second) {
             ++skipped_duplicates;
         } else {
-            MCTS::Options opts;
-            opts.starting_turn = turn;
-            opts.noise_factor = 0.0f;
-            opts.seed = FLAGS_seed + mi;
-            MCTS mcts(analyze_fn, board, opts);
-
-            std::vector<std::pair<int, float>> trajectory;
-            int visits = 0;
-            while (visits < FLAGS_analyze_samples) {
-                int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
-                co_await mcts.sample(chunk);
-                visits += chunk;
-                trajectory.emplace_back(visits, mcts.root_value());
-            }
-
-            nlohmann::json record = build_position_record(board, turn, mcts.root_info(),
-                                                         mcts.root_samples(), trajectory);
-            record["game_id"] = id;
-            record["move_index"] = mi;
-            // board rows/columns above are the MODEL frame; record the true game size too
-            // (the game is embedded in the frame, cat positions are in model coords).
-            record["game_rows"] = game_rows;
-            record["game_columns"] = game_cols;
-            // A turn is TWO actions. root_info().edges are only the FIRST actions, so
-            // record the complete intended turn as well - without it a puzzle solution
-            // is half-specified and cannot be completed by a solver.
-            if (auto best_turn = mcts.peek_best_move()) {
-                std::ostringstream first_str, second_str;
-                first_str << best_turn->first;
-                second_str << best_turn->second;
-                record["best_turn"] = {first_str.str(), second_str.str()};
-            }
-            out << record.dump() << "\n";
-            out.flush();
+            tasks.push_back(AnalysisTask{.board = board,
+                                         .turn = turn,
+                                         .game_id = id,
+                                         .move_index = mi,
+                                         .game_rows = game_rows,
+                                         .game_columns = game_cols});
         }
 
         // Replay the human move (game-space notation -> model-space actions).
@@ -573,6 +645,97 @@ folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_
         turn = {other_player(turn.player), Turn::First};
     }
 
+    return skipped_duplicates;
+}
+
+// Deeply analyzes ONE collected position and appends its JSONL record. Many of these run
+// concurrently, so the output stream is written under a mutex - records still land
+// incrementally (a long run stays inspectable while it is going), just no longer in game
+// order, which is why every record carries its own game id and move index.
+folly::coro::Task<int> analyze_position(EvaluationFunction const& analyze_fn,
+                                        AnalysisTask const& task, int index, std::ostream& out,
+                                        std::mutex& out_mutex, std::atomic<int>& completed,
+                                        int total, std::chrono::steady_clock::time_point start) {
+    MCTS::Options opts;
+    opts.starting_turn = task.turn;
+    opts.noise_factor = 0.0f;  // clean analysis: no root exploration noise
+    opts.max_parallelism = FLAGS_analyze_max_parallelism;
+    // Seeded by position index, not move index, so a rerun of the same task list is
+    // reproducible regardless of how the searches happen to interleave.
+    opts.seed = FLAGS_seed + index;
+    MCTS mcts(analyze_fn, task.board, opts);
+
+    // Chunked sampling grows a single search; record the trajectory as it grows.
+    // sample() resets samples_done() per call, so track cumulative visits ourselves.
+    std::vector<std::pair<int, float>> trajectory;
+    int visits = 0;
+    while (visits < FLAGS_analyze_samples) {
+        int chunk = std::min(FLAGS_analyze_chunk, FLAGS_analyze_samples - visits);
+        co_await mcts.sample(chunk);
+        visits += chunk;
+        trajectory.emplace_back(visits, mcts.root_value());
+    }
+
+    nlohmann::json record = build_position_record(task.board, task.turn, mcts.root_info(),
+                                                  mcts.root_samples(), trajectory);
+    record["game_id"] = task.game_id;
+    record["move_index"] = task.move_index;
+    // board rows/columns above are the MODEL frame; record the true game size too
+    // (the game is embedded in the frame, cat positions are in model coords).
+    record["game_rows"] = task.game_rows;
+    record["game_columns"] = task.game_columns;
+    // A turn is TWO actions. root_info().edges are only the FIRST actions, so
+    // record the complete intended turn as well - without it a puzzle solution
+    // is half-specified and cannot be completed by a solver.
+    if (auto best_turn = mcts.peek_best_move()) {
+        std::ostringstream first_str, second_str;
+        first_str << best_turn->first;
+        second_str << best_turn->second;
+        record["best_turn"] = {first_str.str(), second_str.str()};
+    }
+    add_principal_variation(record, task.board,
+                            mcts.principal_variation(FLAGS_analyze_pv_actions,
+                                                     static_cast<float>(FLAGS_analyze_pv_delta),
+                                                     FLAGS_analyze_pv_min_visits));
+
+    int const done = completed.fetch_add(1) + 1;
+    {
+        std::lock_guard<std::mutex> lock(out_mutex);
+        out << record.dump() << "\n";
+        out.flush();
+    }
+
+    if (done % 25 == 0 || done == total) {
+        double const minutes =
+            std::chrono::duration<double>(std::chrono::steady_clock::now() - start).count() / 60.0;
+        XLOGF(INFO, "Analyzed {}/{} positions ({:.1f}/min, {:.0f} min remaining)", done, total,
+              done / std::max(minutes, 1e-9), (total - done) * minutes / std::max(done, 1));
+    }
+
+    co_return 1;
+}
+
+// Fans the deep searches out. This is where the entire GPU budget of a run goes, so it is
+// the only part that is parallel. Both windows matter and multiply: how many positions are
+// searched at once, and how many NN requests each search keeps in flight. Left at the MCTS
+// default of 4 in-flight requests, one position at a time, this fed a batch queue sized for
+// thousands roughly four items at a time.
+folly::coro::Task<void> run_position_analysis(EvaluationFunction const& analyze_fn,
+                                              std::vector<AnalysisTask> const& tasks,
+                                              std::ostream& out) {
+    auto* executor = co_await folly::coro::co_current_executor;
+    std::mutex out_mutex;
+    std::atomic<int> completed{0};
+    int const total = static_cast<int>(tasks.size());
+    auto const start = std::chrono::steady_clock::now();
+
+    auto search_tasks = views::iota(0, total) | views::transform([&](int i) {
+                            return analyze_position(analyze_fn, tasks[i], i, out, out_mutex,
+                                                    completed, total, start)
+                                .scheduleOn(executor);
+                        });
+
+    co_await folly::coro::collectAllWindowed(search_tasks, FLAGS_analyze_parallel_positions);
     co_return;
 }
 
@@ -594,6 +757,8 @@ void analyze_external_games(EvaluationFunction const& analyze_fn) {
           FLAGS_analyze_game_file, FLAGS_analyze_samples, FLAGS_columns, FLAGS_rows,
           FLAGS_analyze_moves, FLAGS_analyze_output);
 
+    // Pass 1 (CPU only): replay every game and collect the distinct positions.
+    std::vector<AnalysisTask> tasks;
     std::unordered_set<std::uint64_t> seen_positions;
     int skipped_duplicates = 0;
     std::string line;
@@ -607,18 +772,24 @@ void analyze_external_games(EvaluationFunction const& analyze_fn) {
             XLOGF(ERR, "Skipping malformed JSONL line: {}", e.what());
             continue;
         }
-        XLOGF(INFO, "Analyzing game {} (id {}, {}x{})", game_no,
-              game.value("id", std::string("?")), game.value("rows", 0),
-              game.value("columns", 0));
-        folly::coro::blockingWait(
-            analyze_external_game(analyze_fn, game, out, seen_positions, skipped_duplicates)
-                .scheduleOn(&thread_pool));
+        skipped_duplicates += collect_external_game_positions(game, tasks, seen_positions);
         ++game_no;
     }
+
+    XLOGF(INFO,
+          "Collected {} distinct positions from {} games ({} duplicates skipped before any "
+          "search). Searching up to {} at a time, {} NN requests in flight each.",
+          tasks.size(), game_no, skipped_duplicates, FLAGS_analyze_parallel_positions,
+          FLAGS_analyze_max_parallelism);
+
+    // Pass 2 (GPU): fan the searches out.
+    folly::coro::blockingWait(
+        run_position_analysis(analyze_fn, tasks, out).scheduleOn(&thread_pool));
+
     XLOGF(INFO,
           "External-game analysis complete: {} games, {} positions analyzed, {} duplicate "
           "positions skipped (deep search avoided).",
-          game_no, seen_positions.size(), skipped_duplicates);
+          game_no, tasks.size(), skipped_duplicates);
 }
 
 void analyze(EvaluationFunction const& analyze_fn, EvaluationFunction const& play_fn,
