@@ -274,6 +274,59 @@ notation + real board size) instead of self-playing, analyze each start-of-turn
 position with the strong oracle (model_78+) -> density + best-move policy-prior,
 then filter. Build/run on the 4090 desktop.
 
+## Phase 1 first detection run (8x8 human games, 2026-07-25)
+
+Ran the external-game ingest over the 8x8 bucket: 19 wallwars.net human games,
+570 start-of-turn positions, oracle model_83, 10k visits/position. 95.7 min wall
+clock = **~6 positions/min** on the 4090. Zero parse/replay errors.
+
+**Duplicates are real and worth avoiding: 61 of 570 positions (10.7%) were repeats**
+of a position already analyzed. These players reused openings, so the same board
+recurs across games (one position appeared identically in 3 games). That is 10.7% of
+GPU time spent producing duplicate records - and duplicates would have become
+duplicate puzzles. Now deduped inside the engine BEFORE the search (see the
+`--analyze_game_file` dedup), so the saving is compute, not just output rows.
+
+**The density-as-a-FRACTION threshold was wrong, and this run exposed it.** With
+`density <= 0.12` on boards exposing ~100 legal actions, the bar still admits ~12
+equally-good moves. It passed 21 positions, but only 9 had a genuinely unique best
+move and **7 were already-won blowouts** (|q| >= 0.9 with a ~0 gap to the
+second-best move) - exactly the "loose won endgame" non-puzzle that Phase 0b
+identified at density 0.86-1.00. They slipped through only because a fraction looks
+small on a large action space. Fractions do not transfer across board sizes either,
+which matters because 10x12 exposes even more actions.
+
+Fix (in `scripts/filter_puzzle_candidates.py`, which supersedes the candidate bar in
+`analyze_puzzle_spike.py`): gate on the **absolute count** of near-best actions
+(<= 3) and the **Q gap to the second-best move** (>= 0.15), alongside best-move
+prior < 0.20 and |root_q| >= 0.30.
+
+**Result: 5 candidates from 509 distinct positions (~1.0%)** - 3 winning-shot,
+2 save, median gap 0.275, every one with exactly ONE move within 0.05 of best:
+
+| game | mv | side | root_q | prior | gap | legal | best | theme |
+|---|---|---|---|---|---|---|---|---|
+| efe0 | 9 | blue | +0.52 | **0.001** | **1.11** | 107 | `>f8` | winning-shot |
+| 2133 | 8 | blue | +0.56 | 0.017 | 0.82 | 93 | `^g7` | winning-shot |
+| efe1 | 8 | blue | -0.41 | 0.023 | 0.22 | 100 | `^e6` | save |
+| 4fa5 | 9 | blue | +0.49 | 0.096 | 0.18 | 102 | `Cat:Down` | winning-shot |
+| efe1 | 6 | blue | -0.66 | 0.115 | 0.27 | 106 | `Cat:Left` | save |
+
+The top row is the archetype the whole pipeline was built to find: one move out of
+107 wins, the gap to the next-best is over a full unit of eval, and the network's raw
+policy gave that move a **1-in-1000** prior - deep search finds it, pattern
+recognition nearly misses it. That is the human-relative difficulty signal working,
+and it is exactly what N_jump could not provide.
+
+**Both themes appear**, which no engine-only source produced: Phase 0b weak-vs-weak
+play yielded 14 candidates and ZERO winning shots (a weak opponent cannot convert),
+and strong-vs-weak yielded 2. Real games between similar, imperfect humans give both.
+
+**Scope for the full corpus:** 14,021 positions at ~6/min is ~39 GPU-hours, minus
+~10% for dedup. At ~1% yield that projects to roughly **130 candidates** - a real
+puzzle set. The 8x8 bucket is only 570 of those positions; 10x12 (5929) and 8x10
+(3825) are where the volume is.
+
 ## Open questions
 
 1. **D6 CPU latency** on 8x8 short search - decides solve-time hosting. (Phase 0b)
