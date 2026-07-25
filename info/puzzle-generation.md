@@ -327,6 +327,77 @@ and strong-vs-weak yielded 2. Real games between similar, imperfect humans give 
 puzzle set. The 8x8 bucket is only 570 of those positions; 10x12 (5929) and 8x10
 (3825) are where the volume is.
 
+## PLAYTEST VERDICT: the candidates are not human-solvable (Nil, 2026-07-25)
+
+Nil played all 4 reconstructed candidates in the puzzle UI. Verdict:
+
+- **1 of 4 was trivially intuitive** - "required no thinking" (the `^g7+>g7` one,
+  which pushes the opponent's distance-to-goal 14 -> 16).
+- **3 of 4 were impossible to guess, and the logic was not visible even after the
+  answer was revealed.** To understand *why* the move is good he would have to play
+  on against the engine and watch the continuations.
+- Conclusion: **not human-solvable. Back to the drawing board** on what we select for.
+
+**Diagnosis: we optimized for "hard to find" with no constraint on "checkable".**
+The filter's difficulty signal was the best move's low policy prior. That selects
+for moves the network's pattern recognition nearly missed - which turns out to mean
+**alien**, not **deep**. A move with prior 0.001 that wins by 1.11 eval is typically
+a quiet shaping move whose justification is many plies away, i.e. precisely the class
+a human cannot verify at the board.
+
+**D2 was the missing ingredient, and it was in the original design.** D2 ("prefer
+forcing lines at generation time") says to require the opponent's replies along the
+line to be forced. We never implemented it. Forcing lines are what make chess puzzles
+solvable: the solver can *verify* a short concrete sequence instead of trusting a
+positional judgement. Everything Nil reported is what you would predict from
+implementing "non-obvious" while skipping "forcing".
+
+**A useful empirical mapping fell out of the playtest:**
+
+| key move changes distances? | example | human reaction |
+|---|---|---|
+| YES, immediately | `^g7+>g7`, opponent 14 -> 16 | obvious, no thinking |
+| NO, at all | `>f8+>fX`, 12 -> 12 and 9 -> 9 | inscrutable, no visible logic |
+
+So the target is the middle band: a move that does **not** obviously change the
+distance count now, but **forces** a short sequence that does - and where the
+opponent's replies are constrained enough that a human can check the line.
+
+**Revised plan (Phase 2):**
+1. **Engine: emit the principal variation**, not just the best turn. Needed twice
+   over - to measure forcing-ness for the filter, and to *show the continuation* in
+   the UI, which is what Nil said he would need to understand a move at all.
+2. **Filter v2:** require forcing (opponent's replies near-unique for 2-3 turns) and
+   a short horizon (eval saturates within a few turns). Demote low prior from a
+   *target* to a *cap* (exclude the blatantly obvious; stop chasing 0.001).
+3. **UI: step through the line** so the reason is inspectable. Cheaper than the
+   live-engine solve mode (D1) and enough to judge candidate quality.
+4. **Parallelize analysis** (below).
+
+## Analysis throughput: the ingest was accidentally serial (2026-07-25)
+
+Two knobs were left at defaults, discovered by reading rather than measuring:
+- `MCTS::Options::max_parallelism` defaults to **4** (`mcts.hpp:75`) and the analyze
+  path never overrode it, though `play.cpp` sets it explicitly for self-play.
+- Positions and games were analyzed **strictly serially** (`blockingWait` per game,
+  a plain loop per position).
+
+So roughly 4 NN requests were ever in flight against a batch queue sized 4096
+(`kBatchedModelQueueSize`), while training saturates the same GPU by running 125-500
+games concurrently. Fix: collect positions first (replay is cheap CPU), then fan the
+*searches* out with `folly::coro::collectAllWindowed`, the pattern already used in
+`play.cpp:226` and `mcts.cpp:69`. Nil approved doing this without measuring first.
+
+## Eval is not stable at 10k visits on borderline positions (2026-07-25)
+
+`efe1 mv8` scored `root_q = -0.408` in one run and `-0.103` in a second run with the
+same model, seed and visit count, which moved it across the `|root_q| >= 0.30` gate
+and changed the candidate count from 5 to 4. GPU MCTS is not bit-deterministic
+(batching order, float non-associativity), and that position had not converged until
+~10k visits. Implication: the filter should require the eval **trajectory to have
+converged** (flat over the last chunks), not merely to be decisive at the final
+sample. It also means 10k visits is *barely* enough for this population, not generous.
+
 ## Open questions
 
 1. **D6 CPU latency** on 8x8 short search - decides solve-time hosting. (Phase 0b)
