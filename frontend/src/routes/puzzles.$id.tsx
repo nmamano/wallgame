@@ -11,7 +11,14 @@ import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { AudioControls } from "@/components/audio-controls";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { ArrowLeft, Check, Undo2, RotateCcw, ChevronRight } from "lucide-react";
+import {
+  ArrowLeft,
+  Check,
+  Undo2,
+  RotateCcw,
+  ChevronRight,
+  Lightbulb,
+} from "lucide-react";
 
 export const Route = createFileRoute("/puzzles/$id")({
   component: PuzzlePage,
@@ -75,6 +82,9 @@ function PuzzlePageContent({
     boardPawns,
     resetPuzzle,
     retryMove,
+    showSolution,
+    solutionShown,
+    solutionAnnotations,
     handleCellClick,
     handleWallClick,
     handlePawnClick,
@@ -210,6 +220,16 @@ function PuzzlePageContent({
                 <Badge variant="outline">Rating: {puzzle.difficulty}</Badge>
                 <AudioControls />
                 <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={showSolution}
+                  disabled={solutionShown}
+                  title="Draw the expected move on the board"
+                >
+                  <Lightbulb className="h-4 w-4 mr-1" />
+                  {solutionShown ? "Shown" : "Show move"}
+                </Button>
+                <Button
                   variant="ghost"
                   size="icon"
                   onClick={resetPuzzle}
@@ -221,8 +241,16 @@ function PuzzlePageContent({
             </div>
             <p className="text-sm text-muted-foreground mt-2">
               Move your{" "}
-              <span className="text-red-500 font-medium">red cat</span> to your
-              home before your opponent does!
+              <span
+                className={
+                  puzzle.humanPlaysAs === 1
+                    ? "text-red-500 font-medium"
+                    : "text-blue-500 font-medium"
+                }
+              >
+                {puzzle.humanPlaysAs === 1 ? "red cat" : "blue cat"}
+              </span>{" "}
+              to your home before your opponent does!
             </p>
           </div>
 
@@ -319,7 +347,7 @@ function PuzzlePageContent({
             lastMoves={lastMoves ?? undefined}
             lastWalls={lastWalls ?? undefined}
             // Annotations
-            annotations={annotations}
+            annotations={[...annotations, ...solutionAnnotations]}
             previewAnnotation={previewAnnotation}
             onWallSlotRightClick={onWallSlotRightClick}
             onCellRightClickDragStart={onCellRightClickDragStart}

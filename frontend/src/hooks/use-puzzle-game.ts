@@ -5,6 +5,7 @@ import { GameState } from "../../../shared/domain/game-state";
 import type { Puzzle } from "../../../shared/domain/puzzles";
 import { buildPuzzleConfig } from "../../../shared/domain/puzzles";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
+import type { Annotation } from "@/hooks/use-annotations";
 import type { BoardPawn, BoardProps, LastWall } from "@/components/board";
 import { computeLastMoves, computeLastWalls } from "@/lib/gameViewModel";
 import { pawnId } from "../../../shared/domain/game-utils";
@@ -72,6 +73,11 @@ export interface UsePuzzleGameResult {
   // Actions
   resetPuzzle: () => void;
   retryMove: () => void;
+  /** Reveal the expected move for the current turn as board annotations. */
+  showSolution: () => void;
+  solutionShown: boolean;
+  /** Annotations drawing the expected move; empty unless solutionShown. */
+  solutionAnnotations: Annotation[];
   handleCommit: () => void;
   handleUndo: () => void;
 
@@ -170,6 +176,7 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
   const [currentMoveIndex, setCurrentMoveIndex] = useState(0);
   const [isOpponentThinking, setIsOpponentThinking] = useState(false);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [solutionShown, setSolutionShown] = useState(false);
 
   // State for retry: store the game state before the wrong move
   const preWrongMoveStateRef = useRef<GameState | null>(null);
@@ -460,6 +467,41 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     [gameState, playerColorsForBoard],
   );
 
+  /**
+   * The expected move for this turn, rendered with the same annotation vocabulary the
+   * user's own right-click marks use: walls become wall-lines, pawn moves become an
+   * arrow from where the pawn stands now to its destination. Only the first listed
+   * alternative is shown - the others are equally correct, but drawing all of them at
+   * once reads as noise rather than as an answer.
+   */
+  const solutionAnnotations = useMemo((): Annotation[] => {
+    if (!solutionShown || !gameState) return [];
+    const alternative = puzzle.moves[currentMoveIndex]?.[0];
+    if (!alternative) return [];
+
+    return alternative.actions.map((action): Annotation => {
+      if (action.type === "wall") {
+        return {
+          type: "wall-line",
+          row: action.target[0],
+          col: action.target[1],
+          orientation: action.wallOrientation ?? "vertical",
+        };
+      }
+      const pawns = gameState.pawns[humanPlayerId];
+      const from = action.type === "cat" ? pawns.cat : pawns.mouse;
+      return { type: "arrow", from, to: action.target };
+    });
+  }, [solutionShown, gameState, puzzle.moves, currentMoveIndex, humanPlayerId]);
+
+  const showSolution = useCallback(() => setSolutionShown(true), []);
+
+  // Re-hide once the turn advances or the puzzle restarts, so a reveal never leaks
+  // into the next turn (where the annotation would point at a stale move).
+  useEffect(() => {
+    setSolutionShown(false);
+  }, [currentMoveIndex]);
+
   return {
     gameState,
     isLoading,
@@ -490,6 +532,9 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     arrowDragStateRef: boardInteractions.arrowDragStateRef,
     annotations: boardInteractions.annotations,
     previewAnnotation: boardInteractions.previewAnnotation,
+    solutionAnnotations,
+    solutionShown,
+    showSolution,
     handleCommit,
     handleUndo: boardInteractions.undoLastAction,
     canCommit: boardInteractions.canCommit,
