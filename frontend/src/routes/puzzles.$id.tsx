@@ -241,16 +241,8 @@ function PuzzlePageContent({
             </div>
             <p className="text-sm text-muted-foreground mt-2">
               Move your{" "}
-              <span
-                className={
-                  puzzle.humanPlaysAs === 1
-                    ? "text-red-500 font-medium"
-                    : "text-blue-500 font-medium"
-                }
-              >
-                {puzzle.humanPlaysAs === 1 ? "red cat" : "blue cat"}
-              </span>{" "}
-              to your home before your opponent does!
+              <span className="text-red-500 font-medium">red cat</span> to your
+              home before your opponent does!
             </p>
           </div>
 

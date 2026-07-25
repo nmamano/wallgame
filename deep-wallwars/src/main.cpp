@@ -546,6 +546,15 @@ folly::coro::Task<void> analyze_external_game(EvaluationFunction const& analyze_
             // (the game is embedded in the frame, cat positions are in model coords).
             record["game_rows"] = game_rows;
             record["game_columns"] = game_cols;
+            // A turn is TWO actions. root_info().edges are only the FIRST actions, so
+            // record the complete intended turn as well - without it a puzzle solution
+            // is half-specified and cannot be completed by a solver.
+            if (auto best_turn = mcts.peek_best_move()) {
+                std::ostringstream first_str, second_str;
+                first_str << best_turn->first;
+                second_str << best_turn->second;
+                record["best_turn"] = {first_str.str(), second_str.str()};
+            }
             out << record.dump() << "\n";
             out.flush();
         }
