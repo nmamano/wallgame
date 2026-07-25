@@ -357,6 +357,13 @@ export const buildCompleteConfig = (
 
   const { boardWidth, boardHeight, variant } = baseConfig;
 
+  if (
+    variant === "custom-setup-classic" ||
+    variant === "custom-setup-standard"
+  ) {
+    throw new Error(`${variant} requires an explicit variantConfig`);
+  }
+
   // Build variantConfig based on variant
   if (variant === "freestyle") {
     return {

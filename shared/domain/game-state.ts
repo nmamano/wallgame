@@ -1,3 +1,4 @@
+import { isClassicVariant } from "./game-types";
 import type {
   PlayerId,
   GameStatus,
@@ -177,7 +178,7 @@ export class GameState {
     pawns?: Record<PlayerId, { cat: Cell; mouse: Cell }>,
   ): Cell {
     const p = pawns ?? this.pawns;
-    if (this.config.variant === "classic") {
+    if (isClassicVariant(this.config.variant)) {
       return p[playerId].mouse;
     }
     if (this.config.variant === "survival") {
@@ -294,7 +295,7 @@ export class GameState {
       mouse: [myPawns.mouse[0], myPawns.mouse[1]] as Cell,
     };
 
-    const isClassic = this.config.variant === "classic";
+    const isClassic = isClassicVariant(this.config.variant);
 
     for (const action of move.actions) {
       if (action.type === "cat" || action.type === "mouse") {
@@ -473,11 +474,11 @@ export class GameState {
     // Win condition depends on variant:
     // - Standard/Freestyle: cat captures opponent's mouse
     // - Classic: cat reaches its own home (stored in mouse slot)
-    const isClassicVariant = this.config.variant === "classic";
+    const usesClassicRules = isClassicVariant(this.config.variant);
     let myCatCaught: boolean;
     let opCatCaught: boolean;
 
-    if (isClassicVariant) {
+    if (usesClassicRules) {
       // Classic: cat reaches its own home (home is stored in mouse slot)
       myCatCaught = cellEq(nextMyPawns.cat, nextMyPawns.mouse);
       opCatCaught = cellEq(opPawns.cat, opPawns.mouse);

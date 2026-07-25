@@ -38,10 +38,30 @@ export type PlayerId = 1 | 2;
 export type Variant =
   | "standard" // Catch the mouse first
   | "classic" // Reach the opposite corner first
+  | "custom-setup-standard" // Standard rules from an explicit position
+  | "custom-setup-classic" // Classic rules from an explicit position
   | "freestyle" // Randomized setup with starting walls
   | "survival"; // Player 2 wins by surviving a set number of turns
 
-export type NonSurvivalVariant = Exclude<Variant, "survival">;
+export type CustomSetupVariant =
+  | "custom-setup-standard"
+  | "custom-setup-classic";
+
+export type NonSurvivalVariant = Exclude<
+  Variant,
+  "survival" | CustomSetupVariant
+>;
+
+export const isClassicVariant = (variant: Variant): boolean =>
+  variant === "classic" || variant === "custom-setup-classic";
+
+export const botCapabilityVariant = (
+  variant: Variant,
+): Exclude<Variant, CustomSetupVariant> => {
+  if (variant === "custom-setup-classic") return "classic";
+  if (variant === "custom-setup-standard") return "standard";
+  return variant;
+};
 
 /**
  * Variant-specific initial state types.

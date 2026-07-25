@@ -3,7 +3,10 @@ import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type BoardProps, type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
-import { type GameAction } from "../../../shared/domain/game-types";
+import {
+  isClassicVariant as usesClassicRules,
+  type GameAction,
+} from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
 import { generateFreestyleInitialState } from "../../../shared/domain/freestyle-setup";
 import {
@@ -1759,7 +1762,8 @@ export function useGamePageController(gameId: string) {
   const canBufferPremoves = shouldQueueAsPremove(controllerSelectorState);
 
   // Compute values needed for board interactions hook
-  const isClassicVariant = gameState?.config.variant === "classic";
+  const isClassicVariant =
+    gameState !== null && usesClassicRules(gameState.config.variant);
   const survivalSettings =
     gameState?.config.variant === "survival"
       ? (gameState.config.variantConfig as SurvivalInitialState)
@@ -2108,7 +2112,7 @@ export function useGamePageController(gameId: string) {
     const sourceState =
       viewingHistory || !previewState ? boardState : previewState;
     if (!sourceState) return [];
-    const isClassicVariant = sourceState.config.variant === "classic";
+    const isClassicVariant = usesClassicRules(sourceState.config.variant);
     const basePawns = sourceState.getPawns().map((pawn) => {
       const isClassicGoal = isClassicVariant && pawn.type === "mouse";
       const visualType = isClassicGoal ? "home" : pawn.type;

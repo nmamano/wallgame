@@ -9,6 +9,8 @@ import type {
   TimeControlConfig,
   Variant,
   NonSurvivalVariant,
+  ClassicInitialState,
+  StandardInitialState,
   MatchType,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
@@ -58,9 +60,10 @@ async function handleResponse<T>(
 }
 
 const assertNonSurvivalVariant = (variant: Variant): NonSurvivalVariant => {
-  if (variant === "survival") {
+  if (variant === "survival")
     throw new Error("Survival games are not supported by this endpoint.");
-  }
+  if (variant === "custom-setup-classic") return "classic";
+  if (variant === "custom-setup-standard") return "standard";
   return variant;
 };
 
@@ -340,21 +343,42 @@ export const playVsBot = async (args: {
   config: GameConfiguration;
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
+  hostIsPlayer1?: boolean;
 }): Promise<CreateBotGameResponse> => {
   // V3: Bot games are untimed - no timeControl in config
-  const variant = assertNonSurvivalVariant(args.config.variant);
+  if (args.config.variant === "survival") {
+    throw new Error("Survival games are not supported by this endpoint.");
+  }
+
+  const config =
+    args.config.variant === "custom-setup-classic"
+      ? {
+          variant: args.config.variant,
+          boardWidth: args.config.boardWidth,
+          boardHeight: args.config.boardHeight,
+          variantConfig: args.config.variantConfig as ClassicInitialState,
+        }
+      : args.config.variant === "custom-setup-standard"
+        ? {
+            variant: args.config.variant,
+            boardWidth: args.config.boardWidth,
+            boardHeight: args.config.boardHeight,
+            variantConfig: args.config.variantConfig as StandardInitialState,
+          }
+        : {
+            variant: args.config.variant,
+            boardWidth: args.config.boardWidth,
+            boardHeight: args.config.boardHeight,
+          };
 
   return handleResponse<CreateBotGameResponse>(
     api.bots.play.$post({
       json: {
         botId: args.botId,
-        config: {
-          variant,
-          boardWidth: args.config.boardWidth,
-          boardHeight: args.config.boardHeight,
-        },
+        config,
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
+        hostIsPlayer1: args.hostIsPlayer1,
       },
     }),
   );

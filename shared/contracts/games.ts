@@ -18,6 +18,108 @@ export const timeControlValues = [
   "unlimited",
 ] as const;
 export const variantValues = ["standard", "classic", "freestyle"] as const;
+export const customSetupVariantValues = [
+  "custom-setup-standard",
+  "custom-setup-classic",
+] as const;
+
+const cellSchema = z.tuple([
+  z.number().int().min(0).max(19),
+  z.number().int().min(0).max(19),
+]).readonly();
+
+const neutralWallSchema = z
+  .object({
+    cell: cellSchema,
+    orientation: z.enum(["vertical", "horizontal"]),
+  })
+  .strict();
+
+const standardInitialStateSchema = z.object({
+  pawns: z.object({
+    p1: z.object({ cat: cellSchema, mouse: cellSchema }),
+    p2: z.object({ cat: cellSchema, mouse: cellSchema }),
+  }),
+  walls: z.array(neutralWallSchema),
+});
+
+const classicInitialStateSchema = z.object({
+  pawns: z.object({
+    p1: z.object({ cat: cellSchema, home: cellSchema }),
+    p2: z.object({ cat: cellSchema, home: cellSchema }),
+  }),
+  walls: z.array(neutralWallSchema),
+});
+
+const customSetupConfigSchema = z
+  .discriminatedUnion("variant", [
+    z.object({
+      variant: z.literal("custom-setup-standard"),
+      boardWidth: z.number().int().min(3).max(20),
+      boardHeight: z.number().int().min(3).max(20),
+      variantConfig: standardInitialStateSchema,
+    }),
+    z.object({
+      variant: z.literal("custom-setup-classic"),
+      boardWidth: z.number().int().min(3).max(20),
+      boardHeight: z.number().int().min(3).max(20),
+      variantConfig: classicInitialStateSchema,
+    }),
+  ])
+  .superRefine((config, ctx) => {
+    const cells =
+      config.variant === "custom-setup-classic"
+        ? [
+            config.variantConfig.pawns.p1.cat,
+            config.variantConfig.pawns.p1.home,
+            config.variantConfig.pawns.p2.cat,
+            config.variantConfig.pawns.p2.home,
+          ]
+        : [
+            config.variantConfig.pawns.p1.cat,
+            config.variantConfig.pawns.p1.mouse,
+            config.variantConfig.pawns.p2.cat,
+            config.variantConfig.pawns.p2.mouse,
+          ];
+    for (const [index, [row, col]] of cells.entries()) {
+      if (row >= config.boardHeight || col >= config.boardWidth) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["variantConfig", "pawns"],
+          message: `pawn ${index + 1} is outside the board`,
+        });
+      }
+    }
+    for (const [index, wall] of config.variantConfig.walls.entries()) {
+      const [row, col] = wall.cell;
+      const outside =
+        row >= config.boardHeight ||
+        col >= config.boardWidth ||
+        (wall.orientation === "vertical"
+          ? col >= config.boardWidth - 1
+          : row === 0);
+      if (outside) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["variantConfig", "walls", index],
+          message: "wall is outside the playable board boundary",
+        });
+      }
+    }
+
+    const wallKeys = new Set<string>();
+    for (const [index, wall] of config.variantConfig.walls.entries()) {
+      const key = `${wall.cell[0]}:${wall.cell[1]}:${wall.orientation}`;
+      if (wallKeys.has(key)) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["variantConfig", "walls", index],
+          message: "duplicate wall",
+        });
+      }
+      wallKeys.add(key);
+    }
+  });
 
 export const timeControlSchema = z.object({
   initialSeconds: z
@@ -283,7 +385,7 @@ export interface PastGamesResponse {
 // ============================================================================
 
 export const botsQuerySchema = z.object({
-  variant: z.enum(variantValues),
+  variant: z.enum([...variantValues, ...customSetupVariantValues]),
   // V3: timeControl removed - bot games are untimed
   boardWidth: z.coerce.number().int().min(3).max(20).optional(),
   boardHeight: z.coerce.number().int().min(3).max(20).optional(),
@@ -293,11 +395,14 @@ export const createBotGameSchema = z.object({
   /** Composite bot ID: clientId:botId */
   botId: z.string(),
   /** V3: Bot game config has no timeControl - bot games are untimed */
-  config: z.object({
-    variant: z.enum(variantValues),
-    boardWidth: z.number().int().min(3).max(20),
-    boardHeight: z.number().int().min(3).max(20),
-  }),
+  config: z.union([
+    z.object({
+      variant: z.enum(variantValues),
+      boardWidth: z.number().int().min(3).max(20),
+      boardHeight: z.number().int().min(3).max(20),
+    }),
+    customSetupConfigSchema,
+  ]),
   hostDisplayName: z.string().max(50).optional(),
   hostAppearance: appearanceSchema,
   /**

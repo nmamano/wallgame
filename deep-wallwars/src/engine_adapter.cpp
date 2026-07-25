@@ -857,8 +857,14 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
     Cell red_mouse, blue_mouse;
 
-    if (variant == Variant::Classic) {
-        // Classic goals are at the model corners
+    if (variant_str == "custom-setup-classic") {
+        // Board::winner models each player's goal as the opposing mouse:
+        // Red reaches blue_mouse and Blue reaches red_mouse.
+        red_mouse = transform_to_model(blue_mouse_game, padding_config);
+        blue_mouse = transform_to_model(red_mouse_game, padding_config);
+    } else if (variant == Variant::Classic) {
+        // Default Classic uses model-corner goals for compatibility with the
+        // model's established small-board embedding.
         red_mouse = Cell{0, model_rows - 1};
         blue_mouse = Cell{model_columns - 1, model_rows - 1};
     } else {
@@ -877,7 +883,8 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     for (auto const& wall_json : walls_array) {
         Wall game_wall = parse_wall(wall_json, game_height);
         Wall model_wall = transform_to_model(game_wall, padding_config);
-        // V3 walls have playerId field (1 or 2)
+        // Board has no neutral owner representation. Ownerless setup walls use
+        // Red internally for model input; ownership never leaves this BGS.
         int player_id = wall_json.value("playerId", 1);
         Player wall_owner = (player_id == 1) ? Player::Red : Player::Blue;
         board.place_wall(wall_owner, model_wall);

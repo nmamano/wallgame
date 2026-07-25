@@ -12,7 +12,11 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import type { PlayerId, Variant } from "../../shared/domain/game-types";
+import {
+  botCapabilityVariant,
+  type PlayerId,
+  type Variant,
+} from "../../shared/domain/game-types";
 import type {
   BotConfig,
   BotAppearance,
@@ -316,7 +320,7 @@ export const getMatchingBots = (
     }
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
+    const variantConfig = bot.variants[botCapabilityVariant(variant)];
     if (!variantConfig) continue;
 
     // Check board dimensions if specified
@@ -385,7 +389,7 @@ export const getRecommendedBots = (
     }
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
+    const variantConfig = bot.variants[botCapabilityVariant(variant)];
     if (!variantConfig) continue;
 
     // V3: Check client is still connected
@@ -457,7 +461,7 @@ export const findEvalBot = (
     if (!bot.isOfficial) continue;
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
+    const variantConfig = bot.variants[botCapabilityVariant(variant)];
     if (!variantConfig) continue;
 
     // Check board dimensions
