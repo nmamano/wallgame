@@ -102,8 +102,20 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
       proved idempotency on rerun (0 inserted / 41 skipped); GET /api/puzzles returns
       exactly Generated Puzzle 1..41 in order; legacy unauthenticated POST/DELETE now
       404; live launch from a persisted config played normally (game \_VgxJoLk).
-- [ ] S-G2 — one puzzles page: nav entry, presents the 10 scripted puzzles AND the
-      persisted generated set; format optimized for navigation (agent's call)
+- [x] S-G2 — one puzzles page: nav entry, presents the 10 scripted puzzles AND the
+      persisted generated set; format optimized for navigation (agent's call). DONE
+      `bacc0ce`, deployed + verified: /puzzles (already reachable from the home tile)
+      shows both sections; scripted /puzzles/1 loads; a persisted-puzzle launch played
+      normally; /generated-candidates replace-redirects to /puzzles (bookmarks live);
+      all in-app links repointed. Copy note for future batches: keep the disclosure
+      aligned with the exact delta -2 rule if verdicts are regenerated.
+
+LOOP STATUS (2026-07-26): S-CX, S-H, S-G1, S-G2 all shipped and production-verified.
+S-E remains OPEN, parked on Nil: the server takeback path probed healthy in four
+scenarios and the start-race bug found instead was fixed (4d96f6e); the checkbox waits
+on Nil describing what "takeback does not work" looked like (or retrying it). The
+active loop is stopped; restart it for loop 3 (G3 completion tracking, G4 votes) or to
+close S-E once Nil answers.
 
 ## Deferred / parked
 
