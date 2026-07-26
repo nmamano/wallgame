@@ -229,6 +229,60 @@ function GamePageContent() {
     return () => observer.disconnect();
   }, []);
 
+  // Banner stack shared by the mobile and desktop trees — defined once so the
+  // two layouts cannot drift (the desktop tree used to be missing the puzzle
+  // banner entirely). Compact is the mobile styling.
+  const renderGameBanners = (compact: boolean) => (
+    <>
+      {/* Puzzles look exactly like an ordinary game, so say what the goal is.
+          Without this there is no way to tell a draw you achieved from a win you
+          missed. On desktop the banner also carries the "Back to puzzles" link,
+          because the slim mobile nav that holds it on mobile does not exist
+          there — desktop keeps the global site nav, which knows nothing about
+          puzzles. Symmetric padding keeps the goal text centered independently
+          of the absolutely-positioned link. */}
+      {info.isPuzzle && (
+        <div
+          className={`relative bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 text-center font-medium border-b border-indigo-200 dark:border-indigo-800 shrink-0 ${
+            compact ? "py-0.5 text-xs" : "px-36 py-2 text-sm"
+          }`}
+        >
+          {puzzleCandidate ? `${puzzleCandidate.id} - ` : "Puzzle - "}
+          reach your mouse before PuzzleBot reaches its own. A draw is a
+          possible best result.
+          {!compact && (
+            <Link
+              to="/generated-candidates"
+              className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 hover:underline"
+            >
+              <ArrowLeft className="w-4 h-4" />
+              Back to puzzles
+            </Link>
+          )}
+        </div>
+      )}
+      {isSpectator && (
+        <div
+          className={`bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center font-medium border-b border-amber-200 dark:border-amber-800 shrink-0 ${
+            compact ? "py-0.5 text-xs" : "py-2 text-sm"
+          }`}
+        >
+          {!compact && <span className="mr-2">👁️</span>}
+          Spectating
+        </div>
+      )}
+      {isReplay && (
+        <div
+          className={`bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center font-medium border-b border-amber-200 dark:border-amber-800 shrink-0 ${
+            compact ? "py-0.5 text-xs" : "py-2 text-sm"
+          }`}
+        >
+          Replay
+        </div>
+      )}
+    </>
+  );
+
   if (!isLargeScreen) {
     // Board renders flush (no padding) — the measured container IS the grid space.
     // For < 8 columns, use 8 as reference so cells don't grow oversized.
@@ -296,28 +350,7 @@ function GamePageContent() {
             </Link>
           </div>
 
-          {/* Puzzles look exactly like an ordinary game, so say what the goal is.
-              Without this there is no way to tell a draw you achieved from a win you
-              missed. */}
-          {info.isPuzzle && (
-            <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 text-center py-0.5 text-xs font-medium border-b border-indigo-200 dark:border-indigo-800 shrink-0">
-              {puzzleCandidate ? `${puzzleCandidate.id} - ` : "Puzzle - "}
-              reach your mouse before PuzzleBot reaches its own. A draw is a
-              possible best result.
-            </div>
-          )}
-
-          {/* Slim spectator/replay banner */}
-          {isSpectator && (
-            <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-0.5 text-xs font-medium border-b border-amber-200 dark:border-amber-800 shrink-0">
-              Spectating
-            </div>
-          )}
-          {isReplay && (
-            <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-0.5 text-xs font-medium border-b border-amber-200 dark:border-amber-800 shrink-0">
-              Replay
-            </div>
-          )}
+          {renderGameBanners(true)}
 
           {/* Main content: timers + eval bar + board — centered as a group */}
           <div
@@ -507,18 +540,7 @@ function GamePageContent() {
   return (
     <>
       <div className="min-h-screen bg-background flex flex-col">
-        {/* Spectator indicator banner */}
-        {isSpectator && (
-          <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-2 text-sm font-medium border-b border-amber-200 dark:border-amber-800">
-            <span className="mr-2">👁️</span>
-            Spectating
-          </div>
-        )}
-        {isReplay && (
-          <div className="bg-amber-100 dark:bg-amber-900/30 text-amber-800 dark:text-amber-200 text-center py-2 text-sm font-medium border-b border-amber-200 dark:border-amber-800">
-            Replay
-          </div>
-        )}
+        {renderGameBanners(false)}
 
         {/* Matching panel renders null when isOpen is false */}
         <MatchingStagePanel

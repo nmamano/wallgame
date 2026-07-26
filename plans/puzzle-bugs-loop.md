@@ -70,7 +70,7 @@ tmux pane merely appears to show.
 
 ## Slice plan
 
-- [ ] S-A — puzzle banner + "Back to puzzles" visible on desktop (hoist, don't duplicate)
+- [x] S-A — puzzle banner + "Back to puzzles" visible on desktop (hoist, don't duplicate)
 - [ ] S-B — bot client registers the true variant per bot; delete the
       `bot.id.includes("puzzle")` tiebreak; PuzzleBot out of the normal picker; bounded
       investigation of the `ixQQelmh` resignation (findings → parked queue)
