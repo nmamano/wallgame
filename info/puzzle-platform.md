@@ -136,12 +136,20 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
 `94c989b` (candidate launcher), `a5abd94` (standard generation + puzzle framing),
 `24e22d3` (PuzzleBot + variant naming), plus the puzzle-name banner commit.
 
-- `/generated-candidates` - unlinked route, 32 deterministic 6x6 positions, one click
-  launches a normal game against PuzzleBot.
-- `shared/domain/generated-custom-setup-candidates.ts` - the generator, plus
-  `findGeneratedCandidate()` which resolves a game back to its candidate by matching the
-  position (deterministic generation means the position identifies itself; no field was
-  added to the game schema to carry a playtest label).
+- **Saved puzzles (`3d3a318`, S-G1):** the 41 filtered candidates are PERSISTED in the
+  `saved_puzzles` table as named entities ("Generated Puzzle 1..41"), seeded manually
+  inside the fly machine (`bun /app/scripts/seed-puzzles.ts`, idempotent via the UNIQUE
+  mover-aware fingerprint). `GET /api/puzzles` is the read-only listing (every row
+  Zod-validated fail-closed); the legacy tutorial-era CRUD route is gone (its `puzzles`
+  TABLE remains, orphaned - dropping it is a future non-additive migration).
+- `/generated-candidates` - still unlinked (S-G2 builds the real page); lists the
+  persisted puzzles from the API and launches via the normal bot-game flow. The puzzle
+  id+name ride the client game handshake (atomic pair, preserved across refresh,
+  rematch, and Retry); the game banner names the puzzle from the handshake, and
+  spectators/shared links see a generic "Puzzle" (by design).
+- `shared/domain/generated-custom-setup-candidates.ts` - the generator
+  (`findGeneratedCandidate` position-matching is DELETED per §G; `positionKey` remains
+  for the verdict fingerprints).
 - Game page: no rematch offer for puzzles, no match score, opponent shown as PuzzleBot at
   a nominal 3000, "Puzzle" instead of "Custom-Setup-Standard" (one shared
   `variantDisplayName`), back/exit return to the candidate list.
@@ -311,11 +319,9 @@ Fixed in `101e073`, deployed. Kept for the record:
 
 ## 5. Things that will mislead you
 
-- **"Older games stop resolving their name."** `findGeneratedCandidate` matches a game's
-  position against a freshly generated candidate set. Games created before a generator
-  change no longer match any current candidate, so their banner falls back to a generic
-  "Puzzle" label. Nothing is lost; the position and the game are intact. It is only a
-  label, and it is arguably correct - that game is no longer one of the current candidates.
+- **Banner names are client-side only.** The puzzle name comes from the launching
+  client's stored handshake (atomic id+name pair). Spectators, shared links, and games
+  launched before S-G1 show the generic "Puzzle" label - by design, nothing is lost.
 - **Do not trust `bun run ci`** on auntie, and do not chase it.
 - **Do not restore** `...GENERATED_PUZZLES` into `PUZZLES`.
 - There are two git stashes on auntie holding old local playtest wiring and a prettier

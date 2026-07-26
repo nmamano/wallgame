@@ -94,10 +94,14 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
       [3,6]; 48 candidates; engine filter kept 41 (all 7 rejections delta -2). Verdicts
       committed with mover-aware fingerprints; regenerate with
       scripts/filter-puzzle-candidates.ts (OFFLINE ssh driver — see parked item below).
-- [ ] S-G1 — puzzles become named persisted entities: DB table + migration, generate a
+- [x] S-G1 — puzzles become named persisted entities: DB table + migration, generate a
       batch with the H rule, auto-names, launch-by-id; DELETE findGeneratedCandidate and
       the position-matching (banner name rides the URL or handshake - doc §G says
-      nothing goes on the game record for display)
+      nothing goes on the game record for display). DONE `3d3a318`, deployed + verified:
+      migration ran via release_command; seeder inside the fly machine inserted 41 then
+      proved idempotency on rerun (0 inserted / 41 skipped); GET /api/puzzles returns
+      exactly Generated Puzzle 1..41 in order; legacy unauthenticated POST/DELETE now
+      404; live launch from a persisted config played normally (game _VgxJoLk).
 - [ ] S-G2 — one puzzles page: nav entry, presents the 10 scripted puzzles AND the
       persisted generated set; format optimized for navigation (agent's call)
 
@@ -265,6 +269,28 @@ test that replays every record.
 - Locked: no completion tracking, no votes (loop 3); no puzzleId column on games;
   additive-only migration; the verdict machinery stays (it filters FUTURE batches
   before they are persisted).
+
+## SLICE-G2 PICKUP (authored after S-G1 shipped at 3d3a318)
+
+What S-G1 taught: (1) check for legacy leftovers before designing — the tutorial-era
+puzzles table + unauthenticated CRUD route shaped the slice; the legacy TABLE remains
+(dropping it is non-additive; parked) while its route is gone; (2) keep drizzle schema
+files for tables you are not dropping, or generate will emit DROP TABLE; (3) DB-boundary
+Zod wants split insert/read schemas (createdAt exists only on read); (4) handshake-style
+client metadata needs an atomic-pair invariant plus preservation at EVERY construction
+site (rg them all).
+
+- Baseline: 3d3a318 (+ the docs commit).
+- Goal (doc §G2, Nil's decisions): ONE discoverable puzzles page — a real entry in the
+  site navigation — presenting BOTH sets: the 10 scripted puzzles (which STAY scripted)
+  and the persisted generated set (from GET /api/puzzles). Format/layout is the agent's
+  call, optimized for easy navigation.
+- Survey first (plan gate): where the scripted puzzles live today (routes, how they
+  launch), what the site nav structure is, whether /generated-candidates should be
+  replaced/redirected by the new page or linked from it, and what back/exit targets on
+  the game page need to change (they currently point at /generated-candidates).
+- Locked: scripted puzzles stay on their existing play model; no completion tracking or
+  votes (loop 3); no migrations expected (frontend + possibly a nav tweak only).
 
 ## SLICE-N PICKUPS
 
