@@ -163,49 +163,8 @@ No quality filter is applied. The positions being decent is currently a property
 
 ## 4. Open work
 
-### A. Bug: the puzzle banner and back link only exist on mobile
-
-`frontend/src/routes/game.$id.tsx` has **two separate layout trees** - a mobile early
-return around line 261 and "Desktop Layout" from about line 505. The puzzle banner (which
-names the candidate and states the goal) and the "Back to puzzles" link were only added to
-the mobile branch, so on desktop Nil sees neither. This is the duplicated-render-tree trap
-in CLAUDE.md; the fix should probably hoist the shared chrome rather than paste it twice.
-
-### B. Bug: PuzzleBot resigns in ordinary games
-
-Game `ixQQelmh`, a Classic match against PuzzleBot, ended in a resignation. PuzzleBot is
-reachable from the normal bot picker at all because bot discovery collapses
-`custom-setup-*` onto the base variant (`custom-setup-store.ts` uses
-`botCapabilityVariant(variant)`), so the puzzle bot has to declare `standard`/`classic` to
-be discoverable, and the puzzle page then picks it by **string match on the bot id**
-(`bot.id.includes("puzzle")` in `generated-candidates.tsx`). That is a hack.
-
-To be clear about what is and is not broken: officiality **is** enforced - the page filters
-`isOfficial` before the id match, both bots are registered official, and the server
-re-checks official-only at `POST /bots/play`. An unofficial bot named "puzzle" cannot
-hijack anything. The problem is narrower: because both bots end up declaring the same
-variants, "the official bot for this variant" is ambiguous, and the id match is the
-tiebreak.
-
-**Nil's fix, agreed: the bot client should register the true variant it serves.** Then the
-two bots are registered for genuinely different variants, "pick the official bot for that
-variant" becomes unambiguous everywhere, and the id match disappears. It also keeps
-PuzzleBot out of the normal picker, which is where the Classic resignation came from.
-Investigate the resignation separately in case it is a real engine fault at 10k samples
-rather than a consequence of PuzzleBot being offered for a game it was never meant to
-serve.
-
-### C. Lower PuzzleBot to 5k samples, and check parallelism
-
-10k is too slow in play. Drop `--samples` to 5000 in
-`transformer.prod.config.json`. Also confirm how many samples run concurrently -
-`--parallel_samples 32` today - and consider raising it, since higher parallelism buys
-throughput without lowering strength.
-
-### D. Retry after failing a puzzle
-
-Still missing. Agreed implementation: **relaunch the same candidate into a fresh game**.
-No state rewinding, no server work - the candidate config is already client-side.
+Items A, B, C, D, and F were fixed 2026-07-26 (slice loop, `plans/puzzle-bugs-loop.md`,
+commits `9ea1062`..`2b4a0c0`, reviewed by Project Reviewer 1) - summary in section 4bis.
 
 ### E. Bug: takeback does not work
 
@@ -214,12 +173,37 @@ bug and not a missing feature. Untested hypothesis: the replay rebuilds the BGS 
 from the standard initial state rather than the authored one, or the seeded partial turn
 breaks it.
 
-### F. Bug: puzzle attempts pollute Past Games
+### 4bis. What the 2026-07-26 fixes established (A, B, C, D, F)
 
-Puzzle games appear on the Past Games page, are labelled with the wrong variant, and
-clicking one fails with "no game saved". They should not appear there at all. Nil's note:
-"there may be other bugs, who knows" - worth a sweep of the surfaces that enumerate games
-(history, profile, rankings) for custom-setup leakage.
+- **A (banner on desktop):** the banner stack (puzzle/spectator/replay) is one render
+  helper both layout trees call; desktop carries "Back to puzzles" inside the puzzle
+  banner (its nav is the global site nav). `9ea1062`.
+- **B (true variant registration):** bots declare exactly what they serve - PuzzleBot
+  only `custom-setup-standard` - and the server does exact capability lookups
+  (`botCapabilityVariant` is deleted, the id-match tiebreak too). The strict runtime
+  config schema (`custom-bot-config-schema.ts`) had to learn the custom-setup keys; it
+  is enforced at client config load AND server attach, so schema/server must deploy
+  before the bot client restarts with a new-variant config. Puzzle evals now resolve to
+  PuzzleBot as well. `fcc16d2`.
+- **C (speed):** dw-puzzle runs `--samples 5000 --parallel_samples 128`; measured reply
+  657ms end-to-end (was ~12s at 10k/32). The in-repo interactive preset (play.hpp) uses
+  256 parallel, so 128 is conservative. `01d031d`.
+- **D (retry):** a finished puzzle offers Retry where rematch would be - same authored
+  config, same seat, fresh game; logic lives once in the game page controller. Works
+  from the game's own config, so it does not depend on candidate resolution. `5a1090f`.
+- **F (surface leakage):** root cause was `normalizeVariant()` in
+  `server/db/game-queries.ts` collapsing custom-setup to standard (wrong label AND
+  broken replay). It now knows the custom-setup variants, replay derives each mover
+  from the game state's authored turn (half the puzzles start with player 2), and
+  custom-setup games are excluded from Past Games, the random showcase, and live-games.
+  Direct game URLs still work and replay correctly. `2b4a0c0`.
+- **Model fact worth remembering:** in a puzzle the HUMAN always moves first (authored
+  turn state). A bot-log session showing an eval at ply 0 and nothing after is an
+  abandoned human-first game, not an engine hang.
+- **Open question parked for Nil:** the only way a bot resigns is the server resigning
+  ALL of a client's active games on websocket disconnect, and 1006 drops are routine.
+  `ixQQelmh`'s exact trigger was never confirmed. Consider a reconnect grace period.
+  Also parked: the reattach race (section 2) deserves a server-side fix.
 
 ### G. Make it a first-class feature
 

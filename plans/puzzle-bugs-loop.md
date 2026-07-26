@@ -1,5 +1,10 @@
 # Puzzle bugs loop — standing orders + slice handoffs
 
+**COMPLETE (2026-07-26).** All five slices shipped, deployed, and production-verified:
+S-A `9ea1062`, S-B `fcc16d2`, S-C `01d031d`, S-D `5a1090f`, S-F `2b4a0c0`. Outstanding:
+Nil's authenticated click-through of Retry (S-D functional acceptance), and the parked
+queue below. The loop is stopped; this file is now a record.
+
 Re-read this file at the start of every iteration. Conversations compact; this file does not.
 Companion: `info/puzzle-platform.md` is the authoritative doc for the model, the environment,
 and the bug details. Read section 2 of it before touching any machine.
