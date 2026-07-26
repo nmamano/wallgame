@@ -89,7 +89,7 @@ real wake signal.
 
 ## Slice plan
 
-- [ ] S-COPY — copy + curation: (1) remove the /puzzles Generated-section subtitle
+- [x] S-COPY — copy + curation: (1) remove the /puzzles Generated-section subtitle
       that exposes filter mechanics (`frontend/src/routes/puzzles.index.tsx` ~227);
       replace with user-facing copy or nothing. (2) Retire Generated Puzzle 1 and 6:
       prod `UPDATE saved_puzzles SET enabled=false` for those two rows (verify the

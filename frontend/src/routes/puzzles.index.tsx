@@ -223,9 +223,7 @@ function GeneratedPuzzlesSection() {
         Generated Puzzles
       </h2>
       <p className="text-sm text-muted-foreground mb-6">
-        Generated 6×6 race positions against PuzzleBot. Positions whose best
-        first move is simply walking at the target are filtered out; nothing
-        else is vetted.
+        Fresh 6×6 positions to play against PuzzleBot.
       </p>
 
       {puzzlesQuery.isPending && (
