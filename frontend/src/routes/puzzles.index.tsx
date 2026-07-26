@@ -24,6 +24,14 @@ export const Route = createFileRoute("/puzzles/")({
 });
 
 /**
+ * Card shell shared by both puzzle sections so their visual treatment cannot
+ * drift; padding and internal layout stay density-specific (roomy scripted
+ * rows vs the compact generated grid).
+ */
+const puzzleCardShell =
+  "hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur";
+
+/**
  * Convert difficulty rating (1350-1850) to a 1-5 scale for display.
  */
 function ratingToDifficulty(rating: number): number {
@@ -51,7 +59,6 @@ function Puzzles() {
       id: puzzle.id,
       title: puzzle.title,
       author: puzzle.author,
-      rating: puzzle.difficulty,
       difficulty: ratingToDifficulty(puzzle.difficulty),
       completed: isCompleted(puzzle.id),
     };
@@ -84,10 +91,7 @@ function Puzzles() {
 
         <div className="space-y-4">
           {puzzles.map((puzzle) => (
-            <Card
-              key={puzzle.id}
-              className="p-6 hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur"
-            >
+            <Card key={puzzle.id} className={`p-6 ${puzzleCardShell}`}>
               <div className="flex items-center justify-between">
                 <div className="flex items-center gap-4 flex-1">
                   <div className="text-foreground">
@@ -106,14 +110,6 @@ function Puzzles() {
                       by {puzzle.author}
                     </p>
                     <div className="flex flex-wrap gap-2">
-                      <Badge
-                        variant={
-                          puzzle.difficulty <= 2 ? "secondary" : "default"
-                        }
-                        className="text-xs"
-                      >
-                        Rating: {puzzle.rating}
-                      </Badge>
                       <Badge variant="outline" className="text-xs">
                         Difficulty: {puzzle.difficulty}/5
                       </Badge>
@@ -258,12 +254,14 @@ function GeneratedPuzzlesSection() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {generated.map((puzzle) => (
-          <Card className="space-y-3 p-4" key={puzzle.id}>
+          <Card className={`space-y-3 p-4 ${puzzleCardShell}`} key={puzzle.id}>
             <div>
-              <h3 className="font-semibold">{puzzle.displayName}</h3>
+              <h3 className="font-serif font-semibold text-foreground">
+                {puzzle.displayName}
+              </h3>
             </div>
             <Button
-              className="w-full"
+              className="w-full gap-2"
               disabled={!officialBot || launchingId !== null}
               onClick={() => void launch(puzzle)}
             >
@@ -273,7 +271,10 @@ function GeneratedPuzzlesSection() {
                   Starting…
                 </>
               ) : (
-                "Try"
+                <>
+                  <Play className="w-4 h-4" />
+                  Solve
+                </>
               )}
             </Button>
           </Card>

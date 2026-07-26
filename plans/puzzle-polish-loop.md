@@ -160,7 +160,7 @@ real wake signal.
       disabled? wrong position rendered? cursor stuck?); empirical browser repro
       required. If cursor -1 shows a STANDARD start position instead of the
       authored one, the config reaching buildHistoryState is the place to look.
-- [ ] S-UI — one product, two sections: make scripted vs generated cards consistent
+- [x] S-UI — one product, two sections: make scripted vs generated cards consistent
       ("Solve" vs "Try" buttons etc.); scripted cards show BOTH difficulty and rating
       — keep one (lean: difficulty; settle at plan gate). Re-check item 8 (is it
       clear whether you are P1 or P2 in-game) AFTER S-P1 — Nil expects S-P1 largely
