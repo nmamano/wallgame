@@ -188,6 +188,28 @@ replies to a move); 0-move probes and listings are blind to engine death.
 - [x] S-P2C — scripted player polish: on /puzzles/N the "Puzzle Solved!"
       card's Replay/Next buttons overflow the card's right edge (Nil's
       screenshot). Fix the card layout (wrap/shrink within bounds).
+      S-P2 DONE `5afc9c9`, deployed + prod-verified 2026-07-26 evening:
+      renumber ran exactly to spec (41/39/known-disabled preflight, 39
+      renames, read-back contiguous unique 1..39); population rerun proved
+      post-rename idempotency (0 new / 19 already — name-free identity
+      preflight worked as designed); prod API serves exactly Generated
+      Puzzle 1..39; page screenshot clean (intro is one sentence, unified
+      cards); /puzzles/1 loads; closing ROUND-TRIP probe green (bot replied,
+      game D6zvcWtS resigned). Nil eyeballs the solved-card wrap at his
+      leisure.
+- [ ] S-P3 — lead-in move arrow color (Nil playtest #3, 2026-07-26): on
+      first arrival in a P2 puzzle the bot's ply-0 arrow renders in the
+      HUMAN's color; after history navigation or takeback it is correct.
+      RECON (code read): diffSnapshots colors by pawn owner (correct), but
+      applyServerUpdate (frontend/src/lib/gameViewModel.ts ~186) BAKES
+      playerColorsForBoard into the cached lastMoves/lastWalls at
+      update-arrival time — before primaryLocalPlayerId resolves on a fresh
+      join, so the stale map is frozen until the next state update. Fix
+      direction (root-cause, plan-gate it): store colorless diffs (with
+      playerId) in the view model and apply colors at render time via a
+      memo. ALSO check computeLastWalls' parity formula ((index % 2) + 1
+      with 1-based entry indices looks off by one — verify the index base
+      empirically and derive the mover consistently).
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
       (frontend/src/lib/history-utils.ts) derives the initial mover from the
       authored config (`new GameState(config, 0)`) and the historyNav gating in
