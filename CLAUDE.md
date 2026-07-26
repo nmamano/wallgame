@@ -279,12 +279,6 @@ addressing the root cause?" Follow these rules strictly:
 
    Only after you have concrete evidence of what's actually happening should you attempt another fix.
 
-5. **Never commit a fix without user verification.** When the user reports a visual or behavioral
-   bug, do NOT commit the fix immediately after writing code. The user must confirm the fix actually
-   works first. Write the fix, then ask the user to verify. Only commit after they confirm. This
-   applies to all UI/visual fixes and any fix where the root cause was uncertain. A wrong fix baked
-   into a commit is worse than no commit — it pollutes history and creates false confidence.
-
 ## Documentation
 
 See `/info/` for detailed design docs including:
