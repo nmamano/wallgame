@@ -79,7 +79,7 @@ tmux pane merely appears to show.
       verification is code/config-level; both fully verified after the bounce)
 - [x] S-D — retry on a finished puzzle relaunches the same candidate into a fresh game,
       client-side only
-- [ ] S-F — puzzle games excluded from Past Games; sweep history/profile/rankings surfaces
+- [x] S-F — puzzle games excluded from Past Games; sweep history/profile/rankings surfaces
       for custom-setup leakage
 
 ## Deferred / parked

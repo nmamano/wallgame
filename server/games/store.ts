@@ -13,6 +13,7 @@ import {
   isUnlimitedTimeControl,
   isCountedResult,
 } from "../../shared/domain/game-utils";
+import { isCustomSetupVariant } from "../../shared/domain/game-types";
 import type {
   GameConfiguration,
   GameSnapshot,
@@ -906,7 +907,9 @@ export const listLiveGames = (limit = 100): LiveGameSummary[] => {
     .filter(
       (session) =>
         (session.status === "ready" || session.status === "in-progress") &&
-        !session.cancelled,
+        !session.cancelled &&
+        // Puzzle attempts are solo practice, not spectator content.
+        !isCustomSetupVariant(session.config.variant),
     )
     .map((session) => buildLiveGameSummary(session))
     .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
@@ -921,7 +924,9 @@ export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
   const session = sessions.get(gameId);
   if (
     !session ||
-    (session.status !== "ready" && session.status !== "in-progress")
+    (session.status !== "ready" && session.status !== "in-progress") ||
+    // Puzzle attempts are solo practice, not spectator content.
+    isCustomSetupVariant(session.config.variant)
   ) {
     return null;
   }

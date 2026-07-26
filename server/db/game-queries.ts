@@ -2,7 +2,18 @@ import { db } from "./index";
 import { gamesTable } from "./schema/games";
 import { gameDetailsTable } from "./schema/game-details";
 import { gamePlayersTable } from "./schema/game-players";
-import { and, desc, eq, gte, inArray, lte, sql, type SQL } from "drizzle-orm";
+import {
+  and,
+  desc,
+  eq,
+  gte,
+  inArray,
+  lte,
+  notInArray,
+  sql,
+  type SQL,
+} from "drizzle-orm";
+import { customSetupVariantValues } from "../../shared/contracts/games";
 import { GameState } from "../../shared/domain/game-state";
 import type {
   GameConfiguration,
@@ -55,7 +66,9 @@ const normalizeVariant = (value: string): Variant => {
     value === "standard" ||
     value === "classic" ||
     value === "freestyle" ||
-    value === "survival"
+    value === "survival" ||
+    value === "custom-setup-standard" ||
+    value === "custom-setup-classic"
   ) {
     return value;
   }
@@ -231,7 +244,10 @@ const assembleReplayGame = (
         String(notation),
         config.boardHeight,
       );
-      const playerId = (index % 2 === 0 ? 1 : 2) as PlayerId;
+      // The acting player comes from the replay state itself, not move-index
+      // parity: custom-setup games have an authored turn, so half the puzzles
+      // start with player 2. GameState seeds `turn` from variantConfig.turn.
+      const playerId = replayState.turn;
       replayState = replayState.applyGameAction({
         kind: "move",
         move,
@@ -411,7 +427,12 @@ export const getRandomShowcaseGames = async (
   const games = await db
     .select(replayGameSelect)
     .from(gamesTable)
-    .where(gte(gamesTable.movesCount, 10))
+    .where(
+      and(
+        gte(gamesTable.movesCount, 10),
+        notInArray(gamesTable.variant, [...customSetupVariantValues]),
+      ),
+    )
     .orderBy(sql`random()`)
     .limit(count);
 
@@ -432,7 +453,12 @@ export const queryPastGames = async (args: {
   player1?: string;
   player2?: string;
 }): Promise<PastGamesResponse> => {
-  const conditions: SQL[] = [gte(gamesTable.movesCount, 2)];
+  // Puzzle attempts (custom-setup variants) are solo practice, not match
+  // history - they never appear in Past Games.
+  const conditions: SQL[] = [
+    gte(gamesTable.movesCount, 2),
+    notInArray(gamesTable.variant, [...customSetupVariantValues]),
+  ];
 
   if (args.variant) {
     conditions.push(eq(gamesTable.variant, args.variant));
