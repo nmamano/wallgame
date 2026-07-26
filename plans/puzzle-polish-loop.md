@@ -96,6 +96,11 @@ real wake signal.
       displayName↔row mapping inside the fly machine before writing; GET /api/puzzles
       already filters `enabled=true`; the seeder is fingerprint-idempotent so a rerun
       cannot re-enable them — verify that claim in-slice). No migration.
+      DONE `3636107`, deployed + prod-verified: retire script reported exactly
+      41 total / 41 enabled pre-write and retired exactly the two ordered rows;
+      GET /api/puzzles now 39 rows (names 1 and 6 absent, list spans 2..41);
+      page screenshot clean with the new subtitle; 0-move launch probe on
+      Generated Puzzle 2 (game 6eNB47kJ) played and resigned normally.
 - [ ] S-P1 — restore the P1-moves-first axiom: puzzles where the human is P2 begin
       with the bot's first move applied as a REAL move in the game history (ply 0).
       OPEN DESIGN QUESTION for the plan gate (and Nil): synthetic positions have no

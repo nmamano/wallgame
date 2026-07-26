@@ -136,6 +136,11 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
 `94c989b` (candidate launcher), `a5abd94` (standard generation + puzzle framing),
 `24e22d3` (PuzzleBot + variant naming), plus the puzzle-name banner commit.
 
+- **Curation state (loop 3 S-COPY, `3636107`):** Generated Puzzle 1 and 6 are RETIRED
+  (`enabled=false`, Nil: too easy) — 39 live. Retire future rejects with
+  `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<display name>' ..."`
+  (fail-closed: exact-set lookup, transactional, read-back asserted). Nil's ratings:
+  pool good overall; 2, 3, 10, 11 good; 8, 9 excellent.
 - **Saved puzzles (`3d3a318`, S-G1):** the 41 filtered candidates are PERSISTED in the
   `saved_puzzles` table as named entities ("Generated Puzzle 1..41"), seeded manually
   inside the fly machine (`bun /app/scripts/seed-puzzles.ts`, idempotent via the UNIQUE
