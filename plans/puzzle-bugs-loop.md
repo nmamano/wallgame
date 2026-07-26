@@ -77,7 +77,7 @@ tmux pane merely appears to show.
 - [x] S-C — `dw-puzzle` samples 10000 → 5000; review `--parallel_samples 32`, raise only on
       evidence; ONE combined desktop bot restart + deploy covers B+C (B's pre-restart
       verification is code/config-level; both fully verified after the bounce)
-- [ ] S-D — retry on a finished puzzle relaunches the same candidate into a fresh game,
+- [x] S-D — retry on a finished puzzle relaunches the same candidate into a fresh game,
       client-side only
 - [ ] S-F — puzzle games excluded from Past Games; sweep history/profile/rankings surfaces
       for custom-setup leakage

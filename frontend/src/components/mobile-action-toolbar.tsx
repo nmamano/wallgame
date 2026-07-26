@@ -68,6 +68,10 @@ export interface MobileToolbarEndgameProps {
   openRematchWindow: () => void;
   handleExitAfterMatch: () => void;
   isMultiplayerMatch: boolean;
+  /** Puzzles have no rematch; retry (same position, same seat) takes its place. */
+  isPuzzle?: boolean;
+  handleRetryPuzzle?: () => void;
+  isRetryingPuzzle?: boolean;
   primaryLocalPlayerId: PlayerId | null;
   spectatorRematchGameId?: string | null;
   handleFollowSpectatorRematch?: () => void;
@@ -85,7 +89,10 @@ interface MobileActionToolbarProps {
  * Compact floating toolbar for mobile game page.
  * Replaces the full ActionsPanel with a slim 40px bar.
  */
-export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps) {
+export function MobileActionToolbar({
+  live,
+  endgame,
+}: MobileActionToolbarProps) {
   const {
     drawDecisionPrompt,
     takebackDecisionPrompt,
@@ -125,6 +132,9 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
     handleProposeRematch,
     handleExitAfterMatch,
     isMultiplayerMatch,
+    isPuzzle = false,
+    handleRetryPuzzle,
+    isRetryingPuzzle = false,
     primaryLocalPlayerId,
     spectatorRematchGameId,
     handleFollowSpectatorRematch,
@@ -157,6 +167,7 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
     const canPropose =
       !isReadOnlyView &&
       isMultiplayerMatch &&
+      !isPuzzle &&
       (rematchState.status === "idle" || rematchState.status === "declined");
 
     const spectatorFollowHandler =
@@ -165,7 +176,10 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         : undefined;
 
     return (
-      <div className={`${barClass} relative gap-2 py-1`} style={{ minHeight: "40px" }}>
+      <div
+        className={`${barClass} relative gap-2 py-1`}
+        style={{ minHeight: "40px" }}
+      >
         {/* Centered result text */}
         <div className="absolute inset-0 flex items-center justify-center pointer-events-none">
           <Trophy className="w-4 h-4 text-yellow-500 shrink-0 mr-1.5" />
@@ -179,14 +193,32 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         <div className="flex gap-1 shrink-0 z-10">
           {isReadOnlyView ? (
             spectatorFollowHandler && spectatorRematchGameId ? (
-              <Button size="sm" className="h-7 px-2 text-[10px]" onClick={spectatorFollowHandler}>
+              <Button
+                size="sm"
+                className="h-7 px-2 text-[10px]"
+                onClick={spectatorFollowHandler}
+              >
                 Watch
               </Button>
             ) : null
           ) : (
             <>
+              {isPuzzle && handleRetryPuzzle && (
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  onClick={handleRetryPuzzle}
+                  disabled={isRetryingPuzzle}
+                >
+                  {isRetryingPuzzle ? "Retrying…" : "Retry"}
+                </Button>
+              )}
               {canPropose && (
-                <Button size="sm" className="h-7 px-2 text-[10px]" onClick={handleProposeRematch}>
+                <Button
+                  size="sm"
+                  className="h-7 px-2 text-[10px]"
+                  onClick={handleProposeRematch}
+                >
                   Rematch
                 </Button>
               )}
@@ -195,7 +227,8 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
                   Proposed...
                 </Button>
               )}
-              {((rematchState.status === "pending" && !isMultiplayerMatch) || isIncomingOffer) && (
+              {((rematchState.status === "pending" && !isMultiplayerMatch) ||
+                isIncomingOffer) && (
                 <>
                   <Button
                     size="sm"
@@ -217,11 +250,18 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
                 </>
               )}
               {rematchState.status === "starting" && (
-                <span className="text-[10px] animate-pulse text-primary font-medium">Starting...</span>
+                <span className="text-[10px] animate-pulse text-primary font-medium">
+                  Starting...
+                </span>
               )}
             </>
           )}
-          <Button size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={handleExitAfterMatch}>
+          <Button
+            size="sm"
+            variant="ghost"
+            className="h-7 px-1.5 text-[10px]"
+            onClick={handleExitAfterMatch}
+          >
             <LogOut className="w-3 h-3" />
           </Button>
         </div>
@@ -235,10 +275,20 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
       <div className={`${barClass} gap-2 py-1`} style={{ minHeight: "40px" }}>
         <span className="text-xs text-muted-foreground">Resign?</span>
         <div className="flex-1" />
-        <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={handleCancelResign}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[10px]"
+          onClick={handleCancelResign}
+        >
           Cancel
         </Button>
-        <Button size="sm" variant="destructive" className="h-7 px-2 text-[10px]" onClick={handleConfirmResign}>
+        <Button
+          size="sm"
+          variant="destructive"
+          className="h-7 px-2 text-[10px]"
+          onClick={handleConfirmResign}
+        >
           Resign
         </Button>
       </div>
@@ -252,10 +302,19 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         <Handshake className="w-4 h-4 text-primary shrink-0" />
         <span className="text-xs truncate">Draw offer</span>
         <div className="flex-1" />
-        <Button size="sm" className="h-7 px-2 text-[10px]" onClick={() => respondToDrawPrompt("accept")}>
+        <Button
+          size="sm"
+          className="h-7 px-2 text-[10px]"
+          onClick={() => respondToDrawPrompt("accept")}
+        >
           Accept
         </Button>
-        <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => respondToDrawPrompt("reject")}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[10px]"
+          onClick={() => respondToDrawPrompt("reject")}
+        >
           Decline
         </Button>
       </div>
@@ -268,10 +327,19 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         <RotateCcw className="w-4 h-4 shrink-0" />
         <span className="text-xs truncate">Takeback request</span>
         <div className="flex-1" />
-        <Button size="sm" className="h-7 px-2 text-[10px]" onClick={() => respondToTakebackPrompt("allow")}>
+        <Button
+          size="sm"
+          className="h-7 px-2 text-[10px]"
+          onClick={() => respondToTakebackPrompt("allow")}
+        >
           Allow
         </Button>
-        <Button size="sm" variant="outline" className="h-7 px-2 text-[10px]" onClick={() => respondToTakebackPrompt("decline")}>
+        <Button
+          size="sm"
+          variant="outline"
+          className="h-7 px-2 text-[10px]"
+          onClick={() => respondToTakebackPrompt("decline")}
+        >
           Decline
         </Button>
       </div>
@@ -282,9 +350,16 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
   if (incomingPassiveNotice && !isReadOnlyView) {
     return (
       <div className={`${barClass} gap-2 py-1`} style={{ minHeight: "40px" }}>
-        <span className="text-xs truncate">{incomingPassiveNotice.message}</span>
+        <span className="text-xs truncate">
+          {incomingPassiveNotice.message}
+        </span>
         <div className="flex-1" />
-        <Button size="sm" variant="ghost" className="h-7 px-1.5 text-[10px]" onClick={handleDismissIncomingNotice}>
+        <Button
+          size="sm"
+          variant="ghost"
+          className="h-7 px-1.5 text-[10px]"
+          onClick={handleDismissIncomingNotice}
+        >
           <X className="w-3 h-3" />
         </Button>
       </div>
@@ -352,7 +427,9 @@ export function MobileActionToolbar({ live, endgame }: MobileActionToolbarProps)
         size="icon"
         className="h-8 w-8"
         onClick={handleOfferDraw}
-        disabled={actionsDisabled || manualActionsBlocked || Boolean(pendingDrawOffer)}
+        disabled={
+          actionsDisabled || manualActionsBlocked || Boolean(pendingDrawOffer)
+        }
         title="Offer Draw"
       >
         <Handshake className="w-4 h-4" />

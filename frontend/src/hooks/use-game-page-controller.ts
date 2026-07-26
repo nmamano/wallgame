@@ -38,6 +38,8 @@ import {
   userQueryOptions,
   fetchGameSession,
   abortGameSession,
+  fetchBots,
+  playVsBot,
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { sounds, play } from "@/lib/sounds";
@@ -2622,6 +2624,86 @@ export function useGamePageController(gameId: string) {
     navigate,
   ]);
 
+  // Retry a puzzle: relaunch the SAME authored position into a fresh game on
+  // the same seat. The finished game's own config IS the candidate's config
+  // (position identity is how candidates are matched), so no candidate
+  // resolution is needed - this works even for games whose candidate no
+  // longer resolves after a generator change.
+  const [isRetryingPuzzle, setIsRetryingPuzzle] = useState(false);
+  const handleRetryPuzzle = useCallback(async () => {
+    const config = gameState?.config;
+    if (
+      !isPuzzleGame ||
+      gameStatus !== "finished" ||
+      isRetryingPuzzle ||
+      !config ||
+      primaryLocalPlayerId === null
+    ) {
+      return;
+    }
+    setIsRetryingPuzzle(true);
+    let navigated = false;
+    try {
+      const { bots } = await fetchBots({
+        variant: config.variant,
+        boardWidth: config.boardWidth,
+        boardHeight: config.boardHeight,
+      });
+      const officialBot = bots.find((bot) => bot.isOfficial);
+      if (!officialBot) {
+        addSystemMessage(
+          "PuzzleBot is offline right now, so the puzzle cannot be retried.",
+        );
+        return;
+      }
+      const response = await playVsBot({
+        botId: officialBot.id,
+        config,
+        hostDisplayName: settings.displayName,
+        hostAppearance: {
+          pawnColor: settings.pawnColor,
+          catSkin: settings.catPawn,
+          mouseSkin: settings.mousePawn,
+          homeSkin: settings.homePawn,
+        },
+        hostIsPlayer1: primaryLocalPlayerId === 1,
+      });
+      saveGameHandshake({
+        gameId: response.gameId,
+        token: response.token,
+        socketToken: response.socketToken,
+        role: response.role,
+        playerId: response.playerId,
+        shareUrl: response.shareUrl,
+      });
+      await navigate({ to: `/game/${response.gameId}` });
+      navigated = true;
+    } catch (cause) {
+      addSystemMessage(
+        cause instanceof Error
+          ? `Could not retry the puzzle: ${cause.message}`
+          : "Could not retry the puzzle.",
+      );
+    } finally {
+      if (!navigated) {
+        setIsRetryingPuzzle(false);
+      }
+    }
+  }, [
+    isPuzzleGame,
+    gameStatus,
+    isRetryingPuzzle,
+    gameState?.config,
+    primaryLocalPlayerId,
+    settings.displayName,
+    settings.pawnColor,
+    settings.catPawn,
+    settings.mousePawn,
+    settings.homePawn,
+    addSystemMessage,
+    navigate,
+  ]);
+
   const navigateToLocalRematch = useCallback(() => {
     if (typeof window === "undefined") return;
     const nextGameId = generateLocalGameId();
@@ -3725,6 +3807,8 @@ export function useGamePageController(gameId: string) {
       handleExitAfterMatch,
       isMultiplayerMatch: boardIsMultiplayer,
       isPuzzle: isPuzzleGame,
+      handleRetryPuzzle,
+      isRetryingPuzzle,
       primaryLocalPlayerId: boardPrimaryPlayerId,
       accessKind,
       isReadOnly: isReadOnlySession,

@@ -72,8 +72,11 @@ interface EndgameProps {
   openRematchWindow: () => void;
   handleExitAfterMatch: () => void;
   isMultiplayerMatch: boolean;
-  /** Puzzles have no rematch: it would swap sides, and the position is the puzzle. */
+  /** Puzzles have no rematch: it would swap sides, and the position is the puzzle.
+      Retry takes its place: same position, same seat, fresh game. */
   isPuzzle?: boolean;
+  handleRetryPuzzle?: () => void;
+  isRetryingPuzzle?: boolean;
   primaryLocalPlayerId: PlayerId | null;
   spectatorRematchGameId?: string | null;
   handleFollowSpectatorRematch?: () => void;
@@ -134,6 +137,8 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     handleExitAfterMatch,
     isMultiplayerMatch,
     isPuzzle = false,
+    handleRetryPuzzle,
+    isRetryingPuzzle = false,
     primaryLocalPlayerId,
     spectatorRematchGameId,
     handleFollowSpectatorRematch,
@@ -270,6 +275,17 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
                 )
               ) : (
                 <>
+                  {isPuzzle && handleRetryPuzzle && (
+                    <Button
+                      size="sm"
+                      className="h-7 lg:h-8 px-3 text-xs flex-1"
+                      onClick={handleRetryPuzzle}
+                      disabled={isRetryingPuzzle}
+                    >
+                      {isRetryingPuzzle ? "Retrying…" : "Retry puzzle"}
+                    </Button>
+                  )}
+
                   {canProposeMultiplayerRematch && (
                     <Button
                       size="sm"
