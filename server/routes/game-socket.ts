@@ -1178,7 +1178,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
       const resetPromise = getResetPromise(bgsId);
       let bgs = getBgs(bgsId);
 
-      if (resetPromise || bgs?.status === "initializing" || bgs?.pendingRequest) {
+      if (
+        resetPromise ||
+        bgs?.status === "initializing" ||
+        bgs?.pendingRequest
+      ) {
         if (resetPromise) {
           // Takeback reset in progress — await the promise with a safety timeout.
           // The promise resolves when clearBgsResetting is called in the finally
@@ -1217,16 +1221,23 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
         bgs = getBgs(bgsId);
       }
 
-      if (bgs?.status === "ready" && !getResetPromise(bgsId) && !bgs.pendingRequest) {
+      if (
+        bgs?.status === "ready" &&
+        !getResetPromise(bgsId) &&
+        !bgs.pendingRequest
+      ) {
         // Idempotency guard: if the BGS ply is already at or past where this
         // move would land, the takeback replay already applied it. Skip to
         // avoid double-applying the same move (which causes engine rejection).
         if (bgs.currentPly >= targetHistoryLength) {
-          console.info("[ws] BGS already up-to-date — move was replayed during reset", {
-            sessionId: socket.sessionId,
-            bgsPly: bgs.currentPly,
-            targetHistoryLength,
-          });
+          console.info(
+            "[ws] BGS already up-to-date — move was replayed during reset",
+            {
+              sessionId: socket.sessionId,
+              bgsPly: bgs.currentPly,
+              targetHistoryLength,
+            },
+          );
           // Still trigger bot turn if needed — the replay may not have done it
           // (e.g., game advanced during reset so the reset handler skipped it).
           if (updatedSession.gameState.turn === botPlayer.playerId) {

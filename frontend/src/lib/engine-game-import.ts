@@ -100,7 +100,9 @@ export function parseEngineGameRecords(
         errors.push("top-level JSON is not an array");
       }
     } catch (e) {
-      errors.push(`JSON parse failed: ${e instanceof Error ? e.message : String(e)}`);
+      errors.push(
+        `JSON parse failed: ${e instanceof Error ? e.message : String(e)}`,
+      );
     }
     return { records, errors };
   }
@@ -162,7 +164,8 @@ const createPaddingConfig = (
   // Standard embeds at top-left; Classic embeds at the bottom, horizontally
   // centered (left-biased), so the bottom row stays a path to the corner goals.
   rowOffset: variant === "standard" ? 0 : modelRows - gameRows,
-  colOffset: variant === "standard" ? 0 : Math.floor((modelCols - gameCols) / 2),
+  colOffset:
+    variant === "standard" ? 0 : Math.floor((modelCols - gameCols) / 2),
 });
 
 /**

@@ -71,6 +71,7 @@ always correct - tournament results are unaffected by this one.)
 
 Does the fix remove the blue dominance in twin mirrors? After ~5 clean
 curriculum generations, twin-mirror the new model:
+
 - Asymmetry gone/greatly reduced => the corruption explains it.
 - Blue still dominates => a real second-mover advantage at bot level exists
   (independent discovery; game-design implications; NOT explained by the bug;
@@ -103,12 +104,12 @@ Twin-mirrors at 8x8-in-12x10-frame (the clean model's trained size), standard
 variant, ranking mode, 40 games each. Enabled by commit a7ffaa9
 (-game_columns/-game_rows in evaluation/ranking modes).
 
-| Test | Result |
-|---|---|
-| A. simple-policy mirror (frame control) | 12/7/21 - balanced; the padded frame introduces no seat bias |
-| B. CLEAN model_5 twin (sharpened falsification) | **40/40 draws - zero seat determinism** |
-| C. CORRUPTED model_48 twin, same protocol | **blue wins 40/40** |
-| D. clean gen1 vs gen5 ladder | 39 draws, 1 gen5 win (as red) |
+| Test                                            | Result                                                       |
+| ----------------------------------------------- | ------------------------------------------------------------ |
+| A. simple-policy mirror (frame control)         | 12/7/21 - balanced; the padded frame introduces no seat bias |
+| B. CLEAN model_5 twin (sharpened falsification) | **40/40 draws - zero seat determinism**                      |
+| C. CORRUPTED model_48 twin, same protocol       | **blue wins 40/40**                                          |
+| D. clean gen1 vs gen5 ladder                    | 39 draws, 1 gen5 win (as red)                                |
 
 B vs C is the decisive contrast: identical protocol, identical frame - the
 corrupted model shows total blue seat-determinism, the clean model none.

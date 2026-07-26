@@ -248,10 +248,14 @@ export function BoardPanel({
                 onClick={clearStagedActions}
                 disabled={!hasPendingActions}
               >
-                <span className="truncate block">{mobileMode ? "Clear" : "Clear staged actions"}</span>
+                <span className="truncate block">
+                  {mobileMode ? "Clear" : "Clear staged actions"}
+                </span>
               </Button>
             </div>
-            <div className={`flex items-center justify-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden text-center leading-snug`}>
+            <div
+              className={`flex items-center justify-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden text-center leading-snug`}
+            >
               {hasActionMessage && (
                 <span
                   className={`min-w-0 block whitespace-normal break-words ${
@@ -274,13 +278,17 @@ export function BoardPanel({
                   gameState?.turn !== activeLocalPlayerId
                 }
               >
-                <span className="truncate block">{mobileMode ? "Finish" : "Finish move"}</span>
+                <span className="truncate block">
+                  {mobileMode ? "Finish" : "Finish move"}
+                </span>
               </Button>
             </div>
           </>
         )}
         {!showStagedActionControls && (
-          <div className={`flex items-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden leading-snug`}>
+          <div
+            className={`flex items-center ${mobileMode ? "text-[8px] h-[1.5rem]" : "text-[clamp(8px,1.1vw,11px)] lg:text-[clamp(10px,0.85vw,13px)] h-[2.2rem] lg:h-[2.4rem]"} text-muted-foreground min-w-0 overflow-hidden leading-snug`}
+          >
             {hasActionMessage && (
               <span
                 className={`min-w-0 block whitespace-normal break-words ${

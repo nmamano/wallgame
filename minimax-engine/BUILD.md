@@ -6,20 +6,24 @@ so it compiles as a **single translation unit** — the build is fast and LTO is
 irrelevant.
 
 ## Toolchain (verified on auntie)
+
 - cmake 3.28.3
 - g++ (Ubuntu) 13.3.0
 - Ubuntu 24.04, x86-64
 
 ## Build
+
 ```bash
 cd minimax-engine
 cmake --preset release
 ( cd build_release && make )
 ```
+
 Produces `build_release/wallwars_ai`. `cmake --list-presets` shows the
 `debug` / `release` / `*-clang` variants.
 
 ## Run modes
+
 ```bash
 ./build_release/wallwars_ai test       # self-test suite
 ./build_release/wallwars_ai play        # interactive CLI game
@@ -27,11 +31,13 @@ Produces `build_release/wallwars_ai`. `cmake --list-presets` shows the
 ```
 
 ## Gate
+
 `scripts/test-gate.sh` builds and runs the self-tests, then asserts the
 only failing test is the documented baseline failure below — failing (non-zero)
 if the build breaks or the failing-test set/count changes.
 
 ## Known baseline failure (quarantined, NOT hidden)
+
 `wallwars_ai test` reports **11/12 PASSED**. The single failure is:
 
 ```

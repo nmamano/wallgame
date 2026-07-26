@@ -25,13 +25,13 @@ Gates: priors max-abs-diff <= 1e-2 post-softmax; values <= 1e-2; priors sums
 (near-ties reported, not gated). 64 seeded batch-1 samples; one full batch
 for batch-256 engines.
 
-| engine | precision | worst priors diff | worst values diff | margin-gated flips | verdict |
-|---|---|---|---|---|---|
-| transformer_b1 | fp16 | 1.3e-5 | 5.6e-4 | 0 | **PASS** |
-| transformer_b256 | fp16 | 1.8e-5 | 8.9e-4 | 0 (1 near-tie at margin 0.00000, top5 5/5) | **PASS** |
-| resnet48_b256 | fp16 | large | - | **11 flips (margins to 0.56) on first build; a REBUILD of the same ONNX flipped different positions with margins to 0.995** - TRT kernel selection is nondeterministic across builds | FAIL (informational, see finding 1) |
-| resnet48_b256 | fp32 (TF32 default) | 1.9e-2 | 0.000000 | 1 flip at margin 0.018 | FAIL (diagnostic) |
-| resnet48_b256 | fp32 `--noTF32` | 1.6e-4 | 0.000000 | 0 | **PASS** (validates harness + export) |
+| engine           | precision           | worst priors diff | worst values diff | margin-gated flips                                                                                                                                                                   | verdict                               |
+| ---------------- | ------------------- | ----------------- | ----------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------ | ------------------------------------- |
+| transformer_b1   | fp16                | 1.3e-5            | 5.6e-4            | 0                                                                                                                                                                                    | **PASS**                              |
+| transformer_b256 | fp16                | 1.8e-5            | 8.9e-4            | 0 (1 near-tie at margin 0.00000, top5 5/5)                                                                                                                                           | **PASS**                              |
+| resnet48_b256    | fp16                | large             | -                 | **11 flips (margins to 0.56) on first build; a REBUILD of the same ONNX flipped different positions with margins to 0.995** - TRT kernel selection is nondeterministic across builds | FAIL (informational, see finding 1)   |
+| resnet48_b256    | fp32 (TF32 default) | 1.9e-2            | 0.000000          | 1 flip at margin 0.018                                                                                                                                                               | FAIL (diagnostic)                     |
+| resnet48_b256    | fp32 `--noTF32`     | 1.6e-4            | 0.000000          | 0                                                                                                                                                                                    | **PASS** (validates harness + export) |
 
 ### Finding 1: the trained ResNet has always had fp16 drift in production
 
@@ -50,13 +50,13 @@ in S4 (the harness takes `--pt`).
 
 ## Throughput (qps x batch, `scripts/bench_baseline.sh`)
 
-| engine | batch | pos/sec | bar | verdict |
-|---|---|---|---|---|
-| transformer_b1 | 1 | **4135** | >= 1850 (0.5x deployed model_48) | **PASS** - also beats the deployed ResNet serving engine outright (3699) |
-| transformer_b256 | 256 | 84,638 | >= 97,030 (0.5x regenerated ResNet) | **MISS at 0.436x** |
-| transformer_b256 (builderOptimizationLevel=5) | 256 | 83,713 | same | no change - kernels already optimal |
-| transformer_b1024 | 1024 | 64,217 | informational: batches past 256 amortize WORSE; 256 is already past the sweet spot | - |
-| resnet48_b256 | 256 | 194,060 | reference | - |
+| engine                                        | batch | pos/sec  | bar                                                                                | verdict                                                                  |
+| --------------------------------------------- | ----- | -------- | ---------------------------------------------------------------------------------- | ------------------------------------------------------------------------ |
+| transformer_b1                                | 1     | **4135** | >= 1850 (0.5x deployed model_48)                                                   | **PASS** - also beats the deployed ResNet serving engine outright (3699) |
+| transformer_b256                              | 256   | 84,638   | >= 97,030 (0.5x regenerated ResNet)                                                | **MISS at 0.436x**                                                       |
+| transformer_b256 (builderOptimizationLevel=5) | 256   | 83,713   | same                                                                               | no change - kernels already optimal                                      |
+| transformer_b1024                             | 1024  | 64,217   | informational: batches past 256 amortize WORSE; 256 is already past the sweet spot | -                                                                        |
+| resnet48_b256                                 | 256   | 194,060  | reference                                                                          | -                                                                        |
 
 ### Finding 2: batch-256 bar missed at 0.436x (bar 0.5x) - queued, not weakened
 

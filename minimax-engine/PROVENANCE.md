@@ -25,6 +25,7 @@ wallgame's representation in that wrapper; see the plan's "Resources" and "Traps
 ## Modifications to vendored files
 
 Tracked here as the project progresses:
+
 - **slice 1b** — `include/negamax.h`: routed the four search-progress logs in
   `GetMove` from `std::cout` to `std::cerr` (the wrapper's stdout must be pure
   JSON-lines), and added `LastRootEval()` / `GameOverEval()` accessors so the
@@ -33,6 +34,7 @@ Tracked here as the project progresses:
   (not needed here; `benchmark` mode regenerates it). Directory is gitignored.
 
 ## Added (not in the source repo)
+
 - nlohmann/json: the wrapper uses the **system** package via CMake
   `find_package(nlohmann_json)` — same as deep-wallwars — not a vendored copy.
 - `include/bgs_translation.h`, `source/bgs_engine_main.cc` — the V3 BGS wrapper.

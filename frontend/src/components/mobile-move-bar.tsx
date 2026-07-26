@@ -44,15 +44,26 @@ export function MobileMoveBar({
   // Flatten rows into a list of individual moves for the horizontal strip
   const moves: { notation: string; plyIndex: number }[] = [];
   for (const row of formattedHistory) {
-    if (row.white) moves.push({ notation: `${row.num}. ${row.white.notation}`, plyIndex: row.white.plyIndex });
-    if (row.black) moves.push({ notation: `${row.num}… ${row.black.notation}`, plyIndex: row.black.plyIndex });
+    if (row.white)
+      moves.push({
+        notation: `${row.num}. ${row.white.notation}`,
+        plyIndex: row.white.plyIndex,
+      });
+    if (row.black)
+      moves.push({
+        notation: `${row.num}… ${row.black.notation}`,
+        plyIndex: row.black.plyIndex,
+      });
   }
 
   // Determine which ply is active (cursor, or latest if live)
   const activePly = historyNav.cursor ?? historyNav.latestPlyIndex;
 
   return (
-    <div className="flex items-center w-full px-1 shrink-0 gap-0.5" style={{ height: "32px" }}>
+    <div
+      className="flex items-center w-full px-1 shrink-0 gap-0.5"
+      style={{ height: "32px" }}
+    >
       {/* Jump to start */}
       <Button
         variant="ghost"
@@ -81,7 +92,9 @@ export function MobileMoveBar({
         className="flex-1 overflow-x-auto overflow-y-hidden flex items-center gap-0.5 min-w-0 scrollbar-none"
       >
         {moves.length === 0 ? (
-          <span className="text-[10px] text-muted-foreground px-1 whitespace-nowrap">No moves</span>
+          <span className="text-[10px] text-muted-foreground px-1 whitespace-nowrap">
+            No moves
+          </span>
         ) : (
           moves.map((move) => {
             const isActive = move.plyIndex === activePly;

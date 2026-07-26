@@ -10,14 +10,14 @@
 
 All 6 slices shipped (4 core + 2 optional), each plan-gated + diff-gated by Game Reviewer, one focused commit per slice, zero unresolved gate failures.
 
-| Slice | Commit | What landed |
-|---|---|---|
-| S1 | `9baaa61` | `bench_baseline.sh` + baseline numbers: deployed engines are batch-1 serving exports (~3700 pos/sec, launch-bound). |
-| S2 | `441e07d` | `WallgameTransformer` (per-token heads, pointwise/conv stems, 8-10M params) + 14 CPU tests; cell order locked to `gamestate.cpp:781` after reviewer caught the wrong formula. |
-| S3 | `551eb51` | Export path proven: ONNX→TRT fp16 parity 1.8e-5; batch-1 4135 pos/sec (beats deployed ResNet); batch-256 0.436x bar MISS queued; found production ResNet fp16 drift. |
-| S4 | `2def3a0` | `--arch transformer` in training.py + smoke: **C++ deep_ww ran a transformer engine in self-play**; trained parity 1.1e-4; fastai/fastcore pin fix. |
-| S5 | `2c25e4a` | `ConvHeadResNet` control (`--arch convhead`), smoke-proven; isolates size-free-heads from attention for the ablation. |
-| S6 | `87e84f3` | `-game_columns/-game_rows` padded self-play datagen: 8x8-in-12x10 CSVs verified; unlocks distillation from the strong 8x8 models. |
+| Slice | Commit    | What landed                                                                                                                                                                   |
+| ----- | --------- | ----------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| S1    | `9baaa61` | `bench_baseline.sh` + baseline numbers: deployed engines are batch-1 serving exports (~3700 pos/sec, launch-bound).                                                           |
+| S2    | `441e07d` | `WallgameTransformer` (per-token heads, pointwise/conv stems, 8-10M params) + 14 CPU tests; cell order locked to `gamestate.cpp:781` after reviewer caught the wrong formula. |
+| S3    | `551eb51` | Export path proven: ONNX→TRT fp16 parity 1.8e-5; batch-1 4135 pos/sec (beats deployed ResNet); batch-256 0.436x bar MISS queued; found production ResNet fp16 drift.          |
+| S4    | `2def3a0` | `--arch transformer` in training.py + smoke: **C++ deep_ww ran a transformer engine in self-play**; trained parity 1.1e-4; fastai/fastcore pin fix.                           |
+| S5    | `2c25e4a` | `ConvHeadResNet` control (`--arch convhead`), smoke-proven; isolates size-free-heads from attention for the ablation.                                                         |
+| S6    | `87e84f3` | `-game_columns/-game_rows` padded self-play datagen: 8x8-in-12x10 CSVs verified; unlocks distillation from the strong 8x8 models.                                             |
 
 Gates to re-run anytime: `.venv/bin/python -m pytest scripts/tests/ -q` (22), `scripts/cpp-test-gate.sh`, `scripts/s3_run.sh`, `scripts/s4_smoke.sh [transformer|convhead]`, `scripts/s6_smoke.sh`.
 
@@ -26,6 +26,7 @@ Gates to re-run anytime: `.venv/bin/python -m pytest scripts/tests/ -q` (22), `s
 (real-run architecture config and LR policy are PARKED — see below). The distillation seed path: generate data with the strong 8x8 models via `-game_columns 8 -game_rows 8`, train the transformer on it, then continue self-play.
 
 ### Parked for Nil (HUMAN-ONLY — never decided in the loop)
+
 - Accept batch-256 throughput at 0.436x of ResNet and start real training? (WallGamer recommends yes; serving path is faster than deployed.)
 - Production ResNet fp16 policy drift: quantify Elo cost (fp16 vs `--noTF32` tournament) or ignore.
 - Real-run architecture config (d_model/layers/stem) + LR policy.
@@ -99,7 +100,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 ## Slice plan
 
 - [x] **S1** — Bench baseline: script measuring positions/sec of existing `.trt` engines (weak `model_48` 12x10 + strong `model_27` 8x8) + committed numbers report. Sets the throughput bar S3 must meet. → `scripts/bench_baseline.sh` + `plans/transformer-baseline-numbers.md`; both engines are batch-1 serving exports (~3700 pos/sec, launch-bound); serving bar for S3 = 1850 pos/sec, batch-256 bar measured in S3 from regenerated artifacts.
-- [x] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability. → 14 CPU tests green; 7.98M/10.3M params (pointwise/conv); cell order locked to `gamestate.cpp:781` (col*rows+row) after reviewer's formula correction; note for S4: training.py exports without `eval()`.
+- [x] **S2** — `WallgameTransformer` in `scripts/model.py` (per-token heads; pointwise-embed and conv-stem variants behind a flag) + CPU pytest suite: output shapes, policy index-order parity vs ResNet, ONNX-exportability. → 14 CPU tests green; 7.98M/10.3M params (pointwise/conv); cell order locked to `gamestate.cpp:781` (col\*rows+row) after reviewer's formula correction; note for S4: training.py exports without `eval()`.
 - [x] **S3** — Export path proven: ONNX → `trtexec --fp16` → parity script (TRT vs PyTorch outputs within tolerance) + throughput vs S1 baseline. → Transformer parity PASS at b1 and b256 (worst diff 1.8e-5); batch-1 serving bar PASS at 4135 pos/sec (beats deployed ResNet); **batch-256 bar MISSED at 0.436x - queued for Nil, not weakened**; bonus finding: production ResNet fp16 drift (queued). Report: `plans/transformer-export-parity.md`.
 - [x] **S4** — `--arch transformer` in `training.py` (one-cycle warmup for this arch; fastai `lr_find` stays for ResNet) + end-to-end smoke generation: tiny model, ~20 self-play games → CSV → train → export → reload. → SMOKE PASSED: C++ deep_ww loaded and ran the transformer engine in gen-1 self-play (evidence in `build-tests/s4/SMOKE_SUMMARY.md`); trained-weight parity 1.1e-4. Environment fix baked into standing orders: fastcore<2 + fastprogress<1.1 pins.
 - [x] **S5 (optional)** — Control experiment: ResNet body + size-free conv heads (isolates "per-token heads" from "attention"). → `ConvHeadResNet` + `--arch convhead`; 22/22 tests; convhead smoke PASSED end-to-end (evidence: `build-tests/s5-convhead/SMOKE_SUMMARY.md`); parity harness extension to convhead noted as future work.
@@ -119,6 +120,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 ## Resources
 
 **Environment (probed 2026-07-11, this box = auntie, RTX 5090 32GB):**
+
 - Python venv: `deep-wallwars/.venv` — python 3.12.3, torch 2.13.0+cu130 (CUDA OK on 5090; NOTE: the Phase-2 fastai install silently UPGRADED torch from 2.10.0+cu128 — S2 onward all validated under 2.13), onnx 1.20.1, numpy 2.4.2. ⚠ venv shebangs are broken (created under `/home/yu`): ALWAYS `.venv/bin/python -m pip`, never `.venv/bin/pip`.
 - fastai 2.8.7 + pytest 9.1.1: installed into the venv during Phase 2 (verified). ⚠ PIN fastcore<2 and fastprogress<1.1 (verified working: fastcore 1.14.5, fastprogress 1.0.5): unpinned pip pulls fastcore 2.x / fastprogress 1.1+ (which imports fasthtml), and fastai 2.8.7's Optimizer breaks with "'list' object has no attribute 'starmap'". python-fasthtml uninstalled from the venv.
 - C++ suite baseline: 80 cases, 6 pre-existing failures quarantined via `scripts/cpp-test-gate.sh` (exit 0 at baseline). Fixing the drifted tests is parked for Nil.
@@ -127,6 +129,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - C++ builds: `build-tests/` (fresh, correct paths). `build/` is legacy — read-only.
 
 **Key files / contract truth:**
+
 - Model defs: `deep-wallwars/scripts/model.py` (ResNet, `input_channels = 9`).
 - Training: `scripts/training.py` (loss = KLDiv(priors) + MSE(values); ONNX export ~lines 194–229, tensor names `States`/`Priors`/`Values`).
 - Data: `scripts/data.py` (CSV: 4 lines per position — state, priors, value, blank).
@@ -138,6 +141,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - House pattern: `plans/minimax-ai-loop.md` (previous successful loop with the same reviewer).
 
 **Evidence surfaces (judge by these, not by impressions):**
+
 - pytest exit codes; `trtexec` reported qps; parity script printed max-abs-diff; CSV files on disk with correct line counts; `git log`/`git status`.
 
 ---
@@ -157,7 +161,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
   - Board has a 6-arg constructor taking explicit pawn/goal cells (gamestate.hpp:151-155).
   - CSV output auto-scales to board dims (state_conversions reads board.columns()/rows()); NO changes needed there.
 - **Design:** new flags `-game_columns`/`-game_rows` (default 0 = off, current behavior byte-identical). When set: validate 4 <= game <= model dims; build PaddingConfig; compute embedded start cells (game-space corners transformed via transform_to_model); construct Board with the 6-arg constructor at MODEL dims; place_padding_walls; hand to training_play unchanged.
-- **Gates/evidence:** C++ build + cpp-test-gate.sh green + new Catch2 test (padded training board has expected walls/positions); live evidence: a few simple-policy games at 8x8-in-12x10, CSV state line length = 9*120, wall planes show the padding region blocked (python one-liner check).
+- **Gates/evidence:** C++ build + cpp-test-gate.sh green + new Catch2 test (padded training board has expected walls/positions); live evidence: a few simple-policy games at 8x8-in-12x10, CSV state line length = 9\*120, wall planes show the padding region blocked (python one-liner check).
 - **Locked:** default behavior byte-identical; no contract changes; nothing written to build/.
 
 ## SLICE-5 PICKUP
@@ -193,7 +197,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
   - Resume check (~line 770) uses `model.priors[-1].out_features` (ResNet-only attr): replace with an arch-agnostic `expected_priors_of(model)` helper.
   - `--warm-start` + `--arch transformer`: hard error (v1; transformer bootstraps via distillation later, different mechanism entirely).
   - Optimizer: ResNet path UNTOUCHED (lr_find + fit). Transformer path: `fit_one_cycle` (built-in warmup) with fixed conservative lr (3e-4) + wd - marked smoke-defaults, real-run LR policy parked for Nil.
-  - Smoke (scripts/s4_smoke.sh): everything under `build-tests/s4/{models,data}`; MUST pass explicit `--models/--data` (training.py defaults are `../models`, `../data`); deep_ww binary built fresh via `cmake --build build-tests --target deep_ww` (executing `build/` binaries is allowed, writing to `build/` is not - fresh build avoids staleness anyway); tiny config (d_model 32, layers 2, heads 4), ~20 games gen-0 simple policy, train, export, gen-1 self-play WITH the transformer engine (few games, low samples), train again. Evidence: CSV counts > 0 per generation dir, `model_*.trt` exist, deep_ww exit 0 while running the transformer engine, trained-weight parity via `export_transformer.py --pt <trained model_N.pt>` + `parity_check.py`.
+  - Smoke (scripts/s4*smoke.sh): everything under `build-tests/s4/{models,data}`; MUST pass explicit `--models/--data` (training.py defaults are `../models`, `../data`); deep_ww binary built fresh via `cmake --build build-tests --target deep_ww` (executing `build/` binaries is allowed, writing to `build/` is not - fresh build avoids staleness anyway); tiny config (d_model 32, layers 2, heads 4), ~20 games gen-0 simple policy, train, export, gen-1 self-play WITH the transformer engine (few games, low samples), train again. Evidence: CSV counts > 0 per generation dir, `model*\*.trt`exist, deep_ww exit 0 while running the transformer engine, trained-weight parity via`export_transformer.py --pt <trained model_N.pt>`+`parity_check.py`.
 - **Acceptance:** s4_smoke.sh exits 0 end-to-end on the 5090 in <= ~15 min; pytest still green; ResNet path provably untouched (default-arch diff inspection).
 - **Locked:** contract; ResNet training behavior byte-identical when `--arch` omitted; no C++ changes.
 - **Decide-with-reviewer:** the arch-agnostic priors-check helper shape; transformer smoke lr/wd defaults.
@@ -229,7 +233,7 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 - **Load-bearing mechanics:**
   - Interface mirrors ResNet exactly: `__init__(columns, rows, d_model, layers, move_channels=8, heads=8, stem="pointwise"|"conv", stem_blocks=2)`; `forward(x: (B,9,cols,rows)) -> (priors (B, 2*cols*rows + move_channels), value (B,1))`; same `log_output` flag semantics (log_softmax train / softmax export); value tanh'd in-model.
   - **Flat-order contract (the trap):** the ResNet head's `Flatten` consumes spatial dims in torch row-major order; the transformer must flatten cells to tokens the SAME way and un-flatten wall logits the same way. Wall head: per-cell `Linear(d,2)` -> (B,N,2) -> permute(0,2,1) -> flatten -> (B,2N) for type-major order (all type-0 wall logits over cells, then all type-1). Move head: global token `Linear(d, move_channels)` appended after walls. Factor the arrangement into a pure function so it is unit-testable on synthetic tensors.
-  - Tokens: N = cols*rows cell tokens (embedded from the 9 per-cell channel values) + 1 learned global token. Position: learned col-table (columns entries) + row-table (rows entries), added. Pre-norm `TransformerEncoderLayer`, batch_first, GELU, dropout 0.
+  - Tokens: N = cols\*rows cell tokens (embedded from the 9 per-cell channel values) + 1 learned global token. Position: learned col-table (columns entries) + row-table (rows entries), added. Pre-norm `TransformerEncoderLayer`, batch_first, GELU, dropout 0.
   - Stems: "pointwise" = per-cell linear embed of the 9 channels; "conv" = reuse `ResLayer` blocks (stem_blocks of them) then per-cell embed. Both size-agnostic.
   - ONNX-exportability is a TEST (CPU `torch.onnx.export` smoke), not an assumption.
 - **Acceptance:** pytest green CPU-only (shapes across (12,10)/(8,8)/(5,5) x both stems; arrangement-function order test on synthetic values; log_output softmax sums to 1; ONNX export smoke; param-count sanity). Gates: pytest + git-status.

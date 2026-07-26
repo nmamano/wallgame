@@ -444,7 +444,11 @@ function GameSetup() {
   return (
     <div className={isSmallScreen ? "py-2" : "container mx-auto py-8 px-4"}>
       <div className={isSmallScreen ? "" : "max-w-5xl mx-auto"}>
-        <Wrapper className={isSmallScreen ? "" : "border-border/50 bg-card/50 backdrop-blur"}>
+        <Wrapper
+          className={
+            isSmallScreen ? "" : "border-border/50 bg-card/50 backdrop-blur"
+          }
+        >
           {/* Tab bar */}
           <div className="flex border-b">
             {TABS.map((tab) => (
@@ -462,7 +466,9 @@ function GameSetup() {
             ))}
           </div>
 
-          <div className={isSmallScreen ? "px-3 py-3 space-y-4" : "p-5 space-y-4"}>
+          <div
+            className={isSmallScreen ? "px-3 py-3 space-y-4" : "p-5 space-y-4"}
+          >
             {/* Config section - settings vary per tab */}
             <div className="grid grid-cols-1 md:grid-cols-2 gap-x-6 gap-y-4">
               {/* Variant (all tabs) */}

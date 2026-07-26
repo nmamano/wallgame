@@ -19,7 +19,10 @@ import { z } from "zod";
 import { BotClient } from "./ws-client";
 import { setLogLevel, logger, type LogLevel } from "./logger";
 import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
-import { botConfigSchema, botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-schema";
+import {
+  botConfigSchema,
+  botConfigBaseSchema,
+} from "../../shared/contracts/custom-bot-config-schema";
 
 const VERSION = "3.0.0";
 

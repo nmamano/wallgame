@@ -246,10 +246,7 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
     const gapPx = 12;
     const refCols = Math.max(boardCols, 8);
     const availableW = typeof window !== "undefined" ? window.innerWidth : 390;
-    const cellPx = Math.max(
-      28,
-      (availableW - (refCols - 1) * gapPx) / refCols,
-    );
+    const cellPx = Math.max(28, (availableW - (refCols - 1) * gapPx) / refCols);
     return { gapSizeRem: gapPx / 16, maxCellSizeRem: cellPx / 16 };
   }, [flush, boardCols]);
 
@@ -310,7 +307,11 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
 
   if (flush) {
     return (
-      <div onClick={handleOpenReplay} role="button" className="cursor-pointer max-w-full overflow-hidden">
+      <div
+        onClick={handleOpenReplay}
+        role="button"
+        className="cursor-pointer max-w-full overflow-hidden"
+      >
         <Board
           rows={boardRows}
           cols={boardCols}
@@ -339,9 +340,15 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
             }}
           >
             {isPlaying ? (
-              <><Pause className="h-3 w-3 mr-1" />Pause</>
+              <>
+                <Pause className="h-3 w-3 mr-1" />
+                Pause
+              </>
             ) : (
-              <><Play className="h-3 w-3 mr-1" />Play</>
+              <>
+                <Play className="h-3 w-3 mr-1" />
+                Play
+              </>
             )}
           </Button>
         </div>

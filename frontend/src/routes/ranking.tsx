@@ -170,13 +170,21 @@ function Ranking() {
 
   return (
     <div className="min-h-screen bg-background">
-      <div className={isSmallScreen ? "py-4 px-3" : "container mx-auto py-8 px-4"}>
+      <div
+        className={isSmallScreen ? "py-4 px-3" : "container mx-auto py-8 px-4"}
+      >
         <h1 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight text-foreground mb-4 sm:mb-8 text-balance">
           Ranking
         </h1>
 
         {/* Filters */}
-        <Wrapper className={isSmallScreen ? "mb-4" : "p-6 mb-6 border-border/50 bg-card/50 backdrop-blur"}>
+        <Wrapper
+          className={
+            isSmallScreen
+              ? "mb-4"
+              : "p-6 mb-6 border-border/50 bg-card/50 backdrop-blur"
+          }
+        >
           <h2 className="text-lg sm:text-2xl font-serif font-semibold mb-3 sm:mb-4 text-foreground">
             Filters
           </h2>
@@ -236,7 +244,13 @@ function Ranking() {
         </Wrapper>
 
         {/* Rankings Table */}
-        <Wrapper className={isSmallScreen ? "overflow-x-auto -mx-3" : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"}>
+        <Wrapper
+          className={
+            isSmallScreen
+              ? "overflow-x-auto -mx-3"
+              : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"
+          }
+        >
           <Table>
             <TableHeader>
               <TableRow className="bg-muted/50">
@@ -261,13 +275,19 @@ function Ranking() {
                 </TableRow>
               ) : error ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-destructive">
+                  <TableCell
+                    colSpan={7}
+                    className="py-12 text-center text-destructive"
+                  >
                     {error.message}
                   </TableCell>
                 </TableRow>
               ) : rankings.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={7} className="py-12 text-center text-muted-foreground">
+                  <TableCell
+                    colSpan={7}
+                    className="py-12 text-center text-muted-foreground"
+                  >
                     {hasPlayerSearch
                       ? "No player found for that search."
                       : "No ranking data available for these filters."}

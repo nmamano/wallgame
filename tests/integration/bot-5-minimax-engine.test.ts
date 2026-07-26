@@ -24,7 +24,10 @@ import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
-import type { GameConfiguration, PlayerId } from "../../shared/domain/game-types";
+import type {
+  GameConfiguration,
+  PlayerId,
+} from "../../shared/domain/game-types";
 
 // Absolute path to the built wrapper binary (test runs from the repo root).
 const MINIMAX_ENGINE = join(
@@ -57,7 +60,11 @@ async function stopTestServer() {
 /** Build the wrapper so this test is self-contained as a gate. */
 async function buildEngine() {
   const proc = spawn({
-    cmd: ["sh", "-c", "cmake --preset release && ( cd build_release && make minimax_bgs_engine )"],
+    cmd: [
+      "sh",
+      "-c",
+      "cmake --preset release && ( cd build_release && make minimax_bgs_engine )",
+    ],
     cwd: "./minimax-engine",
     stdout: "pipe",
     stderr: "pipe",
@@ -65,7 +72,9 @@ async function buildEngine() {
   const code = await proc.exited;
   if (code !== 0) {
     const err = await new Response(proc.stderr).text();
-    throw new Error(`Failed to build minimax_bgs_engine (exit ${code}):\n${err}`);
+    throw new Error(
+      `Failed to build minimax_bgs_engine (exit ${code}):\n${err}`,
+    );
   }
 }
 
@@ -106,11 +115,14 @@ async function listBots(filters: {
   variant: string;
   boardWidth?: number;
   boardHeight?: number;
-}): Promise<{ bots: { id: string; botId: string; name: string; clientId: string }[] }> {
+}): Promise<{
+  bots: { id: string; botId: string; name: string; clientId: string }[];
+}> {
   const params = new URLSearchParams();
   params.set("variant", filters.variant);
   if (filters.boardWidth) params.set("boardWidth", String(filters.boardWidth));
-  if (filters.boardHeight) params.set("boardHeight", String(filters.boardHeight));
+  if (filters.boardHeight)
+    params.set("boardHeight", String(filters.boardHeight));
   const res = await fetch(`${baseUrl}/api/bots?${params.toString()}`);
   if (res.status !== 200) {
     throw new Error(`Expected 200 but got ${res.status}: ${await res.text()}`);
@@ -142,7 +154,8 @@ async function openHumanSocket(
 ): Promise<HumanSocket> {
   return new Promise((resolve, reject) => {
     const wsUrl =
-      baseUrl.replace("http", "ws") + `/ws/games/${gameId}?token=${socketToken}`;
+      baseUrl.replace("http", "ws") +
+      `/ws/games/${gameId}?token=${socketToken}`;
     const ws = new WebSocket(wsUrl, {
       headers: { Origin: "http://localhost:5173", "x-test-user-id": userId },
     });
@@ -170,58 +183,62 @@ async function openHumanSocket(
         ) => {
           const ignoreTypes = ["welcome", ...(options?.ignore ?? [])];
           const timeoutMs = options?.timeoutMs ?? 10000;
-          return new Promise<Extract<ServerMessage, { type: T }>>((res, rej) => {
-            const process = (msg: ServerMessage): boolean => {
-              if (msg.type === expectedType) {
-                res(msg as Extract<ServerMessage, { type: T }>);
+          return new Promise<Extract<ServerMessage, { type: T }>>(
+            (res, rej) => {
+              const process = (msg: ServerMessage): boolean => {
+                if (msg.type === expectedType) {
+                  res(msg as Extract<ServerMessage, { type: T }>);
+                  return true;
+                } else if (ignoreTypes.includes(msg.type)) {
+                  return false;
+                }
+                rej(
+                  new Error(
+                    `Expected "${expectedType}" but got "${msg.type}": ${JSON.stringify(msg)}`,
+                  ),
+                );
                 return true;
-              } else if (ignoreTypes.includes(msg.type)) {
-                return false;
-              }
-              rej(
-                new Error(
-                  `Expected "${expectedType}" but got "${msg.type}": ${JSON.stringify(msg)}`,
-                ),
-              );
-              return true;
-            };
-            while (buffer.length > 0) if (process(buffer.shift()!)) return;
-            const timeout = setTimeout(() => {
-              waitingResolve = null;
-              rej(new Error(`Timeout waiting for "${expectedType}"`));
-            }, timeoutMs);
-            const waitForNext = () => {
-              waitingResolve = (msg) => {
-                if (process(msg)) clearTimeout(timeout);
-                else waitForNext();
               };
-            };
-            waitForNext();
-          });
+              while (buffer.length > 0) if (process(buffer.shift()!)) return;
+              const timeout = setTimeout(() => {
+                waitingResolve = null;
+                rej(new Error(`Timeout waiting for "${expectedType}"`));
+              }, timeoutMs);
+              const waitForNext = () => {
+                waitingResolve = (msg) => {
+                  if (process(msg)) clearTimeout(timeout);
+                  else waitForNext();
+                };
+              };
+              waitForNext();
+            },
+          );
         },
         waitForState: (predicate, options) => {
           const timeoutMs = options?.timeoutMs ?? 15000;
-          return new Promise<Extract<ServerMessage, { type: "state" }>>((res, rej) => {
-            const process = (msg: ServerMessage): boolean => {
-              if (msg.type === "state" && predicate(msg)) {
-                res(msg);
-                return true;
-              }
-              return false;
-            };
-            while (buffer.length > 0) if (process(buffer.shift()!)) return;
-            const timeout = setTimeout(() => {
-              waitingResolve = null;
-              rej(new Error("Timeout waiting for state predicate"));
-            }, timeoutMs);
-            const waitForNext = () => {
-              waitingResolve = (msg) => {
-                if (process(msg)) clearTimeout(timeout);
-                else waitForNext();
+          return new Promise<Extract<ServerMessage, { type: "state" }>>(
+            (res, rej) => {
+              const process = (msg: ServerMessage): boolean => {
+                if (msg.type === "state" && predicate(msg)) {
+                  res(msg);
+                  return true;
+                }
+                return false;
               };
-            };
-            waitForNext();
-          });
+              while (buffer.length > 0) if (process(buffer.shift()!)) return;
+              const timeout = setTimeout(() => {
+                waitingResolve = null;
+                rej(new Error("Timeout waiting for state predicate"));
+              }, timeoutMs);
+              const waitForNext = () => {
+                waitingResolve = (msg) => {
+                  if (process(msg)) clearTimeout(timeout);
+                  else waitForNext();
+                };
+              };
+              waitForNext();
+            },
+          );
         },
       });
     });
@@ -242,9 +259,21 @@ interface BotConfigFile {
 }
 
 const defaultVariants = {
-  standard: { boardWidth: { min: 3, max: 15 }, boardHeight: { min: 3, max: 15 }, recommended: [{ boardWidth: 8, boardHeight: 8 }] },
-  classic: { boardWidth: { min: 3, max: 15 }, boardHeight: { min: 3, max: 15 }, recommended: [{ boardWidth: 8, boardHeight: 8 }] },
-  freestyle: { boardWidth: { min: 3, max: 15 }, boardHeight: { min: 3, max: 15 }, recommended: [] },
+  standard: {
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [{ boardWidth: 8, boardHeight: 8 }],
+  },
+  classic: {
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [{ boardWidth: 8, boardHeight: 8 }],
+  },
+  freestyle: {
+    boardWidth: { min: 3, max: 15 },
+    boardHeight: { min: 3, max: 15 },
+    recommended: [],
+  },
 };
 
 async function createBotConfigFile(args: {
@@ -257,16 +286,36 @@ async function createBotConfigFile(args: {
   const path = join(dir, "bot-config.json");
   const config = {
     server: args.serverUrl,
-    bots: [{ botId: args.botId, name: args.botName, username: null, variants: defaultVariants }],
+    bots: [
+      {
+        botId: args.botId,
+        name: args.botName,
+        username: null,
+        variants: defaultVariants,
+      },
+    ],
     engineCommands: { [args.botId]: args.engine },
   };
   await writeFile(path, JSON.stringify(config, null, 2));
   return { path, cleanup: () => rm(dir, { recursive: true, force: true }) };
 }
 
-function spawnBotClient(configPath: string, clientId: string): BotClientProcess {
+function spawnBotClient(
+  configPath: string,
+  clientId: string,
+): BotClientProcess {
   const proc = spawn({
-    cmd: ["bun", "run", "src/index.ts", "--client-id", clientId, "--config", configPath, "--log-level", "debug"],
+    cmd: [
+      "bun",
+      "run",
+      "src/index.ts",
+      "--client-id",
+      clientId,
+      "--config",
+      configPath,
+      "--log-level",
+      "debug",
+    ],
     cwd: "./official-custom-bot-client",
     stdout: "pipe",
     stderr: "pipe",
@@ -294,10 +343,16 @@ function spawnBotClient(configPath: string, clientId: string): BotClientProcess 
 
 // ================================ Helpers ===================================
 
-const sleep = (ms: number): Promise<void> => new Promise((r) => setTimeout(r, ms));
+const sleep = (ms: number): Promise<void> =>
+  new Promise((r) => setTimeout(r, ms));
 
-async function submitHumanMove(s: HumanSocket, moveNotation: string, boardHeight: number) {
-  const { moveFromStandardNotation } = await import("../../shared/domain/standard-notation");
+async function submitHumanMove(
+  s: HumanSocket,
+  moveNotation: string,
+  boardHeight: number,
+) {
+  const { moveFromStandardNotation } =
+    await import("../../shared/domain/standard-notation");
   const move = moveFromStandardNotation(moveNotation, boardHeight);
   s.ws.send(JSON.stringify({ type: "submit-move", move }));
 }
@@ -308,8 +363,13 @@ async function waitForTurn(
   currentState?: Extract<ServerMessage, { type: "state" }>,
   timeoutMs?: number,
 ): Promise<Extract<ServerMessage, { type: "state" }>> {
-  if (currentState?.state.status === "playing" && currentState.state.turn === playerId) return currentState;
-  if (currentState && currentState.state.status !== "playing") return currentState;
+  if (
+    currentState?.state.status === "playing" &&
+    currentState.state.turn === playerId
+  )
+    return currentState;
+  if (currentState && currentState.state.status !== "playing")
+    return currentState;
   return s.waitForState(
     (st) => st.state.status !== "playing" || st.state.turn === playerId,
     { timeoutMs },
@@ -356,7 +416,11 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
     let configFile: BotConfigFile | null = null;
 
     const gameConfig: GameConfiguration = {
-      timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
       variant: "classic",
       rated: false,
       boardWidth: 8,
@@ -373,7 +437,11 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
       botClient = spawnBotClient(configFile.path, clientId);
 
       await waitForBotRegistration(compositeId, { variant: "classic" });
-      const { bots } = await listBots({ variant: "classic", boardWidth: 8, boardHeight: 8 });
+      const { bots } = await listBots({
+        variant: "classic",
+        boardWidth: 8,
+        boardHeight: 8,
+      });
       expect(bots.some((b) => b.id === compositeId)).toBe(true);
 
       const { gameId, socketToken, playerId } = await createGameVsBot(
@@ -385,7 +453,9 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
       expect(playerId).toBe(1);
 
       humanSocket = await openHumanSocket(hostUserId, gameId, socketToken);
-      const initialState = await humanSocket.waitForMessage("state", { ignore: ["match-status"] });
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.config.variant).toBe("classic");
       expect(initialState.state.config.boardWidth).toBe(8);
@@ -400,7 +470,12 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
       const MAX_ROUNDS = 50;
 
       for (let round = 0; round < MAX_ROUNDS; round++) {
-        currentState = await waitForTurn(humanSocket, humanPlayerId, currentState, 20000);
+        currentState = await waitForTurn(
+          humanSocket,
+          humanPlayerId,
+          currentState,
+          20000,
+        );
         if (currentState.state.status !== "playing") break;
 
         const moveCountBefore = currentState.state.moveCount;
@@ -414,7 +489,9 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
         // game must finish). If the bot returned an illegal move, moveCount
         // would not advance and this would time out -> a real failure.
         currentState = await humanSocket.waitForState(
-          (s) => s.state.moveCount >= moveCountBefore + 2 || s.state.status !== "playing",
+          (s) =>
+            s.state.moveCount >= moveCountBefore + 2 ||
+            s.state.status !== "playing",
           { timeoutMs: 20000 },
         );
         if (currentState.state.moveCount >= moveCountBefore + 2) botMoves++;

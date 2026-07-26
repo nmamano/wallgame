@@ -90,9 +90,7 @@ export function EvaluationBar({
       <div
         className={cn(
           "text-[11px] font-mono font-semibold tabular-nums text-right overflow-hidden",
-          isVisible
-            ? "min-w-[3.5ch] text-muted-foreground"
-            : "w-0 min-w-0",
+          isVisible ? "min-w-[3.5ch] text-muted-foreground" : "w-0 min-w-0",
         )}
       >
         {evaluation !== null ? formatEval(evaluation) : "—"}

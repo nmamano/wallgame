@@ -84,8 +84,16 @@ describe("EngineProcess pendingRequests keying", () => {
   it("keeps separate sessions independent", async () => {
     engine = await EngineProcess.spawn(ENGINE_CMD);
 
-    const a = engine.send({ type: "evaluate_position", bgsId: "A", expectedPly: 0 });
-    const b = engine.send({ type: "evaluate_position", bgsId: "B", expectedPly: 0 });
+    const a = engine.send({
+      type: "evaluate_position",
+      bgsId: "A",
+      expectedPly: 0,
+    });
+    const b = engine.send({
+      type: "evaluate_position",
+      bgsId: "B",
+      expectedPly: 0,
+    });
 
     const [ra, rb] = await Promise.all([a, b]);
     expect(ra.bgsId).toBe("A");

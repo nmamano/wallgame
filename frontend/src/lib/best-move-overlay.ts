@@ -3,7 +3,13 @@ import type { WallPosition } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
 
-type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing" | "best-move";
+type WallState =
+  | "placed"
+  | "staged"
+  | "premoved"
+  | "calculated"
+  | "missing"
+  | "best-move";
 
 type WallPositionWithState = WallPosition & {
   state?: WallState;

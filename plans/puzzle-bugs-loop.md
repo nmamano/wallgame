@@ -29,6 +29,7 @@ the reply is the real wake signal.
 ## Gates per slice
 
 Always-run (on auntie, before every diff-gate):
+
 - `bun run build` — 0 TS errors
 - `bun x eslint .` — clean
 - prettier on touched files only (`bun x prettier --write <files>`), NEVER repo-wide
@@ -185,7 +186,7 @@ git-archive deploy → bundle-grep + preview-url evidence); reviewer turnaround 
   then S-C, then one push + server deploy + one desktop `git pull` + one bot restart.
   Brief degraded window (puzzle page lists no bot) between deploy and restart accepted.
 - Found in-slice: the client-side tsc (`cd official-custom-bot-client && bun x tsc
-  --noEmit`) has 7 PRE-EXISTING errors (dumb-bot.ts, a fixture) at baseline and after
+--noEmit`) has 7 PRE-EXISTING errors (dumb-bot.ts, a fixture) at baseline and after
   S-B alike — nothing compiles the client in CI (same gap as the C++, doc item I).
 - Locked: officiality enforcement stays exactly as is; no protocol version bump.
 

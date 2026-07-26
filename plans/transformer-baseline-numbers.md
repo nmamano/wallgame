@@ -11,10 +11,10 @@ Slice S1 of `plans/transformer-ready-loop.md`. Produced by
 
 ## Results
 
-| engine | batch | States shape (TRT) | qps | positions/sec | mean latency (ms) | mean GPU compute (ms) |
-|---|---|---|---|---|---|---|
-| `models_12x10_universal/model_48.trt` | 1 | 1x9x12x10 | 3699.22 | **3699** | 0.272897 | 0.269271 |
-| `models_8x8_standard/model_27.trt` | 1 | 1x8x8x8 | 3785.37 | **3785** | 0.266675 | 0.263157 |
+| engine                                | batch | States shape (TRT) | qps     | positions/sec | mean latency (ms) | mean GPU compute (ms) |
+| ------------------------------------- | ----- | ------------------ | ------- | ------------- | ----------------- | --------------------- |
+| `models_12x10_universal/model_48.trt` | 1     | 1x9x12x10          | 3699.22 | **3699**      | 0.272897          | 0.269271              |
+| `models_8x8_standard/model_27.trt`    | 1     | 1x8x8x8            | 3785.37 | **3785**      | 0.266675          | 0.263157              |
 
 ## Findings
 

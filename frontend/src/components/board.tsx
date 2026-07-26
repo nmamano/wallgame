@@ -34,7 +34,13 @@ import {
 import type { Pawn } from "../../../shared/domain/game-types";
 import { pawnId } from "../../../shared/domain/game-utils";
 
-type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing" | "best-move";
+type WallState =
+  | "placed"
+  | "staged"
+  | "premoved"
+  | "calculated"
+  | "missing"
+  | "best-move";
 
 type WallPositionWithState = WallPosition & { state?: WallState };
 
@@ -618,7 +624,14 @@ export function Board({
       <svg
         key={`arrow-${arrow.from[0]}-${arrow.from[1]}-${arrow.to[0]}-${arrow.to[1]}-${index}`}
         className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: arrow.type === "calculated" ? 1 : arrow.type === "best-move" ? 4 : 5 }}
+        style={{
+          zIndex:
+            arrow.type === "calculated"
+              ? 1
+              : arrow.type === "best-move"
+                ? 4
+                : 5,
+        }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
           gridMetrics.height,
           1,
@@ -1279,7 +1292,8 @@ export function Board({
       disableMousePawnInteraction && pawn.type === "mouse";
 
     // Use percentage padding for large pawns to maintain proportions on small screens
-    const dimensionClass = size === "lg" ? "w-full h-full" : "w-[45%] aspect-square";
+    const dimensionClass =
+      size === "lg" ? "w-full h-full" : "w-[45%] aspect-square";
     // If pawns are too close to the edge boundaries, increase this padding.
     const paddingStyle = size === "lg" ? { padding: "0%" } : undefined;
 

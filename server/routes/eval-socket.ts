@@ -244,11 +244,7 @@ const initializeBgsHistory = async (
 
       let entry: EvalHistoryEntry;
       try {
-        const response = await requestEvaluation(
-          botCompositeId,
-          bgsId,
-          newPly,
-        );
+        const response = await requestEvaluation(botCompositeId, bgsId, newPly);
 
         // Validate ply matches expected
         if (response.ply !== newPly) {
@@ -275,11 +271,8 @@ const initializeBgsHistory = async (
 
         // Synthesize terminal eval from game result:
         //   winner=1 → P1 won → +1, winner=2 → P2 won → -1, no winner → draw → 0
-        const terminalEval = gameResult.winner === 1
-          ? 1.0
-          : gameResult.winner === 2
-            ? -1.0
-            : 0.0;
+        const terminalEval =
+          gameResult.winner === 1 ? 1.0 : gameResult.winner === 2 ? -1.0 : 0.0;
         entry = { ply: newPly, evaluation: terminalEval, bestMove: "" };
       }
 

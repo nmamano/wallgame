@@ -1,10 +1,7 @@
 import { Switch } from "@/components/ui/switch";
 import { Loader2 } from "lucide-react";
 import { cn } from "@/lib/utils";
-import type {
-  EvalToggleState,
-  EvalDisplayMode,
-} from "@/hooks/use-eval-bar";
+import type { EvalToggleState, EvalDisplayMode } from "@/hooks/use-eval-bar";
 
 interface EvalToggleProps {
   state: EvalToggleState;

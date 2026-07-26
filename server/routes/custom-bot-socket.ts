@@ -895,10 +895,13 @@ export const endBgsSession = async (
       });
     });
 
-    console.info("[custom-bot-ws] drained in-flight request before ending BGS", {
-      bgsId,
-      drainedType: existingResolver.expectedResponseType,
-    });
+    console.info(
+      "[custom-bot-ws] drained in-flight request before ending BGS",
+      {
+        bgsId,
+        drainedType: existingResolver.expectedResponseType,
+      },
+    );
   }
 
   // Now safe to send end_game_session — no in-flight request at the bot

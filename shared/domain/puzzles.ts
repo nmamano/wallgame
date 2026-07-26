@@ -167,10 +167,7 @@ export const PUZZLES: Record<string, Puzzle> = {
       h(2, 4),
     ],
     humanPlaysAs: 2,
-    moves: parseMoves(
-      "b1v f2v, b1> f2v; e1; f2; f2; d2; d2; b2; b2; a3",
-      3,
-    ),
+    moves: parseMoves("b1v f2v, b1> f2v; e1; f2; f2; d2; d2; b2; b2; a3", 3),
   },
 
   // 3x5 board. Human plays as P1.

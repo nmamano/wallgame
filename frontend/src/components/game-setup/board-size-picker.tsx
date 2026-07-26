@@ -67,13 +67,9 @@ export function BoardSizePicker({
             const row = Math.floor(i / GRID_SIZE) + 1;
             const belowMin = col < MIN_SIZE || row < MIN_SIZE;
             const isInHoverRegion =
-              hoverCell != null &&
-              col <= hoverCell.col &&
-              row <= hoverCell.row;
+              hoverCell != null && col <= hoverCell.col && row <= hoverCell.row;
             const isSelected =
-              hoverCell == null &&
-              col <= width &&
-              row <= height;
+              hoverCell == null && col <= width && row <= height;
 
             let bgClass: string;
             if (isInHoverRegion) {
