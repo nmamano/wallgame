@@ -121,6 +121,14 @@ real wake signal.
       REPRODUCE FIRST — ideally reproduce BEFORE S-P1 lands so we know whether S-P1
       fixes it (suspect: history cursor / buildHistoryState with authored
       custom-setup state). Then fix whatever remains.
+      Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
+      (frontend/src/lib/history-utils.ts) derives the initial mover from the
+      authored config (`new GameState(config, 0)`) and the historyNav gating in
+      use-game-page-controller.ts (~2287) has no variant/puzzle conditions — no
+      smoking gun by reading. Symptom description needed from Nil (buttons
+      disabled? wrong position rendered? cursor stuck?); empirical browser repro
+      required. If cursor -1 shows a STANDARD start position instead of the
+      authored one, the config reaching buildHistoryState is the place to look.
 - [ ] S-UI — one product, two sections: make scripted vs generated cards consistent
       ("Solve" vs "Try" buttons etc.); scripted cards show BOTH difficulty and rating
       — keep one (lean: difficulty; settle at plan gate). Re-check item 8 (is it
