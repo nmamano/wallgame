@@ -18,7 +18,7 @@ import {
   isSupportedController,
 } from "@/lib/player-controllers";
 import { describeControllerError } from "@/lib/controller-errors";
-import type { BoardProps } from "@/components/board";
+import type { LastMoveDiff } from "@/lib/gameViewModel";
 
 export interface PendingDrawOfferState {
   actorSeatId: PlayerId;
@@ -90,19 +90,10 @@ interface UseMetaGameActionsParams {
   ) => GameState;
   updateGameState: (
     nextState: GameState,
-    options?: { lastMoves?: BoardProps["lastMoves"] | null },
+    options?: { lastMoves?: LastMoveDiff[] | null },
   ) => void;
-  computeLastMoves: (
-    state: GameState,
-    playerColorsForBoard: Record<
-      PlayerId,
-      import("@/lib/player-colors").PlayerColor
-    >,
-  ) => BoardProps["lastMoves"] | null;
-  playerColorsForBoard: Record<
-    PlayerId,
-    import("@/lib/player-colors").PlayerColor
-  >;
+  /** Colorless identity diffs; colors are applied at render time. */
+  computeLastMoveDiffs: (state: GameState) => LastMoveDiff[] | null;
 
   // UI callbacks
   addSystemMessage: (text: string) => void;
@@ -323,8 +314,7 @@ export function useMetaGameActions({
   getSeatController,
   performGameAction,
   updateGameState,
-  computeLastMoves,
-  playerColorsForBoard,
+  computeLastMoveDiffs,
   addSystemMessage,
   getPlayerName,
   setActionError,
@@ -441,7 +431,7 @@ export function useMetaGameActions({
         timestamp: Date.now(),
       });
 
-      const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
+      const lastMoves = computeLastMoveDiffs(nextState);
       updateGameState(nextState, { lastMoves });
       if (clearStaging) {
         clearStaging();
@@ -451,9 +441,8 @@ export function useMetaGameActions({
     [
       gameStateRef,
       setActionError,
-      computeLastMoves,
+      computeLastMoveDiffs,
       updateGameState,
-      playerColorsForBoard,
       clearStaging,
     ],
   );

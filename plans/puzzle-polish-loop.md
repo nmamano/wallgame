@@ -197,7 +197,7 @@ replies to a move); 0-move probes and listings are blind to engine death.
       cards); /puzzles/1 loads; closing ROUND-TRIP probe green (bot replied,
       game D6zvcWtS resigned). Nil eyeballs the solved-card wrap at his
       leisure.
-- [ ] S-P3 — lead-in move arrow color (Nil playtest #3, 2026-07-26): on
+- [x] S-P3 — lead-in move arrow color (Nil playtest #3, 2026-07-26): on
       first arrival in a P2 puzzle the bot's ply-0 arrow renders in the
       HUMAN's color; after history navigation or takeback it is correct.
       RECON (code read): diffSnapshots colors by pawn owner (correct), but
@@ -210,6 +210,18 @@ replies to a move); 0-move probes and listings are blind to engine death.
       memo. ALSO check computeLastWalls' parity formula ((index % 2) + 1
       with 1-based entry indices looks off by one — verify the index base
       empirically and derive the mover consistently).
+      IMPLEMENTED (diff-gated): view-model caches COLORLESS identity diffs
+      (LastMoveDiff/LastWallDiff with playerId); colors applied at render
+      time via pure colorizers; all cache writers migrated (server update,
+      local applyMove, meta takeback); playerColorsForBoardRef deleted.
+      Wall attribution now reads stored grid ownership (index-parity formula
+      removed — 1-based indices made its cached attribution wrong for every
+      first move; no consumer rendered it yet). Regression tests live in the
+      FRONTEND project (frontend/src/lib/gameViewModel.test.ts, dedicated
+      frontend/tsconfig.test.json + narrow eslint override; type-check with
+      `bun x tsc --noEmit -p frontend/tsconfig.test.json`), including the
+      exact first-join race (re-colorize cached diffs on a color-map change
+      with no new game state).
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
       (frontend/src/lib/history-utils.ts) derives the initial mover from the
       authored config (`new GameState(config, 0)`) and the historyNav gating in

@@ -70,6 +70,19 @@ export default tseslint.config(
     },
   },
 
+  // FRONTEND BUN TESTS: same rules, but the dedicated test tsconfig (the
+  // app project excludes *.test.ts because bun:test types are not part of
+  // the vite build).
+  {
+    files: ["frontend/**/*.test.ts"],
+    languageOptions: {
+      parserOptions: {
+        project: ["./tsconfig.test.json"],
+        tsconfigRootDir: fileURLToPath(new URL("./frontend", import.meta.url)),
+      },
+    },
+  },
+
   // SERVER + SHARED + TESTS: Type-checked TS
   {
     extends: [

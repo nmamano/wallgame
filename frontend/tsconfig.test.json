@@ -1,0 +1,13 @@
+{
+  // Frontend bun:test files: same compiler settings and "@/" aliases as the
+  // app project, plus bun-types (the app build excludes *.test.ts so vite's
+  // tsc never sees bun globals). Type-check with:
+  //   bun x tsc --noEmit -p tsconfig.test.json
+  "extends": "./tsconfig.app.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
+    "types": ["bun-types"]
+  },
+  "include": ["src/**/*.test.ts", "src"],
+  "exclude": ["node_modules", "dist", "src/components/unused-components"]
+}

@@ -1,4 +1,4 @@
-import type { BoardProps, LastWall } from "@/components/board";
+import type { LastMove, LastWall } from "@/components/board";
 import type {
   PlayerId,
   GameResult,
@@ -20,6 +20,29 @@ export type PlayerType = "you" | "friend" | "matched-user";
 // game state. All server updates flow through a single entry point, and all
 // UI state is derived from this model plus local preferences.
 
+/**
+ * Colorless last-move identity: WHO moved WHERE. Colors are presentation and
+ * are applied at render time (colorizeLastMoves) — never cached. Caching
+ * colored arrows froze whatever color map existed when a server update
+ * arrived, which mis-colored a puzzle's bot lead-in on first join (the local
+ * seat had not resolved yet).
+ */
+export interface LastMoveDiff {
+  fromRow: number;
+  fromCol: number;
+  toRow: number;
+  toCol: number;
+  playerId: PlayerId;
+}
+
+/** Colorless last-wall identity; ownership comes from the history grid. */
+export interface LastWallDiff {
+  row: number;
+  col: number;
+  orientation: NonNullable<Action["wallOrientation"]>;
+  playerId: PlayerId;
+}
+
 export interface GameViewModel {
   // Game configuration (board size, time control, etc.)
   config: GameConfiguration | null;
@@ -27,10 +50,10 @@ export interface GameViewModel {
   gameState: GameState | null;
   // Match/lobby metadata (players, readiness, appearances)
   match: GameSnapshot | null;
-  // Last move arrows to display on the board
-  lastMoves: BoardProps["lastMoves"] | null;
-  // Last placed walls to highlight on the board
-  lastWalls: LastWall[] | null;
+  // Last move arrows (colorless identity; colorize at render time)
+  lastMoves: LastMoveDiff[] | null;
+  // Last placed walls (colorless identity; colorize at render time)
+  lastWalls: LastWallDiff[] | null;
   // Whether the game has been initialized
   initialized: boolean;
 }
@@ -82,12 +105,11 @@ const snapshotFromHistoryEntry = (
 const diffSnapshots = (
   before: PawnSnapshot,
   after: PawnSnapshot,
-  playerColorsForBoard: Record<PlayerId, PlayerColor>,
-): BoardProps["lastMoves"] | null => {
-  const moves: NonNullable<BoardProps["lastMoves"]> = [];
-  (Object.keys(after) as unknown as PlayerId[]).forEach((playerId) => {
-    const playerColor =
-      playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId];
+): LastMoveDiff[] | null => {
+  const moves: LastMoveDiff[] = [];
+  // Real numeric ids — Object.keys would yield STRING keys, which index a
+  // color map fine but must never be stored as a diff's playerId.
+  ([1, 2] as const).forEach((playerId) => {
     const beforePawns = before[playerId];
     const afterPawns = after[playerId];
 
@@ -99,7 +121,7 @@ const diffSnapshots = (
         fromCol: catBefore[1],
         toRow: catAfter[0],
         toCol: catAfter[1],
-        playerColor,
+        playerId,
       });
     }
 
@@ -111,7 +133,7 @@ const diffSnapshots = (
         fromCol: mouseBefore[1],
         toRow: mouseAfter[0],
         toCol: mouseAfter[1],
-        playerColor,
+        playerId,
       });
     }
   });
@@ -120,13 +142,12 @@ const diffSnapshots = (
 };
 
 /**
- * Computes last-move arrows from the authoritative move history.
+ * Computes colorless last-move diffs from the authoritative move history.
  * After a takeback, the history is truncated, so arrows disappear naturally.
  */
-export function computeLastMoves(
+export function computeLastMoveDiffs(
   current: GameState | null,
-  playerColorsForBoard: Record<PlayerId, PlayerColor>,
-): BoardProps["lastMoves"] | null {
+): LastMoveDiff[] | null {
   if (!current || current.history.length === 0) {
     return null;
   }
@@ -142,17 +163,20 @@ export function computeLastMoves(
     ? snapshotFromHistoryEntry(beforeEntry)
     : current.getInitialSnapshot().pawns;
 
-  return diffSnapshots(beforeSnapshot, afterSnapshot, playerColorsForBoard);
+  return diffSnapshots(beforeSnapshot, afterSnapshot);
 }
 
 /**
- * Computes last-placed walls from the authoritative move history.
- * After a takeback, the history is truncated, so highlights disappear naturally.
+ * Computes colorless last-wall diffs from the authoritative move history.
+ * Ownership comes from the resulting grid (placed walls are stamped with the
+ * mover's playerId) — direct evidence, replacing an index-parity formula
+ * whose cached attribution was incorrect (1-based indices flipped it; no
+ * current consumer rendered that value, but future ones would). A wall
+ * without stored ownership is deliberately omitted rather than guessed.
  */
-export function computeLastWalls(
+export function computeLastWallDiffs(
   current: GameState | null,
-  playerColorsForBoard: Record<PlayerId, PlayerColor>,
-): LastWall[] | null {
+): LastWallDiff[] | null {
   if (!current || current.history.length === 0) {
     return null;
   }
@@ -166,17 +190,72 @@ export function computeLastWalls(
     return null;
   }
 
-  // Determine the player who made the last move
-  // The move at index N was made by player ((N % 2) + 1) since P1 moves first
-  const playerWhoMoved = ((lastEntry.index % 2) + 1) as PlayerId;
-  const playerColor = playerColorsForBoard[playerWhoMoved];
+  const gridWalls = lastEntry.grid.getWalls();
+  const diffs: LastWallDiff[] = [];
+  for (const action of wallActions) {
+    const placed = gridWalls.find(
+      (wall) =>
+        wall.cell[0] === action.target[0] &&
+        wall.cell[1] === action.target[1] &&
+        wall.orientation === action.wallOrientation,
+    );
+    if (placed?.playerId === undefined) {
+      continue;
+    }
+    diffs.push({
+      row: action.target[0],
+      col: action.target[1],
+      orientation: action.wallOrientation!,
+      playerId: placed.playerId,
+    });
+  }
 
-  return wallActions.map((action) => ({
-    row: action.target[0],
-    col: action.target[1],
-    orientation: action.wallOrientation!,
-    playerColor,
+  return diffs.length ? diffs : null;
+}
+
+/** Applies the CURRENT color map to cached colorless move diffs, at render time. */
+export function colorizeLastMoves(
+  diffs: LastMoveDiff[] | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): LastMove[] | null {
+  if (!diffs) return null;
+  return diffs.map(({ playerId, ...coordinates }) => ({
+    ...coordinates,
+    playerColor:
+      playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId],
   }));
+}
+
+/** Applies the CURRENT color map to cached colorless wall diffs, at render time. */
+export function colorizeLastWalls(
+  diffs: LastWallDiff[] | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): LastWall[] | null {
+  if (!diffs) return null;
+  return diffs.map(({ playerId, ...wall }) => ({
+    ...wall,
+    playerColor:
+      playerColorsForBoard[playerId] ?? DEFAULT_PLAYER_COLORS[playerId],
+  }));
+}
+
+/**
+ * Colored convenience wrapper for consumers whose color map is reactive at
+ * the call site (showcase, scripted puzzles, solo campaign, history mode).
+ */
+export function computeLastMoves(
+  current: GameState | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): LastMove[] | null {
+  return colorizeLastMoves(computeLastMoveDiffs(current), playerColorsForBoard);
+}
+
+/** Colored convenience wrapper; see computeLastMoves. */
+export function computeLastWalls(
+  current: GameState | null,
+  playerColorsForBoard: Record<PlayerId, PlayerColor>,
+): LastWall[] | null {
+  return colorizeLastWalls(computeLastWallDiffs(current), playerColorsForBoard);
 }
 
 /**
@@ -186,19 +265,14 @@ export function computeLastWalls(
 export function applyServerUpdate(
   prev: GameViewModel,
   update: ServerUpdate,
-  playerColorsForBoard: Record<PlayerId, PlayerColor>,
 ): GameViewModel {
   switch (update.type) {
     case "game-state": {
-      // Compute last moves and walls solely from the new state's history
-      const lastMoves = computeLastMoves(
-        update.gameState,
-        playerColorsForBoard,
-      );
-      const lastWalls = computeLastWalls(
-        update.gameState,
-        playerColorsForBoard,
-      );
+      // Compute COLORLESS last-move/wall diffs solely from the new state's
+      // history; colors are applied at render time so a color map that
+      // settles after this update (fresh join) can never be frozen in.
+      const lastMoves = computeLastMoveDiffs(update.gameState);
+      const lastWalls = computeLastWallDiffs(update.gameState);
       return {
         ...prev,
         config: update.config,

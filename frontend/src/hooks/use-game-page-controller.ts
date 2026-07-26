@@ -1,7 +1,7 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
-import { type BoardProps, type BoardPawn } from "@/components/board";
+import { type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import {
   isClassicVariant as usesClassicRules,
@@ -73,6 +73,10 @@ import { buildHistoryState } from "@/lib/history-utils";
 import type { HistoryNav } from "@/types/history";
 import {
   type PlayerType,
+  type LastMoveDiff,
+  colorizeLastMoves,
+  colorizeLastWalls,
+  computeLastMoveDiffs,
   computeLastMoves,
   computeLastWalls,
   buildPlayerName,
@@ -359,13 +363,8 @@ export function useGamePageController(gameId: string) {
     setHasLocalConfig(sessionStorage.getItem(`game-config-${gameId}`) != null);
   }, [gameId]);
 
-  const {
-    viewModel,
-    applyServerUpdate,
-    updateGameState,
-    resetViewModel,
-    playerColorsForBoardRef,
-  } = useGameViewModel(DEFAULT_PLAYER_COLORS);
+  const { viewModel, applyServerUpdate, updateGameState, resetViewModel } =
+    useGameViewModel();
 
   // ============================================================================
   // Connection & Session State
@@ -695,11 +694,6 @@ export function useGamePageController(gameId: string) {
 
     return colors;
   }, [friendColorOverrides, localPreferences.pawnColor, primaryLocalPlayerId]);
-
-  // Keep ref in sync with computed value
-  useEffect(() => {
-    playerColorsForBoardRef.current = playerColorsForBoard;
-  }, [playerColorsForBoard, playerColorsForBoardRef]);
 
   const stagedActionsSnapshotRef = useRef<Action[] | null>(null);
   const latestStagedActionsRef = useRef<Action[]>([]);
@@ -1032,12 +1026,18 @@ export function useGamePageController(gameId: string) {
     if (!historyState) return null;
     return computeLastWalls(historyState, playerColorsForBoard);
   }, [historyState, playerColorsForBoard]);
-  const resolvedLastMoves = historyState
-    ? historyLastMoves
-    : viewModel.lastMoves;
-  const resolvedLastWalls = historyState
-    ? historyLastWalls
-    : viewModel.lastWalls;
+  // Live cached diffs are colorless; apply the CURRENT color map at render
+  // time so a late-resolving local seat can never freeze stale colors in.
+  const liveLastMoves = useMemo(
+    () => colorizeLastMoves(viewModel.lastMoves, playerColorsForBoard),
+    [viewModel.lastMoves, playerColorsForBoard],
+  );
+  const liveLastWalls = useMemo(
+    () => colorizeLastWalls(viewModel.lastWalls, playerColorsForBoard),
+    [viewModel.lastWalls, playerColorsForBoard],
+  );
+  const resolvedLastMoves = historyState ? historyLastMoves : liveLastMoves;
+  const resolvedLastWalls = historyState ? historyLastWalls : liveLastWalls;
   // Convert null to undefined for Board component compatibility
   const lastMove = resolvedLastMoves ?? undefined;
   const lastWalls = resolvedLastWalls ?? undefined;
@@ -1919,7 +1919,7 @@ export function useGamePageController(gameId: string) {
     (
       action: GameAction,
       options?: {
-        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+        lastMoves?: LastMoveDiff[] | null;
       },
     ) => {
       const currentState = gameStateRef.current;
@@ -1951,8 +1951,7 @@ export function useGamePageController(gameId: string) {
     getSeatController,
     performGameAction: performGameActionImpl,
     updateGameState,
-    computeLastMoves,
-    playerColorsForBoard,
+    computeLastMoveDiffs,
     addSystemMessage,
     getPlayerName,
     setActionError,
@@ -2002,7 +2001,7 @@ export function useGamePageController(gameId: string) {
     (
       action: GameAction,
       options?: {
-        lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+        lastMoves?: LastMoveDiff[] | null;
       },
     ) => {
       const result = performGameActionImpl(action, options);
@@ -2354,10 +2353,10 @@ export function useGamePageController(gameId: string) {
         playerId,
         timestamp: Date.now(),
       });
-      const lastMoves = computeLastMoves(nextState, playerColorsForBoard);
+      const lastMoves = computeLastMoveDiffs(nextState);
       updateGameState(nextState, { lastMoves });
     },
-    [updateGameState, playerColorsForBoard],
+    [updateGameState],
   );
 
   const clearStagedActions = useCallback(() => {

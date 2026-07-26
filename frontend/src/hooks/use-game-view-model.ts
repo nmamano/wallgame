@@ -1,17 +1,16 @@
-import { useState, useCallback, useRef, type MutableRefObject } from "react";
-import type { BoardProps } from "@/components/board";
+import { useState, useCallback } from "react";
 import type { GameState } from "../../../shared/domain/game-state";
-import type { PlayerId } from "../../../shared/domain/game-types";
-import type { PlayerColor } from "@/lib/player-colors";
 import {
   DEFAULT_VIEW_MODEL,
   applyServerUpdate as applyServerUpdatePure,
   type GameViewModel,
+  type LastMoveDiff,
   type ServerUpdate,
 } from "@/lib/gameViewModel";
 
 interface UpdateGameStateOptions {
-  lastMoves?: BoardProps["lastMove"] | BoardProps["lastMoves"] | null;
+  /** Colorless identity diffs; colors are applied at render time. */
+  lastMoves?: LastMoveDiff[] | null;
 }
 
 interface UseGameViewModelResult {
@@ -22,23 +21,13 @@ interface UseGameViewModelResult {
     options?: UpdateGameStateOptions,
   ) => void;
   resetViewModel: () => void;
-  playerColorsForBoardRef: MutableRefObject<Record<PlayerId, PlayerColor>>;
 }
 
-export function useGameViewModel(
-  defaultPlayerColors: Record<PlayerId, PlayerColor>,
-): UseGameViewModelResult {
+export function useGameViewModel(): UseGameViewModelResult {
   const [viewModel, setViewModel] = useState<GameViewModel>(DEFAULT_VIEW_MODEL);
 
-  const playerColorsForBoardRef = useRef<Record<PlayerId, PlayerColor>>({
-    1: defaultPlayerColors[1],
-    2: defaultPlayerColors[2],
-  });
-
   const applyServerUpdate = useCallback((update: ServerUpdate) => {
-    setViewModel((prev) =>
-      applyServerUpdatePure(prev, update, playerColorsForBoardRef.current),
-    );
+    setViewModel((prev) => applyServerUpdatePure(prev, update));
   }, []);
 
   const updateGameState = useCallback(
@@ -51,7 +40,7 @@ export function useGameViewModel(
           ...prev,
           gameState: nextState,
           lastMoves: shouldUpdateLastMoves
-            ? ((options?.lastMoves as BoardProps["lastMoves"] | null) ?? null)
+            ? (options?.lastMoves ?? null)
             : prev.lastMoves,
         };
       });
@@ -61,17 +50,12 @@ export function useGameViewModel(
 
   const resetViewModel = useCallback(() => {
     setViewModel(DEFAULT_VIEW_MODEL);
-    playerColorsForBoardRef.current = {
-      1: defaultPlayerColors[1],
-      2: defaultPlayerColors[2],
-    };
-  }, [defaultPlayerColors]);
+  }, []);
 
   return {
     viewModel,
     applyServerUpdate,
     updateGameState,
     resetViewModel,
-    playerColorsForBoardRef,
   };
 }
