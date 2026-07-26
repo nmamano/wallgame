@@ -1,0 +1,141 @@
+# Puzzle polish loop (loop 3) — standing orders + slice handoffs
+
+Re-read this file at the start of every iteration. Conversations compact; this file
+does not. Companions: `info/puzzle-platform.md` (model, environment - THE doc to read
+first), `plans/puzzle-feature-loop.md` (loop 2's record), `plans/puzzle-bugs-loop.md`
+(loop 1's record). Scope source: Nil's 2026-07-26 playtest of the shipped /puzzles
+page.
+
+## North star
+
+The puzzle experience stops feeling rough at the edges: copy leaks nothing internal,
+the pool is curated, "P1 moves first" is restored as a universal axiom (fixing
+takeback gating and seat clarity in one stroke), move history works in puzzles, and
+the two puzzle sections look and act like one product.
+
+## Nil's decisions already made (do not re-ask)
+
+- Website copy must NEVER expose internal mechanics (filter rules, pipelines). Durable
+  rule, saved to boss memory. Describe what the user gets, not how it is made.
+- Curation verdict on the 41: pool is good overall — all winnable, non-trivial.
+  Retire Generated Puzzle 1 and 6 (too easy) via `enabled=false` (the column exists
+  for exactly this). Rated good: 2, 3, 10, 11. Excellent: 8, 9.
+- **P1 moves first is a universal axiom** (Nil, verbatim intent): the old codebase
+  assumption was correct and generalizing away from it was the mistake. For puzzles
+  where the human is P2, the BOT makes a real first move (an actual ply-0 move in the
+  game history), so: takeback parity is correct again without frontend special-casing,
+  move history makes sense, and you can SEE you are P2 (a bot move is already on the
+  board) — which also answers "does the one-move rule apply to me".
+- G3 (completion tracking) and G4 (likes/dislikes) are DEFERRED to loop 4.
+- GH issue nmamano/wallgame#1 stays open as-is (long-form writeup linked from board
+  task 8f1cf7e3). Bugs are tracked on the isomux task board, not GH.
+- PuzzleBot graceful losing (equal-eval tie-breaking) is engine-side C++ = Nil's
+  territory: filed as board task b4c2b191, linked from info/puzzle-platform.md §I.
+  NOT in this loop.
+- Reviewer: Project Reviewer 1 (`agent-1780864878869-eq7t`), plan-gate + diff-gate per
+  slice, commit only on sign-off. No other agents. Gate messages must be
+  SELF-CONTAINED (their session may be cleared between gates).
+- Autonomy: push + deploy to production autonomously per slice; bot restarts anytime
+  (no gap needed since S-CX); login-required verification = walk Nil through it.
+
+## Process per slice
+
+plan → Reviewer plan-gate → implement → always-run gates → Reviewer diff-gate →
+sign-off → ONE focused commit (tick the checkbox in it) → push → deploy / restart as
+the slice requires → production verification → author the next slice's pickup (with a
+"what the previous slice taught" block). Production verification is post-commit; if it
+fails, fix forward before the next slice. While waiting on the reviewer, end the turn
+with a ~20-25 min fallback wakeup via isomux scheduled self-message; the reply is the
+real wake signal.
+
+## Gates per slice
+
+- `bun run build` — 0 TS errors; server/shared changes ALSO need
+  `bun x tsc --noEmit -p tsconfig.json` (ignore minimax-engine CMake-artifact noise).
+- `bun x eslint .` — clean.
+- prettier on touched files only; `bun x prettier --check .` must stay clean
+  (pinned 3.8.3).
+- NOT gates: `bun run ci` (cannot pass on auntie).
+- Production evidence: fresh curl reads of prod APIs, desktop bot log
+  (`~/logs/bot-client-transformer.log`), DB reads/writes via
+  `~/.fly/bin/fly ssh console -a wallgame` (base64-encode a bun script, run inside
+  the machine), preview-url screenshots as artifacts only. Probe harness from loops
+  1-2 (POST /api/bots/play + drive the game websocket with a bun script) is proven —
+  reuse it; probe games 0 moves where possible and resign them.
+
+## Standing rails (prohibitions)
+
+- NEVER `pkill -f` / `killall` on any box; exact PIDs only.
+- NEVER scp SOURCE to the desktop; source moves by git (test DATA files are fine).
+- NEVER deploy anything but a clean `git archive` of a committed sha:
+  `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
+- NEVER restart `wallgame-dev-5174` while Nil is mid-game; own dev on port 5175.
+- NEVER add wrong-move detection, correctness checks, or automated puzzle-quality
+  gating. Nil is the filter.
+- ELO paths untouched.
+- No migrations expected this loop; if one becomes necessary: additive-only, review
+  the generated SQL pre-deploy, seeding never in release_command.
+- Prod data changes only when Nil explicitly ordered them (retiring 1 and 6 is
+  ordered); anything ambiguous about production data → ask Nil.
+- Batch engine evaluation ONLY via the sequential offline ssh driver
+  (`scripts/filter-puzzle-candidates.ts`); NEVER point batch tooling at the serving
+  engine (parked concurrency defect, task 8f1cf7e3).
+- Bot restart recipe: kill tmux `bot-client` on the desktop, start
+  `bash ~/run_transformer_bot.sh` in tmux, verify BOTH the attach log line AND
+  `/api/bots?variant=custom-setup-standard` lists dw-puzzle. No gap needed.
+- NEVER weaken a gate to pass; fix in-slice or park the decision for Nil.
+- Stop conditions: 3 consecutive gate failures on one slice → stop and summarize; any
+  ambiguity about production data → ask Nil (he is reachable).
+
+## Slice plan
+
+- [ ] S-COPY — copy + curation: (1) remove the /puzzles Generated-section subtitle
+      that exposes filter mechanics (`frontend/src/routes/puzzles.index.tsx` ~227);
+      replace with user-facing copy or nothing. (2) Retire Generated Puzzle 1 and 6:
+      prod `UPDATE saved_puzzles SET enabled=false` for those two rows (verify the
+      displayName↔row mapping inside the fly machine before writing; GET /api/puzzles
+      already filters `enabled=true`; the seeder is fingerprint-idempotent so a rerun
+      cannot re-enable them — verify that claim in-slice). No migration.
+- [ ] S-P1 — restore the P1-moves-first axiom: puzzles where the human is P2 begin
+      with the bot's first move applied as a REAL move in the game history (ply 0).
+      OPEN DESIGN QUESTION for the plan gate (and Nil): synthetic positions have no
+      real game history to take the bot's move from. Candidate designs:
+      (a) wall-backout lead-in — pre-position = the vetted position minus two of its
+      neutral walls; the stored lead-in move places those two walls; the human then
+      faces EXACTLY the curated position (preserves Nil's curation byte-for-byte,
+      deterministic, no engine involvement);
+      (b) regenerate P2 puzzles from a sampled pre-position + engine best move
+      (invalidates curation of existing P2 puzzles);
+      (c) live engine first move at game start (non-deterministic, also invalidates
+      curation). Lean: (a), pending Nil's veto.
+      Ships with: loop 2's S-E checkbox ticked (takeback parity becomes correct with
+      NO frontend change — `hasTakebackHistory`'s hard-coded parity is right once P1
+      truly moves first); docs updated (the "human always moves first" model fact in
+      info/puzzle-platform.md and the bot-log ply-0 interpretation both change).
+- [ ] S-MH — move history doesn't work when playing a puzzle (Nil, unspecified).
+      REPRODUCE FIRST — ideally reproduce BEFORE S-P1 lands so we know whether S-P1
+      fixes it (suspect: history cursor / buildHistoryState with authored
+      custom-setup state). Then fix whatever remains.
+- [ ] S-UI — one product, two sections: make scripted vs generated cards consistent
+      ("Solve" vs "Try" buttons etc.); scripted cards show BOTH difficulty and rating
+      — keep one (lean: difficulty; settle at plan gate). Re-check item 8 (is it
+      clear whether you are P1 or P2 in-game) AFTER S-P1 — Nil expects S-P1 largely
+      answers it; fold a small indicator in here only if still unclear.
+
+## SLICE S-COPY PICKUP (authored at loop-3 setup)
+
+- Baseline: c59667d (docs-only ahead of prod bacc0ce; this slice's deploy carries
+  both).
+- Goal: the two curation/copy orders above, exactly. Nothing else rides along.
+- Subtitle today (puzzles.index.tsx ~225-228): "Positions whose best first move is
+  simply walking at the target are filtered out; nothing else is vetted." Gone per
+  the durable copy rule. Replacement is the slice's call — short, user-facing, or
+  nothing.
+- Retirement mechanics: bun script run inside the fly machine (base64 pattern from
+  S-G1's seeder verification); read the two rows back after the UPDATE; then curl
+  GET /api/puzzles from outside and confirm 39 rows, names 1 and 6 absent, page
+  renders 39 cards (screenshot).
+- Check nothing depends on contiguous sort indices or the count 41 (rg for "41",
+  sortIndex assumptions).
+- Verification: prod API + page screenshot; a launch of a surviving puzzle still
+  plays.

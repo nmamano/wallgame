@@ -79,7 +79,12 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 
 ## Slice plan
 
-- [ ] S-E — takeback works in puzzle (custom-setup) bot games
+- [ ] S-E — takeback works in puzzle (custom-setup) bot games. NIL ANSWERED
+      (2026-07-26): the button is SOMETIMES GRAYED OUT (example game LOH8GsyP) — a
+      frontend gating issue, and Nil's chosen fix is structural: restore "P1 moves
+      first" as a universal axiom (bot makes a real first move in human-as-P2
+      puzzles). Superseded by loop 3's S-P1 slice
+      (`plans/puzzle-polish-loop.md`); tick this box when S-P1 ships.
 - [x] S-CX — connection lifecycle: fix the reattach race AND add a disconnect grace
       period (delay clientId cleanup, re-bind sessions on prompt reattach) - one code
       path, server-side. Nil approved both. DONE `0c197b6`, deployed + prod-verified
@@ -111,11 +116,12 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
       aligned with the exact delta -2 rule if verdicts are regenerated.
 
 LOOP STATUS (2026-07-26): S-CX, S-H, S-G1, S-G2 all shipped and production-verified.
-S-E remains OPEN, parked on Nil: the server takeback path probed healthy in four
-scenarios and the start-race bug found instead was fixed (4d96f6e); the checkbox waits
-on Nil describing what "takeback does not work" looked like (or retrying it). The
-active loop is stopped; restart it for loop 3 (G3 completion tracking, G4 votes) or to
-close S-E once Nil answers.
+S-E remains OPEN — Nil answered (see the checkbox above); it closes via loop 3's S-P1.
+Loop 3 is the PLAYTEST-POLISH loop (`plans/puzzle-polish-loop.md`), scoped from Nil's
+2026-07-26 playtest feedback. G3 (completion tracking) and G4 (likes/dislikes) are
+deferred again, to loop 4. GH issue nmamano/wallgame#1 stays open as the linked
+writeup for board task 8f1cf7e3 (Nil's call). PuzzleBot graceful-losing filed as
+board task b4c2b191 (engine-side, Nil's territory).
 
 ## Deferred / parked
 

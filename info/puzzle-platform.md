@@ -314,6 +314,10 @@ Fixed in `101e073`, deployed. Kept for the record:
   an isomux room log. Low risk in a private office; rotate if wanted.
 - Engine only ever emits its own best turn, so an equally good alternative has no
   representation. A ceiling on candidate quality if automated filtering ever returns.
+- **PuzzleBot loses ungracefully** (Nil playtest, 2026-07-26): once the engine sees the
+  position as lost, every move has equal eval and play looks random/broken. Real fix is
+  engine-side tie-breaking (max resistance) in the C++ — Nil's territory. Follow-up
+  filed as **isomux board task b4c2b191** (P3).
 
 ---
 
