@@ -82,9 +82,16 @@ Restarting the bots (needed after a config or engine change):
 ```
 ssh nilo@desktop-053vvpl-1
 tmux kill-session -t bot-client
+sleep 15   # REQUIRED - see below
 tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"
 # confirm: grep "Successfully attached" ~/logs/bot-client-transformer.log
+# then ALSO confirm: /api/bots?variant=custom-setup-standard lists dw-puzzle
 ```
+
+The 15s gap matters: registrations are keyed by clientId, and a quick kill+restart can
+have the server process the old connection's disconnect cleanup AFTER the new attach,
+silently wiping the new registration - the client still gets "attached" and ping/pong,
+but every bot listing is empty. "Successfully attached" alone does not prove health.
 
 Never use `pkill -f` on either box - on auntie it matches the isomux office server and
 takes the whole office down. Capture an exact PID instead.

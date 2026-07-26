@@ -91,7 +91,19 @@ delete. S-A moves that code, never extends it.
 
 Parked-for-Nil queue:
 
-1. **Resignation investigation (S-B, 2026-07-26).** The engine's V3 BGS path and the bot
+1. **Bot-client reattach race (found during S-C verification, 2026-07-26).** The server
+   keys bot registrations by clientId; when the client is killed and restarted within a
+   few seconds, the server can process the OLD connection's disconnect cleanup AFTER the
+   new attach, wiping the fresh registration — the client then believes it is attached
+   (ping/pong flows) while ALL bot listings return empty. Reproduced, then confirmed a
+   15s kill→start gap avoids it (now baked into the restart recipe). Decision for Nil:
+   server fix (e.g. connection-scoped cleanup instead of clientId-scoped, or reattach
+   supersede) — likely also related to why the resign-on-disconnect fired historically.
+2. **Probe games created during verification (2026-07-26).** Six unrated finished/aborted
+   games vs PuzzleBot exist from scripted verification (hostDisplayName "WallGamer
+   latency probe"): cHHfxhVV, 1i2mHv1q, H-FIR_4Y, tpSwObYr, Q16h_i92, k8lxFItA. They sit
+   in Past Games until S-F hides puzzle games; harmless, delete only if wanted.
+3. **Resignation investigation (S-B, 2026-07-26).** The engine's V3 BGS path and the bot
    client have NO resign capability; the only way a bot resigns is server-side:
    `custom-bot-socket.ts` `handleBotClientDisconnect` resigns ALL of a client's active
    games when its websocket drops. The client log shows 1006 drops are routine (two
@@ -107,8 +119,11 @@ Parked-for-Nil queue:
 
 - Deploy: `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
 - Bot restart: `ssh nilo@desktop-053vvpl-1`, then `tmux kill-session -t bot-client`, then
+  **wait at least 15 seconds** (reattach race — see parked item 1), then
   `tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"`, then
-  confirm "Successfully attached" in `~/logs/bot-client-transformer.log`.
+  confirm "Successfully attached" in `~/logs/bot-client-transformer.log` AND that
+  `/api/bots?variant=custom-setup-standard` lists dw-puzzle (attach success alone does
+  NOT prove the registration survived).
 - Reviewer: Project Reviewer 1 = `agent-1780864878869-eq7t`, POST
   `localhost:4000/api/agents/<id>/messages` (isomux).
 - Key files: `frontend/src/routes/game.$id.tsx` (mobile tree early-return ~261, desktop
@@ -189,6 +204,29 @@ ordering (server before bot restart). Verify runtime schemas empirically, not by
   `/api/bots?variant=custom-setup-standard` lists exactly PuzzleBot and
   `variant=classic` excludes it (S-B evidence); a fresh dw-puzzle eval's wall-clock in
   the log ≲ 6s (S-C evidence); puzzle page screenshot artifact.
+
+## SLICE-D PICKUP (authored after S-B/S-C verified in production)
+
+What S-B/S-C verification taught: (1) B+C rollout complete and verified — attach OK,
+variant listings exact (custom-setup-standard → dw-puzzle only; classic/standard →
+dw-transformer only), and PuzzleBot's reply measured at 657ms end-to-end / 416ms
+engine-side at 5000/128, vs ~12s at 10000/32. (2) In puzzles the HUMAN always moves
+first (authored turn state) — a session log showing "Evaluating position at ply 0" with
+nothing after is a human-first game nobody played, not a hang. (3) The engine's ply-0
+eval of a candidate is ≈ −0.99 (bot knows it is losing) — the winnability signal, free.
+(4) Beware the reattach race when restarting bots (parked item 1; 15s gap).
+
+- Baseline: 01d031d.
+- Goal (doc 4D): after failing/finishing a puzzle, one click relaunches the SAME
+  candidate into a fresh game. No state rewind, no server work — the candidate config
+  is client-side (`findGeneratedCandidate` already resolves it on the game page).
+- Design direction: puzzles suppress the rematch offer (doc §3); retry is the puzzle
+  counterpart, so it belongs wherever rematch appears for ordinary games, gated on
+  `info.isPuzzle && puzzleCandidate`. Relaunch = same flow generated-candidates.tsx
+  uses: fetchBots(custom-setup-standard) → playVsBot(config, hostIsPlayer1) →
+  saveGameHandshake → navigate to the new game id.
+- Locked: no wrong-move detection; no server changes; candidate resolution stays
+  position-based until G replaces it with named puzzles.
 
 ## SLICE-N PICKUPS
 
