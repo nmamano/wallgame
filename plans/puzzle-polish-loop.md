@@ -117,6 +117,23 @@ real wake signal.
       NO frontend change — `hasTakebackHistory`'s hard-coded parity is right once P1
       truly moves first); docs updated (the "human always moves first" model fact in
       info/puzzle-platform.md and the bot-log ply-0 interpretation both change).
+      DONE `f51f41c` + fix-forward `a4b6f77`, deployed + prod-verified 2026-07-26:
+      migration + population clean (exact-set preflight, 19 populated / 22 null);
+      probe battery ALL PASS — P2 launch (real ply-0 "Ma2", curated board, human
+      to move), human move → BOT REPLIES, TAKEBACK rolls back to curated with
+      lead-in intact (Nil's reported bug, fixed), Retry-equivalence (identical
+      scripted ply 0), P1 regression, direct-shape regression. Fix-forward: the
+      fresh BGS init assumed ply 0 — first-ever games with pre-BGS history
+      desynced the engine (sync guard correctly refused bot turns, prod probe
+      caught it); initializeBotGameOnStart now routes history>0 + no-BGS through
+      resyncBgsFromHistory; regression test bot-8 (proven to fail pre-fix).
+      WHAT S-P1 TAUGHT: (1) every "first time a game can be in state X" moment
+      needs a sweep of paths that assume the old invariant — the frontend parity
+      was fixed by design, but the BGS init had the same class of assumption and
+      only a live probe caught it; (2) the probe battery must include a REPLY
+      round-trip, not just launch+resign — 0-move probes cannot see engine
+      desync; (3) union request schemas need strictness on EVERY member or
+      fallback matching silently strips discriminating keys.
 - [ ] S-MH — move history doesn't work when playing a puzzle (Nil, unspecified).
       REPRODUCE FIRST — ideally reproduce BEFORE S-P1 lands so we know whether S-P1
       fixes it (suspect: history cursor / buildHistoryState with authored
@@ -128,6 +145,13 @@ real wake signal.
       authored turn from /api/puzzles). Plausible mechanism: the paired
       move-table memo in use-game-page-controller.ts (~2240-2285) pairing
       movers by parity. Recheck empirically AFTER S-P1 ships.
+      POST-S-P1 STATUS: the census CONFIRMS the correlation — Generated
+      Puzzle 3 is a P2 row (cat-advance lead-in), Puzzle 4 is P1. With S-P1
+      live, every game history again starts at ply 0 = P1, so the suspected
+      parity assumption now holds universally. SLICE IS NOW VERIFICATION-
+      FIRST: ask Nil to play a P2 puzzle (e.g. Generated Puzzle 3) and check
+      the move history panel. If it renders, close this slice with his
+      confirmation; if not, instrument the paired-move memo and fix.
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
       (frontend/src/lib/history-utils.ts) derives the initial mover from the
       authored config (`new GameState(config, 0)`) and the historyNav gating in
