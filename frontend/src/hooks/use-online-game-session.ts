@@ -7,6 +7,8 @@ import {
 import {
   getGameHandshake,
   saveGameHandshake,
+  handshakesEqual,
+  withPuzzleMetadataFrom,
   clearGameHandshake,
   type StoredGameHandshake,
 } from "@/lib/game-session";
@@ -63,22 +65,6 @@ export function useOnlineGameSession({
     [gameId],
   );
 
-  const handshakesEqual = useCallback(
-    (a: StoredGameHandshake | null, b: StoredGameHandshake | null): boolean => {
-      if (a === b) return true;
-      if (!a || !b) return false;
-      return (
-        a.gameId === b.gameId &&
-        a.token === b.token &&
-        a.socketToken === b.socketToken &&
-        a.role === b.role &&
-        a.playerId === b.playerId &&
-        a.shareUrl === b.shareUrl
-      );
-    },
-    [],
-  );
-
   const bootstrapRef = useRef<string | null>(null);
 
   useEffect(() => {
@@ -116,7 +102,7 @@ export function useOnlineGameSession({
       setGameHandshake((prev) => (prev === null ? prev : null));
       setMatchShareUrl((prev) => (prev === undefined ? prev : undefined));
     }
-  }, [enabled, gameId, debugMatch, maskToken, handshakesEqual]);
+  }, [enabled, gameId, debugMatch, maskToken]);
 
   const resolveCacheRef = useRef<
     Map<string, Promise<ResolveGameAccessResponse>>
@@ -213,21 +199,21 @@ export function useOnlineGameSession({
         onMatchSnapshotUpdate?.(response.matchStatus);
 
         if (response.kind === "player") {
-          const nextHandshake: StoredGameHandshake = {
-            gameId,
-            token: response.seat.token,
-            socketToken: response.seat.socketToken,
-            role: response.seat.role,
-            playerId: response.seat.playerId,
-            shareUrl: response.shareUrl,
-          };
-          const handshakeChanged =
-            !gameHandshake ||
-            gameHandshake.token !== nextHandshake.token ||
-            gameHandshake.socketToken !== nextHandshake.socketToken ||
-            gameHandshake.playerId !== nextHandshake.playerId ||
-            gameHandshake.role !== nextHandshake.role ||
-            gameHandshake.shareUrl !== nextHandshake.shareUrl;
+          const nextHandshake: StoredGameHandshake = withPuzzleMetadataFrom(
+            {
+              gameId,
+              token: response.seat.token,
+              socketToken: response.seat.socketToken,
+              role: response.seat.role,
+              playerId: response.seat.playerId,
+              shareUrl: response.shareUrl,
+            },
+            gameHandshake,
+          );
+          const handshakeChanged = !handshakesEqual(
+            gameHandshake,
+            nextHandshake,
+          );
           if (handshakeChanged) {
             debugMatch?.("Updating stored handshake from resolve access", {
               id: gameId,
@@ -334,14 +320,17 @@ export function useOnlineGameSession({
         refetchAccess();
         return;
       }
-      const handshake: StoredGameHandshake = {
-        gameId,
-        token: result.token,
-        socketToken: result.socketToken,
-        role: result.role,
-        playerId: result.playerId,
-        shareUrl: result.shareUrl,
-      };
+      const handshake: StoredGameHandshake = withPuzzleMetadataFrom(
+        {
+          gameId,
+          token: result.token,
+          socketToken: result.socketToken,
+          role: result.role,
+          playerId: result.playerId,
+          shareUrl: result.shareUrl,
+        },
+        gameHandshake,
+      );
       updateGameHandshake(handshake);
       setMatchShareUrl(result.shareUrl);
       refetchAccess();
@@ -363,6 +352,7 @@ export function useOnlineGameSession({
     debugMatch,
     enabled,
     gameId,
+    gameHandshake,
     isClaimingSeat,
     localPreferences.catSkin,
     localPreferences.displayName,

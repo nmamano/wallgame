@@ -1,47 +1,33 @@
 import { Hono } from "hono";
+import { asc, eq } from "drizzle-orm";
 
 import { db } from "../db";
-import { puzzlesTable } from "../db/schema/puzzles";
-import { count, eq } from "drizzle-orm";
-import { createPostSchema } from "../../shared/contracts/puzzles";
+import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
+import { mapSavedPuzzleRows } from "../../shared/contracts/puzzles";
 
-export const puzzlesRoute = new Hono()
-  .get("/", async (c) => {
-    const puzzles = await db.select().from(puzzlesTable);
-    return c.json({ puzzles: puzzles });
-  })
-  .get("/count", async (c) => {
-    const numPuzzles = await db.select({ count: count() }).from(puzzlesTable);
-    return c.json({
-      count: numPuzzles[0].count,
-    });
-  })
-  .post("/", async (c) => {
-    const data: unknown = await c.req.json();
-    const puzzle = createPostSchema.parse(data);
-    const res = await db.insert(puzzlesTable).values(puzzle).returning();
-    c.status(201);
-    return c.json(res);
-  })
-  .get("/:id{[0-9]+}", async (c) => {
-    const id = Number.parseInt(c.req.param("id"));
-    const res = await db
+/**
+ * Saved puzzles (S-G1): read-only listing of the named persisted puzzles.
+ *
+ * DB JSONB is untrusted: every row is validated through the shared contract
+ * before it is returned; a corrupted enabled row fails the request closed
+ * (500) rather than reaching a client's launch flow.
+ *
+ * This replaces the legacy tutorial-era CRUD route (unauthenticated
+ * POST/DELETE on the old `puzzles` table) — that surface is intentionally
+ * gone. Seeding/curation happen server-side (scripts/seed-puzzles.ts), not
+ * over HTTP.
+ */
+export const puzzlesRoute = new Hono().get("/", async (c) => {
+  try {
+    const rows = await db
       .select()
-      .from(puzzlesTable)
-      .where(eq(puzzlesTable.id, id));
-    if (res.length === 0) {
-      return c.notFound();
-    }
-    return c.json(res[0]);
-  })
-  .delete("/:id{[0-9]+}", async (c) => {
-    const id = Number.parseInt(c.req.param("id"));
-    const res = await db
-      .delete(puzzlesTable)
-      .where(eq(puzzlesTable.id, id))
-      .returning();
-    if (res.length === 0) {
-      return c.notFound();
-    }
-    return c.json({ puzzle: res[0] });
-  });
+      .from(savedPuzzlesTable)
+      .where(eq(savedPuzzlesTable.enabled, true))
+      .orderBy(asc(savedPuzzlesTable.sortIndex));
+    const puzzles = mapSavedPuzzleRows(rows);
+    return c.json({ puzzles });
+  } catch (error) {
+    console.error("[puzzles] failed to list saved puzzles", { error });
+    return c.json({ error: "Failed to load puzzles" }, 500);
+  }
+});

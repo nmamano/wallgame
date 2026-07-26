@@ -1,58 +1,34 @@
-import { useMemo, useState } from "react";
+import { useState } from "react";
 import { createFileRoute } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { Loader2 } from "lucide-react";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
-import { fetchBots, playVsBot, userQueryOptions } from "@/lib/api";
+import {
+  fetchBots,
+  fetchSavedPuzzles,
+  playVsBot,
+  userQueryOptions,
+} from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
-import {
-  generateCustomSetupCandidates,
-  type GeneratedCustomSetupCandidate,
-} from "../../../shared/domain/generated-custom-setup-candidates";
-import {
-  applyCandidateVerdicts,
-  type CandidateVerdictFile,
-} from "../../../shared/domain/custom-setup-verdicts";
-import candidateVerdicts from "../../../shared/domain/generated-custom-setup-verdicts.json";
+import type { SavedPuzzle } from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/generated-candidates")({
   component: GeneratedCandidatesPage,
 });
 
-/**
- * The engine-filtered candidate list, with `stale: true` (and no candidates)
- * when the committed verdicts do not match the current generator — fail
- * closed: show an error, list nothing, regenerate via
- * scripts/filter-puzzle-candidates.ts.
- */
-const filterCandidates = (): {
-  candidates: GeneratedCustomSetupCandidate[];
-  stale: boolean;
-} => {
-  try {
-    return {
-      candidates: applyCandidateVerdicts(
-        generateCustomSetupCandidates(),
-        candidateVerdicts as CandidateVerdictFile,
-      ),
-      stale: false,
-    };
-  } catch (error) {
-    console.error("[generated-candidates] stale verdicts", error);
-    return { candidates: [], stale: true };
-  }
-};
-
 function GeneratedCandidatesPage() {
   const navigate = Route.useNavigate();
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const settings = useSettings(!!userData?.user, userPending);
-  const { candidates, stale: verdictsStale } = useMemo(
-    () => filterCandidates(),
-    [],
-  );
+  // Saved puzzles are persisted entities served by the API; the response is
+  // contract-parsed in fetchSavedPuzzles, so a corrupted payload fails this
+  // query rather than reaching a launch.
+  const puzzlesQuery = useQuery({
+    queryKey: ["saved-puzzles"],
+    queryFn: fetchSavedPuzzles,
+  });
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const botsQuery = useQuery({
@@ -71,15 +47,16 @@ function GeneratedCandidatesPage() {
     botsQuery.data?.bots.filter((bot) => bot.isOfficial) ?? [];
   const officialBot = officialBots[0];
 
-  const launch = async (candidate: (typeof candidates)[number]) => {
+  const launch = async (puzzle: SavedPuzzle) => {
     if (!officialBot || launchingId !== null) return;
-    setLaunchingId(candidate.id);
+    setLaunchingId(puzzle.id);
     setError(null);
 
     try {
+      const humanIsPlayer1 = puzzle.config.variantConfig.turn.playerId === 1;
       const response = await playVsBot({
         botId: officialBot.id,
-        config: candidate.config,
+        config: puzzle.config,
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
@@ -87,7 +64,7 @@ function GeneratedCandidatesPage() {
           mouseSkin: settings.mousePawn,
           homeSkin: settings.homePawn,
         },
-        hostIsPlayer1: candidate.humanPlaysAs === 1,
+        hostIsPlayer1: humanIsPlayer1,
       });
       saveGameHandshake({
         gameId: response.gameId,
@@ -96,31 +73,40 @@ function GeneratedCandidatesPage() {
         role: response.role,
         playerId: response.playerId,
         shareUrl: response.shareUrl,
+        puzzleId: puzzle.id,
+        puzzleName: puzzle.displayName,
       });
       void navigate({ to: `/game/${response.gameId}` });
     } catch (cause) {
       setError(
-        cause instanceof Error ? cause.message : "Unable to launch candidate.",
+        cause instanceof Error ? cause.message : "Unable to launch puzzle.",
       );
       setLaunchingId(null);
     }
   };
 
+  const puzzles = puzzlesQuery.data?.puzzles ?? [];
+
   return (
     <main className="mx-auto max-w-5xl space-y-6 px-4 py-8">
       <div>
-        <h1 className="text-3xl font-bold">Generated candidates</h1>
+        <h1 className="text-3xl font-bold">Generated puzzles</h1>
         <p className="mt-2 text-muted-foreground">
-          Directly generated 6×6 positions with 18 neutral walls and short
-          races. Positions whose best first move is simply walking at the target
-          are filtered out; nothing else is vetted.
+          Generated 6×6 positions with 18 neutral walls and short races.
+          Positions whose best first move is simply walking at the target are
+          filtered out; nothing else is vetted.
         </p>
       </div>
 
-      {verdictsStale && (
+      {puzzlesQuery.isPending && (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading puzzles…
+        </p>
+      )}
+      {puzzlesQuery.isError && (
         <Card className="border-destructive p-4 text-destructive">
-          The committed engine verdicts do not match the current generator.
-          Regenerate them with scripts/filter-puzzle-candidates.ts.
+          Could not load the puzzles. Try again later.
         </Card>
       )}
 
@@ -132,7 +118,7 @@ function GeneratedCandidatesPage() {
       )}
       {!botsQuery.isPending && !officialBot && (
         <Card className="border-destructive p-4 text-destructive">
-          The official bot is offline. Candidates can be inspected, but games
+          The official bot is offline. Puzzles can be inspected, but games
           cannot start until it reconnects.
         </Card>
       )}
@@ -141,17 +127,17 @@ function GeneratedCandidatesPage() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {candidates.map((candidate) => (
-          <Card className="space-y-3 p-4" key={candidate.id}>
+        {puzzles.map((puzzle) => (
+          <Card className="space-y-3 p-4" key={puzzle.id}>
             <div>
-              <h2 className="font-semibold">{candidate.displayName}</h2>
+              <h2 className="font-semibold">{puzzle.displayName}</h2>
             </div>
             <Button
               className="w-full"
               disabled={!officialBot || launchingId !== null}
-              onClick={() => void launch(candidate)}
+              onClick={() => void launch(puzzle)}
             >
-              {launchingId === candidate.id ? (
+              {launchingId === puzzle.id ? (
                 <>
                   <Loader2 className="h-4 w-4 animate-spin" />
                   Starting…

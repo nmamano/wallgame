@@ -18,7 +18,7 @@ import { useEvalBar } from "@/hooks/use-eval-bar";
 import { useMobileViewport } from "@/hooks/use-mobile-viewport";
 import { parseBestMoveOverlay } from "@/lib/best-move-overlay";
 import type { PlayerId } from "../../../shared/domain/game-types";
-import { findGeneratedCandidate } from "../../../shared/domain/generated-custom-setup-candidates";
+import { getGameHandshake, getPuzzleBannerName } from "@/lib/game-session";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -41,14 +41,12 @@ function GamePageContent() {
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
 
-  // Which generated candidate this is, so the banner can name it and you can find it
-  // again in the list. Resolved from the position itself - see findGeneratedCandidate.
-  const puzzleCandidate = useMemo(
-    () =>
-      info.config
-        ? findGeneratedCandidate(info.config.variant, info.config.variantConfig)
-        : null,
-    [info.config],
+  // The saved puzzle's name, carried client-side in the launch handshake
+  // (doc §G: nothing on the game record). Spectators and shared links have
+  // no handshake and fall back to the generic "Puzzle" label — correct.
+  const puzzleName = useMemo(
+    () => getPuzzleBannerName(getGameHandshake(id)),
+    [id],
   );
 
   // Eval bar state
@@ -247,7 +245,7 @@ function GamePageContent() {
             compact ? "py-0.5 text-xs" : "px-36 py-2 text-sm"
           }`}
         >
-          {puzzleCandidate ? `${puzzleCandidate.displayName} - ` : "Puzzle - "}
+          {puzzleName ? `${puzzleName} - ` : "Puzzle - "}
           catch the opponent&apos;s mouse before PuzzleBot catches yours.
           {!compact && (
             <Link

@@ -26,8 +26,6 @@ import {
  * positionKey() alone covers pawns+walls but not the mover — and the mover
  * determines whose best move and goal distance are being judged, so a
  * generator edit that flips humanPlaysAs must invalidate the verdict.
- * (findGeneratedCandidate keeps using the board-only positionKey; that is
- * intentional — it answers "which position is this", not "what was judged".)
  */
 export const evaluationInputKey = (
   candidate: GeneratedCustomSetupCandidate,

@@ -59,6 +59,8 @@ import { RemotePlayerController } from "@/lib/remote-player-controller";
 import { useOnlineGameSession } from "@/hooks/use-online-game-session";
 import {
   saveGameHandshake,
+  getGameHandshake,
+  withPuzzleMetadataFrom,
   type StoredGameHandshake,
 } from "@/lib/game-session";
 import {
@@ -1456,14 +1458,17 @@ export function useGamePageController(gameId: string) {
           (typeof window !== "undefined"
             ? `${window.location.origin}/game/${payload.newGameId}`
             : undefined);
-        const nextHandshake: StoredGameHandshake = {
-          gameId: payload.newGameId,
-          token: payload.seat.token,
-          socketToken: payload.seat.socketToken,
-          role: currentHandshake.role,
-          playerId: nextPlayerId,
-          shareUrl: inferredShareUrl,
-        };
+        const nextHandshake: StoredGameHandshake = withPuzzleMetadataFrom(
+          {
+            gameId: payload.newGameId,
+            token: payload.seat.token,
+            socketToken: payload.seat.socketToken,
+            role: currentHandshake.role,
+            playerId: nextPlayerId,
+            shareUrl: inferredShareUrl,
+          },
+          currentHandshake,
+        );
         saveGameHandshake(nextHandshake);
         updateGameHandshake(null);
         rematchRequestIdRef.current += 1;
@@ -2668,14 +2673,19 @@ export function useGamePageController(gameId: string) {
         },
         hostIsPlayer1: primaryLocalPlayerId === 1,
       });
-      saveGameHandshake({
-        gameId: response.gameId,
-        token: response.token,
-        socketToken: response.socketToken,
-        role: response.role,
-        playerId: response.playerId,
-        shareUrl: response.shareUrl,
-      });
+      saveGameHandshake(
+        withPuzzleMetadataFrom(
+          {
+            gameId: response.gameId,
+            token: response.token,
+            socketToken: response.socketToken,
+            role: response.role,
+            playerId: response.playerId,
+            shareUrl: response.shareUrl,
+          },
+          getGameHandshake(gameId),
+        ),
+      );
       await navigate({ to: `/game/${response.gameId}` });
       navigated = true;
     } catch (cause) {
@@ -2694,6 +2704,7 @@ export function useGamePageController(gameId: string) {
     gameStatus,
     isRetryingPuzzle,
     gameState?.config,
+    gameId,
     primaryLocalPlayerId,
     settings.displayName,
     settings.pawnColor,

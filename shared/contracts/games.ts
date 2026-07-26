@@ -70,7 +70,7 @@ const classicInitialStateSchema = z.object({
   turn: setupTurnSchema,
 });
 
-const customSetupConfigSchema = z
+export const customSetupConfigSchema = z
   .discriminatedUnion("variant", [
     z.object({
       variant: z.literal("custom-setup-standard"),

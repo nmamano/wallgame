@@ -1,3 +1,8 @@
+import {
+  savedPuzzlesResponseSchema,
+  type SavedPuzzle,
+  type SavedPuzzlesResponse,
+} from "../../../shared/contracts/puzzles";
 import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/index";
 import { queryOptions } from "@tanstack/react-query";
@@ -305,6 +310,15 @@ export const fetchShowcaseGames = async (
 };
 
 /** V3: Bot listing - no timeControl (bot games are untimed) */
+/**
+ * Saved puzzles list. The response is parsed against the shared contract —
+ * a malformed payload throws rather than reaching a launch flow.
+ */
+export const fetchSavedPuzzles = async (): Promise<SavedPuzzlesResponse> => {
+  const raw = await handleResponse<unknown>(api.puzzles.$get());
+  return savedPuzzlesResponseSchema.parse(raw);
+};
+
 export const fetchBots = async (args: {
   variant: Variant;
   boardWidth?: number;
@@ -345,7 +359,9 @@ export const fetchRecommendedBots = async (args: {
 
 export const playVsBot = async (args: {
   botId: string;
-  config: GameConfiguration;
+  /** Full local config, or a saved puzzle's wire config (no timeControl —
+   *  bot games are untimed and the server supplies it). */
+  config: GameConfiguration | SavedPuzzle["config"];
   hostDisplayName?: string;
   hostAppearance?: PlayerAppearance;
   hostIsPlayer1?: boolean;
