@@ -200,10 +200,13 @@ breaks it.
 - **Model fact worth remembering:** in a puzzle the HUMAN always moves first (authored
   turn state). A bot-log session showing an eval at ply 0 and nothing after is an
   abandoned human-first game, not an engine hang.
-- **Open question parked for Nil:** the only way a bot resigns is the server resigning
-  ALL of a client's active games on websocket disconnect, and 1006 drops are routine.
-  `ixQQelmh`'s exact trigger was never confirmed. Consider a reconnect grace period.
-  Also parked: the reattach race (section 2) deserves a server-side fix.
+- **Nil confirmed all five fixes in an authenticated playtest (2026-07-26):** banner,
+  back link, retry, bot speed, past-games absence, and the eval bar as a hint all work.
+- **Agreed follow-ups (Nil, 2026-07-26):** (1) the reattach race gets a real server fix;
+  (2) a disconnect grace period is worth doing - routine 1006 drops currently resign
+  every live bot game instantly, and the bot client already survives drops (its engine
+  and sessions outlive the websocket), so the server delaying clientId cleanup and
+  re-binding sessions on prompt reattach fixes both problems in the same code path.
 
 ### G. Make it a first-class feature
 
@@ -252,6 +255,23 @@ Nil: *"the best move improves your distance to the goal by at most 1, not 2"*. T
 filters out positions whose answer is simply walking at your mouse. It is the one quality
 rule he wants; the others from the original spec (naive bot loses, single-sample bot
 loses) remain dropped.
+
+### J. Copy and naming polish (Nil's playtest feedback, 2026-07-26)
+
+All on the puzzle surfaces, all small, all frontend:
+
+1. **Banner goal copy is wrong.** It says "reach your mouse before PuzzleBot reaches its
+   own" - the actual goal is **catch the opponent's mouse**. And drop "A draw is a
+   possible best result": a puzzle must state its goal plainly, not hedge about outcomes.
+2. **Candidate-card subtext is noise.** "You play P1 · distances 4/6 · 18 walls" serves
+   no player purpose - remove it.
+3. **"Play against oracle" means nothing to users.** The button should say "Try" or
+   similar.
+4. **`synthetic-6x6-01` looks like an internal id.** Display names must be human
+   ("Synthetic Puzzle 1" at minimum) - properly solved by G's named saved puzzles, but
+   the display string should not leak raw ids even before that.
+
+(Nil also flagged the absence of completion tracking - that is G.3, already scoped.)
 
 ### I. Smaller items
 
