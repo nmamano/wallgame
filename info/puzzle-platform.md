@@ -256,9 +256,9 @@ filters out positions whose answer is simply walking at your mouse. It is the on
 rule he wants; the others from the original spec (naive bot loses, single-sample bot
 loses) remain dropped.
 
-### J. Copy and naming polish (Nil's playtest feedback, 2026-07-26)
+### J. Copy and naming polish (Nil's playtest feedback, 2026-07-26) - DONE
 
-All on the puzzle surfaces, all small, all frontend:
+Fixed in `101e073`, deployed. Kept for the record:
 
 1. **Banner goal copy is wrong.** It says "reach your mouse before PuzzleBot reaches its
    own" - the actual goal is **catch the opponent's mouse**. And drop "A draw is a
