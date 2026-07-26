@@ -108,6 +108,6 @@
   ],
   "engineCommands": {
     "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
-    "dw-puzzle": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 10000 --parallel_samples 32 --thread_pool_size 4"
+    "dw-puzzle": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 5000 --parallel_samples 128 --thread_pool_size 4"
   }
 }

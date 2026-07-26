@@ -74,7 +74,7 @@ tmux pane merely appears to show.
 - [x] S-B — bot client registers the true variant per bot; delete the
       `bot.id.includes("puzzle")` tiebreak; PuzzleBot out of the normal picker; bounded
       investigation of the `ixQQelmh` resignation (findings → parked queue)
-- [ ] S-C — `dw-puzzle` samples 10000 → 5000; review `--parallel_samples 32`, raise only on
+- [x] S-C — `dw-puzzle` samples 10000 → 5000; review `--parallel_samples 32`, raise only on
       evidence; ONE combined desktop bot restart + deploy covers B+C (B's pre-restart
       verification is code/config-level; both fully verified after the bounce)
 - [ ] S-D — retry on a finished puzzle relaunches the same candidate into a fresh game,
@@ -168,6 +168,27 @@ git-archive deploy → bundle-grep + preview-url evidence); reviewer turnaround 
   --noEmit`) has 7 PRE-EXISTING errors (dumb-bot.ts, a fixture) at baseline and after
   S-B alike — nothing compiles the client in CI (same gap as the C++, doc item I).
 - Locked: officiality enforcement stays exactly as is; no protocol version bump.
+
+## SLICE-C PICKUP (authored after S-B committed at fcc16d2)
+
+What S-B taught: TypeScript-level acceptance does not imply runtime-schema acceptance —
+`botConfigSchema`'s strict variants object needed the custom-setup keys explicitly, and
+it is enforced at BOTH client config load and server attach, creating the hard rollout
+ordering (server before bot restart). Verify runtime schemas empirically, not by types.
+
+- Baseline: fcc16d2 (not yet pushed — push rides with this slice's rollout).
+- Goal: `dw-puzzle` engine command `--samples 5000` (Nil's call; 10k measured ~12s/move
+  in the log, too slow) and `--parallel_samples 128` (in-repo evidence: play.hpp's
+  InteractivePlayOptions — the single-interactive-game preset, our serving shape — uses
+  256 at 1000 samples; training's 16-per-game gets batching from 128 parallel games
+  instead, which serving lacks; 128 is the conservative middle). `dw-transformer` and
+  `--thread_pool_size` untouched (out of scope).
+- Rollout (covers B+C, in order): push → deploy server (schema must land first) →
+  desktop `git pull` → tmux bot restart → verify.
+- Verification: desktop log "Successfully attached with 2 bot(s)"; prod API
+  `/api/bots?variant=custom-setup-standard` lists exactly PuzzleBot and
+  `variant=classic` excludes it (S-B evidence); a fresh dw-puzzle eval's wall-clock in
+  the log ≲ 6s (S-C evidence); puzzle page screenshot artifact.
 
 ## SLICE-N PICKUPS
 
