@@ -85,7 +85,17 @@ tmux kill-session -t bot-client
 tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"
 # confirm: grep "Successfully attached" ~/logs/bot-client-transformer.log
 # and: /api/bots?variant=custom-setup-standard lists dw-puzzle
+# and REQUIRED since 2026-07-26: a full round-trip probe (launch a puzzle,
+# survive >5s past connect, play a move, get the bot's reply, resign).
 ```
+
+**The attach line and /api/bots listings are BLIND to a dead engine.** Incident
+2026-07-26: the dw-puzzle engine segfaulted (exit 139, ~21:28Z, ordinary
+serialized traffic — see board task 8f1cf7e3) while the CLIENT stayed attached
+and listing; every puzzle game was created normally and then insta-aborted on
+the failed engine session start, for ~103 minutes, silently. 0-move probes
+also cannot see this (they resign before the engine is exercised) — only a
+round-trip probe (bot actually replies to a move) proves engine health.
 
 No kill-to-start gap is needed (the 15s rule is retired). Since `0c197b6` the server's
 teardown is connection-scoped and deferred: a stale connection's close event cannot wipe

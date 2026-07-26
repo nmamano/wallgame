@@ -152,6 +152,42 @@ real wake signal.
       FIRST: ask Nil to play a P2 puzzle (e.g. Generated Puzzle 3) and check
       the move history panel. If it renders, close this slice with his
       confirmation; if not, instrument the paired-move memo and fix.
+      DONE — Nil confirmed (playtest 2026-07-26 evening): the bot's setup
+      move is visible on the board AND in the move history. No code needed;
+      S-P1 was the fix, as suspected.
+
+## OPS INCIDENT (2026-07-26 ~21:28-23:11Z) — engine death made all puzzles
+
+## insta-abort; recorded on board task 8f1cf7e3
+
+The dw-puzzle engine segfaulted (exit 139) during an apply_move at the tail
+of the S-P1 probe battery — ordinary serialized traffic, NOT batch tooling,
+so the concurrency defect's danger window is wider than believed. The client
+stayed attached and listing bots, so games were created normally and then
+insta-aborted when the engine session start failed (this is what Nil hit as
+"puzzles are completely broken"). Fixed by a bot-client restart + round-trip
+health probe. Rule change (also in info/puzzle-platform.md §2): every bot
+restart AND every deploy-adjacent verification needs a ROUND-TRIP probe (bot
+replies to a move); 0-move probes and listings are blind to engine death.
+
+## Slice plan — playtest #2 additions (Nil, 2026-07-26 evening)
+
+- [ ] S-P2A — copy: delete the /puzzles intro sentence "Scripted puzzles walk
+      you through a winning sequence move by move; generated puzzles drop you
+      into a race position against PuzzleBot and let you find your own way."
+      entirely (Nil: pure noise; "race position" was never his copy).
+- [ ] S-P2B — continuous UI numbering: the generated list starts at
+      "Generated Puzzle 2" after retirements. Nil wants continuous numbers.
+      DECISION (asked of Nil, default if unanswered): RENAME the persisted
+      rows contiguously (display names 1..39 by sortIndex order; identity =
+      fingerprint, unaffected; record old↔new mapping in the docs since his
+      curation ratings referenced old numbers; make the retire script
+      renumber automatically going forward). Alternative: positional display
+      numbers with stable stored names — rejected-by-default because the
+      in-game banner shows the stored name and would disagree with the list.
+- [ ] S-P2C — scripted player polish: on /puzzles/N the "Puzzle Solved!"
+      card's Replay/Next buttons overflow the card's right edge (Nil's
+      screenshot). Fix the card layout (wrap/shrink within bounds).
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
       (frontend/src/lib/history-utils.ts) derives the initial mover from the
       authored config (`new GameState(config, 0)`) and the historyNav gating in
