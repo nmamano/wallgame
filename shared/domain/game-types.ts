@@ -70,14 +70,6 @@ export const variantDisplayName = (variant: Variant): string =>
     ? "Puzzle"
     : variant.charAt(0).toUpperCase() + variant.slice(1);
 
-export const botCapabilityVariant = (
-  variant: Variant,
-): Exclude<Variant, CustomSetupVariant> => {
-  if (variant === "custom-setup-classic") return "classic";
-  if (variant === "custom-setup-standard") return "standard";
-  return variant;
-};
-
 /**
  * Variant-specific initial state types.
  * Each variant has its own configuration structure stored in `variantConfig`.

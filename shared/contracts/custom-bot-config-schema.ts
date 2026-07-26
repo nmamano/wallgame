@@ -72,6 +72,8 @@ const variantsSchema = z
     standard: variantConfigSchema.optional(),
     classic: variantConfigSchema.optional(),
     freestyle: variantConfigSchema.optional(),
+    "custom-setup-standard": variantConfigSchema.optional(),
+    "custom-setup-classic": variantConfigSchema.optional(),
   })
   .strict()
   .refine(
@@ -91,9 +93,9 @@ export const botConfigBaseSchema = z.object({
 });
 
 export const botConfigSchema = botConfigBaseSchema.superRefine((bot, ctx) => {
-  // Every configurable variant (standard, classic, freestyle) is played on a
-  // board of the user's chosen size, so each one a bot supports must advertise
-  // the sizes it recommends. The upper bound of 3 comes from variantConfigSchema.
+  // Every configurable variant is played on a board of the user's chosen size,
+  // so each one a bot supports must advertise the sizes it recommends. The
+  // upper bound of 3 comes from variantConfigSchema.
   for (const [variant, config] of Object.entries(bot.variants)) {
     if (!config) continue;
     if (config.recommended.length === 0) {

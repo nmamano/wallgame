@@ -330,11 +330,14 @@ export const fetchBots = async (args: {
 export const fetchRecommendedBots = async (args: {
   variant: Variant;
 }): Promise<{ bots: RecommendedBotEntry[] }> => {
-  const variant = assertNonSurvivalVariant(args.variant);
+  // Bot discovery uses the true variant: bots register exactly what they serve
+  // (custom-setup included), so collapsing here would list the wrong bots.
+  if (args.variant === "survival")
+    throw new Error("Survival games are not supported by this endpoint.");
   return handleResponse<{ bots: RecommendedBotEntry[] }>(
     api.bots.recommended.$get({
       query: {
-        variant,
+        variant: args.variant,
       },
     }),
   );

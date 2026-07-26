@@ -13,7 +13,6 @@
 
 import type { ServerWebSocket } from "bun";
 import {
-  botCapabilityVariant,
   isCustomSetupVariant,
   type PlayerId,
   type Variant,
@@ -322,7 +321,7 @@ export const getMatchingBots = (
     }
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[botCapabilityVariant(variant)];
+    const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
 
     // Check board dimensions if specified
@@ -392,7 +391,7 @@ export const getRecommendedBots = (
     }
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[botCapabilityVariant(variant)];
+    const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
 
     // V3: Check client is still connected
@@ -464,7 +463,7 @@ export const findEvalBot = (
     if (!bot.isOfficial) continue;
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[botCapabilityVariant(variant)];
+    const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
 
     // Check board dimensions

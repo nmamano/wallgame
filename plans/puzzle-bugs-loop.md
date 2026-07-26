@@ -71,7 +71,7 @@ tmux pane merely appears to show.
 ## Slice plan
 
 - [x] S-A — puzzle banner + "Back to puzzles" visible on desktop (hoist, don't duplicate)
-- [ ] S-B — bot client registers the true variant per bot; delete the
+- [x] S-B — bot client registers the true variant per bot; delete the
       `bot.id.includes("puzzle")` tiebreak; PuzzleBot out of the normal picker; bounded
       investigation of the `ixQQelmh` resignation (findings → parked queue)
 - [ ] S-C — `dw-puzzle` samples 10000 → 5000; review `--parallel_samples 32`, raise only on
@@ -89,7 +89,19 @@ Do not pick up: E (takeback), G (first-class feature / named saved puzzles), H
 G interaction note: the banner label comes from `findGeneratedCandidate()`, which G will
 delete. S-A moves that code, never extends it.
 
-Parked-for-Nil queue: (empty)
+Parked-for-Nil queue:
+
+1. **Resignation investigation (S-B, 2026-07-26).** The engine's V3 BGS path and the bot
+   client have NO resign capability; the only way a bot resigns is server-side:
+   `custom-bot-socket.ts` `handleBotClientDisconnect` resigns ALL of a client's active
+   games when its websocket drops. The client log shows 1006 drops are routine (two
+   disconnect/reattach cycles today, ~190 connection-lifecycle lines). `ixQQelmh` itself
+   (classic 6x6 friend match, 5 moves, 01:10 UTC): client log healthy through ply 3, then
+   silence, and NO disconnect logged in the window — exact trigger unconfirmed (fly's log
+   buffer no longer reaches that far back). Decision for Nil: is resign-all-on-disconnect
+   the right policy given routine 1006 drops (vs. e.g. a grace period for reconnect)?
+   Engines verified healthy; the two silent ply-0 sessions (YD2Jyw-2, Od7siezW) look like
+   launched-and-abandoned games, not hangs.
 
 ## Resources
 
@@ -125,6 +137,37 @@ Parked-for-Nil queue: (empty)
   diff-gates signed off; post-deploy screenshot artifact plus code-level evidence.
 - Locked (don't relitigate): no new fields on the game record; label keeps coming from
   `findGeneratedCandidate()` for now (deletion is G's job); no wrong-move anything.
+
+## SLICE-B PICKUP (authored after S-A shipped)
+
+What S-A taught: the gates run clean end-to-end (build/lint → diff-gate → commit →
+git-archive deploy → bundle-grep + preview-url evidence); reviewer turnaround was fast;
+`grep -c` on a minified bundle counts lines, not matches — use `grep -o | wc -l`.
+
+- Baseline: 9ea1062 + this file's S-B edits.
+- Goal: each bot registers the true variant it serves, so "the official bot for a
+  variant" is unambiguous everywhere and the `bot.id.includes("puzzle")` tiebreak dies.
+- Mechanics: the TypeScript capability maps (`Partial<Record<Variant, VariantConfig>>`)
+  already admit the custom-setup keys, so no wire type or protocol-version change is
+  needed — but the strict RUNTIME config schema (`custom-bot-config-schema.ts`,
+  enforced at client config load and server attach) must add them explicitly.
+  Three collapse sites in `server/games/custom-bot-store.ts` (~325 listing, ~395 listing
+  with recommended, ~467 `findEvalBot`) become exact lookups; delete
+  `botCapabilityVariant` from `shared/domain/game-types.ts` (no other callers).
+  Config: PuzzleBot declares only `custom-setup-standard`; Transformer unchanged.
+  Frontend: puzzle page keeps the `isOfficial` filter, picks `officialBots[0]`.
+- Side effect (desired): `findEvalBot` for puzzle games now resolves to PuzzleBot
+  (10k→5k samples) instead of iteration order.
+- Rollout: HARD ORDERING — the server validates each bot's config on attach with
+  `botConfigSchema`, whose `variants` object is `.strict()`; the schema gains the
+  custom-setup keys in this slice, so the server MUST deploy before the bot restarts
+  or the old server rejects the new attach (both bots down). Sequence: commit S-B,
+  then S-C, then one push + server deploy + one desktop `git pull` + one bot restart.
+  Brief degraded window (puzzle page lists no bot) between deploy and restart accepted.
+- Found in-slice: the client-side tsc (`cd official-custom-bot-client && bun x tsc
+  --noEmit`) has 7 PRE-EXISTING errors (dumb-bot.ts, a fixture) at baseline and after
+  S-B alike — nothing compiles the client in CI (same gap as the C++, doc item I).
+- Locked: officiality enforcement stays exactly as is; no protocol version bump.
 
 ## SLICE-N PICKUPS
 

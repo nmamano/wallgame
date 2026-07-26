@@ -87,23 +87,7 @@
         "homeStyle": "home8.svg"
       },
       "variants": {
-        "standard": {
-          "boardWidth": {
-            "min": 4,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 4,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 6,
-              "boardHeight": 6
-            }
-          ]
-        },
-        "classic": {
+        "custom-setup-standard": {
           "boardWidth": {
             "min": 4,
             "max": 12

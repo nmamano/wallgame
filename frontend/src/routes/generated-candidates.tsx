@@ -29,14 +29,12 @@ function GeneratedCandidatesPage() {
         boardHeight: 6,
       }),
   });
-  // Prefer a bot that exists specifically to answer puzzles: it runs a far bigger search
-  // than the one serving ordinary games, which is what makes it an oracle rather than an
-  // opponent. Falls back to whatever official bot is connected so the page still works
-  // when only the normal bot is up.
+  // Bots register the exact variant they serve, so the only official bot listed for
+  // custom-setup-standard is PuzzleBot - the deep-search oracle. If it is down, the
+  // page says so rather than quietly substituting a shallower opponent.
   const officialBots =
     botsQuery.data?.bots.filter((bot) => bot.isOfficial) ?? [];
-  const officialBot =
-    officialBots.find((bot) => bot.id.includes("puzzle")) ?? officialBots[0];
+  const officialBot = officialBots[0];
 
   const launch = async (candidate: (typeof candidates)[number]) => {
     if (!officialBot || launchingId !== null) return;
