@@ -122,6 +122,18 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 
 ## SLICE-E PICKUP (authored at loop-2 setup)
 
+STATUS (2026-07-26, in progress): the doc's hypothesis is REFUTED — four scripted prod
+probes (simple, deep-replay, mid-think, instant-resubmit takebacks) all pass; the server
+takeback path is healthy and buildBgsConfig already uses the authored position. What the
+probing DID find and this slice fixed (reviewer plan+diff sign-off): a game-start race —
+a human first move landing while the initial eval is in flight made the bot play its
+stale ply-0 best move, desyncing the engine until a forced resignation (repro: prod game
+KMenTASH). Fix: sync guard in executeBotTurnV3 (bgs.currentPly must equal history
+length); deterministic regression in tests/integration/bot-6-bgs-init-race.test.ts
+(runs WITHOUT Docker on auntie via a DB-less fallback — protocol-level integration tests
+ARE runnable here). Checkbox stays open until Nil describes what "takeback does not
+work" looked like for him (asked in chat; three candidate explanations listed there).
+
 - Baseline: 101e073.
 - Goal: takeback works in a puzzle game vs PuzzleBot.
 - Doc's untested hypothesis (E): `server/games/bgs-store.ts` has a full takeback-replay

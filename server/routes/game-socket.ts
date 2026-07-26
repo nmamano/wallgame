@@ -331,6 +331,21 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     return;
   }
 
+  // Sync guard: only play when the BGS has seen every move in the game
+  // history. A turn-based check alone races: a human move can be applied to
+  // the game state while the BGS is still initializing (or catching up), and
+  // playing the stale "best move" here would desync the engine from the game.
+  // Whoever drives the catch-up (the human-move handler, the takeback replay)
+  // re-triggers the bot turn once the BGS is in sync, so returning is safe.
+  if (bgs.currentPly !== session.gameState.history.length) {
+    console.info("[ws] bot turn skipped — BGS not in sync with game history", {
+      sessionId,
+      bgsPly: bgs.currentPly,
+      gameHistoryLength: session.gameState.history.length,
+    });
+    return;
+  }
+
   // Get the best move from BGS history (already computed from previous evaluation)
   const latestEntry = getLatestHistoryEntry(bgsId);
   if (!latestEntry) {
