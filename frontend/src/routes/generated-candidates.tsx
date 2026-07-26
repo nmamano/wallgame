@@ -101,11 +101,7 @@ function GeneratedCandidatesPage() {
         {candidates.map((candidate) => (
           <Card className="space-y-3 p-4" key={candidate.id}>
             <div>
-              <h2 className="font-semibold">{candidate.id}</h2>
-              <p className="text-sm text-muted-foreground">
-                You play P{candidate.humanPlaysAs} · distances{" "}
-                {candidate.distances.p1}/{candidate.distances.p2} · 18 walls
-              </p>
+              <h2 className="font-semibold">{candidate.displayName}</h2>
             </div>
             <Button
               className="w-full"
@@ -118,7 +114,7 @@ function GeneratedCandidatesPage() {
                   Starting…
                 </>
               ) : (
-                "Play against oracle"
+                "Try"
               )}
             </Button>
           </Card>

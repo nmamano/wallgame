@@ -247,9 +247,8 @@ function GamePageContent() {
             compact ? "py-0.5 text-xs" : "px-36 py-2 text-sm"
           }`}
         >
-          {puzzleCandidate ? `${puzzleCandidate.id} - ` : "Puzzle - "}
-          reach your mouse before PuzzleBot reaches its own. A draw is a
-          possible best result.
+          {puzzleCandidate ? `${puzzleCandidate.displayName} - ` : "Puzzle - "}
+          catch the opponent&apos;s mouse before PuzzleBot catches yours.
           {!compact && (
             <Link
               to="/generated-candidates"

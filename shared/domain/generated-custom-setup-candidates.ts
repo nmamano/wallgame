@@ -9,6 +9,8 @@ import type {
 
 export interface GeneratedCustomSetupCandidate {
   id: string;
+  /** Player-facing name. Ids like synthetic-6x6-01 must not reach the UI. */
+  displayName: string;
   config: GameConfiguration;
   humanPlaysAs: PlayerId;
   distances: { p1: number; p2: number };
@@ -129,6 +131,7 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
 
   return {
     id: `synthetic-6x6-${String(index + 1).padStart(2, "0")}`,
+    displayName: `Synthetic Puzzle ${index + 1}`,
     humanPlaysAs,
     distances: { p1: p1.distance, p2: p2.distance },
     config: {
