@@ -58,7 +58,8 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 
 - NEVER `pkill -f` / `killall` on any box; exact PIDs only.
 - NEVER scp SOURCE to the desktop; source moves by git (test DATA files are fine).
-- NEVER run repo-wide prettier.
+- Prettier is pinned (3.8.3) and the repo formatted once (`6d08c66`); `prettier --check .`
+  must stay clean.
 - NEVER restore `...GENERATED_PUZZLES` into `PUZZLES` (that third stale set stays dead).
 - NEVER touch the two auntie stashes or the desktop phase0a stash.
 - NEVER deploy anything but a clean `git archive` of a committed sha:
@@ -66,7 +67,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 - NEVER restart `wallgame-dev-5174` while Nil is mid-game; own dev on port 5175.
 - NEVER add wrong-move detection, correctness checks, or automated puzzle-quality
   gating.
-- Bot restart recipe: kill tmux `bot-client`, WAIT 15s (reattach race), start
+- Bot restart recipe (15s gap RETIRED by S-CX): kill tmux `bot-client`, start
   `bash ~/run_transformer_bot.sh` in tmux, then verify BOTH the attach log line AND that
   `/api/bots?variant=custom-setup-standard` lists dw-puzzle.
 - Migrations ARE allowed this loop (G1 needs one). Extra care: migrations run
@@ -84,10 +85,15 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
       path, server-side. Nil approved both. DONE `0c197b6`, deployed + prod-verified
       (zero-gap restart with correct listings; live game `0Sfsq10b` survived a mid-game
       client kill+restart; race/takeback/ordinary probes green). 15s-gap rule retired.
-- [ ] S-H — generation rule: keep a candidate only if the best first move improves the
+- [x] S-H — generation rule: keep a candidate only if the best first move improves the
       mover's true distance to goal by at most 1 (filters "just walk at your mouse"
       positions). Nil's one quality rule; the dropped rules (naive bot loses, etc.) stay
-      dropped.
+      dropped. DONE `3ea372e`, deployed + verified (live game on a new candidate, page
+      screenshot). ALSO fixed en route: the generator paired each cat with its OWN mouse
+      (defense geometry); real attack races measured 1..14. Now both ATTACK races are in
+      [3,6]; 48 candidates; engine filter kept 41 (all 7 rejections delta -2). Verdicts
+      committed with mover-aware fingerprints; regenerate with
+      scripts/filter-puzzle-candidates.ts (OFFLINE ssh driver — see parked item below).
 - [ ] S-G1 — puzzles become named persisted entities: DB table + migration, generate a
       batch with the H rule, auto-names, launch-by-id; DELETE findGeneratedCandidate and
       the position-matching (banner name rides the URL or handshake - doc §G says
@@ -97,6 +103,19 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 
 ## Deferred / parked
 
+- PARKED FOR NIL (engine concurrency defect, found 2026-07-26 during S-H): a filter
+  run against the LIVE production eval path segfaulted the serving engine (exit 139;
+  PuzzleBot down until a client restart). Concurrent/load-shaped evaluation is
+  implicated but the segfault's exact root cause is UNPROVEN. Independently
+  reproduced: bulk-pumping stdin requests deadlocks the engine — bgs_engine_main.cpp
+  schedules request handlers on its thread pool and blockingWaits coroutines ON THE
+  SAME POOL (~line 283), starvation by construction. All 48 candidate positions
+  evaluate cleanly when driven strictly sequentially, which strongly rules against
+  these sampled positions as the trigger (though not position-independence
+  universally). Operational rail until Nil addresses the engine: no batch/filter
+  tooling may target the serving engine or intentionally bulk-pump requests — use the
+  strictly sequential offline ssh driver (reviewer-mandated). This operational rail
+  does not prohibit normal concurrent live games; they remain supported.
 - G3 completion tracking, G4 likes/dislikes → loop 3 (needs G1's persisted ids).
 - I-items: CI for the C++/bot-client (7 pre-existing client tsc errors in dumb-bot.ts +
   a fixture), bot token rotation, engine alt-move representation.
@@ -221,6 +240,31 @@ drop+reattach exercise now, and the desktop restart needs no gap.
   check counts; deploy; Nil's playtest judges quality (he is the filter).
 - Locked: no automated winnability/quality gating beyond this one rule; standard
   variant; 6x6/18 walls/3-6 races unchanged.
+
+## SLICE-G1 PICKUP (authored after S-H shipped at 3ea372e)
+
+What S-H taught: (1) verify domain-level assumptions empirically before building on
+them — the "races" the generator constrained were the wrong pairs entirely, and the
+distance-based reading of the quality rule was provably vacuous; (2) the engine is an
+offline-drivable oracle now (scripts/filter-puzzle-candidates.ts) but must NEVER see
+concurrent/bulk requests (parked item); (3) applyGameAction is immutable — it returns
+the next state; (4) committed artifacts want fail-closed fingerprint validation and a
+test that replays every record.
+
+- Baseline: 3ea372e (+ the docs commit).
+- Goal (doc §G1, Nil's decision "just give puzzles names and save them"): puzzles
+  become named persisted entities. DB table + ADDITIVE migration (review generated SQL
+  before deploy; fly release_command auto-runs it); persist the current 41-survivor
+  batch with auto-names; the puzzles page lists from the DB and launches by id; DELETE
+  findGeneratedCandidate and the position-matching (the banner name rides the URL or
+  the client-side handshake — doc §G says nothing goes on the game record for display).
+- Design questions for the plan gate: table shape (id, display name, config JSONB,
+  createdAt, source/provenance), naming scheme, list/get API endpoints (Zod contracts
+  in shared/contracts/), whether the generated-candidates page becomes the persisted
+  list or S-G2 replaces it wholesale.
+- Locked: no completion tracking, no votes (loop 3); no puzzleId column on games;
+  additive-only migration; the verdict machinery stays (it filters FUTURE batches
+  before they are persisted).
 
 ## SLICE-N PICKUPS
 

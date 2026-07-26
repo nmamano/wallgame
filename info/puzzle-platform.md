@@ -69,7 +69,7 @@ Both run on the desktop from one client process, configured in
 | botId | Name | Samples | Serves |
 |---|---|---|---|
 | `dw-transformer` | Transformer Bot (experimental) | 1000 | ordinary games |
-| `dw-puzzle` | PuzzleBot | 10000 | puzzles |
+| `dw-puzzle` | PuzzleBot | 5000 (parallel 128) | puzzles |
 
 Same binary and model, different `--samples`. The engine's sample count is **process
 global** (`bgs_engine_main.cpp` sets `config.samples_per_move = FLAGS_samples` once), which
@@ -125,8 +125,8 @@ cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only
 Clean export so another agent's uncommitted work never ships. fly CLI is authenticated on
 auntie. `bun run ci` **cannot** pass on auntie: `bun run test` shells to `wsl.exe` and the
 integration tests need Docker. Verify with `bun run build` (0 TS errors) and
-`bun x eslint .`. prettier is not pinned and ~37 files fail `--check` - format only files
-you touch, never repo-wide (task ee6cf406).
+`bun x eslint .`. prettier is pinned (3.8.3) and the repo formatted once (`6d08c66`);
+`bun x prettier --check .` must stay clean.
 
 ---
 
@@ -147,9 +147,27 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
   `variantDisplayName`), back/exit return to the candidate list.
 - Puzzle games are **unrated** and do not touch ELO (`server/routes/games.ts` ~496-507).
 
-### Current generation heuristic
+### Current generation heuristic (updated 2026-07-26, `3ea372e`)
 
 - 6x6 board, **18 neutral walls**, sampled blind.
+- **48 candidates; both ATTACK races (cat -> opponent's mouse, the actual goal in
+  standard) are 3-6 moves through the walls.** The original generator paired each cat
+  with its OWN mouse - the same "reach your mouse" misconception as the old banner
+  copy - so the real races were unconstrained (measured 1..14). Fixed in S-H.
+- **Engine-best-move filter (Nil's one quality rule):** a candidate is rejected when
+  applying the engine's best first move improves the mover's distance to their goal by
+  2 (delta -2 is the rule, whatever the move's actions are; the current seven rejected
+  best moves all happened to be greedy walks). Verdicts live in
+  `shared/domain/generated-custom-setup-verdicts.json`, bound to mover-aware
+  fingerprints and validated fail-closed; a test replays every recorded best move.
+  Current batch: 41 kept / 48. Regenerate with
+  `bun scripts/filter-puzzle-candidates.ts` - an OFFLINE ssh driver on the desktop,
+  strictly one request per response. **No batch/filter tooling may target the live
+  production eval path or intentionally bulk-pump requests** — a filter run against it
+  segfaulted the serving engine once (2026-07-26, exit 139; root cause unproven,
+  concurrency implicated — parked item in plans/puzzle-feature-loop.md). This
+  operational rail does not prohibit normal concurrent live games; they remain
+  supported.
 - **Standard** variant. This matters: the transformer has only ever seen *classic* with
   goals in the board corners, so a classic position with the home dropped anywhere is
   outside its training distribution and its play there was arbitrary. In standard the
@@ -256,12 +274,13 @@ keeps its name whatever the generator does next.
 Persisting them is a prerequisite for the rest of this section anyway: votes and
 completions cannot attach to something that only exists as a client-side computation.
 
-### H. Generation heuristic: add the distance-delta rule
+### H. Generation heuristic: add the distance-delta rule - DONE (`3ea372e`, 2026-07-26)
 
-Nil: *"the best move improves your distance to the goal by at most 1, not 2"*. This
-filters out positions whose answer is simply walking at your mouse. It is the one quality
-rule he wants; the others from the original spec (naive bot loses, single-sample bot
-loses) remain dropped.
+Nil: *"the best move improves your distance to the goal by at most 1, not 2"*. Note the
+rule is necessarily about the ENGINE's best move - a pure path-math reading is vacuous
+(two steps along any shortest path always improve the distance by exactly 2). Implemented
+as the engine-best-move filter described in section 3; the other original-spec rules
+(naive bot loses, single-sample bot loses) remain dropped.
 
 ### J. Copy and naming polish (Nil's playtest feedback, 2026-07-26) - DONE
 
