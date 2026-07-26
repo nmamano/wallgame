@@ -720,6 +720,22 @@ const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
     return;
   }
 
+  // S-P1: a puzzle game with a scripted lead-in already has real history
+  // BEFORE any BGS exists. The fresh-init path below assumes ply 0, which
+  // desyncs the engine from the game forever (the sync guard then correctly
+  // refuses every bot turn). Build the session through the history rebuild
+  // instead — it starts the BGS from the authored (pre-position) config,
+  // replays the recorded moves, and resigns the bot on any failure.
+  if (session.gameState.history.length > 0) {
+    console.info("[ws] initializing BGS via history rebuild (lead-in game)", {
+      sessionId,
+      historyLength: session.gameState.history.length,
+      botCompositeId: botPlayer.botCompositeId,
+    });
+    await resyncBgsFromHistory(sessionId, botPlayer.botCompositeId);
+    return;
+  }
+
   // Initialize BGS for this bot game
   console.info("[ws] initializing BGS on player connect", {
     sessionId,
