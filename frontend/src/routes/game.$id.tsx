@@ -18,6 +18,7 @@ import { useEvalBar } from "@/hooks/use-eval-bar";
 import { useMobileViewport } from "@/hooks/use-mobile-viewport";
 import { parseBestMoveOverlay } from "@/lib/best-move-overlay";
 import type { PlayerId } from "../../../shared/domain/game-types";
+import { findGeneratedCandidate } from "../../../shared/domain/generated-custom-setup-candidates";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -39,6 +40,16 @@ function GamePageContent() {
     controller;
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
+
+  // Which generated candidate this is, so the banner can name it and you can find it
+  // again in the list. Resolved from the position itself - see findGeneratedCandidate.
+  const puzzleCandidate = useMemo(
+    () =>
+      info.config
+        ? findGeneratedCandidate(info.config.variant, info.config.variantConfig)
+        : null,
+    [info.config],
+  );
 
   // Eval bar state
   const isActivePlayer =
@@ -290,8 +301,9 @@ function GamePageContent() {
               missed. */}
           {info.isPuzzle && (
             <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 text-center py-0.5 text-xs font-medium border-b border-indigo-200 dark:border-indigo-800 shrink-0">
-              Puzzle - reach your mouse before PuzzleBot reaches its own. A draw
-              is a possible best result.
+              {puzzleCandidate ? `${puzzleCandidate.id} - ` : "Puzzle - "}
+              reach your mouse before PuzzleBot reaches its own. A draw is a
+              possible best result.
             </div>
           )}
 

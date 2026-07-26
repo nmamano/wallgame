@@ -160,3 +160,50 @@ export const generateCustomSetupCandidates =
     Array.from({ length: CANDIDATE_COUNT }, (_, index) =>
       generateCandidate(index),
     );
+
+/** Position fingerprint: pawns plus the wall set, order-independent. */
+const positionKey = (state: {
+  pawns: {
+    p1: { cat: Cell; mouse: Cell };
+    p2: { cat: Cell; mouse: Cell };
+  };
+  walls: WallPosition[];
+}): string => {
+  const { p1, p2 } = state.pawns;
+  const pawns = [p1.cat, p1.mouse, p2.cat, p2.mouse]
+    .map((c) => `${c[0]},${c[1]}`)
+    .join("|");
+  const walls = state.walls
+    .map((w) => `${w.cell[0]},${w.cell[1]},${w.orientation}`)
+    .sort()
+    .join("|");
+  return `${pawns}#${walls}`;
+};
+
+/**
+ * Which generated candidate a game was started from, or null if it was not one.
+ *
+ * Nothing on a game records which candidate produced it, and adding a field just to
+ * carry a label would put playtesting scaffolding into the game schema. Generation is
+ * deterministic, so the position identifies itself: regenerate the set and match on the
+ * board. If the generator changes, old games stop resolving, which is correct - they are
+ * no longer that candidate.
+ */
+export const findGeneratedCandidate = (
+  variant: string,
+  variantConfig: unknown,
+): GeneratedCustomSetupCandidate | null => {
+  if (variant !== "custom-setup-standard") return null;
+  const state = variantConfig as Parameters<typeof positionKey>[0] | null;
+  if (!state?.pawns?.p1?.cat || !Array.isArray(state.walls)) return null;
+
+  const key = positionKey(state);
+  return (
+    generateCustomSetupCandidates().find(
+      (candidate) =>
+        positionKey(
+          candidate.config.variantConfig as Parameters<typeof positionKey>[0],
+        ) === key,
+    ) ?? null
+  );
+};
