@@ -21,15 +21,22 @@ function GeneratedCandidatesPage() {
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const botsQuery = useQuery({
-    queryKey: ["bots", "custom-setup-classic", 6, 6],
+    queryKey: ["bots", "custom-setup-standard", 6, 6],
     queryFn: () =>
       fetchBots({
-        variant: "custom-setup-classic",
+        variant: "custom-setup-standard",
         boardWidth: 6,
         boardHeight: 6,
       }),
   });
-  const officialBot = botsQuery.data?.bots.find((bot) => bot.isOfficial);
+  // Prefer a bot that exists specifically to answer puzzles: it runs a far bigger search
+  // than the one serving ordinary games, which is what makes it an oracle rather than an
+  // opponent. Falls back to whatever official bot is connected so the page still works
+  // when only the normal bot is up.
+  const officialBots =
+    botsQuery.data?.bots.filter((bot) => bot.isOfficial) ?? [];
+  const officialBot =
+    officialBots.find((bot) => bot.id.includes("puzzle")) ?? officialBots[0];
 
   const launch = async (candidate: (typeof candidates)[number]) => {
     if (!officialBot || launchingId !== null) return;

@@ -58,8 +58,17 @@ export const isClassicVariant = (variant: Variant): boolean =>
 export const isCustomSetupVariant = (
   variant: Variant,
 ): variant is CustomSetupVariant =>
-  variant === "custom-setup-classic" ||
-  variant === "custom-setup-standard";
+  variant === "custom-setup-classic" || variant === "custom-setup-standard";
+
+/**
+ * How a variant is named to players. The custom-setup variants are an implementation
+ * detail - what a player is looking at is a puzzle, and "Custom-Setup-Standard" tells
+ * them nothing about the game in front of them.
+ */
+export const variantDisplayName = (variant: Variant): string =>
+  isCustomSetupVariant(variant)
+    ? "Puzzle"
+    : variant.charAt(0).toUpperCase() + variant.slice(1);
 
 export const botCapabilityVariant = (
   variant: Variant,

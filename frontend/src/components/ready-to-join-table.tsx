@@ -15,8 +15,8 @@ import type {
   GameConfiguration,
   TimeControlPreset,
   TimeControlConfig,
-  Variant,
 } from "../../../shared/domain/game-types";
+import { variantDisplayName } from "../../../shared/domain/game-types";
 import type {
   ListedBot,
   RecommendedBotEntry,
@@ -63,9 +63,6 @@ interface ReadyToJoinTableProps {
   isPlaying?: boolean;
   errorMessage?: string | null;
 }
-
-const formatVariantLabel = (variant: Variant): string =>
-  variant.charAt(0).toUpperCase() + variant.slice(1);
 
 const formatBoardSizeShort = (width: number, height: number): string =>
   `${width}x${height}`;
@@ -368,7 +365,7 @@ export function ReadyToJoinTable({
         {activeTab === "bots-recommended" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing recommended bots for: {formatVariantLabel(config.variant)}
+              Showing recommended bots for: {variantDisplayName(config.variant)}
             </p>
             <Table>
               <TableHeader>
@@ -427,7 +424,7 @@ export function ReadyToJoinTable({
         {activeTab === "bots-filtered" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing bots matching: {formatVariantLabel(config.variant)}
+              Showing bots matching: {variantDisplayName(config.variant)}
               {` / ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
             </p>
             <Table>

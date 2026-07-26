@@ -74,9 +74,56 @@
           ]
         }
       }
+    },
+    {
+      "botId": "dw-puzzle",
+      "name": "PuzzleBot",
+      "official": true,
+      "username": null,
+      "appearance": {
+        "color": "purple",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "standard": {
+          "boardWidth": {
+            "min": 4,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 4,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 6,
+              "boardHeight": 6
+            }
+          ]
+        },
+        "classic": {
+          "boardWidth": {
+            "min": 4,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 4,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 6,
+              "boardHeight": 6
+            }
+          ]
+        }
+      }
     }
   ],
   "engineCommands": {
-    "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4"
+    "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
+    "dw-puzzle": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_73.trt --samples 10000 --parallel_samples 32 --thread_pool_size 4"
   }
 }

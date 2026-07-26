@@ -2609,9 +2609,12 @@ export function useGamePageController(gameId: string) {
         respondToRematch(primaryLocalPlayerId, "declined");
       }
     }
-    void navigate({ to: "/" });
+    // Leaving a puzzle means going back to the puzzle list, not out to the landing
+    // page - you are almost always about to try another one.
+    void navigate({ to: isPuzzleGame ? "/generated-candidates" : "/" });
   }, [
     isMultiplayerMatch,
+    isPuzzleGame,
     primaryLocalPlayerId,
     rematchState.status,
     respondToRematch,

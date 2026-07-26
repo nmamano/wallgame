@@ -1,13 +1,12 @@
 import { useState } from "react";
 import { MessageSquare, Settings2 } from "lucide-react";
-import {
-  Drawer,
-  DrawerContent,
-  DrawerTitle,
-} from "@/components/ui/drawer";
+import { Drawer, DrawerContent, DrawerTitle } from "@/components/ui/drawer";
 import { GameChatPanel, type ChatMessage } from "@/components/game-chat-panel";
 import { GameInfoPanel } from "@/components/game-info-panel";
-import type { GameConfiguration } from "../../../shared/domain/game-types";
+import type {
+  GameConfiguration,
+  Variant,
+} from "../../../shared/domain/game-types";
 import type { EvalToggleState, EvalDisplayMode } from "@/hooks/use-eval-bar";
 import type { PlayerType } from "@/lib/gameViewModel";
 
@@ -31,7 +30,7 @@ interface MobileGameDrawerProps {
 
   // Game info props
   config: GameConfiguration | null;
-  defaultVariant: string;
+  defaultVariant: Variant;
   defaultTimeControlPreset: string | null | undefined;
   sfxEnabled: boolean;
   onSfxToggle: () => void;
@@ -66,7 +65,8 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
 
   const tabButtonClass = (tab: DrawerTab, highlighted: boolean) => {
     const isActive = isOpen && activeTab === tab;
-    const base = "flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer rounded-md";
+    const base =
+      "flex items-center gap-1 px-3 py-1.5 text-xs font-medium transition-colors cursor-pointer rounded-md";
     if (isActive) return `${base} text-primary bg-primary/10`;
     if (highlighted) return `${base} text-primary animate-pulse`;
     return `${base} text-muted-foreground hover:text-foreground`;
@@ -76,11 +76,17 @@ export function MobileGameDrawer(props: MobileGameDrawerProps) {
     <>
       {/* Tab bar — always visible at the bottom of the mobile layout */}
       <div className="flex items-center justify-center gap-2 w-full py-1 bg-card/90 backdrop-blur border-t border-border">
-        <button className={tabButtonClass("chat", props.chatTabHighlighted)} onClick={() => openTab("chat")}>
+        <button
+          className={tabButtonClass("chat", props.chatTabHighlighted)}
+          onClick={() => openTab("chat")}
+        >
           <MessageSquare className="w-3.5 h-3.5" />
           Chat
         </button>
-        <button className={tabButtonClass("settings", false)} onClick={() => openTab("settings")}>
+        <button
+          className={tabButtonClass("settings", false)}
+          onClick={() => openTab("settings")}
+        >
           <Settings2 className="w-3.5 h-3.5" />
           Settings
         </button>

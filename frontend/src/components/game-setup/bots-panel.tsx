@@ -8,10 +8,8 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import type {
-  GameConfiguration,
-  Variant,
-} from "../../../../shared/domain/game-types";
+import type { GameConfiguration } from "../../../../shared/domain/game-types";
+import { variantDisplayName } from "../../../../shared/domain/game-types";
 import { BOT_GAME_TIME_CONTROL } from "../../../../shared/domain/game-utils";
 import type {
   ListedBot,
@@ -20,9 +18,6 @@ import type {
 import { useBotsQuery, useRecommendedBotsQuery } from "@/hooks/use-bots";
 
 type BotTabKey = "recommended" | "filtered";
-
-const formatVariantLabel = (variant: Variant): string =>
-  variant.charAt(0).toUpperCase() + variant.slice(1);
 
 const formatBoardSizeShort = (width: number, height: number): string =>
   `${width}x${height}`;
@@ -120,7 +115,7 @@ export function BotsPanel({
       {activeTab === "recommended" && (
         <div className="overflow-x-auto">
           <p className="text-xs text-muted-foreground mb-2">
-            Showing recommended bots for: {formatVariantLabel(config.variant)}
+            Showing recommended bots for: {variantDisplayName(config.variant)}
           </p>
           <Table>
             <TableHeader>
@@ -153,7 +148,11 @@ export function BotsPanel({
                       >
                         <TableCell>{entry.bot.name}</TableCell>
                         <TableCell>
-                          <Badge variant={entry.bot.isOfficial ? "default" : "outline"}>
+                          <Badge
+                            variant={
+                              entry.bot.isOfficial ? "default" : "outline"
+                            }
+                          >
                             {entry.bot.isOfficial ? "official" : "custom"}
                           </Badge>
                         </TableCell>
@@ -173,7 +172,7 @@ export function BotsPanel({
       {activeTab === "filtered" && (
         <div className="overflow-x-auto">
           <p className="text-xs text-muted-foreground mb-2">
-            Showing bots matching: {formatVariantLabel(config.variant)}
+            Showing bots matching: {variantDisplayName(config.variant)}
             {` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
           </p>
           <Table>
@@ -204,7 +203,9 @@ export function BotsPanel({
                       >
                         <TableCell>{bot.name}</TableCell>
                         <TableCell>
-                          <Badge variant={bot.isOfficial ? "default" : "outline"}>
+                          <Badge
+                            variant={bot.isOfficial ? "default" : "outline"}
+                          >
                             {bot.isOfficial ? "official" : "custom"}
                           </Badge>
                         </TableCell>

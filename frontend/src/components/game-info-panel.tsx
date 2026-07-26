@@ -1,3 +1,7 @@
+import {
+  variantDisplayName,
+  type Variant,
+} from "../../../shared/domain/game-types";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -21,7 +25,7 @@ import { useTheme } from "@/components/theme-provider";
 
 interface GameInfoPanelProps {
   config: GameConfiguration | null;
-  defaultVariant: string;
+  defaultVariant: Variant;
   defaultTimeControlPreset: string | null | undefined;
   sfxEnabled: boolean;
   onSfxToggle: () => void;
@@ -71,7 +75,7 @@ export function GameInfoPanel({
             <div className="flex items-center gap-1.5 lg:gap-2">
               <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
               <span className="font-medium capitalize text-sm lg:text-base">
-                {config?.variant ?? defaultVariant}
+                {variantDisplayName(config?.variant ?? defaultVariant)}
               </span>
             </div>
             <div className="flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm text-muted-foreground">
@@ -117,7 +121,11 @@ export function GameInfoPanel({
               size="icon"
               className="h-5 w-5 lg:h-6 lg:w-6 cursor-pointer"
               onClick={() => setTheme(theme === "dark" ? "light" : "dark")}
-              title={theme === "dark" ? "Switch to light mode" : "Switch to dark mode"}
+              title={
+                theme === "dark"
+                  ? "Switch to light mode"
+                  : "Switch to dark mode"
+              }
             >
               {theme === "dark" ? (
                 <Sun className="w-3.5 h-3.5 lg:w-4 lg:h-4" />
