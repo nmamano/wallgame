@@ -79,9 +79,11 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 ## Slice plan
 
 - [ ] S-E — takeback works in puzzle (custom-setup) bot games
-- [ ] S-CX — connection lifecycle: fix the reattach race AND add a disconnect grace
+- [x] S-CX — connection lifecycle: fix the reattach race AND add a disconnect grace
       period (delay clientId cleanup, re-bind sessions on prompt reattach) - one code
-      path, server-side. Nil approved both.
+      path, server-side. Nil approved both. DONE `0c197b6`, deployed + prod-verified
+      (zero-gap restart with correct listings; live game `0Sfsq10b` survived a mid-game
+      client kill+restart; race/takeback/ordinary probes green). 15s-gap rule retired.
 - [ ] S-H — generation rule: keep a candidate only if the best first move improves the
       mover's true distance to goal by at most 1 (filters "just walk at your mouse"
       positions). Nil's one quality rule; the dropped rules (naive bot loses, etc.) stay
@@ -182,6 +184,43 @@ prod (game ujKm0dvM) and all four takeback scenarios plus ordinary bot games sta
 - Rollout: server deploy only; a desktop bot restart afterwards exercises the new path
   (and, if the fix works, retires the 15s-gap rule — update info/puzzle-platform.md).
 - Locked: no bot-client (desktop) code changes; no protocol version bump; ELO untouched.
+
+## SLICE-H PICKUP (authored after S-CX shipped at 0c197b6)
+
+What S-CX taught: (1) the autopilot mock-bot pattern (auto-answer protocol requests,
+transcript + predicate waits) is the right harness for flows whose message order varies;
+(2) some identity guards have no black-box test seam (Bun delivers force-close events
+synchronously) - when so, keep the guard small, comment the exact scenario, and say so
+at the diff gate rather than writing a probabilistic test; (3) prettier keeps trying to
+rewrap three pre-existing long lines in game-socket.ts and one in custom-bot-socket.ts -
+revert those hunks before every diff gate; (4) the deploy bounce itself is a live
+drop+reattach exercise now, and the desktop restart needs no gap.
+
+- Baseline: 0c197b6 (+ the docs commit).
+- Goal (doc §H, Nil's one quality rule): generation keeps a candidate only if the best
+  first move improves the mover's true distance to goal by AT MOST 1 (drops positions
+  whose answer is simply walking at the target). The dropped rules (naive bot loses,
+  single-sample bot loses) STAY dropped; no other automated quality gating.
+- Mechanics: "best first move" needs the engine's verdict per candidate, and engines
+  live on the desktop - but the rule as stated is about the MOVER's distance delta,
+  computable in TypeScript: for the side to move, compare Grid.distance(cat, target)
+  before and after each legal first move... CAREFUL: read the rule as Nil stated it -
+  "the best move improves your distance to the goal by at most 1, not 2". The natural
+  cheap formalization: a candidate is BAD if a single first move exists that improves
+  the mover's true distance by 2 (i.e. a 2-step walk toward the mouse is the best
+  thing to do). Whether "best move" means engine-best or distance-best is the ONE open
+  interpretation question - decide with the reviewer at plan gate; if engine-best is
+  required the slice needs the desktop analysis binary and becomes a different shape.
+  Lean: distance-based (cheap, deterministic, in generated-custom-setup-candidates.ts,
+  runs at generation time), argue it at plan gate.
+- The filter changes which candidates the deterministic generator emits, so candidate
+  indices shift - acceptable (G1 will persist puzzles as entities anyway; doc §5 says
+  the "older games stop resolving their name" wrinkle is cosmetic).
+- Verification: unit test the predicate on hand-built positions (a "walk 2 at the
+  mouse" position is rejected, a wall-blocked one is kept); regenerate the 32 and spot
+  check counts; deploy; Nil's playtest judges quality (he is the filter).
+- Locked: no automated winnability/quality gating beyond this one rule; standard
+  variant; 6x6/18 walls/3-6 races unchanged.
 
 ## SLICE-N PICKUPS
 

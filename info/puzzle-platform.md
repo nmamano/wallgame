@@ -82,16 +82,20 @@ Restarting the bots (needed after a config or engine change):
 ```
 ssh nilo@desktop-053vvpl-1
 tmux kill-session -t bot-client
-sleep 15   # REQUIRED - see below
 tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"
 # confirm: grep "Successfully attached" ~/logs/bot-client-transformer.log
-# then ALSO confirm: /api/bots?variant=custom-setup-standard lists dw-puzzle
+# and: /api/bots?variant=custom-setup-standard lists dw-puzzle
 ```
 
-The 15s gap matters: registrations are keyed by clientId, and a quick kill+restart can
-have the server process the old connection's disconnect cleanup AFTER the new attach,
-silently wiping the new registration - the client still gets "attached" and ping/pong,
-but every bot listing is empty. "Successfully attached" alone does not prove health.
+No kill-to-start gap is needed (the 15s rule is retired). Since `0c197b6` the server's
+teardown is connection-scoped and deferred: a stale connection's close event cannot wipe
+a newer attach with the same clientId, and a dropped client gets a 30s grace window
+(`BOT_DISCONNECT_GRACE_MS`) in which its ACTIVE GAMES SURVIVE - on reattach the server
+rebuilds each game's engine session and play continues (verified in prod: a puzzle game
+survived a mid-game client kill+restart, game `0Sfsq10b`). During grace the bots are
+hidden from listings, cannot start new games, and their seats show disconnected. If the
+client stays down past the grace window, the games are resigned as before. Routine 1006
+websocket blips therefore no longer resign live games.
 
 Never use `pkill -f` on either box - on auntie it matches the isomux office server and
 takes the whole office down. Capture an exact PID instead.
@@ -202,11 +206,14 @@ breaks it.
   abandoned human-first game, not an engine hang.
 - **Nil confirmed all five fixes in an authenticated playtest (2026-07-26):** banner,
   back link, retry, bot speed, past-games absence, and the eval bar as a hint all work.
-- **Agreed follow-ups (Nil, 2026-07-26):** (1) the reattach race gets a real server fix;
-  (2) a disconnect grace period is worth doing - routine 1006 drops currently resign
-  every live bot game instantly, and the bot client already survives drops (its engine
-  and sessions outlive the websocket), so the server delaying clientId cleanup and
-  re-binding sessions on prompt reattach fixes both problems in the same code path.
+- **Agreed follow-ups (Nil, 2026-07-26) - BOTH DONE in `0c197b6` (loop 2, S-CX):**
+  (1) the reattach race is fixed (connection-scoped teardown; stale closes and stale
+  frames from a superseded connection are ignored); (2) the disconnect grace period
+  exists (30s; games survive a drop and are healed by a full engine-session rebuild on
+  reattach). See section 2's restart recipe for the operational consequences. Tests:
+  `tests/integration/bot-7-connection-lifecycle.test.ts` (runs on auntie without
+  Docker - the bot-6/bot-7 files fall back to a DB-less mode, so protocol-level
+  server tests ARE runnable here despite the no-backend rule for the UI).
 
 ### G. Make it a first-class feature
 
