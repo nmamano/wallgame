@@ -165,6 +165,14 @@ real wake signal.
       — keep one (lean: difficulty; settle at plan gate). Re-check item 8 (is it
       clear whether you are P1 or P2 in-game) AFTER S-P1 — Nil expects S-P1 largely
       answers it; fold a small indicator in here only if still unclear.
+      DONE `26abc8e`, deployed + prod-verified 2026-07-26: page screenshot shows
+      unified treatment (shared shell, serif titles, single Difficulty badge,
+      Solve/Play buttons in both sections); scripted /puzzles/1 loads (200);
+      0-move generated launch probe played and resigned (game w7JkKOlQ).
+      Reviewer required one mechanical cleanup pre-commit (JSDoc adjacency).
+      Item-8 re-check still rides on Nil's playtest.
+      LOOP STATUS: S-COPY, S-P1, S-UI shipped and verified; S-MH is the only
+      open slice, verification-first, waiting on Nil playing a P2 puzzle.
 
 ## SLICE S-P1 AMENDED DESIGN (reviewer plan-gate amendments + Nil's lead-in
 
