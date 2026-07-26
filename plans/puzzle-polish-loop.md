@@ -222,14 +222,29 @@ replies to a move); 0-move probes and listings are blind to engine death.
       `bun x tsc --noEmit -p frontend/tsconfig.test.json`), including the
       exact first-join race (re-colorize cached diffs on a color-map change
       with no new game state).
-      Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
-      (frontend/src/lib/history-utils.ts) derives the initial mover from the
-      authored config (`new GameState(config, 0)`) and the historyNav gating in
-      use-game-page-controller.ts (~2287) has no variant/puzzle conditions — no
-      smoking gun by reading. Symptom description needed from Nil (buttons
-      disabled? wrong position rendered? cursor stuck?); empirical browser repro
-      required. If cursor -1 shows a STANDARD start position instead of the
-      authored one, the config reaching buildHistoryState is the place to look.
+      DONE `ea44def`, deployed + prod-verified 2026-07-26 night: fresh
+      anonymous P2 launch screenshot (game jL25Lv_l — bot lead-in arrow
+      renders under default colors), finished-game replay screenshot,
+      closing round-trip probe green (bot replied, game cfLOVsbX resigned).
+      Nil's preference-sensitive eyeball (his own color prefs, logged in) is
+      the final acceptance check.
+
+LOOP 3 CLOSED (2026-07-26): S-COPY, S-P1 (+fix-forward), S-MH (fixed by
+S-P1, Nil-confirmed), S-UI, S-P2 (A/B/C), S-P3 — all shipped, reviewed by
+Project Reviewer 1 at every gate, and production-verified. Loop 4 pointers:
+G3 completion tracking + G4 likes/dislikes (deferred twice; G3 gains the
+server-authoritative puzzleId launch from S-P1 as groundwork); parked for
+Nil: engine concurrency defect (board 8f1cf7e3, caused a prod outage this
+loop) and PuzzleBot graceful losing (board b4c2b191).
+Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
+(frontend/src/lib/history-utils.ts) derives the initial mover from the
+authored config (`new GameState(config, 0)`) and the historyNav gating in
+use-game-page-controller.ts (~2287) has no variant/puzzle conditions — no
+smoking gun by reading. Symptom description needed from Nil (buttons
+disabled? wrong position rendered? cursor stuck?); empirical browser repro
+required. If cursor -1 shows a STANDARD start position instead of the
+authored one, the config reaching buildHistoryState is the place to look.
+
 - [x] S-UI — one product, two sections: make scripted vs generated cards consistent
       ("Solve" vs "Try" buttons etc.); scripted cards show BOTH difficulty and rating
       — keep one (lean: difficulty; settle at plan gate). Re-check item 8 (is it
