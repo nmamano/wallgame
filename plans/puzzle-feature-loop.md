@@ -150,6 +150,39 @@ work" looked like for him (asked in chat; three candidate explanations listed th
   takeback still works (regression).
 - Locked: no wrong-move anything; takeback UI already exists - this is a server fix.
 
+## SLICE-CX PICKUP (authored after S-E's race fix shipped at 4d96f6e)
+
+What S-E taught: (1) protocol-level integration tests RUN ON AUNTIE — the bot-6 test's
+beforeAll falls back to a placeholder DATABASE_URL when no container runtime exists
+(fallback is limited to the known missing-runtime errors; everything else rethrows), so
+server lifecycle changes can be tested deterministically here with the mock bot-client
+harness. Reuse that pattern. (2) Deterministic race tests: hold a protocol response to
+keep the window open instead of sleeping. (3) Ply-count comparisons are not content
+comparisons — sync checks must compare against the definitive history, a theme likely
+to recur in reattach handling. (4) Production probes confirmed the sync guard fires in
+prod (game ujKm0dvM) and all four takeback scenarios plus ordinary bot games stay green.
+
+- Baseline: 4d96f6e.
+- Goal (Nil approved both, one server-side code path): fix the bot-client reattach race
+  AND add a disconnect grace period. Today: (a) registrations are keyed by clientId and
+  the OLD connection's disconnect cleanup can run AFTER a new attach, silently wiping
+  the fresh registration (loop 1 parked item 1; the reason for the 15s restart gap);
+  (b) handleBotClientDisconnect resigns ALL of a client's active games the instant its
+  websocket drops, though 1006 drops are routine and the client's engine and sessions
+  survive them.
+- Direction: delay clientId cleanup (grace period) and re-bind live sessions when the
+  client reattaches promptly; make cleanup connection-scoped so a stale connection's
+  teardown can never destroy a newer attach. Design details are the slice plan's job.
+- Key files: server/routes/custom-bot-socket.ts (attach handling,
+  handleBotClientDisconnect ~1150-1200), server/games/custom-bot-store.ts.
+- Verification: bot-6-style deterministic tests (fast reattach keeps registration; games
+  survive a drop + prompt reattach; grace expiry still resigns; ordinary attach/detach
+  unaffected) + production: restart the desktop bot WITHOUT the 15s gap and confirm
+  /api/bots listings survive, and a live probe game surviving a simulated drop.
+- Rollout: server deploy only; a desktop bot restart afterwards exercises the new path
+  (and, if the fix works, retires the 15s-gap rule — update info/puzzle-platform.md).
+- Locked: no bot-client (desktop) code changes; no protocol version bump; ELO untouched.
+
 ## SLICE-N PICKUPS
 
 Authored when the previous slice commits, folding in what it taught.
