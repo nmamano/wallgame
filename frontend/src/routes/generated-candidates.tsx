@@ -7,17 +7,52 @@ import { Card } from "@/components/ui/card";
 import { useSettings } from "@/hooks/use-settings";
 import { fetchBots, playVsBot, userQueryOptions } from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
-import { generateCustomSetupCandidates } from "../../../shared/domain/generated-custom-setup-candidates";
+import {
+  generateCustomSetupCandidates,
+  type GeneratedCustomSetupCandidate,
+} from "../../../shared/domain/generated-custom-setup-candidates";
+import {
+  applyCandidateVerdicts,
+  type CandidateVerdictFile,
+} from "../../../shared/domain/custom-setup-verdicts";
+import candidateVerdicts from "../../../shared/domain/generated-custom-setup-verdicts.json";
 
 export const Route = createFileRoute("/generated-candidates")({
   component: GeneratedCandidatesPage,
 });
 
+/**
+ * The engine-filtered candidate list, with `stale: true` (and no candidates)
+ * when the committed verdicts do not match the current generator — fail
+ * closed: show an error, list nothing, regenerate via
+ * scripts/filter-puzzle-candidates.ts.
+ */
+const filterCandidates = (): {
+  candidates: GeneratedCustomSetupCandidate[];
+  stale: boolean;
+} => {
+  try {
+    return {
+      candidates: applyCandidateVerdicts(
+        generateCustomSetupCandidates(),
+        candidateVerdicts as CandidateVerdictFile,
+      ),
+      stale: false,
+    };
+  } catch (error) {
+    console.error("[generated-candidates] stale verdicts", error);
+    return { candidates: [], stale: true };
+  }
+};
+
 function GeneratedCandidatesPage() {
   const navigate = Route.useNavigate();
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const settings = useSettings(!!userData?.user, userPending);
-  const candidates = useMemo(() => generateCustomSetupCandidates(), []);
+  const { candidates, stale: verdictsStale } = useMemo(
+    () => filterCandidates(),
+    [],
+  );
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
   const botsQuery = useQuery({
@@ -77,9 +112,17 @@ function GeneratedCandidatesPage() {
         <h1 className="text-3xl font-bold">Generated candidates</h1>
         <p className="mt-2 text-muted-foreground">
           Directly generated 6×6 positions with 18 neutral walls and short
-          races. These are deliberately unvetted.
+          races. Positions whose best first move is simply walking at the target
+          are filtered out; nothing else is vetted.
         </p>
       </div>
+
+      {verdictsStale && (
+        <Card className="border-destructive p-4 text-destructive">
+          The committed engine verdicts do not match the current generator.
+          Regenerate them with scripts/filter-puzzle-candidates.ts.
+        </Card>
+      )}
 
       {botsQuery.isPending && (
         <p className="flex items-center gap-2 text-muted-foreground">

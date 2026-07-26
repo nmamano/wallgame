@@ -13,14 +13,20 @@ export interface GeneratedCustomSetupCandidate {
   displayName: string;
   config: GameConfiguration;
   humanPlaysAs: PlayerId;
+  /**
+   * ATTACK races, through the walls: p1 is p1.cat -> p2.mouse, p2 is
+   * p2.cat -> p1.mouse (in standard the goal is the opponent's mouse).
+   */
   distances: { p1: number; p2: number };
 }
 
 const BOARD_SIZE = 6;
 const WALL_COUNT = 18;
-const CANDIDATE_COUNT = 32;
+const CANDIDATE_COUNT = 48;
 const MIN_RACE = 3;
 const MAX_RACE = 6;
+/** Bounded sampling: fail loud rather than spin forever on a hostile wall set. */
+const MAX_PAWN_SAMPLING_ATTEMPTS = 100_000;
 const TIME_CONTROL = {
   initialSeconds: 0,
   incrementSeconds: 0,
@@ -72,36 +78,62 @@ const generateWalls = (random: () => number): WallPosition[] => {
 };
 
 /**
- * Picks a cat and the mouse it is chasing, measuring the race as the ACTUAL path
- * length through the walls rather than as a straight-line count.
+ * Picks all four pawn cells so that BOTH attack races are short, measuring each
+ * race as the ACTUAL path length through the walls rather than as a straight-line
+ * count.
  *
- * The first version of this used Manhattan distance and placed the walls afterwards,
- * which meant a "3 to 6 move race" could be a pawn sealed off from its target entirely:
- * 18 walls on a 6x6 board partitions it often. Those positions are what produced the
- * nonsense play, and one of them hung the engine mid-search (game 7y7LrnoN, evaluation
- * at ply 3 never returned). `Grid.distance` walks the board and returns -1 when there is
- * no path at all, so this cannot select an unreachable target.
+ * The races that matter are the ATTACK races: in standard the goal is the
+ * OPPONENT's mouse (game-state.ts goalCell), so the game's difficulty is set by
+ * p1.cat -> p2.mouse and p2.cat -> p1.mouse. An earlier version constrained each
+ * cat against its OWN mouse — the defense geometry — which left the actual races
+ * unconstrained (measured 1 to 14 moves across the old batch) and did not even
+ * guarantee the goals were reachable. Same wrong mental model as the old banner
+ * copy ("reach your mouse"); the copy was fixed first, this catches the code up.
  *
- * This is not quality gating - it makes no judgement about whether a position is a GOOD
- * puzzle. It only guarantees the position is a playable game.
+ * `Grid.distance` returns -1 when there is no path, so requiring both attack
+ * distances in [MIN_RACE, MAX_RACE] also guarantees reachability by construction.
+ * An even earlier version used Manhattan distance with walls placed afterwards,
+ * which produced sealed-off pawns and one engine hang (game 7y7LrnoN).
+ *
+ * This is not quality gating - it makes no judgement about whether a position is
+ * a GOOD puzzle. It only guarantees the position is a playable short race.
  */
-const randomShortRace = (
+const randomCrossPairedPawns = (
   random: () => number,
   grid: Grid,
-  taken: Cell[],
-): { cat: Cell; mouse: Cell; distance: number } => {
-  while (true) {
-    const cat = randomCell(random);
-    const mouse = randomCell(random);
-    if (sameCell(cat, mouse)) continue;
-    if (taken.some((cell) => sameCell(cell, cat) || sameCell(cell, mouse))) {
-      continue;
-    }
-    const distance = grid.distance(cat, mouse);
-    if (distance >= MIN_RACE && distance <= MAX_RACE) {
-      return { cat, mouse, distance };
-    }
+): {
+  p1: { cat: Cell; mouse: Cell };
+  p2: { cat: Cell; mouse: Cell };
+  attackDistances: { p1: number; p2: number };
+} => {
+  for (let attempt = 0; attempt < MAX_PAWN_SAMPLING_ATTEMPTS; attempt++) {
+    const cells = [
+      randomCell(random),
+      randomCell(random),
+      randomCell(random),
+      randomCell(random),
+    ];
+    const distinct = cells.every(
+      (cell, i) => !cells.some((other, j) => j < i && sameCell(cell, other)),
+    );
+    if (!distinct) continue;
+
+    const [p1Cat, p1Mouse, p2Cat, p2Mouse] = cells;
+    const p1Attack = grid.distance(p1Cat, p2Mouse);
+    if (p1Attack < MIN_RACE || p1Attack > MAX_RACE) continue;
+    const p2Attack = grid.distance(p2Cat, p1Mouse);
+    if (p2Attack < MIN_RACE || p2Attack > MAX_RACE) continue;
+
+    return {
+      p1: { cat: p1Cat, mouse: p1Mouse },
+      p2: { cat: p2Cat, mouse: p2Mouse },
+      attackDistances: { p1: p1Attack, p2: p2Attack },
+    };
   }
+  throw new Error(
+    `Could not place pawns with both attack races in [${MIN_RACE},${MAX_RACE}] ` +
+      `after ${MAX_PAWN_SAMPLING_ATTEMPTS} attempts`,
+  );
 };
 
 const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
@@ -113,14 +145,13 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
     grid.addWall(wall);
   }
 
-  const p1 = randomShortRace(random, grid, []);
-  const p2 = randomShortRace(random, grid, [p1.cat, p1.mouse]);
+  const pawns = randomCrossPairedPawns(random, grid);
 
   const humanPlaysAs: PlayerId = index % 2 === 0 ? 1 : 2;
   const initialState: CustomSetupStandardInitialState = {
     pawns: {
-      p1: { cat: p1.cat, mouse: p1.mouse },
-      p2: { cat: p2.cat, mouse: p2.mouse },
+      p1: pawns.p1,
+      p2: pawns.p2,
     },
     walls,
     turn: {
@@ -133,7 +164,7 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
     id: `synthetic-6x6-${String(index + 1).padStart(2, "0")}`,
     displayName: `Synthetic Puzzle ${index + 1}`,
     humanPlaysAs,
-    distances: { p1: p1.distance, p2: p2.distance },
+    distances: pawns.attackDistances,
     config: {
       variant: "custom-setup-standard",
       timeControl: TIME_CONTROL,
@@ -164,8 +195,13 @@ export const generateCustomSetupCandidates =
       generateCandidate(index),
     );
 
-/** Position fingerprint: pawns plus the wall set, order-independent. */
-const positionKey = (state: {
+/**
+ * Position fingerprint: pawns plus the wall set, order-independent.
+ * Exported so engine-filter verdicts can be tied to the exact position they
+ * were computed for (a candidate id alone is not stable across generator
+ * edits — the fingerprint is).
+ */
+export const positionKey = (state: {
   pawns: {
     p1: { cat: Cell; mouse: Cell };
     p2: { cat: Cell; mouse: Cell };

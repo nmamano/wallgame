@@ -1,0 +1,234 @@
+/**
+ * Computes engine-best-move verdicts for the generated custom-setup candidates
+ * (Nil's rule: keep a candidate only if the engine's best first move improves
+ * the mover's distance to their goal by at most 1) and writes them to
+ * shared/domain/generated-custom-setup-verdicts.json.
+ *
+ * The engine is driven OFFLINE on the desktop over an ssh pipe — the same
+ * deep_ww_bgs_engine binary, model, and sample settings that serve PuzzleBot
+ * in production, but in a throwaway process. Production is deliberately not
+ * used: a filter run against the live eval path once segfaulted the serving
+ * engine (2026-07-26, exit 139) and took PuzzleBot down for everyone.
+ *
+ * Requests are sent STRICTLY ONE AT A TIME, awaiting each response: the
+ * engine schedules request handlers on its thread pool and blockingWaits
+ * coroutines on that same pool, so pumping requests in bulk starves the pool
+ * and deadlocks it (bgs_engine_main.cpp).
+ *
+ * Fail-loud: per-candidate response timeout; an engine crash, timeout, or
+ * mismatched response aborts the run. The artifact is written atomically
+ * (temp file + rename) only after the full run self-validates, so an
+ * existing good artifact can never be truncated or partially overwritten.
+ *
+ * Usage: bun scripts/filter-puzzle-candidates.ts [--ssh nilo@desktop-053vvpl-1]
+ */
+
+import { spawn } from "bun";
+import { renameSync, writeFileSync } from "node:fs";
+import { join } from "node:path";
+import { generateCustomSetupCandidates } from "../shared/domain/generated-custom-setup-candidates";
+import {
+  computeBestMoveDelta,
+  keepByDelta,
+  applyCandidateVerdicts,
+  evaluationInputKey,
+  type CandidateVerdict,
+  type CandidateVerdictFile,
+} from "../shared/domain/custom-setup-verdicts";
+
+const sshArgIndex = process.argv.indexOf("--ssh");
+const SSH_TARGET =
+  sshArgIndex >= 0 ? process.argv[sshArgIndex + 1] : "nilo@desktop-053vvpl-1";
+if (
+  sshArgIndex >= 0 &&
+  (!SSH_TARGET || SSH_TARGET.trim() === "" || SSH_TARGET.startsWith("--"))
+) {
+  throw new Error("--ssh requires a nonempty host value");
+}
+
+const ENGINE_MODEL = "tf_curriculum_model_73.trt";
+const ENGINE_SAMPLES = 5000;
+const ENGINE_PARALLEL = 128;
+const ENGINE_CMD =
+  `cd ~/nil/wallgame/official-custom-bot-client && exec nice -n15 ` +
+  `../deep-wallwars/build-tests/deep_ww_bgs_engine ` +
+  `--model ../deep-wallwars/models_serving/${ENGINE_MODEL} ` +
+  `--samples ${ENGINE_SAMPLES} --parallel_samples ${ENGINE_PARALLEL} ` +
+  `--thread_pool_size 4 2>/dev/null`;
+
+const RESPONSE_TIMEOUT_MS = 120_000;
+
+const log = (...args: unknown[]) =>
+  console.log(new Date().toISOString(), ...args);
+
+const main = async () => {
+  const proc = spawn(
+    ["ssh", "-o", "ConnectTimeout=15", SSH_TARGET, ENGINE_CMD],
+    {
+      stdin: "pipe",
+      stdout: "pipe",
+      stderr: "inherit",
+    },
+  );
+  const reader = proc.stdout.getReader();
+  let buffer = "";
+
+  /** Read one JSON line from the engine within the deadline. */
+  const readLine = async (
+    deadline: number,
+  ): Promise<Record<string, unknown>> => {
+    for (;;) {
+      const newlineAt = buffer.indexOf("\n");
+      if (newlineAt >= 0) {
+        const line = buffer.slice(0, newlineAt);
+        buffer = buffer.slice(newlineAt + 1);
+        if (line.trim() === "") continue;
+        return JSON.parse(line) as Record<string, unknown>;
+      }
+      const remaining = deadline - Date.now();
+      if (remaining <= 0) {
+        throw new Error("engine response timeout — no artifact written");
+      }
+      let timeoutId: ReturnType<typeof setTimeout> | undefined;
+      const chunk = await Promise.race([
+        reader.read(),
+        new Promise<"timeout">((resolve) => {
+          timeoutId = setTimeout(() => resolve("timeout"), remaining);
+        }),
+      ]).finally(() => clearTimeout(timeoutId));
+      if (chunk === "timeout") {
+        throw new Error("engine response timeout — no artifact written");
+      }
+      if (chunk.done) {
+        throw new Error("engine process exited (crash?) — no artifact written");
+      }
+      buffer += new TextDecoder().decode(chunk.value);
+    }
+  };
+
+  /**
+   * Send one request and await ITS response, validating the response type
+   * and bgsId (rather than accepting the next arbitrary JSON object).
+   */
+  const sendAndAwait = async (
+    msg: { type: string; bgsId: string } & Record<string, unknown>,
+    expectedResponseType: string,
+  ): Promise<Record<string, unknown>> => {
+    proc.stdin.write(JSON.stringify(msg) + "\n");
+    await proc.stdin.flush();
+    const response = await readLine(Date.now() + RESPONSE_TIMEOUT_MS);
+    if (
+      response.type !== expectedResponseType ||
+      response.bgsId !== msg.bgsId
+    ) {
+      throw new Error(
+        `unexpected engine response to ${msg.type} (${msg.bgsId}): ` +
+          JSON.stringify(response).slice(0, 200),
+      );
+    }
+    if (response.success === false) {
+      throw new Error(
+        `${msg.type} failed for ${msg.bgsId}: ${String(response.error)}`,
+      );
+    }
+    return response;
+  };
+
+  try {
+    const candidates = generateCustomSetupCandidates();
+    const verdicts: CandidateVerdict[] = [];
+
+    for (const candidate of candidates) {
+      const bgsId = `filter-${candidate.id}`;
+      await sendAndAwait(
+        {
+          type: "start_game_session",
+          bgsId,
+          botId: "dw-puzzle",
+          config: {
+            variant: candidate.config.variant,
+            boardWidth: candidate.config.boardWidth,
+            boardHeight: candidate.config.boardHeight,
+            initialState: candidate.config.variantConfig,
+          },
+        },
+        "game_session_started",
+      );
+
+      const evaluated = await sendAndAwait(
+        { type: "evaluate_position", bgsId, expectedPly: 0 },
+        "evaluate_response",
+      );
+      const bestMove = evaluated.bestMove;
+      if (typeof bestMove !== "string" || evaluated.ply !== 0) {
+        throw new Error(
+          `evaluate_response malformed for ${candidate.id}: ` +
+            JSON.stringify(evaluated).slice(0, 200),
+        );
+      }
+
+      await sendAndAwait(
+        { type: "end_game_session", bgsId },
+        "game_session_ended",
+      );
+
+      const { beforeDistance, afterDistance, delta } = computeBestMoveDelta(
+        candidate,
+        bestMove,
+      );
+      const keep = keepByDelta(delta);
+      verdicts.push({
+        candidateId: candidate.id,
+        fingerprint: evaluationInputKey(candidate),
+        bestMove,
+        beforeDistance,
+        afterDistance,
+        delta,
+        keep,
+      });
+      log(
+        `${candidate.id}: best ${bestMove}, d ${beforeDistance}->${afterDistance} ` +
+          `(delta ${delta}) => ${keep ? "KEEP" : "REJECT"}`,
+      );
+    }
+
+    const file: CandidateVerdictFile = {
+      evaluatedAt: new Date().toISOString(),
+      origin: `offline:${SSH_TARGET}`,
+      botCompositeId: "offline:dw-puzzle",
+      botName:
+        `deep_ww_bgs_engine ${ENGINE_MODEL} ` +
+        `samples=${ENGINE_SAMPLES} parallel=${ENGINE_PARALLEL} ` +
+        `(PuzzleBot's production configuration, run offline)`,
+      verdicts,
+    };
+
+    // Self-check, then atomic write: the existing artifact is replaced only
+    // by a fully validated new one.
+    const kept = applyCandidateVerdicts(candidates, file);
+    const outPath = join(
+      import.meta.dir,
+      "../shared/domain/generated-custom-setup-verdicts.json",
+    );
+    const tmpPath = `${outPath}.tmp`;
+    writeFileSync(tmpPath, JSON.stringify(file, null, 2) + "\n");
+    renameSync(tmpPath, outPath);
+    log(
+      `wrote ${outPath}: ${verdicts.length} verdicts, ${kept.length} kept, ` +
+        `${verdicts.length - kept.length} rejected`,
+    );
+  } finally {
+    try {
+      proc.stdin.end();
+    } catch {
+      /* ignore */
+    }
+    try {
+      proc.kill();
+    } catch {
+      /* ignore */
+    }
+  }
+};
+
+await main();
