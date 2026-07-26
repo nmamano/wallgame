@@ -121,6 +121,13 @@ real wake signal.
       REPRODUCE FIRST — ideally reproduce BEFORE S-P1 lands so we know whether S-P1
       fixes it (suspect: history cursor / buildHistoryState with authored
       custom-setup state). Then fix whatever remains.
+      SYMPTOM (Nil, 2026-07-26): NO moves appear at all in the history panel —
+      seen in Puzzle 3; Puzzle 4 shows moves fine. Nil suspects the same
+      P2-moves-first root as takeback (cannot derive parity from the puzzle
+      NAME: sortIndex renumbers the 41 survivors, so check each puzzle's
+      authored turn from /api/puzzles). Plausible mechanism: the paired
+      move-table memo in use-game-page-controller.ts (~2240-2285) pairing
+      movers by parity. Recheck empirically AFTER S-P1 ships.
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState
       (frontend/src/lib/history-utils.ts) derives the initial mover from the
       authored config (`new GameState(config, 0)`) and the historyNav gating in
@@ -135,8 +142,30 @@ real wake signal.
       clear whether you are P1 or P2 in-game) AFTER S-P1 — Nil expects S-P1 largely
       answers it; fold a small indicator in here only if still unclear.
 
-## SLICE S-P1 AMENDED DESIGN (reviewer plan-gate amendments, 2026-07-26 —
-## implement ONLY after Nil approves the wall-backout lead-in)
+## SLICE S-P1 AMENDED DESIGN (reviewer plan-gate amendments + Nil's lead-in
+## heuristic, 2026-07-26 — design APPROVED by Nil, plumbing per reviewer)
+
+NIL'S LEAD-IN HEURISTIC (2026-07-26, replaces wall-backout as primary — he
+rejected wall placements as "equally noticeable"; fabricated pawn walks must
+look PLAUSIBLE, hence greedy-advance/flee shapes). All distances are true path
+length through the curated position's walls (BFS); walls are identical in the
+pre-position for cases 1-2. Curated cells: bot cat C, bot mouse M, human cat
+hC, human mouse hM.
+1. CAT ADVANCE: find a cell X with dist(X, C) = 2 and dist(X, hM) =
+   dist(C, hM) + 2. Pre-position: bot cat at X. Lead-in: double cat move
+   X→C — a strict 2-step greedy advance toward the human mouse.
+2. Else MOUSE FLEE: find a cell Y with dist(Y, M) = 2 and dist(Y, hC) =
+   dist(M, hC) − 2. Pre-position: bot mouse at Y. Lead-in: double mouse move
+   Y→M — a 2-step flee from the human cat.
+3. Else WALL FALLBACK: lead-in places 2 of the premade walls (canonical
+   last-two; pre-position = curated minus those walls). Nil: "nonsensical but
+   not game breaking, we can accept this."
+Implementation notes: deterministic tie-break when multiple X/Y qualify
+(lexicographic smallest); X/Y must not collide with any other pawn cell;
+assert via the pure replay that pre-position + lead-in reproduces the curated
+config EXACTLY and triggers no terminal state. ONE-MOVE RULE CHECK (done): it
+is a draw-compensation rule at capture time (game-state.ts ~588-603), NOT a
+first-turn action limit — a double-action ply 0 is legal.
 
 Reviewer approved stored-explicit `lead_in` column but required these amendments
 (they caught two real gaps: POST /api/bots/play has no server-side puzzle
