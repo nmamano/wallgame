@@ -43,6 +43,7 @@ import {
   getMatchingBots,
   getRecommendedBots,
   getBotByCompositeId,
+  isBotClientInGrace,
   addActiveGame,
 } from "../games/custom-bot-store";
 // Note: V3 BGS initialization is handled asynchronously when the player connects
@@ -485,6 +486,14 @@ export const botsRoute = new Hono()
         const bot = getBotByCompositeId(parsed.botId);
         if (!bot) {
           return c.json({ error: "Bot not found or not connected" }, 404);
+        }
+        // A client in disconnect grace still exists (its games survive) but
+        // cannot accept new games — reject like an unknown bot would be.
+        if (isBotClientInGrace(parsed.botId)) {
+          return c.json(
+            { error: "Bot is reconnecting, try again shortly" },
+            404,
+          );
         }
         if (isCustomSetupVariant(parsed.config.variant) && !bot.isOfficial) {
           return c.json(

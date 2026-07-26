@@ -53,6 +53,8 @@ import {
   resetInvalidMessageCount,
   addClientBgsSession,
   removeClientBgsSession,
+  markClientDisconnected,
+  type ActiveBotGame,
 } from "../games/custom-bot-store";
 
 import {
@@ -73,6 +75,7 @@ import {
   sendMatchStatus,
   broadcast,
   broadcastLiveGamesRemove,
+  resyncBgsFromHistory,
 } from "./game-socket";
 
 const { upgradeWebSocket, websocket } = createBunWebSocket();
@@ -90,6 +93,21 @@ const BGS_REQUEST_TIMEOUT_MS = 10_000;
 /** Maximum unexpected messages before disconnect */
 const MAX_UNEXPECTED_MESSAGES = 100;
 
+/**
+ * Grace period after a bot client's websocket drops before its games are
+ * resigned and the client unregistered. Reattaching within the window keeps
+ * registration and games alive (each game's BGS is rebuilt via resync).
+ * Overridable via BOT_DISCONNECT_GRACE_MS, mainly for tests.
+ */
+const BOT_DISCONNECT_GRACE_MS = (() => {
+  const raw = process.env.BOT_DISCONNECT_GRACE_MS;
+  if (raw !== undefined) {
+    const parsed = Number(raw);
+    if (Number.isFinite(parsed) && parsed >= 0) return parsed;
+  }
+  return 30_000;
+})();
+
 // ============================================================================
 // Types
 // ============================================================================
@@ -99,6 +117,12 @@ interface BotSocket {
   clientId: string | null; // null until attached
   attached: boolean;
   unexpectedMessageCount: number;
+  /**
+   * Set when a newer connection attached with the same clientId. This
+   * socket's close event must not tear anything down — the clientId now
+   * belongs to the newer connection.
+   */
+  superseded: boolean;
 }
 
 /** Response types the bot can send */
@@ -152,16 +176,6 @@ const getSocketForContext = (ctx: WSContext): BotSocket | undefined => {
     return rawSocketMap.get(ctx.raw);
   }
   return undefined;
-};
-
-const cleanupSocket = (ctx: WSContext, socket: BotSocket) => {
-  contextToSocket.delete(ctx);
-  if (ctx.raw && typeof ctx.raw === "object") {
-    rawSocketMap.delete(ctx.raw);
-  }
-  if (socket.clientId) {
-    clientIdToContext.delete(socket.clientId);
-  }
 };
 
 // ============================================================================
@@ -327,10 +341,21 @@ const handleAttach = (
   }
 
   // Register or replace client
+  let isReattach = false;
   if (existingClient) {
-    // Force-disconnect old connection
+    isReattach = true;
+
+    // This attach supersedes any pending grace teardown.
+    const graceCancelled = cancelDisconnectGrace(message.clientId);
+
+    // Force-disconnect the old connection if one is still live, and mark its
+    // socket superseded so its close event cannot tear down this attach.
     const oldCtx = clientIdToContext.get(message.clientId);
     if (oldCtx) {
+      const oldSocket = getSocketForContext(oldCtx);
+      if (oldSocket) {
+        oldSocket.superseded = true;
+      }
       console.info("[custom-bot-ws] force-disconnecting old client", {
         clientId: message.clientId,
       });
@@ -340,12 +365,37 @@ const handleAttach = (
         // Ignore close errors
       }
     }
-    replaceClient(
+
+    const { orphanedBotCompositeIds, orphanedGames } = replaceClient(
       message.clientId,
       message.bots,
       ctx.raw as never,
       OFFICIAL_BOT_TOKEN,
     );
+
+    // Bots the new attach no longer declares: end their BGS, reject their
+    // resolvers, and resign their games — they must not outlive their bot.
+    for (const compositeId of orphanedBotCompositeIds) {
+      endBgsAndRejectResolvers(compositeId);
+    }
+    if (orphanedGames.length > 0) {
+      console.info("[custom-bot-ws] resigning games of dropped bots", {
+        clientId: message.clientId,
+        gameCount: orphanedGames.length,
+      });
+      void resignBotGames(orphanedGames).catch((error: unknown) => {
+        console.error("[custom-bot-ws] error resigning orphaned games", {
+          error,
+          clientId: message.clientId,
+        });
+      });
+    }
+
+    if (graceCancelled) {
+      console.info("[custom-bot-ws] reattached within disconnect grace", {
+        clientId: message.clientId,
+      });
+    }
   } else {
     const result = registerClient(
       message.clientId,
@@ -382,6 +432,36 @@ const handleAttach = (
     clientVersion: message.client.version,
     protocolVersion: message.protocolVersion,
   });
+
+  // Reattach: rebuild every carried game's BGS on the new connection. The
+  // full rebuild (resync) is idempotent against whatever the client process
+  // kept or lost, and plays the bot's turn if one is due.
+  if (isReattach) {
+    const carriedGames = getActiveGamesForClient(message.clientId);
+    for (const { compositeId, game } of carriedGames) {
+      let session: GameSession;
+      try {
+        session = getSession(game.gameId);
+      } catch {
+        continue; // game gone from the store
+      }
+      if (session.gameState.status !== "playing") continue;
+      console.info("[custom-bot-ws] resyncing game after reattach", {
+        clientId: message.clientId,
+        gameId: game.gameId,
+        compositeId,
+      });
+      void resyncBgsFromHistory(game.gameId, compositeId).catch(
+        (error: unknown) => {
+          console.error("[custom-bot-ws] resync after reattach failed", {
+            error,
+            gameId: game.gameId,
+            compositeId,
+          });
+        },
+      );
+    }
+  }
 
   return true;
 };
@@ -1145,15 +1225,45 @@ const handleMessage = (
 };
 
 // ============================================================================
-// Disconnect Handling
+// Disconnect Handling (grace period + generation-owned teardown)
 // ============================================================================
 
-const handleBotClientDisconnect = async (clientId: string): Promise<void> => {
-  // Get all active games for this client's bots
-  const activeGames = getActiveGamesForClient(clientId);
+/** Monotonic token establishing ownership of a pending grace teardown. */
+let nextGraceGeneration = 0;
 
-  // Resign all active games
-  for (const { compositeId, game } of activeGames) {
+/** Pending grace-expiry teardowns by clientId. */
+const pendingGrace = new Map<
+  string,
+  { generation: number; timeoutId: ReturnType<typeof setTimeout> }
+>();
+
+/**
+ * End all BGS sessions for a bot, reject their pending resolvers, and prune
+ * them from the client's session bookkeeping.
+ */
+const endBgsAndRejectResolvers = (compositeId: string): void => {
+  const clientId = compositeId.split(":")[0];
+  const endedSessions = endAllBgsForBot(compositeId);
+  for (const session of endedSessions) {
+    const resolver = pendingResolvers.get(session.bgsId);
+    if (resolver) {
+      clearTimeout(resolver.timeoutId);
+      pendingResolvers.delete(session.bgsId);
+      resolver.reject(new Error("Bot client disconnected"));
+    }
+    removeClientBgsSession(clientId, session.bgsId);
+  }
+};
+
+/**
+ * Resign a set of bot games (client gone or bot no longer served).
+ * Async finalization only — must be called with a snapshot taken while the
+ * caller owned the state, never with a live lookup.
+ */
+const resignBotGames = async (
+  games: { compositeId: string; game: ActiveBotGame }[],
+): Promise<void> => {
+  for (const { compositeId, game } of games) {
     try {
       let session: GameSession;
       try {
@@ -1203,29 +1313,88 @@ const handleBotClientDisconnect = async (clientId: string): Promise<void> => {
       });
     }
   }
+};
 
-  // End all BGS for this client's bots
-  // Get all composite IDs for this client
+/**
+ * Grace-expiry teardown. The claim phase is fully synchronous: verify and
+ * DELETE the pendingGrace entry, verify store ownership via the generation,
+ * snapshot the games, end BGS + reject resolvers, unregister. Only then does
+ * the async finalization (resigning games from the snapshot) run — so a
+ * reattach that lands after the claim finds no client and registers fresh,
+ * and a stale timer whose generation was superseded does nothing at all.
+ */
+const finalizeDisconnectedClient = (
+  clientId: string,
+  generation: number,
+): void => {
+  const entry = pendingGrace.get(clientId);
+  if (entry?.generation !== generation) {
+    return; // superseded by a reattach (or a newer disconnect)
+  }
+  pendingGrace.delete(clientId);
+
   const client = getClient(clientId);
-  if (client) {
-    for (const [botId] of client.bots) {
-      const compositeId = `${clientId}:${botId}`;
-      const endedSessions = endAllBgsForBot(compositeId);
-
-      // Cancel any pending resolvers for ended sessions
-      for (const session of endedSessions) {
-        const resolver = pendingResolvers.get(session.bgsId);
-        if (resolver) {
-          clearTimeout(resolver.timeoutId);
-          pendingResolvers.delete(session.bgsId);
-          resolver.reject(new Error("Bot client disconnected"));
-        }
-      }
-    }
+  if (client?.graceGeneration !== generation) {
+    return; // client reattached (or was replaced) since this timer was set
   }
 
-  // Unregister client
+  const activeGames = getActiveGamesForClient(clientId);
+  for (const [botId] of client.bots) {
+    endBgsAndRejectResolvers(`${clientId}:${botId}`);
+  }
   unregisterClient(clientId);
+
+  console.info("[custom-bot-ws] disconnect grace expired — client torn down", {
+    clientId,
+    generation,
+    gameCount: activeGames.length,
+  });
+
+  void resignBotGames(activeGames).catch((error: unknown) => {
+    console.error("[custom-bot-ws] error resigning games after grace expiry", {
+      error,
+      clientId,
+    });
+  });
+};
+
+/**
+ * Start the disconnect grace period for a client whose current websocket
+ * just closed.
+ */
+const beginDisconnectGrace = (clientId: string): void => {
+  const generation = ++nextGraceGeneration;
+  if (!markClientDisconnected(clientId, generation)) {
+    return; // client not registered (already torn down)
+  }
+
+  const previous = pendingGrace.get(clientId);
+  if (previous) {
+    clearTimeout(previous.timeoutId);
+  }
+
+  const timeoutId = setTimeout(() => {
+    finalizeDisconnectedClient(clientId, generation);
+  }, BOT_DISCONNECT_GRACE_MS);
+  (timeoutId as { unref?: () => void }).unref?.();
+  pendingGrace.set(clientId, { generation, timeoutId });
+
+  console.info("[custom-bot-ws] disconnect grace started", {
+    clientId,
+    generation,
+    graceMs: BOT_DISCONNECT_GRACE_MS,
+  });
+};
+
+/**
+ * Cancel a pending grace teardown (the client reattached in time).
+ */
+const cancelDisconnectGrace = (clientId: string): boolean => {
+  const entry = pendingGrace.get(clientId);
+  if (!entry) return false;
+  clearTimeout(entry.timeoutId);
+  pendingGrace.delete(clientId);
+  return true;
 };
 
 // ============================================================================
@@ -1243,6 +1412,7 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
             clientId: null,
             attached: false,
             unexpectedMessageCount: 0,
+            superseded: false,
           };
           mapSocketContext(ws, socket);
           console.info("[custom-bot-ws] connection opened");
@@ -1252,6 +1422,18 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
           const socket = getSocketForContext(ws);
           if (!socket) {
             console.warn("[custom-bot-ws] message from unknown socket");
+            return;
+          }
+
+          // A superseded connection may still have frames in flight. They
+          // must not be processed: pendingResolvers are keyed by bgsId, so a
+          // late response from the old connection could resolve a request
+          // that belongs to the new connection's resync.
+          if (socket.superseded) {
+            console.info(
+              "[custom-bot-ws] ignoring message from superseded connection",
+              { clientId: socket.clientId },
+            );
             return;
           }
 
@@ -1267,20 +1449,42 @@ export const registerCustomBotSocketRoute = (app: Hono): typeof websocket => {
           console.info("[custom-bot-ws] connection closed", {
             attached: socket.attached,
             clientId: socket.clientId,
+            superseded: socket.superseded,
           });
 
-          if (socket.clientId) {
-            void handleBotClientDisconnect(socket.clientId).catch(
-              (error: unknown) => {
-                console.error(
-                  "[custom-bot-ws] error handling disconnect",
-                  error,
-                );
-              },
-            );
+          // Per-connection map cleanup is always safe.
+          contextToSocket.delete(ws);
+          if (ws.raw && typeof ws.raw === "object") {
+            rawSocketMap.delete(ws.raw);
           }
 
-          cleanupSocket(ws, socket);
+          // Teardown is connection-scoped: only the connection that still
+          // OWNS the clientId mapping may delete it and start grace. The
+          // superseded flag is the explanatory fast path (set when a newer
+          // attach replaced this socket); the mapping-identity check protects
+          // the new connection even if flag-marking ever failed. Identity is
+          // compared on the context and on its raw socket (the raw object is
+          // stable per connection; context object identity may not be).
+          if (!socket.clientId || socket.superseded) {
+            return;
+          }
+          const currentCtx = clientIdToContext.get(socket.clientId);
+          const ownsMapping =
+            !!currentCtx &&
+            (currentCtx === ws ||
+              (!!currentCtx.raw &&
+                typeof currentCtx.raw === "object" &&
+                currentCtx.raw === ws.raw));
+          if (!ownsMapping) {
+            console.info(
+              "[custom-bot-ws] close from non-current connection — no teardown",
+              { clientId: socket.clientId },
+            );
+            return;
+          }
+
+          clientIdToContext.delete(socket.clientId);
+          beginDisconnectGrace(socket.clientId);
         },
       };
     }),

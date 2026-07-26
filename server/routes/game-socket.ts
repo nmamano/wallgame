@@ -50,7 +50,7 @@ import {
   notifyBotGameEnded,
 } from "./custom-bot-socket";
 import { notifyEvalBarMove, handleEvalBarGameEnd } from "./eval-socket";
-import { addActiveGame } from "../games/custom-bot-store";
+import { addActiveGame, isBotClientInGrace } from "../games/custom-bot-store";
 import {
   getBgs,
   getLatestHistoryEntry,
@@ -226,6 +226,25 @@ const resignBotOnFailure = async (
   botPlayerId: PlayerId,
 ): Promise<void> => {
   if (session.gameState.status !== "playing") return;
+
+  // Quiet-bail during the disconnect grace period: BGS operations are
+  // expected to fail while the bot client's websocket is down. The reattach
+  // resync heals the game; if grace expires, the expiry teardown resigns it.
+  const botPlayer =
+    session.players.host.playerId === botPlayerId
+      ? session.players.host
+      : session.players.joiner;
+  if (
+    botPlayer.botCompositeId &&
+    isBotClientInGrace(botPlayer.botCompositeId)
+  ) {
+    console.info("[ws] skipping bot resignation — client in disconnect grace", {
+      gameId: session.id,
+      botPlayerId,
+      botCompositeId: botPlayer.botCompositeId,
+    });
+    return;
+  }
 
   const newState = resignGame({
     id: session.id,
@@ -454,10 +473,16 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
 };
 
 /**
- * V3: Handle takeback by ending current BGS, starting a new one, and replaying moves.
- * Called when a takeback is accepted in a bot game.
+ * V3: Rebuild a bot game session to match the game's current history: end the
+ * BGS, start a fresh one from the authored config, replay the history, and
+ * play the bot's turn if it is due. Generation-token guarded, so concurrent
+ * resyncs supersede each other safely.
+ *
+ * Used when a takeback is accepted in a bot game, and by the bot-client
+ * reattach path to heal every active game after a connection drop (the
+ * rebuild is idempotent against whatever state the client lost or kept).
  */
-const handleTakebackBgsReset = async (
+export const resyncBgsFromHistory = async (
   sessionId: string,
   botCompositeId: string,
 ): Promise<void> => {
@@ -1157,7 +1182,7 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
         if (resetPromise) {
           // Takeback reset in progress — await the promise with a safety timeout.
           // The promise resolves when clearBgsResetting is called in the finally
-          // block of handleTakebackBgsReset. The 60s timeout is a safety net only;
+          // block of resyncBgsFromHistory. The 60s timeout is a safety net only;
           // the promise should always resolve in normal operation.
           console.debug("[ws] move handler awaiting BGS reset", {
             sessionId: socket.sessionId,
@@ -1339,7 +1364,7 @@ const handleTakebackOffer = (socket: SessionSocket) => {
       playerId: opponent.playerId,
     });
     // V3: Handle takeback by ending BGS and starting new one
-    void handleTakebackBgsReset(socket.sessionId, opponent.botCompositeId);
+    void resyncBgsFromHistory(socket.sessionId, opponent.botCompositeId);
     console.info("[ws] takeback-offer auto-accepted (bot opponent)", {
       sessionId: socket.sessionId,
       playerId,
@@ -1379,7 +1404,7 @@ const handleTakebackAccept = (socket: SessionSocket) => {
       ? session.players.joiner
       : null;
   if (botPlayer?.botCompositeId) {
-    void handleTakebackBgsReset(socket.sessionId, botPlayer.botCompositeId);
+    void resyncBgsFromHistory(socket.sessionId, botPlayer.botCompositeId);
   }
 
   console.info("[ws] takeback-accept processed", {
@@ -1933,7 +1958,7 @@ const handleActionRequest = async (
           playerId: opponent.playerId,
         });
         // V3: Handle takeback by ending BGS and starting new one
-        void handleTakebackBgsReset(socket.sessionId, opponent.botCompositeId);
+        void resyncBgsFromHistory(socket.sessionId, opponent.botCompositeId);
         sendActionAck(socket, message);
         console.info(
           "[ws] action-requestTakeback auto-accepted (bot opponent)",

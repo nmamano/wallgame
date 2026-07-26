@@ -40,7 +40,7 @@ import {
   Outcome,
   type RatingState,
 } from "./rating-system";
-import { getClientForBot } from "./custom-bot-store";
+import { isBotClientConnected } from "./custom-bot-store";
 
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
@@ -668,10 +668,14 @@ const resolveSeatConfigType = (
   player: SessionPlayer,
 ): GamePlayerSummary["configType"] => (player.botCompositeId ? "bot" : "human");
 
-/** For bots, check if the bot client is still connected; for humans, use the session field. */
+/**
+ * For bots, check if the bot client is still connected; for humans, use the
+ * session field. A bot client in disconnect grace reports NOT connected —
+ * the game survives, but the seat should show the drop.
+ */
 const resolveSeatConnected = (player: SessionPlayer): boolean =>
   player.botCompositeId
-    ? !!getClientForBot(player.botCompositeId)
+    ? isBotClientConnected(player.botCompositeId)
     : player.connected;
 
 /** The single place a session's seats are projected onto the wire contract. */

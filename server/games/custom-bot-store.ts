@@ -43,6 +43,19 @@ export interface BotClientConnection {
   invalidMessageCount: number;
   /** V3: Set of active BGS IDs this client is handling */
   activeBgsSessions: Set<string>;
+  /**
+   * Set while the client's websocket is down but within the disconnect grace
+   * period. Cleared on reattach (replaceClient). While set, the client's bots
+   * are hidden from listings, cannot start new games, and report their seats
+   * as disconnected — but their active games survive.
+   */
+  disconnectedAt?: number;
+  /**
+   * Ownership token for the pending grace-expiry teardown. A teardown may
+   * only finalize the client if its generation still matches; a reattach
+   * clears it.
+   */
+  graceGeneration?: number;
 }
 
 export interface RegisteredBot {
@@ -196,23 +209,67 @@ export const replaceClient = (
   bots: BotConfig[],
   ws: ServerWebSocket<unknown>,
   officialToken: string | undefined,
-): BotClientConnection => {
-  // First unregister old bots
+): {
+  client: BotClientConnection;
+  /**
+   * Composite ids of bots that the old registration served but the new
+   * attach no longer declares. The caller must end their BGS sessions and
+   * reject their pending resolvers.
+   */
+  orphanedBotCompositeIds: string[];
+  /**
+   * Active games of those orphaned bots. The caller must resign these —
+   * they must not survive without a serving bot.
+   */
+  orphanedGames: { compositeId: string; game: ActiveBotGame }[];
+} => {
+  // Snapshot the old registration's per-bot active games and unregister it.
   const existing = clients.get(clientId);
+  const previousBots = new Map<string, RegisteredBot>();
+  const previousBgsSessions = new Set<string>();
   if (existing) {
-    for (const [botId] of existing.bots) {
+    for (const [botId, bot] of existing.bots) {
+      previousBots.set(botId, bot);
       botIndex.delete(makeCompositeId(clientId, botId));
+    }
+    for (const bgsId of existing.activeBgsSessions) {
+      previousBgsSessions.add(bgsId);
     }
     clients.delete(clientId);
   }
 
   // Then register new client
   const result = registerClient(clientId, bots, ws, officialToken);
-  if (result.success) {
-    return result.client;
+  if (!result.success) {
+    // Should never happen since we just deleted the old one
+    throw new Error("Failed to register client after replacement");
   }
-  // Should never happen since we just deleted the old one
-  throw new Error("Failed to register client after replacement");
+
+  // Carry active games forward for bots present in BOTH registrations, and
+  // collect orphans for bots the new attach dropped. The BGS-session set is
+  // carried whole; the caller prunes orphaned bots' sessions when it ends
+  // their BGS.
+  const orphanedBotCompositeIds: string[] = [];
+  const orphanedGames: { compositeId: string; game: ActiveBotGame }[] = [];
+  for (const [botId, oldBot] of previousBots) {
+    const newBot = result.client.bots.get(botId);
+    if (newBot) {
+      for (const [gameId, game] of oldBot.activeGames) {
+        newBot.activeGames.set(gameId, game);
+      }
+    } else {
+      const compositeId = makeCompositeId(clientId, botId);
+      orphanedBotCompositeIds.push(compositeId);
+      for (const game of oldBot.activeGames.values()) {
+        orphanedGames.push({ compositeId, game });
+      }
+    }
+  }
+  for (const bgsId of previousBgsSessions) {
+    result.client.activeBgsSessions.add(bgsId);
+  }
+
+  return { client: result.client, orphanedBotCompositeIds, orphanedGames };
 };
 
 /**
@@ -235,6 +292,51 @@ export const unregisterClient = (clientId: string): RegisteredBot[] | null => {
   });
 
   return bots;
+};
+
+/**
+ * Mark a client as disconnected (websocket down, grace period running).
+ * The generation token establishes ownership of the eventual teardown.
+ * Returns false if the client is not registered.
+ */
+export const markClientDisconnected = (
+  clientId: string,
+  graceGeneration: number,
+): boolean => {
+  const client = clients.get(clientId);
+  if (!client) return false;
+  client.disconnectedAt = Date.now();
+  client.graceGeneration = graceGeneration;
+  return true;
+};
+
+/**
+ * True while the client exists but its websocket is down (grace period).
+ */
+export const isClientIdInGrace = (clientId: string): boolean => {
+  const client = clients.get(clientId);
+  return !!client && client.disconnectedAt !== undefined;
+};
+
+/**
+ * Grace check by bot composite id ("clientId:botId") — the centralized
+ * predicate for the play route, listing filters, seat projection, and the
+ * quiet-bail failure paths.
+ */
+export const isBotClientInGrace = (botCompositeId: string): boolean => {
+  const clientId = botCompositeId.split(":")[0];
+  return isClientIdInGrace(clientId);
+};
+
+/**
+ * True when the bot's client is registered AND its websocket is up.
+ * Used for seat "connected" projection: a client in grace exists but is
+ * not connected.
+ */
+export const isBotClientConnected = (botCompositeId: string): boolean => {
+  const clientId = botCompositeId.split(":")[0];
+  const client = clients.get(clientId);
+  return !!client && client.disconnectedAt === undefined;
 };
 
 /**
@@ -342,9 +444,10 @@ export const getMatchingBots = (
       }
     }
 
-    // V3: Check client is still connected
+    // V3: Check client is still connected (a client in disconnect grace
+    // keeps its games but is hidden from listings)
     const client = clients.get(bot.clientId);
-    if (!client) {
+    if (!client || client.disconnectedAt !== undefined) {
       continue;
     }
 
@@ -394,9 +497,9 @@ export const getRecommendedBots = (
     const variantConfig = bot.variants[variant];
     if (!variantConfig) continue;
 
-    // V3: Check client is still connected
+    // V3: Check client is still connected (grace clients are hidden)
     const client = clients.get(bot.clientId);
-    if (!client) {
+    if (!client || client.disconnectedAt !== undefined) {
       continue;
     }
 
@@ -480,9 +583,9 @@ export const findEvalBot = (
       continue;
     }
 
-    // Check that the client is still connected
+    // Check that the client is still connected (grace clients are hidden)
     const client = clients.get(bot.clientId);
-    if (!client) continue;
+    if (!client || client.disconnectedAt !== undefined) continue;
 
     return { compositeId, bot };
   }
