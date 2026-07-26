@@ -127,6 +127,48 @@ real wake signal.
       clear whether you are P1 or P2 in-game) AFTER S-P1 — Nil expects S-P1 largely
       answers it; fold a small indicator in here only if still unclear.
 
+## SLICE S-P1 AMENDED DESIGN (reviewer plan-gate amendments, 2026-07-26 —
+## implement ONLY after Nil approves the wall-backout lead-in)
+
+Reviewer approved stored-explicit `lead_in` column but required these amendments
+(they caught two real gaps: POST /api/bots/play has no server-side puzzle
+identity — puzzleId/name are client-local handshake metadata only — and Retry
+calls playVsBot with gameState.config, which after backout would be the
+PRE-position, silently degrading Retry):
+
+1. SERVER-AUTHORITATIVE PUZZLE LAUNCH: discriminated request shape on
+   /api/bots/play — a puzzle launch sends `puzzleId` (NO config/hostIsPlayer1);
+   the route fetches the ENABLED saved_puzzles row, validates via the DB
+   contract, derives config + seat + leadIn from the row. Ordinary bot-game
+   requests keep today's shape.
+2. RETRY BY PUZZLE ID: Retry must call the same puzzleId launch variant, never
+   reconstruct from gameState.config. Client-local handshake puzzleId can carry
+   it; verify it survives snapshot/handshake replacement paths.
+3. LEAD-IN APPLICATION: on a P2 saved puzzle the server reconstructs the
+   pre-position, creates the session with bot=P1, applies leadIn through the
+   NORMAL action path before the human gets playable state. Postconditions:
+   history length 1, turn=P2, board/pawns byte-equivalent to curated config,
+   replayable authored initial config. P1 puzzles: history 0, turn=P1.
+4. FAIL-CLOSED INVARIANT at the server boundary: P2 row with lead_in=null
+   REFUSES launch (no silent human-first fallback); P1 row must have
+   lead_in=null. Enforced during the migration→population rollout gap too.
+
+Population script: shared strict Move/lead-in Zod schema (no unchecked JSONB);
+validate all rows pre-write; populate EVERY stored P2 row including disabled
+ones; assert exact selected set + P1 rows stay null; one transaction; read back
+all. Canonical last-two-walls choice valid only after a pure replay assertion
+passes for every row (>=2 walls, lead-in = exactly those 2 wall actions, mover
+is P1, reconstructed result matches curated config incl. turn/actionsTaken
+normalization).
+
+Tests beyond the pure replay test: route/service-level saved-puzzle launch test
+(authoritative lookup, P2 seat, real history[0], exact curated position,
+rejection on missing/invalid leadIn); Retry regression (sends puzzleId,
+recreates pre-position + ply-0 history); P1 launch regression; ordinary
+bot-game regression. Ops: review migration SQL pre-deploy; run population
+immediately after deploy/migrate (fail-closed makes the gap safe). Prod
+verification adds RETRY of a P2 puzzle to launch/takeback checks.
+
 ## SLICE S-COPY PICKUP (authored at loop-3 setup)
 
 - Baseline: c59667d (docs-only ahead of prod bacc0ce; this slice's deploy carries
