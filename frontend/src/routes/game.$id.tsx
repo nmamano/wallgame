@@ -249,7 +249,7 @@ function GamePageContent() {
           catch the opponent&apos;s mouse before PuzzleBot catches yours.
           {!compact && (
             <Link
-              to="/generated-candidates"
+              to="/puzzles"
               className="absolute right-4 top-1/2 -translate-y-1/2 flex items-center gap-1.5 hover:underline"
             >
               <ArrowLeft className="w-4 h-4" />
@@ -337,7 +337,7 @@ function GamePageContent() {
                 not out to the site root - otherwise trying the next one costs two
                 navigations and a scroll. */}
             <Link
-              to={info.isPuzzle ? "/generated-candidates" : "/"}
+              to={info.isPuzzle ? "/puzzles" : "/"}
               className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
             >
               <ArrowLeft className="w-4 h-4" />

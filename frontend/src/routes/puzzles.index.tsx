@@ -1,12 +1,23 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { useState } from "react";
+import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Play, Clock } from "lucide-react";
+import { CheckCircle2, Circle, Play, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
+import { useSettings } from "@/hooks/use-settings";
+import {
+  fetchBots,
+  fetchSavedPuzzles,
+  playVsBot,
+  userQueryOptions,
+} from "@/lib/api";
+import { saveGameHandshake } from "@/lib/game-session";
+import type { SavedPuzzle } from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/puzzles/")({
   component: Puzzles,
@@ -53,88 +64,223 @@ function Puzzles() {
           Puzzles
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Sharpen your tactical skills with challenging puzzle positions. Find
-          the winning sequence of moves to reach your goal!
+          Sharpen your tactical skills. Scripted puzzles walk you through a
+          winning sequence move by move; generated puzzles drop you into a race
+          position against PuzzleBot and let you find your own way.
         </p>
       </div>
 
-      <Alert className="mb-6 bg-card/50 border-border/50">
-        <Info className="h-4 w-4" />
-        <AlertDescription className="text-sm text-muted-foreground">
-          Your progress is saved locally in this browser.
-        </AlertDescription>
-      </Alert>
+      <section className="mb-12">
+        <h2 className="text-2xl font-serif font-semibold text-foreground mb-4">
+          Scripted Puzzles
+        </h2>
 
-      <div className="space-y-4">
-        {puzzles.map((puzzle) => (
-          <Card
-            key={puzzle.id}
-            className="p-6 hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur"
-          >
-            <div className="flex items-center justify-between">
-              <div className="flex items-center gap-4 flex-1">
-                <div className="text-foreground">
-                  {puzzle.completed ? (
-                    <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-500" />
-                  ) : (
-                    <Circle className="w-6 h-6" />
-                  )}
-                </div>
+        <Alert className="mb-6 bg-card/50 border-border/50">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-sm text-muted-foreground">
+            Your scripted-puzzle progress is saved locally in this browser.
+          </AlertDescription>
+        </Alert>
 
-                <div className="flex-1">
-                  <h3 className="text-xl font-serif font-semibold text-foreground mb-1">
-                    {puzzle.title}
-                  </h3>
-                  <p className="text-sm text-muted-foreground mb-2">
-                    by {puzzle.author}
-                  </p>
-                  <div className="flex flex-wrap gap-2">
-                    <Badge
-                      variant={puzzle.difficulty <= 2 ? "secondary" : "default"}
-                      className="text-xs"
-                    >
-                      Rating: {puzzle.rating}
-                    </Badge>
-                    <Badge variant="outline" className="text-xs">
-                      Difficulty: {puzzle.difficulty}/5
-                    </Badge>
-                    {puzzle.completed && (
-                      <Badge className="text-xs bg-green-600 dark:bg-green-700">
-                        Completed
-                      </Badge>
+        <div className="space-y-4">
+          {puzzles.map((puzzle) => (
+            <Card
+              key={puzzle.id}
+              className="p-6 hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur"
+            >
+              <div className="flex items-center justify-between">
+                <div className="flex items-center gap-4 flex-1">
+                  <div className="text-foreground">
+                    {puzzle.completed ? (
+                      <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-500" />
+                    ) : (
+                      <Circle className="w-6 h-6" />
                     )}
                   </div>
-                </div>
-              </div>
 
-              <Button
-                onClick={() => handlePlayPuzzle(puzzle.id)}
-                className="gap-2"
-              >
-                <Play className="w-4 h-4" />
-                {puzzle.completed ? "Replay" : "Solve"}
-              </Button>
+                  <div className="flex-1">
+                    <h3 className="text-xl font-serif font-semibold text-foreground mb-1">
+                      {puzzle.title}
+                    </h3>
+                    <p className="text-sm text-muted-foreground mb-2">
+                      by {puzzle.author}
+                    </p>
+                    <div className="flex flex-wrap gap-2">
+                      <Badge
+                        variant={
+                          puzzle.difficulty <= 2 ? "secondary" : "default"
+                        }
+                        className="text-xs"
+                      >
+                        Rating: {puzzle.rating}
+                      </Badge>
+                      <Badge variant="outline" className="text-xs">
+                        Difficulty: {puzzle.difficulty}/5
+                      </Badge>
+                      {puzzle.completed && (
+                        <Badge className="text-xs bg-green-600 dark:bg-green-700">
+                          Completed
+                        </Badge>
+                      )}
+                    </div>
+                  </div>
+                </div>
+
+                <Button
+                  onClick={() => handlePlayPuzzle(puzzle.id)}
+                  className="gap-2"
+                >
+                  <Play className="w-4 h-4" />
+                  {puzzle.completed ? "Replay" : "Solve"}
+                </Button>
+              </div>
+            </Card>
+          ))}
+        </div>
+      </section>
+
+      <GeneratedPuzzlesSection />
+    </div>
+  );
+}
+
+/**
+ * The persisted generated set (S-G1/S-G2): race positions against PuzzleBot,
+ * filtered only by the best-move distance rule — no winnability
+ * certification, no other vetting. Loading, error, and bot-offline states
+ * are scoped to this section; the scripted list above renders regardless.
+ */
+function GeneratedPuzzlesSection() {
+  const navigate = useNavigate();
+  const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
+  const settings = useSettings(!!userData?.user, userPending);
+  const puzzlesQuery = useQuery({
+    queryKey: ["saved-puzzles"],
+    queryFn: fetchSavedPuzzles,
+  });
+  const [launchingId, setLaunchingId] = useState<string | null>(null);
+  const [error, setError] = useState<string | null>(null);
+  const botsQuery = useQuery({
+    queryKey: ["bots", "custom-setup-standard", 6, 6],
+    queryFn: () =>
+      fetchBots({
+        variant: "custom-setup-standard",
+        boardWidth: 6,
+        boardHeight: 6,
+      }),
+  });
+  // Bots register the exact variant they serve, so the only official bot
+  // listed for custom-setup-standard is PuzzleBot - the deep-search oracle.
+  // If it is down, the section says so rather than substituting a shallower
+  // opponent.
+  const officialBots =
+    botsQuery.data?.bots.filter((bot) => bot.isOfficial) ?? [];
+  const officialBot = officialBots[0];
+
+  const launch = async (puzzle: SavedPuzzle) => {
+    if (!officialBot || launchingId !== null) return;
+    setLaunchingId(puzzle.id);
+    setError(null);
+
+    try {
+      const humanIsPlayer1 = puzzle.config.variantConfig.turn.playerId === 1;
+      const response = await playVsBot({
+        botId: officialBot.id,
+        config: puzzle.config,
+        hostDisplayName: settings.displayName,
+        hostAppearance: {
+          pawnColor: settings.pawnColor,
+          catSkin: settings.catPawn,
+          mouseSkin: settings.mousePawn,
+          homeSkin: settings.homePawn,
+        },
+        hostIsPlayer1: humanIsPlayer1,
+      });
+      saveGameHandshake({
+        gameId: response.gameId,
+        token: response.token,
+        socketToken: response.socketToken,
+        role: response.role,
+        playerId: response.playerId,
+        shareUrl: response.shareUrl,
+        puzzleId: puzzle.id,
+        puzzleName: puzzle.displayName,
+      });
+      void navigate({ to: `/game/${response.gameId}` });
+    } catch (cause) {
+      setError(
+        cause instanceof Error ? cause.message : "Unable to launch puzzle.",
+      );
+      setLaunchingId(null);
+    }
+  };
+
+  const generated = puzzlesQuery.data?.puzzles ?? [];
+
+  return (
+    <section>
+      <h2 className="text-2xl font-serif font-semibold text-foreground mb-2">
+        Generated Puzzles
+      </h2>
+      <p className="text-sm text-muted-foreground mb-6">
+        Generated 6×6 race positions against PuzzleBot. Positions whose best
+        first move is simply walking at the target are filtered out; nothing
+        else is vetted.
+      </p>
+
+      {puzzlesQuery.isPending && (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Loading puzzles…
+        </p>
+      )}
+      {puzzlesQuery.isError && (
+        <Card className="border-destructive p-4 text-destructive">
+          Could not load the generated puzzles. Try again later.
+        </Card>
+      )}
+
+      {botsQuery.isPending && (
+        <p className="flex items-center gap-2 text-muted-foreground">
+          <Loader2 className="h-4 w-4 animate-spin" />
+          Looking for the official bot…
+        </p>
+      )}
+      {!botsQuery.isPending && !officialBot && (
+        <Card className="border-destructive p-4 text-destructive mb-4">
+          The official bot is offline. Puzzles can be inspected, but games
+          cannot start until it reconnects.
+        </Card>
+      )}
+      {error && (
+        <Card className="border-destructive p-4 text-destructive mb-4">
+          {error}
+        </Card>
+      )}
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {generated.map((puzzle) => (
+          <Card className="space-y-3 p-4" key={puzzle.id}>
+            <div>
+              <h3 className="font-semibold">{puzzle.displayName}</h3>
             </div>
+            <Button
+              className="w-full"
+              disabled={!officialBot || launchingId !== null}
+              onClick={() => void launch(puzzle)}
+            >
+              {launchingId === puzzle.id ? (
+                <>
+                  <Loader2 className="h-4 w-4 animate-spin" />
+                  Starting…
+                </>
+              ) : (
+                "Try"
+              )}
+            </Button>
           </Card>
         ))}
-
-        {/* Coming soon placeholder */}
-        <Card className="p-6 border-dashed border-2 border-border/50 bg-card/30">
-          <div className="flex items-center gap-4">
-            <div className="text-muted-foreground">
-              <Clock className="w-6 h-6" />
-            </div>
-            <div>
-              <h3 className="text-xl font-serif font-semibold text-muted-foreground">
-                More coming soon...
-              </h3>
-              <p className="text-sm text-muted-foreground/70 mt-1">
-                Additional puzzles are in development
-              </p>
-            </div>
-          </div>
-        </Card>
       </div>
-    </div>
+    </section>
   );
 }

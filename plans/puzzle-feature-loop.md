@@ -101,7 +101,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
       migration ran via release_command; seeder inside the fly machine inserted 41 then
       proved idempotency on rerun (0 inserted / 41 skipped); GET /api/puzzles returns
       exactly Generated Puzzle 1..41 in order; legacy unauthenticated POST/DELETE now
-      404; live launch from a persisted config played normally (game _VgxJoLk).
+      404; live launch from a persisted config played normally (game \_VgxJoLk).
 - [ ] S-G2 — one puzzles page: nav entry, presents the 10 scripted puzzles AND the
       persisted generated set; format optimized for navigation (agent's call)
 

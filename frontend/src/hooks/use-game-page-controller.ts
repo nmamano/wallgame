@@ -2618,7 +2618,7 @@ export function useGamePageController(gameId: string) {
     }
     // Leaving a puzzle means going back to the puzzle list, not out to the landing
     // page - you are almost always about to try another one.
-    void navigate({ to: isPuzzleGame ? "/generated-candidates" : "/" });
+    void navigate({ to: isPuzzleGame ? "/puzzles" : "/" });
   }, [
     isMultiplayerMatch,
     isPuzzleGame,
