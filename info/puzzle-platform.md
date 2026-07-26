@@ -173,11 +173,20 @@ reachable from the normal bot picker at all because bot discovery collapses
 be discoverable, and the puzzle page then picks it by **string match on the bot id**
 (`bot.id.includes("puzzle")` in `generated-candidates.tsx`). That is a hack.
 
-**Nil's fix, agreed: the bot client should register the true variant it serves.** Match
-bots on the exact variant first and let a bot declare `custom-setup-*` directly. That
-removes the id string match, keeps PuzzleBot out of the normal picker, and probably
-removes the resignation entirely. Investigate the resignation separately in case it is a
-real engine fault at 10k samples rather than a routing accident.
+To be clear about what is and is not broken: officiality **is** enforced - the page filters
+`isOfficial` before the id match, both bots are registered official, and the server
+re-checks official-only at `POST /bots/play`. An unofficial bot named "puzzle" cannot
+hijack anything. The problem is narrower: because both bots end up declaring the same
+variants, "the official bot for this variant" is ambiguous, and the id match is the
+tiebreak.
+
+**Nil's fix, agreed: the bot client should register the true variant it serves.** Then the
+two bots are registered for genuinely different variants, "pick the official bot for that
+variant" becomes unambiguous everywhere, and the id match disappears. It also keeps
+PuzzleBot out of the normal picker, which is where the Classic resignation came from.
+Investigate the resignation separately in case it is a real engine fault at 10k samples
+rather than a consequence of PuzzleBot being offered for a game it was never meant to
+serve.
 
 ### C. Lower PuzzleBot to 5k samples, and check parallelism
 
@@ -222,9 +231,19 @@ the URL, and there are two unrelated puzzle systems.
    user/puzzle pair, changeable later, stored in the DB, and puzzles sortable so the most
    liked appear first. Needs a migration, an auth-gated endpoint, and UI.
 
-Note this requires generated candidates to become **persistent entities with stable ids**
-rather than something regenerated client-side on each page load - you cannot attach votes
-or completions to a position that only exists as a deterministic function.
+**Nil's decision (2026-07-26): just give puzzles names and save them.** Generate a set,
+give each a name or number, persist it under that name, and have games reference it by id.
+Puzzles are entities, not a deterministic function of a seed.
+
+This replaces `findGeneratedCandidate()`, which resolves a game back to its candidate by
+matching the board position. That was written to avoid touching the game schema, which was
+the wrong thing to optimise for: the requirement was never "identify this position", it
+was "puzzles have names". **Delete the position-matching rather than extend it.** It also
+disposes of the "older games stop resolving their name" wrinkle entirely - a saved puzzle
+keeps its name whatever the generator does next.
+
+Persisting them is a prerequisite for the rest of this section anyway: votes and
+completions cannot attach to something that only exists as a client-side computation.
 
 ### H. Generation heuristic: add the distance-delta rule
 
