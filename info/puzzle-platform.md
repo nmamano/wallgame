@@ -232,8 +232,18 @@ the URL, and there are two unrelated puzzle systems.
    liked appear first. Needs a migration, an auth-gated endpoint, and UI.
 
 **Nil's decision (2026-07-26): just give puzzles names and save them.** Generate a set,
-give each a name or number, persist it under that name, and have games reference it by id.
-Puzzles are entities, not a deterministic function of a seed.
+give each a name or number, persist it under that name. Puzzles are entities, not a
+deterministic function of a seed.
+
+**Showing the name needs nothing on the game record.** The page that launched the puzzle
+already knows which one it clicked, so the id can ride in the URL
+(`/game/<id>?puzzle=<name>`) or in the handshake already stored client-side by
+`saveGameHandshake`. Do not add a column for this.
+
+A `puzzleId` on the game is needed only for **server-verified completion tracking**, since
+a client claiming "I solved puzzle 7" is forgeable. Add it when completion tracking is
+built, not before - these are two requirements and conflating them is what produced the
+position-matching code below.
 
 This replaces `findGeneratedCandidate()`, which resolves a game back to its candidate by
 matching the board position. That was written to avoid touching the game schema, which was
