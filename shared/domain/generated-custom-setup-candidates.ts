@@ -1,6 +1,7 @@
+import { Grid } from "./grid";
 import type {
   Cell,
-  CustomSetupClassicInitialState,
+  CustomSetupStandardInitialState,
   GameConfiguration,
   PlayerId,
   WallPosition,
@@ -16,14 +17,13 @@ export interface GeneratedCustomSetupCandidate {
 const BOARD_SIZE = 6;
 const WALL_COUNT = 18;
 const CANDIDATE_COUNT = 32;
+const MIN_RACE = 3;
+const MAX_RACE = 6;
 const TIME_CONTROL = {
   initialSeconds: 0,
   incrementSeconds: 0,
   preset: "unlimited" as const,
 };
-
-const manhattanDistance = (from: Cell, to: Cell): number =>
-  Math.abs(from[0] - to[0]) + Math.abs(from[1] - to[1]);
 
 const createRandom = (seed: number): (() => number) => {
   let state = seed >>> 0;
@@ -38,19 +38,14 @@ const randomCell = (random: () => number): Cell => [
   Math.floor(random() * BOARD_SIZE),
 ];
 
-const randomShortRace = (
-  random: () => number,
-): { cat: Cell; home: Cell; distance: number } => {
-  while (true) {
-    const cat = randomCell(random);
-    const home = randomCell(random);
-    const distance = manhattanDistance(cat, home);
-    if (distance >= 3 && distance <= 6) {
-      return { cat, home, distance };
-    }
-  }
-};
+const sameCell = (a: Cell, b: Cell): boolean => a[0] === b[0] && a[1] === b[1];
 
+/**
+ * Walls first, pawns second - the order matters.
+ *
+ * Walls are still sampled blind, with no quality judgement, but they are laid down
+ * BEFORE the races are chosen so that the races can be measured against them.
+ */
 const generateWalls = (random: () => number): WallPosition[] => {
   const walls: WallPosition[] = [];
   const keys = new Set<string>();
@@ -74,17 +69,58 @@ const generateWalls = (random: () => number): WallPosition[] => {
   return walls;
 };
 
+/**
+ * Picks a cat and the mouse it is chasing, measuring the race as the ACTUAL path
+ * length through the walls rather than as a straight-line count.
+ *
+ * The first version of this used Manhattan distance and placed the walls afterwards,
+ * which meant a "3 to 6 move race" could be a pawn sealed off from its target entirely:
+ * 18 walls on a 6x6 board partitions it often. Those positions are what produced the
+ * nonsense play, and one of them hung the engine mid-search (game 7y7LrnoN, evaluation
+ * at ply 3 never returned). `Grid.distance` walks the board and returns -1 when there is
+ * no path at all, so this cannot select an unreachable target.
+ *
+ * This is not quality gating - it makes no judgement about whether a position is a GOOD
+ * puzzle. It only guarantees the position is a playable game.
+ */
+const randomShortRace = (
+  random: () => number,
+  grid: Grid,
+  taken: Cell[],
+): { cat: Cell; mouse: Cell; distance: number } => {
+  while (true) {
+    const cat = randomCell(random);
+    const mouse = randomCell(random);
+    if (sameCell(cat, mouse)) continue;
+    if (taken.some((cell) => sameCell(cell, cat) || sameCell(cell, mouse))) {
+      continue;
+    }
+    const distance = grid.distance(cat, mouse);
+    if (distance >= MIN_RACE && distance <= MAX_RACE) {
+      return { cat, mouse, distance };
+    }
+  }
+};
+
 const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
   const random = createRandom(0x51f15e + index * 7919);
-  const p1 = randomShortRace(random);
-  const p2 = randomShortRace(random);
+
+  const walls = generateWalls(random);
+  const grid = new Grid(BOARD_SIZE, BOARD_SIZE, "standard");
+  for (const wall of walls) {
+    grid.addWall(wall);
+  }
+
+  const p1 = randomShortRace(random, grid, []);
+  const p2 = randomShortRace(random, grid, [p1.cat, p1.mouse]);
+
   const humanPlaysAs: PlayerId = index % 2 === 0 ? 1 : 2;
-  const initialState: CustomSetupClassicInitialState = {
+  const initialState: CustomSetupStandardInitialState = {
     pawns: {
-      p1: { cat: p1.cat, home: p1.home },
-      p2: { cat: p2.cat, home: p2.home },
+      p1: { cat: p1.cat, mouse: p1.mouse },
+      p2: { cat: p2.cat, mouse: p2.mouse },
     },
-    walls: generateWalls(random),
+    walls,
     turn: {
       playerId: humanPlaysAs,
       actionsTaken: [],
@@ -96,7 +132,7 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
     humanPlaysAs,
     distances: { p1: p1.distance, p2: p2.distance },
     config: {
-      variant: "custom-setup-classic",
+      variant: "custom-setup-standard",
       timeControl: TIME_CONTROL,
       rated: false,
       boardWidth: BOARD_SIZE,
@@ -109,8 +145,15 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
 /**
  * Deterministic, directly generated positions for human playtesting.
  *
- * These are intentionally candidates, not certified puzzles. Walls are sampled
- * without legality or reachability analysis; Nil supplies the quality filter.
+ * STANDARD, not classic, and that is the whole point. The transformer has only ever seen
+ * classic with the goals in the board corners, so a classic position with a home dropped
+ * anywhere is outside everything it was trained on - which is why its play there looked
+ * arbitrary. In standard the target is the opponent's own mouse, which moves, so the
+ * network has seen targets all over the board and a generated position sits inside its
+ * training distribution. Standard also gives mouse moves, which make richer puzzles.
+ *
+ * These remain candidates, not certified puzzles: walls are sampled blind and no
+ * judgement is made about whether a position is interesting. Nil supplies that filter.
  */
 export const generateCustomSetupCandidates =
   (): GeneratedCustomSetupCandidate[] =>

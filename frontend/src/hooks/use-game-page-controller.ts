@@ -5,6 +5,7 @@ import { type BoardProps, type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import {
   isClassicVariant as usesClassicRules,
+  isCustomSetupVariant,
   type GameAction,
 } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
@@ -194,6 +195,9 @@ interface StoredLocalGameConfig {
 
 const generateLocalGameId = () => Math.random().toString(36).substring(2, 15);
 
+/** Displayed strength of the puzzle oracle. Nominal - puzzles are unrated. */
+const PUZZLE_ORACLE_RATING = 3000;
+
 const SPECTATOR_PLAYER_TYPES: PlayerType[] = ["friend", "friend"];
 const NOOP = () => undefined;
 
@@ -207,6 +211,10 @@ function buildSeatViewsFromSnapshot(
 ): GamePlayer[] {
   const { primaryLocalPlayerId, localPreferences, playerColorsForBoard } =
     options;
+  // In a puzzle the opponent is not a rated player you are competing with, it is the
+  // oracle you are being measured against. Showing its real bot identity and a normal
+  // rating invites you to read the game as a match, which is the wrong frame.
+  const isPuzzle = isCustomSetupVariant(snapshot.config.variant);
   const ordered = [...snapshot.players].sort((a, b) => {
     if (a.role === "host" && b.role !== "host") return -1;
     if (b.role === "host" && a.role !== "host") return 1;
@@ -219,8 +227,13 @@ function buildSeatViewsFromSnapshot(
     name:
       player.playerId === primaryLocalPlayerId
         ? player.displayName || localPreferences.displayName
-        : player.displayName,
-    rating: player.elo ?? 1500,
+        : isPuzzle
+          ? "PuzzleBot"
+          : player.displayName,
+    rating:
+      isPuzzle && player.playerId !== primaryLocalPlayerId
+        ? PUZZLE_ORACLE_RATING
+        : (player.elo ?? 1500),
     ratingAtStart: player.ratingAtStart,
     color:
       playerColorsForBoard[player.playerId] ??
@@ -1764,6 +1777,14 @@ export function useGamePageController(gameId: string) {
   // Compute values needed for board interactions hook
   const isClassicVariant =
     gameState !== null && usesClassicRules(gameState.config.variant);
+  /**
+   * A puzzle is an ordinary game played from an authored position, so it runs through the
+   * whole normal game page. The few places it must differ are the ones that assume an
+   * opponent you are competing with over a series: a rematch would swap the sides, which
+   * makes no sense when one side is the puzzle, and a match score is counting nothing.
+   */
+  const isPuzzleGame =
+    gameState !== null && isCustomSetupVariant(gameState.config.variant);
   const survivalSettings =
     gameState?.config.variant === "survival"
       ? (gameState.config.variantConfig as SurvivalInitialState)
@@ -2078,7 +2099,13 @@ export function useGamePageController(gameId: string) {
   }, [premovedActions, actionablePlayerId, activeLocalPlayerId]);
 
   type WallPositionWithState = WallPosition & {
-    state?: "placed" | "staged" | "premoved" | "calculated" | "missing" | "best-move";
+    state?:
+      | "placed"
+      | "staged"
+      | "premoved"
+      | "calculated"
+      | "missing"
+      | "best-move";
   };
 
   const boardWalls = useMemo<WallPositionWithState[]>(() => {
@@ -3403,6 +3430,9 @@ export function useGamePageController(gameId: string) {
 
   const getPlayerMatchScore = (player: GamePlayer | null) => {
     if (!player) return null;
+    // A puzzle is one position, not a series, so there is no score to keep. Returning
+    // null rather than 0 lets the card omit the row instead of showing an empty tally.
+    if (isPuzzleGame) return null;
     return scoreByPlayerId[player.playerId] ?? 0;
   };
 
@@ -3483,8 +3513,7 @@ export function useGamePageController(gameId: string) {
   const matchingStatusForView = isReadOnlySession
     ? undefined
     : matchingStatusMessage;
-  const ratedGameNeedsAccount =
-    waitingAccessReason === "rated-requires-login";
+  const ratedGameNeedsAccount = waitingAccessReason === "rated-requires-login";
   const waitingMessage = isAuthoritativeWaiting
     ? waitingAccessReason === "host-aborted"
       ? "The creator aborted this game."
@@ -3692,6 +3721,7 @@ export function useGamePageController(gameId: string) {
       openRematchWindow: rematchWindowHandler,
       handleExitAfterMatch,
       isMultiplayerMatch: boardIsMultiplayer,
+      isPuzzle: isPuzzleGame,
       primaryLocalPlayerId: boardPrimaryPlayerId,
       accessKind,
       isReadOnly: isReadOnlySession,
@@ -3750,6 +3780,7 @@ export function useGamePageController(gameId: string) {
       onMusicToggle: () => setMusicEnabled((prev) => !prev),
       interactionLocked,
       isMultiplayerMatch: infoIsMultiplayerMatch,
+      isPuzzle: isPuzzleGame,
       unsupportedPlayers,
       placeholderCopy: PLACEHOLDER_COPY,
     },

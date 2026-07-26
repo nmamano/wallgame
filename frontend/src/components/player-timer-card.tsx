@@ -125,9 +125,11 @@ export function PlayerTimerCard({
 
         {/* Right: match score + distance + timer */}
         <div className="flex items-center gap-3 flex-shrink-0">
-          <span className="text-[9px] text-muted-foreground tabular-nums">
-            match: {scoreLabel}
-          </span>
+          {typeof score === "number" && (
+            <span className="text-[9px] text-muted-foreground tabular-nums">
+              match: {scoreLabel}
+            </span>
+          )}
           <span className="text-[9px] text-muted-foreground tabular-nums">
             dist: {goalDistanceLabel}
           </span>
@@ -205,18 +207,26 @@ export function PlayerTimerCard({
         </div>
       </div>
 
-      {/* Middle: Match score and distance */}
+      {/* Middle: Match score and distance. With no score to show (a puzzle is one
+          position, not a series) the distance takes the full width rather than
+          leaving a gap where the badge was. */}
       <div className="flex-1 min-w-0 px-1 lg:px-2">
-        <div className="grid grid-cols-2 gap-2 lg:gap-3">
-          <div className="flex items-center justify-center">
-            <Badge
-              variant="outline"
-              className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
-            >
-              Match<span className="hidden lg:inline"> Score</span>:{" "}
-              {scoreLabel}
-            </Badge>
-          </div>
+        <div
+          className={`grid gap-2 lg:gap-3 ${
+            typeof score === "number" ? "grid-cols-2" : "grid-cols-1"
+          }`}
+        >
+          {typeof score === "number" && (
+            <div className="flex items-center justify-center">
+              <Badge
+                variant="outline"
+                className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
+              >
+                Match<span className="hidden lg:inline"> Score</span>:{" "}
+                {scoreLabel}
+              </Badge>
+            </div>
+          )}
           <div className="flex items-center justify-center">
             <Badge
               variant="outline"

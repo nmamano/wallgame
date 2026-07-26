@@ -72,6 +72,8 @@ interface EndgameProps {
   openRematchWindow: () => void;
   handleExitAfterMatch: () => void;
   isMultiplayerMatch: boolean;
+  /** Puzzles have no rematch: it would swap sides, and the position is the puzzle. */
+  isPuzzle?: boolean;
   primaryLocalPlayerId: PlayerId | null;
   spectatorRematchGameId?: string | null;
   handleFollowSpectatorRematch?: () => void;
@@ -131,6 +133,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     openRematchWindow,
     handleExitAfterMatch,
     isMultiplayerMatch,
+    isPuzzle = false,
     primaryLocalPlayerId,
     spectatorRematchGameId,
     handleFollowSpectatorRematch,
@@ -155,6 +158,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
   const canProposeMultiplayerRematch =
     !isReadOnlyView &&
     isMultiplayerMatch &&
+    !isPuzzle &&
     (rematchState.status === "idle" || rematchState.status === "declined");
   const isReplayView = accessKind === "replay";
   const actionsDisabled = actionButtonsDisabled || isReadOnlyView;

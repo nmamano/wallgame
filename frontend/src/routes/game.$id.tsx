@@ -60,7 +60,8 @@ function GamePageContent() {
   // Build eval bar props for BoardPanel
   const evalBarProps = useMemo((): EvalBarProps | undefined => {
     // Show eval bar when displayMode is not "off"
-    const isVisible = evalBar.displayMode !== "off" && evalBar.toggleState === "on";
+    const isVisible =
+      evalBar.displayMode !== "off" && evalBar.toggleState === "on";
     const player1Color = board.playerColorsForBoard[1 as PlayerId] ?? "red";
     const player2Color = board.playerColorsForBoard[2 as PlayerId] ?? "blue";
 
@@ -81,13 +82,21 @@ function GamePageContent() {
 
   // Build best-move overlay when in "eval-and-best-move" mode
   const bestMoveOverlay = useMemo(() => {
-    if (evalBar.displayMode !== "eval-and-best-move" || !evalBar.bestMove) return null;
-    const displayState = chat.historyNav.cursor !== null
-      ? board.historyGameState
-      : board.currentGameState;
+    if (evalBar.displayMode !== "eval-and-best-move" || !evalBar.bestMove)
+      return null;
+    const displayState =
+      chat.historyNav.cursor !== null
+        ? board.historyGameState
+        : board.currentGameState;
     if (displayState?.status !== "playing") return null;
     return parseBestMoveOverlay(evalBar.bestMove, displayState);
-  }, [evalBar.displayMode, evalBar.bestMove, chat.historyNav.cursor, board.historyGameState, board.currentGameState]);
+  }, [
+    evalBar.displayMode,
+    evalBar.bestMove,
+    chat.historyNav.cursor,
+    board.historyGameState,
+    board.currentGameState,
+  ]);
 
   // Detect if screen is large (lg breakpoint = 1024px)
   const isLargeScreen = useMediaQuery("(min-width: 1024px)");
@@ -223,8 +232,12 @@ function GamePageContent() {
         ? Math.max(
             28, // minimum tappable size
             Math.min(
-              (boardAreaSize.h - mobileChromePx - (rows - 1) * mobileGapSizePx) / rows,
-              (boardAreaSize.w - (referenceColsForWidth - 1) * mobileGapSizePx) /
+              (boardAreaSize.h -
+                mobileChromePx -
+                (rows - 1) * mobileGapSizePx) /
+                rows,
+              (boardAreaSize.w -
+                (referenceColsForWidth - 1) * mobileGapSizePx) /
                 referenceColsForWidth,
             ),
           )
@@ -258,11 +271,29 @@ function GamePageContent() {
         >
           {/* Slim top nav */}
           <div className="flex items-center px-2 py-1 border-b border-border shrink-0">
-            <Link to="/" className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors">
+            {/* From a puzzle, "back" means back to the candidate list you came from,
+                not out to the site root - otherwise trying the next one costs two
+                navigations and a scroll. */}
+            <Link
+              to={info.isPuzzle ? "/generated-candidates" : "/"}
+              className="flex items-center gap-1.5 text-muted-foreground hover:text-foreground transition-colors"
+            >
               <ArrowLeft className="w-4 h-4" />
-              <span className="text-xs font-medium">Wall Game</span>
+              <span className="text-xs font-medium">
+                {info.isPuzzle ? "Back to puzzles" : "Wall Game"}
+              </span>
             </Link>
           </div>
+
+          {/* Puzzles look exactly like an ordinary game, so say what the goal is.
+              Without this there is no way to tell a draw you achieved from a win you
+              missed. */}
+          {info.isPuzzle && (
+            <div className="bg-indigo-100 dark:bg-indigo-900/30 text-indigo-800 dark:text-indigo-200 text-center py-0.5 text-xs font-medium border-b border-indigo-200 dark:border-indigo-800 shrink-0">
+              Puzzle - reach your mouse before PuzzleBot reaches its own. A draw
+              is a possible best result.
+            </div>
+          )}
 
           {/* Slim spectator/replay banner */}
           {isSpectator && (
@@ -277,7 +308,10 @@ function GamePageContent() {
           )}
 
           {/* Main content: timers + eval bar + board — centered as a group */}
-          <div ref={boardAreaRef} className="flex flex-col flex-1 items-center justify-center min-h-0 gap-1 py-1">
+          <div
+            ref={boardAreaRef}
+            className="flex flex-col flex-1 items-center justify-center min-h-0 gap-1 py-1"
+          >
             {board.shouldRender ? (
               <>
                 {/* Top compact timer */}
@@ -286,8 +320,12 @@ function GamePageContent() {
                     <PlayerTimerCard
                       player={timers.topPlayer}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
-                      timeLeft={timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0}
-                      goalDistance={timers.goalDistances[timers.topPlayer.playerId] ?? null}
+                      timeLeft={
+                        timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
+                      }
+                      goalDistance={
+                        timers.goalDistances[timers.topPlayer.playerId] ?? null
+                      }
                       score={timers.getPlayerMatchScore(timers.topPlayer)}
                       gameStatus={board.gameStatus}
                       isUnlimited={timers.isUnlimited}
@@ -315,23 +353,45 @@ function GamePageContent() {
                     rows={rows}
                     cols={cols}
                     pawns={board.boardPawns}
-                    walls={bestMoveOverlay ? [...board.boardWalls, ...bestMoveOverlay.walls] : board.boardWalls}
-                    arrows={bestMoveOverlay ? [...board.stagedArrows, ...bestMoveOverlay.arrows] : board.stagedArrows}
+                    walls={
+                      bestMoveOverlay
+                        ? [...board.boardWalls, ...bestMoveOverlay.walls]
+                        : board.boardWalls
+                    }
+                    arrows={
+                      bestMoveOverlay
+                        ? [...board.stagedArrows, ...bestMoveOverlay.arrows]
+                        : board.stagedArrows
+                    }
                     className="p-0"
                     maxWidth="max-w-full"
                     playerColors={board.playerColorsForBoard}
                     onCellClick={board.onCellClick}
                     onWallClick={board.onWallClick}
                     onPawnClick={board.onPawnClick}
-                    onPawnDragStart={board.interactionLocked ? undefined : board.onPawnDragStart}
+                    onPawnDragStart={
+                      board.interactionLocked
+                        ? undefined
+                        : board.onPawnDragStart
+                    }
                     onPawnDragEnd={board.onPawnDragEnd}
-                    onCellDrop={board.interactionLocked ? undefined : board.onCellDrop}
-                    lastMove={!Array.isArray(board.lastMove) ? board.lastMove : undefined}
-                    lastMoves={Array.isArray(board.lastMove) ? board.lastMove : undefined}
+                    onCellDrop={
+                      board.interactionLocked ? undefined : board.onCellDrop
+                    }
+                    lastMove={
+                      !Array.isArray(board.lastMove)
+                        ? board.lastMove
+                        : undefined
+                    }
+                    lastMoves={
+                      Array.isArray(board.lastMove) ? board.lastMove : undefined
+                    }
                     lastWalls={board.lastWalls}
                     draggingPawnId={board.draggingPawnId}
                     selectedPawnId={board.selectedPawnId}
-                    disableMousePawnInteraction={board.disableMousePawnInteraction}
+                    disableMousePawnInteraction={
+                      board.disableMousePawnInteraction
+                    }
                     stagedActionsCount={board.pendingActionsCount}
                     controllablePlayerId={board.actionablePlayerId ?? undefined}
                     forceReadOnly={!hasLocalPlayer}
@@ -346,9 +406,18 @@ function GamePageContent() {
                   <div className="w-full px-1 shrink-0 mt-2">
                     <PlayerTimerCard
                       player={timers.bottomPlayer}
-                      isActive={timers.gameTurn === timers.bottomPlayer.playerId}
-                      timeLeft={timers.displayedTimeLeft[timers.bottomPlayer.playerId] ?? 0}
-                      goalDistance={timers.goalDistances[timers.bottomPlayer.playerId] ?? null}
+                      isActive={
+                        timers.gameTurn === timers.bottomPlayer.playerId
+                      }
+                      timeLeft={
+                        timers.displayedTimeLeft[
+                          timers.bottomPlayer.playerId
+                        ] ?? 0
+                      }
+                      goalDistance={
+                        timers.goalDistances[timers.bottomPlayer.playerId] ??
+                        null
+                      }
                       score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                       gameStatus={board.gameStatus}
                       isUnlimited={timers.isUnlimited}
@@ -374,7 +443,10 @@ function GamePageContent() {
 
           {/* Floating action toolbar */}
           <div className="shrink-0">
-            <MobileActionToolbar live={actions.live} endgame={actions.endgame} />
+            <MobileActionToolbar
+              live={actions.live}
+              endgame={actions.endgame}
+            />
           </div>
 
           {/* Bottom drawer tab bar + drawer */}
@@ -498,8 +570,16 @@ function GamePageContent() {
                   rows={board.rows}
                   cols={board.cols}
                   boardPawns={board.boardPawns}
-                  boardWalls={bestMoveOverlay ? [...board.boardWalls, ...bestMoveOverlay.walls] : board.boardWalls}
-                  stagedArrows={bestMoveOverlay ? [...board.stagedArrows, ...bestMoveOverlay.arrows] : board.stagedArrows}
+                  boardWalls={
+                    bestMoveOverlay
+                      ? [...board.boardWalls, ...bestMoveOverlay.walls]
+                      : board.boardWalls
+                  }
+                  stagedArrows={
+                    bestMoveOverlay
+                      ? [...board.stagedArrows, ...bestMoveOverlay.arrows]
+                      : board.stagedArrows
+                  }
                   playerColorsForBoard={board.playerColorsForBoard}
                   interactionLocked={board.interactionLocked}
                   lastMove={board.lastMove}
