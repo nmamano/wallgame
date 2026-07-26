@@ -172,11 +172,11 @@ replies to a move); 0-move probes and listings are blind to engine death.
 
 ## Slice plan — playtest #2 additions (Nil, 2026-07-26 evening)
 
-- [ ] S-P2A — copy: delete the /puzzles intro sentence "Scripted puzzles walk
+- [x] S-P2A — copy: delete the /puzzles intro sentence "Scripted puzzles walk
       you through a winning sequence move by move; generated puzzles drop you
       into a race position against PuzzleBot and let you find your own way."
       entirely (Nil: pure noise; "race position" was never his copy).
-- [ ] S-P2B — continuous UI numbering: the generated list starts at
+- [x] S-P2B — continuous UI numbering: the generated list starts at
       "Generated Puzzle 2" after retirements. Nil wants continuous numbers.
       DECISION (asked of Nil, default if unanswered): RENAME the persisted
       rows contiguously (display names 1..39 by sortIndex order; identity =
@@ -185,7 +185,7 @@ replies to a move); 0-move probes and listings are blind to engine death.
       renumber automatically going forward). Alternative: positional display
       numbers with stable stored names — rejected-by-default because the
       in-game banner shows the stored name and would disagree with the list.
-- [ ] S-P2C — scripted player polish: on /puzzles/N the "Puzzle Solved!"
+- [x] S-P2C — scripted player polish: on /puzzles/N the "Puzzle Solved!"
       card's Replay/Next buttons overflow the card's right edge (Nil's
       screenshot). Fix the card layout (wrap/shrink within bounds).
       Recon 2026-07-26 (pre-repro, code read only): buildHistoryState

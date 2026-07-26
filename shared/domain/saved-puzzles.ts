@@ -25,6 +25,44 @@ export const generatedPuzzleDisplayName = (sortIndex: number): string =>
 export type SavedPuzzleSeedRowWithoutId = Omit<SavedPuzzleSeedRow, "id">;
 
 /**
+ * Display names are presentation, not identity (identity is
+ * sourceFingerprint). The UI shows continuous numbers, so retirement
+ * renumbers the ENABLED rows positionally by sortIndex order; disabled rows
+ * keep their historical names (harmless duplicates — enabled-aware tooling
+ * never looks names up across disabled rows).
+ */
+export const computeContiguousRenames = (
+  rows: {
+    id: string;
+    displayName: string;
+    sortIndex: number;
+    enabled: boolean;
+  }[],
+): { id: string; from: string; to: string }[] =>
+  rows
+    .filter((row) => row.enabled)
+    .sort((a, b) => a.sortIndex - b.sortIndex)
+    .map((row, index) => ({
+      id: row.id,
+      from: row.displayName,
+      to: generatedPuzzleDisplayName(index + 1),
+    }))
+    .filter((rename) => rename.from !== rename.to);
+
+/**
+ * Whether a stored row is the given committed seed row, by IDENTITY:
+ * fingerprint and exact config. Deliberately name-free so contiguous
+ * renumbering can never fail an identity preflight (populate script,
+ * audits).
+ */
+export const rowMatchesSeedIdentity = (
+  row: { sourceFingerprint: string; config: unknown },
+  seed: SavedPuzzleSeedRowWithoutId,
+): boolean =>
+  row.sourceFingerprint === seed.sourceFingerprint &&
+  JSON.stringify(row.config) === JSON.stringify(seed.config);
+
+/**
  * The kept candidates (per the verdict file, validated fail-closed) as seed
  * rows, in generation order with sortIndex 1..N. The launch config is parsed
  * through the wire schema, so construction is exact at compile time AND

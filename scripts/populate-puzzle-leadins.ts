@@ -24,7 +24,10 @@ import {
   computeLeadIn,
   validateLeadInReplay,
 } from "../shared/domain/puzzle-lead-in";
-import { buildSavedPuzzleSeedRows } from "../shared/domain/saved-puzzles";
+import {
+  buildSavedPuzzleSeedRows,
+  rowMatchesSeedIdentity,
+} from "../shared/domain/saved-puzzles";
 import { generateCustomSetupCandidates } from "../shared/domain/generated-custom-setup-candidates";
 import verdictFile from "../shared/domain/generated-custom-setup-verdicts.json";
 import type { CandidateVerdictFile } from "../shared/domain/custom-setup-verdicts";
@@ -68,12 +71,11 @@ const main = async () => {
   }
   for (const row of rows) {
     const seed = seedByFingerprint.get(row.sourceFingerprint)!;
-    if (
-      row.displayName !== seed.displayName ||
-      JSON.stringify(row.config) !== JSON.stringify(seed.config)
-    ) {
+    // Identity is fingerprint + config, deliberately NAME-FREE: display
+    // names renumber on retirement (S-P2) and must not fail this preflight.
+    if (!rowMatchesSeedIdentity(row, seed)) {
       console.error(
-        `abort: row ${row.displayName} (${row.id}) drifted from the committed seed row ${seed.displayName}`,
+        `abort: row ${row.displayName} (${row.id}) drifted from its committed seed row (config mismatch for fingerprint ${row.sourceFingerprint})`,
       );
       process.exit(1);
     }

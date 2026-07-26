@@ -71,9 +71,7 @@ function Puzzles() {
           Puzzles
         </h1>
         <p className="text-lg text-muted-foreground leading-relaxed">
-          Sharpen your tactical skills. Scripted puzzles walk you through a
-          winning sequence move by move; generated puzzles drop you into a race
-          position against PuzzleBot and let you find your own way.
+          Sharpen your tactical skills.
         </p>
       </div>
 

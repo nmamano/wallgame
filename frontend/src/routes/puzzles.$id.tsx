@@ -211,7 +211,7 @@ function PuzzlePageContent({
           <div
             className={`col-start-1 row-start-1 ${puzzleStatus !== "playing" ? "invisible" : ""}`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-xl font-semibold text-foreground">
                   {puzzle.title}
@@ -220,7 +220,7 @@ function PuzzlePageContent({
                   by {puzzle.author}
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Badge variant="outline">Rating: {puzzle.difficulty}</Badge>
                 <AudioControls />
                 <Button
@@ -268,7 +268,7 @@ function PuzzlePageContent({
           <div
             className={`col-start-1 row-start-1 ${puzzleStatus !== "wrong_move" ? "invisible" : ""}`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-xl font-semibold text-foreground">
                   Not quite!
@@ -277,7 +277,7 @@ function PuzzlePageContent({
                   That&apos;s not the optimal move.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" onClick={resetPuzzle}>
                   <RotateCcw className="h-4 w-4 mr-1" />
                   Reset
@@ -297,7 +297,7 @@ function PuzzlePageContent({
           <div
             className={`col-start-1 row-start-1 ${puzzleStatus !== "solved" ? "invisible" : ""}`}
           >
-            <div className="flex items-center justify-between">
+            <div className="flex flex-wrap items-center justify-between gap-2">
               <div>
                 <h2 className="text-xl font-semibold text-foreground">
                   Puzzle Solved!
@@ -306,7 +306,7 @@ function PuzzlePageContent({
                   You found the winning sequence.
                 </p>
               </div>
-              <div className="flex items-center gap-2">
+              <div className="flex flex-wrap items-center gap-2">
                 <Button variant="outline" size="sm" onClick={resetPuzzle}>
                   <RotateCcw className="h-4 w-4 mr-1" />
                   Replay

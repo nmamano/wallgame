@@ -146,11 +146,16 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
 `94c989b` (candidate launcher), `a5abd94` (standard generation + puzzle framing),
 `24e22d3` (PuzzleBot + variant naming), plus the puzzle-name banner commit.
 
-- **Curation state (loop 3 S-COPY, `3636107`):** Generated Puzzle 1 and 6 are RETIRED
-  (`enabled=false`, Nil: too easy) — 39 live. Retire future rejects with
-  `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<display name>' ..."`
-  (fail-closed: exact-set lookup, transactional, read-back asserted). Nil's ratings:
-  pool good overall; 2, 3, 10, 11 good; 8, 9 excellent.
+- **Curation state (loop 3 S-COPY `3636107`, renumbered in S-P2):** the original
+  Generated Puzzle 1 and 6 are RETIRED (`enabled=false`, Nil: too easy) — 39 live.
+  S-P2 renumbered the ENABLED rows contiguously (display names are presentation;
+  identity is `source_fingerprint`): **old 2–5 → new 1–4, old 7–41 → new 5–39**
+  (disabled rows keep their historical names). Nil's ratings in NEW numbers:
+  pool good overall; **1, 2, 8, 9 good** (were 2, 3, 10, 11); **6, 7 excellent**
+  (were 8, 9). Retire future rejects with
+  `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<current display name>' ..."`
+  — it matches names among ENABLED rows only and renumbers survivors in the same
+  transaction, so numbers stay continuous.
 - **Saved puzzles (`3d3a318`, S-G1):** the 41 filtered candidates are PERSISTED in the
   `saved_puzzles` table as named entities ("Generated Puzzle 1..41"), seeded manually
   inside the fly machine (`bun /app/scripts/seed-puzzles.ts`, idempotent via the UNIQUE
