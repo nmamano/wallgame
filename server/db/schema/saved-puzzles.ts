@@ -30,6 +30,13 @@ export const savedPuzzlesTable = pgTable("saved_puzzles", {
   sortIndex: integer("sort_index").notNull().unique(),
   enabled: boolean("enabled").notNull().default(true),
   config: jsonb("config").notNull(),
+  /**
+   * Scripted bot ply-0 move for human-as-P2 puzzles (S-P1 "P1 moves first"
+   * axiom): {piece, from}. Invariant (enforced at the launch boundary, not
+   * here): non-null iff the config's authored turn is P2. Nullable so the
+   * additive migration lands before population.
+   */
+  leadIn: jsonb("lead_in"),
   source: jsonb("source").notNull(),
   sourceFingerprint: text("source_fingerprint").notNull().unique(),
   createdAt: timestamp("created_at", { withTimezone: true })

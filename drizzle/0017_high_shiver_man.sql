@@ -1,0 +1,1 @@
+ALTER TABLE "saved_puzzles" ADD COLUMN "lead_in" jsonb;

@@ -407,6 +407,29 @@ export const playVsBot = async (args: {
   );
 };
 
+/**
+ * Server-authoritative saved-puzzle launch (S-P1): the server derives the
+ * config, seat, and bot lead-in from the puzzle row — the client never
+ * supplies a config, so Retry and launch always recreate the real puzzle.
+ */
+export const playPuzzle = async (args: {
+  botId: string;
+  puzzleId: string;
+  hostDisplayName?: string;
+  hostAppearance?: PlayerAppearance;
+}): Promise<CreateBotGameResponse> => {
+  return handleResponse<CreateBotGameResponse>(
+    api.bots.play.$post({
+      json: {
+        botId: args.botId,
+        puzzleId: args.puzzleId,
+        hostDisplayName: args.hostDisplayName,
+        hostAppearance: args.hostAppearance,
+      },
+    }),
+  );
+};
+
 // Campaign progress API
 import type {
   CampaignProgressResponse,

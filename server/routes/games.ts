@@ -1,6 +1,7 @@
 import { Hono } from "hono";
 import { zValidator } from "@hono/zod-validator";
 import {
+  applyPlayerMove,
   cancelGameSession,
   createGameSession,
   getSession,
@@ -24,12 +25,19 @@ import {
   showcaseQuerySchema,
   botsQuerySchema,
   createBotGameSchema,
+  type CreateBotGameConfig,
 } from "../../shared/contracts/games";
 import {
   isCustomSetupVariant,
+  type Move,
   type PlayerAppearance,
 } from "../../shared/domain/game-types";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
+import { resolveSavedPuzzleLaunch } from "../../shared/domain/puzzle-lead-in";
+import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
+import { db } from "../db";
+import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
+import { eq } from "drizzle-orm";
 import type { BotAppearance } from "../../shared/contracts/custom-bot-protocol";
 import { getOptionalUserMiddleware } from "../kinde";
 import { sendMatchStatus } from "./game-socket";
@@ -477,7 +485,7 @@ export const botsRoute = new Hono()
     "/play",
     getOptionalUserMiddleware,
     zValidator("json", createBotGameSchema),
-    (c) => {
+    async (c) => {
       try {
         const parsed = c.req.valid("json");
         const user = c.get("user");
@@ -495,7 +503,48 @@ export const botsRoute = new Hono()
             404,
           );
         }
-        if (isCustomSetupVariant(parsed.config.variant) && !bot.isOfficial) {
+
+        // Resolve what to launch. Saved-puzzle launches are
+        // server-authoritative (S-P1): the client names the puzzle and the
+        // server derives config, seat, and lead-in from the DB row.
+        let gameConfig: CreateBotGameConfig;
+        let hostIsPlayer1: boolean | undefined;
+        let leadInMove: Move | null = null;
+
+        if ("puzzleId" in parsed) {
+          const rows = await db
+            .select()
+            .from(savedPuzzlesTable)
+            .where(eq(savedPuzzlesTable.id, parsed.puzzleId));
+          const raw = rows[0];
+          if (!raw) {
+            return c.json({ error: "Puzzle not found" }, 404);
+          }
+          try {
+            const row = savedPuzzleDbRowSchema.parse(raw);
+            if (!row.enabled) {
+              return c.json({ error: "Puzzle not found" }, 404);
+            }
+            const resolved = resolveSavedPuzzleLaunch(row);
+            gameConfig = resolved.config;
+            hostIsPlayer1 = resolved.humanIsPlayer1;
+            leadInMove = resolved.leadInMove;
+          } catch (resolveError) {
+            // Fail closed: a corrupted row, a missing lead-in during the
+            // migration->population gap, or an invariant violation must
+            // refuse the launch, never fall back to human-first.
+            console.error("[games] puzzle launch refused", {
+              puzzleId: parsed.puzzleId,
+              error: resolveError,
+            });
+            return c.json({ error: "Puzzle is temporarily unavailable" }, 409);
+          }
+        } else {
+          gameConfig = parsed.config;
+          hostIsPlayer1 = parsed.hostIsPlayer1;
+        }
+
+        if (isCustomSetupVariant(gameConfig.variant) && !bot.isOfficial) {
           return c.json(
             { error: "Custom setup games require an official bot" },
             400,
@@ -511,14 +560,14 @@ export const botsRoute = new Hono()
         // V3: Bot games are untimed - use placeholder time control
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: {
-            ...parsed.config,
+            ...gameConfig,
             timeControl: BOT_GAME_TIME_CONTROL,
             rated: false, // Bot games are unrated
           },
           matchType: "friend",
           hostDisplayName: parsed.hostDisplayName,
           hostAppearance: parsed.hostAppearance,
-          hostIsPlayer1: parsed.hostIsPlayer1 ?? Math.random() < 0.5,
+          hostIsPlayer1: hostIsPlayer1 ?? Math.random() < 0.5,
           hostAuthUserId: user?.id,
           hostElo,
           joinerConfig: {
@@ -535,6 +584,37 @@ export const botsRoute = new Hono()
         // Mark joiner as ready (bot is always ready)
         session.players.joiner.ready = true;
         session.status = "ready";
+
+        // S-P1: apply the puzzle's scripted bot lead-in as a REAL ply-0 move
+        // through the normal action path, so the human's first state already
+        // shows the bot's move and it is the human's turn. BGS init replays
+        // history, so the engine sees ply 0 like any move.
+        if (leadInMove) {
+          try {
+            const next = applyPlayerMove({
+              id: session.id,
+              playerId: session.players.joiner.playerId,
+              move: leadInMove,
+              timestamp: Date.now(),
+            });
+            if (
+              next.status !== "playing" ||
+              next.history.length !== 1 ||
+              next.turn !== session.players.host.playerId
+            ) {
+              throw new Error(
+                `lead-in postcondition violated (status ${next.status}, history ${next.history.length}, turn ${next.turn})`,
+              );
+            }
+          } catch (leadInError) {
+            console.error("[games] failed to apply puzzle lead-in", {
+              gameId: session.id,
+              error: leadInError,
+            });
+            cancelGameSession({ id: session.id, token: hostToken });
+            return c.json({ error: "Puzzle is temporarily unavailable" }, 409);
+          }
+        }
 
         // Track active bot game for response validation and disconnect handling
         addActiveGame(

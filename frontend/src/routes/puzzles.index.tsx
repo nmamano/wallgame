@@ -13,7 +13,7 @@ import { useSettings } from "@/hooks/use-settings";
 import {
   fetchBots,
   fetchSavedPuzzles,
-  playVsBot,
+  playPuzzle,
   userQueryOptions,
 } from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
@@ -183,10 +183,11 @@ function GeneratedPuzzlesSection() {
     setError(null);
 
     try {
-      const humanIsPlayer1 = puzzle.config.variantConfig.turn.playerId === 1;
-      const response = await playVsBot({
+      // S-P1: server-authoritative launch — the server derives config, seat,
+      // and the bot's lead-in move from the puzzle row.
+      const response = await playPuzzle({
         botId: officialBot.id,
-        config: puzzle.config,
+        puzzleId: puzzle.id,
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
@@ -194,7 +195,6 @@ function GeneratedPuzzlesSection() {
           mouseSkin: settings.mousePawn,
           homeSkin: settings.homePawn,
         },
-        hostIsPlayer1: humanIsPlayer1,
       });
       saveGameHandshake({
         gameId: response.gameId,

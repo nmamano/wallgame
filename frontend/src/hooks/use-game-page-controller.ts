@@ -39,7 +39,7 @@ import {
   fetchGameSession,
   abortGameSession,
   fetchBots,
-  playVsBot,
+  playPuzzle,
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { sounds, play } from "@/lib/sounds";
@@ -2629,14 +2629,14 @@ export function useGamePageController(gameId: string) {
     navigate,
   ]);
 
-  // Retry a puzzle: relaunch the SAME authored position into a fresh game on
-  // the same seat. The finished game's own config IS the candidate's config
-  // (position identity is how candidates are matched), so no candidate
-  // resolution is needed - this works even for games whose candidate no
-  // longer resolves after a generator change.
+  // Retry a puzzle: relaunch the SAME puzzle into a fresh game via the
+  // server-authoritative puzzleId launch (S-P1). The game's own config must
+  // NOT be used — for a puzzle with a bot lead-in it is the rewound
+  // pre-position, not the puzzle. The puzzleId rides the stored handshake.
   const [isRetryingPuzzle, setIsRetryingPuzzle] = useState(false);
   const handleRetryPuzzle = useCallback(async () => {
     const config = gameState?.config;
+    const puzzleId = getGameHandshake(gameId)?.puzzleId;
     if (
       !isPuzzleGame ||
       gameStatus !== "finished" ||
@@ -2644,6 +2644,14 @@ export function useGamePageController(gameId: string) {
       !config ||
       primaryLocalPlayerId === null
     ) {
+      return;
+    }
+    if (!puzzleId) {
+      // Pre-S-P1 games and spectator-opened links have no stored puzzle
+      // identity; without it the server cannot recreate the puzzle.
+      addSystemMessage(
+        "This game predates puzzle retry support — launch the puzzle again from the puzzles page.",
+      );
       return;
     }
     setIsRetryingPuzzle(true);
@@ -2661,9 +2669,9 @@ export function useGamePageController(gameId: string) {
         );
         return;
       }
-      const response = await playVsBot({
+      const response = await playPuzzle({
         botId: officialBot.id,
-        config,
+        puzzleId,
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
@@ -2671,7 +2679,6 @@ export function useGamePageController(gameId: string) {
           mouseSkin: settings.mousePawn,
           homeSkin: settings.homePawn,
         },
-        hostIsPlayer1: primaryLocalPlayerId === 1,
       });
       saveGameHandshake(
         withPuzzleMetadataFrom(

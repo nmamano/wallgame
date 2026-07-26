@@ -23,7 +23,7 @@ export const customSetupVariantValues = [
   "custom-setup-classic",
 ] as const;
 
-const cellSchema = z
+export const cellSchema = z
   .tuple([z.number().int().min(0).max(19), z.number().int().min(0).max(19)])
   .readonly();
 
@@ -500,29 +500,64 @@ export const botsQuerySchema = z.object({
   boardHeight: z.coerce.number().int().min(3).max(20).optional(),
 });
 
-export const createBotGameSchema = z.object({
-  /** Composite bot ID: clientId:botId */
-  botId: z.string(),
-  /** V3: Bot game config has no timeControl - bot games are untimed */
-  config: z.union([
-    z.object({
-      variant: z.enum(variantValues),
-      boardWidth: z.number().int().min(3).max(20),
-      boardHeight: z.number().int().min(3).max(20),
-    }),
-    customSetupConfigSchema,
-  ]),
-  hostDisplayName: z.string().max(50).optional(),
-  hostAppearance: appearanceSchema,
-  /**
-   * Whether the host becomes Player 1 (who starts first).
-   * If true, host is Player 1 and bot is Player 2.
-   * If false, host is Player 2 and bot is Player 1.
-   * If not provided, the server randomly chooses.
-   * Tests can pass this explicitly for deterministic behavior.
-   */
-  hostIsPlayer1: z.boolean().optional(),
-});
+/**
+ * Server-authoritative saved-puzzle launch (S-P1): the client names the
+ * puzzle; the server derives config, seat, and lead-in from the DB row.
+ * `.strict()` so a request carrying a client config can never match this
+ * variant and silently have it ignored.
+ */
+export const createBotGameFromPuzzleSchema = z
+  .object({
+    /** Composite bot ID: clientId:botId */
+    botId: z.string(),
+    puzzleId: z.string().min(1),
+    hostDisplayName: z.string().max(50).optional(),
+    hostAppearance: appearanceSchema,
+  })
+  .strict();
+
+/**
+ * Also `.strict()`: with a non-strict direct shape, a malformed puzzle
+ * request (puzzleId + config) would fail the strict puzzle variant and then
+ * MATCH here with puzzleId silently stripped — a client-authoritative launch
+ * through the back door. Strict on both variants means such a request fails
+ * the whole union instead.
+ */
+export const createBotGameDirectSchema = z
+  .object({
+    /** Composite bot ID: clientId:botId */
+    botId: z.string(),
+    /** V3: Bot game config has no timeControl - bot games are untimed */
+    config: z.union([
+      z.object({
+        variant: z.enum(variantValues),
+        boardWidth: z.number().int().min(3).max(20),
+        boardHeight: z.number().int().min(3).max(20),
+      }),
+      customSetupConfigSchema,
+    ]),
+    hostDisplayName: z.string().max(50).optional(),
+    hostAppearance: appearanceSchema,
+    /**
+     * Whether the host becomes Player 1 (who starts first).
+     * If true, host is Player 1 and bot is Player 2.
+     * If false, host is Player 2 and bot is Player 1.
+     * If not provided, the server randomly chooses.
+     * Tests can pass this explicitly for deterministic behavior.
+     */
+    hostIsPlayer1: z.boolean().optional(),
+  })
+  .strict();
+
+export const createBotGameSchema = z.union([
+  createBotGameFromPuzzleSchema,
+  createBotGameDirectSchema,
+]);
+
+/** The wire config shape a bot game is created from (no timeControl). */
+export type CreateBotGameConfig = z.infer<
+  typeof createBotGameDirectSchema
+>["config"];
 
 export interface CreateBotGameResponse {
   gameId: string;

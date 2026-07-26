@@ -232,7 +232,18 @@ breaks it.
   from the game state's authored turn (half the puzzles start with player 2), and
   custom-setup games are excluded from Past Games, the random showcase, and live-games.
   Direct game URLs still work and replay correctly. `2b4a0c0`.
-- **Model fact worth remembering:** in a puzzle the HUMAN always moves first (authored
+- **Model fact — SUPERSEDED by S-P1 (loop 3):** P1 always moves first, including in
+  puzzles. A human-as-P2 puzzle now opens with the bot's scripted lead-in applied as
+  REAL ply 0 (stored in `saved_puzzles.lead_in`, chosen by Nil's plausibility
+  heuristic: 2-step cat advance toward the human mouse, else 2-step mouse flee from
+  the human cat; no wall fallback — placed walls become owned/colored and the census
+  showed 0 rows need it). Launches are server-authoritative: the client sends only
+  `puzzleId` to POST /api/bots/play and the server derives config, seat, and lead-in
+  from the row, fail-closed (a P2 row without a lead-in refuses to launch). Bot-log
+  reading changes accordingly: a P2-puzzle session shows the human's reply at ply 1;
+  an eval at ply 0 with nothing after is still an abandoned P1-puzzle game.
+- **Model fact (loop 1, original wording for the record):** the OLD rule was that the
+  human always moved first (authored
   turn state). A bot-log session showing an eval at ply 0 and nothing after is an
   abandoned human-first game, not an engine hang.
 - **Nil confirmed all five fixes in an authenticated playtest (2026-07-26):** banner,

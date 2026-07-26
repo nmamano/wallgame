@@ -79,7 +79,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 
 ## Slice plan
 
-- [ ] S-E — takeback works in puzzle (custom-setup) bot games. NIL ANSWERED
+- [x] S-E — takeback works in puzzle (custom-setup) bot games. NIL ANSWERED
       (2026-07-26): the button is SOMETIMES GRAYED OUT (example game LOH8GsyP) — a
       frontend gating issue, and Nil's chosen fix is structural: restore "P1 moves
       first" as a universal axiom (bot makes a real first move in human-as-P2

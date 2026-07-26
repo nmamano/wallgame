@@ -11,6 +11,7 @@ import {
 } from "./custom-setup-verdicts";
 import { customSetupConfigSchema } from "../contracts/games";
 import type { SavedPuzzleSeedRow } from "../contracts/puzzles";
+import { computeLeadIn, validateLeadInReplay } from "./puzzle-lead-in";
 
 /**
  * Distinct naming namespace: the ten hand-authored scripted puzzles are
@@ -46,16 +47,29 @@ export const buildSavedPuzzleSeedRows = (
       throw new Error(`No verdict for kept candidate ${candidate.id}`);
     }
     const sortIndex = index + 1;
+    const config = customSetupConfigSchema.parse({
+      variant: candidate.config.variant,
+      boardWidth: candidate.config.boardWidth,
+      boardHeight: candidate.config.boardHeight,
+      variantConfig: candidate.config.variantConfig,
+    });
+    // P1-moves-first axiom (S-P1): a human-as-P2 puzzle cannot be seeded
+    // without a plausible bot lead-in — fail closed, no wall fallback.
+    const leadIn = computeLeadIn(config);
+    if (config.variantConfig.turn.playerId === 2) {
+      if (!leadIn) {
+        throw new Error(
+          `no pawn lead-in heuristic applies to candidate ${candidate.id}`,
+        );
+      }
+      validateLeadInReplay(config, leadIn);
+    }
     return {
       displayName: generatedPuzzleDisplayName(sortIndex),
       sortIndex,
       enabled: true,
-      config: customSetupConfigSchema.parse({
-        variant: candidate.config.variant,
-        boardWidth: candidate.config.boardWidth,
-        boardHeight: candidate.config.boardHeight,
-        variantConfig: candidate.config.variantConfig,
-      }),
+      config,
+      leadIn,
       source: {
         candidateId: candidate.id,
         fingerprint: verdict.fingerprint,

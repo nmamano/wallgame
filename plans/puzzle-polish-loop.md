@@ -101,7 +101,7 @@ real wake signal.
       GET /api/puzzles now 39 rows (names 1 and 6 absent, list spans 2..41);
       page screenshot clean with the new subtitle; 0-move launch probe on
       Generated Puzzle 2 (game 6eNB47kJ) played and resigned normally.
-- [ ] S-P1 — restore the P1-moves-first axiom: puzzles where the human is P2 begin
+- [x] S-P1 — restore the P1-moves-first axiom: puzzles where the human is P2 begin
       with the bot's first move applied as a REAL move in the game history (ply 0).
       OPEN DESIGN QUESTION for the plan gate (and Nil): synthetic positions have no
       real game history to take the bot's move from. Candidate designs:
@@ -143,6 +143,7 @@ real wake signal.
       answers it; fold a small indicator in here only if still unclear.
 
 ## SLICE S-P1 AMENDED DESIGN (reviewer plan-gate amendments + Nil's lead-in
+
 ## heuristic, 2026-07-26 — design APPROVED by Nil, plumbing per reviewer)
 
 NIL'S LEAD-IN HEURISTIC (2026-07-26, replaces wall-backout as primary — he
@@ -151,6 +152,7 @@ look PLAUSIBLE, hence greedy-advance/flee shapes). All distances are true path
 length through the curated position's walls (BFS); walls are identical in the
 pre-position for cases 1-2. Curated cells: bot cat C, bot mouse M, human cat
 hC, human mouse hM.
+
 1. CAT ADVANCE: find a cell X with dist(X, C) = 2 and dist(X, hM) =
    dist(C, hM) + 2. Pre-position: bot cat at X. Lead-in: double cat move
    X→C — a strict 2-step greedy advance toward the human mouse.
@@ -160,12 +162,30 @@ hC, human mouse hM.
 3. Else WALL FALLBACK: lead-in places 2 of the premade walls (canonical
    last-two; pre-position = curated minus those walls). Nil: "nonsensical but
    not game breaking, we can accept this."
-Implementation notes: deterministic tie-break when multiple X/Y qualify
-(lexicographic smallest); X/Y must not collide with any other pawn cell;
-assert via the pure replay that pre-position + lead-in reproduces the curated
-config EXACTLY and triggers no terminal state. ONE-MOVE RULE CHECK (done): it
-is a draw-compensation rule at capture time (game-state.ts ~588-603), NOT a
-first-turn action limit — a double-action ply 0 is legal.
+   CENSUS RESULT (2026-07-26, read-only, reviewer-required): ZERO fallbacks —
+   the 41 rows split 22 P1 / 19 P2, and all 19 P2 rows admit a pawn lead-in
+   (11 cat-advance, 8 mouse-flee). DECISION: implement tiers 1-2 only and FAIL
+   CLOSED when neither applies (reviewer amendment 2). Wall fallback is NOT
+   implemented; if a future batch needs it, note (a) reviewer finding: walls
+   placed BY A MOVE are stamped with the mover's playerId and render colored
+   (applyMove converts neutral walls to owned — "structurally ownerless" is
+   false for placed walls), and (b) Nil explicitly accepts that visual
+   difference ("wall colors won't be neutral — non-issue to me", 2026-07-26),
+   so tier 3 may be added then without re-litigating, but never by silently
+   neutralizing walls post-apply (breaks history-replay consistency).
+   Reviewer implementation clarifications: a double pawn move is ONE Move
+   action with the target cell (applyMove charges Manhattan distance 2 and
+   picks a legal intermediate internally) — require Manhattan==2 AND
+   Grid.distance==2; lexicographic X/Y tie-break; no intermediate stored.
+   Replay assertion: status=playing, history length 1, turn=P2, serialized
+   pawns/walls (incl. ownership) equal the curated target. Population records
+   per-row heuristic choice for auditability.
+   Implementation notes: deterministic tie-break when multiple X/Y qualify
+   (lexicographic smallest); X/Y must not collide with any other pawn cell;
+   assert via the pure replay that pre-position + lead-in reproduces the curated
+   config EXACTLY and triggers no terminal state. ONE-MOVE RULE CHECK (done): it
+   is a draw-compensation rule at capture time (game-state.ts ~588-603), NOT a
+   first-turn action limit — a double-action ply 0 is legal.
 
 Reviewer approved stored-explicit `lead_in` column but required these amendments
 (they caught two real gaps: POST /api/bots/play has no server-side puzzle
