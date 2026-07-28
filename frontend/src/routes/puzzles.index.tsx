@@ -4,7 +4,7 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Circle, Play, Loader2 } from "lucide-react";
+import { CheckCircle2, Play, Loader2 } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
@@ -17,6 +17,10 @@ import {
   userQueryOptions,
 } from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
+import {
+  PUZZLE_ACTION_SIZING_LABEL,
+  puzzleActionLabel,
+} from "@/lib/puzzle-action-label";
 import type { SavedPuzzle } from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/puzzles/")({
@@ -24,9 +28,10 @@ export const Route = createFileRoute("/puzzles/")({
 });
 
 /**
- * Card shell shared by both puzzle sections so their visual treatment cannot
- * drift; padding and internal layout stay density-specific (roomy scripted
- * rows vs the compact generated grid).
+ * Surface treatment for a puzzle card. Both sections now render the same
+ * `PuzzleCard` in the same grid, so this no longer holds a density
+ * distinction — padding and internal layout live in that component, and only
+ * the shell's look (border, background, hover) is kept separate here.
  */
 const puzzleCardShell =
   "hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur";
@@ -42,6 +47,99 @@ function ratingToDifficulty(rating: number): number {
   if (rating < 1600) return 3;
   if (rating < 1750) return 4;
   return 5;
+}
+
+interface PuzzleCardProps {
+  title: string;
+  completed: boolean;
+  onAction: () => void;
+  /** Omitted where a card has nothing to say beyond its name. */
+  subtitle?: string;
+  badge?: string;
+  /** Set only while this card's action is in flight. */
+  pending?: boolean;
+  disabled?: boolean;
+}
+
+/**
+ * One card, both puzzle sections. Scripted and generated puzzles differ in
+ * what they know about themselves (an author and a difficulty versus just a
+ * name) and in what their button does, but they are the same object to a
+ * player, so they render through one component rather than two trees that
+ * have to be kept looking alike — which is how they drifted apart before.
+ *
+ * Kept local to this route: both call sites are here, and its props encode
+ * this page's presentation rather than a general card contract.
+ */
+function PuzzleCard({
+  title,
+  completed,
+  onAction,
+  subtitle,
+  badge,
+  pending = false,
+  disabled = false,
+}: PuzzleCardProps) {
+  return (
+    <Card className={`flex h-full flex-col gap-3 p-4 ${puzzleCardShell}`}>
+      <div className="flex items-start gap-2">
+        {completed && (
+          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600 dark:text-green-500" />
+        )}
+        <div className="min-w-0">
+          <h3 className="font-serif font-semibold text-foreground">{title}</h3>
+          {subtitle && (
+            <p className="text-sm text-muted-foreground">{subtitle}</p>
+          )}
+        </div>
+      </div>
+
+      {badge && (
+        <div>
+          <Badge variant="outline" className="text-xs">
+            {badge}
+          </Badge>
+        </div>
+      )}
+
+      {/* Pushed to the bottom so buttons line up across a grid row, whose
+          cards are unequal heights (only scripted ones carry author+badge). */}
+      <div className="mt-auto">
+        <Button
+          className="gap-2"
+          // A card whose action is in flight is never clickable, whatever the
+          // caller says about `disabled` — the two reasons are independent.
+          disabled={disabled || pending}
+          onClick={onAction}
+        >
+          {pending ? (
+            <>
+              <Loader2 className="h-4 w-4 animate-spin" />
+              Starting…
+            </>
+          ) : (
+            <>
+              <Play className="h-4 w-4" />
+              {/* Both labels occupy the same cell, with the widest one
+                  invisible, so every resting button is Replay-wide instead of
+                  a hardcoded size that would rot if the copy changed. */}
+              <span className="grid">
+                <span
+                  aria-hidden="true"
+                  className="col-start-1 row-start-1 invisible"
+                >
+                  {PUZZLE_ACTION_SIZING_LABEL}
+                </span>
+                <span className="col-start-1 row-start-1">
+                  {puzzleActionLabel(completed)}
+                </span>
+              </span>
+            </>
+          )}
+        </Button>
+      </div>
+    </Card>
+  );
 }
 
 function Puzzles() {
@@ -89,48 +187,16 @@ function Puzzles() {
           </Alert>
         )}
 
-        <div className="space-y-4">
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {puzzles.map((puzzle) => (
-            <Card key={puzzle.id} className={`p-6 ${puzzleCardShell}`}>
-              <div className="flex items-center justify-between">
-                <div className="flex items-center gap-4 flex-1">
-                  <div className="text-foreground">
-                    {puzzle.completed ? (
-                      <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-500" />
-                    ) : (
-                      <Circle className="w-6 h-6" />
-                    )}
-                  </div>
-
-                  <div className="flex-1">
-                    <h3 className="text-xl font-serif font-semibold text-foreground mb-1">
-                      {puzzle.title}
-                    </h3>
-                    <p className="text-sm text-muted-foreground mb-2">
-                      by {puzzle.author}
-                    </p>
-                    <div className="flex flex-wrap gap-2">
-                      <Badge variant="outline" className="text-xs">
-                        Difficulty: {puzzle.difficulty}/5
-                      </Badge>
-                      {puzzle.completed && (
-                        <Badge className="text-xs bg-green-600 dark:bg-green-700">
-                          Completed
-                        </Badge>
-                      )}
-                    </div>
-                  </div>
-                </div>
-
-                <Button
-                  onClick={() => handlePlayPuzzle(puzzle.id)}
-                  className="gap-2"
-                >
-                  <Play className="w-4 h-4" />
-                  {puzzle.completed ? "Replay" : "Solve"}
-                </Button>
-              </div>
-            </Card>
+            <PuzzleCard
+              key={puzzle.id}
+              title={puzzle.title}
+              subtitle={`by ${puzzle.author}`}
+              badge={`Difficulty: ${puzzle.difficulty}/5`}
+              completed={puzzle.completed}
+              onAction={() => handlePlayPuzzle(puzzle.id)}
+            />
           ))}
         </div>
       </section>
@@ -255,33 +321,14 @@ function GeneratedPuzzlesSection() {
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {generated.map((puzzle) => (
-          <Card className={`space-y-3 p-4 ${puzzleCardShell}`} key={puzzle.id}>
-            <div className="flex items-start gap-2">
-              {isGeneratedCompleted(puzzle.id) && (
-                <CheckCircle2 className="mt-0.5 w-5 h-5 shrink-0 text-green-600 dark:text-green-500" />
-              )}
-              <h3 className="font-serif font-semibold text-foreground">
-                {puzzle.displayName}
-              </h3>
-            </div>
-            <Button
-              className="w-full gap-2"
-              disabled={!officialBot || launchingId !== null}
-              onClick={() => void launch(puzzle)}
-            >
-              {launchingId === puzzle.id ? (
-                <>
-                  <Loader2 className="h-4 w-4 animate-spin" />
-                  Starting…
-                </>
-              ) : (
-                <>
-                  <Play className="w-4 h-4" />
-                  {isGeneratedCompleted(puzzle.id) ? "Replay" : "Solve"}
-                </>
-              )}
-            </Button>
-          </Card>
+          <PuzzleCard
+            key={puzzle.id}
+            title={puzzle.displayName}
+            completed={isGeneratedCompleted(puzzle.id)}
+            pending={launchingId === puzzle.id}
+            disabled={!officialBot || launchingId !== null}
+            onAction={() => void launch(puzzle)}
+          />
         ))}
       </div>
     </section>

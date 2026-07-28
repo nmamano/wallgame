@@ -267,6 +267,25 @@ WHAT S-ID TAUGHT:
 - Locked: no votes (S-G4), no backfill, no automated quality gating, additive migration
   only.
 
+- [x] **S-UI2 — one card, both sections** (Nil's playtest feedback on S-G3, 2026-07-28,
+      verbatim): the scripted cards always drew an empty circle while generated ones
+      only show a checkmark once solved — drop the empty circle; the "Completed" chip
+      duplicates the checkmark — remove it; make every button the width of the
+      scripted "Replay"; put the scripted puzzles in three columns too.
+      Since all four converge on one card, both sections render a single local
+      `PuzzleCard` (reviewer: keep it local — two call sites, route-specific props)
+      rather than two trees kept looking alike, per CLAUDE.md rule 4. Buttons reserve
+      "Replay" width via an invisible sizing label in the same grid cell, never a
+      hardcoded size (reviewer amendment: "Solve" is intrinsically narrower, so
+      dropping `w-full` alone would NOT have satisfied Nil's item 3); the labels live
+      in `frontend/src/lib/puzzle-action-label.ts` with a test asserting the sizing
+      label stays the widest, so rewording a button fails a test instead of silently
+      making the row ragged. Cards are full-height flex columns with the action at
+      `mt-auto`, because scripted cards carry author+difficulty and would otherwise
+      leave buttons at different heights across a grid row.
+      Author line and "Difficulty: N/5" badge RETAINED — Nil called only the
+      Completed chip redundant.
+
 ## SLICE S-G4 PICKUP (authored after S-G3 shipped at 1820993)
 
 WHAT S-G3 TAUGHT:
