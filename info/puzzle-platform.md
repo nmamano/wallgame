@@ -10,9 +10,9 @@ The /puzzles page presents 10 scripted + 39 generated puzzles (named persisted
 entities, continuously numbered, launched server-authoritatively by puzzleId);
 P1 always moves first — human-as-P2 puzzles open with the bot's scripted
 lead-in as real ply 0 — and takeback, move history, Retry, and last-move
-colors all work. Remaining product work is loop 4 (`plans/puzzle-loop-4.md`):
-G3 completion tracking — its groundwork `games.puzzle_id` shipped in S-ID —
-and G4 likes/dislikes. Last updated 2026-07-28.
+colors all work. Loop 4 (`plans/puzzle-loop-4.md`) has shipped G3 completion
+tracking (S-ID + S-G3); G4 likes/dislikes is the last piece.
+Last updated 2026-07-28.
 
 Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
 tasks: 8f1cf7e3 (engine concurrency, caused two incidents), b4c2b191
@@ -300,17 +300,26 @@ breaks it.
    `GENERATED_PUZZLES` in `shared/domain/generated-puzzles.ts` remains a
    **third**, older set from the real-game pipeline, deliberately not spread
    into `PUZZLES` - unvetted, must not ship.
-3. **Completion tracking — LOOP 4, in progress.** Which puzzles a user has
-   solved. Its groundwork SHIPPED in loop 4 S-ID (`b784ddb`): `games.puzzle_id`
-   (nullable text, FK `saved_puzzles.id`, migration 0018) is written from the
-   puzzle row the SERVER resolved during a server-authoritative launch, so a
-   completion can never be credited to a puzzle the client merely named.
-   `createRematchSession` deliberately drops it. No backfill — the 120 puzzle
-   games finished before the deploy keep NULL (Nil: the feature starts
-   counting from its deploy).
-   **Reading it: a solve is a DECISIVE win.** `buildOutcomeRank` gives BOTH
-   players rank 1 when there is no winner, so "the human's row is rank 1"
-   counts draws as solves; require the opponent's row at rank 2 too.
+3. **Completion tracking — DONE** (loop 4, S-ID `b784ddb` + S-G3 `1820993`).
+   `games.puzzle_id` (nullable text, FK `saved_puzzles.id`, migration 0018) is
+   written from the puzzle row the SERVER resolved during a
+   server-authoritative launch, so a completion can never be credited to a
+   puzzle the client merely named; `createRematchSession` deliberately drops
+   it. No backfill — games finished before the deploy keep NULL.
+   **A solve is a DECISIVE win.** `buildOutcomeRank` gives BOTH players rank 1
+   when there is no winner, so "the human's row is rank 1" counts draws as
+   solves — measured in prod, that rule would have miscredited 14 rows. The
+   shipped rule also requires the opponent's row at rank 2. It lives in
+   `server/games/puzzle-progress.ts` (derived, never stored); scripted
+   completions are client-asserted rows in `scripted_puzzle_completions`,
+   whose NULLABLE user_id records anonymous solves as usage telemetry (one
+   UNIQUE (user_id, puzzle_id) gives idempotent logged-in writes AND
+   unlimited anonymous rows, because Postgres treats NULLs as distinct).
+   **Ordering rule this established:** a finished game is PERSISTED BEFORE the
+   finished state is broadcast (`server/games/finish-sequence.ts`) — the
+   bot-move path used to broadcast first, which let a player return to
+   /puzzles before their win existed. A persistence failure still cannot
+   suppress the broadcast.
 4. **Likes / dislikes — LOOP 4**, per Nil's spec: logged-in users only, one
    vote per user/puzzle pair, changeable later, stored in the DB, and puzzles
    sortable so the most liked appear first. Needs a migration, an auth-gated

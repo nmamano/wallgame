@@ -152,6 +152,30 @@ what completion tracking needs — only the puzzle's identity is missing from it
       generated-puzzle wins and the stored scripted completions; scripted completion
       moves off localStorage; solved markers on /puzzles for logged-in users and a
       log-in invitation for anonymous ones; anonymous completions recorded for usage.
+      DONE `1820993`, deployed + prod-verified 2026-07-28: migration 0019 ran via
+      release_command (scripted_puzzle_completions with NULLABLE user_id, the named
+      UNIQUE constraint, and `game_players_user_outcome_idx` all read back from the
+      catalogs); ROUND-TRIP probe green (game `iavSz5Y2`, bot replied); anonymous
+      surface verified live — GET /progress 401, a bogus scripted id 400 "Unknown
+      puzzle", a valid one 200 and the row lands with user_id NULL (one telemetry
+      row from verification).
+      THE RULE PROVED ON REAL DATA: over puzzle-variant games the naive rank-1 rule
+      credits 71 rows and the shipped decisive rule credits 57 — a difference of
+      exactly the 14 draw rows (7 drawn games x 2), so the draw bug was real and is
+      excluded. Scoped to games with a puzzle_id both rules currently return 0,
+      because puzzle_id only started being written at S-ID's deploy and no
+      logged-in player has won one since; that is the no-backfill decision working
+      as intended, not an empty query.
+      EXPLAIN ANALYZE in production: the planner picks
+      `game_players_user_outcome_idx` (Index Cond user_id AND outcome_rank) and
+      reaches the opponent row through the existing primary key, exactly the
+      design the reviewer specified; 0.49ms over 4183 games / 8366 player rows.
+      Known and accepted: `games` is seq-scanned for `puzzle_id IS NOT NULL`
+      (4183 rows, trivial today). If puzzle games ever grow large, a partial index
+      on puzzle_id is the answer — deliberately not added now.
+      STILL OPEN: Nil's authenticated walkthrough (no test account exists) — solve
+      one generated and one scripted puzzle, confirm both markers appear and
+      survive a reload.
 
       BINDING REQUIREMENTS FOR S-G3 (Project Reviewer 1, S-ID plan gate — do not
       relitigate):
@@ -242,6 +266,47 @@ WHAT S-ID TAUGHT:
   it survives a reload and shows on another device.
 - Locked: no votes (S-G4), no backfill, no automated quality gating, additive migration
   only.
+
+## SLICE S-G4 PICKUP (authored after S-G3 shipped at 1820993)
+
+WHAT S-G3 TAUGHT:
+
+1. **A comment cannot make a property true.** Both of the reviewer's blockers were
+   places where I asserted a guarantee in prose instead of establishing it: a
+   "retry" that only reset mutation state, and an ordering claim ("mount is late
+   enough") standing in for an ordering the server did not actually provide. When
+   writing a comment that says "this is safe because X", check that X is enforced
+   somewhere.
+2. **Fix the server, not the client.** The freshness race was closed by making the
+   bot finish path persist before broadcasting — matching every other path — rather
+   than by adding client-side revalidation. Afterwards the client comment describes
+   an invariant instead of a hope.
+3. **No database here shapes the design, honestly.** Moving the rule out of the
+   route into `server/games/puzzle-progress.ts` made the real SQL reachable by a
+   container-backed test without mocking auth. Say plainly which tests cannot run
+   on auntie rather than weakening them until they can.
+4. **Verify a rule against production data, not just fixtures.** The naive-versus-
+   decisive comparison (71 vs 57) turned "the reviewer was right in principle" into
+   a measured count of rows that would have been miscredited.
+
+- Baseline: `1820993` (+ the docs commit); production runs `1820993`.
+- Goal (doc §G4, Nil's spec): a player who has BEATEN a generated puzzle can like or
+  dislike it; one changeable vote per user and puzzle; votes stored in the DB; the
+  list sortable so the most liked come first.
+- Scope decisions already made (see decisions 6 and 7 above): GENERATED puzzles only;
+  capture on the game page right after the win notification; also changeable later
+  from that puzzle's card once solved; numeric order stays the default with a "Most
+  liked" control ranking by likes minus dislikes, puzzle number as tiebreak.
+- Shape: additive `puzzle_votes` table (user_id, puzzle_id, value, timestamps; one
+  row per user+puzzle), an auth-gated write that REFUSES a vote for a puzzle the
+  caller has not solved — reuse `readPuzzleProgress`'s decisive-win rule rather than
+  restating it — vote counts on the listing, and the caller's own vote when authed.
+- Watch for: the listing endpoint is currently unauthenticated and fail-closed on
+  bad rows; adding per-caller vote state must not make it require auth for everyone.
+- Verification: the usual round-trip probe; counts read back in the fly machine; and
+  a logged-in walkthrough with Nil, since voting requires both auth and a real win.
+- Locked: no automated quality gating (votes inform Nil, they do not retire
+  puzzles), ELO untouched, additive migration only.
 
 ## SLICE-N PICKUPS
 
