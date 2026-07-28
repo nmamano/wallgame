@@ -510,6 +510,10 @@ export const botsRoute = new Hono()
         let gameConfig: CreateBotGameConfig;
         let hostIsPlayer1: boolean | undefined;
         let leadInMove: Move | null = null;
+        // Identity recorded on the game record (S-ID). Taken from the
+        // validated DB row, never from the request, so a completion can never
+        // be credited to a puzzle the server did not itself resolve.
+        let resolvedPuzzleId: string | undefined;
 
         if ("puzzleId" in parsed) {
           const rows = await db
@@ -529,6 +533,7 @@ export const botsRoute = new Hono()
             gameConfig = resolved.config;
             hostIsPlayer1 = resolved.humanIsPlayer1;
             leadInMove = resolved.leadInMove;
+            resolvedPuzzleId = row.id;
           } catch (resolveError) {
             // Fail closed: a corrupted row, a missing lead-in during the
             // migration->population gap, or an invariant violation must
@@ -574,6 +579,7 @@ export const botsRoute = new Hono()
             type: "bot",
             displayName: bot.name,
           },
+          puzzleId: resolvedPuzzleId,
         });
 
         session.players.joiner.appearance = joinerAppearance;

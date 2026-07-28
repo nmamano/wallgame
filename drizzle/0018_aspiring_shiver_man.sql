@@ -1,0 +1,2 @@
+ALTER TABLE "games" ADD COLUMN "puzzle_id" text;--> statement-breakpoint
+ALTER TABLE "games" ADD CONSTRAINT "games_puzzle_id_saved_puzzles_id_fk" FOREIGN KEY ("puzzle_id") REFERENCES "public"."saved_puzzles"("id") ON DELETE no action ON UPDATE no action;

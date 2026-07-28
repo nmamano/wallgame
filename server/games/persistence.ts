@@ -132,6 +132,9 @@ export const persistCompletedGame = async (
         boardHeight: session.config.boardHeight,
         startedAt: new Date(startedAt),
         movesCount: state.moveCount,
+        // S-ID: which saved puzzle this game was, for server-verified
+        // completion tracking. Undefined for every ordinary game.
+        puzzleId: session.puzzleId,
       })
       .onConflictDoNothing()
       .returning({ gameId: gamesTable.gameId });

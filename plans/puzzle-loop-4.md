@@ -117,9 +117,12 @@ Two kinds of completion with two different trust models, stored separately rathe
 merged into one table, so no fact is written twice:
 
 - **Generated puzzles — derived, server-verified.** `games.puzzle_id` (S-ID) plus the
-  existing `game_players.outcome_rank = 1` already say "this user won this puzzle". No
+  existing `game_players` outcome ranks already say "this user won this puzzle". No
   completion row is written; the read is a join. Anonymous solves are the same rows
   with `user_id` NULL, which is the usage data Nil asked for, for free.
+  CAUTION (reviewer, S-ID plan gate): a solve is a DECISIVE win — the human's row at
+  rank 1 AND the opponent's row at rank 2. Rank 1 alone counts draws as solves,
+  because `buildOutcomeRank` gives both players rank 1 when there is no winner.
 - **Scripted puzzles — stored, client-asserted.** A small table mirroring
   `campaign_progress`, with a NULLABLE user id so anonymous completions accumulate as
   usage events while logged-in ones stay one row per user+puzzle (partial unique index
@@ -132,7 +135,7 @@ what completion tracking needs — only the puzzle's identity is missing from it
 
 ## Slice plan
 
-- [ ] **S-ID — puzzle identity on the game record.** Additive `puzzle_id` column on
+- [x] **S-ID — puzzle identity on the game record.** Additive `puzzle_id` column on
       `games` (nullable, FK `saved_puzzles.id`), threaded from the server-authoritative
       puzzle launch through the game session into `persistCompletedGame`. No
       user-visible change; this is the groundwork doc §G explicitly deferred to G3.
@@ -140,6 +143,24 @@ what completion tracking needs — only the puzzle's identity is missing from it
       generated-puzzle wins and the stored scripted completions; scripted completion
       moves off localStorage; solved markers on /puzzles for logged-in users and a
       log-in invitation for anonymous ones; anonymous completions recorded for usage.
+
+      BINDING REQUIREMENTS FOR S-G3 (Project Reviewer 1, S-ID plan gate — do not
+      relitigate):
+      1. **A solve is a DECISIVE win, not rank 1.** `buildOutcomeRank` in
+         `server/games/persistence.ts` assigns rank 1 to BOTH players when `winner`
+         is absent, so "the human's row is rank 1" counts every DRAW as a solve.
+         Require decisive evidence: the human's row is rank 1 AND the opponent's row
+         for the same game is rank 2. Ship a draw regression test.
+      2. **Index:** verify query planning for the games ⋈ game_players join; add an
+         index beginning with `game_players.user_id` if the existing
+         `(game_id, player_order)` primary key proves insufficient (the join can then
+         reach `games` by its own primary key).
+      3. **The persistence carve-out means "counted decisive puzzle wins", not every
+         UI finish:** a game with `moveCount < 2` is globally treated as aborted and
+         never persisted. Current generated positions have 3-6 move attack distances,
+         so no legitimate one-ply puzzle exists today — but preserve an invariant or
+         regression if future curation could introduce one.
+
 - [ ] **S-G4 — likes / dislikes (generated puzzles only).** `puzzle_votes` table (one
       changeable row per user+puzzle), vote allowed only for a puzzle the user has
       beaten, captured on the game page right after the win notification and changeable

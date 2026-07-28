@@ -89,6 +89,17 @@ export interface GameSession {
   startedAt?: number | null;
   updatedAt: number;
   config: GameConfiguration;
+  /**
+   * Set only by a server-authoritative saved-puzzle launch, to the id of the
+   * puzzle row the server itself resolved (S-ID). Carries the puzzle's
+   * identity from launch to `persistCompletedGame`, which writes it onto the
+   * game record so completion can be verified server-side later.
+   *
+   * Deliberately NOT propagated by `createRematchSession`: a rematch is a
+   * different game (seats swap, and for freestyle the layout can refresh), so
+   * crediting it as the original puzzle would be wrong.
+   */
+  puzzleId?: string;
   status: SessionStatus;
   matchType: MatchType;
   cancelled: boolean;
@@ -473,6 +484,8 @@ export const createGameSession = (args: {
     type: PlayerConfigType;
     displayName?: string;
   };
+  /** Server-resolved saved-puzzle id; see `GameSession.puzzleId` (S-ID). */
+  puzzleId?: string;
 }): GameCreationResult => {
   const completeConfig = buildCompleteConfig(args.config);
   const id = nanoid(8); // Short, shareable game ID (62^8 = 218 trillion combinations)
@@ -507,6 +520,7 @@ export const createGameSession = (args: {
     startedAt: null,
     updatedAt: now,
     config: completeConfig,
+    puzzleId: args.puzzleId,
     status: joinerReady ? "ready" : "waiting",
     matchType: args.matchType,
     cancelled: false,
@@ -1191,6 +1205,10 @@ export const createRematchSession = (
   const hostPlayerId = previous.players.host.playerId;
   const joinerPlayerId = previous.players.joiner.playerId;
 
+  // NOTE: `puzzleId` is deliberately NOT carried over (S-ID). A rematch swaps
+  // seats and starts a different game, so crediting it as a solve of the
+  // original puzzle would be wrong — and the server accepts a rematch offer
+  // even where the UI suppresses one for puzzles.
   const newSession: GameSession = {
     id: newId,
     seriesId: previous.seriesId ?? previous.id,
