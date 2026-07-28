@@ -139,6 +139,15 @@ what completion tracking needs — only the puzzle's identity is missing from it
       `games` (nullable, FK `saved_puzzles.id`), threaded from the server-authoritative
       puzzle launch through the game session into `persistCompletedGame`. No
       user-visible change; this is the groundwork doc §G explicitly deferred to G3.
+      DONE `b784ddb`, deployed + prod-verified 2026-07-28: migration 0018 ran via
+      release_command (column `text`/nullable, FK `games_puzzle_id_saved_puzzles_id_fk`
+      with no-action delete, both read back from information_schema/pg_constraint);
+      ROUND-TRIP probe green (puzzle game `fBlMITUq` on Generated Puzzle 1 — survived
+      BGS init, human move accepted, BOT REPLIED, resigned) and its row reads back
+      `puzzle_id = uN9TKDUp0T`, joining to "Generated Puzzle 1"; control ordinary bot
+      game `EqX78gw7` driven to the SAME counted persistence threshold (both players
+      moved, then resigned) and its row EXISTS with `puzzle_id` NULL — so the NULL is
+      evidence, not a missing row.
 - [ ] **S-G3 — completion tracking.** Auth-gated progress read merging the derived
       generated-puzzle wins and the stored scripted completions; scripted completion
       moves off localStorage; solved markers on /puzzles for logged-in users and a
@@ -191,6 +200,48 @@ or scope goes to Nil rather than being resolved in-loop.
 - Verification: deploy, then a prod round-trip probe that launches a puzzle by id,
   plays to a finish, and reads the row back inside the fly machine showing puzzle_id set.
 - Locked: no completion reads, no votes, no UI, no backfill of existing games.
+
+## SLICE S-G3 PICKUP (authored after S-ID shipped at b784ddb)
+
+WHAT S-ID TAUGHT:
+
+1. **Do not reuse another feature's encoding without reading its edge cases.**
+   `outcome_rank` answers "how did each player place", and rank 1 for BOTH players is
+   its perfectly sensible encoding of a draw. Reading it as "did this player win" is
+   what would have shipped the draw bug. Whenever S-G3 borrows an existing column,
+   find the case where its meaning is not what the new feature assumes.
+2. **A test for a deliberate omission must be proven non-vacuous.** The rematch test
+   passes trivially if the field is simply never set anywhere. Temporarily introduce
+   the behaviour you are forbidding, watch the test fail, then revert — cheap, and it
+   converts an assertion into evidence.
+3. **Absence-of-value evidence needs the row to exist.** Reviewer's catch: reading NULL
+   proves nothing if the game was never persisted. Drive control cases to the same
+   counted threshold (both players moved, counted result) before reading them.
+4. **The loop-3 probe harness still runs unmodified** — launch by puzzleId, wait 6s
+   past connect, submit a cat move by trying legal targets, wait for the bot's reply,
+   resign. Keep that shape; a 0-move probe cannot see a dead engine.
+
+- Baseline: `b784ddb` (+ this docs commit); production runs `b784ddb`.
+- Goal (doc §G3): a logged-in player sees which puzzles they have solved, on /puzzles,
+  for BOTH sets — generated (server-verified) and scripted (client-asserted).
+- Generated read: join `games` (puzzle_id NOT NULL) to `game_players`, requiring a
+  DECISIVE win — the user's row at rank 1 AND the opponent's row at rank 2 for the same
+  game (binding requirement 1 above; ship the draw regression test). Check query
+  planning and add the `game_players.user_id` index if needed.
+- Scripted: new table (nullable user id, partial unique index where user_id is not
+  null), an additive migration, a completion endpoint modeled on
+  `server/routes/campaign.ts` (which is the existing client-asserted precedent), and
+  validation of the puzzle id against the known scripted set. Anonymous writes are
+  accepted for usage data — keep them cheap and consider a light rate limit.
+- Frontend: `frontend/src/hooks/use-puzzle-progress.ts` is the localStorage hook to
+  replace; it is consumed by `puzzles.index.tsx` (~49, `isCompleted` per card) and
+  `puzzles.$id.tsx` (~32/56, `markCompleted` on solve). Anonymous visitors see no
+  markers plus a log-in invitation (Nil's decision 2).
+- Verification: prod round-trip probe as ever, plus a logged-in check walked through
+  with Nil (there is no test account) — solve a puzzle, see the marker appear, confirm
+  it survives a reload and shows on another device.
+- Locked: no votes (S-G4), no backfill, no automated quality gating, additive migration
+  only.
 
 ## SLICE-N PICKUPS
 

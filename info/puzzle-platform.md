@@ -10,9 +10,9 @@ The /puzzles page presents 10 scripted + 39 generated puzzles (named persisted
 entities, continuously numbered, launched server-authoritatively by puzzleId);
 P1 always moves first — human-as-P2 puzzles open with the bot's scripted
 lead-in as real ply 0 — and takeback, move history, Retry, and last-move
-colors all work. Remaining product work is loop 4: G3 completion tracking and
-G4 likes/dislikes (see §G and `plans/puzzle-polish-loop.md` for pickups).
-Last updated 2026-07-28.
+colors all work. Remaining product work is loop 4 (`plans/puzzle-loop-4.md`):
+G3 completion tracking — its groundwork `games.puzzle_id` shipped in S-ID —
+and G4 likes/dislikes. Last updated 2026-07-28.
 
 Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
 tasks: 8f1cf7e3 (engine concurrency, caused two incidents), b4c2b191
@@ -300,9 +300,17 @@ breaks it.
    `GENERATED_PUZZLES` in `shared/domain/generated-puzzles.ts` remains a
    **third**, older set from the real-game pipeline, deliberately not spread
    into `PUZZLES` - unvetted, must not ship.
-3. **Completion tracking — LOOP 4.** Which puzzles a user has solved. Needs a
-   `puzzleId` on the game record for server-verified completion (see below);
-   the server-authoritative puzzleId launch (S-P1) is the groundwork.
+3. **Completion tracking — LOOP 4, in progress.** Which puzzles a user has
+   solved. Its groundwork SHIPPED in loop 4 S-ID (`b784ddb`): `games.puzzle_id`
+   (nullable text, FK `saved_puzzles.id`, migration 0018) is written from the
+   puzzle row the SERVER resolved during a server-authoritative launch, so a
+   completion can never be credited to a puzzle the client merely named.
+   `createRematchSession` deliberately drops it. No backfill — the 120 puzzle
+   games finished before the deploy keep NULL (Nil: the feature starts
+   counting from its deploy).
+   **Reading it: a solve is a DECISIVE win.** `buildOutcomeRank` gives BOTH
+   players rank 1 when there is no winner, so "the human's row is rank 1"
+   counts draws as solves; require the opponent's row at rank 2 too.
 4. **Likes / dislikes — LOOP 4**, per Nil's spec: logged-in users only, one
    vote per user/puzzle pair, changeable later, stored in the DB, and puzzles
    sortable so the most liked appear first. Needs a migration, an auth-gated
@@ -320,7 +328,8 @@ already knows which one it clicked, so the id can ride in the URL
 A `puzzleId` on the game is needed only for **server-verified completion tracking**, since
 a client claiming "I solved puzzle 7" is forgeable. Add it when completion tracking is
 built, not before - these are two requirements and conflating them is what produced the
-position-matching code below.
+position-matching code below. (Added in loop 4 S-ID, `b784ddb`, exactly when completion
+tracking began; display still rides the client handshake and needs nothing on the record.)
 
 This replaces `findGeneratedCandidate()`, which resolves a game back to its candidate by
 matching the board position. That was written to avoid touching the game schema, which was
