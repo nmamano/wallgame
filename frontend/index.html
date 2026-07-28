@@ -64,22 +64,29 @@
       }
     </style>
 
-    <!-- Google Analytics (GA4) -->
-    <script
-      async
-      src="https://www.googletagmanager.com/gtag/js?id=G-QCJNMJD21N"
-    ></script>
+    <!-- Google Analytics (GA4). Only loads on the production host, so dev
+         servers, previews, and localhost don't pollute the real numbers. -->
     <script>
-      window.dataLayer = window.dataLayer || [];
-      function gtag() {
-        dataLayer.push(arguments);
+      if (
+        location.hostname === "wallgame.io" ||
+        location.hostname === "www.wallgame.io"
+      ) {
+        window.dataLayer = window.dataLayer || [];
+        window.gtag = function () {
+          window.dataLayer.push(arguments);
+        };
+        gtag("js", new Date());
+        gtag("config", "G-QCJNMJD21N", {
+          anonymize_ip: true,
+          allow_google_signals: false,
+          allow_ad_personalization_signals: false,
+        });
+
+        const tag = document.createElement("script");
+        tag.async = true;
+        tag.src = "https://www.googletagmanager.com/gtag/js?id=G-QCJNMJD21N";
+        document.head.appendChild(tag);
       }
-      gtag("js", new Date());
-      gtag("config", "G-QCJNMJD21N", {
-        anonymize_ip: true,
-        allow_google_signals: false,
-        allow_ad_personalization_signals: false,
-      });
     </script>
   </head>
 
