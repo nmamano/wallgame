@@ -229,6 +229,9 @@ replies to a move); 0-move probes and listings are blind to engine death.
       Nil's preference-sensitive eyeball (his own color prefs, logged in) is
       the final acceptance check.
 
+NIL ACCEPTED all visual fixes 2026-07-28 (arrow color S-P3, solved-card
+wrap S-P2C) — loop 3 fully accepted, nothing pending.
+
 LOOP 3 CLOSED (2026-07-26): S-COPY, S-P1 (+fix-forward), S-MH (fixed by
 S-P1, Nil-confirmed), S-UI, S-P2 (A/B/C), S-P3 — all shipped, reviewed by
 Project Reviewer 1 at every gate, and production-verified. Loop 4 pointers:
