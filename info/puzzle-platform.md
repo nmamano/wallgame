@@ -89,6 +89,19 @@ tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"
 # survive >5s past connect, play a move, get the bot's reply, resign).
 ```
 
+**If `desktop-053vvpl-1` (WSL) is unreachable entirely** (ssh hangs, tailscale
+shows it offline while `desktop-053vvpl` — the WINDOWS side of the same box —
+is online): the WSL instance has stopped (it does NOT auto-start, and nothing
+restarts the bot). Recovery from auntie, no human at the desk needed
+(2026-07-28 outage):
+
+```
+ssh nilo@desktop-053vvpl "wsl -d Ubuntu -u nilo -- tmux new-session -d -s bot-client -n bot-client \"bash ~/run_transformer_bot.sh\""
+```
+
+The tmux server keeps WSL alive. Then verify attach + listing + the round-trip
+probe as below.
+
 **The attach line and /api/bots listings are BLIND to a dead engine.** Incident
 2026-07-26: the dw-puzzle engine segfaulted (exit 139, ~21:28Z, ordinary
 serialized traffic — see board task 8f1cf7e3) while the CLIENT stayed attached
