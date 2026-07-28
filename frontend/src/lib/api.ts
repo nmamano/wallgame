@@ -1,7 +1,9 @@
 import {
   savedPuzzlesResponseSchema,
+  puzzleProgressResponseSchema,
   type SavedPuzzle,
   type SavedPuzzlesResponse,
+  type PuzzleProgressResponse,
 } from "../../../shared/contracts/puzzles";
 import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/index";
@@ -317,6 +319,30 @@ export const fetchShowcaseGames = async (
 export const fetchSavedPuzzles = async (): Promise<SavedPuzzlesResponse> => {
   const raw = await handleResponse<unknown>(api.puzzles.$get());
   return savedPuzzlesResponseSchema.parse(raw);
+};
+
+/** Shared so the game page can invalidate what the puzzles page reads. */
+export const PUZZLE_PROGRESS_QUERY_KEY = ["puzzle-progress"] as const;
+
+/**
+ * Which puzzles the logged-in user has solved. Requires authentication: the
+ * endpoint answers 401 for anonymous callers, so callers must gate the query
+ * on a settled, authenticated user rather than firing it while browsing
+ * logged out.
+ */
+export const fetchPuzzleProgress =
+  async (): Promise<PuzzleProgressResponse> => {
+    const raw = await handleResponse<unknown>(api.puzzles.progress.$get());
+    return puzzleProgressResponseSchema.parse(raw);
+  };
+
+/** Report a scripted-puzzle solve (client-asserted; anonymous is allowed). */
+export const reportScriptedPuzzleCompletion = async (
+  puzzleId: string,
+): Promise<void> => {
+  await handleResponse<SuccessResponse>(
+    api.puzzles["scripted-completions"].$post({ json: { puzzleId } }),
+  );
 };
 
 export const fetchBots = async (args: {

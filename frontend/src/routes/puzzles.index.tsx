@@ -46,7 +46,7 @@ function ratingToDifficulty(rating: number): number {
 
 function Puzzles() {
   const navigate = useNavigate();
-  const { isCompleted } = usePuzzleProgress();
+  const { isScriptedCompleted, isLoggedIn } = usePuzzleProgress();
 
   const handlePlayPuzzle = (puzzleId: string) => {
     void navigate({ to: `/puzzles/${puzzleId}` });
@@ -60,7 +60,7 @@ function Puzzles() {
       title: puzzle.title,
       author: puzzle.author,
       difficulty: ratingToDifficulty(puzzle.difficulty),
-      completed: isCompleted(puzzle.id),
+      completed: isScriptedCompleted(puzzle.id),
     };
   });
 
@@ -80,12 +80,14 @@ function Puzzles() {
           Scripted Puzzles
         </h2>
 
-        <Alert className="mb-6 bg-card/50 border-border/50">
-          <Info className="h-4 w-4" />
-          <AlertDescription className="text-sm text-muted-foreground">
-            Your scripted-puzzle progress is saved locally in this browser.
-          </AlertDescription>
-        </Alert>
+        {!isLoggedIn && (
+          <Alert className="mb-6 bg-card/50 border-border/50">
+            <Info className="h-4 w-4" />
+            <AlertDescription className="text-sm text-muted-foreground">
+              Log in to keep track of the puzzles you have solved.
+            </AlertDescription>
+          </Alert>
+        )}
 
         <div className="space-y-4">
           {puzzles.map((puzzle) => (
@@ -148,6 +150,7 @@ function GeneratedPuzzlesSection() {
   const navigate = useNavigate();
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const settings = useSettings(!!userData?.user, userPending);
+  const { isGeneratedCompleted } = usePuzzleProgress();
   const puzzlesQuery = useQuery({
     queryKey: ["saved-puzzles"],
     queryFn: fetchSavedPuzzles,
@@ -253,7 +256,10 @@ function GeneratedPuzzlesSection() {
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
         {generated.map((puzzle) => (
           <Card className={`space-y-3 p-4 ${puzzleCardShell}`} key={puzzle.id}>
-            <div>
+            <div className="flex items-start gap-2">
+              {isGeneratedCompleted(puzzle.id) && (
+                <CheckCircle2 className="mt-0.5 w-5 h-5 shrink-0 text-green-600 dark:text-green-500" />
+              )}
               <h3 className="font-serif font-semibold text-foreground">
                 {puzzle.displayName}
               </h3>
@@ -271,7 +277,7 @@ function GeneratedPuzzlesSection() {
               ) : (
                 <>
                   <Play className="w-4 h-4" />
-                  Solve
+                  {isGeneratedCompleted(puzzle.id) ? "Replay" : "Solve"}
                 </>
               )}
             </Button>

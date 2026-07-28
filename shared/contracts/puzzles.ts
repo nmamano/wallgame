@@ -135,3 +135,37 @@ export const mapSavedPuzzleRows = (rows: unknown[]): SavedPuzzle[] =>
       displayName: row.displayName,
       config: row.config,
     }));
+
+// ============================================================================
+// Completion tracking (S-G3)
+// ============================================================================
+
+/**
+ * Which puzzles the caller has solved, kept as TWO arrays on purpose: the id
+ * namespaces differ (generated puzzles are nanoid rows in saved_puzzles,
+ * scripted ones are "1".."10" from the domain set) and so do the trust
+ * models — a generated solve is server-verified from the game record, a
+ * scripted one is client-asserted. Merging them would invite a later reader
+ * to treat scripted completions as verified.
+ *
+ * Both arrays are sorted, so responses are deterministic for caching and
+ * tests.
+ */
+export const puzzleProgressResponseSchema = z.object({
+  solvedGeneratedIds: z.array(nonempty),
+  solvedScriptedIds: z.array(nonempty),
+});
+
+/** Body of the client-asserted scripted-completion write. */
+export const scriptedCompletionRequestSchema = z
+  .object({
+    puzzleId: z.string().min(1).max(32),
+  })
+  .strict();
+
+export type PuzzleProgressResponse = z.infer<
+  typeof puzzleProgressResponseSchema
+>;
+export type ScriptedCompletionRequest = z.infer<
+  typeof scriptedCompletionRequestSchema
+>;

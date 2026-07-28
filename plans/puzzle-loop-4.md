@@ -148,7 +148,7 @@ what completion tracking needs — only the puzzle's identity is missing from it
       game `EqX78gw7` driven to the SAME counted persistence threshold (both players
       moved, then resigned) and its row EXISTS with `puzzle_id` NULL — so the NULL is
       evidence, not a missing row.
-- [ ] **S-G3 — completion tracking.** Auth-gated progress read merging the derived
+- [x] **S-G3 — completion tracking.** Auth-gated progress read merging the derived
       generated-puzzle wins and the stored scripted completions; scripted completion
       moves off localStorage; solved markers on /puzzles for logged-in users and a
       log-in invitation for anonymous ones; anonymous completions recorded for usage.

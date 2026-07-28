@@ -1,5 +1,5 @@
 import { useState, useEffect, useMemo, useRef, useCallback } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useQuery, useQueryClient } from "@tanstack/react-query";
 import { useNavigate, useRouterState } from "@tanstack/react-router";
 import { type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
@@ -42,6 +42,7 @@ import {
   playPuzzle,
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
+import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { sounds, play } from "@/lib/sounds";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -268,6 +269,7 @@ function buildSeatViewsFromSnapshot(
 
 export function useGamePageController(gameId: string) {
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
+  const queryClient = useQueryClient();
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
   const navigate = useNavigate();
@@ -3171,6 +3173,24 @@ export function useGamePageController(gameId: string) {
       addSystemMessage(`Game drawn (${formatWinReason(result.reason)}).`);
     }
   }, [gameState, addSystemMessage, sfxEnabledRef]);
+
+  /**
+   * A decisive puzzle win may have just added a solved puzzle, so drop the
+   * cached progress (S-G3). An invalidation is all the client may do: the
+   * completion is derived server-side from the persisted game, so marking it
+   * here would be claiming a solve rather than having earned one.
+   *
+   * This is safe to do immediately because the server persists a finished
+   * game before it broadcasts the finish, so the state that triggered this
+   * effect already implies the row exists.
+   */
+  useEffect(() => {
+    if (!isPuzzleGame) return;
+    if (gameState?.status !== "finished") return;
+    const winner = gameState.result?.winner;
+    if (!winner || winner !== primaryLocalPlayerId) return;
+    invalidatePuzzleProgress(queryClient);
+  }, [isPuzzleGame, gameState, primaryLocalPlayerId, queryClient]);
 
   // Clear annotations when turn changes (move is committed)
   const prevTurnRef = useRef(gameState?.turn);

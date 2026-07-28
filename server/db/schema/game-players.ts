@@ -1,4 +1,10 @@
-import { pgTable, integer, varchar, primaryKey } from "drizzle-orm/pg-core";
+import {
+  pgTable,
+  integer,
+  varchar,
+  primaryKey,
+  index,
+} from "drizzle-orm/pg-core";
 import { gamesTable } from "./games";
 import { usersTable } from "./users";
 import { builtInBotsTable } from "./built-in-bots";
@@ -25,5 +31,19 @@ export const gamePlayersTable = pgTable(
     outcomeRank: integer("outcome_rank").notNull(), // e.g., 1 for winner
     outcomeReason: varchar("outcome_reason", { length: 255 }).notNull(), // "timeout", "resignation", "knockout", "agreement", "tie", "abandoned"
   },
-  (table) => [primaryKey({ columns: [table.gameId, table.playerOrder] })],
+  (table) => [
+    primaryKey({ columns: [table.gameId, table.playerOrder] }),
+    /**
+     * Puzzle completion (S-G3) asks "which games did THIS user win", and the
+     * primary key begins with game_id, so it cannot find one user's rows
+     * without a scan as history grows. This index leads with user_id; the
+     * opponent's row is then reached through the primary key, since a game
+     * has only two rows.
+     */
+    index("game_players_user_outcome_idx").on(
+      table.userId,
+      table.outcomeRank,
+      table.gameId,
+    ),
+  ],
 );

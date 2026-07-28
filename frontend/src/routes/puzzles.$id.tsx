@@ -29,7 +29,8 @@ function PuzzlePage() {
   const { id } = Route.useParams();
   const navigate = useNavigate();
   const puzzle = PUZZLES[id];
-  const { markCompleted } = usePuzzleProgress();
+  const { markScriptedCompleted, retryScriptedCompletion } =
+    usePuzzleProgress();
 
   // Redirect if puzzle doesn't exist
   useEffect(() => {
@@ -53,7 +54,8 @@ function PuzzlePage() {
       key={id}
       puzzle={puzzle}
       puzzleId={id}
-      onSolved={() => markCompleted(id)}
+      onSolved={() => markScriptedCompleted(id)}
+      onRetrySavingProgress={retryScriptedCompletion}
     />
   );
 }
@@ -62,12 +64,15 @@ interface PuzzlePageContentProps {
   puzzle: (typeof PUZZLES)[string];
   puzzleId: string;
   onSolved: () => void;
+  /** Non-null only when saving this solve failed; calling it tries again. */
+  onRetrySavingProgress: (() => void) | null;
 }
 
 function PuzzlePageContent({
   puzzle,
   puzzleId,
   onSolved,
+  onRetrySavingProgress,
 }: PuzzlePageContentProps) {
   const navigate = useNavigate();
   const {
@@ -326,6 +331,18 @@ function PuzzlePageContent({
             <p className="text-sm text-muted-foreground mt-2">
               Excellent work! Ready for the next challenge?
             </p>
+            {onRetrySavingProgress && (
+              <div className="mt-3 flex flex-wrap items-center gap-2 text-sm text-destructive">
+                <span>We could not save this solve.</span>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={onRetrySavingProgress}
+                >
+                  Try again
+                </Button>
+              </div>
+            )}
           </div>
         </div>
       </Card>

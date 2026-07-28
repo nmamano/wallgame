@@ -30,6 +30,7 @@ import {
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
+import { persistThenBroadcastFinish } from "../games/finish-sequence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
 import type {
@@ -396,21 +397,25 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
     ply: bgs.currentPly,
   });
 
-  // Handle game end - can broadcast immediately since no BGS update needed
+  // Handle game end. The finished state is broadcast only AFTER the game has
+  // been persisted, matching every other finish path: puzzle completion is
+  // derived from the stored game, so a client must not be able to ask what it
+  // has solved before the row exists (S-G3).
   if (newState.status === "finished") {
-    broadcast(sessionId, {
-      type: "state",
-      state: getSerializedState(sessionId),
-    });
     await processRatingUpdate(sessionId);
-    try {
-      await persistCompletedGame(getSession(sessionId));
-    } catch (error) {
-      console.error("[persistence] failed after bot move", {
-        error,
-        sessionId,
-      });
-    }
+    await persistThenBroadcastFinish({
+      persist: () => persistCompletedGame(getSession(sessionId)),
+      broadcast: () =>
+        broadcast(sessionId, {
+          type: "state",
+          state: getSerializedState(sessionId),
+        }),
+      onPersistError: (error) =>
+        console.error("[persistence] failed after bot move", {
+          error,
+          sessionId,
+        }),
+    });
     broadcastLiveGamesRemove(sessionId);
     notifyBotsGameEnded(sessionId);
     sendMatchStatus(sessionId);
