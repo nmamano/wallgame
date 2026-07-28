@@ -5,12 +5,18 @@ and everything still to do. Companion to `info/puzzle-generation.md`, which is t
 research narrative (how we got here, and the negative result about real-game corpora).
 **This file is the one to read before picking the work up.**
 
-Status: **playable but not a feature.** Generated candidates can be played against the
-oracle in production, and Nil has confirmed the positions themselves are decent
-("they all seem winnable, with a bit of thinking"). Everything else - discoverability,
-retry, likes, merging with the existing puzzles - is open. Last updated 2026-07-26.
+Status: **shipped as a first-class feature** (loops 1-3, all Nil-playtested).
+The /puzzles page presents 10 scripted + 39 generated puzzles (named persisted
+entities, continuously numbered, launched server-authoritatively by puzzleId);
+P1 always moves first — human-as-P2 puzzles open with the bot's scripted
+lead-in as real ply 0 — and takeback, move history, Retry, and last-move
+colors all work. Remaining product work is loop 4: G3 completion tracking and
+G4 likes/dislikes (see §G and `plans/puzzle-polish-loop.md` for pickups).
+Last updated 2026-07-28.
 
-Isomux task: **638f40e6** (the only open puzzle task; everything else is folded in here).
+Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
+tasks: 8f1cf7e3 (engine concurrency, caused two incidents), b4c2b191
+(graceful losing), 87e711cb (WSL/bot autostart) — all Nil-side or unassigned.
 
 ---
 
@@ -285,22 +291,22 @@ breaks it.
   Docker - the bot-6/bot-7 files fall back to a DB-less mode, so protocol-level
   server tests ARE runnable here despite the no-backend rule for the UI).
 
-### G. Make it a first-class feature
+### G. Make it a first-class feature — G1/G2 DONE (loop 2); G3/G4 = loop 4
 
-The big one. Today `/generated-candidates` is **unlinked and unreachable** without typing
-the URL, and there are two unrelated puzzle systems.
-
-1. **Discoverability** - a real entry point in the site navigation.
-2. **Cohesion with the existing puzzles.** `shared/domain/puzzles.ts` holds 10
-   hand-authored puzzles on the old scripted model (fixed move list, wrong-move
-   detection). Decide whether they migrate to play-vs-oracle or stay scripted, and how one
-   puzzle list can present both. `GENERATED_PUZZLES` in
-   `shared/domain/generated-puzzles.ts` is a **third**, older set from the real-game
-   pipeline, deliberately not spread into `PUZZLES` - unvetted, must not ship.
-3. **Completion tracking** - which puzzles a user has solved.
-4. **Likes / dislikes**, per Nil's spec: logged-in users only, one vote per
-   user/puzzle pair, changeable later, stored in the DB, and puzzles sortable so the most
-   liked appear first. Needs a migration, an auth-gated endpoint, and UI.
+1. **Discoverability — DONE** (S-G2, `bacc0ce`): one /puzzles page in the site
+   nav presents both sets; /generated-candidates redirects there.
+2. **Cohesion — DONE** (S-G2 + loop 3 S-UI): the 10 scripted puzzles stay on
+   their scripted model but share the page with unified card treatment.
+   `GENERATED_PUZZLES` in `shared/domain/generated-puzzles.ts` remains a
+   **third**, older set from the real-game pipeline, deliberately not spread
+   into `PUZZLES` - unvetted, must not ship.
+3. **Completion tracking — LOOP 4.** Which puzzles a user has solved. Needs a
+   `puzzleId` on the game record for server-verified completion (see below);
+   the server-authoritative puzzleId launch (S-P1) is the groundwork.
+4. **Likes / dislikes — LOOP 4**, per Nil's spec: logged-in users only, one
+   vote per user/puzzle pair, changeable later, stored in the DB, and puzzles
+   sortable so the most liked appear first. Needs a migration, an auth-gated
+   endpoint, and UI.
 
 **Nil's decision (2026-07-26): just give puzzles names and save them.** Generate a set,
 give each a name or number, persist it under that name. Puzzles are entities, not a
