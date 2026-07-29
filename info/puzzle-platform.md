@@ -320,10 +320,19 @@ breaks it.
    bot-move path used to broadcast first, which let a player return to
    /puzzles before their win existed. A persistence failure still cannot
    suppress the broadcast.
-4. **Likes / dislikes — LOOP 4**, per Nil's spec: logged-in users only, one
-   vote per user/puzzle pair, changeable later, stored in the DB, and puzzles
-   sortable so the most liked appear first. Needs a migration, an auth-gated
-   endpoint, and UI.
+4. **Likes / dislikes — DONE** (loop 4, S-G4). Generated puzzles only. A vote is
+   EARNED: the write refuses a puzzle the caller has not DECISIVELY won, using
+   the same query as completion (`hasSolvedGeneratedPuzzle`), so the rule lives
+   in one place. `puzzle_votes` (migration 0021) keys on (user_id, puzzle_id)
+   with `CHECK (value in (-1, 1))` and a NOT NULL user id — the one table here
+   that has no anonymous case, because an anonymous vote cannot be earned.
+   `{value: 1 | -1 | null}`, where null deletes the row. Captured on the game
+   page right after a win, changeable later from the puzzle's card. The
+   listing stays unauthenticated and merely gains `myVote` for a logged-in
+   caller; counts are one grouped query plus at most one for the caller's own
+   votes. Numeric order is the default; "Most liked" sorts client-side by
+   likes minus dislikes with `sortIndex` as the tiebreak. Votes inform
+   curation only — nothing retires a puzzle automatically.
 5. **The solo campaign uses the same model — DONE** (loop 4, S-CAMP, board
    task `98a0e022`). Campaign levels are played entirely client-side against a
    local AI, so their completion is client-asserted like the scripted puzzles

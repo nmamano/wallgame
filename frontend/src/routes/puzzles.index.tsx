@@ -11,17 +11,28 @@ import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { useSettings } from "@/hooks/use-settings";
 import {
+  SAVED_PUZZLES_QUERY_KEY,
   fetchBots,
   fetchSavedPuzzles,
   playPuzzle,
   userQueryOptions,
 } from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
+import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
+import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
 } from "@/lib/puzzle-action-label";
-import type { SavedPuzzle } from "../../../shared/contracts/puzzles";
+import {
+  PUZZLE_SORT_OPTIONS,
+  sortPuzzles,
+  type PuzzleSortMode,
+} from "@/lib/puzzle-sort";
+import type {
+  PuzzleVoteState,
+  SavedPuzzle,
+} from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/puzzles/")({
   component: Puzzles,
@@ -59,6 +70,18 @@ interface PuzzleCardProps {
   /** Set only while this card's action is in flight. */
   pending?: boolean;
   disabled?: boolean;
+  /**
+   * Vote state for a generated puzzle. Scripted cards omit it entirely —
+   * votes cover the generated set only.
+   */
+  votes?: PuzzleVoteState;
+  /**
+   * Given only when this player earned a vote here (logged in and solved);
+   * without it the counts still render, read-only.
+   */
+  onVote?: (value: 1 | -1 | null) => void;
+  votePending?: boolean;
+  voteFailed?: boolean;
 }
 
 /**
@@ -79,6 +102,10 @@ function PuzzleCard({
   badge,
   pending = false,
   disabled = false,
+  votes,
+  onVote,
+  votePending = false,
+  voteFailed = false,
 }: PuzzleCardProps) {
   return (
     // Text and action sit side by side: a stacked card left the button as a
@@ -106,6 +133,19 @@ function PuzzleCard({
           <Badge variant="outline" className="mt-2 text-xs">
             {badge}
           </Badge>
+        )}
+        {votes && (
+          // Counts show on every generated card, including for visitors who
+          // cannot vote — otherwise a "Most liked" sort would rank by
+          // something nobody can see.
+          <div className="mt-2">
+            <PuzzleVoteControl
+              {...votes}
+              onVote={onVote}
+              pending={votePending}
+              failed={voteFailed}
+            />
+          </div>
         )}
       </div>
 
@@ -220,10 +260,13 @@ function Puzzles() {
 function GeneratedPuzzlesSection() {
   const navigate = useNavigate();
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
-  const settings = useSettings(!!userData?.user, userPending);
+  const isLoggedIn = !!userData?.user;
+  const settings = useSettings(isLoggedIn, userPending);
   const { isGeneratedCompleted } = usePuzzleProgress();
+  const [sortMode, setSortMode] = useState<PuzzleSortMode>("number");
+  const { voteFor, isVotePending, isVoteFailed } = usePuzzleCardVotes();
   const puzzlesQuery = useQuery({
-    queryKey: ["saved-puzzles"],
+    queryKey: SAVED_PUZZLES_QUERY_KEY,
     queryFn: fetchSavedPuzzles,
   });
   const [launchingId, setLaunchingId] = useState<string | null>(null);
@@ -284,15 +327,32 @@ function GeneratedPuzzlesSection() {
   };
 
   const generated = puzzlesQuery.data?.puzzles ?? [];
+  // A copy, always: this is cached query data.
+  const ordered = sortPuzzles(generated, sortMode);
 
   return (
     <section>
       <h2 className="text-2xl font-serif font-semibold text-foreground mb-2">
         Generated Puzzles
       </h2>
-      <p className="text-sm text-muted-foreground mb-6">
-        Fresh 6×6 positions to play against PuzzleBot.
-      </p>
+      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
+        <p className="text-sm text-muted-foreground">
+          Fresh 6×6 positions to play against PuzzleBot.
+        </p>
+        <div className="flex items-center gap-1">
+          {PUZZLE_SORT_OPTIONS.map((option) => (
+            <Button
+              key={option.value}
+              size="sm"
+              variant={sortMode === option.value ? "default" : "outline"}
+              aria-pressed={sortMode === option.value}
+              onClick={() => setSortMode(option.value)}
+            >
+              {option.label}
+            </Button>
+          ))}
+        </div>
+      </div>
 
       {puzzlesQuery.isPending && (
         <p className="flex items-center gap-2 text-muted-foreground">
@@ -325,16 +385,29 @@ function GeneratedPuzzlesSection() {
       )}
 
       <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {generated.map((puzzle) => (
-          <PuzzleCard
-            key={puzzle.id}
-            title={puzzle.displayName}
-            completed={isGeneratedCompleted(puzzle.id)}
-            pending={launchingId === puzzle.id}
-            disabled={!officialBot || launchingId !== null}
-            onAction={() => void launch(puzzle)}
-          />
-        ))}
+        {ordered.map((puzzle) => {
+          const solved = isGeneratedCompleted(puzzle.id);
+          return (
+            <PuzzleCard
+              key={puzzle.id}
+              title={puzzle.displayName}
+              completed={solved}
+              pending={launchingId === puzzle.id}
+              disabled={!officialBot || launchingId !== null}
+              onAction={() => void launch(puzzle)}
+              votes={{
+                likes: puzzle.likes,
+                dislikes: puzzle.dislikes,
+                myVote: puzzle.myVote,
+              }}
+              // Earned: only a logged-in player who has beaten this puzzle
+              // gets controls. Everyone else sees the counts.
+              onVote={isLoggedIn && solved ? voteFor(puzzle.id) : undefined}
+              votePending={isVotePending(puzzle.id)}
+              voteFailed={isVoteFailed(puzzle.id)}
+            />
+          );
+        })}
       </div>
     </section>
   );

@@ -39,6 +39,7 @@ let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let readPuzzleProgress: typeof import("../../server/games/puzzle-progress").readPuzzleProgress;
+let hasSolvedGeneratedPuzzle: typeof import("../../server/games/puzzle-progress").hasSolvedGeneratedPuzzle;
 let recordScriptedCompletion: typeof import("../../server/games/puzzle-progress").recordScriptedCompletion;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let gamePlayersTable: typeof import("../../server/db/schema/game-players").gamePlayersTable;
@@ -72,6 +73,7 @@ async function importServerModules() {
     .persistCompletedGame;
   const progress = await import("../../server/games/puzzle-progress");
   readPuzzleProgress = progress.readPuzzleProgress;
+  hasSolvedGeneratedPuzzle = progress.hasSolvedGeneratedPuzzle;
   recordScriptedCompletion = progress.recordScriptedCompletion;
   gamesTable = (await import("../../server/db/schema/games")).gamesTable;
   gamePlayersTable = (await import("../../server/db/schema/game-players"))
@@ -318,5 +320,46 @@ describe("scripted puzzle completion (client-asserted)", () => {
 
     expect((await readPuzzleProgress(mine)).solvedScriptedIds).toEqual(["7"]);
     expect((await readPuzzleProgress(theirs)).solvedScriptedIds).toEqual(["2"]);
+  });
+});
+
+/**
+ * The single-puzzle question voting is gated on (S-G4). It shares its SQL
+ * with the progress read above, so the draw case is repeated here on purpose:
+ * the shared query is where the rank-2 requirement lives, and a regression
+ * there would open voting to every drawn game.
+ */
+describe("has this user solved ONE generated puzzle", () => {
+  it("is true after a decisive win", async () => {
+    const userId = await seedUser("single-winner");
+    await createFinishedGame({
+      puzzleId: PUZZLE_A,
+      hostAuthUserId: "auth-single-winner",
+      ending: "joiner-resigns",
+    });
+
+    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_A)).toBe(true);
+  });
+
+  it("is false after a draw", async () => {
+    const userId = await seedUser("single-drawer");
+    await createFinishedGame({
+      puzzleId: PUZZLE_A,
+      hostAuthUserId: "auth-single-drawer",
+      ending: "draw",
+    });
+
+    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_A)).toBe(false);
+  });
+
+  it("does not answer for a puzzle the user beat a different one of", async () => {
+    const userId = await seedUser("single-other");
+    await createFinishedGame({
+      puzzleId: PUZZLE_A,
+      hostAuthUserId: "auth-single-other",
+      ending: "joiner-resigns",
+    });
+
+    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_B)).toBe(false);
   });
 });

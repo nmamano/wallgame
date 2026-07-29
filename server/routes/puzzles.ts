@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { asc, eq } from "drizzle-orm";
+import { and, asc, eq } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 
 import { db } from "../db";
@@ -7,11 +7,19 @@ import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
 import { getUserMiddleware, getOptionalUserMiddleware } from "../kinde";
 import { getUserIdFromKinde } from "../db/user-helpers";
 import {
+  hasSolvedGeneratedPuzzle,
   readPuzzleProgress,
   recordScriptedCompletion,
 } from "../games/puzzle-progress";
 import {
+  clearVote,
+  readVoteState,
+  readVoteStates,
+  setVote,
+} from "../games/puzzle-votes";
+import {
   mapSavedPuzzleRows,
+  puzzleVoteRequestSchema,
   scriptedCompletionRequestSchema,
 } from "../../shared/contracts/puzzles";
 import { PUZZLES } from "../../shared/domain/puzzles";
@@ -47,15 +55,45 @@ const anonymousCompletionLimiter = createAnonymousWriteLimiter({
   maxKeys: 10_000,
 });
 
+/**
+ * Resolves the target of a vote. Only an ENABLED puzzle may be voted on,
+ * matching launch semantics: a retired puzzle is not something a player can
+ * be looking at. Existing votes on a retired puzzle stay in the table and
+ * come back if it is re-enabled.
+ */
+const findVotablePuzzle = async (puzzleId: string) => {
+  const rows = await db
+    .select({ id: savedPuzzlesTable.id })
+    .from(savedPuzzlesTable)
+    .where(
+      and(
+        eq(savedPuzzlesTable.id, puzzleId),
+        eq(savedPuzzlesTable.enabled, true),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
 export const puzzlesRoute = new Hono()
-  .get("/", async (c) => {
+  /**
+   * The listing stays PUBLIC. Optional auth adds the caller's own votes when
+   * there is a caller; it must never turn this into an authenticated
+   * endpoint, because anonymous visitors browse the puzzle list.
+   */
+  .get("/", getOptionalUserMiddleware, async (c) => {
     try {
-      const rows = await db
-        .select()
-        .from(savedPuzzlesTable)
-        .where(eq(savedPuzzlesTable.enabled, true))
-        .orderBy(asc(savedPuzzlesTable.sortIndex));
-      const puzzles = mapSavedPuzzleRows(rows);
+      const user = c.get("user");
+      const userId = user ? await getUserIdFromKinde(c) : undefined;
+      const [rows, voteStates] = await Promise.all([
+        db
+          .select()
+          .from(savedPuzzlesTable)
+          .where(eq(savedPuzzlesTable.enabled, true))
+          .orderBy(asc(savedPuzzlesTable.sortIndex)),
+        readVoteStates(userId),
+      ]);
+      const puzzles = mapSavedPuzzleRows(rows, voteStates);
       return c.json({ puzzles });
     } catch (error) {
       console.error("[puzzles] failed to list saved puzzles", { error });
@@ -122,6 +160,65 @@ export const puzzlesRoute = new Hono()
           puzzleId,
         });
         return c.json({ error: "Failed to save progress" }, 500);
+      }
+    },
+  )
+
+  /**
+   * One puzzle's vote state for the caller (S-G4). The game page reads this
+   * so a vote survives a refresh or a direct revisit, rather than depending
+   * on the listing having been fetched or on navigation state.
+   */
+  .get("/:id/vote", getUserMiddleware, async (c) => {
+    const puzzleId = c.req.param("id");
+    try {
+      if (!(await findVotablePuzzle(puzzleId))) {
+        return c.json({ error: "Unknown puzzle" }, 404);
+      }
+      const userId = await getUserIdFromKinde(c);
+      return c.json(await readVoteState(puzzleId, userId));
+    } catch (error) {
+      console.error("[puzzles] failed to read vote", { error, puzzleId });
+      return c.json({ error: "Failed to load vote" }, 500);
+    }
+  })
+
+  /**
+   * Cast, change, or withdraw a vote. A vote is EARNED: the caller must have
+   * decisively beaten this puzzle, which is checked with the same query that
+   * answers "have I solved it" — see
+   * `hasSolvedGeneratedPuzzle` in `server/games/puzzle-progress.ts`. Voting
+   * never retires anything; the counts are for Nil to read.
+   *
+   * Returns the updated state, so the game page and the puzzle card can
+   * refresh from one round trip.
+   */
+  .post(
+    "/:id/vote",
+    getUserMiddleware,
+    zValidator("json", puzzleVoteRequestSchema),
+    async (c) => {
+      const puzzleId = c.req.param("id");
+      const { value } = c.req.valid("json");
+      try {
+        if (!(await findVotablePuzzle(puzzleId))) {
+          return c.json({ error: "Unknown puzzle" }, 404);
+        }
+
+        const userId = await getUserIdFromKinde(c);
+        if (!(await hasSolvedGeneratedPuzzle(userId, puzzleId))) {
+          return c.json({ error: "Beat the puzzle first" }, 403);
+        }
+
+        if (value === null) {
+          await clearVote({ userId, puzzleId });
+        } else {
+          await setVote({ userId, puzzleId, value });
+        }
+        return c.json(await readVoteState(puzzleId, userId));
+      } catch (error) {
+        console.error("[puzzles] failed to record vote", { error, puzzleId });
+        return c.json({ error: "Failed to save vote" }, 500);
       }
     },
   );

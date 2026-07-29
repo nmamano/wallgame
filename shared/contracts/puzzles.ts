@@ -101,12 +101,40 @@ export const savedPuzzleDbRowSchema = savedPuzzleRowBase
     fingerprintsMatch,
   );
 
-/** What the list endpoint returns per puzzle. */
-export const savedPuzzleSchema = z.object({
-  id: nonempty,
-  displayName: nonempty,
-  config: customSetupConfigSchema,
+/**
+ * Likes and dislikes on one puzzle, plus the caller's own vote (S-G4).
+ * `myVote` is null for an anonymous caller and for one who has not voted —
+ * the two are the same to the UI, which only offers controls to a player who
+ * has solved the puzzle anyway.
+ */
+export const puzzleVoteStateSchema = z.object({
+  likes: z.number().int().nonnegative(),
+  dislikes: z.number().int().nonnegative(),
+  myVote: z.union([z.literal(1), z.literal(-1), z.null()]),
 });
+
+/** Body of a vote write: 1 likes, -1 dislikes, null withdraws. */
+export const puzzleVoteRequestSchema = z
+  .object({
+    value: z.union([z.literal(1), z.literal(-1), z.null()]),
+  })
+  .strict();
+
+/**
+ * What the list endpoint returns per puzzle.
+ *
+ * `sortIndex` is the durable numeric order the server keeps; it ships so the
+ * client can offer a "Most liked" sort with a deterministic tiebreak instead
+ * of parsing display names or leaning on array order.
+ */
+export const savedPuzzleSchema = z
+  .object({
+    id: nonempty,
+    displayName: nonempty,
+    sortIndex: z.number().int(),
+    config: customSetupConfigSchema,
+  })
+  .merge(puzzleVoteStateSchema);
 
 export const savedPuzzlesResponseSchema = z.object({
   puzzles: z.array(savedPuzzleSchema),
@@ -119,22 +147,38 @@ export type SavedPuzzleDbRow = z.infer<typeof savedPuzzleDbRowSchema>;
 export type SavedPuzzle = z.infer<typeof savedPuzzleSchema>;
 export type SavedPuzzlesResponse = z.infer<typeof savedPuzzlesResponseSchema>;
 export type SavedPuzzleConfig = z.infer<typeof customSetupConfigSchema>;
+export type PuzzleVoteState = z.infer<typeof puzzleVoteStateSchema>;
+export type PuzzleVoteRequest = z.infer<typeof puzzleVoteRequestSchema>;
 
 /**
  * Pure row->response mapping used by the GET /api/puzzles route: validates
  * each full DB row (throws on the first corrupted one — fail closed), drops
  * disabled rows, orders by sortIndex, and projects the public shape.
+ *
+ * `voteStates` carries the counts; a puzzle nobody has voted on is simply
+ * absent from it and defaults to zeroes with no vote of its own, so the
+ * listing shape never depends on whether voting has happened yet.
  */
-export const mapSavedPuzzleRows = (rows: unknown[]): SavedPuzzle[] =>
+export const mapSavedPuzzleRows = (
+  rows: unknown[],
+  voteStates?: Map<string, PuzzleVoteState>,
+): SavedPuzzle[] =>
   rows
     .map((row) => savedPuzzleDbRowSchema.parse(row))
     .filter((row) => row.enabled)
     .sort((a, b) => a.sortIndex - b.sortIndex)
-    .map((row) => ({
-      id: row.id,
-      displayName: row.displayName,
-      config: row.config,
-    }));
+    .map((row) => {
+      const votes = voteStates?.get(row.id);
+      return {
+        id: row.id,
+        displayName: row.displayName,
+        sortIndex: row.sortIndex,
+        config: row.config,
+        likes: votes?.likes ?? 0,
+        dislikes: votes?.dislikes ?? 0,
+        myVote: votes?.myVote ?? null,
+      };
+    });
 
 // ============================================================================
 // Completion tracking (S-G3)

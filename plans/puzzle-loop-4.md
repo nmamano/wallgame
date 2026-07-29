@@ -234,11 +234,40 @@ what completion tracking needs — only the puzzle's identity is missing from it
       STILL OPEN: Nil's authenticated walkthrough (no test account exists) —
       beat a campaign level logged in, confirm the checkmark appears
       immediately on returning to the list and survives a reload.
-- [ ] **S-G4 — likes / dislikes (generated puzzles only).** `puzzle_votes` table (one
+- [x] **S-G4 — likes / dislikes (generated puzzles only).** `puzzle_votes` table (one
       changeable row per user+puzzle), vote allowed only for a puzzle the user has
       beaten, captured on the game page right after the win notification and changeable
       afterwards from that puzzle's solved card; counts on the puzzle listing and a
       "Most liked" sort control.
+      Shape: `puzzle_votes` (migration 0021) is the one table here with a NOT NULL
+      user id — an anonymous vote cannot be earned, so unlike the two completion
+      tables there is no telemetry case. `{value: 1 | -1 | null}`; null deletes the
+      row, which is how a misclick gets undone. The earned check reuses the
+      decisive-win rule rather than restating it: `puzzle-progress.ts` now holds ONE
+      private query (`decisiveGeneratedSolves`) behind both
+      `readSolvedGeneratedPuzzleIds` and `hasSolvedGeneratedPuzzle`, with the draw
+      regression pinned against the shared path.
+      Statuses: 401 anonymous, 400 malformed, 404 unknown OR retired puzzle
+      (matching launch semantics — existing rows survive and return if it is
+      re-enabled), 403 for a caller who has not decisively won it.
+      The listing stays PUBLIC: optional auth only adds `myVote`. Counts show on
+      every generated card including for visitors who cannot vote, because a "Most
+      liked" sort with invisible numbers explains nothing. Sorting is client-side
+      over the ~39 rows, non-mutating, with `sortIndex` as the deterministic
+      tiebreak (every puzzle starts at zero, so without it sort stability decides).
+      Aggregates are ONE grouped query plus at most one for the caller's own votes,
+      never per card.
+      WHAT THE 390px SCREENSHOT CHANGED: the vote control fits beside "Retry puzzle"
+      in the desktop panel's existing fixed-height block, but NOT in the mobile
+      toolbar — that bar centres its result text in an absolute layer, so at 390px
+      "Nil won - Puzzle - no rating change" ran underneath the buttons. Mobile gets
+      its own slim strip above the toolbar instead (the board area is measured, so
+      it costs a few pixels of board rather than breaking a budget). Same lesson for
+      the failure state: an inline "Not saved" sentence collided in both compact
+      rows, so it is a bounded icon with `role="status"` plus screen-reader text,
+      and the mobile strip swaps its own label instead of growing.
+      PRE-EXISTING, deliberately untouched: at 390px the mobile toolbar's centred
+      result text already slides under the Retry button after any game.
 
 ## Open questions parked for Nil
 

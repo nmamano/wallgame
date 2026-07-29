@@ -12,6 +12,7 @@ import { MoveListAndChatPanel } from "@/components/move-list-and-chat-panel";
 import { MobileActionToolbar } from "@/components/mobile-action-toolbar";
 import { MobileMoveBar } from "@/components/mobile-move-bar";
 import { MobileGameDrawer } from "@/components/mobile-game-drawer";
+import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useEvalBar } from "@/hooks/use-eval-bar";
@@ -482,6 +483,27 @@ function GamePageContent() {
               historyNav={chat.historyNav}
             />
           </div>
+
+          {/* Rate the puzzle you just beat (S-G4). Its own strip rather than
+              more buttons in the toolbar below: at 390px that bar's centred
+              result text runs underneath anything else on the right. The
+              board area is measured, so this strip costs it a few pixels
+              rather than breaking a layout budget. */}
+          {actions.endgame.puzzleVote && (
+            <div className="shrink-0 flex items-center justify-between gap-2 border-t border-border bg-card/90 px-3 py-1.5">
+              {/* The label carries the failure message rather than the strip
+                  growing a second line: swapping text keeps the row the same
+                  height and the same width at 390px. */}
+              <span
+                className={`text-xs ${actions.endgame.puzzleVote.failed ? "text-destructive" : "text-muted-foreground"}`}
+              >
+                {actions.endgame.puzzleVote.failed
+                  ? "Could not save — tap again"
+                  : "Rate this puzzle"}
+              </span>
+              <PuzzleVoteControl {...actions.endgame.puzzleVote} />
+            </div>
+          )}
 
           {/* Floating action toolbar */}
           <div className="shrink-0">

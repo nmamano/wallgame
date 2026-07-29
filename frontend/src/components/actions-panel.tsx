@@ -8,6 +8,10 @@ import {
   Trophy,
   LogOut,
 } from "lucide-react";
+import {
+  PuzzleVoteControl,
+  type PuzzleVoteProps,
+} from "@/components/puzzle-vote-control";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { ResolveGameAccessResponse } from "../../../shared/contracts/games";
 import type {
@@ -77,6 +81,11 @@ interface EndgameProps {
   isPuzzle?: boolean;
   handleRetryPuzzle?: () => void;
   isRetryingPuzzle?: boolean;
+  /**
+   * Present only when this player earned a vote on this puzzle (S-G4). The
+   * controller decides that; the panel just renders it.
+   */
+  puzzleVote?: PuzzleVoteProps;
   primaryLocalPlayerId: PlayerId | null;
   spectatorRematchGameId?: string | null;
   handleFollowSpectatorRematch?: () => void;
@@ -139,6 +148,7 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
     isPuzzle = false,
     handleRetryPuzzle,
     isRetryingPuzzle = false,
+    puzzleVote,
     primaryLocalPlayerId,
     spectatorRematchGameId,
     handleFollowSpectatorRematch,
@@ -285,6 +295,11 @@ export function ActionsPanel({ live, endgame }: ActionsPanelProps) {
                       {isRetryingPuzzle ? "Retrying…" : "Retry puzzle"}
                     </Button>
                   )}
+
+                  {/* Beside Retry rather than in a row of its own: the three
+                      blocks of this panel are fixed-height, so growing it for
+                      puzzles would push the layout everywhere else. */}
+                  {puzzleVote && <PuzzleVoteControl {...puzzleVote} />}
 
                   {canProposeMultiplayerRematch && (
                     <Button

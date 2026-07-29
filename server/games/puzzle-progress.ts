@@ -8,10 +8,11 @@ import { scriptedPuzzleCompletionsTable } from "../db/schema/scripted-puzzle-com
 import type { PuzzleProgressResponse } from "../../shared/contracts/puzzles";
 
 /**
- * Which puzzles a user has solved (S-G3).
+ * Which puzzles a user has solved (S-G3), and the eligibility check that
+ * voting is built on (S-G4).
  *
- * Lives apart from the route so the rule below can be exercised against a
- * real database without standing up authentication: the route is auth plus
+ * Lives apart from the routes so the rule below can be exercised against a
+ * real database without standing up authentication: the routes are auth plus
  * delegation, this is the whole of the logic.
  *
  * GENERATED puzzles are SERVER-VERIFIED and derived rather than stored: a
@@ -30,32 +31,70 @@ import type { PuzzleProgressResponse } from "../../shared/contracts/puzzles";
  *
  * SCRIPTED puzzles are client-asserted and simply read back.
  */
+/**
+ * THE decisive-win query. Every caller that asks "did this user solve a
+ * generated puzzle" goes through here, so the rule — and its rank-2 subtlety
+ * — exists exactly once. `puzzleId` narrows it to a single puzzle; omitting
+ * it returns every puzzle the user has solved.
+ */
+const decisiveGeneratedSolves = (userId: number, puzzleId?: string) => {
+  const opponent = alias(gamePlayersTable, "opponent");
+
+  return db
+    .selectDistinct({ puzzleId: gamesTable.puzzleId })
+    .from(gamesTable)
+    .innerJoin(
+      gamePlayersTable,
+      and(
+        eq(gamePlayersTable.gameId, gamesTable.gameId),
+        eq(gamePlayersTable.userId, userId),
+        eq(gamePlayersTable.outcomeRank, 1),
+      ),
+    )
+    .innerJoin(
+      opponent,
+      and(
+        eq(opponent.gameId, gamesTable.gameId),
+        ne(opponent.playerOrder, gamePlayersTable.playerOrder),
+        eq(opponent.outcomeRank, 2),
+      ),
+    )
+    .where(
+      puzzleId === undefined
+        ? isNotNull(gamesTable.puzzleId)
+        : eq(gamesTable.puzzleId, puzzleId),
+    );
+};
+
+/**
+ * Which GENERATED puzzles the user has decisively won. Sorted, so callers
+ * and their tests see a deterministic list.
+ */
+export const readSolvedGeneratedPuzzleIds = async (
+  userId: number,
+): Promise<string[]> =>
+  (await decisiveGeneratedSolves(userId))
+    .map((row) => row.puzzleId)
+    .filter((id): id is string => id != null)
+    .sort();
+
+/**
+ * Whether the user has decisively won ONE generated puzzle — the eligibility
+ * check behind voting (S-G4). Deliberately not "read all progress and look
+ * inside it": voting has nothing to do with scripted completions, and this
+ * asks the database a single narrow question.
+ */
+export const hasSolvedGeneratedPuzzle = async (
+  userId: number,
+  puzzleId: string,
+): Promise<boolean> =>
+  (await decisiveGeneratedSolves(userId, puzzleId).limit(1)).length > 0;
+
 export const readPuzzleProgress = async (
   userId: number,
 ): Promise<PuzzleProgressResponse> => {
-  const opponent = alias(gamePlayersTable, "opponent");
-
   const [generated, scripted] = await Promise.all([
-    db
-      .selectDistinct({ puzzleId: gamesTable.puzzleId })
-      .from(gamesTable)
-      .innerJoin(
-        gamePlayersTable,
-        and(
-          eq(gamePlayersTable.gameId, gamesTable.gameId),
-          eq(gamePlayersTable.userId, userId),
-          eq(gamePlayersTable.outcomeRank, 1),
-        ),
-      )
-      .innerJoin(
-        opponent,
-        and(
-          eq(opponent.gameId, gamesTable.gameId),
-          ne(opponent.playerOrder, gamePlayersTable.playerOrder),
-          eq(opponent.outcomeRank, 2),
-        ),
-      )
-      .where(isNotNull(gamesTable.puzzleId)),
+    readSolvedGeneratedPuzzleIds(userId),
     db
       .selectDistinct({ puzzleId: scriptedPuzzleCompletionsTable.puzzleId })
       .from(scriptedPuzzleCompletionsTable)
@@ -64,10 +103,7 @@ export const readPuzzleProgress = async (
 
   // Sorted so responses are deterministic for caching and assertions.
   return {
-    solvedGeneratedIds: generated
-      .map((row) => row.puzzleId)
-      .filter((id): id is string => id != null)
-      .sort(),
+    solvedGeneratedIds: generated,
     solvedScriptedIds: scripted.map((row) => row.puzzleId).sort(),
   };
 };

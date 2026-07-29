@@ -72,6 +72,10 @@ export interface MobileToolbarEndgameProps {
   isPuzzle?: boolean;
   handleRetryPuzzle?: () => void;
   isRetryingPuzzle?: boolean;
+  // The puzzle vote control is deliberately NOT in this bar: at 390px the
+  // centred result text runs under any extra buttons on the right — measured
+  // in a browser, not guessed — so the mobile game page renders it as its own
+  // slim strip above this toolbar (see `routes/game.$id.tsx`).
   primaryLocalPlayerId: PlayerId | null;
   spectatorRematchGameId?: string | null;
   handleFollowSpectatorRematch?: () => void;

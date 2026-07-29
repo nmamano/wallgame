@@ -1,9 +1,11 @@
 import {
   savedPuzzlesResponseSchema,
   puzzleProgressResponseSchema,
+  puzzleVoteStateSchema,
   type SavedPuzzle,
   type SavedPuzzlesResponse,
   type PuzzleProgressResponse,
+  type PuzzleVoteState,
 } from "../../../shared/contracts/puzzles";
 import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/index";
@@ -312,13 +314,51 @@ export const fetchShowcaseGames = async (
 };
 
 /** V3: Bot listing - no timeControl (bot games are untimed) */
+/** Shared so a vote can invalidate the listing its counts appear in. */
+export const SAVED_PUZZLES_QUERY_KEY = ["saved-puzzles"] as const;
+
+/** Shared so the game page and the puzzle card read the same cache entry. */
+export const puzzleVoteQueryKey = (puzzleId: string) =>
+  ["puzzle-vote", puzzleId] as const;
+
 /**
  * Saved puzzles list. The response is parsed against the shared contract —
  * a malformed payload throws rather than reaching a launch flow.
+ *
+ * Public: it answers for anonymous visitors, who simply get `myVote: null`
+ * on every puzzle.
  */
 export const fetchSavedPuzzles = async (): Promise<SavedPuzzlesResponse> => {
   const raw = await handleResponse<unknown>(api.puzzles.$get());
   return savedPuzzlesResponseSchema.parse(raw);
+};
+
+/**
+ * One puzzle's vote state for the logged-in caller. Requires authentication,
+ * so callers must gate this on a settled, authenticated user. The game page
+ * uses it to recover a vote after a refresh without fetching the listing.
+ */
+export const fetchPuzzleVote = async (
+  puzzleId: string,
+): Promise<PuzzleVoteState> => {
+  const raw = await handleResponse<unknown>(
+    api.puzzles[":id"].vote.$get({ param: { id: puzzleId } }),
+  );
+  return puzzleVoteStateSchema.parse(raw);
+};
+
+/** Cast (1), flip (-1), or withdraw (null) a vote; returns the new state. */
+export const submitPuzzleVote = async (args: {
+  puzzleId: string;
+  value: 1 | -1 | null;
+}): Promise<PuzzleVoteState> => {
+  const raw = await handleResponse<unknown>(
+    api.puzzles[":id"].vote.$post({
+      param: { id: args.puzzleId },
+      json: { value: args.value },
+    }),
+  );
+  return puzzleVoteStateSchema.parse(raw);
 };
 
 /** Shared so the game page can invalidate what the puzzles page reads. */

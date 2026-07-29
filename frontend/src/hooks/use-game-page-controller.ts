@@ -43,6 +43,7 @@ import {
 } from "@/lib/api";
 import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
+import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { sounds, play } from "@/lib/sounds";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -3192,6 +3193,30 @@ export function useGamePageController(gameId: string) {
     invalidatePuzzleProgress(queryClient);
   }, [isPuzzleGame, gameState, primaryLocalPlayerId, queryClient]);
 
+  /**
+   * Whether to offer a vote on this puzzle (S-G4). A vote is EARNED, so every
+   * clause here is load-bearing and `isPuzzleGame` alone would be wrong — it
+   * means "any custom-setup variant", which includes ordinary custom games.
+   *
+   * Required: the durable saved-puzzle id from the launching client's
+   * handshake (a shared link or a pre-S-P1 game has none), a settled
+   * logged-in user, a seat of our own that is not read-only, and a FINISHED
+   * game this player decisively won. Spectators, replays, draws and losses
+   * therefore see nothing.
+   */
+  const votablePuzzleId =
+    isPuzzleGame && !isReadOnlySession && primaryLocalPlayerId !== null
+      ? (getGameHandshake(gameId)?.puzzleId ?? null)
+      : null;
+  const wonThisPuzzle =
+    gameStatus === "finished" &&
+    gameState?.result?.winner != null &&
+    gameState.result.winner === primaryLocalPlayerId;
+  const puzzleVote = usePuzzleVote({
+    puzzleId: votablePuzzleId,
+    enabled: isLoggedIn && !userPending && wonThisPuzzle,
+  });
+
   // Clear annotations when turn changes (move is committed)
   const prevTurnRef = useRef(gameState?.turn);
   useEffect(() => {
@@ -3846,6 +3871,16 @@ export function useGamePageController(gameId: string) {
       isPuzzle: isPuzzleGame,
       handleRetryPuzzle,
       isRetryingPuzzle,
+      // Present only when this player earned the right to vote; the panels
+      // render it and decide nothing.
+      puzzleVote: puzzleVote.canVote
+        ? {
+            ...puzzleVote.state,
+            onVote: puzzleVote.vote,
+            pending: puzzleVote.pending,
+            failed: puzzleVote.failed,
+          }
+        : undefined,
       primaryLocalPlayerId: boardPrimaryPlayerId,
       accessKind,
       isReadOnly: isReadOnlySession,

@@ -118,12 +118,38 @@ describe("route row mapping (mapSavedPuzzleRows)", () => {
     const mapped = mapSavedPuzzleRows(rows);
     expect(mapped.map((p) => p.id)).toEqual(["a", "b"]);
     expect(mapped[0].displayName).toBe(seedRows[0].displayName);
-    // Only the public projection is exposed.
+    // Only the public projection is exposed. `sortIndex` joined it in S-G4
+    // so the client can sort by likes with a deterministic tiebreak; the
+    // provenance columns still must not leak.
     expect(Object.keys(mapped[0]).sort()).toEqual([
       "config",
+      "dislikes",
       "displayName",
       "id",
+      "likes",
+      "myVote",
+      "sortIndex",
     ]);
+  });
+
+  it("defaults the vote state of a puzzle nobody has voted on", () => {
+    const mapped = mapSavedPuzzleRows([{ id: "a", createdAt, ...seedRows[0] }]);
+    expect(mapped[0]).toMatchObject({ likes: 0, dislikes: 0, myVote: null });
+  });
+
+  it("merges vote counts by puzzle id", () => {
+    const rows = [
+      { id: "a", createdAt, ...seedRows[0] },
+      { id: "b", createdAt, ...seedRows[1] },
+    ];
+    const mapped = mapSavedPuzzleRows(
+      rows,
+      new Map([["a", { likes: 3, dislikes: 1, myVote: -1 as const }]]),
+    );
+    expect(mapped[0]).toMatchObject({ likes: 3, dislikes: 1, myVote: -1 });
+    // The puzzle absent from the map keeps the zero defaults rather than
+    // inheriting its neighbour's counts.
+    expect(mapped[1]).toMatchObject({ likes: 0, dislikes: 0, myVote: null });
   });
 
   it("fails closed on a corrupted config", () => {
