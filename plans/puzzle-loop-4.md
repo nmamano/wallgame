@@ -217,9 +217,23 @@ what completion tracking needs — only the puzzle's identity is missing from it
       the deploy-to-backfill window, an old machine finishing an in-flight
       legacy write during rollout, and a backfill that fails. This is the
       expand/migrate/contract sequence, not accidental duplication.
-      CONTRACT STEP (follow-up board task, after a soak): re-run and verify
+      CONTRACT STEP (board task `cb05c49d`, after a soak): re-run and verify
       `scripts/backfill-campaign-completions.ts`, then remove the legacy half
       of the read, and only later drop `campaign_progress`.
+      DONE `fadc71e`, deployed + prod-verified 2026-07-29: migration 0020 ran
+      via release_command and the catalogs read back a NULLABLE `user_id`, the
+      named UNIQUE (user_id, level_id), and the cascade FK. The backfill ran
+      twice (idempotent both times): 15 legacy rows / 10 users / 2 levels
+      copied, every triple read back with its timestamp intact, 0 unexpected
+      extras. Live checks: anonymous GET /api/campaign/progress 401, a bogus
+      level 400 "Invalid level ID", an extra body key 400, a valid anonymous
+      completion 200 with the row landing at `user_id` NULL (one telemetry row
+      from verification — the table then held 16 rows, 15 authenticated).
+      ROUND-TRIP probe green after the deploy (game `siUWmsvj` on Generated
+      Puzzle 1 — survived BGS init, human move accepted, BOT REPLIED).
+      STILL OPEN: Nil's authenticated walkthrough (no test account exists) —
+      beat a campaign level logged in, confirm the checkmark appears
+      immediately on returning to the list and survives a reload.
 - [ ] **S-G4 — likes / dislikes (generated puzzles only).** `puzzle_votes` table (one
       changeable row per user+puzzle), vote allowed only for a puzzle the user has
       beaten, captured on the game page right after the win notification and changeable
@@ -352,7 +366,31 @@ WHAT S-G3 TAUGHT:
    decisive comparison (71 vs 57) turned "the reviewer was right in principle" into
    a measured count of rows that would have been miscredited.
 
-- Baseline: `1820993` (+ the docs commit); production runs `1820993`.
+WHAT S-CAMP ALSO TAUGHT (it shipped between S-G3 and this slice):
+
+1. **A structural blocker beats a preference argument.** The campaign could not
+   reuse its own table because a composite PRIMARY KEY cannot hold a NULL, and
+   dropping a primary key is not additive. Checking that first turned a design
+   debate into a one-line fact. Look for the constraint that decides the
+   question before weighing options.
+2. **Expand/migrate/contract removes the window you were about to accept.** I
+   planned "read the new table, then backfill", with a short window where real
+   users would see no markers; the reviewer's union read made that window,
+   a failed backfill, and a mid-rollout legacy write all degrade to nothing
+   visible. A transitional read needs a loud comment, a doc entry, and a
+   follow-up task, or the next reader deletes it as duplication.
+3. **Check for a test hook before declaring something untestable here.**
+   `server/kinde.ts` honours an `x-test-user-id` header when NODE_ENV=test, so
+   Hono routes are drivable directly. That moved four assertions (401 read,
+   400 validation) out of the Docker-only suite and onto this box, where they
+   actually run.
+4. **Deleting a visual element can move everything around it.** Dropping the
+   empty circle stepped completed rows' titles right by 40px, because that
+   icon had been holding the column open for every row. Screenshotting the
+   change and LOOKING at it is what caught it — reading the diff would not
+   have.
+
+- Baseline: `fadc71e` (+ this docs commit); production runs `fadc71e`.
 - Goal (doc §G4, Nil's spec): a player who has BEATEN a generated puzzle can like or
   dislike it; one changeable vote per user and puzzle; votes stored in the DB; the
   list sortable so the most liked come first.
