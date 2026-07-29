@@ -300,7 +300,54 @@ Not started. Notes gathered while planning:
 
 ## S-BOTS — rename, and Easy Bot (items 4 and 5)
 
-- [ ] awaiting diff gate; config + docs done, desktop rollout not yet performed.
+- [x] **DONE `eca38aa`, rolled out and production-verified 2026-07-29.** No Fly deploy;
+      config plus desktop rollout only.
+
+ROLLOUT EVIDENCE:
+
+1. Local config preflight VALID (3 bots, each with a command); desktop `git pull` to
+   `eca38aa2da43d437dd1f3d8f098f4bdec1bf2203`; validator re-run ON THE DESKTOP checkout
+   showing Easy Bot at `--samples 128 --parallel_samples 32 --thread_pool_size 4`.
+2. Pre-restart round-trip probe green. Active-game check: no engine activity in the
+   preceding 6 minutes other than that probe; the one suspicious open session
+   (`ZRjUy33o`) resolved to `matchStatus.status = "completed"` with a disconnected
+   Guest, so nothing live was interrupted.
+3. Log byte offset captured at 2427166 BEFORE the restart. After it, and after the
+   LAST client-start marker: `Engine started for bot` for dw-transformer, dw-easy AND
+   dw-puzzle, then `Successfully attached with 3 bot(s)`. Three live engine processes
+   with the expected command lines (1000/32/4, 128/32/4, 5000/128/4).
+4. Listings: `?variant=standard` gives Superhuman Bot (isOfficial true) and Easy Bot
+   (isOfficial FALSE); `?variant=custom-setup-standard` gives only PuzzleBot; the
+   string "Transformer Bot" appears nowhere.
+5. Round-trip probe on a puzzle green (game `gTFLxn7v`, bot replied). Second round trip
+   against EASY BOT specifically in an 8x8 standard game (`CJWaU7PO`) — it replied,
+   which with the post-offset start line is the proof that its neural engine is serving
+   rather than the dummy fallback.
+6. `built_in_bots` polled (the upsert is fire-and-forget) — 7/7 checks pass: Superhuman
+   row reads "Superhuman Bot" and still official, Easy row reads "Easy Bot" and is NOT
+   official, and **363 `game_players` rows remain attached to the UNCHANGED Superhuman
+   bot id**, which is what makes the rename safe for ratings and history.
+
+### THE OUTAGE I CAUSED, AND THE RECIPE THAT CAUSED IT
+
+`tmux kill-session -t bot-client` **took the entire WSL instance down**, because
+bot-client was the ONLY tmux session: the tmux server exits with its last session and
+nothing else holds WSL open. The `tmux new-session` that followed reported success and
+then went down with the box. Bots were unavailable for roughly 90 seconds.
+
+The restart recipe in `info/puzzle-platform.md` said to do exactly that, and my own
+office memory recorded that "tmux keeps WSL alive" — I had BOTH halves of the fact and
+did not put them together. The doc is now fixed: open a `keepalive` session BEFORE
+killing anything, so the tmux server never reaches zero sessions.
+
+Recovery was the documented Windows-side one-liner and it worked first try:
+`ssh nilo@desktop-053vvpl "wsl -d Ubuntu -u nilo -- tmux new-session -d -s bot-client -n bot-client \"bash ~/run_transformer_bot.sh\""`.
+
+Second lesson, about evidence: my first active-game check looked for sessions started
+without a matching end, and found ~70. That test is worthless — unmatched sessions are
+the normal state. What actually answered the question was recent engine ACTIVITY plus
+`GET /api/games/<id>` on the one suspicious id. A check that flags everything flags
+nothing.
 
 Measured before planning, because the obvious config would not have worked:
 

@@ -138,17 +138,56 @@ is why two processes rather than a per-session override: teaching the engine tha
 "custom-setup means think harder" would push product knowledge into a layer that has no
 business knowing what a puzzle is.
 
-Restarting the bots (needed after a config or engine change):
+Restarting the bots (needed after a config or engine change).
+
+**DANGER, learned by causing it 2026-07-29: `tmux kill-session -t bot-client`
+takes the whole WSL instance down when that is the ONLY tmux session.** The
+tmux server exits with its last session, nothing else holds WSL open, and WSL
+shuts down mid-restart — so the `tmux new-session` that follows can appear to
+succeed and then vanish with the box. Symptom: ssh to
+`desktop-053vvpl-1` times out and tailscale shows it offline while
+`desktop-053vvpl` (the Windows side) stays online. Recovery is the
+Windows-side one-liner below, which worked first try.
+
+So ALWAYS hold the tmux server open before killing anything:
 
 ```
 ssh nilo@desktop-053vvpl-1
+tmux new-session -d -s keepalive 'sleep infinity'   # tmux server now survives
 tmux kill-session -t bot-client
 tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"
-# confirm: grep "Successfully attached" ~/logs/bot-client-transformer.log
-# and: /api/bots?variant=custom-setup-standard lists dw-puzzle
-# and REQUIRED since 2026-07-26: a full round-trip probe (launch a puzzle,
-# survive >5s past connect, play a move, get the bot's reply, resign).
 ```
+
+Alternative that never touches a session at all, derived from
+`~/run_transformer_bot.sh` (a `while true` supervisor that relaunches the
+client 10s after it exits) but NOT YET EXERCISED: capture the client's exact
+PID and kill only that, then wait ~15s for the supervisor to relaunch it with
+the freshly read config. Exact PIDs only — never a `pkill -f` pattern.
+
+Verify, in this order:
+
+```
+# 1. capture the log's byte offset BEFORE restarting, so an OLD "Engine
+#    started" line cannot satisfy the check:
+#      stat -c %s ~/logs/bot-client-transformer.log
+# 2. after restart, read only what came after it:
+#      tail -c +<offset+1> ~/logs/bot-client-transformer.log
+#    expect "Engine started for bot" for ALL THREE bots, then
+#    "Successfully attached with 3 bot(s)".
+# 3. /api/bots?variant=standard lists Superhuman Bot and Easy Bot;
+#    ?variant=custom-setup-standard lists ONLY PuzzleBot.
+# 4. REQUIRED since 2026-07-26: a full round-trip probe (launch a puzzle,
+#    survive >5s past connect, play a move, get the bot's reply, resign),
+#    plus a second round trip against Easy Bot specifically.
+```
+
+Before killing anything, check nothing is mid-game on these bots: look for
+`Evaluating position` / `Applying move` lines in the last few minutes, and
+resolve any suspicious open session against `GET /api/games/<id>`
+(`matchStatus.status`). Do NOT use "a session start with no matching end" as
+the signal — around 70 sessions are permanently unmatched in a normal log, so
+that test says nothing. A live game would survive anyway if the client returns
+inside the 30s grace window, but do not rely on that.
 
 **If `desktop-053vvpl-1` (WSL) is unreachable entirely** (ssh hangs, tailscale
 shows it offline while `desktop-053vvpl` — the WINDOWS side of the same box —
