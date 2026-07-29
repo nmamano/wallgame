@@ -74,13 +74,23 @@ describe("saved puzzle seed rows", () => {
     }
   });
 
-  it("never collides with the scripted puzzle titles", () => {
+  it("shares display names with the scripted puzzles, and stays distinct by identity", () => {
+    // The overlap is intentional (Nil, 2026-07-29: drop "Generated" from the
+    // names). Pinned here so removing it is a deliberate act rather than a
+    // silent regression back to the old namespace.
     const scriptedTitles = new Set(
       Object.values(PUZZLES).map((puzzle) => puzzle.title),
     );
-    for (const row of seedRows) {
-      expect(scriptedTitles.has(row.displayName)).toBe(false);
-    }
+    const overlapping = seedRows.filter((row) =>
+      scriptedTitles.has(row.displayName),
+    );
+    expect(overlapping.length).toBe(scriptedTitles.size);
+
+    // What actually keeps the two sets apart. This documents the contract;
+    // it cannot by itself stop someone from adding a name-based lookup
+    // later, which is why the naming helper says so in prose too.
+    const fingerprints = seedRows.map((row) => row.sourceFingerprint);
+    expect(new Set(fingerprints).size).toBe(seedRows.length);
   });
 
   it("every seed row passes the boundary contract", () => {
@@ -185,7 +195,7 @@ describe("handshake puzzle metadata", () => {
     playerId: 2,
     shareUrl: "https://example/game/g1",
     puzzleId: "pz1",
-    puzzleName: "Generated Puzzle 7",
+    puzzleName: "Puzzle 7",
   };
 
   it("withPuzzleMetadataFrom carries metadata onto rebuilt handshakes (refresh/Retry/rematch)", () => {
@@ -198,7 +208,7 @@ describe("handshake puzzle metadata", () => {
     };
     const carried = withPuzzleMetadataFrom(rebuilt, base);
     expect(carried.puzzleId).toBe("pz1");
-    expect(carried.puzzleName).toBe("Generated Puzzle 7");
+    expect(carried.puzzleName).toBe("Puzzle 7");
     // Non-puzzle games are untouched (spectator/shared-link fallback stays
     // generic because there is nothing to carry).
     const plain = withPuzzleMetadataFrom(rebuilt, {
@@ -227,7 +237,7 @@ describe("handshake puzzle metadata", () => {
   });
 
   it("getPuzzleBannerName resolves the name, else the generic fallback", () => {
-    expect(getPuzzleBannerName(base)).toBe("Generated Puzzle 7");
+    expect(getPuzzleBannerName(base)).toBe("Puzzle 7");
     // Spectators/shared links have no handshake at all.
     expect(getPuzzleBannerName(null)).toBe(null);
     // Ordinary games carry no metadata.

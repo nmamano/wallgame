@@ -32,21 +32,13 @@ describe("computeContiguousRenames", () => {
     // The real production state: sortIndex 1 and 6 retired.
     const renames = computeContiguousRenames(rowsFixture([1, 6]));
     // Rows 2..5 shift down by one; 7..41 shift down by two.
-    expect(renames.find((r) => r.from === "Generated Puzzle 2")?.to).toBe(
-      "Generated Puzzle 1",
-    );
-    expect(renames.find((r) => r.from === "Generated Puzzle 5")?.to).toBe(
-      "Generated Puzzle 4",
-    );
-    expect(renames.find((r) => r.from === "Generated Puzzle 7")?.to).toBe(
-      "Generated Puzzle 5",
-    );
-    expect(renames.find((r) => r.from === "Generated Puzzle 41")?.to).toBe(
-      "Generated Puzzle 39",
-    );
+    expect(renames.find((r) => r.from === "Puzzle 2")?.to).toBe("Puzzle 1");
+    expect(renames.find((r) => r.from === "Puzzle 5")?.to).toBe("Puzzle 4");
+    expect(renames.find((r) => r.from === "Puzzle 7")?.to).toBe("Puzzle 5");
+    expect(renames.find((r) => r.from === "Puzzle 41")?.to).toBe("Puzzle 39");
     // Disabled rows never appear.
-    expect(renames.some((r) => r.from === "Generated Puzzle 1")).toBe(false);
-    expect(renames.some((r) => r.from === "Generated Puzzle 6")).toBe(false);
+    expect(renames.some((r) => r.from === "Puzzle 1")).toBe(false);
+    expect(renames.some((r) => r.from === "Puzzle 6")).toBe(false);
     // Resulting names are unique.
     const targets = renames.map((r) => r.to);
     expect(new Set(targets).size).toBe(targets.length);

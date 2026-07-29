@@ -14,12 +14,18 @@ import type { SavedPuzzleSeedRow } from "../contracts/puzzles";
 import { computeLeadIn, validateLeadInReplay } from "./puzzle-lead-in";
 
 /**
- * Distinct naming namespace: the ten hand-authored scripted puzzles are
- * titled exactly "Puzzle 1".."Puzzle 10", and both sets will share one page,
- * so generated puzzles must never collide with those titles.
+ * Generated puzzles are named "Puzzle 1".."Puzzle N" by position.
+ *
+ * The ten hand-authored scripted puzzles are titled exactly "Puzzle
+ * 1".."Puzzle 10", so the first ten names OVERLAP, deliberately (Nil,
+ * 2026-07-29 — the word "Generated" described how a puzzle was made, which
+ * is not the player's business). The overlap is safe only because a display
+ * name is presentation: identity is the row id, and seed matching is by
+ * `sourceFingerprint`. Nothing may look a puzzle up by name — a name-based
+ * lookup would resolve two different puzzles to one.
  */
 export const generatedPuzzleDisplayName = (sortIndex: number): string =>
-  `Generated Puzzle ${sortIndex}`;
+  `Puzzle ${sortIndex}`;
 
 /** A seed row before the seeder assigns its id. */
 export type SavedPuzzleSeedRowWithoutId = Omit<SavedPuzzleSeedRow, "id">;

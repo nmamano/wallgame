@@ -11,12 +11,12 @@ import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { useSettings } from "@/hooks/use-settings";
 import {
-  SAVED_PUZZLES_QUERY_KEY,
-  fetchBots,
-  fetchSavedPuzzles,
   playPuzzle,
+  puzzleBotsQueryOptions,
+  savedPuzzlesQueryOptions,
   userQueryOptions,
 } from "@/lib/api";
+import { puzzleProgressQueryOptions } from "@/hooks/use-puzzle-progress";
 import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
@@ -35,6 +35,38 @@ import type {
 } from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/puzzles/")({
+  /**
+   * Warm everything the page renders from BEFORE it paints, so cards and
+   * markers arrive together instead of in waves a second apart.
+   *
+   * `prefetchQuery`, never `ensureQueryData`: prefetch resolves even when a
+   * request fails, leaving the failure to the component, which already
+   * renders an inline "could not load" card. `ensureQueryData` rejects, and
+   * a rejecting loader replaces the whole route with the router's error
+   * boundary — a worse page for a recoverable failure.
+   *
+   * The user query is AWAITED first because two things depend on the
+   * answer: progress is only worth fetching for a logged-in visitor (the
+   * endpoint answers 401 otherwise), and the log-in invitation is only
+   * correct once we know. Puzzles and bots do not depend on it, so they run
+   * alongside.
+   */
+  loader: async ({ context: { queryClient } }) => {
+    const user = queryClient
+      .ensureQueryData(userQueryOptions)
+      // An unreachable /api/me must not block the page; the component
+      // treats "unknown" as logged out, which is the safe default.
+      .catch(() => null);
+    await Promise.all([
+      queryClient.prefetchQuery(savedPuzzlesQueryOptions),
+      queryClient.prefetchQuery(puzzleBotsQueryOptions),
+      user.then((data) =>
+        data?.user
+          ? queryClient.prefetchQuery(puzzleProgressQueryOptions)
+          : undefined,
+      ),
+    ]);
+  },
   component: Puzzles,
 });
 
@@ -189,7 +221,7 @@ function PuzzleCard({
 
 function Puzzles() {
   const navigate = useNavigate();
-  const { isScriptedCompleted, isLoggedIn } = usePuzzleProgress();
+  const { isScriptedCompleted, isLoggedIn, isLoading } = usePuzzleProgress();
 
   const handlePlayPuzzle = (puzzleId: string) => {
     void navigate({ to: `/puzzles/${puzzleId}` });
@@ -220,10 +252,13 @@ function Puzzles() {
 
       <section className="mb-12">
         <h2 className="text-2xl font-serif font-semibold text-foreground mb-4">
-          Scripted Puzzles
+          Handcrafted Puzzles
         </h2>
 
-        {!isLoggedIn && (
+        {/* Waiting on `isLoading` as well as the answer: logged-out is the
+            resting state of this hook, so testing it alone flashed the
+            invitation at logged-in visitors for as long as /api/me took. */}
+        {!isLoading && !isLoggedIn && (
           <Alert className="mb-6 bg-card/50 border-border/50">
             <Info className="h-4 w-4" />
             <AlertDescription className="text-sm text-muted-foreground">
@@ -265,21 +300,12 @@ function GeneratedPuzzlesSection() {
   const { isGeneratedCompleted } = usePuzzleProgress();
   const [sortMode, setSortMode] = useState<PuzzleSortMode>("number");
   const { voteFor, isVotePending, isVoteFailed } = usePuzzleCardVotes();
-  const puzzlesQuery = useQuery({
-    queryKey: SAVED_PUZZLES_QUERY_KEY,
-    queryFn: fetchSavedPuzzles,
-  });
+  // Same options object the route loader warms, so this reads the primed
+  // cache entry rather than issuing the request a second time.
+  const puzzlesQuery = useQuery(savedPuzzlesQueryOptions);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const botsQuery = useQuery({
-    queryKey: ["bots", "custom-setup-standard", 6, 6],
-    queryFn: () =>
-      fetchBots({
-        variant: "custom-setup-standard",
-        boardWidth: 6,
-        boardHeight: 6,
-      }),
-  });
+  const botsQuery = useQuery(puzzleBotsQueryOptions);
   // Bots register the exact variant they serve, so the only official bot
   // listed for custom-setup-standard is PuzzleBot - the deep-search oracle.
   // If it is down, the section says so rather than substituting a shallower
@@ -332,13 +358,14 @@ function GeneratedPuzzlesSection() {
 
   return (
     <section>
-      <h2 className="text-2xl font-serif font-semibold text-foreground mb-2">
-        Generated Puzzles
-      </h2>
-      <div className="mb-6 flex flex-wrap items-center justify-between gap-2">
-        <p className="text-sm text-muted-foreground">
-          Fresh 6×6 positions to play against PuzzleBot.
-        </p>
+      {/* Heading and sort control share a row: with the old subtitle gone
+          (Nil, 2026-07-29) a control-only row under the heading would be a
+          band of empty space, and the margin here matches the handcrafted
+          section's heading so the two sections still line up. */}
+      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+        <h2 className="text-2xl font-serif font-semibold text-foreground">
+          Generated Puzzles
+        </h2>
         <div className="flex items-center gap-1">
           {PUZZLE_SORT_OPTIONS.map((option) => (
             <Button

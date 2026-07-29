@@ -1,7 +1,7 @@
 /**
  * Retires saved puzzles by CURRENT (enabled) display name: sets
  * enabled = false and, in the SAME transaction, renumbers the remaining
- * enabled rows so display names stay continuous ("Generated Puzzle 1..K"
+ * enabled rows so display names stay continuous ("Puzzle 1..K"
  * in sortIndex order — the UI invariant from S-P2). Disabled rows keep
  * their historical names; those are display-only duplicates and are never
  * lookup candidates (identity is sourceFingerprint, and this script only
@@ -11,7 +11,11 @@
  * part of release_command — retirement is a deliberate manual step:
  *
  *   fly ssh console -a wallgame -C \
- *     "bun scripts/retire-puzzles.ts 'Generated Puzzle 7' 'Generated Puzzle 12'"
+ *     "bun scripts/retire-puzzles.ts 'Puzzle 7' 'Puzzle 12'"
+ *
+ * The names it matches are those of ENABLED `saved_puzzles` rows. The ten
+ * hand-authored puzzles share this numbering ("Puzzle 1".."Puzzle 10") but
+ * are not rows in that table at all, so they can never be matched here.
  *
  * Fail-closed: aborts unless each requested name matches EXACTLY ONE
  * enabled row; disables by captured id with exact affected-count

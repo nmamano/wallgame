@@ -17,6 +17,7 @@ export function Navigation() {
 
   const navItems = [
     { label: "Play", href: "/play" },
+    { label: "Puzzles", href: "/puzzles" },
     { label: "Ranking", href: "/ranking" },
     { label: "Past Games", href: "/past-games" },
     { label: "Live Games", href: "/live-games" },

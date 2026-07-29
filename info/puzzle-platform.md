@@ -238,12 +238,17 @@ No quality filter is applied. The positions being decent is currently a property
 Items A, B, C, D, and F were fixed 2026-07-26 (slice loop, `plans/puzzle-bugs-loop.md`,
 commits `9ea1062`..`2b4a0c0`, reviewed by Project Reviewer 1) - summary in section 4bis.
 
-### E. Bug: takeback does not work
+### E. Bug: takeback does not work - RESOLVED (Nil confirmed 2026-07-29)
 
-`server/games/bgs-store.ts` has a full takeback-replay path for bot games, so this is a
-bug and not a missing feature. Untested hypothesis: the replay rebuilds the BGS session
-from the standard initial state rather than the authored one, or the seeded partial turn
-breaks it.
+Nil confirmed on 2026-07-29 that takeback works in production. No fix was made for it
+directly, so it was either never broken in the shape reported or it was fixed in passing
+by one of the 2026-07-26 bot-game repairs (section 4bis). Kept here rather than deleted
+so the next reader does not go hunting for it again.
+
+The original report: `server/games/bgs-store.ts` has a full takeback-replay path for bot
+games, so this looked like a bug and not a missing feature. Untested hypothesis at the
+time: the replay rebuilds the BGS session from the standard initial state rather than the
+authored one, or the seeded partial turn breaks it.
 
 ### 4bis. What the 2026-07-26 fixes established (A, B, C, D, F)
 

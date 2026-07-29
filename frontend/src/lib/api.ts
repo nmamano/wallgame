@@ -334,6 +334,43 @@ export const fetchSavedPuzzles = async (): Promise<SavedPuzzlesResponse> => {
 };
 
 /**
+ * The two queries that fill the puzzles page. They live here, shared, so the
+ * route loader that warms them and the component that reads them address the
+ * SAME cache entry — a loader keyed differently from its component is a
+ * silent no-op, and the request simply happens twice.
+ *
+ * The bot listing is pinned to the 6x6 custom-setup variant because that is
+ * what every generated puzzle is played on; bots register the exact variant
+ * they serve, so this is what decides whether PuzzleBot is available.
+ *
+ * The staleTime is what stops the loader's work being thrown away: with the
+ * default of 0, data arrives from the loader already stale and the component
+ * refetches the instant it mounts, so every visit costs two requests for one
+ * answer. Half a minute is short enough that a bot going offline becomes
+ * eligible to be noticed on a visit after at most 30 seconds — a revisit
+ * inside the window deliberately serves cache — and invalidation still
+ * overrides it, so casting a vote refreshes the counts immediately.
+ */
+const PUZZLE_LIST_STALE_MS = 30_000;
+
+export const savedPuzzlesQueryOptions = {
+  queryKey: SAVED_PUZZLES_QUERY_KEY,
+  queryFn: fetchSavedPuzzles,
+  staleTime: PUZZLE_LIST_STALE_MS,
+} as const;
+
+export const puzzleBotsQueryOptions = {
+  queryKey: ["bots", "custom-setup-standard", 6, 6] as const,
+  queryFn: () =>
+    fetchBots({
+      variant: "custom-setup-standard" as const,
+      boardWidth: 6,
+      boardHeight: 6,
+    }),
+  staleTime: PUZZLE_LIST_STALE_MS,
+} as const;
+
+/**
  * One puzzle's vote state for the logged-in caller. Requires authentication,
  * so callers must gate this on a settled, authenticated user. The game page
  * uses it to recover a vote after a refresh without fetching the listing.
