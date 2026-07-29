@@ -7,7 +7,7 @@ research narrative (how we got here, and the negative result about real-game cor
 
 Status: **shipped as a first-class feature** (loops 1-4, Nil-playtested through
 loop 4's S-UI2).
-The /puzzles page presents 10 scripted + 39 generated puzzles (named persisted
+The /puzzles page presents 10 scripted + 33 generated puzzles (named persisted
 entities, continuously numbered, launched server-authoritatively by puzzleId);
 P1 always moves first — human-as-P2 puzzles open with the bot's scripted
 lead-in as real ply 0 — and takeback, move history, Retry, and last-move
@@ -15,6 +15,10 @@ colors all work. Loop 4 (`plans/puzzle-loop-4.md`) is COMPLETE: completion track
 S-G3), one card treatment (S-UI2), the solo campaign on the same completion
 model (S-CAMP), and likes/dislikes (S-G4). Section G is done. Awaiting only
 Nil's two logged-in walkthroughs.
+Batch 2 (`plans/puzzle-batch2.md`) is under way: S-EVAL shipped 2026-07-29 —
+generated puzzles must now be DECISIVELY WINNING for the mover, six that were
+not have been retired, and the generation filter records the engine's
+evaluation instead of discarding it.
 Last updated 2026-07-29.
 
 Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
@@ -181,13 +185,23 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
 `94c989b` (candidate launcher), `a5abd94` (standard generation + puzzle framing),
 `24e22d3` (PuzzleBot + variant naming), plus the puzzle-name banner commit.
 
-- **Curation state (loop 3 S-COPY `3636107`, renumbered in S-P2):** the original
-  Generated Puzzle 1 and 6 are RETIRED (`enabled=false`, Nil: too easy) — 39 live.
-  S-P2 renumbered the ENABLED rows contiguously (display names are presentation;
-  identity is `source_fingerprint`): **old 2–5 → new 1–4, old 7–41 → new 5–39**
-  (disabled rows keep their historical names). Nil's ratings in NEW numbers:
-  pool good overall; **1, 2, 8, 9 good** (were 2, 3, 10, 11); **6, 7 excellent**
-  (were 8, 9). Retire future rejects with
+- **Curation state — 8 of 41 rows retired, 33 live.** Two rounds:
+  1. loop 3 S-COPY `3636107`: the original Generated Puzzle 1 and 6 (Nil: too easy).
+     S-P2 then renumbered the ENABLED rows contiguously: **old 2–5 → new 1–4,
+     old 7–41 → new 5–39**.
+  2. **S-EVAL 2026-07-29:** six puzzles the mover was not decisively winning —
+     then-current **17, 19, 28, 32, 34, 39** (candidates `synthetic-6x6-21`,
+     `-23`, `-35`, `-41`, `-43`, `-48`; row ids `1aU39bPioY`, `5S-CAHHLH9`,
+     `PU1J5kqmoK`, `IuJo82y0Tg`, `w1CbAJ10fA`, `pIsulg5AOf`). Survivors above 17
+     renumbered: **18→17, 20→18, 21→19, 22→20, 23→21, 24→22, 25→23, 26→24,
+     27→25, 29→26, 30→27, 31→28, 33→29, 35→30, 36→31, 37→32, 38→33.**
+
+  Display names are presentation; identity is `source_fingerprint` and the row id,
+  and disabled rows keep their historical names. **Nil's ratings are unaffected by
+  the S-EVAL renumbering** because every rated puzzle sits below 17: pool good
+  overall; **1, 2, 8, 9 good**; **6, 7 excellent**. (6 and 7 are also the two
+  survivors closest to the decisively-winning threshold — see the audit note in
+  `plans/puzzle-batch2.md` before ever raising it.) Retire future rejects with
   `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<current display name>' ..."`
   — it matches names among ENABLED rows only and renumbers survivors in the same
   transaction, so numbers stay continuous.

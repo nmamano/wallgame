@@ -244,7 +244,35 @@ check; it does not pass this.
 
 ### Status
 
-- [ ] S-EVAL — awaiting diff gate.
+- [x] **S-EVAL — DONE `3ae727b`, deployed and production-verified 2026-07-29.**
+
+PRODUCTION EVIDENCE, in the order the reviewer required:
+
+1. Clean archive of `3ae727b` deployed; the extracted tree was checked to carry the
+   0.65 threshold and the 48-verdict/36-kept artifact before deploying.
+2. Pre-write ROUND-TRIP probe green (game `pF2K2DVr`: survived BGS init, human move
+   accepted, BOT REPLIED, resigned).
+3. Read-only preflight: all six CURRENT display names matched exactly one ENABLED row
+   each, and every row's recorded `source.candidateId` matched the candidate the gate
+   rejected — **zero identity mismatches**. This is what independently confirmed the
+   candidate-to-live-puzzle arithmetic; it was derived from the kept-order and S-P2
+   renumbering, and the database agreed. Row ids and the mapping are recorded in
+   `info/puzzle-platform.md` section 3.
+4. ONE retirement invocation with all six names: 6 disabled, 17 survivors renamed,
+   33 remain contiguous 1..33.
+5. Independent exact-set read-back (a separate script comparing against the sets
+   captured BEFORE the write, not a re-derivation) — 11 of 11 PASS: total rows
+   unchanged at 41; 33 enabled; enabled set == preflight enabled minus targets;
+   newly-disabled set == exactly the six targets; the two previously disabled rows
+   still disabled; names exactly Puzzle 1..33 in sortIndex order; every retired row
+   kept its fingerprint and identity; sortIndex untouched; all 2 vote rows still
+   resolve; all 13 games carrying a puzzle_id still resolve INCLUDING the retired
+   ones; and the game played on retired Puzzle 39 is still attached by id.
+6. Post-retirement ROUND-TRIP probe green (game `JLT8XWb_`, bot replied).
+7. Live checks: `GET /api/puzzles` returns 33 rows, contiguous, sortIndex ascending,
+   serving none of the six retired ids; launching a retired puzzle by id is refused
+   404 "Puzzle not found"; the live page screenshot shows 33 generated cards and the
+   surviving votes still rendered on Puzzle 1 and Puzzle 2.
 
 ---
 
