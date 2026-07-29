@@ -324,6 +324,21 @@ breaks it.
    vote per user/puzzle pair, changeable later, stored in the DB, and puzzles
    sortable so the most liked appear first. Needs a migration, an auth-gated
    endpoint, and UI.
+5. **The solo campaign uses the same model — DONE** (loop 4, S-CAMP, board
+   task `98a0e022`). Campaign levels are played entirely client-side against a
+   local AI, so their completion is client-asserted like the scripted puzzles
+   and cannot be server-verified; everything else now matches — anonymous
+   usage rows, the per-IP limiter on the open write, a retry that resends,
+   and the same completion affordances.
+   **Transitional dual read — do not remove it as duplication.**
+   `campaign_progress` has a composite PRIMARY KEY `(user_id, level_id)` and
+   so cannot hold an anonymous (NULL user) row, which is why S-CAMP added
+   `campaign_level_completions` (migration 0020) instead of altering it.
+   Writes go only to the new table; `readCampaignProgress` unions both so no
+   existing player's markers vanish before
+   `scripts/backfill-campaign-completions.ts` has run and been verified.
+   Removing the legacy half of the read, and later dropping the old table, is
+   a deliberate follow-up — see `plans/puzzle-loop-4.md`.
 
 **Nil's decision (2026-07-26): just give puzzles names and save them.** Generate a set,
 give each a name or number, persist it under that name. Puzzles are entities, not a

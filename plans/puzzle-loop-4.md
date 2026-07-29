@@ -194,6 +194,32 @@ what completion tracking needs — only the puzzle's identity is missing from it
          so no legitimate one-ply puzzle exists today — but preserve an invariant or
          regression if future curation could introduce one.
 
+- [x] **S-CAMP — the solo campaign joins the completion model** (board task
+      `98a0e022`; Nil ordered it BEFORE S-G4). Campaign levels run entirely in
+      the browser against a local AI, so completion is CLIENT-ASSERTED like
+      the scripted puzzles and can never be server-verified — that is settled,
+      not a gap. What it gained: anonymous completions recorded as usage data,
+      the bounded per-IP limiter on the now-open write (the level id was
+      already validated against the known set), a retry that resends a failed
+      report instead of only clearing an error, and the /puzzles completion
+      affordances (checkmark only, no empty circle, no duplicate chip, log-in
+      invitation). Also fixed in passing: the list cached progress for five
+      minutes with nothing invalidating it, so a level beaten seconds earlier
+      could still show as unfinished.
+      TRANSITIONAL DUAL READ — DO NOT "SIMPLIFY" IT AWAY. `campaign_progress`
+      has a composite PRIMARY KEY `(user_id, level_id)`, and primary-key
+      columns cannot be NULL, so it structurally cannot hold an anonymous row;
+      dropping a primary key is not an additive migration. Hence a new table,
+      `campaign_level_completions`, mirroring `scripted_puzzle_completions`
+      (nullable user id, ONE unique constraint, NULLs distinct). Writes go
+      only to the new table; `readCampaignProgress` returns the distinct union
+      of BOTH tables so no existing player's markers can vanish — that covers
+      the deploy-to-backfill window, an old machine finishing an in-flight
+      legacy write during rollout, and a backfill that fails. This is the
+      expand/migrate/contract sequence, not accidental duplication.
+      CONTRACT STEP (follow-up board task, after a soak): re-run and verify
+      `scripts/backfill-campaign-completions.ts`, then remove the legacy half
+      of the read, and only later drop `campaign_progress`.
 - [ ] **S-G4 — likes / dislikes (generated puzzles only).** `puzzle_votes` table (one
       changeable row per user+puzzle), vote allowed only for a puzzle the user has
       beaten, captured on the game page right after the win notification and changeable

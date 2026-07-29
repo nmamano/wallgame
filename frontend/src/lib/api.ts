@@ -457,27 +457,33 @@ export const playPuzzle = async (args: {
 };
 
 // Campaign progress API
-import type {
-  CampaignProgressResponse,
-  CompleteLevelResponse,
+import {
+  campaignProgressResponseSchema,
+  completeLevelResponseSchema,
+  type CampaignProgressResponse,
 } from "../../../shared/contracts/campaign";
 
-export const campaignProgressQueryOptions = queryOptions({
-  queryKey: ["campaign-progress"],
-  queryFn: async (): Promise<CampaignProgressResponse> => {
-    return handleResponse<CampaignProgressResponse>(
-      api.campaign.progress.$get(),
-    );
-  },
-  staleTime: 5 * 60 * 1000,
-});
+/** Shared so a finished level can invalidate what the level list reads. */
+export const CAMPAIGN_PROGRESS_QUERY_KEY = ["campaign-progress"] as const;
 
-export const completeLevel = async (
+/**
+ * Which campaign levels the logged-in user has completed. Requires
+ * authentication: the endpoint answers 401 for anonymous callers, so callers
+ * must gate the query on a settled, authenticated user rather than firing it
+ * while browsing logged out.
+ */
+export const fetchCampaignProgress =
+  async (): Promise<CampaignProgressResponse> => {
+    const raw = await handleResponse<unknown>(api.campaign.progress.$get());
+    return campaignProgressResponseSchema.parse(raw);
+  };
+
+/** Report a campaign level completion (client-asserted; anonymous is allowed). */
+export const reportCampaignCompletion = async (
   levelId: string,
-): Promise<CompleteLevelResponse> => {
-  return handleResponse<CompleteLevelResponse>(
-    api.campaign.complete.$post({
-      json: { levelId },
-    }),
+): Promise<void> => {
+  const raw = await handleResponse<unknown>(
+    api.campaign.complete.$post({ json: { levelId } }),
   );
+  completeLevelResponseSchema.parse(raw);
 };

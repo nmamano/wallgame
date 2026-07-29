@@ -11,6 +11,7 @@ import {
   reportScriptedPuzzleCompletion,
   userQueryOptions,
 } from "@/lib/api";
+import { createCompletionRetry } from "@/lib/completion-retry";
 
 /**
  * Freshness is part of the contract, so it lives here where a test can pin
@@ -84,14 +85,16 @@ export function usePuzzleProgress() {
   const failedScriptedPuzzleId = scriptedCompletion.isError
     ? (scriptedCompletion.variables ?? null)
     : null;
-  const { mutate: sendScriptedCompletion } = scriptedCompletion;
+  const { mutate: sendScriptedCompletion, isPending: scriptedPending } =
+    scriptedCompletion;
   const retryScriptedCompletion = useMemo(
     () =>
-      createScriptedRetry({
-        failedPuzzleId: failedScriptedPuzzleId,
+      createCompletionRetry({
+        failedId: failedScriptedPuzzleId,
+        pending: scriptedPending,
         resend: sendScriptedCompletion,
       }),
-    [failedScriptedPuzzleId, sendScriptedCompletion],
+    [failedScriptedPuzzleId, scriptedPending, sendScriptedCompletion],
   );
 
   const markScriptedCompleted = useCallback(
@@ -129,22 +132,6 @@ export function usePuzzleProgress() {
     scriptedCompletionPending: scriptedCompletion.isPending,
   };
 }
-
-/**
- * Builds the retry action for a failed scripted-completion report, or null
- * when there is nothing to retry. Separated from the hook so the behaviour
- * that matters — retrying issues another request for the failed puzzle,
- * rather than merely clearing an error flag — is directly testable in a repo
- * with no React renderer.
- */
-export const createScriptedRetry = (args: {
-  failedPuzzleId: string | null;
-  resend: (puzzleId: string) => void;
-}): (() => void) | null => {
-  const { failedPuzzleId, resend } = args;
-  if (!failedPuzzleId) return null;
-  return () => resend(failedPuzzleId);
-};
 
 /**
  * Ask for a fresh progress read after a decisive puzzle win.

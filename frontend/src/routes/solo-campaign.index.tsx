@@ -1,15 +1,13 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
-import { Badge } from "@/components/ui/badge";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import { CheckCircle2, Circle, Play, Info, Clock } from "lucide-react";
+import { CheckCircle2, Play, Info, Clock } from "lucide-react";
 import {
   SOLO_CAMPAIGN_LEVELS,
   getLevelIds,
 } from "../../../shared/domain/solo-campaign-levels";
-import { userQueryOptions, campaignProgressQueryOptions } from "@/lib/api";
+import { useCampaignProgress } from "@/hooks/use-campaign-progress";
 
 export const Route = createFileRoute("/solo-campaign/")({
   component: SoloCampaign,
@@ -17,18 +15,8 @@ export const Route = createFileRoute("/solo-campaign/")({
 
 function SoloCampaign() {
   const navigate = useNavigate();
+  const { isLoggedIn, isLevelCompleted } = useCampaignProgress();
 
-  // Check if user is logged in
-  const { data: userData } = useQuery(userQueryOptions);
-  const isLoggedIn = !!userData?.user;
-
-  // Fetch campaign progress (only if logged in)
-  const { data: progressData } = useQuery({
-    ...campaignProgressQueryOptions,
-    enabled: isLoggedIn,
-  });
-
-  const completedLevels = new Set(progressData?.completedLevels ?? []);
   const levelIds = getLevelIds();
 
   const handlePlayPuzzle = (levelId: string) => {
@@ -51,7 +39,7 @@ function SoloCampaign() {
         <Alert className="mb-6 bg-card/50 border-border/50">
           <Info className="h-4 w-4" />
           <AlertDescription className="text-sm text-muted-foreground">
-            Create an account to save your progress.
+            Log in to keep track of the levels you have completed.
           </AlertDescription>
         </Alert>
       )}
@@ -59,7 +47,7 @@ function SoloCampaign() {
       <div className="space-y-4">
         {levelIds.map((levelId) => {
           const level = SOLO_CAMPAIGN_LEVELS[levelId];
-          const isCompleted = completedLevels.has(levelId);
+          const isCompleted = isLevelCompleted(levelId);
 
           return (
             <Card
@@ -67,24 +55,23 @@ function SoloCampaign() {
               className="p-6 hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur"
             >
               <div className="flex items-center justify-between">
+                {/* A checkmark when completed and nothing at all otherwise:
+                    an empty circle beside a "Completed" chip beside a
+                    checkmark said the same thing three times (Nil, S-UI2).
+                    The slot keeps its width either way, so level names stay
+                    aligned down the list instead of stepping right wherever
+                    a checkmark appears. */}
                 <div className="flex items-center gap-4 flex-1">
-                  <div className="text-foreground">
-                    {isCompleted ? (
+                  <div className="w-6 shrink-0">
+                    {isCompleted && (
                       <CheckCircle2 className="w-6 h-6 text-green-600 dark:text-green-500" />
-                    ) : (
-                      <Circle className="w-6 h-6" />
                     )}
                   </div>
 
                   <div className="flex-1 min-w-0">
-                    <h3 className="text-xl font-serif font-semibold text-foreground mb-1">
+                    <h3 className="text-xl font-serif font-semibold text-foreground">
                       {levelId}. {level.name}
                     </h3>
-                    {isCompleted && (
-                      <Badge className="text-xs bg-green-600 dark:bg-green-700">
-                        Completed
-                      </Badge>
-                    )}
                   </div>
                 </div>
 

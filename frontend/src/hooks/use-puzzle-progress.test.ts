@@ -1,7 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { QueryClient } from "@tanstack/react-query";
 import {
-  createScriptedRetry,
   invalidatePuzzleProgress,
   puzzleProgressQueryOptions,
 } from "./use-puzzle-progress";
@@ -43,40 +42,5 @@ describe("puzzle progress freshness", () => {
 
   it("uses the same key the API module exposes for invalidation", () => {
     expect(puzzleProgressQueryOptions.queryKey).toBe(PUZZLE_PROGRESS_QUERY_KEY);
-  });
-});
-
-/**
- * A scripted solve is reported once, by an effect that fires a single time
- * per puzzle. So if that report fails, the only thing standing between the
- * player and a lost solve is a retry that actually SENDS AGAIN — clearing an
- * error flag would look like a fix and lose the completion.
- */
-describe("retrying a failed scripted completion", () => {
-  it("sends the failed puzzle again", () => {
-    const sent: string[] = [];
-    const retry = createScriptedRetry({
-      failedPuzzleId: "7",
-      resend: (puzzleId) => sent.push(puzzleId),
-    });
-
-    expect(retry).not.toBeNull();
-    retry?.();
-    expect(sent).toEqual(["7"]);
-
-    // And it stays usable if the network is still unhappy.
-    retry?.();
-    expect(sent).toEqual(["7", "7"]);
-  });
-
-  it("offers nothing to retry when no report failed", () => {
-    expect(
-      createScriptedRetry({
-        failedPuzzleId: null,
-        resend: () => {
-          throw new Error("must not send");
-        },
-      }),
-    ).toBeNull();
   });
 });

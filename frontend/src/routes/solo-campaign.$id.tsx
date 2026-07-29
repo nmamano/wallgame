@@ -1,6 +1,5 @@
 import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useEffect, useMemo, useRef, useCallback } from "react";
-import { useMutation, useQuery } from "@tanstack/react-query";
 import { Board } from "@/components/board";
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
@@ -13,7 +12,7 @@ import {
 } from "../../../shared/domain/solo-campaign-levels";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
-import { userQueryOptions, completeLevel } from "@/lib/api";
+import { useCampaignProgress } from "@/hooks/use-campaign-progress";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { ArrowLeft, Check, Undo2 } from "lucide-react";
 
@@ -26,22 +25,12 @@ function SoloCampaignLevel() {
   const navigate = useNavigate();
   const level = SOLO_CAMPAIGN_LEVELS[id];
 
-  // Check if user is logged in
-  const { data: userData } = useQuery(userQueryOptions);
-  const isLoggedIn = !!userData?.user;
-
-  // Complete level mutation
-  const completeLevelMutation = useMutation({
-    mutationFn: (levelId: string) => completeLevel(levelId),
-    onError: (error) => {
-      console.error("Failed to save progress:", error);
-    },
-  });
+  const { markCompleted, retryCompletion } = useCampaignProgress();
 
   // Memoize onComplete to prevent infinite loops
   const onComplete = useCallback(() => {
-    completeLevelMutation.mutate(id);
-  }, [completeLevelMutation, id]);
+    markCompleted(id);
+  }, [markCompleted, id]);
 
   // Redirect if level doesn't exist
   useEffect(() => {
@@ -63,8 +52,8 @@ function SoloCampaignLevel() {
       key={id}
       level={level}
       levelId={id}
-      isLoggedIn={isLoggedIn}
       onComplete={onComplete}
+      onRetrySavingProgress={retryCompletion}
     />
   );
 }
@@ -72,15 +61,16 @@ function SoloCampaignLevel() {
 interface SoloCampaignLevelContentProps {
   level: (typeof SOLO_CAMPAIGN_LEVELS)[string];
   levelId: string;
-  isLoggedIn: boolean;
   onComplete: () => void;
+  /** Non-null only when saving this win failed; calling it tries again. */
+  onRetrySavingProgress: (() => void) | null;
 }
 
 function SoloCampaignLevelContent({
   level,
   levelId,
-  isLoggedIn,
   onComplete,
+  onRetrySavingProgress,
 }: SoloCampaignLevelContentProps) {
   const {
     gameState,
@@ -125,13 +115,15 @@ function SoloCampaignLevelContent({
   // Track if we've reported completion to prevent duplicate calls
   const hasReportedCompletion = useRef(false);
 
-  // Report completion to server when player wins
+  // Report completion to the server when the player wins — for anonymous
+  // players too, whose completions are kept as usage data even though they
+  // are shown no progress markers.
   useEffect(() => {
-    if (playerWon && isLoggedIn && !hasReportedCompletion.current) {
+    if (playerWon && !hasReportedCompletion.current) {
       hasReportedCompletion.current = true;
       onComplete();
     }
-  }, [playerWon, isLoggedIn, onComplete]);
+  }, [playerWon, onComplete]);
 
   // boardPawns is now provided by useSoloCampaignGame with staged positions applied
 
@@ -213,6 +205,7 @@ function SoloCampaignLevelContent({
             won={playerWon}
             nextLevelId={nextLevelId}
             onTryAgain={resetLevel}
+            onRetrySavingProgress={onRetrySavingProgress}
           />
         )}
       </div>
