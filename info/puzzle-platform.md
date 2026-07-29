@@ -70,6 +70,19 @@ means deploying to production.**
 transforms of `shared/**` until restarted. If you change anything under `shared/`, restart
 that unit or you will debug ghosts. If Nil is mid-game on it, wait and ask.
 
+### Driving the real app in a browser (S-BATCH1, 2026-07-29)
+
+`scripts/browser-harness/` closes the gap the row above creates. It serves the BUILT
+frontend (`frontend/dist`) with a stubbed API and drives real headless Chrome over the
+DevTools protocol, so questions like "do cards arrive in waves", "does the nav bar fit at
+1024px", or "does navigating back re-read progress" get measured instead of reasoned
+about. Chrome is installed on auntie. See its README - it is a diagnostic tool, not a
+test suite, and no gate runs it.
+
+The lesson it exists to enforce: **an experiment proves nothing unless you can name what
+it makes impossible.** The campaign example flips server-side state from the driver,
+outside the browser, precisely so a checkmark cannot have come from any earlier read.
+
 ### The two bots
 
 Both run on the desktop from one client process, configured in
@@ -178,8 +191,20 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
   `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<current display name>' ..."`
   — it matches names among ENABLED rows only and renumbers survivors in the same
   transaction, so numbers stay continuous.
+- **Naming (S-BATCH1 `caf7117`, 2026-07-29):** generated puzzles are called
+  "Puzzle 1".."Puzzle 39" - the word "Generated" described how a puzzle was made, which
+  is not the player's business. The handcrafted ten are also "Puzzle 1".."Puzzle 10", so
+  the first ten names OVERLAP on purpose. That is safe only because a display name is
+  presentation: identity is the row id, and seed matching is by `source_fingerprint`.
+  **Nothing may look a puzzle up by name.** `retire-puzzles.ts` takes names, but matches
+  them among ENABLED `saved_puzzles` rows only, and the handcrafted set is not in that
+  table at all. The one-time rename ran in-machine via
+  `scripts/rename-generated-puzzles.ts` (fail-closed, idempotent - a re-run exits 0
+  saying there is nothing to do). Historical note: rows retired before this keep their
+  old "Generated Puzzle N" names, exactly as they kept their old numbers.
 - **Saved puzzles (`3d3a318`, S-G1):** the 41 filtered candidates are PERSISTED in the
-  `saved_puzzles` table as named entities ("Generated Puzzle 1..41"), seeded manually
+  `saved_puzzles` table as named entities (seeded as "Generated Puzzle 1..41", renamed
+  since - see above), seeded manually
   inside the fly machine (`bun /app/scripts/seed-puzzles.ts`, idempotent via the UNIQUE
   mover-aware fingerprint). `GET /api/puzzles` is the read-only listing (every row
   Zod-validated fail-closed); the legacy tutorial-era CRUD route is gone (its `puzzles`

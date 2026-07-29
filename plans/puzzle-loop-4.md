@@ -458,6 +458,68 @@ WHAT S-CAMP ALSO TAUGHT (it shipped between S-G3 and this slice):
 - Locked: no automated quality gating (votes inform Nil, they do not retire
   puzzles), ELO untouched, additive migration only.
 
+## S-BATCH1 — Nil's follow-ups of 2026-07-29 (a fresh batch, not a loop-4 slice)
+
+Nil confirmed loop 4's features all work ("All the main features work"), then gave seven
+follow-ups. Run as ONE slice with the usual gates. DONE `caf7117`, deployed and
+production-verified 2026-07-29.
+
+1. Campaign checkmarks appear only after a refresh — **PARKED by Nil** ("leave as is and
+   do the rest"; he has already completed every level so he cannot easily reproduce it).
+   Board task `cfc6135a` carries the three disproved theories so nobody redoes them.
+2. Campaign end popup: buttons, not prose. The way back EXISTED as the words "main menu"
+   inside a sentence — the defect was that prose links do not read as actions and the
+   label named a screen the player does not recognise. Now Replay / Level list / Next
+   level, one primary action, primary last, `flex-wrap` so labels cannot overflow.
+3. "Puzzles" in the nav bar. Measured, not assumed: nine items fit at 1024/1280/1440
+   with no overflow; 390px keeps the drawer. At 1024px the gap to the logo is 8px — a
+   TENTH item would not fit.
+4. Generated puzzles renamed to "Puzzle 1..39". The two sets now share a numbering space
+   deliberately; see `info/puzzle-platform.md` §3 for why that is safe and what it
+   forbids. The spent `scripts/renumber-puzzles.ts` was DELETED rather than left with a
+   note (reviewer: once the naming helper changed, that script silently became a second,
+   looser route to the same write).
+5. `/puzzles` subtitle deleted; the sort control moved up beside the heading.
+6. "Scripted Puzzles" → "Handcrafted Puzzles" (copy only; internal `scripted` vocabulary
+   and the `scripted_puzzle_completions` table are untouched).
+7. The page no longer arrives in waves: a route loader (the app's FIRST) warms the user
+   query, then puzzles, bots, and progress-when-logged-in. `prefetchQuery`, not
+   `ensureQueryData` — prefetch resolves on failure, so a dead endpoint still falls
+   through to the existing inline error card instead of the router error boundary.
+   A 30s staleTime stops the component discarding the loader's work on mount.
+
+PRODUCTION EVIDENCE: round-trip probe green before the rename (game `FUUTZd3W`) and
+after it (game `SYaYZEYo`, launched by a RENAMED puzzle — bot replied both times). The
+rename printed all 39 old→new pairs, asserted the read-back, and a second run exited 0
+with "nothing to do" (idempotent). `GET /api/puzzles` returns 39 rows, "Puzzle 1".."Puzzle
+39", zero containing "Generated". Live page confirmed by screenshot: both headings, no
+subtitle, nine nav items.
+
+BROWSER-MEASURED (the new harness, against the built bundle, 400ms stub latency):
+logged in, everything arrives in ONE paint at 1214ms — 22 cards and all 3 markers
+together, and the contractual progress refetch does not blank them; logged out is one
+paint at 686ms with the log-in invitation correct immediately and only three requests;
+with `/api/puzzles` failing, the handcrafted section still renders at 999ms, the router
+error boundary NEVER takes the page, and the inline error card appears at 9606ms.
+
+### What this batch taught
+
+1. **Check whether the affordance is missing or just illegible.** Item 2 was reported as
+   "no way back" and was really "the way back is a word in a sentence". Reading the
+   component before planning turned a routing task into a labelling one.
+2. **A request log catches what a screenshot cannot.** The page looked perfect while
+   fetching two of its three endpoints twice; only the log showed it. Screenshot for
+   layout, log for behaviour.
+3. **An experiment must exclude the rival explanation, not merely agree with yours.**
+   The first campaign harness flipped state on the first read, so a read during level
+   mount could have produced the identical picture. The conclusion happened to be right,
+   which is exactly why it was dangerous. Reviewer caught it; the fixed version flips
+   state from outside the browser, and the fixture has exactly one writer.
+4. **The same defect keeps arriving in new costumes.** Three times now: a comment
+   asserting a guarantee nothing enforced, a proxy checked instead of a property, and now
+   an experiment that excluded nothing. Ask "what would make this false, and did I rule
+   it out?" before writing the sentence that claims it.
+
 ## SLICE-N PICKUPS
 
 Authored when the previous slice commits, folding in what it taught.
