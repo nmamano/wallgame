@@ -1,5 +1,5 @@
 {
-  "evaluatedAt": "2026-07-26T08:24:24.858Z",
+  "evaluatedAt": "2026-07-29T19:20:08.926Z",
   "origin": "offline:nilo@desktop-053vvpl-1",
   "botCompositeId": "offline:dw-puzzle",
   "botName": "deep_ww_bgs_engine tf_curriculum_model_73.trt samples=5000 parallel=128 (PuzzleBot's production configuration, run offline)",
@@ -11,6 +11,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": 0.9243057370185852,
       "keep": true
     },
     {
@@ -20,6 +21,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": -0.8347312211990356,
       "keep": true
     },
     {
@@ -29,6 +31,7 @@
       "beforeDistance": 4,
       "afterDistance": 2,
       "delta": -2,
+      "evaluation": 0.30107980966567993,
       "keep": false
     },
     {
@@ -38,6 +41,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": -0.9097087979316711,
       "keep": true
     },
     {
@@ -47,6 +51,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": 0.8815978169441223,
       "keep": true
     },
     {
@@ -56,6 +61,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": -0.8759987950325012,
       "keep": true
     },
     {
@@ -65,6 +71,7 @@
       "beforeDistance": 5,
       "afterDistance": 4,
       "delta": -1,
+      "evaluation": 0.9319567680358887,
       "keep": true
     },
     {
@@ -74,6 +81,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": -0.9775246977806091,
       "keep": true
     },
     {
@@ -83,6 +91,7 @@
       "beforeDistance": 5,
       "afterDistance": 7,
       "delta": 2,
+      "evaluation": 0.7708554267883301,
       "keep": true
     },
     {
@@ -92,6 +101,7 @@
       "beforeDistance": 5,
       "afterDistance": 7,
       "delta": 2,
+      "evaluation": -0.7891569137573242,
       "keep": true
     },
     {
@@ -101,15 +111,17 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": 0.8812255263328552,
       "keep": true
     },
     {
       "candidateId": "synthetic-6x6-12",
       "fingerprint": "custom-setup-standard#6x6#mover:2#0,4|3,0|3,3|2,3#0,1,vertical|1,2,vertical|1,3,horizontal|1,3,vertical|1,4,vertical|1,5,horizontal|2,0,horizontal|2,3,vertical|2,4,vertical|3,0,vertical|3,1,horizontal|3,1,vertical|3,2,vertical|4,2,horizontal|4,2,vertical|5,0,horizontal|5,1,vertical|5,4,vertical",
-      "bestMove": "^c5.^d3",
+      "bestMove": ">c6.^d3",
       "beforeDistance": 5,
       "afterDistance": 7,
       "delta": 2,
+      "evaluation": -0.9248530268669128,
       "keep": true
     },
     {
@@ -119,6 +131,7 @@
       "beforeDistance": 4,
       "afterDistance": 3,
       "delta": -1,
+      "evaluation": 0.9656842350959778,
       "keep": true
     },
     {
@@ -128,6 +141,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": -0.8591667413711548,
       "keep": true
     },
     {
@@ -137,6 +151,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": 0.9035365581512451,
       "keep": true
     },
     {
@@ -146,6 +161,7 @@
       "beforeDistance": 3,
       "afterDistance": 1,
       "delta": -2,
+      "evaluation": -0.9979077577590942,
       "keep": false
     },
     {
@@ -155,6 +171,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": 0.899958610534668,
       "keep": true
     },
     {
@@ -164,6 +181,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": -0.9915674328804016,
       "keep": true
     },
     {
@@ -173,6 +191,7 @@
       "beforeDistance": 3,
       "afterDistance": 3,
       "delta": 0,
+      "evaluation": 0.8360323309898376,
       "keep": true
     },
     {
@@ -182,16 +201,18 @@
       "beforeDistance": 5,
       "afterDistance": 9,
       "delta": 4,
+      "evaluation": -0.8746384382247925,
       "keep": true
     },
     {
       "candidateId": "synthetic-6x6-21",
       "fingerprint": "custom-setup-standard#6x6#mover:1#0,2|1,0|2,2|4,2#0,0,vertical|0,1,vertical|0,4,vertical|1,0,vertical|1,2,horizontal|1,3,vertical|1,4,horizontal|1,5,horizontal|2,1,vertical|2,4,vertical|3,2,horizontal|3,4,horizontal|4,0,vertical|4,1,horizontal|5,1,vertical|5,2,horizontal|5,2,vertical|5,4,vertical",
-      "bestMove": ">b3.^b4",
+      "bestMove": ">b5.>b3",
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
-      "keep": true
+      "evaluation": 0.5918363928794861,
+      "keep": false
     },
     {
       "candidateId": "synthetic-6x6-22",
@@ -200,6 +221,7 @@
       "beforeDistance": 4,
       "afterDistance": 3,
       "delta": -1,
+      "evaluation": -0.9920961856842041,
       "keep": true
     },
     {
@@ -209,7 +231,8 @@
       "beforeDistance": 6,
       "afterDistance": 5,
       "delta": -1,
-      "keep": true
+      "evaluation": -0.9988248348236084,
+      "keep": false
     },
     {
       "candidateId": "synthetic-6x6-24",
@@ -218,6 +241,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": -0.9439675807952881,
       "keep": true
     },
     {
@@ -227,16 +251,18 @@
       "beforeDistance": 5,
       "afterDistance": 3,
       "delta": -2,
+      "evaluation": -0.9976117014884949,
       "keep": false
     },
     {
       "candidateId": "synthetic-6x6-26",
       "fingerprint": "custom-setup-standard#6x6#mover:2#3,2|1,3|4,3|5,4#0,0,vertical|0,1,vertical|1,1,horizontal|1,1,vertical|1,2,horizontal|1,2,vertical|1,4,vertical|2,0,horizontal|2,1,horizontal|2,1,vertical|3,2,vertical|4,0,horizontal|4,0,vertical|4,1,horizontal|4,2,vertical|5,2,horizontal|5,4,vertical|5,5,horizontal",
-      "bestMove": "Cd4",
+      "bestMove": "Cd3.>c4",
       "beforeDistance": 3,
-      "afterDistance": 1,
-      "delta": -2,
-      "keep": false
+      "afterDistance": 2,
+      "delta": -1,
+      "evaluation": -0.8417144417762756,
+      "keep": true
     },
     {
       "candidateId": "synthetic-6x6-27",
@@ -245,6 +271,7 @@
       "beforeDistance": 3,
       "afterDistance": 3,
       "delta": 0,
+      "evaluation": 0.9411908388137817,
       "keep": true
     },
     {
@@ -254,6 +281,7 @@
       "beforeDistance": 3,
       "afterDistance": 3,
       "delta": 0,
+      "evaluation": -0.9118186235427856,
       "keep": true
     },
     {
@@ -263,6 +291,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": 0.9711169004440308,
       "keep": true
     },
     {
@@ -272,6 +301,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": -0.9712333679199219,
       "keep": true
     },
     {
@@ -281,6 +311,7 @@
       "beforeDistance": 3,
       "afterDistance": 2,
       "delta": -1,
+      "evaluation": 0.9881906509399414,
       "keep": true
     },
     {
@@ -290,6 +321,7 @@
       "beforeDistance": 4,
       "afterDistance": 3,
       "delta": -1,
+      "evaluation": -0.9856151938438416,
       "keep": true
     },
     {
@@ -299,6 +331,7 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
+      "evaluation": 0.8719855546951294,
       "keep": true
     },
     {
@@ -308,6 +341,7 @@
       "beforeDistance": 3,
       "afterDistance": 1,
       "delta": -2,
+      "evaluation": -0.9959836006164551,
       "keep": false
     },
     {
@@ -317,15 +351,17 @@
       "beforeDistance": 3,
       "afterDistance": 3,
       "delta": 0,
-      "keep": true
+      "evaluation": 0.15439632534980774,
+      "keep": false
     },
     {
       "candidateId": "synthetic-6x6-36",
       "fingerprint": "custom-setup-standard#6x6#mover:2#2,3|1,3|3,5|4,2#0,2,vertical|1,0,vertical|1,2,horizontal|1,2,vertical|1,3,horizontal|1,5,horizontal|2,0,vertical|2,1,horizontal|2,4,horizontal|2,4,vertical|2,5,horizontal|3,2,horizontal|3,4,horizontal|4,0,vertical|4,1,horizontal|4,2,horizontal|5,0,horizontal|5,4,vertical",
-      "bestMove": "^d2.^e2",
+      "bestMove": ">b3.^d2",
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": -0.7566191554069519,
       "keep": true
     },
     {
@@ -335,6 +371,7 @@
       "beforeDistance": 5,
       "afterDistance": 4,
       "delta": -1,
+      "evaluation": 0.9663076400756836,
       "keep": true
     },
     {
@@ -344,6 +381,7 @@
       "beforeDistance": 3,
       "afterDistance": 1,
       "delta": -2,
+      "evaluation": -0.9385756850242615,
       "keep": false
     },
     {
@@ -353,6 +391,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": 0.8527172207832336,
       "keep": true
     },
     {
@@ -362,6 +401,7 @@
       "beforeDistance": 4,
       "afterDistance": 2,
       "delta": -2,
+      "evaluation": -0.9369449615478516,
       "keep": false
     },
     {
@@ -371,7 +411,8 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
-      "keep": true
+      "evaluation": -0.06932611018419266,
+      "keep": false
     },
     {
       "candidateId": "synthetic-6x6-42",
@@ -380,6 +421,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": -0.9162325859069824,
       "keep": true
     },
     {
@@ -389,7 +431,8 @@
       "beforeDistance": 6,
       "afterDistance": 6,
       "delta": 0,
-      "keep": true
+      "evaluation": 0.2613872289657593,
+      "keep": false
     },
     {
       "candidateId": "synthetic-6x6-44",
@@ -398,15 +441,17 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": -0.9600983262062073,
       "keep": true
     },
     {
       "candidateId": "synthetic-6x6-45",
       "fingerprint": "custom-setup-standard#6x6#mover:1#3,5|3,2|2,4|4,3#0,2,vertical|1,1,vertical|1,2,vertical|1,3,horizontal|1,3,vertical|1,4,horizontal|2,0,vertical|2,1,horizontal|2,2,horizontal|3,0,horizontal|3,1,horizontal|3,5,horizontal|4,1,horizontal|4,2,vertical|4,3,horizontal|5,1,horizontal|5,3,horizontal|5,4,vertical",
-      "bestMove": ">c3.^c3",
+      "bestMove": ">d4.>d3",
       "beforeDistance": 3,
       "afterDistance": 3,
       "delta": 0,
+      "evaluation": 0.910471498966217,
       "keep": true
     },
     {
@@ -416,6 +461,7 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
+      "evaluation": -0.9482303857803345,
       "keep": true
     },
     {
@@ -425,6 +471,7 @@
       "beforeDistance": 5,
       "afterDistance": 5,
       "delta": 0,
+      "evaluation": 0.8736143112182617,
       "keep": true
     },
     {
@@ -434,7 +481,8 @@
       "beforeDistance": 4,
       "afterDistance": 4,
       "delta": 0,
-      "keep": true
+      "evaluation": 0.8999443054199219,
+      "keep": false
     }
   ]
 }

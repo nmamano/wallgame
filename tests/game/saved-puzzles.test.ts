@@ -17,6 +17,7 @@ import { PUZZLES } from "../../shared/domain/puzzles";
 import {
   savedPuzzleSeedRowSchema,
   savedPuzzleDbRowSchema,
+  savedPuzzleSourceSchema,
   mapSavedPuzzleRows,
 } from "../../shared/contracts/puzzles";
 import {
@@ -35,7 +36,7 @@ describe("saved puzzle seed rows", () => {
   it("builds exactly the kept candidates, in order, with 1..N sort indices", () => {
     const keptCount = verdictFile.verdicts.filter((v) => v.keep).length;
     expect(seedRows.length).toBe(keptCount);
-    expect(seedRows.length).toBe(41);
+    expect(seedRows.length).toBe(36);
     seedRows.forEach((row, index) => {
       expect(row.sortIndex).toBe(index + 1);
       expect(row.displayName).toBe(generatedPuzzleDisplayName(index + 1));
@@ -68,10 +69,31 @@ describe("saved puzzle seed rows", () => {
       expect(row.sourceFingerprint).toBe(verdict.fingerprint);
       expect(row.source.bestMove).toBe(verdict.bestMove);
       expect(row.source.delta).toBe(verdict.delta);
+      // A row carries the evaluation its keep decision rested on, so the
+      // provenance does not depend on finding the artifact of that day.
+      expect(row.source.evaluation).toBe(verdict.evaluation);
       expect(row.source.evaluatedAt).toBe(verdictFile.evaluatedAt);
       expect(row.source.origin).toBe(verdictFile.origin);
       expect(row.source.engine).toBe(verdictFile.botName);
     }
+  });
+
+  it("still parses a source recorded before evaluations were kept", () => {
+    // The 41 rows seeded before 2026-07-29 have no evaluation and are
+    // deliberately not backfilled, so the field must stay optional: making it
+    // required would fail every existing row closed at the read boundary.
+    const legacySource: { evaluation?: number } = { ...seedRows[0].source };
+    delete legacySource.evaluation;
+    expect(savedPuzzleSourceSchema.parse(legacySource).evaluation).toBe(
+      undefined,
+    );
+    expect(savedPuzzleSourceSchema.parse(seedRows[0].source).evaluation).toBe(
+      seedRows[0].source.evaluation,
+    );
+    // Still range-checked when present.
+    expect(() =>
+      savedPuzzleSourceSchema.parse({ ...seedRows[0].source, evaluation: 1.5 }),
+    ).toThrow();
   });
 
   it("shares display names with the scripted puzzles, and stays distinct by identity", () => {

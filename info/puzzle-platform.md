@@ -229,13 +229,37 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
   standard) are 3-6 moves through the walls.** The original generator paired each cat
   with its OWN mouse - the same "reach your mouse" misconception as the old banner
   copy - so the real races were unconstrained (measured 1..14). Fixed in S-H.
-- **Engine-best-move filter (Nil's one quality rule):** a candidate is rejected when
-  applying the engine's best first move improves the mover's distance to their goal by
-  2 (delta -2 is the rule, whatever the move's actions are; the current seven rejected
-  best moves all happened to be greedy walks). Verdicts live in
-  `shared/domain/generated-custom-setup-verdicts.json`, bound to mover-aware
-  fingerprints and validated fail-closed; a test replays every recorded best move.
-  Current batch: 41 kept / 48. Regenerate with
+- **TWO engine filters, both Nil's, both read off the SAME single evaluate response:**
+  1. *Distance rule:* reject when applying the engine's best first move improves the
+     mover's distance to their goal by 2 (delta -2 is the rule, whatever the move's
+     actions are).
+  2. *Decisively-winning rule (2026-07-29, S-EVAL):* reject unless the mover's
+     evaluation is at least `MIN_MOVER_EVALUATION` (0.65). Solving a puzzle means
+     winning it, so a position the mover cannot win is not a puzzle. This narrows the
+     "Nil is the filter" rail by exactly one property — it is a precondition of his own
+     model, not a judgement of taste. **`evaluation` was in the engine's response all
+     along and was being discarded**, which is how six unwinnable puzzles shipped; see
+     `plans/puzzle-batch2.md` for the measurements and the audit of every keep flip.
+     The threshold is a threshold on the engine's [-1,+1] number, NOT a calibrated win
+     probability (the UI happens to display 0.65 as 82.5%). It is the MIDPOINT of Nil's
+     observed keep/retire boundary, deliberately not hugging either edge: repeated
+     evaluations of the same position vary by ~0.04, so a threshold set at an anchor
+     turns engine noise into an arbitrary classification.
+     **The engine is stochastic, so a boundary classification is a measurement, not a
+     fact.** `NEAR_THRESHOLD` in the filter script flags anything within 0.15 for human
+     review; a single recorded evaluation still decides the artifact, and a rerun never
+     rewrites it. Do NOT "fix" this with a minimum-of-N rule: the puzzles nearest the
+     threshold are the two Nil rated EXCELLENT, so discarding boundary cases
+     preferentially discards the best puzzles.
+
+  Verdicts live in `shared/domain/generated-custom-setup-verdicts.json`, bound to
+  mover-aware fingerprints and validated fail-closed. **Nothing in that file is
+  trusted:** the loader replays every recorded best move with production rules, requires
+  the recorded distances to reproduce, rejects an empty move (`"---"` is valid notation
+  for a pass and would otherwise reproduce any delta-0 record), and RECOMPUTES `keep` —
+  the stored flag is an audit checksum and disagreement throws, so a rule change with a
+  stale artifact fails loudly instead of honouring old decisions.
+  Current batch: 36 kept / 48. Regenerate with
   `bun scripts/filter-puzzle-candidates.ts` - an OFFLINE ssh driver on the desktop,
   strictly one request per response. **No batch/filter tooling may target the live
   production eval path or intentionally bulk-pump requests** — a filter run against it
@@ -253,8 +277,9 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
   that produced nonsense play and probably the engine hang in game `7y7LrnoN`.
 - Deterministic per index; 32 candidates; alternating which side the human plays.
 
-No quality filter is applied. The positions being decent is currently a property of
-"6x6, 18 walls, short races", not of selection.
+Beyond those two rules no quality filter is applied. The positions being decent is
+still mostly a property of "6x6, 18 walls, short races" rather than of selection —
+what the second rule adds is only that the mover can actually win.
 
 ---
 

@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import {
   buildSavedPuzzleSeedRows,
   computeContiguousRenames,
+  generatedPuzzleDisplayName,
   rowMatchesSeedIdentity,
 } from "../../shared/domain/saved-puzzles";
 import { generateCustomSetupCandidates } from "../../shared/domain/generated-custom-setup-candidates";
@@ -19,12 +20,21 @@ const seedRows = buildSavedPuzzleSeedRows(
   verdictFile as CandidateVerdictFile,
 );
 
-const rowsFixture = (retiredSortIndices: number[]) =>
-  seedRows.map((seed, index) => ({
+/**
+ * A standalone row set, NOT the current seed rows: renumbering is arithmetic
+ * over enabled rows and has nothing to do with how many candidates the
+ * generator happens to keep. Deriving this from the seed rows once made a
+ * regenerated verdict artifact fail a renumbering test.
+ *
+ * 41 rows with 1 and 6 retired is the historical production state these
+ * assertions describe.
+ */
+const rowsFixture = (retiredSortIndices: number[], count = 41) =>
+  Array.from({ length: count }, (_, index) => ({
     id: `id-${index + 1}`,
-    displayName: seed.displayName,
-    sortIndex: seed.sortIndex,
-    enabled: !retiredSortIndices.includes(seed.sortIndex),
+    displayName: generatedPuzzleDisplayName(index + 1),
+    sortIndex: index + 1,
+    enabled: !retiredSortIndices.includes(index + 1),
   }));
 
 describe("computeContiguousRenames", () => {

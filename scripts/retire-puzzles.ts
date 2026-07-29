@@ -19,8 +19,18 @@
  *
  * Fail-closed: aborts unless each requested name matches EXACTLY ONE
  * enabled row; disables by captured id with exact affected-count
- * assertions; renumbers survivors; read-back asserts targets are disabled
- * and enabled names are contiguous and unique.
+ * assertions; renumbers survivors.
+ *
+ * The read-back proves EXACT SETS rather than counts — the id set is
+ * unchanged, the newly-disabled set equals the requested targets exactly,
+ * the surviving enabled set equals the preflight enabled set minus targets,
+ * rows already disabled stay disabled with their historical names, and no
+ * row's fingerprint, sortIndex or config moved. A write that disabled the
+ * right NUMBER of wrong rows passes a count check; it does not pass this.
+ *
+ * Pass every name in ONE invocation. Names shift as survivors renumber, so
+ * six sequential runs would resolve later names against an already-changed
+ * numbering.
  */
 
 import { and, eq } from "drizzle-orm";
@@ -122,28 +132,69 @@ const main = async () => {
   const readBack = (await db.select().from(savedPuzzlesTable)).map((raw) =>
     savedPuzzleDbRowSchema.parse(raw),
   );
+
+  // Read-back proves the EXACT sets, not just counts: a write that disabled
+  // the right number of rows but the wrong ones would pass a count check.
+  const abort = (message: string, detail?: unknown): never => {
+    console.error(`abort: ${message}`, detail ?? "");
+    process.exit(1);
+  };
+  const sorted = (ids: Iterable<string>) => [...ids].sort();
+  const sameSet = (a: Iterable<string>, b: Iterable<string>) =>
+    JSON.stringify(sorted(a)) === JSON.stringify(sorted(b));
+
   if (readBack.length !== rows.length) {
-    console.error(
-      `abort: read-back total ${readBack.length} != preflight ${rows.length}`,
-    );
-    process.exit(1);
+    abort(`read-back total ${readBack.length} != preflight ${rows.length}`);
   }
-  const stillEnabledTargets = readBack.filter(
-    (row) => targetIds.has(row.id) && row.enabled,
+  const preflightById = new Map(rows.map((row) => [row.id, row]));
+  const readBackById = new Map(readBack.map((row) => [row.id, row]));
+  if (!sameSet(preflightById.keys(), readBackById.keys())) {
+    abort("read-back id set differs from preflight");
+  }
+
+  // Exactly the targets are newly disabled; every row already disabled stays
+  // disabled and untouched.
+  const preflightEnabledIds = new Set(enabledRows.map((row) => row.id));
+  const expectedEnabledIds = new Set(
+    [...preflightEnabledIds].filter((id) => !targetIds.has(id)),
   );
-  if (stillEnabledTargets.length > 0) {
-    console.error("abort: read-back shows targets still enabled");
-    process.exit(1);
+  const enabledAfterIds = new Set(
+    readBack.filter((row) => row.enabled).map((row) => row.id),
+  );
+  if (!sameSet(enabledAfterIds, expectedEnabledIds)) {
+    abort("read-back enabled id set != preflight enabled minus targets");
   }
+  const newlyDisabled = [...preflightEnabledIds].filter(
+    (id) => !enabledAfterIds.has(id),
+  );
+  if (!sameSet(newlyDisabled, targetIds)) {
+    abort("read-back newly-disabled set != requested targets", newlyDisabled);
+  }
+
+  // Nothing but the enabled rows' display names may change: identity
+  // (fingerprint), position (sortIndex), and the launch config are invariant
+  // for EVERY row, and previously disabled rows keep their historical names.
+  const plannedRenames = new Map(renames.map((r) => [r.id, r.to]));
+  for (const before of rows) {
+    const after = readBackById.get(before.id)!;
+    if (
+      after.sourceFingerprint !== before.sourceFingerprint ||
+      after.sortIndex !== before.sortIndex ||
+      JSON.stringify(after.config) !== JSON.stringify(before.config)
+    ) {
+      abort(`row ${before.id} changed fingerprint, sortIndex or config`);
+    }
+    const expectedName = plannedRenames.get(before.id) ?? before.displayName;
+    if (after.displayName !== expectedName) {
+      abort(
+        `row ${before.id} name is "${after.displayName}", expected "${expectedName}"`,
+      );
+    }
+  }
+
   const enabledAfter = readBack
     .filter((row) => row.enabled)
     .sort((a, b) => a.sortIndex - b.sortIndex);
-  if (enabledAfter.length !== enabledRows.length - targets.length) {
-    console.error(
-      `abort: read-back enabled count ${enabledAfter.length}, expected ${enabledRows.length - targets.length}`,
-    );
-    process.exit(1);
-  }
   const expectedNames = enabledAfter.map((_, index) =>
     generatedPuzzleDisplayName(index + 1),
   );

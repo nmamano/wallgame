@@ -1,8 +1,17 @@
 /**
- * Computes engine-best-move verdicts for the generated custom-setup candidates
- * (Nil's rule: keep a candidate only if the engine's best first move improves
- * the mover's distance to their goal by at most 1) and writes them to
- * shared/domain/generated-custom-setup-verdicts.json.
+ * Computes engine verdicts for the generated custom-setup candidates and
+ * writes them to shared/domain/generated-custom-setup-verdicts.json.
+ *
+ * Two rules decide a candidate, both from the SAME single evaluate response:
+ * the best first move may improve the mover's goal distance by at most 1, and
+ * the mover must be decisively winning (MIN_MOVER_EVALUATION). The evaluation
+ * was always in the response and used to be discarded — which is how six
+ * unwinnable puzzles reached production.
+ *
+ * Because the engine is stochastic, the run prints an OLD-vs-NEW audit against
+ * the currently committed artifact and flags every candidate near the
+ * threshold. Read both before committing a regenerated artifact: a keep flip
+ * changes the canonical generated set.
  *
  * The engine is driven OFFLINE on the desktop over an ssh pipe — the same
  * deep_ww_bgs_engine binary, model, and sample settings that serve PuzzleBot
@@ -29,12 +38,32 @@ import { join } from "node:path";
 import { generateCustomSetupCandidates } from "../shared/domain/generated-custom-setup-candidates";
 import {
   computeBestMoveDelta,
-  keepByDelta,
+  keepVerdict,
+  moverEvaluation,
+  isValidEvaluation,
   applyCandidateVerdicts,
   evaluationInputKey,
+  MIN_MOVER_EVALUATION,
   type CandidateVerdict,
   type CandidateVerdictFile,
 } from "../shared/domain/custom-setup-verdicts";
+import committedVerdicts from "../shared/domain/generated-custom-setup-verdicts.json";
+
+/**
+ * How close to the threshold counts as "rerun this one and look again".
+ *
+ * Sized from MEASURED noise, not intuition. One position read 0.691, 0.715
+ * and 0.757 across three independent evaluations, so the band has to be
+ * comfortably wider than that spread AND wide enough that a candidate sitting
+ * at the top of it is still flagged: at 0.1 a 0.757 reading would fall 0.107
+ * from the threshold and go unexamined.
+ *
+ * This is only an AUDIT TRIGGER. It is not part of the keep rule, a flagged
+ * candidate is not rejected, and a rerun never rewrites the artifact — the
+ * single recorded evaluation decides the committed artifact, and the band
+ * exists to force human review of noisy boundary cases.
+ */
+const NEAR_THRESHOLD = 0.15;
 
 const sshArgIndex = process.argv.indexOf("--ssh");
 const SSH_TARGET =
@@ -166,6 +195,15 @@ const main = async () => {
             JSON.stringify(evaluated).slice(0, 200),
         );
       }
+      // Range-checked here so a malformed engine number can never reach the
+      // artifact, rather than only being caught when the artifact is read.
+      if (!isValidEvaluation(evaluated.evaluation)) {
+        throw new Error(
+          `evaluate_response evaluation for ${candidate.id} is not a number ` +
+            `in [-1,1]: ${JSON.stringify(evaluated).slice(0, 200)}`,
+        );
+      }
+      const evaluation = evaluated.evaluation;
 
       await sendAndAwait(
         { type: "end_game_session", bgsId },
@@ -176,7 +214,8 @@ const main = async () => {
         candidate,
         bestMove,
       );
-      const keep = keepByDelta(delta);
+      const moverEval = moverEvaluation(evaluation, candidate.humanPlaysAs);
+      const keep = keepVerdict({ delta, moverEval });
       verdicts.push({
         candidateId: candidate.id,
         fingerprint: evaluationInputKey(candidate),
@@ -184,11 +223,13 @@ const main = async () => {
         beforeDistance,
         afterDistance,
         delta,
+        evaluation,
         keep,
       });
       log(
         `${candidate.id}: best ${bestMove}, d ${beforeDistance}->${afterDistance} ` +
-          `(delta ${delta}) => ${keep ? "KEEP" : "REJECT"}`,
+          `(delta ${delta}), mover eval ${moverEval.toFixed(3)} ` +
+          `=> ${keep ? "KEEP" : "REJECT"}`,
       );
     }
 
@@ -202,6 +243,60 @@ const main = async () => {
         `(PuzzleBot's production configuration, run offline)`,
       verdicts,
     };
+
+    // OLD-vs-NEW audit. The engine is stochastic, so a regenerated artifact
+    // can legitimately differ; what must never happen silently is a change to
+    // which candidates are kept. Every flip is listed explicitly.
+    const previous = new Map(
+      (committedVerdicts as { verdicts: Partial<CandidateVerdict>[] }).verdicts
+        .filter((v): v is CandidateVerdict => typeof v.candidateId === "string")
+        .map((v) => [v.candidateId, v]),
+    );
+    const flips: string[] = [];
+    const nearThreshold: string[] = [];
+    log("audit (old -> new):");
+    for (const verdict of verdicts) {
+      const candidate = candidates.find((c) => c.id === verdict.candidateId)!;
+      const moverEval = moverEvaluation(
+        verdict.evaluation,
+        candidate.humanPlaysAs,
+      );
+      const old = previous.get(verdict.candidateId);
+      const oldEval =
+        old && isValidEvaluation(old.evaluation)
+          ? moverEvaluation(old.evaluation, candidate.humanPlaysAs).toFixed(3)
+          : "n/a";
+      log(
+        `  ${verdict.candidateId}: move ${old?.bestMove ?? "n/a"} -> ${verdict.bestMove}, ` +
+          `delta ${old?.delta ?? "n/a"} -> ${verdict.delta}, ` +
+          `mover eval ${oldEval} -> ${moverEval.toFixed(3)}, ` +
+          `keep ${String(old?.keep ?? "n/a")} -> ${String(verdict.keep)}`,
+      );
+      if (old && old.keep !== verdict.keep) {
+        flips.push(
+          `${verdict.candidateId}: keep ${String(old.keep)} -> ${String(verdict.keep)}`,
+        );
+      }
+      if (Math.abs(moverEval - MIN_MOVER_EVALUATION) <= NEAR_THRESHOLD) {
+        nearThreshold.push(
+          `${verdict.candidateId}: mover eval ${moverEval.toFixed(3)} ` +
+            `(threshold ${MIN_MOVER_EVALUATION})`,
+        );
+      }
+    }
+    log(
+      flips.length === 0
+        ? "KEEP FLIPS: none"
+        : `KEEP FLIPS (${flips.length}) — each one changes the canonical set:`,
+    );
+    for (const flip of flips) log(`  ${flip}`);
+    log(
+      nearThreshold.length === 0
+        ? `NEAR THRESHOLD (within ${NEAR_THRESHOLD}): none`
+        : `NEAR THRESHOLD (within ${NEAR_THRESHOLD}) — rerun these in a fresh ` +
+            `session and compare, do not average:`,
+    );
+    for (const near of nearThreshold) log(`  ${near}`);
 
     // Self-check, then atomic write: the existing artifact is replaced only
     // by a fully validated new one.

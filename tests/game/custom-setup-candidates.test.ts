@@ -6,10 +6,14 @@
  *    against its own mouse, leaving real difficulty unconstrained).
  * 2. computeBestMoveDelta applies the engine's best move with production
  *    rules and measures the mover's distance change.
- * 3. applyCandidateVerdicts fails closed on any mismatch between the
- *    committed verdict artifact and the current candidate set, so a
- *    generator edit can never silently reuse stale engine decisions.
- * 4. The committed verdict artifact covers the current generator exactly
+ * 3. The two keep rules: the distance rule and (2026-07-29) the
+ *    decisively-winning rule, including the mover-perspective sign
+ *    conversion that would invert the whole filter if it were backwards.
+ * 4. applyCandidateVerdicts fails closed on any mismatch between the
+ *    committed verdict artifact and the current candidate set, so neither a
+ *    generator edit nor a rule change can silently reuse stale engine
+ *    decisions — recorded moves are replayed and keep flags recomputed.
+ * 5. The committed verdict artifact covers the current generator exactly
  *    one-to-one (this test fails whenever the generator changes without
  *    regenerating the artifact — that is its job).
  */
@@ -22,8 +26,14 @@ import {
 import {
   computeBestMoveDelta,
   keepByDelta,
+  keepByEvaluation,
+  keepVerdict,
+  moverEvaluation,
+  isValidEvaluation,
   applyCandidateVerdicts,
   evaluationInputKey,
+  MIN_MOVER_EVALUATION,
+  type CandidateVerdict,
   type CandidateVerdictFile,
 } from "../../shared/domain/custom-setup-verdicts";
 import { Grid } from "../../shared/domain/grid";
@@ -137,30 +147,150 @@ describe("computeBestMoveDelta", () => {
   });
 });
 
+describe("the two keep rules", () => {
+  it("negates the evaluation only when the mover is P2", () => {
+    // The sign is the whole trap in this rule: an inverted conversion would
+    // keep exactly the losing positions and reject the winning ones.
+    expect(moverEvaluation(0.9, 1)).toBe(0.9);
+    expect(moverEvaluation(0.9, 2)).toBe(-0.9);
+    expect(moverEvaluation(-0.9, 1)).toBe(-0.9);
+    expect(moverEvaluation(-0.9, 2)).toBe(0.9);
+  });
+
+  it("treats the threshold as inclusive", () => {
+    expect(keepByEvaluation(MIN_MOVER_EVALUATION)).toBe(true);
+    expect(keepByEvaluation(MIN_MOVER_EVALUATION - 0.001)).toBe(false);
+    expect(keepByEvaluation(1)).toBe(true);
+    expect(keepByEvaluation(-1)).toBe(false);
+  });
+
+  it("requires BOTH rules to keep a candidate", () => {
+    const winning = MIN_MOVER_EVALUATION;
+    const losing = MIN_MOVER_EVALUATION - 0.001;
+    expect(keepVerdict({ delta: 0, moverEval: winning })).toBe(true);
+    // A decisively winning position whose answer is a greedy walk.
+    expect(keepVerdict({ delta: -2, moverEval: winning })).toBe(false);
+    // A non-trivial answer in a position the mover cannot win.
+    expect(keepVerdict({ delta: 0, moverEval: losing })).toBe(false);
+    expect(keepVerdict({ delta: -2, moverEval: losing })).toBe(false);
+  });
+
+  it("rejects evaluations that are not real numbers in [-1,1]", () => {
+    for (const good of [-1, -0.5, 0, 0.715, 1]) {
+      expect(isValidEvaluation(good)).toBe(true);
+    }
+    for (const bad of [
+      NaN,
+      Infinity,
+      -Infinity,
+      1.0001,
+      -1.0001,
+      "0.5",
+      null,
+      undefined,
+    ]) {
+      expect(isValidEvaluation(bad)).toBe(false);
+    }
+  });
+});
+
 describe("applyCandidateVerdicts fail-closed validation", () => {
-  const candidates = generateCustomSetupCandidates().slice(0, 3);
-  const goodFile = (): CandidateVerdictFile => ({
-    evaluatedAt: "2026-07-26T00:00:00.000Z",
+  // Fixtures are built from REAL committed verdicts, because the loader now
+  // replays the recorded move: a placeholder like "---" no longer parses.
+  // Only candidates that pass the distance rule are used, so the evaluation
+  // is the variable under test and regenerating the artifact cannot make
+  // these fixtures accidentally about something else.
+  const committed = committedVerdicts as CandidateVerdictFile;
+  const committedById = new Map(
+    committed.verdicts.map((v) => [v.candidateId, v]),
+  );
+  const candidates = generateCustomSetupCandidates()
+    .filter((c) => (committedById.get(c.id)?.delta ?? 0) >= -1)
+    .slice(0, 3);
+
+  /** A self-consistent file: each candidate at the given mover evaluation. */
+  const fileWithMoverEvals = (moverEvals: number[]): CandidateVerdictFile => ({
+    evaluatedAt: "2026-07-29T00:00:00.000Z",
     origin: "test",
     botCompositeId: "test:bot",
     botName: "Test Bot",
-    verdicts: candidates.map((candidate) => ({
-      candidateId: candidate.id,
-      fingerprint: evaluationInputKey(candidate),
-      bestMove: "---",
-      beforeDistance: 4,
-      afterDistance: 3,
-      delta: -1,
-      keep: true,
-    })),
+    verdicts: candidates.map((candidate, index): CandidateVerdict => {
+      const real = committedById.get(candidate.id)!;
+      const moverEval = moverEvals[index];
+      return {
+        ...real,
+        fingerprint: evaluationInputKey(candidate),
+        // Undo the mover-perspective conversion to get a raw P1 number.
+        evaluation: candidate.humanPlaysAs === 1 ? moverEval : -moverEval,
+        keep: keepVerdict({ delta: real.delta, moverEval }),
+      };
+    }),
   });
 
-  it("accepts an exact one-to-one match and filters by keep", () => {
-    const file = goodFile();
-    expect(applyCandidateVerdicts(candidates, file).length).toBe(3);
-    file.verdicts[1].keep = false;
+  const goodFile = (): CandidateVerdictFile =>
+    fileWithMoverEvals([0.99, 0.99, 0.99]);
+
+  it("keeps every candidate when all pass both rules", () => {
+    const kept = applyCandidateVerdicts(candidates, goodFile());
+    expect(kept.map((c) => c.id)).toEqual(candidates.map((c) => c.id));
+  });
+
+  it("drops a candidate the mover is not decisively winning", () => {
+    const file = fileWithMoverEvals([0.99, 0, 0.99]);
     const kept = applyCandidateVerdicts(candidates, file);
     expect(kept.map((c) => c.id)).toEqual([candidates[0].id, candidates[2].id]);
+  });
+
+  it("throws when the stored keep disagrees with the recomputed rule", () => {
+    // The artifact's keep is an audit checksum, not an instruction: a rule
+    // change with a stale file must fail loudly rather than quietly honour
+    // the old decisions.
+    const file = goodFile();
+    file.verdicts[1].keep = false;
+    expect(() => applyCandidateVerdicts(candidates, file)).toThrow(
+      /keep flag .* disagrees/,
+    );
+  });
+
+  it("throws on an evaluation that is missing, non-finite or out of range", () => {
+    for (const bad of [undefined, NaN, 1.5, -1.5]) {
+      const file = goodFile();
+      (file.verdicts[0] as { evaluation: unknown }).evaluation = bad;
+      expect(() => applyCandidateVerdicts(candidates, file)).toThrow(
+        /not a number in/,
+      );
+    }
+  });
+
+  it("throws when the recorded distances do not reproduce", () => {
+    // Fabricated numbers with a legal move: only replaying the move catches
+    // this, which is why the loader replays instead of trusting the record.
+    const file = goodFile();
+    file.verdicts[0].beforeDistance += 1;
+    expect(() => applyCandidateVerdicts(candidates, file)).toThrow(
+      /do not reproduce/,
+    );
+
+    const deltaOnly = goodFile();
+    deltaOnly.verdicts[0].delta -= 1;
+    expect(() => applyCandidateVerdicts(candidates, deltaOnly)).toThrow(
+      /do not reproduce/,
+    );
+  });
+
+  it("throws on a malformed recorded move", () => {
+    const file = goodFile();
+    file.verdicts[0].bestMove = "XYZ";
+    expect(() => applyCandidateVerdicts(candidates, file)).toThrow();
+  });
+
+  it("throws on a recorded move that is a pass", () => {
+    // "---" is VALID notation for an empty move, so it replays to zero
+    // distance change and would silently reproduce any delta-0 record. The
+    // engine never answers a live position with a pass.
+    const file = goodFile();
+    file.verdicts[0].bestMove = "---";
+    expect(() => applyCandidateVerdicts(candidates, file)).toThrow(/is empty/);
   });
 
   it("throws on a missing verdict", () => {
@@ -210,8 +340,9 @@ describe("applyCandidateVerdicts fail-closed validation", () => {
 
 describe("committed verdict artifact", () => {
   it("covers the current candidate set one-to-one and every record recomputes", () => {
-    // Fails whenever the generator changes without regenerating the artifact
-    // (bun scripts/filter-puzzle-candidates.ts). That is deliberate.
+    // Fails whenever the generator OR the rule changes without regenerating
+    // the artifact (bun scripts/filter-puzzle-candidates.ts). That is
+    // deliberate.
     const candidates = generateCustomSetupCandidates();
     const byId = new Map(candidates.map((c) => [c.id, c]));
     for (const verdict of (committedVerdicts as CandidateVerdictFile)
@@ -225,19 +356,40 @@ describe("committed verdict artifact", () => {
         afterDistance: verdict.afterDistance,
         delta: verdict.delta,
       });
-      expect(verdict.keep).toBe(keepByDelta(verdict.delta));
+      expect(verdict.delta).toBe(
+        verdict.afterDistance - verdict.beforeDistance,
+      );
+      // Every evaluation is a real number in range, and every keep flag
+      // matches BOTH rules applied to the mover's view of it.
+      expect(isValidEvaluation(verdict.evaluation)).toBe(true);
+      expect(verdict.keep).toBe(
+        keepVerdict({
+          delta: verdict.delta,
+          moverEval: moverEvaluation(
+            verdict.evaluation,
+            candidate!.humanPlaysAs,
+          ),
+        }),
+      );
     }
     const kept = applyCandidateVerdicts(
       candidates,
       committedVerdicts as CandidateVerdictFile,
     );
     expect(kept.length).toBeGreaterThan(0);
+  });
+
+  it("keeps no candidate the mover is not decisively winning", () => {
+    // The property the six retired puzzles violated, asserted directly over
+    // the artifact rather than inferred from the keep flags.
+    const candidates = generateCustomSetupCandidates();
+    const byId = new Map(candidates.map((c) => [c.id, c]));
     for (const verdict of (committedVerdicts as CandidateVerdictFile)
       .verdicts) {
-      // Every recorded delta obeys the keep rule exactly.
-      expect(verdict.keep).toBe(keepByDelta(verdict.delta));
-      expect(verdict.delta).toBe(
-        verdict.afterDistance - verdict.beforeDistance,
+      if (!verdict.keep) continue;
+      const mover = byId.get(verdict.candidateId)!.humanPlaysAs;
+      expect(moverEvaluation(verdict.evaluation, mover)).toBeGreaterThanOrEqual(
+        MIN_MOVER_EVALUATION,
       );
     }
   });

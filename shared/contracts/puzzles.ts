@@ -51,6 +51,14 @@ export const savedPuzzleSourceSchema = z.object({
   beforeDistance: z.number().int(),
   afterDistance: z.number().int(),
   delta: z.number().int(),
+  /**
+   * The engine's raw P1-perspective evaluation at ply 0, recorded from
+   * 2026-07-29 so a row carries the number its keep decision rested on.
+   * OPTIONAL because the rows seeded before that date do not have it and are
+   * deliberately not backfilled — their provenance is the committed verdict
+   * artifact of the day they were seeded.
+   */
+  evaluation: z.number().min(-1).max(1).optional(),
   evaluatedAt: z.string().datetime(),
   origin: nonempty,
   engine: nonempty,

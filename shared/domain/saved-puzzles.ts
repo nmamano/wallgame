@@ -121,6 +121,7 @@ export const buildSavedPuzzleSeedRows = (
         beforeDistance: verdict.beforeDistance,
         afterDistance: verdict.afterDistance,
         delta: verdict.delta,
+        evaluation: verdict.evaluation,
         evaluatedAt: verdictFile.evaluatedAt,
         origin: verdictFile.origin,
         engine: verdictFile.botName,

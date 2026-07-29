@@ -49,8 +49,12 @@ const p2Rows = seedRows.filter(
 );
 
 describe("lead-in heuristic over the persisted batch", () => {
-  it("covers every P2 row with a pawn lead-in (census: 22 P1 / 11 cat / 8 mouse)", () => {
-    expect(p1Rows.length).toBe(22);
+  // Census of the batch as of the decisively-winning rule (2026-07-29): 36
+  // kept, of which 17 are P1. It was 22 P1 / 19 P2 before that rule rejected
+  // five P1 candidates and one P2, and a re-evaluated best move admitted one
+  // more P2 — so the P2 side happens to be unchanged at 19.
+  it("covers every P2 row with a pawn lead-in (census: 17 P1 / 11 cat / 8 mouse)", () => {
+    expect(p1Rows.length).toBe(17);
     expect(p2Rows.length).toBe(19);
     expect(p1Rows.every((row) => row.leadIn === null)).toBe(true);
     const pieces = p2Rows.map((row) => row.leadIn?.piece);
