@@ -298,10 +298,11 @@ WHAT S-ID TAUGHT:
       the direction must be explicit (`flex-row`), or `items-center` silently
       centres everything horizontally in a still-vertical card.
       PROCESS LESSON: I had been reasoning about layout from source and sending Nil
-      screenshots I had not looked at. Headless Chrome is installed on auntie —
-      `google-chrome --headless --disable-gpu --no-sandbox --window-size=W,H
-    --virtual-time-budget=6000 --screenshot=/tmp/x.png <url>` — and the Read tool
-      displays the PNG. LOOK AT VISUAL WORK before gating it.
+      screenshots I had not looked at. Headless Chrome IS installed on auntie, and
+      the Read tool displays a PNG — so screenshot your own visual work to a file
+      and LOOK at it before gating it. Chrome flags that work: headless,
+      disable-gpu, no-sandbox, hide-scrollbars, window-size=W,H,
+      virtual-time-budget=6000, screenshot=PATH, then the url.
 
 ## SLICE S-G4 PICKUP (authored after S-G3 shipped at 1820993)
 
