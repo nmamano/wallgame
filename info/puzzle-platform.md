@@ -5,14 +5,17 @@ and everything still to do. Companion to `info/puzzle-generation.md`, which is t
 research narrative (how we got here, and the negative result about real-game corpora).
 **This file is the one to read before picking the work up.**
 
-Status: **shipped as a first-class feature** (loops 1-3, all Nil-playtested).
+Status: **shipped as a first-class feature** (loops 1-4, Nil-playtested through
+loop 4's S-UI2).
 The /puzzles page presents 10 scripted + 39 generated puzzles (named persisted
 entities, continuously numbered, launched server-authoritatively by puzzleId);
 P1 always moves first — human-as-P2 puzzles open with the bot's scripted
 lead-in as real ply 0 — and takeback, move history, Retry, and last-move
-colors all work. Loop 4 (`plans/puzzle-loop-4.md`) has shipped G3 completion
-tracking (S-ID + S-G3); G4 likes/dislikes is the last piece.
-Last updated 2026-07-28.
+colors all work. Loop 4 (`plans/puzzle-loop-4.md`) is COMPLETE: completion tracking (S-ID,
+S-G3), one card treatment (S-UI2), the solo campaign on the same completion
+model (S-CAMP), and likes/dislikes (S-G4). Section G is done. Awaiting only
+Nil's two logged-in walkthroughs.
+Last updated 2026-07-29.
 
 Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
 tasks: 8f1cf7e3 (engine concurrency, caused two incidents), b4c2b191

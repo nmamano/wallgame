@@ -268,6 +268,26 @@ what completion tracking needs — only the puzzle's identity is missing from it
       and the mobile strip swaps its own label instead of growing.
       PRE-EXISTING, deliberately untouched: at 390px the mobile toolbar's centred
       result text already slides under the Retry button after any game.
+      DONE `5d43751`, deployed + prod-verified 2026-07-29: migration 0021 ran via
+      release_command and the catalogs read back the composite PRIMARY KEY, both
+      FKs (users cascade, saved_puzzles no-action), and
+      `CHECK ((value = ANY (ARRAY['-1'::integer, 1])))`. Live: anonymous vote write
+      401, anonymous vote read 401, an out-of-range value 401 (auth precedes
+      validation — the 400 path is pinned by `tests/game/puzzle-vote-guards.test.ts`
+      with a test identity), the public listing still 200 over all 39 puzzles with
+      zeroed counts, `myVote` null, and sortIndex ascending. ROUND-TRIP probe green
+      (game `0oWQL7q9` on Generated Puzzle 1 — bot replied).
+      STILL OPEN: the logged-in half needs Nil, since a vote requires both auth and
+      a real decisive win — beat a generated puzzle, like it from the win panel,
+      flip it, clear it, and check the card shows the same vote afterwards. An
+      authenticated-but-unsolved 403 can be observed in the same session.
+
+## Loop 4 status
+
+All five slices are shipped and production-verified: S-ID, S-G3, S-UI2 (+ its
+fix-forward), S-CAMP, S-G4. Doc §G is complete. Outstanding, and neither is loop-4
+scope: Nil's two logged-in walkthroughs (campaign markers, puzzle votes), and the
+contract step for the campaign dual read (board task `cb05c49d`).
 
 ## Open questions parked for Nil
 
