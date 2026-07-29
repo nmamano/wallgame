@@ -285,6 +285,23 @@ WHAT S-ID TAUGHT:
       leave buttons at different heights across a grid row.
       Author line and "Difficulty: N/5" badge RETAINED — Nil called only the
       Completed chip redundant.
+      FIX-FORWARD after Nil saw it in production ("the buttons look bad, the space
+      is not well used at all"): the card is now HORIZONTAL — text left, action
+      right-aligned and vertically centred. Stacking the button under the text left
+      a small pill in the bottom-left of a ~280px card beside a wide empty strip,
+      and made every card tall; the scripted section went from ~690px to ~460px of
+      height. `mt-auto` is gone: a horizontal card aligns buttons by centring, so
+      the amendment's goal survives without its mechanism.
+      TRAP WORTH REMEMBERING: `components/ui/card.tsx` bakes `flex flex-col` into
+      Card and merges with tailwind-merge, which only drops a base utility when a
+      CONFLICTING one is passed. Passing `flex` alone does NOT beat `flex-col` —
+      the direction must be explicit (`flex-row`), or `items-center` silently
+      centres everything horizontally in a still-vertical card.
+      PROCESS LESSON: I had been reasoning about layout from source and sending Nil
+      screenshots I had not looked at. Headless Chrome is installed on auntie —
+      `google-chrome --headless --disable-gpu --no-sandbox --window-size=W,H
+    --virtual-time-budget=6000 --screenshot=/tmp/x.png <url>` — and the Read tool
+      displays the PNG. LOOK AT VISUAL WORK before gating it.
 
 ## SLICE S-G4 PICKUP (authored after S-G3 shipped at 1820993)
 

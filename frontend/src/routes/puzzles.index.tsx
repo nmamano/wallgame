@@ -81,30 +81,35 @@ function PuzzleCard({
   disabled = false,
 }: PuzzleCardProps) {
   return (
-    <Card className={`flex h-full flex-col gap-3 p-4 ${puzzleCardShell}`}>
-      <div className="flex items-start gap-2">
-        {completed && (
-          <CheckCircle2 className="mt-0.5 h-5 w-5 shrink-0 text-green-600 dark:text-green-500" />
-        )}
-        <div className="min-w-0">
-          <h3 className="font-serif font-semibold text-foreground">{title}</h3>
-          {subtitle && (
-            <p className="text-sm text-muted-foreground">{subtitle}</p>
+    // Text and action sit side by side: a stacked card left the button as a
+    // small pill against a wide empty strip, wasting the space a three-column
+    // grid is meant to save.
+    // `flex-row` is explicit because Card's own classes include flex-col, and
+    // the class merge only drops a base utility when a conflicting one is
+    // passed — omitting the direction leaves the column in place.
+    <Card
+      className={`flex h-full flex-row items-center justify-between gap-3 p-4 ${puzzleCardShell}`}
+    >
+      <div className="min-w-0 flex-1">
+        <div className="flex items-start gap-2">
+          {completed && (
+            <CheckCircle2 className="mt-0.5 h-4 w-4 shrink-0 text-green-600 dark:text-green-500" />
           )}
+          <h3 className="font-serif font-semibold leading-tight text-foreground">
+            {title}
+          </h3>
         </div>
-      </div>
-
-      {badge && (
-        <div>
-          <Badge variant="outline" className="text-xs">
+        {subtitle && (
+          <p className="mt-0.5 text-sm text-muted-foreground">{subtitle}</p>
+        )}
+        {badge && (
+          <Badge variant="outline" className="mt-2 text-xs">
             {badge}
           </Badge>
-        </div>
-      )}
+        )}
+      </div>
 
-      {/* Pushed to the bottom so buttons line up across a grid row, whose
-          cards are unequal heights (only scripted ones carry author+badge). */}
-      <div className="mt-auto">
+      <div className="shrink-0">
         <Button
           className="gap-2"
           // A card whose action is in flight is never clickable, whatever the
