@@ -300,8 +300,9 @@ Not started. Notes gathered while planning:
 
 ## S-BOTS — rename, and Easy Bot (items 4 and 5)
 
-Not started. Measured before planning, because the obvious config would not have
-worked:
+- [ ] awaiting diff gate; config + docs done, desktop rollout not yet performed.
+
+Measured before planning, because the obvious config would not have worked:
 
 - **`--samples 1` is impossible.** The engine answers "No legal move available" below
   roughly 100 samples: measured FAIL at 1, 2, 3, 4, 8, 16, 32, 64, 96 and OK at 112,
@@ -322,3 +323,66 @@ worked:
 - Levers if 128 still plays too strong: an older checkpoint
   (`tf_curriculum_model_63.trt` is on the desktop) or `--model simple`. Not fewer
   samples.
+
+### What the slice added beyond the config edit
+
+The config file's schema lived inside `index.ts`, a CLI entry point that starts the
+client on import, so a validator could not reuse it. It is extracted to
+`official-custom-bot-client/src/config-schema.ts` and imported by both the client and
+the new `scripts/validate-bot-config.ts`. A validator with its own COPY of the schema
+would certify configs the client rejects, which is the same "second, looser route to the
+same write" hazard the reviewer caught in S-BATCH1.
+
+`assertEngineCommandsCoverBots` is the part the schema cannot express: bots and
+`engineCommands` must be the same EXACT set. A bot with a missing command parses
+cleanly, attaches, advertises itself, and then serves the built-in dummy implementation.
+Proven non-vacuous rather than assumed — a missing command, a typo'd command key, and a
+duplicate bot id each fail it, demonstrated on copies and pinned in
+`tests/game/bot-config-guards.test.ts`.
+
+DELIBERATELY NOT DONE, though it was written and then reverted: wiring that assert into
+the client's own `loadConfig`. It is a behaviour change to the very component being
+restarted in this slice, and a new startup failure path shipped in the same rollout
+would make a rollback ambiguous. Worth doing separately.
+
+Also noticed, not addressed: the config schema is `.strict()` at the config and bot
+levels but NOT on nested `appearance`/`variants` entries, which accept unknown keys.
+That schema is enforced at SERVER attach too, so tightening it needs the
+schema-deploys-before-client-restart ordering. Recorded on board task `5f302c24`
+alongside the runtime half of the silent-fallback hazard.
+
+### Rollout evidence checklist (reviewer amendments 3-8)
+
+Nothing below has run yet; the reviewer requires diff sign-off first.
+
+1. Local fail-closed config preflight — DONE, VALID, 3 bots each with a command.
+2. Desktop `git pull`; record the resulting sha.
+3. Run the validator AGAIN on the DESKTOP checkout and record its output — the local
+   run proves the committed file, this proves the file the client will actually read.
+4. Recheck for other active games on this client's bots IMMEDIATELY before the kill,
+   after the pre-restart probe game has resigned. An earlier check can race with a
+   player starting a game in between. Wait rather than restarting under one; a restart
+   destroys long-lived engine session state.
+5. Capture the bot log's byte offset ONLY AFTER that final check, so an OLD
+   `Engine started for bot dw-easy` line cannot satisfy the check.
+6. Restart by exact tmux SESSION NAME (never a process-pattern kill).
+7. After the offset: `Engine started for bot` for all THREE bots, then
+   `Successfully attached`. Per the reviewer's reading of the code this pair is
+   sufficient to prove the neural engine rather than the dummy fallback — the started
+   line is emitted only after `spawnEngine` returns and the process is inserted into
+   the `engines` map, and once inserted, later death does NOT fall back to the dummy
+   (the request fails instead). So do not attempt to judge move quality.
+8. Record the live child command lines showing 128/32/4 (corroboration, not proof).
+9. Listings: `?variant=standard` shows Superhuman Bot (official) and Easy Bot
+   (isOfficial false), old name absent. `?variant=custom-setup-standard` shows only
+   PuzzleBot — but do NOT claim that proves the non-official filter, since Easy Bot
+   does not advertise that variant either.
+10. MANDATORY puzzle ROUND-TRIP probe, then a second full round trip in an 8x8 standard
+    game against EASY BOT specifically.
+11. `built_in_bots`: the stable Superhuman composite id now reads "Superhuman Bot", a
+    new Easy composite id exists with `is_official` false, and Superhuman's rating and
+    history remain attached to the unchanged id. That upsert is FIRE-AND-FORGET in
+    `custom-bot-store.ts`, so POLL for it with a bounded wait rather than reading once
+    and assuming it had landed.
+12. If startup fails: restore the prior known-good sha/config immediately and report
+    rather than experimenting while the production bots are down.

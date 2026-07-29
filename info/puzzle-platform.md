@@ -87,15 +87,50 @@ The lesson it exists to enforce: **an experiment proves nothing unless you can n
 it makes impossible.** The campaign example flips server-side state from the driver,
 outside the browser, precisely so a checkmark cannot have come from any earlier read.
 
-### The two bots
+### The three configured bots
 
-Both run on the desktop from one client process, configured in
-`official-custom-bot-client/transformer.prod.config.json` (tracked in git):
+All three run on the desktop from ONE client process, configured in
+`official-custom-bot-client/transformer.prod.config.json` (tracked in git).
+Two are OFFICIAL; Easy Bot is deliberately not.
 
-| botId | Name | Samples | Serves |
-|---|---|---|---|
-| `dw-transformer` | Transformer Bot (experimental) | 1000 | ordinary games |
-| `dw-puzzle` | PuzzleBot | 5000 (parallel 128) | puzzles |
+| botId | Name | Official | Samples | Serves |
+|---|---|---|---|---|
+| `dw-transformer` | Superhuman Bot | yes | 1000 | ordinary games |
+| `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128) | puzzles |
+| `dw-easy` | Easy Bot | **no** | 128 | ordinary games |
+
+Naming history: `dw-transformer` was "Transformer Bot (experimental)" until
+2026-07-29 (Nil). The bot ID never changed, which is what keeps its rating and
+game history attached — `built_in_bots.display_name` is re-upserted by bot id
+on every attach, so a rename propagates to historical games for free.
+
+**Easy Bot's non-official status is load-bearing, not cosmetic.** The client
+withholds the official token for a bot marked `"official": false`, the server
+derives `isOfficial` from that token match, and `custom-bot-store.ts` then
+excludes non-official bots from the custom-setup variants and from
+`findEvalBot`. So Easy Bot structurally cannot become the puzzle oracle or
+serve the evaluation bar; it also simply does not advertise those variants,
+which is a second independent reason.
+
+**Why 128 samples and not 1** (Nil asked for "a single sample per move,
+basically just policy head"): the engine cannot do that. `peek_best_move` in
+`deep-wallwars/src/bgs_session.cpp` reports a move only once MCTS has expanded
+a COMPLETE two-action turn, so below roughly 100 samples it answers "No legal
+move available" instead of playing weakly — measured FAIL at 1/2/4/8/16/32/64/96
+and OK at 112/128/256/1000, with `--parallel_samples` ruled out as the variable
+and no board-size dependence. There is no policy-only flag. At 128 the search
+barely gets past expanding the root, so the policy prior dominates: as close to
+his intent as this engine allows. Levers if it plays too strong are an older
+checkpoint or `--model simple`, NOT fewer samples. (Internal detail — website
+copy must not describe sample counts or tree search.)
+
+Before restarting the client after any config edit, run the fail-closed
+preflight: `bun scripts/validate-bot-config.ts
+official-custom-bot-client/transformer.prod.config.json`. It parses with the
+client's own schema and asserts bots and `engineCommands` are the same exact
+set, because a bot with a MISSING command parses fine and then silently serves
+the built-in dummy implementation (board task `5f302c24` covers the runtime
+half of that hazard, which is not fixed).
 
 Same binary and model, different `--samples`. The engine's sample count is **process
 global** (`bgs_engine_main.cpp` sets `config.samples_per_move = FLAGS_samples` once), which

@@ -15,26 +15,12 @@
  */
 
 import { parseArgs } from "util";
-import { z } from "zod";
 import { BotClient } from "./ws-client";
 import { setLogLevel, logger, type LogLevel } from "./logger";
-import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
-import {
-  botConfigSchema,
-  botConfigBaseSchema,
-} from "../../shared/contracts/custom-bot-config-schema";
+import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
+import { configFileSchema, type ConfigFile } from "./config-schema";
 
 const VERSION = "3.0.0";
-
-interface ConfigBot extends Omit<BotConfig, "officialToken"> {
-  official?: boolean;
-}
-
-interface ConfigFile {
-  server?: string;
-  bots: ConfigBot[];
-  engineCommands: Record<string, string>;
-}
 
 function printUsage(): void {
   console.log(`
@@ -117,21 +103,6 @@ PROTOCOL V3 CHANGES (from V2):
 function printVersion(): void {
   console.log(`wallgame-bot-client v${VERSION}`);
 }
-
-const configBotSchema = botConfigBaseSchema
-  .omit({ officialToken: true })
-  .extend({
-    official: z.boolean().optional(),
-  })
-  .strict();
-
-const configFileSchema = z
-  .object({
-    server: z.string().optional(),
-    bots: z.array(configBotSchema).min(1),
-    engineCommands: z.record(z.string(), z.string().trim().min(1)),
-  })
-  .strict();
 
 async function loadConfig(path: string): Promise<ConfigFile> {
   const file = Bun.file(path);
