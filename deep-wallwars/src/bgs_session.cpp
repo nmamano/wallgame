@@ -8,6 +8,9 @@
 
 #include <algorithm>
 
+#include "naive_move.hpp"
+#include "simple_policy.hpp"
+
 namespace bgs {
 
 // ============================================================================
@@ -273,8 +276,41 @@ folly::coro::Task<json> handle_evaluate_position(
 
     std::string game_notation;
 
-    // A custom setup may begin after the first action of a turn.
-    auto action1_opt = session->mcts->peek_best_action();
+    // In a position the search scores as completely lost, every line loses, so the visit counts are
+    // ranking moves whose outcomes are identical - and the move that wins that ranking can look
+    // absurd to a human. Take it from the naive policy instead (board task b4c2b191). `raw_eval` is
+    // already from the MOVER's perspective, which is the perspective the threshold is written in; the
+    // P1-perspective conversion further down is only for the response field.
+    //
+    // Deliberately limited to a turn with BOTH actions still to play. The naive policy has to be told
+    // which cell the mover's pawn came from so it can exclude the undo action, and that information
+    // is not recoverable from the tree - TreeNode does not retain it. A request for a turn that has
+    // already spent an action keeps the search's move, which costs almost nothing: that can only
+    // happen at ply 0 of a custom setup which begins mid-turn, because every later evaluate follows a
+    // full applied move and therefore has both actions in hand.
+    // An UNSET threshold is off, and nothing else is: root_value() reaches exactly -1.0 in a position
+    // where every sample ends in a loss, so no numeric default can mean "disabled".
+    bool const use_naive_policy = current_turn.action == Turn::First &&
+                                  config.losing_fallback_eval.has_value() &&
+                                  raw_eval <= *config.losing_fallback_eval;
+
+    std::optional<Action> action1_opt;
+    std::optional<Move> naive_move;
+
+    if (use_naive_policy) {
+        EvaluationFunction naive_policy = SimplePolicy{
+            config.naive_move_prior, config.naive_good_move_bias, config.naive_bad_move_bias};
+        naive_move = co_await naive::best_move(naive_policy, board, current_turn, std::nullopt);
+        if (naive_move) {
+            action1_opt = naive_move->first;
+        }
+        XLOGF(DBG, "BGS {} ply {}: eval {:.3f} <= losing threshold {:.3f}, playing the naive policy",
+              bgs_id, session->ply, raw_eval, *config.losing_fallback_eval);
+    } else {
+        // A custom setup may begin after the first action of a turn.
+        action1_opt = session->mcts->peek_best_action();
+    }
+
     if (!action1_opt) {
         co_return create_evaluate_response(
             bgs_id, session->ply, "", 0.0f, false, "No legal move available");
@@ -296,7 +332,11 @@ folly::coro::Task<json> handle_evaluate_position(
             game_notation = engine_adapter::transform_move_notation(
                 model_notation, cat_pos, mouse_pos, session->padding_config);
         } else {
-            auto move_opt = session->mcts->peek_best_move();
+            // Selected on `use_naive_policy` rather than on naive_move being set, so the intent is
+            // stated rather than inferred. When the fallback is in play naive_move is necessarily
+            // populated here: it produced action1_opt, and an empty one returned above.
+            std::optional<Move> const move_opt =
+                use_naive_policy ? naive_move : session->mcts->peek_best_move();
             if (!move_opt) {
                 co_return create_evaluate_response(
                     bgs_id, session->ply, "", 0.0f, false, "No legal move available");

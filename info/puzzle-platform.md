@@ -110,7 +110,7 @@ Two are OFFICIAL; Easy Bot is deliberately not.
 | botId | Name | Official | Samples | Serves |
 |---|---|---|---|---|
 | `dw-transformer` | Superhuman Bot | yes | 1000 | ordinary games |
-| `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128) | puzzles |
+| `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128), naive below -0.9 | puzzles |
 | `dw-easy` | Easy Bot | **no** | 1 (no root noise) | ordinary games |
 
 Naming history: `dw-transformer` was "Transformer Bot (experimental)" until
@@ -155,6 +155,38 @@ that looks configured and is not.
 
 Levers if it still plays too strong are an older checkpoint or `--model simple`.
 (Internal detail — website copy must not describe sample counts or tree search.)
+
+**PuzzleBot loses gracefully below -0.9** (`--losing_fallback
+--losing_fallback_eval -0.9`, board task `b4c2b191`, Nil's own design). In a
+position the search scores as
+completely lost, every line loses — so the visit counts are ranking moves whose
+outcomes are identical, and the winner of that ranking can look absurd to a
+human. Below the threshold the move comes from `SimplePolicy`'s priors instead
+(walk the cat toward the goal), taken as a policy argmax and re-asked after the
+first action so the second one cannot be an illegal undo.
+
+**The flapping is the FEATURE, so there is deliberately no hysteresis.** The
+bot coasts while the human plays correctly, and snaps back to full-strength
+search the instant the human errs and the eval recovers. Nil: "if the human
+makes a mistake, it gets punished with full strength. that's WAI." Latching
+into naive mode would delay exactly that punishment.
+
+**Scoped to PuzzleBot only, and that is load-bearing.** Enablement is a SEPARATE
+switch from the threshold, because no number can mean "off": `root_value()`
+reaches exactly -1.0 whenever every sample ends in a loss, so an earlier version
+that defaulted the threshold to -1 and called it disabled would have fired for
+Superhuman and Easy in exactly those positions. The engine also refuses to start
+with the threshold but not the switch, so a half-configured command cannot look
+enabled and quietly do nothing. The eval scale is NOT calibrated and carries a
+large board-size
+dependent offset: a symmetric opening reads **-0.605 on 6x6, -0.827 on 8x8 and
++0.764 on native 12x10**. So on 8x8 a bot merely somewhat behind in an ordinary
+game would cross -0.9 and start playing naively for no reason a player could
+understand. -0.9 was sized against the real puzzle corpus instead: the 36 kept
+puzzles in `shared/domain/generated-custom-setup-verdicts.json`, evaluated at
+PuzzleBot's own configuration, put the BOT between -0.757 and -0.992 with a
+median of -0.912, so the threshold lands on the corpus median and fires from the
+first move in 21 of 36. Numbers and method in `plans/engine-cluster.md`.
 
 Before restarting the client after any config edit, run the fail-closed
 preflight: `bun scripts/validate-bot-config.ts

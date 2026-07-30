@@ -41,6 +41,14 @@ DEFINE_double(root_noise_factor, MCTS::Options{}.noise_factor,
               "Fraction of Dirichlet noise mixed into the root priors, in [0, 1]. "
               "0 leaves the policy head untouched, which is what a 1-sample search needs "
               "to be policy-only");
+DEFINE_bool(losing_fallback, false,
+            "Play the naive policy instead of the search once the position is hopeless. OFF unless "
+            "asked for: there is no numeric threshold that means 'disabled', because root_value() "
+            "legitimately reaches -1. On its own it uses --losing_fallback_eval's default");
+DEFINE_double(losing_fallback_eval, bgs::BgsEngineConfig::kDefaultLosingFallbackEval,
+              "How bad the position has to be, from the mover's own perspective, before "
+              "--losing_fallback takes over. In [-1, 0]. Passing it EXPLICITLY requires "
+              "--losing_fallback; on its own it is rejected rather than ignored");
 
 // Simple policy options
 DEFINE_double(move_prior, 0.3, "Move prior of simple agent");
@@ -173,8 +181,13 @@ int main(int argc, char** argv) {
         "  --cache_size N    Evaluation cache size (default: 100000)\n"
         "  --thread_pool_size N  Thread pool size (default: 12)\n"
         "  --root_noise_factor N  Dirichlet noise fraction mixed into the root priors,\n"
-        "                    in [0, 1]; 0 leaves the policy head untouched\n\n"
-        "Simple Policy Options (when --model=simple):\n"
+        "                    in [0, 1]; 0 leaves the policy head untouched\n"
+        "  --losing_fallback  Play the naive policy once the position is hopeless\n"
+        "                    (default: off; on its own it uses the default threshold)\n"
+        "  --losing_fallback_eval N  How bad it has to get first, in [-1, 0] (default: -0.9).\n"
+        "                    Passing this explicitly REQUIRES --losing_fallback: a threshold\n"
+        "                    with no switch is refused at startup, not ignored\n\n"
+        "Simple Policy Options (used by --model=simple AND by the losing fallback):\n"
         "  --move_prior N    Likelihood of choosing a pawn move (default: 0.3)\n"
         "  --good_move N     Bias for moves closer to goal (default: 1.5)\n"
         "  --bad_move N      Bias for moves farther from goal (default: 0.75)\n"
@@ -189,6 +202,28 @@ int main(int argc, char** argv) {
         FLAGS_root_noise_factor > 1.0) {
         XLOGF(ERR, "Invalid --root_noise_factor: {}", FLAGS_root_noise_factor);
         std::cerr << "Error: --root_noise_factor must be finite and within [0, 1]\n";
+        return 1;
+    }
+
+    // Bounded ABOVE by 0 on purpose: a positive threshold would mean "abandon the search while
+    // winning", which is only ever a sign error, and it would be invisible in play until someone
+    // wondered why the bot had stopped trying. Checked whether or not the fallback is enabled, so a
+    // typo cannot sit unnoticed in a config until the day someone turns the feature on.
+    if (!std::isfinite(FLAGS_losing_fallback_eval) || FLAGS_losing_fallback_eval < -1.0 ||
+        FLAGS_losing_fallback_eval > 0.0) {
+        XLOGF(ERR, "Invalid --losing_fallback_eval: {}", FLAGS_losing_fallback_eval);
+        std::cerr << "Error: --losing_fallback_eval must be finite and within [-1, 0]\n";
+        return 1;
+    }
+
+    // FAIL CLOSED on a threshold given without the switch. That combination is a config that LOOKS
+    // configured and does nothing - the same silent-downgrade shape as a bot with no engine command -
+    // and refusing to start is the only version of it anyone notices.
+    if (!gflags::GetCommandLineFlagInfoOrDie("losing_fallback_eval").is_default &&
+        !FLAGS_losing_fallback) {
+        XLOG(ERR, "--losing_fallback_eval given without --losing_fallback");
+        std::cerr << "Error: --losing_fallback_eval has no effect without --losing_fallback; "
+                     "pass both or neither\n";
         return 1;
     }
 
@@ -268,6 +303,16 @@ int main(int argc, char** argv) {
         config.model_rows = model_rows;
         config.model_columns = model_columns;
         config.root_noise_factor = static_cast<float>(FLAGS_root_noise_factor);
+        // Left EMPTY unless asked for. The optional is the enablement, so there is no number that
+        // could accidentally mean "on".
+        if (FLAGS_losing_fallback) {
+            config.losing_fallback_eval = static_cast<float>(FLAGS_losing_fallback_eval);
+        }
+        // The simple-agent flags do double duty: they configure --model=simple AND the naive policy
+        // the losing fallback plays. Same knobs, same meaning of "naive".
+        config.naive_move_prior = static_cast<float>(FLAGS_move_prior);
+        config.naive_good_move_bias = static_cast<float>(FLAGS_good_move);
+        config.naive_bad_move_bias = static_cast<float>(FLAGS_bad_move);
 
         // Create session manager
         bgs::SessionManager session_manager(eval_fn, config);
@@ -324,9 +369,14 @@ int main(int argc, char** argv) {
 
         XLOG(INFO, "Deep Wallwars V3 BGS Engine started");
         XLOGF(INFO,
-              "Configuration: samples={}, parallel={}, threads={}, cache={}, root_noise={}",
+              "Configuration: samples={}, parallel={}, threads={}, cache={}, root_noise={}, "
+              "losing_fallback={}",
               FLAGS_samples, FLAGS_parallel_samples, FLAGS_thread_pool_size, FLAGS_cache_size,
-              FLAGS_root_noise_factor);
+              FLAGS_root_noise_factor,
+              // Prints the effective state, not the flag: "off" is what the other two bots must show.
+              config.losing_fallback_eval
+                  ? std::to_string(*config.losing_fallback_eval)
+                  : std::string{"off"});
 
         // Run event loop
         evb.loopForever();

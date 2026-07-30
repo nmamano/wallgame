@@ -55,7 +55,10 @@ for (const bot of config.bots) {
   // which model, and how much search.
   const knobs =
     command.match(
-      /--samples \d+|--parallel_samples \d+|--thread_pool_size \d+|--root_noise_factor \S+|models_serving\/\S+/g,
+      // `--losing_fallback_eval` MUST precede the bare `--losing_fallback`: alternation takes the
+      // first branch that matches at a position, so the short one would swallow the long one's
+      // prefix and the threshold would silently vanish from the summary.
+      /--samples \d+|--parallel_samples \d+|--thread_pool_size \d+|--root_noise_factor \S+|--losing_fallback_eval \S+|--losing_fallback|models_serving\/\S+/g,
     ) ?? [];
   console.log(
     `  ${bot.botId}: "${bot.name}" official=${bot.official !== false} ` +

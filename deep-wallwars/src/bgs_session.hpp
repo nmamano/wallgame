@@ -6,6 +6,7 @@
 
 #include <memory>
 #include <mutex>  // std::unique_lock / std::lock_guard over m_sessions_mutex
+#include <optional>
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -34,6 +35,35 @@ struct BgsEngineConfig {
     // the policy head untouched, which is what a 1-sample "policy only" search needs; anything above
     // zero leaves that fraction of the root prior as noise.
     float root_noise_factor = MCTS::Options{}.noise_factor;
+
+    // When set, and the search scores the position this bad or worse FROM THE MOVER'S OWN
+    // PERSPECTIVE, the move is taken from the naive policy instead of from the tree (board task
+    // b4c2b191). In a completely lost position every line loses, so the visit counts are ranking moves
+    // with identical outcomes and the one that comes out can look absurd to a human.
+    //
+    // EMPTY MEANS OFF, and it is an optional rather than a number for a reason worth keeping. The
+    // first version of this defaulted to -1.0 and called that "effectively off" - which was wrong,
+    // because `MCTS::root_value()` legitimately reaches exactly -1.0 when every sample ends in a loss.
+    // So the feature would have fired for Superhuman and Easy Bot in exactly the positions where it
+    // was claimed to be disabled, contradicting both the config guard and the docs. There is no
+    // numeric value that means "off"; only the absence of a value does.
+    //
+    // Production sets it for PuzzleBot ONLY. The scale is not calibrated and carries a large
+    // board-size-dependent offset (a symmetric opening reads -0.83 on 8x8 and +0.76 on 12x10), so the
+    // number cannot be reasoned about in the abstract - see the measurement in plans/engine-cluster.md.
+    std::optional<float> losing_fallback_eval;
+
+    // The threshold production uses when the fallback IS enabled, sized against the real puzzle corpus
+    // (the 36 kept puzzles put the bot between -0.757 and -0.992, median -0.912). Lives here so the
+    // engine flag's default and this document agree by construction.
+    static constexpr float kDefaultLosingFallbackEval = -0.9f;
+
+    // Parameters for the naive policy used by that fallback: cat moves biased toward the goal, mouse
+    // moves away from the opponent's cat, walls taking the rest. Same defaults as SimplePolicy's own
+    // flags, which is what "naive" means here.
+    float naive_move_prior = 0.3f;
+    float naive_good_move_bias = 1.5f;
+    float naive_bad_move_bias = 0.75f;
 
     static constexpr int kMaxSessions = 256;
 };

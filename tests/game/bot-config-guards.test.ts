@@ -138,6 +138,33 @@ describe("the tracked production bot config", () => {
     expect(pathsOf(easy).length).toBe(2);
   });
 
+  it("pins the losing-move fallback to PuzzleBot ONLY", () => {
+    // PuzzleBot is losing by construction in every puzzle, and in a completely
+    // lost position every line loses — so the search ranks moves whose outcomes
+    // are identical and the winner can look absurd to a human. Below -0.9 it
+    // plays a naive walk-toward-the-goal policy instead, and snaps back to full
+    // search the moment the human errs and the eval recovers.
+    //
+    // Scoped to this bot on purpose. The other two must NOT enable it: on 8x8 an
+    // even position already evaluates around -0.83, so a bot merely behind in an
+    // ordinary game would cross -0.9 and start playing naively for no reason a
+    // player could understand.
+    //
+    // TWO flags, and both are pinned. Enablement is a separate switch because no
+    // NUMBER can mean "off": the engine's root value legitimately reaches exactly
+    // -1.0 in a position where every line loses, so a threshold of -1 as a
+    // "disabled" default would have fired there. The engine also refuses to start
+    // with the threshold but not the switch, so a half-configured command cannot
+    // look enabled and do nothing.
+    const config = parsedProd();
+    const puzzle = config.engineCommands["dw-puzzle"];
+    expect(puzzle).toMatch(/--losing_fallback(\s|$)/);
+    expect(puzzle).toMatch(/--losing_fallback_eval -0\.9(\s|$)/);
+    for (const other of ["dw-transformer", "dw-easy"]) {
+      expect(config.engineCommands[other]).not.toMatch(/--losing_fallback/);
+    }
+  });
+
   it("gives PuzzleBot the deepest search and Easy Bot the shallowest", () => {
     // Not a claim about strength, just that the three engine commands are not
     // accidentally identical — the whole point of separate processes.

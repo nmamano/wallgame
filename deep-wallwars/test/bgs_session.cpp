@@ -1,4 +1,5 @@
 #include "bgs_session.hpp"
+#include "bgs_test_support.hpp"
 #include "engine_adapter.hpp"
 #include "mcts.hpp"
 #include "simple_policy.hpp"
@@ -102,34 +103,10 @@ static Action policy_best_action(Policy policy, Board const& board, Turn turn) {
            })->action;
 }
 
-// Legality straight from the Board, not from the policy's edge list, so that a
-// second action which is illegal AFTER the first one is caught.
-static bool is_legal_action(Board const& board, Player player, Action const& action) {
-    if (auto const* pawn_move = std::get_if<PawnMove>(&action)) {
-        std::vector<Direction> const dirs = board.legal_directions(player, pawn_move->pawn);
-        return std::ranges::find(dirs, pawn_move->dir) != dirs.end();
-    }
-
-    std::vector<Wall> const walls = board.legal_walls();
-    return std::ranges::find(walls, std::get<Wall>(action)) != walls.end();
-}
-
-// ============================================================================
-// Helper: Create standard BgsConfig JSON
-// ============================================================================
-
-static json make_standard_config(int width = 8, int height = 8) {
-    json config;
-    config["variant"] = "standard";
-    config["boardWidth"] = width;
-    config["boardHeight"] = height;
-    config["initialState"]["pawns"]["p1"]["cat"] = {height - 1, 0};
-    config["initialState"]["pawns"]["p1"]["mouse"] = {height - 1, width - 1};
-    config["initialState"]["pawns"]["p2"]["cat"] = {0, width - 1};
-    config["initialState"]["pawns"]["p2"]["mouse"] = {0, 0};
-    config["initialState"]["walls"] = json::array();
-    return config;
-}
+// `is_legal_action` and `make_standard_config` live in test/bgs_test_support.hpp, because
+// test/naive_move.cpp needs the same two and a second copy of either would drift.
+using bgs_test::is_legal_action;
+using bgs_test::make_standard_config;
 
 static json make_classic_config(int width = 8, int height = 8) {
     json config;

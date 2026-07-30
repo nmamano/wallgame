@@ -56,6 +56,7 @@ add_library(core OBJECT
     src/game_recorder.cpp
     src/mcts.cpp
     src/model.cpp
+    src/naive_move.cpp
     src/play.cpp
     src/request_dispatcher.cpp
     src/simple_policy.cpp
@@ -94,6 +95,7 @@ if (Catch2_FOUND)
         test/gamestate.cpp
         test/main.cpp
         test/mcts.cpp
+        test/naive_move.cpp
         test/engine_adapter.cpp
         test/play.cpp
         test/request_dispatcher.cpp
