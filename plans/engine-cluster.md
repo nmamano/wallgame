@@ -579,6 +579,57 @@ Return with a concrete choice rule and the enumerated list of moves it changes. 
 need a unit case pinning a won/unclear position as **identical** to today, plus a real playtest from
 Nil - probes can only show the bot still answers; only a human can say it stopped feeling broken.
 
+### NIL DECIDED THE DESIGN, 2026-07-30. This supersedes the option survey above.
+
+Nil chose, in his words, to "handle it at the adapter level, not the core engine: if the evaluation
+says that the position is completely lost, fall back to the naive policy instead (walk toward
+goal/mouse)". Settled parameters:
+
+- **Adapter level, not `mcts.cpp`.** The core is shared with self-play and training; the BGS adapter
+  is only the bot-serving path. This is a smaller blast radius than the peek-function change I had
+  planned, and nothing that would need retraining is touched.
+- **Threshold: eval <= -0.9** from the mover's perspective. Nil picked -0.9 over my -0.8 explicitly
+  as the more aggressive/safer choice.
+- **NO hysteresis.** I proposed it; Nil declined, and he is right for a reason I had backwards - see
+  below.
+- **Firing throughout a puzzle is WORKING AS INTENDED.** I flagged that PuzzleBot is losing by
+  construction in every puzzle, so the fallback would fire constantly. Nil: "well only if the human
+  finds the right move. if the human makes a mistake, it gets punished with full strength. that's
+  WAI." That is the whole design in one line: the bot coasts while the human is playing correctly and
+  snaps back to full-strength search the moment the human errs and the eval recovers.
+- **Which is exactly why hysteresis would be a BUG, not a nicety.** Hysteresis exists to stop a
+  threshold flapping, but here the flapping IS the feature. Latching into naive mode would delay the
+  bot punishing a mistake, which is the opposite of what the design wants. My recommendation was
+  actively wrong, not merely over-cautious.
+
+`SimplePolicy` (`src/simple_policy.cpp`) is the naive policy to reuse, and it is already
+flag-configurable. Use it AS A POLICY - argmax over its priors on legal actions, re-evaluated after
+the first action - rather than hand-rolling "step toward goal". A wallgame turn is two actions and the
+second sometimes has only "undo the first" available, so a hand-rolled walker can emit an illegal
+move where an argmax over legal priors cannot.
+
+### THE ONE THING TO MEASURE BEFORE WRITING THE THRESHOLD IN
+
+I do not understand the eval scale yet, and the number depends on it. Measured on 2026-07-30: a
+**fresh, symmetric 8x8 standard opening** reported `eval = -0.8277` at 1000 samples. A symmetric
+opening should read near zero. Three candidate explanations, in order of my confidence:
+
+1. **Padding.** The production model is **10x12** (it logs `Model dimensions: 10x12`), and my probe
+   asked for an 8x8 board, so `validate_bgs_config` padded it. Nil's real games are 12x10 - native
+   size. So the -0.83 may be an artifact of a board size nobody actually plays.
+2. The value is from the perspective of the player NOT to move, or the P1-perspective conversion in
+   `handle_evaluate_position` (`bgs_session.cpp:303`) does something other than what the field name
+   suggests.
+3. The value head is not calibrated as anything probability-like.
+
+**Cheap check that settles it, and it must be done first:** run `scripts/bgs-engine-probe.ts` on a
+NATIVE 12x10 fresh position and read the eval. If it comes back near zero, explanation 1 holds, the
+scale is fine, and -0.9 is a sensible "clearly lost" line - proceed. If a native fresh opening also
+reads about -0.83, then the usable range is compressed and -0.9 is only ~0.07 from ordinary play,
+which would make the bot naive most of the time. Then bring Nil the numbers before picking a value.
+Also read a genuinely lost position and a genuinely won one, so the threshold sits inside a known
+range rather than next to a single sample.
+
 ---
 
 ## Order - SETTLED: S-CONC first
