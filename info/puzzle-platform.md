@@ -269,6 +269,20 @@ process that predates the rebuild from one that does not.
 **`ps` on the bot client exposes the official token** in its command line.
 Redact before pasting anything from it: `sed -E 's/--official-token [^ ]+/--official-token REDACTED/g'`.
 
+**The client does NOT capture engine stderr** (found 2026-07-30). Nothing
+matching `bgs_engine_main` reaches `~/logs/bot-client-transformer.log`, so an
+engine's own startup line — including its `Configuration: samples=... root_noise=...
+losing_fallback=...` state — is not readable there. To establish what a running
+engine is actually configured to do, read `/proc/<pid>/cmdline` for the argv and,
+if the mapping matters, launch the same binary directly with the same flags and
+read its startup line. Engine-side diagnostics being invisible in the client log
+is adjacent to board task `5f302c24`.
+
+**A restart replays every abandoned game.** Immediately after one, the log shows
+bursts like `Applying move ... at ply 57/58/59/60` for a game whose human left
+hours earlier — a resync rebuilding that tree. Expected, and exactly the cost
+board task `ce4434fc` describes; do not mistake it for live play.
+
 Before killing anything, check nothing is mid-game on these bots: look for
 `Evaluating position` / `Applying move` lines in the last few minutes, and
 resolve any suspicious open session against `GET /api/games/<id>`
@@ -338,9 +352,9 @@ timeout 300 ./unit_tests "[dispatcher]"   # concurrency cases; a TIMEOUT is a FA
 timeout 300 ./unit_tests                  # full suite
 ```
 
-**Compare the failures BY NAME, not by count.** As of `3aff1ae` the suite is 96 cases (91 at
-`a4b6783`, plus the five S-SAMPLES cases) with the same **6 expected failures** plus one
-separately-reported `[!shouldfail]`:
+**Compare the failures BY NAME, not by count.** As of `d85d880` the suite is 102 cases (91 at
+`a4b6783`, plus five S-SAMPLES and six S-TIEBREAK cases) with the same **6 expected failures**
+plus one separately-reported `[!shouldfail]`:
 
 ```
 parse_move_notation - Cat and mouse move                     test/bgs_session.cpp

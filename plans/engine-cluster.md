@@ -884,6 +884,123 @@ follow one. Missing:
 
 ---
 
+## S-TIEBREAK SHIPPED AND PRODUCTION-VERIFIED (`d85d880`, 2026-07-30). CLUSTER COMPLETE.
+
+Board task `b4c2b191` done, and with it all three of Nil's cluster. Same transport-branch process; main
+was fast-forwarded to the exact validated SHA and both temporary branches are deleted.
+
+PuzzleBot runs `--samples 5000 --parallel_samples 128 --thread_pool_size 4 --losing_fallback
+--losing_fallback_eval -0.9`. Superhuman Bot and Easy Bot pass neither flag.
+
+### The reviewer caught a real hole: "-1.0 is effectively off" was FALSE
+
+The first version of this made `losing_fallback_eval` a plain `float` defaulting to -1.0, described in
+three places as effectively disabled. `MCTS::root_value()` reaches exactly -1.0 whenever every sample
+ends in a loss, and the condition is `<=`, so the feature WOULD have fired for Superhuman and Easy in
+precisely the positions where the config guard and the docs both claimed it was off. I had noticed that
+-1.0 is reachable while choosing the default, decided firing there was harmless, and then wrote
+"effectively off" anyway - so the code and the claim disagreed, and every downstream argument was built
+on the claim.
+
+Fixed the way this repo's own rules already say: **no sentinels, use an optional.**
+`std::optional<float>` in the config plus a separate `--losing_fallback` switch, so no number can mean
+"on". The comment names the -1.0 boundary so nobody re-introduces a numeric sentinel by simplifying it,
+and there is a test at exactly -1.0: disabled must be byte-identical to search, explicitly enabled must
+take the naive path.
+
+The reviewer's second round caught the CLI help overstating the contract. It is ASYMMETRIC on purpose:
+`--losing_fallback` alone is fine and uses the -0.9 default, while an explicit `--losing_fallback_eval`
+without the switch is REFUSED at startup - a command line that looks configured and does nothing is the
+same silent-downgrade shape as a bot with no engine command.
+
+### The three flag-contract checks, run before anything else
+
+| launch                                          | result                                          |
+| ----------------------------------------------- | ----------------------------------------------- |
+| no fallback flags                               | starts, logs `losing_fallback=off`              |
+| `--losing_fallback --losing_fallback_eval -0.9` | starts, logs `losing_fallback=-0.900000`        |
+| `--losing_fallback_eval -0.9` alone             | **refuses, exit 1**, with the explanatory error |
+
+The first row was the one that mattered: if `gflags`' `is_default` had misfired, the new fail-closed
+check would have been a hard startup failure for the two bots that must not have this feature. The
+second row also settled a question flagged as unproven at the diff gate - gflags DOES consume a
+space-separated NEGATIVE value, so `--losing_fallback_eval -0.9` parses as -0.9 and the `=` form is not
+needed.
+
+A harness lesson from those checks: feeding the engine `< /dev/null` makes it hang until the timeout,
+because a character device is not pollable and `AsyncPipeReader` never sees EOF. Use a real pipe. The
+engine is fine - the A/B/C runs below used a pipe and exited 0 naturally.
+
+### Process evidence: the threshold as the lever, not a contrived position
+
+The probe cannot build a custom-setup position, so rather than inventing a lost board, three runs held
+the position (8x8 standard opening), the seed (777) and the sample count (1000) fixed and moved only the
+threshold:
+
+| run | flags                                           | bestMove  | fires?            |
+| --- | ----------------------------------------------- | --------- | ----------------- |
+| A   | none (the shipped default)                      | `>a2.>a1` | -                 |
+| B   | `--losing_fallback --losing_fallback_eval 0`    | **`Cc8`** | yes, -0.827 <= 0  |
+| C   | `--losing_fallback --losing_fallback_eval -0.9` | `>a2.>a1` | no, -0.827 > -0.9 |
+
+`Cc8` is the cat walking two cells toward its goal: the naive policy, end to end in the shipped binary,
+choosing a move the search does not. C is production's exact threshold and reproduces A, which is the
+process-level confirmation of the scoping argument - at the number production runs, an ordinary 8x8
+position is left to the search.
+
+Precision about those evals (-0.8279 / -0.8271 / -0.8275): the MOVES are identical between A and C, but
+the eval varies in the fourth decimal at the same seed, so the search is NOT bit-deterministic across
+processes. That matches the 0.0008 spread measured earlier and is not claimed otherwise.
+
+### Build and unit gates at the candidate SHA
+
+- `make -j6 deep_ww_bgs_engine unit_tests` - clean, only the pre-existing folly `MPMCQueue` warning.
+  This build was the first compile of ANY of `bgs_engine_main.cpp` for this slice, because that file is
+  in neither `core` nor `unit_tests` - so a `unit_tests`-only pre-gate build proves nothing about flag
+  code. Worth remembering: it is the only file where the flags live.
+- Targeted, each exit 0: `[naive]` 6 cases, `[dispatcher]` 7, `[BGS MCTS]` 9, `[BGS Session]` 7.
+- Full suite: **102 cases** (96 + 6 new), 95 passed, 6 failed + 1 as expected, and the six matched the
+  recorded baseline BY NAME. No additions, no substitutions.
+- Band sanity pass unchanged from the S-SAMPLES after-state, so neither slice moved the other.
+
+### Production rollout
+
+- Live-game check by CONJUNCTION: four games showed `status: "in-progress"`; all four had the human
+  `connected: false` AND were 12, 194, 287 and 294 minutes stale. The 12-minute one was worth a second
+  look - a guest who made ONE move, left within six seconds, and had been disconnected since. Abandoned,
+  not interrupted (task `ce4434fc`).
+- Preflight run on the DESKTOP against the file the client actually reads: VALID, and the dw-puzzle line
+  showing both flags.
+- Restarted keepalive-first, keepalive confirmed present before the kill.
+- Verified from a log byte offset captured beforehand: `Engine started` for all three, then
+  `Successfully attached with 3 bot(s)`.
+- All three engines proved to be inode **41691** with `stat -L`, matching the file on disk, and their
+  `/proc/<pid>/cmdline` confirms the scoping in production: only the `--samples 5000` process carries
+  `--losing_fallback --losing_fallback_eval -0.9`.
+- Full ROUND TRIPS green on all three: PuzzleBot `asANkzJb`, Easy Bot `-vwMNuUO`, Superhuman Bot
+  `PSu6RmwV`.
+
+### Two things the rollout revealed, neither a blocker
+
+1. **The bot client does not capture engine stderr.** Nothing matching `bgs_engine_main` appears in
+   `~/logs/bot-client-transformer.log`, so an engine's own startup line - including the new
+   `losing_fallback=` state - is NOT readable from the client log. The effective state in production is
+   therefore established in two steps rather than one: `/proc/<pid>/cmdline` shows the exact argv, and
+   the three direct launches above show what that argv produces. Worth knowing that engine-side
+   diagnostics are invisible there; it is adjacent to task `5f302c24`.
+2. **A restart replays every abandoned game.** Straight after the restart the log shows
+   `Applying move ... at ply 57/58/59/60` for `HxJPf_or` in under a second - a resync rebuilding the tree
+   for a game whose human left three hours earlier. Exactly the cost task `ce4434fc` describes.
+
+### The one thing that is NOT verified, and cannot be by a probe
+
+Whether the naive moves FEEL graceful rather than broken is Nil's judgement and needs him to play a
+puzzle. Everything above shows the bot answers, answers legally, answers differently when the threshold
+fires and identically when it does not. None of that is "it stopped feeling broken". Handed to him as a
+playtest ask.
+
+---
+
 ## Reviewer rulings (plan gate, 2026-07-30) - BINDING
 
 Full gate and amendment rulings from Project Reviewer 1. Recorded here because their session is
