@@ -443,15 +443,32 @@ TEST_CASE("validate_request - accepts standard variant", "[Padding]") {
     CHECK(result.valid);
 }
 
-TEST_CASE("validate_request - rejects freestyle variant", "[Padding]") {
+// STALE EXPECTATION, INVERTED 2026-07-30. This case asserted that freestyle is
+// rejected, which was true when it was written and stopped being true when
+// freestyle support shipped: engine_adapter.cpp:409 and :795 now name freestyle
+// among the supported variants, gamestate.cpp:27 accepts it, and all three
+// production bots advertise it in transformer.prod.config.json. The test was
+// pinning a constraint the product had deliberately removed.
+TEST_CASE("validate_request - accepts freestyle variant", "[Padding]") {
     json state;
     state["config"]["variant"] = "freestyle";
     state["config"]["boardWidth"] = 8;
     state["config"]["boardHeight"] = 8;
 
     auto result = validate_request(state, 8, 8);
+    CHECK(result.valid);
+    CHECK(result.error_message.empty());
+}
+
+TEST_CASE("validate_request - rejects an unsupported variant", "[Padding]") {
+    json state;
+    state["config"]["variant"] = "survival";
+    state["config"]["boardWidth"] = 8;
+    state["config"]["boardHeight"] = 8;
+
+    auto result = validate_request(state, 8, 8);
     CHECK_FALSE(result.valid);
-    CHECK(result.error_message.find("freestyle") != std::string::npos);
+    CHECK(result.error_message.find("survival") != std::string::npos);
 }
 
 // ============================================================================

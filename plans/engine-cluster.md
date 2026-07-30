@@ -67,6 +67,11 @@ compares against the recorded baseline.
 
 ### BASELINE: 6 pre-existing failures at `1caaa61` (RECORD THESE, they are not ours)
 
+> **CLOSED 2026-07-30 by task `e5fec60c`.** This table is the historical batch-3 baseline;
+> do not use it as the current expectation. All six are fixed and the suite is green at
+> 103 cases / 1 `[!shouldfail]`. Five were stale tests; `Invalid notation` was a real
+> `std::stoi` truncation defect in the inbound parser. See info/puzzle-platform.md.
+
 ```
 84 cases | 77 passed | 6 failed | 1 failed as expected
 ```

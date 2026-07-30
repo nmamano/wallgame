@@ -217,9 +217,12 @@ TEST_CASE("parse_move_notation - Cat and mouse move", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // P1 cat starts at a8 [7,0], mouse at h8 [7,7] (standard 8x8 setup)
-    // Valid adjacent moves: cat to a7 (up), mouse to h7 (up)
-    auto move = parse_move_notation("Ca7.Mh7", board, turn, padding);
+    // P1 cat starts at a1 [7,0], mouse at h1 [7,7] (standard 8x8 setup).
+    // Internal rows grow downward and official rows grow upward, so
+    // cell_notation([7,0], 8) is "a1" - NOT "a8", which is what these cases
+    // claimed until 2026-07-30 and why they fed the parser a cell six rows away.
+    // Valid adjacent moves: cat to a2 (up), mouse to h2 (up).
+    auto move = parse_move_notation("Ca2.Mh2", board, turn, padding);
 
     REQUIRE(move.has_value());
     REQUIRE(move->size() == 2);
@@ -233,9 +236,9 @@ TEST_CASE("parse_move_notation - Pawn move and wall", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // P1 cat starts at a8 [7,0], valid adjacent move is a7 (up)
-    // Then place a vertical wall at b3
-    auto move = parse_move_notation("Ca7.>b3", board, turn, padding);
+    // P1 cat starts at a1 [7,0], valid adjacent move is a2 (up).
+    // Then place a vertical wall at b3.
+    auto move = parse_move_notation("Ca2.>b3", board, turn, padding);
 
     REQUIRE(move.has_value());
     REQUIRE(move->size() == 2);
@@ -247,10 +250,10 @@ TEST_CASE("parse_move_notation - Double pawn move (cat moves twice)", "[BGS Move
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // P1 cat starts at a8 [7,0]. "Cb7" means cat ends at b7 [6,1].
+    // P1 cat starts at a1 [7,0]. "Cb2" means cat ends at b2 [6,1].
     // This is 2 steps away (manhattan distance 2), so cat uses both actions.
-    // Path: a8 -> b8 (right) -> b7 (up), or a8 -> a7 (up) -> b7 (right)
-    auto move = parse_move_notation("Cb7", board, turn, padding);
+    // Path: a1 -> b1 (right) -> b2 (up), or a1 -> a2 (up) -> b2 (right)
+    auto move = parse_move_notation("Cb2", board, turn, padding);
 
     REQUIRE(move.has_value());
     REQUIRE(move->size() == 2);
@@ -273,9 +276,9 @@ TEST_CASE("parse_move_notation - Double pawn move straight line", "[BGS Move Par
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // P1 cat starts at a8 [7,0]. "Ca6" means cat ends at a6 [5,0].
+    // P1 cat starts at a1 [7,0]. "Ca3" means cat ends at a3 [5,0].
     // This is 2 steps up (same column), so cat uses both actions moving up twice.
-    auto move = parse_move_notation("Ca6", board, turn, padding);
+    auto move = parse_move_notation("Ca3", board, turn, padding);
 
     REQUIRE(move.has_value());
     REQUIRE(move->size() == 2);
@@ -292,9 +295,30 @@ TEST_CASE("parse_move_notation - Invalid notation", "[BGS Move Parsing]") {
     auto config = make_standard_config(8, 8);
     auto [board, turn, padding] = convert_bgs_config_to_board(config, 8, 8);
 
-    // Missing separator (and invalid - would be 3+ actions)
+    // THIS CASE IS NOT STALE - unlike the four above, its expectation is right
+    // and the parser is wrong. Diagnosed 2026-07-30.
+    //
+    // parse_notation_part reads the row with std::stoi(coords.substr(1)), and
+    // std::stoi stops at the first non-digit WITHOUT reporting that it did. So
+    // "Ca2Mh1" parses as "Ca2" and the "Mh1" is silently discarded: the call
+    // returns ONE action where the caller asked for two. Measured, not inferred -
+    // a probe printed the parsed action list for each of these.
+    //
+    // It matters because this is the INBOUND path. handle_apply_move feeds the
+    // human's move through here into the bot's search tree, so a notation that
+    // truncates instead of failing leaves the engine searching a position the
+    // real game is not in. Production is safe only because the server always
+    // emits the "." separator, which is a property of today's caller rather
+    // than of this parser.
+    //
+    // Fix belongs in src/engine_adapter.cpp (reject unless the coordinate
+    // substring is fully consumed), so it ships with an engine rebuild.
     auto move1 = parse_move_notation("Ca2Mh1", board, turn, padding);
     CHECK_FALSE(move1.has_value());
+
+    // The same defect with the trailing junk made obvious.
+    auto move3 = parse_move_notation("Ca2xyz", board, turn, padding);
+    CHECK_FALSE(move3.has_value());
 
     // Empty string
     auto move2 = parse_move_notation("", board, turn, padding);

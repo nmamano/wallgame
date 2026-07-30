@@ -352,22 +352,39 @@ timeout 300 ./unit_tests "[dispatcher]"   # concurrency cases; a TIMEOUT is a FA
 timeout 300 ./unit_tests                  # full suite
 ```
 
-**Compare the failures BY NAME, not by count.** As of `d85d880` the suite is 102 cases (91 at
-`a4b6783`, plus five S-SAMPLES and six S-TIEBREAK cases) with the same **6 expected failures**
-plus one separately-reported `[!shouldfail]`:
+**Compare the failures BY NAME, not by count.** A count alone is not a gate: "still N" is also
+true if one stale test gets fixed while a real regression takes its slot.
+
+**The suite is now GREEN (task `e5fec60c`, 2026-07-30).** Expected result:
 
 ```
-parse_move_notation - Cat and mouse move                     test/bgs_session.cpp
-parse_move_notation - Pawn move and wall                     test/bgs_session.cpp
-parse_move_notation - Double pawn move (cat moves twice)      test/bgs_session.cpp
-parse_move_notation - Double pawn move straight line          test/bgs_session.cpp
-parse_move_notation - Invalid notation                        test/bgs_session.cpp
-validate_request - rejects freestyle variant                  test/engine_adapter.cpp
-TensorRT 5x5 model  <- tagged [!shouldfail], the "1 failed as expected"
+test cases: 103 | 102 passed | 0 failed | 1 failed as expected
 ```
 
-Those six are stale tests, tracked as board task `e5fec60c`. A count alone is not a gate:
-"still 6" is also true if one stale test gets fixed while a real regression takes its slot.
+The one expected failure is `TensorRT 5x5 model`, tagged `[!shouldfail]` upstream - it handles
+itself and is not a defect. **Any other failure is real.**
+
+What the six long-standing failures turned out to be, since "they are stale, ignore them" was
+the standing assumption for three weeks and was only 5/6 right:
+
+- Four `parse_move_notation` cases were stale. The fixture's cat is at **a1**, not the `a8`
+  every comment claimed (`cell_notation` is `official_row = rows - cell.row`, so internal
+  `[7,0]` on 8 rows is a1), so they fed the parser a cell six rows from the pawn. Proved with
+  a round trip: every legal action's own notation parses straight back, 4 of 4.
+- `validate_request - rejects freestyle variant` was stale in the other direction - freestyle
+  became supported and the test kept pinning the old rejection. Now inverted, with a
+  `survival` case added so the reject path stays covered.
+- `parse_move_notation - Invalid notation` was **a real defect, not a stale test.**
+  `parse_notation_part` read the row with `std::stoi`, which stops at the first non-digit
+  without reporting it, so `"Ca2Mh1"` parsed as `"Ca2"` and silently discarded an action.
+  That is the inbound path `handle_apply_move` uses for the human's move, so a truncating
+  parse would leave the engine searching a position the real game is not in. Fixed with
+  `std::from_chars` in `src/engine_adapter.cpp`.
+
+`scripts/cpp-test-gate.sh` used to exclude all six. Worth remembering why that was worse than
+it looked: the exclusion was the wildcard `~parse_move_notation*`, so it hid the entire parser
+group and any NEW parser breakage would also have gone unreported while the gate said green.
+The exclusions are gone; the gate now runs everything.
 
 Extracting the names (the console reporter prints a header block per failure, and gflags in
 `test/main.cpp` eats `--`-style Catch2 flags, so the XML reporter is not available):

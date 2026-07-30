@@ -31,7 +31,10 @@ Gates to re-run anytime: `.venv/bin/python -m pytest scripts/tests/ -q` (22), `s
 - Production ResNet fp16 policy drift: quantify Elo cost (fp16 vs `--noTF32` tournament) or ignore.
 - Real-run architecture config (d_model/layers/stem) + LR policy.
 - The two pre-existing untracked `.onnx.data` files at deep-wallwars root: gitignore, move, or delete.
-- 6 pre-existing drifted C++ tests (quarantined in `cpp-test-gate.sh`).
+- ~~6 pre-existing drifted C++ tests (quarantined in `cpp-test-gate.sh`).~~ CLOSED 2026-07-30
+  by task `e5fec60c`: five were stale tests, one (`Invalid notation`) was a real `std::stoi`
+  truncation defect in the inbound parser. The quarantine is removed and the gate runs the
+  whole suite.
 - Parity-harness extension to convhead (future work note from S5).
 
 ---
@@ -76,7 +79,9 @@ git -C /home/nil/nil/wallgame status --porcelain       # only intended files
 cmake --build build-tests --target unit_tests -j8 && deep-wallwars/scripts/cpp-test-gate.sh
 ```
 
-(The gate script quarantines 6 pre-existing baseline failures — see its header. Never extend the quarantine list mid-loop.)
+(The gate script no longer quarantines anything — the six baseline failures were closed on
+2026-07-30. Expect 103 cases, 102 passed, 1 failed as expected. Never add exclusions to make
+a slice pass.)
 
 **GPU-gated (each ≤ ~30 min; check `nvidia-smi` utilization is ~0% first):**
 
@@ -123,7 +128,8 @@ GPU etiquette: production bot processes `deep_ww_bgs_engine` (PIDs 559736/559737
 
 - Python venv: `deep-wallwars/.venv` — python 3.12.3, torch 2.13.0+cu130 (CUDA OK on 5090; NOTE: the Phase-2 fastai install silently UPGRADED torch from 2.10.0+cu128 — S2 onward all validated under 2.13), onnx 1.20.1, numpy 2.4.2. ⚠ venv shebangs are broken (created under `/home/yu`): ALWAYS `.venv/bin/python -m pip`, never `.venv/bin/pip`.
 - fastai 2.8.7 + pytest 9.1.1: installed into the venv during Phase 2 (verified). ⚠ PIN fastcore<2 and fastprogress<1.1 (verified working: fastcore 1.14.5, fastprogress 1.0.5): unpinned pip pulls fastcore 2.x / fastprogress 1.1+ (which imports fasthtml), and fastai 2.8.7's Optimizer breaks with "'list' object has no attribute 'starmap'". python-fasthtml uninstalled from the venv.
-- C++ suite baseline: 80 cases, 6 pre-existing failures quarantined via `scripts/cpp-test-gate.sh` (exit 0 at baseline). Fixing the drifted tests is parked for Nil.
+- C++ suite: was 80 cases with 6 failures quarantined via `scripts/cpp-test-gate.sh`; as of
+  2026-07-30 the quarantine is gone and the suite is green at 103 cases (1 `[!shouldfail]`).
 - TensorRT: `trtexec` v10.15.01 at `/usr/bin/trtexec`.
 - Catch2 v3.5.4 at `~/nil/tools/catch2` (pass `-DCatch2_DIR=~/nil/tools/catch2/lib/cmake/Catch2`).
 - C++ builds: `build-tests/` (fresh, correct paths). `build/` is legacy — read-only.

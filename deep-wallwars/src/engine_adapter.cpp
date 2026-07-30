@@ -5,6 +5,7 @@
 #include <folly/logging/xlog.h>
 
 #include <algorithm>
+#include <charconv>
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
@@ -940,12 +941,32 @@ static std::vector<Action> parse_notation_part(
     // Parse column letter (a-z) and row number
     char col_char = coords[0];
     int game_col = col_char - 'a';
-    int game_row = 0;
-    try {
-        game_row = padding_config.game_rows - std::stoi(coords.substr(1));
-    } catch (...) {
+
+    /*
+    The row must consume the REST of the part, not just its leading digits.
+
+    This used to be std::stoi(coords.substr(1)), and std::stoi stops at the first
+    non-digit without reporting that it stopped. So "Ca2Mh1" parsed as "Ca2" and
+    the "Mh1" was silently dropped - the function returned one action where the
+    caller had asked for two. That is the inbound direction: handle_apply_move
+    feeds the human's move through here into the bot's search tree, so a
+    truncating parse leaves the engine searching a position the real game is not
+    in, with no error anywhere. Production never hit it only because the server
+    always emits the "." separator, which is a property of today's caller rather
+    than a guarantee of this parser.
+
+    from_chars reports where it stopped, so trailing characters are a parse
+    failure instead of a silent truncation. It also does not throw, which is why
+    the try/catch is gone rather than merely narrowed.
+    */
+    std::string_view const row_text = std::string_view(coords).substr(1);
+    int official_row = 0;
+    auto const [parse_end, parse_ec] =
+        std::from_chars(row_text.data(), row_text.data() + row_text.size(), official_row);
+    if (parse_ec != std::errc{} || parse_end != row_text.data() + row_text.size()) {
         return {};
     }
+    int game_row = padding_config.game_rows - official_row;
 
     // Transform game coordinates to model coordinates
     Cell game_cell{game_col, game_row};
