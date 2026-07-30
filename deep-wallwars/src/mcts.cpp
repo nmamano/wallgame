@@ -318,6 +318,20 @@ void MCTS::reset_to_position(Board board, Turn turn) {
     add_root_noise();
 }
 
+// Highest-prior action among `edges`, or nullopt if there are none.
+//
+// `TreeEdge::prior` is the policy head's probability for that action and it is filled in for EVERY
+// legal action the moment a node is created, so this is well defined before any sample has descended
+// through the node. That is what lets the peek functions below answer at very low sample counts
+// instead of reporting that no move exists (board task 945fe1ef).
+static std::optional<Action> max_prior_action(std::vector<TreeEdge> const& edges) {
+    if (edges.empty()) {
+        return {};
+    }
+
+    return std::ranges::max_element(edges, {}, [](TreeEdge const& te) { return te.prior; })->action;
+}
+
 std::optional<Action> MCTS::peek_best_action() const {
     if (m_root->edges.empty()) {
         return {};
@@ -329,7 +343,11 @@ std::optional<Action> MCTS::peek_best_action() const {
     });
 
     if (!te.child) {
-        return {};
+        // No sample has descended through any root edge yet, so there is no visit evidence to rank
+        // by - but the policy's priors are already here, so the network's own preferred action is
+        // available for free. Note that `commit_to_action` deliberately does NOT do this: it moves
+        // the root into the chosen edge and therefore needs a real child.
+        return max_prior_action(m_root->edges);
     }
 
     return te.action;
@@ -361,7 +379,9 @@ std::optional<Move> MCTS::peek_best_move() const {
         return Move{*action1, legal_walls[0]};
     }
 
-    // Get the best second action from the child node
+    // Get the best second action from the child node.
+    // An empty edge list here is a genuinely action-less position, which happens when our only
+    // possible second action would be to undo the first one - see the comment in sample_rec.
     if (child->edges.empty()) {
         return {};
     }
@@ -372,13 +392,21 @@ std::optional<Move> MCTS::peek_best_move() const {
         });
 
     if (!second_edge.child) {
-        // Second action not explored - try to find any explored edge
-        auto explored_it = std::ranges::find_if(
-            child->edges, [](TreeEdge const& te) { return te.child != nullptr; });
-        if (explored_it == child->edges.end()) {
+        // No second action below `action1` has been expanded, so there is no visit evidence at this
+        // depth. That is the ordinary state below roughly a hundred samples: the root's child only
+        // gets a second visit once the search returns to it, and until then EVERY grandchild edge is
+        // still null - which is why the whole move used to be reported as unavailable and the engine
+        // answered "No legal move available" at low sample counts (board task 945fe1ef).
+        //
+        // Fall back to the policy head for the second action only. This branch is reached only when
+        // nothing below `child` is expanded at all: any expanded edge would win the max_element above
+        // on visit count, so once there is any visit evidence the search's choice stands.
+        auto action2 = max_prior_action(child->edges);
+        if (!action2) {
             return {};
         }
-        return Move{*action1, explored_it->action};
+
+        return Move{*action1, *action2};
     }
 
     return Move{*action1, second_edge.action};

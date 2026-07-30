@@ -55,7 +55,7 @@ for (const bot of config.bots) {
   // which model, and how much search.
   const knobs =
     command.match(
-      /--samples \d+|--parallel_samples \d+|--thread_pool_size \d+|models_serving\/\S+/g,
+      /--samples \d+|--parallel_samples \d+|--thread_pool_size \d+|--root_noise_factor \S+|models_serving\/\S+/g,
     ) ?? [];
   console.log(
     `  ${bot.botId}: "${bot.name}" official=${bot.official !== false} ` +

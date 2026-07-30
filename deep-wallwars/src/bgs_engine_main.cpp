@@ -7,6 +7,7 @@
 #include <folly/logging/xlog.h>
 #include <gflags/gflags.h>
 
+#include <cmath>
 #include <fstream>
 #include <iostream>
 #include <memory>
@@ -17,6 +18,7 @@
 #include "batched_model_policy.hpp"
 #include "bgs_session.hpp"
 #include "cached_policy.hpp"
+#include "mcts.hpp"
 #include "request_dispatcher.hpp"
 #include "simple_policy.hpp"
 #include "tensorrt_model.hpp"
@@ -35,6 +37,10 @@ DEFINE_uint64(cache_size, 100'000, "Size of the MCTS evaluation cache");
 DEFINE_int32(model_rows, 8, "Model rows (for --model=simple)");
 DEFINE_int32(model_columns, 8, "Model columns (for --model=simple)");
 DEFINE_int32(thread_pool_size, 12, "Number of threads in the executor pool");
+DEFINE_double(root_noise_factor, MCTS::Options{}.noise_factor,
+              "Fraction of Dirichlet noise mixed into the root priors, in [0, 1]. "
+              "0 leaves the policy head untouched, which is what a 1-sample search needs "
+              "to be policy-only");
 
 // Simple policy options
 DEFINE_double(move_prior, 0.3, "Move prior of simple agent");
@@ -165,7 +171,9 @@ int main(int argc, char** argv) {
         "  --samples N       MCTS samples per move (default: 1000)\n"
         "  --seed N          Base random seed for MCTS (default: 42)\n"
         "  --cache_size N    Evaluation cache size (default: 100000)\n"
-        "  --thread_pool_size N  Thread pool size (default: 12)\n\n"
+        "  --thread_pool_size N  Thread pool size (default: 12)\n"
+        "  --root_noise_factor N  Dirichlet noise fraction mixed into the root priors,\n"
+        "                    in [0, 1]; 0 leaves the policy head untouched\n\n"
         "Simple Policy Options (when --model=simple):\n"
         "  --move_prior N    Likelihood of choosing a pawn move (default: 0.3)\n"
         "  --good_move N     Bias for moves closer to goal (default: 1.5)\n"
@@ -174,6 +182,15 @@ int main(int argc, char** argv) {
         "  --model_columns N Model columns (default: 8)\n");
 
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+
+    // Checked before anything is built, because the value is mixed into every session's root priors
+    // and a silently-wrong one would look like a search that plays badly rather than a bad flag.
+    if (!std::isfinite(FLAGS_root_noise_factor) || FLAGS_root_noise_factor < 0.0 ||
+        FLAGS_root_noise_factor > 1.0) {
+        XLOGF(ERR, "Invalid --root_noise_factor: {}", FLAGS_root_noise_factor);
+        std::cerr << "Error: --root_noise_factor must be finite and within [0, 1]\n";
+        return 1;
+    }
 
     try {
         // Create evaluation function
@@ -250,6 +267,7 @@ int main(int argc, char** argv) {
         config.base_seed = FLAGS_seed;
         config.model_rows = model_rows;
         config.model_columns = model_columns;
+        config.root_noise_factor = static_cast<float>(FLAGS_root_noise_factor);
 
         // Create session manager
         bgs::SessionManager session_manager(eval_fn, config);
@@ -305,8 +323,10 @@ int main(int argc, char** argv) {
         stdin_pipe->setReadCB(&stdin_reader);
 
         XLOG(INFO, "Deep Wallwars V3 BGS Engine started");
-        XLOGF(INFO, "Configuration: samples={}, parallel={}, threads={}, cache={}",
-              FLAGS_samples, FLAGS_parallel_samples, FLAGS_thread_pool_size, FLAGS_cache_size);
+        XLOGF(INFO,
+              "Configuration: samples={}, parallel={}, threads={}, cache={}, root_noise={}",
+              FLAGS_samples, FLAGS_parallel_samples, FLAGS_thread_pool_size, FLAGS_cache_size,
+              FLAGS_root_noise_factor);
 
         // Run event loop
         evb.loopForever();

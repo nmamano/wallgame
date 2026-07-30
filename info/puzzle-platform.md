@@ -111,7 +111,7 @@ Two are OFFICIAL; Easy Bot is deliberately not.
 |---|---|---|---|---|
 | `dw-transformer` | Superhuman Bot | yes | 1000 | ordinary games |
 | `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128) | puzzles |
-| `dw-easy` | Easy Bot | **no** | 128 | ordinary games |
+| `dw-easy` | Easy Bot | **no** | 1 (no root noise) | ordinary games |
 
 Naming history: `dw-transformer` was "Transformer Bot (experimental)" until
 2026-07-29 (Nil). The bot ID never changed, which is what keeps its rating and
@@ -126,17 +126,35 @@ excludes non-official bots from the custom-setup variants and from
 serve the evaluation bar; it also simply does not advertise those variants,
 which is a second independent reason.
 
-**Why 128 samples and not 1** (Nil asked for "a single sample per move,
-basically just policy head"): the engine cannot do that. `peek_best_move` in
-`deep-wallwars/src/bgs_session.cpp` reports a move only once MCTS has expanded
-a COMPLETE two-action turn, so below roughly 100 samples it answers "No legal
-move available" instead of playing weakly — measured FAIL at 1/2/4/8/16/32/64/96
-and OK at 112/128/256/1000, with `--parallel_samples` ruled out as the variable
-and no board-size dependence. There is no policy-only flag. At 128 the search
-barely gets past expanding the root, so the policy prior dominates: as close to
-his intent as this engine allows. Levers if it plays too strong are an older
-checkpoint or `--model simple`, NOT fewer samples. (Internal detail — website
-copy must not describe sample counts or tree search.)
+**Easy Bot runs at ONE sample, which is what Nil asked for** ("a single sample
+per move, basically just policy head"). That took an engine change: board task
+`945fe1ef`. Until then `peek_best_move` needed a fully expanded two-action turn
+— an expanded GRANDCHILD, which only appears once the root's best child is
+visited a second time — so below roughly 100 samples the engine answered "No
+legal move available" instead of playing weakly (measured FAIL at
+1/2/4/8/16/32/64/96, OK at 112/128/256/1000, with `--parallel_samples` ruled out
+as the variable). 128 was the smallest working number and the reason this bot
+used to be pinned there.
+
+`MCTS::peek_best_action`/`peek_best_move` now fall back to `TreeEdge::prior` —
+the policy head's own probability, filled in for every legal action the moment a
+node is created — whenever nothing below that point has been expanded. So one
+sample gives a complete move: the first action is the edge that sample expanded
+(the top prior), the second is the policy's pick in the position that follows.
+`commit_to_action` deliberately does NOT fall back, so self-play and training are
+untouched.
+
+The second half of "policy only" is `--root_noise_factor 0`, also new in that
+task. The engine mixes 25% Dirichlet noise into the ROOT priors by default
+(`add_root_noise`), which is right for self-play exploration and wrong here: at
+one sample the move would come from a policy that is a quarter noise. The flag
+is per process and defaults to the old 0.25, so Superhuman Bot and PuzzleBot are
+unaffected; only Easy Bot sets it to 0. Both halves are pinned together in
+`tests/game/bot-config-guards.test.ts`, because dropping either one leaves a bot
+that looks configured and is not.
+
+Levers if it still plays too strong are an older checkpoint or `--model simple`.
+(Internal detail — website copy must not describe sample counts or tree search.)
 
 Before restarting the client after any config edit, run the fail-closed
 preflight: `bun scripts/validate-bot-config.ts

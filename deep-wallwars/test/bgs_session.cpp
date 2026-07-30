@@ -7,6 +7,10 @@
 #include <folly/experimental/coro/BlockingWait.h>
 #include <nlohmann/json.hpp>
 
+#include <algorithm>
+#include <cmath>
+#include <ranges>
+
 using json = nlohmann::json;
 using namespace bgs;
 using namespace engine_adapter;
@@ -41,6 +45,74 @@ struct TestPolicy {
         co_return Evaluation{0.0f, std::move(edges)};
     }
 };
+
+/**
+ * A policy whose priors are all DISTINCT, with the highest one deliberately last.
+ *
+ * TestPolicy gives every cat move the same 0.5, so a test built on it cannot tell
+ * "returns the highest-prior action" apart from "returns the first edge in the
+ * list" - and picking the first edge is exactly the mistake the prior fallback
+ * could make. Priors ascend along the action list here, so the two answers differ.
+ *
+ * The value is constant, which keeps the fallback tests about priors only.
+ */
+struct RankedPolicy {
+    folly::coro::Task<Evaluation> operator()(
+        Board const& board,
+        Turn turn,
+        std::optional<PreviousPosition>) {
+
+        std::vector<TreeEdge> edges;
+        int rank = 0;
+        auto next_prior = [&rank] { return 0.001f * static_cast<float>(++rank); };
+
+        for (auto dir : board.legal_directions(turn.player, Pawn::Cat)) {
+            edges.emplace_back(PawnMove{Pawn::Cat, dir}, next_prior());
+        }
+        for (auto dir : board.legal_directions(turn.player, Pawn::Mouse)) {
+            edges.emplace_back(PawnMove{Pawn::Mouse, dir}, next_prior());
+        }
+        for (Wall wall : board.legal_walls()) {
+            edges.emplace_back(wall, next_prior());
+        }
+
+        co_return Evaluation{0.0f, std::move(edges)};
+    }
+};
+
+// Options with the root Dirichlet noise turned OFF. Needed wherever a test states
+// what the highest-prior action is: add_root_noise() rewrites the root priors, and
+// the test cannot see the perturbed values, so with noise on there is nothing to
+// compare against. This is also the setting Easy Bot runs in production.
+static MCTS::Options noiseless_opts() {
+    MCTS::Options opts;
+    opts.noise_factor = 0;
+    return opts;
+}
+
+// Highest-prior action the policy itself reports for `board`. An INDEPENDENT
+// statement of what the fallback should return - it asks the policy directly
+// rather than reading anything MCTS computed.
+template <typename Policy>
+static Action policy_best_action(Policy policy, Board const& board, Turn turn) {
+    Evaluation eval = folly::coro::blockingWait(policy(board, turn, std::nullopt));
+    REQUIRE_FALSE(eval.edges.empty());
+    return std::ranges::max_element(eval.edges, {}, [](TreeEdge const& te) {
+               return te.prior;
+           })->action;
+}
+
+// Legality straight from the Board, not from the policy's edge list, so that a
+// second action which is illegal AFTER the first one is caught.
+static bool is_legal_action(Board const& board, Player player, Action const& action) {
+    if (auto const* pawn_move = std::get_if<PawnMove>(&action)) {
+        std::vector<Direction> const dirs = board.legal_directions(player, pawn_move->pawn);
+        return std::ranges::find(dirs, pawn_move->dir) != dirs.end();
+    }
+
+    std::vector<Wall> const walls = board.legal_walls();
+    return std::ranges::find(walls, std::get<Wall>(action)) != walls.end();
+}
 
 // ============================================================================
 // Helper: Create standard BgsConfig JSON
@@ -256,15 +328,26 @@ TEST_CASE("parse_move_notation - Invalid notation", "[BGS Move Parsing]") {
 // Tests: MCTS peek_best_action
 // ============================================================================
 
-TEST_CASE("peek_best_action - Before sampling returns nullopt", "[BGS MCTS]") {
+// REWRITTEN, and the old assertion is the point of the rewrite. This case used to
+// assert that peek_best_action returns nullopt before sampling - the exact
+// behaviour board task 945fe1ef removes. Reporting "no action" while the policy
+// priors were sitting right there is what made low sample counts unusable, so the
+// case now pins the fallback instead of the failure. Recorded loudly because a
+// quietly-edited assertion is how a regression hides.
+TEST_CASE("peek_best_action - Before sampling falls back to the policy's best action",
+          "[BGS MCTS]") {
     Board board{5, 5};
-    MCTS mcts(TestPolicy{}, std::move(board));
+    MCTS mcts(RankedPolicy{}, board, noiseless_opts());
 
-    // Before any sampling, there's no explored action
+    // After construction the root has edges but no expanded children, so there is
+    // no visit evidence - the answer has to come from the priors.
+    Action const expected =
+        policy_best_action(RankedPolicy{}, board, Turn{Player::Red, Turn::First});
+
     auto action = mcts.peek_best_action();
-    // Note: After construction, root node has edges but no children explored
-    // peek_best_action checks for explored children
-    CHECK_FALSE(action.has_value());
+    REQUIRE(action.has_value());
+    CHECK(*action == expected);
+    CHECK(is_legal_action(board, Player::Red, *action));
 }
 
 TEST_CASE("peek_best_action - After sampling returns action", "[BGS MCTS]") {
@@ -341,6 +424,113 @@ TEST_CASE("peek_best_move - Does not modify tree", "[BGS MCTS]") {
 }
 
 // ============================================================================
+// Tests: the low-sample prior fallback (board task 945fe1ef)
+//
+// Before this, a move needed an expanded GRANDCHILD - the root's best child had
+// to be visited twice - so below roughly a hundred samples the BGS engine
+// answered "No legal move available" and Easy Bot could not be run at the single
+// sample Nil asked for.
+// ============================================================================
+
+TEST_CASE("peek_best_move - Exactly one sample yields a complete legal move", "[BGS MCTS]") {
+    Board board{5, 5};
+    MCTS mcts(RankedPolicy{}, board, noiseless_opts());
+
+    folly::coro::blockingWait(mcts.sample(1));
+
+    // This is the whole slice: nullopt here was the production failure.
+    auto move = mcts.peek_best_move();
+    REQUIRE(move.has_value());
+
+    // Legal IN SEQUENCE, checked against the Board rather than the policy's own
+    // edge list, because the interesting failure is a second action that is legal
+    // at the root and illegal once the first action has been played.
+    CHECK(is_legal_action(board, Player::Red, move->first));
+
+    Board after_first = board;
+    after_first.do_action(Player::Red, move->first);
+    CHECK(is_legal_action(after_first, Player::Red, move->second));
+}
+
+TEST_CASE("peek_best_move - The second action is read from the position after the first",
+          "[BGS MCTS]") {
+    Board board{5, 5};
+    MCTS mcts(RankedPolicy{}, board, noiseless_opts());
+
+    folly::coro::blockingWait(mcts.sample(1));
+
+    auto move = mcts.peek_best_move();
+    REQUIRE(move.has_value());
+
+    // RankedPolicy's best action is its last edge, which is a wall. One sample
+    // expands exactly that edge, so the first action places that wall and the
+    // second action has to come from the child's OWN priors.
+    Board after_first = board;
+    after_first.do_action(Player::Red, move->first);
+
+    Action const expected_second =
+        policy_best_action(RankedPolicy{}, after_first, Turn{Player::Red, Turn::Second});
+    CHECK(move->second == expected_second);
+
+    // And therefore not the root's own best action - the wall it names has just
+    // been placed, so a fallback that read the ROOT's priors twice would return an
+    // illegal move here.
+    Action const root_best =
+        policy_best_action(RankedPolicy{}, board, Turn{Player::Red, Turn::First});
+    CHECK(move->first == root_best);
+    CHECK_FALSE(move->second == root_best);
+}
+
+TEST_CASE("peek_best_move - With zero samples there is still no second position", "[BGS MCTS]") {
+    Board board{5, 5};
+    MCTS mcts(RankedPolicy{}, board, noiseless_opts());
+
+    // DELIBERATE boundary, not an oversight. peek_best_action can fall back
+    // because the root's own priors exist, but the second action needs the
+    // position AFTER the first one, and that node does not exist until a sample
+    // creates it. Manufacturing it here would mean evaluating and inserting a
+    // node - a mutation, which is precisely what a peek must not do. The
+    // requirement is a complete move at exactly ONE sample, above.
+    CHECK(mcts.peek_best_action().has_value());
+    CHECK_FALSE(mcts.peek_best_move().has_value());
+}
+
+TEST_CASE("peek_best_move - A deep search is still decided by visits, not priors", "[BGS MCTS]") {
+    Board board{5, 5};
+    MCTS mcts(TestPolicy{}, board, noiseless_opts());
+
+    folly::coro::blockingWait(mcts.sample(1000));
+
+    auto move = mcts.peek_best_move();
+    REQUIRE(move.has_value());
+
+    // principal_variation() walks the most-visited path, which IS the selection
+    // peek_best_move made before the fallback existed, and it is code this change
+    // does not touch. So this states the old behaviour from an independent place
+    // rather than comparing the new implementation against itself.
+    auto pv = mcts.principal_variation(2, 0.05f, 1);
+    REQUIRE(pv.size() == 2);
+    CHECK(move->first == pv[0].action);
+    CHECK(move->second == pv[1].action);
+
+    // Both steps have real visit evidence, so the fallback provably did not fire:
+    // any expanded edge outranks an unexpanded one on visit count, and if the
+    // fallback had fired anyway it would have had to agree with the visit
+    // selection above to get here.
+    CHECK(pv[0].child_visits > 0);
+    CHECK(pv[1].child_visits > 0);
+
+    // Concrete pin. "Cc5" is not this implementation's output written down: the
+    // same case was compiled and run against the PRE-CHANGE mcts.cpp (d9d4ab4) on
+    // 2026-07-30 and produced "Cc5" there too, so at a high sample count the
+    // fallback provably did not move the engine's choice.
+    Board const& root_board = mcts.current_board();
+    CHECK(move->standard_notation(root_board.position(Player::Red),
+                                  root_board.mouse(Player::Red),
+                                  root_board.rows()) == "Cc5");
+}
+
+// ============================================================================
 // Tests: SessionManager
 // ============================================================================
 
@@ -357,6 +547,44 @@ TEST_CASE("SessionManager - Create session", "[BGS Session]") {
     CHECK(error.empty());
     CHECK(manager.has_session("session_1"));
     CHECK(manager.active_session_count() == 1);
+}
+
+TEST_CASE("SessionManager - root_noise_factor reaches the session's search", "[BGS Session]") {
+    // The only externally visible proof that --root_noise_factor is wired through
+    // BgsEngineConfig into MCTS::Options. Dropping that one assignment would leave
+    // Easy Bot searching a root that is a quarter Dirichlet noise while every
+    // config and doc claimed it was policy-only, and nothing else would notice.
+    auto root_priors = [](float noise) {
+        BgsEngineConfig cfg;
+        cfg.model_rows = 8;
+        cfg.model_columns = 8;
+        cfg.root_noise_factor = noise;
+        SessionManager manager(RankedPolicy{}, cfg);
+
+        auto config = make_standard_config(6, 6);
+        auto [success, error] = manager.create_session("session_noise", "bot_1", config);
+        REQUIRE(success);
+
+        std::vector<float> priors;
+        for (EdgeInfo const& edge : manager.get_session("session_noise")->mcts->root_info().edges) {
+            priors.push_back(edge.prior);
+        }
+        return priors;
+    };
+
+    std::vector<float> const noiseless = root_priors(0.0f);
+    std::vector<float> const noisy = root_priors(0.25f);
+
+    REQUIRE(noiseless.size() > 1);
+    REQUIRE(noiseless.size() == noisy.size());
+
+    // RankedPolicy hands out 0.001, 0.002, ... in edge order, so "untouched" is
+    // something the test can state on its own instead of asking MCTS what it kept.
+    for (std::size_t i = 0; i < noiseless.size(); ++i) {
+        CHECK(std::fabs(noiseless[i] - 0.001f * static_cast<float>(i + 1)) < 1e-6f);
+    }
+
+    CHECK(noiseless != noisy);
 }
 
 TEST_CASE("SessionManager - Create duplicate session fails", "[BGS Session]") {

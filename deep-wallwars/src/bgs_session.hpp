@@ -28,6 +28,13 @@ struct BgsEngineConfig {
     int model_rows = 8;
     int model_columns = 8;
 
+    // Fraction of Dirichlet noise mixed into the ROOT priors of every session in this process.
+    // Taken from MCTS's own default rather than repeating the number, so an engine started without
+    // the flag searches exactly as it did before this field existed. Zero means the root priors are
+    // the policy head untouched, which is what a 1-sample "policy only" search needs; anything above
+    // zero leaves that fraction of the root prior as noise.
+    float root_noise_factor = MCTS::Options{}.noise_factor;
+
     static constexpr int kMaxSessions = 256;
 };
 

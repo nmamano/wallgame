@@ -136,12 +136,17 @@ public:
 
     // Returns the best action without modifying the tree.
     // Use this when you need to know the best move but don't want to commit to it yet.
-    // Returns nullopt if no explored action is available.
+    // Ranks by visit count, and when NOTHING has been expanded yet it falls back to the highest
+    // policy prior, so this answers even with zero samples. Returns nullopt only for a position with
+    // no legal action at all.
     std::optional<Action> peek_best_action() const;
 
     // Returns the best move (two actions) without modifying the tree.
     // If the first action wins the game, the second action will be an arbitrary legal wall.
-    // Returns nullopt if no explored action is available.
+    // Each action falls back to the highest policy prior when nothing below it has been expanded, so
+    // a single sample is enough for a complete move. Returns nullopt with ZERO samples, because
+    // without the root's child there is no second position whose policy could be read, and creating
+    // one would mutate the tree; also nullopt when a position has no legal action at all.
     std::optional<Move> peek_best_move() const;
 
     // Walks the most-visited path down from the root, which is the search's principal

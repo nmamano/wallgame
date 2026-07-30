@@ -50,11 +50,21 @@
  *   bun scripts/bgs-engine-probe.ts --scenario corpus --sessions 144 --threads 4
  *   bun scripts/bgs-engine-probe.ts --scenario race --rounds 40
  *   bun scripts/bgs-engine-probe.ts --scenario band --values 1,2,4,8,112
+ *   bun scripts/bgs-engine-probe.ts --scenario band --values 1,2,4,8 \
+ *       --root-noise 0 --require-move        # the S-SAMPLES after-state gate
  *
  * Exit code is 0 only if the scenario met every condition above.
+ *
+ * `--root-noise N` is passed on to the engine as `--root_noise_factor N`, and ONLY
+ * when given: a binary built before that flag existed would refuse to start with
+ * it, and such a binary is exactly what a before/after comparison needs to drive.
  */
 import { spawn } from "bun";
 import { buildStandardInitialState } from "../shared/domain/standard-setup";
+import { GameState } from "../shared/domain/game-state";
+import { moveFromStandardNotation } from "../shared/domain/standard-notation";
+import { BOT_GAME_TIME_CONTROL } from "../shared/domain/game-utils";
+import type { GameConfiguration, Variant } from "../shared/domain/game-types";
 
 const flag = (name: string, fallback: string): string => {
   const i = process.argv.indexOf(`--${name}`);
@@ -80,6 +90,25 @@ const HEIGHT = numFlag("height", 8);
 const VARIANT = flag("variant", "standard");
 const TIMEOUT_MS = numFlag("timeout", 90_000);
 const MODEL = flag("model", "tf_curriculum_model_73.trt");
+
+/**
+ * Passed through to the engine's `--root_noise_factor` ONLY when given on the
+ * command line. Left out entirely by default, and that is deliberate: appending
+ * the flag unconditionally would make this probe unable to drive any binary built
+ * before the flag existed, which is exactly the binary a before/after comparison
+ * needs. gflags rejects an unknown flag at startup.
+ */
+const ROOT_NOISE = process.argv.includes("--root-noise")
+  ? flag("root-noise", "")
+  : null;
+
+/**
+ * Band only: turn "No legal move available" from data into a failure. The band
+ * scenario is a diagnostic where a low sample count failing used to BE the
+ * finding, so the default stays report-only; the S-SAMPLES gate needs the
+ * opposite and asks for it explicitly.
+ */
+const REQUIRE_MOVE = process.argv.includes("--require-move");
 
 /** How long a healthy engine gets to exit by itself after stdin closes. */
 const SHUTDOWN_GRACE_MS = numFlag("grace", 15_000);
@@ -121,6 +150,98 @@ const startConfig = () => ({
   boardHeight: HEIGHT,
   initialState: buildStandardInitialState(WIDTH, HEIGHT),
 });
+
+/**
+ * The SAME position as `startConfig`, in the server's own game type, so a move the
+ * engine returns can be judged by production rules instead of by eyeballing a
+ * string. Board size, variant and initial state all come from the same place, so
+ * the two cannot describe different positions.
+ */
+const productionGameConfig = (): GameConfiguration => ({
+  variant: VARIANT as Variant,
+  timeControl: BOT_GAME_TIME_CONTROL,
+  rated: false,
+  boardWidth: WIDTH,
+  boardHeight: HEIGHT,
+  variantConfig: buildStandardInitialState(WIDTH, HEIGHT),
+});
+
+/**
+ * Judge a returned move with the code the SERVER uses: parse it with
+ * `moveFromStandardNotation` and hand it to `GameState.applyGameAction`, which is
+ * the same pair `game-socket.ts` runs on every real bot move. An illegal or
+ * malformed move throws there, so this cannot pass on a move production would
+ * reject.
+ *
+ * "Non-empty string" is NOT a verdict, which is why this exists: at one sample the
+ * engine builds the second action out of a policy prior rather than out of a
+ * searched node, and the failure mode to rule out is a second action that was
+ * legal at the root and is not legal after the first one. Note also that a
+ * complete turn is not the same as two notation tokens - a cat walking two cells
+ * prints as ONE token ("Cc5") - so completeness is checked by asking whether the
+ * turn actually passed to the opponent, not by counting actions.
+ */
+const judgeMove = (
+  notation: string,
+): { ok: true; actions: number } | { ok: false; why: string } => {
+  let move;
+  try {
+    move = moveFromStandardNotation(notation, HEIGHT);
+  } catch (error) {
+    return { ok: false, why: `unparseable: ${String(error)}` };
+  }
+
+  const fresh = new GameState(productionGameConfig(), 0);
+  const mover = fresh.turn;
+  const play = (state: GameState) =>
+    state.applyGameAction({
+      kind: "move",
+      move,
+      playerId: mover,
+      timestamp: 0,
+    });
+
+  try {
+    play(fresh);
+  } catch (error) {
+    return { ok: false, why: `rejected by production rules: ${String(error)}` };
+  }
+
+  // COMPLETENESS, and it needs its own check: production treats a `Move` as a
+  // whole turn and only rejects one that uses TOO MANY actions, so a half-turn
+  // applies cleanly and simply wastes an action. Measured, not assumed - ">a2"
+  // alone applies fine and passes the turn.
+  //
+  // So ask production the same question with a one-action budget instead of
+  // re-deriving the action cost here. A move that genuinely costs two actions must
+  // be refused; one that costs one will not be. Counting notation tokens would NOT
+  // do: a cat walking two cells prints as a single token ("Cc5").
+  const oneActionLeft = new GameState(productionGameConfig(), 0);
+  oneActionLeft.actionsRemaining = 1;
+  let refusal = "";
+  try {
+    play(oneActionLeft);
+  } catch (error) {
+    refusal = String(error);
+  }
+  if (refusal === "") {
+    return {
+      ok: false,
+      why: "incomplete turn: it still applies with only one action left, so it does not use both",
+    };
+  }
+  if (!refusal.includes("remain")) {
+    // Identical position, one field different, so the budget is the only thing
+    // that can legitimately refuse here. Anything else means this check is not
+    // measuring what it claims.
+    return {
+      ok: false,
+      why: `one-action probe refused for an unexpected reason: ${refusal}`,
+    };
+  }
+
+  return { ok: true, actions: move.actions.length };
+};
 
 /**
  * `--seed` is a gflags **uint32**, so the marker has to fit in one.
@@ -171,7 +292,8 @@ const openEngine = async (samples: number, threads: number) => {
     `--model ../deep-wallwars/models_serving/${MODEL} ` +
     `--seed ${seed} ` +
     `--samples ${samples} --parallel_samples ${PARALLEL} ` +
-    `--thread_pool_size ${threads}`;
+    `--thread_pool_size ${threads}` +
+    (ROOT_NOISE === null ? "" : ` --root_noise_factor ${ROOT_NOISE}`);
 
   const proc = spawn(["ssh", "-o", "ConnectTimeout=15", SSH_TARGET, remote], {
     stdin: "pipe",
@@ -685,11 +807,15 @@ const runRace = async (rounds: number) => {
 /**
  * One sequential evaluate per --samples value, one engine process each.
  *
- * The SAMPLE RESULT is reported rather than judged: this is the S-SAMPLES
- * diagnostic, where "No legal move available" at a low sample count IS the
- * finding, not a failure.
+ * By default the SAMPLE RESULT is reported rather than judged: this is the
+ * S-SAMPLES diagnostic, where "No legal move available" at a low sample count IS
+ * the finding, not a failure. `--require-move` inverts that, so the same corpus
+ * can serve as the after-state gate.
  *
- * INFRASTRUCTURE is judged, though. A session that will not start, an evaluate
+ * A move that IS returned is always judged, in both modes, by production rules -
+ * an illegal move is never interesting data.
+ *
+ * INFRASTRUCTURE is judged, too. A session that will not start, an evaluate
  * that never arrives, or an engine that has to be forced down are all real
  * failures, and returning true regardless would let a broken probe look like a
  * clean sweep of interesting data.
@@ -697,7 +823,9 @@ const runRace = async (rounds: number) => {
 const runBand = async () => {
   const values = flag("values", "1,2,4,8,112,1000").split(",").map(Number);
   log(
-    `BAND over --samples ${values.join(",")} (${WIDTH}x${HEIGHT} ${VARIANT})`,
+    `BAND over --samples ${values.join(",")} (${WIDTH}x${HEIGHT} ${VARIANT})` +
+      `${ROOT_NOISE === null ? "" : ` root_noise=${ROOT_NOISE}`}` +
+      `${REQUIRE_MOVE ? " REQUIRING a legal move at every value" : ""}`,
   );
   let infrastructureOk = true;
   for (const samples of values) {
@@ -722,12 +850,46 @@ const runBand = async () => {
         { type: "evaluate_position", bgsId, expectedPly: 0 },
         "evaluate_response",
       );
-      // success=false here is DATA, not an infrastructure failure.
+      // By default success=false here is DATA, not an infrastructure failure.
+      const move =
+        typeof response.bestMove === "string" ? response.bestMove : "";
+      // Judged whenever there IS a move, and deliberately NOT gated on the
+      // success flag. A failed response carrying a non-empty move is exactly the
+      // case where gating on success would let an illegal move past the judge and
+      // still report PASS in the default report-only mode.
+      const verdict = move !== "" ? judgeMove(move) : null;
+
       log(
         `  samples=${String(samples).padStart(5)} seed=${engine.seed} ` +
           `success=${response.success} bestMove=${JSON.stringify(response.bestMove)} ` +
-          `eval=${response.evaluation} error=${JSON.stringify(response.error)}`,
+          `eval=${response.evaluation} error=${JSON.stringify(response.error)}` +
+          (verdict === null
+            ? ""
+            : verdict.ok
+              ? ` LEGAL (${verdict.actions} action token(s), complete turn)`
+              : ` ILLEGAL - ${verdict.why}`),
       );
+
+      // An illegal move fails the run whatever the mode: the whole point of this
+      // slice is a second action built from a prior rather than from a searched
+      // node, and a move production would reject is the way that goes wrong.
+      if (verdict !== null && !verdict.ok) {
+        infrastructureOk = false;
+      }
+      // --require-move needs BOTH halves independently: a successful response AND
+      // a move that survives the judge. Requiring only "a move was judged" would
+      // let a legal-looking move attached to a FAILED response satisfy the gate.
+      if (
+        REQUIRE_MOVE &&
+        !(response.success === true && verdict?.ok === true)
+      ) {
+        infrastructureOk = false;
+        log(
+          `  samples=${String(samples).padStart(5)} NO USABLE MOVE ` +
+            `(success=${response.success}, judged=${verdict === null ? "no move" : verdict.ok}), ` +
+            `and --require-move was given`,
+        );
+      }
     } catch (error) {
       // A launch failure, a timeout, or a missing/mismatched response.
       infrastructureOk = false;
@@ -742,7 +904,10 @@ const runBand = async () => {
       }
     }
   }
-  log(`  VERDICT: ${infrastructureOk ? "PASS" : "FAIL"} (infrastructure only)`);
+  log(
+    `  VERDICT: ${infrastructureOk ? "PASS" : "FAIL"} ` +
+      `(${REQUIRE_MOVE ? "a legal move required at every value" : "infrastructure and move legality only"})`,
+  );
   return infrastructureOk;
 };
 
@@ -771,8 +936,77 @@ const preflightSeed = () => {
   );
 };
 
+/**
+ * Prove the move judge DISCRIMINATES before trusting it on engine output.
+ *
+ * A validator that accepts everything and a validator that works look identical
+ * from a passing run, which is the mistake this file's history is full of. So the
+ * negative cases run every time, and the positive case runs whenever the board is
+ * the one it was measured on - and says so out loud when it is skipped.
+ */
+const preflightJudge = () => {
+  // Malformed notation is board-independent, so this one always runs.
+  const alwaysBad = [{ notation: "ZZZ", why: "malformed" }];
+
+  // The rest name concrete cells, so they only mean anything on the board they
+  // were measured on. All five verdicts below were confirmed by hand on
+  // 2026-07-30 against an 8x8 standard opening.
+  const boardSpecific =
+    WIDTH === 8 && HEIGHT === 8 && VARIANT === "standard"
+      ? {
+          // Two wall actions: what the real engine returned from this exact
+          // position at 112 and 1000 samples (plans/engine-cluster.md). If the
+          // judge rejects this, the judge is wrong, not the engine.
+          good: [">a2.>a1", "Cc8"],
+          // "Cc8" is the case token-counting gets wrong: ONE token, and the cat
+          // walks two cells, so it is a complete turn.
+          bad: [
+            { notation: ">a2.>a2", why: "the same wall twice" },
+            { notation: ">a2", why: "only one action" },
+            { notation: "Cb8", why: "a single cat step, only one action" },
+          ],
+        }
+      : null;
+
+  for (const { notation, why } of [
+    ...alwaysBad,
+    ...(boardSpecific?.bad ?? []),
+  ]) {
+    const verdict = judgeMove(notation);
+    if (verdict.ok) {
+      throw new Error(
+        `judgeMove accepted "${notation}" (${why}), so it cannot be trusted to judge engine output`,
+      );
+    }
+  }
+
+  if (boardSpecific === null) {
+    log(
+      `preflight: judgeMove rejects malformed notation; its cell-specific cases are pinned to ` +
+        `8x8 standard, so they are SKIPPED on ${WIDTH}x${HEIGHT} ${VARIANT}`,
+    );
+    return;
+  }
+
+  for (const notation of boardSpecific.good) {
+    const verdict = judgeMove(notation);
+    if (!verdict.ok) {
+      throw new Error(
+        `judgeMove rejected "${notation}", a legal complete turn here: ${verdict.why}`,
+      );
+    }
+  }
+
+  log(
+    `preflight: judgeMove accepts ${boardSpecific.good.length} legal complete turns ` +
+      `(including a one-token two-cell cat walk) and rejects ` +
+      `${alwaysBad.length + boardSpecific.bad.length} malformed, illegal and half-turn moves`,
+  );
+};
+
 const main = async () => {
   preflightSeed();
+  if (SCENARIO === "band") preflightJudge();
   let ok: boolean;
   if (SCENARIO === "corpus") ok = await runCorpus(SESSIONS, THREADS);
   else if (SCENARIO === "ladder") ok = await runLadder();

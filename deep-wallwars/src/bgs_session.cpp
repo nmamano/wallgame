@@ -74,6 +74,7 @@ std::pair<bool, std::string> SessionManager::create_session(
     }
     mcts_opts.seed = generate_seed(bgs_id);
     mcts_opts.max_parallelism = m_config.max_parallel_samples;
+    mcts_opts.noise_factor = m_config.root_noise_factor;
 
     auto session = std::make_shared<BgsSession>();
     session->bgs_id = bgs_id;

@@ -109,15 +109,23 @@ describe("the tracked production bot config", () => {
   });
 
   it("pins Easy Bot's EXACT search settings, not just that they are lower", () => {
-    // 128/32/4 is a MEASURED working configuration. The engine cannot produce
-    // a move below roughly 100 samples — it answers "No legal move available"
-    // (measured: fails at 96, works at 112) — so a merely-lower number like 64
-    // is a broken production config that a relative assertion would accept.
+    // A single sample is what Nil asked for: no tree search, just the policy
+    // head's own preferred move. It only became a valid configuration with the
+    // prior fallback in `MCTS::peek_best_move` (board task 945fe1ef) — before
+    // that the engine answered "No legal move available" below roughly 100
+    // samples, which is why this used to pin 128.
+    //
+    // `--root_noise_factor 0` is pinned as part of the SAME setting, not as an
+    // extra. The engine mixes 25% Dirichlet noise into the root priors by
+    // default, so at one sample the move would be drawn from a policy that is a
+    // quarter noise: neither policy-only nor searching. Removing this flag alone
+    // would leave a bot that looks configured and is not.
     const config = parsedProd();
     const easy = config.engineCommands["dw-easy"];
-    expect(easy).toMatch(/--samples 128(\s|$)/);
+    expect(easy).toMatch(/--samples 1(\s|$)/);
     expect(easy).toMatch(/--parallel_samples 32(\s|$)/);
     expect(easy).toMatch(/--thread_pool_size 4(\s|$)/);
+    expect(easy).toMatch(/--root_noise_factor 0(\s|$)/);
 
     // Same binary and model as the strong bot: "just like Superhuman with less
     // search" is the whole specification, so a diverging model would make Easy
