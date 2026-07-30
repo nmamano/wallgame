@@ -39,6 +39,12 @@ export const launchChrome = async (
       "no Chrome found; install one or set CHROME_PATH to its binary",
     );
   }
+  // Without an explicit profile Chrome runs headless in a throwaway incognito
+  // session, and some questions get a different answer there: PWA
+  // installability, for one, reports a flat `in-incognito` failure no matter
+  // how good the manifest is. A temp profile costs nothing and keeps the
+  // browser's own verdicts usable.
+  const profileDir = `/tmp/wallgame-harness-profile-${process.pid}`;
   const proc = Bun.spawn(
     [
       binary,
@@ -46,6 +52,7 @@ export const launchChrome = async (
       "--disable-gpu",
       "--no-sandbox",
       "--hide-scrollbars",
+      `--user-data-dir=${profileDir}`,
       `--remote-debugging-port=${CDP_PORT}`,
       // Chrome refuses websocket upgrades from unexpected origins otherwise.
       "--remote-allow-origins=*",
@@ -55,22 +62,40 @@ export const launchChrome = async (
     { stdout: "ignore", stderr: "ignore" },
   );
 
+  const stop = () => {
+    proc.kill();
+    // Best effort: a stale profile would only waste disk, never corrupt a run,
+    // since the directory is unique per process.
+    try {
+      require("node:fs").rmSync(profileDir, { recursive: true, force: true });
+    } catch {
+      /* leave it for /tmp cleanup */
+    }
+  };
+
   // The debugging port is not listening the instant the process starts.
   for (let attempt = 0; attempt < 50; attempt++) {
     try {
       await fetch(`${CDP}/json/version`);
-      return { pid: proc.pid, stop: () => proc.kill() };
+      return { pid: proc.pid, stop };
     } catch {
       await wait(100);
     }
   }
-  proc.kill();
+  stop();
   throw new Error("Chrome started but never opened its debugging port");
 };
 
 export interface Page {
   /** Run an expression in the page and get its value back. */
   evaluate: (expression: string) => Promise<unknown>;
+  /**
+   * Any DevTools protocol method, for the questions the helpers above cannot
+   * reach. `Page.getAppManifest` is the reason this exists: whether a manifest
+   * is installable is Chrome's own judgement, and reading the JSON ourselves
+   * would only tell us what we already believe about it.
+   */
+  send: (method: string, params?: Record<string, unknown>) => Promise<unknown>;
   navigate: (url: string) => Promise<void>;
   /** Resize the viewport without restarting the browser. */
   setViewport: (width: number, height: number) => Promise<void>;
@@ -136,6 +161,7 @@ export const connect = async (): Promise<Page> => {
       }
       return res.result?.value;
     },
+    send,
     navigate: async (url) => {
       await send("Page.navigate", { url });
     },

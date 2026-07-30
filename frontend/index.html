@@ -26,7 +26,17 @@
       name="description"
       content="Board game about building walls and outsmarting your opponents. Play with friends, face the AI, or solve puzzles."
     />
-    <meta name="theme-color" content="#1a1a2e" />
+    <!-- Matches the background the app actually paints, oklch(0.14 0.04 265),
+         so the browser chrome and the launch splash do not step out of it. -->
+    <meta name="theme-color" content="#030819" />
+
+    <!-- Installed-app behaviour. iOS ignores the manifest's display mode and
+         reads these instead, so a home-screen launch opens without Safari's
+         chrome rather than in a browser tab. -->
+    <meta name="mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-capable" content="yes" />
+    <meta name="apple-mobile-web-app-title" content="Wall Game" />
+    <meta name="apple-mobile-web-app-status-bar-style" content="black" />
 
     <!-- Open Graph / Facebook / WhatsApp / Discord -->
     <meta property="og:type" content="website" />
