@@ -1,7 +1,8 @@
 # ResNet control run - the apples-to-apples arm of the CNN vs transformer comparison
 
 Launched 2026-07-29 23:44 PDT by WallGamer, at Nil's request. Runs on the 4090
-desktop (`nilo@desktop-053vvpl-1`, WSL) in tmux session `rn-training`.
+desktop (`nilo@desktop-053vvpl-1`, WSL). Now driven by `~/supervise_resnet_run.sh`
+in tmux session `rn-run`, targeting generation 36.
 
 ## The question
 
@@ -41,11 +42,11 @@ deliberate difference.
 ## The run
 
 ```bash
-# ~/launch_resnet_p1.sh on the desktop; args: [initial_generation] [threads]
+# ~/launch_resnet_p1.sh on the desktop; args: [initial_generation] [threads] [generations]
 nice -n 10 ../.venv/bin/python training.py --arch resnet \
   --hidden_channels 128 --layers 20 \
   --columns 12 --rows 10 --game-columns 8 --game-rows 8 --variant universal \
-  --generations 20 --initial_generation 0 --games 5000 --samples 1000 \
+  --generations <N> --initial_generation 0 --games 5000 --samples 1000 \
   --training-batch-size 512 --inference-batch-size 256 --threads 16 \
   --deep_ww ../build-tests/deep_ww \
   --models ../models_12x10_rn_curriculum \
@@ -134,8 +135,9 @@ those 19 moves land mostly in the gradient-step phase, so the sustained-self-pla
 number above is the conservative bound to plan around.
 
 **If it needs to be quieter:** stop and relaunch with fewer self-play threads
-(`bash ~/launch_resnet_p1.sh latest 8`). Prefer doing it at a generation
-boundary - a mid-generation kill can leave one truncated `game_*.csv` behind.
+(`bash ~/launch_resnet_p1.sh latest 8 <generations>`, or restart the supervisor
+as `~/supervise_resnet_run.sh 36 8`). A mid-self-play kill can leave one
+truncated `game_*.csv`, which the supervisor's sweep removes on the next start.
 Thread count does not change what the data contains, only how fast it arrives.
 
 Production baseline for context, from 12416 real bot moves in
@@ -189,24 +191,59 @@ the one contention produces: **medians unmoved, tails stretched** - the heavy
 bot's p90 went 1.49s -> 3.08s and both bots' worst move roughly doubled. Most
 requests slip between self-play batches; some queue behind one.
 
+## The CUDA fault, and why there is a supervisor now
+
+At 08:56 PT on 2026-07-30, after `model_12`, generation 13's training died with
+`torch.AcceleratorError: CUDA error: unknown error` raised inside fastai's
+`Recorder.after_batch` metric accumulation. **The fault was confined to the
+training process:** all three serving engines stayed up (11h17m uptime across
+it), the bot client logged zero errors, and 25 real moves were served in the
+window after it. But with no supervisor the GPU then sat idle for 50 minutes.
+
+Nil's decision that morning was to run on to **generation 36** - where the
+transformer stopped training 8x8-only - so unattended recovery became worth
+having. `~/supervise_resnet_run.sh TARGET THREADS` (running as `36 16` in tmux
+session `rn-run`) loops: read the newest `model_N.pt`, stop at the target,
+otherwise sweep the in-flight generation's data and relaunch with
+`--generations TARGET-N+1`, which lands exactly on the target. Three failures
+inside 5 minutes of each other and it gives up rather than hammering the GPU.
+
+The transformer run deliberately had no auto-restart, and that reasoning still
+holds where it applied: blindly re-running a self-play generation risks the data.
+Two things make a restart safe here instead of merely convenient:
+
+1. `training.py` resumes by **skipping games that already exist** and starting
+   after the highest-numbered file, so nothing completed is re-played or
+   overwritten. Confirmed on the real restart: generation 12's data was skipped,
+   re-audited `AUDIT OK`, and training resumed at generation 13.
+2. The only integrity risk a kill introduces is a **truncated game CSV**, and the
+   sweep removes exactly those before each relaunch, using the format invariant
+   of 4 lines per position. The check was validated both ways before being
+   trusted: 200/200 known-good files give `NR % 4 == 0`, and a deliberately
+   truncated copy gives 3. (The 08:56 crash happened during training, not
+   self-play, so the first sweep found nothing to remove - as expected.)
+
 ## Ops
 
 ```bash
 ssh nilo@desktop-053vvpl-1
-tmux attach -t rn-training                 # or: tail -f ~/nil/wallgame/deep-wallwars/training_curriculum_rn_p1.log
-ls -lt ~/nil/wallgame/deep-wallwars/models_12x10_rn_curriculum/model_*.pt | head
+tmux attach -t rn-run                      # the supervisor; the run itself is its child
+cat ~/resnet_supervisor.log                # one line per launch, exit, and swept file
+tail -f ~/nil/wallgame/deep-wallwars/training_curriculum_rn_p1.log
+ls ~/nil/wallgame/deep-wallwars/models_12x10_rn_curriculum/model_*.pt | sed 's/.*model_//;s/.pt//' | sort -n | tail -1
 ```
 
-- **Stop it:** `tmux kill-session -t rn-training`. Safe for the box because
+- **Stop it:** `tmux kill-session -t rn-run`. Safe for the box because
   `keepalive` and `bot-client` sessions exist (killing the LAST tmux session
   takes WSL down - see `info/puzzle-platform.md` section 2).
-- **Resume:** `bash ~/launch_resnet_p1.sh latest 16` (the script takes
-  `initial_generation` and `threads` as arguments).
+- **Resume:** `tmux new-session -d -s rn-run 'bash ~/supervise_resnet_run.sh 36 16'`.
+  For a single run without the supervisor:
+  `bash ~/launch_resnet_p1.sh latest 16 <generations>`.
 - **Throttle further:** stop, relaunch with a lower thread count, e.g.
   `bash ~/launch_resnet_p1.sh latest 8`.
-- The run stops on its own after model_20. There is deliberately no
-  auto-restart wrapper (same reasoning as the transformer run: silently
-  relaunching a self-play generation unattended is worse than being stopped).
+- The run stops when `model_36` exists (`TARGET REACHED` in the supervisor
+  log), matching where the transformer stopped training 8x8-only. Nil's call,
+  2026-07-30: run it through the day to reach that mark.
 
 ## Reading the result
 
