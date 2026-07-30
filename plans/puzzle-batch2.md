@@ -6,7 +6,26 @@ first), `plans/puzzle-loop-4.md` (loop 4 and the S-BATCH1 section), and loops 1-
 `plans/puzzle-polish-loop.md`, `plans/puzzle-feature-loop.md`, `plans/puzzle-bugs-loop.md`.
 
 Nil gave five items after playing puzzle 39 and finding it unsolvable. They are
-independent and run as three slices.
+independent and ran as three slices — **all five shipped and production-verified on
+2026-07-29/30**: S-EVAL (`3ae727b`), S-BOTS (`eca38aa`), S-FOLD (`8c19d9f`).
+
+Two follow-ups Nil filed on the board afterwards, NOT part of this batch:
+`945fe1ef` (make the engine support `--samples 1` so Easy Bot is truly policy-only) and
+`681a1659` (stop mirroring freestyle boards across the midline).
+
+WHAT THIS BATCH KEPT TEACHING — three separate measurement traps, all the same mistake:
+a check that does not make the claimed state impossible.
+
+1. A near-threshold band of 0.03 that could not perform the ambiguity audit its own
+   comment promised, because the engine's run-to-run noise is ~0.04.
+2. A `history.length` delta used to ask whether a redirect left an entry behind, when
+   navigating to the URL you are already on REPLACES rather than pushes — so the
+   "control" read +0 and made every real navigation look guilty.
+3. `!!document.querySelector('svg, canvas')` as "a board rendered", which measures TRUE
+   on `/puzzles` and `/about` because lucide icons and the nav emit svg on every page.
+
+The habit that catches all three: before writing the sentence that claims a property,
+ask what would make it false, and whether the measurement actually excludes that.
 
 ## The five items
 
@@ -278,7 +297,29 @@ PRODUCTION EVIDENCE, in the order the reviewer required:
 
 ## S-FOLD — landing page, and the campaign under /puzzles (items 2 and 3)
 
-- [ ] awaiting diff gate; implemented and browser-measured, not yet deployed.
+- [x] **DONE `8c19d9f`, deployed and production-verified 2026-07-30.**
+
+PRODUCTION EVIDENCE (public surfaces, real site):
+
+- `/puzzles`: `{"sections":["Campaign","Handcrafted Puzzles","Generated Puzzles"],`
+  `"cards":46,"loginPrompts":1,"routeError":false}` — sections in the right order,
+  46 cards (2 levels + placeholder + 10 handcrafted + 33 generated), exactly ONE
+  logged-out invitation, no router error boundary.
+- Landing page: `{"hasCampaignCard":false,"hasStudyBoardCard":false,`
+  `"singlePlayerCards":["Puzzles","Play vs AI"]}`.
+- Redirect, measured as the user-visible property rather than a history count:
+  `/about -> /solo-campaign -> /puzzles; Back -> /about` — no bounce.
+- Direct level route: `{"path":"/solo-campaign/1","heading":"Level 1: First Steps",`
+  `"cells":36,"notFound":false}` — a real board, counted.
+- Contract: anonymous `GET /api/puzzles/progress` is 401 (not an empty shape), and the
+  legacy `GET /api/campaign/progress` is **401, not 404** — old bundles still work.
+- `GET /api/puzzles` still returns 33.
+- Deploy-adjacent ROUND-TRIP bot probe green (bot replied).
+- Screenshots at 1280 and 390 looked at: the campaign row and the placeholder sit
+  together at desktop and stack cleanly on the phone.
+
+STILL OPEN and deliberately not claimed closed: board bug `cfc6135a`. Nil's
+authenticated marker walkthrough is evidence only.
 
 ### What shipped
 

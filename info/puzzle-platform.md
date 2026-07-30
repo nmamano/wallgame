@@ -15,10 +15,24 @@ colors all work. Loop 4 (`plans/puzzle-loop-4.md`) is COMPLETE: completion track
 S-G3), one card treatment (S-UI2), the solo campaign on the same completion
 model (S-CAMP), and likes/dislikes (S-G4). Section G is done. Awaiting only
 Nil's two logged-in walkthroughs.
-Batch 2 (`plans/puzzle-batch2.md`) is under way: S-EVAL shipped 2026-07-29 —
-generated puzzles must now be DECISIVELY WINNING for the mover, six that were
-not have been retired, and the generation filter records the engine's
-evaluation instead of discarding it.
+Batch 2 (`plans/puzzle-batch2.md`) is COMPLETE — all five of Nil's items
+shipped and production-verified 2026-07-29/30:
+S-EVAL (generated puzzles must be DECISIVELY WINNING for the mover; six that
+were not are retired; the filter records the engine's evaluation instead of
+discarding it), S-BOTS (Superhuman Bot rename plus a non-official Easy Bot),
+and S-FOLD (the landing page trimmed to two single-player cards, and the solo
+campaign folded under /puzzles as its FIRST section).
+
+**The /puzzles page is now three sections — Campaign, Handcrafted Puzzles,
+Generated Puzzles — sharing ONE progress read.** `GET /api/puzzles/progress`
+returns `solvedGeneratedIds`, `solvedScriptedIds` and (required)
+`completedCampaignLevelIds`; it calls `readCampaignProgress` so the
+transitional union over the two campaign tables stays in one place. Campaign
+writes still go to `/api/campaign/complete`, and
+`GET /api/campaign/progress` is kept as COMPATIBILITY surface for browsers on
+an older bundle — do not delete it merely because nothing in the repo calls
+it. `/solo-campaign` redirects to `/puzzles`; levels still play at
+`/solo-campaign/$id`.
 Last updated 2026-07-29.
 
 Isomux task: **638f40e6** (umbrella; loop-4 scope). Related bot/engine ops
