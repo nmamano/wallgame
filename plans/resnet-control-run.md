@@ -151,6 +151,44 @@ each session's median):
 VRAM: bots hold ~1.9 GB of 24.5 GB; the run adds ~3.5 GB (5.4 GB total during
 the gradient step). Disk: ~2.7 GB per generation, 557 GB free.
 
+## Overnight result (through 07:00 PT, 2026-07-30)
+
+**Ten generations, `model_1` through `model_10`, zero errors, 20 x `AUDIT OK`**
+(one-hot 0.1-0.9% per seat, gap ~0). Generation 11 was loading training data at
+07:00. Data on disk 28 GB, free 529 GB. Python RSS peaked at 14.8 GB of the
+25 GB WSL cap - bounded, because `--training-games 20000` now binds (gens 1-10
+already hold ~25000 games), so the window stops growing from here.
+
+Pace, against the transformer arm at the SAME generations:
+
+| gen               | 2   | 3   | 4   | 5   | 6   | 7   | 8   | 9   | 10  |
+| ----------------- | --- | --- | --- | --- | --- | --- | --- | --- | --- |
+| ResNet (min)      | 13  | 28  | 39  | 44  | 50  | 47  | 55  | 50  | 52  |
+| transformer (min) | 42  | 111 | 101 | 94  | 129 | 149 | -   | -   | -   |
+
+**The ResNet arm produces generations about 3x faster in wall clock**, while
+handicapped (16 threads not 22, `nice 10`, sharing the GPU with the serving
+bots; the transformer arm had the box to itself). This matches the S3 finding
+that transformer batch-256 inference ran at 0.436x the ResNet's throughput. It
+gives the comparison a second axis: both arms spend 5000 self-play games per
+generation, so a per-generation plot is fair on the DATA budget, but per GPU
+hour the ResNet gets roughly three generations per transformer generation.
+
+Bot impact over the night, same config on both sides of the comparison (the
+idle window is post-22:28-restart only, since S-SAMPLES changed `dw-easy` from
+128 to 1 sample at that restart):
+
+| bot              | idle                                   | under load                              |
+| ---------------- | -------------------------------------- | --------------------------------------- |
+| `dw-easy`        | n=264, p50 0.16s, p90 6.38s, max 19.9s | n=2549, p50 0.05s, p90 4.08s, max 33.4s |
+| `dw-transformer` | n=87, p50 0.34s, p90 1.49s, max 14.4s  | n=232, p50 0.32s, p90 3.08s, max 32.4s  |
+| `dw-puzzle`      | n=142, p50 0.59s, p90 9.32s, max 18.2s | n=2 (no traffic)                        |
+
+Zero client errors, all three engines alive the whole night. The signature is
+the one contention produces: **medians unmoved, tails stretched** - the heavy
+bot's p90 went 1.49s -> 3.08s and both bots' worst move roughly doubled. Most
+requests slip between self-play batches; some queue behind one.
+
 ## Ops
 
 ```bash
