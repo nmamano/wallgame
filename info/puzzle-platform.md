@@ -211,7 +211,31 @@ Verify, in this order:
 # 4. REQUIRED since 2026-07-26: a full round-trip probe (launch a puzzle,
 #    survive >5s past connect, play a move, get the bot's reply, resign),
 #    plus a second round trip against Easy Bot specifically.
+# 5. after an engine REBUILD, prove the new engines are the new BINARY:
+#      stat -Lc %i /proc/<pid>/exe      # must equal the on-disk inode
 ```
+
+**Use `stat -L` for that inode check, and check the parent.** Two traps, both hit
+on 2026-07-30. Without `-L`, `stat -c %i /proc/<pid>/exe` returns the inode of
+the PROCFS SYMLINK, which is a different number per process and never matches
+anything on disk - it looks like a real reading and answers nothing. And
+`pgrep -f deep_ww_bgs_engine` matches your own shell, so filter to the bot
+client's children (`awk '{print $4}' /proc/<pid>/stat` against the client's pid)
+before believing a count. A correct reading looks like this - three engines,
+one per bot, all on the same inode as the file on disk:
+
+```
+ENGINE pid=4986 ppid=4960 inode=41613 flags=--samples 1000
+ENGINE pid=4987 ppid=4960 inode=41613 flags=--samples 1 --root_noise_factor 0
+ENGINE pid=4988 ppid=4960 inode=41613 flags=--samples 5000
+```
+
+Running engines hold their old image as a DELETED inode
+(`readlink /proc/<pid>/exe` ends in " (deleted)"), which is how you can tell a
+process that predates the rebuild from one that does not.
+
+**`ps` on the bot client exposes the official token** in its command line.
+Redact before pasting anything from it: `sed -E 's/--official-token [^ ]+/--official-token REDACTED/g'`.
 
 Before killing anything, check nothing is mid-game on these bots: look for
 `Evaluating position` / `Applying move` lines in the last few minutes, and
@@ -282,8 +306,9 @@ timeout 300 ./unit_tests "[dispatcher]"   # concurrency cases; a TIMEOUT is a FA
 timeout 300 ./unit_tests                  # full suite
 ```
 
-**Compare the failures BY NAME, not by count.** As of `a4b6783` the suite is 91 cases with
-**6 expected failures** plus one separately-reported `[!shouldfail]`:
+**Compare the failures BY NAME, not by count.** As of `3aff1ae` the suite is 96 cases (91 at
+`a4b6783`, plus the five S-SAMPLES cases) with the same **6 expected failures** plus one
+separately-reported `[!shouldfail]`:
 
 ```
 parse_move_notation - Cat and mouse move                     test/bgs_session.cpp

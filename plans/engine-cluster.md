@@ -717,6 +717,173 @@ impact without isolating a new variable. Reviewer concurred.
 
 ---
 
+## S-SAMPLES SHIPPED AND PRODUCTION-VERIFIED (`3aff1ae`, 2026-07-30)
+
+Board task `945fe1ef` done. Same temporary-transport-branch process as S-CONC: the candidate was
+compiled and fully tested BEFORE main took it, and main was then fast-forwarded to the exact validated
+SHA, so the shipped tree is byte-identical to the tested one. Both temporary branches are deleted.
+
+Easy Bot now runs `--samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0`.
+
+### One extra step this slice needed: a measurement branch
+
+The reviewer required the high-sample regression test to pin a CONCRETE move, and there is no way to
+know that value without compiling. So a throwaway branch `measure/s-samples` (`59a5fd9`, its commit
+message saying MEASUREMENT ONLY) went to the desktop first with the assertion still reading
+`PIN_ME`, and **only the `unit_tests` target was built** - never `deep_ww_bgs_engine`, because
+building that replaces the binary the bot client respawns from. Proof it did not: the engine binary's
+sha256 was identical before and after that build.
+
+That run reported the real value, `Cc5`. Then `src/mcts.cpp` alone was swapped for the `d9d4ab4`
+version (via `git show` into a temp file, so nothing was discarded), rebuilt, and the same case run
+again: the PRE-CHANGE code also produced `Cc5`, and the other six assertions in that case
+(principal-variation equality, positive visits at both selected edges) passed on the old code too.
+So the pinned literal states that deep search is unchanged, rather than recording the new
+implementation's own output. Worth repeating for future slices: a pin measured only on the new code
+is a future-regression canary, not a before/after statement.
+
+### Build and unit gates at the candidate SHA
+
+- `make -j6 deep_ww_bgs_engine unit_tests` - clean; the only warning is the pre-existing
+  `-Walloc-size-larger-than=` from `folly/MPMCQueue.h`.
+- Targeted, each exit 0: `[dispatcher]` 7 cases / 923 assertions (S-CONC's guard, still green),
+  `[BGS MCTS]` 9 / 32, `[BGS Session]` 7 / 93.
+- Full suite: **96 cases** (91 + 5 new), 89 passed, 6 failed + 1 as expected. The six unexpected
+  failures matched the recorded baseline **by name** - no additions, no substitutions - and the case
+  count is fully accounted for by the five new cases.
+
+### Process evidence
+
+| probe                               | before (`a4b6783`)                 | after (`3aff1ae`)                  |
+| ----------------------------------- | ---------------------------------- | ---------------------------------- |
+| band 1/2/4/8, 8x8, `--root-noise 0` | all four "No legal move available" | all four LEGAL complete turns      |
+| `--require-move` verdict            | **FAIL, exit 1**                   | **PASS, exit 0**                   |
+| band 112 (default noise)            | `>a2.>a1` eval -0.842              | `>a2.>a1` eval -0.8413             |
+| band 1000 (default noise)           | `>a2.>a1` eval -0.8261..-0.8270    | `>a2.>a1` eval -0.8270             |
+| 5x5 / 12x10 at 1 sample, noise 0    | (not measured)                     | `Cb5.>a1` / `Cb10.>b1`, both legal |
+
+The `--require-move` row is the one that matters most: the gate was run against the OLD binary FIRST
+and observed to fail, so it is a gate that discriminates rather than one that has only ever passed.
+The 112/1000 rows are the evidence that Superhuman Bot and PuzzleBot are unaffected.
+
+A pleasing detail: on 12x10 the ONE-sample policy pick (`Cb10.>b1`) is the same move the 1000-sample
+search chooses. The policy head agrees with deep search at the opening, which is what "weaker bot"
+rather than "broken bot" looks like.
+
+Stated limit: 6x6 at 5000 samples answers a legal move on the new binary, but no before-value was
+recorded for that exact configuration, so that one shows "still works", not "unchanged". PuzzleBot's
+real games are 6x6 **custom-setup**, which the probe cannot construct - it has no custom-initial-state
+support. That is S-TIEBREAK's work.
+
+### Production rollout
+
+- Live-game check by CONJUNCTION: three games showed `status: "in-progress"`, and all three had the
+  human `connected: false` AND were 154, 247 and 254 minutes stale. Abandoned guest games (task
+  `ce4434fc`), not live players.
+- Preflight run on the DESKTOP against the file the client actually reads: VALID, 3 bots, and the
+  `dw-easy` line showing `--samples 1 ... --root_noise_factor 0`.
+- Restarted keepalive-first, with the keepalive session confirmed present before the kill.
+- Verified from a log byte offset captured before the restart: `Engine started` for all three bots,
+  then `Successfully attached with 3 bot(s)`.
+- **Engines proved to be the new binary**, and this is where the method had to be corrected: bare
+  `stat -c %i /proc/<pid>/exe` returns the PROCFS SYMLINK's inode - a different number per process
+  that can never match the file on disk. With `stat -L` the three pre-restart engines all resolved to
+  the deleted inode 17872 (the S-CONC binary) and the three post-restart engines to 41613, the file on
+  disk. Filtering to the bot client's children also matters, because `pgrep -f` matches your own
+  shell. Both traps are now written up in `info/puzzle-platform.md`.
+- Full ROUND TRIPS - connect, survive >5 s, human move, BOT REPLY, resign - green on all three:
+  Easy Bot `58ktHD4j`, Superhuman Bot `cc-wh9zI`, PuzzleBot `CzQEe4tH`.
+
+### Reviewer's one requested change
+
+The diff gate came back CHANGES REQUESTED on a single point, and it was a violation of the probe's own
+documented contract: `judgeMove` was called only when `response.success === true`, so a failed
+response carrying a non-empty ILLEGAL move would bypass the judge and could still report PASS in
+report-only mode. Fixed by separating the two questions - any non-empty move is judged always, and
+`--require-move` independently requires success AND a passing verdict. Rollout then approved.
+
+---
+
+## S-TIEBREAK (`b4c2b191`) - THE MEASUREMENT, done 2026-07-30
+
+This is the "one thing to measure before writing the threshold in" from the section above. Done, and
+it did not come out the way either candidate explanation predicted.
+
+### The eval scale is NOT centred, and it is board-size dependent
+
+`scripts/bgs-engine-probe.ts --scenario band --values 1000`, fresh symmetric `standard` opening,
+THREE separate engine processes per board (each with its own random `--seed`, so each gets its own
+root Dirichlet noise), against the shipped binary and the production model.
+
+| board          | mover's eval, 3 runs      | spread | move       |
+| -------------- | ------------------------- | ------ | ---------- |
+| 6x6 (padded)   | -0.6050, -0.6051, -0.6050 | 0.0001 | `Ca5.>a1`  |
+| 8x8 (padded)   | -0.8264, -0.8270, -0.8272 | 0.0008 | `>a2.>a1`  |
+| 12x10 (NATIVE) | +0.7627, +0.7652, +0.7631 | 0.0025 | `Cb10.>b1` |
+
+1. A perfectly symmetric opening reads nowhere near zero on ANY board, and **the sign flips with
+   board size**. The value head is not a calibrated "who is winning" number; it carries a large
+   board-size-dependent offset. Consistent with what `shared/domain/custom-setup-verdicts.ts` already
+   says: the engine contract promises only a number in [-1, +1] and says nothing about calibration.
+2. The padding hypothesis is only PARTLY supported. The native size is the odd one out, so padding
+   does shift things - but every size is extreme, so the earlier -0.83 on 8x8 was not merely an
+   artefact of a board nobody plays. 8x8 is a recommended size for all three bots.
+3. Repeated fresh processes agree to within 0.003, so these are not noise. Do NOT generalise to "the
+   eval is deterministic": `custom-setup-verdicts.ts` records a kept puzzle reading 0.691 / 0.715 /
+   0.757 across three independent evaluations. Different position, and 5000 samples at parallelism 128
+   rather than 1000 at 32. The spread is position- and config-dependent.
+
+### Where -0.9 actually sits for real puzzles: almost exactly at the median
+
+This needed no engine run at all. `shared/domain/generated-custom-setup-verdicts.json` holds 48
+candidate 6x6 `custom-setup-standard` positions evaluated offline at **PuzzleBot's exact production
+configuration** (`samples=5000 parallel=128`). 36 kept. Half are `mover:1` and half `mover:2`, so the
+stored P1-perspective number goes through `moverEvaluation` first.
+
+Kept puzzles, from the MOVER's perspective (the mover is the human solving it):
+
+    n=36   min 0.757   p25 0.874   median 0.912   max 0.992
+
+The bot plays the other side, so at a puzzle's start position **the bot's own eval is -0.757 to
+-0.992, median -0.912**. Against Nil's -0.9:
+
+- **21 of 36 (58%)** are already at or below -0.9 at the start, so the fallback fires from the bot's
+  first move. That is exactly Nil's stated intent.
+- **15 of 36 (42%)** sit between -0.757 and -0.9, so the bot keeps searching at full strength until
+  the human makes progress and the eval crosses the line.
+
+So -0.9 is neither a no-op nor always-on; it lands essentially ON the corpus median. The earlier
+worry that -0.9 might be only 0.07 away from ordinary play does not apply to puzzles.
+
+### The design question the measurement raises, and the answer to implement
+
+It DOES apply to ordinary games. The BGS adapter serves all three bots, and on 8x8 an even position
+already reads -0.827 for the mover - so a Superhuman or Easy game where the bot is merely somewhat
+behind could cross -0.9 and start playing naive moves in an ordinary game, with no "the human is
+solving a puzzle" story to justify it.
+
+Board task `b4c2b191` is titled "...so PuzzleBot loses gracefully", and every line of Nil's design
+note is about puzzles and humans making mistakes. So: implement the threshold as a **per-process
+engine flag defaulting to OFF**, enabled at -0.9 for `dw-puzzle` only - exactly the
+`--root_noise_factor` pattern from S-SAMPLES. Superhuman and Easy are then untouched by default, and
+turning it on for another bot later is a config edit rather than a code change. Put to Nil with the
+numbers; proceeding on that assumption because it is the reading that matches the task title, and it
+is the choice that cannot surprise anyone.
+
+### Still to measure, and it needs a probe extension
+
+The probe cannot build a custom initial state, so it cannot yet evaluate a real puzzle position or
+follow one. Missing:
+
+- The eval TRAJECTORY through a puzzle: does it fall as the human converts, and does it climb back
+  above -0.9 when the human errs? **The whole design depends on that recovery, and nothing measured
+  so far demonstrates it.**
+- How low the eval goes in ordinary 8x8/12x10 games where the bot is merely losing.
+- Whether `SimplePolicy`'s argmax actually produces the moves Nil considers graceful. Only he can
+  judge that, and it needs a real playtest.
+
+---
+
 ## Reviewer rulings (plan gate, 2026-07-30) - BINDING
 
 Full gate and amendment rulings from Project Reviewer 1. Recorded here because their session is
