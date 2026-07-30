@@ -65,9 +65,16 @@ const SIGNATURE = `(() => {
   if (!document.body) return JSON.stringify({ blank: true });
   const text = document.body.innerText;
   return JSON.stringify({
+    // Section headings: since S-FOLD there should be THREE (Campaign,
+    // Handcrafted Puzzles, Generated Puzzles), and they must appear together
+    // rather than the campaign arriving separately.
+    sections: document.querySelectorAll('h2').length,
+    // Cards now include the two campaign levels and the "More coming soon"
+    // placeholder, all of which are h3.
     cards: document.querySelectorAll('h3').length,
     checks: document.querySelectorAll('svg[class*="circle-check"]').length,
-    loginPrompt: /Log in to keep track/.test(text),
+    // ONE page-level invitation, not one per section.
+    loginPrompts: (text.match(/Log in to keep track/g) ?? []).length,
     loading: /Loading puzzles/.test(text) || /Looking for the official bot/.test(text),
     listError: /Could not load the generated puzzles/.test(text),
     routeError: /something went wrong|Unexpected error/i.test(text),
@@ -117,6 +124,10 @@ const SCENARIOS = [
     "/api/puzzles/progress": () => ({
       solvedGeneratedIds: ["pz1", "pz2"],
       solvedScriptedIds: ["1"],
+      // REQUIRED since S-FOLD: the campaign section reads from this same
+      // payload, and the response schema fails closed without the field, so a
+      // stub that omits it would render an error rather than the page.
+      completedCampaignLevelIds: ["1"],
     }),
   }),
   scenario("logged out", {
@@ -132,6 +143,7 @@ const SCENARIOS = [
     "/api/puzzles/progress": () => ({
       solvedGeneratedIds: [],
       solvedScriptedIds: [],
+      completedCampaignLevelIds: [],
     }),
   }),
 ];

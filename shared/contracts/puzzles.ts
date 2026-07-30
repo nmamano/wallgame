@@ -193,19 +193,31 @@ export const mapSavedPuzzleRows = (
 // ============================================================================
 
 /**
- * Which puzzles the caller has solved, kept as TWO arrays on purpose: the id
- * namespaces differ (generated puzzles are nanoid rows in saved_puzzles,
- * scripted ones are "1".."10" from the domain set) and so do the trust
- * models — a generated solve is server-verified from the game record, a
- * scripted one is client-asserted. Merging them would invite a later reader
- * to treat scripted completions as verified.
+ * Everything the /puzzles page has been completed on, kept as THREE arrays on
+ * purpose: the id namespaces differ (generated puzzles are nanoid rows in
+ * saved_puzzles, scripted ones are "1".."10" from the domain set, campaign
+ * levels are their own ids) and so do the trust models — a generated solve is
+ * server-verified from the game record, a scripted or campaign one is
+ * client-asserted. Merging them would invite a later reader to treat asserted
+ * completions as verified.
  *
- * Both arrays are sorted, so responses are deterministic for caching and
+ * Campaign levels joined this response in S-FOLD, when the campaign moved onto
+ * the /puzzles page: three sections on one page share ONE progress read, so
+ * the route loader warms them together and one invalidation refreshes all of
+ * them. Campaign WRITES still go to /api/campaign/complete, and
+ * GET /api/campaign/progress is kept for old bundles.
+ *
+ * `completedCampaignLevelIds` is REQUIRED. An old-shaped response missing it
+ * must fail closed rather than quietly render every campaign level as
+ * unfinished.
+ *
+ * All three arrays are sorted, so responses are deterministic for caching and
  * tests.
  */
 export const puzzleProgressResponseSchema = z.object({
   solvedGeneratedIds: z.array(nonempty),
   solvedScriptedIds: z.array(nonempty),
+  completedCampaignLevelIds: z.array(nonempty),
 });
 
 /** Body of the client-asserted scripted-completion write. */

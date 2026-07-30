@@ -158,7 +158,16 @@ describe("recording a campaign completion", () => {
   });
 });
 
-describe("reading campaign progress", () => {
+/**
+ * GET /api/campaign/progress is COMPATIBILITY SURFACE since S-FOLD: the current
+ * bundle reads campaign completion from GET /api/puzzles/progress instead (see
+ * the campaign section of tests/integration/puzzle-progress.test.ts). These
+ * tests are kept, not weakened, precisely because a browser still running an
+ * older hashed bundle calls this endpoint and must keep getting correct
+ * answers. Deleting them would remove the only evidence that old clients still
+ * work.
+ */
+describe("reading campaign progress (legacy endpoint, still supported)", () => {
   it("refuses an anonymous caller", async () => {
     const response = await readProgress();
     expect(response.status).toBe(401);

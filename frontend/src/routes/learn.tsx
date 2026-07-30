@@ -199,7 +199,7 @@ function Learn() {
                       <p className="text-blue-900 dark:text-blue-200">
                         <strong>Ready to play?</strong> You can now{" "}
                         <Link
-                          to="/solo-campaign"
+                          to="/puzzles"
                           className="underline hover:text-blue-600 dark:hover:text-blue-400"
                         >
                           start the solo campaign

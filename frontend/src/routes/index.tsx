@@ -7,7 +7,7 @@ import {
 } from "@/components/ui/card";
 import { GameShowcase } from "@/components/game-showcase";
 import { useMediaQuery } from "@/hooks/use-media-query";
-import { Sparkles, Brain, Bot, BookOpen, Users, UserPlus } from "lucide-react";
+import { Brain, Bot, Users, UserPlus } from "lucide-react";
 
 export const Route = createFileRoute("/")({
   component: Index,
@@ -34,23 +34,6 @@ function Index() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-2xl mx-auto">
-                <Link to="/solo-campaign" className="group min-w-0">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
-                    <CardHeader className="flex items-center sm:flex-col sm:items-start sm:gap-1.5 px-3 py-1 sm:p-6">
-                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Sparkles className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                        </div>
-                        Campaign
-                      </CardTitle>
-                      <CardDescription className="hidden sm:block">
-                        Start here! Begin your journey with carefully crafted
-                        challenges that teach you the fundamentals.
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                </Link>
-
                 <Link to="/puzzles" className="group min-w-0">
                   <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
                     <CardHeader className="flex items-center sm:flex-col sm:items-start sm:gap-1.5 px-3 py-1 sm:p-6">
@@ -87,22 +70,6 @@ function Index() {
                       </CardTitle>
                       <CardDescription className="hidden sm:block">
                         Challenge our AI opponent from easy to hard difficulty.
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                </Link>
-
-                <Link to="/study-board" className="group min-w-0">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
-                    <CardHeader className="flex items-center sm:flex-col sm:items-start sm:gap-1.5 px-3 py-1 sm:p-6">
-                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <BookOpen className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                        </div>
-                        Study Board
-                      </CardTitle>
-                      <CardDescription className="hidden sm:block">
-                        Analyze positions and experiment with strategies freely.
                       </CardDescription>
                     </CardHeader>
                   </Card>

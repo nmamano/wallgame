@@ -3,6 +3,7 @@ import {
   PUZZLE_ACTION_LABELS,
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
+  campaignActionLabel,
 } from "./puzzle-action-label";
 
 /**
@@ -32,10 +33,28 @@ describe("puzzle action labels", () => {
     }
   });
 
-  it("covers every label the card can render at rest", () => {
+  it("labels an unplayed campaign level Play and a completed one Replay", () => {
+    // Asserted on the helper itself, not just on membership in the label map:
+    // iterating Object.values proves the widths are covered, but it would pass
+    // just as happily if campaignActionLabel returned "Solve".
+    expect(campaignActionLabel(false)).toBe("Play");
+    expect(campaignActionLabel(true)).toBe("Replay");
+  });
+
+  it("covers every label a card can render at rest, from BOTH helpers", () => {
     const steadyLabels: string[] = Object.values(PUZZLE_ACTION_LABELS);
-    for (const label of [puzzleActionLabel(false), puzzleActionLabel(true)]) {
+    for (const label of [
+      puzzleActionLabel(false),
+      puzzleActionLabel(true),
+      campaignActionLabel(false),
+      campaignActionLabel(true),
+    ]) {
       expect(steadyLabels).toContain(label);
+      // Every renderable label must fit the reserved width, or the three
+      // sections' buttons start varying again.
+      expect(label.length).toBeLessThanOrEqual(
+        PUZZLE_ACTION_SIZING_LABEL.length,
+      );
     }
   });
 });

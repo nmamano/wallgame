@@ -40,9 +40,12 @@ export function SoloCampaignEndPopup({
   // Wraps rather than overflows: the card is width-capped and a longer
   // translation of any label would otherwise push a button off it.
   const buttonRow = "mt-4 flex flex-wrap items-center justify-center gap-2";
+  // "Level list" still names the destination truthfully: the list is the FIRST
+  // section of /puzzles since S-FOLD, so this lands on it. Do not "fix" the
+  // label to say Puzzles — the player clicked to get back to the levels.
   const levelListButton = (variant: "outline" | "default") => (
     <Button variant={variant} size="sm" asChild>
-      <Link to="/solo-campaign">
+      <Link to="/puzzles">
         <List className="h-4 w-4 mr-1" />
         Level list
       </Link>

@@ -44,6 +44,14 @@ export const campaignRoute = new Hono()
   /**
    * Which levels the logged-in caller has completed.
    *
+   * COMPATIBILITY ONLY since S-FOLD. The current bundle reads campaign
+   * completion from GET /api/puzzles/progress, which returns all three
+   * sections of the /puzzles page in one query. This endpoint stays because a
+   * browser still running an OLD hashed bundle has an open tab that calls it,
+   * and it would 404 mid-session otherwise. Deleting it needs a deliberate
+   * sunset of those clients, NOT merely "the current bundle stopped calling
+   * it" — so do not remove it just because nothing in the repo references it.
+   *
    * Anonymous callers get 401 rather than empty arrays, so "no identity" is
    * never confused with "authenticated, nothing completed".
    */

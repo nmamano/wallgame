@@ -534,26 +534,18 @@ export const playPuzzle = async (args: {
 };
 
 // Campaign progress API
-import {
-  campaignProgressResponseSchema,
-  completeLevelResponseSchema,
-  type CampaignProgressResponse,
-} from "../../../shared/contracts/campaign";
-
-/** Shared so a finished level can invalidate what the level list reads. */
-export const CAMPAIGN_PROGRESS_QUERY_KEY = ["campaign-progress"] as const;
+import { completeLevelResponseSchema } from "../../../shared/contracts/campaign";
 
 /**
- * Which campaign levels the logged-in user has completed. Requires
- * authentication: the endpoint answers 401 for anonymous callers, so callers
- * must gate the query on a settled, authenticated user rather than firing it
- * while browsing logged out.
+ * There is deliberately no campaign-progress READER here any more.
+ *
+ * Since S-FOLD the campaign level list is the first section of /puzzles and its
+ * completion state comes from `fetchPuzzleProgress` — one read for all three
+ * sections. The server still serves GET /api/campaign/progress for browsers
+ * running an older bundle (see server/routes/campaign.ts), but this bundle has
+ * no reason to call it, and a second fetcher would invite a second query key
+ * and a second invalidation back onto the page.
  */
-export const fetchCampaignProgress =
-  async (): Promise<CampaignProgressResponse> => {
-    const raw = await handleResponse<unknown>(api.campaign.progress.$get());
-    return campaignProgressResponseSchema.parse(raw);
-  };
 
 /** Report a campaign level completion (client-asserted; anonymous is allowed). */
 export const reportCampaignCompletion = async (

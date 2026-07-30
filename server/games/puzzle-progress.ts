@@ -5,6 +5,7 @@ import { db } from "../db";
 import { gamesTable } from "../db/schema/games";
 import { gamePlayersTable } from "../db/schema/game-players";
 import { scriptedPuzzleCompletionsTable } from "../db/schema/scripted-puzzle-completions";
+import { readCampaignProgress } from "./campaign-progress";
 import type { PuzzleProgressResponse } from "../../shared/contracts/puzzles";
 
 /**
@@ -93,18 +94,26 @@ export const hasSolvedGeneratedPuzzle = async (
 export const readPuzzleProgress = async (
   userId: number,
 ): Promise<PuzzleProgressResponse> => {
-  const [generated, scripted] = await Promise.all([
+  const [generated, scripted, campaign] = await Promise.all([
     readSolvedGeneratedPuzzleIds(userId),
     db
       .selectDistinct({ puzzleId: scriptedPuzzleCompletionsTable.puzzleId })
       .from(scriptedPuzzleCompletionsTable)
       .where(eq(scriptedPuzzleCompletionsTable.userId, userId)),
+    // Campaign levels live on the /puzzles page since S-FOLD, so they are part
+    // of this one read. `readCampaignProgress` is CALLED rather than
+    // reimplemented: it contains the deliberate transitional union over
+    // campaign_progress and campaign_level_completions, and a second copy of
+    // that SQL would be a second thing to remember when the legacy half is
+    // finally dropped.
+    readCampaignProgress(userId),
   ]);
 
   // Sorted so responses are deterministic for caching and assertions.
   return {
     solvedGeneratedIds: generated,
     solvedScriptedIds: scripted.map((row) => row.puzzleId).sort(),
+    completedCampaignLevelIds: campaign.completedLevels,
   };
 };
 

@@ -278,7 +278,90 @@ PRODUCTION EVIDENCE, in the order the reviewer required:
 
 ## S-FOLD — landing page, and the campaign under /puzzles (items 2 and 3)
 
-Not started. Notes gathered while planning:
+- [ ] awaiting diff gate; implemented and browser-measured, not yet deployed.
+
+### What shipped
+
+**Item 2.** The Campaign and Study Board cards are gone from "Single-player Fun",
+leaving Puzzles and Play vs AI as one row that mirrors "Play with Others" below it.
+`/study-board` itself is untouched — Nil asked to remove the BOX. Flagged to him
+separately: that page is not in the nav bar either, so it is now reachable only by URL.
+
+**Item 3.** `/puzzles` has three sections, Campaign first, then Handcrafted Puzzles,
+then Generated Puzzles. All three render the SAME local `PuzzleCard`; everything
+section-specific arrives as a prop and there is deliberately no "kind" branch inside it.
+`actionLabel` is now a REQUIRED prop rather than being derived in the card, so a call
+site cannot silently inherit the wrong verb — campaign levels say Play, puzzles say
+Solve, and "Replay" remains the width every button reserves.
+
+`/solo-campaign` redirects to `/puzzles` with `replace: true`; levels still play at
+`/solo-campaign/$id`. Every list/back/unknown-level/learn link points at `/puzzles`
+directly rather than resolving through the redirect. Labels like "Level list" and "Back
+to Campaign" are kept, and there is a comment saying not to "fix" them: campaign is the
+first section, so they remain truthful.
+
+### The progress unification, and what it does not do
+
+`/api/puzzles/progress` is now the single read model for all three sections. It gained
+`completedCampaignLevelIds` (REQUIRED — an old-shaped response fails closed rather than
+rendering every level as unfinished), filled by CALLING `readCampaignProgress`, which
+keeps the deliberate transitional union over `campaign_progress` and
+`campaign_level_completions` in exactly one place.
+
+`useCampaignProgress` was renamed to **`useCampaignCompletion`** and is now honestly
+write-only: it exposes `markCompleted`/`retryCompletion` and invalidates the PUZZLE
+progress key. A hook called `...Progress` that no longer read progress would have been a
+lie in the name. The client-side campaign progress FETCHER is gone with it.
+
+GET `/api/campaign/progress` is KEPT and marked compatibility-only: a browser running an
+older hashed bundle still calls it and would 404 mid-session. Its integration tests are
+kept for the same reason — they are now the only evidence old clients still work.
+Removing the endpoint needs a deliberate client sunset, not "nothing in the repo
+references it".
+
+**What this does NOT do:** it does not change write/read timing, so board bug
+`cfc6135a` (campaign checkmarks appearing only after a refresh) stays OPEN. Nil accepted
+that ("i can tell you if i see it again in the wild"). What the unification does buy is
+real: one loader-prefetched query, one key, one invalidation for a page that now has
+three sections.
+
+### Browser-measured evidence (the harness, against the built bundle)
+
+- Logged in: **three sections, 25 cards and 4 checkmarks in ONE paint at 1265ms** —
+  including the campaign checkmark, which proves it renders from the unified read.
+- Logged out: one paint at 700ms, **exactly one** log-in invitation (the signature counts
+  occurrences now, so three-copies-of-the-same-sentence would fail visibly).
+- With `/api/puzzles` failing: all three headings still render at 1009ms, the inline
+  error card appears at 9647ms, and the router error boundary NEVER takes the page.
+- The causal campaign experiment still holds with its property intact: server state
+  flipped from OUTSIDE the browser after the level mounted, the return navigation caused
+  a third progress read (2 -> 3), and exactly one checkmark appeared with no reload.
+- Screenshots at 1280 and 390 looked at, not just captured: the two levels plus the
+  "More coming soon" placeholder fill one desktop row and stack on the phone.
+
+REDIRECT EVIDENCE, and a measurement trap worth remembering: `history.length` cannot
+answer "does the redirect leave an entry behind". Navigating to the URL you are already
+on REPLACES rather than pushes, so a naive control measured from /puzzles reads +0 and
+makes any redirect look like it added an entry — my first attempt reported exactly that
+and was meaningless. The user-visible property is what to measure: arrive from /about,
+follow /solo-campaign, land on /puzzles, press Back, and check you return to /about
+rather than bouncing. Verified.
+
+`/solo-campaign/1` still renders directly, and "a board rendered" is asserted by
+COUNTING CELLS: `{"boardGrids":1,"cells":36,"notFound":false}` for the 6x6 level 1,
+using a selector grounded in `components/board.tsx` (the grid is
+`div.grid.w-full.relative` and each cell is a direct `div.aspect-square` child — the
+grid's other children are absolutely-positioned wall hit areas and pillars, which is
+why the child selector matters).
+
+SECOND MEASUREMENT TRAP, caught by the reviewer: my first version asserted
+`!!document.querySelector('svg, canvas')`. Measured on boardless pages, that check
+returns TRUE on both `/puzzles` and `/about` — lucide icons, the nav and the theme
+toggle emit svg on every page — while the cell count correctly returns 0 on both. So the
+original check would have passed on a blank error page. Same shape as the other two traps
+this batch: the measurement did not make the claimed state impossible.
+
+### Notes gathered while planning:
 
 - Landing page (`frontend/src/routes/index.tsx`): "Single-player Fun" is a
   `grid-cols-2` of four cards; removing Campaign and Study Board leaves Puzzles and

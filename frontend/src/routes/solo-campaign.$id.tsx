@@ -12,7 +12,7 @@ import {
 } from "../../../shared/domain/solo-campaign-levels";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
-import { useCampaignProgress } from "@/hooks/use-campaign-progress";
+import { useCampaignCompletion } from "@/hooks/use-campaign-completion";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { ArrowLeft, Check, Undo2 } from "lucide-react";
 
@@ -25,7 +25,7 @@ function SoloCampaignLevel() {
   const navigate = useNavigate();
   const level = SOLO_CAMPAIGN_LEVELS[id];
 
-  const { markCompleted, retryCompletion } = useCampaignProgress();
+  const { markCompleted, retryCompletion } = useCampaignCompletion();
 
   // Memoize onComplete to prevent infinite loops
   const onComplete = useCallback(() => {
@@ -35,7 +35,7 @@ function SoloCampaignLevel() {
   // Redirect if level doesn't exist
   useEffect(() => {
     if (!level) {
-      void navigate({ to: "/solo-campaign" });
+      void navigate({ to: "/puzzles" });
     }
   }, [level, navigate]);
 
@@ -183,7 +183,7 @@ function SoloCampaignLevelContent({
       {/* Back to campaign link */}
       <div className="mb-4">
         <Link
-          to="/solo-campaign"
+          to="/puzzles"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
         >
           <ArrowLeft className="h-4 w-4" />

@@ -1,5 +1,6 @@
 /**
- * Integration tests for puzzle completion tracking (S-G3).
+ * Integration tests for puzzle completion tracking (S-G3), extended in S-FOLD
+ * when campaign levels joined this same read.
  *
  * Uses Testcontainers for an ephemeral PostgreSQL, following
  * `past-games.test.ts`. These CANNOT run on the auntie box (no Docker); they
@@ -47,6 +48,9 @@ let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let savedPuzzlesTable: typeof import("../../server/db/schema/saved-puzzles").savedPuzzlesTable;
 let scriptedPuzzleCompletionsTable: typeof import("../../server/db/schema/scripted-puzzle-completions").scriptedPuzzleCompletionsTable;
+let campaignLevelCompletionsTable: typeof import("../../server/db/schema/campaign-level-completions").campaignLevelCompletionsTable;
+let campaignProgressTable: typeof import("../../server/db/schema/campaign-progress").campaignProgressTable;
+let recordCampaignCompletion: typeof import("../../server/games/campaign-progress").recordCampaignCompletion;
 let eq: typeof import("drizzle-orm").eq;
 
 const PUZZLE_A = "test-puzzle-a";
@@ -86,6 +90,15 @@ async function importServerModules() {
   scriptedPuzzleCompletionsTable = (
     await import("../../server/db/schema/scripted-puzzle-completions")
   ).scriptedPuzzleCompletionsTable;
+  campaignLevelCompletionsTable = (
+    await import("../../server/db/schema/campaign-level-completions")
+  ).campaignLevelCompletionsTable;
+  campaignProgressTable = (
+    await import("../../server/db/schema/campaign-progress")
+  ).campaignProgressTable;
+  recordCampaignCompletion = (
+    await import("../../server/games/campaign-progress")
+  ).recordCampaignCompletion;
   eq = (await import("drizzle-orm")).eq;
 }
 
@@ -197,6 +210,11 @@ beforeAll(async () => {
 beforeEach(async () => {
   await db.delete(gamesTable);
   await db.delete(scriptedPuzzleCompletionsTable);
+  // Campaign completion is part of this read since S-FOLD, and it has TWO
+  // tables because of the transitional union — both must be cleaned or a
+  // legacy row leaks between tests.
+  await db.delete(campaignLevelCompletionsTable);
+  await db.delete(campaignProgressTable);
 });
 
 afterAll(async () => {
@@ -320,6 +338,77 @@ describe("scripted puzzle completion (client-asserted)", () => {
 
     expect((await readPuzzleProgress(mine)).solvedScriptedIds).toEqual(["7"]);
     expect((await readPuzzleProgress(theirs)).solvedScriptedIds).toEqual(["2"]);
+  });
+});
+
+/**
+ * Campaign levels joined this read in S-FOLD, when the campaign list became
+ * the first section of /puzzles. The point of these tests is that the unified
+ * read does not quietly lose the TRANSITIONAL UNION: `readCampaignProgress`
+ * reads both `campaign_level_completions` and the legacy `campaign_progress`,
+ * and `readPuzzleProgress` must surface both, or a player whose rows predate
+ * the backfill loses their markers.
+ */
+describe("campaign levels in the unified progress read", () => {
+  it("reports a completion recorded in the current table", async () => {
+    const userId = await seedUser("campaign-current");
+    await recordCampaignCompletion({ userId, levelId: "1" });
+
+    const progress = await readPuzzleProgress(userId);
+    expect(progress.completedCampaignLevelIds).toEqual(["1"]);
+    // The three namespaces stay separate: a campaign level must not appear as
+    // a scripted puzzle of the same id.
+    expect(progress.solvedScriptedIds).toEqual([]);
+    expect(progress.solvedGeneratedIds).toEqual([]);
+  });
+
+  it("surfaces a level that exists only in the LEGACY table", async () => {
+    // The transitional union, asserted through the unified read rather than
+    // through readCampaignProgress directly — this is the path the page uses,
+    // and it is the one that would silently drop the legacy half.
+    const userId = await seedUser("campaign-legacy");
+    await db.insert(campaignProgressTable).values({ userId, levelId: "2" });
+
+    expect(
+      (await readPuzzleProgress(userId)).completedCampaignLevelIds,
+    ).toEqual(["2"]);
+  });
+
+  it("unions both tables without duplicating a level in both", async () => {
+    const userId = await seedUser("campaign-both");
+    await recordCampaignCompletion({ userId, levelId: "1" });
+    await db.insert(campaignProgressTable).values({ userId, levelId: "1" });
+    await db.insert(campaignProgressTable).values({ userId, levelId: "2" });
+
+    expect(
+      (await readPuzzleProgress(userId)).completedCampaignLevelIds,
+    ).toEqual(["1", "2"]);
+  });
+
+  it("keeps one user's campaign levels out of another's progress", async () => {
+    const mine = await seedUser("campaign-mine");
+    const theirs = await seedUser("campaign-theirs");
+    await recordCampaignCompletion({ userId: mine, levelId: "1" });
+    await recordCampaignCompletion({ userId: theirs, levelId: "2" });
+
+    expect((await readPuzzleProgress(mine)).completedCampaignLevelIds).toEqual([
+      "1",
+    ]);
+    expect(
+      (await readPuzzleProgress(theirs)).completedCampaignLevelIds,
+    ).toEqual(["2"]);
+  });
+
+  it("excludes anonymous completions from every user's progress", async () => {
+    const userId = await seedUser("campaign-anon");
+    await recordCampaignCompletion({ userId: null, levelId: "1" });
+
+    expect(
+      (await readPuzzleProgress(userId)).completedCampaignLevelIds,
+    ).toEqual([]);
+    const rows = await db.select().from(campaignLevelCompletionsTable);
+    expect(rows).toHaveLength(1);
+    expect(rows[0].userId).toBeNull();
   });
 });
 

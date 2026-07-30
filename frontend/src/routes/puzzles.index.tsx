@@ -4,10 +4,14 @@ import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
-import { CheckCircle2, Play, Loader2 } from "lucide-react";
+import { CheckCircle2, Play, Loader2, Clock } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
+import {
+  SOLO_CAMPAIGN_LEVELS,
+  getLevelIds,
+} from "../../../shared/domain/solo-campaign-levels";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { useSettings } from "@/hooks/use-settings";
 import {
@@ -23,6 +27,7 @@ import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
+  campaignActionLabel,
 } from "@/lib/puzzle-action-label";
 import {
   PUZZLE_SORT_OPTIONS,
@@ -71,7 +76,7 @@ export const Route = createFileRoute("/puzzles/")({
 });
 
 /**
- * Surface treatment for a puzzle card. Both sections now render the same
+ * Surface treatment for a puzzle card. All THREE sections render the same
  * `PuzzleCard` in the same grid, so this no longer holds a density
  * distinction — padding and internal layout live in that component, and only
  * the shell's look (border, background, hover) is kept separate here.
@@ -96,6 +101,13 @@ interface PuzzleCardProps {
   title: string;
   completed: boolean;
   onAction: () => void;
+  /**
+   * The verb this card's button shows at rest. REQUIRED, and supplied by the
+   * caller rather than derived here: a campaign level says Play where a puzzle
+   * says Solve, and a default would let a future call site quietly inherit the
+   * wrong verb. The card stays ignorant of which section it is in.
+   */
+  actionLabel: string;
   /** Omitted where a card has nothing to say beyond its name. */
   subtitle?: string;
   badge?: string;
@@ -117,19 +129,23 @@ interface PuzzleCardProps {
 }
 
 /**
- * One card, both puzzle sections. Scripted and generated puzzles differ in
- * what they know about themselves (an author and a difficulty versus just a
- * name) and in what their button does, but they are the same object to a
- * player, so they render through one component rather than two trees that
- * have to be kept looking alike — which is how they drifted apart before.
+ * One card, all THREE sections. Campaign levels, scripted puzzles and
+ * generated puzzles differ in what they know about themselves (an author and a
+ * difficulty, or votes, or just a name) and in what their button says, but they
+ * are the same object to a player, so they render through one component rather
+ * than parallel trees that have to be kept looking alike — which is how they
+ * drifted apart before.
  *
- * Kept local to this route: both call sites are here, and its props encode
- * this page's presentation rather than a general card contract.
+ * Everything section-specific arrives as a prop; there is deliberately no
+ * "kind" branch inside. Kept local to this route: every call site is here, and
+ * its props encode this page's presentation rather than a general card
+ * contract.
  */
 function PuzzleCard({
   title,
   completed,
   onAction,
+  actionLabel,
   subtitle,
   badge,
   pending = false,
@@ -197,7 +213,7 @@ function PuzzleCard({
           ) : (
             <>
               <Play className="h-4 w-4" />
-              {/* Both labels occupy the same cell, with the widest one
+              {/* Every label occupies the same cell, with the widest one
                   invisible, so every resting button is Replay-wide instead of
                   a hardcoded size that would rot if the copy changed. */}
               <span className="grid">
@@ -207,9 +223,7 @@ function PuzzleCard({
                 >
                   {PUZZLE_ACTION_SIZING_LABEL}
                 </span>
-                <span className="col-start-1 row-start-1">
-                  {puzzleActionLabel(completed)}
-                </span>
+                <span className="col-start-1 row-start-1">{actionLabel}</span>
               </span>
             </>
           )}
@@ -250,22 +264,29 @@ function Puzzles() {
         </p>
       </div>
 
+      {/* ONE invitation for the whole page, not one per section: all three
+          sections show completion markers, and three copies of the same
+          sentence would be noise. It also has to speak for all of them, so it
+          says "your progress" rather than naming puzzles.
+
+          Waiting on `isLoading` as well as the answer: logged-out is the
+          resting state of this hook, so testing it alone flashed the
+          invitation at logged-in visitors for as long as /api/me took. */}
+      {!isLoading && !isLoggedIn && (
+        <Alert className="mb-8 bg-card/50 border-border/50">
+          <Info className="h-4 w-4" />
+          <AlertDescription className="text-sm text-muted-foreground">
+            Log in to keep track of your progress.
+          </AlertDescription>
+        </Alert>
+      )}
+
+      <CampaignSection />
+
       <section className="mb-12">
         <h2 className="text-2xl font-serif font-semibold text-foreground mb-4">
           Handcrafted Puzzles
         </h2>
-
-        {/* Waiting on `isLoading` as well as the answer: logged-out is the
-            resting state of this hook, so testing it alone flashed the
-            invitation at logged-in visitors for as long as /api/me took. */}
-        {!isLoading && !isLoggedIn && (
-          <Alert className="mb-6 bg-card/50 border-border/50">
-            <Info className="h-4 w-4" />
-            <AlertDescription className="text-sm text-muted-foreground">
-              Log in to keep track of the puzzles you have solved.
-            </AlertDescription>
-          </Alert>
-        )}
 
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
           {puzzles.map((puzzle) => (
@@ -275,6 +296,7 @@ function Puzzles() {
               subtitle={`by ${puzzle.author}`}
               badge={`Difficulty: ${puzzle.difficulty}/5`}
               completed={puzzle.completed}
+              actionLabel={puzzleActionLabel(puzzle.completed)}
               onAction={() => handlePlayPuzzle(puzzle.id)}
             />
           ))}
@@ -287,10 +309,70 @@ function Puzzles() {
 }
 
 /**
+ * The solo campaign, first section since S-FOLD (Nil: "fold solo campaign
+ * levels under the Puzzles tab, as the first of now 3 subsections").
+ *
+ * Levels still PLAY at /solo-campaign/$id; only the list moved here, and
+ * /solo-campaign now redirects to this page. Completion is read from the same
+ * unified progress query as the other two sections, so all three arrive in the
+ * paint the route loader warms.
+ */
+function CampaignSection() {
+  const navigate = useNavigate();
+  const { isCampaignLevelCompleted } = usePuzzleProgress();
+  const levelIds = getLevelIds();
+
+  return (
+    <section className="mb-12">
+      <h2 className="text-2xl font-serif font-semibold text-foreground mb-4">
+        Campaign
+      </h2>
+
+      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+        {levelIds.map((levelId) => {
+          const level = SOLO_CAMPAIGN_LEVELS[levelId];
+          const completed = isCampaignLevelCompleted(levelId);
+          return (
+            <PuzzleCard
+              key={levelId}
+              title={`${levelId}. ${level.name}`}
+              completed={completed}
+              actionLabel={campaignActionLabel(completed)}
+              onAction={() =>
+                void navigate({ to: `/solo-campaign/${levelId}` })
+              }
+            />
+          );
+        })}
+
+        {/* Last cell of the SAME grid, so two levels plus this placeholder
+            fill one desktop row and stack at 390px. Kept out of PuzzleCard:
+            it is not a card you can do anything with. Nil asked for it to
+            stay (2026-07-29), knowing the section is sparse. */}
+        <Card className="flex h-full flex-row items-center gap-3 border-2 border-dashed border-border/50 bg-card/30 p-4">
+          <Clock className="h-4 w-4 shrink-0 text-muted-foreground" />
+          <div className="min-w-0">
+            <h3 className="font-serif font-semibold leading-tight text-muted-foreground">
+              More coming soon…
+            </h3>
+            <p className="mt-0.5 text-sm text-muted-foreground/70">
+              Additional levels are in development
+            </p>
+          </div>
+        </Card>
+      </div>
+    </section>
+  );
+}
+
+/**
  * The persisted generated set (S-G1/S-G2): race positions against PuzzleBot,
- * filtered only by the best-move distance rule — no winnability
- * certification, no other vetting. Loading, error, and bot-offline states
- * are scoped to this section; the scripted list above renders regardless.
+ * filtered by TWO engine rules — the best-move distance rule, and since
+ * S-EVAL the requirement that the mover be decisively winning, because solving
+ * a puzzle means winning it. Beyond those, no vetting: Nil is the filter.
+ *
+ * Loading, error, and bot-offline states are scoped to this section; the two
+ * sections above render regardless.
  */
 function GeneratedPuzzlesSection() {
   const navigate = useNavigate();
@@ -419,6 +501,7 @@ function GeneratedPuzzlesSection() {
               key={puzzle.id}
               title={puzzle.displayName}
               completed={solved}
+              actionLabel={puzzleActionLabel(solved)}
               pending={launchingId === puzzle.id}
               disabled={!officialBot || launchingId !== null}
               onAction={() => void launch(puzzle)}

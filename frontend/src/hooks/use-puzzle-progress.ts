@@ -40,12 +40,17 @@ export const puzzleProgressQueryOptions = {
  * anonymous visitors are shown no completion state at all, so a local
  * fallback would only produce markers that vanish on another device.
  *
- * The two sets do not share a trust model. A GENERATED puzzle counts as
+ * The three sets do not share a trust model. A GENERATED puzzle counts as
  * solved only when the server can see a decisive win in a game it launched as
  * that puzzle — the client cannot assert one, and deliberately does not mark
  * one optimistically, because that would undermine the whole point. A
- * SCRIPTED puzzle is a client-side walkthrough with no game to verify, so
- * finishing it is reported and taken at face value.
+ * SCRIPTED puzzle and a CAMPAIGN LEVEL are played entirely in the browser with
+ * no game to verify, so finishing one is reported and taken at face value.
+ *
+ * Campaign levels read from here since S-FOLD, when the campaign moved onto
+ * the /puzzles page. This is the page's ONLY progress query: three sections,
+ * one loader-prefetched read, one invalidation. Campaign WRITES live in
+ * `useCampaignCompletion`, which the level route owns.
  */
 export function usePuzzleProgress() {
   const queryClient = useQueryClient();
@@ -66,6 +71,10 @@ export function usePuzzleProgress() {
   );
   const solvedScriptedIds = useMemo(
     () => progressQuery.data?.solvedScriptedIds ?? [],
+    [progressQuery.data],
+  );
+  const completedCampaignLevelIds = useMemo(
+    () => progressQuery.data?.completedCampaignLevelIds ?? [],
     [progressQuery.data],
   );
 
@@ -114,14 +123,21 @@ export function usePuzzleProgress() {
     [solvedGeneratedIds],
   );
 
+  const isCampaignLevelCompleted = useCallback(
+    (levelId: string) => completedCampaignLevelIds.includes(levelId),
+    [completedCampaignLevelIds],
+  );
+
   return {
     isLoggedIn,
     /** True while we cannot yet know whether anything is solved. */
     isLoading: userPending || (isLoggedIn && progressQuery.isPending),
     solvedGeneratedIds,
     solvedScriptedIds,
+    completedCampaignLevelIds,
     isScriptedCompleted,
     isGeneratedCompleted,
+    isCampaignLevelCompleted,
     markScriptedCompleted,
     /**
      * Non-null only when a completion report failed: calling it sends the
