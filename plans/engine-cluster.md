@@ -597,6 +597,75 @@ improvise.
 
 ---
 
+## S-CONC SHIPPED AND PRODUCTION-VERIFIED (`a4b6783`, 2026-07-30)
+
+Board task `8f1cf7e3` done. Rolled out via a temporary Git transport branch so the candidate was
+compiled and tested BEFORE main took it - the engine builds only on the desktop and reaches it only
+through git, so the alternative was committing uncompiled C++ to main. main was fast-forwarded to the
+exact validated SHA afterwards, so the shipped tree is byte-identical to the tested one, and the
+branch is deleted.
+
+### Build and unit gates at the candidate SHA
+
+- `make -j6 deep_ww_bgs_engine unit_tests` - clean. The only warning is a pre-existing
+  `-Walloc-size-larger-than=` from `folly/MPMCQueue.h` via `batched_model.cpp`, a file this slice
+  does not touch.
+- The two constructs flagged as compile risks both built: `co_invoke(...).scheduleOn(...).start()` as
+  fire-and-forget, and the move-only `Ticket` captured into a mutable lambda.
+- `timeout 300 ./unit_tests "[dispatcher]"` - 7 cases, 923 assertions, exit 0, far inside the bound.
+- `timeout 300 ./unit_tests` - **91 cases** (84 baseline + 7 new), 1545 assertions, and the six
+  unexpected failures matched the recorded baseline **by name**, with `TensorRT 5x5 model` still
+  reported separately as the `[!shouldfail]`. No additions and no substitutions.
+
+### Process evidence, identical corpus both sides
+
+|                                        | BEFORE `1caaa61`                     | AFTER `a4b6783`                               |
+| -------------------------------------- | ------------------------------------ | --------------------------------------------- |
+| 144 concurrent evaluates, pool 4       | **0/144 in 90 011 ms**               | **144/144 in 941 ms**                         |
+| duplicates / unexpected / failed evals | 0 / 0 / 0                            | 0 / 0 / 0                                     |
+| shutdown                               | FORCED, `cleanup=killed`, ssh exit 1 | **NATURAL**, `cleanup=not-needed`, ssh exit 0 |
+| 40-round end-vs-evaluate race          | **SIGSEGV on round 0**               | **40/40 coherent**                            |
+| band 112 / 1000 samples                | `>a2.>a1` / `>a2.>a1`                | `>a2.>a1` / `>a2.>a1` (unchanged)             |
+
+The race run logged `Created BGS session race-39` from one worker and `Ended BGS session race-39`
+from another, so the interleaving genuinely happened rather than accidentally serialising. The band
+result is the evidence that the search itself did not move; low sample counts still answer
+"No legal move available", confirming this slice did not touch S-SAMPLES.
+
+### Production rollout
+
+Restarted keepalive-first per `info/puzzle-platform.md` section 2. The keepalive session held the
+tmux server through the kill, so there was no WSL outage this time.
+
+- Live-game check before interrupting: two games showed `status: "in-progress"`, which on its own
+  would have meant waiting forever. What actually settled it was the CONJUNCTION - both had
+  `connected: false` on the human host AND were 28 and 52 minutes stale. Abandoned guest games the
+  server had not reaped, not live players. `status` alone is not a liveness test, and staleness alone
+  is not either, because a human may simply be thinking.
+- `bun scripts/validate-bot-config.ts official-custom-bot-client/transformer.prod.config.json` -
+  VALID, 3 bots, engine command per bot. Note it REQUIRES the config path argument.
+- Startup verified from a byte offset captured before the restart, so an old log line could not
+  satisfy it: `Engine started` for all three bots, then `Successfully attached with 3 bot(s)`.
+- **The engines were proved to be the rebuilt binary, not just assumed.** All three new PIDs have
+  `/proc/<pid>/exe` resolving to inode 17872, the same inode as the on-disk binary with sha256
+  `95dc875edb69784c125a9f4ab18f229f33cce8c539865243d17ca7a9ceab4e3c`. An `Engine started` log line
+  is not a health verdict and a matching path is not a matching image.
+- Full ROUND TRIPS - connect, survive >5 s, human move, BOT REPLY, resign - all three green:
+  PuzzleBot game `JlgtkrJv`, Easy Bot `SIwisrP5`, Superhuman Bot `LuwTQf1h`.
+
+Deliberately NOT done: driving 4+ simultaneous real games at the live PuzzleBot. The exact shipped
+binary already answered 144 concurrent evaluates offline, so loading production would add user
+impact without isolating a new variable. Reviewer concurred.
+
+### An ops fact worth knowing
+
+`/api/bots/play` needs the CLIENT-NAMESPACED bot id, not the config id:
+`wsl-transformer-001:dw-easy`, not `dw-easy`. The bare id returns
+`404 {"error":"Bot not found or not connected"}`. Read the ids off
+`/api/bots?variant=...` rather than off the config file.
+
+---
+
 ## Reviewer rulings (plan gate, 2026-07-30) - BINDING
 
 Full gate and amendment rulings from Project Reviewer 1. Recorded here because their session is

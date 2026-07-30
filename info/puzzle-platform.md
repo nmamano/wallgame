@@ -251,6 +251,54 @@ binary). **Nothing in CI compiles the C++** - `bun run build` and eslint are Typ
 only. That is how a missing `#include <folly/Overload.h>` reached production and made the
 engine unbuildable while the server already knew about the new variants. Worth closing.
 
+#### There IS a C++ unit test suite, and it is cheap. RUN IT. (found 2026-07-30)
+
+`CMakeLists.txt` defines a Catch2 target `unit_tests`, gated on `find_package(Catch2 3)`.
+Catch2 is installed on the desktop, so it has always been buildable - it had simply never
+been built. Measured: **~5 s to build, sub-second to run**, and it needs no extra model
+work because the `.trt` files `model_trt` depends on already exist in `build-tests/`.
+
+```
+cd ~/nil/wallgame/deep-wallwars/build-tests && nice -n15 make -j6 deep_ww_bgs_engine unit_tests
+timeout 300 ./unit_tests "[dispatcher]"   # concurrency cases; a TIMEOUT is a FAILURE
+timeout 300 ./unit_tests                  # full suite
+```
+
+**Compare the failures BY NAME, not by count.** As of `a4b6783` the suite is 91 cases with
+**6 expected failures** plus one separately-reported `[!shouldfail]`:
+
+```
+parse_move_notation - Cat and mouse move                     test/bgs_session.cpp
+parse_move_notation - Pawn move and wall                     test/bgs_session.cpp
+parse_move_notation - Double pawn move (cat moves twice)      test/bgs_session.cpp
+parse_move_notation - Double pawn move straight line          test/bgs_session.cpp
+parse_move_notation - Invalid notation                        test/bgs_session.cpp
+validate_request - rejects freestyle variant                  test/engine_adapter.cpp
+TensorRT 5x5 model  <- tagged [!shouldfail], the "1 failed as expected"
+```
+
+Those six are stale tests, tracked as board task `e5fec60c`. A count alone is not a gate:
+"still 6" is also true if one stale test gets fixed while a real regression takes its slot.
+
+Extracting the names (the console reporter prints a header block per failure, and gflags in
+`test/main.cpp` eats `--`-style Catch2 flags, so the XML reporter is not available):
+
+```
+./unit_tests 2>/dev/null > /tmp/ut.txt
+grep -A1 '^-\{79\}$' /tmp/ut.txt | grep -v '^-' | grep -v '\.cpp:[0-9]' \
+  | grep -v '^\.\{10,\}$' | grep -v '^$' | sort -u
+```
+
+#### Building here REPLACES the binary production launches from
+
+`build-tests/deep_ww_bgs_engine` is the exact path the bot client spawns. Running engines
+keep their in-memory image, so a build does not change what is currently serving - but the
+NEXT respawn picks up whatever you just built, whether or not you meant to deploy. Do not
+build a candidate here and then walk away from it.
+
+Corollary for rollback: there is no saved copy of the previous binary. Rolling back means
+checking out the old sha in a separate build worktree and rebuilding.
+
 ### Deploying
 
 ```
