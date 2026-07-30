@@ -1,0 +1,670 @@
+# Engine cluster (batch 3) - three C++ tasks
+
+Nil picked these on 2026-07-30 as "the most interesting cluster to me, and most impactful".
+All three live in `deep-wallwars/`. Board tasks:
+
+| Slice      | Task       | P   | Title                                                            |
+| ---------- | ---------- | --- | ---------------------------------------------------------------- |
+| S-SAMPLES  | `945fe1ef` | P2  | support `--samples 1` so Easy Bot is truly policy-only           |
+| S-CONC     | `8f1cf7e3` | P2  | BGS engine unsafe under concurrent requests (two prod segfaults) |
+| S-TIEBREAK | `b4c2b191` | P3  | tie-break equal-eval losing moves so PuzzleBot loses gracefully  |
+
+Process is unchanged from batch 2: plan gate with Project Reviewer 1, implement, gates, diff gate,
+sign-off, ONE commit per slice, push, desktop build, bot restart, production round-trip probe, docs.
+
+---
+
+## 0. Environment findings (2026-07-30, before any code)
+
+These change how this cluster gets tested, so they come first.
+
+### THE C++ HAS A UNIT TEST SUITE AND NOBODY HAS EVER RUN IT
+
+`deep-wallwars/CMakeLists.txt:87-104` defines a Catch2 target `unit_tests` over eight test files
+(`test/mcts.cpp`, `test/bgs_session.cpp`, `test/engine_adapter.cpp`, `test/gamestate.cpp`,
+`test/play.cpp`, `test/batched_model.cpp`, `test/tensorrt_model.cpp`, `test/main.cpp`). It is
+gated on `find_package(Catch2 3)`, Catch2 IS installed on the desktop, and the target had never
+been built - there was no `build-tests/unit_tests` binary.
+
+Measured on the desktop at `1caaa61`:
+
+- `make -j6 unit_tests` in `deep-wallwars/build-tests` - **4.9 s** (the three `.trt` files
+  `model_trt` depends on already exist in that tree, so nothing GPU-ish rebuilds).
+- `./unit_tests` runs in well under a second: **84 cases, 619 assertions**.
+
+So the brief's line "the C++ has no gates, which is the point" is wrong, and cheaply so. This
+cluster gets a real automated gate. Every slice below runs `make unit_tests && ./unit_tests` and
+compares against the recorded baseline.
+
+### BASELINE: 6 pre-existing failures at `1caaa61` (RECORD THESE, they are not ours)
+
+```
+84 cases | 77 passed | 6 failed | 1 failed as expected
+```
+
+| Test case                                                  | Location                      |
+| ---------------------------------------------------------- | ----------------------------- |
+| `parse_move_notation - Cat and mouse move`                 | `test/bgs_session.cpp:167`    |
+| `parse_move_notation - Pawn move and wall`                 | `test/bgs_session.cpp:183`    |
+| `parse_move_notation - Double pawn move (cat moves twice)` | `test/bgs_session.cpp:197`    |
+| `parse_move_notation - Double pawn move straight line`     | `test/bgs_session.cpp:223`    |
+| `parse_move_notation - Invalid notation`                   | `test/bgs_session.cpp:242`    |
+| `validate_request - rejects freestyle variant`             | `test/engine_adapter.cpp:446` |
+
+`TensorRT 5x5 model` is tagged `[!shouldfail]`, which is the "1 failed as expected".
+
+The five notation failures and the freestyle one look like tests that went stale as the notation
+format and the freestyle support moved on - the freestyle one is plainly obsolete now that the
+three prod bots all advertise a `freestyle` variant. **Not in scope for this cluster.** They are
+being filed as a separate board task; the only thing this cluster owes them is the baseline
+number, so that "6 failed" after a slice means "no regression" and "7 failed" means stop.
+
+### Facts about the running configuration that matter for S-CONC
+
+All three production bots run with `--thread_pool_size 4`
+(`official-custom-bot-client/transformer.prod.config.json`). Four is the number that makes the
+concurrency defect a production defect rather than a theoretical one - see S-CONC D1.
+
+### REPRODUCED: the deadlock threshold is EXACTLY `--thread_pool_size`
+
+Measured 2026-07-30 against throwaway engines on the desktop at `1caaa61` (driver:
+`scripts/bgs-engine-probe.ts`, shape copied from `scripts/filter-puzzle-candidates.ts`). Each run
+creates N sessions **sequentially, awaiting every ack** - that is the CONTROL, and it passed in
+every single run, so the engine was provably alive and healthy immediately before it wedged - then
+fires N `evaluate_position` messages with no waiting and counts responses.
+
+| `--thread_pool_size` | concurrent requests | result                        |
+| -------------------- | ------------------- | ----------------------------- |
+| 4                    | 2                   | 2/2 in 239 ms                 |
+| 4                    | 3                   | 3/3 in 258 ms                 |
+| 4                    | **4**               | **0/4 - WEDGED, no recovery** |
+| 8                    | 4                   | 4/4 in 251 ms                 |
+| 8                    | **8**               | **0/8 - WEDGED**              |
+| 2                    | **2**               | **0/2 - WEDGED**              |
+| 12                   | **12**              | **0/12 - WEDGED**             |
+
+The threshold tracks the pool size exactly across four different pool sizes, which is what makes
+this the mechanism rather than a coincidence at 4. It matches the arithmetic in D1 precisely: N
+concurrent requests block N pool threads in `blockingWait`, and the N coroutines they are waiting
+for sit in the same pool's queue behind them. One free thread is enough to drain them serially;
+zero free threads is permanent.
+
+**This escalates the task.** The board task frames it as "bulk/concurrent requests starve it" with
+bulk tooling as the trigger. What is actually true: **every production engine wedges permanently at
+exactly 4 concurrent requests**, because production runs `--thread_pool_size 4`. Four simultaneous
+puzzle games on PuzzleBot is enough. No bulk tooling required, no unusual traffic required. The
+wedge is unrecoverable, and because the bot client stays attached and keeps listing bots when its
+engine is unresponsive (task `5f302c24`), the failure is silent - which is the signature of the
+~103-minute outage on 2026-07-26.
+
+Order and priority are settled - see "Order - SETTLED: S-CONC first" below. The severity question
+(whether the board task should sit above P2) is with Nil; it does not gate the work, which is
+happening first either way.
+
+### Confirmed at the same binary: the S-SAMPLES "before"
+
+| `--samples` | result                                            |
+| ----------- | ------------------------------------------------- |
+| 1           | `success=false`, `"No legal move available"`      |
+| 2           | `success=false`, `"No legal move available"`      |
+| 96          | `success=false`, `"No legal move available"`      |
+| 112         | `success=true`, `bestMove=">a2.>a1"`, eval -0.842 |
+
+Consistent with the inherited measurements, and re-taken here so the after-state has a same-binary
+before-state to compare against.
+
+### REPRODUCED: the segfault, strongly attributed to the D3 lifetime hole
+
+The reviewer told me to keep D3 as inference rather than proved cause. This upgrades it from "matches
+the traffic shape" to **directly reproduced with a backtrace**, which is stronger - but not all the
+way to "proved mechanism", and the limits are spelled out after the trace.
+
+`scripts/bgs-engine-probe.ts --scenario race` starts a session, then puts `evaluate_position` and
+`end_game_session` in flight together. Against the unfixed binary at `1caaa61` it **crashed on round
+0** on both attempts (the probe run, and again under gdb), with only two concurrent requests - well
+below the deadlock threshold of four, so this is a genuinely separate defect and not D1 wearing a
+disguise. Two attempts is not a rate; what it establishes is that the crash is easy to hit on the
+first try, not that it is deterministic. Engine stderr:
+
+```
+Created BGS session race-0 for bot probe          (worker 1794)
+Ended BGS session race-0                          (worker 1796)
+[process died: signal: segmentation fault (core dumped)]
+```
+
+Backtrace of the faulting thread, under gdb with a fifo for stdin (the engine needs a pollable fd,
+so a plain file will not do - `AsyncPipeReader` cannot epoll a regular file):
+
+```
+Thread 8 "CPUThreadPool1" received signal SIGSEGV, Segmentation fault.
+#0  0x00007fffa4001880 in ?? ()
+#1  MCTS::create_tree_node(...) [clone .actor] ()
+#2  std::coroutine_handle<void>::resume ()
+#3  folly::resumeCoroutineWithNewAsyncStackRoot ()
+#4  folly::coro::TaskWithExecutor<void>::Awaiter::await_suspend<...>
+...
+#9  folly::CPUThreadPoolExecutor::threadRun
+```
+
+**What this establishes.** The crash happens while a `create_tree_node` coroutine is being RESUMED
+(frame #1 under `coroutine_handle::resume`), and frame #0 is a jump to an unmapped address. So
+end-racing-evaluate reaches a crashing suspended-MCTS path, below the D1 cliff, and that path is
+inside the session's own evaluation machinery. Combined with the stderr ordering - the session was
+ENDED on another worker moments before - this strongly attributes the crash to the D3 lifetime hole.
+
+**What it does NOT establish**, and the record should not claim:
+
+- It does not prove the coroutine FRAME itself was freed. Destroying the `MCTS` frees the tree, the
+  board and the evaluation function that a still-live frame REFERENCES, and a dangling reference of
+  that kind produces the same invalid jump. Either way the cause is destroying state a suspended
+  coroutine depends on; which allocation specifically got recycled is not readable from this trace.
+- It does not formally exclude D2 from contributing.
+
+Neither gap changes the fix: pinning the session with a `shared_ptr` keeps the whole `BgsSession` -
+tree, board, evaluation function and all - alive until the handler finishes, so the resume lands in
+live memory regardless of which piece was being recycled. And it is consistent with incident #2 (exit
+139 during an `apply_move` at the tail of a four-game battery with a takeback resync) needing no
+batch tooling, which is what that incident report said.
+
+### A wedged engine cannot exit (corroborates D1's blast radius, NOT D4's specific race)
+
+Four throwaway engines from the ladder runs above **survived their ssh pipe closing** and had to be
+reclaimed by exact pid. Stdin EOF calls `terminateLoopSoon()` and `main` returns, but the pool
+destructor then tries to join threads that are blocked forever, so the process never finishes
+shutting down. Operationally that matters a lot: a wedged production engine does not die and get
+respawned, it sits there holding GPU memory, which is consistent with the bot client happily
+continuing to list it.
+
+Be precise about what this is evidence FOR. It confirms D1's blast radius and that the old teardown
+cannot complete while executor threads are deadlocked. It does **not** externally prove D4's specific
+`ResponseWriter`-destroyed-before-the-pool-drains use-after-destruction. That one is read off the
+declaration order in `main`, which is confirmed by reading the code, but it has not been observed
+firing. Both are fixed by the explicit drain either way.
+
+### Which `blockingWait` calls are dangerous and which are merely wasteful
+
+Traced the evaluation chain: `CachedPolicy` (`src/cached_policy.cpp:76`) -> `BatchedModelPolicy`
+(`src/batched_model_policy.cpp:9`) -> `BatchedModel::inference` (`src/batched_model.cpp:32`).
+`BatchedModel` owns its own worker threads (`m_workers`, spawned in the constructor,
+`run_worker` at :65) which `blockingRead` the queue and fulfil the promise. `CachedPolicy` does
+**not** coalesce duplicate in-flight lookups - on a race it just evaluates twice - so there is no
+coroutine-waits-on-coroutine edge anywhere in that chain.
+
+Consequence: the `folly::coro::blockingWait` calls **inside** MCTS (constructor `mcts.cpp:48`,
+`force_action` :299, `reset_to_position` :317) always complete without needing the caller's
+executor. They burn a pool thread for the duration of one inference, which is wasteful, but they
+cannot deadlock. **They are therefore out of scope for S-CONC**, which keeps that diff
+proportional.
+
+This conclusion has a dependency worth writing down: it holds only while `BatchedModel` keeps its own
+independent worker threads. If it were ever changed to run inference on the caller's executor, those
+`blockingWait` calls become the same self-pool dependency as D1 and this scope decision has to be
+revisited.
+
+The dangerous `blockingWait` is the one in `bgs_engine_main.cpp:290`, which waits on
+a coroutine explicitly scheduled onto the same pool.
+
+---
+
+## S-SAMPLES (`945fe1ef`) - policy-prior fallback
+
+### Root cause, now confirmed in code
+
+The measured symptom is in the task body: the engine answers "No legal move available" below
+roughly 100 samples (fails at 96, works at 112). The code reason:
+
+`MCTS::peek_best_action()` (`mcts.cpp:321`) and `MCTS::peek_best_move()` (:338) both rank edges by
+**child visit count** and both bail with `nullopt` when the winning edge has no expanded child
+(`te.child == nullptr`). A `TreeEdge` only gets a child when a sample descends through it.
+
+- After 1 sample, exactly one root edge has a child (`initialize_child` created it with
+  `Value{eval.value, 1}`), so `peek_best_action()` **already works at `--samples 1`** - its key is
+  1 for that edge and 0 for every other.
+- `peek_best_move()` then needs a _grandchild_: the second action's edge must itself be expanded.
+  That only happens once the search descends through the same root child a second time. On an 8x8
+  board the root has 100+ edges and PUCT spreads early visits across them by prior, so the
+  most-visited root child does not reach 2 visits until ~100 samples. Until then every second-action
+  edge has `child == nullptr`, the "try to find any explored edge" fallback at :374-382 also finds
+  nothing, and `bgs_session.cpp:292` reports the error.
+
+So the missing piece is precisely the **second action**, and the threshold is "when does the best
+root child get a second visit", which is why it lands around 100.
+
+What is NOT established: board-size independence. 112 succeeding on both 5x5 and 12x10 only shows
+that both thresholds are at or below 112, and the legal-action count - which is what the visits
+spread over - does vary with the board. The depth-two mechanism is established; the invariance is
+not, and nothing in this slice needs it to be.
+
+### Fix
+
+`TreeEdge::prior` is the policy head's probability for that action, and it is populated for every
+legal action the moment a node is created (`create_tree_node` stores `eval.edges`). So the network
+already tells us the best action without any search. Make both peek functions fall back to it:
+
+- `peek_best_action()`: if no root edge has an expanded child, return the **max-prior** edge's
+  action instead of `nullopt`.
+- `peek_best_move()`: for the second action, if no edge of the first action's child has an expanded
+  child, return that child's **max-prior** edge. Only when NO second edge is expanded - once there is
+  any visit evidence, the existing visit-count selection stands. This also replaces the existing
+  arbitrary-explored-edge fallback at :374-382 with a prior-ordered one, which is strictly better.
+
+`edges.empty()` still returns `nullopt` - that is a genuinely move-less position (the
+"our only second action is to undo our first move" case `sample_rec` comments on at :166-172) and
+erroring is correct there.
+
+**`peek_best_move()` still returns `nullopt` at ZERO samples, by design.** With no root child there
+is no second position whose policy we could read, and manufacturing one would mean evaluating and
+creating a node - mutating the tree, which breaks the read-only contract of a `peek`. Zero-sample
+`peek_best_action()` does fall back to max prior, because the root's own priors already exist. The
+required behaviour is a complete legal move at **exactly 1 sample**.
+
+At `--samples 1` this yields: first action = the one the single sample expanded, which _is_ the
+max-prior edge; second action = policy argmax on the resulting position. So the tree search
+contributes nothing to the choice - but see the root-noise item below before calling that
+"policy-only" without qualification.
+
+### Deliberately NOT changing
+
+- **`commit_to_action()`** keeps its `nullopt`. It mutates the tree via `move_root(te)`, which
+  requires `edge.child` to exist. It cannot fall back without creating a node, and it is what
+  self-play/training uses, so leaving it alone also means training behaviour is untouched. This
+  asymmetry (peek can fall back, commit cannot) is intentional.
+
+### Root Dirichlet noise: a new per-process flag, NOT a shared-default change
+
+`Options::noise_factor = 0.25` and `add_root_noise()` (`mcts.cpp:488`) perturb _root_ priors, and the
+BGS engine never overrides it. So at `--samples 1` the first action would come from a policy that is
+25% Dirichlet noise while the second (one level down) comes from the clean policy. I originally
+proposed leaving that alone and describing samples=1 as approximately policy-only. That does not
+survive contact with what Nil actually asked for, and the reviewer rejected it: I cannot call
+something "truly policy-only" while a quarter of the root prior is noise.
+
+Ruling implemented instead: add a `--root_noise_factor` flag to `bgs_engine_main.cpp`, default
+**0.25** so nothing changes by default, validated finite and within [0,1], plumbed into
+`MCTS::Options::noise_factor` via `BgsEngineConfig`. Set it to **0 for dw-easy only**. Superhuman and
+PuzzleBot keep today's behaviour through the default. The production config test pins samples=1 AND
+root noise=0 for Easy Bot, so a future edit cannot quietly restore the noise and leave the bot
+neither policy-only nor searching.
+
+### Behaviour at production sample counts
+
+The fallback does not fire in the measured production positions - at 1000 or 5000 samples the best
+root child has thousands of visits and therefore expanded children. That is an observation about
+those positions, not a structural impossibility, so it is worth re-checking rather than assuming.
+`main.cpp` (the `deep_ww` analysis binary) also calls `peek_best_move` at :530/:532/:690; same
+reasoning, only thin trees change, and only from "no answer" to "the policy's answer".
+
+### Tests
+
+New Catch2 cases:
+
+- `peek_best_move` returns a complete two-action move after **exactly 1 sample** (today: `nullopt`),
+  with both actions legal in sequence.
+- `peek_best_move` still returns `nullopt` at **0 samples** - the deliberate boundary above.
+- `peek_best_action` at **0 samples** returns the **max-prior** action.
+- The action returned by the prior fallback is one of the position's legal actions.
+- At a high sample count the returned move equals a **concrete pinned expected move** under a fixed
+  `TestPolicy` and seed. NOT two calls of the new implementation compared to each other - that would
+  pass no matter how wrong the new selection was.
+
+One existing assertion FLIPS and must change in the same commit:
+`peek_best_action - Before sampling returns nullopt` (`test/bgs_session.cpp:259`) asserts exactly
+the behaviour being removed. It gets rewritten to assert the prior fallback, with a comment saying
+why. Called out here because a silently-edited test assertion is how a regression hides.
+
+### Rollout
+
+1. `make unit_tests && ./unit_tests` - expect the 6-failure baseline and the new cases passing.
+2. `make deep_ww_bgs_engine`.
+3. Offline throwaway-engine probe at `--samples 1`, one request at a time: start session, evaluate,
+   confirm a legal `bestMove` where today we get "No legal move available". Sweep 1/2/4/8 to show
+   the whole failing band is fixed, not just the one value.
+4. `dw-easy` -> `--samples 1` in `transformer.prod.config.json`; update the pin in
+   `tests/game/bot-config-guards.test.ts:111-131` (128 -> 1) and its comment, which currently says
+   a lower number is a broken config.
+5. `bun scripts/validate-bot-config.ts`.
+6. Restart bots KEEPALIVE-FIRST (`info/puzzle-platform.md` section 2).
+7. Full round-trip probe against Easy Bot specifically, plus the other two.
+
+---
+
+## S-CONC (`8f1cf7e3`) - safe under concurrent requests
+
+Four distinct defects, one theme. D1 is the one the task names; D2-D4 were found while reading and
+are better candidates than D1 for the two segfaults, because neither incident involved bulk traffic.
+
+### D1 - thread-pool inversion -> deadlock (the reproducible bulk-pump hang)
+
+`bgs_engine_main.cpp:286-301`:
+
+```cpp
+thread_pool->add([...]{
+    auto response = folly::coro::blockingWait(
+        bgs::handle_bgs_request(...).scheduleOn(thread_pool.get()));   // same pool
+    response_writer.write(response);
+});
+```
+
+A pool thread blocks until a coroutine **explicitly scheduled onto that same pool** finishes, and
+that coroutine's `MCTS::sample()` in turn schedules its `single_sample()` tasks onto the same pool
+(`mcts.cpp:71-75`). N concurrent requests occupy N threads in `blockingWait`, and the work they are
+waiting for can never be scheduled.
+
+Production runs `--thread_pool_size 4`. So **four** simultaneously in-flight requests wedge the
+engine permanently, and even a single request runs its search on 3 of 4 threads. That is the
+144-message bulk pump returning 0 responses.
+
+**Fix:** never block. Launch the handler as a coroutine that writes its own response, and extract
+the dispatch out of `main` so it is testable (see "Testability" below).
+
+### D2 - `std::mutex` held across a `co_await` -> cross-thread unlock (UB)
+
+`handle_evaluate_position` takes `std::lock_guard<std::mutex> session_lock(session->request_mutex)`
+at `bgs_session.cpp:239` and then `co_await session->mcts->sample(...)` at :250. A folly `Task`
+resumes on _an_ executor thread, not necessarily the one that suspended. So the `lock_guard`
+destructor can run `pthread_mutex_unlock` on a thread that does not own the mutex. That is
+undefined behaviour; glibc's normal mutex silently stores 0 and corrupts the futex state, which is
+exactly the failure profile the task describes - "prod mostly survives by accident" - and it
+becomes lost wakeups or a crash as soon as there is real contention on that mutex.
+
+This is a **hazard on every evaluate path that can suspend**, not an observed corruption on every
+call. Two things make it conditional: a cache hit in `CachedPolicy` can complete inline without ever
+suspending, and a suspension that does happen may be resumed by the same worker anyway. So the UB
+fires only when the continuation lands on a different thread - which is precisely why production
+"mostly survives by accident" rather than crashing constantly. It needs no bulk traffic at all.
+
+`handle_apply_move` locks at :326 but never `co_await`s afterwards (`force_action` blocks inline),
+so it is same-thread today and not affected by D2 - but it is affected by D3.
+
+**Fix:** `folly::coro::Mutex` + `auto lock = co_await session->request_mutex.co_scoped_lock();`.
+Coroutine-aware: it suspends instead of blocking a thread, and it releases correctly regardless of
+which thread resumes.
+
+### D3 - session lifetime: a raw pointer escapes the lock -> use-after-free
+
+`SessionManager::get_session` (`bgs_session.cpp:107`) takes a `shared_lock`, reads the map, and
+returns a raw `BgsSession*` - **the lock is released on return**. `end_session` (:92) takes the
+unique_lock and `m_sessions.erase(it)`, destroying the `unique_ptr<BgsSession>` and with it the
+whole MCTS tree. Any handler still holding that raw pointer is now reading freed memory, and an
+in-flight `sample()` is walking a freed tree. SIGSEGV.
+
+**Directly reproduced** - see the race reproduction in section 0. The backtrace is consistent with
+this lifetime hole and strongly attributes the crash to it, and shared ownership removes the hole.
+Two things it does NOT establish, and the record should not claim: it does not prove the coroutine
+FRAME itself was freed (destroying the MCTS frees the tree, the board and the evaluation function
+that a still-live frame references, and a dangling reference of that kind produces the same invalid
+jump), and it does not formally exclude D2 from contributing.
+
+It also matches incident #2's traffic shape: four bot games created / played / resigned in tight
+sequence plus a takeback resync (end + start + replay churn), with no batch tooling involved.
+
+**Fix:** `std::shared_ptr<BgsSession>` in the map; `get_session` returns the `shared_ptr`. A handler
+pins its session for its whole duration. `end_session` removes it from the map immediately (so a
+later request correctly gets "Session not found") and the object is destroyed when the last handler
+drops it.
+
+### D4 - teardown races in-flight work
+
+On stdin EOF, `on_eof` sets `running = false` and calls `evb.terminateLoopSoon()`. `main` then
+destroys its locals in reverse declaration order: `evb`, then `response_writer`, then
+`thread_pool`. But `CPUThreadPoolExecutor`'s **destructor** is what joins outstanding tasks - so
+`response_writer` is already destroyed by the time the pool drains, and any handler still finishing
+writes through a destroyed `std::mutex` and `ostream`. `running` is written and never read.
+
+**Fix:** drain explicitly after the loop exits and before anything goes out of scope; drop the dead
+`running` flag.
+
+Evidence status: the leaked wedged engines (section 0) corroborate D1 and show that the old teardown
+cannot finish while executor threads are deadlocked. They do **not** externally prove the specific
+`ResponseWriter`-destroyed-before-the-pool-drains use-after-destruction race - that one is read off
+the declaration order, which is confirmed, but it has not been observed firing.
+
+### Testability - extract the dispatcher
+
+The defect lives in `main`, which no test can reach. So the dispatch moves into its own unit,
+`deep-wallwars/src/request_dispatcher.{hpp,cpp}` - a separate file rather than inside
+`bgs_session.*`, to keep transport lifetime out of session-domain code:
+
+```cpp
+class RequestDispatcher {
+public:
+    using ResponseSink = std::function<void(json const&)>;
+    RequestDispatcher(SessionManager&, BgsEngineConfig const&,
+                      std::shared_ptr<folly::Executor>, ResponseSink);
+    ~RequestDispatcher();                 // drains, so no handler outlives what it borrows
+    void dispatch(json request);          // returns immediately; never blocks the caller
+    void drain();                         // blocks until every handler AND its sink call finished
+    bool drain_for(std::chrono::milliseconds);  // bounded, so a test can fail instead of hanging
+    int in_flight() const;
+};
+```
+
+`on_line` becomes `dispatcher.dispatch(std::move(request))` and the post-loop path becomes
+`dispatcher.drain()`. `main` is then left with no dispatch logic of its own, so the unit test
+exercises the shipped path rather than a copy of it. `drain()` must not be called from a pool
+thread; that gets a comment.
+
+Two contracts the implementation has to hold, both of which are easy to get wrong:
+
+- **Exactly one sink call per dispatched request.** Response PRODUCTION is separated from DELIVERY,
+  so a throwing sink is logged rather than retried. My first version wrapped both in one `try`, which
+  meant a throwing success-sink was misread as a handler error and the same broken sink was called a
+  second time with an error object - breaking the contract the header advertises and making the
+  response count meaningless.
+- **The in-flight count releases on every exit.** Incremented before the task exists, and released by
+  a move-only `Ticket` captured into the handler lambda, so it fires even if the task is destroyed
+  without running. `finish_one()` `XCHECK`s that the count is positive first, so a future
+  double-release fails loudly instead of driving the count negative and turning `drain()` into a
+  permanent wait - which would look exactly like the deadlock being fixed.
+
+Honest limitation, stated up front: the new unit test cannot _fail on today's tree_, because today's
+tree has no `RequestDispatcher`. That is why the process-level evidence below is not optional.
+
+### Tests
+
+Catch2 (uses `TestPolicy`/`SimplePolicy`, no GPU):
+
+- **144-message bulk pump does not deadlock.** Executor sized 4, matching production, with far more
+  than 4 concurrent requests across many sessions. Assert all 144 responses arrive and `drain()`
+  returns. This is the regression guard the task asks for.
+- **`end_game_session` concurrent with `evaluate_position` on the same session** - loop it, assert
+  no crash and that every request gets a coherent response (either a result or "Session not found",
+  never a torn one).
+- **Many concurrent evaluates on one session** all complete - the `coro::Mutex` serialises rather
+  than deadlocks.
+
+What these do NOT prove, so I will not claim it: absence of a data race. Catch2 without a sanitizer
+cannot show that. I will **attempt** an ASan build of `unit_tests` to get before/after evidence for
+D3 specifically; if folly + CUDA make that impractical I will say so and rely on the process-level
+evidence rather than overstate the unit tests.
+
+### Process-level evidence (this is the real before/after)
+
+Against a **throwaway** engine on the desktop, never a serving one:
+
+1. **Before:** the 144-session corpus at the CURRENT binary with `--thread_pool_size 4`. DONE - 0/144,
+   see section 0. This is the reproduction the brief insists on; "it worked when I tried it" is
+   worthless for a load-shape bug.
+2. **Before:** the end-vs-evaluate race at the current binary. DONE - SIGSEGV on round 0.
+3. **After:** the identical corpus and race at the fixed binary. Requires 144/144 distinct expected
+   ids with successful non-empty moves and no duplicates, every race round producing exactly one
+   coherent evaluate plus one end, AND a **natural** engine exit in both - a forced exit is a failure
+   on the fixed binary, because a healthy engine must be able to shut down.
+4. The `band` scenario as a sequential sanity pass, so the fix did not break the normal path.
+5. Only then, restart bots keepalive-first and run the full round-trip probe on all three.
+
+A verdict is never "responses arrived". `runCorpus` passes only on all-distinct-expected-ids, zero
+duplicates, zero unexpected ids, zero failed evaluations, and a natural exit. Counting response
+objects would certify an engine that answers "No legal move available" 144 times.
+
+The probe never signals a pid it has not identified: each launch gets a unique `--seed`, and
+`/proc/<pid>/cmdline` must contain both the engine path and that exact seed before any signal. Pids
+get reused, and the serving Superhuman bot runs the same binary, so a bare kill on a captured pid
+could hit production. A mismatch refuses to signal. If no pid arrives, the run aborts before sending
+any protocol traffic rather than driving an engine it could not reclaim.
+
+### Explicitly out of scope
+
+`5f302c24` - the bot client stays attached and keeps listing bots when its engine dies, which is
+what turned incident #2 into a 103-minute silent outage. Different component, its own design
+question (`spawnEngine` returns before readiness, so a real fix needs a handshake). The brief says
+do not fold it in without asking, and I am not folding it in.
+
+---
+
+## S-TIEBREAK (`b4c2b191`) - lose gracefully
+
+**NOT APPROVED FOR CODE.** This slice is measurement-only until a second plan gate. What follows is
+the hypothesis to be tested, not a design to implement.
+
+### Suspected root cause - to be CONFIRMED, not assumed
+
+`peek_best_action`/`peek_best_move` rank by child visit count. The hypothesis is that in a position
+the engine judges lost, every child's Q saturates near -1, so the exploitation term in
+`get_best_edge` (`mcts.cpp:109`) goes flat and visits get distributed by prior plus root Dirichlet
+noise, making the choice among losing moves effectively arbitrary - including moves that lose sooner,
+or that ignore the threat. That would explain Nil's "feels broken to the player".
+
+But the premise is not established. The measurement pass has to distinguish between Q saturation,
+visit ties, root-noise instability, and something else entirely. Designing a fix before knowing which
+of those it is would be the batch-2 mistake again.
+
+### Direction, once the premise is confirmed
+
+A-like: **keep the search as the primary evidence**, and use a resistance measure only among
+actions or full moves whose evaluated outcomes are demonstrably indistinguishable in the lost regime.
+
+The option I originally recommended - when the root looks lost, replace the ranking key with
+`score_for` outright - is **rejected**, and the reasoning against it is better than mine was. A root
+judged lost does not make the visit distribution valueless: visits still encode the policy and
+whatever downstream evidence the search accumulated, so replacing them can pick an unsearched,
+near-zero-prior action and throw away 5000 samples. It is also not the magic-number-free option I
+claimed, because it moves all of the judgement into one root threshold.
+
+`Board::score_for(player)` (`gamestate.cpp:665`) remains the candidate resistance measure - when
+behind it returns `-1 + opponent_dist / my_dist`, so maximising it prefers lengthening the opponent's
+path and shortening your own. Using the cat is consistent with the game's attack race. But it still
+has to be shown to order the moves Nil considers graceful; that a distance ratio is a perceptual
+proxy for "stubborn" is an assumption, not a fact.
+
+### The measurement pass (this is the actual next step for this slice)
+
+For several genuinely lost positions including Nil's observed case, across **fresh bgsIds and
+repeated engine processes** - fresh because root Dirichlet noise is seeded from the bgsId, so
+repeating one id would look stable by construction - collect:
+
+- the root value;
+- for candidate first actions: visits, Q from the acting player's perspective, prior, and the
+  resulting `score_for`;
+- for the explored second actions below the leading first actions: the same facts;
+- the selected complete move, and the board score after BOTH actions;
+- matched won/unclear control positions, to size how often a rule would activate falsely.
+
+Separate same-seed repeatability from cross-seed behaviour. Any root threshold and any
+Q-equivalence band gets sized from the observed spread and placed outside it.
+
+### Full move versus per-action - to be decided by evidence
+
+My proposed per-action greedy tie-break is **not approved**. The user-visible object is a full move,
+and a first action with an attractive immediate score can block a much better second action while the
+5000-sample tree already holds the grandchildren. The discovery pass must compare full-move
+resistance against the per-action shortcut, and prefer scoring the board after BOTH actions for a
+`Turn::First` request; one-action scoring is only for a genuine `Turn::Second` custom setup. If the
+full-move traversal turns out to be disproportionate, that is an approximation to accept
+consciously, with evidence, at the second gate.
+
+### Then
+
+Return with a concrete choice rule and the enumerated list of moves it changes. Verification will
+need a unit case pinning a won/unclear position as **identical** to today, plus a real playtest from
+Nil - probes can only show the bot still answers; only a human can say it stopped feeling broken.
+
+---
+
+## Order - SETTLED: S-CONC first
+
+I proposed S-SAMPLES first (smallest, Nil actively wants it, cheap way to warm the
+build/test/deploy/probe loop). Project Reviewer 1 **overruled that** on the strength of the
+reproduction above, and they are right: the deadlock is not a load-shape edge case, it is a
+four-ordinary-requests outage cliff sitting in production right now, and the warm-up argument does
+not survive the fact that the desktop unit target has already been built and run. Order is
+**S-CONC, then S-SAMPLES, then S-TIEBREAK** (the last one measurement-first, see below).
+
+No interim config mitigation. Raising `--thread_pool_size` does not remove the inversion, it only
+moves the cliff, and it would cost a second bot restart plus its own load validation. Reviewer
+agreed and explicitly did not authorise one. If S-CONC gets blocked, come back rather than
+improvise.
+
+---
+
+## Reviewer rulings (plan gate, 2026-07-30) - BINDING
+
+Full gate and amendment rulings from Project Reviewer 1. Recorded here because their session is
+cleared between gates and this file is the only durable record.
+
+### Approved
+
+- S-SAMPLES and S-CONC approved to implement. **S-TIEBREAK is NOT approved for code** - it needs a
+  measurement pass and a second plan gate first.
+- S-CONC as ONE slice / ONE commit for D1-D4: they share one lifetime invariant and one rollout,
+  and splitting them would leave known memory-safety holes in the same component.
+- The `blockingWait` calls inside MCTS stay out of scope, on the condition that the doc records that
+  this depends on `BatchedModel` retaining independent worker threads. It does; noted above.
+- The dispatcher extraction is justified, with stronger requirements (below).
+
+### Certainty language I had to soften, and did
+
+- **Board-size independence of the samples threshold is NOT established.** 112 working on both 5x5
+  and 12x10 only proves both thresholds are <= 112. The depth-two mechanism is established; the
+  claim "does not depend on board size" is not, and has been removed.
+- **D2 is a hazard, not an observed corruption on every call.** A cache hit can complete inline, and
+  a suspension may happen to resume on the same worker, so the UB is conditional on the continuation
+  landing elsewhere. Phrased as a hazard on every evaluate path that can suspend.
+- The prior fallback "cannot fire" at 1000/5000 samples became "does not fire in the measured
+  production positions" - it is not a structural impossibility.
+
+### Corrections to my design
+
+- **`peek_best_move` cannot return a complete move at ZERO samples** and must keep returning
+  nullopt there. With no root child there is no second position to read a policy from without
+  evaluating and creating a node, which would mutate the tree and break the read-only scope. The
+  planned "complete move after 0 samples" test is deleted. Zero-sample `peek_best_action` still
+  falls back to max prior.
+- **Root Dirichlet noise cannot be waved away.** I cannot call samples=1 "truly policy-only" while
+  25% of the root prior is noise, and the plan cannot say both "approximate" and "in the literal
+  sense". Ruling: add a per-process `--root_noise_factor` flag defaulting to the current 0.25,
+  validated finite and in [0,1], plumbed into `MCTS::Options`, and set to 0 for **dw-easy only**.
+  Pin samples=1 AND root noise=0 in the production config test. The shared default is untouched, so
+  Superhuman and PuzzleBot are unaffected.
+- **The greedy per-action tie-break is not approved.** The user-visible object is a full move, and a
+  first action with an attractive immediate score can block a much better second action while the
+  5000-sample tree already contains the grandchildren. The discovery pass must compare full-move
+  resistance against the per-action shortcut; one-action scoring is only for a genuine `Turn::Second`
+  custom setup.
+- **S-TIEBREAK option B (replace the ranking key when lost) is rejected for now.** A root judged
+  lost does not make the visit distribution valueless - visits still encode policy and downstream
+  evidence, and replacing them can select an unsearched, near-zero-prior action and discard 5000
+  samples. Option B also does not avoid magic, it just moves all the judgement into one root
+  threshold. Direction is A-like: keep search as primary evidence, use resistance only among
+  outcomes that are demonstrably indistinguishable.
+
+### Process amendments
+
+- **The baseline needs an EXACT-SET gate, not a count.** A fixed old failure plus a new regression
+  also totals six. Compare the exact six names, and run newly added cases separately requiring exit 0.
+- **Two-stage gate for every C++ slice.** Bring the uncommitted diff first; diff sign-off authorises
+  the candidate commit/push ONLY. Then pull that exact SHA on the desktop, compile, run the targeted
+  tests plus the exact-set baseline, run the offline process probes, and return that evidence for a
+  separate ROLLOUT sign-off before any production bot restart. A compile failure means stop - not
+  rewriting pushed history. A corrective commit gets its own focused recheck.
+- **Deadlock regressions must be time-bounded.** A unit test that calls an unbounded `drain()` can
+  hang the whole gate forever. Bounded wait inside, external `timeout` outside, and a timeout is
+  reported as a failure.
+- **The probe corpus must live somewhere durable**, not in `/tmp`. Hence
+  `scripts/bgs-engine-probe.ts`.
+- S-SAMPLES probes must parse the returned notation and prove both actions are legal under
+  production rules, not merely assert a non-empty string.
+- S-TIEBREAK measurement must use fresh bgsIds across repeated engine processes, because root
+  Dirichlet noise is seeded from the bgsId - repeating one id looks stable by construction. It must
+  also show that the resistance metric actually orders the moves Nil considers graceful, rather than
+  assuming a distance ratio is a perceptual proxy.

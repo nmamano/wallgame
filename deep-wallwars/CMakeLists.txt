@@ -57,6 +57,7 @@ add_library(core OBJECT
     src/mcts.cpp
     src/model.cpp
     src/play.cpp
+    src/request_dispatcher.cpp
     src/simple_policy.cpp
     src/state_conversions.cpp
     src/tensorrt_model.cpp
@@ -95,6 +96,7 @@ if (Catch2_FOUND)
         test/mcts.cpp
         test/engine_adapter.cpp
         test/play.cpp
+        test/request_dispatcher.cpp
         test/tensorrt_model.cpp
     )
 

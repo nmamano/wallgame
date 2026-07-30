@@ -1,9 +1,6 @@
 #include <NvInfer.h>
 #include <NvInferRuntime.h>
 #include <folly/executors/CPUThreadPoolExecutor.h>
-#include <folly/experimental/coro/BlockingWait.h>
-#include <folly/experimental/coro/Collect.h>
-#include <folly/experimental/coro/Task.h>
 #include <folly/io/async/AsyncPipe.h>
 #include <folly/io/async/AsyncSocketException.h>
 #include <folly/io/async/EventBase.h>
@@ -20,6 +17,7 @@
 #include "batched_model_policy.hpp"
 #include "bgs_session.hpp"
 #include "cached_policy.hpp"
+#include "request_dispatcher.hpp"
 #include "simple_policy.hpp"
 #include "tensorrt_model.hpp"
 
@@ -266,8 +264,16 @@ int main(int argc, char** argv) {
         // Create event base for async I/O
         folly::EventBase evb;
 
-        // Track if we should keep running
-        std::atomic<bool> running{true};
+        // Declared AFTER session_manager, config and response_writer, so that
+        // reverse-order destruction drains it before any of them go away. The
+        // explicit drain() below the loop is the real guarantee; this ordering
+        // corroborates it rather than being the only protection.
+        bgs::RequestDispatcher dispatcher{
+            session_manager, config, thread_pool,
+            [&response_writer](nlohmann::json const& response) {
+                response_writer.write(response);
+                XLOGF(DBG, "Sent response: {}", response.dump());
+            }};
 
         // Create stdin reader callback
         auto on_line = [&](std::string line) {
@@ -282,29 +288,13 @@ int main(int argc, char** argv) {
 
             XLOGF(DBG, "Received request: {}", request.dump());
 
-            // Schedule handler on thread pool (don't block the event loop)
-            thread_pool->add([&session_manager, &config, &response_writer,
-                              &thread_pool, request = std::move(request)]() mutable {
-                try {
-                    // Run the handler coroutine
-                    auto response = folly::coro::blockingWait(
-                        bgs::handle_bgs_request(session_manager, config, request)
-                            .scheduleOn(thread_pool.get()));
-
-                    // Write response
-                    response_writer.write(response);
-
-                    XLOGF(DBG, "Sent response: {}", response.dump());
-                } catch (std::exception const& e) {
-                    XLOGF(ERR, "Handler error: {}", e.what());
-                }
-            });
+            // Launches a coroutine and returns at once, so the event loop keeps
+            // reading stdin and no worker is ever blocked waiting on the pool it
+            // is running on. See RequestDispatcher for what that used to cost.
+            dispatcher.dispatch(std::move(request));
         };
 
-        auto on_eof = [&]() {
-            running = false;
-            evb.terminateLoopSoon();
-        };
+        auto on_eof = [&]() { evb.terminateLoopSoon(); };
 
         // Set up async stdin reading
         StdinLineReader stdin_reader(&evb, on_line, on_eof);
@@ -324,6 +314,13 @@ int main(int argc, char** argv) {
         // Cleanup
         stdin_pipe->setReadCB(nullptr);
         stdin_pipe.reset();
+
+        // Finish the requests that were still running when stdin closed, BEFORE
+        // response_writer, session_manager, config or the pool are torn down.
+        // Without this the pool destructor was the only thing joining the
+        // handlers, and it runs after response_writer is already gone.
+        XLOGF(INFO, "Draining {} in-flight request(s)", dispatcher.in_flight());
+        dispatcher.drain();
 
         XLOG(INFO, "Deep Wallwars V3 BGS Engine shutting down");
         return 0;

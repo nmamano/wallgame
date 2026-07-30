@@ -1,10 +1,11 @@
 #pragma once
 
+#include <folly/experimental/coro/Mutex.h>
 #include <folly/experimental/coro/Task.h>
 #include <nlohmann/json.hpp>
 
 #include <memory>
-#include <mutex>
+#include <mutex>  // std::unique_lock / std::lock_guard over m_sessions_mutex
 #include <shared_mutex>
 #include <string>
 #include <unordered_map>
@@ -54,10 +55,16 @@ struct BgsSession {
     int game_rows;
     int game_columns;
 
-    // Per-session mutex for sequential request handling within this BGS
+    // Per-session lock for sequential request handling within this BGS.
     // The V3 protocol guarantees only one pending request per BGS at a time,
-    // but this mutex ensures safety if requests arrive before responses.
-    std::mutex request_mutex;
+    // but this lock keeps us safe if requests arrive before responses.
+    //
+    // Coroutine-aware ON PURPOSE, not a std::mutex. Handlers hold this across a
+    // co_await - MCTS::sample() suspends - and a folly Task may resume on a
+    // different worker than the one that suspended it. Unlocking a std::mutex
+    // from a thread that does not own it is undefined behaviour, and a
+    // std::mutex would also block a whole worker while the search runs.
+    folly::coro::Mutex request_mutex;
 };
 
 // ============================================================================
@@ -95,9 +102,15 @@ public:
 
     /**
      * Get a session by ID (for operations).
-     * @return Pointer to session, or nullptr if not found
+     *
+     * Returns a SHARED pointer, not a raw one, so that holding the result keeps
+     * the session alive for as long as the caller needs it. A raw pointer would
+     * outlive the internal shared_lock: end_session could erase the map entry
+     * and free the MCTS tree while an in-flight handler was still sampling it.
+     *
+     * @return The session, or nullptr if not found
      */
-    BgsSession* get_session(std::string const& bgs_id);
+    std::shared_ptr<BgsSession> get_session(std::string const& bgs_id);
 
     /**
      * Check if a session exists.
@@ -114,7 +127,7 @@ private:
     BgsEngineConfig m_config;
 
     mutable std::shared_mutex m_sessions_mutex;
-    std::unordered_map<std::string, std::unique_ptr<BgsSession>> m_sessions;
+    std::unordered_map<std::string, std::shared_ptr<BgsSession>> m_sessions;
 
     // Generate a seed for a session based on bgs_id
     std::uint32_t generate_seed(std::string const& bgs_id) const;

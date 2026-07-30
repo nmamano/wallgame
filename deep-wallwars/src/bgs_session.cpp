@@ -75,7 +75,7 @@ std::pair<bool, std::string> SessionManager::create_session(
     mcts_opts.seed = generate_seed(bgs_id);
     mcts_opts.max_parallelism = m_config.max_parallel_samples;
 
-    auto session = std::make_unique<BgsSession>();
+    auto session = std::make_shared<BgsSession>();
     session->bgs_id = bgs_id;
     session->mcts = std::make_unique<MCTS>(m_eval_fn, std::move(board), mcts_opts);
     session->ply = 0;
@@ -97,17 +97,21 @@ std::pair<bool, std::string> SessionManager::end_session(std::string const& bgs_
         return {false, "Session " + bgs_id + " not found"};
     }
 
-    // The unique_ptr destructor will clean up the MCTS tree
+    // Erasing makes every future lookup fail immediately, which is what the
+    // protocol wants. The BgsSession itself only dies once the last in-flight
+    // handler that pinned it via get_session() has dropped its reference, so a
+    // request already in progress finishes coherently instead of reading a
+    // freed MCTS tree.
     m_sessions.erase(it);
 
     XLOGF(INFO, "Ended BGS session {}", bgs_id);
     return {true, ""};
 }
 
-BgsSession* SessionManager::get_session(std::string const& bgs_id) {
+std::shared_ptr<BgsSession> SessionManager::get_session(std::string const& bgs_id) {
     std::shared_lock lock(m_sessions_mutex);
     auto it = m_sessions.find(bgs_id);
-    return it != m_sessions.end() ? it->second.get() : nullptr;
+    return it != m_sessions.end() ? it->second : nullptr;
 }
 
 bool SessionManager::has_session(std::string const& bgs_id) const {
@@ -229,14 +233,19 @@ folly::coro::Task<json> handle_evaluate_position(
     std::string const& bgs_id,
     int expected_ply) {
 
-    BgsSession* session = manager.get_session(bgs_id);
+    // Pinned BEFORE we await anything: this shared_ptr is what keeps the
+    // session and its MCTS tree alive if end_game_session removes it from the
+    // manager while we are suspended in sample().
+    std::shared_ptr<BgsSession> session = manager.get_session(bgs_id);
     if (!session) {
         co_return create_evaluate_response(
             bgs_id, expected_ply, "", 0.0f, false, "Session not found");
     }
 
-    // Lock this session for the duration of the evaluation
-    std::lock_guard<std::mutex> session_lock(session->request_mutex);
+    // Lock this session for the duration of the evaluation. Suspends rather
+    // than blocking a worker, and releases correctly whichever worker resumes
+    // us - see the comment on BgsSession::request_mutex.
+    auto session_lock = co_await session->request_mutex.co_scoped_lock();
 
     // Validate ply
     if (session->ply != expected_ply) {
@@ -316,14 +325,15 @@ folly::coro::Task<json> handle_apply_move(
     int expected_ply,
     std::string const& move_notation) {
 
-    BgsSession* session = manager.get_session(bgs_id);
+    // Pinned before awaiting the lock, same reason as in evaluate_position.
+    std::shared_ptr<BgsSession> session = manager.get_session(bgs_id);
     if (!session) {
         co_return create_move_applied_response(
             bgs_id, expected_ply, false, "Session not found");
     }
 
     // Lock this session
-    std::lock_guard<std::mutex> session_lock(session->request_mutex);
+    auto session_lock = co_await session->request_mutex.co_scoped_lock();
 
     // Validate ply
     if (session->ply != expected_ply) {

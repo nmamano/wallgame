@@ -411,13 +411,20 @@ TEST_CASE("SessionManager - Get session", "[BGS Session]") {
     auto config = make_standard_config(6, 6);
     manager.create_session("session_1", "bot_1", config);
 
-    BgsSession* session = manager.get_session("session_1");
+    std::shared_ptr<BgsSession> session = manager.get_session("session_1");
     REQUIRE(session != nullptr);
     CHECK(session->bgs_id == "session_1");
     CHECK(session->ply == 0);
 
     // Non-existent returns nullptr
     CHECK(manager.get_session("non_existent") == nullptr);
+
+    // The lifetime contract: a caller holding the session keeps it alive past
+    // end_session, so an in-flight handler cannot end up reading a freed MCTS
+    // tree. end_session still makes the lookup fail immediately.
+    CHECK(manager.end_session("session_1").first);
+    CHECK(manager.get_session("session_1") == nullptr);
+    CHECK(session->bgs_id == "session_1");
 }
 
 TEST_CASE("SessionManager - Multiple sessions", "[BGS Session]") {
