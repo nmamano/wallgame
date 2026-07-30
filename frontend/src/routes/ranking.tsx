@@ -45,13 +45,14 @@ const PAGE_SIZE = 100;
 type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
 
 interface RankingFilters {
-  variant: "standard" | "classic" | "freestyle";
+  /** "all" is the global rating, across every variant AND time control. */
+  variant: "all" | "standard" | "classic" | "freestyle";
   timeControl: "bullet" | "blitz" | "rapid" | "classical";
   player: string;
 }
 
 const defaultFilters: RankingFilters = {
-  variant: "standard",
+  variant: "all",
   timeControl: "rapid",
   player: "",
 };
@@ -61,13 +62,21 @@ const buildRankingQuery = (
   page: number,
 ): RankingQuery => {
   const player = filters.player.trim().toLowerCase();
-  return {
-    variant: filters.variant,
-    timeControl: filters.timeControl,
+  const pagination = {
     page: String(page),
     pageSize: String(PAGE_SIZE),
     ...(player ? { player } : {}),
   };
+  // The server rejects unknown keys, so a global request must not carry a time
+  // control - it names nothing that is stored.
+  return filters.variant === "all"
+    ? { scope: "global", ...pagination }
+    : {
+        scope: "variant",
+        variant: filters.variant,
+        timeControl: filters.timeControl,
+        ...pagination,
+      };
 };
 
 const fetchRanking = async (
@@ -136,6 +145,7 @@ function Ranking() {
   const hasMore = data?.hasMore ?? false;
   const resolvedPage = data?.page ?? page;
   const hasPlayerSearch = filters.player.trim().length > 0;
+  const isGlobal = filters.variant === "all";
 
   const updateFilters = (next: Partial<RankingFilters>) => {
     setFilters((prev) => ({ ...prev, ...next }));
@@ -143,12 +153,21 @@ function Ranking() {
   };
 
   const handleRowClick = (row: RankingRow) => {
-    const pastGamesFilters: PastGamesFiltersState = {
-      variant: filters.variant,
-      timeControl: filters.timeControl,
-      rated: "yes",
-      player1: row.displayName,
-    };
+    // In global mode the row summarises every variant and time control, so
+    // carrying either into past-games would filter away most of what it counts.
+    const pastGamesFilters: PastGamesFiltersState = isGlobal
+      ? {
+          variant: "all",
+          timeControl: "all",
+          rated: "yes",
+          player1: row.displayName,
+        }
+      : {
+          variant: filters.variant,
+          timeControl: filters.timeControl,
+          rated: "yes",
+          player1: row.displayName,
+        };
     const navState: PastGamesNavState = { pastGamesFilters };
     void navigate({
       to: "/past-games",
@@ -202,6 +221,7 @@ function Ranking() {
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
+                  <SelectItem value="all">All variants</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
                   <SelectItem value="freestyle">Freestyle</SelectItem>
@@ -209,27 +229,33 @@ function Ranking() {
               </Select>
             </div>
 
-            <div className="space-y-2">
-              <Label className="text-foreground">Time Control</Label>
-              <Select
-                value={filters.timeControl}
-                onValueChange={(value) =>
-                  updateFilters({
-                    timeControl: value as RankingFilters["timeControl"],
-                  })
-                }
-              >
-                <SelectTrigger className="bg-background">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  <SelectItem value="bullet">Bullet</SelectItem>
-                  <SelectItem value="blitz">Blitz</SelectItem>
-                  <SelectItem value="rapid">Rapid</SelectItem>
-                  <SelectItem value="classical">Classical</SelectItem>
-                </SelectContent>
-              </Select>
-            </div>
+            {/* Hidden rather than disabled when the ranking is global: the
+                global rating spans time controls, so there is no value here
+                that would mean anything, and a greyed-out "Rapid" would read
+                as if it still applied. */}
+            {!isGlobal && (
+              <div className="space-y-2">
+                <Label className="text-foreground">Time Control</Label>
+                <Select
+                  value={filters.timeControl}
+                  onValueChange={(value) =>
+                    updateFilters({
+                      timeControl: value as RankingFilters["timeControl"],
+                    })
+                  }
+                >
+                  <SelectTrigger className="bg-background">
+                    <SelectValue />
+                  </SelectTrigger>
+                  <SelectContent>
+                    <SelectItem value="bullet">Bullet</SelectItem>
+                    <SelectItem value="blitz">Blitz</SelectItem>
+                    <SelectItem value="rapid">Rapid</SelectItem>
+                    <SelectItem value="classical">Classical</SelectItem>
+                  </SelectContent>
+                </Select>
+              </div>
+            )}
 
             <div className="space-y-2">
               <Label className="text-foreground">Search Player</Label>
@@ -312,7 +338,17 @@ function Ranking() {
                       {ranking.displayLabel}
                     </TableCell>
                     <TableCell className="font-bold text-lg">
-                      {Math.round(ranking.rating)}
+                      <span className="inline-flex items-baseline gap-1.5">
+                        {Math.round(ranking.rating)}
+                        {ranking.provisional && (
+                          <span
+                            className="text-[0.65rem] font-medium uppercase tracking-wide text-muted-foreground"
+                            title="Provisional: too few games for a confident rating"
+                          >
+                            prov
+                          </span>
+                        )}
+                      </span>
                     </TableCell>
                     <TableCell className="text-muted-foreground/70">
                       {Math.round(ranking.peakRating)}

@@ -32,8 +32,11 @@ export const parsePastGamesNavState = (
   return parsed.data.pastGamesFilters;
 };
 
+// "all" is the global rating, which spans time controls as well as variants -
+// so it carries no time control, and the page hides that selector when it is
+// chosen rather than leaving a stale value on screen that nothing reads.
 const rankingFiltersSchema = z.object({
-  variant: z.enum(["standard", "classic", "freestyle"]).optional(),
+  variant: z.enum(["all", "standard", "classic", "freestyle"]).optional(),
   timeControl: z.enum(["bullet", "blitz", "rapid", "classical"]).optional(),
   player: z.string().optional(),
 });

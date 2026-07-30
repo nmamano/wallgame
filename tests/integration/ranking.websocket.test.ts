@@ -36,6 +36,7 @@ let createApp: typeof import("../../server/index").createApp;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
+let ratingEventsTable: typeof import("../../server/db/schema/rating-events").ratingEventsTable;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let eq: typeof import("drizzle-orm").eq;
 
@@ -44,6 +45,8 @@ async function importServerModules() {
   const serverModule = await import("../../server/index");
   const usersSchemaModule = await import("../../server/db/schema/users");
   const ratingsSchemaModule = await import("../../server/db/schema/ratings");
+  const ratingEventsSchemaModule =
+    await import("../../server/db/schema/rating-events");
   const gamesSchemaModule = await import("../../server/db/schema/games");
   const drizzleOrm = await import("drizzle-orm");
 
@@ -52,6 +55,7 @@ async function importServerModules() {
   usersTable = usersSchemaModule.usersTable;
   userAuthTable = usersSchemaModule.userAuthTable;
   ratingsTable = ratingsSchemaModule.ratingsTable;
+  ratingEventsTable = ratingEventsSchemaModule.ratingEventsTable;
   gamesTable = gamesSchemaModule.gamesTable;
   eq = drizzleOrm.eq;
 }
@@ -101,6 +105,9 @@ async function seedUser(authUserId: string): Promise<number> {
 
 async function cleanupUsers(): Promise<void> {
   await db.delete(gamesTable);
+  // rating_events deliberately has no FK to games and no cascade, so nothing
+  // else removes these. Global rating rows DO cascade when the user goes.
+  await db.delete(ratingEventsTable);
   for (const userId of seededUserIds) {
     await db.delete(ratingsTable).where(eq(ratingsTable.userId, userId));
     await db.delete(userAuthTable).where(eq(userAuthTable.userId, userId));
@@ -317,7 +324,14 @@ async function sendMoveAndWaitForState(
 // ================================
 
 describe("ranking integration", () => {
+  // The global chain is opt-in in production, so an absent variable means off.
+  // The test has to turn it on explicitly and put it back afterwards, or test
+  // order would leak this configuration into whatever runs next.
+  let previousGlobalFlag: string | undefined;
+
   beforeAll(async () => {
+    previousGlobalFlag = process.env.GLOBAL_RATINGS_ENABLED;
+    process.env.GLOBAL_RATINGS_ENABLED = "true";
     const handle = await setupEphemeralDb();
     container = handle.container;
     await importServerModules();
@@ -328,6 +342,11 @@ describe("ranking integration", () => {
     await cleanupUsers();
     await stopTestServer();
     await teardownEphemeralDb(container);
+    if (previousGlobalFlag === undefined) {
+      delete process.env.GLOBAL_RATINGS_ENABLED;
+    } else {
+      process.env.GLOBAL_RATINGS_ENABLED = previousGlobalFlag;
+    }
   }, 60_000);
 
   it("ranks the winner first after a rated resignation", async () => {
@@ -385,7 +404,7 @@ describe("ranking integration", () => {
     socketB.close();
 
     const res = await fetch(
-      `${baseUrl}/api/ranking?variant=standard&timeControl=rapid&page=1&pageSize=100`,
+      `${baseUrl}/api/ranking?scope=variant&variant=standard&timeControl=rapid&page=1&pageSize=100`,
     );
     expect(res.status).toBe(200);
     const ranking = (await res.json()) as RankingResponse;
@@ -400,5 +419,42 @@ describe("ranking integration", () => {
     );
     expect(other).toBeDefined();
     expect(top.rating).toBeGreaterThan(other!.rating);
+
+    // The same game must also have moved the global chain, which is the whole
+    // point of the second chain: one game, two independent ratings.
+    const globalRes = await fetch(
+      `${baseUrl}/api/ranking?scope=global&page=1&pageSize=100`,
+    );
+    expect(globalRes.status).toBe(200);
+    const globalRanking = (await globalRes.json()) as RankingResponse;
+
+    const globalTop = globalRanking.rows.find(
+      (row) => row.displayName === `player_${userB}`,
+    );
+    const globalOther = globalRanking.rows.find(
+      (row) => row.displayName === `player_${userA}`,
+    );
+    expect(globalTop).toBeDefined();
+    expect(globalOther).toBeDefined();
+    expect(globalTop!.rating).toBeGreaterThan(globalOther!.rating);
+    // One game is nowhere near enough certainty to drop the marker.
+    expect(globalTop!.provisional).toBe(true);
   }, 30_000);
+
+  it("rejects a request that mixes global scope with a time control", async () => {
+    // The illegal combination has to fail at the boundary, not be quietly
+    // tidied away: zod strips unknown keys by default, so without .strict()
+    // this would return 200 having silently ignored timeControl.
+    const res = await fetch(
+      `${baseUrl}/api/ranking?scope=global&timeControl=rapid&page=1&pageSize=100`,
+    );
+    expect(res.status).toBe(400);
+  });
+
+  it("rejects a request with no scope at all", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/ranking?variant=standard&timeControl=rapid`,
+    );
+    expect(res.status).toBe(400);
+  });
 });

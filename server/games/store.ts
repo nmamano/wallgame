@@ -30,16 +30,8 @@ import type {
   GameAccessWaitingReason,
   LiveGameSummary,
 } from "../../shared/contracts/games";
-import {
-  getRatingStateForAuthUser,
-  updateRatingStateForAuthUser,
-} from "../db/rating-helpers";
-import {
-  newRatingsAfterGame,
-  initialRating,
-  Outcome,
-  type RatingState,
-} from "./rating-system";
+import { applyRatingsForFinishedGame } from "../db/rating-write";
+import { Outcome } from "./rating-system";
 import { isBotClientConnected } from "./custom-bot-store";
 
 // Match type determines how players join the game
@@ -1344,15 +1336,10 @@ export const processRatingUpdate = async (
   const variant = session.config.variant;
   const timeControl = session.config.timeControl.preset ?? "rapid";
 
-  // Get current rating states from DB
-  const [player1State, player2State] = await Promise.all([
-    getRatingStateForAuthUser(player1.authUserId, variant, timeControl),
-    getRatingStateForAuthUser(player2.authUserId, variant, timeControl),
-  ]);
-
-  // Use initial rating if players don't have a rating yet
-  const state1: RatingState = player1State ?? initialRating();
-  const state2: RatingState = player2State ?? initialRating();
+  // The old ratings used to be read here, before the write. They are now read
+  // inside the transaction and returned, because a value fetched out here is
+  // not the one the update was computed from - with two games finishing at once
+  // the log would report a transition that never happened.
 
   // Determine outcome from game result
   const result = gameState.result;
@@ -1382,65 +1369,55 @@ export const processRatingUpdate = async (
   } else {
     outcomeForPlayer1 = Outcome.Tie;
   }
-  const outcomeForPlayer2 =
-    outcomeForPlayer1 === Outcome.Win
-      ? Outcome.Loss
-      : outcomeForPlayer1 === Outcome.Loss
-        ? Outcome.Win
-        : Outcome.Tie;
+  /*
+  One transaction does the whole thing: the per-variant chain, the global chain,
+  and the ledger row that stops the same game being rated twice.
 
-  const recordDeltaForOutcome = (outcome: Outcome) => ({
-    wins: outcome === Outcome.Win ? 1 : outcome === Outcome.Tie ? 0.5 : 0,
-    losses: outcome === Outcome.Loss ? 1 : outcome === Outcome.Tie ? 0.5 : 0,
+  This used to read both states here and then fire two independent upserts in a
+  `Promise.all`, which could half-apply a game, and nothing anywhere recorded
+  that a game had been rated - `status === "finished"` stays true forever, so a
+  timeout racing a resignation would count the same result twice. Both are
+  handled inside applyRatingsForFinishedGame; see server/db/rating-write.ts.
+  */
+  const applied = await applyRatingsForFinishedGame({
+    gameId: id,
+    authUserIdA: player1.authUserId,
+    authUserIdB: player2.authUserId,
+    variant,
+    timeControl,
+    outcomeForA: outcomeForPlayer1,
   });
 
-  // Calculate new ratings
-  const { a: newState1, b: newState2 } = newRatingsAfterGame(
-    state1,
-    state2,
-    outcomeForPlayer1,
-  );
+  if (!applied) {
+    // Already rated, or a player is not a known user. Either way nothing moved,
+    // so report no change rather than a rating the database does not hold.
+    return undefined;
+  }
 
-  console.info("[ratings] Updating ratings", {
+  console.info("[ratings] Updated ratings", {
     sessionId: id,
     player1: {
       authUserId: player1.authUserId,
-      oldRating: state1.rating,
-      newRating: newState1.rating,
+      oldRating: applied.oldBucketA,
+      newRating: applied.bucketA,
+      newGlobalRating: applied.globalA,
     },
     player2: {
       authUserId: player2.authUserId,
-      oldRating: state2.rating,
-      newRating: newState2.rating,
+      oldRating: applied.oldBucketB,
+      newRating: applied.bucketB,
+      newGlobalRating: applied.globalB,
     },
     outcome: outcomeForPlayer1,
   });
 
-  // Update ratings in DB
-  await Promise.all([
-    updateRatingStateForAuthUser(
-      player1.authUserId,
-      variant,
-      timeControl,
-      newState1,
-      recordDeltaForOutcome(outcomeForPlayer1),
-    ),
-    updateRatingStateForAuthUser(
-      player2.authUserId,
-      variant,
-      timeControl,
-      newState2,
-      recordDeltaForOutcome(outcomeForPlayer2),
-    ),
-  ]);
-
   // Update session's ELO values so match-status reflects new ratings
-  player1.elo = newState1.rating;
-  player2.elo = newState2.rating;
+  player1.elo = applied.bucketA;
+  player2.elo = applied.bucketB;
 
   return {
-    player1NewElo: newState1.rating,
-    player2NewElo: newState2.rating,
+    player1NewElo: applied.bucketA,
+    player2NewElo: applied.bucketB,
   };
 };
 
