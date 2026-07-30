@@ -12,6 +12,35 @@ All three live in `deep-wallwars/`. Board tasks:
 Process is unchanged from batch 2: plan gate with Project Reviewer 1, implement, gates, diff gate,
 sign-off, ONE commit per slice, push, desktop build, bot restart, production round-trip probe, docs.
 
+**ALL THREE SHIPPED AND PRODUCTION-VERIFIED, 2026-07-30.** Nil playtested the puzzle fallback and
+confirmed it: "no longer makes non-sensical moves when fully losing. behaving just like i wanted".
+
+### Recommended NEXT batch (proposed 2026-07-30, Nil deferred the decision to a waking session)
+
+**Bot availability and honest status** - `5f302c24` (the client silently serves the dummy bot when an
+engine fails to start), `87e711cb` (auto-start/keep-alive for WSL + bot client), `222a2e3d` (make the
+desktop WSL always-on), `5f6a2e44` (bots show offline after Fly restarts), `2337bcd6` (Tailscale in the
+Fly container so the server can wake the client).
+
+The reason it should be next: every wallgame outage on record sits inside that cluster's blast radius -
+the 103-minute silent outage on 2026-07-26 (`5f302c24` is precisely WHY nobody noticed a dead engine),
+the WSL-instance-down incident on 2026-07-29, and bots-offline-after-deploy. This cluster hardened the
+engine itself, which moves the remaining risk squarely onto the supervision layer around it. `5f302c24`
+deserves a plan gate of its own rather than being squeezed in: `spawnEngine` returns before the engine is
+ready, so a real fix needs a readiness handshake, and the stderr-capture gap recorded on that task is
+part of the same defect.
+
+Caveat that batch carries: it touches WSL, the desktop supervisor and the Fly container - the same
+surface that took the whole WSL instance down. Keepalive-first discipline throughout, and the
+Windows-side recovery one-liner within reach before anything is killed.
+
+Alternative if user-visible progress is wanted instead: the freestyle trio, `681a1659` (stop mirroring
+the board across the midline), `2787ec58` (other board sizes), `018cc14e` (freestyle 8x8 as the site
+default) - with `018cc14e` last, since it changes what a first-time visitor sees.
+
+Two follow-ups this cluster created, both filed: `9c0ac857` (Easy Bot is STILL too strong at one sample -
+Nil went 2-8 against it) and `e5fec60c` (the six stale C++ failures, now carrying a partial diagnosis).
+
 ---
 
 ## 0. Environment findings (2026-07-30, before any code)
