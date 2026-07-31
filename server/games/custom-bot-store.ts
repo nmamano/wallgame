@@ -526,7 +526,7 @@ export const getRecommendedBots = (
       variantConfig.boardWidth.min === variantConfig.boardWidth.max &&
       variantConfig.boardHeight.min === variantConfig.boardHeight.max
     ) {
-      // Fixed board size variant (e.g. freestyle 12x10) — use the only valid size
+      // The bot declared a single valid size for this variant - use it
       results.push({
         bot: botEntry,
         boardWidth: variantConfig.boardWidth.min,

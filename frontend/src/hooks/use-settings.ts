@@ -96,14 +96,17 @@ const defaultGameConfig: GameConfiguration = {
     preset: "rapid",
   },
   rated: false,
-  variant: "standard",
+  variant: "freestyle",
   boardWidth: 8,
   boardHeight: 8,
-  variantConfig: buildStandardInitialState(8, 8),
+  // Placeholder only. Freestyle boards are always generated per game - the
+  // server builds its own, and local games call the generator again - so this
+  // value is never the board anyone plays on. It exists to satisfy the type.
+  variantConfig: generateFreestyleInitialState(8, 8),
 };
 
 const DEFAULT_TIME_CONTROL_PRESET: TimeControlPreset = "rapid";
-const DEFAULT_VARIANT: NonSurvivalVariant = "standard";
+const DEFAULT_VARIANT: NonSurvivalVariant = "freestyle";
 
 /**
  * Unified settings hook that always calls the same hooks in the same order

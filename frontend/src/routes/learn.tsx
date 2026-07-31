@@ -113,7 +113,7 @@ The moves are listed in a numbered list. Each line begins with the move number, 
 const variantsContent = `
 ### Standard
 
-The default variant with cat and mouse pawns in the corners.
+Cat and mouse pawns start in the corners.
 
 ### Classic
 
@@ -121,7 +121,7 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
 
 ### Freestyle
 
-A randomized 12x10 setup with neutral starting walls.
+A randomized setup with neutral starting walls.
 `;
 
 export const Route = createFileRoute("/learn")({

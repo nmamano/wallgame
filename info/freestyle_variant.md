@@ -6,21 +6,38 @@ A variant where the cat and mice start at random places, and there are some star
 
 The rules of the game are the same as Standard, except for the starting position:
 
-- The board size is fixed to width 12 and height 10.
-- Player 1's cat and mouse start at random cells on columns a-d (they can even be the same). If the mouse ends up above the cat, closer to the top of the board (meaning higher row number in in-game coordinates), flip the cat and mouse so the cat is above.
-- Player 2's cat and mouse start at horizontally symmetric cells on columns i-l.
-- Pawns never spawn in the 4 central columns (e-h).
-- A random number of walls is chosen between 4 and 10 for the left side. The walls are then placed randomly on the left half of the board (columns a-f). Walls are placed one by one, randomly, retrying if the wall is not legal (it will enventually succeed).
-- Horizontally symmetric walls are placed on the right half of the board (columns g-l).
+- Freestyle works at **any supported board size**. It is not fixed to 12x10. The
+  numbers below are expressed as fractions of the board so they scale, and they
+  are calibrated to reproduce the original 12x10 behaviour exactly.
+- Player 1's cat and mouse start at random cells in the leftmost third of the
+  board (4 columns, a-d, at width 12). They may not share a cell. If the mouse
+  ends up above the cat, flip the two so the cat is above.
+- Player 2's cat and mouse start at horizontally symmetric cells in the
+  rightmost third (columns i-l at width 12).
+- The pawn band is capped so a pawn's column is always strictly left of its own
+  mirror, which is what keeps the two players' pawns from colliding on narrow
+  boards. At width 12 this leaves the 4 central columns (e-h) empty.
+- A random number of wall pairs is chosen, scaled by board area: 1/30 to 1/12 of
+  a cell each, which gives 4 to 10 pairs at 12x10. Walls are placed one by one on
+  the left half, retrying if the wall is not legal.
+- Horizontally symmetric walls are placed on the right half of the board.
 - Those walls have a neutral color and do not belong to any player.
+- Wall legality goes through `Grid.canBuildWall`, which rejects any wall that
+  would cut a cat off from its target, so every accepted wall preserves both
+  players' paths by construction.
 
-The starting position has symmetry across the vertical midline between f and g.
+The starting position is symmetric across the vertical midline. That mirroring
+is deliberate and stays.
+
+Implemented in `shared/domain/freestyle-setup.ts`, which takes `boardWidth` and
+`boardHeight` and an injectable RNG.
 
 ## UI changes
 
-- In the Settings page, we'll hide the board dimensions setting for this variant.
+- Board dimensions are a normal, user-editable setting for this variant, the
+  same as Standard. (The original plan hid them; that was undone when the
+  generator became size-generic.)
 - In the Ranking, Past Games, and Live Games pages, we'll include this variant in the filters.
-- In the game setup page, when selecting this variant, we'll hide the board dimensions setting.
 
 ## Server changes
 
@@ -30,10 +47,19 @@ The starting position has symmetry across the vertical midline between f and g.
 ## Other notes
 
 - The generated position must be serializable and replayable, especially for Past Games and Live Games. This implies storing the fully materialized initial state.
-- Freestyle has fixed dimensions and ignores any board-size inputs.
-- Freestyle does not share ELO with Standard. It has its own ladder.
+- Freestyle honours the configured board size like any other variant.
+- Freestyle shares a single global rating with the other variants (commit
+  `9058c2c`). It no longer has its own ladder.
+- Freestyle 8x8 is the default a new visitor lands on (commit pending,
+  2026-07-31), set in `frontend/src/hooks/use-settings.ts`.
 
 # Implementation Approach
+
+> **Historical.** Everything below is the original build plan from when Freestyle
+> was fixed at 12x10 with board size hidden in the UI. Two of its premises no
+> longer hold: the generator is size-generic, and Freestyle shares the global
+> rating. Read the Rules section above for current behaviour; this section is
+> kept for the file-by-file map, which is still broadly accurate.
 
 Implement Freestyle as a first-class variant with a shared generator for the randomized initial state, keep the server authoritative for online games, persist the generated start so replays/past games are accurate, and hide/override board size to the fixed 12x10 in UI + config.
 
