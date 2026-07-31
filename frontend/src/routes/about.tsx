@@ -3,6 +3,7 @@ import { Card } from "@/components/ui/card";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import { DISCORD_INVITE_URL } from "@/lib/external-links";
 
 export const Route = createFileRoute("/about")({
   component: About,
@@ -24,6 +25,10 @@ Use the navigation bar at the top to go to different sections:
 - **[Login](/profile):** Manage your account
 
 There is also a [blog](https://nilmamano.com/blog/category/wallgame) about the game's development, with the post '[The Wall Game Project](https://nilmamano.com/blog/wall-game-intro?category=wallgame)' as an introduction.
+
+## Community
+
+Join the [Wall Game Discord](${DISCORD_INVITE_URL}) to find opponents, talk strategy, report bugs, and follow what is being built next.
 
 ## Credits
 
