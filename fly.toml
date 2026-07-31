@@ -11,6 +11,17 @@ primary_region = 'lax'
 [deploy]
   release_command = "bun run migrate"
 
+[env]
+  # Turns on the cross-variant global rating chain (server/feature-flags.ts).
+  # Not a secret, so it lives here in version control rather than in fly
+  # secrets: what it does is worth reading next to the code it gates.
+  #
+  # Opt-in by design - absent means off - so that the backfill can rebuild
+  # global_ratings against a table no live game is writing to. Order matters
+  # on any future rebuild: backfill, set this, restart, backfill again. See
+  # plans/combined-elo.md section 5a.
+  GLOBAL_RATINGS_ENABLED = "true"
+
 [http_service]
   internal_port = 3000
   force_https = true
