@@ -270,6 +270,11 @@ const resignBotOnFailure = async (
       });
     }
     broadcastLiveGamesRemove(session.id);
+    // Release the engine session, exactly like every other finish path. A
+    // forced resignation used to skip this, so each one leaked a session on
+    // the engine (capped at 256 per process) — the production bot log shows
+    // them as a "Starting game session" with no matching end.
+    notifyBotsGameEnded(session.id);
   }
 
   broadcast(session.id, {
@@ -510,6 +515,14 @@ export const resyncBgsFromHistory = async (
   // takeback's finally block won't destroy the second's promise.
   const resetGeneration = markBgsResetting(bgsId);
 
+  // A newer resync takes ownership of the BGS by ending the current session,
+  // which cancels whatever request this one has in flight. Every await below
+  // can therefore fail for a reason that is not an engine failure, and the
+  // failure branches must ask this before resigning the bot: the newer owner
+  // is already rebuilding the session, so there is nothing to heal here.
+  const superseded = (): boolean =>
+    getResetGeneration(bgsId) !== resetGeneration;
+
   try {
     // End the current BGS
     try {
@@ -523,7 +536,7 @@ export const resyncBgsFromHistory = async (
     }
 
     // Bail if a newer reset has superseded this one
-    if (getResetGeneration(bgsId) !== resetGeneration) {
+    if (superseded()) {
       console.info("[ws] takeback reset superseded by newer reset", {
         sessionId,
         resetGeneration,
@@ -546,6 +559,13 @@ export const resyncBgsFromHistory = async (
     try {
       await startBgsSession(botCompositeId, bgsId, sessionId, config);
     } catch (error) {
+      if (superseded()) {
+        console.info("[ws] takeback BGS start cancelled by newer reset", {
+          sessionId,
+          resetGeneration,
+        });
+        return;
+      }
       console.error("[ws] failed to restart BGS after takeback", {
         error,
         sessionId,
@@ -555,7 +575,7 @@ export const resyncBgsFromHistory = async (
     }
 
     // Bail if a newer reset has superseded this one
-    if (getResetGeneration(bgsId) !== resetGeneration) {
+    if (superseded()) {
       console.info("[ws] takeback reset superseded after BGS start", {
         sessionId,
         resetGeneration,
@@ -566,6 +586,13 @@ export const resyncBgsFromHistory = async (
     // Get initial evaluation
     const initialEval = await getInitialEvaluation(botCompositeId, bgsId);
     if (!initialEval) {
+      if (superseded()) {
+        console.info("[ws] takeback initial eval cancelled by newer reset", {
+          sessionId,
+          resetGeneration,
+        });
+        return;
+      }
       console.error("[ws] failed to get initial eval after takeback", {
         sessionId,
       });
@@ -578,7 +605,7 @@ export const resyncBgsFromHistory = async (
     // the replay — those will be handled by their own move handlers.
     for (let i = 0; i < replaySnapshot.length; i++) {
       // Check for superseding reset before each expensive async operation
-      if (getResetGeneration(bgsId) !== resetGeneration) {
+      if (superseded()) {
         console.info("[ws] takeback reset superseded during replay", {
           sessionId,
           resetGeneration,
@@ -596,6 +623,19 @@ export const resyncBgsFromHistory = async (
         moveNotation,
       );
       if (!evalResult) {
+        // The supersede check at the top of the loop cannot catch this: a
+        // newer reset cancels the request while we are parked on the await
+        // above, so control never reaches it. Production game Cb4nYTIS
+        // (2026-07-30) resigned a bot mid-game exactly this way, after three
+        // takebacks in twelve seconds.
+        if (superseded()) {
+          console.info("[ws] takeback replay cancelled by newer reset", {
+            sessionId,
+            resetGeneration,
+            moveIndex: i,
+          });
+          return;
+        }
         console.error("[ws] failed to replay move during takeback", {
           sessionId,
           moveIndex: i,
