@@ -326,6 +326,122 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
 };
 
 // ============================================================================
+// Abandonment timer
+// ============================================================================
+
+/**
+ * How long a game survives with a walked-away player before the server ends it.
+ *
+ * Generous on purpose. The cost of waiting is one held session on the bot
+ * engine, which caps at 256 per engine process and then refuses new games;
+ * traffic is nowhere near that, so patience is cheap and a player who shuts a
+ * laptop lid gets their game back.
+ */
+const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
+
+const abandonTimers = new Map<string, Timer>();
+
+const clearAbandonTimer = (sessionId: string): void => {
+  const existingTimer = abandonTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    abandonTimers.delete(sessionId);
+  }
+};
+
+/**
+ * The seat that has walked away from a game nothing else would ever end, or
+ * null if the game is fine.
+ *
+ * Only games without a clock qualify: in a timed game the absent player's clock
+ * runs on their turn and times out on its own. Bot seats never qualify either:
+ * they connect over the bot-client socket and have their own disconnect grace
+ * in custom-bot-socket.ts.
+ *
+ * This is the whole policy, in one place, so arming the timer and re-checking
+ * when it fires ask exactly the same question.
+ */
+export const findAbandonedSeat = (sessionId: string): SessionPlayer | null => {
+  const session = sessions.get(sessionId);
+  if (session?.gameState.status !== "playing") {
+    return null;
+  }
+  if (!isUnlimitedTimeControl(session.gameState.timeControl)) {
+    return null;
+  }
+  for (const player of [session.players.host, session.players.joiner]) {
+    if (!player.botCompositeId && !player.connected) {
+      return player;
+    }
+  }
+  return null;
+};
+
+const applyAbandonToSession = (sessionId: string, playerId: PlayerId): void => {
+  // Resigning gets the abort-vs-loss distinction for free: a game abandoned
+  // before both players moved is recorded as aborted and leaves ratings alone.
+  const newState = resignGame({
+    id: sessionId,
+    playerId,
+    timestamp: Date.now(),
+  });
+
+  console.info("[abandon-timer] player never came back - game ended", {
+    sessionId,
+    playerId,
+    result: newState.result,
+  });
+
+  // The same finish work a clock timeout does: ratings, persistence,
+  // broadcasts, and the bot notification that releases the engine's session.
+  if (onTimeoutCallback) {
+    onTimeoutCallback(sessionId, newState).catch((err: unknown) => {
+      console.error("[abandon-timer] callback error", { sessionId, err });
+    });
+  }
+};
+
+/**
+ * Arm or disarm a session's abandonment timer, recomputed from scratch.
+ *
+ * Called whenever a player's connection changes. Like `scheduleTimeoutTimer`
+ * this clears before it schedules, so a second disconnect restarts the
+ * countdown instead of inheriting the first one's deadline - deliberately the
+ * lenient direction, and it keeps the armed seat and the seat checked at expiry
+ * in agreement without tracking who the timer was for.
+ */
+const refreshAbandonTimer = (sessionId: string): void => {
+  clearAbandonTimer(sessionId);
+
+  const abandoned = findAbandonedSeat(sessionId);
+  if (!abandoned) {
+    return;
+  }
+
+  const timer = setTimeout(() => {
+    abandonTimers.delete(sessionId);
+    // Ask again: the game may have finished, or the player may have returned.
+    const stillAbandoned = findAbandonedSeat(sessionId);
+    if (!stillAbandoned) {
+      return;
+    }
+    applyAbandonToSession(sessionId, stillAbandoned.playerId);
+  }, ABANDON_TIMEOUT_MS);
+  // Half an hour is long enough to outlive whatever else is pending, and this
+  // timer is never the reason to keep a process alive (as in the bot client's
+  // disconnect grace).
+  (timer as { unref?: () => void }).unref?.();
+
+  abandonTimers.set(sessionId, timer);
+
+  console.info("[abandon-timer] scheduled", {
+    sessionId,
+    playerId: abandoned.playerId,
+    timeoutMs: ABANDON_TIMEOUT_MS,
+  });
+};
+
+// ============================================================================
 
 const ensureSession = (id: string): GameSession => {
   const session = sessions.get(id);
@@ -960,8 +1076,9 @@ const applyActionToSession = (
   session.updatedAt = Date.now();
   session.status = next.status === "finished" ? "completed" : "in-progress";
   if (next.status === "finished") {
-    // Game ended - clear any timeout timer
+    // Game ended - clear any pending timers
     clearTimeoutTimer(session.id);
+    clearAbandonTimer(session.id);
     finalizeMatchScore(session, next.result ?? null);
   } else if (action.kind === "move") {
     // Move was made and game continues - schedule timeout for next player
@@ -1289,6 +1406,9 @@ export const updateConnectionState = (args: {
   player.connected = args.connected;
   player.lastSeenAt = Date.now();
   session.updatedAt = Date.now();
+  // A game whose player walked away has to end itself. Without a clock there is
+  // nothing else that ever would, and it holds an engine session while it sits.
+  refreshAbandonTimer(session.id);
 };
 
 /**
