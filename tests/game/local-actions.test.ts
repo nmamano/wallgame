@@ -51,6 +51,25 @@ describe("enqueueToggle", () => {
     const cleared = enqueueToggle(queue, action);
     expect(cleared.length).toBe(0);
   });
+
+  it("appends a second step for the same pawn instead of retargeting the first", () => {
+    const state = buildState();
+    const firstStep = { type: "cat", target: [0, 1] } as const;
+    const secondStep = { type: "cat", target: [0, 2] } as const;
+
+    const queue = enqueueToggle([], firstStep);
+    const extended = enqueueToggle(queue, secondStep);
+
+    expect(extended.length).toBe(2);
+    expect(canEnqueue({ state, playerId: 1, queue, action: secondStep })).toBe(
+      true,
+    );
+    // Stepping twice must produce the same move as dragging straight to the
+    // destination, so the turn's action budget fills and the move commits.
+    expect(extended).toEqual(
+      resolveDoubleStep({ state, playerId: 1, action: secondStep })!,
+    );
+  });
 });
 
 describe("canEnqueue", () => {

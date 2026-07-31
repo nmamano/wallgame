@@ -114,21 +114,10 @@ export const enqueueToggle = (
     return queue.filter((_, idx) => idx !== exactIndex);
   }
 
-  // For pawn moves (cat/mouse), replace existing move of same type instead of adding
-  // (you can only move each pawn once per turn)
-  if (action.type === "cat" || action.type === "mouse") {
-    const sameTypeIndex = queue.findIndex(
-      (existing) => existing.type === action.type,
-    );
-    if (sameTypeIndex !== -1) {
-      // Replace the existing pawn move with the new one
-      return queue.map((existing, idx) =>
-        idx === sameTypeIndex ? cloneAction(action) : existing,
-      );
-    }
-  }
-
-  // Otherwise add the action
+  // Otherwise add the action. Pawn moves append like anything else: a turn is
+  // two actions and both may be steps of the same pawn, so a second step for an
+  // already-queued pawn extends the queue into a double step rather than
+  // retargeting the first step. `canEnqueue` validates the same appended queue.
   return [...queue, cloneAction(action)];
 };
 
