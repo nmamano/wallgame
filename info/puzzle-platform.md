@@ -111,7 +111,7 @@ Two are OFFICIAL; Easy Bot is deliberately not.
 |---|---|---|---|---|
 | `dw-transformer` | Superhuman Bot | yes | 1000 | ordinary games |
 | `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128), naive below -0.9 | puzzles |
-| `dw-easy` | Easy Bot | **no** | 1 (no root noise), 20% naive moves | ordinary games |
+| `dw-easy` | Easy Bot | **no** | 1 (no root noise), 33% naive moves | ordinary games |
 
 Naming history: `dw-transformer` was "Transformer Bot (experimental)" until
 2026-07-29 (Nil). The bot ID never changed, which is what keeps its rating and
@@ -156,11 +156,17 @@ that looks configured and is not.
 **One sample was not enough.** Nil played it after that rollout and lost about
 8-2 — "really impressive", not an easy bot. The policy head alone is simply
 strong, so sample count had stopped being the lever. What ships instead (board
-task `9c0ac857`, Nil's design) is `"naiveMoveRate": 0.2` on `dw-easy` in the
-config file: a per-move coin flip, so roughly one move in five comes from the
-client's own naive walk-toward-the-goal policy and the rest still come from the
-engine. Per move, not per game — the bot plays well most of the time and drops
-the occasional weak move, rather than being a different bot for a whole game.
+task `9c0ac857`, Nil's design) is `"naiveMoveRate"` on `dw-easy` in the config
+file: a per-move coin flip, so that share of moves comes from the client's own
+naive walk-toward-the-goal policy and the rest still come from the engine. Per
+move, not per game — the bot plays well most of the time and drops the
+occasional weak move, rather than being a different bot for a whole game.
+
+Tuned by Nil playing it, which is the only calibration that counts. It went out
+at 0.2; over 5 games he went 3-2 and called it still a bit too hard, so it is
+now **0.33**. The 0.2 run is the evidence that the knob does what it says: 75
+naive moves out of 382 Easy Bot evaluations, 19.6% observed, with no shadow
+retired and no fallback to the engine for a missing naive move.
 
 It is deliberately a WRAPPER feature, in `official-custom-bot-client`. No C++
 change, no rebuild, no GPU, no transport branch: retuning the percentage is a
