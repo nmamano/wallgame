@@ -8,7 +8,6 @@ import { applyRatedGame } from "../games/rated-game";
 import { initialRating, type RatingState } from "../games/rating-system";
 import type { Outcome } from "../games/rating-system";
 import type { RecordDelta } from "../games/rated-game";
-import { globalRatingsEnabled } from "../feature-flags";
 
 /**
  * Applies one finished game to both rating chains, atomically and at most once.
@@ -32,8 +31,8 @@ export interface AppliedRatings {
   oldBucketB: number;
   bucketA: number;
   bucketB: number;
-  globalA: number | undefined;
-  globalB: number | undefined;
+  globalA: number;
+  globalB: number;
 }
 
 interface Args {
@@ -151,17 +150,6 @@ export const applyRatingsForFinishedGame = async (
       now,
     });
 
-    const common = {
-      oldBucketA: bucket.a.rating,
-      oldBucketB: bucket.b.rating,
-      bucketA: bucketResult.a.rating,
-      bucketB: bucketResult.b.rating,
-    };
-
-    if (!globalRatingsEnabled()) {
-      return { ...common, globalA: undefined, globalB: undefined };
-    }
-
     // Each player's global rating is updated against the opponent's GLOBAL
     // rating. Reading a per-bucket rating here would make the result depend on
     // whichever variant the opponent happened to play most, and it would not be
@@ -186,7 +174,10 @@ export const applyRatingsForFinishedGame = async (
     });
 
     return {
-      ...common,
+      oldBucketA: bucket.a.rating,
+      oldBucketB: bucket.b.rating,
+      bucketA: bucketResult.a.rating,
+      bucketB: bucketResult.b.rating,
       globalA: globalResult.a.rating,
       globalB: globalResult.b.rating,
     };

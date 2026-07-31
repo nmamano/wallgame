@@ -4,7 +4,7 @@ import { ratingsTable } from "./schema/ratings";
 import { globalRatingsTable } from "./schema/global-ratings";
 import { usersTable } from "./schema/users";
 import {
-  PROVISIONAL_DEVIATION_THRESHOLD,
+  PROVISIONAL_GAME_THRESHOLD,
   type RankingQuery,
   type RankingResponse,
 } from "../../shared/contracts/ranking";
@@ -26,7 +26,6 @@ const buildRankedQuery = (
     displayName: usersTable.displayName,
     capitalizedDisplayName: usersTable.capitalizedDisplayName,
     rating: source.rating,
-    ratingDeviation: source.ratingDeviation,
     peakRating: source.peakRating,
     recordWins: source.recordWins,
     recordLosses: source.recordLosses,
@@ -102,7 +101,6 @@ export const queryRanking = async (
       displayName: ranked.displayName,
       capitalizedDisplayName: ranked.capitalizedDisplayName,
       rating: ranked.rating,
-      ratingDeviation: ranked.ratingDeviation,
       peakRating: ranked.peakRating,
       recordWins: ranked.recordWins,
       recordLosses: ranked.recordLosses,
@@ -128,7 +126,8 @@ export const queryRanking = async (
       recordLosses: row.recordLosses,
       createdAt: row.createdAt.getTime(),
       lastGameAt: row.lastGameAt.getTime(),
-      provisional: row.ratingDeviation > PROVISIONAL_DEVIATION_THRESHOLD,
+      provisional:
+        row.recordWins + row.recordLosses < PROVISIONAL_GAME_THRESHOLD,
     })),
     page: resolvedPage,
     pageSize: args.pageSize,

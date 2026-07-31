@@ -1,11 +1,10 @@
-import { afterEach, describe, expect, test } from "bun:test";
+import { describe, expect, test } from "bun:test";
 import {
   applyRatedGame,
   replayRatedGames,
   type ReplayGame,
 } from "../../server/games/rated-game";
 import { Outcome, initialRating } from "../../server/games/rating-system";
-import { globalRatingsEnabled } from "../../server/feature-flags";
 
 /**
  * The global rating's arithmetic, covered without a database.
@@ -192,35 +191,5 @@ describe("replayRatedGames", () => {
     expect(players.get(2)!.lastGameAt).toEqual(
       new Date("2026-01-01T00:00:00Z"),
     );
-  });
-});
-
-describe("globalRatingsEnabled", () => {
-  // The flag defaults OFF on purpose: the cutover in plans/combined-elo.md 5a
-  // needs the writer dormant while the backfill runs, so an absent variable
-  // must not mean "on". An earlier version used `!== "false"` and enabled
-  // itself whenever the variable was missing - which no test would have caught,
-  // because nothing tested the absence of an env var.
-  const original = process.env.GLOBAL_RATINGS_ENABLED;
-  afterEach(() => {
-    if (original === undefined) delete process.env.GLOBAL_RATINGS_ENABLED;
-    else process.env.GLOBAL_RATINGS_ENABLED = original;
-  });
-
-  test("off when the variable is absent", () => {
-    delete process.env.GLOBAL_RATINGS_ENABLED;
-    expect(globalRatingsEnabled()).toBe(false);
-  });
-
-  test("off when set to anything other than true", () => {
-    for (const value of ["false", "", "1", "yes", "TRUE"]) {
-      process.env.GLOBAL_RATINGS_ENABLED = value;
-      expect(globalRatingsEnabled()).toBe(false);
-    }
-  });
-
-  test("on only for the exact string true", () => {
-    process.env.GLOBAL_RATINGS_ENABLED = "true";
-    expect(globalRatingsEnabled()).toBe(true);
   });
 });

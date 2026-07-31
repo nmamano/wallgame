@@ -44,14 +44,7 @@ export interface RankingRow {
   recordLosses: number;
   createdAt: number;
   lastGameAt: number;
-  /**
-   * Whether the rating is still too uncertain to compare with confidence.
-   *
-   * Shown rather than used for filtering: with a handful of rated players,
-   * hiding provisional rows would recreate the empty leaderboard this exists to
-   * improve, and sorting by a conservative estimate while the column header says
-   * "Rating" is the kind of quiet mismatch that costs trust in a ranking.
-   */
+  /** True until the player has played `PROVISIONAL_GAME_THRESHOLD` games. */
   provisional: boolean;
 }
 
@@ -62,10 +55,5 @@ export interface RankingResponse {
   hasMore: boolean;
 }
 
-/**
- * Rating deviation above which a rating is shown as provisional.
- *
- * Our threshold, not a standard: Glicko defines RD but mandates no particular
- * provisional cutoff. 110 is roughly where the 95% interval narrows to +/- 220.
- */
-export const PROVISIONAL_DEVIATION_THRESHOLD = 110;
+/** Games played before a rating stops being shown as provisional. */
+export const PROVISIONAL_GAME_THRESHOLD = 10;

@@ -324,14 +324,7 @@ async function sendMoveAndWaitForState(
 // ================================
 
 describe("ranking integration", () => {
-  // The global chain is opt-in in production, so an absent variable means off.
-  // The test has to turn it on explicitly and put it back afterwards, or test
-  // order would leak this configuration into whatever runs next.
-  let previousGlobalFlag: string | undefined;
-
   beforeAll(async () => {
-    previousGlobalFlag = process.env.GLOBAL_RATINGS_ENABLED;
-    process.env.GLOBAL_RATINGS_ENABLED = "true";
     const handle = await setupEphemeralDb();
     container = handle.container;
     await importServerModules();
@@ -342,11 +335,6 @@ describe("ranking integration", () => {
     await cleanupUsers();
     await stopTestServer();
     await teardownEphemeralDb(container);
-    if (previousGlobalFlag === undefined) {
-      delete process.env.GLOBAL_RATINGS_ENABLED;
-    } else {
-      process.env.GLOBAL_RATINGS_ENABLED = previousGlobalFlag;
-    }
   }, 60_000);
 
   it("ranks the winner first after a rated resignation", async () => {

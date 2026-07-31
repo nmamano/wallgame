@@ -223,54 +223,22 @@ computed from the history the database actually holds. It is not arithmetically
 reconcilable with today's per-variant ratings, and no test should assert that it
 is.
 
-### 5a. Cutover: an idempotent backfill, run once on each side of the switch
+### 5a. Cutover
 
-Recomputing and overwriting `global_ratings` while games are finishing can erase
-a live update or count it twice. An earlier draft sequenced the deploy as
-"backfill, then ship the live writer" and called that sufficient. It is not:
-a game finishing _after_ the backfill has read its rows and _before_ the writer
-is live is written by nobody and is permanently absent. That is an omission
-race rather than an overwrite race, and "the backfill takes under a second"
-does not shrink the deployment interval that follows it.
+Ran on 2026-07-30: migration deployed, backfill run, 17 games replayed into 3
+players, ledger covering 17/17. A second run produced identical numbers.
 
-What closes it, without a maintenance gate, is making the backfill safe to run
-more than once and running it on both sides of the switch:
+This section used to describe a four-step cutover built around a
+`GLOBAL_RATINGS_ENABLED` flag and two backfill runs, to close the window where a
+game finishing between "backfill has read" and "writer is live" is written by
+nobody. That window is real but the machinery was not worth it at 17 rated games
+in the app's lifetime, and the flag it left behind was permanent debt paid for a
+race that will not happen. Removed at Nil's instruction.
 
-1. Deploy schema, `rating_events`, and the live writer together. `GLOBAL_RATINGS_ENABLED`
-   is unset, and the flag is **opt-in** (`=== "true"`), so an absent variable
-   means off. That direction is the whole safety premise: a default of "on when
-   unset" would silently defeat this the first time someone forgot to set it.
-2. Run the backfill. Inside ONE transaction it takes the `global_ratings` table
-   lock **first**, then reads history through that same transaction, replays,
-   deletes the table, rebuilds it, and inserts a `rating_events` row for every
-   replayed game. Locking before reading is load-bearing: with the read outside
-   the lock, a live game could commit between snapshot and lock and then be
-   erased by the overwrite while its ledger row survived, making it
-   unapplicable forever.
-3. Set `GLOBAL_RATINGS_ENABLED=true` and **restart the service**. This is not a
-   live config flip - `process.env` is read by a running process, not pushed to
-   one - so it is a deploy-shaped step and should be planned as one.
-4. **Run the backfill again.** Any game that finished during the window in step
-   3 is in `games` by then, so the second run includes it.
-
-Re-running is safe precisely because the backfill recomputes from scratch and
-rebuilds: it deletes every global row under the lock before writing the replay
-result, so a row the replay does not produce cannot survive a run. A game rated
-live and a game replayed produce the same state, and neither is counted twice.
-The `rating_events` insert uses `onConflictDoNothing`, so the second run adds
-only what the first one missed.
-
-The lock also composes with the live writer rather than fighting it. A live
-transaction locks its two user rows, writes its bucket, and then blocks on
-`global_ratings`. Because persistence happens only after rating completes, a
-game blocked at that point is not yet in `games` and so is not in the backfill's
-snapshot; when the backfill commits, that transaction resumes, reads the
-freshly rebuilt state, and applies itself exactly once.
-
-Why presence in `games` is the right test for "already counted": ratings commit
-_before_ persistence on every finish path (section 5), so a row in `games`
-implies its rating transaction has already committed. The ordering that made
-the replay imperfect is the same ordering that makes this cutover sound.
+If the table ever needs rebuilding: run `scripts/backfill-global-ratings.ts`. It
+takes ACCESS EXCLUSIVE on `global_ratings`, recomputes from persisted history,
+and overwrites - so running it twice is harmless, and running it again is the
+fix if anything did land during the rebuild.
 
 ## 6. Decision: the UI cannot express an illegal combination
 
@@ -343,10 +311,10 @@ recreate the empty page this task exists to improve. Sorting by a conservative
 score is worse than it looks - the column would say "Rating" and the order would
 follow a different number, which is the kind of quiet mismatch that makes people
 distrust a leaderboard. A "provisional" marker on rows whose deviation is still
-above a chosen threshold of 110 says the same thing honestly and costs one extra
-field on `RankingRow`. (110 is _our_ threshold, not a standard: Glicko defines
-RD but mandates no particular provisional cutoff, and the doc should not imply
-otherwise.)
+under 10 games played says the same thing honestly and costs one extra field on
+`RankingRow`. A game count rather than a rating deviation, because deviation
+stays high for a player who wins everything - so a dominant player would have
+been badged provisional indefinitely.
 
 (Pre-existing in the per-variant view too, but the global view makes it the
 first thing a visitor sees, so it is handled here rather than deferred.)
