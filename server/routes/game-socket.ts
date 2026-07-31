@@ -887,6 +887,32 @@ const removeSocket = (entry: SessionSocket) => {
   }
 };
 
+/**
+ * Whether another still-open socket holds the same seat as `entry`.
+ *
+ * A seat is a single `connected` boolean but can have several sockets at once:
+ * the player opened a second tab, or a reconnect's new socket opened before the
+ * old one's close was delivered. Treating the first close as "the player left"
+ * is wrong in both cases, and it is not merely cosmetic - an unlimited game
+ * arms its abandonment timer off that boolean, so a seat wrongly marked gone is
+ * eventually resigned while its player is still sitting there playing.
+ *
+ * Exported for tests: the two-sockets-one-seat case cannot be reached through
+ * the store's own API.
+ */
+export const seatHasOtherSocket = (
+  sockets: Iterable<SessionSocket> | undefined,
+  entry: SessionSocket,
+): boolean => {
+  if (!sockets || !entry.socketToken) return false;
+  for (const other of sockets) {
+    if (other !== entry && other.socketToken === entry.socketToken) {
+      return true;
+    }
+  }
+  return false;
+};
+
 export const broadcast = (sessionId: string, message: unknown) => {
   const sockets = sessionSockets.get(sessionId);
   if (!sockets) return;
@@ -2524,6 +2550,15 @@ export const registerGameSocketRoute = (app: Hono) => {
             broadcastLiveGamesUpsert(entry.sessionId); // Update spectator count
             console.info("[ws] spectator disconnected", {
               sessionId: entry.sessionId,
+            });
+          } else if (
+            seatHasOtherSocket(sessionSockets.get(entry.sessionId), entry)
+          ) {
+            // The seat is still held by another tab, or by the socket that
+            // replaced this one, so the player has not gone anywhere.
+            console.info("[ws] socket closed, seat still held elsewhere", {
+              sessionId: entry.sessionId,
+              socketToken: entry.socketToken,
             });
           } else {
             // Player disconnect
