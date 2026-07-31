@@ -1,5 +1,6 @@
 import { describe, expect, it, beforeAll } from "bun:test";
 import type { PartialGameConfiguration } from "../../server/games/store";
+import type { PlayerId } from "../../shared/domain/game-types";
 
 /**
  * A game with no clock whose player closed the tab used to stay in progress
@@ -26,6 +27,7 @@ let updateConnectionState: typeof import("../../server/games/store").updateConne
 let findAbandonedSeat: typeof import("../../server/games/store").findAbandonedSeat;
 let setBotCompositeId: typeof import("../../server/games/store").setBotCompositeId;
 let resignGame: typeof import("../../server/games/store").resignGame;
+let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 
 beforeAll(async () => {
   const store = await import("../../server/games/store");
@@ -35,6 +37,7 @@ beforeAll(async () => {
   findAbandonedSeat = store.findAbandonedSeat;
   setBotCompositeId = store.setBotCompositeId;
   resignGame = store.resignGame;
+  applyPlayerMove = store.applyPlayerMove;
 });
 
 const UNLIMITED: PartialGameConfiguration = {
@@ -61,6 +64,20 @@ const startedSession = (config: PartialGameConfiguration) => {
   return session;
 };
 
+/** Any legal turn, purely to get the game past its first move. */
+const playTurn = (id: string, playerId: PlayerId, col: number) =>
+  applyPlayerMove({
+    id,
+    playerId,
+    move: {
+      actions: [
+        { type: "wall", target: [0, col], wallOrientation: "vertical" },
+        { type: "wall", target: [2, col], wallOrientation: "vertical" },
+      ],
+    },
+    timestamp: Date.now(),
+  });
+
 /** Mirrors what game-socket.ts does when a player's websocket opens/closes. */
 const setConnected = (
   session: ReturnType<typeof startedSession>,
@@ -84,11 +101,37 @@ describe("a game whose player walked away", () => {
     expect(findAbandonedSeat(session.id)?.role).toBe("host");
   });
 
-  it("leaves timed games alone, because the clock already ends them", () => {
+  it("leaves a timed game under way alone, because its clock ends it", () => {
     const session = startedSession(TIMED);
     setConnected(session, "host", true);
+    setConnected(session, "joiner", true);
+    playTurn(session.id, 1, 0);
     setConnected(session, "host", false);
 
+    expect(findAbandonedSeat(session.id)).toBeNull();
+  });
+
+  it("still claims a timed game nobody has moved in", () => {
+    // A clock does not start until the first move, so before then a timed game
+    // is no better protected than an untimed one.
+    const session = startedSession(TIMED);
+    setConnected(session, "host", true);
+    setConnected(session, "joiner", true);
+    setConnected(session, "host", false);
+
+    expect(findAbandonedSeat(session.id)?.role).toBe("host");
+  });
+
+  it("stands down once the clock starts running", () => {
+    const session = startedSession(TIMED);
+    setConnected(session, "host", true);
+    setConnected(session, "joiner", true);
+    setConnected(session, "host", false);
+    expect(findAbandonedSeat(session.id)).not.toBeNull();
+
+    // The timer armed above re-asks this same question when it fires, so a
+    // first move landing in the meantime disarms it without any extra wiring.
+    playTurn(session.id, 1, 0);
     expect(findAbandonedSeat(session.id)).toBeNull();
   });
 

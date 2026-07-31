@@ -353,17 +353,14 @@ const clearAbandonTimer = (sessionId: string): void => {
  * The seat that has walked away from a game nothing else would ever end, or
  * null if the game is fine.
  *
- * Only games without a clock qualify: in a timed game that is under way, the
- * absent player's clock runs on their turn and times out on its own.
+ * A game is safe only if a running clock will end it on its own, and a clock
+ * does not start until the first move - `scheduleTimeoutTimer` returns early
+ * before that. So two kinds of game qualify: untimed ones, and timed ones that
+ * nobody has moved in yet. In both, an absent player would otherwise sit there
+ * indefinitely.
  *
- * Known gap: a timed game in which nobody has moved yet is covered by neither
- * mechanism, because `scheduleTimeoutTimer` does not start a clock until the
- * first move. Such a game can still sit in progress forever. No engine session
- * is at stake there - bot games are always untimed (BOT_GAME_TIME_CONTROL) - so
- * it is a phantom listing rather than a leak.
- *
- * Bot seats never qualify either: they connect over the bot-client socket and
- * have their own disconnect grace in custom-bot-socket.ts.
+ * Bot seats never qualify: they connect over the bot-client socket and have
+ * their own disconnect grace in custom-bot-socket.ts.
  *
  * This is the whole policy, in one place, so arming the timer and re-checking
  * when it fires ask exactly the same question.
@@ -373,7 +370,10 @@ export const findAbandonedSeat = (sessionId: string): SessionPlayer | null => {
   if (session?.gameState.status !== "playing") {
     return null;
   }
-  if (!isUnlimitedTimeControl(session.gameState.timeControl)) {
+  const clockWillEndIt =
+    !isUnlimitedTimeControl(session.gameState.timeControl) &&
+    session.gameState.moveCount > 0;
+  if (clockWillEndIt) {
     return null;
   }
   for (const player of [session.players.host, session.players.joiner]) {
