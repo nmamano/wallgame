@@ -88,8 +88,8 @@ export interface GameSession {
    * game record so completion can be verified server-side later.
    *
    * Deliberately NOT propagated by `createRematchSession`: a rematch is a
-   * different game (seats swap, and for freestyle the layout can refresh), so
-   * crediting it as the original puzzle would be wrong.
+   * different game (seats swap, and for freestyle the layout is regenerated),
+   * so crediting it as the original puzzle would be wrong.
    */
   puzzleId?: string;
   status: SessionStatus;
@@ -1176,21 +1176,21 @@ export const createRematchSession = (
     token: nanoid(),
     socketToken: nanoid(),
   };
-  // Freestyle rematch seed pattern: reuse the same initial conditions for 2 games
-  // (so both players experience the same position from each side), then refresh.
-  // Odd rematchNumber = reuse previous layout; even = fresh random layout.
+  // Freestyle is deliberately randomized, so every rematch gets a brand-new
+  // starting position rather than replaying the previous one from the other
+  // side: drop the layout and let `createGameState` generate a fresh one.
   const newRematchNumber = previous.rematchNumber + 1;
   let configForNewGame: PartialGameConfiguration = previous.config;
-  if (previous.config.variant === "freestyle" && newRematchNumber % 2 === 0) {
+  if (previous.config.variant === "freestyle") {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { variantConfig, ...rest } = previous.config;
     configForNewGame = rest;
   }
 
   // Build the state first so the session records the config the game is actually
-  // played with. On refresh turns `configForNewGame` has no variantConfig yet —
-  // `createGameState` generates it — and the next rematch reads the layout back
-  // out of `session.config`, so the two must not be allowed to drift apart.
+  // played with: for freestyle `configForNewGame` has no variantConfig and
+  // `createGameState` generates one, which the session must then carry so the
+  // players, spectators and replay all see the board that was actually played.
   const gameState = createGameState(configForNewGame);
 
   // Swap player IDs so the other player goes first in the rematch

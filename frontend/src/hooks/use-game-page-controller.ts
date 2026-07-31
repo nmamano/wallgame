@@ -200,7 +200,6 @@ interface StoredLocalGameConfig {
   nextSeatOrder?: [number, number];
   matchScore?: number[];
   matchDraws?: number;
-  localRematchNumber?: number;
 }
 
 const generateLocalGameId = () => Math.random().toString(36).substring(2, 15);
@@ -2740,8 +2739,8 @@ export function useGamePageController(gameId: string) {
       config: config ?? DEFAULT_CONFIG,
       players: playerTypes.length ? playerTypes : DEFAULT_PLAYERS,
     };
-    // Update stored config with the current game's actual config so that
-    // generated variant state (e.g. freestyle walls/pawns) carries forward.
+    // Keep the stored config in sync with what was actually played, so the next
+    // game inherits the same variant, board size and time control.
     if (config) {
       payload.config = config;
     }
@@ -2751,7 +2750,6 @@ export function useGamePageController(gameId: string) {
     ];
     payload.matchScore = [...localMatchScore];
     payload.matchDraws = matchDraws;
-    payload.localRematchNumber = (payload.localRematchNumber ?? 0) + 1;
     sessionStorage.setItem(
       `game-config-${nextGameId}`,
       JSON.stringify(payload),
@@ -2802,7 +2800,6 @@ export function useGamePageController(gameId: string) {
     let storedSeatOrder: [number, number] | null = null;
     let storedMatchScore: number[] | null = null;
     let storedMatchDraws: number | null = null;
-    let localRematchNumber = 0;
 
     if (typeof window !== "undefined") {
       const stored = sessionStorage.getItem(`game-config-${gameId}`);
@@ -2836,9 +2833,6 @@ export function useGamePageController(gameId: string) {
           }
           if (typeof parsed?.matchDraws === "number") {
             storedMatchDraws = parsed.matchDraws;
-          }
-          if (typeof parsed?.localRematchNumber === "number") {
-            localRematchNumber = parsed.localRematchNumber;
           }
         } catch {
           setHasLocalConfig(false);
@@ -2878,11 +2872,9 @@ export function useGamePageController(gameId: string) {
     // Build variantConfig based on variant
     const variantConfig: GameInitialState = (() => {
       if (resolvedConfig.variant === "freestyle") {
-        // Freestyle rematch seed pattern: reuse layout for 2 games (both sides),
-        // then generate fresh. Odd rematchNumber = reuse; even = fresh.
-        if (localRematchNumber % 2 === 1 && resolvedConfig.variantConfig) {
-          return resolvedConfig.variantConfig;
-        }
+        // Freestyle is deliberately randomized: every game gets a brand-new
+        // starting position, rematches included. Any layout carried in the
+        // stored config is from the previous game and is intentionally ignored.
         return generateFreestyleInitialState(
           resolvedConfig.boardWidth,
           resolvedConfig.boardHeight,
