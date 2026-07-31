@@ -111,7 +111,7 @@ Two are OFFICIAL; Easy Bot is deliberately not.
 |---|---|---|---|---|
 | `dw-transformer` | Superhuman Bot | yes | 1000 | ordinary games |
 | `dw-puzzle` | PuzzleBot | yes | 5000 (parallel 128), naive below -0.9 | puzzles |
-| `dw-easy` | Easy Bot | **no** | 1 (no root noise) | ordinary games |
+| `dw-easy` | Easy Bot | **no** | 1 (no root noise), 20% naive moves | ordinary games |
 
 Naming history: `dw-transformer` was "Transformer Bot (experimental)" until
 2026-07-29 (Nil). The bot ID never changed, which is what keeps its rating and
@@ -153,8 +153,38 @@ unaffected; only Easy Bot sets it to 0. Both halves are pinned together in
 `tests/game/bot-config-guards.test.ts`, because dropping either one leaves a bot
 that looks configured and is not.
 
-Levers if it still plays too strong are an older checkpoint or `--model simple`.
-(Internal detail — website copy must not describe sample counts or tree search.)
+**One sample was not enough.** Nil played it after that rollout and lost about
+8-2 — "really impressive", not an easy bot. The policy head alone is simply
+strong, so sample count had stopped being the lever. What ships instead (board
+task `9c0ac857`, Nil's design) is `"naiveMoveRate": 0.2` on `dw-easy` in the
+config file: a per-move coin flip, so roughly one move in five comes from the
+client's own naive walk-toward-the-goal policy and the rest still come from the
+engine. Per move, not per game — the bot plays well most of the time and drops
+the occasional weak move, rather than being a different bot for a whole game.
+
+It is deliberately a WRAPPER feature, in `official-custom-bot-client`. No C++
+change, no rebuild, no GPU, no transport branch: retuning the percentage is a
+config edit plus a client restart. It is also invisible to the server —
+`index.ts` strips `naiveMoveRate` (like `official`) before the attach message,
+so the wire shape is unchanged and no deploy has to land first.
+
+The cost is that the naive policy is STATEFUL — board, pawns, ply — and cannot
+be consulted for the first time on the move it is asked to play. So a SHADOW
+dumb-bot session runs alongside the engine session for the whole game:
+`start_game_session` and `apply_move` fan out to both, and only
+`evaluate_position` picks one. The engine stays the authority — its response is
+what goes on the wire, and on a naive turn only `bestMove` is swapped while the
+engine's evaluation is kept, so the eval stream stays continuous. Anything that
+suggests the shadow has drifted (an apply the engine refused, an apply the
+shadow refused, a ply that disagrees with the engine's, or an evaluation that
+fails) retires the shadow and the game finishes on pure engine moves. The naive
+path can only ever REPLACE a move the engine already produced, which is also why
+a naive answer of `---` (the policy's "I am stuck") falls back to the engine
+instead of passing the turn away. `tests/game/easy-bot-naive-mix.test.ts` pins
+the shadow's legality against a real `GameState`.
+
+(Internal detail — website copy must not describe sample counts, tree search, or
+the naive mix.)
 
 **PuzzleBot loses gracefully below -0.9** (`--losing_fallback
 --losing_fallback_eval -0.9`, board task `b4c2b191`, Nil's own design). In a

@@ -65,4 +65,13 @@ for (const bot of config.bots) {
       `color=${bot.appearance?.color ?? "(default)"} variants=[${variants}]`,
   );
   console.log(`      engine: ${knobs.join(" ")}`);
+  // The naive mix changes how the bot PLAYS without changing a single engine
+  // flag, so a preflight that only summarised the command line would report a
+  // deliberately weakened bot as identical to a full-strength one.
+  if ((bot.naiveMoveRate ?? 0) > 0) {
+    console.log(
+      `      naive mix: ${Math.round(bot.naiveMoveRate! * 100)}% of moves ` +
+        `come from the built-in naive policy, not the engine`,
+    );
+  }
 }

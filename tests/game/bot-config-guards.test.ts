@@ -138,6 +138,27 @@ describe("the tracked production bot config", () => {
     expect(pathsOf(easy).length).toBe(2);
   });
 
+  it("mixes naive moves into Easy Bot ONLY", () => {
+    // The knob that makes Easy Bot beatable: a share of its moves come from the
+    // client's naive walk-toward-the-goal policy instead of the engine. It is a
+    // client-side field — the engine command, the model and the sample count are
+    // all untouched — so the number here is the whole feature and a stray copy
+    // on another bot would quietly hobble a bot nobody asked to weaken.
+    //
+    // Pinned as a RANGE, not a value. The exact percentage is Nil's to tune by
+    // playing it, and a test that pinned 0.2 would fail on every retune while
+    // proving nothing; what must not change silently is that Easy Bot mixes and
+    // the other two do not.
+    const config = parsedProd();
+    const easy = config.bots.find((b) => b.botId === "dw-easy");
+    expect(easy!.naiveMoveRate).toBeGreaterThan(0);
+    expect(easy!.naiveMoveRate).toBeLessThan(1);
+    for (const other of ["dw-transformer", "dw-puzzle"]) {
+      const bot = config.bots.find((b) => b.botId === other);
+      expect(bot!.naiveMoveRate ?? 0).toBe(0);
+    }
+  });
+
   it("pins the losing-move fallback to PuzzleBot ONLY", () => {
     // PuzzleBot is losing by construction in every puzzle, and in a completely
     // lost position every line loses — so the search ranks moves whose outcomes

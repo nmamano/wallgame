@@ -20,14 +20,25 @@ import { botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-sc
 
 /**
  * A bot as written in a config file: the full runtime bot shape minus the
- * official token (the client supplies that from its own flag), plus the
- * `official` opt-out. `official: false` makes the client WITHHOLD the token
+ * official token (the client supplies that from its own flag), plus two
+ * CLIENT-ONLY fields. `official: false` makes the client WITHHOLD the token
  * for that bot, and the server then derives isOfficial from the token match.
+ *
+ * `naiveMoveRate` is the per-move probability (0-1) that the bot plays the
+ * built-in naive walk-toward-the-goal move instead of its engine's move — the
+ * knob that makes Easy Bot beatable without a weaker model or a rebuild. It is
+ * deliberately a plain number with no default: absent means 0, i.e. today's
+ * behaviour. Retuning it is a config edit plus a client restart.
+ *
+ * Neither field is part of the wire protocol. index.ts strips both before the
+ * attach message is built, so the server sees exactly the bot shape it always
+ * has and a change here never needs a server deploy to land first.
  */
 export const configBotSchema = botConfigBaseSchema
   .omit({ officialToken: true })
   .extend({
     official: z.boolean().optional(),
+    naiveMoveRate: z.number().min(0).max(1).optional(),
   })
   .strict();
 

@@ -71,6 +71,10 @@ CONFIG FILE FORMAT:
     }
   }
 
+  Optional per-bot field "naiveMoveRate" (0-1, default 0): the chance that any
+  given move comes from the built-in naive policy instead of the engine. Use it
+  to make a strong engine beatable without weakening the engine itself.
+
 EXAMPLES:
   # Multi-bot setup from config file
   wallgame-bot-client --client-id my-client --config bots.json
@@ -156,6 +160,7 @@ async function main(): Promise<void> {
   let bots: BotConfig[];
   let officialToken: string | undefined;
   let engineCommands: Map<string, string>;
+  let naiveMoveRates: Map<string, number>;
 
   // Load from config file (required)
   if (!values.config) {
@@ -178,7 +183,16 @@ async function main(): Promise<void> {
 
     engineCommands = new Map(Object.entries(config.engineCommands));
 
-    bots = config.bots.map(({ official, ...bot }) => ({
+    naiveMoveRates = new Map(
+      config.bots
+        .filter((bot) => (bot.naiveMoveRate ?? 0) > 0)
+        .map((bot) => [bot.botId, bot.naiveMoveRate!] as const),
+    );
+
+    // `official` and `naiveMoveRate` are config-file-only: destructured out
+    // here so the attach payload stays exactly the wire shape the server
+    // validates.
+    bots = config.bots.map(({ official, naiveMoveRate: _rate, ...bot }) => ({
       ...bot,
       officialToken: official !== false ? officialToken : undefined,
     }));
@@ -197,6 +211,7 @@ async function main(): Promise<void> {
     clientId,
     bots,
     engineCommands,
+    naiveMoveRates,
   });
 
   // Handle graceful shutdown

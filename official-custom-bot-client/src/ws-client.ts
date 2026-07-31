@@ -47,6 +47,11 @@ export interface BotClientOptions {
   clientId: string;
   bots: BotConfig[];
   engineCommands: Map<string, string>;
+  /**
+   * Per-bot chance (0-1) that a move comes from the built-in naive policy
+   * instead of the bot's engine. Bots absent from the map never do this.
+   */
+  naiveMoveRates?: Map<string, number>;
   clientName?: string;
   clientVersion?: string;
 }
@@ -63,6 +68,7 @@ interface ResolvedBotClientOptions {
   clientId: string;
   bots: BotConfig[];
   engineCommands: Map<string, string>;
+  naiveMoveRates: Map<string, number>;
   clientName: string;
   clientVersion: string;
 }
@@ -74,6 +80,11 @@ const RECONNECT_JITTER_MAX_MS = 2000;
 
 // Keepalive ping interval
 const PING_INTERVAL_MS = 30_000;
+
+// Standard notation for a move that takes no actions. Valid on the wire — the
+// server applies it as a pass — which is exactly why the naive policy must
+// never be allowed to answer with it.
+const PASS_NOTATION = "---";
 // Heartbeat file the monitor (scripts/bot-monitor.sh) polls for liveness.
 // Resolved from the repo root (this file lives at official-custom-bot-client/src/),
 // env-overridable — never tied to a hardcoded home directory.
@@ -102,6 +113,13 @@ export class BotClient {
   // V3: Session routing table (bgsId -> botId) for routing messages without botId
   private sessionRoutes: Map<string, string> = new Map();
 
+  // Sessions where an engine plays the game but a SHADOW dumb-bot session is
+  // kept alongside it, so a fraction of moves can come from the naive policy
+  // (see naiveMoveRates). A bgsId is in this set only while the shadow is known
+  // to be in lockstep with the engine; the first sign of drift removes it and
+  // the session finishes on pure engine moves.
+  private shadowSessions: Set<string> = new Set();
+
   // Reconnection state
   private reconnectAttempts: number = 0;
   private shouldReconnect: boolean = true;
@@ -121,6 +139,7 @@ export class BotClient {
       clientId: options.clientId,
       bots: options.bots,
       engineCommands: options.engineCommands,
+      naiveMoveRates: options.naiveMoveRates ?? new Map(),
       clientName: options.clientName ?? "wallgame-bot-client",
       clientVersion: options.clientVersion ?? "3.0.0",
     };
@@ -509,7 +528,13 @@ export class BotClient {
         };
         await this.send(errorResponse);
       } else {
-        await this.send(response as GameSessionStartedMessage);
+        const started = response as GameSessionStartedMessage;
+        // Only ever alongside a live engine session: a session the engine
+        // refused gets no end_game_session, so a shadow opened before this
+        // point would sit in the dumb bot's session map for the life of the
+        // process with nothing left to shadow.
+        if (started.success) this.startShadowSession(message);
+        await this.send(started);
       }
     } catch (error) {
       logger.error(`Engine error for start_game_session:`, error);
@@ -566,6 +591,7 @@ export class BotClient {
       // report success, and never tell the real engine to tear down — a silent
       // engine-side session leak.
       this.sessionRoutes.delete(message.bgsId);
+      this.endShadowSession(message);
       this.state = "waiting";
     }
   }
@@ -597,8 +623,17 @@ export class BotClient {
       const response = await engine.send(message);
       // Clamp evaluation to valid range
       const evalResponse = response as EvaluateResponseMessage;
+      // On a naive turn the ENGINE's evaluation is kept and only the move is
+      // swapped. Playing the naive move but reporting the naive bot's crude
+      // distance heuristic would make the eval jump around for reasons no
+      // observer could explain, and it would also throw away the engine's
+      // error handling above.
+      const naiveMove = evalResponse.success
+        ? this.rollNaiveMove(message, botId)
+        : null;
       const normalizedResponse: EvaluateResponseMessage = {
         ...evalResponse,
+        bestMove: naiveMove ?? evalResponse.bestMove,
         evaluation: clampEvaluation(evalResponse.evaluation),
       };
       await this.send(normalizedResponse);
@@ -642,6 +677,7 @@ export class BotClient {
 
     try {
       const response = await engine.send(message);
+      this.applyToShadowSession(message, response as MoveAppliedMessage);
       await this.send(response as MoveAppliedMessage);
     } catch (error) {
       logger.error(`Engine error for apply_move:`, error);
@@ -656,6 +692,136 @@ export class BotClient {
     }
 
     this.state = "waiting";
+  }
+
+  // ===========================================================================
+  // Shadow naive sessions
+  //
+  // A bot with a naiveMoveRate plays its engine's move most of the time and the
+  // built-in naive move the rest of the time. The naive bot is STATEFUL — it
+  // needs the board, the pawns and the ply — so it cannot be consulted for the
+  // first time on the move it is asked to play. It therefore shadows the whole
+  // game: start_game_session and apply_move go to BOTH, and only
+  // evaluate_position picks one.
+  //
+  // The engine stays the authority. Every wire response is the engine's; the
+  // shadow's replies are read for agreement and then discarded.
+  // ===========================================================================
+
+  /**
+   * Open a shadow session next to an engine session, if this bot mixes in naive
+   * moves. A shadow that fails to open is not an error for the game — the
+   * session just plays out on pure engine moves.
+   */
+  private startShadowSession(message: StartGameSessionMessage): void {
+    const rate = this.options.naiveMoveRates.get(message.botId) ?? 0;
+    if (rate <= 0) return;
+
+    const response = dumbBotStartSession(message);
+    if (!response.success) {
+      logger.warn(
+        `Naive shadow session ${message.bgsId} failed to start, engine moves only:`,
+        response.error,
+      );
+      return;
+    }
+
+    this.shadowSessions.add(message.bgsId);
+    logger.info(
+      `Naive shadow session open for ${message.bgsId} (rate ${rate}, bot ${message.botId})`,
+    );
+  }
+
+  /**
+   * Replay a move into the shadow session so it stays on the same position as
+   * the engine. Drift is the one failure that would matter — a naive move
+   * computed from a stale board is a move the server would reject — so the
+   * shadow's ply is compared against the engine's and any disagreement retires
+   * the shadow for the rest of the game.
+   */
+  private applyToShadowSession(
+    message: ApplyMoveMessage,
+    engineResponse: MoveAppliedMessage,
+  ): void {
+    if (!this.shadowSessions.has(message.bgsId)) return;
+
+    // A move the ENGINE refused must not advance the shadow, or the two end up
+    // a ply apart with nothing left to detect it — the engine's ply is the only
+    // thing the shadow is ever checked against.
+    if (!engineResponse.success) {
+      this.retireShadowSession(
+        message.bgsId,
+        `engine rejected ${message.move}: ${engineResponse.error}`,
+      );
+      return;
+    }
+
+    const shadowResponse = dumbBotApplyMove(message);
+    if (!shadowResponse.success) {
+      this.retireShadowSession(
+        message.bgsId,
+        `could not apply ${message.move}: ${shadowResponse.error}`,
+      );
+      return;
+    }
+    if (shadowResponse.ply !== engineResponse.ply) {
+      this.retireShadowSession(
+        message.bgsId,
+        `ply drift — engine at ${engineResponse.ply}, shadow at ${shadowResponse.ply}`,
+      );
+    }
+  }
+
+  private endShadowSession(message: EndGameSessionMessage): void {
+    if (!this.shadowSessions.delete(message.bgsId)) return;
+    dumbBotEndSession(message);
+  }
+
+  private retireShadowSession(bgsId: string, reason: string): void {
+    this.shadowSessions.delete(bgsId);
+    dumbBotEndSession({ type: "end_game_session", bgsId });
+    logger.warn(
+      `Naive shadow session ${bgsId} retired, engine moves only for the rest of the game: ${reason}`,
+    );
+  }
+
+  /**
+   * Decide this move: null means "play the engine's move".
+   *
+   * Every reason to decline is checked here rather than at the call site, so
+   * the naive path can only ever REPLACE a move the engine already produced —
+   * it can never be the reason a turn has no move at all. In particular the
+   * naive policy answers "---" (no actions) when it is stuck, and the server
+   * would apply that as a wasted turn.
+   */
+  private rollNaiveMove(
+    message: EvaluatePositionMessage,
+    botId: string | undefined,
+  ): string | null {
+    if (!botId || !this.shadowSessions.has(message.bgsId)) return null;
+
+    const rate = this.options.naiveMoveRates.get(botId) ?? 0;
+    if (Math.random() >= rate) return null;
+
+    const response = dumbBotEvaluate(message);
+    if (!response.success) {
+      this.retireShadowSession(
+        message.bgsId,
+        `evaluation failed at ply ${message.expectedPly}: ${response.error}`,
+      );
+      return null;
+    }
+    if (!response.bestMove || response.bestMove === PASS_NOTATION) {
+      logger.warn(
+        `Naive policy had no move at ply ${message.expectedPly}, using the engine's move`,
+      );
+      return null;
+    }
+
+    logger.info(
+      `Playing naive move ${response.bestMove} at ply ${message.expectedPly} (session ${message.bgsId})`,
+    );
+    return response.bestMove;
   }
 
   /**

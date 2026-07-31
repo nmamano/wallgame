@@ -79,6 +79,7 @@
       "botId": "dw-easy",
       "name": "Easy Bot",
       "official": false,
+      "naiveMoveRate": 0.2,
       "username": null,
       "appearance": {
         "color": "green",
