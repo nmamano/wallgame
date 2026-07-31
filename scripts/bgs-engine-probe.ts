@@ -78,7 +78,16 @@ const flag = (name: string, fallback: string): string => {
 const numFlag = (name: string, fallback: number) =>
   Number(flag(name, String(fallback)));
 
-const SSH_TARGET = flag("ssh", "nilo@desktop-053vvpl-1");
+// The GPU box this probe talks to is deployment-specific, and this repo is
+// public, so it is not hardcoded. Set WALLGAME_SSH_TARGET once in your shell
+// profile, or pass --ssh <user@host> per run.
+const SSH_TARGET = flag("ssh", process.env.WALLGAME_SSH_TARGET ?? "");
+if (!SSH_TARGET) {
+  console.error(
+    "No ssh target. Set WALLGAME_SSH_TARGET=<user@host> or pass --ssh <user@host>.",
+  );
+  process.exit(1);
+}
 const SCENARIO = flag("scenario", "corpus");
 const SAMPLES = numFlag("samples", 200);
 const PARALLEL = numFlag("parallel", 32);

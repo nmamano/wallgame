@@ -29,7 +29,8 @@
  * (temp file + rename) only after the full run self-validates, so an
  * existing good artifact can never be truncated or partially overwritten.
  *
- * Usage: bun scripts/filter-puzzle-candidates.ts [--ssh nilo@desktop-053vvpl-1]
+ * Usage: bun scripts/filter-puzzle-candidates.ts [--ssh user@gpu-host]
+ *        (or set WALLGAME_SSH_TARGET instead of passing --ssh)
  */
 
 import { spawn } from "bun";
@@ -65,14 +66,24 @@ import committedVerdicts from "../shared/domain/generated-custom-setup-verdicts.
  */
 const NEAR_THRESHOLD = 0.15;
 
+// The GPU box is deployment-specific, and this repo is public, so it is not
+// hardcoded. Set WALLGAME_SSH_TARGET once in your shell profile, or pass
+// --ssh <user@host> per run.
 const sshArgIndex = process.argv.indexOf("--ssh");
 const SSH_TARGET =
-  sshArgIndex >= 0 ? process.argv[sshArgIndex + 1] : "nilo@desktop-053vvpl-1";
+  sshArgIndex >= 0
+    ? process.argv[sshArgIndex + 1]
+    : (process.env.WALLGAME_SSH_TARGET ?? "");
 if (
   sshArgIndex >= 0 &&
   (!SSH_TARGET || SSH_TARGET.trim() === "" || SSH_TARGET.startsWith("--"))
 ) {
   throw new Error("--ssh requires a nonempty host value");
+}
+if (!SSH_TARGET) {
+  throw new Error(
+    "No ssh target. Set WALLGAME_SSH_TARGET=<user@host> or pass --ssh <user@host>.",
+  );
 }
 
 const ENGINE_MODEL = "tf_curriculum_model_73.trt";
