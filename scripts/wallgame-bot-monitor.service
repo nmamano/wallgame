@@ -1,8 +1,18 @@
 [Unit]
+# Health check for the wallgame bots: polls the public bot listing, alerts
+# Discord, and restarts the bot client when it can. See scripts/bot-monitor.sh.
+#
+# Install as a USER unit on a machine OTHER than the bot host:
+#   cp scripts/wallgame-bot-monitor.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now wallgame-bot-monitor.timer
+#
+# Config (webhook, bot host) goes in ~/.wallgame-monitor.env, which is NOT in
+# the repo - see scripts/bot-monitor.env.example.
 Description=Wallgame bot health check
-After=wallgame-bot.service
 
 [Service]
 Type=oneshot
-EnvironmentFile=/home/ubuntu/repos/wallgame/official-custom-bot-client/.env.prod
-ExecStart=/home/ubuntu/repos/wallgame/scripts/bot-monitor.sh
+# %h is the running user's home, so no username is baked in here. Adjust the
+# rest of the path to wherever your checkout lives.
+ExecStart=%h/nil/wallgame/scripts/bot-monitor.sh

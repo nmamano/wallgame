@@ -1,0 +1,75 @@
+[Unit]
+# Runs the official custom bot client as a service, replacing a hand-started
+# tmux session plus a `while true` supervisor loop.
+#
+# This is a USER unit. Install it at ~/.config/systemd/user/wallgame-bot.service,
+# not /etc/systemd/system. That choice matters:
+#   - `systemctl --user restart wallgame-bot` needs no sudo, so a remote health
+#     monitor can restart the bot over ssh without a sudoers rule.
+#   - It still starts at boot, PROVIDED lingering is enabled for the user
+#     (`loginctl enable-linger <user>`). Without lingering a user unit only runs
+#     while someone is logged in, which defeats the purpose.
+#
+# Install:
+#   loginctl enable-linger "$USER"
+#   mkdir -p ~/.config/systemd/user
+#   cp scripts/wallgame-bot.service ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now wallgame-bot
+Description=Wallgame bot client
+
+[Service]
+Type=simple
+
+# %h is the running user's home, so no username is baked into this file.
+# Adjust the rest of these paths to wherever your checkout and runtime live.
+WorkingDirectory=%h/nil/wallgame/official-custom-bot-client
+
+# bun is not on the default systemd PATH.
+Environment=PATH=%h/.bun/bin:/usr/local/bin:/usr/bin:/bin
+
+# Supplies OFFICIAL_BOT_TOKEN, BOT_CLIENT_ID and BOT_CONFIG_FILE. Gitignored,
+# because it holds a secret and identifies this particular deployment.
+EnvironmentFile=%h/nil/wallgame/official-custom-bot-client/.env.prod
+
+# NOTE: the client only accepts the token as a CLI flag, so it ends up in the
+# process argv and is visible in `ps`. The shell script this replaces did the
+# same, so it is not a regression - but teaching
+# official-custom-bot-client/src/index.ts to read OFFICIAL_BOT_TOKEN from the
+# environment is a small change that would remove the exposure.
+ExecStart=%h/.bun/bin/bun run start \
+    --client-id ${BOT_CLIENT_ID} \
+    --config ${BOT_CONFIG_FILE} \
+    --official-token ${OFFICIAL_BOT_TOKEN} \
+    --log-level info
+
+# Replaces the supervisor loop the shell script used.
+Restart=always
+RestartSec=10
+
+# A lot of past incident analysis references this exact log path, so do not
+# move it to the journal without updating the docs that point at it.
+StandardOutput=append:%h/logs/bot-client-transformer.log
+StandardError=append:%h/logs/bot-client-transformer.log
+
+[Install]
+WantedBy=default.target
+
+# --- Cutover notes, if replacing a running tmux session ----------------------
+#
+# 1. NEVER kill the last tmux session on a WSL host: the tmux server exits with
+#    it and WSL goes down too. Make sure another session exists first.
+# 2. Check for live games first - GET /api/games/live - and check the tail of
+#    the bot log for recent "Evaluating position" lines. The cutover drops any
+#    game in flight.
+# 3. Capture the log size BEFORE restarting, so an OLD "Engine started" line
+#    cannot satisfy the verification below:
+#      stat -c %s ~/logs/bot-client-transformer.log
+# 4. Verify by reading only what came after that offset:
+#      tail -c +<offset+1> ~/logs/bot-client-transformer.log
+#    Expect "Engine started for bot" for every bot, then "Successfully attached
+#    with N bot(s)". Then confirm the SERVER registered them - a unit being
+#    "active" is not evidence of that:
+#      /api/bots?variant=standard, /api/bots?variant=custom-setup-standard
+# 5. Rollback: `systemctl --user disable --now wallgame-bot`, then restart
+#    however it was started before.
