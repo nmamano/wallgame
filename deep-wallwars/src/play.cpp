@@ -172,11 +172,13 @@ folly::coro::Task<GameRecorder> evaluation_play_single(Board const& board, int i
     MCTS mcts1{red.model,
                board,
                {.max_parallelism = opts.max_parallel_samples,
+                .noise_factor = opts.noise_factor,
                 .seed = opts.seed * static_cast<std::uint32_t>(index)}};
 
     MCTS mcts2{blue.model,
                board,
                {.max_parallelism = opts.max_parallel_samples,
+                .noise_factor = opts.noise_factor,
                 .seed = opts.seed * static_cast<std::uint32_t>(index)}};
 
     XLOGF(INFO, "Starting game {} with {} as red and {} as blue.", index, red.name, blue.name);
@@ -282,6 +284,7 @@ folly::coro::Task<std::pair<std::vector<size_t>, std::vector<GameRecorder>>> run
             .samples = opts.samples,
             .max_parallel_samples = opts.max_parallel_samples,
             .move_limit = opts.move_limit,
+            .noise_factor = opts.noise_factor,
             .seed = static_cast<std::uint32_t>(opts.seed * (model1_idx + 1) * (model2_idx + 1))};
 
         auto game_tasks =
@@ -352,6 +355,54 @@ folly::coro::Task<std::vector<GameRecorder>> ranking_play(Board board, RankingPl
 
         all_recorders.insert(all_recorders.end(), tournament_recorders.begin(),
                              tournament_recorders.end());
+    }
+
+    co_return all_recorders;
+}
+
+folly::coro::Task<std::vector<GameRecorder>> round_robin_play(Board board,
+                                                              RankingPlayOptions opts) {
+    auto* executor = co_await folly::coro::co_current_executor;
+    std::vector<GameRecorder> all_recorders;
+
+    std::size_t const num_models = opts.models.size();
+    std::size_t const total_pairs = num_models * (num_models - 1) / 2;
+    std::size_t pair_index = 0;
+
+    for (std::size_t i = 0; i < num_models; ++i) {
+        for (std::size_t j = i + 1; j < num_models; ++j) {
+            ++pair_index;
+            XLOGF(INFO, "Round-robin pair {}/{}: {} vs {}", pair_index, total_pairs,
+                  opts.models[i].name, opts.models[j].name);
+
+            EvaluationPlayOptions eval_opts{
+                .model1 = opts.models[i],
+                .model2 = opts.models[j],
+                .samples = opts.samples,
+                .max_parallel_games = opts.max_parallel_games,
+                .max_parallel_samples = opts.max_parallel_samples,
+                .move_limit = opts.move_limit,
+                .noise_factor = opts.noise_factor,
+                .seed = static_cast<std::uint32_t>(opts.seed * (i + 1) * (j + 1))};
+
+            auto game_tasks = views::iota(0, opts.games_per_matchup) |
+                              views::transform([&](int game_idx) {
+                                  return evaluation_play_single(board, game_idx, eval_opts)
+                                      .scheduleOn(executor);
+                              });
+            auto matchup_recorders = co_await folly::coro::collectAllWindowed(
+                std::move(game_tasks), opts.max_parallel_games);
+
+            // Appended per pair rather than at the end, so a run that dies
+            // partway still leaves every completed pair on disk.
+            std::ofstream{opts.output_folder / "games.json", std::ios_base::app}
+                << all_to_json(matchup_recorders);
+            std::ofstream{opts.output_folder / "games.pgn", std::ios_base::app}
+                << all_to_pgn(matchup_recorders);
+
+            all_recorders.insert(all_recorders.end(), matchup_recorders.begin(),
+                                 matchup_recorders.end());
+        }
     }
 
     co_return all_recorders;

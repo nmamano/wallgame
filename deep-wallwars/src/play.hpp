@@ -56,6 +56,11 @@ struct EvaluationPlayOptions {
     int max_parallel_samples = 16;
     int move_limit = 100;
 
+    // Dirichlet noise mixed into the root priors. Set to 0 for a policy-only
+    // measurement: with a 1-sample search there is no tree to absorb the noise,
+    // so anything above 0 picks the move rather than perturbing the search.
+    float noise_factor = MCTS::Options{}.noise_factor;
+
     std::uint32_t seed = 42;
 };
 
@@ -70,6 +75,8 @@ struct RankingPlayOptions {
     int max_parallel_samples = 32;
     int move_limit = 100;
 
+    float noise_factor = MCTS::Options{}.noise_factor;
+
     std::uint32_t seed = 42;
 };
 
@@ -82,3 +89,9 @@ folly::coro::Task<std::vector<GameRecorder>> evaluation_play(Board board, int ga
 
 // Generates random tournaments between the models to generate ranking games for bayeselo.
 folly::coro::Task<std::vector<GameRecorder>> ranking_play(Board board, RankingPlayOptions opts);
+
+// Plays every unordered pair of models exactly once. Unlike ranking_play's
+// single-elimination brackets, coverage is complete and uniform, which is what
+// deterministic play (samples=1, noise_factor=0) needs: repeating a bracket
+// there would replay identical games rather than gather new evidence.
+folly::coro::Task<std::vector<GameRecorder>> round_robin_play(Board board, RankingPlayOptions opts);

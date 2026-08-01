@@ -11,6 +11,7 @@
 #include <chrono>
 #include <fstream>
 #include <iostream>
+#include <map>
 #include <memory>
 #include <mutex>
 #include <ranges>
@@ -64,6 +65,15 @@ DEFINE_bool(gui, false, "Use GUI instead of console for interactive mode");
 
 DEFINE_string(ranking, "", "Folder of *.trt models to rank against each other");
 DEFINE_int32(tournaments, 10, "Number of tournaments to run for ranking");
+DEFINE_bool(round_robin, false,
+            "Ranking mode: play every pair of models once instead of running "
+            "single-elimination brackets. Ignores -tournaments. Use this when play is "
+            "deterministic (-samples 1 -root_noise_factor 0), where repeating a bracket "
+            "would replay identical games.");
+DEFINE_double(root_noise_factor, MCTS::Options{}.noise_factor,
+              "Fraction of Dirichlet noise mixed into the root priors, in [0, 1]. "
+              "0 leaves the policy head untouched, which is what a 1-sample search needs "
+              "to be policy-only. Applies to ranking and evaluation modes.");
 DEFINE_int32(initial_model, 0, "Index of the initial model to use for ranking");
 
 DEFINE_bool(analyze, false,
@@ -166,6 +176,10 @@ std::string get_usage_message() {
         << "  Options:\n"
         << "    --tournaments N    # Number of tournaments to run (default 10)\n"
         << "    --initial_model N  # Index of the initial model to use for ranking (default 0)\n"
+        << "    --round_robin      # Play every pair once instead of brackets; ignores "
+           "--tournaments\n"
+        << "    --root_noise_factor F  # Dirichlet noise on root priors (default 0.25); use 0\n"
+        << "                           # with --samples 1 for a policy-only measurement\n"
         << "INTERACTIVE: Play against the AI\n"
         << "    ./deep_ww --interactive --model1 <model.trt | simple>\n"
         << "    ./deep_ww --interactive --model1 <model.trt | simple> --gui  # Use GUI instead of "
@@ -346,7 +360,10 @@ void interactive(EvaluationFunction const& eval_fn, Variant variant) {
 
 void ranking(nv::IRuntime& runtime, Variant variant) {
     std::filesystem::path ranking_folder(FLAGS_ranking);
-    std::map<std::filesystem::file_time_type, std::filesystem::path> model_paths;
+    // multimap, not map: models are ordered by mtime so that -initial_model drops
+    // the oldest ones, but copying several engines into the folder at once gives
+    // them identical timestamps, and a map would silently discard all but one.
+    std::multimap<std::filesystem::file_time_type, std::filesystem::path> model_paths;
     for (auto const& dir_entry : std::filesystem::directory_iterator{ranking_folder}) {
         if (dir_entry.path().extension() == ".trt") {
             model_paths.insert({dir_entry.last_write_time(), dir_entry.path()});
@@ -365,14 +382,17 @@ void ranking(nv::IRuntime& runtime, Variant variant) {
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
     XLOGF(INFO, "Collected {} models. Starting ranking now.", models.size());
 
-    auto recorders =
-        folly::coro::blockingWait(ranking_play(board, {.models = std::move(models),
-                                                       .output_folder = ranking_folder,
-                                                       .samples = FLAGS_samples,
-                                                       .games_per_matchup = FLAGS_games,
-                                                       .num_tournaments = FLAGS_tournaments,
-                                                       .seed = FLAGS_seed})
-                                      .scheduleOn(&thread_pool));
+    RankingPlayOptions ranking_opts{.models = std::move(models),
+                                    .output_folder = ranking_folder,
+                                    .samples = FLAGS_samples,
+                                    .games_per_matchup = FLAGS_games,
+                                    .num_tournaments = FLAGS_tournaments,
+                                    .noise_factor = static_cast<float>(FLAGS_root_noise_factor),
+                                    .seed = FLAGS_seed};
+
+    auto play = FLAGS_round_robin ? round_robin_play(board, std::move(ranking_opts))
+                                  : ranking_play(board, std::move(ranking_opts));
+    auto recorders = folly::coro::blockingWait(std::move(play).scheduleOn(&thread_pool));
 
     XLOGF(INFO, "Output written to {}.pgn/json.", (ranking_folder / "games").string());
 }
