@@ -209,6 +209,32 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
 }
 
 /**
+ * Looks up the display name a logged-in account should be shown under.
+ *
+ * @param authUserId - The auth provider's user ID (e.g., Kinde ID or test header ID)
+ * @returns The account's display name, or undefined if the account has no row yet
+ */
+export async function getDisplayNameForAuthUser(
+  authUserId: string,
+): Promise<string | undefined> {
+  const rows = await db
+    .select({
+      displayName: usersTable.displayName,
+      capitalizedDisplayName: usersTable.capitalizedDisplayName,
+    })
+    .from(userAuthTable)
+    .innerJoin(usersTable, eq(userAuthTable.userId, usersTable.userId))
+    .where(eq(userAuthTable.authUserId, authUserId))
+    .limit(1);
+
+  const row = rows[0];
+  if (!row) {
+    return undefined;
+  }
+  return row.capitalizedDisplayName ?? row.displayName;
+}
+
+/**
  * Gets userId from a Hono context (extracts Kinde user and converts to userId).
  * This is a convenience wrapper around getUserFromKinde for routes that only need the userId.
  *

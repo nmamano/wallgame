@@ -47,6 +47,7 @@ import {
   queryPastGames,
 } from "../db/game-queries";
 import { getRatingForAuthUser } from "../db/rating-helpers";
+import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import {
   getMatchingBots,
   getRecommendedBots,
@@ -67,6 +68,25 @@ export const addLobbyConnection = (ws: WebSocket) => {
 
 export const removeLobbyConnection = (ws: WebSocket) => {
   lobbyConnections.delete(ws);
+};
+
+/**
+ * Decides what name a seat is shown under. A logged-in seat always uses the
+ * account's own name: the browser sends whatever its settings cache holds,
+ * which is empty while the settings query is in flight and "Guest" until the
+ * login state resolves, and an empty name later reads as "not logged in".
+ * Guests keep the name they asked for.
+ */
+const resolveSeatDisplayName = async (
+  authUserId: string | undefined,
+  requestedDisplayName: string | undefined,
+): Promise<string | undefined> => {
+  const trimmed = requestedDisplayName?.trim();
+  const requested = trimmed === "" ? undefined : trimmed;
+  if (!authUserId) {
+    return requested;
+  }
+  return (await getDisplayNameForAuthUser(authUserId)) ?? requested;
 };
 
 export const broadcastLobbyUpdate = () => {
@@ -182,7 +202,10 @@ export const gamesRoute = new Hono()
         const { session, hostToken, hostSocketToken } = createGameSession({
           config: parsed.config,
           matchType: parsed.matchType,
-          hostDisplayName: parsed.hostDisplayName,
+          hostDisplayName: await resolveSeatDisplayName(
+            user?.id,
+            parsed.hostDisplayName,
+          ),
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: parsed.hostIsPlayer1,
           hostAuthUserId: user?.id,
@@ -384,7 +407,10 @@ export const gamesRoute = new Hono()
 
         const joinResult = joinGameSession({
           id,
-          displayName: parsed.displayName,
+          displayName: await resolveSeatDisplayName(
+            user?.id,
+            parsed.displayName,
+          ),
           appearance: parsed.appearance,
           authUserId: user?.id,
           elo: joinerElo,
@@ -570,7 +596,10 @@ export const botsRoute = new Hono()
             rated: false, // Bot games are unrated
           },
           matchType: "friend",
-          hostDisplayName: parsed.hostDisplayName,
+          hostDisplayName: await resolveSeatDisplayName(
+            user?.id,
+            parsed.hostDisplayName,
+          ),
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: hostIsPlayer1 ?? Math.random() < 0.5,
           hostAuthUserId: user?.id,
