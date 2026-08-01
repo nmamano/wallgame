@@ -558,7 +558,6 @@ export function Board({
               <polygon
                 points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
                 fill={arrowColor}
-                opacity={0.8}
               />
             </marker>
           </defs>
@@ -631,6 +630,10 @@ export function Board({
               : arrow.type === "best-move"
                 ? 4
                 : 5,
+          // Fade the whole arrow at once. Fading the line and the head
+          // separately makes them blend over each other where they overlap,
+          // so a translucent arrow reads as two shapes instead of one.
+          opacity,
         }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
           gridMetrics.height,
@@ -650,7 +653,6 @@ export function Board({
             <polygon
               points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
               fill={arrowColor}
-              opacity={opacity}
             />
           </marker>
         </defs>
@@ -661,7 +663,6 @@ export function Board({
           y2={end.y}
           stroke={arrowColor}
           strokeWidth={strokeWidth}
-          opacity={opacity}
           strokeDasharray={dashArray}
           strokeLinecap="round"
           strokeLinejoin="round"
@@ -787,7 +788,9 @@ export function Board({
       <svg
         key={`annotation-arrow-${from[0]}-${from[1]}-${to[0]}-${to[1]}-${index}`}
         className="absolute inset-0 pointer-events-none"
-        style={{ zIndex: 14 }} // Above pillars (z-index 12)
+        // Above pillars (z-index 12). Fade the whole arrow at once so the head
+        // does not blend over the line where the two overlap.
+        style={{ zIndex: 14, opacity }}
         viewBox={`0 0 ${Math.max(gridMetrics.width, 1)} ${Math.max(
           gridMetrics.height,
           1,
@@ -806,7 +809,6 @@ export function Board({
             <polygon
               points={`0 0, ${markerSize} ${markerRef}, 0 ${markerSize}`}
               fill={ANNOTATION_COLOR}
-              opacity={opacity}
             />
           </marker>
         </defs>
@@ -820,7 +822,6 @@ export function Board({
           strokeLinecap="round"
           strokeLinejoin="round"
           markerEnd={`url(#${markerId})`}
-          opacity={opacity}
         />
       </svg>
     );
