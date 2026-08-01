@@ -1,0 +1,243 @@
+=== ELO GEN 73 Thu Jul 23 00:06:21 UTC 2026 ===
+done classic 73 vs 36
+done classic 73 vs 67
+done classic 73 vs 70
+done classic 73 vs 71
+done classic 73 vs 72
+done standard 73 vs 36
+done standard 73 vs 67
+done standard 73 vs 70
+done standard 73 vs 71
+done standard 73 vs 72
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+PER_GEN_UPDATE_DONE
+=== ELO GEN 72 Thu Jul 23 00:45:53 UTC 2026 ===
+done classic 72 vs 36
+done classic 72 vs 66
+done classic 72 vs 69
+done classic 72 vs 70
+done classic 72 vs 71
+done standard 72 vs 36
+done standard 72 vs 66
+done standard 72 vs 69
+done standard 72 vs 70
+done standard 72 vs 71
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+PER_GEN_UPDATE_DONE
+=== ELO GEN 71 Thu Jul 23 01:26:38 UTC 2026 ===
+done classic 71 vs 36
+done classic 71 vs 65
+done classic 71 vs 68
+done classic 71 vs 69
+done classic 71 vs 70
+done standard 71 vs 36
+done standard 71 vs 65
+done standard 71 vs 68
+done standard 71 vs 69
+done standard 71 vs 70
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+Traceback (most recent call last):
+  File "/home/nilo/elo_tournament/plot_elo_full.py", line 2, in <module>
+    import matplotlib; matplotlib.use('Agg')
+    ^^^^^^^^^^^^^^^^^
+ModuleNotFoundError: No module named 'matplotlib'
+PER_GEN_UPDATE_DONE
+=== ELO GEN 70 Thu Jul 23 01:58:20 UTC 2026 ===
+done classic 70 vs 36
+done classic 70 vs 64
+done classic 70 vs 67
+done classic 70 vs 68
+done classic 70 vs 69
+done standard 70 vs 36
+done standard 70 vs 64
+done standard 70 vs 67
+done standard 70 vs 68
+done standard 70 vs 69
+[classic] last gens: 66:1394 67:1631 68:1498 69:1556 70:1590 71:1512 72:1695 73:1620
+[classic] peak: gen 72 at 1695; last two within 75 of peak
+[standard] last gens: 66:1802 67:1608 68:1785 69:1587 70:1617 71:1707 72:1784 73:1666
+[standard] peak: gen 66 at 1802; last two within 136 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 69 Thu Jul 23 02:42:15 UTC 2026 ===
+done classic 69 vs 36
+done classic 69 vs 63
+done classic 69 vs 66
+done classic 69 vs 67
+done classic 69 vs 68
+done standard 69 vs 36
+done standard 69 vs 63
+done standard 69 vs 66
+done standard 69 vs 67
+done standard 69 vs 68
+[classic] last gens: 66:1501 67:1628 68:1578 69:1568 70:1619 71:1547 72:1734 73:1644
+[classic] peak: gen 72 at 1734; last two within 90 of peak
+[standard] last gens: 66:1697 67:1677 68:1854 69:1713 70:1686 71:1746 72:1815 73:1712
+[standard] peak: gen 68 at 1854; last two within 142 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 68 Thu Jul 23 03:20:14 UTC 2026 ===
+done classic 68 vs 36
+done classic 68 vs 62
+done classic 68 vs 65
+done classic 68 vs 66
+done classic 68 vs 67
+done standard 68 vs 36
+done standard 68 vs 62
+done standard 68 vs 65
+done standard 68 vs 66
+done standard 68 vs 67
+[classic] last gens: 66:1505 67:1636 68:1567 69:1571 70:1622 71:1557 72:1740 73:1651
+[classic] peak: gen 72 at 1740; last two within 89 of peak
+[standard] last gens: 66:1723 67:1736 68:1809 69:1738 70:1707 71:1787 72:1844 73:1742
+[standard] peak: gen 72 at 1844; last two within 102 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 67 Thu Jul 23 04:03:59 UTC 2026 ===
+done classic 67 vs 36
+done classic 67 vs 61
+done classic 67 vs 64
+done classic 67 vs 65
+done classic 67 vs 66
+done standard 67 vs 36
+done standard 67 vs 61
+done standard 67 vs 64
+done standard 67 vs 65
+done standard 67 vs 66
+[classic] last gens: 66:1447 67:1619 68:1571 69:1557 70:1620 71:1560 72:1723 73:1643
+[classic] peak: gen 72 at 1723; last two within 81 of peak
+[standard] last gens: 66:1734 67:1697 68:1804 69:1739 70:1698 71:1793 72:1846 73:1742
+[standard] peak: gen 72 at 1846; last two within 104 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 66 Thu Jul 23 04:40:13 UTC 2026 ===
+done classic 66 vs 36
+done classic 66 vs 60
+done classic 66 vs 63
+done classic 66 vs 64
+done classic 66 vs 65
+done standard 66 vs 36
+done standard 66 vs 60
+done standard 66 vs 63
+done standard 66 vs 64
+done standard 66 vs 65
+[classic] last gens: 66:1464 67:1618 68:1571 69:1559 70:1617 71:1560 72:1727 73:1642
+[classic] peak: gen 72 at 1727; last two within 85 of peak
+[standard] last gens: 66:1665 67:1623 68:1732 69:1648 70:1621 71:1717 72:1769 73:1666
+[standard] peak: gen 72 at 1769; last two within 103 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 65 Thu Jul 23 05:13:57 UTC 2026 ===
+done classic 65 vs 36
+done classic 65 vs 59
+done classic 65 vs 62
+done classic 65 vs 63
+done classic 65 vs 64
+done standard 65 vs 36
+done standard 65 vs 59
+done standard 65 vs 62
+done standard 65 vs 63
+done standard 65 vs 64
+[classic] last gens: 66:1366 67:1517 68:1475 69:1469 70:1519 71:1462 72:1634 73:1547
+[classic] peak: gen 72 at 1634; last two within 87 of peak
+[standard] last gens: 66:1659 67:1631 68:1741 69:1638 70:1627 71:1718 72:1767 73:1667
+[standard] peak: gen 72 at 1767; last two within 100 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 64 Thu Jul 23 05:51:01 UTC 2026 ===
+done classic 64 vs 36
+done classic 64 vs 58
+done classic 64 vs 61
+done classic 64 vs 62
+done classic 64 vs 63
+done standard 64 vs 36
+done standard 64 vs 58
+done standard 64 vs 61
+done standard 64 vs 62
+done standard 64 vs 63
+[classic] last gens: 66:1284 67:1439 68:1418 69:1400 70:1441 71:1397 72:1565 73:1477
+[classic] peak: gen 72 at 1565; last two within 88 of peak
+[standard] last gens: 66:1487 67:1464 68:1561 69:1468 70:1465 71:1549 72:1601 73:1505
+[standard] peak: gen 72 at 1601; last two within 96 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 63 Thu Jul 23 06:43:09 UTC 2026 ===
+done classic 63 vs 36
+done classic 63 vs 57
+done classic 63 vs 60
+done classic 63 vs 61
+done classic 63 vs 62
+done standard 63 vs 36
+done standard 63 vs 57
+done standard 63 vs 60
+done standard 63 vs 61
+done standard 63 vs 62
+[classic] last gens: 66:1304 67:1441 68:1417 69:1406 70:1443 71:1400 72:1572 73:1481
+[classic] peak: gen 72 at 1572; last two within 91 of peak
+[standard] last gens: 66:1423 67:1401 68:1491 69:1417 70:1406 71:1489 72:1544 73:1448
+[standard] peak: gen 72 at 1544; last two within 95 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 62 Thu Jul 23 07:35:02 UTC 2026 ===
+done classic 62 vs 36
+done classic 62 vs 56
+done classic 62 vs 59
+done classic 62 vs 60
+done classic 62 vs 61
+done standard 62 vs 36
+done standard 62 vs 56
+done standard 62 vs 59
+done standard 62 vs 60
+done standard 62 vs 61
+[classic] last gens: 66:1300 67:1431 68:1395 69:1394 70:1430 71:1386 72:1561 73:1469
+[classic] peak: gen 72 at 1561; last two within 92 of peak
+[standard] last gens: 66:1364 67:1335 68:1417 69:1360 70:1345 71:1425 72:1485 73:1390
+[standard] peak: gen 72 at 1485; last two within 95 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 61 Thu Jul 23 08:24:26 UTC 2026 ===
+done classic 61 vs 36
+done classic 61 vs 55
+done classic 61 vs 58
+done classic 61 vs 59
+done classic 61 vs 60
+done standard 61 vs 36
+done standard 61 vs 55
+done standard 61 vs 58
+done standard 61 vs 59
+done standard 61 vs 60
+[classic] last gens: 66:1320 67:1453 68:1413 69:1413 70:1448 71:1404 72:1579 73:1487
+[classic] peak: gen 72 at 1579; last two within 92 of peak
+[standard] last gens: 66:1344 67:1323 68:1404 69:1346 70:1335 71:1414 72:1472 73:1379
+[standard] peak: gen 72 at 1472; last two within 93 of peak
+PER_GEN_UPDATE_DONE
+=== ELO GEN 60 Thu Jul 23 09:10:29 UTC 2026 ===
+done classic 60 vs 36
+done classic 60 vs 54
+done classic 60 vs 57
+done classic 60 vs 58
+done classic 60 vs 59
+done standard 60 vs 36
+done standard 60 vs 54
+done standard 60 vs 57
+done standard 60 vs 58
+done standard 60 vs 59
+[classic] last gens: 66:1345 67:1472 68:1432 69:1432 70:1466 71:1422 72:1598 73:1505
+[classic] peak: gen 72 at 1598; last two within 93 of peak
+[standard] last gens: 66:1353 67:1332 68:1412 69:1354 70:1342 71:1421 72:1480 73:1386
+[standard] peak: gen 72 at 1480; last two within 94 of peak
+PER_GEN_UPDATE_DONE
+BACKFILL_ALL_DONE

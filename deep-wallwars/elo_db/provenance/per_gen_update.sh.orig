@@ -1,0 +1,40 @@
+#!/bin/bash
+# Per-generation Elo update (policy 2026-07-17): model N vs N-1,N-2,N-3,N-6,36,
+# both variants, 40 games each; refit full graph; regenerate plots.
+# Usage: per_gen_update.sh N
+set -uo pipefail
+N="${1:?usage: per_gen_update.sh N}"
+DESK="nilo@desktop-053vvpl-1"
+SRC="nil/wallgame/deep-wallwars/models_12x10_tf_curriculum"
+ENG=$HOME/vs_super_engines
+DW=/home/nil/nil/wallgame/deep-wallwars/build-tests/deep_ww
+if [ ! -f "$ENG/model_$N.trt" ]; then
+  scp -q "$DESK:$SRC/model_$N.onnx" "$DESK:$SRC/model_$N.onnx.data" "$ENG/" || { echo "FETCH FAIL $N"; exit 1; }
+  trtexec "--onnx=$ENG/model_$N.onnx" "--saveEngine=$ENG/model_$N.trt" --fp16 > "$ENG/build_$N.log" 2>&1 || { echo "BUILD FAIL $N"; exit 1; }
+fi
+loc() { if [ -f "$ENG/model_$1.trt" ]; then echo "$ENG/model_$1.trt"; else echo "$HOME/elo_tournament/models/model_$1.trt"; fi; }
+OPPS=$(python3 -c "n=$N; print(' '.join(str(x) for x in sorted({n-1, n-2, n-3, n-6, 36} - {n}) if x >= 1))")
+for V in classic standard; do
+  OUT=$HOME/elo_tournament/ext_$V
+  WORK=$OUT/work
+  mkdir -p "$WORK"
+  for B in $OPPS; do
+    A=$N
+    lo=$((A<B ? A : B)); hi=$((A<B ? B : A))
+    PGN="$OUT/pair_${lo}_${hi}.pgn"
+    [ -s "$PGN" ] && continue
+    rm -f "$WORK"/model_*.trt "$WORK"/games.pgn "$WORK"/games.json
+    cp "$(loc $A)" "$WORK/model_$A.trt"; cp "$(loc $B)" "$WORK/model_$B.trt"
+    "$DW" --ranking "$WORK" -columns 12 -rows 10 -game_columns 8 -game_rows 8 -variant $V \
+      -games 4 -tournaments 10 -samples 400 -j 22 -seed 7 > "$OUT/run_${lo}_${hi}.log" 2>&1 \
+      || { echo "RUN FAIL $V $A vs $B"; continue; }
+    cp "$WORK/games.pgn" "$PGN"
+    echo "done $V $N vs $B"
+  done
+done
+python3 $HOME/elo_tournament/plot_elo_full.py classic
+python3 $HOME/elo_tournament/plot_elo_full.py standard
+# publish to the tracking dashboard on the desktop
+scp -q $HOME/elo_tournament/elo_plot_classic_full.png $HOME/elo_tournament/elo_plot_standard_full.png \
+  "$DESK:~/elo_plots/" || echo "WARN: plot publish to desktop failed"
+echo PER_GEN_UPDATE_DONE

@@ -264,3 +264,51 @@ Caveat to carry into any conclusion: this run covers one night of generations,
 so it can only speak to the EARLY curve. The transformer's "kept improving even
 when 8x8 dropped below 10% of self-play" claim lives at generations 40-83 and is
 out of reach here.
+
+## Outcome (2026-08-01)
+
+**The run finished.** `model_36` landed 18:22 PT on 2026-07-31; the supervisor
+logged `TARGET REACHED` and exited `rc=0` after 37531s, with zero failures in
+the log. Pace held at 66 min/generation to the end.
+
+**The measurement taken was not the one sketched above.** Rather than the
+per-generation ladder, Nil asked for all 72 models (transformer 1-36, ResNet
+1-36) in a single pool so both curves land on one comparable scale. Two things
+made that cheap:
+
+- **Policy-only play.** `-samples 1 -root_noise_factor 0` removes search
+  entirely, so each move is the network's own top choice. This measures what the
+  network learned rather than what MCTS can rescue, and it runs ~400x faster
+  than the 400-sample yardstick.
+- **A complete round-robin.** Under those settings play is deterministic, so a
+  pair yields exactly one game per colour assignment and repeating a bracket
+  would replay identical games. `deep_ww --round_robin` (added in `20c76d2`,
+  along with `--root_noise_factor` on the ranking path) plays all 2556 pairs
+  once, 2 games each: 5112 games per variant, ~15 min per variant.
+
+Result, weakest player normalised to 0, both variants fitted as one connected
+component of 72 players at 142 games each:
+
+| gen | classic tf | classic rn | standard tf | standard rn |
+| --- | ---------- | ---------- | ----------- | ----------- |
+| 1   | 16         | 75         | 76          | 108         |
+| 8   | 318        | 107        | 242         | 86          |
+| 16  | 999        | 159        | 613         | 76          |
+| 24  | 1119       | 189        | 986         | 146         |
+| 36  | 1353       | 407        | 918         | 265         |
+
+The two arms are level for the first three or four generations - the ResNet is
+in fact ahead at gen 1 in both variants - and the transformer separates
+decisively from about gen 8. Neither arm's newest model is its strongest: the
+transformer peaks at gen 33 (classic) and gen 32 (standard).
+
+**What this does and does not claim.** It compares policies at equal DATA
+budget: both arms spend 5000 self-play games per generation. It says nothing
+about the deployed agent's strength, where 400-sample MCTS partially compensates
+for a weaker network, and it is not an equal-COMPUTE comparison - the ResNet
+produces generations ~3x faster, so per GPU hour it would reach roughly gen 108
+in the time the transformer reaches 36. Nil decided on 2026-08-01 not to run the
+400-sample version; the policy plot answered the question he had.
+
+Every game from this run, and every historical Elo game, now lives in
+`deep-wallwars/elo_db/` with its settings recorded per experiment.

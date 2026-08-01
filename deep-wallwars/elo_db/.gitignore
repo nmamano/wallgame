@@ -1,0 +1,4 @@
+# Derived: rebuilt whole from sources/ by scripts/build.py, so it is not tracked.
+games.jsonl
+# Derived: written by scripts/fit_elo.py.
+ratings_*.json

@@ -1,0 +1,65 @@
+{
+  "tf_full_2026-07-16": {
+    "arch": "tf",
+    "date": "2026-07-16",
+    "board": "8x8",
+    "samples": 400,
+    "games_per_pairing": 80,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -samples 400 -games 4 -tournaments 20 -j 22 -seed 7",
+    "script": "elo_run.sh (on auntie, not the desktop)",
+    "sources": [
+      "games_full_classic.pgn",
+      "games_full_standard.pgn"
+    ],
+    "notes": "Round-robin over generations 10-36. Provenance recovered 2026-08-01 from ~/elo_run.sh on auntie: SAMPLES=400, GAMES=4, TOURNEYS=20 (so 80 games per pairing, twice the later ladder's 40), same 8x8 board and 12x10 frame, same seed 7. Corroborated by elo_tournament/models/games.pgn on auntie matching games_full_standard.pgn byte-for-byte in size. NOT byte-proven: that the .trt engines (built 2026-07-14) are the same weights as the later generations of the same number. TensorRT engines are not reproducible across builds, so no hash comparison is possible; the evidence is that the curriculum is one continuous run with consistent generation numbering. Root noise: MCTS::Options defaults noise_factor to 0.25 and evaluation_play_single never overrides it, so this experiment was played with 25% Dirichlet noise mixed into the root priors. Nothing recorded that at the time; established by code inspection 2026-08-01.",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)"
+  },
+  "tf_pergen_2026-07-17": {
+    "arch": "tf",
+    "date": "2026-07-17/2026-07-23",
+    "board": "8x8",
+    "samples": 400,
+    "games_per_pairing": 40,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -games 4 -tournaments 10 -samples 400 -j 22 -seed 7",
+    "script": "per_gen_update.sh",
+    "sources": [
+      "ext_classic/pair_*.pgn",
+      "ext_standard/pair_*.pgn"
+    ],
+    "notes": "Per-generation ladder: model N vs N-1, N-2, N-3, N-6 and a fixed anchor at 36, both variants. Settings verified stable by diffing per_gen_update.sh against per_gen_update.sh.orig - the only differences are file paths and which python runs the plot. Generations 60-73 were filled in by run_backfill.sh on 2026-07-23; per-generation dates are in provenance/elo_backfill.log. Root noise: MCTS::Options defaults noise_factor to 0.25 and evaluation_play_single never overrides it, so this experiment was played with 25% Dirichlet noise mixed into the root priors. Nothing recorded that at the time; established by code inspection 2026-08-01.",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)"
+  },
+  "tf_vs_sitebot_2026-07": {
+    "arch": "tf",
+    "date": "2026-07",
+    "board": "8x8",
+    "samples": 400,
+    "games_per_pairing": 30,
+    "engine_flags": null,
+    "script": null,
+    "sources": [
+      "super_results.json"
+    ],
+    "notes": "Transformer generations against the fixed site bots (classic = 8x8_750000, standard = model_27). Stored as W/L/D aggregates, not individual games, so rows built from this experiment are marked aggregate=true - the per-game records are synthesised from the counts and carry no move data. equal_samples was recorded true. Root noise: MCTS::Options defaults noise_factor to 0.25 and evaluation_play_single never overrides it, so this experiment was played with 25% Dirichlet noise mixed into the root priors. Nothing recorded that at the time; established by code inspection 2026-08-01.",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)"
+  },
+  "rr72_policy_2026-08-01": {
+    "arch": null,
+    "date": "2026-08-01",
+    "board": "8x8",
+    "samples": 1,
+    "games_per_pairing": 2,
+    "noise_factor": 0.0,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -round_robin -samples 1 -root_noise_factor 0 -games 2 -j 22 -seed 7",
+    "script": "deep_ww --round_robin, added in commit 20c76d2",
+    "sources": [
+      "rr72_classic/games.pgn",
+      "rr72_standard/games.pgn"
+    ],
+    "notes": "Policy-only measurement: one sample means no search, and noise_factor 0 leaves the policy head untouched, so each move is the network's own top choice. Complete round-robin over all 72 engines (transformer gens 1-36 as tf_model_N.trt, ResNet gens 1-36 as rn_model_N.trt), every pair once, two games per pair so each side plays both colours. Play is deterministic under these settings, so two games per pair is the whole of the available information - more games per pair return duplicates. arch is null because the engine filenames carry it."
+  }
+}
