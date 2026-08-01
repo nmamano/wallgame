@@ -4,14 +4,18 @@ import {
   resolvePastGameWinner,
 } from "../../../shared/domain/past-games";
 
+export interface PastGamePlayerView {
+  label: string;
+  isWinner: boolean;
+}
+
 export interface PastGameRowView {
   gameId: string;
   variant: PastGameSummary["variant"];
   rated: boolean;
   timeControlLabel: string;
   boardSizeLabel: string;
-  playersLabel: string;
-  winnerLabel: string | null;
+  players: PastGamePlayerView[];
   movesCount: number;
   views: number;
   dateLabel: string;
@@ -29,15 +33,19 @@ const formatBoardSize = (game: PastGameSummary): string => {
   return `${bucket} (${game.boardWidth}x${game.boardHeight})`;
 };
 
-const formatPlayers = (game: PastGameSummary): string => {
+const formatPlayers = (game: PastGameSummary): PastGamePlayerView[] => {
+  // Null unless exactly one side ranked first, so draws mark nobody.
+  const winner = resolvePastGameWinner(game.players);
   return [...game.players]
     .sort((a, b) => a.playerOrder - b.playerOrder)
     .map((player) => {
       const rating =
         player.ratingAtStart != null ? ` (${player.ratingAtStart})` : "";
-      return `${player.displayName}${rating}`;
-    })
-    .join(" vs ");
+      return {
+        label: `${player.displayName}${rating}`,
+        isWinner: winner !== null && player.outcomeRank === 1,
+      };
+    });
 };
 
 const formatDate = (timestamp: number): string => {
@@ -49,7 +57,6 @@ const formatDate = (timestamp: number): string => {
 };
 
 export const presentPastGameRow = (game: PastGameSummary): PastGameRowView => {
-  const winner = resolvePastGameWinner(game.players)?.displayName ?? null;
   const timeControlLabel =
     game.timeControl === "custom" ? "Custom" : formatLabel(game.timeControl);
 
@@ -59,8 +66,7 @@ export const presentPastGameRow = (game: PastGameSummary): PastGameRowView => {
     rated: game.rated,
     timeControlLabel,
     boardSizeLabel: formatBoardSize(game),
-    playersLabel: formatPlayers(game),
-    winnerLabel: winner,
+    players: formatPlayers(game),
     movesCount: game.movesCount,
     views: game.views,
     dateLabel: formatDate(game.startedAt),

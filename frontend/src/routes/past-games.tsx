@@ -25,7 +25,7 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Loader2 } from "lucide-react";
+import { Crown, Eye, Loader2 } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { api } from "@/lib/api";
 import type { PastGamesResponse } from "../../../shared/contracts/games";
@@ -410,14 +410,30 @@ function PastGames() {
                     <TableCell>{row.timeControlLabel}</TableCell>
                     <TableCell>{row.boardSizeLabel}</TableCell>
                     <TableCell>
-                      <span className={row.winnerLabel ? "font-semibold" : ""}>
-                        {row.playersLabel}
-                      </span>
-                      {row.winnerLabel && (
-                        <Badge className="ml-2 text-xs" variant="secondary">
-                          Winner: {row.winnerLabel}
-                        </Badge>
-                      )}
+                      {row.players.map((player, index) => (
+                        <span key={`${row.gameId}-player-${index}`}>
+                          {index > 0 && (
+                            <span className="mx-1 text-muted-foreground">
+                              vs
+                            </span>
+                          )}
+                          <span
+                            className={
+                              player.isWinner
+                                ? "font-semibold whitespace-nowrap"
+                                : "whitespace-nowrap"
+                            }
+                          >
+                            {player.isWinner && (
+                              <Crown
+                                className="inline-block w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500"
+                                aria-label="Winner"
+                              />
+                            )}
+                            {player.label}
+                          </span>
+                        </span>
+                      ))}
                     </TableCell>
                     <TableCell>{row.movesCount}</TableCell>
                     <TableCell>{row.views}</TableCell>
