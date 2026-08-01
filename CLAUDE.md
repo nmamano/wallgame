@@ -46,9 +46,14 @@ bun run format                 # Format with Prettier
 bun run lint                   # Lint with ESLint (auto-fix)
 
 # Testing & CI
-bun run test                   # Run tests (uses WSL)
+bun run test                   # Run tests (needs Docker: each integration file
+                               #   starts its own Postgres via Testcontainers)
+bun run test:wsl               # Same, from a Windows shell via WSL
 bun run ci                     # Full CI: format check, lint, test, build
 ```
+
+Every push also runs format check, lint, build and the full suite on GitHub
+Actions (`.github/workflows/ci.yml`).
 
 For Deep-Wallwars build and training instructions, see `info/deep-wallwars-integration.md`.
 
@@ -171,7 +176,7 @@ tests/
 └── game/            # Game logic tests
 ```
 
-Run with `bun run test` (uses WSL).
+Run with `bun run test` (or `bun run test:wsl` from a Windows shell).
 
 ### Database (`drizzle/`)
 

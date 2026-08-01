@@ -172,8 +172,10 @@ async function playPuzzleGame(args: {
   });
 
   if (args.ending === "draw") {
+    // One call finishes the game: the offer/accept handshake lives in the
+    // socket layer, and store-level acceptDraw applies the agreed draw
+    // outright. Calling it for both seats throws.
     acceptDraw({ id: session.id, playerId: 1 });
-    acceptDraw({ id: session.id, playerId: 2 });
   } else {
     resignGame({
       id: session.id,

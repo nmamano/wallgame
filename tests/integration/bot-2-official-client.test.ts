@@ -357,10 +357,13 @@ const defaultVariants = {
     boardHeight: { min: 3, max: 15 },
     recommended: [{ boardWidth: 5, boardHeight: 5 }],
   },
+  // Freestyle stopped being 12x10-only in a8d2dad, so it now needs recommended
+  // sizes like every other configurable variant. An empty list here is what the
+  // server rejects with INVALID_BOT_CONFIG.
   freestyle: {
     boardWidth: { min: 3, max: 15 },
     boardHeight: { min: 3, max: 15 },
-    recommended: [],
+    recommended: [{ boardWidth: 5, boardHeight: 5 }],
   },
 };
 

@@ -1079,6 +1079,14 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
+    // Joiner (Player 2) replies. Both sides must move for the resignation below
+    // to be a real result: quitting before that is an abort worth no points.
+    /* .. ..... ..
+       .. C1/C2 ..
+       M1 ..... M2
+    */
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
+
     // Host resigns game 3
     await sendActionRequestAndExpectAck(socketA, "resign");
 

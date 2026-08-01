@@ -183,10 +183,11 @@ async function createFinishedGame(args: {
   });
 
   if (args.ending === "draw") {
-    // Both sides agreeing is the path that produces a winner-less result,
-    // which is exactly what gives two rank-1 rows.
+    // A draw is the path that produces a winner-less result, which is exactly
+    // what gives two rank-1 rows. One call finishes the game: the offer/accept
+    // handshake lives in the socket layer, and store-level acceptDraw applies
+    // the agreed draw outright. Calling it for both seats throws.
     acceptDraw({ id: session.id, playerId: 1 });
-    acceptDraw({ id: session.id, playerId: 2 });
   } else {
     resignGame({
       id: session.id,

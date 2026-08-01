@@ -370,7 +370,10 @@ describe("ranking integration", () => {
     await socketB.waitForMessage("state");
     await socketB.waitForMessage("match-status");
 
+    // Both sides must move for the resignation to be a rated result: quitting
+    // before that is an abort, and an abort leaves both ratings untouched.
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
+    await sendMoveAndWaitForState(1, [socketA, socketB], "Cb2", 3);
 
     await sendActionRequestAndExpectAck(socketA, "resign");
 
