@@ -23,3 +23,7 @@ deep-wallwars/assets/models/*.onnx
 # Engine game dumps used as local fixtures. frontend/public/ is copied verbatim
 # into the build, so anything committed here becomes a public URL on the site.
 frontend/public/replays/
+# Private ops runbooks (bot restarts, the GPU desktop, deploys). They name
+# private hostnames, secret file paths and token locations, and this repo is
+# public, so they stay local. Keep them here, not in info/, which is tracked.
+ops-private/
