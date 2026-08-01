@@ -450,10 +450,13 @@ cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only
 ```
 
 Clean export so another agent's uncommitted work never ships. fly CLI is authenticated on
-auntie. `bun run ci` **cannot** pass on auntie: `bun run test` shells to `wsl.exe` and the
-integration tests need Docker. Verify with `bun run build` (0 TS errors) and
-`bun x eslint .`. prettier is pinned (3.8.3) and the repo formatted once (`6d08c66`);
-`bun x prettier --check .` must stay clean.
+auntie. `bun run ci` **cannot** pass on auntie, because `bun run test` shells to `wsl.exe`,
+which does not exist here. The tests themselves do run: Docker was installed on auntie on
+2026-08-01, so `sg docker -c 'bun scripts/run-tests.ts'` runs the whole suite including the
+Testcontainers ones. Use that script rather than a bare `bun test` over several integration
+files - each file starts its own Postgres and HTTP server, so they must not share a process.
+Also verify with `bun run build` (0 TS errors) and `bun x eslint .`. prettier is pinned
+(3.8.3) and the repo formatted once (`6d08c66`); `bun x prettier --check .` must stay clean.
 
 ---
 
