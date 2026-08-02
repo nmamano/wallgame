@@ -768,6 +768,88 @@ describe("custom bot WebSocket integration V3", () => {
     }
   }, 60000);
 
+  /**
+   * A human who moves before the engine answers must not cost the bot the game
+   * (investigated for board task 5d076a25).
+   *
+   * The server keeps "one evaluation ahead": after the bot moves it asks the
+   * engine to evaluate the position the HUMAN is about to move from. That
+   * request is outstanding for as long as the human is thinking, so a human
+   * who moves quickly lands on a BGS that already has one in flight — and
+   * applyBgsMove and requestEvaluation both THROW rather than queue when
+   * pendingResolvers already holds an entry for the game. Any throw on that
+   * path resigns the bot.
+   *
+   * What saves it is the poll in the move handler, which waits up to 10s for
+   * the in-flight request to clear before touching the BGS. This pins that:
+   * without it, every human faster than their opponent's engine would hand the
+   * bot a resignation.
+   */
+  it("does not resign the bot when the human moves during the look-ahead evaluation", async () => {
+    const hostUserId = "host-race-probe";
+    const clientId = "test-client-race";
+    const botId = "race-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: false,
+      boardWidth: 3,
+      boardHeight: 3,
+      variantConfig: buildStandardInitialState(3, 3),
+    };
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [createTestBotConfig(botId, "Race Bot")]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const { gameId, socketToken } = await createGameVsBot(
+        hostUserId,
+        compositeId,
+        gameConfig,
+        true,
+      );
+      humanSocket = await openHumanSocket(hostUserId, gameId, socketToken);
+
+      const startSession = await botSocket.waitForMessage("start_game_session");
+      const bgsId = startSession.bgsId;
+      botSocket.sendGameSessionStarted(bgsId, true);
+
+      // The look-ahead evaluation for the human's first turn.
+      const lookAhead = await botSocket.waitForMessage("evaluate_position");
+      expect(lookAhead.expectedPly).toBe(0);
+
+      // DELIBERATELY LEAVE IT OUTSTANDING and move as a fast human would.
+      const { moveFromStandardNotation } =
+        await import("../../shared/domain/standard-notation");
+      const move = moveFromStandardNotation("---", 3);
+      humanSocket.ws.send(JSON.stringify({ type: "submit-move", move }));
+
+      // Give the server time to reach the move handler with the request still
+      // in flight, then answer the evaluation as a real engine eventually would.
+      await sleep(300);
+      botSocket.sendEvaluateResponse(bgsId, 0, "---", 0.0);
+
+      // The game must still be live. A regression here shows up as
+      // result.reason "resignation" with the bot as the loser.
+      const outcome = await waitForTurn(humanSocket, 1);
+      expect(outcome.state.result).toBeUndefined();
+      expect(outcome.state.status).toBe("playing");
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+    }
+  }, 60000);
+
   it("rejects attach with invalid protocol version", async () => {
     const botSocket = await openBotSocket();
 
