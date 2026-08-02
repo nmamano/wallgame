@@ -25,6 +25,7 @@ import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { SharePuzzleButton } from "@/components/share-puzzle-button";
+import { generatedPuzzleSlug } from "@/lib/puzzle-links";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
@@ -541,7 +542,10 @@ function GeneratedPuzzlesSection() {
               share={
                 <SharePuzzleButton
                   kind="generated"
-                  id={puzzle.id}
+                  // The number, not the row id: a link reading
+                  // /puzzles/generated/7 is the point. See puzzle-links.ts for
+                  // what that costs when a puzzle is retired.
+                  id={generatedPuzzleSlug(puzzle)}
                   puzzleName={puzzle.displayName}
                 />
               }

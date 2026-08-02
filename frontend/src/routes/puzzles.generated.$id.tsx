@@ -12,6 +12,7 @@ import {
 } from "@/lib/api";
 import { saveGameHandshake } from "@/lib/game-session";
 import { useSettings } from "@/hooks/use-settings";
+import { resolveGeneratedPuzzle } from "@/lib/puzzle-links";
 
 /**
  * A generated puzzle's own address, so one can be sent to someone.
@@ -47,7 +48,11 @@ function GeneratedPuzzleLauncher() {
   const botsQuery = useQuery(puzzleBotsQueryOptions);
   const [error, setError] = useState<string | null>(null);
 
-  const puzzle = puzzlesQuery.data?.puzzles.find((p) => p.id === id);
+  // `id` is a puzzle NUMBER on links minted since 2026-08-02, and a row id on
+  // ones minted before that; the resolver takes either.
+  const puzzle = puzzlesQuery.data
+    ? resolveGeneratedPuzzle(puzzlesQuery.data.puzzles, id)
+    : undefined;
   const officialBot = botsQuery.data?.bots.find((bot) => bot.isOfficial);
 
   // One launch per visit. Settings and query data can each land in more than

@@ -1,7 +1,9 @@
 import { describe, expect, it } from "bun:test";
 import {
+  generatedPuzzleSlug,
   puzzlePath,
   puzzleShareUrl,
+  resolveGeneratedPuzzle,
   type PuzzleKind,
 } from "../../frontend/src/lib/puzzle-links";
 import { getPuzzleIds } from "../../shared/domain/puzzles";
@@ -74,6 +76,67 @@ describe("puzzle share links", () => {
       ...getLevelIds().map((id) => puzzleShareUrl("campaign", id, ORIGIN)),
     ];
     expect(new Set(links).size).toBe(links.length);
+  });
+
+  describe("generated links carry the puzzle number", () => {
+    const listing = [
+      { id: "uN9TKDUp0T", displayName: "Puzzle 1" },
+      { id: "thfcTeXikd", displayName: "Puzzle 2" },
+      { id: "mPJ-d8r2yM", displayName: "Puzzle 7" },
+    ];
+
+    it("builds a link on the number a player can actually read", () => {
+      expect(generatedPuzzleSlug(listing[2])).toBe("7");
+      expect(
+        puzzleShareUrl("generated", generatedPuzzleSlug(listing[2]), ORIGIN),
+      ).toBe("https://wallgame.io/puzzles/generated/7");
+    });
+
+    it("resolves a numeric link back to that puzzle", () => {
+      expect(resolveGeneratedPuzzle(listing, "7")?.id).toBe("mPJ-d8r2yM");
+      expect(resolveGeneratedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
+    });
+
+    it("still resolves an id link, so links minted earlier keep working", () => {
+      // The share links handed out before numbers existed are row ids.
+      expect(resolveGeneratedPuzzle(listing, "mPJ-d8r2yM")?.displayName).toBe(
+        "Puzzle 7",
+      );
+    });
+
+    it("resolves by NAME order, not array order", () => {
+      // The listing re-sorts by likes, so position is not the number. Sorting
+      // the array must not change what a link points at.
+      const reordered = [listing[2], listing[0], listing[1]];
+      expect(resolveGeneratedPuzzle(reordered, "7")?.id).toBe("mPJ-d8r2yM");
+      expect(resolveGeneratedPuzzle(reordered, "1")?.id).toBe("uN9TKDUp0T");
+    });
+
+    it("answers nothing for a number no puzzle has", () => {
+      // A retired tail number must miss rather than fall through to a neighbour.
+      expect(resolveGeneratedPuzzle(listing, "99")).toBeUndefined();
+      expect(resolveGeneratedPuzzle(listing, "unknown-id")).toBeUndefined();
+    });
+
+    it("documents that a number is NOT stable across a retirement", () => {
+      // Nil accepted this on 2026-08-02. Retiring a puzzle renumbers the
+      // survivors, so the same link resolves to a different puzzle afterwards.
+      // Pinned so nobody later "fixes" numbering while believing links are safe.
+      const afterRetiringPuzzle1 = [
+        { id: "thfcTeXikd", displayName: "Puzzle 1" },
+        { id: "mPJ-d8r2yM", displayName: "Puzzle 6" },
+      ];
+      expect(resolveGeneratedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
+      expect(resolveGeneratedPuzzle(afterRetiringPuzzle1, "1")?.id).toBe(
+        "thfcTeXikd",
+      );
+    });
+
+    it("falls back to the row id when a name carries no number", () => {
+      const odd = [{ id: "abc123", displayName: "Special Puzzle" }];
+      expect(generatedPuzzleSlug(odd[0])).toBe("abc123");
+      expect(resolveGeneratedPuzzle(odd, "abc123")?.id).toBe("abc123");
+    });
   });
 
   it("covers every kind the type allows", () => {

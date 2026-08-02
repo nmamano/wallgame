@@ -16,9 +16,65 @@
  * the listing page, the two in-page puzzle headers) and a fourth reads one back
  * out of the address bar. A share link that disagrees with the route that
  * serves it is a broken link, so there is one definition of both.
+ *
+ * GENERATED LINKS USE THE PUZZLE'S NUMBER, and that number is not permanent.
+ * Retiring a puzzle renumbers the survivors to keep the listing contiguous
+ * (`scripts/retire-puzzles.ts`), so a link shared before a retirement can
+ * afterwards resolve to a DIFFERENT puzzle rather than to nothing. Nil was
+ * shown that trade and chose it (2026-08-02) over a stable id, because a
+ * shareable link that reads `/puzzles/generated/7` is worth more to him than
+ * one that survives renumbering. The stable alternative is the row id, which
+ * is still accepted here so links minted before this change keep working.
  */
 
 export type PuzzleKind = "scripted" | "campaign" | "generated";
+
+/** Anything with the two fields a generated link is built from or matched against. */
+export interface GeneratedPuzzleRef {
+  id: string;
+  displayName: string;
+}
+
+/**
+ * The number shown to a player, read off the display name ("Puzzle 7" -> 7).
+ *
+ * Read from the NAME rather than from array position because the listing can
+ * be re-sorted (by likes), so position there is not the puzzle's number. Falls
+ * back to null on a name that does not end in a number, which keeps a renamed
+ * or historical row out of the numeric namespace instead of guessing.
+ */
+export function generatedPuzzleNumber(displayName: string): number | null {
+  const match = /(\d+)\s*$/.exec(displayName);
+  if (!match) return null;
+  const value = Number(match[1]);
+  return Number.isInteger(value) && value > 0 ? value : null;
+}
+
+/** What a generated link should carry: the number when it has one, else the id. */
+export function generatedPuzzleSlug(puzzle: GeneratedPuzzleRef): string {
+  const number = generatedPuzzleNumber(puzzle.displayName);
+  return number === null ? puzzle.id : String(number);
+}
+
+/**
+ * Resolve the `$id` segment of a generated link back to a puzzle.
+ *
+ * Accepts both forms on purpose: an all-digits segment is a puzzle number,
+ * anything else is a row id (the shape links used before numbers existed).
+ * The two namespaces cannot collide because row ids are nanoids.
+ */
+export function resolveGeneratedPuzzle<T extends GeneratedPuzzleRef>(
+  puzzles: readonly T[],
+  param: string,
+): T | undefined {
+  if (/^\d+$/.test(param)) {
+    const wanted = Number(param);
+    return puzzles.find(
+      (puzzle) => generatedPuzzleNumber(puzzle.displayName) === wanted,
+    );
+  }
+  return puzzles.find((puzzle) => puzzle.id === param);
+}
 
 /** The in-app path for a puzzle of the given kind. */
 export function puzzlePath(kind: PuzzleKind, id: string): string {
