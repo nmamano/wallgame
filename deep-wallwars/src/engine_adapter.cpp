@@ -573,7 +573,10 @@ std::optional<MoveResult> find_best_move(
     }
 
     std::optional<Move> move_opt;
-    if (mcts.current_board().winner() != Winner::Undecided) {
+    // Asked of the MOVER, and only the mover: a capture is judged when the turn ENDS, so a wall
+    // keeps it, while our own mouse stepping onto the enemy cat is a legal walk-past that the turn
+    // has to continue through (board task 8911a6d5).
+    if (mcts.current_board().reached_goal(turn.player)) {
         // First action won the game, just pick any legal wall for second action
         auto legal_walls = mcts.current_board().legal_walls();
         if (legal_walls.empty()) {

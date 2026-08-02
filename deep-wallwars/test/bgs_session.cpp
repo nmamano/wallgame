@@ -756,3 +756,46 @@ TEST_CASE("handle_end_game_session", "[BGS Handlers]") {
     CHECK(response["success"] == true);
     CHECK_FALSE(manager.has_session("test_session"));
 }
+
+// The exact shape of the production freeze in game 99q94y29 (board task 8911a6d5). A human mouse
+// walked PAST the bot's cat; the engine judged the capture at the midpoint, broke out of the action
+// loop and skipped the end-of-turn reset, so the session sat at Turn::Second forever. Every later
+// move came back as "too many actions for the current turn state", which the server read as engine
+// failure and turned into a forfeit for the bot.
+TEST_CASE("apply_move replays a mouse walking past a cat", "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    SessionManager manager(TestPolicy{}, cfg);
+
+    // An 8x8 game board, so game space and model space coincide and the notation below is literal.
+    // P1's mouse on e4 has P2's cat directly to its left on d4.
+    json config;
+    config["variant"] = "standard";
+    config["boardWidth"] = 8;
+    config["boardHeight"] = 8;
+    config["initialState"]["pawns"]["p1"]["cat"] = {7, 0};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {4, 4};
+    config["initialState"]["pawns"]["p2"]["cat"] = {4, 3};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {0, 7};
+    config["initialState"]["walls"] = json::array();
+
+    manager.create_session("walk_past", "bot_1", config);
+
+    // Two steps left: through d4, where P2's cat is standing, and out the other side to c4.
+    auto first = folly::coro::blockingWait(handle_apply_move(manager, "walk_past", 0, "Mc4"));
+    REQUIRE(first["success"] == true);
+
+    auto session = manager.get_session("walk_past");
+    REQUIRE(session);
+
+    // The turn COMPLETED. Before the fix the tree stopped on d4 and stayed on P1's second action.
+    CHECK(session->mcts->current_turn() == Turn{Player::Blue, Turn::First});
+    CHECK(session->mcts->current_board().mouse(Player::Red) == Cell{2, 4});
+    CHECK(session->mcts->current_board().winner() == Winner::Undecided);
+
+    // And the game goes on: P2's reply is accepted rather than refused.
+    auto second = folly::coro::blockingWait(handle_apply_move(manager, "walk_past", 1, "Cd6"));
+    CHECK(second["success"] == true);
+    CHECK(second["error"] == "");
+}

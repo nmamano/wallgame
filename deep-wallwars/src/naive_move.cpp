@@ -49,9 +49,12 @@ folly::coro::Task<std::optional<Move>> best_move(
     Board after_first = board;
     after_first.do_action(turn.player, *action1);
 
-    if (after_first.winner() != Winner::Undecided) {
-        // The game is over, so the second action cannot matter - but the protocol still wants a
-        // complete turn. Same behaviour as MCTS::peek_best_move here.
+    if (after_first.reached_goal(turn.player)) {
+        // The capture is made, and it is judged when the turn ENDS, so the second action only has to
+        // leave the cat where it is - but the protocol still wants a complete turn. Same behaviour
+        // as MCTS::peek_best_move here, including asking about the MOVER rather than about the
+        // position: our own mouse stepping onto the enemy cat is a legal walk-past and the turn has
+        // to continue through it (board task 8911a6d5).
         std::vector<Wall> const legal_walls = after_first.legal_walls();
         if (legal_walls.empty()) {
             co_return std::nullopt;

@@ -115,3 +115,67 @@ TEST_CASE("Sample slow in parallel", "[MCTS]") {
     CHECK(mcts.root_samples() == 17);
     CHECK(*policy.samples > 3);
 }
+
+// Offers exactly ONE action, so these tests are about what the move-assembly code does with a first
+// action rather than about which action the search happens to prefer.
+struct OnlyPolicy {
+    Pawn pawn;
+    Direction dir;
+
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        if (!board.is_blocked(Wall{board.pawn_position(turn.player, pawn), dir})) {
+            edges.emplace_back(PawnMove{pawn, dir}, 1.0);
+        }
+        co_return Evaluation{0, std::move(edges)};
+    };
+};
+
+// Replaying an opponent's move must apply BOTH actions even when the first one lands a pawn on the
+// cell where it could be taken, because a capture is judged only when the turn ends. Stopping there
+// left the tree a turn behind the real game, after which every later move was refused (board task
+// 8911a6d5).
+TEST_CASE("force_move walks a mouse past a cat", "[MCTS]") {
+    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    MCTS mcts{SimplePolicy{1.0, 1.0, 1.0}, std::move(board)};
+
+    mcts.force_move(
+        Move{PawnMove{Pawn::Mouse, Direction::Right}, PawnMove{Pawn::Mouse, Direction::Right}});
+
+    CHECK(mcts.current_board().mouse(Player::Red) == Cell{4, 2});
+    CHECK(mcts.current_turn() == Turn{Player::Blue, Turn::First});
+    CHECK(mcts.current_board().winner() == Winner::Undecided);
+}
+
+// The mover's OWN capture does still finish the turn with a wall. The cat has to stay on the mouse
+// for the capture to count at the turn boundary, and a wall is the one action that leaves it there.
+TEST_CASE("peek_best_move finishes a capture with a wall", "[MCTS]") {
+    // Red's cat one step left of Blue's mouse, and stepping right is its only action.
+    Board board{5, 5, Cell{2, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+    MCTS mcts{OnlyPolicy{Pawn::Cat, Direction::Right}, std::move(board)};
+
+    folly::coro::blockingWait(mcts.sample(2));
+    auto move = mcts.peek_best_move();
+
+    REQUIRE(move);
+    CHECK(std::get<PawnMove>(move->first).pawn == Pawn::Cat);
+    CHECK(std::holds_alternative<Wall>(move->second));
+}
+
+// The mirror case must NOT take that shortcut. Our own mouse stepping onto the enemy cat decides
+// nothing, so filling the rest of the turn with a wall would strand the mouse on the cat and hand
+// the game over at the turn boundary.
+TEST_CASE("peek_best_move walks a mouse past a cat instead of stranding it", "[MCTS]") {
+    // Red's mouse one step left of Blue's cat, and stepping right is its only action.
+    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    MCTS mcts{OnlyPolicy{Pawn::Mouse, Direction::Right}, std::move(board)};
+
+    folly::coro::blockingWait(mcts.sample(2));
+    auto move = mcts.peek_best_move();
+
+    REQUIRE(move);
+    CHECK(std::get<PawnMove>(move->first).pawn == Pawn::Mouse);
+    REQUIRE(std::holds_alternative<PawnMove>(move->second));
+    CHECK(std::get<PawnMove>(move->second).pawn == Pawn::Mouse);
+}

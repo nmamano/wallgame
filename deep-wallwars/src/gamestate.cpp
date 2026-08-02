@@ -646,8 +646,12 @@ void Board::do_action(Player player, Action action) {
         [&](Wall wall) { place_wall(player, wall); });
 }
 
+bool Board::reached_goal(Player player) const {
+    return position(player) == goal(player);
+}
+
 Winner Board::winner() const {
-    if (m_red.cat == m_blue.mouse) {
+    if (reached_goal(Player::Red)) {
         int dist = distance(m_blue.cat, m_red.mouse);
         if (dist <= 2 && dist != -1) {
             return Winner::Draw;
@@ -655,15 +659,28 @@ Winner Board::winner() const {
         return Winner::Red;
     }
 
-    if (m_blue.cat == m_red.mouse) {
+    if (reached_goal(Player::Blue)) {
         return Winner::Blue;
     }
 
     return Winner::Undecided;
 }
 
+Winner Board::winner(Turn turn) const {
+    if (turn.action == Turn::Second) {
+        return Winner::Undecided;
+    }
+
+    return winner();
+}
+
 double Board::score_for(Player player) const {
-    Winner current_winner = winner();
+    // Only the phase matters below, so the player carried by this turn is arbitrary.
+    return score_for(player, Turn{player, Turn::First});
+}
+
+double Board::score_for(Player player, Turn turn) const {
+    Winner current_winner = winner(turn);
 
     if (current_winner == Winner::Draw) {
         return 0.0;
@@ -680,6 +697,16 @@ double Board::score_for(Player player) const {
     double dist = distance(position(player), goal(player));
     Player opponent = other_player(player);
     double opponent_dist = distance(position(opponent), goal(opponent));
+
+    // Mid-turn the mover's own mouse may be standing ON the opponent's cat, which is legal until the
+    // turn ends. Read literally that is a distance of zero - a capture the rules have not made - and
+    // the formula below would score a certain loss, so the search would shun a walk-past it is now
+    // allowed to make. One step is the truth: the mouse is about to move aside and the cat is right
+    // behind it. This cannot fire at a turn boundary, where a zero here IS a capture and `winner()`
+    // has already returned above.
+    if (opponent_dist == 0) {
+        opponent_dist = 1;
+    }
 
     return dist < opponent_dist ? 1.0 - dist / opponent_dist : -1.0 + opponent_dist / dist;
 }

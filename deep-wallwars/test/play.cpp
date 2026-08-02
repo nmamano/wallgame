@@ -4,6 +4,7 @@
 #include <folly/experimental/coro/BlockingWait.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <optional>
 #include <vector>
 
 #include "simple_policy.hpp"
@@ -40,6 +41,20 @@ int sampled_edge_count(NodeInfo const& info) {
     }
     return count;
 }
+
+// Offers one action and one only: walk your own mouse left. That makes a self-play game fully
+// determined, so a turn can be pointed straight at the cell where a capture would be judged.
+struct MouseLeftPolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        Cell const mouse = board.pawn_position(turn.player, Pawn::Mouse);
+        if (!board.is_blocked(Wall{mouse, Direction::Left})) {
+            edges.emplace_back(PawnMove{Pawn::Mouse, Direction::Left}, 1.0);
+        }
+        co_return Evaluation{0, std::move(edges)};
+    };
+};
 
 }  // namespace
 
@@ -96,4 +111,48 @@ TEST_CASE("training_play records searched decisions exactly once per game",
     }
     CHECK(has_red);
     CHECK(has_blue);
+}
+
+// A mouse walking PAST a cat is legal, and self-play has to read that as a turn in progress rather
+// than a finished game. Judging the bare position after every single action ended the game at the
+// midpoint and wrote a training record labelled with a win nobody scored (board task 8911a6d5).
+TEST_CASE("training_play does not end a game at the midpoint of a walk-past",
+          "[TrainingRecords]") {
+    // Red's mouse sits one step to the right of Blue's cat, and the only action either side has is
+    // to walk its own mouse left - so Red's whole turn is: onto the cat, then past it.
+    Board board{6, 6, Cell{0, 0}, Cell{4, 2}, Cell{3, 2}, Cell{5, 5}, Variant::Standard};
+
+    int calls = 0;
+    std::vector<NodeInfo> captured;
+    std::optional<Board> final_board;
+
+    TrainingPlayOptions opts{
+        .model1 = MouseLeftPolicy{},
+        .model2 = MouseLeftPolicy{},
+        .samples = 4,
+        .max_parallel_games = 1,
+        .max_parallel_samples = 1,
+        .move_limit = 1,
+        .temperature = 1,
+        .on_complete =
+            [&](std::vector<NodeInfo> const& records, Board const& board_at_end, int) {
+                ++calls;
+                captured = records;
+                final_board = board_at_end;
+            },
+        .seed = 7,
+    };
+
+    folly::CPUThreadPoolExecutor pool(2);
+    folly::coro::blockingWait(training_play(board, 1, opts).scheduleOn(&pool));
+
+    REQUIRE(calls == 1);
+
+    // Two actions each for Red and Blue, and then the move limit. Before the fix the game ended
+    // after Red's FIRST action: one record, and Blue credited with a capture it never completed.
+    CHECK(captured.size() == 4);
+
+    REQUIRE(final_board);
+    CHECK(final_board->mouse(Player::Red) == Cell{2, 2});
+    CHECK(final_board->winner() == Winner::Undecided);
 }

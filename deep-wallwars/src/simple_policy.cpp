@@ -91,5 +91,5 @@ folly::coro::Task<Evaluation> SimplePolicy::operator()(Board const& board, Turn 
         }
     }
 
-    co_return Evaluation(board.score_for(turn.player), std::move(edges));
+    co_return Evaluation(board.score_for(turn.player, turn), std::move(edges));
 }

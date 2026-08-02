@@ -322,11 +322,14 @@ folly::coro::Task<json> handle_evaluate_position(
         game_notation = engine_adapter::transform_move_notation(
             model_notation, cat_pos, mouse_pos, session->padding_config);
     } else {
-        // Simulate the first action to check if it wins.
+        // Simulate the first action to check whether it captures. Asked of the MOVER only: a capture
+        // is judged when the turn ENDS, so submitting the single action wins, whereas our own mouse
+        // stepping onto the enemy cat is a legal walk-past and the turn must go on (board task
+        // 8911a6d5).
         Board test_board = board;
         test_board.do_action(current_player, *action1_opt);
 
-        if (test_board.winner() != Winner::Undecided) {
+        if (test_board.reached_goal(current_player)) {
             std::string const model_notation = action_notation(
                 *action1_opt, cat_pos, mouse_pos, board.rows());
             game_notation = engine_adapter::transform_move_notation(
@@ -407,8 +410,14 @@ folly::coro::Task<json> handle_apply_move(
 
     // Apply the actions individually (supports single-action moves)
     try {
+        // Both checks read the TURN, not just the position. A capture only counts once the turn
+        // ends, so a pawn that walks onto the cell it could be taken on and out the other side
+        // decides nothing. Judging it mid-turn used to break out of this loop AND skip the reset
+        // below, leaving the tree stuck at Turn::Second while the real game moved on - after which
+        // every later move was refused as having too many actions (board task 8911a6d5).
         for (const auto& action : *actions_opt) {
-            if (session->mcts->current_board().winner() != Winner::Undecided) {
+            if (session->mcts->current_board().winner(session->mcts->current_turn()) !=
+                Winner::Undecided) {
                 break;  // Game already won, skip remaining actions
             }
             session->mcts->force_action(action);
@@ -418,7 +427,8 @@ folly::coro::Task<json> handle_apply_move(
         // voluntarily use fewer than the available actions.
         // Reset the tree to the next player's Turn::First.
         if (actions_opt->size() < static_cast<size_t>(expected_actions) &&
-            session->mcts->current_board().winner() == Winner::Undecided) {
+            session->mcts->current_board().winner(session->mcts->current_turn()) ==
+                Winner::Undecided) {
             Player next_player = current_player == Player::Red ? Player::Blue : Player::Red;
             session->mcts->reset_to_position(
                 session->mcts->current_board(),

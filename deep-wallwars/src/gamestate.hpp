@@ -169,8 +169,29 @@ public:
 
     void do_action(Player player, Action action);
 
+    // Whether `player`'s cat is standing on its goal. In the standard variant the goal is the
+    // opponent's mouse, so this is a capture; in the classic variant the mouse never moves and this
+    // is the cat reaching its corner.
+    bool reached_goal(Player player) const;
+
+    // The winner judged from the position alone, which is what the rules ask at the END of a turn.
+    // Prefer the overload below wherever the turn is known.
     Winner winner() const;
+
+    // The winner judged at a TURN BOUNDARY, the only moment a capture counts. `turn` is the turn
+    // about to be played from this position - exactly what TreeNode::turn holds - so a Turn::Second
+    // means the previous player is still mid-turn and nothing is decided yet: a pawn may walk
+    // THROUGH the cell it would be captured on and out the other side. That holds in both
+    // directions, a mouse walking past a cat and a cat walking over a mouse.
+    //
+    // The TypeScript server judges the same way - it computes both capture checks from the position
+    // after BOTH actions (shared/domain/game-state.ts) - and the two MUST agree. When they did not,
+    // a human mouse walking past the bot's cat ended the game inside the engine while the server
+    // played on, and the session froze mid-turn (board task 8911a6d5).
+    Winner winner(Turn turn) const;
+
     double score_for(Player player) const;
+    double score_for(Player player, Turn turn) const;
 
     Cell position(Player player) const;
     Cell mouse(Player player) const;

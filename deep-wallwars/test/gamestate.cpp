@@ -233,3 +233,71 @@ TEST_CASE("Fill relative distances matches distance", "[Game State]") {
         }
     }
 }
+
+// A capture counts only when a turn ENDS, so a pawn may step onto the cell where it would be taken
+// and out the other side within a single turn. The engine used to judge the bare position after
+// every individual action, which ended games the TypeScript server was still playing and froze the
+// bot session mid-turn (board task 8911a6d5).
+TEST_CASE("A mouse may walk past a cat mid-turn", "[Game State]") {
+    // Red's mouse with Blue's cat one step to its right, Red to move.
+    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+
+    REQUIRE(board.winner() == Winner::Undecided);
+
+    board.do_action(Player::Red, PawnMove{Pawn::Mouse, Direction::Right});
+
+    // The bare position reads as a capture, and if the turn ended here it would be one...
+    CHECK(board.reached_goal(Player::Blue));
+    CHECK(board.winner() == Winner::Blue);
+    CHECK(board.winner(Turn{Player::Blue, Turn::First}) == Winner::Blue);
+
+    // ...but Red still owes an action, so nothing is decided yet.
+    CHECK(board.winner(Turn{Player::Red, Turn::Second}) == Winner::Undecided);
+
+    board.do_action(Player::Red, PawnMove{Pawn::Mouse, Direction::Right});
+
+    CHECK(board.mouse(Player::Red) == Cell{4, 2});
+    CHECK(board.winner() == Winner::Undecided);
+    CHECK(board.winner(Turn{Player::Blue, Turn::First}) == Winner::Undecided);
+}
+
+// The same rule in the other direction, which is the half that is easy to forget: a cat routing
+// toward its goal may pass straight THROUGH the enemy mouse's cell.
+TEST_CASE("A cat may walk over a mouse mid-turn", "[Game State]") {
+    // Red's cat one step left of Blue's mouse. Blue's cat is far from Red's mouse, so the
+    // one-move-rule draw does not apply and the capture would be a clean Red win.
+    Board board{5, 5, Cell{2, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+
+    REQUIRE(board.winner() == Winner::Undecided);
+
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
+
+    CHECK(board.reached_goal(Player::Red));
+    CHECK(board.winner() == Winner::Red);
+    CHECK(board.winner(Turn{Player::Blue, Turn::First}) == Winner::Red);
+    CHECK(board.winner(Turn{Player::Red, Turn::Second}) == Winner::Undecided);
+
+    board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
+
+    CHECK(board.position(Player::Red) == Cell{4, 2});
+    CHECK(board.winner() == Winner::Undecided);
+}
+
+TEST_CASE("score_for does not read a mid-turn walk-past as a loss", "[Game State]") {
+    // The position from the middle of Red's turn in the first case above: Red's mouse standing on
+    // Blue's cat, with Red still holding an action.
+    Board board{5, 5, Cell{0, 0}, Cell{3, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+
+    // At a turn boundary this is a real capture and Red has lost outright.
+    CHECK(board.score_for(Player::Red) == -1.0);
+    CHECK(board.score_for(Player::Red, Turn{Player::Blue, Turn::First}) == -1.0);
+
+    // Mid-turn it is not. Red's cat is 8 steps from its goal, and Blue's cat counts as ONE step from
+    // Red's mouse - which is where it will be the moment the mouse steps aside - so the heuristic is
+    // -1 + 1/8. Scoring a certain loss here would make the search shun a walk-past it is allowed to
+    // make; scoring a flat 0 would make a lost position look level.
+    double const mid_turn = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
+    CHECK(mid_turn == Catch::Approx(-0.875));
+    CHECK(mid_turn > -1.0);
+    CHECK(mid_turn < 0.0);
+}

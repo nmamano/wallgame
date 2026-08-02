@@ -140,7 +140,7 @@ folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edg
 }
 
 folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
-    if (auto winner = current.board.winner(); winner != Winner::Undecided) {
+    if (auto winner = current.board.winner(current.turn); winner != Winner::Undecided) {
         float value = [&] {
             if (winner == Winner::Draw) {
                 return 0.0;
@@ -158,7 +158,7 @@ folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
     }
 
     if (current.depth - m_root->depth >= m_opts.max_depth) {
-        float value = current.board.score_for(current.turn.player);
+        float value = current.board.score_for(current.turn.player, current.turn);
         current.add_sample(value);
         co_return value;
     }
@@ -253,12 +253,18 @@ std::optional<Action> MCTS::commit_to_action(float temperature) {
 folly::coro::Task<std::optional<Move>> MCTS::sample_and_commit_to_move(int iterations) {
     co_await sample(iterations);
 
+    // Read before committing: commit_to_action moves the root into the child, and with it the turn.
+    Player const mover = current_turn().player;
     auto action_1 = commit_to_action();
     if (!action_1) {
         co_return {};
     }
 
-    if (current_board().winner() != Winner::Undecided) {
+    // Whether the MOVER captured, not whether the position is decided. A capture is judged when the
+    // turn ENDS, so this says "won unless we walk the cat off again" and a wall keeps it. The mirror
+    // case - our own mouse stepping onto the enemy cat - decides nothing and must NOT stop the turn,
+    // or the mouse is stranded on the cat and the game is handed over (board task 8911a6d5).
+    if (current_board().reached_goal(mover)) {
         auto legal_walls = current_board().legal_walls();
 
         if (legal_walls.empty()) {
@@ -306,7 +312,11 @@ void MCTS::force_action(Action const& action) {
 void MCTS::force_move(Move const& move) {
     force_action(move.first);
 
-    if (m_root->board.winner() == Winner::Undecided) {
+    // Reading the turn is what makes this safe to replay someone else's move through. Mid-turn the
+    // game cannot be over (see Board::winner(Turn)), so a two-action move always applies BOTH
+    // actions, even when the first one put a cat on a mouse - the mover is free to walk it off
+    // again, and skipping the second action would leave this tree a turn behind the real game.
+    if (m_root->board.winner(m_root->turn) == Winner::Undecided) {
         force_action(move.second);
     }
 }
@@ -369,8 +379,10 @@ std::optional<Move> MCTS::peek_best_move() const {
         return {};
     }
 
-    // Check if the first action wins the game
-    if (child->board.winner() != Winner::Undecided) {
+    // Check if the first action captured. Judged for the MOVER, and only for the mover: a capture
+    // counts when the turn ENDS, so a wall preserves it, while our own mouse stepping onto the enemy
+    // cat is a legal walk-past that the turn has to continue through (board task 8911a6d5).
+    if (child->board.reached_goal(m_root->turn.player)) {
         // First action won - return an arbitrary legal wall for second action
         auto legal_walls = child->board.legal_walls();
         if (legal_walls.empty()) {
@@ -421,7 +433,7 @@ std::vector<PvStep> MCTS::principal_variation(int max_actions, float delta,
         if (node == nullptr || node->edges.empty()) {
             break;
         }
-        if (node->board.winner() != Winner::Undecided) {
+        if (node->board.winner(node->turn) != Winner::Undecided) {
             break;
         }
 

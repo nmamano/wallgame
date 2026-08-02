@@ -125,7 +125,11 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
 
             mcts2.force_action(*action);
 
-            if (Winner winner = mcts1.current_board().winner(); winner != Winner::Undecided) {
+            // Judged against the TURN, because this runs after every single action and a capture
+            // only counts once the turn ends. Reading the bare position here would end the game at
+            // the midpoint of a walk-past and label the training record with a win nobody scored.
+            if (Winner winner = mcts1.current_board().winner(mcts1.current_turn());
+                winner != Winner::Undecided) {
                 if (winner == Winner::Red) {
                     XLOGF(INFO, "Red player won game {} in {} moves.", index, 2 * num_moves - 1);
                 } else {
@@ -151,7 +155,8 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
             }
             mcts1.force_action(*action);
 
-            if (Winner winner = mcts2.current_board().winner(); winner != Winner::Undecided) {
+            if (Winner winner = mcts2.current_board().winner(mcts2.current_turn());
+                winner != Winner::Undecided) {
                 XLOGF(INFO, "Blue player won game {} in {} moves.", index, 2 * num_moves);
                 opts.on_complete(records, mcts2.current_board(), index);
                 co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
