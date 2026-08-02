@@ -698,14 +698,24 @@ double Board::score_for(Player player, Turn turn) const {
     Player opponent = other_player(player);
     double opponent_dist = distance(position(opponent), goal(opponent));
 
-    // Mid-turn the mover's own mouse may be standing ON the opponent's cat, which is legal until the
-    // turn ends. Read literally that is a distance of zero - a capture the rules have not made - and
-    // the formula below would score a certain loss, so the search would shun a walk-past it is now
-    // allowed to make. One step is the truth: the mouse is about to move aside and the cat is right
-    // behind it. This cannot fire at a turn boundary, where a zero here IS a capture and `winner()`
-    // has already returned above.
-    if (opponent_dist == 0) {
-        opponent_dist = 1;
+    // Mid-turn a pawn may be standing on the cell where a capture WOULD be judged, which reads here
+    // as a distance of zero - a capture the rules have not made yet. Taken literally the formula
+    // below returns an exact win or an exact loss, so the search would either bank a capture that
+    // can still be walked off or shun a walk-past it is now allowed to make; with a zero on BOTH
+    // sides it would divide zero by zero.
+    //
+    // One step is the honest proxy rather than a guarantee: the pawn is about to move aside and the
+    // other one is right behind it, though the mover is free to spend its second action elsewhere
+    // and lose. Substituted on WHICHEVER distance is zero, so the score stays antisymmetric between
+    // the two players. Neither substitution can fire at a turn boundary: a zero there means someone
+    // has reached their goal, and `winner()` has already returned above.
+    if (turn.action == Turn::Second) {
+        if (dist == 0) {
+            dist = 1;
+        }
+        if (opponent_dist == 0) {
+            opponent_dist = 1;
+        }
     }
 
     return dist < opponent_dist ? 1.0 - dist / opponent_dist : -1.0 + opponent_dist / dist;

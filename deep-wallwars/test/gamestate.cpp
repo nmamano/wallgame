@@ -283,7 +283,7 @@ TEST_CASE("A cat may walk over a mouse mid-turn", "[Game State]") {
     CHECK(board.winner() == Winner::Undecided);
 }
 
-TEST_CASE("score_for does not read a mid-turn walk-past as a loss", "[Game State]") {
+TEST_CASE("score_for does not read a mid-turn walk-past as decided", "[Game State]") {
     // The position from the middle of Red's turn in the first case above: Red's mouse standing on
     // Blue's cat, with Red still holding an action.
     Board board{5, 5, Cell{0, 0}, Cell{3, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
@@ -291,13 +291,48 @@ TEST_CASE("score_for does not read a mid-turn walk-past as a loss", "[Game State
     // At a turn boundary this is a real capture and Red has lost outright.
     CHECK(board.score_for(Player::Red) == -1.0);
     CHECK(board.score_for(Player::Red, Turn{Player::Blue, Turn::First}) == -1.0);
+    CHECK(board.score_for(Player::Blue, Turn{Player::Blue, Turn::First}) == 1.0);
 
     // Mid-turn it is not. Red's cat is 8 steps from its goal, and Blue's cat counts as ONE step from
-    // Red's mouse - which is where it will be the moment the mouse steps aside - so the heuristic is
-    // -1 + 1/8. Scoring a certain loss here would make the search shun a walk-past it is allowed to
-    // make; scoring a flat 0 would make a lost position look level.
-    double const mid_turn = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
-    CHECK(mid_turn == Catch::Approx(-0.875));
-    CHECK(mid_turn > -1.0);
-    CHECK(mid_turn < 0.0);
+    // Red's mouse - where it will be the moment the mouse steps aside - so the heuristic is -1 + 1/8.
+    // Scoring a certain loss here would make the search shun a walk-past it is allowed to make;
+    // scoring a flat 0 would make a lost position look level.
+    double const red_mid = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
+    double const blue_mid = board.score_for(Player::Blue, Turn{Player::Red, Turn::Second});
+    CHECK(red_mid == Catch::Approx(-0.875));
+    CHECK(red_mid > -1.0);
+    CHECK(red_mid < 0.0);
+    // The board is zero-sum, so the two views have to be opposites. They were not when only the
+    // OPPONENT's zero distance was substituted: Blue still read an exact +1 from its own zero.
+    CHECK(blue_mid == Catch::Approx(-red_mid));
+}
+
+TEST_CASE("score_for does not read a mid-turn capture as decided", "[Game State]") {
+    // The mirror orientation: Red's cat standing on Blue's mouse, Red still holding an action.
+    Board board{5, 5, Cell{3, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+
+    // At a turn boundary Red has won outright.
+    CHECK(board.score_for(Player::Red) == 1.0);
+
+    // Mid-turn the capture can still be walked off, so it is worth a lot but not everything.
+    double const red_mid = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
+    double const blue_mid = board.score_for(Player::Blue, Turn{Player::Red, Turn::Second});
+    CHECK(red_mid == Catch::Approx(0.875));
+    CHECK(red_mid < 1.0);
+    CHECK(blue_mid == Catch::Approx(-red_mid));
+}
+
+TEST_CASE("score_for survives a mid-turn where BOTH sides sit on a goal", "[Game State]") {
+    // Red's cat has captured Blue's mouse and Red's own mouse is standing on Blue's cat - one turn
+    // that both wins and strands. Only reachable now that a midpoint is never terminal, and it is
+    // what makes suppressing the winner check on its own unsafe: both distances read zero, and the
+    // untouched formula divides zero by zero.
+    Board board{5, 5, Cell{3, 2}, Cell{1, 1}, Cell{1, 1}, Cell{3, 2}, Variant::Standard};
+
+    double const red_mid = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
+    double const blue_mid = board.score_for(Player::Blue, Turn{Player::Red, Turn::Second});
+
+    // Level, and above all a NUMBER - a NaN would fail this comparison rather than pass it.
+    CHECK(red_mid == 0.0);
+    CHECK(blue_mid == 0.0);
 }

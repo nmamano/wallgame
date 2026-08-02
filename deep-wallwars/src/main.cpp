@@ -660,11 +660,13 @@ int collect_external_game_positions(nlohmann::json const& game,
                   tokens[mi]);
             break;
         }
+        // Every action of the submitted move is replayed, with no capture check between them. This
+        // is a recorded human turn, so a pawn of EITHER colour may be walking past the cell where a
+        // capture would be judged, and only the completed turn decides anything - which the outer
+        // loop's condition already checks. A player who spent fewer actions simply supplies a
+        // shorter list.
         for (Action const& action : *actions) {
             board.do_action(turn.player, action);
-            // The mover's own capture ends the game here; the reverse does not, because the human
-            // whose move this is may be walking a pawn PAST the cell it could be taken on.
-            if (board.reached_goal(turn.player)) break;
         }
         turn = {other_player(turn.player), Turn::First};
     }
