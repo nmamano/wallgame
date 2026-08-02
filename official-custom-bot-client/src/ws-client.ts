@@ -192,6 +192,7 @@ export class BotClient {
           this.state === "waiting" ||
           this.state === "processing";
         this.state = "disconnected";
+        this.discardSessionBookkeeping();
 
         if (wasConnecting && this.connectReject) {
           this.connectReject(new Error("WebSocket closed during connection"));
@@ -288,6 +289,9 @@ export class BotClient {
             this.stopPingLoop();
             logger.info("WebSocket closed:", event.code, event.reason);
             this.state = "disconnected";
+            // A reconnected socket carries games again once the server resyncs
+            // them, so dropping a second time leaks exactly as the first would.
+            this.discardSessionBookkeeping();
 
             if (this.shouldReconnect) {
               this.scheduleReconnect();
@@ -782,6 +786,49 @@ export class BotClient {
     dumbBotEndSession({ type: "end_game_session", bgsId });
     logger.warn(
       `Naive shadow session ${bgsId} retired, engine moves only for the rest of the game: ${reason}`,
+    );
+  }
+
+  /**
+   * Drop the client-side session bookkeeping when the socket goes down.
+   *
+   * The server cannot deliver end_game_session while we are disconnected, so a
+   * game that FINISHES during the outage leaves its shadow in the naive bot's
+   * session map, and its route in sessionRoutes, for the life of the process.
+   * Both are bounded per affected game and clear on restart, so this is a slow
+   * leak rather than a correctness bug — but nothing else ever collects them.
+   *
+   * Clearing here is safe because a reattach rebuilds every game that is still
+   * playing: the server calls resyncBgsFromHistory, which sends a fresh
+   * start_game_session and replays the history, repopulating both maps. If the
+   * disconnect grace expires instead, the server resigns those games, so there
+   * is nothing left to route. Either way the surviving entries are exactly the
+   * ones that would have leaked.
+   *
+   * Engine sessions are deliberately left alone: engines keep running across a
+   * reconnect, and the resync ends and restarts their sessions itself.
+   */
+  private discardSessionBookkeeping(): void {
+    const shadows = this.shadowSessions.size;
+    const routes = this.sessionRoutes.size;
+    if (shadows === 0 && routes === 0) return;
+
+    // Every bgsId we know about, from both directions. A bot WITH an engine
+    // keeps its naive shadow in shadowSessions; a bot with NO engine is served
+    // by the naive bot directly, so its primary session sits in the same map
+    // under a plain route. Both leak identically, so both get ended here.
+    // Ending an id the naive bot never knew about is a no-op.
+    for (const bgsId of new Set([
+      ...this.shadowSessions,
+      ...this.sessionRoutes.keys(),
+    ])) {
+      dumbBotEndSession({ type: "end_game_session", bgsId });
+    }
+    this.shadowSessions.clear();
+    this.sessionRoutes.clear();
+
+    logger.info(
+      `Disconnected: dropped ${routes} session route(s) and ${shadows} naive shadow(s); a reattach rebuilds whichever games are still playing`,
     );
   }
 
