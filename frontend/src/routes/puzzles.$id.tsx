@@ -10,6 +10,7 @@ import { PUZZLES, getNextPuzzleId } from "../../../shared/domain/puzzles";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { AudioControls } from "@/components/audio-controls";
+import { SharePuzzleButton } from "@/components/share-puzzle-button";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import {
   ArrowLeft,
@@ -197,8 +198,10 @@ function PuzzlePageContent({
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-lg">
-      {/* Back to puzzles link */}
-      <div className="mb-4">
+      {/* Back link and share sit on one row: the control cluster in the card
+          below already wraps to two lines on a phone, and this row was empty
+          to the right of the link. */}
+      <div className="mb-4 flex items-center justify-between gap-2">
         <Link
           to="/puzzles"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -206,6 +209,12 @@ function PuzzlePageContent({
           <ArrowLeft className="h-4 w-4" />
           Back to Puzzles
         </Link>
+        <SharePuzzleButton
+          kind="scripted"
+          id={puzzleId}
+          puzzleName={puzzle.title}
+          size="default"
+        />
       </div>
 
       {/* Info Panel - all states rendered in same grid cell, only one visible */}

@@ -1,5 +1,5 @@
 import { createFileRoute, useNavigate } from "@tanstack/react-router";
-import { useState } from "react";
+import { useState, type ReactNode } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -24,6 +24,7 @@ import { puzzleProgressQueryOptions } from "@/hooks/use-puzzle-progress";
 import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
+import { SharePuzzleButton } from "@/components/share-puzzle-button";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
@@ -126,6 +127,12 @@ interface PuzzleCardProps {
   onVote?: (value: 1 | -1 | null) => void;
   votePending?: boolean;
   voteFailed?: boolean;
+  /**
+   * The share control for this card, already built by the section that owns it.
+   * Required: every section has a shareable address, and passing the rendered
+   * node rather than a kind keeps the promise below — no kind branch in here.
+   */
+  share: ReactNode;
 }
 
 /**
@@ -154,6 +161,7 @@ function PuzzleCard({
   onVote,
   votePending = false,
   voteFailed = false,
+  share,
 }: PuzzleCardProps) {
   return (
     // Text and action sit side by side: a stacked card left the button as a
@@ -197,7 +205,8 @@ function PuzzleCard({
         )}
       </div>
 
-      <div className="shrink-0">
+      <div className="flex shrink-0 items-center gap-1">
+        {share}
         <Button
           className="gap-2"
           // A card whose action is in flight is never clickable, whatever the
@@ -298,6 +307,13 @@ function Puzzles() {
               completed={puzzle.completed}
               actionLabel={puzzleActionLabel(puzzle.completed)}
               onAction={() => handlePlayPuzzle(puzzle.id)}
+              share={
+                <SharePuzzleButton
+                  kind="scripted"
+                  id={puzzle.id}
+                  puzzleName={puzzle.title}
+                />
+              }
             />
           ))}
         </div>
@@ -340,6 +356,13 @@ function CampaignSection() {
               actionLabel={campaignActionLabel(completed)}
               onAction={() =>
                 void navigate({ to: `/solo-campaign/${levelId}` })
+              }
+              share={
+                <SharePuzzleButton
+                  kind="campaign"
+                  id={levelId}
+                  puzzleName={`${levelId}. ${level.name}`}
+                />
               }
             />
           );
@@ -515,6 +538,13 @@ function GeneratedPuzzlesSection() {
               onVote={isLoggedIn && solved ? voteFor(puzzle.id) : undefined}
               votePending={isVotePending(puzzle.id)}
               voteFailed={isVoteFailed(puzzle.id)}
+              share={
+                <SharePuzzleButton
+                  kind="generated"
+                  id={puzzle.id}
+                  puzzleName={puzzle.displayName}
+                />
+              }
             />
           );
         })}

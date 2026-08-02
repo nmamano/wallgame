@@ -25,6 +25,7 @@ import { Route as PuzzlesIndexRouteImport } from './routes/puzzles.index'
 import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
 import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
 import { Route as GameIdRouteImport } from './routes/game.$id'
+import { Route as PuzzlesGeneratedIdRouteImport } from './routes/puzzles.generated.$id'
 
 const StudyBoardRoute = StudyBoardRouteImport.update({
   id: '/study-board',
@@ -106,6 +107,11 @@ const GameIdRoute = GameIdRouteImport.update({
   path: '/game/$id',
   getParentRoute: () => rootRouteImport,
 } as any)
+const PuzzlesGeneratedIdRoute = PuzzlesGeneratedIdRouteImport.update({
+  id: '/puzzles/generated/$id',
+  path: '/puzzles/generated/$id',
+  getParentRoute: () => rootRouteImport,
+} as any)
 
 export interface FileRoutesByFullPath {
   '/': typeof IndexRoute
@@ -124,6 +130,7 @@ export interface FileRoutesByFullPath {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles': typeof PuzzlesIndexRoute
   '/solo-campaign': typeof SoloCampaignIndexRoute
+  '/puzzles/generated/$id': typeof PuzzlesGeneratedIdRoute
 }
 export interface FileRoutesByTo {
   '/': typeof IndexRoute
@@ -142,6 +149,7 @@ export interface FileRoutesByTo {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles': typeof PuzzlesIndexRoute
   '/solo-campaign': typeof SoloCampaignIndexRoute
+  '/puzzles/generated/$id': typeof PuzzlesGeneratedIdRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -161,6 +169,7 @@ export interface FileRoutesById {
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
   '/puzzles/': typeof PuzzlesIndexRoute
   '/solo-campaign/': typeof SoloCampaignIndexRoute
+  '/puzzles/generated/$id': typeof PuzzlesGeneratedIdRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -181,6 +190,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles'
     | '/solo-campaign'
+    | '/puzzles/generated/$id'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/'
@@ -199,6 +209,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles'
     | '/solo-campaign'
+    | '/puzzles/generated/$id'
   id:
     | '__root__'
     | '/'
@@ -217,6 +228,7 @@ export interface FileRouteTypes {
     | '/solo-campaign/$id'
     | '/puzzles/'
     | '/solo-campaign/'
+    | '/puzzles/generated/$id'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -236,6 +248,7 @@ export interface RootRouteChildren {
   SoloCampaignIdRoute: typeof SoloCampaignIdRoute
   PuzzlesIndexRoute: typeof PuzzlesIndexRoute
   SoloCampaignIndexRoute: typeof SoloCampaignIndexRoute
+  PuzzlesGeneratedIdRoute: typeof PuzzlesGeneratedIdRoute
 }
 
 declare module '@tanstack/react-router' {
@@ -352,6 +365,13 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof GameIdRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/puzzles/generated/$id': {
+      id: '/puzzles/generated/$id'
+      path: '/puzzles/generated/$id'
+      fullPath: '/puzzles/generated/$id'
+      preLoaderRoute: typeof PuzzlesGeneratedIdRouteImport
+      parentRoute: typeof rootRouteImport
+    }
   }
 }
 
@@ -372,6 +392,7 @@ const rootRouteChildren: RootRouteChildren = {
   SoloCampaignIdRoute: SoloCampaignIdRoute,
   PuzzlesIndexRoute: PuzzlesIndexRoute,
   SoloCampaignIndexRoute: SoloCampaignIndexRoute,
+  PuzzlesGeneratedIdRoute: PuzzlesGeneratedIdRoute,
 }
 export const routeTree = rootRouteImport
   ._addFileChildren(rootRouteChildren)

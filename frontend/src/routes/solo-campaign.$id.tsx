@@ -14,6 +14,7 @@ import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { useCampaignCompletion } from "@/hooks/use-campaign-completion";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { SharePuzzleButton } from "@/components/share-puzzle-button";
 import { ArrowLeft, Check, Undo2 } from "lucide-react";
 
 export const Route = createFileRoute("/solo-campaign/$id")({
@@ -180,8 +181,8 @@ function SoloCampaignLevelContent({
 
   return (
     <div className="container mx-auto py-6 px-4 max-w-lg">
-      {/* Back to campaign link */}
-      <div className="mb-4">
+      {/* Back link and share share a row, as on the scripted-puzzle page. */}
+      <div className="mb-4 flex items-center justify-between gap-2">
         <Link
           to="/puzzles"
           className="inline-flex items-center gap-1 text-sm text-muted-foreground hover:text-foreground transition-colors"
@@ -189,6 +190,12 @@ function SoloCampaignLevelContent({
           <ArrowLeft className="h-4 w-4" />
           Back to Campaign
         </Link>
+        <SharePuzzleButton
+          kind="campaign"
+          id={levelId}
+          puzzleName={`${levelId}. ${level.name}`}
+          size="default"
+        />
       </div>
 
       {/* Info Panel with popup overlay */}
