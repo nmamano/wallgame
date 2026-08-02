@@ -53,6 +53,15 @@ export interface TakebackDecisionPromptState {
   responder: PlayerId;
   controller?: ManualPlayerController;
   source: DecisionPromptSource;
+  /**
+   * How long the history was when the offer arrived.
+   *
+   * An offer means "undo the turn I just played", so it only makes sense at the
+   * position it was made at. Once the game moves on, the prompt has to go: the
+   * server refuses a stale accept, and a button that does nothing is worse than
+   * no button.
+   */
+  historyLengthAtOffer: number;
 }
 
 export interface PassiveNotice {
@@ -873,6 +882,7 @@ export function useMetaGameActions({
         responder: responderId,
         controller: responderController,
         source: "local",
+        historyLengthAtOffer: historyLengthAtRequest,
       });
     }
     responsePromise
@@ -1133,6 +1143,7 @@ export function useMetaGameActions({
         requester: playerId,
         responder: responderId,
         source: "remote",
+        historyLengthAtOffer: gameStateRef.current?.history.length ?? 0,
       });
       setActionError(null);
       addSystemMessage(`${getPlayerName(playerId)} requested a takeback.`);
@@ -1143,6 +1154,7 @@ export function useMetaGameActions({
       addSystemMessage,
       getPlayerName,
       setActionError,
+      gameStateRef,
     ],
   );
 
@@ -1282,6 +1294,11 @@ export function useMetaGameActions({
         `${getPlayerName(activeTakebackRequest.opponentSeatId)} accepted the takeback request.`,
       );
       setPendingTakebackRequest(null);
+    } else if (historyLength > activeTakebackRequest.historyLengthAtRequest) {
+      // The game moved on with the request still unanswered. The server will
+      // refuse an accept from here, so stop showing one as outstanding.
+      addSystemMessage("Your takeback request expired - the game moved on.");
+      setPendingTakebackRequest(null);
     }
   }, [
     pendingTakebackRequest,
@@ -1290,6 +1307,28 @@ export function useMetaGameActions({
     addSystemMessage,
     getPlayerName,
     primaryLocalPlayerId,
+  ]);
+
+  // Effect: retire a takeback offer the game has moved past.
+  // Only a longer history means the game moved on - a shorter one is this very
+  // takeback being applied, and the decision path clears the prompt for that.
+  useEffect(() => {
+    if (!takebackDecisionPrompt || !gameState) return;
+    if (
+      gameState.history.length <= takebackDecisionPrompt.historyLengthAtOffer
+    ) {
+      return;
+    }
+    setTakebackDecisionPrompt(null);
+    addSystemMessage(
+      `${getPlayerName(takebackDecisionPrompt.requester)}'s takeback request expired - the game moved on.`,
+    );
+  }, [
+    takebackDecisionPrompt,
+    gameState,
+    gameState?.history.length,
+    addSystemMessage,
+    getPlayerName,
   ]);
 
   useEffect(() => {

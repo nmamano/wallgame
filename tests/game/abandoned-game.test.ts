@@ -1,4 +1,4 @@
-import { describe, expect, it, beforeAll } from "bun:test";
+import { describe, expect, it, beforeAll, jest } from "bun:test";
 import type { PartialGameConfiguration } from "../../server/games/store";
 import type { PlayerId } from "../../shared/domain/game-types";
 
@@ -20,6 +20,18 @@ import type { PlayerId } from "../../shared/domain/game-types";
 
 process.env.DATABASE_URL ??= "postgres://unused:unused@127.0.0.1:5432/unused";
 
+/**
+ * Bun has had fake timers since well before the version this repo runs, but the
+ * pinned `bun-types` (1.2.2, against a 1.3 runtime) still declares a `Jest`
+ * interface without them. Naming the three methods here is the whole of the
+ * gap - drop this once the types catch up.
+ */
+const timers = jest as typeof jest & {
+  useFakeTimers(): void;
+  advanceTimersByTime(ms: number): void;
+  useRealTimers(): void;
+};
+
 // Bound after DATABASE_URL is set, following the pattern in tests/integration.
 let createGameSession: typeof import("../../server/games/store").createGameSession;
 let joinGameSession: typeof import("../../server/games/store").joinGameSession;
@@ -28,6 +40,8 @@ let findAbandonedSeat: typeof import("../../server/games/store").findAbandonedSe
 let setBotCompositeId: typeof import("../../server/games/store").setBotCompositeId;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
+let listLiveGames: typeof import("../../server/games/store").listLiveGames;
+let getSession: typeof import("../../server/games/store").getSession;
 
 beforeAll(async () => {
   const store = await import("../../server/games/store");
@@ -38,6 +52,8 @@ beforeAll(async () => {
   setBotCompositeId = store.setBotCompositeId;
   resignGame = store.resignGame;
   applyPlayerMove = store.applyPlayerMove;
+  listLiveGames = store.listLiveGames;
+  getSession = store.getSession;
 });
 
 const UNLIMITED: PartialGameConfiguration = {
@@ -165,5 +181,44 @@ describe("a game whose player walked away", () => {
 
     setConnected(session, "host", false);
     expect(findAbandonedSeat(session.id)).toBeNull();
+  });
+});
+
+/**
+ * The tests above pin the policy; this one pins that the policy is ever asked.
+ *
+ * Arming the abandonment timer used to hang off a player's connection
+ * *changing*, and a session is born with nobody connected - so a game whose
+ * player never got as far as opening a socket never started a clock and sat in
+ * the live-games list for good. Four of them were visible on wallgame.io on
+ * 2026-08-01, all with `createdAt === updatedAt`, which is what says no socket
+ * ever reached them.
+ *
+ * This drives the real timer, so it needs fake ones. Everything else in this
+ * file runs on real timers, so the switch is scoped to the test and this block
+ * is last: advancing the clock fires every pending timer, including any armed
+ * by earlier tests.
+ */
+describe("a game nobody ever opened", () => {
+  const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
+
+  it("is on the clock from the moment it is created", () => {
+    timers.useFakeTimers();
+    try {
+      const session = startedSession(UNLIMITED);
+      expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
+
+      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS + 1);
+
+      expect(listLiveGames().some((game) => game.id === session.id)).toBe(
+        false,
+      );
+      // Nobody moved, so it is an abort rather than a loss for the absent seat.
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    } finally {
+      timers.useRealTimers();
+    }
   });
 });

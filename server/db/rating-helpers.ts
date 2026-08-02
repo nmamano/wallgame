@@ -1,20 +1,27 @@
 import { db } from "./index";
-import { ratingsTable } from "./schema/ratings";
+import { globalRatingsTable } from "./schema/global-ratings";
 import { userAuthTable } from "./schema/users";
-import { eq, and } from "drizzle-orm";
+import { eq } from "drizzle-orm";
 
 /**
- * Looks up a user's rating from the database based on their auth ID.
+ * Looks up the rating to show beside a player's name in a game.
+ *
+ * This is the GLOBAL rating - one number per player over every rated game they
+ * have played - and not the per-variant, per-time-control one. A player sees
+ * one rating while they play, the same number the global leaderboard shows,
+ * rather than a different one per lobby they happen to be sitting in. The
+ * per-bucket chains still exist and are still updated; they are what the
+ * scoped rankings are built from, and nothing in a game reads them.
+ *
+ * The value reaches the seat as `elo` and `ratingAtStart`, so the rating shown
+ * during the game, the change shown when it ends, and the number recorded
+ * against the game afterwards are all the same chain.
  *
  * @param authUserId - The auth provider's user ID (e.g., Kinde ID or test header ID)
- * @param variant - The game variant ("standard" or "classic")
- * @param timeControl - The time control preset ("bullet", "blitz", "rapid", "classical")
- * @returns The user's rating, or undefined if not found
+ * @returns The user's global rating, or undefined if they have no rating yet
  */
-export async function getRatingForAuthUser(
+export async function getGlobalRatingForAuthUser(
   authUserId: string,
-  variant: string,
-  timeControl: string,
 ): Promise<number | undefined> {
   // First get the internal userId from auth mapping
   const authMapping = await db
@@ -27,20 +34,11 @@ export async function getRatingForAuthUser(
     return undefined; // User doesn't exist in DB yet
   }
 
-  const userId = authMapping[0].userId;
-
-  // Then get their rating for this variant/time control
   const rating = await db
-    .select({ rating: ratingsTable.rating })
-    .from(ratingsTable)
-    .where(
-      and(
-        eq(ratingsTable.userId, userId),
-        eq(ratingsTable.variant, variant),
-        eq(ratingsTable.timeControl, timeControl),
-      ),
-    )
+    .select({ rating: globalRatingsTable.rating })
+    .from(globalRatingsTable)
+    .where(eq(globalRatingsTable.userId, authMapping[0].userId))
     .limit(1);
 
-  return rating[0]?.rating; // undefined if no rating exists
+  return rating[0]?.rating; // undefined if they have not been rated yet
 }

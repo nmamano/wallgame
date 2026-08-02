@@ -17,6 +17,7 @@ import {
   giveTime,
   acceptDraw,
   rejectDraw,
+  offerTakeback,
   acceptTakeback,
   rejectTakeback,
   createRematchSession,
@@ -1509,6 +1510,7 @@ const handleTakebackOffer = (socket: SessionSocket) => {
 
   // V3: Takeback auto-accepted by bot
   if (opponent.botCompositeId) {
+    offerTakeback({ id: socket.sessionId, playerId });
     acceptTakeback({
       id: socket.sessionId,
       playerId: opponent.playerId,
@@ -1527,6 +1529,7 @@ const handleTakebackOffer = (socket: SessionSocket) => {
     return;
   }
 
+  offerTakeback({ id: socket.sessionId, playerId });
   sendToOpponent(socket.sessionId, socket.socketToken, {
     type: "takeback-offer",
     playerId,
@@ -1541,10 +1544,22 @@ const handleTakebackAccept = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "takeback-accept");
   if (playerId === null) return;
 
-  acceptTakeback({
+  const applied = acceptTakeback({
     id: socket.sessionId,
     playerId,
   });
+
+  // The offer expired while it sat unanswered - the game has moved on since,
+  // so there is no longer a turn both players agreed to undo. Say nothing to
+  // the board: the client clears its own prompt when the game moves on, and
+  // the state it already holds is the correct one.
+  if (!applied) {
+    console.info("[ws] takeback-accept ignored - offer no longer stands", {
+      sessionId: socket.sessionId,
+      playerId,
+    });
+    return;
+  }
 
   // V3: If game has a bot, handle BGS reset
   const session = getSession(socket.sessionId);
@@ -2103,6 +2118,7 @@ const handleActionRequest = async (
         opponentRole === "host" ? session.players.host : session.players.joiner;
       // V3: Takeback auto-accepted by bot, need to handle BGS
       if (opponent.botCompositeId) {
+        offerTakeback({ id: socket.sessionId, playerId });
         acceptTakeback({
           id: socket.sessionId,
           playerId: opponent.playerId,
@@ -2124,6 +2140,7 @@ const handleActionRequest = async (
         });
         return;
       }
+      offerTakeback({ id: socket.sessionId, playerId });
       sendToOpponent(socket.sessionId, socket.socketToken, {
         type: "takeback-offer",
         playerId,

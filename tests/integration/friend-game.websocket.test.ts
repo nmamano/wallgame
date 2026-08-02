@@ -48,6 +48,7 @@ let createApp: typeof import("../../server/index").createApp;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
+let globalRatingsTable: typeof import("../../server/db/schema/global-ratings").globalRatingsTable;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let eq: typeof import("drizzle-orm").eq;
 
@@ -58,6 +59,8 @@ async function importServerModules() {
   const gamesSchemaModule = await import("../../server/db/schema/games");
   const usersSchemaModule = await import("../../server/db/schema/users");
   const ratingsSchemaModule = await import("../../server/db/schema/ratings");
+  const globalRatingsSchemaModule =
+    await import("../../server/db/schema/global-ratings");
   const drizzleOrm = await import("drizzle-orm");
 
   db = dbModule.db;
@@ -66,6 +69,7 @@ async function importServerModules() {
   usersTable = usersSchemaModule.usersTable;
   userAuthTable = usersSchemaModule.userAuthTable;
   ratingsTable = ratingsSchemaModule.ratingsTable;
+  globalRatingsTable = globalRatingsSchemaModule.globalRatingsTable;
   eq = drizzleOrm.eq;
 }
 
@@ -93,8 +97,12 @@ async function stopTestServer() {
 const seededUserIds: number[] = [];
 
 /**
- * Seeds a test user with a Glicko-2 rating in the database.
+ * Seeds a test user with both Glicko-2 ratings in the database.
  * The authUserId should match the x-test-user-id header used in requests.
+ *
+ * The two chains are seeded to DIFFERENT values on purpose. A game shows the
+ * global rating beside a player's name, never the per-variant one, and an
+ * assertion cannot tell those apart if the two numbers agree.
  */
 async function seedTestUser(
   authUserId: string,
@@ -104,6 +112,7 @@ async function seedTestUser(
     rating: number;
     ratingDeviation: number;
     volatility: number;
+    global: { rating: number; ratingDeviation: number; volatility: number };
   },
 ): Promise<number> {
   // Create user
@@ -135,6 +144,13 @@ async function seedTestUser(
     volatility: options.volatility,
   });
 
+  await db.insert(globalRatingsTable).values({
+    userId: user.userId,
+    rating: options.global.rating,
+    ratingDeviation: options.global.ratingDeviation,
+    volatility: options.global.volatility,
+  });
+
   return user.userId;
 }
 
@@ -146,6 +162,9 @@ async function cleanupTestUsers(): Promise<void> {
   for (const userId of seededUserIds) {
     // Delete in order respecting foreign keys
     await db.delete(ratingsTable).where(eq(ratingsTable.userId, userId));
+    await db
+      .delete(globalRatingsTable)
+      .where(eq(globalRatingsTable.userId, userId));
     await db.delete(userAuthTable).where(eq(userAuthTable.userId, userId));
     await db.delete(usersTable).where(eq(usersTable.userId, userId));
   }
@@ -590,6 +609,12 @@ describe("friend game WebSocket integration", () => {
     const userARating = { rating: 1500, deviation: 200, volatility: 0.06 };
     const userBRating = { rating: 1350, deviation: 150, volatility: 0.05 };
 
+    // The global chain, which is the one a game displays. Kept clear of the
+    // per-variant numbers above so every rating assertion below says which
+    // chain it means.
+    const userAGlobal = { rating: 1700, deviation: 180, volatility: 0.06 };
+    const userBGlobal = { rating: 1200, deviation: 120, volatility: 0.05 };
+
     // Seed test users with Glicko-2 ratings in the database
     await seedTestUser(userA, {
       variant: "standard",
@@ -597,6 +622,11 @@ describe("friend game WebSocket integration", () => {
       rating: userARating.rating,
       ratingDeviation: userARating.deviation,
       volatility: userARating.volatility,
+      global: {
+        rating: userAGlobal.rating,
+        ratingDeviation: userAGlobal.deviation,
+        volatility: userAGlobal.volatility,
+      },
     });
     await seedTestUser(userB, {
       variant: "standard",
@@ -604,6 +634,11 @@ describe("friend game WebSocket integration", () => {
       rating: userBRating.rating,
       ratingDeviation: userBRating.deviation,
       volatility: userBRating.volatility,
+      global: {
+        rating: userBGlobal.rating,
+        ratingDeviation: userBGlobal.deviation,
+        volatility: userBGlobal.volatility,
+      },
     });
 
     // Define appearance data for testing
@@ -651,7 +686,8 @@ describe("friend game WebSocket integration", () => {
     expect(shareUrl).toBeDefined();
     expect(socketTokenA).toBeDefined();
     expect(initialSnapshotA.players[0].appearance).toEqual(userAAppearance);
-    expect(initialSnapshotA.players[0].elo).toBe(userARating.rating); // Host's rating should be included
+    // The GLOBAL rating, not the standard/rapid one this game is played under.
+    expect(initialSnapshotA.players[0].elo).toBe(userAGlobal.rating);
 
     // User B joins the game with appearance
     const { socketToken: socketTokenB, snapshot: joinSnapshotB } =
@@ -659,8 +695,8 @@ describe("friend game WebSocket integration", () => {
     expect(socketTokenB).toBeDefined();
     expect(joinSnapshotB.players[0].appearance).toEqual(userAAppearance); // Host appearance
     expect(joinSnapshotB.players[1].appearance).toEqual(userBAppearance); // Joiner appearance
-    expect(joinSnapshotB.players[0].elo).toBe(userARating.rating); // Host rating
-    expect(joinSnapshotB.players[1].elo).toBe(userBRating.rating); // Joiner rating
+    expect(joinSnapshotB.players[0].elo).toBe(userAGlobal.rating); // Host rating
+    expect(joinSnapshotB.players[1].elo).toBe(userBGlobal.rating); // Joiner rating
 
     // Both connect via WebSocket
     let socketA = await openGameSocket(userA, gameId, socketTokenA);
@@ -691,10 +727,10 @@ describe("friend game WebSocket integration", () => {
     ); // Joiner
 
     // Verify both clients receive correct player ratings via WebSocket
-    expect(matchStatusMsgA.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
-    expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
-    expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userARating.rating); // Host rating
-    expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBRating.rating); // Joiner rating
+    expect(matchStatusMsgA.snapshot.players[0].elo).toBe(userAGlobal.rating); // Host rating
+    expect(matchStatusMsgA.snapshot.players[1].elo).toBe(userBGlobal.rating); // Joiner rating
+    expect(matchStatusMsgB.snapshot.players[0].elo).toBe(userAGlobal.rating); // Host rating
+    expect(matchStatusMsgB.snapshot.players[1].elo).toBe(userBGlobal.rating); // Joiner rating
     expect(matchStatusMsgA.snapshot.matchScore).toEqual({ 1: 0, 2: 0 });
     expect(matchStatusMsgB.snapshot.matchScore).toEqual({ 1: 0, 2: 0 });
 
@@ -866,10 +902,12 @@ describe("friend game WebSocket integration", () => {
       matchStatusA.snapshot.matchScore,
     );
 
-    // Calculate expected new ratings using the Glicko-2 system
+    // Calculate the expected new ratings using the Glicko-2 system. The global
+    // chain again: each player's global rating moves against the opponent's
+    // GLOBAL rating, so the per-variant seeds play no part in this number.
     const expectedNewRatings = newRatingsAfterGame(
-      userARating,
-      userBRating,
+      userAGlobal,
+      userBGlobal,
       Outcome.Win, // Player 1 (User A) won
     );
 
@@ -886,8 +924,8 @@ describe("friend game WebSocket integration", () => {
     expect(matchStatusB.snapshot.players[1].elo).toBe(joinerNewRating);
 
     // Sanity check: winner's rating should increase, loser's should decrease
-    expect(hostNewRating).toBeGreaterThan(userARating.rating);
-    expect(joinerNewRating).toBeLessThan(userBRating.rating);
+    expect(hostNewRating).toBeGreaterThan(userAGlobal.rating);
+    expect(joinerNewRating).toBeLessThan(userBGlobal.rating);
 
     // Test rematch - Player A offers, Player B accepts
     await sendActionRequestAndExpectAck(socketA, "offerRematch");

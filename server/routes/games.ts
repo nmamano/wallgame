@@ -4,7 +4,6 @@ import {
   applyPlayerMove,
   cancelGameSession,
   createGameSession,
-  getSession,
   getSessionSnapshot,
   getSerializedState,
   joinGameSession,
@@ -46,7 +45,7 @@ import {
   getReplayGame,
   queryPastGames,
 } from "../db/game-queries";
-import { getRatingForAuthUser } from "../db/rating-helpers";
+import { getGlobalRatingForAuthUser } from "../db/rating-helpers";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import {
   getMatchingBots,
@@ -183,12 +182,7 @@ export const gamesRoute = new Hono()
         // Look up ELO if user is authenticated
         let hostElo: number | undefined;
         if (user?.id) {
-          const timeControlPreset = parsed.config.timeControl.preset ?? "rapid";
-          hostElo = await getRatingForAuthUser(
-            user.id,
-            parsed.config.variant,
-            timeControlPreset,
-          );
+          hostElo = await getGlobalRatingForAuthUser(user.id);
         }
 
         // Map the joinerConfig type from schema to store type
@@ -390,19 +384,10 @@ export const gamesRoute = new Hono()
         const parsed = c.req.valid("json");
         const user = c.get("user"); // May be undefined for guests
 
-        // Get session to know what variant/time control to look up
-        const existingSession = getSession(id);
-
         // Look up ELO if user is authenticated
         let joinerElo: number | undefined;
         if (user?.id) {
-          const timeControlPreset =
-            existingSession.config.timeControl.preset ?? "rapid";
-          joinerElo = await getRatingForAuthUser(
-            user.id,
-            existingSession.config.variant,
-            timeControlPreset,
-          );
+          joinerElo = await getGlobalRatingForAuthUser(user.id);
         }
 
         const joinResult = joinGameSession({

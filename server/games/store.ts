@@ -103,6 +103,17 @@ export interface GameSession {
   gameInstanceId: number;
   lastScoredGameInstanceId: number;
   gameState: GameState;
+  /**
+   * The player waiting on an answer to a takeback offer, if any.
+   *
+   * An offer is about one position - "let me retake the turn I just played" -
+   * so it stops meaning anything the moment the game moves past it, and
+   * `applyActionToSession` retires it. Before this existed the server kept no
+   * record of an offer at all, and an accept undid whatever the last turn
+   * happened to be by the time it arrived; a few turns later that is a
+   * different turn, belonging to a player who never offered it.
+   */
+  pendingTakebackFrom?: PlayerId;
   // Chat guest index tracking (per-session)
   chatGuestCounter: number;
   chatGuestIndexMap: Map<string, number>; // socketId -> guestIndex
@@ -448,6 +459,25 @@ const refreshAbandonTimer = (sessionId: string): void => {
   });
 };
 
+/**
+ * Puts a new session in the map and starts its abandonment clock.
+ *
+ * Every session is born with both seats disconnected, so a brand-new one
+ * already answers `findAbandonedSeat`. Arming here is what covers the game
+ * nobody ever opened: `updateConnectionState` used to be the only caller of
+ * `refreshAbandonTimer`, so a session whose player never got as far as opening
+ * a socket never got a timer, and sat in the live-games list forever holding an
+ * engine session. Creating a session is a state change like any other, so it
+ * asks the same question the other state changes ask.
+ *
+ * Going through here rather than calling `sessions.set` directly is the point:
+ * a later creation path cannot forget the clock.
+ */
+const registerSession = (session: GameSession): void => {
+  sessions.set(session.id, session);
+  refreshAbandonTimer(session.id);
+};
+
 // ============================================================================
 
 const ensureSession = (id: string): GameSession => {
@@ -679,7 +709,7 @@ export const createGameSession = (args: {
     chatGuestIndexMap: new Map(),
   };
 
-  sessions.set(id, session);
+  registerSession(session);
 
   return {
     session,
@@ -1081,6 +1111,16 @@ const applyActionToSession = (
   const next = session.gameState.applyGameAction(action);
   session.gameState = next;
   session.updatedAt = Date.now();
+  // Everything that reaches here is the game moving on, which is exactly what a
+  // pending takeback offer does not survive: `move`, and the four that end the
+  // game outright (`resign`, `timeout`, `draw`, and an accepted `takeback`).
+  // Note what does NOT reach here - `giveTime` adjusts a clock in place without
+  // an action, so a gift of time leaves an outstanding offer standing, which is
+  // the same answer the client reaches by watching the history length.
+  //
+  // Expiring here rather than at each call site is what stops a later action
+  // kind from quietly leaving an offer alive behind it.
+  session.pendingTakebackFrom = undefined;
   session.status = next.status === "finished" ? "completed" : "in-progress";
   if (next.status === "finished") {
     // Game ended - clear any pending timers
@@ -1164,18 +1204,6 @@ export const giveTime = (args: {
   return state;
 };
 
-export const takeback = (args: {
-  id: string;
-  playerId: PlayerId;
-}): GameState => {
-  const session = ensureSession(args.id);
-  return applyActionToSession(session, {
-    kind: "takeback",
-    playerId: args.playerId,
-    timestamp: Date.now(),
-  });
-};
-
 export const acceptDraw = (args: {
   id: string;
   playerId: PlayerId;
@@ -1197,11 +1225,40 @@ export const rejectDraw = (args: { id: string; playerId: PlayerId }): void => {
   });
 };
 
+/**
+ * Records that a player has asked to retake their last turn.
+ *
+ * The bot path calls this immediately before accepting on the bot's behalf. A
+ * bot answers in the same breath, so nothing can expire in between - but it
+ * still goes through the offer, so there is one way in and no second path that
+ * skips the check.
+ */
+export const offerTakeback = (args: {
+  id: string;
+  playerId: PlayerId;
+}): void => {
+  ensureSession(args.id).pendingTakebackFrom = args.playerId;
+};
+
+/**
+ * Answers a takeback offer, if there is still one to answer.
+ *
+ * Returns null when there is not: no offer, an offer the game has moved past,
+ * or an offer the accepter made themselves. Returning rather than throwing is
+ * deliberate - a stale accept is a normal thing for a client to send, not an
+ * error, and the caller has nothing to tell the board about it.
+ */
 export const acceptTakeback = (args: {
   id: string;
   playerId: PlayerId;
-}): GameState => {
+}): GameState | null => {
   const session = ensureSession(args.id);
+  if (
+    session.pendingTakebackFrom === undefined ||
+    session.pendingTakebackFrom === args.playerId
+  ) {
+    return null;
+  }
   return applyActionToSession(session, {
     kind: "takeback",
     playerId: args.playerId,
@@ -1213,8 +1270,9 @@ export const rejectTakeback = (args: {
   id: string;
   playerId: PlayerId;
 }): void => {
-  // This is handled in the WebSocket layer for broadcasting
-  // The function exists for API consistency
+  // Broadcasting is the WebSocket layer's job; retiring the offer is this one's,
+  // so a declined offer cannot be accepted afterwards.
+  ensureSession(args.id).pendingTakebackFrom = undefined;
   console.info("Takeback rejected", {
     sessionId: args.id,
     playerId: args.playerId,
@@ -1370,7 +1428,7 @@ export const createRematchSession = (
     chatGuestIndexMap: new Map(),
   };
 
-  sessions.set(newId, newSession);
+  registerSession(newSession);
   previous.nextGameId = newId;
   previous.nextGameSeatCredentials = {
     host: hostCredentials,
@@ -1538,13 +1596,17 @@ export const processRatingUpdate = async (
     outcome: outcomeForPlayer1,
   });
 
-  // Update session's ELO values so match-status reflects new ratings
-  player1.elo = applied.bucketA;
-  player2.elo = applied.bucketB;
+  // Update the session's ELO values so match-status reflects the new ratings.
+  // The GLOBAL chain, matching what the seat was given when the game started:
+  // the seat's `ratingAtStart` is a global rating, so handing it a per-variant
+  // one here would make the change shown at the end of the game a difference
+  // between two different ratings.
+  player1.elo = applied.globalA;
+  player2.elo = applied.globalB;
 
   return {
-    player1NewElo: applied.bucketA,
-    player2NewElo: applied.bucketB,
+    player1NewElo: applied.globalA,
+    player2NewElo: applied.globalB,
   };
 };
 
