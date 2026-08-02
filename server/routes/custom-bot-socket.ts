@@ -1263,6 +1263,18 @@ const endBgsAndRejectResolvers = (compositeId: string): void => {
  * Async finalization only — must be called with a snapshot taken while the
  * caller owned the state, never with a live lookup.
  */
+/**
+ * Forfeit a vanished client's games. Note what this does NOT do: it never
+ * sends end_game_session, because the client it would go to is gone.
+ *
+ * That absence is the way to tell the two forfeit paths apart in a bot client
+ * log, which matters because they mean opposite things - this one is expected
+ * collateral from a restart, while resignBotOnFailure means something broke.
+ * resignBotOnFailure calls notifyBotsGameEnded, so its games show a "Starting
+ * game session" WITH a matching "Ending game session"; a game killed here
+ * shows a start with no end. Both now also record bot_resign_cause on the
+ * game, which is the durable version of the same distinction.
+ */
 const resignBotGames = async (
   games: { compositeId: string; game: ActiveBotGame }[],
 ): Promise<void> => {
