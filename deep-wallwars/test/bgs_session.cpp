@@ -799,3 +799,75 @@ TEST_CASE("apply_move replays a mouse walking past a cat", "[BGS Handlers]") {
     CHECK(second["success"] == true);
     CHECK(second["error"] == "");
 }
+
+// The incident itself, replayed move for move: wallgame.io game 99q94y29, 2026-08-02.
+//
+// A freestyle 8x8 game (freestyle maps to Variant::Standard) with a custom setup, which is why it
+// could not be reconstructed through the engine's external-game ingest - that path assumes a
+// standard opening - but a BGS session takes the server's config verbatim, so the real game fits
+// here. Config and notation are copied from GET /api/games/99q94y29.
+//
+// Move 8 is the bot's cat arriving on f6. Move 9 is the human's mouse stepping ONTO f6 and out to
+// e6. The engine judged the capture at that midpoint, so it stopped applying the human's turn and
+// never reset to the bot's - and from there the session was a turn behind the real game for good.
+// Replaying all eleven moves is the check: the old engine reported success for the first ten while
+// quietly diverging, then refused move 11 with "too many actions for the current turn state". The
+// server read that as engine failure and forfeited the bot, which is the resignation this game
+// ended on (board task 8911a6d5).
+TEST_CASE("apply_move replays wallgame.io game 99q94y29 to the end", "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    // RankedPolicy rather than TestPolicy: force_action can only replay an action the policy listed
+    // as an edge, and TestPolicy offers just the first five walls, so a real game's wall moves are
+    // rejected as illegal by the harness rather than by the engine. The real policy head scores
+    // every legal action, which is what RankedPolicy does here.
+    SessionManager manager(RankedPolicy{}, cfg);
+
+    json config;
+    config["variant"] = "freestyle";
+    config["boardWidth"] = 8;
+    config["boardHeight"] = 8;
+    config["initialState"]["pawns"]["p1"]["cat"] = {1, 0};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {1, 1};
+    config["initialState"]["pawns"]["p2"]["cat"] = {1, 7};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {1, 6};
+    config["initialState"]["walls"] = json::array({
+        {{"cell", {1, 1}}, {"orientation", "horizontal"}},
+        {{"cell", {1, 6}}, {"orientation", "horizontal"}},
+        {{"cell", {2, 0}}, {"orientation", "horizontal"}},
+        {{"cell", {2, 7}}, {"orientation", "horizontal"}},
+        {{"cell", {3, 1}}, {"orientation", "horizontal"}},
+        {{"cell", {3, 6}}, {"orientation", "horizontal"}},
+        {{"cell", {7, 3}}, {"orientation", "horizontal"}},
+        {{"cell", {7, 4}}, {"orientation", "horizontal"}},
+    });
+
+    auto const created = manager.create_session("g99q94y29", "dw-transformer", config);
+    INFO("create_session error: " << created.second);
+    REQUIRE(created.first);
+
+    std::vector<std::string> const moves = {
+        "Mc7.Md7", "Cg7.>a7", "Md6.Md5", ">c8.>c7", "Me5.Me6", "Ce7",
+        "Mf6.Mg6", "Cf6",     "Mf6.Me6", ">f5",     "Md6.Mc6",
+    };
+
+    for (std::size_t ply = 0; ply < moves.size(); ++ply) {
+        auto response = folly::coro::blockingWait(
+            handle_apply_move(manager, "g99q94y29", static_cast<int>(ply), moves[ply]));
+
+        INFO("ply " << ply << " move " << moves[ply] << " error "
+                    << response["error"].get<std::string>());
+        REQUIRE(response["success"] == true);
+
+        // Every submitted move completes a turn, so the tree owes the OTHER player a fresh one after
+        // each. This is the assertion that catches the divergence at move 9 rather than three moves
+        // later: the old engine sat on Turn::Second from here on, and only move 11 was big enough to
+        // be refused for it.
+        auto session = manager.get_session("g99q94y29");
+        REQUIRE(session);
+        Turn const turn = session->mcts->current_turn();
+        CHECK(turn.action == Turn::First);
+        CHECK(turn.player == (ply % 2 == 0 ? Player::Blue : Player::Red));
+    }
+}
