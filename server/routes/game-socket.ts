@@ -225,6 +225,13 @@ const applyMoveAndEvaluate = async (
 const resignBotOnFailure = async (
   session: GameSession,
   botPlayerId: PlayerId,
+  /**
+   * Which failure forfeited the game, recorded on the game so it outlives the
+   * logs. Fly keeps no historical logs, so before this the cause of a bot
+   * resignation was unrecoverable minutes after it happened. Keep these short
+   * and distinct - they are read as a group-by.
+   */
+  cause: string,
 ): Promise<void> => {
   if (session.gameState.status !== "playing") return;
 
@@ -256,13 +263,14 @@ const resignBotOnFailure = async (
   console.info("[ws] bot resigned due to BGS failure", {
     gameId: session.id,
     botPlayerId,
+    cause,
   });
 
   // Process rating update if game ended
   if (newState.status === "finished") {
     await processRatingUpdate(session.id);
     try {
-      await persistCompletedGame(getSession(session.id));
+      await persistCompletedGame(getSession(session.id), cause);
     } catch (error) {
       console.error("[persistence] failed after bot resignation", {
         error,
@@ -352,7 +360,11 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
       sessionId,
       botCompositeId: activePlayer.botCompositeId,
     });
-    await resignBotOnFailure(session, activePlayer.playerId);
+    await resignBotOnFailure(
+      session,
+      activePlayer.playerId,
+      "bgs-missing-on-bot-turn",
+    );
     return;
   }
 
@@ -379,7 +391,11 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
       bgsId,
       currentPly: bgs.currentPly,
     });
-    await resignBotOnFailure(session, activePlayer.playerId);
+    await resignBotOnFailure(
+      session,
+      activePlayer.playerId,
+      "no-history-entry-for-bot-turn",
+    );
     return;
   }
 
@@ -458,7 +474,11 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
       sessionId,
       botCompositeId: activePlayer.botCompositeId,
     });
-    await resignBotOnFailure(session, activePlayer.playerId);
+    await resignBotOnFailure(
+      session,
+      activePlayer.playerId,
+      "bgs-update-failed-after-bot-move",
+    );
     return;
   }
 
@@ -570,7 +590,11 @@ export const resyncBgsFromHistory = async (
         error,
         sessionId,
       });
-      await resignBotOnFailure(session, botPlayer.playerId);
+      await resignBotOnFailure(
+        session,
+        botPlayer.playerId,
+        "bgs-restart-failed-after-takeback",
+      );
       return;
     }
 
@@ -596,7 +620,11 @@ export const resyncBgsFromHistory = async (
       console.error("[ws] failed to get initial eval after takeback", {
         sessionId,
       });
-      await resignBotOnFailure(session, botPlayer.playerId);
+      await resignBotOnFailure(
+        session,
+        botPlayer.playerId,
+        "initial-eval-failed-after-takeback",
+      );
       return;
     }
 
@@ -640,7 +668,11 @@ export const resyncBgsFromHistory = async (
           sessionId,
           moveIndex: i,
         });
-        await resignBotOnFailure(session, botPlayer.playerId);
+        await resignBotOnFailure(
+          session,
+          botPlayer.playerId,
+          "move-replay-failed-during-takeback",
+        );
         return;
       }
     }
@@ -713,7 +745,11 @@ const registerRematchBotGamesV3 = async (
       gameId: session.id,
       botCompositeId: botPlayer.botCompositeId,
     });
-    await resignBotOnFailure(session, botPlayer.playerId);
+    await resignBotOnFailure(
+      session,
+      botPlayer.playerId,
+      "bgs-init-failed-for-rematch",
+    );
     return;
   }
 
@@ -793,7 +829,11 @@ const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
       sessionId,
       botCompositeId: botPlayer.botCompositeId,
     });
-    await resignBotOnFailure(session, botPlayer.playerId);
+    await resignBotOnFailure(
+      session,
+      botPlayer.playerId,
+      "bgs-init-failed-on-connect",
+    );
     return;
   }
 
@@ -1291,7 +1331,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
             console.error("[ws] BGS reset timed out after 60s", {
               sessionId: socket.sessionId,
             });
-            await resignBotOnFailure(updatedSession, botPlayer.playerId);
+            await resignBotOnFailure(
+              updatedSession,
+              botPlayer.playerId,
+              "bgs-reset-timed-out",
+            );
             return;
           }
         } else {
@@ -1364,7 +1408,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
                 sessionId: socket.sessionId,
                 botCompositeId: botPlayer.botCompositeId,
               });
-              await resignBotOnFailure(updatedSession, botPlayer.playerId);
+              await resignBotOnFailure(
+                updatedSession,
+                botPlayer.playerId,
+                "bgs-update-failed-after-human-move",
+              );
             }
           }
         }
@@ -1378,7 +1426,11 @@ const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
           bgsStatus: bgs?.status,
           hasPendingRequest: !!bgs?.pendingRequest,
         });
-        await resignBotOnFailure(updatedSession, botPlayer.playerId);
+        await resignBotOnFailure(
+          updatedSession,
+          botPlayer.playerId,
+          "bgs-unavailable-after-wait",
+        );
       }
     } else {
       // Human vs human game: notify eval bar if active

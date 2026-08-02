@@ -33,6 +33,15 @@ jobs:
       - name: Install dependencies
         run: bun install --frozen-lockfile
 
+      # frontend/ has its OWN package.json and lockfile, and the root is not a
+      # workspace, so a root install leaves it empty. Skipping this does not
+      # merely fail the build step: eslint's typed rules resolve against
+      # frontend/tsconfig.*.json, and with the types missing every expression
+      # becomes `error`-typed, which reports ~5,500 bogus "unsafe" errors.
+      - name: Install frontend dependencies
+        working-directory: frontend
+        run: bun install --frozen-lockfile
+
       # Cheap checks first so an obvious failure does not wait on the suite.
       - name: Check formatting
         run: bun run format:check

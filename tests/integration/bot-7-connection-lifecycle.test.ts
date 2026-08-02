@@ -48,6 +48,10 @@ const TEST_GRACE_MS = 1500;
 // ================================
 
 let container: StartedTestContainer | undefined;
+// Imported only after DATABASE_URL points at the ephemeral container.
+let db: typeof import("../../server/db").db;
+let gameDetailsTable: typeof import("../../server/db/schema/game-details").gameDetailsTable;
+let eq: typeof import("drizzle-orm").eq;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
@@ -56,6 +60,10 @@ let createApp: typeof import("../../server/index").createApp;
 async function importServerModules() {
   const serverModule = await import("../../server/index");
   createApp = serverModule.createApp;
+  db = (await import("../../server/db")).db;
+  gameDetailsTable = (await import("../../server/db/schema/game-details"))
+    .gameDetailsTable;
+  eq = (await import("drizzle-orm")).eq;
 }
 
 function startTestServer() {
@@ -136,6 +144,8 @@ const sleep = (ms: number): Promise<void> =>
 
 interface HumanSocket {
   ws: WebSocket;
+  /** The game this socket is watching, for assertions against stored rows. */
+  gameId: string;
   /** All states received, newest last. */
   states: Extract<ServerMessage, { type: "state" }>[];
   waitForState: (
@@ -184,6 +194,7 @@ async function openHumanSocket(
     ws.on("open", () => {
       resolve({
         ws,
+        gameId,
         states,
         close: () => ws.close(),
         waitForState: (pred, timeoutMs = 10000) => {
@@ -421,6 +432,29 @@ async function startGameWithOneRound(
   return human;
 }
 
+/**
+ * The persisted game_details row, once it exists. Finish paths broadcast the
+ * finished state before awaiting the write, so a read taken straight off the
+ * state message finds nothing.
+ */
+async function waitForGameDetail(
+  gameId: string,
+  timeoutMs = 5000,
+): Promise<typeof gameDetailsTable.$inferSelect> {
+  const deadline = Date.now() + timeoutMs;
+  for (;;) {
+    const [row] = await db
+      .select()
+      .from(gameDetailsTable)
+      .where(eq(gameDetailsTable.gameId, gameId));
+    if (row) return row;
+    if (Date.now() > deadline) {
+      throw new Error(`no game_details row for ${gameId} after ${timeoutMs}ms`);
+    }
+    await new Promise((r) => setTimeout(r, 50));
+  }
+}
+
 const latestState = (human: HumanSocket) =>
   human.states[human.states.length - 1].state;
 
@@ -537,6 +571,18 @@ describe("bot connection lifecycle", () => {
     expect(finished.state.result?.reason).toBe("resignation");
     expect(finished.state.result?.winner).toBe(1);
     expect(await listBotIds("standard")).not.toContain(compositeId);
+
+    // The stored game must say WHY. A bot cannot resign as a game decision, so
+    // every one of these is the server forfeiting on its behalf - and
+    // game_players.outcome_reason records only the word "resignation", which
+    // cannot tell a client restart from an engine that died. Fly keeps no
+    // historical logs, so if the cause is not on the row it is unrecoverable.
+    // The human is told the game is over BEFORE the row lands: resignBotGames
+    // broadcasts the finished state and only then awaits the persist. So poll
+    // rather than reading once off the back of the state message.
+    const detail = await waitForGameDetail(human.gameId);
+    expect(detail.botResignCause).toBe("client-disconnect");
+
     human.close();
 
     // Post-expiry reattach (stale-teardown ownership check): a fresh

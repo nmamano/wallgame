@@ -1298,7 +1298,11 @@ const resignBotGames = async (
         // Handle game end
         if (newState.status === "finished") {
           try {
-            await persistCompletedGame(session);
+            // Recorded so this is separable from an engine failure in the
+            // data. Restarting the bot client forfeits every game in flight,
+            // which is expected collateral, and it used to be indistinguishable
+            // from a game the engine actually broke.
+            await persistCompletedGame(session, "client-disconnect");
           } catch (error) {
             console.error("[custom-bot-ws] failed to persist game", {
               error,

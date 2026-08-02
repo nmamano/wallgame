@@ -90,6 +90,11 @@ const normalizeAppearance = (
 
 export const persistCompletedGame = async (
   session: GameSession,
+  /**
+   * Set only when the server resigned a bot, naming which failure did it.
+   * Callers that are not that path leave it undefined and store NULL.
+   */
+  botResignCause?: string,
 ): Promise<void> => {
   const state = session.gameState;
   if (state.status !== "finished") {
@@ -152,6 +157,7 @@ export const persistCompletedGame = async (
       gameId: session.id,
       configParameters,
       moves: moveNotations,
+      botResignCause: botResignCause ?? null,
     });
 
     await tx.insert(gamePlayersTable).values([

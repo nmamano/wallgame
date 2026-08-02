@@ -1,0 +1,1 @@
+ALTER TABLE "game_details" ADD COLUMN "bot_resign_cause" text;
