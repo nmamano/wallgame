@@ -121,26 +121,56 @@ export function actionFromStandardNotation(
 
 /**
  * Convert a Move to standard notation (e.g., "Ce4.Md5.>f3" or "---")
+ *
+ * A pawn that steps TWICE in one turn is ONE term naming where it ended, not
+ * one term per step: a cat walking b2->c2->d2 is "Cd2", never "Cc2.Cd2". That
+ * is the official notation, and it is also the only form the engine speaks —
+ * `Move::standard_notation` in deep-wallwars collapses the same way, and its
+ * parser resolves each term by path-finding to that destination, so a term per
+ * step can expand past the two actions a turn allows and be rejected outright
+ * ("Move has too many actions for the current turn state").
+ *
+ * Reading the collapsed form back is safe because an action's target is a
+ * destination rather than a step: `moveFromStandardNotation` yields a single
+ * action two cells away, and `GameState` charges it `dist` actions, so the turn
+ * still costs two. Backtracking cannot make a term a no-op — the game forbids
+ * returning a pawn to where it began the turn.
+ *
+ * Walls never collapse; each one is its own term.
  */
 export function moveToStandardNotation(move: Move, totalRows: number): string {
   if (move.actions.length === 0) return "---";
-  const sortedActions = [...move.actions].sort((a, b) => {
-    const typeOrder = { cat: 1, mouse: 2, wall: 3 };
-    const ta = typeOrder[a.type];
-    const tb = typeOrder[b.type];
-    if (ta !== tb) return ta - tb;
-    if (a.type === "wall" && b.type === "wall") {
-      if (a.wallOrientation !== b.wallOrientation) {
-        return a.wallOrientation === "vertical" ? -1 : 1;
-      }
-      if (a.target[1] !== b.target[1]) return a.target[1] - b.target[1];
-      return a.target[0] - b.target[0];
+
+  // An action's target is absolute, so the LAST action for a pawn already names
+  // its final cell; there is no need to walk the steps.
+  let catTarget: Cell | undefined;
+  let mouseTarget: Cell | undefined;
+  const walls: Action[] = [];
+
+  for (const action of move.actions) {
+    if (action.type === "cat") catTarget = action.target;
+    else if (action.type === "mouse") mouseTarget = action.target;
+    else if (action.type === "wall") walls.push(action);
+  }
+
+  walls.sort((a, b) => {
+    if (a.wallOrientation !== b.wallOrientation) {
+      return a.wallOrientation === "vertical" ? -1 : 1;
     }
-    return 0;
+    if (a.target[1] !== b.target[1]) return a.target[1] - b.target[1];
+    return a.target[0] - b.target[0];
   });
-  return sortedActions
-    .map((a) => actionToStandardNotation(a, totalRows))
-    .join(".");
+
+  // Cat, then mouse, then walls — the order the engine also emits.
+  const terms: string[] = [];
+  if (catTarget) terms.push(`C${cellToStandardNotation(catTarget, totalRows)}`);
+  if (mouseTarget) {
+    terms.push(`M${cellToStandardNotation(mouseTarget, totalRows)}`);
+  }
+  for (const wall of walls) {
+    terms.push(actionToStandardNotation(wall, totalRows));
+  }
+  return terms.join(".");
 }
 
 /**
