@@ -38,6 +38,15 @@ const URL = FIXTURE === "puzzle" ? `${BASE}/puzzles/1` : `${BASE}/study-board`;
  */
 const TOLERANCE = 0.3;
 
+/**
+ * How far, in DEVICE pixels, a joint's side edge may sit from its wall's before
+ * it counts as a defect. A joint painted WIDER than its wall leaves no hole for
+ * the coverage test to find - every pixel inside the run is solid - so this is a
+ * genuinely separate failure, and its absence is why an overhanging joint once
+ * passed a clean probe run.
+ */
+const EDGE_TOLERANCE = 0.25;
+
 async function buildTwoColourFixture(page) {
   const trigger = page
     .locator('label[for="wall-color"]')
@@ -171,7 +180,7 @@ const collectGeometry = () => {
   return { walls, joints };
 };
 
-const probe = async ([dataUrl, geo, dpr, tolerance]) => {
+const probe = async ([dataUrl, geo, dpr, tolerance, edgeTolerance]) => {
   const img = await createImageBitmap(await (await fetch(dataUrl)).blob());
   const c = document.createElement("canvas");
   c.width = img.width;
@@ -278,8 +287,77 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
     return out;
   };
 
+  /**
+   * Sub-pixel position of a shape's edge along one axis, as the point where
+   * the colour has travelled half way from the plateau outside the shape to
+   * the plateau inside it. That midpoint is the geometric edge regardless of
+   * what the outside happens to be, which matters here: a wall's neighbour is
+   * a CELL and a joint's neighbour is the darker background, so any fixed
+   * threshold would compare them unfairly.
+   */
+  const edgeAt = (fixed, from, to, horizontal) => {
+    const at = (v) => (horizontal ? rgbAt(v, fixed) : rgbAt(fixed, v));
+    const dist = (p, q) => Math.hypot(p[0] - q[0], p[1] - q[1], p[2] - q[2]);
+    const outside = at(from);
+    const full = dist(at(to), outside);
+    if (full < 20) return null; // no edge to find here
+    const target = full / 2;
+    const dir = to > from ? step : -step;
+    let prevV = from;
+    let prevD = 0;
+    for (let v = from; dir > 0 ? v <= to : v >= to; v += dir) {
+      const d = dist(at(v), outside);
+      if (prevD <= target && d >= target && d !== prevD) {
+        return prevV + (v - prevV) * ((target - prevD) / (d - prevD));
+      }
+      prevV = v;
+      prevD = d;
+    }
+    return null;
+  };
+
+  /**
+   * Do the wall and its joint agree on where their shared side edge falls?
+   *
+   * This is a SEPARATE failure from bleed, and the reason it needs its own
+   * check: a joint painted slightly wider than its wall leaves no hole for a
+   * coverage test to find - every pixel inside the run is solid - yet it reads
+   * as the joint overhanging its wall, which is what a player actually sees.
+   *
+   * Sampled a quarter of the way into the joint, NOT at its centre: where two
+   * owners meet, the centre is the colour handover itself, and an edge read
+   * across a colour transition understates the offset by more than half.
+   */
+  const edgeMismatch = (wall, jointCentre, horizontal) => {
+    const wallLine = horizontal ? wall.bottom - 3 : wall.right - 3;
+    const out = [];
+    for (const [name, from, to] of horizontal
+      ? [
+          ["left", wall.left - 3, wall.left + 3],
+          ["right", wall.right + 3, wall.right - 3],
+        ]
+      : [
+          ["top", wall.top - 3, wall.top + 3],
+          ["bottom", wall.bottom + 3, wall.bottom - 3],
+        ]) {
+      const w = edgeAt(wallLine, from, to, horizontal);
+      const j = edgeAt(jointCentre, from, to, horizontal);
+      if (w !== null && j !== null) {
+        out.push({ side: name, delta: Math.abs(w - j) * dpr });
+      }
+    }
+    return out;
+  };
+
   const findings = [];
-  const stats = { junctions: 0, columns: 0, worst: 0, worstAt: null };
+  const stats = {
+    junctions: 0,
+    columns: 0,
+    worst: 0,
+    worstAt: null,
+    worstEdge: 0,
+    worstEdgeAt: null,
+  };
   const near = (a, b, t) => Math.abs(a - b) <= t;
   const step = 1 / dpr;
   const jointAt = (x, y) =>
@@ -305,6 +383,23 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
             parseColour(a.color),
             parseColour(b.color),
           );
+          for (const m of edgeMismatch(
+            top,
+            top.bottom + (bot.top - top.bottom) * 0.25,
+            true,
+          )) {
+            if (m.delta > stats.worstEdge) {
+              stats.worstEdge = +m.delta.toFixed(3);
+              stats.worstEdgeAt = `${m.side} edge`;
+            }
+            if (m.delta > edgeTolerance) {
+              findings.push({
+                kind: "edge",
+                side: m.side,
+                deltaDevicePx: +m.delta.toFixed(3),
+              });
+            }
+          }
           // The run's own outer boundary columns are INCLUDED. Both the wall
           // and the joint are partly covered there, and comparing the two at
           // the same column cancels that shared antialiasing - so a real
@@ -349,6 +444,23 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
             parseColour(a.color),
             parseColour(b.color),
           );
+          for (const m of edgeMismatch(
+            lft,
+            lft.right + (rgt.left - lft.right) * 0.25,
+            false,
+          )) {
+            if (m.delta > stats.worstEdge) {
+              stats.worstEdge = +m.delta.toFixed(3);
+              stats.worstEdgeAt = `${m.side} edge`;
+            }
+            if (m.delta > edgeTolerance) {
+              findings.push({
+                kind: "edge",
+                side: m.side,
+                deltaDevicePx: +m.delta.toFixed(3),
+              });
+            }
+          }
           for (let y = lft.top; y <= lft.bottom; y += step) {
             let wallCov = 0;
             for (let x = lft.right - 6; x <= lft.right - 2; x += step) {
@@ -416,13 +528,15 @@ for (const dpr of DPRS) {
     geo,
     dpr,
     TOLERANCE,
+    EDGE_TOLERANCE,
   ]);
 
   totalBad += findings.length;
   console.log(
     `DPR ${dpr}: walls=${geo.walls.length} joints=${geo.joints.length} ` +
       `junctions=${stats.junctions} columns=${stats.columns} ` +
-      `SEAM=${findings.length} worstDeficit=${stats.worst} (${stats.worstAt ?? "-"})`,
+      `SEAM=${findings.length} worstDeficit=${stats.worst} ` +
+      `worstEdgeOffset=${stats.worstEdge}dp`,
   );
   await page.close();
 }

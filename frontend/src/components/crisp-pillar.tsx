@@ -113,6 +113,28 @@ function clipToHalfPlane(polygon: Point[], f: (p: Point) => number): Point[] {
   return clipped;
 }
 
+/**
+ * How far each territory reaches PAST the midline into its neighbour, in the
+ * local 0..100 space.
+ *
+ * Two antialiased shapes that merely abut do not add up to full coverage: at
+ * the shared edge one covers a fraction and the other the rest, and compositing
+ * them leaves the background showing through the difference. Overlapping them
+ * removes the shared edge entirely.
+ *
+ * The overlap must be worth at least one device pixel to do anything, and this
+ * is the reason the previous attempt - a 1-unit stroke - did nothing: one unit
+ * of a 0..100 box on a 14px joint is a seventh of a device pixel. 8% is about
+ * 1.2px on that joint, so it still covers a whole device pixel at DPR 1.
+ *
+ * It only relaxes the cuts BETWEEN territories. Every territory starts as the
+ * full square and is only ever cut down, so no amount of relaxing can push one
+ * outside the joint - which matters, because a shape that overruns the outline
+ * would paint the joint's silhouette twice and make it read wider than the wall
+ * it joins.
+ */
+const TERRITORY_OVERLAP = 8;
+
 /** The part of the pillar closer to `wall` than to any other wall touching it. */
 function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
   let polygon: Point[] = [
@@ -125,7 +147,10 @@ function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
     if (other === wall) continue;
     polygon = clipToHalfPlane(
       polygon,
-      (p) => DISTANCE_TO_SIDE[wall](p) - DISTANCE_TO_SIDE[other](p),
+      (p) =>
+        DISTANCE_TO_SIDE[wall](p) -
+        DISTANCE_TO_SIDE[other](p) -
+        TERRITORY_OVERLAP,
     );
   }
   return polygon;
@@ -164,23 +189,22 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
         .map((p) => `${p.x},${p.y}`)
         .join(" ")}
       fill={colors[wall]!}
-      // Widen each territory so neighbours overlap rather than abut. This is
-      // belt to the underlay's braces: it is expressed in the local 0..100
-      // space, so on a small joint it is worth well under a device pixel.
-      stroke={colors[wall]!}
-      strokeWidth={1}
     />
   ));
 
   return (
     <g>
-      {/* Underlay: the whole joint in one of its colours, beneath the
-          per-owner territories. Any hairline the territories leave between
-          them then exposes a wall colour rather than the board behind - which
-          is what "the point where two colours meet has a tiny gap" was. Unlike
-          widening the stroke, this needs no knowledge of the device pixel
-          ratio to be correct. */}
-      <path d={outline} fill={colors[walls[0]]!} />
+      {/* No underlay beneath these.
+          An underlay covering the whole joint looks like cheap insurance
+          against a hairline between territories, but it paints the joint's
+          SILHOUETTE a second time, and two overlapping antialiased edges
+          composite to more coverage than one (half plus half of the rest is
+          three quarters). The joint then measures about 0.4 device px wider
+          than the wall it joins, and reads as the joint overhanging its wall.
+          The territories alone cannot do that: along any side of the joint
+          each stretch belongs to exactly one of them, so the silhouette is
+          painted once. The overlap they need is between EACH OTHER, which is
+          what TERRITORY_OVERLAP does. */}
       {outlineIsSquare ? (
         territories
       ) : (

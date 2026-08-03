@@ -35,6 +35,8 @@ uses `playwright-core` for its screenshot and DPR control instead of `cdp.ts`.
 ```bash
 cd frontend && bun run dev -- --port 5175 --host 127.0.0.1   # in another shell
 bun scripts/browser-harness/seam-probe.mjs                   # walls vs joints
+bun scripts/browser-harness/wall-edge-measure.mjs            # exact edge positions
+bun scripts/browser-harness/shadow-equivalence.mjs           # CSS shadow vs SVG (no server needed)
 PROBE_THEME=default PROBE_FIXTURE=puzzle bun scripts/browser-harness/seam-probe.mjs
 ```
 
@@ -50,6 +52,13 @@ defect it was written for appears at some and not others.
   question needs, with optional latency. Records every `/api` request; read
   the log to tell "it re-read" from "it looked right by luck".
 - **`drive-*.ts`** - one script per question.
+- **`wall-edge-measure.mjs`** - where EXACTLY does a wall's edge fall, and its
+  joint's? Reports both as sub-pixel positions and prints the colour profile
+  down the run. This is the instrument; `seam-probe.mjs` is the gate. Reach for
+  it when the gate fires, or when a render looks wrong and you need a number
+  rather than an opinion - it is what caught a joint painted 0.48 device px
+  wider than its wall, which a coverage test cannot see because nothing is
+  missing.
 - **`seam-probe.mjs`** - is a wall joint painted a pixel off from the wall it
   joins? Compares the joint's brightness against its own wall's at the SAME
   column. An absolute test ("is it the wall colour?") flags every shape's
@@ -57,6 +66,11 @@ defect it was written for appears at some and not others.
   difference between the two sides is a defect. It still understands the
   pre-fix DOM (wall divs, per-joint divs), so it can be pointed at older code
   and shown to go red - a check never observed failing is not evidence.
+  Checks TWO independent failures: a coverage deficit inside the run (a hole),
+  and a mismatch between where the wall's side edge falls and where the joint's
+  does (an overhang). The second was missing at first, and a joint painted
+  wider than its wall sailed through a clean run - nothing was missing, so
+  there was no hole to find.
 
 ## Designing an experiment that proves what you think
 
