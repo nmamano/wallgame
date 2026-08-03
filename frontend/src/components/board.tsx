@@ -11,6 +11,8 @@ import type {
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Cat, House, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
+import { CrispPillar } from "./crisp-pillar";
+import { useBoardTheme } from "./board-theme-provider";
 import {
   type PlayerColor,
   colorClassMap,
@@ -164,6 +166,12 @@ const getWallColor = (
   }
   if (wall.state === "staged") return "#fbbf24";
   if (wall.state === "premoved") return "#60a5fa";
+  // "calculated" is only reachable from the study board's wall-state dropdown -
+  // nothing in a real game produces it (the engine's suggestions are tagged
+  // "best-move"). Note the wall div fades itself to opacity 0.5 for this state
+  // while the pillar drawing the intersection does not, so the joint comes out
+  // solid over a translucent wall. If this state ever goes live, carry the
+  // alpha in the colour here instead (e.g. "#94a3b880") and drop that opacity.
   if (wall.state === "calculated") return "#94a3b8";
   if (wall.state === "best-move") return "#34d399";
   return "transparent";
@@ -261,6 +269,7 @@ export function Board({
   const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
   const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
+  const boardTheme = useBoardTheme();
   const gridRef = useRef<HTMLDivElement | null>(null);
   const [gridMetrics, setGridMetrics] = useState({
     width: 0,
@@ -1207,7 +1216,6 @@ export function Board({
           resolveWallColor,
         );
         const boundingBox = buildPillarBoundingBox(rowIndex, colIndex);
-        const pillar = new StyledPillar({ boundingBox, colors });
         const anchorRect = getCellRect(rowIndex - 1, colIndex - 1);
         if (!anchorRect) {
           continue;
@@ -1225,14 +1233,26 @@ export function Board({
 
         elements.push(
           <div key={`pillar-${rowIndex}-${colIndex}`} style={style}>
-            <svg
-              width="100%"
-              height="100%"
-              viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
-              preserveAspectRatio="none"
-            >
-              {pillar.render()}
-            </svg>
+            {boardTheme === "crisp" ? (
+              // CrispPillar draws in its own 0..100 space and owns its ids.
+              <svg
+                width="100%"
+                height="100%"
+                viewBox="0 0 100 100"
+                preserveAspectRatio="none"
+              >
+                <CrispPillar colors={colors} />
+              </svg>
+            ) : (
+              <svg
+                width="100%"
+                height="100%"
+                viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
+                preserveAspectRatio="none"
+              >
+                {new StyledPillar({ boundingBox, colors }).render()}
+              </svg>
+            )}
           </div>,
         );
       }
@@ -1251,6 +1271,7 @@ export function Board({
     wallMaps,
     resolveWallColor,
     getCellRect,
+    boardTheme,
   ]);
 
   // In flush mode with 8+ cols, skip maxWidth to avoid px→rem→px rounding that can

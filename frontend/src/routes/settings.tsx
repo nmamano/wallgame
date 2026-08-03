@@ -24,6 +24,7 @@ import {
   colorDisplayNames,
   colorHexMap,
 } from "@/lib/player-colors";
+import { BOARD_THEMES, BOARD_THEME_LABELS } from "@/lib/board-themes";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -206,8 +207,11 @@ function Settings() {
                       <SelectValue />
                     </SelectTrigger>
                     <SelectContent>
-                      <SelectItem value="default">Default</SelectItem>
-                      {/* Add more board themes here */}
+                      {BOARD_THEMES.map((theme) => (
+                        <SelectItem key={theme} value={theme}>
+                          {BOARD_THEME_LABELS[theme]}
+                        </SelectItem>
+                      ))}
                     </SelectContent>
                   </Select>
                 </div>
