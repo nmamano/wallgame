@@ -6,7 +6,11 @@ import { Card } from "@/components/ui/card";
 import { Badge } from "@/components/ui/badge";
 import { usePuzzleGame } from "@/hooks/use-puzzle-game";
 import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
-import { PUZZLES, getNextPuzzleId } from "../../../shared/domain/puzzles";
+import {
+  PUZZLES,
+  getNextPuzzleId,
+  ratingToDifficulty,
+} from "../../../shared/domain/puzzles";
 import type { WallPosition, PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import { AudioControls } from "@/components/audio-controls";
@@ -230,13 +234,23 @@ function PuzzlePageContent({
                 <h2 className="text-xl font-semibold text-foreground">
                   {puzzle.title}
                 </h2>
-                <p className="text-sm text-muted-foreground">
-                  by {puzzle.author}
-                </p>
+                {/* Difficulty is metadata about the puzzle, not a control, so it
+                    belongs with the byline rather than in the button row. It
+                    shows the same 1-5 tier as the listing - a player who picked
+                    "Difficulty: 1/5" should not then be shown a 1350 rating. */}
+                <div className="flex flex-wrap items-center gap-2">
+                  <p className="text-sm text-muted-foreground">
+                    by {puzzle.author}
+                  </p>
+                  <Badge variant="outline">
+                    Difficulty: {ratingToDifficulty(puzzle.difficulty)}/5
+                  </Badge>
+                </div>
               </div>
+              {/* Ordered by purpose: the two solving aids first, in the order a
+                  stuck player reaches for them, then puzzle-scoped Reset, then
+                  the global audio toggle last since it is not about this puzzle. */}
               <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline">Rating: {puzzle.difficulty}</Badge>
-                <AudioControls />
                 <Button
                   variant="outline"
                   size="sm"
@@ -269,6 +283,7 @@ function PuzzlePageContent({
                 >
                   <RotateCcw className="h-4 w-4" />
                 </Button>
+                <AudioControls />
               </div>
             </div>
             <p className="text-sm text-muted-foreground mt-2">

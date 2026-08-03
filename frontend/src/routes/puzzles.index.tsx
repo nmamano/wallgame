@@ -7,7 +7,11 @@ import { Badge } from "@/components/ui/badge";
 import { CheckCircle2, Play, Loader2, Clock } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
-import { PUZZLES, getPuzzleIds } from "../../../shared/domain/puzzles";
+import {
+  PUZZLES,
+  getPuzzleIds,
+  ratingToDifficulty,
+} from "../../../shared/domain/puzzles";
 import {
   SOLO_CAMPAIGN_LEVELS,
   getLevelIds,
@@ -85,19 +89,6 @@ export const Route = createFileRoute("/puzzles/")({
  */
 const puzzleCardShell =
   "hover:shadow-lg transition-shadow border-border/50 bg-card/50 backdrop-blur";
-
-/**
- * Convert difficulty rating (1350-1850) to a 1-5 scale for display.
- */
-function ratingToDifficulty(rating: number): number {
-  // Map ~1300-1900 range to 1-5
-  // 1300-1400 = 1, 1400-1500 = 2, 1500-1600 = 3, 1600-1750 = 4, 1750+ = 5
-  if (rating < 1400) return 1;
-  if (rating < 1500) return 2;
-  if (rating < 1600) return 3;
-  if (rating < 1750) return 4;
-  return 5;
-}
 
 interface PuzzleCardProps {
   title: string;

@@ -247,7 +247,7 @@ function GamePageContent() {
           }`}
         >
           {puzzleName ? `${puzzleName} - ` : "Puzzle - "}
-          catch the opponent&apos;s mouse before PuzzleBot catches yours.
+          catch PuzzleBot&apos;s mouse before it catches yours.
           {!compact && (
             <Link
               to="/puzzles"

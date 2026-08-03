@@ -52,6 +52,23 @@ export interface Puzzle {
   moves: Move[][];
 }
 
+/**
+ * Convert a puzzle's rating into the 1-5 difficulty tier players actually see.
+ *
+ * Note the field it reads is `Puzzle.difficulty`, which holds a RATING, not a
+ * tier - the two live under one name and that is what made the puzzle page
+ * print "Rating: 1350" where the listing printed "Difficulty: 1/5". Every
+ * player-facing surface goes through this function so they cannot drift again.
+ */
+export function ratingToDifficulty(rating: number): number {
+  // 1300-1400 = 1, 1400-1500 = 2, 1500-1600 = 3, 1600-1750 = 4, 1750+ = 5
+  if (rating < 1400) return 1;
+  if (rating < 1500) return 2;
+  if (rating < 1600) return 3;
+  if (rating < 1750) return 4;
+  return 5;
+}
+
 /** Default time control for puzzles (not actively used, but required by config) */
 const PUZZLE_TIME_CONTROL: TimeControlConfig = {
   initialSeconds: 600,
