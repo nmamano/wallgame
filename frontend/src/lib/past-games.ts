@@ -48,11 +48,21 @@ const formatPlayers = (game: PastGameSummary): PastGamePlayerView[] => {
     });
 };
 
+/**
+ * Date AND time of day, to the minute. Two games on the same day are otherwise
+ * indistinguishable in the listing, and the order they were played in is one of
+ * the first things you want when reading it.
+ *
+ * Locale is left to the browser (`undefined`), so the reader gets their own
+ * conventions for month order and 12- vs 24-hour.
+ */
 const formatDate = (timestamp: number): string => {
-  return new Date(timestamp).toLocaleDateString(undefined, {
+  return new Date(timestamp).toLocaleString(undefined, {
     year: "numeric",
     month: "short",
     day: "2-digit",
+    hour: "2-digit",
+    minute: "2-digit",
   });
 };
 

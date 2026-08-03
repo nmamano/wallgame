@@ -437,7 +437,7 @@ function PastGames() {
                     </TableCell>
                     <TableCell>{row.movesCount}</TableCell>
                     <TableCell>{row.views}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground">
+                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
                       {row.dateLabel}
                     </TableCell>
                   </TableRow>
