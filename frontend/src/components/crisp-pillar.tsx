@@ -146,28 +146,53 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
     return <path d={outline} fill={walls.map((e) => colors[e]!)[0]} />;
   }
 
+  // When the outline IS the square - a straight run, a tee, a crossing - the
+  // territories already tile it exactly and a clip adds nothing but a second
+  // antialiased edge on top of the polygons' own. Two soft edges multiply, so
+  // the joint ends up covering its boundary pixel less than the wall beside it
+  // does, and reads as a faint seam down the side of the run. Only the shapes
+  // that actually cut the square - a lone wall's end cap, an elbow's fillet -
+  // need clipping.
+  const outlineIsSquare =
+    walls.length >= 3 ||
+    (walls.length === 2 && OPPOSITE[walls[0]] === walls[1]);
+
+  const territories = walls.map((wall) => (
+    <polygon
+      key={wall}
+      points={territoryOf(wall, walls)
+        .map((p) => `${p.x},${p.y}`)
+        .join(" ")}
+      fill={colors[wall]!}
+      // Widen each territory so neighbours overlap rather than abut. This is
+      // belt to the underlay's braces: it is expressed in the local 0..100
+      // space, so on a small joint it is worth well under a device pixel.
+      stroke={colors[wall]!}
+      strokeWidth={1}
+    />
+  ));
+
   return (
     <g>
-      <defs>
-        <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-          <path d={outline} />
-        </clipPath>
-      </defs>
-      <g clipPath={`url(#${clipId})`}>
-        {walls.map((wall) => (
-          <polygon
-            key={wall}
-            points={territoryOf(wall, walls)
-              .map((p) => `${p.x},${p.y}`)
-              .join(" ")}
-            fill={colors[wall]!}
-            // Widen each territory by half a unit so neighbours overlap
-            // instead of leaving an antialiased hairline between them.
-            stroke={colors[wall]!}
-            strokeWidth={1}
-          />
-        ))}
-      </g>
+      {/* Underlay: the whole joint in one of its colours, beneath the
+          per-owner territories. Any hairline the territories leave between
+          them then exposes a wall colour rather than the board behind - which
+          is what "the point where two colours meet has a tiny gap" was. Unlike
+          widening the stroke, this needs no knowledge of the device pixel
+          ratio to be correct. */}
+      <path d={outline} fill={colors[walls[0]]!} />
+      {outlineIsSquare ? (
+        territories
+      ) : (
+        <>
+          <defs>
+            <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+              <path d={outline} />
+            </clipPath>
+          </defs>
+          <g clipPath={`url(#${clipId})`}>{territories}</g>
+        </>
+      )}
     </g>
   );
 }

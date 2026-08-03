@@ -27,10 +27,16 @@ const DPRS = (process.env.PROBE_DPRS ?? "1,1.25,1.5,1.75,2,2.5,3")
   .map(Number);
 const THEME = process.env.PROBE_THEME ?? "crisp";
 const FIXTURE = process.env.PROBE_FIXTURE ?? "twocolour";
+/** "dark" or "light" - a seam bleeds toward whichever the background is. */
+const MODE = process.env.PROBE_MODE ?? "dark";
 const URL = FIXTURE === "puzzle" ? `${BASE}/puzzles/1` : `${BASE}/study-board`;
 
-/** How much darker the joint may be than its wall before it counts as a seam. */
-const TOLERANCE = 14;
+/**
+ * How much less of the joint may be covered than its wall, as a fraction, at
+ * the same column, before it counts as a seam. A one-device-pixel mismatch
+ * costs roughly a whole pixel of coverage at that column.
+ */
+const TOLERANCE = 0.3;
 
 async function buildTwoColourFixture(page) {
   const trigger = page
@@ -115,6 +121,8 @@ const collectGeometry = () => {
       // Wall layer: rects are already in grid coordinates.
       for (const r of el.querySelectorAll("rect[fill]")) {
         const fill = r.getAttribute("fill");
+        // Shadow rects carry their colour via style, not the fill attribute,
+        // so requiring fill also excludes them.
         if (!fill || fill === "none") continue;
         const x = parseFloat(r.getAttribute("x"));
         const y = parseFloat(r.getAttribute("y"));
@@ -127,6 +135,7 @@ const collectGeometry = () => {
           height: h,
           right: x + w,
           bottom: y + h,
+          color: fill,
         });
       }
     }
@@ -155,7 +164,7 @@ const collectGeometry = () => {
         typeof el.className === "string" &&
         el.className.includes("shadow-md")
       ) {
-        walls.push(rel(el));
+        walls.push({ ...rel(el), color: cs.backgroundColor });
       }
     }
   }
@@ -170,11 +179,103 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
   const ctx = c.getContext("2d", { willReadFrequently: true });
   ctx.drawImage(img, 0, 0);
   const data = ctx.getImageData(0, 0, c.width, c.height).data;
-  const lumAt = (x, y) => {
+  const rgbAt = (x, y) => {
     const px = Math.min(Math.max(Math.round(x * dpr), 0), c.width - 1);
     const py = Math.min(Math.max(Math.round(y * dpr), 0), c.height - 1);
     const i = (py * c.width + px) * 4;
-    return 0.2126 * data[i] + 0.7152 * data[i + 1] + 0.0722 * data[i + 2];
+    return [data[i], data[i + 1], data[i + 2]];
+  };
+  const parseColour = (str) => {
+    if (str.startsWith("#")) {
+      const hex =
+        str.length === 4
+          ? str
+              .slice(1)
+              .split("")
+              .map((ch) => ch + ch)
+              .join("")
+          : str.slice(1);
+      return [0, 2, 4].map((i) => parseInt(hex.slice(i, i + 2), 16));
+    }
+    return str.match(/\d+/g).slice(0, 3).map(Number);
+  };
+
+  // The board background, sampled at the intersection FARTHEST from any wall.
+  // "Outside a wall's rectangle" is not enough: an intersection at the end of a
+  // wall paints that wall's end cap, and sampling it would return the wall
+  // colour and make every later comparison meaningless.
+  let bg = [0, 0, 0];
+  let bestGap = -1;
+  for (const j of geo.joints) {
+    const cx = (j.left + j.right) / 2;
+    const cy = (j.top + j.bottom) / 2;
+    let nearest = Infinity;
+    for (const w of geo.walls) {
+      const dx = Math.max(w.left - cx, 0, cx - w.right);
+      const dy = Math.max(w.top - cy, 0, cy - w.bottom);
+      nearest = Math.min(nearest, Math.hypot(dx, dy));
+    }
+    if (nearest > bestGap) {
+      bestGap = nearest;
+      bg = rgbAt(cx, cy);
+    }
+  }
+
+  /**
+   * How much of this pixel is wall rather than background, in 0..1, estimated
+   * by projecting the sampled colour onto the line from the background to the
+   * nearest wall colour.
+   *
+   * Coverage, not brightness. A brightness DEFICIT only catches a seam darker
+   * than its wall, so on a light board - where the background is the brighter
+   * of the two - a real seam would score negative and pass. Coverage falls
+   * below 1 whenever a pixel drifts toward the background, whichever direction
+   * that is.
+   *
+   * `colours` is the whole SEGMENT between the two walls' colours, not just its
+   * endpoints. Where two owners' walls meet, the joint legitimately blends red
+   * into blue, and judging those purple pixels against red-or-blue alone scored
+   * them at about half coverage - flagging every column of a correct render.
+   * A blend matches some point ON the segment at full coverage; a pixel bleeding
+   * toward the background matches none of them, because the segment runs
+   * between the two wall colours and nowhere near the board behind them.
+   *
+   * The residual check is what makes that distinction safe: a candidate is only
+   * accepted if the pixel actually reconstructs as "this much of that colour
+   * over the background", so an unrelated colour cannot be explained away by
+   * picking a convenient point on the segment.
+   */
+  const coverage = (p, colours) => {
+    let best = 0;
+    for (const colour of colours) {
+      const v = [colour[0] - bg[0], colour[1] - bg[1], colour[2] - bg[2]];
+      const len2 = v[0] * v[0] + v[1] * v[1] + v[2] * v[2];
+      if (len2 < 1) continue;
+      const dot =
+        (p[0] - bg[0]) * v[0] + (p[1] - bg[1]) * v[1] + (p[2] - bg[2]) * v[2];
+      const alpha = Math.min(1, Math.max(0, dot / len2));
+      if (alpha <= best) continue;
+      const residual = Math.hypot(
+        p[0] - (bg[0] + alpha * v[0]),
+        p[1] - (bg[1] + alpha * v[1]),
+        p[2] - (bg[2] + alpha * v[2]),
+      );
+      if (residual < 40) best = alpha;
+    }
+    return best;
+  };
+
+  /** The two wall colours and the blends between them. */
+  const colourSegment = (c1, c2) => {
+    const out = [];
+    for (let t = 0; t <= 1.0001; t += 0.1) {
+      out.push([
+        c1[0] + (c2[0] - c1[0]) * t,
+        c1[1] + (c2[1] - c1[1]) * t,
+        c1[2] + (c2[2] - c1[2]) * t,
+      ]);
+    }
+    return out;
   };
 
   const findings = [];
@@ -200,29 +301,35 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
           jointAt(midX, (top.bottom + bot.top) / 2)
         ) {
           stats.junctions += 1;
-          for (let x = top.left + step; x <= top.right - step; x += step) {
-            // Brightest point of the wall at this column, sampled clear of the
-            // joint, versus the darkest point inside the joint at the SAME
-            // column. Same x on both sides, so a shared outer edge cancels.
-            let wallLum = -Infinity;
+          const colours = colourSegment(
+            parseColour(a.color),
+            parseColour(b.color),
+          );
+          // The run's own outer boundary columns are INCLUDED. Both the wall
+          // and the joint are partly covered there, and comparing the two at
+          // the same column cancels that shared antialiasing - so a real
+          // one-device-pixel mismatch confined to the edge still shows up,
+          // where simply skipping the edge would have hidden it.
+          for (let x = top.left; x <= top.right; x += step) {
+            let wallCov = 0;
             for (let y = top.bottom - 6; y <= top.bottom - 2; y += step) {
-              wallLum = Math.max(wallLum, lumAt(x, y));
+              wallCov = Math.max(wallCov, coverage(rgbAt(x, y), colours));
             }
-            let jointLum = Infinity;
+            let jointCov = 1;
             for (let y = top.bottom + step; y <= bot.top - step; y += step) {
-              jointLum = Math.min(jointLum, lumAt(x, y));
+              jointCov = Math.min(jointCov, coverage(rgbAt(x, y), colours));
             }
             stats.columns += 1;
-            const deficit = wallLum - jointLum;
+            const deficit = wallCov - jointCov;
             if (deficit > stats.worst) {
-              stats.worst = Math.round(deficit);
-              stats.worstAt = `x=${x.toFixed(2)} wall=${Math.round(wallLum)} joint=${Math.round(jointLum)}`;
+              stats.worst = +deficit.toFixed(3);
+              stats.worstAt = `x=${x.toFixed(2)} wall=${wallCov.toFixed(2)} joint=${jointCov.toFixed(2)}`;
             }
             if (deficit > tolerance) {
               findings.push({
                 axis: "vertical",
                 x: +x.toFixed(2),
-                deficit: Math.round(deficit),
+                deficit: +deficit.toFixed(3),
               });
             }
           }
@@ -238,26 +345,30 @@ const probe = async ([dataUrl, geo, dpr, tolerance]) => {
           jointAt((lft.right + rgt.left) / 2, midY)
         ) {
           stats.junctions += 1;
-          for (let y = lft.top + step; y <= lft.bottom - step; y += step) {
-            let wallLum = -Infinity;
+          const colours = colourSegment(
+            parseColour(a.color),
+            parseColour(b.color),
+          );
+          for (let y = lft.top; y <= lft.bottom; y += step) {
+            let wallCov = 0;
             for (let x = lft.right - 6; x <= lft.right - 2; x += step) {
-              wallLum = Math.max(wallLum, lumAt(x, y));
+              wallCov = Math.max(wallCov, coverage(rgbAt(x, y), colours));
             }
-            let jointLum = Infinity;
+            let jointCov = 1;
             for (let x = lft.right + step; x <= rgt.left - step; x += step) {
-              jointLum = Math.min(jointLum, lumAt(x, y));
+              jointCov = Math.min(jointCov, coverage(rgbAt(x, y), colours));
             }
             stats.columns += 1;
-            const deficit = wallLum - jointLum;
+            const deficit = wallCov - jointCov;
             if (deficit > stats.worst) {
-              stats.worst = Math.round(deficit);
-              stats.worstAt = `y=${y.toFixed(2)} wall=${Math.round(wallLum)} joint=${Math.round(jointLum)}`;
+              stats.worst = +deficit.toFixed(3);
+              stats.worstAt = `y=${y.toFixed(2)} wall=${wallCov.toFixed(2)} joint=${jointCov.toFixed(2)}`;
             }
             if (deficit > tolerance) {
               findings.push({
                 axis: "horizontal",
                 y: +y.toFixed(2),
-                deficit: Math.round(deficit),
+                deficit: +deficit.toFixed(3),
               });
             }
           }
@@ -281,8 +392,14 @@ for (const dpr of DPRS) {
   });
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.evaluate(
-    (t) => localStorage.setItem("wall-game-board-theme", JSON.stringify(t)),
-    THEME,
+    ([t, mode]) => {
+      localStorage.setItem("wall-game-board-theme", JSON.stringify(t));
+      // Light mode matters for more than looks: there the background is
+      // BRIGHTER than the walls, so bleed makes a seam lighter rather than
+      // darker. A brightness-deficit metric scores that negative and passes it.
+      localStorage.setItem("wall-game-theme", mode);
+    },
+    [THEME, MODE],
   );
   await page.goto(URL, { waitUntil: "networkidle" });
   await page.waitForSelector(".grid.w-full.relative");

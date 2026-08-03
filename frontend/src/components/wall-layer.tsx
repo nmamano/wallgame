@@ -111,12 +111,68 @@ interface WallLayerProps {
 }
 
 /**
- * Tailwind's shadow-md and the last-wall glow, as CSS filters rather than SVG
- * filter primitives: drop-shadow() resolves CSS custom properties, which
- * feDropShadow's flood-color does not do reliably across browsers.
+ * One layer of a CSS box-shadow, expressed so it can be drawn as SVG.
+ *
+ * box-shadow semantics, which drop-shadow() cannot express: the shadow is the
+ * element's box INFLATED BY `spread`, offset by (dx, dy), blurred with a
+ * Gaussian whose standard deviation is half the blur radius, and painted
+ * behind the element. CSS drop-shadow() has no spread parameter at all, so it
+ * structurally cannot reproduce the last-wall glow's 3px spread - a tighter
+ * blur radius is not the same effect, it is a smaller one.
  */
-const WALL_SHADOW = "drop-shadow(0 2px 3px rgb(0 0 0 / 0.18))";
-const WALL_GLOW = "drop-shadow(0 0 5px var(--wall-highlight-glow))";
+interface ShadowLayer {
+  dx: number;
+  dy: number;
+  /** CSS blur RADIUS, converted to a std deviation on use. */
+  blur: number;
+  spread: number;
+  color: string;
+}
+
+/** Tailwind `shadow-md`, which the wall divs carried as a class. */
+const WALL_SHADOW: ShadowLayer[] = [
+  { dx: 0, dy: 4, blur: 6, spread: -1, color: "rgb(0 0 0 / 0.1)" },
+  { dx: 0, dy: 2, blur: 4, spread: -2, color: "rgb(0 0 0 / 0.1)" },
+];
+
+/**
+ * The last-placed wall's glow. The div set this as an INLINE box-shadow, which
+ * overrode the shadow-md class outright rather than adding to it - so a
+ * glowing wall has this and only this.
+ */
+const WALL_GLOW: ShadowLayer[] = [
+  { dx: 0, dy: 0, blur: 8, spread: 3, color: "var(--wall-highlight-glow)" },
+];
+
+function ShadowRects({
+  rect,
+  layers,
+}: {
+  rect: WallLayerRect;
+  layers: ShadowLayer[];
+}) {
+  return (
+    <>
+      {layers.map((layer, index) => {
+        const width = rect.width + 2 * layer.spread;
+        const height = rect.height + 2 * layer.spread;
+        // A negative spread can outgrow a thin wall; such a layer contributes
+        // nothing and a negative width is invalid SVG.
+        if (width <= 0 || height <= 0) return null;
+        return (
+          <rect
+            key={index}
+            x={rect.x - layer.spread + layer.dx}
+            y={rect.y - layer.spread + layer.dy}
+            width={width}
+            height={height}
+            style={{ fill: layer.color, filter: `blur(${layer.blur / 2}px)` }}
+          />
+        );
+      })}
+    </>
+  );
+}
 
 export function WallLayer({ z, width, height, rects }: WallLayerProps) {
   if (rects.length === 0) return null;
@@ -130,10 +186,14 @@ export function WallLayer({ z, width, height, rects }: WallLayerProps) {
       style={{ zIndex: z, overflow: "visible" }}
     >
       {rects.map((rect) => (
-        <g
-          key={rect.key}
-          style={{ filter: rect.glow ? WALL_GLOW : WALL_SHADOW }}
-        >
+        <g key={rect.key}>
+          {/* Behind the wall, and only the wall's own shadow: the glow REPLACES
+              shadow-md rather than adding to it, matching the inline
+              box-shadow that used to override the class. */}
+          <ShadowRects
+            rect={rect}
+            layers={rect.glow ? WALL_GLOW : WALL_SHADOW}
+          />
           <rect
             x={rect.x}
             y={rect.y}
