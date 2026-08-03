@@ -32,13 +32,25 @@ const CASES = [
       { dx: 0, dy: 2, blur: 4, spread: -2, color: "rgb(0 0 0 / 0.1)" },
     ],
   },
+  {
+    // A calculated wall. CSS opacity fades the whole element AS A UNIT -
+    // background and box-shadow together - so the SVG side has to carry the
+    // opacity on the group, not on the body rect. Getting that wrong leaves a
+    // 50% wall wearing a 100% shadow, which this case exists to catch.
+    name: "shadow-md at opacity 0.5 (calculated wall)",
+    opacity: 0.5,
+    layers: [
+      { dx: 0, dy: 4, blur: 6, spread: -1, color: "rgb(0 0 0 / 0.1)" },
+      { dx: 0, dy: 2, blur: 4, spread: -2, color: "rgb(0 0 0 / 0.1)" },
+    ],
+  },
 ];
 
 const W = 60;
 const H = 16;
 const PAD = 40;
 
-const page_html = (layers) => {
+const page_html = (layers, opacity = 1) => {
   const css = layers
     .map((l) => `${l.dx}px ${l.dy}px ${l.blur}px ${l.spread}px ${l.color}`)
     .join(", ");
@@ -51,10 +63,12 @@ const page_html = (layers) => {
     })
     .join("");
   return `<!doctype html><html><body style="margin:0;background:#0b1020">
-<div id="css" style="position:absolute;left:${PAD}px;top:${PAD}px;width:${W}px;height:${H}px;background:#dc2626;box-shadow:${css}"></div>
+<div id="css" style="position:absolute;left:${PAD}px;top:${PAD}px;width:${W}px;height:${H}px;background:#dc2626;box-shadow:${css};opacity:${opacity}"></div>
 <svg id="svg" style="position:absolute;left:0;top:${PAD * 2 + H}px;overflow:visible" width="${PAD * 2 + W}" height="${PAD * 2 + H}">
-  ${svgShadows}
-  <rect x="${PAD}" y="${PAD}" width="${W}" height="${H}" fill="#dc2626"/>
+  <g opacity="${opacity}">
+    ${svgShadows}
+    <rect x="${PAD}" y="${PAD}" width="${W}" height="${H}" fill="#dc2626"/>
+  </g>
 </svg>
 </body></html>`;
 };
@@ -65,12 +79,13 @@ const browser = await chromium.launch({
 });
 
 let worstGap = 0;
+let extentMismatch = 0;
 for (const testCase of CASES) {
   const page = await browser.newPage({
     viewport: { width: PAD * 2 + W + 20, height: (PAD * 2 + H) * 2 + 40 },
     deviceScaleFactor: 1,
   });
-  await page.setContent(page_html(testCase.layers));
+  await page.setContent(page_html(testCase.layers, testCase.opacity ?? 1));
   await page.waitForTimeout(300);
   const buf = await page.screenshot();
 
@@ -111,6 +126,14 @@ for (const testCase of CASES) {
   const gaps = profile.css.map((v, i) => Math.abs(v - profile.svg[i]));
   const gap = Math.max(...gaps);
   worstGap = Math.max(worstGap, gap);
+  // Compare visible EXTENT as well as per-pixel strength. A faint shadow (10%
+  // black) can be rendered at DOUBLE strength and still differ by only 2/255,
+  // which sails under any per-pixel threshold loose enough to tolerate
+  // antialiasing - but it reaches visibly further, and that is what a player
+  // sees. Verified: with opacity applied to the body rect instead of the
+  // group, per-pixel gap is 2 (passes) while extent is 0px vs 3px (fails).
+  const extentGap = Math.abs(extent(profile.css) - extent(profile.svg));
+  extentMismatch = Math.max(extentMismatch, extentGap);
 
   console.log(`\n${testCase.name}`);
   console.log(
@@ -134,8 +157,11 @@ for (const testCase of CASES) {
   await page.close();
 }
 
+const equivalent = worstGap <= 6 && extentMismatch <= 1;
 console.log(
-  `\nWorst disagreement across all cases: ${worstGap} (0-255 scale). ` +
-    (worstGap <= 6 ? "EQUIVALENT" : "NOT EQUIVALENT"),
+  `\nWorst per-pixel disagreement: ${worstGap} (0-255 scale). ` +
+    `Worst visible-extent disagreement: ${extentMismatch}px. ` +
+    (equivalent ? "EQUIVALENT" : "NOT EQUIVALENT"),
 );
+if (!equivalent) process.exitCode = 1;
 await browser.close();

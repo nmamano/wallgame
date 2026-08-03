@@ -186,7 +186,14 @@ export function WallLayer({ z, width, height, rects }: WallLayerProps) {
       style={{ zIndex: z, overflow: "visible" }}
     >
       {rects.map((rect) => (
-        <g key={rect.key}>
+        // Opacity belongs on the GROUP, not on the body rect. The wall used to
+        // be one div with `opacity: 0.5`, and CSS opacity fades the whole
+        // rendered element - background, border AND box-shadow - as a unit.
+        // Fading only the body would leave a calculated wall at 50% wearing a
+        // 100% shadow, which is not what it looked like before. Group opacity
+        // also composites once, so the shadow and the body cannot darken each
+        // other where they overlap.
+        <g key={rect.key} opacity={rect.opacity}>
           {/* Behind the wall, and only the wall's own shadow: the glow REPLACES
               shadow-md rather than adding to it, matching the inline
               box-shadow that used to override the class. */}
@@ -200,7 +207,6 @@ export function WallLayer({ z, width, height, rects }: WallLayerProps) {
             width={rect.width}
             height={rect.height}
             fill={rect.color}
-            opacity={rect.opacity}
           />
           {rect.dashed && (
             // Inset by half the stroke so it sits inside the wall, the way a
