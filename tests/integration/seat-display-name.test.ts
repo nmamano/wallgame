@@ -7,15 +7,15 @@
  * session as-is, and every reader downstream treats a nameless seat as a
  * guest — which is how a logged-in player ended up chatting as "Guest 1".
  *
- * So the property under test is that an authenticated seat is named by the
- * account, not by the request, and that guests still get the name they asked
- * for. The lookup being tested is a database read, so asserting it against
+ * So the property under test is that a seat is named by the server, never by
+ * the request: an authenticated seat from the account, a guest seat from the
+ * animal pool. The account lookup is a database read, so asserting it against
  * anything else would be pretending.
  *
+ * Guest names are drawn at random, so the assertions here are on the shape and
+ * on the distinctness that motivated the feature, never on a chosen animal.
+ *
  * Uses Testcontainers for an ephemeral PostgreSQL, so this needs Docker.
- * Nothing runs it automatically - the repo has no CI, and the pre-push hook
- * checks formatting, lint and the build but not tests. `bun scripts/run-tests.ts`
- * is the only trigger.
  */
 
 import {
@@ -138,6 +138,15 @@ async function joinGame(args: {
   return (await res.json()) as JoinGameResponse;
 }
 
+/**
+ * Asserts the literal shape a guest name must have. Spelled out rather than
+ * built from the server's own format helper, so a change to the format has to
+ * be made here too instead of both sides moving together.
+ */
+const expectGuestName = (name: string) => {
+  expect(name).toMatch(/^Guest [A-Za-z]+$/);
+};
+
 const seatName = (snapshot: GameSnapshot, role: "host" | "joiner"): string => {
   const seat = snapshot.players.find((player) => player.role === role);
   if (!seat) {
@@ -254,10 +263,38 @@ describe("seat display names", () => {
     expect(seatName(joined.snapshot, "joiner")).toBe(bravo.accountName);
   });
 
-  it("leaves a guest with the name it asked for", async () => {
+  it("names a guest from the pool, ignoring the name it asked for", async () => {
+    // A logged-out browser cannot offer a name - the settings field is fixed at
+    // "Guest" - so the request is worth nothing, and trusting it would let a
+    // guest wear a registered player's name.
     const game = await createGame({ hostDisplayName: "Rando" });
 
-    expect(seatName(game.snapshot, "host")).toBe("Rando");
+    expectGuestName(seatName(game.snapshot, "host"));
+  });
+
+  it("gives the two guests in a game names that tell them apart", async () => {
+    // The reported bug: both seats were called "Guest", so the finished game
+    // said "Guest won by resignation" without saying which one.
+    const game = await createGame({ hostDisplayName: "Guest" });
+    const joined = await joinGame({
+      gameId: game.gameId,
+      displayName: "Guest",
+    });
+
+    const host = seatName(joined.snapshot, "host");
+    const joiner = seatName(joined.snapshot, "joiner");
+
+    expectGuestName(host);
+    expectGuestName(joiner);
+    expect(host).not.toBe(joiner);
+  });
+
+  it("does not let a guest claim an account's name", async () => {
+    const alfa = await seedAccount("alfa");
+
+    const game = await createGame({ hostDisplayName: alfa.accountName });
+
+    expect(seatName(game.snapshot, "host")).not.toBe(alfa.accountName);
   });
 
   it("sends chat under the account name, not a numbered guest", async () => {
@@ -276,7 +313,9 @@ describe("seat display names", () => {
     expect(senderName).toBe(alfa.accountName);
   });
 
-  it("still numbers guests in chat", async () => {
+  it("sends a guest's chat under the name on their seat", async () => {
+    // Chat used to run its own numbering ("Guest 1"), so a line could not be
+    // matched to a side of the board. It reads the seat now.
     const game = await createGame({ hostDisplayName: "" });
 
     const senderName = await chatSenderName({
@@ -284,6 +323,7 @@ describe("seat display names", () => {
       socketToken: game.socketToken,
     });
 
-    expect(senderName).toMatch(/^Guest \d+$/);
+    expectGuestName(senderName);
+    expect(senderName).toBe(seatName(game.snapshot, "host"));
   });
 });

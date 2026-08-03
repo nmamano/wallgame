@@ -33,6 +33,7 @@ import type {
 import { applyRatingsForFinishedGame } from "../db/rating-write";
 import { Outcome } from "./rating-system";
 import { isBotClientConnected } from "./custom-bot-store";
+import { pickGuestName } from "./guest-names";
 
 // Match type determines how players join the game
 export type MatchType = "friend" | "matchmaking";
@@ -114,9 +115,14 @@ export interface GameSession {
    * different turn, belonging to a player who never offered it.
    */
   pendingTakebackFrom?: PlayerId;
-  // Chat guest index tracking (per-session)
-  chatGuestCounter: number;
-  chatGuestIndexMap: Map<string, number>; // socketId -> guestIndex
+  /**
+   * Chat names for the spectators of this game, keyed by socket id.
+   *
+   * Seats carry their own name, so this covers the one kind of guest that has
+   * no seat to carry it. Both are drawn from the same pool (`pickGuestName`) so
+   * one game never shows two different guest-naming schemes at once.
+   */
+  spectatorGuestNames: Map<string, string>;
 }
 
 export interface GameCreationResult {
@@ -608,6 +614,56 @@ const finalizeMatchScore = (
 };
 
 /**
+ * Every name already spoken for in this game: both seats, plus the spectators
+ * who have already been handed one. Passed to `pickGuestName` so no two people
+ * in the same game answer to the same name.
+ *
+ * Deliberately every name, not only the guest ones - a spectator should not
+ * turn up wearing "Hard Bot" either.
+ */
+const namesInUse = (session: GameSession): string[] => [
+  session.players.host.displayName,
+  session.players.joiner.displayName,
+  ...session.spectatorGuestNames.values(),
+];
+
+/**
+ * Names the person taking a seat. This is the authority on seat names, so it
+ * decides on the account first and only then looks at what was asked for.
+ *
+ * Nobody gets to name a guest, not even a server caller: a seat with no account
+ * behind it is a guest, and a guest gets an animal so the two sides of a game
+ * can be told apart. Honouring a requested name here would put the invariant in
+ * whichever caller happened to sanitize its input - `resolveSeatDisplayName`
+ * does exactly that today - and a future caller that forgot would quietly seat
+ * a guest under a registered player's name.
+ *
+ * An authenticated seat keeps the name it was given, and falls back to the
+ * neutral placeholder when the account lookup came back empty. That is not a
+ * guest: no animal.
+ *
+ * Only for a seat someone is actually taking. The joiner seat of a fresh
+ * session is a placeholder or a bot, and neither is a person to name.
+ */
+const resolveSeatName = (args: {
+  authUserId: string | undefined;
+  requested: string | undefined;
+  placeholder: string;
+  taken?: string[];
+}): string => {
+  if (!args.authUserId) {
+    return pickGuestName(args.taken);
+  }
+  // An empty request is not a name: the browser sends one while its settings
+  // query is still in flight.
+  const requested = args.requested?.trim();
+  if (!requested) {
+    return args.placeholder;
+  }
+  return requested;
+};
+
+/**
  * Creates a new game session.
  *
  * @param hostIsPlayer1 - Whether the host becomes Player 1 (who starts first).
@@ -675,7 +731,11 @@ export const createGameSession = (args: {
         playerId: hostPlayerId,
         token: hostToken,
         socketToken: hostSocketToken,
-        displayName: args.hostDisplayName ?? `Player ${hostPlayerId}`,
+        displayName: resolveSeatName({
+          authUserId: args.hostAuthUserId,
+          requested: args.hostDisplayName,
+          placeholder: `Player ${hostPlayerId}`,
+        }),
         connected: false,
         ready: true,
         lastSeenAt: now,
@@ -705,8 +765,7 @@ export const createGameSession = (args: {
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
     gameState: createGameState(completeConfig),
-    chatGuestCounter: 0,
-    chatGuestIndexMap: new Map(),
+    spectatorGuestNames: new Map(),
   };
 
   registerSession(session);
@@ -741,9 +800,12 @@ export const joinGameSession = (args: {
   // Seat is available – assign it immediately.
   if (!joiner.ready) {
     joiner.ready = true;
-    joiner.displayName =
-      args.displayName?.trim() ??
-      (session.matchType === "friend" ? "Friend" : "Player 2");
+    joiner.displayName = resolveSeatName({
+      authUserId: args.authUserId,
+      requested: args.displayName,
+      placeholder: session.matchType === "friend" ? "Friend" : "Player 2",
+      taken: namesInUse(session),
+    });
     joiner.appearance = {
       ...joiner.appearance,
       ...args.appearance,
@@ -991,42 +1053,49 @@ export const getSpectatorCount = (gameId: string): number => {
 };
 
 // ============================================================================
-// Chat Guest Index Tracking
+// Spectator Names
 // ============================================================================
 
 /**
- * Assigns a guest index to a socket for chat display names.
- * If the socket already has an index, returns the existing one.
- * Index starts at 1 and increments for each new guest.
+ * The name a spectator goes by, for as long as their connection lives.
+ *
+ * Players carry their name on their seat; a spectator has no seat, so the
+ * session holds it for them, keyed by socket. Drawn from the same pool as seat
+ * names and excluding everything already in use in this game, so a spectator
+ * never shadows a player or another spectator.
+ *
+ * Assigned when the socket opens rather than when it first speaks, so a
+ * spectator is somebody from the moment they arrive.
  */
-export const assignChatGuestIndex = (
+export const assignSpectatorGuestName = (
   sessionId: string,
   socketId: string,
-): number => {
+): string => {
   const session = ensureSession(sessionId);
 
-  // Return existing index if already assigned
-  const existing = session.chatGuestIndexMap.get(socketId);
+  const existing = session.spectatorGuestNames.get(socketId);
   if (existing !== undefined) {
     return existing;
   }
 
-  // Assign new index
-  session.chatGuestCounter += 1;
-  const index = session.chatGuestCounter;
-  session.chatGuestIndexMap.set(socketId, index);
-  return index;
+  const name = pickGuestName(namesInUse(session));
+  session.spectatorGuestNames.set(socketId, name);
+  return name;
 };
 
 /**
- * Gets the guest index for a socket, if one has been assigned.
+ * Hands a spectator's name back when their socket closes.
+ *
+ * Names are handed out per connection, so without this a long-running game
+ * would accumulate one entry for every spectator who ever passed through, and
+ * exhaust the pool for the ones actually watching. A spectator who reconnects
+ * arrives on a new socket and is simply named again.
  */
-export const getChatGuestIndex = (
+export const releaseSpectatorGuestName = (
   sessionId: string,
   socketId: string,
-): number | undefined => {
-  const session = sessions.get(sessionId);
-  return session?.chatGuestIndexMap.get(socketId);
+): void => {
+  sessions.get(sessionId)?.spectatorGuestNames.delete(socketId);
 };
 
 // ============================================================================
@@ -1424,8 +1493,10 @@ export const createRematchSession = (
     gameInstanceId: 0,
     lastScoredGameInstanceId: -1,
     gameState,
-    chatGuestCounter: 0,
-    chatGuestIndexMap: new Map(),
+    // Seat names ride along on the spread seats above, so a guest keeps their
+    // animal across the rematch. Spectator names deliberately do not: they are
+    // keyed by socket, and the rematch is a new game with new connections.
+    spectatorGuestNames: new Map(),
   };
 
   registerSession(newSession);

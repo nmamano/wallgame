@@ -25,7 +25,8 @@ import {
   processRatingUpdate,
   type SessionPlayer,
   type GameSession,
-  assignChatGuestIndex,
+  assignSpectatorGuestName,
+  releaseSpectatorGuestName,
   registerTimeoutCallback,
 } from "../games/store";
 import { moderateMessage } from "../chat/moderation";
@@ -1851,28 +1852,22 @@ const validateChatChannelAccess = (
   return { allowed: false, reason: "Invalid channel." };
 };
 
+/**
+ * A player chats under the name on their seat - the same name the scoreboard,
+ * the live-games list and the finished game's record show, so a chat line can
+ * be matched to a side. That holds for guests too now that the session names
+ * them; chat no longer keeps a numbering scheme of its own.
+ */
 const getChatSenderName = (socket: SessionSocket): string => {
-  const session = getSession(socket.sessionId);
-
   if (socket.role === "spectator") {
-    // Spectators are always guests - use the unique socket id
-    const guestIndex = assignChatGuestIndex(socket.sessionId, socket.id);
-    return `Guest ${guestIndex}`;
+    // A spectator has no seat to carry a name, so the session holds one.
+    return assignSpectatorGuestName(socket.sessionId, socket.id);
   }
 
-  // Get the player for this socket
+  const session = getSession(socket.sessionId);
   const player =
     socket.role === "host" ? session.players.host : session.players.joiner;
-
-  // If the player has a proper display name from auth, use it
-  if (player.authUserId && player.displayName) {
-    return player.displayName;
-  }
-
-  // Otherwise, assign a guest index based on their socket token (or unique id as fallback)
-  const socketId = socket.socketToken ?? socket.id;
-  const guestIndex = assignChatGuestIndex(socket.sessionId, socketId);
-  return `Guest ${guestIndex}`;
+  return player.displayName;
 };
 
 const sendChatError = (
@@ -2500,6 +2495,9 @@ export const registerGameSocketRoute = (app: Hono) => {
             addSocket(entry);
             incrementSpectatorCount(sessionId);
             broadcastLiveGamesUpsert(sessionId); // Update spectator count in list
+            // Named on arrival, not on their first message, so a spectator is
+            // somebody for as long as they are here.
+            assignSpectatorGuestName(sessionId, entry.id);
             console.info("[ws] spectator connected", { sessionId });
             sendWelcome(entry);
             sendStateOnce(entry);
@@ -2615,6 +2613,7 @@ export const registerGameSocketRoute = (app: Hono) => {
 
           if (entry.role === "spectator") {
             // Spectator disconnect
+            releaseSpectatorGuestName(entry.sessionId, entry.id);
             decrementSpectatorCount(entry.sessionId);
             broadcastLiveGamesUpsert(entry.sessionId); // Update spectator count
             console.info("[ws] spectator disconnected", {

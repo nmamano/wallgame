@@ -74,17 +74,24 @@ export const removeLobbyConnection = (ws: WebSocket) => {
  * account's own name: the browser sends whatever its settings cache holds,
  * which is empty while the settings query is in flight and "Guest" until the
  * login state resolves, and an empty name later reads as "not logged in".
- * Guests keep the name they asked for.
+ *
+ * A guest's request is discarded entirely and the session names the seat
+ * instead. The browser has nothing worth sending - a logged-out player cannot
+ * type a name, so the request is always the same literal "Guest" - while
+ * trusting it would let anyone claim any name, including a registered
+ * player's. Returning undefined hands the seat to `createGameSession` /
+ * `joinGameSession`, the only place that can see both seats and so the only
+ * place that can keep their names apart.
  */
 const resolveSeatDisplayName = async (
   authUserId: string | undefined,
   requestedDisplayName: string | undefined,
 ): Promise<string | undefined> => {
+  if (!authUserId) {
+    return undefined;
+  }
   const trimmed = requestedDisplayName?.trim();
   const requested = trimmed === "" ? undefined : trimmed;
-  if (!authUserId) {
-    return requested;
-  }
   return (await getDisplayNameForAuthUser(authUserId)) ?? requested;
 };
 
