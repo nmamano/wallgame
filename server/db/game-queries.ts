@@ -343,8 +343,16 @@ const assembleReplayGame = (
   };
 };
 
+// What to do with a stored game the current rules can no longer replay. `assembleReplayGame`
+// throws on one, and the choice is not a detail of the batch - it is the caller's, so it is
+// required rather than defaulted. A caller asked for ONE specific game must fail loudly, because
+// there is nothing else to return. A caller filling a decorative list must not: a single bad row
+// out of thousands took the whole showcase down roughly 8% of the time (board task eeaab7c1).
+type UnreplayableGamePolicy = "throw" | "skip";
+
 const buildReplayGamesFromRows = async (
   games: ReplayGameRow[],
+  onUnreplayable: UnreplayableGamePolicy,
 ): Promise<ReplayGameData[]> => {
   if (games.length === 0) {
     return [];
@@ -367,19 +375,35 @@ const buildReplayGamesFromRows = async (
     }
   }
 
-  return games.map((game) =>
-    assembleReplayGame(
-      game,
-      detailsByGameId.get(game.gameId),
-      playersByGameId.get(game.gameId) ?? [],
-    ),
-  );
+  const built: ReplayGameData[] = [];
+  for (const game of games) {
+    try {
+      built.push(
+        assembleReplayGame(
+          game,
+          detailsByGameId.get(game.gameId),
+          playersByGameId.get(game.gameId) ?? [],
+        ),
+      );
+    } catch (error) {
+      if (onUnreplayable === "throw") {
+        throw error;
+      }
+      // assembleReplayGame has already logged the id, the moves and the initial state, which is
+      // what a fix needs; this line only records that the batch carried on without it.
+      console.error(
+        `Skipping unreplayable game ${game.gameId} (${built.length}/${games.length} built so far)`,
+      );
+    }
+  }
+
+  return built;
 };
 
 const buildReplayGameFromRow = async (
   game: ReplayGameRow,
 ): Promise<ReplayGameData> => {
-  const [built] = await buildReplayGamesFromRows([game]);
+  const [built] = await buildReplayGamesFromRows([game], "throw");
   return built;
 };
 
@@ -436,7 +460,7 @@ export const getRandomShowcaseGames = async (
     .orderBy(sql`random()`)
     .limit(count);
 
-  return buildReplayGamesFromRows(games);
+  return buildReplayGamesFromRows(games, "skip");
 };
 
 export const queryPastGames = async (args: {
