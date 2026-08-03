@@ -28,6 +28,20 @@ bun scripts/browser-harness/drive-campaign-progress.ts # the worked example
 Set `CHROME_PATH` if your Chrome is not on `PATH` as `google-chrome`,
 `chromium`, or `chromium-browser`.
 
+`seam-probe.mjs` is the odd one out: it asks a question about pixels rather
+than about behaviour, so it drives the **dev server** (no build, no stub) and
+uses `playwright-core` for its screenshot and DPR control instead of `cdp.ts`.
+
+```bash
+cd frontend && bun run dev -- --port 5175 --host 127.0.0.1   # in another shell
+bun scripts/browser-harness/seam-probe.mjs                   # walls vs joints
+PROBE_THEME=default PROBE_FIXTURE=puzzle bun scripts/browser-harness/seam-probe.mjs
+```
+
+Env: `PROBE_BASE`, `PROBE_DPRS`, `PROBE_THEME` (crisp|default), `PROBE_FIXTURE`
+(twocolour|puzzle). It exercises a matrix of device pixel ratios because the
+defect it was written for appears at some and not others.
+
 ## The pieces
 
 - **`cdp.ts`** - launches Chrome and talks the DevTools protocol to it:
@@ -36,6 +50,13 @@ Set `CHROME_PATH` if your Chrome is not on `PATH` as `google-chrome`,
   question needs, with optional latency. Records every `/api` request; read
   the log to tell "it re-read" from "it looked right by luck".
 - **`drive-*.ts`** - one script per question.
+- **`seam-probe.mjs`** - is a wall joint painted a pixel off from the wall it
+  joins? Compares the joint's brightness against its own wall's at the SAME
+  column. An absolute test ("is it the wall colour?") flags every shape's
+  antialiased outer edge and reports a bug that is not there; only the
+  difference between the two sides is a defect. It still understands the
+  pre-fix DOM (wall divs, per-joint divs), so it can be pointed at older code
+  and shown to go red - a check never observed failing is not evidence.
 
 ## Designing an experiment that proves what you think
 

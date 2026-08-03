@@ -164,20 +164,6 @@ function StudyBoard() {
     [selectedPawnColor, colorToId],
   );
 
-  // Handle right-click on wall to change color
-  const handleWallRightClick = useCallback(
-    (wallIndex: number) => {
-      setWalls((prev) =>
-        prev.map((pWall, index) =>
-          index === wallIndex
-            ? { ...pWall, playerId: colorToId[selectedWallColor] as PlayerId }
-            : pWall,
-        ),
-      );
-    },
-    [selectedWallColor, colorToId],
-  );
-
   const clearBoard = useCallback(() => {
     setPawns([]);
     setWalls([]);
@@ -454,7 +440,6 @@ function StudyBoard() {
             onCellClick={handleCellClick}
             onWallClick={handleWallClick}
             onPawnRightClick={handlePawnRightClick}
-            onWallRightClick={handleWallRightClick}
           />
         </div>
       </div>

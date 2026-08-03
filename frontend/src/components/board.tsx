@@ -12,6 +12,12 @@ import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { Cat, House, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
 import { CrispPillar } from "./crisp-pillar";
+import {
+  WallLayer,
+  JointLayer,
+  type WallLayerRect,
+  type JointPlacement,
+} from "./wall-layer";
 import { useBoardTheme } from "./board-theme-provider";
 import {
   type PlayerColor,
@@ -94,7 +100,6 @@ export interface BoardProps {
     orientation: WallOrientation,
   ) => void;
   onPawnRightClick?: (pawnId: string) => void;
-  onWallRightClick?: (wallIndex: number) => void;
   onPawnClick?: (pawnId: string) => void;
   onPawnDragStart?: (pawnId: string) => void;
   onPawnDragEnd?: () => void;
@@ -199,6 +204,25 @@ const getPillarColors = (
   };
 };
 
+/**
+ * Convert a WallPosition to the two cells it separates, as
+ * [row1, col1, row2, col2].
+ *
+ * Module scope, not a component body: it depends on nothing but its argument,
+ * and defining it per render made it a fresh dependency of every memo that
+ * used it, defeating the memo.
+ */
+const wallToRectCoords = (
+  wall: WallPosition,
+): [number, number, number, number] => {
+  if (wall.orientation === "vertical") {
+    // Vertical wall: separates (row, col) and (row, col+1)
+    return [wall.cell[0], wall.cell[1], wall.cell[0], wall.cell[1] + 1];
+  }
+  // Horizontal wall: separates (row-1, col) and (row, col)
+  return [wall.cell[0] - 1, wall.cell[1], wall.cell[0], wall.cell[1]];
+};
+
 const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
   const size = 100;
   return {
@@ -223,7 +247,6 @@ export function Board({
   onCellClick,
   onWallClick,
   onPawnRightClick,
-  onWallRightClick,
   onPawnClick,
   onPawnDragStart,
   onPawnDragEnd,
@@ -584,20 +607,6 @@ export function Board({
         </svg>
       );
     });
-  };
-
-  // Convert WallPosition to rectangle coordinates for rendering
-  // Returns [row1, col1, row2, col2] representing the two cells separated by the wall
-  const wallToRectCoords = (
-    wall: WallPosition,
-  ): [number, number, number, number] => {
-    if (wall.orientation === "vertical") {
-      // Vertical wall: separates (row, col) and (row, col+1)
-      return [wall.cell[0], wall.cell[1], wall.cell[0], wall.cell[1] + 1];
-    } else {
-      // Horizontal wall: separates (row-1, col) and (row, col)
-      return [wall.cell[0] - 1, wall.cell[1], wall.cell[0], wall.cell[1]];
-    }
   };
 
   // Get arrow color based on type
@@ -1203,7 +1212,7 @@ export function Board({
       return [];
     }
 
-    const elements: ReactNode[] = [];
+    const placements: JointPlacement[] = [];
     const gapWidth = Math.max(gridMetrics.gapX, 2);
     const gapHeight = Math.max(gridMetrics.gapY, 2);
 
@@ -1221,44 +1230,31 @@ export function Board({
           continue;
         }
 
-        const style: CSSProperties = {
-          position: "absolute",
-          width: `${gapWidth}px`,
-          height: `${gapHeight}px`,
-          top: `${anchorRect.bottom}px`,
-          left: `${anchorRect.right}px`,
-          pointerEvents: "none",
-          zIndex: 12,
-        };
-
-        elements.push(
-          <div key={`pillar-${rowIndex}-${colIndex}`} style={style}>
-            {boardTheme === "crisp" ? (
-              // CrispPillar draws in its own 0..100 space and owns its ids.
-              <svg
-                width="100%"
-                height="100%"
-                viewBox="0 0 100 100"
-                preserveAspectRatio="none"
-              >
-                <CrispPillar colors={colors} />
-              </svg>
+        // Both themes draw a joint in a square local space; they differ only in
+        // where that square's origin sits. JointLayer maps it onto the real
+        // rect, so neither theme needs its own positioning wrapper.
+        placements.push({
+          key: `pillar-${rowIndex}-${colIndex}`,
+          x: anchorRect.right,
+          y: anchorRect.bottom,
+          width: gapWidth,
+          height: gapHeight,
+          localOrigin:
+            boardTheme === "crisp"
+              ? { x: 0, y: 0 }
+              : { x: boundingBox.x, y: boundingBox.y },
+          localSize: 100,
+          art:
+            boardTheme === "crisp" ? (
+              <CrispPillar colors={colors} />
             ) : (
-              <svg
-                width="100%"
-                height="100%"
-                viewBox={`${boundingBox.x} ${boundingBox.y} ${boundingBox.width} ${boundingBox.height}`}
-                preserveAspectRatio="none"
-              >
-                {new StyledPillar({ boundingBox, colors }).render()}
-              </svg>
-            )}
-          </div>,
-        );
+              new StyledPillar({ boundingBox, colors }).render()
+            ),
+        });
       }
     }
 
-    return elements;
+    return placements;
   }, [
     rows,
     cols,
@@ -1272,6 +1268,79 @@ export function Board({
     resolveWallColor,
     getCellRect,
     boardTheme,
+  ]);
+
+  /**
+   * Wall bodies, bucketed by painting order.
+   *
+   * The geometry here is deliberately identical to what the wall divs used, so
+   * this move changes only WHICH rasterizer paints a wall, never where it sits.
+   * That is the whole point: a div background snaps to whole device pixels
+   * while the joint's SVG path antialiases the same edge at its fractional
+   * position, and the disagreement shows up as a hairline of background between
+   * a wall and its joint. One bucket per z-index keeps the existing stacking.
+   */
+  const wallLayers = useMemo(() => {
+    if (cellWidthPx === 0 || cellHeightPx === 0) return [];
+
+    const buckets = new Map<number, WallLayerRect[]>();
+    walls.forEach((pWall, index) => {
+      const [row1, col1, row2] = wallToRectCoords(pWall);
+      const isVertical = pWall.orientation === "vertical";
+      const rect = isVertical
+        ? getCellRect(row1, col1)
+        : getCellRect(Math.min(row1, row2), col1);
+      if (!rect) return;
+
+      const z =
+        pWall.state === "placed"
+          ? 10
+          : pWall.state === "staged" || pWall.state === "premoved"
+            ? 8
+            : pWall.state === "best-move"
+              ? 4
+              : 2;
+
+      // The 1px overhang along a wall's length is inherited from the divs: it
+      // makes a wall reach into its joints rather than stop at them.
+      const geometry = isVertical
+        ? {
+            x: rect.right,
+            y: rect.top - 1,
+            width: Math.max(gridMetrics.gapX, 2),
+            height: rect.height + 2,
+          }
+        : {
+            x: rect.left - 1,
+            y: rect.bottom,
+            width: rect.width + 2,
+            height: Math.max(gridMetrics.gapY, 2),
+          };
+
+      const bucket = buckets.get(z) ?? [];
+      bucket.push({
+        key: `wall-${index}`,
+        ...geometry,
+        color: resolveWallColor(pWall),
+        opacity: pWall.state === "calculated" ? 0.5 : 1,
+        dashed: pWall.state === "staged" || pWall.state === "premoved",
+        glow: pWall.state === "placed" && isLastWall(pWall),
+      });
+      buckets.set(z, bucket);
+    });
+
+    return [...buckets.entries()]
+      .sort(([a], [b]) => a - b)
+      .map(([z, rects]) => ({ z, rects }));
+  }, [
+    walls,
+    cellWidthPx,
+    cellHeightPx,
+    gridMetrics.gapX,
+    gridMetrics.gapY,
+    getCellRect,
+    resolveWallColor,
+    isLastWall,
   ]);
 
   // In flush mode with 8+ cols, skip maxWidth to avoid px→rem→px rounding that can
@@ -1639,100 +1708,28 @@ export function Board({
             {/* Render move targets */}
             {renderMoveHighlights()}
 
-            {/* Render walls */}
-            {walls.map((pWall, index) => {
-              if (cellWidthPx === 0 || cellHeightPx === 0) {
-                return null;
-              }
-              const [row1, col1, row2] = wallToRectCoords(pWall);
-              const isVertical = pWall.orientation === "vertical";
-              const wallColor = resolveWallColor(pWall);
-
-              let style: CSSProperties = {
-                position: "absolute",
-                backgroundColor: wallColor,
-                zIndex:
-                  pWall.state === "placed"
-                    ? 10
-                    : pWall.state === "staged" || pWall.state === "premoved"
-                      ? 8
-                      : pWall.state === "best-move"
-                        ? 4
-                        : 2,
-              };
-
-              if (isVertical) {
-                // Vertical wall: separates cells horizontally (between columns)
-                const rect = getCellRect(row1, col1);
-                if (!rect) {
-                  return null;
-                }
-                const thickness = Math.max(gridMetrics.gapX, 2);
-
-                style = {
-                  ...style,
-                  height: `${rect.height + 2}px`,
-                  width: `${thickness}px`,
-                  top: `${rect.top - 1}px`,
-                  left: `${rect.right}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : 1,
-                };
-              } else {
-                // Horizontal wall: separates cells vertically (between rows)
-                const minRow = Math.min(row1, row2);
-                const rect = getCellRect(minRow, col1);
-                if (!rect) {
-                  return null;
-                }
-                const thickness = Math.max(gridMetrics.gapY, 2);
-
-                style = {
-                  ...style,
-                  width: `${rect.width + 2}px`,
-                  height: `${thickness}px`,
-                  left: `${rect.left - 1}px`,
-                  top: `${rect.bottom}px`,
-                  opacity: pWall.state === "calculated" ? 0.5 : 1,
-                };
-              }
-
-              const borderStyle =
-                pWall.state === "staged" || pWall.state === "premoved"
-                  ? "border-2 border-dashed border-gray-600"
-                  : "";
-
-              // Add highlight glow for last-placed walls
-              const isLastPlacedWall =
-                pWall.state === "placed" && isLastWall(pWall);
-              if (isLastPlacedWall) {
-                style.boxShadow = "0 0 8px 3px var(--wall-highlight-glow)";
-              }
-
-              return (
-                <div
-                  key={`wall-${index}`}
-                  style={style}
-                  className={`shadow-md ${borderStyle}`}
-                  onContextMenu={(e) => {
-                    e.preventDefault();
-                    // Don't add wall annotation if we're in an arrow drag
-                    if (arrowDragStateRef?.current.isDragging) return;
-                    // If annotation handler exists, use it; otherwise fall back to wall right-click
-                    if (onWallSlotRightClick) {
-                      onWallSlotRightClick(
-                        pWall.cell[0],
-                        pWall.cell[1],
-                        pWall.orientation,
-                      );
-                    } else {
-                      onWallRightClick?.(index);
-                    }
-                  }}
-                />
-              );
-            })}
-            {/* Render pillars */}
-            {pillars}
+            {/* Render walls. Drawn as SVG, in the same coordinate space as the
+                joints, so a wall and its joint cannot disagree about where
+                their shared edge falls - see wall-layer.tsx. */}
+            {wallLayers.map(({ z, rects }) => (
+              <WallLayer
+                key={`wall-layer-${z}`}
+                z={z}
+                width={gridMetrics.width}
+                height={gridMetrics.height}
+                rects={rects}
+              />
+            ))}
+            {/* Render wall joints. One grid-sized SVG rather than a <div>
+                per intersection: a div box is layout-snapped to 1/64px and a
+                wall's SVG geometry is not, and that mismatch is what put a
+                joint a whole device pixel off its wall at some DPRs. */}
+            <JointLayer
+              z={12}
+              width={gridMetrics.width}
+              height={gridMetrics.height}
+              joints={pillars}
+            />
 
             {/* Render cells */}
             {grid.map((row, rowIndex) =>
