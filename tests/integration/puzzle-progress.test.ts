@@ -40,7 +40,7 @@ let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let readPuzzleProgress: typeof import("../../server/games/puzzle-progress").readPuzzleProgress;
-let hasSolvedGeneratedPuzzle: typeof import("../../server/games/puzzle-progress").hasSolvedGeneratedPuzzle;
+let hasVerifiedSavedPuzzleSolve: typeof import("../../server/games/puzzle-progress").hasVerifiedSavedPuzzleSolve;
 let recordScriptedCompletion: typeof import("../../server/games/puzzle-progress").recordScriptedCompletion;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let gamePlayersTable: typeof import("../../server/db/schema/game-players").gamePlayersTable;
@@ -77,7 +77,7 @@ async function importServerModules() {
     .persistCompletedGame;
   const progress = await import("../../server/games/puzzle-progress");
   readPuzzleProgress = progress.readPuzzleProgress;
-  hasSolvedGeneratedPuzzle = progress.hasSolvedGeneratedPuzzle;
+  hasVerifiedSavedPuzzleSolve = progress.hasVerifiedSavedPuzzleSolve;
   recordScriptedCompletion = progress.recordScriptedCompletion;
   gamesTable = (await import("../../server/db/schema/games")).gamesTable;
   gamePlayersTable = (await import("../../server/db/schema/game-players"))
@@ -232,7 +232,7 @@ describe("generated puzzle completion (server-verified)", () => {
     });
 
     const progress = await readPuzzleProgress(userId);
-    expect(progress.solvedGeneratedIds).toEqual([PUZZLE_A]);
+    expect(progress.verifiedSolvedSavedPuzzleIds).toEqual([PUZZLE_A]);
   });
 
   it("does NOT count a draw, though both players hold outcome rank 1", async () => {
@@ -254,7 +254,7 @@ describe("generated puzzle completion (server-verified)", () => {
     expect(players.map((row) => row.outcomeRank).sort()).toEqual([1, 1]);
 
     const progress = await readPuzzleProgress(userId);
-    expect(progress.solvedGeneratedIds).toEqual([]);
+    expect(progress.verifiedSolvedSavedPuzzleIds).toEqual([]);
   });
 
   it("does NOT count a loss", async () => {
@@ -266,7 +266,7 @@ describe("generated puzzle completion (server-verified)", () => {
     });
 
     const progress = await readPuzzleProgress(userId);
-    expect(progress.solvedGeneratedIds).toEqual([]);
+    expect(progress.verifiedSolvedSavedPuzzleIds).toEqual([]);
   });
 
   it("does NOT count an ordinary game, which carries no puzzle id", async () => {
@@ -277,7 +277,7 @@ describe("generated puzzle completion (server-verified)", () => {
     });
 
     const progress = await readPuzzleProgress(userId);
-    expect(progress.solvedGeneratedIds).toEqual([]);
+    expect(progress.verifiedSolvedSavedPuzzleIds).toEqual([]);
   });
 
   it("reports each solved puzzle once, sorted, and ignores other users' wins", async () => {
@@ -300,11 +300,12 @@ describe("generated puzzle completion (server-verified)", () => {
       ending: "joiner-resigns",
     });
 
-    expect((await readPuzzleProgress(userId)).solvedGeneratedIds).toEqual([
-      PUZZLE_A,
-      PUZZLE_B,
-    ]);
-    expect((await readPuzzleProgress(otherId)).solvedGeneratedIds).toEqual([]);
+    expect(
+      (await readPuzzleProgress(userId)).verifiedSolvedSavedPuzzleIds,
+    ).toEqual([PUZZLE_A, PUZZLE_B]);
+    expect(
+      (await readPuzzleProgress(otherId)).verifiedSolvedSavedPuzzleIds,
+    ).toEqual([]);
   });
 });
 
@@ -319,7 +320,9 @@ describe("scripted puzzle completion (client-asserted)", () => {
       .from(scriptedPuzzleCompletionsTable)
       .where(eq(scriptedPuzzleCompletionsTable.userId, userId));
     expect(rows).toHaveLength(1);
-    expect((await readPuzzleProgress(userId)).solvedScriptedIds).toEqual(["3"]);
+    expect(
+      (await readPuzzleProgress(userId)).assertedCompletedSavedPuzzleIds,
+    ).toEqual(["3"]);
   });
 
   it("accumulates anonymous completions as separate rows", async () => {
@@ -337,8 +340,12 @@ describe("scripted puzzle completion (client-asserted)", () => {
     await recordScriptedCompletion({ userId: mine, puzzleId: "7" });
     await recordScriptedCompletion({ userId: theirs, puzzleId: "2" });
 
-    expect((await readPuzzleProgress(mine)).solvedScriptedIds).toEqual(["7"]);
-    expect((await readPuzzleProgress(theirs)).solvedScriptedIds).toEqual(["2"]);
+    expect(
+      (await readPuzzleProgress(mine)).assertedCompletedSavedPuzzleIds,
+    ).toEqual(["7"]);
+    expect(
+      (await readPuzzleProgress(theirs)).assertedCompletedSavedPuzzleIds,
+    ).toEqual(["2"]);
   });
 });
 
@@ -359,8 +366,8 @@ describe("campaign levels in the unified progress read", () => {
     expect(progress.completedCampaignLevelIds).toEqual(["1"]);
     // The three namespaces stay separate: a campaign level must not appear as
     // a scripted puzzle of the same id.
-    expect(progress.solvedScriptedIds).toEqual([]);
-    expect(progress.solvedGeneratedIds).toEqual([]);
+    expect(progress.assertedCompletedSavedPuzzleIds).toEqual([]);
+    expect(progress.verifiedSolvedSavedPuzzleIds).toEqual([]);
   });
 
   it("surfaces a level that exists only in the LEGACY table", async () => {
@@ -428,7 +435,7 @@ describe("has this user solved ONE generated puzzle", () => {
       ending: "joiner-resigns",
     });
 
-    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_A)).toBe(true);
+    expect(await hasVerifiedSavedPuzzleSolve(userId, PUZZLE_A)).toBe(true);
   });
 
   it("is false after a draw", async () => {
@@ -439,7 +446,7 @@ describe("has this user solved ONE generated puzzle", () => {
       ending: "draw",
     });
 
-    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_A)).toBe(false);
+    expect(await hasVerifiedSavedPuzzleSolve(userId, PUZZLE_A)).toBe(false);
   });
 
   it("does not answer for a puzzle the user beat a different one of", async () => {
@@ -450,6 +457,6 @@ describe("has this user solved ONE generated puzzle", () => {
       ending: "joiner-resigns",
     });
 
-    expect(await hasSolvedGeneratedPuzzle(userId, PUZZLE_B)).toBe(false);
+    expect(await hasVerifiedSavedPuzzleSolve(userId, PUZZLE_B)).toBe(false);
   });
 });

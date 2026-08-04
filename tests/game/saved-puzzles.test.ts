@@ -150,14 +150,25 @@ describe("route row mapping (mapSavedPuzzleRows)", () => {
     const mapped = mapSavedPuzzleRows(rows);
     expect(mapped.map((p) => p.id)).toEqual(["a", "b"]);
     expect(mapped[0].displayName).toBe(seedRows[0].displayName);
-    // Only the public projection is exposed. `sortIndex` joined it in S-G4
-    // so the client can sort by likes with a deterministic tiebreak; the
-    // provenance columns still must not leak.
+    // Only the public projection is exposed. `sortIndex` joined it in S-G4 so
+    // the client can sort by likes with a deterministic tiebreak, and the rest
+    // joined it when the authored puzzles became rows: author and difficulty
+    // are shown on the card, legacyScriptedId is how the launcher knows a
+    // puzzle is still playable with no bot around, and botLaunchReady is
+    // whether a bot could be handed the row at all.
+    // The provenance columns must STILL not leak — `source` and
+    // `sourceFingerprint` are absent below, and that is the point of the test.
+    // Note `leadIn` is absent too: it is server-only, which is exactly why
+    // botLaunchReady is derived here rather than on the client.
     expect(Object.keys(mapped[0]).sort()).toEqual([
+      "author",
+      "botLaunchReady",
       "config",
+      "difficulty",
       "dislikes",
       "displayName",
       "id",
+      "legacyScriptedId",
       "likes",
       "myVote",
       "sortIndex",

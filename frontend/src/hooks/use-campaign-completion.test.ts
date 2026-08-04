@@ -44,8 +44,8 @@ describe("campaign completion freshness", () => {
   it("invalidating the PUZZLE progress key is what marks the list stale", () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(PUZZLE_PROGRESS_QUERY_KEY, {
-      solvedGeneratedIds: [],
-      solvedScriptedIds: [],
+      verifiedSolvedSavedPuzzleIds: [],
+      assertedCompletedSavedPuzzleIds: [],
       completedCampaignLevelIds: [],
     });
     expect(
@@ -68,14 +68,14 @@ describe("campaign completion freshness", () => {
     // were renamed or dropped server-side, every level would silently render
     // as unfinished.
     const payload = {
-      solvedGeneratedIds: ["gen-1"],
-      solvedScriptedIds: ["3"],
+      verifiedSolvedSavedPuzzleIds: ["gen-1"],
+      assertedCompletedSavedPuzzleIds: ["3"],
       completedCampaignLevelIds: ["1"],
     };
     expect(payload.completedCampaignLevelIds.includes("1")).toBe(true);
     expect(payload.completedCampaignLevelIds.includes("2")).toBe(false);
     // The three namespaces stay separate — a campaign level id must not be
     // satisfied by a scripted puzzle of the same name.
-    expect(payload.solvedScriptedIds).not.toContain("1");
+    expect(payload.assertedCompletedSavedPuzzleIds).not.toContain("1");
   });
 });

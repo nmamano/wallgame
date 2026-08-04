@@ -76,7 +76,7 @@ const SIGNATURE = `(() => {
     // ONE page-level invitation, not one per section.
     loginPrompts: (text.match(/Log in to keep track/g) ?? []).length,
     loading: /Loading puzzles/.test(text) || /Looking for the official bot/.test(text),
-    listError: /Could not load the generated puzzles/.test(text),
+    listError: /Could not load the puzzles/.test(text),
     routeError: /something went wrong|Unexpected error/i.test(text),
   });
 })()`;
@@ -122,8 +122,8 @@ const SCENARIOS = [
     "/api/puzzles": () => ({ puzzles }),
     "/api/bots": () => bots,
     "/api/puzzles/progress": () => ({
-      solvedGeneratedIds: ["pz1", "pz2"],
-      solvedScriptedIds: ["1"],
+      verifiedSolvedSavedPuzzleIds: ["pz1", "pz2"],
+      assertedCompletedSavedPuzzleIds: ["1"],
       // REQUIRED since S-FOLD: the campaign section reads from this same
       // payload, and the response schema fails closed without the field, so a
       // stub that omits it would render an error rather than the page.
@@ -141,8 +141,8 @@ const SCENARIOS = [
     "/api/puzzles": () => json({ error: "boom" }, 500),
     "/api/bots": () => bots,
     "/api/puzzles/progress": () => ({
-      solvedGeneratedIds: [],
-      solvedScriptedIds: [],
+      verifiedSolvedSavedPuzzleIds: [],
+      assertedCompletedSavedPuzzleIds: [],
       completedCampaignLevelIds: [],
     }),
   }),

@@ -8,11 +8,6 @@ import { CheckCircle2, Play, Loader2, Clock } from "lucide-react";
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info } from "lucide-react";
 import {
-  PUZZLES,
-  getPuzzleIds,
-  ratingToDifficulty,
-} from "../../../shared/domain/puzzles";
-import {
   SOLO_CAMPAIGN_LEVELS,
   getLevelIds,
 } from "../../../shared/domain/solo-campaign-levels";
@@ -20,16 +15,16 @@ import { usePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { useSettings } from "@/hooks/use-settings";
 import {
   playPuzzle,
-  puzzleBotsQueryOptions,
   savedPuzzlesQueryOptions,
   userQueryOptions,
 } from "@/lib/api";
+import { usePuzzlePlayback } from "@/hooks/use-puzzle-playback";
 import { puzzleProgressQueryOptions } from "@/hooks/use-puzzle-progress";
 import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { SharePuzzleButton } from "@/components/share-puzzle-button";
-import { generatedPuzzleSlug } from "@/lib/puzzle-links";
+import { savedPuzzleSlug } from "@/lib/puzzle-links";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,
@@ -40,9 +35,10 @@ import {
   sortPuzzles,
   type PuzzleSortMode,
 } from "@/lib/puzzle-sort";
-import type {
-  PuzzleVoteState,
-  SavedPuzzle,
+import {
+  SYNTHETIC_AUTHOR,
+  type PuzzleVoteState,
+  type SavedPuzzle,
 } from "../../../shared/contracts/puzzles";
 
 export const Route = createFileRoute("/puzzles/")({
@@ -59,8 +55,13 @@ export const Route = createFileRoute("/puzzles/")({
    * The user query is AWAITED first because two things depend on the
    * answer: progress is only worth fetching for a logged-in visitor (the
    * endpoint answers 401 otherwise), and the log-in invitation is only
-   * correct once we know. Puzzles and bots do not depend on it, so they run
+   * correct once we know. The puzzle list does not depend on it, so it runs
    * alongside.
+   *
+   * Bots are NOT warmed here any more. Which bot questions to ask depends on
+   * the SHAPES of the puzzles in the list (variant and board size), so they
+   * cannot be known before the list arrives; `usePuzzlePlayback` asks them
+   * once the list is in hand.
    */
   loader: async ({ context: { queryClient } }) => {
     const user = queryClient
@@ -70,7 +71,6 @@ export const Route = createFileRoute("/puzzles/")({
       .catch(() => null);
     await Promise.all([
       queryClient.prefetchQuery(savedPuzzlesQueryOptions),
-      queryClient.prefetchQuery(puzzleBotsQueryOptions),
       user.then((data) =>
         data?.user
           ? queryClient.prefetchQuery(puzzleProgressQueryOptions)
@@ -108,8 +108,8 @@ interface PuzzleCardProps {
   pending?: boolean;
   disabled?: boolean;
   /**
-   * Vote state for a generated puzzle. Scripted cards omit it entirely —
-   * votes cover the generated set only.
+   * Vote state for a generated puzzle. Campaign levels and handcrafted
+   * puzzles omit it entirely — votes cover the generated set only.
    */
   votes?: PuzzleVoteState;
   /**
@@ -128,7 +128,7 @@ interface PuzzleCardProps {
 }
 
 /**
- * One card, all THREE sections. Campaign levels, scripted puzzles and
+ * One card, all THREE sections. Campaign levels, handcrafted puzzles and
  * generated puzzles differ in what they know about themselves (an author and a
  * difficulty, or votes, or just a name) and in what their button says, but they
  * are the same object to a player, so they render through one component rather
@@ -235,24 +235,7 @@ function PuzzleCard({
 }
 
 function Puzzles() {
-  const navigate = useNavigate();
-  const { isScriptedCompleted, isLoggedIn, isLoading } = usePuzzleProgress();
-
-  const handlePlayPuzzle = (puzzleId: string) => {
-    void navigate({ to: `/puzzles/${puzzleId}` });
-  };
-
-  const puzzleIds = getPuzzleIds();
-  const puzzles = puzzleIds.map((id) => {
-    const puzzle = PUZZLES[id];
-    return {
-      id: puzzle.id,
-      title: puzzle.title,
-      author: puzzle.author,
-      difficulty: ratingToDifficulty(puzzle.difficulty),
-      completed: isScriptedCompleted(puzzle.id),
-    };
-  });
+  const { isLoggedIn, isLoading } = usePuzzleProgress();
 
   return (
     <div className="container mx-auto py-8 px-4 max-w-4xl">
@@ -284,34 +267,7 @@ function Puzzles() {
 
       <CampaignSection />
 
-      <section className="mb-12">
-        <h2 className="text-2xl font-serif font-semibold text-foreground mb-4">
-          Handcrafted Puzzles
-        </h2>
-
-        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-          {puzzles.map((puzzle) => (
-            <PuzzleCard
-              key={puzzle.id}
-              title={puzzle.title}
-              subtitle={`by ${puzzle.author}`}
-              badge={`Difficulty: ${puzzle.difficulty}/5`}
-              completed={puzzle.completed}
-              actionLabel={puzzleActionLabel(puzzle.completed)}
-              onAction={() => handlePlayPuzzle(puzzle.id)}
-              share={
-                <SharePuzzleButton
-                  kind="scripted"
-                  id={puzzle.id}
-                  puzzleName={puzzle.title}
-                />
-              }
-            />
-          ))}
-        </div>
-      </section>
-
-      <GeneratedPuzzlesSection />
+      <PuzzlesSection />
     </div>
   );
 }
@@ -381,20 +337,32 @@ function CampaignSection() {
 }
 
 /**
- * The persisted generated set (S-G1/S-G2): race positions against PuzzleBot,
- * filtered by TWO engine rules — the best-move distance rule, and since
- * S-EVAL the requirement that the mover be decisively winning, because solving
- * a puzzle means winning it. Beyond those, no vetting: Nil is the filter.
+ * The two puzzle sections: handcrafted first, then generated.
  *
- * Loading, error, and bot-offline states are scoped to this section; the two
- * sections above render regardless.
+ * They are ONE component rather than two because the split is presentational
+ * and nothing else about them differs. Everything a launch needs — which card
+ * is starting, which one was refused, what each position can be played as —
+ * is page-wide state, and forking it into two components would mean two copies
+ * of it drifting apart. `author` is the discriminator, and it decides exactly
+ * three things per card: the byline, the difficulty badge, and whether votes
+ * are offered.
+ *
+ * What a card DOES when clicked is not decided here and is not tied to the
+ * section it sits in: `usePuzzlePlayback` asks, per position, whether an
+ * official bot serves it. Seven of the ten handcrafted puzzles play PuzzleBot;
+ * the three that are only three rows tall are below any bot's minimum board
+ * size, so they walk their authored line instead. Same section, different
+ * answers, because origin and playability are genuinely different questions.
+ *
+ * Loading and error states are scoped to these two sections; the campaign
+ * above renders regardless.
  */
-function GeneratedPuzzlesSection() {
+function PuzzlesSection() {
   const navigate = useNavigate();
   const { data: userData, isPending: userPending } = useQuery(userQueryOptions);
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
-  const { isGeneratedCompleted } = usePuzzleProgress();
+  const { isPuzzleCompleted, isVerifiedSolve } = usePuzzleProgress();
   const [sortMode, setSortMode] = useState<PuzzleSortMode>("number");
   const { voteFor, isVotePending, isVoteFailed } = usePuzzleCardVotes();
   // Same options object the route loader warms, so this reads the primed
@@ -402,17 +370,31 @@ function GeneratedPuzzlesSection() {
   const puzzlesQuery = useQuery(savedPuzzlesQueryOptions);
   const [launchingId, setLaunchingId] = useState<string | null>(null);
   const [error, setError] = useState<string | null>(null);
-  const botsQuery = useQuery(puzzleBotsQueryOptions);
-  // Bots register the exact variant they serve, so the only official bot
-  // listed for custom-setup-standard is PuzzleBot - the deep-search oracle.
-  // If it is down, the section says so rather than substituting a shallower
-  // opponent.
-  const officialBots =
-    botsQuery.data?.bots.filter((bot) => bot.isOfficial) ?? [];
-  const officialBot = officialBots[0];
 
-  const launch = async (puzzle: SavedPuzzle) => {
-    if (!officialBot || launchingId !== null) return;
+  const puzzles = puzzlesQuery.data?.puzzles ?? [];
+  const { playbackFor, refetchFor } = usePuzzlePlayback(puzzles);
+  /**
+   * The puzzle whose launch was refused, if any. Kept so the banner can offer
+   * its authored line — no game was created, so falling back is honest here.
+   */
+  const [failedPuzzle, setFailedPuzzle] = useState<SavedPuzzle | null>(null);
+
+  /**
+   * Walking an authored line needs no opponent and no server round trip, so
+   * it is a plain navigation. Playing a bot mints a game first.
+   */
+  const play = async (puzzle: SavedPuzzle) => {
+    if (launchingId !== null) return;
+    const playback = playbackFor(puzzle);
+    // "pending" means discovery has not answered for this puzzle's shape yet.
+    // Doing anything here would guess, and guessing "authored line" for a
+    // puzzle a bot is about to be found for is the wrong guess.
+    if (playback.kind === "pending" || playback.kind === "unavailable") return;
+    if (playback.kind === "scripted") {
+      void navigate({ to: `/puzzles/${savedPuzzleSlug(puzzle)}` });
+      return;
+    }
+
     setLaunchingId(puzzle.id);
     setError(null);
 
@@ -420,7 +402,7 @@ function GeneratedPuzzlesSection() {
       // S-P1: server-authoritative launch — the server derives config, seat,
       // and the bot's lead-in move from the puzzle row.
       const response = await playPuzzle({
-        botId: officialBot.id,
+        botId: playback.bot.id,
         puzzleId: puzzle.id,
         hostDisplayName: settings.displayName,
         hostAppearance: {
@@ -445,105 +427,190 @@ function GeneratedPuzzlesSection() {
       setError(
         cause instanceof Error ? cause.message : "Unable to launch puzzle.",
       );
+      setFailedPuzzle(puzzle);
+      // The bot we chose is by now known to be stale — gone, or no longer
+      // serving this position. Re-asking marks this puzzle's shape pending for
+      // the round trip, so the card cannot be clicked back into the same bot
+      // while the answer is in flight.
+      void refetchFor(puzzle);
       setLaunchingId(null);
     }
   };
 
-  const generated = puzzlesQuery.data?.puzzles ?? [];
-  // A copy, always: this is cached query data.
-  const ordered = sortPuzzles(generated, sortMode);
+  /**
+   * Which section a puzzle belongs to. `author` is the only thing that
+   * decides it — a person wrote it, or the generation pipeline did.
+   */
+  const handcrafted = puzzles.filter(
+    (puzzle) => puzzle.author !== SYNTHETIC_AUTHOR,
+  );
+  const generated = puzzles.filter(
+    (puzzle) => puzzle.author === SYNTHETIC_AUTHOR,
+  );
+
+  /**
+   * One card, either section. The three things that differ between them are
+   * all read off `author` here rather than passed in by the caller, so the two
+   * call sites below cannot disagree about which puzzle gets a byline, a
+   * difficulty, or votes.
+   */
+  const renderCard = (puzzle: SavedPuzzle) => {
+    const authored = puzzle.author !== SYNTHETIC_AUTHOR;
+    const completed = isPuzzleCompleted(puzzle.id);
+    const playback = playbackFor(puzzle);
+    return (
+      <PuzzleCard
+        key={puzzle.id}
+        title={puzzle.displayName}
+        // "by synthetic" on every generated card is noise; a byline is worth
+        // showing only when a person is behind it.
+        subtitle={authored ? `by ${puzzle.author}` : undefined}
+        // Generated puzzles show NO difficulty (Nil, 2026-08-04). The
+        // pipeline does not produce one, so today the column is null for all
+        // of them — the author test is here so a stray value could never
+        // surface a number nobody stands behind.
+        badge={
+          authored && puzzle.difficulty !== null
+            ? `Difficulty: ${puzzle.difficulty}/5`
+            : undefined
+        }
+        completed={completed}
+        actionLabel={puzzleActionLabel(completed)}
+        // Also pending while we do not yet know who can play this puzzle: a
+        // card that looks ready before discovery answers invites a click we
+        // would have to guess at.
+        pending={launchingId === puzzle.id || playback.kind === "pending"}
+        disabled={
+          playback.kind === "unavailable" ||
+          playback.kind === "pending" ||
+          launchingId !== null
+        }
+        onAction={() => void play(puzzle)}
+        // Votes cover the generated set only (Nil, 2026-08-04). Handcrafted
+        // puzzles are a curated set with a person's name on them; asking
+        // players to rate them is a different thing from rating the output of
+        // a pipeline, so the controls and the counts are both absent.
+        votes={
+          authored
+            ? undefined
+            : {
+                likes: puzzle.likes,
+                dislikes: puzzle.dislikes,
+                myVote: puzzle.myVote,
+              }
+        }
+        // Earned: a vote needs a win the SERVER watched, so a card finished by
+        // walking its authored line shows the counts without the controls —
+        // the API would refuse the write anyway.
+        onVote={
+          !authored && isLoggedIn && isVerifiedSolve(puzzle.id)
+            ? voteFor(puzzle.id)
+            : undefined
+        }
+        votePending={isVotePending(puzzle.id)}
+        voteFailed={isVoteFailed(puzzle.id)}
+        share={
+          <SharePuzzleButton
+            kind="saved"
+            // The number, not the row id: a link reading /puzzles/7 is the
+            // point. See puzzle-links.ts for what that costs when a puzzle is
+            // retired.
+            id={savedPuzzleSlug(puzzle)}
+            puzzleName={puzzle.displayName}
+          />
+        }
+      />
+    );
+  };
 
   return (
-    <section>
-      {/* Heading and sort control share a row: with the old subtitle gone
-          (Nil, 2026-07-29) a control-only row under the heading would be a
-          band of empty space, and the margin here matches the handcrafted
-          section's heading so the two sections still line up. */}
-      <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
-        <h2 className="text-2xl font-serif font-semibold text-foreground">
-          Generated Puzzles
-        </h2>
-        <div className="flex items-center gap-1">
-          {PUZZLE_SORT_OPTIONS.map((option) => (
-            <Button
-              key={option.value}
-              size="sm"
-              variant={sortMode === option.value ? "default" : "outline"}
-              aria-pressed={sortMode === option.value}
-              onClick={() => setSortMode(option.value)}
-            >
-              {option.label}
-            </Button>
-          ))}
-        </div>
-      </div>
-
+    <>
+      {/* Both of the states below speak for BOTH sections — one list backs
+          them — so they sit above the pair rather than inside either one. */}
       {puzzlesQuery.isPending && (
-        <p className="flex items-center gap-2 text-muted-foreground">
+        <p className="mb-8 flex items-center gap-2 text-muted-foreground">
           <Loader2 className="h-4 w-4 animate-spin" />
           Loading puzzles…
         </p>
       )}
       {puzzlesQuery.isError && (
-        <Card className="border-destructive p-4 text-destructive">
-          Could not load the generated puzzles. Try again later.
+        <Card className="mb-8 border-destructive p-4 text-destructive">
+          Could not load the puzzles. Try again later.
         </Card>
       )}
 
-      {botsQuery.isPending && (
-        <p className="flex items-center gap-2 text-muted-foreground">
-          <Loader2 className="h-4 w-4 animate-spin" />
-          Looking for the official bot…
-        </p>
-      )}
-      {!botsQuery.isPending && !officialBot && (
-        <Card className="border-destructive p-4 text-destructive mb-4">
-          The official bot is offline. Puzzles can be inspected, but games
-          cannot start until it reconnects.
-        </Card>
-      )}
+      {/* Availability is PER PUZZLE, so a page-wide "the bot is offline"
+          banner would be wrong: with PuzzleBot down the authored puzzles are
+          still fully playable. Each card says what IT can do, and the only
+          page-wide message left is a launch that was actually refused. */}
       {error && (
-        <Card className="border-destructive p-4 text-destructive mb-4">
-          {error}
+        <Card className="mb-8 border-destructive p-4 text-destructive">
+          <p>{error}</p>
+          {failedPuzzle?.legacyScriptedId != null && (
+            <Button
+              className="mt-3"
+              onClick={() => {
+                const target = failedPuzzle;
+                setError(null);
+                setFailedPuzzle(null);
+                // `play=authored` so the destination walks the line instead of
+                // hunting for the same bot again. No game exists yet, which is
+                // what makes this fallback honest.
+                void navigate({
+                  to: "/puzzles/$id",
+                  params: { id: savedPuzzleSlug(target) },
+                  search: { play: "authored" },
+                });
+              }}
+            >
+              Play the authored line
+            </Button>
+          )}
         </Card>
       )}
 
-      <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
-        {ordered.map((puzzle) => {
-          const solved = isGeneratedCompleted(puzzle.id);
-          return (
-            <PuzzleCard
-              key={puzzle.id}
-              title={puzzle.displayName}
-              completed={solved}
-              actionLabel={puzzleActionLabel(solved)}
-              pending={launchingId === puzzle.id}
-              disabled={!officialBot || launchingId !== null}
-              onAction={() => void launch(puzzle)}
-              votes={{
-                likes: puzzle.likes,
-                dislikes: puzzle.dislikes,
-                myVote: puzzle.myVote,
-              }}
-              // Earned: only a logged-in player who has beaten this puzzle
-              // gets controls. Everyone else sees the counts.
-              onVote={isLoggedIn && solved ? voteFor(puzzle.id) : undefined}
-              votePending={isVotePending(puzzle.id)}
-              voteFailed={isVoteFailed(puzzle.id)}
-              share={
-                <SharePuzzleButton
-                  kind="generated"
-                  // The number, not the row id: a link reading
-                  // /puzzles/generated/7 is the point. See puzzle-links.ts for
-                  // what that costs when a puzzle is retired.
-                  id={generatedPuzzleSlug(puzzle)}
-                  puzzleName={puzzle.displayName}
-                />
-              }
-            />
-          );
-        })}
-      </div>
-    </section>
+      <section className="mb-12">
+        <h2 className="mb-4 text-2xl font-serif font-semibold text-foreground">
+          Handcrafted Puzzles
+        </h2>
+
+        {/* No sort control: ten puzzles arranged by their author in rising
+            difficulty are already in the order that matters, and there is
+            nothing to sort them BY — they carry no votes. */}
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {handcrafted.map(renderCard)}
+        </div>
+      </section>
+
+      <section>
+        {/* Heading and sort control share a row: with the old subtitle gone
+            (Nil, 2026-07-29) a control-only row under the heading would be a
+            band of empty space, and the margin matches the headings above so
+            all three sections line up. */}
+        <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
+          <h2 className="text-2xl font-serif font-semibold text-foreground">
+            Generated Puzzles
+          </h2>
+          <div className="flex items-center gap-1">
+            {PUZZLE_SORT_OPTIONS.map((option) => (
+              <Button
+                key={option.value}
+                size="sm"
+                variant={sortMode === option.value ? "default" : "outline"}
+                aria-pressed={sortMode === option.value}
+                onClick={() => setSortMode(option.value)}
+              >
+                {option.label}
+              </Button>
+            ))}
+          </div>
+        </div>
+
+        <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">
+          {/* A copy, always: this is cached query data. */}
+          {sortPuzzles(generated, sortMode).map(renderCard)}
+        </div>
+      </section>
+    </>
   );
 }

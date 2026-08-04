@@ -1,5 +1,5 @@
 import { Hono } from "hono";
-import { and, asc, eq } from "drizzle-orm";
+import { and, asc, eq, isNotNull } from "drizzle-orm";
 import { zValidator } from "@hono/zod-validator";
 
 import { db } from "../db";
@@ -7,7 +7,7 @@ import { savedPuzzlesTable } from "../db/schema/saved-puzzles";
 import { getUserMiddleware, getOptionalUserMiddleware } from "../kinde";
 import { getUserIdFromKinde } from "../db/user-helpers";
 import {
-  hasSolvedGeneratedPuzzle,
+  hasVerifiedSavedPuzzleSolve,
   readPuzzleProgress,
   recordScriptedCompletion,
 } from "../games/puzzle-progress";
@@ -22,7 +22,6 @@ import {
   puzzleVoteRequestSchema,
   scriptedCompletionRequestSchema,
 } from "../../shared/contracts/puzzles";
-import { PUZZLES } from "../../shared/domain/puzzles";
 import {
   createAnonymousWriteLimiter,
   clientIpKey,
@@ -45,9 +44,9 @@ import {
  */
 
 /**
- * Anonymous scripted completions are telemetry, so the cap is generous enough
- * never to trouble a real player (the whole scripted set is 10 puzzles) while
- * bounding abuse of an open write.
+ * Anonymous asserted completions are telemetry, so the cap is generous enough
+ * never to trouble a real player (only the ten authored puzzles can be
+ * completed this way) while bounding abuse of an open write.
  */
 const anonymousCompletionLimiter = createAnonymousWriteLimiter({
   limit: 30,
@@ -69,6 +68,28 @@ const findVotablePuzzle = async (puzzleId: string) => {
       and(
         eq(savedPuzzlesTable.id, puzzleId),
         eq(savedPuzzlesTable.enabled, true),
+      ),
+    )
+    .limit(1);
+  return rows[0] ?? null;
+};
+
+/**
+ * Resolves the target of a client-asserted completion: an enabled puzzle that
+ * HAS an authored line. Only those can be finished without a game to check —
+ * every other puzzle is played against a bot, and its completion is read from
+ * the game record instead. Asking the table rather than a hardcoded set is
+ * what keeps this open write from inserting arbitrary rows.
+ */
+const findScriptedPuzzle = async (puzzleId: string) => {
+  const rows = await db
+    .select({ id: savedPuzzlesTable.id })
+    .from(savedPuzzlesTable)
+    .where(
+      and(
+        eq(savedPuzzlesTable.id, puzzleId),
+        eq(savedPuzzlesTable.enabled, true),
+        isNotNull(savedPuzzlesTable.legacyScriptedId),
       ),
     )
     .limit(1);
@@ -120,15 +141,16 @@ export const puzzlesRoute = new Hono()
   })
 
   /**
-   * Record a scripted-puzzle completion. Client-asserted by nature — a
-   * scripted puzzle is a guided walkthrough with no game to verify — and the
-   * id is validated against the known scripted set, so this open path cannot
-   * write arbitrary rows.
+   * Record a completion asserted by the client. Asserted by nature — a
+   * puzzle played against its authored line is a guided walkthrough with no
+   * game to verify — and the id is validated against the puzzles that HAVE
+   * such a line, so this open path cannot write arbitrary rows.
    *
    * Anonymous writes are accepted because Nil wants usage data, and are rate
    * limited per client IP. They are best-effort telemetry, not unique-user
-   * statistics. Authenticated writes are idempotent (one row per user and
-   * puzzle) and do not share the anonymous cap.
+   * statistics, and they buy nothing: a vote needs a win the server watched.
+   * Authenticated writes are idempotent (one row per user and puzzle) and do
+   * not share the anonymous cap.
    */
   .post(
     "/scripted-completions",
@@ -136,7 +158,7 @@ export const puzzlesRoute = new Hono()
     zValidator("json", scriptedCompletionRequestSchema),
     async (c) => {
       const { puzzleId } = c.req.valid("json");
-      if (!PUZZLES[puzzleId]) {
+      if (!(await findScriptedPuzzle(puzzleId))) {
         return c.json({ error: "Unknown puzzle" }, 400);
       }
 
@@ -187,8 +209,9 @@ export const puzzlesRoute = new Hono()
    * Cast, change, or withdraw a vote. A vote is EARNED: the caller must have
    * decisively beaten this puzzle, which is checked with the same query that
    * answers "have I solved it" — see
-   * `hasSolvedGeneratedPuzzle` in `server/games/puzzle-progress.ts`. Voting
-   * never retires anything; the counts are for Nil to read.
+   * `hasVerifiedSavedPuzzleSolve` in `server/games/puzzle-progress.ts` —
+   * which reads decisive GAMES, so a client-asserted completion can never buy
+   * a vote. Voting never retires anything; the counts are for Nil to read.
    *
    * Returns the updated state, so the game page and the puzzle card can
    * refresh from one round trip.
@@ -206,7 +229,7 @@ export const puzzlesRoute = new Hono()
         }
 
         const userId = await getUserIdFromKinde(c);
-        if (!(await hasSolvedGeneratedPuzzle(userId, puzzleId))) {
+        if (!(await hasVerifiedSavedPuzzleSolve(userId, puzzleId))) {
           return c.json({ error: "Beat the puzzle first" }, 403);
         }
 

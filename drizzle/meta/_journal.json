@@ -169,6 +169,13 @@
       "when": 1785630790615,
       "tag": "0023_narrow_killmonger",
       "breakpoints": true
+    },
+    {
+      "idx": 24,
+      "version": "7",
+      "when": 1785826953607,
+      "tag": "0024_natural_roulette",
+      "breakpoints": true
     }
   ]
 }

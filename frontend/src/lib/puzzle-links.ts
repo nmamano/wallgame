@@ -27,10 +27,15 @@
  * is still accepted here so links minted before this change keep working.
  */
 
-export type PuzzleKind = "scripted" | "campaign" | "generated";
+/**
+ * Two kinds, not three. "scripted" and "generated" used to be separate
+ * catalogs with separate addresses; they are one table now, so one kind
+ * ("saved") covers every puzzle and the campaign keeps its own.
+ */
+export type PuzzleKind = "saved" | "campaign";
 
-/** Anything with the two fields a generated link is built from or matched against. */
-export interface GeneratedPuzzleRef {
+/** Anything with the two fields a puzzle link is built from or matched against. */
+export interface SavedPuzzleRef {
   id: string;
   displayName: string;
 }
@@ -43,34 +48,34 @@ export interface GeneratedPuzzleRef {
  * back to null on a name that does not end in a number, which keeps a renamed
  * or historical row out of the numeric namespace instead of guessing.
  */
-export function generatedPuzzleNumber(displayName: string): number | null {
+export function savedPuzzleNumber(displayName: string): number | null {
   const match = /(\d+)\s*$/.exec(displayName);
   if (!match) return null;
   const value = Number(match[1]);
   return Number.isInteger(value) && value > 0 ? value : null;
 }
 
-/** What a generated link should carry: the number when it has one, else the id. */
-export function generatedPuzzleSlug(puzzle: GeneratedPuzzleRef): string {
-  const number = generatedPuzzleNumber(puzzle.displayName);
+/** What a puzzle link should carry: the number when it has one, else the id. */
+export function savedPuzzleSlug(puzzle: SavedPuzzleRef): string {
+  const number = savedPuzzleNumber(puzzle.displayName);
   return number === null ? puzzle.id : String(number);
 }
 
 /**
- * Resolve the `$id` segment of a generated link back to a puzzle.
+ * Resolve the `$id` segment of a puzzle link back to a puzzle.
  *
  * Accepts both forms on purpose: an all-digits segment is a puzzle number,
  * anything else is a row id (the shape links used before numbers existed).
  * The two namespaces cannot collide because row ids are nanoids.
  */
-export function resolveGeneratedPuzzle<T extends GeneratedPuzzleRef>(
+export function resolveSavedPuzzle<T extends SavedPuzzleRef>(
   puzzles: readonly T[],
   param: string,
 ): T | undefined {
   if (/^\d+$/.test(param)) {
     const wanted = Number(param);
     return puzzles.find(
-      (puzzle) => generatedPuzzleNumber(puzzle.displayName) === wanted,
+      (puzzle) => savedPuzzleNumber(puzzle.displayName) === wanted,
     );
   }
   return puzzles.find((puzzle) => puzzle.id === param);
@@ -79,12 +84,10 @@ export function resolveGeneratedPuzzle<T extends GeneratedPuzzleRef>(
 /** The in-app path for a puzzle of the given kind. */
 export function puzzlePath(kind: PuzzleKind, id: string): string {
   switch (kind) {
-    case "scripted":
+    case "saved":
       return `/puzzles/${id}`;
     case "campaign":
       return `/solo-campaign/${id}`;
-    case "generated":
-      return `/puzzles/generated/${id}`;
   }
 }
 

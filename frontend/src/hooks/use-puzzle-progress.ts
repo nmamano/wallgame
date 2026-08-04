@@ -65,13 +65,28 @@ export function usePuzzleProgress() {
 
   // Memoised because the `?? []` fallback would otherwise be a fresh array
   // each render, and these feed the callbacks below.
-  const solvedGeneratedIds = useMemo(
-    () => progressQuery.data?.solvedGeneratedIds ?? [],
+  const verifiedSolvedSavedPuzzleIds = useMemo(
+    () => progressQuery.data?.verifiedSolvedSavedPuzzleIds ?? [],
     [progressQuery.data],
   );
-  const solvedScriptedIds = useMemo(
-    () => progressQuery.data?.solvedScriptedIds ?? [],
+  const assertedCompletedSavedPuzzleIds = useMemo(
+    () => progressQuery.data?.assertedCompletedSavedPuzzleIds ?? [],
     [progressQuery.data],
+  );
+
+  /**
+   * What a CARD needs: finished by either kind of evidence. The two sources
+   * stay separate on the wire because they mean different things (see the
+   * contract), and this is the single place the union is taken — so nothing
+   * downstream has to remember that a client assertion is not a win.
+   */
+  const completedSavedPuzzleIds = useMemo(
+    () =>
+      new Set([
+        ...verifiedSolvedSavedPuzzleIds,
+        ...assertedCompletedSavedPuzzleIds,
+      ]),
+    [verifiedSolvedSavedPuzzleIds, assertedCompletedSavedPuzzleIds],
   );
   const completedCampaignLevelIds = useMemo(
     () => progressQuery.data?.completedCampaignLevelIds ?? [],
@@ -113,14 +128,20 @@ export function usePuzzleProgress() {
     [scriptedCompletion],
   );
 
-  const isScriptedCompleted = useCallback(
-    (puzzleId: string) => solvedScriptedIds.includes(puzzleId),
-    [solvedScriptedIds],
+  /** For a card's tick: finished at all, however it was finished. */
+  const isPuzzleCompleted = useCallback(
+    (puzzleId: string) => completedSavedPuzzleIds.has(puzzleId),
+    [completedSavedPuzzleIds],
   );
 
-  const isGeneratedCompleted = useCallback(
-    (puzzleId: string) => solvedGeneratedIds.includes(puzzleId),
-    [solvedGeneratedIds],
+  /**
+   * Strictly "the server watched me win this". Voting is authorised on the
+   * SERVER from the same rule; this only decides whether to offer the control,
+   * so a stale client can never do more than show a control the API refuses.
+   */
+  const isVerifiedSolve = useCallback(
+    (puzzleId: string) => verifiedSolvedSavedPuzzleIds.includes(puzzleId),
+    [verifiedSolvedSavedPuzzleIds],
   );
 
   const isCampaignLevelCompleted = useCallback(
@@ -132,11 +153,11 @@ export function usePuzzleProgress() {
     isLoggedIn,
     /** True while we cannot yet know whether anything is solved. */
     isLoading: userPending || (isLoggedIn && progressQuery.isPending),
-    solvedGeneratedIds,
-    solvedScriptedIds,
+    verifiedSolvedSavedPuzzleIds,
+    assertedCompletedSavedPuzzleIds,
     completedCampaignLevelIds,
-    isScriptedCompleted,
-    isGeneratedCompleted,
+    isPuzzleCompleted,
+    isVerifiedSolve,
     isCampaignLevelCompleted,
     markScriptedCompleted,
     /**

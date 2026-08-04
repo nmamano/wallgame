@@ -10,7 +10,10 @@ import {
   type CandidateVerdictFile,
 } from "./custom-setup-verdicts";
 import { customSetupConfigSchema } from "../contracts/games";
-import type { SavedPuzzleSeedRow } from "../contracts/puzzles";
+import {
+  SYNTHETIC_AUTHOR,
+  type SavedPuzzleSeedRow,
+} from "../contracts/puzzles";
 import { computeLeadIn, validateLeadInReplay } from "./puzzle-lead-in";
 
 /**
@@ -113,6 +116,14 @@ export const buildSavedPuzzleSeedRows = (
       sortIndex,
       enabled: true,
       config,
+      // Nobody wrote these; the pipeline produced them. Stated rather than
+      // left empty, so a card can tell "no human author" from "unknown".
+      author: SYNTHETIC_AUTHOR,
+      // The pipeline produces no difficulty. Their cards show votes, which is
+      // a community signal rather than an invented number.
+      difficulty: null,
+      // No authored line: a generated puzzle is only ever played against a bot.
+      legacyScriptedId: null,
       leadIn,
       source: {
         candidateId: candidate.id,

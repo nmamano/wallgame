@@ -177,6 +177,22 @@
               "boardHeight": 6
             }
           ]
+        },
+        "custom-setup-classic": {
+          "boardWidth": {
+            "min": 4,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 4,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 6,
+              "boardHeight": 6
+            }
+          ]
         }
       }
     }

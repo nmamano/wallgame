@@ -334,14 +334,12 @@ export const fetchSavedPuzzles = async (): Promise<SavedPuzzlesResponse> => {
 };
 
 /**
- * The two queries that fill the puzzles page. They live here, shared, so the
- * route loader that warms them and the component that reads them address the
- * SAME cache entry — a loader keyed differently from its component is a
- * silent no-op, and the request simply happens twice.
+ * How long the puzzles page's queries stay fresh.
  *
- * The bot listing is pinned to the 6x6 custom-setup variant because that is
- * what every generated puzzle is played on; bots register the exact variant
- * they serve, so this is what decides whether PuzzleBot is available.
+ * Query options live here, shared, so the route loader that warms one and the
+ * component that reads it address the SAME cache entry — a loader keyed
+ * differently from its component is a silent no-op, and the request simply
+ * happens twice.
  *
  * The staleTime is what stops the loader's work being thrown away: with the
  * default of 0, data arrives from the loader already stale and the component
@@ -359,16 +357,29 @@ export const savedPuzzlesQueryOptions = {
   staleTime: PUZZLE_LIST_STALE_MS,
 } as const;
 
-export const puzzleBotsQueryOptions = {
-  queryKey: ["bots", "custom-setup-standard", 6, 6] as const,
-  queryFn: () =>
-    fetchBots({
-      variant: "custom-setup-standard" as const,
-      boardWidth: 6,
-      boardHeight: 6,
-    }),
+/**
+ * Which bots can play ONE puzzle, asked with that puzzle's real variant and
+ * board size.
+ *
+ * This used to be a single hardcoded question — custom-setup-standard at 6x6 —
+ * which was true only while every puzzle was a generated 6x6 standard
+ * position. The handcrafted set is `custom-setup-classic` on boards from 4x4
+ * to 9x6, so a fixed query would have reported the wrong availability for
+ * every one of them: either offering a bot that cannot play the position, or
+ * hiding one that can.
+ *
+ * Keyed by the triple, so puzzles sharing a shape share one cached answer
+ * (the generated set is one query for all of them).
+ */
+export const puzzleBotsQueryOptionsFor = (args: {
+  variant: Variant;
+  boardWidth: number;
+  boardHeight: number;
+}) => ({
+  queryKey: ["bots", args.variant, args.boardWidth, args.boardHeight] as const,
+  queryFn: () => fetchBots(args),
   staleTime: PUZZLE_LIST_STALE_MS,
-} as const;
+});
 
 /**
  * One puzzle's vote state for the logged-in caller. Requires authentication,

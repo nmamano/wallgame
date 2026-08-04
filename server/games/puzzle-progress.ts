@@ -9,16 +9,18 @@ import { readCampaignProgress } from "./campaign-progress";
 import type { PuzzleProgressResponse } from "../../shared/contracts/puzzles";
 
 /**
- * Which puzzles a user has solved (S-G3), and the eligibility check that
+ * Which puzzles a user has finished (S-G3), and the eligibility check that
  * voting is built on (S-G4).
  *
- * Lives apart from the routes so the rule below can be exercised against a
+ * Lives apart from the routes so the rules below can be exercised against a
  * real database without standing up authentication: the routes are auth plus
  * delegation, this is the whole of the logic.
  *
- * GENERATED puzzles are SERVER-VERIFIED and derived rather than stored: a
- * solve is a persisted game that the server itself launched as a puzzle
- * (`games.puzzle_id`) and that the user won DECISIVELY.
+ * TWO KINDS OF EVIDENCE, and the difference is the point of this file:
+ *
+ * VERIFIED — the server watched it happen. A solve is a persisted game that
+ * the server itself launched as a puzzle (`games.puzzle_id`) and that the user
+ * won DECISIVELY. Unforgeable, and the only thing voting will accept.
  *
  * "Decisively" is the load-bearing word. `buildOutcomeRank` awards rank 1 to
  * BOTH players when a game has no winner, so "my row is rank 1" also matches
@@ -30,15 +32,20 @@ import type { PuzzleProgressResponse } from "../../shared/contracts/puzzles";
  * (`MIN_MOVES_FOR_A_COUNTED_GAME`), so an unwinnable-in-one-ply assumption is
  * baked in here. `tests/game/generated-puzzle-counted-game.test.ts` pins it.
  *
- * SCRIPTED puzzles are client-asserted and simply read back.
+ * ASSERTED — the client said so. A puzzle played against its authored line
+ * produces no game record to check, so its completion is simply read back.
+ * These mark a card solved and buy nothing else.
+ *
+ * Both now name saved_puzzles rows: the handcrafted set moved into that table,
+ * so the old "1".."10" ids are gone and the split is purely about evidence.
  */
 /**
- * THE decisive-win query. Every caller that asks "did this user solve a
- * generated puzzle" goes through here, so the rule — and its rank-2 subtlety
- * — exists exactly once. `puzzleId` narrows it to a single puzzle; omitting
- * it returns every puzzle the user has solved.
+ * THE decisive-win query. Every caller that asks "did the server watch this
+ * user win this puzzle" goes through here, so the rule — and its rank-2
+ * subtlety — exists exactly once. `puzzleId` narrows it to a single puzzle;
+ * omitting it returns every puzzle the user has solved.
  */
-const decisiveGeneratedSolves = (userId: number, puzzleId?: string) => {
+const decisiveSavedPuzzleSolves = (userId: number, puzzleId?: string) => {
   const opponent = alias(gamePlayersTable, "opponent");
 
   return db
@@ -68,34 +75,35 @@ const decisiveGeneratedSolves = (userId: number, puzzleId?: string) => {
 };
 
 /**
- * Which GENERATED puzzles the user has decisively won. Sorted, so callers
+ * Which saved puzzles the server watched the user win. Sorted, so callers
  * and their tests see a deterministic list.
  */
-export const readSolvedGeneratedPuzzleIds = async (
+export const readVerifiedSolvedSavedPuzzleIds = async (
   userId: number,
 ): Promise<string[]> =>
-  (await decisiveGeneratedSolves(userId))
+  (await decisiveSavedPuzzleSolves(userId))
     .map((row) => row.puzzleId)
     .filter((id): id is string => id != null)
     .sort();
 
 /**
- * Whether the user has decisively won ONE generated puzzle — the eligibility
- * check behind voting (S-G4). Deliberately not "read all progress and look
- * inside it": voting has nothing to do with scripted completions, and this
- * asks the database a single narrow question.
+ * Whether the server watched the user win ONE puzzle — the eligibility check
+ * behind voting (S-G4). Deliberately not "read all progress and look inside
+ * it": a vote is earned by BEATING a puzzle, so a client-asserted completion
+ * must never reach this answer, and asking the database one narrow question is
+ * what guarantees it cannot.
  */
-export const hasSolvedGeneratedPuzzle = async (
+export const hasVerifiedSavedPuzzleSolve = async (
   userId: number,
   puzzleId: string,
 ): Promise<boolean> =>
-  (await decisiveGeneratedSolves(userId, puzzleId).limit(1)).length > 0;
+  (await decisiveSavedPuzzleSolves(userId, puzzleId).limit(1)).length > 0;
 
 export const readPuzzleProgress = async (
   userId: number,
 ): Promise<PuzzleProgressResponse> => {
-  const [generated, scripted, campaign] = await Promise.all([
-    readSolvedGeneratedPuzzleIds(userId),
+  const [verified, asserted, campaign] = await Promise.all([
+    readVerifiedSolvedSavedPuzzleIds(userId),
     db
       .selectDistinct({ puzzleId: scriptedPuzzleCompletionsTable.puzzleId })
       .from(scriptedPuzzleCompletionsTable)
@@ -111,8 +119,8 @@ export const readPuzzleProgress = async (
 
   // Sorted so responses are deterministic for caching and assertions.
   return {
-    solvedGeneratedIds: generated,
-    solvedScriptedIds: scripted.map((row) => row.puzzleId).sort(),
+    verifiedSolvedSavedPuzzleIds: verified,
+    assertedCompletedSavedPuzzleIds: asserted.map((row) => row.puzzleId).sort(),
     completedCampaignLevelIds: campaign.completedLevels,
   };
 };

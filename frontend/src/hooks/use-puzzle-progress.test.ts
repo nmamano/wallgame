@@ -26,8 +26,8 @@ describe("puzzle progress freshness", () => {
   it("invalidates the cached progress a win may have changed", () => {
     const queryClient = new QueryClient();
     queryClient.setQueryData(PUZZLE_PROGRESS_QUERY_KEY, {
-      solvedGeneratedIds: [],
-      solvedScriptedIds: [],
+      verifiedSolvedSavedPuzzleIds: [],
+      assertedCompletedSavedPuzzleIds: [],
     });
     expect(
       queryClient.getQueryState(PUZZLE_PROGRESS_QUERY_KEY)?.isInvalidated,

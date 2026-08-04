@@ -108,8 +108,8 @@ const stub = startStubServer({
     "/api/puzzles/progress": () => {
       progressReads++;
       return {
-        solvedGeneratedIds: [],
-        solvedScriptedIds: [],
+        verifiedSolvedSavedPuzzleIds: [],
+        assertedCompletedSavedPuzzleIds: [],
         completedCampaignLevelIds: levelOneCompleted ? ["1"] : [],
       };
     },

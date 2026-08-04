@@ -31,6 +31,7 @@ import {
   type Move,
   type PlayerAppearance,
 } from "../../shared/domain/game-types";
+import { botSupportsPosition } from "../../shared/domain/bot-capability";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
 import { resolveSavedPuzzleLaunch } from "../../shared/domain/puzzle-lead-in";
 import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
@@ -571,6 +572,28 @@ export const botsRoute = new Hono()
           return c.json(
             { error: "Custom setup games require an official bot" },
             400,
+          );
+        }
+
+        // Re-ask the capability question the client already asked when it drew
+        // the page. A bot advertised at list time can be gone, or serving a
+        // different set of variants, by the time someone clicks — and puzzles
+        // now span two variants and board sizes from 4x4 to 9x6, so "an
+        // official bot exists" is no longer the same question as "this bot can
+        // play THIS puzzle". Refusing here is what turns a mismatch into a
+        // clean launch failure the client can offer a fallback for, instead of
+        // a created game whose first engine call fails.
+        if (
+          !botSupportsPosition(
+            bot.variants,
+            gameConfig.variant,
+            gameConfig.boardWidth,
+            gameConfig.boardHeight,
+          )
+        ) {
+          return c.json(
+            { error: "That bot cannot play this position right now" },
+            409,
           );
         }
 

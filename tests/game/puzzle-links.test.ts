@@ -1,84 +1,68 @@
 import { describe, expect, it } from "bun:test";
 import {
-  generatedPuzzleSlug,
+  savedPuzzleSlug,
+  savedPuzzleNumber,
   puzzlePath,
   puzzleShareUrl,
-  resolveGeneratedPuzzle,
+  resolveSavedPuzzle,
   type PuzzleKind,
 } from "../../frontend/src/lib/puzzle-links";
-import { getPuzzleIds } from "../../shared/domain/puzzles";
 import { getLevelIds } from "../../shared/domain/solo-campaign-levels";
 
 /**
- * Share links for the three kinds of puzzle.
+ * Share links for a puzzle, and for a campaign level.
  *
- * The interesting one is `generated`. Those puzzles had no address at all —
- * they were launched straight into a bot game, so the only link a player could
- * produce pointed at one playthrough, which a friend could watch but not play.
- * They now live under `/puzzles/generated/$id`, deliberately NOT at
- * `/puzzles/$id` alongside the scripted set: that route resolves ids against
- * the scripted `PUZZLES` map and sends anything it does not recognise back to
- * the listing, so a generated link parked there would depend on two id
- * namespaces never colliding. They are nanoids and "1".."10" today, which is
- * an accident rather than a guarantee.
+ * There used to be THREE kinds. Generated puzzles lived at
+ * /puzzles/generated/$id specifically to stay clear of /puzzles/$id, which
+ * resolved ids against the handcrafted set — two id namespaces that were only
+ * accidentally disjoint. Unifying the puzzles removed the reason for the extra
+ * segment: there is one collection, one namespace, one address. The old route
+ * survives as a redirect, which is a routing concern rather than a link-
+ * building one and is tested where it lives.
+ *
+ * The campaign keeps its own path, and that separation is load-bearing: level
+ * ids and puzzle numbers are both small integers and genuinely overlap.
  */
 
 const ORIGIN = "https://wallgame.io";
 
 describe("puzzle share links", () => {
   it("gives each kind its own path shape", () => {
-    expect(puzzlePath("scripted", "3")).toBe("/puzzles/3");
+    expect(puzzlePath("saved", "3")).toBe("/puzzles/3");
     expect(puzzlePath("campaign", "2")).toBe("/solo-campaign/2");
-    expect(puzzlePath("generated", "uN9TKDUp0T")).toBe(
-      "/puzzles/generated/uN9TKDUp0T",
-    );
   });
 
-  it("keeps generated links clear of the scripted route", () => {
-    // The collision this URL shape exists to prevent: were generated puzzles
-    // served from /puzzles/$id, a generated id equal to a scripted one would
-    // resolve to the scripted puzzle, silently.
-    const scriptedIds = new Set(
-      getPuzzleIds().map((id) => puzzlePath("scripted", id)),
-    );
-    for (const id of [...getPuzzleIds(), "uN9TKDUp0T", "abc123"]) {
-      expect(scriptedIds.has(puzzlePath("generated", id))).toBe(false);
-    }
-  });
-
-  it("keeps campaign links clear of the scripted route", () => {
-    // Level ids and scripted puzzle ids are both small integers and DO overlap
-    // ("1" is both), so these two kinds genuinely rely on separate paths.
-    const scriptedIds = new Set(
-      getPuzzleIds().map((id) => puzzlePath("scripted", id)),
+  it("keeps campaign links clear of puzzle links", () => {
+    // "1" is both a level id and a puzzle number, so these two kinds rely on
+    // separate paths rather than on distinct ids.
+    const puzzleLinks = new Set(
+      ["1", "2", "3"].map((id) => puzzlePath("saved", id)),
     );
     for (const levelId of getLevelIds()) {
-      expect(scriptedIds.has(puzzlePath("campaign", levelId))).toBe(false);
+      expect(puzzleLinks.has(puzzlePath("campaign", levelId))).toBe(false);
     }
   });
 
   it("builds an absolute link on the given origin", () => {
-    expect(puzzleShareUrl("scripted", "3", ORIGIN)).toBe(
+    expect(puzzleShareUrl("saved", "3", ORIGIN)).toBe(
       "https://wallgame.io/puzzles/3",
     );
   });
 
   it("does not double the slash when the origin carries one", () => {
-    expect(puzzleShareUrl("generated", "abc", "https://wallgame.io/")).toBe(
-      "https://wallgame.io/puzzles/generated/abc",
+    expect(puzzleShareUrl("saved", "abc", "https://wallgame.io/")).toBe(
+      "https://wallgame.io/puzzles/abc",
     );
   });
 
-  it("produces a distinct link for every shipped puzzle and level", () => {
-    // Nothing may share a link with anything else, across all three kinds.
-    const links: string[] = [
-      ...getPuzzleIds().map((id) => puzzleShareUrl("scripted", id, ORIGIN)),
-      ...getLevelIds().map((id) => puzzleShareUrl("campaign", id, ORIGIN)),
-    ];
+  it("produces a distinct link for every level", () => {
+    const links = getLevelIds().map((id) =>
+      puzzleShareUrl("campaign", id, ORIGIN),
+    );
     expect(new Set(links).size).toBe(links.length);
   });
 
-  describe("generated links carry the puzzle number", () => {
+  describe("puzzle links carry the puzzle number", () => {
     const listing = [
       { id: "uN9TKDUp0T", displayName: "Puzzle 1" },
       { id: "thfcTeXikd", displayName: "Puzzle 2" },
@@ -86,20 +70,20 @@ describe("puzzle share links", () => {
     ];
 
     it("builds a link on the number a player can actually read", () => {
-      expect(generatedPuzzleSlug(listing[2])).toBe("7");
-      expect(
-        puzzleShareUrl("generated", generatedPuzzleSlug(listing[2]), ORIGIN),
-      ).toBe("https://wallgame.io/puzzles/generated/7");
+      expect(savedPuzzleSlug(listing[2])).toBe("7");
+      expect(puzzleShareUrl("saved", savedPuzzleSlug(listing[2]), ORIGIN)).toBe(
+        "https://wallgame.io/puzzles/7",
+      );
     });
 
     it("resolves a numeric link back to that puzzle", () => {
-      expect(resolveGeneratedPuzzle(listing, "7")?.id).toBe("mPJ-d8r2yM");
-      expect(resolveGeneratedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
+      expect(resolveSavedPuzzle(listing, "7")?.id).toBe("mPJ-d8r2yM");
+      expect(resolveSavedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
     });
 
     it("still resolves an id link, so links minted earlier keep working", () => {
       // The share links handed out before numbers existed are row ids.
-      expect(resolveGeneratedPuzzle(listing, "mPJ-d8r2yM")?.displayName).toBe(
+      expect(resolveSavedPuzzle(listing, "mPJ-d8r2yM")?.displayName).toBe(
         "Puzzle 7",
       );
     });
@@ -108,14 +92,14 @@ describe("puzzle share links", () => {
       // The listing re-sorts by likes, so position is not the number. Sorting
       // the array must not change what a link points at.
       const reordered = [listing[2], listing[0], listing[1]];
-      expect(resolveGeneratedPuzzle(reordered, "7")?.id).toBe("mPJ-d8r2yM");
-      expect(resolveGeneratedPuzzle(reordered, "1")?.id).toBe("uN9TKDUp0T");
+      expect(resolveSavedPuzzle(reordered, "7")?.id).toBe("mPJ-d8r2yM");
+      expect(resolveSavedPuzzle(reordered, "1")?.id).toBe("uN9TKDUp0T");
     });
 
     it("answers nothing for a number no puzzle has", () => {
       // A retired tail number must miss rather than fall through to a neighbour.
-      expect(resolveGeneratedPuzzle(listing, "99")).toBeUndefined();
-      expect(resolveGeneratedPuzzle(listing, "unknown-id")).toBeUndefined();
+      expect(resolveSavedPuzzle(listing, "99")).toBeUndefined();
+      expect(resolveSavedPuzzle(listing, "unknown-id")).toBeUndefined();
     });
 
     it("documents that a number is NOT stable across a retirement", () => {
@@ -126,23 +110,38 @@ describe("puzzle share links", () => {
         { id: "thfcTeXikd", displayName: "Puzzle 1" },
         { id: "mPJ-d8r2yM", displayName: "Puzzle 6" },
       ];
-      expect(resolveGeneratedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
-      expect(resolveGeneratedPuzzle(afterRetiringPuzzle1, "1")?.id).toBe(
+      expect(resolveSavedPuzzle(listing, "1")?.id).toBe("uN9TKDUp0T");
+      expect(resolveSavedPuzzle(afterRetiringPuzzle1, "1")?.id).toBe(
         "thfcTeXikd",
       );
     });
 
     it("falls back to the row id when a name carries no number", () => {
       const odd = [{ id: "abc123", displayName: "Special Puzzle" }];
-      expect(generatedPuzzleSlug(odd[0])).toBe("abc123");
-      expect(resolveGeneratedPuzzle(odd, "abc123")?.id).toBe("abc123");
+      expect(savedPuzzleNumber(odd[0].displayName)).toBeNull();
+      expect(savedPuzzleSlug(odd[0])).toBe("abc123");
+      expect(resolveSavedPuzzle(odd, "abc123")?.id).toBe("abc123");
+    });
+
+    it("does not confuse an authored puzzle with a generated one by number", () => {
+      // The whole point of one numbering sequence: after the migration a
+      // number names exactly one puzzle, whoever wrote it. Two rows sharing a
+      // number would make a share link ambiguous, and this is the shape that
+      // would catch it.
+      const mixed = [
+        { id: "hand-1", displayName: "Puzzle 1" },
+        { id: "gen-11", displayName: "Puzzle 11" },
+      ];
+      expect(resolveSavedPuzzle(mixed, "1")?.id).toBe("hand-1");
+      expect(resolveSavedPuzzle(mixed, "11")?.id).toBe("gen-11");
+      expect(new Set(mixed.map(savedPuzzleSlug)).size).toBe(mixed.length);
     });
   });
 
   it("covers every kind the type allows", () => {
     // A new kind added to PuzzleKind without a path here would fall through
     // the switch and return undefined; this fails loudly if that happens.
-    const kinds: PuzzleKind[] = ["scripted", "campaign", "generated"];
+    const kinds: PuzzleKind[] = ["saved", "campaign"];
     for (const kind of kinds) {
       expect(puzzlePath(kind, "x")).toStartWith("/");
     }

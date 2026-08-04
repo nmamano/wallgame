@@ -17,6 +17,7 @@ import {
   type PlayerId,
   type Variant,
 } from "../../shared/domain/game-types";
+import { botSupportsPosition } from "../../shared/domain/bot-capability";
 import type {
   BotConfig,
   BotAppearance,
@@ -422,26 +423,11 @@ export const getMatchingBots = (
       }
     }
 
-    // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
-    if (!variantConfig) continue;
-
-    // Check board dimensions if specified
-    if (boardWidth !== undefined) {
-      if (
-        boardWidth < variantConfig.boardWidth.min ||
-        boardWidth > variantConfig.boardWidth.max
-      ) {
-        continue;
-      }
-    }
-    if (boardHeight !== undefined) {
-      if (
-        boardHeight < variantConfig.boardHeight.min ||
-        boardHeight > variantConfig.boardHeight.max
-      ) {
-        continue;
-      }
+    // Does this bot declare this variant, at this size? Same rule the launch
+    // path re-asks later, and the same one the client uses to decide what a
+    // puzzle card offers — see shared/domain/bot-capability.ts.
+    if (!botSupportsPosition(bot.variants, variant, boardWidth, boardHeight)) {
+      continue;
     }
 
     // V3: Check client is still connected (a client in disconnect grace
