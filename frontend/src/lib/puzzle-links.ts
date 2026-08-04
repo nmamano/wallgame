@@ -1,30 +1,27 @@
 /**
  * Where each kind of puzzle lives, as a link you can send someone.
  *
- * The three kinds have separate id namespaces (see shared/contracts/puzzles.ts)
- * and, until now, separate link stories: a scripted puzzle and a campaign level
- * each played at their own address, so they were already shareable even though
- * nothing advertised it, while a generated puzzle had no address at all. It was
- * launched straight into a fresh bot game, and its identity travelled in
- * client-side handshake state — so the only link a player could produce pointed
- * at one playthrough of it, which a friend could watch but not play.
+ * Every puzzle plays at `/puzzles/$id`, and a campaign level at
+ * `/solo-campaign/$id`. Generated puzzles briefly had a third address,
+ * `/puzzles/generated/$id`, from when they were numbered separately from the
+ * handcrafted ones; the numbering runs once across both now, so the extra
+ * segment distinguished nothing. It is gone rather than redirected — the links
+ * were never out in the world (Nil, 2026-08-04: "we can get rid of the old
+ * generated/ links, they were not used yet").
  *
- * `/puzzles/generated/$id` is that missing address. It is a launcher, not a
- * board: opening it starts that puzzle for whoever opened it.
+ * Centralised here because three surfaces build these links (the card on the
+ * listing page, the two in-page puzzle headers) and a fourth reads one back out
+ * of the address bar. A share link that disagrees with the route that serves it
+ * is a broken link, so there is one definition of both.
  *
- * Centralised here because three surfaces now build these links (the card on
- * the listing page, the two in-page puzzle headers) and a fourth reads one back
- * out of the address bar. A share link that disagrees with the route that
- * serves it is a broken link, so there is one definition of both.
- *
- * GENERATED LINKS USE THE PUZZLE'S NUMBER, and that number is not permanent.
+ * PUZZLE LINKS USE THE PUZZLE'S NUMBER, and that number is not permanent.
  * Retiring a puzzle renumbers the survivors to keep the listing contiguous
  * (`scripts/retire-puzzles.ts`), so a link shared before a retirement can
  * afterwards resolve to a DIFFERENT puzzle rather than to nothing. Nil was
  * shown that trade and chose it (2026-08-02) over a stable id, because a
- * shareable link that reads `/puzzles/generated/7` is worth more to him than
- * one that survives renumbering. The stable alternative is the row id, which
- * is still accepted here so links minted before this change keep working.
+ * shareable link that reads `/puzzles/7` is worth more to him than one that
+ * survives renumbering. The stable alternative is the row id, which is still
+ * accepted here so links minted before numbers existed keep working.
  */
 
 /**

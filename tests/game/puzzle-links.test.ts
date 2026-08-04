@@ -15,10 +15,11 @@ import { getLevelIds } from "../../shared/domain/solo-campaign-levels";
  * There used to be THREE kinds. Generated puzzles lived at
  * /puzzles/generated/$id specifically to stay clear of /puzzles/$id, which
  * resolved ids against the handcrafted set — two id namespaces that were only
- * accidentally disjoint. Unifying the puzzles removed the reason for the extra
- * segment: there is one collection, one namespace, one address. The old route
- * survives as a redirect, which is a routing concern rather than a link-
- * building one and is tested where it lives.
+ * accidentally disjoint. Moving every puzzle into one table removed the reason
+ * for the extra segment: the listing still shows handcrafted and generated
+ * apart, but the numbering runs once across both, so one namespace and one
+ * address serve them. The old route is deleted outright, not redirected — no
+ * link under it had been shared yet.
  *
  * The campaign keeps its own path, and that separation is load-bearing: level
  * ids and puzzle numbers are both small integers and genuinely overlap.

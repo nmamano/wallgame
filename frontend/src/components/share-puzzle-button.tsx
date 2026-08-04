@@ -20,9 +20,12 @@ interface SharePuzzleButtonProps {
  * in progress. This points at the puzzle, and whoever opens it gets their own
  * attempt at it.
  *
- * Uses the Web Share sheet where the browser offers one, which on a phone is
- * the difference between "copied, now go find where to paste it" and picking a
- * conversation. Everywhere else it falls back to the clipboard.
+ * It COPIES, always. It used to hand off to the Web Share sheet wherever the
+ * browser offered one, which reads well on a phone but means the same button
+ * does two different things depending on the device — on desktop Chrome and
+ * Edge it opened an OS share menu nobody asked for (Nil, 2026-08-04: "the
+ * share button should just copy url to clipboard, not open whatever menu it
+ * opens now"). One behaviour everywhere is worth more than the phone nicety.
  */
 export function SharePuzzleButton({
   kind,
@@ -45,17 +48,6 @@ export function SharePuzzleButton({
   const handleShare = async () => {
     if (typeof window === "undefined") return;
     const url = puzzleShareUrl(kind, id, window.location.origin);
-
-    if (navigator.share) {
-      try {
-        await navigator.share({ title: puzzleName, url });
-        return;
-      } catch {
-        // Dismissing the share sheet rejects, and so does a browser that
-        // advertises share but refuses this payload. Either way the clipboard
-        // is a reasonable second attempt; a failure there is handled below.
-      }
-    }
 
     try {
       await navigator.clipboard.writeText(url);
