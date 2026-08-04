@@ -199,6 +199,30 @@ const getPillarColors = (
   };
 };
 
+/**
+ * The size of the grid's first track, as the browser actually laid it out, or
+ * 0 when that cannot be read.
+ *
+ * WHY THIS IS MEASURED RATHER THAN DERIVED. `colTemplate` below caps every
+ * track at `maxCellSizeRem`, and the mobile game page derives that cap from
+ * available HEIGHT. Whenever height is the tighter constraint the tracks come
+ * out narrower than an even split of the container - so computing a cell size
+ * from the container's width overstates it. Every wall, joint and tap target
+ * is placed at `index * (cellSize + gap)`, so the error compounds: measured on
+ * a 393x650 viewport, walls sat 20px right of their slots by the eighth
+ * column, on a 35.75px cell. At 393x852 the width constraint wins and the two
+ * agree exactly, which is why the defect looked intermittent.
+ *
+ * `getComputedStyle` reports USED track sizes ("35.75px 35.75px ...") for a
+ * grid that is being laid out, and falls back to the specified value
+ * ("repeat(8, minmax(0, 2.234rem))") for one that is not. The latter parses to
+ * NaN, which is a signal to fall back - not a size to trust.
+ */
+const readFirstTrackSize = (template: string): number => {
+  const first = parseFloat(template);
+  return Number.isFinite(first) && first > 0 ? first : 0;
+};
+
 const buildPillarBoundingBox = (rowIndex: number, colIndex: number) => {
   const size = 100;
   return {
@@ -276,6 +300,9 @@ export function Board({
     height: 0,
     gapX: 0,
     gapY: 0,
+    /** Measured track sizes; 0 means "could not be read", not "zero wide". */
+    cellWidth: 0,
+    cellHeight: 0,
   });
 
   // Flag to suppress contextmenu after arrow drag (since contextmenu fires after mouseup)
@@ -312,6 +339,8 @@ export function Board({
         height: rect.height,
         gapX,
         gapY,
+        cellWidth: readFirstTrackSize(computedStyle.gridTemplateColumns),
+        cellHeight: readFirstTrackSize(computedStyle.gridTemplateRows),
       });
     };
 
@@ -363,21 +392,25 @@ export function Board({
     };
   }, [onArrowDragFinalize, arrowDragStateRef]);
 
+  // The browser's own track size wherever we could read it; an even split of
+  // the container only when we could not. See readFirstTrackSize.
   const cellWidthPx = useMemo(() => {
     if (cols <= 0) return 0;
+    if (gridMetrics.cellWidth > 0) return gridMetrics.cellWidth;
     const widthSansGaps =
       gridMetrics.width - Math.max(0, cols - 1) * gridMetrics.gapX;
     if (widthSansGaps <= 0) return 0;
     return widthSansGaps / cols;
-  }, [cols, gridMetrics.width, gridMetrics.gapX]);
+  }, [cols, gridMetrics.cellWidth, gridMetrics.width, gridMetrics.gapX]);
 
   const cellHeightPx = useMemo(() => {
     if (rows <= 0) return 0;
+    if (gridMetrics.cellHeight > 0) return gridMetrics.cellHeight;
     const heightSansGaps =
       gridMetrics.height - Math.max(0, rows - 1) * gridMetrics.gapY;
     if (heightSansGaps <= 0) return 0;
     return heightSansGaps / rows;
-  }, [rows, gridMetrics.height, gridMetrics.gapY]);
+  }, [rows, gridMetrics.cellHeight, gridMetrics.height, gridMetrics.gapY]);
 
   const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
   const resolveWallColor = useCallback(
