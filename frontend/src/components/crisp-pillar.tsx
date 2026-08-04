@@ -113,28 +113,6 @@ function clipToHalfPlane(polygon: Point[], f: (p: Point) => number): Point[] {
   return clipped;
 }
 
-/**
- * How far each territory reaches PAST the midline into its neighbour, in the
- * local 0..100 space.
- *
- * Two antialiased shapes that merely abut do not add up to full coverage: at
- * the shared edge one covers a fraction and the other the rest, and compositing
- * them leaves the background showing through the difference. Overlapping them
- * removes the shared edge entirely.
- *
- * The overlap must be worth at least one device pixel to do anything, and this
- * is the reason the previous attempt - a 1-unit stroke - did nothing: one unit
- * of a 0..100 box on a 14px joint is a seventh of a device pixel. 8% is about
- * 1.2px on that joint, so it still covers a whole device pixel at DPR 1.
- *
- * It only relaxes the cuts BETWEEN territories. Every territory starts as the
- * full square and is only ever cut down, so no amount of relaxing can push one
- * outside the joint - which matters, because a shape that overruns the outline
- * would paint the joint's silhouette twice and make it read wider than the wall
- * it joins.
- */
-const TERRITORY_OVERLAP = 8;
-
 /** The part of the pillar closer to `wall` than to any other wall touching it. */
 function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
   let polygon: Point[] = [
@@ -147,10 +125,7 @@ function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
     if (other === wall) continue;
     polygon = clipToHalfPlane(
       polygon,
-      (p) =>
-        DISTANCE_TO_SIDE[wall](p) -
-        DISTANCE_TO_SIDE[other](p) -
-        TERRITORY_OVERLAP,
+      (p) => DISTANCE_TO_SIDE[wall](p) - DISTANCE_TO_SIDE[other](p),
     );
   }
   return polygon;
@@ -171,52 +146,28 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
     return <path d={outline} fill={walls.map((e) => colors[e]!)[0]} />;
   }
 
-  // When the outline IS the square - a straight run, a tee, a crossing - the
-  // territories already tile it exactly and a clip adds nothing but a second
-  // antialiased edge on top of the polygons' own. Two soft edges multiply, so
-  // the joint ends up covering its boundary pixel less than the wall beside it
-  // does, and reads as a faint seam down the side of the run. Only the shapes
-  // that actually cut the square - a lone wall's end cap, an elbow's fillet -
-  // need clipping.
-  const outlineIsSquare =
-    walls.length >= 3 ||
-    (walls.length === 2 && OPPOSITE[walls[0]] === walls[1]);
-
-  const territories = walls.map((wall) => (
-    <polygon
-      key={wall}
-      points={territoryOf(wall, walls)
-        .map((p) => `${p.x},${p.y}`)
-        .join(" ")}
-      fill={colors[wall]!}
-    />
-  ));
-
   return (
     <g>
-      {/* No underlay beneath these.
-          An underlay covering the whole joint looks like cheap insurance
-          against a hairline between territories, but it paints the joint's
-          SILHOUETTE a second time, and two overlapping antialiased edges
-          composite to more coverage than one (half plus half of the rest is
-          three quarters). The joint then measures about 0.4 device px wider
-          than the wall it joins, and reads as the joint overhanging its wall.
-          The territories alone cannot do that: along any side of the joint
-          each stretch belongs to exactly one of them, so the silhouette is
-          painted once. The overlap they need is between EACH OTHER, which is
-          what TERRITORY_OVERLAP does. */}
-      {outlineIsSquare ? (
-        territories
-      ) : (
-        <>
-          <defs>
-            <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-              <path d={outline} />
-            </clipPath>
-          </defs>
-          <g clipPath={`url(#${clipId})`}>{territories}</g>
-        </>
-      )}
+      <defs>
+        <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+          <path d={outline} />
+        </clipPath>
+      </defs>
+      <g clipPath={`url(#${clipId})`}>
+        {walls.map((wall) => (
+          <polygon
+            key={wall}
+            points={territoryOf(wall, walls)
+              .map((p) => `${p.x},${p.y}`)
+              .join(" ")}
+            fill={colors[wall]!}
+            // Widen each territory by half a unit so neighbours overlap
+            // instead of leaving an antialiased hairline between them.
+            stroke={colors[wall]!}
+            strokeWidth={1}
+          />
+        ))}
+      </g>
     </g>
   );
 }
