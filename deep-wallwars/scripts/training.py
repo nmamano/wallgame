@@ -3,6 +3,8 @@ import sys
 import argparse
 import gc
 import os
+import re
+import shutil
 import functools
 from pathlib import Path
 
@@ -257,8 +259,43 @@ def parse_size_mix(spec):
 size_mix = parse_size_mix(args.size_mix)
 
 
+ARCHIVE_SUFFIX = ".tar.zst"
+
+
+def window_lower_bound(generation):
+    """Oldest generation still inside the training window for `generation`.
+
+    Training reads generations [window_lower_bound(g), g). This bound never
+    decreases as g grows, so anything below it is finished with for good -
+    which is what makes archiving it safe.
+    """
+    return max(generation - args.max_training_window, (generation - 1) // 2)
+
+
+def generation_index(name):
+    """Leading generation number of a `generation_<n>_...` name, else None."""
+    match = re.match(r"generation_(\d+)(?:_|$)", name)
+    return int(match.group(1)) if match else None
+
+
+def restore_archived(path):
+    """Unpack a generation's archive if the directory itself is gone.
+
+    fastai's get_files() returns an empty list for a missing directory rather
+    than raising, so an archived generation that training still wanted would
+    silently shrink the training set. Restoring keeps archiving reversible.
+    """
+    archive = Path(f"{path}{ARCHIVE_SUFFIX}")
+    if Path(path).exists() or not archive.exists():
+        return
+    print(f"Restoring archived {archive.name}...")
+    subprocess.run(
+        ["tar", "--zstd", "-xf", archive.name], cwd=archive.parent, check=True
+    )
+
+
 def get_training_paths(generation):
-    lb = max(generation - args.max_training_window, (generation - 1) // 2)
+    lb = window_lower_bound(generation)
     paths = []
     for i in range(lb, generation):
         if args.variant == "universal":
@@ -268,10 +305,72 @@ def get_training_paths(generation):
         for base in bases:
             paths.append(f"{args.data}/{base}")
             # Size-mix runs write to size-suffixed dirs (e.g. generation_36_standard_8x9).
-            paths.extend(
-                str(p) for p in sorted(Path(args.data).glob(f"{base}_[0-9]*x[0-9]*"))
-            )
+            # The glob also matches their archives, so a size dir that has been
+            # archived is still discovered; strip the suffix back to the dir name.
+            for p in sorted(Path(args.data).glob(f"{base}_[0-9]*x[0-9]*")):
+                name = p.name
+                if name.endswith(ARCHIVE_SUFFIX):
+                    name = name[: -len(ARCHIVE_SUFFIX)]
+                paths.append(f"{args.data}/{name}")
+    paths = list(dict.fromkeys(paths))  # a dir and its archive collapse to one path
+    for path in paths:
+        restore_archived(path)
     return paths
+
+
+def create_archive(directory, archive):
+    """Compress `directory` into `archive`. Returns True on success."""
+    tmp = Path(f"{archive}.tmp")
+    result = subprocess.run(
+        ["tar", "-I", "zstd -3 -T8", "-cf", tmp.name, directory.name],
+        cwd=directory.parent,
+    )
+    if result.returncode != 0:
+        tmp.unlink(missing_ok=True)
+        return False
+    # Rename only once the archive is complete, so an interrupted run never
+    # leaves a half-written file wearing the final name.
+    tmp.rename(archive)
+    return True
+
+
+def archive_matches(directory, archive):
+    """Compare every member of `archive` byte-for-byte against `directory`.
+
+    Stronger than counting members: equal file counts say nothing about equal
+    contents, and this data is about to be deleted.
+    """
+    result = subprocess.run(
+        ["tar", "--zstd", "-df", archive.name], cwd=directory.parent
+    )
+    return result.returncode == 0
+
+
+def archive_stale_generations(generation):
+    """Compress and remove self-play data that has left the training window.
+
+    Self-play CSVs compress ~20x, and a run that keeps every generation fills
+    the disk (the 12x10 curriculum reached 190G before this existed).
+    Directories are removed only after their archive verifies, and
+    get_training_paths() restores them if they are ever wanted again.
+    """
+    bound = window_lower_bound(generation)
+    for directory in sorted(Path(args.data).glob("generation_*")):
+        if not directory.is_dir():
+            continue
+        index = generation_index(directory.name)
+        if index is None or index >= bound:
+            continue
+        archive = Path(f"{directory}{ARCHIVE_SUFFIX}")
+        if not archive.exists() and not create_archive(directory, archive):
+            print(f"  {directory.name}: could not archive, keeping it")
+            continue
+        if not archive_matches(directory, archive):
+            print(f"  {directory.name}: archive does not match, keeping both")
+            continue
+        freed = sum(f.stat().st_size for f in directory.rglob("*") if f.is_file())
+        shutil.rmtree(directory)
+        print(f"  archived {directory.name} ({freed / 1e9:.1f} GB freed)")
 
 
 def save_model(model, name, device):
@@ -978,6 +1077,9 @@ def init():
         start_generation = args.initial_generation + 1
 
     for generation in range(start_generation, start_generation + args.generations - 1):
+        # Before self-play writes another few gigabytes, give back the data this
+        # generation's training window has left behind.
+        archive_stale_generations(generation)
         model_path = f"{args.models}/model_{generation - 1}.trt"
         variants = ["standard", "classic"] if args.variant == "universal" else [args.variant]
         games_per_variant = args.games // len(variants)
