@@ -153,7 +153,11 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
       then fix (board task `c13fdaaa`). The investigation killed the ticket's
       hypothesis: GA counts full document loads and **nothing else**, not merely
       parameter-only changes. **Done locally, reviewer-acked, NOT deployed.**
-- [ ] **S6** Post-game account nudge.
+- [x] **S6** Post-game account nudge. A toast after a guest's first _counted_
+      finish - not a panel, because the endgame panel's three blocks are
+      fixed-height and one of them is the rematch button. **Done**,
+      reviewer-acked over two diff-gate rounds: the first was rejected because
+      the browser gate only printed its findings and exited 0 whatever it saw.
 - [ ] **S7** _(optional)_ The retention query that turns S3+S4 into D1/D7 numbers.
 
 ## Deferred / parked

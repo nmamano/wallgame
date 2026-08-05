@@ -4,10 +4,15 @@ Drives the **built frontend** in a real headless Chrome, against a stubbed
 API, so questions about what a player actually sees can be answered with
 evidence.
 
-This is **not a test suite.** Nothing here asserts, and no gate runs it: it
-needs a Chrome binary and a current `frontend/dist`, neither of which the
-test gates can assume. It is a tool you point at a question, and it prints
-what it found.
+**`bun run ci` does not run any of this**, and cannot: these need a Chrome
+binary and a current `frontend/dist`, neither of which the test gates can
+assume. Most scripts here are tools you point at a question, and they print
+what they found without judging it.
+
+One exception, and it is deliberate: **`drive-account-nudge.ts` asserts.** It
+is the gate for a change whose whole claim is about what a player sees, so it
+measures, prints everything, and then exits non-zero if a required invariant
+failed. Run it by hand after `bun run build`.
 
 ## Why it exists
 

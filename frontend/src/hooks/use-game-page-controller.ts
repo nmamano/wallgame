@@ -44,6 +44,7 @@ import {
 import { useSettings } from "@/hooks/use-settings";
 import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
+import { useAccountNudge } from "@/hooks/use-account-nudge";
 import { sounds, play } from "@/lib/sounds";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
@@ -3207,6 +3208,26 @@ export function useGamePageController(gameId: string) {
   const puzzleVote = usePuzzleVote({
     puzzleId: votablePuzzleId,
     enabled: isLoggedIn && !userPending && wonThisPuzzle,
+  });
+
+  /**
+   * Offer a guest an account once they have finished a real game (S6).
+   *
+   * Called from here rather than from the route because the route only has the
+   * DISPLAYED state, which is the history snapshot while someone is stepping
+   * back through the final moves — a player reviewing how they lost would
+   * silently stop counting as having finished a game. `gameState` here is the
+   * live one.
+   */
+  useAccountNudge({
+    gameId,
+    gameStatus,
+    result: gameState?.result ?? null,
+    hasSeat: primaryLocalPlayerId !== null,
+    isReadOnly: isReadOnlySession,
+    isPuzzle: isPuzzleGame,
+    authSettled: !userPending,
+    isLoggedIn,
   });
 
   // Clear annotations when turn changes (move is committed)
