@@ -26,6 +26,12 @@
       name="description"
       content="Board game about building walls and outsmarting your opponents. Play with friends, face the AI, or solve puzzles."
     />
+    <!-- The server rewrites this href per route before serving the page, so a
+         query string or a duplicate path does not read as a separate page.
+         It must stay a single tag with an href attribute: server/routes/html-shell.ts
+         refuses to start if it finds zero of these or more than one. -->
+    <link rel="canonical" href="https://wallgame.io/" />
+
     <!-- Matches the background the app actually paints, oklch(0.14 0.04 265),
          so the browser chrome and the launch splash do not step out of it. -->
     <meta name="theme-color" content="#030819" />

@@ -38,7 +38,7 @@ export const SITE_ORIGIN = "https://wallgame.io";
  * - `/profile` and `/settings` are per-visitor and worthless in an index. They
  *   stay crawlable on purpose - see `buildRobotsTxt`.
  */
-const CANONICAL_PATHS = [
+export const CANONICAL_PATHS = [
   "/",
   "/play",
   "/puzzles",

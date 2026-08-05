@@ -11,7 +11,17 @@ import { registerGameSocketRoute } from "./routes/game-socket";
 import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 import { registerEvalSocketRoute } from "./routes/eval-socket";
 import { registerSeoRoutes } from "./routes/seo";
-export function createApp() {
+import {
+  loadHtmlShell,
+  registerHtmlShell,
+  type HtmlShell,
+} from "./routes/html-shell";
+
+/**
+ * `htmlShell` is absent in tests and in vite-backed development, where this
+ * process never serves HTML. File I/O to obtain it stays in the caller.
+ */
+export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   const app = new Hono();
   app.use(logger());
 
@@ -43,13 +53,23 @@ export function createApp() {
 
   // When users go to the main website (or any route that doesn't match an API
   // route), serve the frontend.
+  // Ahead of the static handlers, and it defers to them for anything that
+  // looks like a file. It cannot sit after them: the static handler resolves
+  // "/" to dist/index.html as a directory index, so the homepage would never
+  // reach this and would keep the template's generic title.
+  if (htmlShell) registerHtmlShell(app, htmlShell);
   app.get("*", serveStatic({ root: "./frontend/dist" }));
   app.get("*", serveStatic({ path: "./frontend/dist/index.html" }));
 
   return { app, websocket, apiRoutes };
 }
 
-const { app, websocket } = createApp();
+// Only when this file is the process being run, never when a test imports it
+// for createApp: loading the shell throws if the frontend was not built, and
+// the test suite runs before the build.
+const { app, websocket } = createApp(
+  import.meta.main ? { htmlShell: loadHtmlShell() } : {},
+);
 
 console.log("Server is running");
 

@@ -140,7 +140,9 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
 
 - [x] **S1** Real `robots.txt` + `sitemap.xml` - both currently return the SPA HTML
       shell with a 200. **Done**, reviewer-acked.
-- [ ] **S2** Per-page titles + meta descriptions, injected server-side per route.
+- [x] **S2** Per-page titles + meta descriptions, injected server-side per route.
+      Grew to nine values per page - the og/twitter tags were all hardcoded to the
+      homepage, and there was no canonical link at all. **Done**, reviewer-acked.
 - [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
       persisted on a new nullable `games` column.
 - [ ] **S4** Persist the rematch/match chain (board task `8dba09de`).
@@ -157,7 +159,26 @@ Do-not-pick-up list:
 - The $100 ad spend (plan step 5) - gated on three conditions in the plan doc.
 - W4 distribution, W5 multiplayer liquidity, W6 mobile quality.
 
-Queued human-only decisions: _(none yet)_
+Found during this loop, deliberately not fixed in the slice that found them. Neither is
+on the board yet; ask Nil before filing.
+
+- **An unmatched `/api/*` path returns 200 HTML, not a JSON 404.** It falls through to
+  the SPA shell. Pre-existing, unchanged by S2, and the same class of bug as
+  `robots.txt` returning HTML - a caller gets a cheerful success containing the wrong
+  content type. Found in S2; the reviewer agreed it stays out of that slice.
+- **`server/index.ts` boots a server at module scope**, so importing it for `createApp`
+  has side effects - it prints "Server is running" during tests, and it is why the
+  shell loader needs an `import.meta.main` guard. Splitting the entrypoint would remove
+  the guard and the noise. The reviewer explicitly ruled it out of S2 as a last-minute
+  refactor.
+
+Queued human-only decisions:
+
+- **Does the anonymous player id need a privacy or consent treatment for EU visitors?**
+  Raised with Nil 2026-08-05, not yet answered. It is a first-party random id in
+  `localStorage` with no personal data attached. **This gates S3** - the mechanism can
+  be built either way, but shipping it is Nil's call.
+- **The S2 copy.** Draft wording is live in `PAGE_META`; Nil edits when he sees it.
 
 ## Resources
 
@@ -328,3 +349,82 @@ gets and must not expose internal mechanics.
 
 `SITE_ORIGIN` is a server-local literal. The canonical path list lives in
 `server/routes/seo.ts` and S2 reuses it rather than forking a second list.
+
+---
+
+# SLICE-3 PICKUP
+
+**Baseline commit:** the S2 commit.
+
+## What slice 2 taught
+
+1. **Build it and serve it before believing a test.** Nineteen tests passed on an
+   implementation that served the homepage untransformed. The suite runs before the
+   build, so the test environment is permanently the one where any
+   `frontend/dist`-dependent bug is invisible. S3 has the same shape of hazard in a
+   different place: the test suite gets a fresh migrated database every run, so
+   anything that only goes wrong on a database with existing rows is invisible too.
+   Migrate a database that already has data before believing S3 works.
+2. **Deliberate breaks tell you what a green run is worth.** Forcing `metaForPath` to
+   the default failed exactly the two uniqueness tests; disabling the registration
+   failed exactly the three wiring tests. That both breaks hit precisely their own
+   assertions, and nothing else, is what makes the green run evidence.
+3. **Check the reviewer's factual claims too.** They were right about the parser
+   accepting either attribute order, and right that the "beginner" copy was unsupported
+   - but their stated reason (an open follow-up task) was stale: task `9c0ac857` is
+     closed and a 20% naive-move injection shipped 2026-07-31.
+4. A contextual type annotation does not flow through `.sort()`, so
+   `const xs: T[] = [...].sort()` silently widens the literal's inferred type.
+
+## Goal
+
+A returning guest is countable. Today `game_players.user_id` is NULL for guests and no
+session, cookie or anonymous id exists anywhere in the schema, so "do guests come back"
+cannot be asked at all - and that is the single most important unknown in the growth
+plan.
+
+## Load-bearing mechanics (the traps)
+
+- **The plan doc says "persisted on the game row". That is probably wrong.** A game has
+  two seats, and `game_players` is already per-seat with a nullable `userId` for guests
+  (`server/db/schema/game-players.ts`). An anonymous id is the guest counterpart of
+  `userId` and belongs beside it, one per seat. On `games` it could only ever record one
+  of the two humans. Settle this at the plan-gate before writing a migration.
+- **A client-supplied id is not an identity.** Anyone can send anything. It is adequate
+  for counting returning visitors and useless for anything that must not be forged -
+  compare `games.puzzleId`, whose comment records that it is written only from the row
+  the SERVER resolved, "which is what makes completion tracking unforgeable". Say so in
+  a comment, and never let this id gate anything.
+- **Never run a migration against production.** Rail 1. `bun run migrate` targets
+  whatever `DATABASE_URL` points at; fly runs migrations itself via `release_command`.
+- **`localStorage` key convention is `wall-game-*`** - the existing keys are
+  `wall-game-theme` and `wall-game-sound-enabled`. Match it.
+- **Rate limiting already exists** for anonymous writes
+  (`server/routes/anonymous-write-limiter.ts`); look at it before inventing anything.
+- Blocked storage. `localStorage` throws in some privacy modes. A visitor who cannot
+  store an id must still be able to play - degrade to no id, never to no game.
+
+## Acceptance criteria
+
+1. A guest playing two games from the same browser profile produces two rows carrying
+   the same id; a different profile produces a different one.
+2. The id is absent, not empty or faked, when the client does not send one.
+3. A returning-guest count is a direct query, not an inference.
+4. Verified against a database that already had rows before the migration ran.
+5. New tests watched failing first. `sg docker -c 'bun run ci'` green.
+
+## Decide with the reviewer
+
+`game_players` vs `games`; id format and length; whether the id is sent at game creation
+only or on every write; what happens when `localStorage` is unavailable.
+
+## Human-only, blocking
+
+**Does this need a privacy or consent treatment for EU visitors?** Raised with Nil
+2026-08-05, unanswered. Note the rails make this non-blocking for the loop: nothing here
+deploys, and committing is not shipping. Build the mechanism, commit it, and leave the
+deploy decision with Nil - but say that out loud rather than assuming it.
+
+## Locked, do not relitigate
+
+The id carries no personal data and is a plain random string. No env-var knob for it.
