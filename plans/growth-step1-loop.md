@@ -144,8 +144,10 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
       Grew to nine values per page - the og/twitter tags were all hardcoded to the
       homepage, and there was no canonical link at all. **Done**, reviewer-acked.
 - [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
-      persisted on a new nullable `games` column.
-- [ ] **S4** Persist the rematch/match chain (board task `8dba09de`).
+      persisted on a new nullable `game_players` column. **PARKED on Nil**, see below.
+- [x] **S4** Persist the rematch/match chain (board task `8dba09de`). Landed as
+      `series_id` + `rematch_number`, a group key rather than the previous-game link
+      the task proposed. **Done**, reviewer-acked.
 - [ ] **S5** Confirm the GA in-app undercount in a real browser **before** any code,
       then fix (board task `c13fdaaa`).
 - [ ] **S6** Post-game account nudge.
@@ -174,10 +176,34 @@ on the board yet; ask Nil before filing.
 
 Queued human-only decisions:
 
-- **Does the anonymous player id need a privacy or consent treatment for EU visitors?**
-  Raised with Nil 2026-08-05, not yet answered. It is a first-party random id in
-  `localStorage` with no personal data attached. **This gates S3** - the mechanism can
-  be built either way, but shipping it is Nil's call.
+**S3 IS PARKED ON THESE TWO, NOT IN FLIGHT.** Per the standing orders a slice
+hard-blocked on a human-only decision is queued while unblocked work continues, so the
+current slice is S4. No S3 code exists. The reviewer approved the mechanics and blocked
+implementation pending Nil, and wants his ruling relayed before the final ACK.
+
+1. **Move the id from `games` to `game_players`?** `ops-private/growth-plan.md` says
+   "persisted on the game row". `game_players` is per-seat and already has a nullable
+   `userId` that is NULL exactly for guests; on `games` the field could only record one
+   of two humans, which silently breaks human-vs-human. Reviewer: `game_players` is the
+   correct normalized location. Changing a decision recorded in the plan doc is
+   human-only, hence the ask.
+2. **Store the id on logged-in seats too?** It is the only way to measure
+   guest-to-account conversion, which is the retention question the plan cares about.
+   It also creates a pseudonymous browser-to-account link, which falls under the
+   standing privacy decision. Reviewer approves it technically, conditional on Nil.
+
+Settled by the reviewer, not needing Nil: `crypto.randomUUID()` with strict UUID
+validation rather than a frontend nanoid dependency; names `anonymousId` /
+`anonymous_id` / `wall-game-anonymous-id`; no rate limiter; no index until S7 shows one
+is useful; `getAnonymousId` must validate stored data, replace an invalid value, return
+undefined when storage is denied, and **never** return a fresh unpersisted value, which
+would manufacture false one-off visitors. `createRematchSession` must preserve the id
+and needs a regression test, because a rematch makes no creation or join HTTP request.
+
+Honest framing of the metric this buys, per the reviewer: return among players with
+**counted completed games**, not all visitors and not all game attempts. Abandoned
+games write no `game_players` row at all.
+
 - **The S2 copy.** Draft wording is live in `PAGE_META`; Nil edits when he sees it.
 
 ## Resources

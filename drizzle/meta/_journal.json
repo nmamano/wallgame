@@ -176,6 +176,13 @@
       "when": 1785826953607,
       "tag": "0024_natural_roulette",
       "breakpoints": true
+    },
+    {
+      "idx": 25,
+      "version": "7",
+      "when": 1785919270947,
+      "tag": "0025_plain_cloak",
+      "breakpoints": true
     }
   ]
 }

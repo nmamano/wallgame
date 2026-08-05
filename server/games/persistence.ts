@@ -140,6 +140,13 @@ export const persistCompletedGame = async (
         // S-ID: which saved puzzle this game was, for server-verified
         // completion tracking. Undefined for every ordinary game.
         puzzleId: session.puzzleId,
+        // Which match this game belongs to and where in it. Both come straight
+        // off the session, which has tracked them all along without ever
+        // writing them down. Always written together - the table rejects one
+        // without the other, since a half-written pair would be indistinguish-
+        // able from a pre-tracking row.
+        seriesId: session.seriesId,
+        rematchNumber: session.rematchNumber,
       })
       .onConflictDoNothing()
       .returning({ gameId: gamesTable.gameId });
