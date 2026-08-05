@@ -1,6 +1,7 @@
 import type { Arrow } from "@/components/board";
 import type { WallPosition } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import { pawnCell } from "../../../shared/domain/pawns";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
 
 type WallState =
@@ -41,12 +42,11 @@ export function parseBestMoveOverlay(
     const currentPlayer = displayState.turn;
 
     for (const action of move.actions) {
-      if (action.type === "cat") {
-        const from = displayState.pawns[currentPlayer].cat;
-        arrows.push({ from, to: action.target, type: "best-move" });
-      } else if (action.type === "mouse") {
-        const from = displayState.pawns[currentPlayer].mouse;
-        arrows.push({ from, to: action.target, type: "best-move" });
+      if (action.type === "cat" || action.type === "mouse") {
+        const from = pawnCell(displayState.pawns, currentPlayer, action.type);
+        if (from) {
+          arrows.push({ from, to: action.target, type: "best-move" });
+        }
       } else if (action.type === "wall") {
         walls.push({
           cell: action.target,

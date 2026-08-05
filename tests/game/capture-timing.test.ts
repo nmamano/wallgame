@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { GameState } from "../../shared/domain/game-state";
+import { pawnCell } from "../../shared/domain/pawns";
 import type {
   Cell,
   GameConfiguration,
@@ -66,7 +67,7 @@ describe("capture timing", () => {
 
     expect(next.status).not.toBe("finished");
     expect(next.result).toBeUndefined();
-    expect(next.pawns[1].mouse).toEqual([4, 2]);
+    expect(pawnCell(next.pawns, 1, "mouse")).toEqual([4, 2]);
     // The turn passed normally, which is the part the engine used to get wrong.
     expect(next.turn).toBe(2);
   });
@@ -85,7 +86,7 @@ describe("capture timing", () => {
 
     expect(next.status).not.toBe("finished");
     expect(next.result).toBeUndefined();
-    expect(next.pawns[1].cat).toEqual([4, 2]);
+    expect(pawnCell(next.pawns, 1, "cat")).toEqual([4, 2]);
     expect(next.turn).toBe(2);
   });
 

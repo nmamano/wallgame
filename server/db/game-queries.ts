@@ -15,6 +15,7 @@ import {
 } from "drizzle-orm";
 import { customSetupVariantValues } from "../../shared/contracts/games";
 import { GameState } from "../../shared/domain/game-state";
+import { clonePawns } from "../../shared/domain/pawns";
 import type {
   GameConfiguration,
   GameResult,
@@ -282,16 +283,7 @@ const assembleReplayGame = (
     moveCount: replayState.moveCount,
     timeLeft: { ...replayState.timeLeft },
     lastMoveTime: replayState.lastMoveTime,
-    pawns: {
-      1: {
-        cat: replayState.pawns[1].cat,
-        mouse: replayState.pawns[1].mouse,
-      },
-      2: {
-        cat: replayState.pawns[2].cat,
-        mouse: replayState.pawns[2].mouse,
-      },
-    },
+    pawns: clonePawns(replayState.pawns),
     walls: replayState.grid.getWalls(),
     initialState: replayState.getInitialState(),
     history,

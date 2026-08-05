@@ -4,6 +4,7 @@ import type {
   GamePawnType,
 } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import { requirePawnCell } from "../../../shared/domain/pawns";
 import { actionsEqual, buildDoubleStepPaths } from "@/lib/gameViewModel";
 
 export type LocalAction = Action;
@@ -126,8 +127,7 @@ const resolvePawnCell = (
   playerId: PlayerId,
   pawnType: GamePawnType,
 ) => {
-  const pawns = state.pawns[playerId];
-  return pawnType === "cat" ? pawns.cat : pawns.mouse;
+  return requirePawnCell(state.pawns, playerId, pawnType);
 };
 
 export const resolveDoubleStep = ({

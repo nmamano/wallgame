@@ -295,6 +295,35 @@ export interface Pawn {
   pawnStyle?: string;
 }
 
+/**
+ * Live pawn positions, shaped per variant family.
+ *
+ * This mirrors `GameInitialState` above: standard and classic keep a per-player
+ * record, survival is flat because it has exactly one cat and one mouse on the
+ * board rather than one of each per player.
+ *
+ * The point of the union is that every slot here is real. Before it existed,
+ * live state was a single `Record<PlayerId, { cat, mouse }>` and two variants
+ * had to lie to fit: classic stored each player's `home` in the `mouse` slot,
+ * and survival parked its two unused pawns in board corners. Both lies were
+ * load-bearing, and both are gone.
+ *
+ * Unlike `GameInitialState` this union carries an explicit `kind` discriminant.
+ * That is safe precisely because live pawns are never persisted - games are
+ * replayed from `initialState` plus notation, so no stored payload has to parse
+ * this shape. It does cross the wire to our own frontend, so server and client
+ * must be deployed together.
+ *
+ * Accessors live in `./pawns` - prefer them over reaching into the shape.
+ */
+export type GamePawns =
+  | { kind: "standard"; pawns: Record<PlayerId, { cat: Cell; mouse: Cell }> }
+  | { kind: "classic"; pawns: Record<PlayerId, { cat: Cell; home: Cell }> }
+  | { kind: "survival"; cat: Cell; mouse: Cell };
+
+/** Which live pawn shape a variant uses. */
+export type PawnFamily = GamePawns["kind"];
+
 export type GameAction =
   | { kind: "move"; move: Move; playerId: PlayerId; timestamp: number }
   | { kind: "resign"; playerId: PlayerId; timestamp: number }
@@ -316,7 +345,7 @@ export interface SerializedGameState {
   moveCount: number; // Completed moves count (0 before any moves), not per-player
   timeLeft: Record<PlayerId, number>; // Milliseconds remaining for each player
   lastMoveTime: number; // Timestamp in milliseconds (milliseconds since epoch)
-  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  pawns: GamePawns;
   walls: WallPosition[];
   initialState: GameInitialState;
   history: { index: number; notation: string }[]; // Move history: notation is a string representation (e.g., "Ce4.Md5.>f3") that can be parsed back into Move objects via Move.fromNotation()

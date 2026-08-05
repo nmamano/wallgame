@@ -24,6 +24,7 @@
  */
 
 import { GameState } from "./game-state";
+import { boardPawns, requirePawnCell } from "./pawns";
 import type { Cell, GameConfiguration, Move } from "./game-types";
 import type {
   SavedPuzzleConfig,
@@ -63,10 +64,12 @@ export const computeLeadIn = (
   }
 
   const state = new GameState(toPlayableConfig(config), 0);
-  const botCat = state.pawns[1].cat;
-  const botMouse = state.pawns[1].mouse;
-  const humanCat = state.pawns[2].cat;
-  const humanMouse = state.pawns[2].mouse;
+  // Guarded above: this heuristic only runs on custom-setup-standard, so all
+  // four cat/mouse pawns exist.
+  const botCat = requirePawnCell(state.pawns, 1, "cat");
+  const botMouse = requirePawnCell(state.pawns, 1, "mouse");
+  const humanCat = requirePawnCell(state.pawns, 2, "cat");
+  const humanMouse = requirePawnCell(state.pawns, 2, "mouse");
   const grid = state.grid;
   const pawnCells = [botCat, botMouse, humanCat, humanMouse];
 
@@ -227,11 +230,20 @@ export const validateLeadInReplay = (
   if (replayed.previousPawnPosition !== undefined) {
     throw new Error("lead-in replay left a previous-pawn restriction");
   }
-  const pawnsEqual = ([1, 2] as const).every((player) =>
-    (["cat", "mouse"] as const).every((piece) =>
-      cellEq(replayed.pawns[player][piece], curated.pawns[player][piece]),
-    ),
-  );
+  // Compared through boardPawns so each variant contributes exactly the
+  // pawns it has, in a stable order.
+  const replayedPawns = boardPawns(replayed.pawns);
+  const curatedPawns = boardPawns(curated.pawns);
+  const pawnsEqual =
+    replayedPawns.length === curatedPawns.length &&
+    replayedPawns.every((pawn, index) => {
+      const other = curatedPawns[index];
+      return (
+        pawn.playerId === other.playerId &&
+        pawn.type === other.type &&
+        cellEq(pawn.cell, other.cell)
+      );
+    });
   if (!pawnsEqual) {
     throw new Error("lead-in replay pawns differ from the curated position");
   }

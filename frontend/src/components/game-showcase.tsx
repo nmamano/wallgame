@@ -23,7 +23,6 @@ import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
 } from "@/lib/game-state-utils";
-import { isClassicVariant } from "../../../shared/domain/game-types";
 import { pawnId } from "../../../shared/domain/game-utils";
 import type { GameSnapshot, PlayerId } from "../../../shared/domain/game-types";
 import type { ShowcaseGame } from "../../../shared/contracts/games";
@@ -183,24 +182,21 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
 
   const boardPawns = useMemo((): BoardPawn[] => {
     if (!displayState || !showcase) return [];
-    const usesClassicRules = isClassicVariant(displayState.config.variant);
     const playersById = new Map(
       showcase.matchStatus.players.map((player) => [player.playerId, player]),
     );
 
     return displayState.getPawns().map((pawn) => {
-      const isClassicGoal = usesClassicRules && pawn.type === "mouse";
-      const visualType = isClassicGoal ? "home" : pawn.type;
       // In Classic, homes display in the owning player's color (their destination)
       const visualPlayerId = pawn.playerId;
       const player = playersById.get(visualPlayerId);
 
       const pawnStyle = (() => {
-        if (visualType === "cat") {
+        if (pawn.type === "cat") {
           const style = player?.appearance?.catSkin;
           return style && style !== "default" ? style : undefined;
         }
-        if (visualType === "mouse") {
+        if (pawn.type === "mouse") {
           const style = player?.appearance?.mouseSkin;
           return style && style !== "default" ? style : undefined;
         }
@@ -212,7 +208,6 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
         ...pawn,
         id: pawnId(pawn),
         pawnStyle,
-        visualType,
         visualPlayerId,
       };
     });

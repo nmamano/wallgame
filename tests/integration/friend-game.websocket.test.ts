@@ -10,6 +10,7 @@ import { randomUUID } from "crypto";
 import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
+import { pawnCell } from "../../shared/domain/pawns";
 import type {
   GameCreateResponse,
   GameSessionDetails,
@@ -514,12 +515,16 @@ async function sendMoveAndWaitForState(
 
   // Verify each action in the move was applied correctly
   // After a move, state.turn switches to the other player, so the mover is the opposite
-  const playerId = stateA.state.turn === 1 ? "2" : "1";
+  const playerId = stateA.state.turn === 1 ? 2 : 1;
   for (const action of move.actions) {
     if (action.type === "cat") {
-      expect(stateA.state.pawns[playerId].cat).toEqual(action.target);
+      expect(pawnCell(stateA.state.pawns, playerId, "cat")).toEqual(
+        action.target,
+      );
     } else if (action.type === "mouse") {
-      expect(stateA.state.pawns[playerId].mouse).toEqual(action.target);
+      expect(pawnCell(stateA.state.pawns, playerId, "mouse")).toEqual(
+        action.target,
+      );
     } else if (action.type === "wall") {
       const matchingWall = stateA.state.walls.find(
         (w) =>
@@ -768,7 +773,7 @@ describe("friend game WebSocket integration", () => {
     // After takeback, it should be Player 2's turn again
     expect(takebackStateA.state.turn).toBe(2);
     // Player 2's cat should be back on c3
-    expect(takebackStateA.state.pawns[2].cat).toEqual(
+    expect(pawnCell(takebackStateA.state.pawns, 2, "cat")).toEqual(
       cellFromStandardNotation("c3", 3),
     );
 
@@ -828,10 +833,10 @@ describe("friend game WebSocket integration", () => {
     // After takeback, it's Player 1's turn (back to start)
     expect(takebackState2A.state.turn).toBe(1);
     // Both cats should be back at their starting corners
-    expect(takebackState2A.state.pawns[1].cat).toEqual(
+    expect(pawnCell(takebackState2A.state.pawns, 1, "cat")).toEqual(
       cellFromStandardNotation("a3", 3),
     );
-    expect(takebackState2A.state.pawns[2].cat).toEqual(
+    expect(pawnCell(takebackState2A.state.pawns, 2, "cat")).toEqual(
       cellFromStandardNotation("c3", 3),
     );
 

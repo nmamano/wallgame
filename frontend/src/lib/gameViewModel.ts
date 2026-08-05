@@ -6,7 +6,9 @@ import type {
   GamePawnType,
   Action,
   GameConfiguration,
+  GamePawns,
 } from "../../../shared/domain/game-types";
+import { boardPawns } from "../../../shared/domain/pawns";
 import { GameState } from "../../../shared/domain/game-state";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
 import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
@@ -85,57 +87,41 @@ const DEFAULT_PLAYER_COLORS: Record<PlayerId, PlayerColor> = {
 // Server Update Logic
 // ============================================================================
 
-type PawnSnapshot = Record<PlayerId, { cat: Cell; mouse: Cell }>;
+const pawnKey = (playerId: PlayerId, type: string) => `${playerId}:${type}`;
 
-const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
-
-const snapshotFromHistoryEntry = (
-  entry: GameState["history"][number],
-): PawnSnapshot => ({
-  1: {
-    cat: cloneCell(entry.catPos[0]),
-    mouse: cloneCell(entry.mousePos[0]),
-  },
-  2: {
-    cat: cloneCell(entry.catPos[1]),
-    mouse: cloneCell(entry.mousePos[1]),
-  },
-});
-
+/**
+ * One arrow per pawn that moved. Driven by `boardPawns`, so each variant
+ * contributes exactly the pawns it has - a classic home is compared like
+ * anything else and simply never moves.
+ *
+ * `playerId` comes off the Pawn itself, so it stays a real number. Iterating
+ * Object.keys would hand back STRING keys, which index a color map fine but
+ * must never be stored as a diff's playerId.
+ */
 const diffSnapshots = (
-  before: PawnSnapshot,
-  after: PawnSnapshot,
+  before: GamePawns,
+  after: GamePawns,
 ): LastMoveDiff[] | null => {
   const moves: LastMoveDiff[] = [];
-  // Real numeric ids — Object.keys would yield STRING keys, which index a
-  // color map fine but must never be stored as a diff's playerId.
-  ([1, 2] as const).forEach((playerId) => {
-    const beforePawns = before[playerId];
-    const afterPawns = after[playerId];
+  const beforeCells = new Map<string, Cell>(
+    boardPawns(before).map((pawn) => [
+      pawnKey(pawn.playerId, pawn.type),
+      pawn.cell,
+    ]),
+  );
 
-    const catBefore = beforePawns.cat;
-    const catAfter = afterPawns.cat;
-    if (catBefore[0] !== catAfter[0] || catBefore[1] !== catAfter[1]) {
-      moves.push({
-        fromRow: catBefore[0],
-        fromCol: catBefore[1],
-        toRow: catAfter[0],
-        toCol: catAfter[1],
-        playerId,
-      });
-    }
-
-    const mouseBefore = beforePawns.mouse;
-    const mouseAfter = afterPawns.mouse;
-    if (mouseBefore[0] !== mouseAfter[0] || mouseBefore[1] !== mouseAfter[1]) {
-      moves.push({
-        fromRow: mouseBefore[0],
-        fromCol: mouseBefore[1],
-        toRow: mouseAfter[0],
-        toCol: mouseAfter[1],
-        playerId,
-      });
-    }
+  boardPawns(after).forEach((pawn) => {
+    const from = beforeCells.get(pawnKey(pawn.playerId, pawn.type));
+    if (!from) return;
+    const to = pawn.cell;
+    if (from[0] === to[0] && from[1] === to[1]) return;
+    moves.push({
+      fromRow: from[0],
+      fromCol: from[1],
+      toRow: to[0],
+      toCol: to[1],
+      playerId: pawn.playerId,
+    });
   });
 
   return moves.length ? moves : null;
@@ -158,9 +144,9 @@ export function computeLastMoveDiffs(
       ? current.history[current.history.length - 2]
       : null;
 
-  const afterSnapshot = snapshotFromHistoryEntry(lastEntry);
+  const afterSnapshot = lastEntry.pawns;
   const beforeSnapshot = beforeEntry
-    ? snapshotFromHistoryEntry(beforeEntry)
+    ? beforeEntry.pawns
     : current.getInitialSnapshot().pawns;
 
   return diffSnapshots(beforeSnapshot, afterSnapshot);

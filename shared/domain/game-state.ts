@@ -15,9 +15,19 @@ import type {
   StandardInitialState,
   ClassicInitialState,
   SurvivalInitialState,
+  GamePawns,
 } from "./game-types";
 import { Grid } from "./grid";
 import { cellEq, endedBeforeBothPlayersMoved } from "./game-utils";
+import {
+  boardPawns,
+  clonePawns,
+  hasPawn,
+  pawnCell,
+  pawnFamilyForVariant,
+  requirePawnCell,
+  withPawnCell,
+} from "./pawns";
 
 // Type guards for variant-specific initial states
 export function isStandardInitialState(
@@ -44,8 +54,8 @@ export interface MoveInHistory {
   index: number;
   move: Move;
   grid: Grid;
-  catPos: [Cell, Cell];
-  mousePos: [Cell, Cell];
+  /** Snapshot of every pawn after this move. Deep-copied, never shared. */
+  pawns: GamePawns;
   timeLeftSeconds: [number, number];
   distances: [number, number];
   wallCounts: [number, number];
@@ -53,7 +63,7 @@ export interface MoveInHistory {
 
 export class GameState {
   grid: Grid;
-  pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  pawns: GamePawns;
   turn: PlayerId;
   moveCount: number; // Completed moves count (0 before any moves)
   actionsRemaining: 1 | 2;
@@ -71,7 +81,7 @@ export class GameState {
 
   // Initial state for undoing the first move
   private initialGrid: Grid;
-  private initialPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+  private initialPawns: GamePawns;
   private initialTurn: PlayerId;
   private initialActionsRemaining: 1 | 2;
   private initialPreviousPawnPosition?: { type: GamePawnType; cell: Cell };
@@ -82,55 +92,62 @@ export class GameState {
 
     const variantConfig = config.variantConfig;
 
-    // Initialize pawns based on variant type
-    if (isSurvivalInitialState(variantConfig)) {
-      // Survival has flat cat/mouse structure
-      const rows = config.boardHeight;
-      const cols = config.boardWidth;
+    // Every pawn below is one the variant actually has. There is no slot to
+    // fill for a pawn a variant lacks, so nothing has to be invented.
+    const family = pawnFamilyForVariant(config.variant);
+    if (family === "survival") {
+      if (!isSurvivalInitialState(variantConfig)) {
+        throw new Error("Survival game requires a survival initial state");
+      }
       this.pawns = {
-        1: {
-          cat: [variantConfig.cat[0], variantConfig.cat[1]],
-          mouse: [rows - 1, 0], // P1 mouse not used in survival
-        },
-        2: {
-          cat: [0, cols - 1], // P2 cat not used in survival
-          mouse: [variantConfig.mouse[0], variantConfig.mouse[1]],
-        },
+        kind: "survival",
+        cat: [variantConfig.cat[0], variantConfig.cat[1]],
+        mouse: [variantConfig.mouse[0], variantConfig.mouse[1]],
       };
-    } else if (isClassicInitialState(variantConfig)) {
-      // Classic has cat/home structure - store home in mouse slot for now
+    } else if (family === "classic") {
+      if (!isClassicInitialState(variantConfig)) {
+        throw new Error("Classic game requires a classic initial state");
+      }
       this.pawns = {
-        1: {
-          cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
-          mouse: [
-            variantConfig.pawns.p1.home[0],
-            variantConfig.pawns.p1.home[1],
-          ],
-        },
-        2: {
-          cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
-          mouse: [
-            variantConfig.pawns.p2.home[0],
-            variantConfig.pawns.p2.home[1],
-          ],
+        kind: "classic",
+        pawns: {
+          1: {
+            cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
+            home: [
+              variantConfig.pawns.p1.home[0],
+              variantConfig.pawns.p1.home[1],
+            ],
+          },
+          2: {
+            cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
+            home: [
+              variantConfig.pawns.p2.home[0],
+              variantConfig.pawns.p2.home[1],
+            ],
+          },
         },
       };
     } else {
-      // Standard/Freestyle have cat/mouse structure
+      if (!isStandardInitialState(variantConfig)) {
+        throw new Error("Standard game requires a standard initial state");
+      }
       this.pawns = {
-        1: {
-          cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
-          mouse: [
-            variantConfig.pawns.p1.mouse[0],
-            variantConfig.pawns.p1.mouse[1],
-          ],
-        },
-        2: {
-          cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
-          mouse: [
-            variantConfig.pawns.p2.mouse[0],
-            variantConfig.pawns.p2.mouse[1],
-          ],
+        kind: "standard",
+        pawns: {
+          1: {
+            cat: [variantConfig.pawns.p1.cat[0], variantConfig.pawns.p1.cat[1]],
+            mouse: [
+              variantConfig.pawns.p1.mouse[0],
+              variantConfig.pawns.p1.mouse[1],
+            ],
+          },
+          2: {
+            cat: [variantConfig.pawns.p2.cat[0], variantConfig.pawns.p2.cat[1]],
+            mouse: [
+              variantConfig.pawns.p2.mouse[0],
+              variantConfig.pawns.p2.mouse[1],
+            ],
+          },
         },
       };
     }
@@ -142,10 +159,7 @@ export class GameState {
 
     // Save initial state
     this.initialGrid = this.grid.clone();
-    this.initialPawns = {
-      1: { ...this.pawns[1] },
-      2: { ...this.pawns[2] },
-    };
+    this.initialPawns = clonePawns(this.pawns);
 
     const setupTurn = "turn" in variantConfig ? variantConfig.turn : null;
     const [spentAction] = setupTurn?.actionsTaken ?? [];
@@ -176,45 +190,33 @@ export class GameState {
   }
 
   private isPawnActive(playerId: PlayerId, pawnType: GamePawnType): boolean {
-    if (this.config.variant !== "survival") {
-      return true;
-    }
-    if (playerId === 1) {
-      return pawnType === "cat";
-    }
-    return pawnType === "mouse";
+    return hasPawn(this.pawns, playerId, pawnType);
   }
 
   /** Returns the target cell for a player's cat based on game variant.
-   *  - Classic: own home (stored in mouse slot)
-   *  - Survival: the mouse (always player 2's mouse slot)
+   *  - Classic: own home
+   *  - Survival: the mouse (player 2's)
    *  - Standard/Freestyle: opponent's mouse
    *
    * Optionally accepts pawns to use instead of this.pawns (e.g. for
    * mid-move wall legality checks where pawn positions are pending).
    */
-  goalCell(
-    playerId: PlayerId,
-    pawns?: Record<PlayerId, { cat: Cell; mouse: Cell }>,
-  ): Cell {
+  goalCell(playerId: PlayerId, pawns?: GamePawns): Cell {
     const p = pawns ?? this.pawns;
     if (isClassicVariant(this.config.variant)) {
-      return p[playerId].mouse;
+      return requirePawnCell(p, playerId, "home");
     }
     if (this.config.variant === "survival") {
-      return p[2].mouse;
+      return requirePawnCell(p, 2, "mouse");
     }
     const opponent: PlayerId = playerId === 1 ? 2 : 1;
-    return p[opponent].mouse;
+    return requirePawnCell(p, opponent, "mouse");
   }
 
   clone(): GameState {
     const newGame = new GameState(this.config, this.lastMoveTime);
     newGame.grid = this.grid.clone();
-    newGame.pawns = {
-      1: { ...this.pawns[1] },
-      2: { ...this.pawns[2] },
-    };
+    newGame.pawns = clonePawns(this.pawns);
     newGame.turn = this.turn;
     newGame.actionsRemaining = this.actionsRemaining;
     newGame.previousPawnPosition = this.previousPawnPosition
@@ -229,10 +231,7 @@ export class GameState {
     newGame.result = this.result ? { ...this.result } : undefined;
     newGame.timeLeft = { ...this.timeLeft };
     newGame.initialGrid = this.initialGrid.clone();
-    newGame.initialPawns = {
-      1: { ...this.initialPawns[1] },
-      2: { ...this.initialPawns[2] },
-    };
+    newGame.initialPawns = clonePawns(this.initialPawns);
     return newGame;
   }
 
@@ -318,15 +317,13 @@ export class GameState {
     }
 
     const player = this.turn;
-    const opponent = player === 1 ? 2 : 1;
-    const myPawns = this.pawns[player];
-    const opPawns = this.pawns[opponent];
+    const opponent: PlayerId = player === 1 ? 2 : 1;
 
     const nextGrid = this.grid.clone();
-    const nextMyPawns = {
-      cat: [myPawns.cat[0], myPawns.cat[1]] as Cell,
-      mouse: [myPawns.mouse[0], myPawns.mouse[1]] as Cell,
-    };
+    // Working copy of every pawn. Only the mover's pawns change, but carrying
+    // the whole shape means wall legality and the win checks below read one
+    // consistent state instead of reassembling it from halves.
+    let nextPawns = clonePawns(this.pawns);
 
     const isClassic = isClassicVariant(this.config.variant);
     let actionsUsed = 0;
@@ -356,8 +353,7 @@ export class GameState {
             throw new Error("Mouse cannot move in survival variant");
           }
         }
-        const currentPos =
-          action.type === "cat" ? nextMyPawns.cat : nextMyPawns.mouse;
+        const currentPos = requirePawnCell(nextPawns, player, action.type);
         const targetPos = action.target;
 
         const dist =
@@ -479,8 +475,7 @@ export class GameState {
           throw new Error("Invalid move distance");
         }
 
-        if (action.type === "cat") nextMyPawns.cat = targetPos;
-        else nextMyPawns.mouse = targetPos;
+        nextPawns = withPawnCell(nextPawns, player, action.type, targetPos);
       } else if (action.type === "wall") {
         actionsUsed += 1;
         if (actionsUsed > this.actionsRemaining) {
@@ -498,24 +493,18 @@ export class GameState {
           playerId: player,
         };
 
-        const pendingPawns = {
-          1: player === 1 ? nextMyPawns : opPawns,
-          2: player === 2 ? nextMyPawns : opPawns,
-        };
-        const cats: [Cell, Cell] =
-          this.config.variant === "survival"
-            ? [
-                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
-                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
-              ]
-            : [
-                [pendingPawns[1].cat[0], pendingPawns[1].cat[1]],
-                [pendingPawns[2].cat[0], pendingPawns[2].cat[1]],
-              ];
+        const p1Cat = requirePawnCell(nextPawns, 1, "cat");
+        // Survival has no player 2 cat. canBuildWall takes a pair, so the one
+        // cat on the board is checked twice rather than a second one invented.
+        const p2Cat = pawnCell(nextPawns, 2, "cat") ?? p1Cat;
+        const cats: [Cell, Cell] = [
+          [p1Cat[0], p1Cat[1]],
+          [p2Cat[0], p2Cat[1]],
+        ];
         // Wall legality: each cat must keep a path to its goal.
         const mice: [Cell, Cell] = [
-          this.goalCell(1, pendingPawns),
-          this.goalCell(2, pendingPawns),
+          this.goalCell(1, nextPawns),
+          this.goalCell(2, nextPawns),
         ];
 
         if (!nextGrid.canBuildWall(cats, mice, wall)) {
@@ -528,49 +517,43 @@ export class GameState {
 
     // Win condition depends on variant:
     // - Standard/Freestyle: cat captures opponent's mouse
-    // - Classic: cat reaches its own home (stored in mouse slot)
+    // - Classic: cat reaches its own home
     const usesClassicRules = isClassicVariant(this.config.variant);
     let myCatCaught: boolean;
     let opCatCaught: boolean;
 
     if (usesClassicRules) {
-      // Classic: cat reaches its own home (home is stored in mouse slot)
-      myCatCaught = cellEq(nextMyPawns.cat, nextMyPawns.mouse);
-      opCatCaught = cellEq(opPawns.cat, opPawns.mouse);
+      // Classic: cat reaches its own home
+      myCatCaught = cellEq(
+        requirePawnCell(nextPawns, player, "cat"),
+        requirePawnCell(nextPawns, player, "home"),
+      );
+      opCatCaught = cellEq(
+        requirePawnCell(nextPawns, opponent, "cat"),
+        requirePawnCell(nextPawns, opponent, "home"),
+      );
     } else {
-      // Standard/Freestyle/Survival: cat captures opponent's mouse
-      myCatCaught =
-        this.isPawnActive(player, "cat") &&
-        this.isPawnActive(opponent, "mouse") &&
-        cellEq(nextMyPawns.cat, opPawns.mouse);
-      opCatCaught =
-        this.isPawnActive(opponent, "cat") &&
-        this.isPawnActive(player, "mouse") &&
-        cellEq(opPawns.cat, nextMyPawns.mouse);
+      // Standard/Freestyle/Survival: cat captures opponent's mouse. A missing
+      // cell means the variant has no such pawn, so no capture is possible.
+      const myCat = pawnCell(nextPawns, player, "cat");
+      const myMouse = pawnCell(nextPawns, player, "mouse");
+      const opCat = pawnCell(nextPawns, opponent, "cat");
+      const opMouse = pawnCell(nextPawns, opponent, "mouse");
+      myCatCaught = !!myCat && !!opMouse && cellEq(myCat, opMouse);
+      opCatCaught = !!opCat && !!myMouse && cellEq(opCat, myMouse);
     }
 
     // Update timeLeft with increment
     const nextTimeLeft = { ...this.timeLeft };
     nextTimeLeft[player] += this.timeControl.incrementSeconds;
 
-    const nextPawns = {
-      1: player === 1 ? nextMyPawns : opPawns,
-      2: player === 2 ? nextMyPawns : opPawns,
-    };
-
     const nextMoveIndex = this.moveCount + 1;
     const moveInHistory: MoveInHistory = {
       index: nextMoveIndex,
       move: move,
       grid: nextGrid.clone(),
-      catPos: [
-        [nextPawns[1].cat[0], nextPawns[1].cat[1]],
-        [nextPawns[2].cat[0], nextPawns[2].cat[1]],
-      ],
-      mousePos: [
-        [nextPawns[1].mouse[0], nextPawns[1].mouse[1]],
-        [nextPawns[2].mouse[0], nextPawns[2].mouse[1]],
-      ],
+      // Deep copy: the snapshot must not share cells with the live state.
+      pawns: clonePawns(nextPawns),
       timeLeftSeconds: [nextTimeLeft[1], nextTimeLeft[2]],
       distances: [0, 0],
       wallCounts: [0, 0],
@@ -591,8 +574,9 @@ export class GameState {
         this.isPawnActive(opponent, "cat") &&
         this.isPawnActive(player, "mouse")
       ) {
+        const opCatCell = requirePawnCell(this.pawns, opponent, "cat");
         const dist = this.grid.distance(
-          [opPawns.cat[0], opPawns.cat[1]],
+          [opCatCell[0], opCatCell[1]],
           this.goalCell(opponent),
         );
         if (dist <= 2 && dist !== -1) {
@@ -670,22 +654,14 @@ export class GameState {
     this.history.pop();
 
     let prevGrid: Grid;
-    let prevPawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
+    let prevPawns: GamePawns;
     let prevTimeLeft: Record<PlayerId, number>;
 
     if (this.history.length > 0) {
       const last = this.history[this.history.length - 1];
       prevGrid = last.grid;
-      prevPawns = {
-        1: {
-          cat: [last.catPos[0][0], last.catPos[0][1]],
-          mouse: [last.mousePos[0][0], last.mousePos[0][1]],
-        },
-        2: {
-          cat: [last.catPos[1][0], last.catPos[1][1]],
-          mouse: [last.mousePos[1][0], last.mousePos[1][1]],
-        },
-      };
+      // Copy out, so replaying forward from here cannot mutate the snapshot.
+      prevPawns = clonePawns(last.pawns);
       prevTimeLeft = {
         1: last.timeLeftSeconds[0],
         2: last.timeLeftSeconds[1],
@@ -695,10 +671,7 @@ export class GameState {
       this.previousPawnPosition = undefined;
     } else {
       prevGrid = this.initialGrid.clone();
-      prevPawns = {
-        1: { ...this.initialPawns[1] },
-        2: { ...this.initialPawns[2] },
-      };
+      prevPawns = clonePawns(this.initialPawns);
       prevTimeLeft = {
         1: this.config.timeControl.initialSeconds,
         2: this.config.timeControl.initialSeconds,
@@ -725,39 +698,19 @@ export class GameState {
     this.result = undefined;
   }
 
+  /**
+   * Everything the board draws. In classic this includes each player's home,
+   * typed "home" rather than masquerading as a mouse, so callers render it
+   * directly instead of remapping it.
+   */
   getPawns(): Pawn[] {
-    const pawns: Pawn[] = [];
-    if (this.isPawnActive(1, "cat")) {
-      pawns.push({ playerId: 1, type: "cat", cell: this.pawns[1].cat });
-    }
-    if (this.isPawnActive(1, "mouse")) {
-      pawns.push({ playerId: 1, type: "mouse", cell: this.pawns[1].mouse });
-    }
-    if (this.isPawnActive(2, "cat")) {
-      pawns.push({ playerId: 2, type: "cat", cell: this.pawns[2].cat });
-    }
-    if (this.isPawnActive(2, "mouse")) {
-      pawns.push({ playerId: 2, type: "mouse", cell: this.pawns[2].mouse });
-    }
-    return pawns;
+    return boardPawns(this.pawns);
   }
 
-  getInitialSnapshot(): {
-    grid: Grid;
-    pawns: Record<PlayerId, { cat: Cell; mouse: Cell }>;
-  } {
+  getInitialSnapshot(): { grid: Grid; pawns: GamePawns } {
     return {
       grid: this.initialGrid.clone(),
-      pawns: {
-        1: {
-          cat: [this.initialPawns[1].cat[0], this.initialPawns[1].cat[1]],
-          mouse: [this.initialPawns[1].mouse[0], this.initialPawns[1].mouse[1]],
-        },
-        2: {
-          cat: [this.initialPawns[2].cat[0], this.initialPawns[2].cat[1]],
-          mouse: [this.initialPawns[2].mouse[0], this.initialPawns[2].mouse[1]],
-        },
-      },
+      pawns: clonePawns(this.initialPawns),
     };
   }
 

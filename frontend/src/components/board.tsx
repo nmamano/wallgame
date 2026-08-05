@@ -34,6 +34,7 @@ import {
   ANNOTATION_PREVIEW_OPACITY,
 } from "@/hooks/use-annotations";
 import type { Pawn } from "../../../shared/domain/game-types";
+import { isMovablePawnType } from "../../../shared/domain/pawns";
 import { pawnId } from "../../../shared/domain/game-utils";
 
 type WallState =
@@ -133,6 +134,21 @@ interface WallMaps {
 }
 
 type PillarColors = Record<EdgeColorKey, string | null>;
+
+/**
+ * Pawns that cannot be picked up. A classic home is drawn on the board but is
+ * a goal, not something anyone moves; a mouse is only locked when the variant
+ * says so. The home half matters because homes used to arrive here typed
+ * "mouse", so the mouse check covered them by accident.
+ *
+ * Module-level so it keeps a stable identity across renders and the drag
+ * callbacks below need not list it as a dependency.
+ */
+const pawnInteractionDisabled = (
+  type: Pawn["type"],
+  disableMousePawnInteraction: boolean,
+) =>
+  !isMovablePawnType(type) || (disableMousePawnInteraction && type === "mouse");
 
 const wallKey = (row: number, col: number) => `${row}-${col}`;
 
@@ -276,6 +292,9 @@ export function Board({
     ...pawn,
     id: pawnId(pawn),
   }));
+
+  const isPawnInteractionDisabled = (type: Pawn["type"]) =>
+    pawnInteractionDisabled(type, disableMousePawnInteraction);
 
   // Create grid array
   const grid = Array.from({ length: rows }, (_, rowIndex) =>
@@ -990,7 +1009,8 @@ export function Board({
       pawnPlayerId: PlayerId,
       pawnType: Pawn["type"],
     ) => {
-      if (disableMousePawnInteraction && pawnType === "mouse") return;
+      if (pawnInteractionDisabled(pawnType, disableMousePawnInteraction))
+        return;
       const isControllable =
         !forceReadOnly &&
         (controllablePlayerId == null || pawnPlayerId === controllablePlayerId);
@@ -1343,8 +1363,7 @@ export function Board({
     const isControllable =
       !forceReadOnly &&
       (controllablePlayerId == null || pawn.playerId === controllablePlayerId);
-    const isMouseInteractionDisabled =
-      disableMousePawnInteraction && pawn.type === "mouse";
+    const isMouseInteractionDisabled = isPawnInteractionDisabled(pawn.type);
 
     // Use percentage padding for large pawns to maintain proportions on small screens
     const dimensionClass =

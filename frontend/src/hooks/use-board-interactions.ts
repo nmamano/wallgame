@@ -8,11 +8,17 @@ import {
 } from "react";
 import type {
   Action,
+  PawnType,
   PlayerId,
   WallOrientation,
   Cell,
 } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import {
+  isMovablePawnType,
+  pawnCell,
+  requirePawnCell,
+} from "../../../shared/domain/pawns";
 import type { BoardPawn, Arrow } from "@/components/board";
 import {
   canEnqueue,
@@ -27,6 +33,15 @@ import {
   type Annotation,
   type AnnotationDragState,
 } from "@/hooks/use-annotations";
+
+/**
+ * Whether this pawn refuses to move right now. A classic home never moves at
+ * all; a mouse moves unless the variant locks it. Checking `isMovablePawnType`
+ * rather than just "mouse" matters because a home used to travel in the mouse
+ * slot, so mouse-only guards used to cover it by accident.
+ */
+const isPawnMoveBlocked = (type: PawnType, mouseMoveLocked: boolean) =>
+  !isMovablePawnType(type) || (mouseMoveLocked && type === "mouse");
 
 export interface BoardInteractionsOptions {
   /**
@@ -164,12 +179,14 @@ function buildArrowsForQueue(
   arrowType: Arrow["type"],
 ): Arrow[] {
   if (!gameState || queue.length === 0 || !ownerId) return [];
-  const pawns = gameState.pawns[ownerId];
-  if (!pawns) return [];
+  const cat = pawnCell(gameState.pawns, ownerId, "cat");
+  const mouse = pawnCell(gameState.pawns, ownerId, "mouse");
 
-  const workingPositions = {
-    cat: [pawns.cat[0], pawns.cat[1]] as Cell,
-    mouse: [pawns.mouse[0], pawns.mouse[1]] as Cell,
+  // Arrows only ever describe cat and mouse moves. A variant that lacks one
+  // simply never produces an action for it.
+  const workingPositions: Partial<Record<"cat" | "mouse", Cell>> = {
+    ...(cat ? { cat: [cat[0], cat[1]] as Cell } : {}),
+    ...(mouse ? { mouse: [mouse[0], mouse[1]] as Cell } : {}),
   };
 
   const moveActions = queue.filter(
@@ -184,6 +201,7 @@ function buildArrowsForQueue(
   ) {
     const pawnType = moveActions[0].type as "cat" | "mouse";
     const fromCell = workingPositions[pawnType];
+    if (!fromCell) return [];
     const toCell = moveActions[1].target;
     const from: Cell = [fromCell[0], fromCell[1]];
     const to: Cell = [toCell[0], toCell[1]];
@@ -197,6 +215,7 @@ function buildArrowsForQueue(
       return;
     }
     const fromCell = workingPositions[action.type];
+    if (!fromCell) return;
     const toCell = action.target;
     const from: Cell = [fromCell[0], fromCell[1]];
     const to: Cell = [toCell[0], toCell[1]];
@@ -448,19 +467,22 @@ export function useBoardInteractions(
 
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== controllablePlayerId) return;
-      if (pawn.type !== "cat" && pawn.type !== "mouse") return;
-
-      const pawnType = pawn.type;
-
       // Same cell = no-op
       if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
 
-      // Check mouse lock
-      if (mouseMoveLocked && pawnType === "mouse") {
+      // Refuses to move: a home never does, a mouse when the variant locks it.
+      // Spelled out rather than via isPawnMoveBlocked so that the type guard
+      // narrows pawn.type to something an Action can actually carry.
+      if (
+        !isMovablePawnType(pawn.type) ||
+        (mouseMoveLocked && pawn.type === "mouse")
+      ) {
         setError(mouseMoveLockedMessage);
         clearSelection();
         return;
       }
+
+      const pawnType = pawn.type;
 
       const queue =
         queueMode === "staged"
@@ -476,10 +498,11 @@ export function useBoardInteractions(
 
       if (existingStagedPawnAction && gameState) {
         // Get the pawn's ORIGINAL position from gameState
-        const originalCell =
-          pawnType === "cat"
-            ? gameState.pawns[controllablePlayerId].cat
-            : gameState.pawns[controllablePlayerId].mouse;
+        const originalCell = requirePawnCell(
+          gameState.pawns,
+          controllablePlayerId,
+          pawnType,
+        );
 
         // Case 1: Dragging back to original position = undo the staged action
         if (originalCell[0] === targetRow && originalCell[1] === targetCol) {
@@ -596,8 +619,8 @@ export function useBoardInteractions(
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== controllablePlayerId) return;
 
-      // Check mouse lock
-      if (mouseMoveLocked && pawn.type === "mouse") {
+      // Refuses to move: a home never does, a mouse when the variant locks it.
+      if (isPawnMoveBlocked(pawn.type, mouseMoveLocked)) {
         setError(mouseMoveLockedMessage);
         clearSelection();
         return;
@@ -657,7 +680,7 @@ export function useBoardInteractions(
             p.cell[1] === col,
         );
         if (pawn) {
-          if (mouseMoveLocked && pawn.type === "mouse") {
+          if (isPawnMoveBlocked(pawn.type, mouseMoveLocked)) {
             setError(mouseMoveLockedMessage);
             return;
           }
@@ -709,7 +732,7 @@ export function useBoardInteractions(
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (pawn?.playerId !== controllablePlayerId) return;
 
-      if (mouseMoveLocked && pawn?.type === "mouse") {
+      if (pawn && isPawnMoveBlocked(pawn.type, mouseMoveLocked)) {
         setError(mouseMoveLockedMessage);
         clearSelection();
         return;

@@ -1,5 +1,6 @@
 import { describe, expect, it } from "bun:test";
 import { GameState } from "../shared/domain/game-state";
+import { pawnCell } from "../shared/domain/pawns";
 import type {
   GameConfiguration,
   Move,
@@ -65,8 +66,8 @@ describe("buildHistoryState", () => {
     expect(snapshot).not.toBeNull();
     expect(snapshot?.history.length).toBe(0);
     expect(snapshot?.turn).toBe(1);
-    expect(snapshot?.pawns[1].cat).toEqual([0, 0]);
-    expect(snapshot?.pawns[2].mouse).toEqual([8, 8]);
+    expect(pawnCell(snapshot!.pawns, 1, "cat")).toEqual([0, 0]);
+    expect(pawnCell(snapshot!.pawns, 2, "mouse")).toEqual([8, 8]);
   });
 
   it("reconstructs board state for a specific ply", () => {
@@ -77,8 +78,12 @@ describe("buildHistoryState", () => {
       cursor,
     });
     expect(snapshot).not.toBeNull();
-    expect(snapshot?.pawns[1].cat).toEqual(historyEntries[cursor].catPos[0]);
-    expect(snapshot?.pawns[2].cat).toEqual(historyEntries[cursor].catPos[1]);
+    expect(pawnCell(snapshot!.pawns, 1, "cat")).toEqual(
+      pawnCell(historyEntries[cursor].pawns, 1, "cat"),
+    );
+    expect(pawnCell(snapshot!.pawns, 2, "cat")).toEqual(
+      pawnCell(historyEntries[cursor].pawns, 2, "cat"),
+    );
     expect(snapshot?.turn).toBe(1);
     expect(snapshot?.history.length).toBe(cursor + 1);
   });

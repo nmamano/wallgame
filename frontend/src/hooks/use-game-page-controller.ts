@@ -32,6 +32,7 @@ import {
 } from "../../../shared/domain/standard-notation";
 import type { MoveHistoryRow } from "@/components/move-list-panel";
 import { pawnId } from "../../../shared/domain/game-utils";
+import { requirePawnCell } from "../../../shared/domain/pawns";
 import { type PlayerColor } from "@/lib/player-colors";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import {
@@ -2149,42 +2150,34 @@ export function useGamePageController(gameId: string) {
     const sourceState =
       viewingHistory || !previewState ? boardState : previewState;
     if (!sourceState) return [];
-    const isClassicVariant = usesClassicRules(sourceState.config.variant);
     const basePawns = sourceState.getPawns().map((pawn) => {
-      const isClassicGoal = isClassicVariant && pawn.type === "mouse";
-      const visualType = isClassicGoal ? "home" : pawn.type;
       // In Classic, the home should display in the owning player's color (their destination)
       const visualPlayerId = pawn.playerId;
       const player = players.find((p) => p.playerId === visualPlayerId);
 
       let pawnStyle: string | undefined;
       if (
-        visualType === "cat" &&
+        pawn.type === "cat" &&
         player?.catSkin &&
         player.catSkin !== "default"
       ) {
         pawnStyle = player.catSkin;
       } else if (
-        visualType === "mouse" &&
+        pawn.type === "mouse" &&
         player?.mouseSkin &&
         player.mouseSkin !== "default"
       ) {
         pawnStyle = player.mouseSkin;
       } else if (
-        visualType === "home" &&
+        pawn.type === "home" &&
         player?.homeSkin &&
         player.homeSkin !== "default"
       ) {
         pawnStyle = player.homeSkin;
       }
 
-      if (isClassicGoal) {
-        return {
-          ...pawn,
-          pawnStyle,
-          visualType,
-          visualPlayerId,
-        };
+      if (pawn.type === "home") {
+        return { ...pawn, pawnStyle, visualPlayerId };
       }
 
       return pawnStyle ? { ...pawn, pawnStyle } : pawn;
@@ -3344,7 +3337,7 @@ export function useGamePageController(gameId: string) {
     }
     const goalFor = (playerId: PlayerId) =>
       sourceState.grid.distance(
-        sourceState.pawns[playerId].cat,
+        requirePawnCell(sourceState.pawns, playerId, "cat"),
         sourceState.goalCell(playerId),
       );
     return {

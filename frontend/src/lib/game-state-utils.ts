@@ -4,6 +4,7 @@ import type {
   SerializedGameState,
 } from "../../../shared/domain/game-types";
 import { Grid } from "../../../shared/domain/grid";
+import { clonePawns } from "../../../shared/domain/pawns";
 import { GameState } from "../../../shared/domain/game-state";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
 
@@ -55,16 +56,7 @@ export const hydrateGameStateFromSerialized = (
   });
   state.grid = grid;
 
-  state.pawns = {
-    1: {
-      cat: serialized.pawns[1].cat,
-      mouse: serialized.pawns[1].mouse,
-    },
-    2: {
-      cat: serialized.pawns[2].cat,
-      mouse: serialized.pawns[2].mouse,
-    },
-  };
+  state.pawns = clonePawns(serialized.pawns);
 
   try {
     const orderedHistory = [...serialized.history].sort(
@@ -86,14 +78,7 @@ export const hydrateGameStateFromSerialized = (
         index: entry.index,
         move,
         grid: nextState.grid.clone(),
-        catPos: [
-          [nextState.pawns[1].cat[0], nextState.pawns[1].cat[1]],
-          [nextState.pawns[2].cat[0], nextState.pawns[2].cat[1]],
-        ],
-        mousePos: [
-          [nextState.pawns[1].mouse[0], nextState.pawns[1].mouse[1]],
-          [nextState.pawns[2].mouse[0], nextState.pawns[2].mouse[1]],
-        ],
+        pawns: clonePawns(nextState.pawns),
         timeLeftSeconds: [nextState.timeLeft[1], nextState.timeLeft[2]],
         distances: [0, 0],
         wallCounts: [0, 0],

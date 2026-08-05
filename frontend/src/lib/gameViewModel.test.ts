@@ -1,4 +1,5 @@
 import { describe, expect, it } from "bun:test";
+import { requirePawnCell } from "../../../shared/domain/pawns";
 import {
   colorizeLastMoves,
   colorizeLastWalls,
@@ -153,7 +154,7 @@ describe("colored wrappers (showcase/history consumers) stay equivalent", () => 
   it("second-move diffs attribute player 2 (ordinary parity preserved)", () => {
     const arrival = leadInArrivalState();
     // Human (P2) cat makes any legal single step.
-    const humanCat = arrival.pawns[2].cat;
+    const humanCat = requirePawnCell(arrival.pawns, 2, "cat");
     const steps: [number, number][] = [
       [humanCat[0] + 1, humanCat[1]],
       [humanCat[0] - 1, humanCat[1]],

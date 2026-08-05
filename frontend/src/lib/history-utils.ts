@@ -3,18 +3,16 @@ import {
   type MoveInHistory,
 } from "../../../shared/domain/game-state";
 import type {
-  Cell,
   GameConfiguration,
   PlayerId,
 } from "../../../shared/domain/game-types";
+import { clonePawns } from "../../../shared/domain/pawns";
 
 interface BuildHistoryStateOptions {
   config: GameConfiguration;
   historyEntries: MoveInHistory[];
   cursor: number;
 }
-
-const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]] as Cell;
 
 const nextTurnAfter = (
   moveIndex: number,
@@ -52,16 +50,7 @@ export function buildHistoryState({
   }
 
   snapshot.grid = entry.grid.clone();
-  snapshot.pawns = {
-    1: {
-      cat: cloneCell(entry.catPos[0]),
-      mouse: cloneCell(entry.mousePos[0]),
-    },
-    2: {
-      cat: cloneCell(entry.catPos[1]),
-      mouse: cloneCell(entry.mousePos[1]),
-    },
-  };
+  snapshot.pawns = clonePawns(entry.pawns);
   snapshot.timeLeft = {
     1: entry.timeLeftSeconds[0],
     2: entry.timeLeftSeconds[1],

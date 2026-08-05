@@ -1,5 +1,6 @@
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
+import { clonePawns } from "../../shared/domain/pawns";
 import { generateFreestyleInitialState } from "../../shared/domain/freestyle-setup";
 import {
   buildSurvivalInitialState,
@@ -1378,16 +1379,7 @@ export const serializeGameState = (
     moveCount: state.moveCount,
     timeLeft: { ...state.timeLeft },
     lastMoveTime: state.lastMoveTime,
-    pawns: {
-      1: {
-        cat: state.pawns[1].cat,
-        mouse: state.pawns[1].mouse,
-      },
-      2: {
-        cat: state.pawns[2].cat,
-        mouse: state.pawns[2].mouse,
-      },
-    },
+    pawns: clonePawns(state.pawns),
     walls: state.grid.getWalls(),
     initialState: state.getInitialState(),
     history: state.history.map((entry) => ({

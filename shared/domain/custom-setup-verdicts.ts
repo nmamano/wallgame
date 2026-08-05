@@ -25,6 +25,7 @@
  */
 
 import { GameState } from "./game-state";
+import { requirePawnCell } from "./pawns";
 import { moveFromStandardNotation } from "./standard-notation";
 import type { PlayerId } from "./game-types";
 import {
@@ -103,7 +104,7 @@ export const computeBestMoveDelta = (
   const mover = candidate.humanPlaysAs;
 
   const beforeDistance = state.grid.distance(
-    state.pawns[mover].cat,
+    requirePawnCell(state.pawns, mover, "cat"),
     state.goalCell(mover),
   );
 
@@ -117,7 +118,7 @@ export const computeBestMoveDelta = (
   });
 
   const afterDistance = next.grid.distance(
-    next.pawns[mover].cat,
+    requirePawnCell(next.pawns, mover, "cat"),
     next.goalCell(mover),
   );
 

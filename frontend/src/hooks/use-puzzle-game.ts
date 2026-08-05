@@ -9,6 +9,7 @@ import type { Annotation } from "@/hooks/use-annotations";
 import type { BoardPawn, BoardProps, LastWall } from "@/components/board";
 import { computeLastMoves, computeLastWalls } from "@/lib/gameViewModel";
 import { pawnId } from "../../../shared/domain/game-utils";
+import { requirePawnCell } from "../../../shared/domain/pawns";
 
 export type PuzzleStatus = "loading" | "playing" | "wrong_move" | "solved";
 
@@ -218,18 +219,14 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     setGameState(nextState);
   }, []);
 
-  // Compute board pawns with staged positions
-  // TODO: Extract visualType logic into shared utility - same pattern exists in
-  // use-game-page-controller.ts and game-showcase.tsx
+  // Compute board pawns with staged positions. Pawn types are already honest
+  // - a classic home arrives typed "home" - so nothing needs remapping.
   const boardPawns = useMemo((): BoardPawn[] => {
     if (!gameState) return [];
 
-    const pawns = gameState.getPawns();
-    return pawns.map((pawn) => ({
+    return gameState.getPawns().map((pawn) => ({
       ...pawn,
       id: pawnId(pawn),
-      // Classic variant: "mouse" is actually "home"
-      visualType: pawn.type === "mouse" ? "home" : pawn.type,
     }));
   }, [gameState]);
 
@@ -294,8 +291,6 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
       const basePawn = {
         ...pawn,
         id: pawnId(pawn),
-        // Classic variant: "mouse" is actually "home"
-        visualType: pawn.type === "mouse" ? ("home" as const) : pawn.type,
       };
 
       if (pawn.playerId !== humanPlayerId) return basePawn;
@@ -493,8 +488,7 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
           orientation: action.wallOrientation ?? "vertical",
         };
       }
-      const pawns = gameState.pawns[humanPlayerId];
-      const from = action.type === "cat" ? pawns.cat : pawns.mouse;
+      const from = requirePawnCell(gameState.pawns, humanPlayerId, action.type);
       return { type: "arrow", from, to: action.target };
     });
   }, [solutionShown, gameState, puzzle.moves, currentMoveIndex, humanPlayerId]);
