@@ -158,7 +158,11 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
       fixed-height and one of them is the rematch button. **Done**,
       reviewer-acked over two diff-gate rounds: the first was rejected because
       the browser gate only printed its findings and exited 0 whatever it saw.
-- [ ] **S7** _(optional)_ The retention query that turns S3+S4 into D1/D7 numbers.
+- [x] **S7** The retention query that turns S3 into a real number - built
+      because S3 and S4 only COLLECT, so without it the loop ends with new
+      columns and still no answer. A return is a game on a LATER UTC DAY, which
+      is what stops a rematch sitting counting as coming back. **Done**,
+      reviewer-acked. It reports nothing until the anonymous id is deployed.
 
 ## Deferred / parked
 
