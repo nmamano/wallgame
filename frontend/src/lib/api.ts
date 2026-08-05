@@ -7,6 +7,7 @@ import {
   type PuzzleProgressResponse,
   type PuzzleVoteState,
 } from "../../../shared/contracts/puzzles";
+import { getAnonymousId } from "./anonymous-id";
 import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/index";
 import { queryOptions } from "@tanstack/react-query";
@@ -201,6 +202,7 @@ export const createGameSession = async (args: {
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
         joinerConfig: args.joinerConfig,
+        anonymousId: getAnonymousId(),
         // Let server randomly decide who is Player 1
       },
     }),
@@ -262,6 +264,7 @@ export const joinGameSession = async (args: {
       json: {
         displayName: args.displayName,
         appearance: args.appearance,
+        anonymousId: getAnonymousId(),
       },
     }),
   );
@@ -516,6 +519,7 @@ export const playVsBot = async (args: {
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
         hostIsPlayer1: args.hostIsPlayer1,
+        anonymousId: getAnonymousId(),
       },
     }),
   );
@@ -539,6 +543,7 @@ export const playPuzzle = async (args: {
         puzzleId: args.puzzleId,
         hostDisplayName: args.hostDisplayName,
         hostAppearance: args.hostAppearance,
+        anonymousId: getAnonymousId(),
       },
     }),
   );

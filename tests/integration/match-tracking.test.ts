@@ -73,9 +73,24 @@ function migrationsFolderWithoutThisSlice(): string {
   const journal = JSON.parse(
     readFileSync(journalPath, "utf8"),
   ) as MigrationJournal;
-  journal.entries = journal.entries.filter(
-    (entry) => entry.tag !== THIS_SLICE_MIGRATION,
+  // TRUNCATE at this slice's migration - do not merely filter it out.
+  // Drizzle records how far it has got by the last applied migration's
+  // timestamp, so leaving LATER migrations in the staged folder applies them
+  // first and then makes the real run skip this one as "older than what is
+  // already applied". Filtering worked only while this was the newest
+  // migration in the repo, and silently stopped working when it was not.
+  // Truncating also matches reality: a database cannot be at "before N" while
+  // already carrying N+1.
+  const index = journal.entries.findIndex(
+    (entry) => entry.tag === THIS_SLICE_MIGRATION,
   );
+  if (index === -1) {
+    throw new Error(
+      `Staged migration harness: ${THIS_SLICE_MIGRATION} is not in the journal. ` +
+        `Was it renamed?`,
+    );
+  }
+  journal.entries = journal.entries.slice(0, index);
   writeFileSync(journalPath, JSON.stringify(journal, null, 2));
 
   return folder;

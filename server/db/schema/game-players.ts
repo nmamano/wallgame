@@ -2,6 +2,7 @@ import {
   pgTable,
   integer,
   varchar,
+  uuid,
   primaryKey,
   index,
 } from "drizzle-orm/pg-core";
@@ -20,6 +21,22 @@ export const gamePlayersTable = pgTable(
     playerConfigType: varchar("player_config_type", { length: 255 }).notNull(), // "you", "friend", "matched user", "bot", "custom bot"
     displayName: varchar("display_name", { length: 255 }).notNull(),
     userId: integer("user_id").references(() => usersTable.userId), // NULL for non-logged-in users and built-in bots
+    /**
+     * The browser this seat was played from, when it told us. The guest
+     * counterpart of `user_id`, which is why it lives here and not on `games`:
+     * a game has two seats and one column could only ever record one of them.
+     *
+     * Written for every HUMAN seat, including signed-in ones - that adjacency
+     * is what answers "did this guest later make an account". NULL for bots.
+     *
+     * A native `uuid` column, so the shape is enforced for every writer rather
+     * than only the ones that go through our Zod schemas.
+     *
+     * CORRELATION TELEMETRY, NOT AUTHENTICATION. It is supplied by the client,
+     * so it can be anything; it must never be read as evidence about the
+     * `user_id` beside it. See shared/domain/anonymous-id.ts.
+     */
+    anonymousId: uuid("anonymous_id"),
     botId: varchar("bot_id", { length: 255 }).references(
       () => builtInBotsTable.botId,
     ), // Only non-NULL for built-in bots

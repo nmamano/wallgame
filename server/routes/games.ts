@@ -211,6 +211,7 @@ export const gamesRoute = new Hono()
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: parsed.hostIsPlayer1,
           hostAuthUserId: user?.id,
+          hostAnonymousId: parsed.anonymousId,
           hostElo,
           joinerConfig,
         });
@@ -406,6 +407,7 @@ export const gamesRoute = new Hono()
           ),
           appearance: parsed.appearance,
           authUserId: user?.id,
+          anonymousId: parsed.anonymousId,
           elo: joinerElo,
         });
         const session = joinResult.session;
@@ -618,6 +620,7 @@ export const botsRoute = new Hono()
           hostAppearance: parsed.hostAppearance,
           hostIsPlayer1: hostIsPlayer1 ?? Math.random() < 0.5,
           hostAuthUserId: user?.id,
+          hostAnonymousId: parsed.anonymousId,
           hostElo,
           joinerConfig: {
             type: "bot",

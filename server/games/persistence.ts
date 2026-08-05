@@ -50,6 +50,19 @@ const getBotId = (compositeId: string | undefined): string | null => {
   return compositeId ?? null;
 };
 
+/**
+ * The anonymous id to store for a seat: the human's, or NULL for a bot.
+ *
+ * Keyed on the seat's CONFIG TYPE, the same thing `buildPlayerConfigType` uses,
+ * and deliberately NOT on `userId` being NULL - guests are humans, and keying
+ * on the absence of an account would silently exclude the very players this
+ * column exists to count. Bot seats are forced to NULL rather than trusted,
+ * because a bot has no browser and any id on one would be a bug leaking a
+ * human's id onto the wrong row.
+ */
+const anonymousIdFor = (player: SessionPlayer): string | null =>
+  player.configType === "bot" ? null : (player.anonymousId ?? null);
+
 const buildOutcomeRank = (
   winner: PlayerId | undefined,
   playerId: PlayerId,
@@ -175,6 +188,7 @@ export const persistCompletedGame = async (
         playerConfigType: buildPlayerConfigType(session, session.players.host),
         displayName: session.players.host.displayName,
         userId: hostUserId,
+        anonymousId: anonymousIdFor(session.players.host),
         botId: getBotId(session.players.host.botCompositeId),
         ratingAtStart: normalizeRating(session.players.host.ratingAtStart),
         ...normalizeAppearance(session.players.host.appearance),
@@ -191,6 +205,7 @@ export const persistCompletedGame = async (
         ),
         displayName: session.players.joiner.displayName,
         userId: joinerUserId,
+        anonymousId: anonymousIdFor(session.players.joiner),
         botId: getBotId(session.players.joiner.botCompositeId),
         ratingAtStart: normalizeRating(session.players.joiner.ratingAtStart),
         ...normalizeAppearance(session.players.joiner.appearance),

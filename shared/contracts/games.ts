@@ -1,4 +1,5 @@
 import { z } from "zod";
+import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
 import type {
   GameSnapshot,
   PlayerId,
@@ -283,6 +284,12 @@ export const createGameSchema = z.object({
       displayName: z.string().max(50).optional(),
     })
     .optional(),
+  /**
+   * This browser's anonymous id, when it has one. Correlation telemetry only -
+   * see shared/domain/anonymous-id.ts. Optional because a browser that cannot
+   * store it durably sends nothing rather than something unstable.
+   */
+  anonymousId: z.string().regex(ANONYMOUS_ID_PATTERN).optional(),
 });
 
 export interface GameCreateResponse {
@@ -305,6 +312,12 @@ export interface GameSessionDetails {
 export const joinGameSchema = z.object({
   displayName: z.string().max(50).optional(),
   appearance: appearanceSchema,
+  /**
+   * This browser's anonymous id, when it has one. Correlation telemetry only -
+   * see shared/domain/anonymous-id.ts. Optional because a browser that cannot
+   * store it durably sends nothing rather than something unstable.
+   */
+  anonymousId: z.string().regex(ANONYMOUS_ID_PATTERN).optional(),
 });
 
 export const readySchema = z.object({
@@ -513,6 +526,11 @@ export const createBotGameFromPuzzleSchema = z
     puzzleId: z.string().min(1),
     hostDisplayName: z.string().max(50).optional(),
     hostAppearance: appearanceSchema,
+    /**
+     * This browser's anonymous id, when it has one. Correlation telemetry only
+     * - see shared/domain/anonymous-id.ts.
+     */
+    anonymousId: z.string().regex(ANONYMOUS_ID_PATTERN).optional(),
   })
   .strict();
 
@@ -546,6 +564,11 @@ export const createBotGameDirectSchema = z
      * Tests can pass this explicitly for deterministic behavior.
      */
     hostIsPlayer1: z.boolean().optional(),
+    /**
+     * This browser's anonymous id, when it has one. Correlation telemetry only
+     * - see shared/domain/anonymous-id.ts.
+     */
+    anonymousId: z.string().regex(ANONYMOUS_ID_PATTERN).optional(),
   })
   .strict();
 

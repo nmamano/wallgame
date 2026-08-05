@@ -143,9 +143,9 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
 - [x] **S2** Per-page titles + meta descriptions, injected server-side per route.
       Grew to nine values per page - the og/twitter tags were all hardcoded to the
       homepage, and there was no canonical link at all. **Done**, reviewer-acked.
-- [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
-      persisted on a new nullable `game_players` column. **UNPARKED** - Nil ruled
-      2026-08-05; next slice.
+- [x] **S3** Anonymous player id - a random `localStorage` UUID, sent at seat creation,
+      persisted on a nullable `game_players.anonymous_id`. **Done locally, NOT
+      deployed.** Reviewer-acked; Nil ruled on consent 2026-08-05 (below).
 - [x] **S4** Persist the rematch/match chain (board task `8dba09de`). Landed as
       `series_id` + `rematch_number`, a group key rather than the previous-game link
       the task proposed. **Done**, reviewer-acked.
@@ -226,8 +226,20 @@ His words, quoted rather than paraphrased, because the difference matters:
    the wire/dataLayer capture, with DebugView deferred to a human check after deploy.
 4. **The replay view counters** (see the incident below). Nil: **"np"**. No rollback.
 
-**STILL NOT ANSWERED, and must not be inferred from the above:** whether the anonymous
-id needs a **privacy or consent treatment for EU visitors**. That was in the human-only
+**5. EU privacy/consent treatment for the anonymous id. ANSWERED 2026-08-05: Nil,
+asked to choose between shipping as-is and adding a consent banner, said "ship".**
+
+Asked as its own question rather than inferred from his other rulings, because it is
+not a deploy-time flag - if consent were required the browser must not MINT the id
+until it is given, which changes `getAnonymousId`'s callers. He was given both sides:
+that EU device-storage rules have a strictly-necessary carve-out this arguably falls
+outside, against the cost of putting a consent popup in front of every new visitor to
+a site whose measured problem is that visitors do not return. My recommendation was to
+ship, and to add a privacy-page line if it ever matters; his call, his risk.
+
+If that judgement is ever revisited, the change is in `frontend/src/lib/api.ts` where
+`getAnonymousId()` is called - the storage module and everything server-side are
+already consent-neutral. That was in the human-only
 list as its own question. Nil ruled on where the id lives and on whose rows it goes on;
 he said nothing about consent, cookie banners or a privacy-policy line. Ask it plainly
 at the S3 plan-gate rather than reading approval into "your call" - which was a reply

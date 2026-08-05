@@ -55,6 +55,14 @@ export interface SessionPlayer {
   lastSeenAt: number;
   appearance: PlayerAppearance;
   authUserId?: string; // Auth provider's user ID (for rating updates)
+  /**
+   * The browser this seat was played from. Rides the session from creation to
+   * `persistCompletedGame`, because game_players rows are written at the end of
+   * the game, not at the start - and because a rematch creates seats with no
+   * HTTP request at all, so the seat spreads in `createRematchSession` are the
+   * only thing carrying it across a rematch chain.
+   */
+  anonymousId?: string;
   ratingAtStart?: number; // Rating at game start, captured before updates
   elo?: number; // Looked up from DB based on authenticated user
   configType?: PlayerConfigType; // How this player seat was configured
@@ -681,6 +689,8 @@ export const createGameSession = (args: {
   hostIsPlayer1?: boolean;
   hostAuthUserId?: string;
   hostElo?: number;
+  /** The host browser's anonymous id, when it sent one. */
+  hostAnonymousId?: string;
   joinerConfig?: {
     type: PlayerConfigType;
     displayName?: string;
@@ -741,6 +751,7 @@ export const createGameSession = (args: {
         lastSeenAt: now,
         appearance: args.hostAppearance ?? {},
         authUserId: args.hostAuthUserId,
+        anonymousId: args.hostAnonymousId,
         ratingAtStart: args.hostElo,
         elo: args.hostElo,
       },
@@ -783,6 +794,8 @@ export const joinGameSession = (args: {
   appearance?: PlayerAppearance;
   authUserId?: string; // Auth provider's user ID (for rating updates + seat ownership)
   elo?: number; // Looked up from DB by the route handler
+  /** The joining browser's anonymous id, when it sent one. */
+  anonymousId?: string;
 }): JoinGameSessionResult => {
   const session = ensureSession(args.id);
   if (session.cancelled) {
@@ -811,6 +824,7 @@ export const joinGameSession = (args: {
       ...args.appearance,
     };
     joiner.authUserId = args.authUserId;
+    joiner.anonymousId = args.anonymousId;
     joiner.ratingAtStart = args.elo;
     joiner.elo = args.elo;
     joiner.lastSeenAt = Date.now();
