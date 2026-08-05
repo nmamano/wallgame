@@ -36,6 +36,31 @@ Set `CHROME_PATH` if your Chrome is not on `PATH` as `google-chrome`,
   question needs, with optional latency. Records every `/api` request; read
   the log to tell "it re-read" from "it looked right by luck".
 - **`drive-*.ts`** - one script per question.
+- **`wall-edge-measure.mjs`** - where EXACTLY does a wall's edge fall, and its
+  joint's? Reports both as sub-pixel positions. Reads the 50% crossing of the
+  red channel between the plateau outside a shape and the one inside it,
+  because a wall's neighbour is a CELL and a joint's is the darker background:
+  the same geometry produces different-looking pixels on either side, so any
+  absolute threshold reports a defect that is not there.
+- **`joint-layers.mjs`** - WHICH LAYER is a wall/joint mismatch in? Three
+  things can disagree and lumping them together is how an earlier attempt at
+  this ended up rewriting the rasterizer: where CSS Grid put the CELL, where
+  the joint's wrapper box sits, and where its artwork is actually PAINTED. The
+  first two come from the DOM, the third only from pixels. It also paints the
+  wrapper a solid colour as a control - if that lands on the wall's edge while
+  the artwork does not, the geometry is fine and the artwork is short.
+
+Both take `PROBE_BASE` (default `http://127.0.0.1:5175`) and `EDGE_DPR`;
+`joint-layers.mjs` also takes `PROBE_THEME` (crisp|default). Run a dev server
+first - they drive the source, not `dist`.
+
+Measured 2026-08-05, on the div-based board, two walls meeting at a joint: the
+wall box and the joint box agree to four decimals and the wall's edge sits
+exactly on the grid cell's edge, at every DPR. The only non-zero readings are
+at FRACTIONAL device pixel ratios, where the painted artwork lands 0.06-0.10
+device px past the wall - a paint-time effect, not a geometry one. Reach for
+these before proposing a coordinate change; that is a bug class that has
+already cost this repo four commits and a rollback.
 
 ## Designing an experiment that proves what you think
 
