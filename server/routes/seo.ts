@@ -14,6 +14,7 @@
  */
 
 import { Hono } from "hono";
+import { CANONICAL_PATHS } from "../../shared/domain/page-metadata";
 
 /**
  * Sitemap entries have to be absolute, so the origin is written down once here.
@@ -22,33 +23,6 @@ import { Hono } from "hono";
  * domain.
  */
 export const SITE_ORIGIN = "https://wallgame.io";
-
-/**
- * The canonical pages, and the only URLs the sitemap advertises.
- *
- * Deliberately absent, each for its own reason:
- *
- * - `/game/$id`, `/puzzles/$id` and `/solo-campaign/$id` are per-item URLs. The
- *   first is unbounded. The other two are real content and deserve a sitemap
- *   generated from the database, which is a separate piece of work - a
- *   hardcoded list of them would be wrong the day after it was written.
- * - `/solo-campaign` and `/generated-candidates` are legacy URLs whose routes
- *   redirect to `/puzzles` client-side. Sending a crawler there buys an empty
- *   shell and a JavaScript hop to a page already listed below.
- * - `/profile` and `/settings` are per-visitor and worthless in an index. They
- *   stay crawlable on purpose - see `buildRobotsTxt`.
- */
-export const CANONICAL_PATHS = [
-  "/",
-  "/play",
-  "/puzzles",
-  "/learn",
-  "/ranking",
-  "/live-games",
-  "/past-games",
-  "/about",
-  "/study-board",
-] as const;
 
 /**
  * Every URL under `/game/` is one specific game, live or finished. There are

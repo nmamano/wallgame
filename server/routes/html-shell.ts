@@ -16,99 +16,27 @@
 
 import { existsSync, readFileSync } from "node:fs";
 import type { Hono } from "hono";
-import { CANONICAL_PATHS, SITE_ORIGIN } from "./seo";
+import { SITE_ORIGIN } from "./seo";
+import {
+  normalizePath,
+  pageMetaForPath,
+  type PageMeta,
+} from "../../shared/domain/page-metadata";
 
 const SHELL_FILE = "./frontend/dist/index.html";
 
-export interface PageMeta {
-  title: string;
-  description: string;
-}
-
 /**
- * Copy for every indexable page. Typed against the sitemap's path list rather
- * than repeating it, so adding a page to one and forgetting the other is a
- * compile error instead of a page that quietly inherits the generic title.
+ * The shared title and description for a path, plus the absolute URL only the
+ * server can build. The copy comes from shared/domain/page-metadata so the
+ * client sets exactly the same title when it navigates; the origin stays here
+ * because it is a deployment fact rather than a shared contract.
  */
-const PAGE_META: Record<(typeof CANONICAL_PATHS)[number], PageMeta> = {
-  "/": {
-    title: "Wall Game - free online strategy board game",
-    description:
-      "Build walls to trap your opponent and hunt down their mouse. Play free in your browser against a friend, a stranger, or bots with different styles and strengths.",
-  },
-  "/play": {
-    title: "Play Wall Game online - free, no account needed",
-    description:
-      "Start a game in seconds. Choose a bot to face, invite a friend with a link, or get matched with someone else looking for a game.",
-  },
-  "/puzzles": {
-    title: "Wall Game puzzles and solo campaign",
-    description:
-      "Sharpen your play on hand-picked positions, and work through the campaign from your first wall to the hard endgames.",
-  },
-  "/learn": {
-    title: "How to play Wall Game - rules and strategy",
-    description:
-      "Learn the rules in a couple of minutes, and then pick up the walling and chasing patterns that decide most games.",
-  },
-  "/ranking": {
-    title: "Wall Game rankings - the top rated players",
-    description:
-      "See who is playing best right now, across board sizes, variants and time controls.",
-  },
-  "/live-games": {
-    title: "Live Wall Game matches to watch",
-    description:
-      "Watch games as they are being played, follow a match move by move, and see how stronger players handle a position.",
-  },
-  "/past-games": {
-    title: "Wall Game replays and game archive",
-    description:
-      "Browse finished games and replay them move by move, including your own.",
-  },
-  "/about": {
-    title: "About Wall Game",
-    description:
-      "What Wall Game is, where it came from, and how to get in touch.",
-  },
-  "/study-board": {
-    title: "Wall Game study board - set up any position",
-    description:
-      "Place pawns and walls by hand to build any position you like, and study what happens next.",
-  },
-};
-
-/**
- * What a path we have no copy for gets: every game, puzzle and campaign level,
- * plus anything that does not resolve at all. Item-specific metadata for those
- * needs the database and is separate work.
- */
-const DEFAULT_META: PageMeta = {
-  title: "Wall Game - free online strategy board game",
-  description:
-    "Board game about building walls and outsmarting your opponents. Play with friends, face the AI, or solve puzzles.",
-};
-
-/**
- * A path as it will appear in a canonical URL: no query, no hash - Hono's
- * `c.req.path` has already dropped both - and no trailing slash, so /play/ and
- * /play are one page rather than two competing for the same content.
- */
-export function normalizePath(path: string): string {
-  if (!path.startsWith("/")) return "/";
-  const trimmed = path.replace(/\/+$/, "");
-  return trimmed === "" ? "/" : trimmed;
-}
-
 export function metaForPath(path: string): PageMeta & { url: string } {
   const normalized = normalizePath(path);
-  const meta =
-    (PAGE_META as Record<string, PageMeta | undefined>)[normalized] ??
-    DEFAULT_META;
 
   return {
-    ...meta,
-    url: `${SITE_ORIGIN}${normalized === "/" ? "/" : normalized}`,
+    ...pageMetaForPath(normalized),
+    url: `${SITE_ORIGIN}${normalized}`,
   };
 }
 

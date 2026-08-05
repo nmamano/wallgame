@@ -144,12 +144,15 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
       Grew to nine values per page - the og/twitter tags were all hardcoded to the
       homepage, and there was no canonical link at all. **Done**, reviewer-acked.
 - [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
-      persisted on a new nullable `game_players` column. **PARKED on Nil**, see below.
+      persisted on a new nullable `game_players` column. **UNPARKED** - Nil ruled
+      2026-08-05; next slice.
 - [x] **S4** Persist the rematch/match chain (board task `8dba09de`). Landed as
       `series_id` + `rematch_number`, a group key rather than the previous-game link
       the task proposed. **Done**, reviewer-acked.
-- [ ] **S5** Confirm the GA in-app undercount in a real browser **before** any code,
-      then fix (board task `c13fdaaa`).
+- [x] **S5** Confirm the GA in-app undercount in a real browser **before** any code,
+      then fix (board task `c13fdaaa`). The investigation killed the ticket's
+      hypothesis: GA counts full document loads and **nothing else**, not merely
+      parameter-only changes. **Done locally, reviewer-acked, NOT deployed.**
 - [ ] **S6** Post-game account nudge.
 - [ ] **S7** _(optional)_ The retention query that turns S3+S4 into D1/D7 numbers.
 
@@ -161,8 +164,8 @@ Do-not-pick-up list:
 - The $100 ad spend (plan step 5) - gated on three conditions in the plan doc.
 - W4 distribution, W5 multiplayer liquidity, W6 mobile quality.
 
-Found during this loop, deliberately not fixed in the slice that found them. Neither is
-on the board yet; ask Nil before filing.
+Found during this loop, deliberately not fixed in the slice that found them. None is on
+the board yet; ask Nil before filing.
 
 - **An unmatched `/api/*` path returns 200 HTML, not a JSON 404.** It falls through to
   the SPA shell. Pre-existing, unchanged by S2, and the same class of bug as
@@ -173,24 +176,62 @@ on the board yet; ask Nil before filing.
   shell loader needs an `import.meta.main` guard. Splitting the entrypoint would remove
   the guard and the noise. The reviewer explicitly ruled it out of S2 as a last-minute
   refactor.
+- **Nothing typechecks `server/`, `shared/` or `tests/`.** `bun x tsc --noEmit -p
+tsconfig.json` at the repo root emits thousands of SYNTAX errors from
+  CMake-generated `.ts` files under `minimax-engine/build_release/`, and a real error in
+  `tests/` did **not** appear in its output, raw or filtered. So the "run root tsc and
+  grep for `server|shared|tests`" step in `ops-private/wallgame-testing.md` cannot tell
+  a clean run from a broken one - both print nothing. What actually covers those types
+  today is the **type-aware ESLint rules** in CI, which is what caught the error, plus
+  the frontend's own `tsc -b` via `bun run build`. A real typecheck script excluding
+  build artifacts is worth its own slice. Found in S5.
+
+## Incident: view counters written to production (2026-08-05)
+
+Recorded because it was my mistake and the shape of it recurs.
+
+Two S5 harness scripts navigated to real replay URLs on wallgame.io. `GET
+/api/games/:id` runs `getReplayGame()`, which **increments `games.views`** - so both
+scripts wrote to the production database across a handful of runs, on replay ids
+`mOw0N6-0` and `OS0_CVf5`. No games created, no bot time, no other writes. **No rollback
+attempted**, on the reviewer's advice and mine: a corrective UPDATE against production
+is a larger risk than a slightly inflated view count on two rows.
+
+Two things went wrong, and only the first is about analytics:
+
+1. I described the proxy as "read-only GETs" because my own notes describe that pattern
+   that way. **A GET is not necessarily read-only.** Check what the endpoint does before
+   calling a proxy safe.
+2. I reported the effect to Nil attributing it only to the local verifier. The
+   production diagnostic did it too. The reviewer caught that by reading the script
+   rather than my summary of it.
+
+Both harnesses are now write-free: invented ids, `/api` intercepted with a local 404,
+and `ga-report-verify.ts` aborts every request to any host but its own.
 
 Queued human-only decisions:
 
-**S3 IS PARKED ON THESE TWO, NOT IN FLIGHT.** Per the standing orders a slice
-hard-blocked on a human-only decision is queued while unblocked work continues, so the
-current slice is S4. No S3 code exists. The reviewer approved the mechanics and blocked
-implementation pending Nil, and wants his ruling relayed before the final ACK.
+**RESOLVED BY NIL, 2026-08-05.** Both S3 questions and the S5 gate were answered.
+His words, quoted rather than paraphrased, because the difference matters:
 
-1. **Move the id from `games` to `game_players`?** `ops-private/growth-plan.md` says
-   "persisted on the game row". `game_players` is per-seat and already has a nullable
-   `userId` that is NULL exactly for guests; on `games` the field could only record one
-   of two humans, which silently breaks human-vs-human. Reviewer: `game_players` is the
-   correct normalized location. Changing a decision recorded in the plan doc is
-   human-only, hence the ask.
-2. **Store the id on logged-in seats too?** It is the only way to measure
-   guest-to-account conversion, which is the retention question the plan cares about.
-   It also creates a pseudonymous browser-to-account link, which falls under the
-   standing privacy decision. Reviewer approves it technically, conditional on Nil.
+1. **Move the id from `games` to `game_players`?** Asked as "I'd put it on the
+   per-player table" - Nil: **"agree"**. `game_players` is per-seat and already has a
+   nullable `userId` that is NULL exactly for guests; on `games` the field could only
+   record one of two humans, silently breaking human-vs-human.
+2. **Store it on logged-in seats too?** Nil: **"your call. sounds like a small cost for
+   the everyone option."** Delegated, with a lean. Taking the EVERYONE option - every
+   human seat, bot seats NULL - which is what the reviewer approved technically and the
+   only thing that answers "did this guest later sign up".
+3. **S5's gate, DebugView being unreachable from this box?** Nil: **"good enough"** to
+   the wire/dataLayer capture, with DebugView deferred to a human check after deploy.
+4. **The replay view counters** (see the incident below). Nil: **"np"**. No rollback.
+
+**STILL NOT ANSWERED, and must not be inferred from the above:** whether the anonymous
+id needs a **privacy or consent treatment for EU visitors**. That was in the human-only
+list as its own question. Nil ruled on where the id lives and on whose rows it goes on;
+he said nothing about consent, cookie banners or a privacy-policy line. Ask it plainly
+at the S3 plan-gate rather than reading approval into "your call" - which was a reply
+about the linkage tradeoff, not about consent.
 
 Settled by the reviewer, not needing Nil: `crypto.randomUUID()` with strict UUID
 validation rather than a frontend nanoid dependency; names `anonymousId` /
@@ -204,7 +245,14 @@ Honest framing of the metric this buys, per the reviewer: return among players w
 **counted completed games**, not all visitors and not all game attempts. Abandoned
 games write no `game_players` row at all.
 
-- **The S2 copy.** Draft wording is live in `PAGE_META`; Nil edits when he sees it.
+- **The S2 copy.** Draft wording is live in `shared/domain/page-metadata.ts`; Nil edits
+  when he sees it.
+- **S5: DebugView is unavailable from this box, so what is the gate?** The standing
+  orders name the GA DebugView event stream as S5's evidence surface. The only GA access
+  here is a service account for the Data and Admin APIs; DebugView is a console-only
+  feature with no API. Either Nil accepts the wire capture as the local gate with
+  DebugView deferred to a post-deploy human check, or he runs it interactively. The
+  reviewer refused to erase a gate Nil set, and so do I. **This blocks the S5 commit.**
 
 ## Resources
 

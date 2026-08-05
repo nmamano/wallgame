@@ -12,9 +12,11 @@ import {
   parseHtmlShell,
   renderPageShell,
   metaForPath,
-  normalizePath,
   isNavigablePath,
 } from "../server/routes/html-shell";
+// Path normalisation moved to shared/ when the client began needing the same
+// titles; the server composes it with the origin rather than owning it.
+import { normalizePath } from "../shared/domain/page-metadata";
 
 let createApp: typeof import("../server/index").createApp;
 
