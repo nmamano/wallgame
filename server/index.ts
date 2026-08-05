@@ -10,6 +10,7 @@ import { campaignRoute } from "./routes/campaign";
 import { registerGameSocketRoute } from "./routes/game-socket";
 import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 import { registerEvalSocketRoute } from "./routes/eval-socket";
+import { registerSeoRoutes } from "./routes/seo";
 export function createApp() {
   const app = new Hono();
   app.use(logger());
@@ -21,6 +22,10 @@ export function createApp() {
   app.get("/blog/*", (c) => {
     return c.redirect("https://nilmamano.com/blog/category/wallgame", 301);
   });
+
+  // Must precede the catch-alls at the bottom, which would otherwise answer
+  // both of these with the SPA shell and a 200.
+  registerSeoRoutes(app);
 
   const apiRoutes = app
     .basePath("/api")

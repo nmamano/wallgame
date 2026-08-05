@@ -138,8 +138,8 @@ what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summa
 
 ## Slice plan
 
-- [ ] **S1** Real `robots.txt` + `sitemap.xml` - both currently return the SPA HTML
-      shell with a 200.
+- [x] **S1** Real `robots.txt` + `sitemap.xml` - both currently return the SPA HTML
+      shell with a 200. **Done**, reviewer-acked.
 - [ ] **S2** Per-page titles + meta descriptions, injected server-side per route.
 - [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
       persisted on a new nullable `games` column.
@@ -246,3 +246,85 @@ content types, instead of the SPA's HTML shell with a 200.
 should disallow anything (`/game/*` is unbounded and infinitely crawlable).
 
 **Locked, do not relitigate:** the loop scope; the rails above; the reviewer gates.
+
+---
+
+# SLICE-2 PICKUP
+
+**Baseline commit:** the S1 commit.
+
+## What slice 1 taught
+
+1. **`c.text()` on this Hono version returns no `Content-Type` header at all.** Measured
+   by dumping `[...response.headers.entries()]`, not inferred. Set every content type
+   explicitly with `c.body(body, 200, {...})`. S2 serves HTML, so this applies directly.
+2. **The test suite runs before the frontend build**, so `frontend/dist` cannot be
+   assumed to exist. This was a mild inconvenience in S1; in S2 it is the **central
+   design constraint**, because per-route metadata means transforming
+   `dist/index.html`.
+3. **Verify a route's behaviour by reading the route.** I told the reviewer
+   `/generated-candidates` was an internal tool worth blocking. It is a client-side
+   redirect to `/puzzles`, exactly like `/solo-campaign`, and blocking it would have
+   been actively harmful. Two of the nine candidate URLs were not what I said they were.
+4. **Assert the exact set, not a subset.** `expect(locs).toEqual([...])` fails when
+   someone appends a private URL later; `toContain` per item would not.
+5. `app.request()` plus an inert unconditional `DATABASE_URL` is a complete harness for
+   any surface that touches neither the database nor a socket. No container, no port.
+
+## Goal
+
+Every indexable route serves its own `<title>` and `<meta name="description">` in the
+**first HTTP response**, without the crawler executing JavaScript. Today all of them
+serve the identical `<title>Wall Game</title>`.
+
+## Load-bearing mechanics (the traps)
+
+- **`dist/index.html` is a build artifact the tests cannot rely on.** The reviewer's
+  standing guidance from the S1 plan-gate: cache the immutable template, build a fresh
+  response string per request, never mutate shared state, and **fail loudly if the
+  expected markers are absent** rather than silently serving an untransformed shell.
+  Keep `createApp()` usable with no dist - either inject the template/loader at app
+  construction, or register the shell handler outside the pure app factory. Decide which
+  with the reviewer; it changes the test layering.
+- **Do not intercept everything.** Static assets (`/assets/*`, `/favicon/*`) and `/api`
+  must keep their current path. Only navigable HTML routes get transformed. S1 verified
+  the current ordering works - `/favicon/favicon.ico` returns `image/x-icon`, 15406
+  bytes - so that is the regression to protect.
+- **Escaping.** A description goes inside an HTML attribute. Escape it, and cover it in
+  a unit test, for the same reason S1 escapes XML it currently never needs to.
+- **Dynamic routes.** `/game/$id`, `/puzzles/$id` and `/solo-campaign/$id` have no
+  static metadata. They need a sensible generic default; anything item-specific needs
+  the database and belongs with the DB-driven sitemap in a later slice.
+- **Client-side navigation does not re-fetch.** After the first load the SPA changes
+  route without a server round-trip, so a server-injected title goes stale in the
+  browser tab. Crawlers are unaffected (they fetch each URL fresh), but real users and
+  GA's `page_view` title are. **This overlaps S5** - do not solve it twice. Raise the
+  boundary with the reviewer before implementing.
+
+## Acceptance criteria
+
+1. Each route in the canonical list from `server/routes/seo.ts` serves a distinct
+   `<title>` and a distinct `<meta name="description">` in its first response.
+2. An unknown or dynamic path still serves a valid shell with the default metadata.
+3. Static assets and `/api` are byte-identical to before.
+4. The pure functions are unit-tested exhaustively - path mapping and escaping - with a
+   smaller `app.request()` test for the wiring, per the reviewer's (b) ruling.
+5. The new tests are **watched failing** against the pre-fix code.
+6. `sg docker -c 'bun run ci'` green.
+
+## Decide with the reviewer
+
+Where the template loader lives (app factory vs outside it); whether `og:title` and
+`og:description` are in scope or a separate slice; where the S2/S5 boundary sits on
+client-side title updates.
+
+## Human-only, do not decide in the loop
+
+**The words.** Per the Phase-1 agreement I ship the mechanism with best-draft copy and
+screenshot it for Nil; he edits afterwards. Draft copy must describe what the player
+gets and must not expose internal mechanics.
+
+## Locked, do not relitigate
+
+`SITE_ORIGIN` is a server-local literal. The canonical path list lives in
+`server/routes/seo.ts` and S2 reuses it rather than forking a second list.
