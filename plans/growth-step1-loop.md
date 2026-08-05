@@ -1,0 +1,248 @@
+# Growth step 1 loop - standing orders + slice handoffs
+
+**Re-read this file at the start of every iteration.** Conversations get compacted;
+this file does not. If something here contradicts your memory of the conversation,
+this file wins.
+
+Board task: `d9ff7318` ("[wallgame] MASTER: grow the player base").
+Reasoning, measured baseline and the decisions behind all of this live in
+`ops-private/growth-plan.md` - **read it, do not restate its numbers here.** That file
+is gitignored because this repo is public and it holds traffic figures and competitor
+analysis. This file is engineering standing orders only.
+
+Reviewer: **Project Reviewer 1**, `agent-1780864878869-eq7t`.
+
+---
+
+## North star
+
+When this loop is done, wallgame can answer **"do players come back?"** from a direct
+database query, every page has its own title and description with a real `robots.txt`
+and `sitemap.xml`, and a player who finishes their first game is offered a reason to
+make an account.
+
+What must not be diluted: **the measurement slices are the point.** S1/S2 are cheap SEO
+wins and S6 is a hook, but the reason the plan puts measurement first is epistemic - if
+retention stays unmeasurable, nothing else shipped this quarter can be evaluated. A
+slice that ships a nudge but leaves return unmeasurable has not helped.
+
+Out of scope for this loop, deliberately: the Quoridor-rules variant, anything in
+`deep-wallwars/`, anything needing the 4090, and the $100 ad spend.
+
+## Process per slice
+
+```
+re-read this file
+  -> write the design (including alternatives rejected and why)
+  -> PLAN-GATE: send design to Project Reviewer 1, wait for explicit ACK
+  -> implement
+  -> run the gates (below)
+  -> DIFF-GATE: send the diff to Project Reviewer 1, wait for explicit ACK
+  -> ONE focused commit, ticking this slice's checkbox in the same commit
+```
+
+Never start slice N+1 before slice N is committed. Never two slices in flight.
+
+**Never write "no reply needed if you agree" to the reviewer.** Silence then cannot be
+told apart from "has not read it yet". Demand an ack either way, even one word. Their
+conditional acks ("after you move X, ACK") are the useful shape - and re-read the last
+inbound message before declaring done, because conditions and messages cross.
+
+## Gates per slice
+
+**Always-run, every slice, no exceptions:**
+
+```
+sg docker -c 'bun run ci'      # prettier --check, eslint, full test suite, frontend build
+```
+
+Docker on this box needs the `sg docker` wrapper - see `ops-private/wallgame-testing.md`.
+Baseline at `0eaebeb` is recorded in the Phase-2 block below; compare failures **by
+name**, never by count.
+
+**Per-slice live gate** - judged by the evidence surface, never by what a page looks
+like:
+
+| Slice | Evidence surface                                                                 |
+| ----- | -------------------------------------------------------------------------------- |
+| S1    | HTTP response body, status and `content-type` from the real `createApp()`        |
+| S2    | The HTML bytes served for each route - titles must differ from each other        |
+| S3    | Rows in the database: same browser profile, two games, same anon id              |
+| S4    | Rows in the database: the rematch chain reconstructs the match                   |
+| S5    | GA DebugView event stream (not the page, not the console)                        |
+| S6    | The DOM plus a screenshot posted to Nil - **and** the rematch button still works |
+
+**Reserved ports** (do not fight other agents for framework defaults):
+
+| Port | Use                                                         |
+| ---- | ----------------------------------------------------------- |
+| 5175 | my vite dev server                                          |
+| 5176 | my built-server live gate                                   |
+| 5174 | **Nil's playtest server. Never restart it, never bind it.** |
+
+Every gate instance gets its own state; ephemeral Postgres via `tests/setup-db.ts`
+(Testcontainers), never a shared or long-lived database.
+
+**Nothing in this loop burns money or quota.** The one gate touching a live service is
+S5, which puts a handful of debug events into the real GA property - Nil signed off on
+that specifically on 2026-08-05.
+
+## Standing rails
+
+Prohibitions, verbatim from the Phase-1 agreement with Nil (2026-08-05):
+
+1. **Never push to origin. Never deploy to Fly. Never run a migration against the
+   production database.** Commits land on local `main`; deploying is Nil's call.
+2. **Never `git add` anything under `ops-private/`, and never `git add -f`.** The repo
+   is public; that directory names private hosts and secret paths.
+3. **Never restart the `wallgame-dev-5174` systemd user unit.** It is Nil's puzzle
+   playtest server. Run your own vite on 5175.
+4. **No env-var knobs.** Ship a plain named constant and let Nil name the value. (Nil,
+   2026-07-31: "NO, we don't need env variables for everything?? that's my opinion.")
+5. **No user-facing copy that exposes internal mechanics.** Describe what the player
+   gets, not how the pipeline works.
+6. **Never weaken a gate to make it pass.** A gate failure is fixed in-slice or becomes
+   a queued decision. A bug a gate catches gets a regression test at the right layer in
+   the same slice.
+7. **No Quoridor-variant work, no C++, no GPU work** in this loop.
+8. **Do not edit a file that already has uncommitted changes** from another agent - this
+   repo is shared. Report the conflict instead.
+9. **Show Nil the pixels before anything user-visible is called done.** Build it,
+   screenshot the real page, post it in chat.
+
+## Decision protocol
+
+- **Mine alone:** implementation shape, internal naming, test structure, where a file
+  goes.
+- **With Project Reviewer 1:** anything with a design alternative worth naming - schema
+  shape, where a middleware sits, what the pure/impure split is.
+- **HUMAN-ONLY, goes to the parked queue, never decided in the loop:**
+  - whether the anonymous id needs a privacy or consent treatment for EU visitors;
+  - the final wording of any user-facing copy;
+  - any change to a decision recorded in `ops-private/growth-plan.md`;
+  - deploying, and spending the $100.
+
+Agreed with Nil so the loop does not stall overnight: for **S2 and S6** I ship the
+_mechanism_ with best-draft copy and screenshot it; Nil edits the words afterwards.
+Copy is a one-line change - blocking the loop on wording would stall it for hours.
+
+**If hard-blocked on a human-only decision:** queue it under "Parked" below and work
+what is unblocked. **If fully blocked:** stop the loop cleanly and leave a summary.
+
+## Stop conditions
+
+- All slices committed; or
+- three consecutive gate failures on the same slice; or
+- a parked human-only decision blocks every remaining slice; or
+- Nil says stop.
+
+## Slice plan
+
+- [ ] **S1** Real `robots.txt` + `sitemap.xml` - both currently return the SPA HTML
+      shell with a 200.
+- [ ] **S2** Per-page titles + meta descriptions, injected server-side per route.
+- [ ] **S3** Anonymous player id - random `localStorage` id, sent at game creation,
+      persisted on a new nullable `games` column.
+- [ ] **S4** Persist the rematch/match chain (board task `8dba09de`).
+- [ ] **S5** Confirm the GA in-app undercount in a real browser **before** any code,
+      then fix (board task `c13fdaaa`).
+- [ ] **S6** Post-game account nudge.
+- [ ] **S7** _(optional)_ The retention query that turns S3+S4 into D1/D7 numbers.
+
+## Deferred / parked
+
+Do-not-pick-up list:
+
+- Quoridor-rules variant, its training run, and the comparison page (plan steps 2-4).
+- The $100 ad spend (plan step 5) - gated on three conditions in the plan doc.
+- W4 distribution, W5 multiplayer liquidity, W6 mobile quality.
+
+Queued human-only decisions: _(none yet)_
+
+## Resources
+
+| What                                                    | Where                                                  |
+| ------------------------------------------------------- | ------------------------------------------------------ |
+| The plan and all reasoning                              | `ops-private/growth-plan.md` (gitignored)              |
+| My working notes - prod DB, deploys, 4090, safety hooks | `ops-private/wallgamer-agent-notes.md`                 |
+| Test suite, Docker wrapper, viewport rule               | `ops-private/wallgame-testing.md`                      |
+| GA + Search Console procedures                          | `~/nil/nilmamano.com/ops-private/analytics-ga.md`      |
+| Hono app factory (exported, testable)                   | `server/index.ts` - `createApp()`                      |
+| SPA catch-all that swallows `/robots.txt` today         | `server/index.ts:41-42`                                |
+| Frontend routes                                         | `frontend/src/routes/` (TanStack file-based)           |
+| Games schema                                            | `server/db/schema/games.ts`                            |
+| Game write path                                         | `server/games/persistence.ts`, `server/games/store.ts` |
+| Ephemeral Postgres for tests                            | `tests/setup-db.ts`                                    |
+| Real-browser harness + its traps                        | `scripts/browser-harness/README.md`                    |
+
+House patterns worth matching: integration tests drive `createApp()` directly through
+`app.request()` rather than binding a port; the test runner spawns one process per file
+on purpose; comments in this repo explain _why_, not _what_.
+
+---
+
+# Phase 2 - tooling readiness (verified 2026-08-05, at `0eaebeb`)
+
+Probed empirically, not assumed:
+
+| Layer                 | Result                                                                                                                                                       |
+| --------------------- | ------------------------------------------------------------------------------------------------------------------------------------------------------------ |
+| Runtime               | bun 1.3.11, node 24.18.0                                                                                                                                     |
+| Format / lint / build | `bun run ci` runs all three; formatting clean at baseline                                                                                                    |
+| Test suite            | Testcontainers Postgres 16; needs `sg docker -c '...'` on this box                                                                                           |
+| Real browser          | `/usr/bin/google-chrome` 150.0.7871.186 + `playwright-core` 1.62.1, `channel:"chrome"`, headless - launched and navigated OK, **no browser download needed** |
+| WebKit                | **not available on this box** - an iOS-specific claim cannot be checked here; ask Nil to look at his phone                                                   |
+
+Baseline at `0eaebeb`, from a real run of `sg docker -c 'bun run ci'`:
+**54 test files, 54 passed, 0 failed; prettier clean; eslint clean; frontend build OK;
+exit 0.** (One test _case_ is skipped inside a passing file - the negamax
+`evaluate_position` timeout, task `1bd83f99`. That is expected; see
+`ops-private/wallgame-testing.md`.)
+
+Known-bad states confirmed against **production**, 2026-08-05, so the S1/S2 gates have
+something to fail against:
+
+- `GET https://wallgame.io/robots.txt` and `/sitemap.xml` both return **200
+  `text/html`, 4112 bytes** - byte-identical SPA shell, not the files they claim to be.
+- `/`, `/play`, `/puzzles`, `/ranking`, `/learn` and `/about` all serve the identical
+  `<title>Wall Game</title>`.
+
+---
+
+# SLICE-1 PICKUP
+
+**Baseline commit:** `0eaebeb`.
+
+**Goal:** `GET /robots.txt` and `GET /sitemap.xml` return real files with the right
+content types, instead of the SPA's HTML shell with a 200.
+
+**Load-bearing mechanics (the traps):**
+
+- `server/index.ts:41-42` registers two `serveStatic` catch-alls on `*`. Anything not
+  matched earlier becomes `index.html` with a 200 - which is exactly why these two URLs
+  look "present" to a crawler today while containing HTML.
+- A file dropped in `frontend/public/` is copied to `frontend/dist/` by vite and would
+  be served by the first catch-all. That works, but it puts the sitemap's URL list in a
+  static asset that nobody will remember to update when a route is added. Decide with
+  the reviewer whether the sitemap should be generated from the route list instead.
+- The test suite cannot assume `frontend/dist` exists (it is a build artifact, and
+  `bun run ci` builds _after_ it runs tests). So a gate that depends on a built dist is
+  the wrong layer. Prefer explicit Hono routes, which `app.request()` can hit with no
+  build at all.
+- `createApp()` is exported. Integration tests in this repo call it directly rather than
+  binding a port - match that.
+
+**Acceptance criteria:**
+
+1. `GET /robots.txt` returns `text/plain`, a body that is not HTML, and references the
+   sitemap URL.
+2. `GET /sitemap.xml` returns XML with an entry per public route.
+3. A test asserts both, and asserts the **known-bad** behaviour is gone - i.e. the test
+   fails on `0eaebeb`. Verify that by running it against the pre-fix code and watching
+   it go red. A gate never observed failing is not evidence.
+4. `sg docker -c 'bun run ci'` green, same failures by name as the baseline.
+
+**Decide with the reviewer:** static file vs generated route; whether `robots.txt`
+should disallow anything (`/game/*` is unbounded and infinitely crawlable).
+
+**Locked, do not relitigate:** the loop scope; the rails above; the reviewer gates.
