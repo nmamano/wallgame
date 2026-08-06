@@ -61,5 +61,66 @@
       "rr72_standard/games.pgn"
     ],
     "notes": "Policy-only measurement: one sample means no search, and noise_factor 0 leaves the policy head untouched, so each move is the network's own top choice. Complete round-robin over all 72 engines (transformer gens 1-36 as tf_model_N.trt, ResNet gens 1-36 as rn_model_N.trt), every pair once, two games per pair so each side plays both colours. Play is deterministic under these settings, so two games per pair is the whole of the available information - more games per pair return duplicates. arch is null because the engine filenames carry it."
+  },
+  "tf_ladder8_2026-08-05": {
+    "arch": "tf",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "date": "2026-08-05/2026-08-06",
+    "board": "8x8",
+    "samples": 400,
+    "games_per_pairing": 40,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -variant standard -games 4 -tournaments 10 -samples 400 -j 22 -seed 7",
+    "script": "run_newgens_standard.sh + per_gen_update_v.sh + cross_cluster.sh",
+    "sources": [
+      "ext_standard/pair_*.pgn"
+    ],
+    "notes": "Fill of generations 74-93 (per_gen_update_v.sh: N vs N-1,N-2,N-3,N-6,36) PLUS nine DIRECT cross-cluster pairings added afterwards (72/73/70/68/66 vs 84/86/88/90/93). THE DIRECT PAIRINGS ARE THE POINT. Before they existed, generations <=73 and >=84 connected only through the gen-36 anchor, and the fit read a ~400 Elo collapse that was not real: the newer models draw far more at 8x8 (44-65% vs 20-31%), so against a much weaker common opponent they convert wins into draws and score lower at equal strength. With direct games the curve is flat - gen 68 1242, gen 72 1229, gen 93 1186, and 3 of 9 direct pairings favour the NEWER model. LESSON: never infer a gap between two clusters through a distant anchor; play them directly."
+  },
+  "tf_ladder12x10_2026-08-06": {
+    "arch": "tf",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "date": "2026-08-06",
+    "board": "12x10",
+    "samples": 400,
+    "games_per_pairing": 40,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 12 -game_rows 10 -variant standard -games 4 -tournaments 10 -samples 400 -j 22 -seed 7",
+    "script": "ladder_12x10.sh",
+    "sources": [
+      "ext_12x10/pair_*.pgn"
+    ],
+    "notes": "FULL round robin over 66,70,73,82,84,88,93 - complete graph by design, so no anchor inference is possible. p7 (84/88/93) BEATS the pre-onset models (66/70/73) by 114 Elo pooled: 63-120-177 over 360 games, 1 SE = 2.6pp (~+/-18 Elo), 8 of 9 pairings favour p7. This is the size p7 was weighted toward (12x10 = 25% of its self-play mix) and the hardest board, so it is where strength matters most. Draw rate is FLAT here across all generations (22.9-37.5%), so the 8x8 drawishness is board-size specific, not a property of the p7 models. UNEXPLAINED: gen 82 scores 50.0% vs the old group AND 49.6% vs p7, while p7 beats old by 114 - intransitive, 120 games per side. No explanation offered."
+  },
+  "tf_classic8_2026-08-06": {
+    "arch": "tf",
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "date": "2026-08-06",
+    "board": "8x8",
+    "samples": 400,
+    "games_per_pairing": 40,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -variant classic -games 4 -tournaments 10 -samples 400 -j 22 -seed 7",
+    "script": "ladder_classic8.sh",
+    "sources": [
+      "ext_classic8/pair_*.pgn"
+    ],
+    "notes": "Full round robin over the same 7 models under CLASSIC rules. FLAT: pooled old-vs-p7 is 79-211-70 = 51.2% (+9 Elo) over 360 games, inside the +/-18 Elo noise floor. Individual pairings swing hard (66 vs 93 = +228, 70 vs 93 = -158), the same intransitivity seen at 12x10. Note the very high draw count (211/360) under classic rules at 8x8."
+  },
+  "tf_policy8_2026-08-06": {
+    "arch": "tf",
+    "noise_factor": 0.0,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "date": "2026-08-06",
+    "board": "8x8",
+    "samples": 1,
+    "games_per_pairing": 2,
+    "engine_flags": "deep_ww --ranking -columns 12 -rows 10 -game_columns 8 -game_rows 8 -variant {standard,classic} -games 4 -tournaments 10 -samples 1 -root_noise_factor 0 -j 22 -seed 7",
+    "script": "ladder_policy.sh",
+    "sources": [
+      "ext_policy_standard/pair_*.pgn",
+      "ext_policy_classic/pair_*.pgn"
+    ],
+    "notes": "WASTED RUN - kept only as evidence of the trap. Asked for 40 games per pairing, but samples=1 with noise 0 is DETERMINISTIC, so each pairing produced 2 distinct games (one per colour) repeated 20 times. rr72_policy_2026-08-01 already recorded exactly this ('two games per pair is the whole of the available information - more games per pair return duplicates') and it was not read first. Detection signal: in 21/21 pairings every result count is an exact multiple of 20, versus 0/21 in the search ladders. The 1680 games here are 84 distinct games. Do not compute Elo from them."
   }
 }
