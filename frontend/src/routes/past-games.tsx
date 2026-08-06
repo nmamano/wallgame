@@ -25,11 +25,21 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Crown, Eye, Loader2 } from "lucide-react";
+import { BarChart3, Crown, Eye, List, Loader2 } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { api } from "@/lib/api";
-import type { PastGamesResponse } from "../../../shared/contracts/games";
-import { presentPastGameRow } from "@/lib/past-games";
+import type {
+  PastGamesActivityResponse,
+  PastGamesResponse,
+} from "../../../shared/contracts/games";
+import {
+  buildPastGamesFilterQuery,
+  defaultPastGamesFilters,
+  pastGamesFilterKey,
+  presentPastGameRow,
+  type PastGamesFilters as Filters,
+} from "@/lib/past-games";
+import { PastGamesActivityChart } from "@/components/past-games-activity-chart";
 import { parsePastGamesNavState } from "@/lib/navigation-state";
 
 export const Route = createFileRoute("/past-games")({
@@ -38,86 +48,44 @@ export const Route = createFileRoute("/past-games")({
 
 const PAGE_SIZE = 100;
 
-interface Filters {
-  variant: "all" | "standard" | "classic" | "freestyle";
-  rated: "all" | "yes" | "no";
-  timeControl: "all" | "bullet" | "blitz" | "rapid" | "classical";
-  boardSize: "all" | "small" | "medium" | "large";
-  player1: string;
-  player2: string;
-  eloMin: string;
-  eloMax: string;
-}
+type ViewMode = "list" | "plot";
 
-const defaultFilters: Filters = {
-  variant: "all",
-  rated: "all",
-  timeControl: "all",
-  boardSize: "all",
-  player1: "",
-  player2: "",
-  eloMin: "",
-  eloMax: "",
-};
-
-const buildPastGamesQuery = (
-  filters: Filters,
-  page: number,
-): Record<string, string | number> => {
-  const query: Record<string, string | number> = {
-    page,
-    pageSize: PAGE_SIZE,
-  };
-
-  if (filters.variant !== "all") {
-    query.variant = filters.variant;
-  }
-  if (filters.rated !== "all") {
-    query.rated = filters.rated;
-  }
-  if (filters.timeControl !== "all") {
-    query.timeControl = filters.timeControl;
-  }
-  if (filters.boardSize !== "all") {
-    query.boardSize = filters.boardSize;
-  }
-
-  const minElo = Number.parseInt(filters.eloMin, 10);
-  if (Number.isFinite(minElo) && minElo >= 0) {
-    query.minElo = minElo;
-  }
-  const maxElo = Number.parseInt(filters.eloMax, 10);
-  if (Number.isFinite(maxElo) && maxElo >= 0) {
-    query.maxElo = maxElo;
-  }
-
-  const player1 = filters.player1.trim();
-  if (player1) {
-    query.player1 = player1;
-  }
-  const player2 = filters.player2.trim();
-  if (player2) {
-    query.player2 = player2;
-  }
-
-  return query;
+const readError = async (res: Response): Promise<never> => {
+  const data = (await res.json().catch(() => null)) as {
+    error?: string;
+  } | null;
+  throw new Error(
+    data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
+  );
 };
 
 const fetchPastGames = async (
   filters: Filters,
   page: number,
 ): Promise<PastGamesResponse> => {
-  const query = buildPastGamesQuery(filters, page);
-  const res = await api.games.past.$get({ query });
+  const res = await api.games.past.$get({
+    query: {
+      ...buildPastGamesFilterQuery(filters),
+      page: String(page),
+      pageSize: String(PAGE_SIZE),
+    },
+  });
   if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
-    );
+    await readError(res);
   }
   return res.json() as Promise<PastGamesResponse>;
+};
+
+const fetchPastGamesActivity = async (
+  filters: Filters,
+): Promise<PastGamesActivityResponse> => {
+  const res = await api.games.past.activity.$get({
+    query: buildPastGamesFilterQuery(filters),
+  });
+  if (!res.ok) {
+    await readError(res);
+  }
+  return res.json() as Promise<PastGamesActivityResponse>;
 };
 
 function PastGames() {
@@ -132,26 +100,24 @@ function PastGames() {
   );
 
   const [filters, setFilters] = useState<Filters>(() => ({
-    ...defaultFilters,
+    ...defaultPastGamesFilters,
     ...initialFilters,
   }));
   const [page, setPage] = useState<number>(1);
+  const [view, setView] = useState<ViewMode>("list");
+
+  const filterKey = pastGamesFilterKey(filters);
 
   const { data, isPending, error } = useQuery({
-    queryKey: [
-      "past-games",
-      page,
-      PAGE_SIZE,
-      filters.variant,
-      filters.rated,
-      filters.timeControl,
-      filters.boardSize,
-      filters.player1,
-      filters.player2,
-      filters.eloMin,
-      filters.eloMax,
-    ],
+    queryKey: ["past-games", page, PAGE_SIZE, ...filterKey],
     queryFn: () => fetchPastGames(filters, page),
+    enabled: view === "list",
+  });
+
+  const activity = useQuery({
+    queryKey: ["past-games-activity", ...filterKey],
+    queryFn: () => fetchPastGamesActivity(filters),
+    enabled: view === "plot",
   });
 
   const games = data?.games ?? [];
@@ -172,9 +138,34 @@ function PastGames() {
       <div
         className={isSmallScreen ? "py-4 px-3" : "container mx-auto py-8 px-4"}
       >
-        <h1 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight text-foreground mb-4 sm:mb-8 text-balance">
-          Past Games
-        </h1>
+        <div className="flex flex-wrap items-center justify-between gap-3 mb-4 sm:mb-8">
+          <h1 className="text-2xl sm:text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
+            Past Games
+          </h1>
+          <div
+            className="inline-flex rounded-md border border-border/60 p-0.5"
+            role="group"
+            aria-label="View mode"
+          >
+            {(
+              [
+                { mode: "list", label: "List", Icon: List },
+                { mode: "plot", label: "Plot", Icon: BarChart3 },
+              ] as const
+            ).map(({ mode, label, Icon }) => (
+              <Button
+                key={mode}
+                size="sm"
+                variant={view === mode ? "secondary" : "ghost"}
+                aria-pressed={view === mode}
+                onClick={() => setView(mode)}
+              >
+                <Icon className="w-4 h-4 mr-1.5" />
+                {label}
+              </Button>
+            ))}
+          </div>
+        </div>
 
         {/* Filters */}
         <Wrapper
@@ -337,136 +328,153 @@ function PastGames() {
           </div>
         </Wrapper>
 
-        {/* Games Table */}
-        <Wrapper
-          className={
-            isSmallScreen
-              ? "overflow-x-auto -mx-3"
-              : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"
-          }
-        >
-          <Table>
-            <TableHeader>
-              <TableRow className="bg-muted/30">
-                <TableHead>Watch</TableHead>
-                <TableHead>Variant</TableHead>
-                <TableHead>Rated</TableHead>
-                <TableHead>Time Control</TableHead>
-                <TableHead>Board Size</TableHead>
-                <TableHead>Players</TableHead>
-                <TableHead>Moves</TableHead>
-                <TableHead>Views</TableHead>
-                <TableHead>Date</TableHead>
-              </TableRow>
-            </TableHeader>
-            <TableBody>
-              {isPending ? (
-                <TableRow>
-                  <TableCell colSpan={9} className="py-12 text-center">
-                    <div className="flex items-center justify-center text-muted-foreground">
-                      <Loader2 className="w-5 h-5 animate-spin mr-2" />
-                      Loading past games...
-                    </div>
-                  </TableCell>
+        {/* Activity plot - the same filtered games, counted per day */}
+        {view === "plot" ? (
+          <Wrapper
+            className={
+              isSmallScreen
+                ? ""
+                : "p-6 border-border/50 bg-card/50 backdrop-blur"
+            }
+          >
+            <PastGamesActivityChart
+              days={activity.data?.days ?? []}
+              total={activity.data?.total ?? 0}
+              isPending={activity.isPending}
+              error={activity.error}
+            />
+          </Wrapper>
+        ) : (
+          <Wrapper
+            className={
+              isSmallScreen
+                ? "overflow-x-auto -mx-3"
+                : "overflow-hidden border-border/50 bg-card/50 backdrop-blur"
+            }
+          >
+            <Table>
+              <TableHeader>
+                <TableRow className="bg-muted/30">
+                  <TableHead>Watch</TableHead>
+                  <TableHead>Variant</TableHead>
+                  <TableHead>Rated</TableHead>
+                  <TableHead>Time Control</TableHead>
+                  <TableHead>Board Size</TableHead>
+                  <TableHead>Players</TableHead>
+                  <TableHead>Moves</TableHead>
+                  <TableHead>Views</TableHead>
+                  <TableHead>Date</TableHead>
                 </TableRow>
-              ) : error ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={9}
-                    className="py-12 text-center text-destructive"
-                  >
-                    {error.message}
-                  </TableCell>
-                </TableRow>
-              ) : games.length === 0 ? (
-                <TableRow>
-                  <TableCell
-                    colSpan={9}
-                    className="py-12 text-center text-muted-foreground"
-                  >
-                    No past games match your filters.
-                  </TableCell>
-                </TableRow>
-              ) : (
-                rows.map((row) => (
-                  <TableRow key={row.gameId} className="hover:bg-muted/20">
-                    <TableCell>
-                      <Button
-                        size="sm"
-                        variant="ghost"
-                        onClick={() => handleWatchGame(row.gameId)}
-                      >
-                        <Eye className="w-4 h-4" />
-                      </Button>
-                    </TableCell>
-                    <TableCell className="font-medium capitalize">
-                      {row.variant}
-                    </TableCell>
-                    <TableCell>
-                      <Badge variant={row.rated ? "default" : "secondary"}>
-                        {row.rated ? "Yes" : "No"}
-                      </Badge>
-                    </TableCell>
-                    <TableCell>{row.timeControlLabel}</TableCell>
-                    <TableCell>{row.boardSizeLabel}</TableCell>
-                    <TableCell>
-                      {row.players.map((player, index) => (
-                        <span key={`${row.gameId}-player-${index}`}>
-                          {index > 0 && (
-                            <span className="mx-1 text-muted-foreground">
-                              vs
-                            </span>
-                          )}
-                          <span
-                            className={
-                              player.isWinner
-                                ? "font-semibold whitespace-nowrap"
-                                : "whitespace-nowrap"
-                            }
-                          >
-                            {player.isWinner && (
-                              <Crown
-                                className="inline-block w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500"
-                                aria-label="Winner"
-                              />
-                            )}
-                            {player.label}
-                          </span>
-                        </span>
-                      ))}
-                    </TableCell>
-                    <TableCell>{row.movesCount}</TableCell>
-                    <TableCell>{row.views}</TableCell>
-                    <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
-                      {row.dateLabel}
+              </TableHeader>
+              <TableBody>
+                {isPending ? (
+                  <TableRow>
+                    <TableCell colSpan={9} className="py-12 text-center">
+                      <div className="flex items-center justify-center text-muted-foreground">
+                        <Loader2 className="w-5 h-5 animate-spin mr-2" />
+                        Loading past games...
+                      </div>
                     </TableCell>
                   </TableRow>
-                ))
-              )}
-            </TableBody>
-          </Table>
-          <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
-            <span className="text-sm text-muted-foreground">Page {page}</span>
-            <div className="flex items-center gap-2">
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setPage((prev) => Math.max(1, prev - 1))}
-                disabled={page <= 1}
-              >
-                Previous
-              </Button>
-              <Button
-                size="sm"
-                variant="ghost"
-                onClick={() => setPage((prev) => prev + 1)}
-                disabled={!hasMore}
-              >
-                Next
-              </Button>
+                ) : error ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={9}
+                      className="py-12 text-center text-destructive"
+                    >
+                      {error.message}
+                    </TableCell>
+                  </TableRow>
+                ) : games.length === 0 ? (
+                  <TableRow>
+                    <TableCell
+                      colSpan={9}
+                      className="py-12 text-center text-muted-foreground"
+                    >
+                      No past games match your filters.
+                    </TableCell>
+                  </TableRow>
+                ) : (
+                  rows.map((row) => (
+                    <TableRow key={row.gameId} className="hover:bg-muted/20">
+                      <TableCell>
+                        <Button
+                          size="sm"
+                          variant="ghost"
+                          onClick={() => handleWatchGame(row.gameId)}
+                        >
+                          <Eye className="w-4 h-4" />
+                        </Button>
+                      </TableCell>
+                      <TableCell className="font-medium capitalize">
+                        {row.variant}
+                      </TableCell>
+                      <TableCell>
+                        <Badge variant={row.rated ? "default" : "secondary"}>
+                          {row.rated ? "Yes" : "No"}
+                        </Badge>
+                      </TableCell>
+                      <TableCell>{row.timeControlLabel}</TableCell>
+                      <TableCell>{row.boardSizeLabel}</TableCell>
+                      <TableCell>
+                        {row.players.map((player, index) => (
+                          <span key={`${row.gameId}-player-${index}`}>
+                            {index > 0 && (
+                              <span className="mx-1 text-muted-foreground">
+                                vs
+                              </span>
+                            )}
+                            <span
+                              className={
+                                player.isWinner
+                                  ? "font-semibold whitespace-nowrap"
+                                  : "whitespace-nowrap"
+                              }
+                            >
+                              {player.isWinner && (
+                                <Crown
+                                  className="inline-block w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500"
+                                  aria-label="Winner"
+                                />
+                              )}
+                              {player.label}
+                            </span>
+                          </span>
+                        ))}
+                      </TableCell>
+                      <TableCell>{row.movesCount}</TableCell>
+                      <TableCell>{row.views}</TableCell>
+                      <TableCell className="text-sm text-muted-foreground whitespace-nowrap">
+                        {row.dateLabel}
+                      </TableCell>
+                    </TableRow>
+                  ))
+                )}
+              </TableBody>
+            </Table>
+            <div className="flex items-center justify-between px-4 py-3 border-t border-border/40">
+              <span className="text-sm text-muted-foreground">Page {page}</span>
+              <div className="flex items-center gap-2">
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPage((prev) => Math.max(1, prev - 1))}
+                  disabled={page <= 1}
+                >
+                  Previous
+                </Button>
+                <Button
+                  size="sm"
+                  variant="ghost"
+                  onClick={() => setPage((prev) => prev + 1)}
+                  disabled={!hasMore}
+                >
+                  Next
+                </Button>
+              </div>
             </div>
-          </div>
-        </Wrapper>
+          </Wrapper>
+        )}
       </div>
     </div>
   );

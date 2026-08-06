@@ -21,9 +21,11 @@ import type {
   PlayerId,
 } from "../../shared/domain/game-types";
 import type {
+  PastGamesActivityResponse,
   PastGamesResponse,
   ResolveGameAccessResponse,
 } from "../../shared/contracts/games";
+import { PAST_GAMES_ACTIVITY_DAYS } from "../../shared/domain/past-games";
 
 // ================================
 // --- Test Harness ---
@@ -478,5 +480,235 @@ describe("past games persistence", () => {
     const largeBoardGames = (await resBoardLarge.json()) as PastGamesResponse;
     expect(largeBoardGames.games.length).toBe(1);
     expect(largeBoardGames.games[0]?.gameId).toBe(gameC);
+  });
+});
+
+// ================================
+// --- Activity plot ---
+// ================================
+
+const DAY_MS = 24 * 60 * 60 * 1000;
+
+/**
+ * The window bounds, restated independently of the production helper: "today
+ * and the 89 UTC days before it". The helper gets there by subtracting 90 days
+ * from tomorrow's midnight, so agreeing here is evidence rather than an echo.
+ */
+const expectedWindow = () => {
+  const now = new Date();
+  const todayMidnight = Date.UTC(
+    now.getUTCFullYear(),
+    now.getUTCMonth(),
+    now.getUTCDate(),
+  );
+  return {
+    todayMidnight,
+    oldestMidnight: todayMidnight - 89 * DAY_MS,
+  };
+};
+
+const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
+
+/**
+ * A finished game dated to an arbitrary instant.
+ *
+ * The session is played out at the current time and the row is re-dated
+ * afterwards, because the live clock aborts a game whose moves are stamped
+ * three months ago - and `started_at` is the only thing the plot reads.
+ */
+async function seedGameStartedAt(
+  config: GameConfiguration,
+  startedAtMs: number,
+  seats?: { host: string; joiner: string },
+): Promise<string> {
+  // Seat names only survive for logged-in players: a guest seat is renamed
+  // "Guest <Animal>" by the session, so a name filter needs real accounts.
+  const gameId = await createCompletedGame({
+    config,
+    hostDisplayName: seats?.host,
+    joinerDisplayName: seats?.joiner,
+    hostAuthUserId: seats && `auth-${seats.host.toLowerCase()}`,
+    joinerAuthUserId: seats && `auth-${seats.joiner.toLowerCase()}`,
+  });
+  await db
+    .update(gamesTable)
+    .set({ startedAt: new Date(startedAtMs) })
+    .where(eq(gamesTable.gameId, gameId));
+  return gameId;
+}
+
+const rapid6x6 = (variant: "standard" | "classic"): GameConfiguration => ({
+  timeControl: { initialSeconds: 180, incrementSeconds: 2, preset: "rapid" },
+  variant,
+  rated: false,
+  boardWidth: 6,
+  boardHeight: 6,
+});
+
+describe("past games activity", () => {
+  it("counts every matching game per UTC day, and only inside the window", async () => {
+    const { todayMidnight, oldestMidnight } = expectedWindow();
+    // Robust at any hour: never in the future, never before today's midnight.
+    const todayInstant = Math.max(todayMidnight, Date.now() - 5_000);
+
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant);
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant);
+    // One minute inside the oldest day the plot draws...
+    await seedGameStartedAt(rapid6x6("standard"), oldestMidnight + 60_000);
+    // ...and one minute before it, which must not be counted anywhere.
+    await seedGameStartedAt(rapid6x6("standard"), oldestMidnight - 60_000);
+
+    const res = await fetch(`${baseUrl}/api/games/past/activity`);
+    expect(res.status).toBe(200);
+    const activity = (await res.json()) as PastGamesActivityResponse;
+
+    expect(activity.days.length).toBe(PAST_GAMES_ACTIVITY_DAYS);
+    expect(activity.days[0]?.date).toBe(dayKey(oldestMidnight));
+    expect(activity.days[activity.days.length - 1]?.date).toBe(
+      dayKey(todayMidnight),
+    );
+
+    const byDate = new Map(activity.days.map((day) => [day.date, day.count]));
+    expect(byDate.get(dayKey(todayMidnight))).toBe(2);
+    expect(byDate.get(dayKey(oldestMidnight))).toBe(1);
+
+    // The game a minute outside the window is excluded, not folded into the
+    // first bucket: 3 of the 4 seeded games are in range.
+    expect(activity.total).toBe(3);
+    expect(activity.total).toBe(
+      activity.days.reduce((sum, day) => sum + day.count, 0),
+    );
+  });
+
+  it("applies the same filters as the listing, independently of paging", async () => {
+    const { todayMidnight } = expectedWindow();
+    const todayInstant = Math.max(todayMidnight, Date.now() - 5_000);
+
+    await seedGameStartedAt(rapid6x6("classic"), todayInstant);
+    await seedGameStartedAt(rapid6x6("classic"), todayInstant - DAY_MS);
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant);
+
+    const activityRes = await fetch(
+      `${baseUrl}/api/games/past/activity?variant=classic`,
+    );
+    expect(activityRes.status).toBe(200);
+    const activity = (await activityRes.json()) as PastGamesActivityResponse;
+
+    // The plot counts every matching game, not the page the reader is on.
+    const listRes = await fetch(
+      `${baseUrl}/api/games/past?variant=classic&page=1&pageSize=1`,
+    );
+    const list = (await listRes.json()) as PastGamesResponse;
+    expect(list.games.length).toBe(1);
+    expect(list.hasMore).toBe(true);
+
+    expect(activity.total).toBe(2);
+
+    // ...and the filter genuinely narrows: unfiltered sees the standard game too.
+    const allRes = await fetch(`${baseUrl}/api/games/past/activity`);
+    const all = (await allRes.json()) as PastGamesActivityResponse;
+    expect(all.total).toBe(3);
+  });
+
+  it("normalizes player names identically for both projections", async () => {
+    const { todayMidnight } = expectedWindow();
+    const todayInstant = Math.max(todayMidnight, Date.now() - 5_000);
+
+    for (const name of ["Ada", "Grace", "Linus", "Ken"]) {
+      await seedUser({
+        authUserId: `auth-${name.toLowerCase()}`,
+        displayName: name.toLowerCase(),
+        capitalizedDisplayName: name,
+      });
+    }
+
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant, {
+      host: "Ada",
+      joiner: "Grace",
+    });
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant - DAY_MS, {
+      host: "Grace",
+      joiner: "Ada",
+    });
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant, {
+      host: "Linus",
+      joiner: "Ken",
+    });
+
+    // Mixed case and surrounding whitespace: normalization now lives in the
+    // shared condition builder rather than in the route, so the two
+    // projections cannot disagree about which name was meant.
+    const messy = encodeURIComponent("  aDa  ");
+
+    const listRes = await fetch(
+      `${baseUrl}/api/games/past?player1=${messy}&page=1&pageSize=50`,
+    );
+    const list = (await listRes.json()) as PastGamesResponse;
+    expect(list.games.length).toBe(2);
+
+    const activityRes = await fetch(
+      `${baseUrl}/api/games/past/activity?player1=${messy}`,
+    );
+    const activity = (await activityRes.json()) as PastGamesActivityResponse;
+    expect(activity.total).toBe(list.games.length);
+
+    // The two games sit on different days, so this also pins the filtered
+    // games to the right buckets rather than just to the right count.
+    const byDate = new Map(activity.days.map((day) => [day.date, day.count]));
+    expect(byDate.get(dayKey(todayMidnight))).toBe(1);
+    expect(byDate.get(dayKey(todayMidnight - DAY_MS))).toBe(1);
+
+    // Both filters at once still agrees across projections.
+    const pairRes = await fetch(
+      `${baseUrl}/api/games/past/activity?player1=${messy}&player2=GRACE`,
+    );
+    const pair = (await pairRes.json()) as PastGamesActivityResponse;
+    expect(pair.total).toBe(2);
+
+    const missRes = await fetch(
+      `${baseUrl}/api/games/past/activity?player1=${messy}&player2=Linus`,
+    );
+    const miss = (await missRes.json()) as PastGamesActivityResponse;
+    expect(miss.total).toBe(0);
+  });
+
+  it("excludes puzzle attempts and 1-move games, like the listing does", async () => {
+    const { todayMidnight } = expectedWindow();
+    const todayInstant = Math.max(todayMidnight, Date.now() - 5_000);
+
+    await seedGameStartedAt(rapid6x6("standard"), todayInstant);
+
+    // Straight to the table: the base exclusions are about rows the game flow
+    // would not normally produce here.
+    await db.insert(gamesTable).values({
+      gameId: "activity-puzzle",
+      variant: "custom-setup-standard",
+      rated: false,
+      timeControl: "rapid",
+      boardWidth: 6,
+      boardHeight: 6,
+      movesCount: 12,
+      startedAt: new Date(todayInstant),
+      matchType: "friend",
+    });
+    await db.insert(gamesTable).values({
+      gameId: "activity-one-move",
+      variant: "standard",
+      rated: false,
+      timeControl: "rapid",
+      boardWidth: 6,
+      boardHeight: 6,
+      movesCount: 1,
+      startedAt: new Date(todayInstant),
+      matchType: "friend",
+    });
+
+    const res = await fetch(`${baseUrl}/api/games/past/activity`);
+    const activity = (await res.json()) as PastGamesActivityResponse;
+    expect(activity.total).toBe(1);
+
+    const listRes = await fetch(`${baseUrl}/api/games/past?page=1&pageSize=50`);
+    const list = (await listRes.json()) as PastGamesResponse;
+    expect(list.games.length).toBe(1);
   });
 });

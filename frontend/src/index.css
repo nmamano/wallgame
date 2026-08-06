@@ -26,7 +26,10 @@
   --border: oklch(0.8 0.04 70);
   --input: oklch(0.92 0.02 70);
   --ring: oklch(0.5 0.15 260);
-  --chart-1: oklch(0.65 0.18 65);
+  /* Stepped down from L 0.65, which read at 2.98:1 on the card surface - under
+     the 3:1 floor a chart mark has to clear to stay distinguishable. Same hue
+     and chroma; 3.34:1 against the darkest surface it is drawn on. */
+  --chart-1: oklch(0.62 0.18 65);
   --chart-2: oklch(0.45 0.15 260);
   --chart-3: oklch(0.7 0.2 50);
   --chart-4: oklch(0.55 0.12 40);

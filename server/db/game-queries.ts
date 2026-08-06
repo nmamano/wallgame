@@ -8,6 +8,7 @@ import {
   eq,
   gte,
   inArray,
+  lt,
   lte,
   notInArray,
   sql,
@@ -34,8 +35,14 @@ import { moveFromStandardNotation } from "../../shared/domain/standard-notation"
 import {
   BOARD_SIZE_AREA_MEDIUM_MAX,
   BOARD_SIZE_AREA_SMALL_MAX,
+  densifyPastGamesActivity,
+  pastGamesActivityWindow,
 } from "../../shared/domain/past-games";
-import type { PastGamesResponse } from "../../shared/contracts/games";
+import type {
+  PastGamesActivityResponse,
+  PastGamesFilter,
+  PastGamesResponse,
+} from "../../shared/contracts/games";
 
 const buildMatchScore = (result: GameResult | undefined): MatchScore => {
   if (!result?.winner) {
@@ -455,20 +462,20 @@ export const getRandomShowcaseGames = async (
   return buildReplayGamesFromRows(games, "skip");
 };
 
-export const queryPastGames = async (args: {
-  page: number;
-  pageSize: number;
-  variant?: string;
-  rated?: "yes" | "no";
-  timeControl?: string;
-  boardSize?: "small" | "medium" | "large";
-  minElo?: number;
-  maxElo?: number;
-  dateFrom?: Date;
-  dateTo?: Date;
-  player1?: string;
-  player2?: string;
-}): Promise<PastGamesResponse> => {
+/**
+ * Every condition that decides which games Past Games is about - the base
+ * exclusions plus the caller's filters.
+ *
+ * Shared by the listing and the activity plot on purpose. "The plot shows the
+ * same games as the list" is a promise that two hand-maintained WHERE clauses
+ * would break the first time a filter was added to one of them; here a new
+ * filter reaches both projections or neither. Its input is the shared filter
+ * schema's own type, so the field list cannot drift from the API either.
+ *
+ * Note this is the *selection*, not the window: the plot's 90-day bound is
+ * specific to that projection and is applied by its own query.
+ */
+const buildPastGamesConditions = (args: PastGamesFilter): SQL[] => {
   // Puzzle attempts (custom-setup variants) are solo practice, not match
   // history - they never appear in Past Games.
   const conditions: SQL[] = [
@@ -523,11 +530,13 @@ export const queryPastGames = async (args: {
     );
   }
 
+  // Normalized here rather than at the route, so both projections match names
+  // the same way however they were called.
   const playerFilter = (playerName: string) =>
     sql`EXISTS (
       SELECT 1 FROM ${gamePlayersTable} gp_filter
       WHERE gp_filter.game_id = ${gamesTable.gameId}
-        AND lower(gp_filter.display_name) = ${playerName}
+        AND lower(gp_filter.display_name) = ${playerName.trim().toLowerCase()}
     )`;
 
   if (args.player1) {
@@ -538,7 +547,13 @@ export const queryPastGames = async (args: {
     conditions.push(playerFilter(args.player2));
   }
 
-  const whereClause = and(...conditions);
+  return conditions;
+};
+
+export const queryPastGames = async (
+  args: PastGamesFilter & { page: number; pageSize: number },
+): Promise<PastGamesResponse> => {
+  const whereClause = and(...buildPastGamesConditions(args));
   const limit = args.pageSize + 1;
   const offset = (args.page - 1) * args.pageSize;
 
@@ -625,4 +640,54 @@ export const queryPastGames = async (args: {
     pageSize: args.pageSize,
     hasMore,
   };
+};
+
+/**
+ * The same selection as `queryPastGames`, counted per UTC day over the fixed
+ * activity window instead of paged. Paging deliberately has no effect here: the
+ * plot is about every matching game, not the page you happen to be looking at.
+ *
+ * `at` is passed in rather than read from the clock inside, so the SQL bounds
+ * and the densified buckets are derived from one anchor and cannot land on
+ * different sides of a UTC midnight.
+ */
+export const queryPastGamesActivity = async (
+  args: PastGamesFilter,
+  at: Date,
+): Promise<PastGamesActivityResponse> => {
+  const { start, endExclusive } = pastGamesActivityWindow(at);
+  const dayExpr = sql`to_char(${gamesTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+
+  const rows = await db
+    .select({
+      date: sql<string>`${dayExpr}`.as("day"),
+      count: sql<number>`count(*)::int`,
+    })
+    .from(gamesTable)
+    .where(
+      and(
+        ...buildPastGamesConditions(args),
+        gte(gamesTable.startedAt, start),
+        lt(gamesTable.startedAt, endExclusive),
+      ),
+    )
+    .groupBy(dayExpr);
+
+  const countsByDay = new Map(rows.map((row) => [row.date, row.count]));
+  const days = densifyPastGamesActivity(countsByDay, at);
+
+  // Counted twice on purpose, from the two sides that must agree: the rows the
+  // database matched, and the buckets the chart will draw. Deriving the total
+  // from the buckets would make "every matching game has a column" true by
+  // construction, so a window that admitted a day the densifier cannot
+  // represent would silently drop those games instead of showing up here.
+  const rowTotal = rows.reduce((sum, row) => sum + row.count, 0);
+  const bucketTotal = days.reduce((sum, day) => sum + day.count, 0);
+  if (rowTotal !== bucketTotal) {
+    throw new Error(
+      `Past games activity window and buckets disagree: ${rowTotal} matched rows vs ${bucketTotal} in buckets`,
+    );
+  }
+
+  return { days, total: rowTotal };
 };

@@ -20,6 +20,7 @@ import {
   joinGameSchema,
   readySchema,
   getGameSessionQuerySchema,
+  pastGamesActivityQuerySchema,
   pastGamesQuerySchema,
   showcaseQuerySchema,
   botsQuerySchema,
@@ -45,6 +46,7 @@ import {
   getRandomShowcaseGames,
   getReplayGame,
   queryPastGames,
+  queryPastGamesActivity,
 } from "../db/game-queries";
 import { getGlobalRatingForAuthUser } from "../db/rating-helpers";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
@@ -151,29 +153,29 @@ export const gamesRoute = new Hono()
   })
   .get("/past", zValidator("query", pastGamesQuerySchema), async (c) => {
     try {
-      const query = c.req.valid("query");
-      const player1 = query.player1?.trim().toLowerCase();
-      const player2 = query.player2?.trim().toLowerCase();
-      const response = await queryPastGames({
-        page: query.page,
-        pageSize: query.pageSize,
-        variant: query.variant,
-        rated: query.rated,
-        timeControl: query.timeControl,
-        boardSize: query.boardSize,
-        minElo: query.minElo,
-        maxElo: query.maxElo,
-        dateFrom: query.dateFrom,
-        dateTo: query.dateTo,
-        player1,
-        player2,
-      });
+      const response = await queryPastGames(c.req.valid("query"));
       return c.json(response);
     } catch (error) {
       console.error("Failed to query past games:", error);
       return c.json({ error: "Internal server error" }, 500);
     }
   })
+  .get(
+    "/past/activity",
+    zValidator("query", pastGamesActivityQuerySchema),
+    async (c) => {
+      try {
+        const response = await queryPastGamesActivity(
+          c.req.valid("query"),
+          new Date(),
+        );
+        return c.json(response);
+      } catch (error) {
+        console.error("Failed to query past games activity:", error);
+        return c.json({ error: "Internal server error" }, 500);
+      }
+    },
+  )
   .post(
     "/",
     getOptionalUserMiddleware,

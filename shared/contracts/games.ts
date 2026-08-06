@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
+import type { PastGamesActivityDay } from "../domain/past-games";
 import type {
   GameSnapshot,
   PlayerId,
@@ -459,9 +460,13 @@ export const showcaseQuerySchema = z.object({
   count: z.coerce.number().int().min(1).max(50).default(20),
 });
 
-export const pastGamesQuerySchema = z.object({
-  page: z.coerce.number().int().min(1).default(1),
-  pageSize: z.coerce.number().int().min(1).max(100).default(100),
+/**
+ * Everything that narrows *which* games Past Games is about, with no say in how
+ * they are projected. The listing extends it with paging; the activity plot
+ * validates against it directly, so "the same filters" is true by construction
+ * rather than by two lists being kept in sync by hand.
+ */
+export const pastGamesFilterSchema = z.object({
   variant: z.enum(variantValues).optional(),
   rated: z.enum(["yes", "no"]).optional(),
   timeControl: z.enum(timeControlValues).optional(),
@@ -473,6 +478,15 @@ export const pastGamesQuerySchema = z.object({
   player1: z.string().trim().min(1).optional(),
   player2: z.string().trim().min(1).optional(),
 });
+
+export type PastGamesFilter = z.infer<typeof pastGamesFilterSchema>;
+
+export const pastGamesQuerySchema = pastGamesFilterSchema.extend({
+  page: z.coerce.number().int().min(1).default(1),
+  pageSize: z.coerce.number().int().min(1).max(100).default(100),
+});
+
+export const pastGamesActivityQuerySchema = pastGamesFilterSchema;
 
 export interface PastGamePlayerSummary {
   playerOrder: PlayerId;
@@ -500,6 +514,16 @@ export interface PastGamesResponse {
   page: number;
   pageSize: number;
   hasMore: boolean;
+}
+
+/**
+ * The same games the listing would return, counted per UTC day instead of
+ * paged. `days` always has PAST_GAMES_ACTIVITY_DAYS entries in ascending date
+ * order, zeros included, and `total` is their sum.
+ */
+export interface PastGamesActivityResponse {
+  days: PastGamesActivityDay[];
+  total: number;
 }
 
 // ============================================================================
