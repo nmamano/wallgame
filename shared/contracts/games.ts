@@ -1,5 +1,6 @@
 import { z } from "zod";
 import { ANONYMOUS_ID_PATTERN } from "../domain/anonymous-id";
+import { isValidTimeZone } from "../domain/past-games";
 import type { PastGamesActivityDay } from "../domain/past-games";
 import type {
   GameSnapshot,
@@ -486,7 +487,18 @@ export const pastGamesQuerySchema = pastGamesFilterSchema.extend({
   pageSize: z.coerce.number().int().min(1).max(100).default(100),
 });
 
-export const pastGamesActivityQuerySchema = pastGamesFilterSchema;
+/**
+ * The plot's days are the reader's own calendar days, so the browser sends its
+ * zone. Projection-specific, like the 90-day window itself - it says nothing
+ * about WHICH games match, only how they are grouped - so it rides on this
+ * schema rather than on the shared filter.
+ */
+export const pastGamesActivityQuerySchema = pastGamesFilterSchema.extend({
+  timeZone: z
+    .string()
+    .default("UTC")
+    .refine(isValidTimeZone, "Unknown time zone"),
+});
 
 export interface PastGamePlayerSummary {
   playerOrder: PlayerId;

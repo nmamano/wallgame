@@ -80,7 +80,12 @@ const fetchPastGamesActivity = async (
   filters: Filters,
 ): Promise<PastGamesActivityResponse> => {
   const res = await api.games.past.activity.$get({
-    query: buildPastGamesFilterQuery(filters),
+    query: {
+      ...buildPastGamesFilterQuery(filters),
+      // The plot's days are the reader's days, so they are bucketed in the
+      // reader's zone - the list beside it already prints local timestamps.
+      timeZone: Intl.DateTimeFormat().resolvedOptions().timeZone,
+    },
   });
   if (!res.ok) {
     await readError(res);

@@ -8,7 +8,6 @@ import {
   eq,
   gte,
   inArray,
-  lt,
   lte,
   notInArray,
   sql,
@@ -35,8 +34,10 @@ import { moveFromStandardNotation } from "../../shared/domain/standard-notation"
 import {
   BOARD_SIZE_AREA_MEDIUM_MAX,
   BOARD_SIZE_AREA_SMALL_MAX,
+  civilDayIn,
   densifyPastGamesActivity,
-  pastGamesActivityWindow,
+  pastGamesActivityDays,
+  shiftCivilDay,
 } from "../../shared/domain/past-games";
 import type {
   PastGamesActivityResponse,
@@ -643,20 +644,30 @@ export const queryPastGames = async (
 };
 
 /**
- * The same selection as `queryPastGames`, counted per UTC day over the fixed
- * activity window instead of paged. Paging deliberately has no effect here: the
- * plot is about every matching game, not the page you happen to be looking at.
+ * The same selection as `queryPastGames`, counted per calendar day over the
+ * fixed activity window instead of paged. Paging deliberately has no effect
+ * here: the plot is about every matching game, not the page you are looking at.
  *
- * `at` is passed in rather than read from the clock inside, so the SQL bounds
- * and the densified buckets are derived from one anchor and cannot land on
- * different sides of a UTC midnight.
+ * Days are the reader's own days, in the time zone the browser reported. One
+ * anchor day is derived from `at` and then used for BOTH the query bounds and
+ * the buckets, so the two cannot land on opposite sides of a midnight - the
+ * boundaries are civil dates handed to Postgres, which resolves them against
+ * the zone's real offset and so stays correct across a DST change inside the
+ * window.
  */
 export const queryPastGamesActivity = async (
-  args: PastGamesFilter,
+  args: PastGamesFilter & { timeZone: string },
   at: Date,
 ): Promise<PastGamesActivityResponse> => {
-  const { start, endExclusive } = pastGamesActivityWindow(at);
-  const dayExpr = sql`to_char(${gamesTable.startedAt} AT TIME ZONE 'UTC', 'YYYY-MM-DD')`;
+  const { timeZone } = args;
+  const anchorDay = civilDayIn(at, timeZone);
+  const days = pastGamesActivityDays(anchorDay);
+  const firstDay = days[0];
+  // Exclusive: the midnight that opens tomorrow, which also drops any row
+  // stamped in the future.
+  const endDay = shiftCivilDay(anchorDay, 1);
+
+  const dayExpr = sql`to_char(${gamesTable.startedAt} AT TIME ZONE ${timeZone}, 'YYYY-MM-DD')`;
 
   const rows = await db
     .select({
@@ -667,14 +678,17 @@ export const queryPastGamesActivity = async (
     .where(
       and(
         ...buildPastGamesConditions(args),
-        gte(gamesTable.startedAt, start),
-        lt(gamesTable.startedAt, endExclusive),
+        sql`${gamesTable.startedAt} >= (${firstDay}::timestamp AT TIME ZONE ${timeZone})`,
+        sql`${gamesTable.startedAt} < (${endDay}::timestamp AT TIME ZONE ${timeZone})`,
       ),
     )
-    .groupBy(dayExpr);
+    // Grouped by the output alias, not by repeating the expression: the zone is
+    // a bound parameter, so emitting `dayExpr` twice yields two different
+    // placeholders ($1 and $3) and Postgres cannot see them as the same value.
+    .groupBy(sql`"day"`);
 
   const countsByDay = new Map(rows.map((row) => [row.date, row.count]));
-  const days = densifyPastGamesActivity(countsByDay, at);
+  const buckets = densifyPastGamesActivity(countsByDay, anchorDay);
 
   // Counted twice on purpose, from the two sides that must agree: the rows the
   // database matched, and the buckets the chart will draw. Deriving the total
@@ -682,12 +696,12 @@ export const queryPastGamesActivity = async (
   // construction, so a window that admitted a day the densifier cannot
   // represent would silently drop those games instead of showing up here.
   const rowTotal = rows.reduce((sum, row) => sum + row.count, 0);
-  const bucketTotal = days.reduce((sum, day) => sum + day.count, 0);
+  const bucketTotal = buckets.reduce((sum, day) => sum + day.count, 0);
   if (rowTotal !== bucketTotal) {
     throw new Error(
       `Past games activity window and buckets disagree: ${rowTotal} matched rows vs ${bucketTotal} in buckets`,
     );
   }
 
-  return { days, total: rowTotal };
+  return { days: buckets, total: rowTotal };
 };

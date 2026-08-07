@@ -18,47 +18,64 @@ export const getBoardSizeBucket = (
 };
 
 /**
- * How many UTC calendar days the Past Games activity plot covers, counting the
+ * How many calendar days the Past Games activity plot covers, counting the
  * current day. Deliberately a constant and not a query parameter: the plot has
  * one job, and a knob nobody asked for is a knob to keep working.
  */
 export const PAST_GAMES_ACTIVITY_DAYS = 90;
 
-const DAY_MS = 24 * 60 * 60 * 1000;
-
-/** `YYYY-MM-DD` for a UTC instant. */
-export const utcDayKey = (at: Date): string => at.toISOString().slice(0, 10);
-
-/**
- * The instant bounds of the activity window, as a half-open `[start, end)`
- * interval that lines up exactly with the days the plot draws.
- *
- * Half-open and anchored to UTC midnight rather than `now() - 90 days`: a
- * rolling 90x24-hour window starts partway through a 91st calendar day, so it
- * would count games into a bucket the plot has no column for. The exclusive
- * upper bound is the midnight that opens tomorrow, which also drops any row
- * with a future timestamp.
- *
- * UTC because no player timezone is stored anywhere, so it is the only boundary
- * that gives every reader the same answer - the same reasoning as the retention
- * report in server/db/retention-queries.ts.
- */
-export const pastGamesActivityWindow = (
-  at: Date,
-): { start: Date; endExclusive: Date } => {
-  const endExclusive = Date.UTC(
-    at.getUTCFullYear(),
-    at.getUTCMonth(),
-    at.getUTCDate() + 1,
-  );
-  return {
-    start: new Date(endExclusive - PAST_GAMES_ACTIVITY_DAYS * DAY_MS),
-    endExclusive: new Date(endExclusive),
-  };
+/** True if Postgres and `Intl` will both accept this as a time zone. */
+export const isValidTimeZone = (timeZone: string): boolean => {
+  try {
+    new Intl.DateTimeFormat("en-CA", { timeZone });
+    return true;
+  } catch {
+    return false;
+  }
 };
 
+/**
+ * The calendar day an instant falls on, `YYYY-MM-DD`, as seen from `timeZone`.
+ *
+ * The plot's days are the reader's own days. UTC would be defensible for an
+ * internal report - it is what the retention query uses, since no player
+ * timezone is stored anywhere - but this chart sits next to a list that already
+ * prints every timestamp in the browser's local zone, and a reader in Los
+ * Angeles seeing a column for a "tomorrow" that has not started is just wrong.
+ */
+export const civilDayIn = (at: Date, timeZone: string): string =>
+  new Intl.DateTimeFormat("en-CA", {
+    timeZone,
+    year: "numeric",
+    month: "2-digit",
+    day: "2-digit",
+  }).format(at);
+
+/** The civil date `offset` days after `day`, `YYYY-MM-DD`. */
+export const shiftCivilDay = (day: string, offset: number): string => {
+  const [year, month, date] = day.split("-").map(Number);
+  // Pure calendar arithmetic on a date with no zone attached. UTC is only the
+  // carrier here - the result is never converted back to an instant, so it
+  // cannot pick up an offset.
+  return new Date(Date.UTC(year, month - 1, date + offset))
+    .toISOString()
+    .slice(0, 10);
+};
+
+/**
+ * The days the plot draws, ascending, ending on `anchorDay`.
+ *
+ * A count of days rather than a span of hours: a rolling 90x24-hour window
+ * starts partway through a 91st calendar day, so it would count games into a
+ * bucket the plot has no column for.
+ */
+export const pastGamesActivityDays = (anchorDay: string): string[] =>
+  Array.from({ length: PAST_GAMES_ACTIVITY_DAYS }, (_, index) =>
+    shiftCivilDay(anchorDay, index - (PAST_GAMES_ACTIVITY_DAYS - 1)),
+  );
+
 export interface PastGamesActivityDay {
-  /** UTC calendar day, `YYYY-MM-DD`. */
+  /** Calendar day in the requesting reader's time zone, `YYYY-MM-DD`. */
   date: string;
   count: number;
 }
@@ -66,19 +83,17 @@ export interface PastGamesActivityDay {
 /**
  * Expand the days the database actually returned into every day in the window,
  * zeros included, so the client draws what it is handed instead of working out
- * which days are missing. Takes the same anchor as `pastGamesActivityWindow`,
- * so the buckets and the SQL bounds cannot disagree across a UTC midnight.
+ * which days are missing. Takes the same anchor day the query bounds are built
+ * from, so the buckets and the bounds cannot disagree across a midnight.
  */
 export const densifyPastGamesActivity = (
   countsByDay: Map<string, number>,
-  at: Date,
-): PastGamesActivityDay[] => {
-  const { start } = pastGamesActivityWindow(at);
-  return Array.from({ length: PAST_GAMES_ACTIVITY_DAYS }, (_, index) => {
-    const date = utcDayKey(new Date(start.getTime() + index * DAY_MS));
-    return { date, count: countsByDay.get(date) ?? 0 };
-  });
-};
+  anchorDay: string,
+): PastGamesActivityDay[] =>
+  pastGamesActivityDays(anchorDay).map((date) => ({
+    date,
+    count: countsByDay.get(date) ?? 0,
+  }));
 
 export interface PastGameOutcomePlayer {
   displayName: string;

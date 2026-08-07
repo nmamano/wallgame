@@ -17,8 +17,9 @@ const BAR_RADIUS = 4;
 const X_AXIS_LABEL_COUNT = 5;
 
 /**
- * `date` is a UTC calendar day, so it is formatted in UTC too. Letting the
- * browser apply the local zone would shift every label a day west of Greenwich.
+ * `date` is a bare calendar day with no zone attached, so it is read back in
+ * UTC purely to relabel it. Parsing it as a local instant would shift the label
+ * by a day for readers behind Greenwich.
  */
 const formatDay = (date: string, withYear = false): string =>
   new Date(`${date}T00:00:00Z`).toLocaleDateString(undefined, {

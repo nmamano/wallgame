@@ -610,6 +610,41 @@ describe("past games activity", () => {
     expect(all.total).toBe(3);
   });
 
+  it("buckets days in the reader's time zone, not Greenwich's", async () => {
+    // 02:00 UTC is the previous evening on the US west coast, so this instant
+    // belongs to different calendar days depending on who is looking.
+    const utcDay = "2026-07-15";
+    const instant = Date.parse(`${utcDay}T02:00:00Z`);
+    await seedGameStartedAt(rapid6x6("standard"), instant);
+
+    const read = async (timeZone: string) => {
+      const res = await fetch(
+        `${baseUrl}/api/games/past/activity?timeZone=${encodeURIComponent(timeZone)}`,
+      );
+      expect(res.status).toBe(200);
+      const body = (await res.json()) as PastGamesActivityResponse;
+      return body.days.filter((day) => day.count > 0);
+    };
+
+    expect(await read("UTC")).toEqual([{ date: utcDay, count: 1 }]);
+    // Same game, same row, one day earlier for a reader in Los Angeles.
+    expect(await read("America/Los_Angeles")).toEqual([
+      { date: "2026-07-14", count: 1 },
+    ]);
+    // And a day later for one in Tokyo, from a late-morning UTC instant.
+    const tokyoInstant = Date.parse(`${utcDay}T23:00:00Z`);
+    await seedGameStartedAt(rapid6x6("standard"), tokyoInstant);
+    const tokyo = await read("Asia/Tokyo");
+    expect(tokyo).toContainEqual({ date: "2026-07-16", count: 1 });
+  });
+
+  it("rejects a time zone Postgres would not accept", async () => {
+    const res = await fetch(
+      `${baseUrl}/api/games/past/activity?timeZone=Mars%2FOlympus`,
+    );
+    expect(res.status).toBe(400);
+  });
+
   it("normalizes player names identically for both projections", async () => {
     const { todayMidnight } = expectedWindow();
     const todayInstant = Math.max(todayMidnight, Date.now() - 5_000);

@@ -68,7 +68,13 @@
   --border: oklch(0.32 0.05 270);
   --input: oklch(0.3 0.05 270);
   --ring: oklch(0.68 0.18 60);
-  --chart-1: oklch(0.7 0.2 50);
+  /* Cool in dark, warm in light - the theme itself swaps hue families between
+     modes (primary is blue in light and orange in dark), so a chart mark that
+     matches its own mode is following the theme, not diverging from it. This is
+     a lighter step of the theme's blue: --secondary at L 0.45 is built to carry
+     text on top of it and only reaches 2.39:1 as a mark on the card, where this
+     reaches 4.55:1. */
+  --chart-1: oklch(0.6 0.15 260);
   --chart-2: oklch(0.45 0.15 260);
   --chart-3: oklch(0.68 0.18 60);
   --chart-4: oklch(0.55 0.12 40);

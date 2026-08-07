@@ -1,73 +1,101 @@
 /**
- * The calendar arithmetic behind the Past Games activity plot.
+ * The calendar arithmetic behind the Past Games activity plot, plus its axis.
  *
- * Pure functions, no database: the window bounds and the buckets are derived
- * from the same anchor, and this is where that agreement is pinned down. A
- * rolling `now() - 90 days` window would start partway through a 91st calendar
- * day and feed the plot a bucket it has no column for.
+ * Pure functions, no database. Two things are pinned down here: the days are
+ * the READER'S calendar days rather than Greenwich's - the deployed chart drew
+ * a column for a tomorrow that Los Angeles had not reached - and the window is
+ * a count of days rather than a span of hours, since a rolling 90x24 hours
+ * starts partway through a 91st day and feeds the plot a bucket it cannot draw.
  */
 
 import { describe, it, expect } from "bun:test";
 import {
   PAST_GAMES_ACTIVITY_DAYS,
+  civilDayIn,
   densifyPastGamesActivity,
-  pastGamesActivityWindow,
-  utcDayKey,
+  isValidTimeZone,
+  pastGamesActivityDays,
+  shiftCivilDay,
 } from "../../shared/domain/past-games";
 import { buildActivityAxis } from "../../frontend/src/lib/past-games";
 
-const at = (iso: string) => new Date(iso);
+const LA = "America/Los_Angeles";
 
-describe("past games activity window", () => {
-  it("spans today plus the preceding days, anchored to UTC midnight", () => {
-    const { start, endExclusive } = pastGamesActivityWindow(
-      at("2026-08-06T13:45:12.345Z"),
+describe("civilDayIn", () => {
+  it("reports the reader's day, not Greenwich's", () => {
+    // 23:30 UTC on Aug 6 is still Aug 6 in Los Angeles...
+    expect(civilDayIn(new Date("2026-08-06T23:30:00Z"), LA)).toBe("2026-08-06");
+    // ...and 01:30 UTC on Aug 7 is STILL Aug 6 there. This is exactly the bug
+    // that was visible on the deployed chart: a column for a day LA had not
+    // reached yet.
+    expect(civilDayIn(new Date("2026-08-07T01:30:00Z"), LA)).toBe("2026-08-06");
+    expect(civilDayIn(new Date("2026-08-07T01:30:00Z"), "UTC")).toBe(
+      "2026-08-07",
     );
-
-    // Aug 7 00:00Z minus 90 days.
-    expect(start.toISOString()).toBe("2026-05-09T00:00:00.000Z");
-    // Exclusive: the midnight that opens tomorrow, so nothing dated in the
-    // future can slip in either.
-    expect(endExclusive.toISOString()).toBe("2026-08-07T00:00:00.000Z");
   });
 
-  it("covers exactly PAST_GAMES_ACTIVITY_DAYS days", () => {
-    const { start, endExclusive } = pastGamesActivityWindow(
-      at("2026-08-06T13:45:12.345Z"),
+  it("handles a zone ahead of Greenwich too", () => {
+    expect(civilDayIn(new Date("2026-08-06T22:00:00Z"), "Asia/Tokyo")).toBe(
+      "2026-08-07",
     );
-    const spanDays =
-      (endExclusive.getTime() - start.getTime()) / (24 * 60 * 60 * 1000);
-    expect(spanDays).toBe(PAST_GAMES_ACTIVITY_DAYS);
+  });
+});
+
+describe("shiftCivilDay", () => {
+  it("does plain calendar arithmetic", () => {
+    expect(shiftCivilDay("2026-08-06", 1)).toBe("2026-08-07");
+    expect(shiftCivilDay("2026-08-06", -1)).toBe("2026-08-05");
   });
 
-  it("gives the same window anywhere inside one UTC day", () => {
-    const first = pastGamesActivityWindow(at("2026-08-06T00:00:00.000Z"));
-    const last = pastGamesActivityWindow(at("2026-08-06T23:59:59.999Z"));
-    expect(first.start.getTime()).toBe(last.start.getTime());
-    expect(first.endExclusive.getTime()).toBe(last.endExclusive.getTime());
+  it("crosses month, year and leap-day boundaries", () => {
+    expect(shiftCivilDay("2026-03-01", -1)).toBe("2026-02-28");
+    expect(shiftCivilDay("2026-01-01", -1)).toBe("2025-12-31");
+    expect(shiftCivilDay("2024-03-01", -1)).toBe("2024-02-29");
   });
 
-  it("crosses a month boundary without drifting", () => {
-    const { start, endExclusive } = pastGamesActivityWindow(
-      at("2026-03-01T09:00:00Z"),
-    );
-    expect(endExclusive.toISOString()).toBe("2026-03-02T00:00:00.000Z");
-    expect(start.toISOString()).toBe("2025-12-02T00:00:00.000Z");
+  it("is unaffected by daylight saving", () => {
+    // US DST began 2026-03-08. A shift that went through an instant would land
+    // 23 or 25 hours away and could repeat or skip a date.
+    expect(shiftCivilDay("2026-03-07", 1)).toBe("2026-03-08");
+    expect(shiftCivilDay("2026-03-08", 1)).toBe("2026-03-09");
+    expect(shiftCivilDay("2026-11-01", 1)).toBe("2026-11-02");
+  });
+});
+
+describe("pastGamesActivityDays", () => {
+  it("ends on the anchor and runs the full length, ascending", () => {
+    const days = pastGamesActivityDays("2026-08-06");
+    expect(days.length).toBe(PAST_GAMES_ACTIVITY_DAYS);
+    expect(days[days.length - 1]).toBe("2026-08-06");
+    expect(days[0]).toBe("2026-05-09");
+    expect([...days].sort()).toEqual(days);
+  });
+
+  it("has no duplicate or missing day across a DST change", () => {
+    const days = pastGamesActivityDays("2026-04-30");
+    expect(new Set(days).size).toBe(PAST_GAMES_ACTIVITY_DAYS);
+    days.forEach((day, i) => {
+      if (i > 0) expect(day).toBe(shiftCivilDay(days[i - 1], 1));
+    });
+  });
+});
+
+describe("isValidTimeZone", () => {
+  it("accepts real zones and rejects junk", () => {
+    expect(isValidTimeZone(LA)).toBe(true);
+    expect(isValidTimeZone("UTC")).toBe(true);
+    expect(isValidTimeZone("Europe/Madrid")).toBe(true);
+    expect(isValidTimeZone("Mars/Olympus")).toBe(false);
+    expect(isValidTimeZone("nonsense")).toBe(false);
   });
 });
 
 describe("densifyPastGamesActivity", () => {
-  const anchor = at("2026-08-06T13:45:12.345Z");
-
-  it("returns one ascending entry per day in the window", () => {
-    const days = densifyPastGamesActivity(new Map(), anchor);
-
+  it("returns one entry per day in the window", () => {
+    const days = densifyPastGamesActivity(new Map(), "2026-08-06");
     expect(days.length).toBe(PAST_GAMES_ACTIVITY_DAYS);
     expect(days[0]?.date).toBe("2026-05-09");
     expect(days[days.length - 1]?.date).toBe("2026-08-06");
-
-    const sorted = [...days].sort((a, b) => a.date.localeCompare(b.date));
-    expect(days.map((d) => d.date)).toEqual(sorted.map((d) => d.date));
   });
 
   it("fills days the database did not return with zero", () => {
@@ -76,9 +104,8 @@ describe("densifyPastGamesActivity", () => {
         ["2026-08-06", 7],
         ["2026-05-09", 3],
       ]),
-      anchor,
+      "2026-08-06",
     );
-
     expect(days[0]).toEqual({ date: "2026-05-09", count: 3 });
     expect(days[days.length - 1]).toEqual({ date: "2026-08-06", count: 7 });
     expect(days.filter((day) => day.count === 0).length).toBe(
@@ -89,18 +116,12 @@ describe("densifyPastGamesActivity", () => {
   it("ignores counts for days outside the window", () => {
     const days = densifyPastGamesActivity(
       new Map([
-        ["2026-05-08", 99], // one day before the window opens
-        ["2026-08-07", 99], // tomorrow
+        ["2026-05-08", 99],
+        ["2026-08-07", 99],
       ]),
-      anchor,
+      "2026-08-06",
     );
     expect(days.every((day) => day.count === 0)).toBe(true);
-  });
-
-  it("keys the first bucket on the window start", () => {
-    const { start } = pastGamesActivityWindow(anchor);
-    const days = densifyPastGamesActivity(new Map(), anchor);
-    expect(days[0]?.date).toBe(utcDayKey(start));
   });
 });
 
