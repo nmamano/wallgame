@@ -160,6 +160,49 @@ describe("the tracked production bot config", () => {
     expect(ladder).toEqual(["Easy Bot", "Normal Bot", "Superhuman Bot"]);
   });
 
+  it("recommends 8x8 and nothing bigger", () => {
+    // 62% of our search clicks are mobile, and 12x10 does not fit a phone
+    // (Nil, 2026-08-07). The Recommended tab is what a first-time visitor
+    // clicks, so it offers one size.
+    //
+    // A recommendation is not a restriction: every bot still DECLARES the full
+    // range and 12x10 stays reachable from the board-size control and the
+    // Filtered tab. The two are pinned together on purpose, because quietly
+    // narrowing what the bots can play would be a different and much larger
+    // change wearing this one's clothes.
+    //
+    // Not empty, either. `getRecommendedBots` falls back to a bot's declared
+    // size only when min equals max on both axes, so a bot with a range and no
+    // recommendation vanishes from the tab entirely.
+    const oversized: string[] = [];
+    const unrecommended: string[] = [];
+    const narrowed: string[] = [];
+
+    for (const bot of parsedProd().bots) {
+      for (const [variant, config] of Object.entries(bot.variants)) {
+        const label = `${bot.botId}/${variant}`;
+        if (config!.recommended.length === 0) unrecommended.push(label);
+        for (const rec of config!.recommended) {
+          if (rec.boardWidth > 8 || rec.boardHeight > 8) {
+            oversized.push(`${label} ${rec.boardWidth}x${rec.boardHeight}`);
+          }
+        }
+        // Unchanged: what the bot can be ASKED to play.
+        if (config!.boardWidth.max < 12 || config!.boardHeight.max < 10) {
+          narrowed.push(
+            `${label} ${config!.boardWidth.max}x${config!.boardHeight.max}`,
+          );
+        }
+      }
+    }
+
+    // Collected rather than asserted per-entry so a failure names every
+    // offender at once instead of the first one.
+    expect(oversized).toEqual([]);
+    expect(unrecommended).toEqual([]);
+    expect(narrowed).toEqual([]);
+  });
+
   it("keeps the two weak bots off the puzzle variants and out of analysis", () => {
     // Two independent reasons neither can end up as the puzzle or evaluation
     // engine: they do not declare `analysis`, and they do not advertise the
