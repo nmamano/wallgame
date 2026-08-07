@@ -7,10 +7,10 @@
       "naiveMoveRate": 0.6,
       "username": null,
       "appearance": {
-        "color": "cyan",
-        "catStyle": "cat247.svg",
+        "color": "green",
+        "catStyle": "cat9.svg",
         "mouseStyle": "mouse77.svg",
-        "homeStyle": "home8.svg"
+        "homeStyle": "home3.svg"
       },
       "variants": {
         "classic": {
@@ -70,10 +70,10 @@
       "naiveMoveRate": 0.4,
       "username": null,
       "appearance": {
-        "color": "green",
-        "catStyle": "cat247.svg",
-        "mouseStyle": "mouse77.svg",
-        "homeStyle": "home8.svg"
+        "color": "pink",
+        "catStyle": "cat59.svg",
+        "mouseStyle": "mouse84.svg",
+        "homeStyle": "home2.svg"
       },
       "variants": {
         "classic": {
@@ -134,9 +134,9 @@
       "username": null,
       "appearance": {
         "color": "purple",
-        "catStyle": "cat247.svg",
-        "mouseStyle": "mouse77.svg",
-        "homeStyle": "home8.svg"
+        "catStyle": "cat82.svg",
+        "mouseStyle": "mouse52.svg",
+        "homeStyle": "home5.svg"
       },
       "variants": {
         "classic": {
@@ -197,9 +197,9 @@
       "official": true,
       "username": null,
       "appearance": {
-        "color": "purple",
-        "catStyle": "cat247.svg",
-        "mouseStyle": "mouse77.svg",
+        "color": "gray",
+        "catStyle": "cat293.svg",
+        "mouseStyle": "mouse28.svg",
         "homeStyle": "home8.svg"
       },
       "variants": {
