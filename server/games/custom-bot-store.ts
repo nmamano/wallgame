@@ -428,9 +428,14 @@ const toListedBot = (compositeId: string, bot: RegisteredBot): ListedBot => ({
 });
 
 /**
- * An absent `listOrder` sorts last rather than first. A community bot has no
- * opinion about where it belongs in our ladder, and defaulting to zero would
- * put every one of them ahead of the bots we deliberately placed.
+ * An absent `listOrder` sorts last rather than first, because defaulting to
+ * zero would put every bot that never thought about it ahead of the ones we
+ * deliberately placed.
+ *
+ * Note what this does NOT do: `listOrder` is ungated, so a community bot can
+ * send any number it likes. It cannot reach our ladder with it - the
+ * official-first comparison below runs first and no value survives it - so the
+ * number only ever orders a client's bots among the other community ones.
  */
 const LAST_IN_LIST = Number.MAX_SAFE_INTEGER;
 

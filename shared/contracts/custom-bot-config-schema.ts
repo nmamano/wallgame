@@ -117,6 +117,14 @@ export const botConfigBaseSchema = z.object({
    * name put Superhuman Bot at the top of the ladder for months, and 57% of
    * new players took the first row and lost - measured 2026-08-07. Sorting by
    * strength would need a number we do not have for a community bot.
+   *
+   * UNGATED, unlike `analysis`, and the asymmetry is deliberate. Anyone may
+   * set it, so a community client serving three bots can present its own
+   * easy-to-hard order. What stops that from touching our ladder is the
+   * official-first rule that runs before this one: a community bot can order
+   * itself among other community bots and can never sort ahead of ours,
+   * whatever number it sends. It is a preference within a group, not a
+   * position in the list.
    */
   listOrder: z.number().int().optional(),
 });

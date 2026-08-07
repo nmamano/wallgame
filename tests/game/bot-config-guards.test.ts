@@ -181,16 +181,16 @@ describe("the tracked production bot config", () => {
     for (const bot of parsedProd().bots) {
       for (const [variant, config] of Object.entries(bot.variants)) {
         const label = `${bot.botId}/${variant}`;
-        if (config!.recommended.length === 0) unrecommended.push(label);
-        for (const rec of config!.recommended) {
+        if (config.recommended.length === 0) unrecommended.push(label);
+        for (const rec of config.recommended) {
           if (rec.boardWidth > 8 || rec.boardHeight > 8) {
             oversized.push(`${label} ${rec.boardWidth}x${rec.boardHeight}`);
           }
         }
         // Unchanged: what the bot can be ASKED to play.
-        if (config!.boardWidth.max < 12 || config!.boardHeight.max < 10) {
+        if (config.boardWidth.max < 12 || config.boardHeight.max < 10) {
           narrowed.push(
-            `${label} ${config!.boardWidth.max}x${config!.boardHeight.max}`,
+            `${label} ${config.boardWidth.max}x${config.boardHeight.max}`,
           );
         }
       }
@@ -276,11 +276,20 @@ describe("the tracked production bot config", () => {
     // all untouched — so a stray copy on another bot would quietly hobble a bot
     // nobody asked to weaken.
     //
-    // Unlike root noise this has a smooth gradient. Measured against the simple
-    // policy on 2026-08-07: 100% at rate 0, 76% at 0.33, 54% at 0.5, 45% at
-    // 0.65, 39% at 0.8. And it stays SENSIBLE at every point, because every
-    // move it substitutes is a walk toward the goal rather than a random one -
-    // which is the property root noise loses exactly where it starts working.
+    // Unlike root noise this has a smooth gradient. Measured against the
+    // simple policy on 2026-08-07: 100% at rate 0, 76% at 0.33, 54% at 0.5,
+    // 45% at 0.65, 39% at 0.8. And it stays SENSIBLE at every point, because
+    // every move it substitutes is a walk toward the goal rather than a random
+    // one - which is the property root noise loses exactly where it starts
+    // working.
+    //
+    // READ THOSE AS RELATIVE, NOT PREDICTIVE. The simple policy is a
+    // repeatable floor, not a calibrated stand-in for a beginner: humans win
+    // about 15% against the bot the simple policy loses to 100% of the time.
+    // What the sweep establishes is which knob is monotonic and roughly how
+    // far apart two settings sit - not a human win rate. Real human outcomes
+    // against the shipped ladder are the calibration, and retuning should wait
+    // for them.
     //
     // Pinned as an ORDERING, not as values. The exact percentages are Nil's to
     // tune by playing them; what must not change silently is which bots mix and
