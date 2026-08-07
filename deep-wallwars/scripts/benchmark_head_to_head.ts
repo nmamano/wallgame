@@ -62,6 +62,35 @@ const OUR_NOISE = arg("our-noise", "");
 const OPP_NOISE = arg("opp-noise", "");
 const noiseFlag = (value: string): string =>
   value === "" ? "" : ` --root_noise_factor ${Number(value)}`;
+
+/**
+ * The share of OUR moves that come from the built-in naive policy instead of
+ * the engine - the site's other difficulty knob, and the one that actually
+ * ships. It lives in the bot client (`naiveMoveRates` in ws-client.ts), not in
+ * any engine flag, so a benchmark that only drove engines was measuring a bot
+ * the site does not serve.
+ *
+ * Modelled the way the client models it: a second `--model simple` process
+ * kept in lockstep as a shadow, whose move is swapped in when the roll says
+ * so. Same policy, same defaults, same lockstep.
+ */
+const OUR_NAIVE_RATE = parseFloat(arg("our-naive-rate", "0"));
+
+/**
+ * Seeded, so a rerun of the same command replays the same coin flips. Rolling
+ * with Math.random would make every measurement a different experiment and
+ * quietly turn a 3-point difference between two configurations into noise.
+ */
+function makeRng(seed: number): () => number {
+  let state = seed >>> 0;
+  return () => {
+    state = (state + 0x6d2b79f5) >>> 0;
+    let t = state;
+    t = Math.imul(t ^ (t >>> 15), t | 1);
+    t ^= t + Math.imul(t ^ (t >>> 7), t | 61);
+    return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+  };
+}
 const VARIANT = arg("variant", "standard") as Variant;
 const GAMES = parseInt(arg("games", "20"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
@@ -104,6 +133,7 @@ async function playGame(
   opp: EngineProcess,
   gameIdx: number,
   oursIsP1: boolean,
+  naive: EngineProcess | null,
 ): Promise<GameOutcome> {
   const config = makeConfig();
   let referee = new GameState(config, FAKE_TS);
@@ -118,8 +148,15 @@ async function playGame(
     [oursIsP1 ? 2 : 1]: { eng: opp, bgsId: oppId },
   };
 
+  const naiveId = `g${gameIdx}-naive`;
   await send(ours, { type: "start_game_session", bgsId: oursId, botId: "ours", config: bgsConfig });
   await send(opp, { type: "start_game_session", bgsId: oppId, botId: "opp", config: bgsConfig });
+  if (naive) {
+    await send(naive, { type: "start_game_session", bgsId: naiveId, botId: "naive", config: bgsConfig });
+  }
+  // One stream of coin flips per game, derived from the seed, so game 7 rolls
+  // the same way whatever the noise level under test is.
+  const roll = makeRng(SEED * 1000 + gameIdx);
 
   let outcome: Side = "draw";
   let reason = "move-limit"; // default if the loop exits via the ply cap
@@ -128,7 +165,15 @@ async function playGame(
     for (let ply = 0; referee.status === "playing" && ply < MOVE_LIMIT; ply++) {
       const mover = referee.turn; // 1 or 2, matches ply parity
       const me = seat[mover];
-      const ev = await send(me.eng, { type: "evaluate_position", bgsId: me.bgsId, expectedPly: ply });
+      const isOurTurn = mover === (oursIsP1 ? 1 : 2);
+      let ev = await send(me.eng, { type: "evaluate_position", bgsId: me.bgsId, expectedPly: ply });
+      // The naive swap, exactly as the client does it: the engine is asked
+      // first and its answer is replaced. Asking it anyway is not waste - it
+      // is what keeps its own tree advancing, and it is what the client does.
+      if (naive && isOurTurn && ev.success && roll() < OUR_NAIVE_RATE) {
+        const naiveEv = await send(naive, { type: "evaluate_position", bgsId: naiveId, expectedPly: ply });
+        if (naiveEv.success && naiveEv.bestMove) ev = naiveEv;
+      }
       if (!ev.success || !ev.bestMove) {
         // No legal move => mover loses.
         outcome = mover === (oursIsP1 ? 1 : 2) ? "opp" : "ours";
@@ -141,6 +186,9 @@ async function playGame(
       // Advance BOTH engines to keep them in lockstep (tree reuse).
       await send(seat[1].eng, { type: "apply_move", bgsId: seat[1].bgsId, expectedPly: ply, move: ev.bestMove });
       await send(seat[2].eng, { type: "apply_move", bgsId: seat[2].bgsId, expectedPly: ply, move: ev.bestMove });
+      if (naive) {
+        await send(naive, { type: "apply_move", bgsId: naiveId, expectedPly: ply, move: ev.bestMove });
+      }
     }
     if (referee.status === "finished" && referee.result) {
       const r = referee.result;
@@ -151,6 +199,9 @@ async function playGame(
   } finally {
     await send(ours, { type: "end_game_session", bgsId: oursId }).catch(() => {});
     await send(opp, { type: "end_game_session", bgsId: oppId }).catch(() => {});
+    if (naive) {
+      await send(naive, { type: "end_game_session", bgsId: naiveId }).catch(() => {});
+    }
   }
   return { outcome, reason, moves };
 }
@@ -158,6 +209,12 @@ async function playGame(
 async function main() {
   const ours = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OURS} --samples ${OUR_SAMPLES} --seed ${SEED}${noiseFlag(OUR_NOISE)}`);
   const opp = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OPP} --samples ${OPP_SAMPLES} --seed ${SEED}${noiseFlag(OPP_NOISE)}`);
+  // Only spawned when asked for: a third GPU process per run is not free, and
+  // a rate of 0 must measure exactly what it measured before this flag existed.
+  const naive =
+    OUR_NAIVE_RATE > 0
+      ? await EngineProcess.spawn(`${BGS_ENGINE} --model simple --samples 1 --seed ${SEED} --root_noise_factor 0`)
+      : null;
   const tally = { ours: 0, opp: 0, draw: 0 };
   // Per-seat: when our model is P1 (red/first) vs P2 (blue/second).
   const bySeat = { P1: { ours: 0, opp: 0, draw: 0 }, P2: { ours: 0, opp: 0, draw: 0 } };
@@ -167,7 +224,7 @@ async function main() {
   try {
     for (let g = 0; g < GAMES; g++) {
       const oursIsP1 = g % 2 === 0;
-      const { outcome: res, reason, moves } = await playGame(ours, opp, g, oursIsP1);
+      const { outcome: res, reason, moves } = await playGame(ours, opp, g, oursIsP1, naive);
       tally[res]++;
       bySeat[oursIsP1 ? "P1" : "P2"][res]++;
       reasons[reason] = (reasons[reason] ?? 0) + 1;
@@ -181,10 +238,12 @@ async function main() {
   } finally {
     ours.kill();
     opp.kill();
+    naive?.kill();
   }
   console.log(JSON.stringify({
     variant: VARIANT, ours: OURS.split("/").pop(), our_samples: OUR_SAMPLES,
     our_noise: OUR_NOISE === "" ? "(engine default)" : Number(OUR_NOISE),
+    our_naive_rate: OUR_NAIVE_RATE,
     opp: OPP.split("/").pop(), opp_samples: OPP_SAMPLES,
     opp_noise: OPP_NOISE === "" ? "(engine default)" : Number(OPP_NOISE),
     games: GAMES,
