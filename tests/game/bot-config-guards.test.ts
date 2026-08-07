@@ -174,9 +174,23 @@ describe("the tracked production bot config", () => {
     // Not empty, either. `getRecommendedBots` falls back to a bot's declared
     // size only when min equals max on both axes, so a bot with a range and no
     // recommendation vanishes from the tab entirely.
+    // The capability half is pinned as an EXACT range per variant, both ends.
+    // An earlier version asserted only the maxima, which reads like "nothing
+    // was narrowed" and is not: raising standard's minimum from 5 to 8 removes
+    // every small board and passes a maximum check untouched (Project Reviewer
+    // 1, 2026-08-07). A bound is only guarded from the side you assert on.
+    const EXPECTED_RANGE: Record<string, string> = {
+      standard: "5-12 x 5-10",
+      classic: "5-12 x 5-10",
+      freestyle: "4-12 x 4-10",
+      "custom-setup-standard": "4-12 x 4-10",
+      "custom-setup-classic": "4-12 x 4-10",
+    };
+
     const oversized: string[] = [];
     const unrecommended: string[] = [];
-    const narrowed: string[] = [];
+    const ranges: Record<string, string> = {};
+    const expected: Record<string, string> = {};
 
     for (const bot of parsedProd().bots) {
       for (const [variant, config] of Object.entries(bot.variants)) {
@@ -188,11 +202,10 @@ describe("the tracked production bot config", () => {
           }
         }
         // Unchanged: what the bot can be ASKED to play.
-        if (config.boardWidth.max < 12 || config.boardHeight.max < 10) {
-          narrowed.push(
-            `${label} ${config.boardWidth.max}x${config.boardHeight.max}`,
-          );
-        }
+        ranges[label] =
+          `${config.boardWidth.min}-${config.boardWidth.max} x ` +
+          `${config.boardHeight.min}-${config.boardHeight.max}`;
+        expected[label] = EXPECTED_RANGE[variant];
       }
     }
 
@@ -200,7 +213,7 @@ describe("the tracked production bot config", () => {
     // offender at once instead of the first one.
     expect(oversized).toEqual([]);
     expect(unrecommended).toEqual([]);
-    expect(narrowed).toEqual([]);
+    expect(ranges).toEqual(expected);
   });
 
   it("keeps the two weak bots off the puzzle variants and out of analysis", () => {
