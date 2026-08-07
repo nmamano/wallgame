@@ -135,21 +135,47 @@ export function installNavigationReporting(
 }
 
 /**
+ * `gtag` is defined solely on the production hostname - see the guard in
+ * index.html - so everywhere else every send below is a no-op rather than an
+ * error. One reader for it, so the two senders cannot disagree about how it is
+ * found.
+ */
+function findGtag(): ((...args: unknown[]) => void) | undefined {
+  return (window as unknown as { gtag?: (...args: unknown[]) => void }).gtag;
+}
+
+/**
  * The two things that actually touch the browser, and the only part of this
  * file that cannot run in a test.
- *
- * `gtag` is defined solely on the production hostname - see the guard in
- * index.html - so everywhere else sending is a no-op rather than an error.
  */
 export const browserReporter: NavigationReporter = {
   setTitle: (title) => {
     document.title = title;
   },
   send: (payload) => {
-    const gtag = (window as unknown as { gtag?: (...args: unknown[]) => void })
-      .gtag;
-    if (!gtag) return;
-
-    gtag("event", "page_view", payload);
+    findGtag()?.("event", "page_view", payload);
   },
+};
+
+/**
+ * Anything that is worth counting but is not a navigation.
+ *
+ * A page view answers "did they get here"; these answer "did they do the
+ * thing". The account nudge is the first caller and the reason this exists:
+ * signups are countable in our own database, but a signup that never happened
+ * looks identical whether the offer was never shown, shown and ignored, or
+ * clicked and abandoned at the identity provider. Those are three different
+ * problems with three different fixes.
+ *
+ * Params are flat scalars because that is all GA4 stores - a nested object
+ * arrives as "[object Object]", which is the same class of bug as the parsed
+ * `search` object in `ReportableLocation` above.
+ */
+export type SendEvent = (
+  name: string,
+  params?: Record<string, string | number | boolean>,
+) => void;
+
+export const browserSendEvent: SendEvent = (name, params) => {
+  findGtag()?.("event", name, params ?? {});
 };

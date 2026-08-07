@@ -1,7 +1,13 @@
 import { useEffect } from "react";
 import { ToastAction } from "@/components/ui/toast";
 import { toast } from "@/hooks/use-toast";
-import { recordFinishAndDecide, type GameFinish } from "@/lib/account-nudge";
+import {
+  NUDGE_SHOWN_EVENT,
+  NUDGE_SIGNUP_CLICK_EVENT,
+  recordFinishAndDecide,
+  type GameFinish,
+} from "@/lib/account-nudge";
+import { browserSendEvent } from "@/lib/analytics";
 import type { IdStorage } from "@/lib/anonymous-id";
 
 /**
@@ -85,6 +91,12 @@ export function useAccountNudge({
     });
     if (!decision.show) return;
 
+    // Counted here rather than inside the toast, because this is the line the
+    // once-ever and once-per-session rules have already gated: one event per
+    // offer actually made, which is what the click rate needs as its
+    // denominator.
+    browserSendEvent(NUDGE_SHOWN_EVENT);
+
     toast({
       title: NUDGE_TITLE,
       description: NUDGE_DESCRIPTION,
@@ -93,6 +105,9 @@ export function useAccountNudge({
         <ToastAction
           altText="Sign up for a free account"
           onClick={() => {
+            // Before the navigation, not after: assigning to location.href can
+            // tear the page down before a queued request leaves.
+            browserSendEvent(NUDGE_SIGNUP_CLICK_EVENT);
             window.location.href = REGISTER_URL;
           }}
         >

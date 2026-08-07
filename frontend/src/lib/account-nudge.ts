@@ -24,6 +24,20 @@ const SHOWN_KEY = "wall-game-account-nudge-shown";
 const SHOWN_VALUE = "1";
 
 /**
+ * What we ask analytics to count, named here rather than at the call site so a
+ * test can pin the strings without rendering anything.
+ *
+ * These two are the whole instrumentation, and the pair is the point: on its
+ * own "no signups" cannot distinguish an offer nobody saw from one everybody
+ * declined. Shown-minus-clicked is the wording's problem; clicked-minus-signups
+ * is the identity provider's.
+ *
+ * GA4 event names are snake_case and capped at 40 characters.
+ */
+export const NUDGE_SHOWN_EVENT = "account_nudge_shown";
+export const NUDGE_SIGNUP_CLICK_EVENT = "account_nudge_signup_click";
+
+/**
  * A finish, described by everything that decides whether this viewer actually
  * played a real game - the question that comes before any nudging.
  */

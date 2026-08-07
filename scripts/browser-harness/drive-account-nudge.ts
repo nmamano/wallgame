@@ -170,6 +170,51 @@ const committedMoves = async (page: Page): Promise<number> =>
   );
 
 /**
+ * Drives the game in front of us to a resignation that COUNTS, and returns how
+ * many turns it recorded.
+ *
+ * Extracted because the run needs it twice. Clicking the nudge's own Sign up
+ * button dismisses the toast - that is Radix doing its job - so the click
+ * cannot be tested on the same nudge whose position, coverage and lifetime the
+ * rest of the run measures. Testing it on a second game keeps every one of
+ * those checks looking at a toast nobody has touched.
+ */
+const playToCountedFinish = async (
+  page: Page,
+  say: (line: string) => void,
+): Promise<number> => {
+  const log: string[] = [];
+  for (let turn = 0; turn < 6 && (await committedMoves(page)) < 3; turn++) {
+    const stepped = await stepAnyPawn(page);
+    await clickByText(page, "Finish move");
+    await wait(400);
+    log.push(
+      `t${turn}:${stepped ? "stepped" : "stuck"}=${await committedMoves(page)}`,
+    );
+  }
+  const moves = await committedMoves(page);
+  say(`play: ${log.join(" ")} -> ${moves} committed moves`);
+  // Thrown rather than collected: with too few moves nothing downstream means
+  // anything, so there is no point gathering further failures.
+  if (moves < 2) {
+    throw new Error(
+      `only ${moves} moves committed; the game would abort and prove nothing`,
+    );
+  }
+
+  // A half-finished turn disables every meta action, Resign included - the
+  // first attempt at this run left one action staged and quietly did nothing
+  // at all.
+  await clickByText(page, "Clear staged actions");
+  await wait(300);
+  await clickByText(page, "Resign");
+  await wait(400);
+  await clickByText(page, "Resign");
+  await wait(900);
+  return moves;
+};
+
+/**
  * Every visible control, and whether the point at its own centre belongs to
  * it. An overlay that covers a button leaves the button perfectly present in
  * the DOM and perfectly unclickable, so presence is not the question.
@@ -246,7 +291,17 @@ const ENDGAME_CONTROL =
 
 const main = async () => {
   mkdirSync(SHOT_DIR, { recursive: true });
-  const stub = startStubServer({ routes: { "/api/me": loggedOut } });
+  const stub = startStubServer({
+    routes: {
+      "/api/me": loggedOut,
+      // 204 on purpose. In production this redirects to the identity provider;
+      // here a No Content answer makes the browser ABANDON the navigation and
+      // leave the document standing, so the click can be checked without
+      // ending the run. What is asserted is that the app tried to go there and
+      // counted the click, not what the real endpoint answers.
+      "/api/register": () => new Response(null, { status: 204 }),
+    },
+  });
   const chrome = await launchChrome(DESKTOP);
   const page = await connect();
   const findings: string[] = [];
@@ -266,6 +321,29 @@ const main = async () => {
     await page.navigate(`${stub.url}/play`);
     await wait(900);
 
+    // Stand in for Google's tag, which only exists on the production hostname
+    // (see the guard in index.html), and record into sessionStorage rather
+    // than a variable so the log survives a navigation. `browserSendEvent`
+    // looks `window.gtag` up at call time, so installing it after load is
+    // enough and does not require a page reload.
+    await page.evaluate(`
+      window.gtag = function () {
+        const seen = JSON.parse(sessionStorage.getItem("__events") || "[]");
+        seen.push(Array.from(arguments));
+        sessionStorage.setItem("__events", JSON.stringify(seen));
+      };
+      sessionStorage.removeItem("__events");
+    `);
+    const eventNames = async (): Promise<string[]> =>
+      (
+        (await json(
+          page,
+          `JSON.parse(sessionStorage.getItem("__events") || "[]")`,
+        )) as unknown[][]
+      )
+        .filter((call) => call[0] === "event")
+        .map((call) => String(call[1]));
+
     // The app's own path to a local game, so the config is the one it builds.
     if (!(await clickByText(page, "Play Locally"))) {
       throw new Error("no 'Play Locally' tab on /play");
@@ -284,34 +362,7 @@ const main = async () => {
     // opposite of what it claimed. Staging moves is not enough: a turn is only
     // committed when the action budget fills or "Finish move" is pressed, and
     // the first attempt at this run staged six moves and committed none.
-    const log: string[] = [];
-    for (let turn = 0; turn < 6 && (await committedMoves(page)) < 3; turn++) {
-      const stepped = await stepAnyPawn(page);
-      await clickByText(page, "Finish move");
-      await wait(400);
-      log.push(
-        `t${turn}:${stepped ? "stepped" : "stuck"}=${await committedMoves(page)}`,
-      );
-    }
-    const moves = await committedMoves(page);
-    say(`play: ${log.join(" ")} -> ${moves} committed moves`);
-    // Not a `must`: with too few moves nothing downstream means anything, so
-    // there is no point collecting further failures.
-    if (moves < 2) {
-      throw new Error(
-        `only ${moves} moves committed; the game would abort and prove nothing`,
-      );
-    }
-
-    // A half-finished turn disables every meta action, Resign included - the
-    // first attempt at this run left one action staged and quietly did
-    // nothing at all.
-    await clickByText(page, "Clear staged actions");
-    await wait(300);
-    await clickByText(page, "Resign");
-    await wait(400);
-    await clickByText(page, "Resign");
-    await wait(900);
+    const moves = await playToCountedFinish(page, say);
     const appearedAt = Date.now();
 
     const finished = Boolean(
@@ -392,6 +443,19 @@ const main = async () => {
     );
     await page.screenshot(`${SHOT_DIR}/desktop.png`);
 
+    // Half the instrumentation. Without the pair, "no signups" cannot be told
+    // apart from "no offers shown" - different problems with different fixes.
+    // The click half is at the very end of the run, on a nudge of its own,
+    // because clicking the offer dismisses the toast and would blind every
+    // check below that reads it.
+    const shownEvents = await eventNames();
+    say(`analytics after the nudge appeared: ${JSON.stringify(shownEvents)}`);
+    must(
+      "showing the nudge counted exactly one account_nudge_shown",
+      shownEvents.filter((n) => n === "account_nudge_shown").length === 1,
+      JSON.stringify(shownEvents),
+    );
+
     await page.setViewport(PHONE.width, PHONE.height);
     await wait(700);
     const phone = (await json(page, HIT_TEST)) as HitTest;
@@ -471,6 +535,55 @@ const main = async () => {
     must(
       `the nudge is gone ${Math.round(EXPECTED_DURATION_MS / 1000)}s after it appeared`,
       !stillThere,
+    );
+
+    // --- The click half, on a nudge of its own. ---
+    //
+    // Everything above has finished with nudge one, so the markers can be
+    // cleared and game two - already running, started by the rematch - can
+    // earn a fresh one. Clearing both is what the component's own rules
+    // require: `wall-game-first-finished-game` is the once-ever gate and
+    // `wall-game-account-nudge-shown` the once-per-session one.
+    await page.evaluate(`
+      localStorage.removeItem("wall-game-first-finished-game");
+      sessionStorage.removeItem("wall-game-account-nudge-shown");
+    `);
+    await playToCountedFinish(page, say);
+    await wait(600);
+    const secondNudge = Boolean(
+      await json(
+        page,
+        `[...document.querySelectorAll("li")].some((li) => (li.textContent || "").includes(${JSON.stringify(NUDGE_TITLE)}))`,
+      ),
+    );
+    // If this fails the click checks below prove nothing, so it is stated
+    // rather than assumed.
+    must("a second nudge was earned for the click test", secondNudge);
+
+    const clickedSignUp = await clickByText(page, "Sign up");
+    await wait(900);
+    const afterSignUp = await eventNames();
+    const registerCalls = stub
+      .log()
+      .filter((line) => line === "GET /api/register");
+    say(
+      `sign up: clicked=${clickedSignUp} events=${JSON.stringify(afterSignUp)} ` +
+        `register=${JSON.stringify(registerCalls)}`,
+    );
+    must("the nudge's Sign up control was clickable", clickedSignUp);
+    must(
+      "clicking Sign up counted exactly one account_nudge_signup_click",
+      afterSignUp.filter((n) => n === "account_nudge_signup_click").length ===
+        1,
+      JSON.stringify(afterSignUp),
+    );
+    // Independent of the analytics stub: the browser really did head for the
+    // register endpoint, so the event is not being counted for a click that
+    // goes nowhere.
+    must(
+      "clicking Sign up really requested /api/register",
+      registerCalls.length === 1,
+      JSON.stringify(stub.log()),
     );
 
     const failed = checks.filter((c) => !c.ok);
