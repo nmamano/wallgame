@@ -3,9 +3,10 @@
  *
  * Plays two models against each other at the MOVE level over the V3 BGS
  * protocol, refereed locally by the shared GameState -- no server, no database,
- * nothing touches wallgame.io. Each side takes its own --samples, so a stronger
- * opponent can be handicapped (e.g. 1 sample) while ours searches at full
- * strength. Board size is independent of the model frame: our transformers are
+ * nothing touches wallgame.io. Each side takes its own --samples and its own
+ * --*-noise, so a stronger opponent can be handicapped (e.g. 1 sample) while
+ * ours searches at full strength, and a candidate's root noise can be swept
+ * against a fixed reference. Board size is independent of the model frame: our transformers are
  * always 12x10-framed and smaller games are embedded via BGS padding, so
  * --width/--height set the game, not the network input.
  *
@@ -16,7 +17,8 @@
  *   bun deep-wallwars/scripts/benchmark_head_to_head.ts \
  *     --ours <our.trt> --our-samples 250 \
  *     --opp <opp.trt> --opp-samples 1 --variant standard --games 20 --seed 7 \
- *     --width 8 --height 8 [--engine <path to deep_ww_bgs_engine>]
+ *     --width 8 --height 8 [--engine <path to deep_ww_bgs_engine>] \
+ *     [--our-noise 0.6] [--opp-noise 0]
  */
 import { EngineProcess } from "../../official-custom-bot-client/src/engine-runner";
 import { GameState } from "../../shared/domain/game-state";
@@ -42,6 +44,24 @@ const OURS = arg("ours");
 const OUR_SAMPLES = parseInt(arg("our-samples", "250"), 10);
 const OPP = arg("opp");
 const OPP_SAMPLES = parseInt(arg("opp-samples", "1"), 10);
+/**
+ * Dirichlet noise mixed into each side's ROOT priors, independently.
+ *
+ * Per side because that is the only way to measure it. `deep_ww`'s own
+ * `--root_noise_factor` is one number applied to both MCTS instances, so a
+ * sweep over it moves the candidate and the reference together and the win
+ * rate trends to 50% for the wrong reason. Here each side is a separate
+ * process with its own command line, so the reference can stay fixed.
+ *
+ * At `--samples 1` this flag IS the move selection: with no tree to absorb it,
+ * the engine takes the argmax of priors that are `(1-f)` policy and `f`
+ * Dirichlet. So 0 is the policy's own favourite move and 1 is uniform random.
+ * The engine's own default is 0.25.
+ */
+const OUR_NOISE = arg("our-noise", "");
+const OPP_NOISE = arg("opp-noise", "");
+const noiseFlag = (value: string): string =>
+  value === "" ? "" : ` --root_noise_factor ${Number(value)}`;
 const VARIANT = arg("variant", "standard") as Variant;
 const GAMES = parseInt(arg("games", "20"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
@@ -136,8 +156,8 @@ async function playGame(
 }
 
 async function main() {
-  const ours = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OURS} --samples ${OUR_SAMPLES} --seed ${SEED}`);
-  const opp = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OPP} --samples ${OPP_SAMPLES} --seed ${SEED}`);
+  const ours = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OURS} --samples ${OUR_SAMPLES} --seed ${SEED}${noiseFlag(OUR_NOISE)}`);
+  const opp = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OPP} --samples ${OPP_SAMPLES} --seed ${SEED}${noiseFlag(OPP_NOISE)}`);
   const tally = { ours: 0, opp: 0, draw: 0 };
   // Per-seat: when our model is P1 (red/first) vs P2 (blue/second).
   const bySeat = { P1: { ours: 0, opp: 0, draw: 0 }, P2: { ours: 0, opp: 0, draw: 0 } };
@@ -164,7 +184,10 @@ async function main() {
   }
   console.log(JSON.stringify({
     variant: VARIANT, ours: OURS.split("/").pop(), our_samples: OUR_SAMPLES,
-    opp: OPP.split("/").pop(), opp_samples: OPP_SAMPLES, games: GAMES,
+    our_noise: OUR_NOISE === "" ? "(engine default)" : Number(OUR_NOISE),
+    opp: OPP.split("/").pop(), opp_samples: OPP_SAMPLES,
+    opp_noise: OPP_NOISE === "" ? "(engine default)" : Number(OPP_NOISE),
+    games: GAMES,
     wld: `${tally.ours}/${tally.opp}/${tally.draw}`, tally,
     our_wld_as_P1_red: `${bySeat.P1.ours}/${bySeat.P1.opp}/${bySeat.P1.draw}`,
     our_wld_as_P2_blue: `${bySeat.P2.ours}/${bySeat.P2.opp}/${bySeat.P2.draw}`,
