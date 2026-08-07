@@ -45,6 +45,9 @@ const standardOnlyBot = (botId: string): BotConfig => ({
   name: "Standard Only Bot",
   username: null,
   officialToken: TEST_OFFICIAL_TOKEN,
+  // Puzzles are launched against the analysis bot, so a fixture that only
+  // carried the token would now be refused by the launch route.
+  analysis: true,
   variants: {
     "custom-setup-standard": {
       boardWidth: { min: 4, max: 12 },

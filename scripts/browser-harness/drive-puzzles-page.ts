@@ -50,6 +50,7 @@ const bots = {
       botId: "puzzlebot",
       name: "PuzzleBot",
       isOfficial: true,
+      isAnalysisBot: true,
       appearance: {},
       variants: { "custom-setup-standard": {} },
     },

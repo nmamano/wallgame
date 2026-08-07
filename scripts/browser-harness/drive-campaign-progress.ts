@@ -85,6 +85,7 @@ const bots = {
       botId: "dw-puzzle",
       name: "PuzzleBot",
       isOfficial: true,
+      isAnalysisBot: true,
       appearance: { color: "purple" },
       variants: {
         "custom-setup-standard": {

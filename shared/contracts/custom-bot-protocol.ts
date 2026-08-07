@@ -59,7 +59,14 @@ export interface BotAppearance {
   homeStyle?: string;
 }
 
-/** Configuration for a single bot */
+/**
+ * Configuration for a single bot.
+ *
+ * MIRRORS `botConfigBaseSchema` in custom-bot-config-schema.ts, which is what
+ * actually validates an incoming attach. This file stays type-only on purpose
+ * - it is imported by code that has no business pulling in zod - so the two
+ * are kept in step by hand. A field added to one belongs in both.
+ */
 export interface BotConfig {
   /** Unique identifier for this bot within the client */
   botId: string;
@@ -73,6 +80,14 @@ export interface BotConfig {
   appearance?: BotAppearance;
   /** Supported variants and their configurations */
   variants: Partial<Record<Variant, VariantConfig>>;
+  /**
+   * Asks to be the bot that answers for the site - the evaluation bar's best
+   * move, and the opponent in a puzzle. Granted only alongside a valid
+   * official token.
+   */
+  analysis?: boolean;
+  /** Ascending position in the bot list, gentlest first. Absent sorts last. */
+  listOrder?: number;
 }
 
 // ============================================================================
@@ -268,6 +283,12 @@ export interface ListedBot {
   botId: string;
   name: string;
   isOfficial: boolean;
+  /**
+   * This bot supplies the evaluation bar's best move and plays puzzles. Always
+   * false unless the bot is also official - see `analysis` in
+   * custom-bot-config-schema.ts for why the two are not the same question.
+   */
+  isAnalysisBot: boolean;
   appearance: BotAppearance;
   variants: Partial<Record<Variant, VariantConfig>>;
 }

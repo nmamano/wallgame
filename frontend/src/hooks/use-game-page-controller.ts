@@ -2657,7 +2657,8 @@ export function useGamePageController(gameId: string) {
         boardWidth: config.boardWidth,
         boardHeight: config.boardHeight,
       });
-      const officialBot = bots.find((bot) => bot.isOfficial);
+      // The puzzle bot, not merely one of ours - see use-puzzle-playback.ts.
+      const officialBot = bots.find((bot) => bot.isAnalysisBot);
       if (!officialBot) {
         addSystemMessage(
           "PuzzleBot is offline right now, so the puzzle cannot be retried.",

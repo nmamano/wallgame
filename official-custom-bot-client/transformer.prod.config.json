@@ -2,6 +2,156 @@
   "server": "https://wallgame.io",
   "bots": [
     {
+      "botId": "dw-beginner",
+      "name": "Easy Bot",
+      "naiveMoveRate": 0.6,
+      "username": null,
+      "appearance": {
+        "color": "cyan",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        },
+        "standard": {
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        },
+        "freestyle": {
+          "boardWidth": {
+            "min": 4,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 4,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        }
+      },
+      "listOrder": 1
+    },
+    {
+      "botId": "dw-easy",
+      "name": "Normal Bot",
+      "naiveMoveRate": 0.4,
+      "username": null,
+      "appearance": {
+        "color": "green",
+        "catStyle": "cat247.svg",
+        "mouseStyle": "mouse77.svg",
+        "homeStyle": "home8.svg"
+      },
+      "variants": {
+        "classic": {
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        },
+        "standard": {
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        },
+        "freestyle": {
+          "boardWidth": {
+            "min": 4,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 4,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            },
+            {
+              "boardWidth": 12,
+              "boardHeight": 10
+            }
+          ]
+        }
+      },
+      "listOrder": 2
+    },
+    {
       "botId": "dw-transformer",
       "name": "Superhuman Bot",
       "official": true,
@@ -73,82 +223,9 @@
             }
           ]
         }
-      }
-    },
-    {
-      "botId": "dw-easy",
-      "name": "Easy Bot",
-      "official": false,
-      "naiveMoveRate": 0.33,
-      "username": null,
-      "appearance": {
-        "color": "green",
-        "catStyle": "cat247.svg",
-        "mouseStyle": "mouse77.svg",
-        "homeStyle": "home8.svg"
       },
-      "variants": {
-        "classic": {
-          "boardWidth": {
-            "min": 5,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 5,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            },
-            {
-              "boardWidth": 12,
-              "boardHeight": 10
-            }
-          ]
-        },
-        "standard": {
-          "boardWidth": {
-            "min": 5,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 5,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            },
-            {
-              "boardWidth": 12,
-              "boardHeight": 10
-            }
-          ]
-        },
-        "freestyle": {
-          "boardWidth": {
-            "min": 4,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 4,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            },
-            {
-              "boardWidth": 12,
-              "boardHeight": 10
-            }
-          ]
-        }
-      }
+      "analysis": true,
+      "listOrder": 3
     },
     {
       "botId": "dw-puzzle",
@@ -194,12 +271,14 @@
             }
           ]
         }
-      }
+      },
+      "analysis": true
     }
   ],
   "engineCommands": {
+    "dw-beginner": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.4",
+    "dw-easy": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.25",
     "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
-    "dw-puzzle": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 5000 --parallel_samples 128 --thread_pool_size 4 --losing_fallback --losing_fallback_eval -0.9",
-    "dw-easy": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0"
+    "dw-puzzle": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 5000 --parallel_samples 128 --thread_pool_size 4 --losing_fallback --losing_fallback_eval -0.9"
   }
 }

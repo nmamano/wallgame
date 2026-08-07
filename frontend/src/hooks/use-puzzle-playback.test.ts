@@ -48,12 +48,17 @@ const puzzle = (over: Partial<SavedPuzzle> = {}): SavedPuzzle =>
     ...over,
   }) as SavedPuzzle;
 
-const bot = { id: "client:bot", isOfficial: true } as ListedBot;
+const bot = {
+  id: "client:bot",
+  isOfficial: true,
+  isAnalysisBot: true,
+} as ListedBot;
 
 /** A bot that really declares the 4x4 classic shape the fixture puzzle uses. */
 const declaringBot = {
   id: "client:puzzlebot",
   isOfficial: true,
+  isAnalysisBot: true,
   variants: {
     "custom-setup-classic": {
       boardWidth: { min: 4, max: 12 },
@@ -161,8 +166,20 @@ describe("resolveShapeBot", () => {
     ).toBeUndefined();
   });
 
-  it("ignores an unofficial bot, and one that does not declare the shape", () => {
-    const unofficial = { ...declaringBot, isOfficial: false } as ListedBot;
+  it("ignores a bot that is not the analysis bot, and one that does not declare the shape", () => {
+    const unofficial = {
+      ...declaringBot,
+      isOfficial: false,
+      isAnalysisBot: false,
+    } as ListedBot;
+    // Ours, badged as ours, listed above the analysis bot - and still not
+    // allowed to play a puzzle. This is the case the split exists for: Easy
+    // Bot became official, and "official" used to be the whole test.
+    const officialButWeak = {
+      ...declaringBot,
+      isOfficial: true,
+      isAnalysisBot: false,
+    } as ListedBot;
     const wrongSize = {
       ...declaringBot,
       variants: {
@@ -175,7 +192,7 @@ describe("resolveShapeBot", () => {
     } as unknown as ListedBot;
     expect(
       resolveShapeBot(
-        { isPending: false, bots: [unofficial, wrongSize] },
+        { isPending: false, bots: [unofficial, officialButWeak, wrongSize] },
         false,
         config,
       ),

@@ -481,6 +481,11 @@ async function createBotConfigFile(args: {
         botId: args.botId,
         name: args.botName,
         username: null,
+        // The evaluation bar asks the ANALYSIS bot, which is a narrower thing
+        // than an official one: an official bot can now be deliberately weak,
+        // and a weak bot's "best move" is not an evaluation. Without this the
+        // client attaches, lists, plays - and `findEvalBot` returns null.
+        analysis: true,
         variants: defaultVariants,
       },
     ],

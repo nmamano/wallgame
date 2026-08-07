@@ -16,6 +16,7 @@
 
 import {
   configFileSchema,
+  assertAnalysisCoverage,
   assertEngineCommandsCoverBots,
 } from "../official-custom-bot-client/src/config-schema";
 
@@ -39,6 +40,7 @@ if (!parsed.success) {
 const config = parsed.data;
 try {
   assertEngineCommandsCoverBots(config);
+  assertAnalysisCoverage(config);
 } catch (error) {
   console.error(`INVALID ${path}`);
   console.error(`  ${(error as Error).message}`);
@@ -62,6 +64,8 @@ for (const bot of config.bots) {
     ) ?? [];
   console.log(
     `  ${bot.botId}: "${bot.name}" official=${bot.official !== false} ` +
+      `analysis=${bot.analysis === true} ` +
+      `listOrder=${bot.listOrder ?? "(last)"} ` +
       `color=${bot.appearance?.color ?? "(default)"} variants=[${variants}]`,
   );
   console.log(`      engine: ${knobs.join(" ")}`);

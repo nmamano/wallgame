@@ -64,6 +64,14 @@ export interface RegisteredBot {
   clientId: string;
   name: string;
   isOfficial: boolean;
+  /**
+   * May answer for the site: the evaluation bar's best move, and playing a
+   * puzzle. Granted only to a bot that is ALSO official, so the trust decision
+   * still rests entirely on the token.
+   */
+  isAnalysisBot: boolean;
+  /** Ascending list position, gentlest first. Undefined sorts last. */
+  listOrder: number | undefined;
   username: string | null; // null = public bot
   appearance: BotAppearance;
   variants: Partial<Record<Variant, VariantConfig>>;
@@ -178,6 +186,11 @@ export const registerClient = (
       clientId,
       name: botConfig.name,
       isOfficial,
+      // `&&`, not the declaration alone: the config field is a request and the
+      // token is the authority. A community client can put `analysis: true` in
+      // its own file and it buys nothing.
+      isAnalysisBot: isOfficial && botConfig.analysis === true,
+      listOrder: botConfig.listOrder,
       username: botConfig.username,
       appearance: botConfig.appearance ?? {},
       variants: botConfig.variants,
@@ -401,6 +414,56 @@ export const getClientForBot = (
 // Bot Discovery
 // ============================================================================
 
+/** The public shape of a registered bot. One builder, so the two listings
+ *  below cannot come to disagree about what a bot looks like. */
+const toListedBot = (compositeId: string, bot: RegisteredBot): ListedBot => ({
+  id: compositeId,
+  clientId: bot.clientId,
+  botId: bot.botId,
+  name: bot.name,
+  isOfficial: bot.isOfficial,
+  isAnalysisBot: bot.isAnalysisBot,
+  appearance: bot.appearance,
+  variants: bot.variants,
+});
+
+/**
+ * An absent `listOrder` sorts last rather than first. A community bot has no
+ * opinion about where it belongs in our ladder, and defaulting to zero would
+ * put every one of them ahead of the bots we deliberately placed.
+ */
+const LAST_IN_LIST = Number.MAX_SAFE_INTEGER;
+
+/**
+ * A row of a listing together with the key it sorts by. The key rides
+ * alongside rather than on `ListedBot` itself: it is how the server decided to
+ * order the array, not a property of the bot that any client needs.
+ */
+interface SortableRow<T> {
+  row: T;
+  isOfficial: boolean;
+  listOrder: number;
+  name: string;
+}
+
+/**
+ * The order players see, and the first row is the one that matters: it is what
+ * a first-time visitor plays. Ours before other people's, then the ladder in
+ * the order we chose, then alphabetical so the result is stable.
+ */
+const compareRows = <T>(a: SortableRow<T>, b: SortableRow<T>): number => {
+  if (a.isOfficial !== b.isOfficial) return a.isOfficial ? -1 : 1;
+  if (a.listOrder !== b.listOrder) return a.listOrder - b.listOrder;
+  return a.name.localeCompare(b.name);
+};
+
+const sortableRow = <T>(row: T, bot: RegisteredBot): SortableRow<T> => ({
+  row,
+  isOfficial: bot.isOfficial,
+  listOrder: bot.listOrder ?? LAST_IN_LIST,
+  name: bot.name,
+});
+
 /**
  * Get all bots that support the given game configuration.
  * V3: Filters by variant and optionally board size.
@@ -412,7 +475,7 @@ export const getMatchingBots = (
   boardHeight?: number,
   username?: string,
 ): ListedBot[] => {
-  const results: ListedBot[] = [];
+  const results: SortableRow<ListedBot>[] = [];
 
   for (const [compositeId, bot] of botIndex) {
     if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
@@ -437,26 +500,12 @@ export const getMatchingBots = (
       continue;
     }
 
-    results.push({
-      id: compositeId,
-      clientId: bot.clientId,
-      botId: bot.botId,
-      name: bot.name,
-      isOfficial: bot.isOfficial,
-      appearance: bot.appearance,
-      variants: bot.variants,
-    });
+    results.push(sortableRow(toListedBot(compositeId, bot), bot));
   }
 
-  // Sort: official first, then by name
-  results.sort((a, b) => {
-    if (a.isOfficial !== b.isOfficial) {
-      return a.isOfficial ? -1 : 1;
-    }
-    return a.name.localeCompare(b.name);
-  });
+  results.sort(compareRows);
 
-  return results;
+  return results.map(({ row }) => row);
 };
 
 /**
@@ -468,7 +517,7 @@ export const getRecommendedBots = (
   variant: Variant,
   username?: string,
 ): RecommendedBotEntry[] => {
-  const results: RecommendedBotEntry[] = [];
+  const results: SortableRow<RecommendedBotEntry>[] = [];
 
   for (const [compositeId, bot] of botIndex) {
     if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
@@ -489,58 +538,69 @@ export const getRecommendedBots = (
       continue;
     }
 
-    const botEntry: ListedBot = {
-      id: compositeId,
-      clientId: bot.clientId,
-      botId: bot.botId,
-      name: bot.name,
-      isOfficial: bot.isOfficial,
-      appearance: bot.appearance,
-      variants: bot.variants,
-    };
+    const botEntry = toListedBot(compositeId, bot);
 
     if (variantConfig.recommended.length > 0) {
       // Add an entry for each recommended setting
       for (const rec of variantConfig.recommended) {
-        results.push({
-          bot: botEntry,
-          boardWidth: rec.boardWidth,
-          boardHeight: rec.boardHeight,
-        });
+        results.push(
+          sortableRow(
+            {
+              bot: botEntry,
+              boardWidth: rec.boardWidth,
+              boardHeight: rec.boardHeight,
+            },
+            bot,
+          ),
+        );
       }
     } else if (
       variantConfig.boardWidth.min === variantConfig.boardWidth.max &&
       variantConfig.boardHeight.min === variantConfig.boardHeight.max
     ) {
       // The bot declared a single valid size for this variant - use it
-      results.push({
-        bot: botEntry,
-        boardWidth: variantConfig.boardWidth.min,
-        boardHeight: variantConfig.boardHeight.min,
-      });
+      results.push(
+        sortableRow(
+          {
+            bot: botEntry,
+            boardWidth: variantConfig.boardWidth.min,
+            boardHeight: variantConfig.boardHeight.min,
+          },
+          bot,
+        ),
+      );
     }
   }
 
-  // Sort: official first, then by name, then by board size
+  // One bot contributes several rows, so board size breaks the tie WITHIN a
+  // bot - smaller first - after the shared comparator has placed the bot.
   results.sort((a, b) => {
-    if (a.bot.isOfficial !== b.bot.isOfficial) {
-      return a.bot.isOfficial ? -1 : 1;
-    }
-    const nameCompare = a.bot.name.localeCompare(b.bot.name);
-    if (nameCompare !== 0) return nameCompare;
-    // Sort by board size (smaller first)
-    const sizeA = a.boardWidth * a.boardHeight;
-    const sizeB = b.boardWidth * b.boardHeight;
+    const byBot = compareRows(a, b);
+    if (byBot !== 0) return byBot;
+    const sizeA = a.row.boardWidth * a.row.boardHeight;
+    const sizeB = b.row.boardWidth * b.row.boardHeight;
     return sizeA - sizeB;
   });
 
-  return results;
+  return results.map(({ row }) => row);
 };
 
 /**
- * Find an official bot that can evaluate positions for the given game.
- * Returns the first matching official bot, or null if none available.
- * Used by the evaluation bar feature.
+ * Find the bot that evaluates positions for the given game. Returns the first
+ * matching analysis bot, or null if none is available.
+ *
+ * "First matching" is exact rather than arbitrary because the analysis bots
+ * declare DISJOINT variants - Superhuman Bot the three ordinary ones,
+ * PuzzleBot the two custom-setup ones - so the variant filter below leaves at
+ * most one candidate. That is a deliberate property of the bot configuration
+ * and this function depends on it: two analysis bots sharing a variant would
+ * make the answer depend on registration order. If a second bot is ever given
+ * `analysis` on an already-covered variant, this needs a real tie-break first.
+ *
+ * It reads `isAnalysisBot` rather than `isOfficial` because those parted ways
+ * when Easy Bot became official: a bot can be ours, badged as ours and listed
+ * first while being the last thing that should be telling anyone the best
+ * move.
  */
 export const findEvalBot = (
   variant: Variant,
@@ -548,8 +608,8 @@ export const findEvalBot = (
   boardHeight: number,
 ): { compositeId: string; bot: RegisteredBot } | null => {
   for (const [compositeId, bot] of botIndex) {
-    // Only official bots can provide evaluations
-    if (!bot.isOfficial) continue;
+    // Only an analysis bot can provide evaluations
+    if (!bot.isAnalysisBot) continue;
 
     // Check if bot supports this variant
     const variantConfig = bot.variants[variant];

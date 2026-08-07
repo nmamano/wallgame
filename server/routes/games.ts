@@ -579,6 +579,21 @@ export const botsRoute = new Hono()
           );
         }
 
+        // A puzzle needs the ANALYSIS bot, not merely one of ours. The
+        // difference used to be nothing - `isOfficial` answered both - and
+        // stopped being nothing when Easy Bot became official: a puzzle is
+        // only a puzzle if the opponent actually plays the refutation, and a
+        // one-sample bot with noisy priors does not. The client picks the same
+        // way (use-puzzle-playback.ts); this is the half that a hand-made
+        // request cannot skip, and it matters because puzzle completions feed
+        // campaign progress.
+        if (resolvedPuzzleId !== undefined && !bot.isAnalysisBot) {
+          return c.json(
+            { error: "Puzzles require the official analysis bot" },
+            400,
+          );
+        }
+
         // Re-ask the capability question the client already asked when it drew
         // the page. A bot advertised at list time can be gone, or serving a
         // different set of variants, by the time someone clicks — and puzzles

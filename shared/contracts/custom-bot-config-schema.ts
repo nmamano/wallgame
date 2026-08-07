@@ -90,6 +90,35 @@ export const botConfigBaseSchema = z.object({
   username: z.string().trim().min(1).nullable(),
   appearance: botAppearanceSchema.optional(),
   variants: variantsSchema,
+  /**
+   * This bot answers the site's own questions: the evaluation bar's best move,
+   * and the opponent a puzzle is played against.
+   *
+   * SEPARATE FROM `officialToken` on purpose. That token means "we made this
+   * bot", which is a question about trust, and it is the right gate for the
+   * badge, for list position and for who may be handed a custom-setup
+   * position. Whether a bot should be the one ANSWERING is a question about
+   * strength, and the two stopped agreeing the moment we wanted a deliberately
+   * weak bot to still show as ours.
+   *
+   * A claim, not an authority: the server grants it only to a bot that also
+   * passed the official token, so a community bot cannot volunteer itself to
+   * supply best-move suggestions to our players.
+   *
+   * Absent means false, which is the right default for every bot but the two
+   * that carry it.
+   */
+  analysis: z.boolean().optional(),
+  /**
+   * Where this bot sits in the list players choose from, ascending, with the
+   * gentlest first. Absent sorts last.
+   *
+   * Explicit because the alternative orderings are all accidents. Sorting by
+   * name put Superhuman Bot at the top of the ladder for months, and 57% of
+   * new players took the first row and lost - measured 2026-08-07. Sorting by
+   * strength would need a number we do not have for a community bot.
+   */
+  listOrder: z.number().int().optional(),
 });
 
 export const botConfigSchema = botConfigBaseSchema.superRefine((bot, ctx) => {

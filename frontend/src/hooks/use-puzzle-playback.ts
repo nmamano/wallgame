@@ -79,13 +79,17 @@ export const resolveShapeBot = (
   config: SavedPuzzle["config"],
 ): ListedBot | undefined | "pending" => {
   if (!query || query.isPending || isRefetching) return "pending";
-  // Only an OFFICIAL bot plays a puzzle: a puzzle must never be silently
-  // handed to somebody's own bot. The endpoint already narrowed to this shape;
-  // re-asking each bot's own declaration keeps the client's idea of "can play
-  // it" identical to the server's, which re-checks the same way at launch.
+  // Only an ANALYSIS bot plays a puzzle. Two conditions used to be one: a
+  // puzzle must never be silently handed to somebody's own bot (trust), and it
+  // must be played by an engine strong enough to hold the solution line
+  // (strength). `isOfficial` covered both until we started shipping official
+  // bots that are weak on purpose. The endpoint already narrowed to this
+  // shape; re-asking each bot's own declaration keeps the client's idea of
+  // "can play it" identical to the server's, which re-checks the same way at
+  // launch.
   return query.bots.find(
     (bot) =>
-      bot.isOfficial &&
+      bot.isAnalysisBot &&
       botSupportsPosition(
         bot.variants,
         config.variant,

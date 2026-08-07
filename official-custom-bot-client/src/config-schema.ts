@@ -65,6 +65,57 @@ export type ConfigFile = z.infer<typeof configFileSchema>;
  * stray command is a typo'd bot id, which presents as the same downgrade for
  * the bot that was meant to have it.
  */
+/**
+ * The analysis bots must cover the site's own questions, exactly once each.
+ *
+ * Three ways a config can be accepted by the schema and still be wrong, all of
+ * which present as silence rather than as an error:
+ *
+ * 1. NO analysis bot. The evaluation bar finds nothing and puzzles cannot be
+ *    launched. Nothing throws - `findEvalBot` returns null, which is also what
+ *    it returns when the client is simply offline.
+ * 2. An analysis bot that is not official. The server grants `isAnalysisBot`
+ *    only alongside a valid official token, so the declaration is dropped on
+ *    arrival and the bot looks like it asked for nothing.
+ * 3. TWO analysis bots declaring the same variant. `findEvalBot` takes the
+ *    first match, so which engine answers becomes a function of registration
+ *    order. The production config avoids this deliberately - Superhuman Bot
+ *    takes the three ordinary variants and PuzzleBot the two custom-setup ones
+ *    - and this is the check that keeps that deliberate.
+ */
+export const assertAnalysisCoverage = (config: ConfigFile): void => {
+  const analysisBots = config.bots.filter((bot) => bot.analysis === true);
+
+  if (analysisBots.length === 0) {
+    throw new Error(
+      "no bot declares `analysis: true` — the evaluation bar and puzzles " +
+        "would have no engine to ask",
+    );
+  }
+
+  const unofficial = analysisBots.filter((bot) => bot.official === false);
+  if (unofficial.length > 0) {
+    throw new Error(
+      `analysis bots must also be official, but these withhold the token: ` +
+        `[${unofficial.map((bot) => bot.botId).join(", ")}]`,
+    );
+  }
+
+  const claimedBy = new Map<string, string>();
+  for (const bot of analysisBots) {
+    for (const variant of Object.keys(bot.variants)) {
+      const other = claimedBy.get(variant);
+      if (other) {
+        throw new Error(
+          `two analysis bots declare "${variant}" (${other} and ${bot.botId}) — ` +
+            `the evaluation bar would pick whichever attached first`,
+        );
+      }
+      claimedBy.set(variant, bot.botId);
+    }
+  }
+};
+
 export const assertEngineCommandsCoverBots = (config: ConfigFile): void => {
   const botIds = config.bots.map((bot) => bot.botId);
   const duplicateBotIds = botIds.filter((id, i) => botIds.indexOf(id) !== i);
