@@ -12,8 +12,15 @@
  * icon is then fetched to check it is really an image and not HTML wearing a
  * .png suffix.
  *
- * Usage:
- *   bun scripts/browser-harness/drive-pwa-manifest.ts [url]
+ * Usage - the two modes want different commands, because only one of them
+ * reads a build:
+ *   bun run harness:pwa                                          # local dist
+ *   bun scripts/browser-harness/drive-pwa-manifest.ts <url>      # a live site
+ *
+ * `harness:pwa` is `bun run build && <this file>`. The no-argument mode serves
+ * local `frontend/dist`, so without that chain a failed build leaves it
+ * measuring the previous commit. With an explicit URL no build is involved and
+ * the direct command is the right one.
  *
  * Run it against production BEFORE changing anything: a check you have never
  * seen fail is not evidence that the after-state is good.

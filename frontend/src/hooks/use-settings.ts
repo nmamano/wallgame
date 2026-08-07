@@ -89,6 +89,20 @@ const STORAGE_KEYS = {
   VARIANT_SETTINGS: "wall-game-variant-settings",
 } as const;
 
+/**
+ * The keys holding the game SETUP, which is the part that has defaults worth
+ * retiring - see `preference-reset.ts`. Exported from here rather than
+ * restated there so that renaming a key cannot leave the reset pointing at a
+ * name nothing writes any more, which would fail by doing nothing at all.
+ *
+ * The appearance keys are excluded on purpose: a theme or a pawn colour is the
+ * player's own taste, not a default we ever want to take back.
+ */
+export const RESETTABLE_GAME_SETUP_KEYS = [
+  STORAGE_KEYS.GAME_CONFIG,
+  STORAGE_KEYS.VARIANT_SETTINGS,
+] as const;
+
 const defaultGameConfig: GameConfiguration = {
   timeControl: {
     initialSeconds: 600,

@@ -12,7 +12,7 @@ what they found without judging it.
 One exception, and it is deliberate: **`drive-account-nudge.ts` asserts.** It
 is the gate for a change whose whole claim is about what a player sees, so it
 measures, prints everything, and then exits non-zero if a required invariant
-failed. Run it by hand after `bun run build`.
+failed. Run it with `bun run harness:nudge`.
 
 ## Why it exists
 
@@ -24,11 +24,40 @@ source has produced confident wrong answers more than once.
 
 ## Running
 
+Use the `harness:*` scripts. Each one is `bun run build && <driver>`, and the
+`&&` is the point: a build that fails stops the run instead of leaving you at
+a prompt to launch a driver against the previous commit's `dist`.
+
 ```bash
-bun run build                                          # dist must be current
-bun scripts/browser-harness/drive-puzzles-page.ts      # paint order, failure states, nav fit
-bun scripts/browser-harness/drive-campaign-progress.ts # the worked example
+bun run harness:nudge     # the account nudge - ASSERTS, exits non-zero on failure
+bun run harness:puzzles   # paint order, failure states, nav fit
+bun run harness:campaign  # the worked example
+bun run harness:pwa       # the manifest and its icons, against local dist
 ```
+
+Running a driver directly still works and is sometimes what you want - a
+second run against a build you have just made costs nothing extra. It is also
+the one way to get a stale reading, so if you do it, build first and know that
+nothing is checking you.
+
+That failure is not hypothetical: on 2026-08-07 a type error failed the build,
+the driver ran against the previous bundle, and the run reported a clean
+failure of a feature that had never been loaded. The output looked exactly
+like a real defect.
+
+`drive-pwa-manifest.ts` has TWO modes and the URL decides which. With one, it
+drives that live site and no build is involved. Without one, it serves local
+`frontend/dist` through the stub - so the no-argument form goes stale exactly
+like the others, and `harness:pwa` above is the form to use for it. Supply the
+URL directly:
+
+```bash
+bun scripts/browser-harness/drive-pwa-manifest.ts https://wallgame.io/
+```
+
+(An earlier draft of this README called that script live-only. It is not, and
+the driver's own header said so - which is a reminder that a claim about what a
+script reads is worth checking against the script.)
 
 Set `CHROME_PATH` if your Chrome is not on `PATH` as `google-chrome`,
 `chromium`, or `chromium-browser`.
@@ -110,4 +139,5 @@ page look healthy while asking for something that does not exist.
 
 **Build before you drive.** The scripts serve `frontend/dist`. A stale dist
 means you are measuring the previous version of your change, which is its own
-special kind of wasted afternoon.
+special kind of wasted afternoon. `bun run harness:*` chains the build for
+exactly this reason - reach for those rather than the driver path.

@@ -41,8 +41,10 @@
  * Still a manual diagnostic, not an assertion suite: it prints a verdict, it
  * does not fail a build.
  *
- *   bun run build
- *   bun scripts/browser-harness/drive-campaign-progress.ts
+ *   bun run harness:campaign
+ *
+ * That script is `bun run build && <this file>`. The chain matters: driving a
+ * stale `dist` measures the previous commit and reads exactly like a defect.
  */
 
 import { connect, launchChrome, wait } from "./cdp";

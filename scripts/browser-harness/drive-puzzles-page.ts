@@ -5,8 +5,10 @@
  * bar fit once "Puzzles" is added to it.
  *
  * Run it:
- *   bun run build                                   # dist must be current
- *   bun scripts/browser-harness/drive-puzzles-page.ts
+ *   bun run harness:puzzles
+ *
+ * That script is `bun run build && <this file>`. The chain matters: driving a
+ * stale `dist` measures the previous commit and reads exactly like a defect.
  *
  * The wave measurement: after navigating, sample the DOM every 50ms and
  * record a signature of what is on screen. A page that arrives in one piece

@@ -25,7 +25,11 @@
  * WITHOUT the nudge is a real check rather than a reading: the gate must go
  * red, and which lines go red is the evidence that it can see anything at all.
  *
- * Run it: bun run build && bun scripts/browser-harness/drive-account-nudge.ts
+ * Run it: bun run harness:nudge
+ *
+ * That script is `bun run build && <this file>`, and the chain is the point: a
+ * failed build otherwise leaves the previous bundle in `dist`, and this gate
+ * then reports a clean failure of code that was never loaded.
  */
 
 import { mkdirSync } from "node:fs";
