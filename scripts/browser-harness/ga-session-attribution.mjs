@@ -202,7 +202,9 @@ console.log(
 const stale = log
   .slice(1)
   .filter((e) => e.dr && !e.dr.startsWith("https://wallgame.io"));
-console.log(`\nin-app navigations still referred from off-site: ${stale.length}`);
+console.log(
+  `\nin-app navigations still referred from off-site: ${stale.length}`,
+);
 console.log(
   stale.length > 0
     ? `  NOT FIXED - e.g. ${stale[0].dr}. Every one of these tells GA the\n` +
