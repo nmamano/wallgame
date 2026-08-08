@@ -3,6 +3,7 @@
   "module": "server/index.ts",
   "type": "module",
   "scripts": {
+    "prepare": "husky",
     "start": "bun run server/index.ts",
     "dev": "FRONTEND_URL=http://localhost:5173 bun run --hot server/index.ts",
     "migrate": "bun scripts/migrate.ts",

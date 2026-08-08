@@ -4,11 +4,23 @@ set -e
 # Make sure Bun is on PATH (Windows + Git Bash)
 export PATH="$HOME/.bun/bin:$PATH"
 
+# These are the SAME commands .github/workflows/ci.yml runs, deliberately. A
+# local gate that only approximates the remote one drifts from it, and then a
+# green push still fails CI - which is exactly what happened on 2026-08-08.
+#
+# Tests are the one thing left to CI. They need Docker (each integration file
+# starts its own Postgres through Testcontainers) and take minutes, which is too
+# much to put in front of every push. That is a considered split, not an
+# oversight: `bun run test` is what catches a broken test, and it runs remotely.
+
 echo "🔍🔍 Running Prettier check..."
 bun run format:check
 
-echo "🔎🔎 Running ESLint (global)..."
-bun run lint
+# Not `bun run lint`: that one passes --fix, so it would REPAIR a violation and
+# report success, leaving the unfixed version to be the thing that was pushed.
+# CI runs the checking form, so this does too.
+echo "🔎🔎 Running ESLint..."
+bun x eslint .
 
 echo "🔍🔍 Checking build..."
 bun run build

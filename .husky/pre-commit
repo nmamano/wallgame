@@ -18,25 +18,28 @@ echo "Staged files:"
 echo "$STAGED_FILES"
 echo
 
-# ----- Prettier: only on staged files that Prettier cares about -----
-FORMATTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|json|md|css|html)$' || true)
-
-if [ -n "$FORMATTABLE_FILES" ]; then
-  echo "🔍🔍 Running Prettier check on staged files..."
-  # NOTE: This checks only the staged files' current on-disk contents.
-  echo "$FORMATTABLE_FILES" | xargs bunx prettier --check
-else
-  echo "No staged files need Prettier."
-fi
+# ----- Prettier -----
+# No extension list. There used to be one, and it did not include .mjs - so a
+# .mjs file was committed unformatted, pushed, and failed CI (run 31271384297,
+# 2026-08-08) on the one check that was supposed to run right here. A hand-kept
+# list of what Prettier handles drifts from what Prettier actually handles.
+# --ignore-unknown lets Prettier answer that question itself, and it is the same
+# answer `prettier --check .` gives in CI.
+echo "🔍🔍 Running Prettier check on staged files..."
+# NOTE: This checks only the staged files' current on-disk contents.
+echo "$STAGED_FILES" | xargs bunx prettier --check --ignore-unknown
 
 echo
 
 # ----- ESLint: only on staged code files -----
-LINTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx)$' || true)
+# ESLint has no --ignore-unknown, so this list stays - but a file the config
+# does not cover is now skipped quietly instead of failing the commit, which is
+# what lets the list be generous rather than exact.
+LINTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|cts)$' || true)
 
 if [ -n "$LINTABLE_FILES" ]; then
   echo "🔎🔎 Running ESLint on staged files..."
-  echo "$LINTABLE_FILES" | xargs bunx eslint
+  echo "$LINTABLE_FILES" | xargs bunx eslint --no-warn-ignored
 else
   echo "No staged files need ESLint."
 fi
