@@ -136,6 +136,7 @@ describe("the payload", () => {
   it("carries an absolute location, a path and the destination title", () => {
     const payload = buildPageViewPayload(
       "https://wallgame.io",
+      at("/"),
       at("/puzzles"),
       "Wall Game puzzles and solo campaign",
     );
@@ -144,7 +145,54 @@ describe("the payload", () => {
       page_location: "https://wallgame.io/puzzles",
       page_path: "/puzzles",
       page_title: "Wall Game puzzles and solo campaign",
+      page_referrer: "https://wallgame.io/",
     });
+  });
+
+  /**
+   * The referrer is the page just left, not the page being entered, and it is
+   * absolute. Stating it separately because the two URLs differ by one path in
+   * the assertion above, which is the kind of pair a copy-paste can equalise
+   * without any test noticing.
+   */
+  it("names the page just left as the referrer", () => {
+    const payload = buildPageViewPayload(
+      "https://wallgame.io",
+      at("/play", "?variant=classic"),
+      at("/ranking"),
+      "Wall Game rankings",
+    );
+
+    expect(payload.page_referrer).toBe(
+      "https://wallgame.io/play?variant=classic",
+    );
+    expect(payload.page_location).toBe("https://wallgame.io/ranking");
+  });
+});
+
+/**
+ * What the referrer is FOR. gtag fills `page_referrer` from
+ * `document.referrer` when a payload omits it, and in a single-page app that
+ * value is frozen at whatever brought the visitor in - so an omitted referrer
+ * does not read as "no referrer", it reads as "arrived from Google again",
+ * on every navigation of the visit. That is what produced a shadow
+ * "Unassigned" channel on the real property (see PageViewPayload).
+ */
+describe("the referrer never points outside the app", () => {
+  it("stays in-app across a whole visit that began at Google", () => {
+    const router = fakeRouter();
+    const { sent } = install(router);
+
+    router.resolve(undefined, at("/"));
+    router.resolve(at("/"), at("/play"));
+    router.resolve(at("/play"), at("/game/abc"));
+    router.resolve(at("/game/abc"), at("/game/def"));
+
+    expect(sent.map((event) => event.page_referrer)).toEqual([
+      "https://wallgame.io/",
+      "https://wallgame.io/play",
+      "https://wallgame.io/game/abc",
+    ]);
   });
 });
 

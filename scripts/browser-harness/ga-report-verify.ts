@@ -71,6 +71,7 @@ interface PageViewEvent {
   page_path: string;
   page_title: string;
   page_location: string;
+  page_referrer: string;
 }
 
 let browser: Browser | undefined;
@@ -141,8 +142,20 @@ try {
     return [];
   }
 
+  // Arrive the way 88% of real visitors do. This is not decoration: an omitted
+  // page_referrer makes gtag substitute document.referrer, and document.referrer
+  // is exactly this value - for the whole visit, since no document is ever
+  // loaded again. Without a real external referrer here, the bug this guards
+  // against cannot appear even when the code has it.
+  await page.setExtraHTTPHeaders({ referer: "https://www.google.com/" });
   await page.goto(`${BASE}/`, { waitUntil: "networkidle" });
   await page.waitForTimeout(1500);
+
+  check(
+    "the visit really began off-site",
+    await page.evaluate(() => document.referrer),
+    "https://www.google.com/",
+  );
 
   check(
     "gtag guard passed (hostname)",
@@ -164,6 +177,11 @@ try {
     "Play Wall Game online - free, no account needed",
   );
   check("/ -> /play location", batch[0]?.page_location, `${BASE}/play`);
+  // The page just left, and it must be OURS. Left out of the payload, gtag
+  // substitutes document.referrer, which in a single-page app is still whatever
+  // brought the visitor in - so this asserts against a real external arrival
+  // below, where the substitution would actually be visible.
+  check("/ -> /play referrer", batch[0]?.page_referrer, `${BASE}/`);
   check(
     "document.title already set at send time",
     await page.title(),
@@ -199,6 +217,7 @@ try {
   check("param-only path", batch[0]?.page_path, `/game/${b}`);
   check("param-only title", batch[0]?.page_title, GENERIC_TITLE);
   check("param-only location", batch[0]?.page_location, `${BASE}/game/${b}`);
+  check("param-only referrer", batch[0]?.page_referrer, `${BASE}/game/${a}`);
 
   // --- back, then forward. Asserted by destination, not only by count: a
   // stale or swapped event has the same count as a correct one.
@@ -217,6 +236,17 @@ try {
   check("forward path", batch[0]?.page_path, `/game/${b}`);
   check("forward title", batch[0]?.page_title, GENERIC_TITLE);
   check("forward location", batch[0]?.page_location, `${BASE}/game/${b}`);
+  check("forward referrer", batch[0]?.page_referrer, `${BASE}/game/${a}`);
+
+  // The whole visit at once. Per-step assertions each check one payload; this
+  // one checks that NOTHING anywhere in the visit still points at Google, which
+  // is the shape the real property saw.
+  const all = await reported();
+  check(
+    "no reported navigation came from off-site",
+    all.filter((event) => !event.page_referrer?.startsWith(BASE)),
+    [],
+  );
 } finally {
   await browser?.close();
   server.stop(true);

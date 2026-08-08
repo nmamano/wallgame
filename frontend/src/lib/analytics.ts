@@ -40,6 +40,24 @@ export interface PageViewPayload {
   page_location: string;
   page_path: string;
   page_title: string;
+  /**
+   * Where the visitor came from - the page they were just on, in this app.
+   *
+   * Required, not optional, and that is the whole point. Omit it and gtag falls
+   * back to `document.referrer`, which in a single-page app never changes: it
+   * is still "https://www.google.com/" on the fifth navigation of a visit,
+   * because no document was ever loaded again. Every in-app navigation then
+   * reports a fresh arrival from an external site in the middle of a session.
+   *
+   * Measured on the GA property 2026-08-08, three days after manual page views
+   * shipped: an "Unassigned" channel holding 96 sessions/day, source and medium
+   * "(not set)", containing 470 page_views and NO session_start and NO
+   * first_visit - so not new arrivals but a shadow of the real ones, its
+   * browser mix a near-copy of organic search's (Chrome mobile 66 vs 79, Chrome
+   * desktop 59 vs 60). Sessions that arrive WITHOUT an external referrer -
+   * direct - cast no such shadow, which is the detail that points here.
+   */
+  page_referrer: string;
 }
 
 export type SendPageView = (payload: PageViewPayload) => void;
@@ -74,11 +92,16 @@ export function canonicalPath(location: ReportableLocation): string {
  * false: gtag's own config call already counted the initial load - it is the
  * one thing that was working - so reporting it here would double-count the
  * loads GA currently gets right.
+ *
+ * It narrows `from` rather than returning a plain boolean, because a reportable
+ * navigation is exactly one that HAS a previous page, and the payload now needs
+ * that page. Saying so in the type means the caller cannot reach for a sentinel
+ * referrer to satisfy the compiler.
  */
 export function shouldReportNavigation(
   from: ReportableLocation | undefined,
   to: ReportableLocation,
-): boolean {
+): from is ReportableLocation {
   if (!from) return false;
   return canonicalPath(from) !== canonicalPath(to);
 }
@@ -88,16 +111,21 @@ export function metaForLocation(location: ReportableLocation): PageMeta {
   return pageMetaForPath(location.pathname);
 }
 
+/**
+ * Parameters read as the navigation itself: out of `from`, into `to`.
+ */
 export function buildPageViewPayload(
   origin: string,
-  location: ReportableLocation,
+  from: ReportableLocation,
+  to: ReportableLocation,
   title: string,
 ): PageViewPayload {
-  const path = canonicalPath(location);
+  const path = canonicalPath(to);
   return {
     page_location: `${origin}${path}`,
     page_path: path,
     page_title: title,
+    page_referrer: `${origin}${canonicalPath(from)}`,
   };
 }
 
@@ -130,7 +158,9 @@ export function installNavigationReporting(
 
     const meta = metaForLocation(toLocation);
     reporter.setTitle(meta.title);
-    reporter.send(buildPageViewPayload(origin, toLocation, meta.title));
+    reporter.send(
+      buildPageViewPayload(origin, fromLocation, toLocation, meta.title),
+    );
   });
 }
 
