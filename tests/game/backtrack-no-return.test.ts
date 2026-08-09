@@ -26,8 +26,10 @@
  * The four sequences below are the real ones, lifted from the production rows
  * (board task 59a8c5a2; investigation in `showcase-500-investigation.md` Part 3,
  * artifacts captured 2026-08-09). `via` is an on-board neighbour that `applyMove`
- * accepted before this fix — checked on-board deliberately, because `applyMove`
- * has no bounds check and would otherwise accept a step off the edge.
+ * accepted before this fix — checked on-board deliberately, because at the time
+ * `applyMove` had no bounds check and would otherwise have accepted a step off
+ * the edge. It has one now (board task d39862b4), so an off-board `via` would be
+ * refused for the wrong reason; on-board is still what these cases need.
  */
 
 import { describe, expect, it } from "bun:test";

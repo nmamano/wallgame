@@ -37,11 +37,12 @@ import { persistThenBroadcastFinish } from "../games/finish-sequence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
 import type {
-  ClientMessage,
-  ActionRequestMessage,
+  InboundClientMessage,
+  InboundActionRequestMessage,
   ChatChannel,
   ChatErrorCode,
 } from "../../shared/contracts/websocket-messages";
+import { clientMessageSchema } from "../../shared/contracts/websocket-messages";
 import type {
   ActionNackCode,
   RematchDecision,
@@ -1193,11 +1194,24 @@ const sendMatchStatusOnce = (entry: SessionSocket) => {
   }
 };
 
-const parseMessage = (raw: string | ArrayBuffer) => {
+/**
+ * Every frame the game socket accepts passes through here.
+ *
+ * It used to be `JSON.parse(raw) as ClientMessage` - a cast, which asserts a
+ * shape without checking one, so any JSON at all reached the handlers. Now the
+ * schema decides, and a frame that fails it throws the same "Invalid message
+ * format" the non-string branch has always thrown, so the caller's existing
+ * error-frame path answers unchanged.
+ */
+const parseMessage = (raw: string | ArrayBuffer): InboundClientMessage => {
   if (typeof raw !== "string") {
     throw new Error("Invalid message format");
   }
-  return JSON.parse(raw) as ClientMessage;
+  const parsed = clientMessageSchema.safeParse(JSON.parse(raw));
+  if (!parsed.success) {
+    throw new Error("Invalid message format");
+  }
+  return parsed.data;
 };
 
 /**
@@ -1233,7 +1247,10 @@ const handleTimeoutFromTimer = async (sessionId: string): Promise<void> => {
 // Register the timeout callback so timers can trigger broadcasts
 registerTimeoutCallback(handleTimeoutFromTimer);
 
-const handleMove = async (socket: SessionSocket, message: ClientMessage) => {
+const handleMove = async (
+  socket: SessionSocket,
+  message: InboundClientMessage,
+) => {
   if (message.type !== "submit-move") return;
   const playerId = ensureAuthorizedPlayer(socket, "submit-move");
   if (playerId === null) return;
@@ -1804,14 +1821,24 @@ const getPlayersPerTeam = (variant: string): number => {
   }
 };
 
-interface ChatChannelValidation {
-  allowed: boolean;
-  reason?: string;
-}
+/**
+ * The allowed branch carries the channel back, narrowed.
+ *
+ * The wire schema types an inbound channel as a plain string on purpose (see
+ * `clientMessageSchema`), so something has to turn a string into a `ChatChannel`
+ * before the message is broadcast. That job belongs here, where the three
+ * channels are already enumerated - each accepting branch names its own literal,
+ * which narrows by proof rather than by assertion. A cast would have claimed the
+ * same thing without checking it, which is the class of bug this whole change is
+ * about.
+ */
+type ChatChannelValidation =
+  | { allowed: true; channel: ChatChannel }
+  | { allowed: false; reason?: string };
 
 const validateChatChannelAccess = (
   socket: SessionSocket,
-  channel: ChatChannel,
+  channel: string,
 ): ChatChannelValidation => {
   const session = getSession(socket.sessionId);
   const isSpectator = socket.role === "spectator";
@@ -1823,7 +1850,7 @@ const validateChatChannelAccess = (
         reason: "Game chat is disabled for spectators.",
       };
     }
-    return { allowed: true };
+    return { allowed: true, channel: "game" };
   }
 
   if (channel === "team") {
@@ -1837,7 +1864,7 @@ const validateChatChannelAccess = (
     if (playersPerTeam <= 1) {
       return { allowed: false, reason: "Team chat is disabled in 1v1 games." };
     }
-    return { allowed: true };
+    return { allowed: true, channel: "team" };
   }
 
   if (channel === "audience") {
@@ -1847,7 +1874,7 @@ const validateChatChannelAccess = (
         reason: "Audience chat is only for spectators.",
       };
     }
-    return { allowed: true };
+    return { allowed: true, channel: "audience" };
   }
 
   return { allowed: false, reason: "Invalid channel." };
@@ -1926,7 +1953,7 @@ const broadcastChatMessage = (
 
 const handleChatMessage = (
   socket: SessionSocket,
-  channel: ChatChannel,
+  channel: string,
   text: string,
 ) => {
   // Validate channel access
@@ -1966,11 +1993,17 @@ const handleChatMessage = (
   const senderName = getChatSenderName(socket);
 
   // Broadcast to appropriate recipients (include socket.id for echo detection)
-  broadcastChatMessage(socket.sessionId, channel, socket.id, senderName, text);
+  broadcastChatMessage(
+    socket.sessionId,
+    channelValidation.channel,
+    socket.id,
+    senderName,
+    text,
+  );
 
   console.info("[ws] chat-message processed", {
     sessionId: socket.sessionId,
-    channel,
+    channel: channelValidation.channel,
     senderName,
     textLength: text.length,
   });
@@ -1978,7 +2011,7 @@ const handleChatMessage = (
 
 const sendActionAck = (
   socket: SessionSocket,
-  message: ActionRequestMessage,
+  message: InboundActionRequestMessage,
 ) => {
   socket.ctx.send(
     JSON.stringify({
@@ -1992,7 +2025,7 @@ const sendActionAck = (
 
 const sendActionNack = (
   socket: SessionSocket,
-  message: ActionRequestMessage,
+  message: InboundActionRequestMessage,
   code: ActionNackCode,
   options?: { retryable?: boolean; error?: unknown },
 ) => {
@@ -2012,7 +2045,7 @@ const sendActionNack = (
 
 const handleActionRequest = async (
   socket: SessionSocket,
-  message: ActionRequestMessage,
+  message: InboundActionRequestMessage,
 ) => {
   switch (message.action) {
     case "resign": {
@@ -2298,7 +2331,7 @@ const handleClientMessage = async (
   socket: SessionSocket,
   raw: string | ArrayBuffer,
 ) => {
-  let payload: ClientMessage;
+  let payload: InboundClientMessage;
   try {
     payload = parseMessage(raw);
   } catch (error) {

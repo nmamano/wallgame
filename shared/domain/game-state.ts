@@ -392,6 +392,18 @@ export class GameState {
         const currentPos = requirePawnCell(nextPawns, player, action.type);
         const targetPos = action.target;
 
+        // A pawn target was the one coordinate nothing checked. Walls have been
+        // bounded all along - `canBuildWall` starts with `inBounds` - but a pawn
+        // could be sent off the edge, and was: against 66f6688 a crafted
+        // `submit-move` frame parked a cat on [0,-1], moved the authoritative
+        // state and stored the term "C`8" (board task d39862b4). The grid is
+        // built from the game's own boardWidth/boardHeight, so this reads the
+        // real board rather than assuming the common 8x8 - the archive holds
+        // fifteen shapes, six of them non-square.
+        if (!nextGrid.inBounds(targetPos)) {
+          throw new Error("A pawn cannot leave the board");
+        }
+
         const dist =
           Math.abs(currentPos[0] - targetPos[0]) +
           Math.abs(currentPos[1] - targetPos[1]);
