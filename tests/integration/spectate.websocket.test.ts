@@ -20,10 +20,8 @@ import type {
   ServerMessage,
   LiveGamesServerMessage,
 } from "../../shared/contracts/websocket-messages";
-import type {
-  GameConfiguration,
-  PlayerAppearance,
-} from "../../shared/domain/game-types";
+import type { PlayerAppearance } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -60,7 +58,7 @@ async function stopTestServer() {
 // --- HTTP Client Helpers ---
 // ================================
 
-const DEFAULT_CONFIG: GameConfiguration = {
+const DEFAULT_CONFIG: PartialGameConfiguration = {
   timeControl: {
     initialSeconds: 300,
     incrementSeconds: 5,
@@ -74,7 +72,7 @@ const DEFAULT_CONFIG: GameConfiguration = {
 
 async function createFriendGame(
   userId: string,
-  config: GameConfiguration = DEFAULT_CONFIG,
+  config: PartialGameConfiguration = DEFAULT_CONFIG,
   options?: {
     appearance?: PlayerAppearance;
     hostIsPlayer1?: boolean;
@@ -104,7 +102,7 @@ async function createFriendGame(
 
 async function createMatchmakingGame(
   userId: string,
-  config: GameConfiguration = DEFAULT_CONFIG,
+  config: PartialGameConfiguration = DEFAULT_CONFIG,
   options?: {
     appearance?: PlayerAppearance;
     hostIsPlayer1?: boolean;

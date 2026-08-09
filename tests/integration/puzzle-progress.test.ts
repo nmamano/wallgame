@@ -25,10 +25,8 @@ import {
 } from "bun:test";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
-import type {
-  GameConfiguration,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 let container: StartedTestContainer | undefined;
 
@@ -56,7 +54,7 @@ let eq: typeof import("drizzle-orm").eq;
 const PUZZLE_A = "test-puzzle-a";
 const PUZZLE_B = "test-puzzle-b";
 
-const CONFIG: GameConfiguration = {
+const CONFIG: PartialGameConfiguration = {
   timeControl: { initialSeconds: 120, incrementSeconds: 0, preset: "rapid" },
   variant: "standard",
   boardWidth: 8,

@@ -32,7 +32,8 @@ import {
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import type { GameConfiguration, Move } from "../../shared/domain/game-types";
+import type { Move } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 interface MigrationJournal {
   entries: { tag: string }[];
@@ -96,12 +97,14 @@ function migrationsFolderWithoutThisSlice(): string {
   return folder;
 }
 
-const CONFIG: GameConfiguration = {
+const CONFIG: PartialGameConfiguration = {
   variant: "standard",
   boardWidth: 8,
   boardHeight: 8,
   rated: false,
-  timeControl: { preset: "5+3", initialSeconds: 300, incrementSeconds: 3 },
+  // No `preset`: 5+3 is not one of the named presets, and the field is
+  // optional precisely so a custom time control can say so.
+  timeControl: { initialSeconds: 300, incrementSeconds: 3 },
 };
 
 beforeAll(async () => {
@@ -228,6 +231,18 @@ async function readMatchColumns(
   return rows[0];
 }
 
+/**
+ * `readMatchColumns` for a game the test requires to be in the table. It keeps
+ * the missing-row case in the return type of `readMatchColumns` itself, which
+ * one test asserts on deliberately, and fails here with the game id rather than
+ * with a property access on undefined.
+ */
+async function requireMatchColumns(gameId: string): Promise<MatchColumns> {
+  const columns = await readMatchColumns(gameId);
+  if (!columns) throw new Error(`no games row for ${gameId}`);
+  return columns;
+}
+
 describe("the migration, over a database that already had games in it", () => {
   it("leaves the old game and its players intact", async () => {
     const games: { moves_count: number }[] = await sql`
@@ -246,7 +261,7 @@ describe("the migration, over a database that already had games in it", () => {
   it("records the old game as untracked rather than inventing a series", async () => {
     // Both NULL is the honest value: this game predates match tracking.
     // Backfilling it as a standalone series would be inventing a fact.
-    const columns = await readMatchColumns(LEGACY_GAME_ID);
+    const columns = await requireMatchColumns(LEGACY_GAME_ID);
 
     expect(columns.series_id).toBeNull();
     expect(columns.rematch_number).toBeNull();
@@ -259,7 +274,7 @@ describe("a game that is not a rematch", () => {
 
     await persistCompletedGame(session);
 
-    const columns = await readMatchColumns(session.id);
+    const columns = await requireMatchColumns(session.id);
     expect(columns.series_id).toBe(session.id);
     expect(columns.rematch_number).toBe(0);
   });
@@ -279,7 +294,7 @@ describe("a rematch chain", () => {
       previousId = rematch.id;
     }
 
-    const rows = await Promise.all(ids.map(readMatchColumns));
+    const rows = await Promise.all(ids.map(requireMatchColumns));
 
     expect(rows.map((r) => r.series_id)).toEqual([
       first.id,
@@ -303,7 +318,7 @@ describe("a rematch chain", () => {
 
     expect(await readMatchColumns(middle.id)).toBeUndefined();
 
-    const columns = await readMatchColumns(third.id);
+    const columns = await requireMatchColumns(third.id);
     expect(columns.series_id).toBe(first.id);
     expect(columns.rematch_number).toBe(2);
   });

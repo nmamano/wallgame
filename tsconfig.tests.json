@@ -1,0 +1,37 @@
+// Typecheck project for tests/.
+//
+// Split out of tsconfig.server.json because a test is not server code: several
+// files under tests/ import frontend helpers directly (lib/anonymous-id,
+// lib/history-utils, game/local-actions, ...), and tsc follows an import into
+// the imported file. That drags three things into the compilation that server
+// code neither has nor should have:
+//
+//   1. DOM globals. The frontend helpers touch window, localStorage and
+//      StorageEvent. tsconfig.server.json leaves DOM out on purpose, so those
+//      files only typecheck here.
+//   2. The "@/" alias. Frontend source imports itself through it.
+//   3. React JSX. The ROOT tsconfig sets jsxImportSource to hono/jsx for the
+//      server's JSX. Any frontend .tsx reached from a test would then be
+//      checked against Hono's JSX types and fail with TS2786 "cannot be used as
+//      a JSX component" - 12 such errors, all from that one inherited setting.
+//
+// frontend/src/vite-env.d.ts is in `include` for `import.meta.env.BASE_URL`,
+// which frontend/src/lib/asset-url.ts reads and bun-types does not declare.
+//
+// This project is NOT the frontend's own typecheck: frontend/ is covered by its
+// `tsc -b` through `bun run build`. It only has to be correct about the handful
+// of frontend files that tests reach.
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.tests.tsbuildinfo",
+    "lib": ["ES2023", "DOM", "DOM.Iterable"],
+    "jsxImportSource": "react",
+    "baseUrl": ".",
+    "paths": {
+      "@/*": ["./frontend/src/*"],
+      "@server/*": ["./server/*"]
+    }
+  },
+  "include": ["tests/**/*.ts", "frontend/src/vite-env.d.ts"]
+}

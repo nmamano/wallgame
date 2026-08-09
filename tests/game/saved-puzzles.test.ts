@@ -19,6 +19,7 @@ import {
   savedPuzzleDbRowSchema,
   savedPuzzleSourceSchema,
   mapSavedPuzzleRows,
+  type SavedPuzzleSource,
 } from "../../shared/contracts/puzzles";
 import {
   handshakesEqual,
@@ -31,6 +32,19 @@ import committedVerdicts from "../../shared/domain/generated-custom-setup-verdic
 const verdictFile = committedVerdicts as CandidateVerdictFile;
 const candidates = generateCustomSetupCandidates();
 const seedRows = buildSavedPuzzleSeedRows(candidates, verdictFile);
+
+/**
+ * `source` is nullable on the row type because a HANDCRAFTED puzzle has no
+ * pipeline provenance. Every row in `seedRows` is generated, so it always has
+ * one. This asserts that where the tests rely on it, rather than each call site
+ * reading through a null.
+ */
+const sourceOf = (row: (typeof seedRows)[number]): SavedPuzzleSource => {
+  if (!row.source) {
+    throw new Error(`generated seed row ${row.displayName} has no source`);
+  }
+  return row.source;
+};
 
 describe("saved puzzle seed rows", () => {
   it("builds exactly the kept candidates, in order, with 1..N sort indices", () => {
@@ -47,7 +61,7 @@ describe("saved puzzle seed rows", () => {
       verdictFile.verdicts.filter((v) => !v.keep).map((v) => v.candidateId),
     );
     for (const row of seedRows) {
-      expect(rejectedIds.has(row.source.candidateId)).toBe(false);
+      expect(rejectedIds.has(sourceOf(row).candidateId)).toBe(false);
     }
   });
 
@@ -57,24 +71,25 @@ describe("saved puzzle seed rows", () => {
       verdictFile.verdicts.map((v) => [v.candidateId, v]),
     );
     for (const row of seedRows) {
-      const candidate = byId.get(row.source.candidateId)!;
-      const verdict = verdictById.get(row.source.candidateId)!;
+      const source = sourceOf(row);
+      const candidate = byId.get(source.candidateId)!;
+      const verdict = verdictById.get(source.candidateId)!;
       expect(row.config).toEqual({
         variant: candidate.config.variant,
         boardWidth: candidate.config.boardWidth,
         boardHeight: candidate.config.boardHeight,
         variantConfig: candidate.config.variantConfig,
       });
-      expect(row.source.fingerprint).toBe(verdict.fingerprint);
+      expect(source.fingerprint).toBe(verdict.fingerprint);
       expect(row.sourceFingerprint).toBe(verdict.fingerprint);
-      expect(row.source.bestMove).toBe(verdict.bestMove);
-      expect(row.source.delta).toBe(verdict.delta);
+      expect(source.bestMove).toBe(verdict.bestMove);
+      expect(source.delta).toBe(verdict.delta);
       // A row carries the evaluation its keep decision rested on, so the
       // provenance does not depend on finding the artifact of that day.
-      expect(row.source.evaluation).toBe(verdict.evaluation);
-      expect(row.source.evaluatedAt).toBe(verdictFile.evaluatedAt);
-      expect(row.source.origin).toBe(verdictFile.origin);
-      expect(row.source.engine).toBe(verdictFile.botName);
+      expect(source.evaluation).toBe(verdict.evaluation);
+      expect(source.evaluatedAt).toBe(verdictFile.evaluatedAt);
+      expect(source.origin).toBe(verdictFile.origin);
+      expect(source.engine).toBe(verdictFile.botName);
     }
   });
 
@@ -82,17 +97,18 @@ describe("saved puzzle seed rows", () => {
     // The 41 rows seeded before 2026-07-29 have no evaluation and are
     // deliberately not backfilled, so the field must stay optional: making it
     // required would fail every existing row closed at the read boundary.
-    const legacySource: { evaluation?: number } = { ...seedRows[0].source };
+    const firstSource = sourceOf(seedRows[0]);
+    const legacySource: { evaluation?: number } = { ...firstSource };
     delete legacySource.evaluation;
     expect(savedPuzzleSourceSchema.parse(legacySource).evaluation).toBe(
       undefined,
     );
-    expect(savedPuzzleSourceSchema.parse(seedRows[0].source).evaluation).toBe(
-      seedRows[0].source.evaluation,
+    expect(savedPuzzleSourceSchema.parse(firstSource).evaluation).toBe(
+      firstSource.evaluation,
     );
     // Still range-checked when present.
     expect(() =>
-      savedPuzzleSourceSchema.parse({ ...seedRows[0].source, evaluation: 1.5 }),
+      savedPuzzleSourceSchema.parse({ ...firstSource, evaluation: 1.5 }),
     ).toThrow();
   });
 

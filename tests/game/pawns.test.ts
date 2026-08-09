@@ -203,7 +203,11 @@ describe("a home is never movable", () => {
 
 describe("snapshots never share cells with the live state", () => {
   const mutate = (cell: Cell) => {
-    (cell as number[])[0] = 99;
+    // Cell is a READONLY tuple and this writes through it on purpose: the whole
+    // point of the test is that a snapshot which shared the array would show
+    // the write. Hence the double cast - the type is right, the test is the
+    // deliberate exception.
+    (cell as unknown as number[])[0] = 99;
   };
 
   it("clonePawns copies the cells, not just the record", () => {

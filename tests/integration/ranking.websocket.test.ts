@@ -19,9 +19,9 @@ import type {
   ActionRequestMessage,
   ServerMessage,
 } from "../../shared/contracts/websocket-messages";
-import type { GameConfiguration } from "../../shared/domain/game-types";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import type { RankingResponse } from "../../shared/contracts/ranking";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -122,7 +122,7 @@ async function cleanupUsers(): Promise<void> {
 
 async function createFriendGame(
   userId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   hostIsPlayer1: boolean,
 ): Promise<GameCreateResponse> {
   const res = await fetch(`${baseUrl}/api/games`, {
@@ -343,7 +343,7 @@ describe("ranking integration", () => {
     await seedUser(userA);
     await seedUser(userB);
 
-    const config: GameConfiguration = {
+    const config: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 120,
         incrementSeconds: 0,

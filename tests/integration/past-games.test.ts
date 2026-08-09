@@ -15,17 +15,14 @@ import {
 } from "bun:test";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
-import type {
-  GameConfiguration,
-  Move,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { Move, PlayerId } from "../../shared/domain/game-types";
 import type {
   PastGamesActivityResponse,
   PastGamesResponse,
   ResolveGameAccessResponse,
 } from "../../shared/contracts/games";
 import { PAST_GAMES_ACTIVITY_DAYS } from "../../shared/domain/past-games";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -126,7 +123,7 @@ async function cleanupUsers(): Promise<void> {
 }
 
 const buildOpeningMove = (
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   playerId: PlayerId,
 ): Move => {
   const rows = config.boardHeight;
@@ -159,7 +156,7 @@ const buildOpeningMove = (
 };
 
 async function createCompletedGame(args: {
-  config: GameConfiguration;
+  config: PartialGameConfiguration;
   hostDisplayName?: string;
   joinerDisplayName?: string;
   hostAuthUserId?: string;
@@ -233,7 +230,7 @@ afterAll(async () => {
 
 describe("past games persistence", () => {
   it("serves replay data from the DB and increments views", async () => {
-    const config: GameConfiguration = {
+    const config: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 120,
         incrementSeconds: 0,
@@ -285,7 +282,7 @@ describe("past games persistence", () => {
   });
 
   it("persists freestyle initial state for past games", async () => {
-    const config: GameConfiguration = {
+    const config: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 120,
         incrementSeconds: 0,
@@ -517,7 +514,7 @@ const dayKey = (ms: number) => new Date(ms).toISOString().slice(0, 10);
  * three months ago - and `started_at` is the only thing the plot reads.
  */
 async function seedGameStartedAt(
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   startedAtMs: number,
   seats?: { host: string; joiner: string },
 ): Promise<string> {
@@ -537,7 +534,9 @@ async function seedGameStartedAt(
   return gameId;
 }
 
-const rapid6x6 = (variant: "standard" | "classic"): GameConfiguration => ({
+const rapid6x6 = (
+  variant: "standard" | "classic",
+): PartialGameConfiguration => ({
   timeControl: { initialSeconds: 180, incrementSeconds: 2, preset: "rapid" },
   variant,
   rated: false,

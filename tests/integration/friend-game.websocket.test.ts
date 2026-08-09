@@ -21,10 +21,7 @@ import type {
   ActionRequestMessage,
   ServerMessage,
 } from "../../shared/contracts/websocket-messages";
-import type {
-  GameConfiguration,
-  PlayerAppearance,
-} from "../../shared/domain/game-types";
+import type { PlayerAppearance } from "../../shared/domain/game-types";
 import {
   cellFromStandardNotation,
   moveFromStandardNotation,
@@ -34,6 +31,7 @@ import type {
   ActionRequestPayload,
   ControllerActionKind,
 } from "../../shared/contracts/controller-actions";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -185,7 +183,7 @@ async function cleanupTestUsers(): Promise<void> {
  */
 async function createFriendGame(
   userId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   options?: {
     appearance?: PlayerAppearance;
     hostIsPlayer1?: boolean;
@@ -212,8 +210,10 @@ async function createFriendGame(
       `Expected status 201 but got ${res.status}. Error: ${text}`,
     );
   }
-  const json = await res.json();
-  return json as GameCreateResponse;
+  // Cast on the expression, not through a variable: the tests project has the
+  // DOM lib (tests/ imports frontend helpers), and DOM types Response.json()
+  // as Promise<any>, so binding it to a name first is an unsafe assignment.
+  return (await res.json()) as GameCreateResponse;
 }
 
 /**
@@ -225,7 +225,7 @@ async function createFriendGame(
  */
 async function createMatchmakingGame(
   userId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   options?: {
     appearance?: PlayerAppearance;
     hostIsPlayer1?: boolean;
@@ -247,8 +247,10 @@ async function createMatchmakingGame(
   });
 
   expect(res.status).toBe(201);
-  const json = await res.json();
-  return json as GameCreateResponse;
+  // Cast on the expression, not through a variable: the tests project has the
+  // DOM lib (tests/ imports frontend helpers), and DOM types Response.json()
+  // as Promise<any>, so binding it to a name first is an unsafe assignment.
+  return (await res.json()) as GameCreateResponse;
 }
 
 async function joinFriendGame(
@@ -665,7 +667,7 @@ describe("friend game WebSocket integration", () => {
       .. .. ..
       M1 .. M2
     */
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,
@@ -1412,7 +1414,7 @@ describe("friend game WebSocket integration", () => {
     };
 
     // 1. User A creates a matchmaking game with appearance
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,

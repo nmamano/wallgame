@@ -38,10 +38,8 @@ import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
-import type {
-  GameConfiguration,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -95,7 +93,7 @@ interface PlayVsBotResponse {
 async function createGameVsBot(
   userId: string,
   botId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   hostIsPlayer1?: boolean,
 ): Promise<PlayVsBotResponse> {
   const res = await fetch(`${baseUrl}/api/bots/play`, {
@@ -541,7 +539,7 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
     let configFile: BotConfigFile | null = null;
 
     // Use a small board for quick testing
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,
@@ -662,7 +660,7 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
     let humanSocket: HumanSocket | null = null;
     let configFile: BotConfigFile | null = null;
 
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,

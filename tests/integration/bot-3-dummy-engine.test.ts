@@ -31,10 +31,8 @@ import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
-import type {
-  GameConfiguration,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // ================================
 // --- Test Harness ---
@@ -87,7 +85,7 @@ interface PlayVsBotResponse {
 async function createGameVsBot(
   userId: string,
   botId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   hostIsPlayer1?: boolean,
 ): Promise<PlayVsBotResponse> {
   const res = await fetch(`${baseUrl}/api/bots/play`, {
@@ -517,7 +515,7 @@ describe("custom bot client CLI integration V3 (dummy engine)", () => {
     let humanSocket: HumanSocket | null = null;
     let configFile: BotConfigFile | null = null;
 
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,
@@ -628,7 +626,7 @@ describe("custom bot client CLI integration V3 (dummy engine)", () => {
     let configFile: BotConfigFile | null = null;
 
     // Classic variant - goal is to reach opponent's corner
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,

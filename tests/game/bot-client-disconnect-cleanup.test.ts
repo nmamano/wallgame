@@ -69,7 +69,10 @@ const START_SESSION = {
   },
 };
 
-let server: ReturnType<typeof Bun.serve> | null = null;
+// <undefined>: this fake server attaches no per-socket data. Bun types
+// `upgrade`'s options argument as REQUIRED whenever the socket data type is
+// anything else, so saying so is what makes the bare `upgrade(req)` below legal.
+let server: ReturnType<typeof Bun.serve<undefined>> | null = null;
 let client: BotClient | null = null;
 
 /**
@@ -83,7 +86,7 @@ function startFakeServer(): { port: number; sessionOpened: Promise<void> } {
     openSession = resolve;
   });
 
-  server = Bun.serve({
+  server = Bun.serve<undefined>({
     port: 0,
     fetch(req, srv) {
       if (srv.upgrade(req)) return undefined;
@@ -113,7 +116,12 @@ function startFakeServer(): { port: number; sessionOpened: Promise<void> } {
     },
   });
 
-  return { port: server.port, sessionOpened };
+  // `port` is undefined for a server bound to a unix socket. This one asked for
+  // port 0, so Bun picked a real one, and the test cannot proceed without it.
+  const { port } = server;
+  if (port === undefined) throw new Error("fake server was given no port");
+
+  return { port, sessionOpened };
 }
 
 beforeEach(() => {

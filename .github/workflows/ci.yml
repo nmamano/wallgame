@@ -51,6 +51,14 @@ jobs:
       - name: Lint
         run: bun x eslint .
 
+      # server/, shared/ and tests/. Nothing ran tsc over them until 2026-08-09:
+      # the root tsconfig.json has no `include`, so `tsc -p tsconfig.json` globs
+      # the CMake-generated .ts under minimax-engine/build_release and drowns in
+      # syntax errors, which is why a real breakage in tests/ once reached main.
+      # frontend/ is covered separately, by its own `tsc -b` in the build step.
+      - name: Typecheck
+        run: bun run typecheck
+
       - name: Build frontend
         run: bun run build
 

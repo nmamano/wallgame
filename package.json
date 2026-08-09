@@ -9,6 +9,7 @@
     "migrate": "bun scripts/migrate.ts",
     "test": "bun scripts/run-tests.ts",
     "test:wsl": "wsl.exe -d Ubuntu -- bash -lc 'cd \"$PWD\" && env PATH=\"$HOME/.bun/bin:/usr/bin:/bin\" bun scripts/run-tests.ts'",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.server.json && bun x tsc --noEmit -p tsconfig.tests.json",
     "build": "bun --cwd=frontend run build",
     "harness:nudge": "bun run build && bun scripts/browser-harness/drive-account-nudge.ts",
     "harness:puzzles": "bun run build && bun scripts/browser-harness/drive-puzzles-page.ts",
@@ -17,8 +18,8 @@
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
     "lint": "bun x eslint . --fix --cache --cache-location .eslintcache",
-    "ci": "bun x prettier --check . && bun x eslint . && bun run test && bun run build",
-    "cip": "bun x prettier --write . && bun x eslint . --fix && bun run test && bun run build"
+    "ci": "bun x prettier --check . && bun x eslint . && bun run typecheck && bun run test && bun run build",
+    "cip": "bun x prettier --write . && bun x eslint . --fix && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
     "@fontsource/cormorant": "^5.3.0",
@@ -38,8 +39,9 @@
     "@eslint/js": "^9.39.1",
     "@flydotio/dockerfile": "^0.7.8",
     "@testcontainers/postgresql": "^11.9.0",
-    "@types/bun": "latest",
+    "@types/bun": "^1.3.14",
     "@types/pg": "^8.11.11",
+    "@types/ws": "^8.18.1",
     "drizzle-kit": "^0.30.4",
     "eslint": "^9.39.1",
     "eslint-plugin-react": "^7.37.5",

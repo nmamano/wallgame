@@ -33,11 +33,9 @@ import type {
   GameCreateResponse,
   JoinGameResponse,
 } from "../../shared/contracts/games";
-import type {
-  GameConfiguration,
-  GameSnapshot,
-} from "../../shared/domain/game-types";
+import type { GameSnapshot } from "../../shared/domain/game-types";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 let container: StartedTestContainer | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
@@ -63,7 +61,7 @@ function startTestServer() {
   baseUrl = `http://localhost:${server.port}`;
 }
 
-const GAME_CONFIG: GameConfiguration = {
+const GAME_CONFIG: PartialGameConfiguration = {
   timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
   variant: "standard",
   rated: false,

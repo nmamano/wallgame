@@ -30,10 +30,8 @@ import { generateCustomSetupCandidates } from "../../shared/domain/generated-cus
 import { buildSavedPuzzleSeedRows } from "../../shared/domain/saved-puzzles";
 import type { CandidateVerdictFile } from "../../shared/domain/custom-setup-verdicts";
 import committedVerdicts from "../../shared/domain/generated-custom-setup-verdicts.json";
-import type {
-  GameConfiguration,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 let container: StartedTestContainer | undefined;
 
@@ -56,7 +54,7 @@ const PUZZLE_A = "test-puzzle-a";
 const PUZZLE_B = "test-puzzle-b";
 const RETIRED = "test-puzzle-retired";
 
-const CONFIG: GameConfiguration = {
+const CONFIG: PartialGameConfiguration = {
   timeControl: { initialSeconds: 120, incrementSeconds: 0, preset: "rapid" },
   variant: "standard",
   boardWidth: 8,

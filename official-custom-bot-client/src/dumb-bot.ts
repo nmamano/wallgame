@@ -7,7 +7,14 @@
  * V3: Maintains stateful sessions like a real engine, but with simple logic.
  */
 
-import type { Cell, PlayerId, Variant } from "../../shared/domain/game-types";
+import type {
+  Cell,
+  ClassicInitialState,
+  PlayerId,
+  StandardInitialState,
+  SurvivalInitialState,
+  Variant,
+} from "../../shared/domain/game-types";
 import { Grid } from "../../shared/domain/grid";
 import { computeDummyAiMove } from "../../shared/domain/dummy-ai";
 import {
@@ -61,11 +68,7 @@ function createSession(bgsId: string, config: BgsConfig): DumbBotSession {
 
   if (variant === "survival") {
     // Survival has flat cat/mouse structure
-    const survivalState = initialState as {
-      cat: Cell;
-      mouse: Cell;
-      walls: Cell[];
-    };
+    const survivalState = initialState as SurvivalInitialState;
     pawns = {
       p1: { cat: survivalState.cat, mouse: survivalState.mouse },
       p2: { cat: survivalState.cat, mouse: survivalState.mouse }, // Survival is 1-player
@@ -76,10 +79,7 @@ function createSession(bgsId: string, config: BgsConfig): DumbBotSession {
     }
   } else if (variant === "classic") {
     // Classic has cat/home structure (home stored in mouse slot for compatibility)
-    const classicState = initialState as {
-      pawns: { p1: { cat: Cell; home: Cell }; p2: { cat: Cell; home: Cell } };
-      walls: Cell[];
-    };
+    const classicState = initialState as ClassicInitialState;
     pawns = {
       p1: { cat: classicState.pawns.p1.cat, mouse: classicState.pawns.p1.home },
       p2: { cat: classicState.pawns.p2.cat, mouse: classicState.pawns.p2.home },
@@ -90,13 +90,7 @@ function createSession(bgsId: string, config: BgsConfig): DumbBotSession {
     }
   } else {
     // Standard/Freestyle have cat/mouse structure
-    const standardState = initialState as {
-      pawns: {
-        p1: { cat: Cell; mouse: Cell };
-        p2: { cat: Cell; mouse: Cell };
-      };
-      walls: Cell[];
-    };
+    const standardState = initialState as StandardInitialState;
     pawns = {
       p1: standardState.pawns.p1,
       p2: standardState.pawns.p2,

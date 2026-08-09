@@ -98,7 +98,10 @@ export default tseslint.config(
         ...globals.node,
       },
       parserOptions: {
-        project: ["./tsconfig.server.json"],
+        // Both, because tests/ left tsconfig.server.json for its own project.
+        // A file that belongs to NEITHER project silently loses every typed
+        // rule, so these must list the same ground `bun run typecheck` covers.
+        project: ["./tsconfig.server.json", "./tsconfig.tests.json"],
         tsconfigRootDir: fileURLToPath(new URL(".", import.meta.url)),
       },
     },

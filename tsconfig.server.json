@@ -1,3 +1,12 @@
+// Typecheck project for the BACKEND half of the repo: server/ and shared/.
+//
+// Deliberately no DOM lib. Nothing here runs in a browser, so a reference to
+// `window` or `localStorage` in server code is a bug, and leaving DOM out is
+// what makes it one. tests/ DOES need DOM - it imports frontend helpers - so it
+// lives in its own project, tsconfig.tests.json, rather than widening this one.
+//
+// Read by two things, which must stay in step: `bun run typecheck`, and the
+// type-aware ESLint rules in eslint.config.js.
 {
   "extends": "./tsconfig.json",
   "compilerOptions": {
@@ -15,5 +24,5 @@
     "noFallthroughCasesInSwitch": true,
     "types": ["bun-types"]
   },
-  "include": ["server/**/*.ts", "shared/**/*.ts", "tests/**/*.ts"]
+  "include": ["server/**/*.ts", "shared/**/*.ts"]
 }

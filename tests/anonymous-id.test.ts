@@ -48,8 +48,8 @@ describe("getAnonymousId", () => {
     const second = getAnonymousId(storage);
     const third = getAnonymousId(storage);
 
-    expect(second).toBe(first!);
-    expect(third).toBe(first!);
+    expect(second).toBe(first);
+    expect(third).toBe(first);
   });
 
   it("writes nothing when a valid id is already there", () => {

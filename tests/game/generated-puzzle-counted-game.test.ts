@@ -2,7 +2,6 @@ import { describe, it, expect } from "bun:test";
 import { generateCustomSetupCandidates } from "../../shared/domain/generated-custom-setup-candidates";
 import { MIN_MOVES_FOR_A_COUNTED_GAME } from "../../shared/domain/game-utils";
 import { Grid } from "../../shared/domain/grid";
-import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
 
 /**
  * Completion tracking (S-G3) can only ever see puzzles whose win produces a
@@ -36,8 +35,7 @@ describe("generated puzzles stay recordable as completions", () => {
     expect(humanFirst.length).toBeGreaterThan(0);
 
     for (const candidate of humanFirst) {
-      const init = candidate.config
-        .variantConfig as CustomSetupStandardInitialState;
+      const init = candidate.config.variantConfig;
       const grid = new Grid(
         candidate.config.boardWidth,
         candidate.config.boardHeight,

@@ -56,8 +56,7 @@ describe("generated candidates: attack-race pairing", () => {
 
   it("places four distinct pawn cells with both ATTACK races in [3,6]", () => {
     for (const candidate of candidates) {
-      const init = candidate.config
-        .variantConfig as CustomSetupStandardInitialState;
+      const init = candidate.config.variantConfig;
       const cells = [
         init.pawns.p1.cat,
         init.pawns.p1.mouse,

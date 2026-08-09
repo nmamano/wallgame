@@ -30,7 +30,8 @@ import {
 import postgres from "postgres";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
-import type { GameConfiguration, Move } from "../../shared/domain/game-types";
+import type { Move } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 interface MigrationJournal {
   entries: { tag: string }[];
@@ -87,7 +88,7 @@ function migrationsFolderWithoutThisSlice(): string {
   return folder;
 }
 
-const CONFIG: GameConfiguration = {
+const CONFIG: PartialGameConfiguration = {
   variant: "standard",
   boardWidth: 8,
   boardHeight: 8,

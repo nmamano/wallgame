@@ -65,7 +65,10 @@ export const computeContiguousRenames = (
  * audits).
  */
 export const rowMatchesSeedIdentity = (
-  row: { sourceFingerprint: string; config: unknown },
+  // Nullable on both sides, because the column is: a handcrafted row has no
+  // provenance. Demanding a `string` here asked callers for something the DB
+  // and the seed row type cannot promise.
+  row: { sourceFingerprint: string | null; config: unknown },
   seed: SavedPuzzleSeedRowWithoutId,
 ): boolean =>
   row.sourceFingerprint === seed.sourceFingerprint &&

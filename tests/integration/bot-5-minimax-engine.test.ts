@@ -24,10 +24,8 @@ import { WebSocket } from "ws";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
-import type {
-  GameConfiguration,
-  PlayerId,
-} from "../../shared/domain/game-types";
+import type { PlayerId } from "../../shared/domain/game-types";
+import type { PartialGameConfiguration } from "../../server/games/store";
 
 // Absolute path to the built wrapper binary (test runs from the repo root).
 const MINIMAX_ENGINE = join(
@@ -92,7 +90,7 @@ interface PlayVsBotResponse {
 async function createGameVsBot(
   userId: string,
   botId: string,
-  config: GameConfiguration,
+  config: PartialGameConfiguration,
   hostIsPlayer1?: boolean,
 ): Promise<PlayVsBotResponse> {
   const res = await fetch(`${baseUrl}/api/bots/play`, {
@@ -429,7 +427,7 @@ describe("minimax engine integration V3 (8x8 classic, full game)", () => {
     let humanSocket: HumanSocket | null = null;
     let configFile: BotConfigFile | null = null;
 
-    const gameConfig: GameConfiguration = {
+    const gameConfig: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 600,
         incrementSeconds: 0,
