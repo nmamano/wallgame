@@ -9,7 +9,7 @@
     "migrate": "bun scripts/migrate.ts",
     "test": "bun scripts/run-tests.ts",
     "test:wsl": "wsl.exe -d Ubuntu -- bash -lc 'cd \"$PWD\" && env PATH=\"$HOME/.bun/bin:/usr/bin:/bin\" bun scripts/run-tests.ts'",
-    "typecheck": "bun x tsc --noEmit -p tsconfig.server.json && bun x tsc --noEmit -p tsconfig.tests.json",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.server.json && bun x tsc --noEmit -p tsconfig.tests.json && bun x tsc --noEmit -p frontend/tsconfig.test.json",
     "build": "bun --cwd=frontend run build",
     "harness:nudge": "bun run build && bun scripts/browser-harness/drive-account-nudge.ts",
     "harness:puzzles": "bun run build && bun scripts/browser-harness/drive-puzzles-page.ts",

@@ -55,7 +55,9 @@ jobs:
       # the root tsconfig.json has no `include`, so `tsc -p tsconfig.json` globs
       # the CMake-generated .ts under minimax-engine/build_release and drowns in
       # syntax errors, which is why a real breakage in tests/ once reached main.
-      # frontend/ is covered separately, by its own `tsc -b` in the build step.
+      # Plus frontend/tsconfig.test.json: the frontend's own `tsc -b` in the
+      # build step covers the app, but it excludes *.test.ts, so the bun:test
+      # files under frontend/src had no type-checker of their own.
       - name: Typecheck
         run: bun run typecheck
 

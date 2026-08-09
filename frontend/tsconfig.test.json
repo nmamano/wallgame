@@ -1,8 +1,12 @@
 {
   // Frontend bun:test files: same compiler settings and "@/" aliases as the
   // app project, plus bun-types (the app build excludes *.test.ts so vite's
-  // tsc never sees bun globals). Type-check with:
-  //   bun x tsc --noEmit -p tsconfig.test.json
+  // tsc never sees bun globals).
+  //
+  // Run by `bun run typecheck` from the repository root, alongside the server
+  // and tests projects. It has to be named there explicitly: frontend's own
+  // `tsc -b` goes through tsconfig.json, which references app and node only, so
+  // until 2026-08-09 nothing type-checked these files at all.
   "extends": "./tsconfig.app.json",
   "compilerOptions": {
     "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.test.tsbuildinfo",
