@@ -22,6 +22,7 @@ import { registerCustomBotSocketRoute } from "./routes/custom-bot-socket";
 import { registerEvalSocketRoute } from "./routes/eval-socket";
 import { registerSeoRoutes } from "./routes/seo";
 import { registerHtmlShell, type HtmlShell } from "./routes/html-shell";
+import { registerCanonicalHostRedirect } from "./routes/canonical-host";
 
 /**
  * `htmlShell` is absent in tests and in vite-backed development, where this
@@ -30,6 +31,11 @@ import { registerHtmlShell, type HtmlShell } from "./routes/html-shell";
 export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   const app = new Hono();
   app.use(logger());
+
+  // Ahead of every route below, so www.wallgame.io never reaches one. After
+  // the logger, which claims nothing, so a 301 is still logged like any other
+  // request.
+  registerCanonicalHostRedirect(app);
 
   // Redirect blog to external site
   app.get("/blog", (c) => {
