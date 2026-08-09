@@ -617,6 +617,12 @@ export class GameState {
     this.pawns = nextPawns;
     this.timeLeft = nextTimeLeft;
     this.lastMoveTime = timestamp;
+    // The move is now part of the game, so it counts - including the move that
+    // ends it. Every terminal branch below returns early, so this cannot sit
+    // with the turn handoff at the bottom: a finished game rightly skips the
+    // handoff, and used to skip the count with it and report N-1 while holding
+    // N moves of history.
+    this.moveCount = nextMoveIndex;
 
     if (myCatCaught) {
       // One-move-rule: if P1 reaches their goal first, P2 gets a draw
@@ -676,7 +682,6 @@ export class GameState {
     this.turn = opponent;
     this.actionsRemaining = 2;
     this.previousPawnPosition = undefined;
-    this.moveCount = nextMoveIndex;
   }
 
   /**
