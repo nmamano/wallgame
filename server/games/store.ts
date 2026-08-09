@@ -616,6 +616,155 @@ const registerSession = (session: GameSession): void => {
 };
 
 // ============================================================================
+// Idle timer
+// ============================================================================
+
+/**
+ * How long an untimed game that is under way survives with nobody moving.
+ *
+ * The abandonment timer above only fires for a seat the server *knows* has
+ * gone, and it only knows that from a websocket close. A socket that stays open
+ * but silent - a locked phone, a closed lid - never reaches the close handler,
+ * so `connected` stays true and no abandonment timer is ever armed. An untimed
+ * game has no clock either, so nothing ends it at all: seven such games were
+ * observed sitting in the live list for 60-78 minutes on 2026-08-06, each
+ * holding a session on the bot engine and standing in the way of a deploy.
+ *
+ * So this timer asks a different question from the one above - not "has a seat
+ * gone" but "has anybody moved" - which is what makes it the answer to a
+ * half-open socket. No liveness probe is needed to detect one.
+ *
+ * Two hours, deliberately far longer than ABANDON_TIMEOUT_MS: a seat that
+ * disconnected cleanly is known to be gone, whereas a quiet game may just be
+ * two people thinking. This is the last resort, not the first.
+ */
+const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+
+const idleTimers = new Map<string, Timer>();
+
+const clearIdleTimer = (sessionId: string): void => {
+  const existingTimer = idleTimers.get(sessionId);
+  if (existingTimer) {
+    clearTimeout(existingTimer);
+    idleTimers.delete(sessionId);
+  }
+};
+
+/**
+ * The seat that must act in an untimed game already under way, or null if this
+ * is not a game the idle timer governs.
+ *
+ * The condition looks like the complement of `findAbandonedSeat`'s clock test
+ * and is deliberately NOT the same set, so the two are written out separately
+ * rather than shared. That one protects untimed games at any move count *plus*
+ * timed games nobody has moved in; this one governs untimed games that have
+ * STARTED, and nothing else. Both exclusions are on purpose:
+ *
+ *   - a timed game is left alone at every move count, including zero
+ *   - an untimed game nobody has moved in is left alone
+ *
+ * Each leaves a game this timer will never end. That is reported rather than
+ * patched here: widening either boundary would end games on a rule nobody
+ * asked for.
+ *
+ * The seat returned is the one whose turn it is, because a move is what resets
+ * this clock - so the clock belongs to whoever must act, exactly as a chess
+ * clock does. That is also what keeps a human waiting on a slow bot safe: the
+ * wait sits on the bot's clock and can never be charged to the human.
+ */
+export const findIdleSeat = (sessionId: string): SessionPlayer | null => {
+  const session = sessions.get(sessionId);
+  if (session?.gameState.status !== "playing") {
+    return null;
+  }
+  const state = session.gameState;
+  if (!isUnlimitedTimeControl(state.timeControl) || state.moveCount === 0) {
+    return null;
+  }
+  return session.players.host.playerId === state.turn
+    ? session.players.host
+    : session.players.joiner;
+};
+
+const applyIdleTimeoutToSession = (
+  sessionId: string,
+  playerId: PlayerId,
+): void => {
+  // The same resignation the abandonment path uses, for the same reasons: the
+  // abort-vs-loss distinction comes for free (a game ended before both players
+  // moved is recorded as aborted and leaves ratings alone), and players and
+  // spectators see an ordinary ending rather than a game that vanishes.
+  const newState = resignGame({
+    id: sessionId,
+    playerId,
+    timestamp: Date.now(),
+  });
+
+  console.info("[idle-timer] nobody moved - game ended", {
+    sessionId,
+    playerId,
+    result: newState.result,
+  });
+
+  // The same finish work a clock timeout does: ratings, persistence,
+  // broadcasts, and the bot notification that releases the engine's session.
+  if (onTimeoutCallback) {
+    onTimeoutCallback(sessionId, newState).catch((err: unknown) => {
+      console.error("[idle-timer] callback error", { sessionId, err });
+    });
+  }
+};
+
+/**
+ * Arm or disarm a session's idle timer, recomputed from scratch.
+ *
+ * The deadline is derived from `gameState.lastMoveTime` rather than from the
+ * moment of arming, the way `scheduleTimeoutTimer` derives its own from the
+ * clock. That makes the timer a pure function of session state, and the
+ * property worth having is idempotence: a caller that re-arms more often than
+ * necessary cannot push the deadline out, so re-arming after every action is
+ * safe and no future action kind can quietly leave a stale deadline behind.
+ *
+ * Like `refreshAbandonTimer` this clears before it schedules and re-asks the
+ * policy when it fires, which keeps the armed seat and the seat charged at
+ * expiry in agreement without tracking who the timer was for.
+ */
+const refreshIdleTimer = (sessionId: string): void => {
+  clearIdleTimer(sessionId);
+
+  const idle = findIdleSeat(sessionId);
+  const session = sessions.get(sessionId);
+  if (!idle || !session) {
+    return;
+  }
+
+  const remainingMs = Math.max(
+    0,
+    IDLE_TIMEOUT_MS - (Date.now() - session.gameState.lastMoveTime),
+  );
+
+  const timer = setTimeout(() => {
+    idleTimers.delete(sessionId);
+    // Ask again: a move may have landed, or the game may have finished.
+    const stillIdle = findIdleSeat(sessionId);
+    if (!stillIdle) {
+      return;
+    }
+    applyIdleTimeoutToSession(sessionId, stillIdle.playerId);
+  }, remainingMs);
+  // Two hours is never the reason to keep the process alive.
+  (timer as { unref?: () => void }).unref?.();
+
+  idleTimers.set(sessionId, timer);
+
+  console.info("[idle-timer] scheduled", {
+    sessionId,
+    playerId: idle.playerId,
+    timeoutMs: remainingMs,
+  });
+};
+
+// ============================================================================
 
 const ensureSession = (id: string): GameSession => {
   const session = sessions.get(id);
@@ -1333,10 +1482,23 @@ const applyActionToSession = (
     // Game ended - clear any pending timers
     clearTimeoutTimer(session.id);
     clearAbandonTimer(session.id);
+    clearIdleTimer(session.id);
     finalizeMatchScore(session, next.result ?? null);
-  } else if (action.kind === "move") {
-    // Move was made and game continues - schedule timeout for next player
-    scheduleTimeoutTimer(session.id);
+  } else {
+    if (action.kind === "move") {
+      // Move was made and game continues - schedule timeout for next player
+      scheduleTimeoutTimer(session.id);
+    }
+    // Recomputed after every action that leaves the game running, not only a
+    // move. The deadline comes from `lastMoveTime`, so this is idempotent and
+    // cannot extend anybody's grace; asking unconditionally is what stops an
+    // action kind added later - one that shifts the turn, say - from leaving a
+    // deadline pointing at the wrong seat.
+    //
+    // This is the only place the idle timer is armed. A new session cannot
+    // qualify (it has no moves yet, and `findIdleSeat` leaves those alone), and
+    // only a move changes the move count, so nothing else needs to ask.
+    refreshIdleTimer(session.id);
   }
   return next;
 };
