@@ -88,11 +88,20 @@ takeback, and render.
 1. **Pawn-shape generalization.** Pure refactor. `{cat, mouse}` becomes a per-variant shape,
    the same way `variantConfig` was unified in `generalized_variants.md`. No new variant.
    The existing test suite stays green throughout.
-2. **10 Wall rules in `shared/domain`, local hot-seat only.** Frontend-only games are
-   already a first-class path (it is how bot and hot-seat games work), so this slice needs
-   no server, no persistence and no ratings. All the rules work and its tests land here.
-3. **The AI** (see below).
-4. **Online, later and optional:** server plumbing, persistence, ratings ladder, spectating.
+2. **10 Wall rules in `shared/domain`, local hot-seat only.** Hot-seat play is a
+   frontend-only path already, so this slice needs no server, no persistence and no
+   ratings. All the rules work and its tests land here.
+3. **The AI, server-side** (see below). This slice brings the server plumbing with it:
+   the variant value in the games and ratings tables, and the engine registered as a bot.
+4. **Everything a persisted game already gets:** ratings ladder, replays, spectating, past
+   games. These follow from step 3 rather than being separate work.
+
+> Steps 3 and 4 were originally "the AI, client-side" and "online, later and optional". The
+> AI moved to the server on 2026-08-09. The reason is measurement: a browser-only mode
+> writes no `games` row and no anonymous player id, so nothing in the analytics or retention
+> tooling can see that anyone played it. Running the engine as a bot behind the existing
+> protocol also means 10 Wall games are ordinary games, which is where step 4 comes from.
+> Note that *hot-seat* play in step 2 is unaffected and stays client-side.
 
 Step 1 comes first because it is the only ordering where a failing test is unambiguous. Do
 it in the other order and a regression in standard or classic is indistinguishable from a
@@ -102,9 +111,15 @@ it in the other order and a regression in standard or classic is indistinguishab
 
 **Vendor, do not train.** The opponent is [`gorisanson/quoridor-ai`](https://github.com/gorisanson/quoridor-ai)
 (MIT): pure MCTS with hand-written heuristics and **no neural network**, so there is no
-model to train, export or serve. Four difficulty levels, 2,500 to 60,000 rollouts. Its
-`worker.js` already runs the search in a Web Worker, so a deep search will not block our
-board.
+model to train, export or serve. Four difficulty levels, 2,500 to 60,000 rollouts, which map
+onto the bot-strength ladder we already have.
+
+**It runs on the server, as a bot behind the bot protocol.** Not in the browser. The
+`worker.js` wrapper in the upstream repo runs the search off the main thread, which is the
+right shape for a page but the wrong place for us: a game the browser plays alone leaves no
+trace we can count, and it gets none of the ratings, replay, spectating or notation support
+that every other game on the site gets for free. Behind the protocol, 10 Wall games are
+ordinary games.
 
 **Vendor `ai.js` only - not `game.js`.** Its source splits into `ai.js` (the AI), `game.js`
 (its own Quoridor rules), and `view.js`/`controller.js` (its UI). Taking `game.js` as well
@@ -113,8 +128,19 @@ no replays, no notation, no puzzles, no ratings, no spectating and no bot protoc
 rules engine from step 2 and write an adapter from our `GameState` into the board object
 `ai.js` expects.
 
-**Spike first (half a day):** confirm how tightly `ai.js` is coupled to `game.js`'s data
-structures. This has been assessed from the repo layout, not from reading the source.
+**Spike first (half a day), three questions.** All of this has been assessed from the repo
+layout rather than from reading the source, so treat every estimate here as unfounded until
+the spike lands.
+
+1. How tightly is `ai.js` coupled to `game.js`'s data structures? That decides how big the
+   adapter is.
+2. Does it run under Bun outside a browser at all? The `worker.js` wrapper suggests it is
+   written for a Web Worker context, so it may reference worker globals and need a shim.
+3. **What does a move cost in CPU?** Up to 60,000 MCTS rollouts per move, in JavaScript, on
+   a machine with no GPU. Measure seconds per move at each of the four levels, and then
+   work out how many concurrent games one process can serve. This question did not exist
+   while the design spent the player's CPU instead of ours, and it is the one most likely
+   to change the plan.
 
 Deep-Wallwars needs no changes for this variant, and no training run is on the path.
 Separately and optionally, `state_conversions.hpp:24` already reserves input plane 8 as a
