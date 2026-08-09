@@ -24,8 +24,7 @@ type WallState = "placed" | "staged" | "premoved" | "calculated" | "missing";
 
 type WallPositionWithState = WallPosition & { state: WallState };
 import { PawnSelector } from "@/components/pawn-selector";
-import { CAT_PAWNS } from "@/lib/cat-pawns";
-import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
+import { CAT_PAWNS, MOUSE_PAWNS } from "@/lib/pawns";
 import {
   SELECTABLE_PLAYER_COLORS,
   colorDisplayNames,

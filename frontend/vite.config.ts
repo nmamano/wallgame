@@ -3,9 +3,15 @@ import react from "@vitejs/plugin-react";
 import tailwindcss from "@tailwindcss/vite";
 import path from "path";
 import { TanStackRouterVite } from "@tanstack/router-vite-plugin";
+import { pawnManifestPlugin } from "./vite-plugin-pawn-manifest";
 
 export default defineConfig({
-  plugins: [react(), tailwindcss(), TanStackRouterVite()],
+  plugins: [
+    react(),
+    tailwindcss(),
+    TanStackRouterVite(),
+    pawnManifestPlugin(path.resolve(__dirname, "./public")),
+  ],
   resolve: {
     alias: {
       "@": path.resolve(__dirname, "./src"),

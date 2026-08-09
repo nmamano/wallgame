@@ -16,9 +16,7 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Loader2 } from "lucide-react";
 import { PawnSelector } from "@/components/pawn-selector";
-import { CAT_PAWNS } from "@/lib/cat-pawns";
-import { HOME_PAWNS } from "@/lib/home-pawns";
-import { MOUSE_PAWNS } from "@/lib/mouse-pawns";
+import { CAT_PAWNS, HOME_PAWNS, MOUSE_PAWNS } from "@/lib/pawns";
 import {
   SELECTABLE_PLAYER_COLORS,
   colorDisplayNames,

@@ -57,7 +57,8 @@ Anything that needs CI coverage must be importable from `tests/`.
 
 ## Slice plan
 
-- [ ] **Slice 1** — stop emitting a hashed copy of every pawn SVG that nothing imports.
+- [x] **Slice 1** — stop emitting a hashed copy of every pawn SVG that nothing imports.
+      Landed 2026-08-09. `dist` went 1125 files / 41 MB -> 417 files / 30 MB.
 - [ ] **Slice 2** — `assetUrl()` over `import.meta.env.BASE_URL` for the runtime-absolute
       asset paths, so a subdirectory mount stops 404ing.
 - [ ] **Slice 3** — `?embedded=1`: hide the login entry point, hide the four outbound
