@@ -8,6 +8,7 @@ import {
 import { Button } from "@/components/ui/button";
 import { Card } from "@/components/ui/card";
 import { Check, Copy, Loader2, User, Users } from "lucide-react";
+import { isEmbedded } from "@/lib/embedded-mode";
 import type { PlayerType } from "@/lib/gameViewModel";
 import type { MatchType } from "../../../shared/domain/game-types";
 import type {
@@ -136,17 +137,24 @@ export function MatchingStagePanel({
       );
     }
     if (waitingReason === "rated-requires-login") {
+      // A portal frame cannot reach Kinde, so offering the links there would
+      // put two dead ends in front of the player. See lib/embedded-mode.ts.
       return (
         <div className="mt-2 text-sm text-muted-foreground">
-          This game is rated, so both players need an account.{" "}
-          <a className="underline" href="/api/register">
-            Sign up
-          </a>{" "}
-          or{" "}
-          <a className="underline" href="/api/login">
-            log in
-          </a>{" "}
-          to take the seat.
+          This game is rated, so both players need an account.
+          {!isEmbedded() && (
+            <>
+              {" "}
+              <a className="underline" href="/api/register">
+                Sign up
+              </a>{" "}
+              or{" "}
+              <a className="underline" href="/api/login">
+                log in
+              </a>{" "}
+              to take the seat.
+            </>
+          )}
         </div>
       );
     }

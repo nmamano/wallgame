@@ -66,13 +66,8 @@
     <meta name="twitter:image" content="https://wallgame.io/og-image.png" />
 
     <title>Wall Game</title>
-    <!-- Google Fonts -->
-    <link rel="preconnect" href="https://fonts.googleapis.com" />
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
-    <link
-      href="https://fonts.googleapis.com/css2?family=Cormorant:wght@300;400;600;700&family=Geist+Mono:wght@400;500;600&display=swap"
-      rel="stylesheet"
-    />
+    <!-- Cormorant and Geist Mono are self-hosted; see the @font-face imports at
+         the top of src/index.css. -->
     <style>
       :root {
         --font-serif: "Cormorant", serif;
@@ -81,11 +76,37 @@
     </style>
 
     <!-- Google Analytics (GA4). Only loads on the production host, so dev
-         servers, previews, and localhost don't pollute the real numbers. -->
+         servers, previews, and localhost don't pollute the real numbers.
+
+         It is also skipped entirely in a portal frame, which must contact no
+         third party at all. That decision has to be made HERE, in plain JS,
+         because this script runs before any module: by the time
+         lib/embedded-mode.ts could answer, the tag would already be appended.
+         So the query param, the sessionStorage key and the guarded reads below
+         mirror that file. tests/embedded-analytics.test.ts executes this very
+         script against production-shaped input and fails if the two drift. -->
     <script>
+      const embedded = (function () {
+        try {
+          if (new URLSearchParams(location.search).get("embedded") === "1") {
+            return true;
+          }
+        } catch (e) {
+          /* a malformed query string is not a reason to fail the page */
+        }
+        try {
+          // The latch, for a reload that no longer carries the param. Reading
+          // sessionStorage can itself throw in some privacy modes.
+          return sessionStorage.getItem("wall-game-embedded") === "1";
+        } catch (e) {
+          return false;
+        }
+      })();
+
       if (
-        location.hostname === "wallgame.io" ||
-        location.hostname === "www.wallgame.io"
+        !embedded &&
+        (location.hostname === "wallgame.io" ||
+          location.hostname === "www.wallgame.io")
       ) {
         window.dataLayer = window.dataLayer || [];
         window.gtag = function () {

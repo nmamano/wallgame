@@ -32,6 +32,7 @@ import { useSettings } from "@/hooks/use-settings";
 import { createGameSession, joinGameSession } from "@/lib/api";
 import { saveGameHandshake, clearGameHandshake } from "@/lib/game-session";
 import { usePlayVsBotMutation } from "@/hooks/use-bots";
+import { isEmbedded } from "@/lib/embedded-mode";
 
 export const Route = createFileRoute("/play")({
   component: GameSetup,
@@ -588,7 +589,12 @@ function GameSetup() {
                   />
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  {!isLoggedIn && "Log in to play rated games."}
+                  {/* Telling a framed player to log in points at a door that
+                      is not there; see lib/embedded-mode.ts. */}
+                  {!isLoggedIn &&
+                    (isEmbedded()
+                      ? "Rated games are not available here."
+                      : "Log in to play rated games.")}
                   {isLoggedIn &&
                     (activeTab === "vs-ai" || activeTab === "local-play") &&
                     "Rated games are only available vs other players."}

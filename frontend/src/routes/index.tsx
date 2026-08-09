@@ -8,6 +8,7 @@ import {
 import { GameShowcase } from "@/components/game-showcase";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { DISCORD_INVITE_URL } from "@/lib/external-links";
+import { isEmbedded } from "@/lib/embedded-mode";
 import { Brain, Bot, Users, UserPlus } from "lucide-react";
 
 export const Route = createFileRoute("/")({
@@ -15,6 +16,7 @@ export const Route = createFileRoute("/")({
 });
 
 function Index() {
+  const embedded = isEmbedded();
   const isSmallScreen = useMediaQuery("(max-width: 639px)");
   const showcaseContainerClass = isSmallScreen
     ? ""
@@ -162,41 +164,52 @@ function Index() {
       <footer className="border-t border-border mt-6 lg:mt-12">
         <div className="container mx-auto px-4 py-3 lg:py-5">
           <div className="flex flex-wrap items-center justify-center gap-x-4 gap-y-1 text-xs lg:text-sm text-muted-foreground">
+            {/* A portal frame must not send the player off-site, so embedded
+                mode keeps the credit and drops every outbound link. See
+                lib/embedded-mode.ts. */}
             <p>
               Created by{" "}
-              <a
-                href="https://nilmamano.com"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-primary transition-colors"
-              >
-                Nil Mamano
-              </a>
+              {embedded ? (
+                "Nil Mamano"
+              ) : (
+                <a
+                  href="https://nilmamano.com"
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="underline hover:text-primary transition-colors"
+                >
+                  Nil Mamano
+                </a>
+              )}
             </p>
             {/* Each separator is bound to the link it precedes, so a wrap can
                 never leave a dot stranded at the end of a line. */}
-            <span className="flex items-center gap-x-4">
-              <span aria-hidden="true">&middot;</span>
-              <a
-                href={DISCORD_INVITE_URL}
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-primary transition-colors"
-              >
-                Join the Discord
-              </a>
-            </span>
-            <span className="flex items-center gap-x-4">
-              <span aria-hidden="true">&middot;</span>
-              <a
-                href="https://nilmamano.com/games"
-                target="_blank"
-                rel="noopener noreferrer"
-                className="underline hover:text-primary transition-colors"
-              >
-                More games by Nil
-              </a>
-            </span>
+            {!embedded && (
+              <>
+                <span className="flex items-center gap-x-4">
+                  <span aria-hidden="true">&middot;</span>
+                  <a
+                    href={DISCORD_INVITE_URL}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-primary transition-colors"
+                  >
+                    Join the Discord
+                  </a>
+                </span>
+                <span className="flex items-center gap-x-4">
+                  <span aria-hidden="true">&middot;</span>
+                  <a
+                    href="https://nilmamano.com/games"
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    className="underline hover:text-primary transition-colors"
+                  >
+                    More games by Nil
+                  </a>
+                </span>
+              </>
+            )}
           </div>
         </div>
       </footer>

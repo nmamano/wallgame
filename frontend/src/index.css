@@ -1,5 +1,20 @@
 @import "tailwindcss";
 
+/* The two families used to come from fonts.googleapis.com. Self-hosted because
+   a game portal frames the site and forbids third-party requests, and because
+   Vite then hashes the woff2 files and rewrites their URLs against the build's
+   base, which a hand-written <link> could never do. All subsets, exactly as the
+   Google CSS2 query served: the unicode-range in each @font-face means a browser
+   still downloads only what the text needs. Weights match the old query -
+   Cormorant 300/400/600/700, Geist Mono 400/500/600. */
+@import "@fontsource/cormorant/300.css";
+@import "@fontsource/cormorant/400.css";
+@import "@fontsource/cormorant/600.css";
+@import "@fontsource/cormorant/700.css";
+@import "@fontsource/geist-mono/400.css";
+@import "@fontsource/geist-mono/500.css";
+@import "@fontsource/geist-mono/600.css";
+
 @plugin "tailwindcss-animate";
 @plugin "@tailwindcss/typography";
 

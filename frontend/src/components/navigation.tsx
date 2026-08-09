@@ -7,6 +7,7 @@ import { useTheme } from "./theme-provider";
 import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions } from "@/lib/api";
 import { assetUrl } from "@/lib/asset-url";
+import { isEmbedded } from "@/lib/embedded-mode";
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -25,7 +26,12 @@ export function Navigation() {
     { label: "Learn", href: "/learn" },
     { label: "About", href: "/about" },
     { label: "Settings", href: "/settings" },
-    { label: isLoggedIn ? "Profile" : "Login", href: "/profile" },
+    // A portal frame cannot log anyone in - Kinde's cookies are sameSite Lax
+    // and never reach a third-party frame - so the entry point is absent there
+    // rather than dead. See lib/embedded-mode.ts.
+    ...(isEmbedded()
+      ? []
+      : [{ label: isLoggedIn ? "Profile" : "Login", href: "/profile" }]),
   ];
 
   return (

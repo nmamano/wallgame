@@ -62,8 +62,9 @@ Anything that needs CI coverage must be importable from `tests/`.
 - [x] **Slice 2** — `assetUrl()` over `import.meta.env.BASE_URL` for the runtime-absolute
       asset paths, so a subdirectory mount stops 404ing. Landed 2026-08-09. 27 call sites
       across 10 files, not the 20 across 7 the task estimated.
-- [ ] **Slice 3** — `?embedded=1`: hide the login entry point, hide the four outbound
-      destinations, self-host the two font families.
+- [x] **Slice 3** — `?embedded=1`: hide the login entry point, hide the four outbound
+      destinations, self-host the two font families. Landed 2026-08-09, after Project
+      Reviewer 1 blocked the first attempt over the analytics tag.
 
 Stopping after any slice is a legitimate finish. Slice 3 alone is the shortest path to a
 CrazyGames submission; slices 1-2 are production wins that stand on their own.
@@ -223,3 +224,35 @@ belongs to whoever needs an installable PWA at a non-root path.
    nilmamano.com or wikipedia.org, and no request to any host outside our own origin.
 3. The latch survives a client-side navigation away from the URL carrying the param.
 4. `sg docker -c 'bun run ci'` green.
+
+**SLICE-3 RECORD — the probe was the thing at fault.**
+
+Project Reviewer 1 blocked the first attempt: `index.html` injects Google Analytics, and
+a portal frame must contact no third party at all. My browser probe had reported "zero
+external hosts" and that measured NOTHING - analytics is gated to
+`location.hostname === "wallgame.io"`, the probe served from `127.0.0.1`, so the whole
+block was skipped. On the real URL it would have loaded.
+
+This is the same error twice recorded in `ops-private/wallgamer-agent-notes.md`:
+confirming the ABSENCE of something with an instrument that could not have shown its
+presence. The tell was there and I read past it - a page that demonstrably ships an
+analytics tag reporting no external hosts should prompt "why none?", not "good, none".
+
+The repair removes localhost from the question entirely. `tests/embedded-analytics.test.ts`
+extracts the shipped inline script from `index.html` and EXECUTES it - `new Function` plus
+`with (window)`, so the script's bare `gtag(...)` resolves to the `window.gtag` it just
+assigned, as in a browser - against a fake page whose hostname is `wallgame.io`, then
+asserts what reached `document.head`. Deleting the `!embedded &&` guard fails 4 of its 9
+tests. Alongside it, a probe launching Chrome with
+`--host-resolver-rules="MAP wallgame.io 127.0.0.1"` gets a genuine production hostname and
+aborts every Google request while recording it, so the check never calls out for real.
+
+Two more things this slice taught:
+
+- The suppression HAS to live in `index.html`, in plain JS. That script runs before any
+  module, so by the time `lib/embedded-mode.ts` could answer, the tag would already be
+  appended. The duplication is therefore forced, not lazy; the two literal-agreement
+  tests are the drift alarm and the execution test is the behavioural gate.
+- A background-task completion notification reports the WRAPPER's exit code. One CI run
+  here failed on eslint while the notification said "exit code 0". Always echo the real
+  status inside the command.
