@@ -6,6 +6,7 @@ import { cn } from "@/lib/utils";
 import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
+import { assetUrl } from "@/lib/asset-url";
 
 const rulesContent = `
 The Wall Game is a two-player, turn-based, strategy board game played on a rectangular grid. Each player controls a cat and a mouse, and the goal is to catch the opponent's mouse before they catch yours.
@@ -13,7 +14,7 @@ A capture occurs whenever a cat and the opponent's mouse occupy the same cell, r
 
 Each player is identified by a color. Player 1's cat and mouse start on the left and Player 2's cat and mouse start on the right, like this:
 
-<img src="/starting-position.png" alt="Starting position" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
+<img src="${assetUrl("/starting-position.png")}" alt="Starting position" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
 
 Player 1 moves first. Each move consists of up to two actions, which can be:
 
@@ -38,7 +39,7 @@ const notationContent = `
 
 Wall Game uses a standard notation system similar to chess. Squares are identified by a (lowercase) letter indicating the column (left to right) followed by a number indicating the row (bottom to top).
 
-<img src="/board-coordinates.png" alt="Board coordinates" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
+<img src="${assetUrl("/board-coordinates.png")}" alt="Board coordinates" width="500" class="mx-auto my-4 rounded-lg shadow-md" />
 
 Boards never have more than 26 columns.
 

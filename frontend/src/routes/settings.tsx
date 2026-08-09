@@ -23,6 +23,7 @@ import {
   colorHexMap,
 } from "@/lib/player-colors";
 import { BOARD_THEMES, BOARD_THEME_LABELS } from "@/lib/board-themes";
+import { assetUrl } from "@/lib/asset-url";
 
 export const Route = createFileRoute("/settings")({
   component: Settings,
@@ -248,7 +249,7 @@ function Settings() {
                     value={catPawn}
                     onChange={setCatPawn}
                     pawns={CAT_PAWNS}
-                    basePath="/pawns/cat/"
+                    basePath={assetUrl("/pawns/cat/")}
                     label="Cat Pawn"
                     defaultLabel="Default Cat"
                     color={pawnColor}
@@ -262,7 +263,7 @@ function Settings() {
                     value={mousePawn}
                     onChange={setMousePawn}
                     pawns={MOUSE_PAWNS}
-                    basePath="/pawns/mouse/"
+                    basePath={assetUrl("/pawns/mouse/")}
                     label="Mouse Pawn"
                     defaultLabel="Default Mouse"
                     color={pawnColor}
@@ -276,7 +277,7 @@ function Settings() {
                     value={homePawn}
                     onChange={setHomePawn}
                     pawns={HOME_PAWNS}
-                    basePath="/pawns/home/"
+                    basePath={assetUrl("/pawns/home/")}
                     label="Home Pawn"
                     defaultLabel="Default Home"
                     color={pawnColor}

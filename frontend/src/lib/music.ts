@@ -9,11 +9,13 @@
  * - Proper cleanup on teardown
  */
 
+import { assetUrl } from "@/lib/asset-url";
+
 const PLAYLIST = [
-  "/audio/songs/song1.mp3",
-  "/audio/songs/song2.mp3",
-  "/audio/songs/song3.mp3",
-  "/audio/songs/song4.mp3",
+  assetUrl("/audio/songs/song1.mp3"),
+  assetUrl("/audio/songs/song2.mp3"),
+  assetUrl("/audio/songs/song3.mp3"),
+  assetUrl("/audio/songs/song4.mp3"),
 ];
 
 const MUSIC_VOLUME = 0.3;

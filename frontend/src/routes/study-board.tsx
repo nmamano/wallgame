@@ -31,6 +31,7 @@ import {
   colorHexMap,
   type PlayerColor,
 } from "@/lib/player-colors";
+import { assetUrl } from "@/lib/asset-url";
 
 export const Route = createFileRoute("/study-board")({
   component: StudyBoard,
@@ -341,7 +342,7 @@ function StudyBoard() {
                   value={catPawn}
                   onChange={setCatPawn}
                   pawns={CAT_PAWNS}
-                  basePath="/pawns/cat/"
+                  basePath={assetUrl("/pawns/cat/")}
                   label="Cat Pawn"
                   defaultLabel="Default Cat"
                   color={selectedPawnColor}
@@ -357,7 +358,7 @@ function StudyBoard() {
                   value={mousePawn}
                   onChange={setMousePawn}
                   pawns={MOUSE_PAWNS}
-                  basePath="/pawns/mouse/"
+                  basePath={assetUrl("/pawns/mouse/")}
                   label="Mouse Pawn"
                   defaultLabel="Default Mouse"
                   color={selectedPawnColor}

@@ -1,3 +1,5 @@
+import { assetUrl } from "@/lib/asset-url";
+
 export type PawnStyleType = "cat" | "mouse" | "home";
 
 const ensureSvgExtension = (value: string): string => {
@@ -37,9 +39,14 @@ export const resolvePawnStyleSrc = (
     return null;
   }
 
-  if (normalized.startsWith("http") || normalized.startsWith("/")) {
+  // An off-site pawn is whatever the URL says; a site path still has to move
+  // with the build's base.
+  if (normalized.startsWith("http")) {
     return normalized;
   }
+  if (normalized.startsWith("/")) {
+    return assetUrl(normalized);
+  }
 
-  return `/pawns/${type}/${ensureSvgExtension(normalized)}`;
+  return assetUrl(`/pawns/${type}/${ensureSvgExtension(normalized)}`);
 };

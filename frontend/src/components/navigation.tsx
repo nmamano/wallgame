@@ -6,6 +6,7 @@ import { Sheet, SheetContent, SheetTrigger } from "@/components/ui/sheet";
 import { useTheme } from "./theme-provider";
 import { useQuery } from "@tanstack/react-query";
 import { userQueryOptions } from "@/lib/api";
+import { assetUrl } from "@/lib/asset-url";
 
 export function Navigation() {
   const [isOpen, setIsOpen] = useState(false);
@@ -33,7 +34,7 @@ export function Navigation() {
         <div className="flex h-10 lg:h-16 items-center justify-between">
           <Link to="/" className="flex items-center space-x-2">
             <img
-              src="/logo.png"
+              src={assetUrl("/logo.png")}
               alt="WallGame Logo"
               className="h-6 lg:h-8 w-auto object-contain mix-blend-multiply dark:mix-blend-screen"
             />

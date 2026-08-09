@@ -13,6 +13,7 @@ import type {
   TimeControlPreset,
 } from "../../../../shared/domain/game-types";
 import { formatTimeControl as formatTimeControlUtil } from "../../../../shared/domain/game-utils";
+import { assetUrl } from "@/lib/asset-url";
 
 interface GameMatchStatus {
   variant: boolean;
@@ -43,10 +44,10 @@ function formatTimeControl(timeControl: TimeControlConfig): string {
 function getTimeControlIcon(timeControl: TimeControlConfig): string {
   if (!timeControl.preset) return "";
   const iconMap: Record<TimeControlPreset, string> = {
-    bullet: "/time_control_icons/activity.lichess-bullet.webp",
-    blitz: "/time_control_icons/activity.lichess-blitz.webp",
-    rapid: "/time_control_icons/activity.lichess-rapid.webp",
-    classical: "/time_control_icons/activity.lichess-classical.webp",
+    bullet: assetUrl("/time_control_icons/activity.lichess-bullet.webp"),
+    blitz: assetUrl("/time_control_icons/activity.lichess-blitz.webp"),
+    rapid: assetUrl("/time_control_icons/activity.lichess-rapid.webp"),
+    classical: assetUrl("/time_control_icons/activity.lichess-classical.webp"),
     unlimited: "",
   };
   return iconMap[timeControl.preset] || "";

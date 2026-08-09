@@ -59,8 +59,9 @@ Anything that needs CI coverage must be importable from `tests/`.
 
 - [x] **Slice 1** — stop emitting a hashed copy of every pawn SVG that nothing imports.
       Landed 2026-08-09. `dist` went 1125 files / 41 MB -> 417 files / 30 MB.
-- [ ] **Slice 2** — `assetUrl()` over `import.meta.env.BASE_URL` for the runtime-absolute
-      asset paths, so a subdirectory mount stops 404ing.
+- [x] **Slice 2** — `assetUrl()` over `import.meta.env.BASE_URL` for the runtime-absolute
+      asset paths, so a subdirectory mount stops 404ing. Landed 2026-08-09. 27 call sites
+      across 10 files, not the 20 across 7 the task estimated.
 - [ ] **Slice 3** — `?embedded=1`: hide the login entry point, hide the four outbound
       destinations, self-host the two font families.
 
@@ -140,6 +141,85 @@ stays. The "no manual maintenance" property stays.
 
 ---
 
-## SLICE-2 PICKUP — authored when slice 1 commits
+## SLICE-2 RECORD
 
-## SLICE-3 PICKUP — authored when slice 2 commits
+**Baseline:** `ca390c8`.
+
+**What slice 1 taught, and slice 2 used.** Both of slice 1's surprises were the task's
+numbers being low - 708 wasted files, not ~290 - so slice 2 started by counting rather
+than by trusting: 27 call sites across 10 files, against the task's "20 runtime-absolute
+paths across 7 files". The extra three files are `routes/learn.tsx` (two images the task
+listed under other files) and `lib/pawn-style.ts`, which builds the pawn URL that
+`board.tsx` and `player-timer-card.tsx` render.
+
+**Measured, same instrument both times**, serving `frontend/dist` built with
+`--base=/embed/wall-game/` under that subdirectory: 7 asset 404s before (six sound
+effects and the logo), 0 after. `/api/me` 404s in both and always will - a CDN has no
+backend.
+
+**The probe lied once, in my favour's opposite direction.** Its first version fetched
+`"/audio/songs/song1.mp3"` with a hardcoded absolute path of its own, so after the fix it
+still reported a 404 that the app was no longer responsible for. An instrument that
+hardcodes what it is testing for measures itself. Fixed to resolve against
+`document.baseURI`.
+
+**What the browser probe cannot see.** Under a subdirectory the router renders "Not
+Found", because it has default path history and no basepath - that was slice 4, which is
+cancelled. So only what renders outside the router outlet is reachable: the nav logo, and
+`sounds.ts`, which builds its `Audio` objects at module scope. The time-control icons, the
+learn images and the pawn paths are covered by the static gate in
+`tests/asset-url.test.ts` instead, which fails if any `frontend/src` file starts a string
+literal with a `public/` path outside an `assetUrl()` call. It found all 27; it now finds
+none.
+
+**Production is unchanged.** At the root base `assetUrl` is a no-op:
+`joinAssetPath("/", "/logo.png") === "/logo.png"`. Verified in Chrome against the root
+build - `/`, `/learn` and `/play` resolve `/logo.png`, `/starting-position.png` and
+`/board-coordinates.png` exactly as before, with no failed requests.
+
+**Left alone deliberately:** `public/favicon/site.webmanifest` hardcodes `start_url`,
+`scope` and three icon paths at the root. It is a static file, so `assetUrl` cannot reach
+it, and under a subdirectory mount a portal never reads a manifest anyway. Fixing it
+belongs to whoever needs an installable PWA at a non-root path.
+
+---
+
+## SLICE-3 PICKUP
+
+**Baseline:** the slice-2 commit.
+
+**Goal:** `https://wallgame.io/?embedded=1` renders a page a game portal will accept, and
+`https://wallgame.io/` renders exactly what it does today.
+
+**Load-bearing mechanics.**
+
+- The flag must be LATCHED. A query param survives the initial load only; the first
+  client-side navigation drops it. Latch to `sessionStorage` on first read, so the whole
+  tab session stays embedded. Consequence worth accepting: a tab that once opened
+  `?embedded=1` stays embedded until it is closed.
+- Follow the house pattern in `lib/anonymous-id.ts`: a two-method storage interface so a
+  test can pass its own, and a guarded accessor, because reading `window.sessionStorage`
+  can itself throw in some privacy modes. Import `IdStorage` rather than declaring a
+  second identical interface.
+- Three things to hide: the login entry point (`components/navigation.tsx` builds a nav
+  item labelled Profile/Login); `DISCORD_INVITE_URL` (`routes/index.tsx`,
+  `routes/about.tsx`); and the nilmamano.com and en.wikipedia.org links in
+  `routes/index.tsx` (x2) and `routes/about.tsx` (x4). The about-page links live inside a
+  markdown template literal, so the conditional has to produce plain text, not an anchor.
+- Fonts are the one part that CANNOT be flag-gated: `index.html` is static. Self-host
+  unconditionally with `@fontsource/cormorant` and `@fontsource/geist-mono` (both 5.3.0,
+  confirmed reachable 2026-08-09) at the weights the Google CSS2 query asks for -
+  Cormorant 300/400/600/700, Geist Mono 400/500/600. Importing the CSS also gets the
+  woff2 files base-rewritten by Vite for free, which is slice 2's problem solved for
+  fonts.
+- Because fonts are unconditional, this slice IS user-visible on wallgame.io. Screenshot
+  the same pages before and after and show Nil, per the standing rule.
+
+**Acceptance criteria.**
+
+1. With no query param: the nav still has its Profile/Login item, all six outbound links
+   are present, and the rendered pages are visually unchanged.
+2. With `?embedded=1`: no login entry point, no outbound link to discord.gg,
+   nilmamano.com or wikipedia.org, and no request to any host outside our own origin.
+3. The latch survives a client-side navigation away from the URL carrying the param.
+4. `sg docker -c 'bun run ci'` green.

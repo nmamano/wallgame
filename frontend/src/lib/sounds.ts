@@ -1,10 +1,12 @@
+import { assetUrl } from "@/lib/asset-url";
+
 export const sounds = {
-  pawn: new Audio("/audio/pawn.wav"),
-  pawnUndo: new Audio("/audio/pawn_undo.wav"),
-  wall: new Audio("/audio/wall.wav"),
-  wallUndo: new Audio("/audio/wall_undo.wav"),
-  gameStart: new Audio("/audio/game_start.mp3"),
-  gameEnd: new Audio("/audio/game_end.mp3"),
+  pawn: new Audio(assetUrl("/audio/pawn.wav")),
+  pawnUndo: new Audio(assetUrl("/audio/pawn_undo.wav")),
+  wall: new Audio(assetUrl("/audio/wall.wav")),
+  wallUndo: new Audio(assetUrl("/audio/wall_undo.wav")),
+  gameStart: new Audio(assetUrl("/audio/game_start.mp3")),
+  gameEnd: new Audio(assetUrl("/audio/game_end.mp3")),
 };
 
 Object.values(sounds).forEach((a) => {
