@@ -51,6 +51,19 @@ export function createApp({ htmlShell }: { htmlShell?: HtmlShell } = {}) {
   registerCustomBotSocketRoute(app);
   registerEvalSocketRoute(app);
 
+  // Anything under /api that no route above claimed. Without this the catch-alls
+  // below answer a mistyped or removed endpoint with the SPA shell and a 200, so
+  // a caller has to parse HTML to discover that it failed.
+  //
+  // Registered on `app` rather than on the /api chain: that chain's type is
+  // ApiRoutes, which the frontend's RPC client is generic over, and a wildcard
+  // route in it would widen the paths the client believes exist. Order is what
+  // makes it a fallback - Hono runs matching handlers in registration order and
+  // stops at the first response, so every real route above still wins. `all`
+  // rather than `get` so a wrong method on a real path answers the same way; it
+  // was already a 404, but Hono's default one, in text/plain.
+  app.all("/api/*", (c) => c.json({ error: "Not found" }, 404));
+
   // When users go to the main website (or any route that doesn't match an API
   // route), serve the frontend.
   // Ahead of the static handlers, and it defers to them for anything that
