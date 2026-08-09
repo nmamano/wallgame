@@ -241,10 +241,6 @@ export class GameClient {
     this.send({ type: "resign" });
   }
 
-  sendGiveTime(seconds: number): void {
-    this.send({ type: "give-time", seconds });
-  }
-
   sendTakebackOffer(): void {
     this.send({ type: "takeback-offer" });
   }

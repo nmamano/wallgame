@@ -1498,26 +1498,6 @@ const handleResign = async (socket: SessionSocket) => {
   sendMatchStatus(socket.sessionId);
 };
 
-const handleGiveTime = (socket: SessionSocket, seconds: number) => {
-  const playerId = ensureAuthorizedPlayer(socket, "give-time");
-  if (playerId === null) return;
-
-  giveTime({
-    id: socket.sessionId,
-    playerId,
-    seconds,
-  });
-  console.info("[ws] give-time processed", {
-    sessionId: socket.sessionId,
-    playerId,
-    seconds,
-  });
-  broadcast(socket.sessionId, {
-    type: "state",
-    state: getSerializedState(socket.sessionId),
-  });
-};
-
 const handleTakebackOffer = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "takeback-offer");
   if (playerId === null || socket.socketToken === null) return;
@@ -2362,9 +2342,6 @@ const handleClientMessage = async (
       break;
     case "resign":
       await handleResign(socket);
-      break;
-    case "give-time":
-      handleGiveTime(socket, payload.seconds);
       break;
     case "takeback-offer":
       handleTakebackOffer(socket);

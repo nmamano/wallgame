@@ -404,23 +404,46 @@ describe("the frames a real client sends still pass", () => {
     joiner.close();
   });
 
-  it("give-time is shape-checked only, so its own policy is untouched", async () => {
-    // The schema checks that `seconds` is a number and nothing more. What a seat
-    // is ALLOWED to do to a clock is the handler's business, and the fact that
-    // this frame validates nothing is a separate hole, filed separately.
+  it("the legacy give-time frame is gone, so it cannot take the opponent's clock", async () => {
+    // Measured 2026-08-09 against 47c9b0a: this exact frame was ACCEPTED, and the
+    // opponent's clock went 600 -> -99400 in the authoritative broadcast. The
+    // frame reached `store.giveTime`, which does `timeLeft[opponent] += seconds`
+    // and nothing else, so a seat could hand its opponent a negative number.
+    // Nothing had sent the frame since 2025-12-18, so it is removed rather than
+    // validated - the surviving `action-request` path already has the policy.
     const { id, host, joiner } = await openGame();
+    const clockBefore = store.getSession(id).gameState.timeLeft[2];
 
-    host.send({ type: "give-time", seconds: "thirty" });
+    host.send({ type: "give-time", seconds: -100000 });
     const refused = await host.collect(500);
     expect(errorsIn(refused)).toHaveLength(1);
     expect(errorsIn(refused)[0]).toEqual({
       type: "error",
       message: SCHEMA_REFUSAL,
     });
+    // The victim's clock, not merely the absence of a crash.
+    expect(store.getSession(id).gameState.timeLeft[2]).toBe(clockBefore);
+    // And the victim was never told otherwise.
+    expect(await joiner.collect(200)).toHaveLength(0);
 
+    // A LEGITIMATE number is refused too: the frame is gone, not policed.
     host.send({ type: "give-time", seconds: 30 });
-    const accepted = await host.collect(500);
-    expect(errorsIn(accepted)).toHaveLength(0);
+    expect(errorsIn(await host.collect(500))).toHaveLength(1);
+    expect(store.getSession(id).gameState.timeLeft[2]).toBe(clockBefore);
+
+    // The path that survives still works, so this is a removal and not an
+    // outage of the feature.
+    host.send({
+      type: "action-request",
+      requestId: "give-time-still-works",
+      action: "giveTime",
+      payload: { seconds: 30 },
+    });
+    const acked = await host.collect(500);
+    expect(errorsIn(acked)).toHaveLength(0);
+    expect(acked.find((frame) => frame.type === "actionAck")).toBeDefined();
+    expect(store.getSession(id).gameState.timeLeft[2]).toBe(clockBefore + 30);
+
     expect(store.getSession(id).gameState.status).toBe("playing");
 
     host.close();

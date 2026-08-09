@@ -38,7 +38,10 @@ export type ChatErrorCode =
  * Includes:
  * - Game moves: "submit-move" (actions on the board)
  * - Meta game actions: resign, draw offers/accept/reject, takeback offers/accept/reject, rematch offers/accept/reject
- * - Utility: ping, give-time
+ * - Utility: ping
+ *
+ * Giving time is NOT here. It goes through `action-request` with the `giveTime`
+ * action, which is the only path the client has used since 2025-12-18.
  */
 export interface ActionRequestMessage<
   K extends ControllerActionKind = ControllerActionKind,
@@ -53,7 +56,6 @@ export type ClientMessage =
   | { type: "submit-move"; move: Move }
   | { type: "resign" }
   | { type: "ping" }
-  | { type: "give-time"; seconds: number }
   | { type: "takeback-offer" }
   | { type: "takeback-accept" }
   | { type: "takeback-reject" }
@@ -114,10 +116,11 @@ export const clientMessageSchema = z.discriminatedUnion("type", [
   }),
   z.object({ type: z.literal("resign") }),
   z.object({ type: z.literal("ping") }),
-  // Shape only. A negative number is accepted here exactly as before, because
-  // what a seat may do to a clock is the giveTime handler's policy, not the
-  // wire's — see the board task filed alongside d39862b4.
-  z.object({ type: z.literal("give-time"), seconds: z.number() }),
+  // No `give-time` variant, on purpose. It was a second way to give time that
+  // reached the clock with no policy at all, so a seat could send a negative
+  // number and take its opponent's clock away. Nothing had sent it since
+  // 2025-12-18, so it is gone rather than validated: one path to a clock is one
+  // rule to keep, and the surviving `action-request` path already has it.
   z.object({ type: z.literal("takeback-offer") }),
   z.object({ type: z.literal("takeback-accept") }),
   z.object({ type: z.literal("takeback-reject") }),
