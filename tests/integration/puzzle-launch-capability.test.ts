@@ -118,7 +118,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     db = (await import("../../server/db")).db;
     savedPuzzlesTable = (await import("../../server/db/schema/saved-puzzles"))
       .savedPuzzlesTable;
-    const { app, websocket } = (await import("../../server/index")).createApp();
+    const { app, websocket } = (await import("../../server/app")).createApp();
     server = Bun.serve({ fetch: app.fetch, websocket, port: 0 });
     baseUrl = `http://localhost:${server.port}`;
     socket = await attachBot(clientId, [standardOnlyBot("capability-bot")]);

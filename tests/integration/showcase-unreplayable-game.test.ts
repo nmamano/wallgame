@@ -30,7 +30,7 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 let db: typeof import("../../server/db").db;
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let gameDetailsTable: typeof import("../../server/db/schema/game-details").gameDetailsTable;
 
@@ -65,7 +65,7 @@ beforeAll(async () => {
   container = handle.container;
 
   const dbModule = await import("../../server/db");
-  const serverModule = await import("../../server/index");
+  const serverModule = await import("../../server/app");
   const gamesSchemaModule = await import("../../server/db/schema/games");
   const detailsSchemaModule =
     await import("../../server/db/schema/game-details");

@@ -33,7 +33,7 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 let db: typeof import("../../server/db").db;
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 let createGameSession: typeof import("../../server/games/store").createGameSession;
 let joinGameSession: typeof import("../../server/games/store").joinGameSession;
 let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
@@ -47,7 +47,7 @@ let eq: typeof import("drizzle-orm").eq;
 
 async function importServerModules() {
   const dbModule = await import("../../server/db");
-  const serverModule = await import("../../server/index");
+  const serverModule = await import("../../server/app");
   const storeModule = await import("../../server/games/store");
   const persistenceModule = await import("../../server/games/persistence");
   const gamesSchemaModule = await import("../../server/db/schema/games");

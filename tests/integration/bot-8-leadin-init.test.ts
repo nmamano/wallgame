@@ -37,13 +37,13 @@ let container: StartedTestContainer | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 let store: typeof import("../../server/games/store");
 let customBotStore: typeof import("../../server/games/custom-bot-store");
 let bgsStore: typeof import("../../server/games/bgs-store");
 
 async function importServerModules() {
-  createApp = (await import("../../server/index")).createApp;
+  createApp = (await import("../../server/app")).createApp;
   store = await import("../../server/games/store");
   customBotStore = await import("../../server/games/custom-bot-store");
   bgsStore = await import("../../server/games/bgs-store");

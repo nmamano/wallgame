@@ -29,7 +29,7 @@ const DB_PASSWORD = "test";
  * server modules will use this database.
  *
  * IMPORTANT: Call this BEFORE importing any server modules that
- * depend on the database (e.g., server/db, server/index).
+ * depend on the database (e.g., server/db, server/app).
  */
 export async function setupEphemeralDb(): Promise<TestDbHandle> {
   // Use GenericContainer instead of PostgreSqlContainer for better Bun compatibility

@@ -95,7 +95,8 @@ Hono-based backend handling HTTP API, WebSocket connections, and game sessions.
 
 ```
 server/
-├── index.ts         # Main entry point (Hono setup)
+├── index.ts         # Process entry point (binds the port; run by `start`/`dev`)
+├── app.ts           # createApp() - the Hono setup, importable with no side effects
 ├── kinde.ts         # OAuth authentication
 ├── routes/          # Hono API route handlers
 ├── db/              # Database layer

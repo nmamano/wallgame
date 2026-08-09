@@ -136,7 +136,7 @@ describe("the bot list is ordered by the ladder we chose", () => {
 
   beforeAll(async () => {
     container = (await setupEphemeralDb()).container;
-    const { app, websocket } = (await import("../../server/index")).createApp();
+    const { app, websocket } = (await import("../../server/app")).createApp();
     server = Bun.serve({ fetch: app.fetch, websocket, port: 0 });
     baseUrl = `http://localhost:${server.port}`;
     socket = await attachBots("ladder-client", LADDER);

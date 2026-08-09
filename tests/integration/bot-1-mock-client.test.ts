@@ -57,10 +57,10 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 // These will be dynamically imported after DB is set up
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 
 async function importServerModules() {
-  const serverModule = await import("../../server/index");
+  const serverModule = await import("../../server/app");
   createApp = serverModule.createApp;
 }
 

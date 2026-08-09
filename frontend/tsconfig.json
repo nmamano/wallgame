@@ -9,8 +9,8 @@
     "baseUrl": ".",
     "paths": {
       "@/*": ["./src/*"],
-      // instead of 'import { type ApiRoutes } from "../../../server/index"'
-      // allows us to do from '@server/index'
+      // instead of 'import { type ApiRoutes } from "../../../server/app"'
+      // allows us to do from '@server/app'
       // We also need this in vite.config.ts
       // we may also need this in tsconfig.app.json, not sure, but added it just
       // in case.

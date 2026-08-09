@@ -42,14 +42,14 @@ let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
 let db: typeof import("../../server/db").db;
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 
 async function importServerModules() {
   // Dynamic imports - these must happen AFTER DATABASE_URL is set
   db = (await import("../../server/db")).db;
-  createApp = (await import("../../server/index")).createApp;
+  createApp = (await import("../../server/app")).createApp;
   const users = await import("../../server/db/schema/users");
   usersTable = users.usersTable;
   userAuthTable = users.userAuthTable;

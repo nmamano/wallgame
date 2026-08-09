@@ -16,11 +16,11 @@
 
 import { describe, it, expect, beforeAll } from "bun:test";
 
-let createApp: typeof import("../server/index").createApp;
+let createApp: typeof import("../server/app").createApp;
 
 beforeAll(async () => {
   process.env.DATABASE_URL = "postgres://inert:inert@127.0.0.1:5432/inert";
-  ({ createApp } = await import("../server/index"));
+  ({ createApp } = await import("../server/app"));
 });
 
 /** Every <loc> in document order, so tests can assert the exact URL set. */

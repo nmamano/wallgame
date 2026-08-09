@@ -43,7 +43,7 @@ let baseUrl: string;
 
 // These will be dynamically imported after DB is set up
 let db: typeof import("../../server/db").db;
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let ratingsTable: typeof import("../../server/db/schema/ratings").ratingsTable;
@@ -54,7 +54,7 @@ let eq: typeof import("drizzle-orm").eq;
 async function importServerModules() {
   // Dynamic imports - these must happen AFTER DATABASE_URL is set
   const dbModule = await import("../../server/db");
-  const serverModule = await import("../../server/index");
+  const serverModule = await import("../../server/app");
   const gamesSchemaModule = await import("../../server/db/schema/games");
   const usersSchemaModule = await import("../../server/db/schema/users");
   const ratingsSchemaModule = await import("../../server/db/schema/ratings");

@@ -9,7 +9,7 @@ import {
 } from "../../../shared/contracts/puzzles";
 import { getAnonymousId } from "./anonymous-id";
 import { hc, type ClientResponse } from "hono/client";
-import { type ApiRoutes } from "@server/index";
+import { type ApiRoutes } from "@server/app";
 import { queryOptions } from "@tanstack/react-query";
 import type {
   GameSnapshot,

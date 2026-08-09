@@ -55,10 +55,10 @@ let eq: typeof import("drizzle-orm").eq;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
-let createApp: typeof import("../../server/index").createApp;
+let createApp: typeof import("../../server/app").createApp;
 
 async function importServerModules() {
-  const serverModule = await import("../../server/index");
+  const serverModule = await import("../../server/app");
   createApp = serverModule.createApp;
   db = (await import("../../server/db")).db;
   gameDetailsTable = (await import("../../server/db/schema/game-details"))
