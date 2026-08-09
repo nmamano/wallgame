@@ -139,7 +139,7 @@ const main = async () => {
       process.exit(1);
     }
     console.log(
-      `will populate: ${row.displayName} (${row.id}, enabled=${row.enabled}) — ${expected.piece} from [${expected.from}]`,
+      `will populate: ${row.displayName} (${row.id}, enabled=${row.enabled}) — ${expected.piece} from [${expected.from.join(",")}]`,
     );
     updates.push({
       id: row.id,

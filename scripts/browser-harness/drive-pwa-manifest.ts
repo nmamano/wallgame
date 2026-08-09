@@ -131,6 +131,9 @@ try {
     const displayOk = ["fullscreen", "standalone", "minimal-ui"].includes(
       parsed.display ?? "",
     );
+    // `||`, not `??`: an empty-string name is present-but-useless and should
+    // fall through to short_name. `??` would only fall through on null.
+    // eslint-disable-next-line @typescript-eslint/prefer-nullish-coalescing
     const named = Boolean(parsed.name || parsed.short_name);
     console.log(
       `  installable fields: name=${named} 192=${has192} 512=${has512} display=${displayOk} start_url=${Boolean(parsed.start_url)}`,
@@ -165,5 +168,5 @@ try {
   page.close();
 } finally {
   browser.stop();
-  stub?.stop();
+  void stub?.stop();
 }

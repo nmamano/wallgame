@@ -163,7 +163,7 @@ try {
     states.forEach(({ atMs, state }) => console.log(`  ${atMs}ms  ${state}`));
     console.log(`  requests: ${JSON.stringify(stub.log())}`);
     page.close();
-    stub.stop();
+    void stub.stop();
   }
 
   // Nav bar: does it fit once "Puzzles" is a ninth item?
@@ -202,11 +202,11 @@ try {
         labels,
       });
     })()`);
-    console.log(`  ${width}px: ${fit}`);
+    console.log(`  ${width}px: ${String(fit)}`);
     await page.screenshot(`/tmp/nav-${width}.png`);
   }
   page.close();
-  stub.stop();
+  void stub.stop();
 } finally {
   chrome.stop();
 }

@@ -249,7 +249,7 @@ try {
   );
 } finally {
   await browser?.close();
-  server.stop(true);
+  void server.stop(true);
 }
 
 console.log("\n=== navigation reporting, real app, production hostname ===");

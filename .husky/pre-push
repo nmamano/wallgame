@@ -18,11 +18,11 @@ bun run format:check
 
 # Not `bun run lint`: that one passes --fix, so it would REPAIR a violation and
 # report success, leaving the unfixed version to be the thing that was pushed.
-# CI runs the checking form, so this does too.
+# `lint:check` is the checking form, and it is what CI runs too.
 echo "🔎🔎 Running ESLint..."
-bun x eslint .
+bun run lint:check
 
-echo "🧩🧩 Typechecking server, shared and tests..."
+echo "🧩🧩 Typechecking six projects (server+shared, tests, scripts, harness, frontend tests, bot client)..."
 bun run typecheck
 
 echo "🔍🔍 Checking build..."

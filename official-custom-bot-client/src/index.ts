@@ -17,7 +17,7 @@
 import { parseArgs } from "util";
 import { BotClient } from "./ws-client";
 import { setLogLevel, logger, type LogLevel } from "./logger";
-import { botConfigSchema } from "../../shared/contracts/custom-bot-config-schema";
+import type { BotConfig } from "../../shared/contracts/custom-bot-protocol";
 import { configFileSchema, type ConfigFile } from "./config-schema";
 
 const VERSION = "3.0.0";
@@ -191,13 +191,15 @@ async function main(): Promise<void> {
 
     // `official` and `naiveMoveRate` are config-file-only: destructured out
     // here so the attach payload stays exactly the wire shape the server
-    // validates.
-    bots = config.bots.map(({ official, naiveMoveRate: _rate, ...bot }) => ({
+    // validates. Binding naiveMoveRate and never reading it IS the mechanism -
+    // it is how the property is kept out of `...bot`.
+    // eslint-disable-next-line @typescript-eslint/no-unused-vars
+    bots = config.bots.map(({ official, naiveMoveRate, ...bot }) => ({
       ...bot,
       officialToken: official !== false ? officialToken : undefined,
     }));
   } catch (error) {
-    console.error(`Error loading config file: ${error}`);
+    console.error(`Error loading config file: ${String(error)}`);
     process.exit(1);
   }
 

@@ -8,6 +8,16 @@
  * exact scenario the request-collision fix targets.
  */
 
+// Exported for one reason beyond documenting the wire shape: it makes this
+// file a module. Without a single import or export, tsc rejects the top-level
+// `for await` below with TS1431, and the file is spawned directly rather than
+// imported, so nothing else would have given it module status.
+export interface EngineRequest {
+  type: string;
+  bgsId: string;
+  expectedPly?: number;
+}
+
 const RESPONSE_TYPE: Record<string, string> = {
   start_game_session: "game_session_started",
   end_game_session: "game_session_ended",
@@ -21,7 +31,7 @@ const DELAY_MS: Record<string, number> = {
   evaluate_position: 150,
 };
 
-function respond(req: { type: string; bgsId: string; expectedPly?: number }) {
+function respond(req: EngineRequest) {
   const type = RESPONSE_TYPE[req.type];
   if (!type) return;
   const res: Record<string, unknown> = {
@@ -50,7 +60,7 @@ for await (const chunk of Bun.stdin.stream()) {
     const line = buffer.slice(0, newlineIndex).trim();
     buffer = buffer.slice(newlineIndex + 1);
     if (!line) continue;
-    const req = JSON.parse(line);
+    const req = JSON.parse(line) as EngineRequest;
     const delay = DELAY_MS[req.type] ?? 0;
     if (delay > 0) {
       setTimeout(() => respond(req), delay);

@@ -1,34 +1,57 @@
 import { readFile, writeFile } from "node:fs/promises";
+import { relative } from "node:path";
+import { fileURLToPath } from "node:url";
 import { glob } from "glob";
-import { parse, stringify } from "svgson";
+import { parse, stringify, type INode } from "svgson";
 import pathBounds from "svg-path-bounds";
 
 const TARGET_SIZE = 100;
 const PADDING_RATIO = 0.01; // 1% padding around art
 
-type SvgNode = {
-  name: string;
-  type: string;
-  value?: string;
-  attributes: Record<string, string>;
-  children: SvgNode[];
-};
+// Both anchors are derived from this module's own location, so neither the
+// search nor the writes depend on the working directory.
+//
+// Two separate cwd traps live here, and fixing one hid the other. The file sat
+// in the repo-root scripts/ tree until 2026-08-09 and could not run at all,
+// because Bun resolves PACKAGES from the module's path and its three
+// dependencies are installed under frontend/. Moving it here fixed that - and
+// left a worse bug behind: the glob was still the relative string
+// "public/pawns/**/*.svg", so from the repository root the script matched
+// nothing, wrote nothing, and exited 0. A run that reports success after
+// touching no files is the failure this anchoring exists to prevent.
+const FRONTEND_DIR = fileURLToPath(new URL("..", import.meta.url));
+const PAWNS_DIR = fileURLToPath(new URL("../public/pawns", import.meta.url));
+
+// --dry-run does everything except the write: it is how the discovery and
+// parse path can be exercised without rewriting tracked assets.
+const DRY_RUN = process.argv.includes("--dry-run");
 
 async function main() {
-  // Adjusted path to match the actual directory structure
-  const files = await glob("public/pawns/**/*.svg");
+  const files = await glob("**/*.svg", { cwd: PAWNS_DIR, absolute: true });
 
+  // Silence here would mean the anchors are wrong, not that the work is done.
+  if (files.length === 0) {
+    console.error(
+      `No SVGs found under ${PAWNS_DIR}. Refusing to report success.`,
+    );
+    process.exit(1);
+  }
+  console.log(
+    `${DRY_RUN ? "Dry run: would normalize" : "Normalizing"} ${files.length} file(s) under ${PAWNS_DIR}`,
+  );
+
+  let written = 0;
   for (const file of files) {
-    console.log("Normalizing", file);
+    console.log("Normalizing", relative(FRONTEND_DIR, file));
     const raw = await readFile(file, "utf8");
-    const svg = (await parse(raw)) as SvgNode;
+    const svg = await parse(raw);
 
     // 1) Flatten and collect all shapes (paths, rects, etc.) AND style/defs
     // This prevents double-wrapping if the script is run multiple times
-    const shapes: SvgNode[] = [];
-    const stylesAndDefs: SvgNode[] = [];
+    const shapes: INode[] = [];
+    const stylesAndDefs: INode[] = [];
 
-    function collectNodes(node: SvgNode) {
+    function collectNodes(node: INode) {
       if (node.name === "style" || node.name === "defs") {
         stylesAndDefs.push(node);
       } else if (
@@ -120,6 +143,9 @@ async function main() {
       {
         name: "g",
         type: "element",
+        // Required by INode and never read for an element: svgson's stringify
+        // consults node.value only on the `type === "text"` branch.
+        value: "",
         attributes: { transform },
         children: shapes,
       },
@@ -131,11 +157,19 @@ async function main() {
     delete svg.attributes.height;
 
     const out = stringify(svg);
+    if (DRY_RUN) continue;
     await writeFile(file, out, "utf8");
+    written++;
   }
+
+  console.log(
+    DRY_RUN
+      ? `Dry run complete: ${files.length} file(s) discovered and parsed, 0 written.`
+      : `Wrote ${written} file(s).`,
+  );
 }
 
-main().catch((err) => {
+main().catch((err: unknown) => {
   console.error(err);
   process.exit(1);
 });

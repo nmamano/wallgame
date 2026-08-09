@@ -154,7 +154,7 @@ const main = async () => {
     msg: { type: string; bgsId: string } & Record<string, unknown>,
     expectedResponseType: string,
   ): Promise<Record<string, unknown>> => {
-    proc.stdin.write(JSON.stringify(msg) + "\n");
+    void proc.stdin.write(JSON.stringify(msg) + "\n");
     await proc.stdin.flush();
     const response = await readLine(Date.now() + RESPONSE_TIMEOUT_MS);
     if (
@@ -325,7 +325,7 @@ const main = async () => {
     );
   } finally {
     try {
-      proc.stdin.end();
+      void proc.stdin.end();
     } catch {
       /* ignore */
     }

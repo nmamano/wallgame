@@ -9,7 +9,7 @@
     "migrate": "bun scripts/migrate.ts",
     "test": "bun scripts/run-tests.ts",
     "test:wsl": "wsl.exe -d Ubuntu -- bash -lc 'cd \"$PWD\" && env PATH=\"$HOME/.bun/bin:/usr/bin:/bin\" bun scripts/run-tests.ts'",
-    "typecheck": "bun x tsc --noEmit -p tsconfig.server.json && bun x tsc --noEmit -p tsconfig.tests.json && bun x tsc --noEmit -p frontend/tsconfig.test.json",
+    "typecheck": "bun x tsc --noEmit -p tsconfig.server.json && bun x tsc --noEmit -p tsconfig.tests.json && bun x tsc --noEmit -p tsconfig.scripts.json && bun x tsc --noEmit -p tsconfig.harness.json && bun x tsc --noEmit -p frontend/tsconfig.test.json && bun x tsc --noEmit -p official-custom-bot-client/tsconfig.json",
     "build": "bun --cwd=frontend run build",
     "harness:nudge": "bun run build && bun scripts/browser-harness/drive-account-nudge.ts",
     "harness:puzzles": "bun run build && bun scripts/browser-harness/drive-puzzles-page.ts",
@@ -17,9 +17,10 @@
     "harness:pwa": "bun run build && bun scripts/browser-harness/drive-pwa-manifest.ts",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
-    "lint": "bun x eslint . --fix --cache --cache-location .eslintcache",
-    "ci": "bun x prettier --check . && bun x eslint . && bun run typecheck && bun run test && bun run build",
-    "cip": "bun x prettier --write . && bun x eslint . --fix && bun run typecheck && bun run test && bun run build"
+    "lint": "NODE_OPTIONS=--max-old-space-size=4096 bun x eslint . --fix --cache --cache-location .eslintcache",
+    "lint:check": "NODE_OPTIONS=--max-old-space-size=4096 bun x eslint .",
+    "ci": "bun x prettier --check . && bun run lint:check && bun run typecheck && bun run test && bun run build",
+    "cip": "bun x prettier --write . && bun run lint && bun run typecheck && bun run test && bun run build"
   },
   "dependencies": {
     "@fontsource/cormorant": "^5.3.0",

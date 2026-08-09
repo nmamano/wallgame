@@ -13,6 +13,8 @@
  * you point at a question. See README.md.
  */
 
+import { rmSync } from "node:fs";
+
 /** Chrome's DevTools endpoint. One browser at a time is plenty. */
 const CDP_PORT = 9222;
 const CDP = `http://127.0.0.1:${CDP_PORT}`;
@@ -67,7 +69,7 @@ export const launchChrome = async (
     // Best effort: a stale profile would only waste disk, never corrupt a run,
     // since the directory is unique per process.
     try {
-      require("node:fs").rmSync(profileDir, { recursive: true, force: true });
+      rmSync(profileDir, { recursive: true, force: true });
     } catch {
       /* leave it for /tmp cleanup */
     }

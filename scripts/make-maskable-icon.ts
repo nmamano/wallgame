@@ -9,7 +9,7 @@
  * margin baked in, on an opaque background, or it should not claim the purpose.
  *
  * Why the browser does the drawing: the repo has no raster image dependency
- * (normalize-icons.mts is SVG-only via svgson), and the harness already starts
+ * (frontend/scripts/normalize-icons.ts is SVG-only via svgson), and the harness already starts
  * a real Chrome. Canvas gives correct downscaling for free rather than through
  * a hand-rolled resampler.
  *

@@ -1,0 +1,29 @@
+// Typecheck project for scripts/, EXCEPT the browser harnesses.
+//
+// Everything here runs under Bun on a terminal: migrations, backfills, puzzle
+// tooling, the test runner itself. So it inherits the server project's
+// settings, DOM deliberately EXCLUDED - a reference to `document` in a
+// migration script is a bug, and leaving DOM out is what makes it one.
+//
+// scripts/browser-harness/ is the exception and has its own project,
+// tsconfig.harness.json, because those files DO write browser code. DOM cannot
+// simply be widened into this project to cover them: with lib.dom loaded, the
+// DOM's ReadableStream shadows Bun's, and `for await (const chunk of
+// proc.stderr)` in bgs-engine-probe.ts fails TS2504 because the DOM type
+// declares no [Symbol.asyncIterator]. Measured 2026-08-09: no DOM here plus DOM
+// there is 0 errors; one project with DOM for everything is 1, and the only way
+// to silence it is a cast at a line that is already correct.
+//
+// scripts/**/*.mjs is not listed. Those are plain-JS harnesses with no types
+// to check; eslint covers them for syntax and unused bindings.
+//
+// Read by two things, which must stay in step: `bun run typecheck`, and the
+// type-aware ESLint rules in eslint.config.js.
+{
+  "extends": "./tsconfig.server.json",
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.scripts.tsbuildinfo"
+  },
+  "include": ["scripts/**/*.ts", "scripts/**/*.mts"],
+  "exclude": ["scripts/browser-harness/**"]
+}

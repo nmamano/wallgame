@@ -138,11 +138,13 @@ try {
   await page.navigate(`${stub.url}/puzzles`);
   await wait(2500);
   console.log(
-    `first load: checkmarks=${await page.evaluate(CHECKMARKS)} (expect 0), progress reads=${progressReads}`,
+    `first load: checkmarks=${String(await page.evaluate(CHECKMARKS))} (expect 0), progress reads=${progressReads}`,
   );
   console.log(
-    `  sections: ${await page.evaluate(
-      `JSON.stringify([...document.querySelectorAll('h2')].map(h => h.textContent))`,
+    `  sections: ${String(
+      await page.evaluate(
+        `JSON.stringify([...document.querySelectorAll('h2')].map(h => h.textContent))`,
+      ),
     )}`,
   );
 
@@ -161,7 +163,7 @@ try {
     })()`),
   );
   await wait(1500);
-  console.log(`  url: ${await page.evaluate("location.pathname")}`);
+  console.log(`  url: ${String(await page.evaluate("location.pathname"))}`);
 
   // 3. Beat the level, as far as the server is concerned. Deliberately NOT
   //    through the browser: no request, no cache write, nothing the app can
@@ -258,7 +260,7 @@ try {
       });
     })()`),
   );
-  const cells = Number(JSON.parse(level).cells);
+  const cells = Number((JSON.parse(level) as { cells: unknown }).cells);
   console.log(`\n/solo-campaign/1 renders: ${level}`);
   console.log(
     cells === EXPECTED_CELLS
@@ -268,5 +270,5 @@ try {
   page.close();
 } finally {
   chrome.stop();
-  stub.stop();
+  void stub.stop();
 }

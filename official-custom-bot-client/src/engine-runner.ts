@@ -59,9 +59,11 @@ function parseCommand(command: string): string[] {
   let current = "";
   let inQuote: string | null = null;
 
-  for (let i = 0; i < command.length; i++) {
-    const char = command[i];
-
+  // for-of yields whole code points where the old index loop yielded UTF-16
+  // code units. The output is unchanged either way: a surrogate half matches
+  // none of the delimiters below, so both forms concatenate it back into
+  // `current` unmodified.
+  for (const char of command) {
     if (inQuote) {
       if (char === inQuote) {
         inQuote = null;
@@ -103,25 +105,25 @@ export class EngineProcess {
   private stdin: import("bun").FileSink;
   // Keyed by (requestType, bgsId) via pendingKey(), NOT by bgsId alone, so that
   // more than one request per session can be in flight concurrently.
-  private pendingRequests: Map<
+  private pendingRequests = new Map<
     string,
     {
       resolve: (response: EngineResponseV3) => void;
       reject: (error: Error) => void;
     }
-  > = new Map();
-  private isAlive: boolean = true;
-  private lineBuffer: string = "";
+  >();
+  private isAlive = true;
+  private lineBuffer = "";
 
   private constructor(proc: Subprocess<"pipe", "pipe", "pipe">) {
     this.proc = proc;
     this.stdin = proc.stdin;
 
     // Start reading stdout for responses
-    this.readResponses();
+    void this.readResponses();
 
     // Handle process exit
-    proc.exited.then((exitCode) => {
+    void proc.exited.then((exitCode) => {
       logger.info(`Engine process exited with code ${exitCode}`);
       this.isAlive = false;
       // Reject all pending requests
@@ -137,6 +139,11 @@ export class EngineProcess {
   /**
    * Spawn a new engine process.
    */
+  // `async` with nothing awaited, kept on purpose. Dropping it would turn the
+  // "Empty engine command" throw below from a rejected promise into a
+  // synchronous one, which is a different thing for any caller that does not
+  // await. The Promise return type is the published contract either way.
+  // eslint-disable-next-line @typescript-eslint/require-await
   static async spawn(engineCommand: string): Promise<EngineProcess> {
     const args = parseCommand(engineCommand);
     if (args.length === 0) {
@@ -157,7 +164,7 @@ export class EngineProcess {
 
     // Log stderr output
     const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-    (async () => {
+    void (async () => {
       const reader = stderrStream.getReader();
       const decoder = new TextDecoder();
       while (true) {
@@ -214,7 +221,7 @@ export class EngineProcess {
 
     let response: EngineResponseV3;
     try {
-      response = JSON.parse(line);
+      response = JSON.parse(line) as EngineResponseV3;
     } catch (error) {
       logger.error(`Failed to parse engine response: ${line}`, error);
       return;
@@ -284,7 +291,7 @@ export class EngineProcess {
     logger.debug(`Sending to engine: ${json.trim()}`);
 
     const encoder = new TextEncoder();
-    this.stdin.write(encoder.encode(json));
+    void this.stdin.write(encoder.encode(json));
 
     return responsePromise;
   }
@@ -297,7 +304,7 @@ export class EngineProcess {
       logger.debug("Killing engine process");
       this.isAlive = false;
       try {
-        this.stdin.end();
+        void this.stdin.end();
       } catch {
         // Ignore stdin close errors
       }

@@ -143,7 +143,7 @@ type CleanupVerdict =
   | "leaked" // survived TERM and KILL
   | "no-pid"; // never identified
 
-type Shutdown = {
+interface Shutdown {
   /** ssh exited AND the remote pid is gone. Both, not either. */
   natural: boolean;
   sshExitCode: number | null;
@@ -151,7 +151,7 @@ type Shutdown = {
   stderr: string[];
   /** False if the exit code or the final stderr could not be collected. */
   reapComplete: boolean;
-};
+}
 
 const startConfig = () => ({
   variant: VARIANT,
@@ -361,7 +361,7 @@ const openEngine = async (samples: number, threads: number) => {
   };
 
   const write = async (msg: Msg) => {
-    proc.stdin.write(JSON.stringify(msg) + "\n");
+    void proc.stdin.write(JSON.stringify(msg) + "\n");
     await proc.stdin.flush();
   };
 
@@ -466,8 +466,10 @@ const openEngine = async (samples: number, threads: number) => {
    */
   const shutdown = async (): Promise<Shutdown> => {
     try {
-      proc.stdin.end();
-    } catch {}
+      void proc.stdin.end();
+    } catch {
+      // Already closed; shutdown proceeds either way.
+    }
 
     await waitForLocalExit(SHUTDOWN_GRACE_MS);
     const sshExited = proc.exitCode !== null;
@@ -493,7 +495,9 @@ const openEngine = async (samples: number, threads: number) => {
         await waitForLocalExit(REAP_BUDGET_MS);
         try {
           if (proc.exitCode === null) proc.kill();
-        } catch {}
+        } catch {
+          // Raced its own exit. The wait below reports what actually happened.
+        }
         // Second bounded wait: the first one ran BEFORE the local kill, so
         // without this the ssh exit code could still be reported as null.
         await waitForLocalExit(REAP_BUDGET_MS);
@@ -532,9 +536,11 @@ const openEngine = async (samples: number, threads: number) => {
   }
   if (remotePid === undefined) {
     try {
-      proc.stdin.end();
+      void proc.stdin.end();
       proc.kill();
-    } catch {}
+    } catch {
+      // Best effort: this path already throws below.
+    }
     await Promise.race([stderrDone, Bun.sleep(REAP_BUDGET_MS)]);
     throw new Error(
       `no PROBE_PID within ${PID_DEADLINE_MS}ms - refusing to drive an engine ` +
@@ -870,8 +876,8 @@ const runBand = async () => {
 
       log(
         `  samples=${String(samples).padStart(5)} seed=${engine.seed} ` +
-          `success=${response.success} bestMove=${JSON.stringify(response.bestMove)} ` +
-          `eval=${response.evaluation} error=${JSON.stringify(response.error)}` +
+          `success=${String(response.success)} bestMove=${JSON.stringify(response.bestMove)} ` +
+          `eval=${String(response.evaluation)} error=${JSON.stringify(response.error)}` +
           (verdict === null
             ? ""
             : verdict.ok
@@ -895,7 +901,7 @@ const runBand = async () => {
         infrastructureOk = false;
         log(
           `  samples=${String(samples).padStart(5)} NO USABLE MOVE ` +
-            `(success=${response.success}, judged=${verdict === null ? "no move" : verdict.ok}), ` +
+            `(success=${String(response.success)}, judged=${verdict === null ? "no move" : verdict.ok}), ` +
             `and --require-move was given`,
         );
       }

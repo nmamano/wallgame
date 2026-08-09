@@ -47,17 +47,23 @@ jobs:
         run: bun run format:check
 
       # Not `bun run lint`: that one passes --fix, which would repair the
-      # problem and report success instead of failing the build.
+      # problem and report success instead of failing the build. `lint:check`
+      # is the same eslint run without --fix, and it carries the raised heap
+      # limit that type-aware linting of seven TS projects needs.
       - name: Lint
-        run: bun x eslint .
+        run: bun run lint:check
 
-      # server/, shared/ and tests/. Nothing ran tsc over them until 2026-08-09:
-      # the root tsconfig.json has no `include`, so `tsc -p tsconfig.json` globs
-      # the CMake-generated .ts under minimax-engine/build_release and drowns in
-      # syntax errors, which is why a real breakage in tests/ once reached main.
-      # Plus frontend/tsconfig.test.json: the frontend's own `tsc -b` in the
-      # build step covers the app, but it excludes *.test.ts, so the bun:test
-      # files under frontend/src had no type-checker of their own.
+      # Six projects in series, as of 2026-08-09: server+shared, tests,
+      # scripts, scripts/browser-harness, the frontend bun:test files, and
+      # official-custom-bot-client. Nothing ran tsc over server/shared/tests
+      # until that date: the root tsconfig.json has no `include`, so
+      # `tsc -p tsconfig.json` globs the CMake-generated .ts under
+      # minimax-engine/build_release and drowns in syntax errors, which is why a
+      # real breakage in tests/ once reached main. The frontend's own `tsc -b`
+      # in the build step covers the app and frontend/scripts, but it excludes
+      # *.test.ts, so those needed naming here too. See
+      # ops-private/wallgame-testing.md for why scripts and the harnesses are
+      # separate projects (DOM is contagious).
       - name: Typecheck
         run: bun run typecheck
 

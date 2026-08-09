@@ -39,7 +39,11 @@ LINTABLE_FILES=$(echo "$STAGED_FILES" | grep -E '\.(ts|tsx|js|jsx|mjs|cjs|mts|ct
 
 if [ -n "$LINTABLE_FILES" ]; then
   echo "🔎🔎 Running ESLint on staged files..."
-  echo "$LINTABLE_FILES" | xargs bunx eslint --no-warn-ignored
+  # Same raised heap as `lint:check`. The file list is short, but the cost is
+  # in the TS programs the typed rules build, and a commit spanning frontend,
+  # server, scripts and the bot client loads all of them.
+  echo "$LINTABLE_FILES" |
+    NODE_OPTIONS=--max-old-space-size=4096 xargs bunx eslint --no-warn-ignored
 else
   echo "No staged files need ESLint."
 fi

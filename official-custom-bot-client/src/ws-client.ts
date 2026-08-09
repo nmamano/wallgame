@@ -108,25 +108,25 @@ export class BotClient {
   private limits: CustomBotServerLimits = DEFAULT_BOT_LIMITS;
 
   // V3: Long-lived engine processes (one per bot)
-  private engines: Map<string, EngineProcess> = new Map();
+  private engines = new Map<string, EngineProcess>();
 
   // V3: Session routing table (bgsId -> botId) for routing messages without botId
-  private sessionRoutes: Map<string, string> = new Map();
+  private sessionRoutes = new Map<string, string>();
 
   // Sessions where an engine plays the game but a SHADOW dumb-bot session is
   // kept alongside it, so a fraction of moves can come from the naive policy
   // (see naiveMoveRates). A bgsId is in this set only while the shadow is known
   // to be in lockstep with the engine; the first sign of drift removes it and
   // the session finishes on pure engine moves.
-  private shadowSessions: Set<string> = new Set();
+  private shadowSessions = new Set<string>();
 
   // Reconnection state
-  private reconnectAttempts: number = 0;
-  private shouldReconnect: boolean = true;
+  private reconnectAttempts = 0;
+  private shouldReconnect = true;
 
   // Keepalive ping state
   private pingInterval: ReturnType<typeof setInterval> | null = null;
-  private pongReceived: boolean = true;
+  private pongReceived = true;
 
   // Connection promise callbacks (for resolving on attached/rejected)
   private connectResolve: (() => void) | null = null;
@@ -139,7 +139,7 @@ export class BotClient {
       clientId: options.clientId,
       bots: options.bots,
       engineCommands: options.engineCommands,
-      naiveMoveRates: options.naiveMoveRates ?? new Map(),
+      naiveMoveRates: options.naiveMoveRates ?? new Map<string, number>(),
       clientName: options.clientName ?? "wallgame-bot-client",
       clientVersion: options.clientVersion ?? "3.0.0",
     };
@@ -258,7 +258,11 @@ export class BotClient {
       )}ms`,
     );
 
-    setTimeout(async () => {
+    // Named rather than passed inline, because setTimeout expects a void
+    // callback and an async arrow hands it a promise nothing can observe. The
+    // body and its timing are unchanged; `void` states that the rejection is
+    // handled internally, which the try/catch below does.
+    const attemptReconnect = async () => {
       if (!this.shouldReconnect) return;
 
       try {
@@ -310,7 +314,8 @@ export class BotClient {
           this.scheduleReconnect();
         }
       }
-    }, delay);
+    };
+    setTimeout(() => void attemptReconnect(), delay);
   }
 
   /**
@@ -393,7 +398,10 @@ export class BotClient {
 
     let message: CustomBotServerMessage;
     try {
-      message = JSON.parse(data);
+      // Unvalidated by design: the handlers below switch on message.type and
+      // ignore anything they do not recognise. The assertion only names the
+      // shape the code already assumes.
+      message = JSON.parse(data) as CustomBotServerMessage;
     } catch (error) {
       logger.error("Failed to parse server message:", error);
       return;
@@ -492,7 +500,23 @@ export class BotClient {
 
   // ===========================================================================
   // V3 BGS Message Handlers
+  //
+  // Every handler below writes its reply with `await this.send(...)`, and
+  // send() is synchronous (`private send(...): void`). So each of those awaits
+  // is an await of a non-Promise, which is what await-thenable objects to.
+  //
+  // They are kept deliberately rather than removed. `await undefined` still
+  // yields to the microtask queue, so dropping the keyword would move the
+  // statement after each send - `this.state = "waiting"`, a `return`, a shadow
+  // session update - from the next microtask into the same tick. That is a
+  // scheduling change in a client that is live in production, and this is a
+  // lint-coverage change, not the place to make it.
+  //
+  // Scoped to this section rather than the file so an await of a non-Promise
+  // anywhere else in ws-client.ts is still reported.
   // ===========================================================================
+
+  /* eslint-disable @typescript-eslint/await-thenable */
 
   /**
    * V3: Handle start_game_session - pass through to engine
@@ -532,7 +556,7 @@ export class BotClient {
         };
         await this.send(errorResponse);
       } else {
-        const started = response as GameSessionStartedMessage;
+        const started = response;
         // Only ever alongside a live engine session: a session the engine
         // refused gets no end_game_session, so a shadow opened before this
         // point would sit in the dumb bot's session map for the life of the
@@ -697,6 +721,8 @@ export class BotClient {
 
     this.state = "waiting";
   }
+
+  /* eslint-enable @typescript-eslint/await-thenable */
 
   // ===========================================================================
   // Shadow naive sessions

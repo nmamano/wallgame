@@ -366,7 +366,7 @@ const main = async () => {
     // opposite of what it claimed. Staging moves is not enough: a turn is only
     // committed when the action budget fills or "Finish move" is pressed, and
     // the first attempt at this run staged six moves and committed none.
-    const moves = await playToCountedFinish(page, say);
+    await playToCountedFinish(page, say);
     const appearedAt = Date.now();
 
     const finished = Boolean(
@@ -602,7 +602,7 @@ const main = async () => {
   } finally {
     page.close();
     chrome.stop();
-    stub.stop();
+    void stub.stop();
     console.log("\n--- measurements ---");
     findings.forEach((f) => console.log(f));
     console.log("\n--- required invariants ---");
