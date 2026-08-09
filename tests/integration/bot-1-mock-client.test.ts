@@ -850,6 +850,129 @@ describe("custom bot WebSocket integration V3", () => {
     }
   }, 60000);
 
+  /**
+   * A human who tries an illegal backtrack must be told no. The BOT must not
+   * pay for it.
+   *
+   * Before board task 59a8c5a2, `applyMove` accepted a pawn that stepped to a
+   * neighbour and back inside one submitted move, even though the rules forbid
+   * it. The server then sent that move to the engine as notation, which collapses
+   * a pawn's steps to its final cell — so the engine was handed a term naming the
+   * cell the pawn already stood on, found no path of length zero, and refused it.
+   * The server reads a refused apply_move as engine failure and resigns the bot
+   * (`bgs-update-failed-after-human-move`). 17 bot games ended that way between
+   * 2026-02-18 and 2026-08-09, each one a win the player never earned.
+   *
+   * With the rule fixed, the move dies in `applyPlayerMove`, which `handleMove`
+   * calls BEFORE it touches the BGS. So the assertion that matters is not only
+   * that the human gets an error: it is that the engine is never asked at all.
+   */
+  it("refuses a human backtrack without resigning the bot", async () => {
+    const hostUserId = "host-backtrack";
+    const clientId = "test-client-backtrack";
+    const botId = "backtrack-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    const gameConfig: GameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "standard",
+      rated: false,
+      boardWidth: 3,
+      boardHeight: 3,
+      variantConfig: buildStandardInitialState(3, 3),
+    };
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [
+        createTestBotConfig(botId, "Backtrack Bot"),
+      ]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const { gameId, socketToken } = await createGameVsBot(
+        hostUserId,
+        compositeId,
+        gameConfig,
+        true,
+      );
+      humanSocket = await openHumanSocket(hostUserId, gameId, socketToken);
+
+      const startSession = await botSocket.waitForMessage("start_game_session");
+      const bgsId = startSession.bgsId;
+      botSocket.sendGameSessionStarted(bgsId, true);
+
+      const lookAhead = await botSocket.waitForMessage("evaluate_position");
+      expect(lookAhead.expectedPly).toBe(0);
+      botSocket.sendEvaluateResponse(bgsId, 0, "---", 0.0);
+
+      const opening = await humanSocket.waitForMessage("state");
+      expect(opening.state.turn).toBe(1);
+
+      // The human's cat is on [0,0]. It steps to [0,1] and straight back — the
+      // exact shape of the four stored rows that cannot be replayed.
+      humanSocket.ws.send(
+        JSON.stringify({
+          type: "submit-move",
+          move: {
+            actions: [
+              { type: "cat", target: [0, 1] },
+              { type: "cat", target: [0, 0] },
+            ],
+          },
+        }),
+      );
+
+      // 1. The human is told no, in as many words.
+      const rejection = await humanSocket.waitForMessage("error", {
+        ignore: ["state", "match-status"],
+      });
+      expect(rejection.message).toBe(
+        "A pawn cannot immediately return to its previous cell",
+      );
+
+      // 2. THE ENGINE WAS NEVER ASKED. This is what makes the forfeit
+      //    impossible rather than merely unlikely: no apply_move can fail if no
+      //    apply_move is ever sent. A timeout is the pass; any message arriving
+      //    (an apply_move, or an end_game_session from a resignation) fails with
+      //    a different error, so this cannot pass for the wrong reason.
+      let engineWasAsked: CustomBotServerMessage | null = null;
+      let silence: Error | null = null;
+      try {
+        engineWasAsked = await botSocket.waitForMessage("apply_move");
+      } catch (error) {
+        silence = error as Error;
+      }
+      expect(engineWasAsked).toBeNull();
+      expect(silence?.message).toMatch(/Timeout waiting for "apply_move"/);
+
+      // 3. The session is unharmed: the same seat plays a LEGAL move and the
+      //    game goes on. A refusal broadcasts no state of its own, so this is
+      //    what shows the human was not left wedged — and it is the sharper
+      //    assertion anyway, because it pins that the engine IS asked for a
+      //    legal move. The silence above was the illegal move being stopped,
+      //    not a dead socket.
+      const afterLegal = await humanMove(humanSocket, "Cb3", 3);
+      expect(afterLegal.state.status).toBe("playing");
+      expect(afterLegal.state.result).toBeUndefined();
+      expect(afterLegal.state.history).toHaveLength(1);
+      expect(afterLegal.state.turn).toBe(2);
+
+      const applied = await botSocket.waitForMessage("apply_move");
+      expect(applied.bgsId).toBe(bgsId);
+      expect(applied.move).toBe("Cb3");
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+    }
+  }, 60000);
+
   it("rejects attach with invalid protocol version", async () => {
     const botSocket = await openBotSocket();
 

@@ -62,7 +62,14 @@ export const hydrateGameStateFromSerialized = (
     const orderedHistory = [...serialized.history].sort(
       (a, b) => a.index - b.index,
     );
-    let replayState: GameState = new GameState(config, Date.now());
+    // Stored-history mode, for the same reason as the server's
+    // `assembleReplayGame`: the showcase and the replay page re-run the SAME
+    // stored notation here, so a strict clone would move the failure into the
+    // browser. Note this is the SCRATCH state that walks the history. `state`
+    // above stays strict, because that is what a live game continues from.
+    let replayState: GameState = new GameState(config, Date.now(), {
+      allowStoredHistoryBacktracks: true,
+    });
     state.history = orderedHistory.map((entry) => {
       const move = moveFromStandardNotation(entry.notation, config.boardHeight);
       const playerId = (entry.index % 2 === 1 ? 1 : 2) as PlayerId;

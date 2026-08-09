@@ -61,6 +61,20 @@ export interface MoveInHistory {
   wallCounts: [number, number];
 }
 
+/**
+ * Stored-history mode. Rows written before the no-return rule applied WITHIN a
+ * move hold backtracks that today's rules refuse - 20 of them, measured
+ * 2026-08-09. Replay is a reader, not a referee: its job is to show what
+ * happened, so the two paths that read stored notation back opt in here.
+ *
+ * Live play must never set this. It is off by default so that forgetting it
+ * fails in the visible direction (a stored row cannot be replayed) rather than
+ * the silent one (a live backtrack is accepted).
+ */
+export interface GameStateOptions {
+  allowStoredHistoryBacktracks?: boolean;
+}
+
 export class GameState {
   grid: Grid;
   pawns: GamePawns;
@@ -86,8 +100,17 @@ export class GameState {
   private initialActionsRemaining: 1 | 2;
   private initialPreviousPawnPosition?: { type: GamePawnType; cell: Cell };
 
-  constructor(config: GameConfiguration, startTime: number) {
+  /** See {@link GameStateOptions}. Carried through `clone()`, never reassigned. */
+  private readonly allowStoredHistoryBacktracks: boolean;
+
+  constructor(
+    config: GameConfiguration,
+    startTime: number,
+    options?: GameStateOptions,
+  ) {
     this.config = config;
+    this.allowStoredHistoryBacktracks =
+      options?.allowStoredHistoryBacktracks ?? false;
     this.grid = new Grid(config.boardWidth, config.boardHeight, config.variant);
 
     const variantConfig = config.variantConfig;
@@ -214,7 +237,12 @@ export class GameState {
   }
 
   clone(): GameState {
-    const newGame = new GameState(this.config, this.lastMoveTime);
+    // Through the constructor, not by assignment afterwards: `applyGameAction`
+    // validates on this clone, so a mode dropped here would be dropped on every
+    // single move, silently and in the permissive-looking direction.
+    const newGame = new GameState(this.config, this.lastMoveTime, {
+      allowStoredHistoryBacktracks: this.allowStoredHistoryBacktracks,
+    });
     newGame.grid = this.grid.clone();
     newGame.pawns = clonePawns(this.pawns);
     newGame.turn = this.turn;
@@ -327,12 +355,20 @@ export class GameState {
 
     const isClassic = isClassicVariant(this.config.variant);
     let actionsUsed = 0;
+    // The no-return rule has to hold WITHIN one submitted move, not only across
+    // moves. A pawn that steps to a neighbour and back has returned to its
+    // previous cell just as surely as if the two steps had arrived separately,
+    // and the field alone cannot see that: it is seeded only from a custom-setup
+    // turn and cleared at the end of every move, so for a complete two-action
+    // move the rule was inert. Holding the compared position in a local makes
+    // the rule behave the same way whichever shape the client sends.
+    let previousPawnPosition = this.previousPawnPosition;
 
     for (const action of move.actions) {
       if (
-        this.previousPawnPosition &&
-        action.type === this.previousPawnPosition.type &&
-        cellEq(action.target, this.previousPawnPosition.cell)
+        previousPawnPosition &&
+        action.type === previousPawnPosition.type &&
+        cellEq(action.target, previousPawnPosition.cell)
       ) {
         throw new Error(
           "A pawn cannot immediately return to its previous cell",
@@ -476,6 +512,11 @@ export class GameState {
         }
 
         nextPawns = withPawnCell(nextPawns, player, action.type, targetPos);
+        // Only the within-move half is optional. A seeded restriction describes
+        // a real previous move and stays in force even in stored-history mode.
+        if (!this.allowStoredHistoryBacktracks) {
+          previousPawnPosition = { type: action.type, cell: currentPos };
+        }
       } else if (action.type === "wall") {
         actionsUsed += 1;
         if (actionsUsed > this.actionsRemaining) {

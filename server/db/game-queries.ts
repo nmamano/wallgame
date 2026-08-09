@@ -246,7 +246,13 @@ const assembleReplayGame = (
 
   const startTimestamp = game.startedAt.getTime();
   const moves = Array.isArray(details?.moves) ? details.moves : [];
-  let replayState = new GameState(config, startTimestamp);
+  // Stored-history mode: 20 rows written before the no-return rule applied
+  // within a move hold a backtrack, and replaying them under today's rules would
+  // strand every one of them (measured 2026-08-09). A reader shows what
+  // happened; it does not re-adjudicate it.
+  let replayState = new GameState(config, startTimestamp, {
+    allowStoredHistoryBacktracks: true,
+  });
   try {
     moves.forEach((notation, index) => {
       const move = moveFromStandardNotation(
