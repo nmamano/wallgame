@@ -6,6 +6,7 @@ import {
   getSerializedState,
   getSession,
   getSessionSnapshot,
+  recordSocketConnect,
   resolveSessionForSocketToken,
   resignGame,
   updateConnectionState,
@@ -2408,25 +2409,41 @@ const originCheckMiddleware: MiddlewareHandler = async (c, next) => {
 };
 
 const gameSocketAuth: MiddlewareHandler = async (c, next) => {
-  if (!checkOrigin(c)) {
-    return c.text("Unauthorized origin", 403);
-  }
-
+  // The id and the token are read before the origin check so that a rejection
+  // can still name the game it was for. Until this moved, an unauthorized
+  // origin logged the origin and nothing else, and a 403 could not be tied to
+  // any game at all - which is half of why the 2026-08-03 dead-board reports
+  // were undiagnosable. Same responses, same order of effects.
   const sessionId = c.req.param("id");
   if (!sessionId) {
     return c.text("Missing session id", 400);
   }
 
   const socketToken = c.req.query("token");
+  const role = socketToken ? "player" : "spectator";
+
+  if (!checkOrigin(c)) {
+    recordSocketConnect(sessionId, { role, outcome: "rejected-origin" });
+    return c.text("Unauthorized origin", 403);
+  }
 
   // If no token provided, this is a spectator connection
   if (!socketToken) {
+    // Distinguishes the two ways this try can end. `getSession` is not the only
+    // thing inside it - `next()` is too - so without this flag anything that
+    // throws AFTER a game was found would be recorded as `game-not-found` for a
+    // game that demonstrably exists. That false pair (`authorized` then
+    // `game-not-found`) would land on precisely the authorized-but-never-opened
+    // case this record exists to identify. The response is unchanged either way.
+    let found = false;
     // Verify game exists and is spectatable
     try {
       const session = getSession(sessionId);
+      found = true;
       const isSpectatable =
         session.status === "ready" || session.status === "in-progress";
       if (!isSpectatable) {
+        recordSocketConnect(sessionId, { role, outcome: "not-spectatable" });
         const message =
           session.status === "waiting"
             ? "Game not yet spectatable"
@@ -2439,9 +2456,13 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
         player: null,
         isSpectator: true,
       } satisfies GameSocketMeta);
+      recordSocketConnect(sessionId, { role, outcome: "authorized" });
       await next();
       return;
     } catch {
+      if (!found) {
+        recordSocketConnect(sessionId, { role, outcome: "game-not-found" });
+      }
       return c.text("Game not found", 404);
     }
   }
@@ -2453,6 +2474,7 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
   });
 
   if (!resolved) {
+    recordSocketConnect(sessionId, { role, outcome: "rejected-token" });
     console.warn("[ws] rejected connection with invalid token", {
       sessionId,
       socketToken,
@@ -2466,6 +2488,10 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
     player: resolved.player,
     isSpectator: false,
   } satisfies GameSocketMeta);
+
+  // `authorized` with no `opened` after it is a connection the server accepted
+  // and the client never completed.
+  recordSocketConnect(sessionId, { role, outcome: "authorized" });
 
   await next();
 };
@@ -2483,6 +2509,10 @@ export const registerGameSocketRoute = (app: Hono) => {
 
       return {
         onOpen(_event: Event, ws: WSContext) {
+          recordSocketConnect(sessionId, {
+            role: isSpectator ? "spectator" : "player",
+            outcome: "opened",
+          });
           if (isSpectator) {
             // Spectator connection
             const entry: SessionSocket = {
@@ -2606,6 +2636,10 @@ export const registerGameSocketRoute = (app: Hono) => {
           if (!entry) {
             return;
           }
+          recordSocketConnect(entry.sessionId, {
+            role: entry.role === "spectator" ? "spectator" : "player",
+            outcome: "closed",
+          });
           removeSocket(entry);
 
           // Clean up chat rate limit entry

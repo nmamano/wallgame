@@ -77,6 +77,48 @@ export interface RematchSeatCredentials {
 
 type SessionMatchScore = Record<SessionPlayer["role"], number>;
 
+/**
+ * What became of one attempt to open a game's websocket.
+ *
+ * The first four are the terminal outcomes of the socket's auth middleware
+ * (`gameSocketAuth`); `authorized` means the handshake passed; `opened` and
+ * `closed` are the socket itself.
+ *
+ * The pair that carries the diagnosis is `authorized` with no `opened` after
+ * it: the server accepted the connection and it never arrived.
+ */
+export type SocketConnectOutcome =
+  | "rejected-origin"
+  | "rejected-token"
+  | "game-not-found"
+  | "not-spectatable"
+  | "authorized"
+  | "opened"
+  | "closed";
+
+export interface SocketConnectEvent {
+  at: number;
+  /** A connect carrying a seat token is a player; without one, a spectator. */
+  role: "player" | "spectator";
+  outcome: SocketConnectOutcome;
+}
+
+/**
+ * How many events one game keeps.
+ *
+ * The FIRST N, not the last: a "the board is dead" report is about how the
+ * game opened, and a client stuck in a reconnect loop would otherwise push the
+ * interesting part out of a last-N window.
+ */
+const SOCKET_CONNECT_LOG_CAP = 20;
+
+export interface SocketConnectRecord {
+  /** Every attempt, including the ones past the cap. */
+  total: number;
+  /** The first `SOCKET_CONNECT_LOG_CAP` events, oldest first. */
+  first: SocketConnectEvent[];
+}
+
 export interface GameSession {
   id: string;
   seriesId: string;
@@ -132,6 +174,25 @@ export interface GameSession {
    * one game never shows two different guest-naming schemes at once.
    */
   spectatorGuestNames: Map<string, string>;
+  /**
+   * Every attempt to open this game's websocket, in order.
+   *
+   * `players[].connected` is current state, so it cannot tell a game nobody
+   * ever opened from one whose player connected and walked away. On 2026-08-03
+   * three bot games were reported dead and that question had no answer: the
+   * shape they left behind (status "ready", `createdAt === updatedAt`, no
+   * engine session) is produced by every failure ahead of `onOpen` alike -
+   * a socket never attempted, refused, or dropped mid-handshake.
+   *
+   * A log line alone would not answer it either. The retained production log
+   * buffer is small, and these games were reported after the fact; this record
+   * lives exactly as long as the session it describes.
+   *
+   * Server-internal, and it must stay that way: it is in neither `GameSnapshot`
+   * nor `LiveGameSummary`, and every outbound payload field-picks into one of
+   * those contract types rather than serializing a session.
+   */
+  socketConnects: SocketConnectRecord;
 }
 
 export interface GameCreationResult {
@@ -352,6 +413,59 @@ export const scheduleTimeoutTimer = (sessionId: string): void => {
 };
 
 // ============================================================================
+// Websocket connect record
+// ============================================================================
+
+/**
+ * Record one attempt to open a game's websocket, and log it.
+ *
+ * The single writer for both, so the stored record and the log line can never
+ * disagree about what happened.
+ *
+ * An id with no session is logged and not stored. An attempt can name a game
+ * that never existed, or one the server has already forgotten, and that is
+ * itself worth seeing - `knownGame` in the line says which.
+ *
+ * NOT covered: a player-token connect to an unknown id, where
+ * `resolveSessionForSocketToken` throws out of the middleware before anything
+ * here runs. Recording it would mean turning that 500 into a handled response,
+ * which is a behaviour change rather than instrumentation.
+ */
+export const recordSocketConnect = (
+  sessionId: string,
+  event: Omit<SocketConnectEvent, "at">,
+): void => {
+  const session = sessions.get(sessionId);
+  if (session) {
+    session.socketConnects.total += 1;
+    if (session.socketConnects.first.length < SOCKET_CONNECT_LOG_CAP) {
+      session.socketConnects.first.push({ ...event, at: Date.now() });
+    }
+  }
+  console.info("[ws-connect]", {
+    sessionId,
+    outcome: event.outcome,
+    role: event.role,
+    knownGame: session !== undefined,
+    attempt: session?.socketConnects.total ?? null,
+  });
+};
+
+/**
+ * A game's connect history on one line, for a log that has to survive being
+ * read months later by somebody holding only a game id.
+ */
+export const summarizeSocketConnects = (
+  record: SocketConnectRecord,
+): string => {
+  if (record.first.length === 0) {
+    return `none (total ${record.total})`;
+  }
+  const sequence = record.first.map((e) => `${e.role}:${e.outcome}`).join(" ");
+  return `${sequence} (total ${record.total})`;
+};
+
+// ============================================================================
 // Abandonment timer
 // ============================================================================
 
@@ -419,10 +533,18 @@ const applyAbandonToSession = (sessionId: string, playerId: PlayerId): void => {
     timestamp: Date.now(),
   });
 
+  // The connect history rides along because this is the moment a never-started
+  // game becomes visible: one line says whether anybody ever tried to open it,
+  // which is what a "the board was dead" report needs and cannot get from
+  // `players[].connected`.
+  const session = sessions.get(sessionId);
   console.info("[abandon-timer] player never came back - game ended", {
     sessionId,
     playerId,
     result: newState.result,
+    socketConnects: session
+      ? summarizeSocketConnects(session.socketConnects)
+      : "unknown (session gone)",
   });
 
   // The same finish work a clock timeout does: ratings, persistence,
@@ -728,6 +850,7 @@ export const createGameSession = (args: {
     seriesId: id,
     rematchParentId: undefined,
     rematchNumber: 0,
+    socketConnects: { total: 0, first: [] },
     createdAt: now,
     startedAt: null,
     updatedAt: now,
@@ -1463,6 +1586,9 @@ export const createRematchSession = (
     seriesId: previous.seriesId ?? previous.id,
     rematchParentId: previous.id,
     rematchNumber: newRematchNumber,
+    // A rematch is its own game with its own sockets: the parent's connect
+    // history describes the parent, and carrying it would misreport this one.
+    socketConnects: { total: 0, first: [] },
     createdAt: now,
     startedAt: null,
     updatedAt: now,
