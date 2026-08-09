@@ -13,6 +13,7 @@ import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import {
   isUnlimitedTimeControl,
   isCountedResult,
+  MIN_MOVES_FOR_A_COUNTED_GAME,
 } from "../../shared/domain/game-utils";
 import { isCustomSetupVariant } from "../../shared/domain/game-types";
 import type {
@@ -479,6 +480,29 @@ export const summarizeSocketConnects = (
  */
 const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * The same wait, cut short for a game that never got going and that nobody is
+ * looking at: the browser that never opened its socket, or the one that opened
+ * it and went away again before moving.
+ *
+ * Nil ruled on 2026-08-09 that "30 min is enough. and if <2 moves, 5 min is
+ * enough". The band is guarded (clause 1): it applies only to an UNTIMED game
+ * under two moves with NO human seat connected. Any game with a human seat
+ * connected follows the thirty-minute rules instead. Untimed-only is clause 4.
+ *
+ * The guard decides one case, because reaching here already means a human seat
+ * is known gone: the one where the OTHER human seat is still present, which is
+ * a friend link whose host waits while the guest opens it. That wait is
+ * routinely longer than five minutes and has always had thirty.
+ *
+ * A human thinking about their first move is spared by WHERE this lives rather
+ * than by the guard - with nobody disconnected no abandonment timer is armed at
+ * all, so the game belongs to the idle policy at thirty minutes. Puzzles depend
+ * on that: a puzzle puts the human on turn under two moves, so the same five
+ * minutes in the idle path would abort one under thought.
+ */
+const UNWATCHED_TIMEOUT_MS = 5 * 60 * 1000;
+
 const abandonTimers = new Map<string, Timer>();
 
 const clearAbandonTimer = (sessionId: string): void => {
@@ -523,6 +547,28 @@ export const findAbandonedSeat = (sessionId: string): SessionPlayer | null => {
   }
   return null;
 };
+
+/**
+ * Whether this game gets the short wait: untimed, under two moves, and with no
+ * human seat connected to it.
+ *
+ * "No seat connected" and "no HUMAN seat connected" are the same test here, so
+ * only the first is written: `connected` is set from the game websocket alone,
+ * and a bot seat never opens one, so it reads as disconnected for its whole
+ * life. `findAbandonedSeat` must exclude bot seats explicitly only because it
+ * tests the opposite polarity, where always-false would make every bot look
+ * like a player who walked away.
+ *
+ * Asked at arming time rather than at expiry, which is safe because every
+ * connection change re-arms: a seat that arrives moves the game onto the long
+ * wait, and a seat that leaves starts the short one over.
+ */
+const isUnwatchedUnstartedGame = (session: GameSession): boolean =>
+  isUnlimitedTimeControl(session.gameState.timeControl) &&
+  session.gameState.moveCount < MIN_MOVES_FOR_A_COUNTED_GAME &&
+  ![session.players.host, session.players.joiner].some(
+    (player) => player.connected,
+  );
 
 const applyAbandonToSession = (sessionId: string, playerId: PlayerId): void => {
   // Resigning gets the abort-vs-loss distinction for free: a game abandoned
@@ -573,6 +619,12 @@ const refreshAbandonTimer = (sessionId: string): void => {
     return;
   }
 
+  const session = sessions.get(sessionId);
+  const timeoutMs =
+    session && isUnwatchedUnstartedGame(session)
+      ? UNWATCHED_TIMEOUT_MS
+      : ABANDON_TIMEOUT_MS;
+
   const timer = setTimeout(() => {
     abandonTimers.delete(sessionId);
     // Ask again: the game may have finished, or the player may have returned.
@@ -581,8 +633,8 @@ const refreshAbandonTimer = (sessionId: string): void => {
       return;
     }
     applyAbandonToSession(sessionId, stillAbandoned.playerId);
-  }, ABANDON_TIMEOUT_MS);
-  // Half an hour is long enough to outlive whatever else is pending, and this
+  }, timeoutMs);
+  // Neither wait is long enough to outlive whatever else is pending, and this
   // timer is never the reason to keep a process alive (as in the bot client's
   // disconnect grace).
   (timer as { unref?: () => void }).unref?.();
@@ -592,7 +644,7 @@ const refreshAbandonTimer = (sessionId: string): void => {
   console.info("[abandon-timer] scheduled", {
     sessionId,
     playerId: abandoned.playerId,
-    timeoutMs: ABANDON_TIMEOUT_MS,
+    timeoutMs,
   });
 };
 
@@ -609,6 +661,11 @@ const refreshAbandonTimer = (sessionId: string): void => {
  *
  * Going through here rather than calling `sessions.set` directly is the point:
  * a later creation path cannot forget the clock.
+ *
+ * The idle timer needs no arming here, and not by luck: every creation path
+ * registers with both seats disconnected, so the abandonment policy claims the
+ * session and the idle policy stands down. The first seat to connect arms it
+ * through `updateConnectionState`, and a game cannot be played without one.
  */
 const registerSession = (session: GameSession): void => {
   sessions.set(session.id, session);
@@ -634,11 +691,15 @@ const registerSession = (session: GameSession): void => {
  * gone" but "has anybody moved" - which is what makes it the answer to a
  * half-open socket. No liveness probe is needed to detect one.
  *
- * Two hours, deliberately far longer than ABANDON_TIMEOUT_MS: a seat that
- * disconnected cleanly is known to be gone, whereas a quiet game may just be
- * two people thinking. This is the last resort, not the first.
+ * Thirty minutes, per Nil's ruling of 2026-08-09: "30 min is enough." It was
+ * two hours on the argument that a quiet game may just be two people thinking,
+ * which is true and is why this is still the last resort rather than the first.
+ *
+ * Equal to ABANDON_TIMEOUT_MS and deliberately NOT the same constant: the two
+ * answer different questions and could be ruled on separately tomorrow. The
+ * equality is what made the stand-down in `findIdleSeat` necessary.
  */
-const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
 const idleTimers = new Map<string, Timer>();
 
@@ -651,26 +712,32 @@ const clearIdleTimer = (sessionId: string): void => {
 };
 
 /**
- * The seat that must act in an untimed game already under way, or null if this
- * is not a game the idle timer governs.
+ * The seat that must act in an untimed game nobody is moving in, or null if
+ * this is not a game the idle timer governs.
  *
- * The condition looks like the complement of `findAbandonedSeat`'s clock test
- * and is deliberately NOT the same set, so the two are written out separately
- * rather than shared. That one protects untimed games at any move count *plus*
- * timed games nobody has moved in; this one governs untimed games that have
- * STARTED, and nothing else. Both exclusions are on purpose:
+ * Timed games are left alone at every move count - the one boundary this
+ * policy still has, kept by clause 4: "Timed games remain untouched by this
+ * task entirely."
  *
- *   - a timed game is left alone at every move count, including zero
- *   - an untimed game nobody has moved in is left alone
+ * The move-count floor is gone. It used to leave an untimed game nobody had
+ * started to the abandonment policy, which only reaches a seat it KNOWS is
+ * gone - so two seats both connected and both silent fell between the two and
+ * sat in the live list indefinitely.
  *
- * Each leaves a game this timer will never end. That is reported rather than
- * patched here: widening either boundary would end games on a rule nobody
- * asked for.
+ * WHERE THE OTHER POLICY ALREADY HAS AN ANSWER, IT WINS. Clause 3: "when the
+ * server knows which seat disconnected, the disconnect path owns the ending
+ * (charges the seat that left). The idle path only ends a game when there is
+ * no known-disconnected seat to charge." The two name different seats, and
+ * with the deadlines equal they would not merely coexist: this deadline runs
+ * from the last move and the other from the disconnect, which cannot come
+ * first, so left to race this one always wins and charges the player still
+ * sitting there for the absence of the one who left. Standing down is not a
+ * retirement - `updateConnectionState` re-arms when the seat returns.
  *
  * The seat returned is the one whose turn it is, because a move is what resets
- * this clock - so the clock belongs to whoever must act, exactly as a chess
- * clock does. That is also what keeps a human waiting on a slow bot safe: the
- * wait sits on the bot's clock and can never be charged to the human.
+ * this clock. That is also what keeps a human waiting on a slow bot safe: the
+ * wait sits on the bot's clock. Below two moves nobody is charged at all -
+ * `resignGame` records an abort whichever seat is named.
  */
 export const findIdleSeat = (sessionId: string): SessionPlayer | null => {
   const session = sessions.get(sessionId);
@@ -678,7 +745,10 @@ export const findIdleSeat = (sessionId: string): SessionPlayer | null => {
     return null;
   }
   const state = session.gameState;
-  if (!isUnlimitedTimeControl(state.timeControl) || state.moveCount === 0) {
+  if (!isUnlimitedTimeControl(state.timeControl)) {
+    return null;
+  }
+  if (findAbandonedSeat(sessionId)) {
     return null;
   }
   return session.players.host.playerId === state.turn
@@ -752,7 +822,7 @@ const refreshIdleTimer = (sessionId: string): void => {
     }
     applyIdleTimeoutToSession(sessionId, stillIdle.playerId);
   }, remainingMs);
-  // Two hours is never the reason to keep the process alive.
+  // Half an hour is never the reason to keep the process alive.
   (timer as { unref?: () => void }).unref?.();
 
   idleTimers.set(sessionId, timer);
@@ -1495,9 +1565,9 @@ const applyActionToSession = (
     // action kind added later - one that shifts the turn, say - from leaving a
     // deadline pointing at the wrong seat.
     //
-    // This is the only place the idle timer is armed. A new session cannot
-    // qualify (it has no moves yet, and `findIdleSeat` leaves those alone), and
-    // only a move changes the move count, so nothing else needs to ask.
+    // `updateConnectionState` is the other arming site, since the policy now
+    // covers a game nobody has moved in and stands down for a seat known to be
+    // gone. Between them every state change this policy reads is covered.
     refreshIdleTimer(session.id);
   }
   return next;
@@ -1839,6 +1909,11 @@ export const updateConnectionState = (args: {
   // A game whose player walked away has to end itself. Without a clock there is
   // nothing else that ever would, and it holds an engine session while it sits.
   refreshAbandonTimer(session.id);
+  // The idle timer stands down while a seat is known to be gone, so a
+  // connection change is when it may need to take the game back - or hand it
+  // over. The deadline comes from `lastMoveTime`, so re-arming can never
+  // extend anybody's grace.
+  refreshIdleTimer(session.id);
 };
 
 /**

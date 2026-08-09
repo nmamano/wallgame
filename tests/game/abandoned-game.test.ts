@@ -236,8 +236,12 @@ describe("a game whose player walked away", () => {
  * status "playing". Seven such games sat for 60-78 minutes on 2026-08-06.
  *
  * So the second question is not "has a seat gone" but "has anybody moved", and
- * `findIdleSeat` is where it is asked. Its boundary is deliberately narrower
- * than the abandonment policy's and the two are not interchangeable.
+ * `findIdleSeat` is where it is asked.
+ *
+ * The two policies overlap and name DIFFERENT seats, so one has to give way.
+ * Clause 3, verbatim: "when the server knows which seat disconnected, the
+ * disconnect path owns the ending (charges the seat that left). The idle path
+ * only ends a game when there is no known-disconnected seat to charge."
  */
 describe("a game nobody is moving in", () => {
   it("names the seat whose turn it is", () => {
@@ -250,15 +254,26 @@ describe("a game nobody is moving in", () => {
     expect(findIdleSeat(session.id)?.role).toBe("host");
   });
 
-  it("charges the seat on turn, not the seat that disconnected", () => {
-    // The two policies deliberately disagree here, and each is right about its
-    // own question. Merging them would silently pick one.
+  it("stands down when the server knows which seat left", () => {
+    // The joiner left, but the host is on turn, so the two policies disagree.
     const session = startedSession(UNLIMITED);
     bothSeatsLookConnected(session);
     playMoves(session.id, 2);
     setConnected(session, "joiner", false);
 
     expect(findAbandonedSeat(session.id)?.role).toBe("joiner");
+    expect(findIdleSeat(session.id)).toBeNull();
+  });
+
+  it("takes the game back once that seat returns", () => {
+    // Standing down must not be permanent.
+    const session = startedSession(UNLIMITED);
+    bothSeatsLookConnected(session);
+    playMoves(session.id, 2);
+    setConnected(session, "joiner", false);
+    expect(findIdleSeat(session.id)).toBeNull();
+
+    setConnected(session, "joiner", true);
     expect(findIdleSeat(session.id)?.role).toBe("host");
   });
 
@@ -279,11 +294,22 @@ describe("a game nobody is moving in", () => {
     expect(findIdleSeat(session.id)).toBeNull();
   });
 
-  it("leaves an untimed game nobody has started alone", () => {
+  it("claims an untimed game nobody has started", () => {
+    // The move-count floor is gone. Both seats connected and both silent is
+    // the one shape neither policy used to reach.
     const session = startedSession(UNLIMITED);
     bothSeatsLookConnected(session);
 
     expect(getSession(session.id).gameState.moveCount).toBe(0);
+    expect(findIdleSeat(session.id)?.role).toBe("host");
+  });
+
+  it("leaves a game nobody is connected to to the disconnect path", () => {
+    // Nobody has moved and nobody is watching, so clause 3 hands this to the
+    // abandonment policy - and with it the five-minute deadline.
+    const session = startedSession(UNLIMITED);
+
+    expect(findAbandonedSeat(session.id)?.role).toBe("host");
     expect(findIdleSeat(session.id)).toBeNull();
   });
 
@@ -324,69 +350,192 @@ describe("a game nobody is moving in", () => {
 });
 
 /**
- * The tests above pin the policy; this one pins that the policy is ever asked.
+ * The three deadlines, restated rather than imported: an imported constant
+ * would agree with the source by construction, and these tests exist to pin
+ * the NUMBERS that were ruled on. A source change not made here reddens the
+ * boundary pairs.
+ */
+const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
+const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
+const UNWATCHED_TIMEOUT_MS = 5 * 60 * 1000;
+
+/**
+ * Everything below drives real timers, so it needs fake ones. Everything above
+ * runs on real timers, so the switch is scoped to a test and these blocks are
+ * last: advancing the clock fires every pending timer, including any armed by
+ * earlier tests.
+ */
+const withFakeTimers = (body: () => void) => {
+  timers.useFakeTimers();
+  try {
+    body();
+  } finally {
+    timers.useRealTimers();
+  }
+};
+
+const isLive = (id: string) => listLiveGames().some((game) => game.id === id);
+
+/**
+ * The five-minute band, and the guard on it.
  *
- * Arming the abandonment timer used to hang off a player's connection
- * *changing*, and a session is born with nobody connected - so a game whose
- * player never got as far as opening a socket never started a clock and sat in
- * the live-games list for good. Four of them were visible on wallgame.io on
- * 2026-08-01, all with `createdAt === updatedAt`, which is what says no socket
- * ever reached them.
+ * A game whose player never got as far as opening a socket used to sit in the
+ * live-games list for good; arming at registration fixed that at thirty
+ * minutes, and the ruling of 2026-08-09 cuts the wait to five.
  *
- * This drives the real timer, so it needs fake ones. Everything else in this
- * file runs on real timers, so the switch is scoped to the test and this block
- * is last: advancing the clock fires every pending timer, including any armed
- * by earlier tests.
+ * Clause 1, verbatim: "the 5-minute abort band applies only to UNTIMED games
+ * with moveCount < 2 AND no human seat connected. A game with any human seat
+ * connected (puzzle, bot game, waiting friend-link host) follows the 30-minute
+ * rules instead." Clause 4: "the 5-minute band is untimed-only."
+ *
+ * The tests from the friend link onwards are that guard. Each asserts both
+ * sides of the deadline it claims, since a game that merely ends eventually
+ * would satisfy a much weaker rule than the one ruled on.
  */
 describe("a game nobody ever opened", () => {
-  const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
-
-  it("is on the clock from the moment it is created", () => {
-    timers.useFakeTimers();
-    try {
+  it("is aborted five minutes after it is created", () => {
+    withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
-      expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
+      expect(isLive(session.id)).toBe(true);
 
-      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS + 1);
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
 
-      expect(listLiveGames().some((game) => game.id === session.id)).toBe(
-        false,
-      );
+      expect(isLive(session.id)).toBe(false);
       // Nobody moved, so it is an abort rather than a loss for the absent seat.
       expect(getSession(session.id).gameState.result).toEqual({
         reason: "aborted",
       });
-    } finally {
-      timers.useRealTimers();
-    }
+    });
+  });
+
+  it("aborts the bot game of board 916af5bd in five minutes", () => {
+    // The incident shape: a bot game whose browser never opened its websocket.
+    // A bot seat never opens a game socket either, so what decides this is
+    // that no HUMAN is there.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+
+      expect(isLive(session.id)).toBe(false);
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    });
+  });
+
+  it("is left alone right up to the five-minute deadline", () => {
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS - 1);
+
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
+    });
+  });
+
+  it("counts the five minutes from the moment the last human leaves", () => {
+    // Every connection change re-arms, so a host who opens the board and then
+    // closes it starts the five minutes over rather than inheriting the
+    // deadline from creation.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      timers.advanceTimersByTime(3 * 60 * 1000);
+      setConnected(session, "host", true);
+      setConnected(session, "host", false);
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+    });
+  });
+
+  it("gives a waiting friend-link host the full thirty minutes", () => {
+    // The host is on the waiting screen while the guest opens the link from a
+    // chat app. Killing this at five minutes was the hazard that sent the
+    // literal rule back for a ruling. Connecting re-arms, so the thirty
+    // minutes run from there.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setConnected(session, "host", true);
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS - UNWATCHED_TIMEOUT_MS - 2);
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    });
+  });
+
+  it("gives a human thinking about their first move the full thirty minutes", () => {
+    // The puzzle and bot-game shape: the human seat is connected and on turn,
+    // the opponent is a bot, and no move has been played yet.
+    //
+    // What spares this is structural rather than the connected-seat clause -
+    // nobody is disconnected, so no abandonment timer is armed and the short
+    // band is never consulted. That structure is the reason the five minutes
+    // live in the abandonment path: the same wait in the idle path would abort
+    // a puzzle mid-thought.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+      expect(getSession(session.id).gameState.moveCount).toBe(0);
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS - UNWATCHED_TIMEOUT_MS - 2);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    });
+  });
+
+  it("never puts a timed game in the five-minute band", () => {
+    // Clause 4. A timed game nobody opened is still claimed by the
+    // abandonment policy - no clock runs before the first move - but on the
+    // thirty-minute deadline it has always had.
+    withFakeTimers(() => {
+      const session = startedSession(TIMED);
+
+      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+    });
   });
 });
 
 /**
  * The idle timer actually running.
  *
- * Same fake-timer caveat as the block above, and the same reason it sits last:
- * advancing the clock fires every pending timer, including any armed earlier.
- * Every test here connects both seats first, so the 30-minute abandonment timer
- * is disarmed and anything that happens is the idle timer's doing.
+ * Every test here connects both seats first. That disarms the abandonment
+ * timer, so anything that happens is the idle timer's doing - which matters
+ * more now that the two deadlines are equal, since clause 3 would otherwise
+ * hand the ending to the other mechanism.
  *
- * Two hours cannot be waited out against a real server, so the boundary is
+ * Thirty minutes cannot be waited out against a real server, so the boundary is
  * proven here while the half-open socket that motivates it was reproduced
  * separately through real websockets against unfixed code.
  */
 describe("the idle timeout ending a game", () => {
-  const IDLE_TIMEOUT_MS = 2 * 60 * 60 * 1000;
-  const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
-
-  const withFakeTimers = (body: () => void) => {
-    timers.useFakeTimers();
-    try {
-      body();
-    } finally {
-      timers.useRealTimers();
-    }
-  };
-
   it("ends an untimed game under way, charging the seat on turn", () => {
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
@@ -427,12 +576,12 @@ describe("the idle timeout ending a game", () => {
       bothSeatsLookConnected(session);
       playMoves(session.id, 2);
 
-      timers.advanceTimersByTime(90 * 60 * 1000);
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
       playTurn(session.id, 1, 5);
-      timers.advanceTimersByTime(90 * 60 * 1000);
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS - 1);
 
-      // Three hours have passed in total, so a timer armed once and never
-      // rearmed would have ended this game an hour ago.
+      // Nearly two full timeouts have passed, so a timer armed once and never
+      // rearmed would have ended this game a timeout ago.
       expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
       expect(getSession(session.id).gameState.status).toBe("playing");
     });
@@ -463,15 +612,31 @@ describe("the idle timeout ending a game", () => {
     });
   });
 
-  it("never touches an untimed game nobody has started", () => {
+  /**
+   * The hole this task closes, and the only shape neither mechanism reached
+   * before it: two seats both connected, both silent, no move ever played.
+   * The abandonment policy sees nobody gone and the idle policy used to stop
+   * at the move-count floor, so nothing ended these at all.
+   *
+   * Both seats are connected, so clause 1 keeps this out of the five-minute
+   * band and on the thirty-minute one.
+   */
+  it("ends an untimed game nobody has started, as an abort", () => {
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
       bothSeatsLookConnected(session);
 
-      timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+      expect(isLive(session.id)).toBe(true);
 
-      expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
-      expect(getSession(session.id).gameState.status).toBe("playing");
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS - UNWATCHED_TIMEOUT_MS - 2);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
     });
   });
 
@@ -483,7 +648,7 @@ describe("the idle timeout ending a game", () => {
 
       timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
 
-      // Two hours idle, and two hours of clock still to run. Only the idle
+      // Thirty minutes idle, and hours of clock still to run. Only the idle
       // timer could have ended this, so its silence is the assertion.
       expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
       expect(getSession(session.id).gameState.status).toBe("playing");
@@ -522,10 +687,15 @@ describe("the idle timeout ending a game", () => {
   });
 
   /**
-   * The disconnect path is untouched and still fires first, on its own clock
-   * and against its own seat. Player 1 is on turn here while the JOINER is the
-   * one who left, so the two mechanisms name different losers - which is what
-   * makes this fail if they are ever merged.
+   * Clause 3, end to end, and the reason it had to be ruled on at all.
+   *
+   * Player 1 is on turn here while the JOINER is the one who left, so the two
+   * mechanisms name different losers. At two hours against thirty minutes they
+   * never raced and the disconnect path always won. At thirty against thirty
+   * the idle deadline is the earlier one - it runs from the last move, and a
+   * disconnect cannot come before the move that preceded it - so without the
+   * stand-down this ends as `winner: 2`, convicting the player who is still
+   * sitting there of the absence of the one who left.
    */
   it("leaves the 30-minute disconnect path in charge of a seat that left", () => {
     withFakeTimers(() => {
@@ -538,6 +708,32 @@ describe("the idle timeout ending a game", () => {
 
       expect(getSession(session.id).gameState.result).toEqual({
         winner: 1,
+        reason: "resignation",
+      });
+    });
+  });
+
+  /**
+   * The other half of clause 3: standing down is not a retirement.
+   *
+   * What carries this is NOT the re-arm in `updateConnectionState` - the timer
+   * armed by the last MOVE survives a disconnect and re-asks the policy when
+   * it fires, by which time the seat is back. The re-arm matters where no move
+   * ever armed anything, which is the two move-count-0 cases above.
+   */
+  it("takes the game back over when the disconnected seat returns", () => {
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      bothSeatsLookConnected(session);
+      playMoves(session.id, 2);
+      setConnected(session, "joiner", false);
+      setConnected(session, "joiner", true);
+
+      timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
+
+      // Player 1 is on turn, so the idle policy charges the host once more.
+      expect(getSession(session.id).gameState.result).toEqual({
+        winner: 2,
         reason: "resignation",
       });
     });
