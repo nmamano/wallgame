@@ -793,32 +793,6 @@ export const resetInvalidMessageCount = (clientId: string): void => {
 };
 
 // ============================================================================
-// Cleanup
-// ============================================================================
-
-/**
- * Clean up stale connections.
- * Should be called periodically.
- */
-export const cleanupStaleEntries = (
-  maxAgeMs: number = 24 * 60 * 60 * 1000,
-): void => {
-  const now = Date.now();
-  let clientsCleaned = 0;
-
-  for (const [clientId, client] of clients.entries()) {
-    if (now - client.attachedAt > maxAgeMs) {
-      unregisterClient(clientId);
-      clientsCleaned++;
-    }
-  }
-
-  if (clientsCleaned > 0) {
-    console.info("[bot-store] cleanup completed", { clientsCleaned });
-  }
-};
-
-// ============================================================================
 // Debug / Testing
 // ============================================================================
 
