@@ -104,6 +104,11 @@ async function seedUser(authUserId: string): Promise<number> {
 }
 
 async function cleanupUsers(): Promise<void> {
+  // A no-op when the container never started: beforeAll threw before this
+  // handle was assigned, and a TypeError from here would name teardown, which
+  // is not what failed. Same convention as teardownEphemeralDb. Board 04a59d77.
+  if (!db) return;
+
   await db.delete(gamesTable);
   // rating_events deliberately has no FK to games and no cascade, so nothing
   // else removes these. Global rating rows DO cascade when the user goes.

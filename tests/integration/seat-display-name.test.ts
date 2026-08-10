@@ -210,8 +210,14 @@ describe("seat display names", () => {
   }, 120_000);
 
   afterAll(async () => {
-    await db.delete(userAuthTable);
-    await db.delete(usersTable);
+    // A no-op when the container never started: beforeAll threw before this
+    // handle was assigned, and a TypeError from here would name teardown,
+    // which is not what failed. Same convention as teardownEphemeralDb.
+    // Board 04a59d77.
+    if (db) {
+      await db.delete(userAuthTable);
+      await db.delete(usersTable);
+    }
     if (server) {
       await server.stop(true);
     }

@@ -157,6 +157,11 @@ async function seedTestUser(
  * Cleans up all seeded test users and their related data.
  */
 async function cleanupTestUsers(): Promise<void> {
+  // A no-op when the container never started: beforeAll threw before this
+  // handle was assigned, and a TypeError from here would name teardown, which
+  // is not what failed. Same convention as teardownEphemeralDb. Board 04a59d77.
+  if (!db) return;
+
   await db.delete(gamesTable);
   for (const userId of seededUserIds) {
     // Delete in order respecting foreign keys

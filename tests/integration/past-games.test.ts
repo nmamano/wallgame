@@ -115,6 +115,11 @@ async function seedUser(args: {
 }
 
 async function cleanupUsers(): Promise<void> {
+  // A no-op when the container never started: beforeAll threw before this
+  // handle was assigned, and a TypeError from here would name teardown, which
+  // is not what failed. Same convention as teardownEphemeralDb. Board 04a59d77.
+  if (!db) return;
+
   await db.delete(gamesTable);
   for (const userId of seededUserIds) {
     await db.delete(usersTable).where(eq(usersTable.userId, userId));
