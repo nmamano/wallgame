@@ -107,11 +107,17 @@ export function BoardSizePicker({
               bgClass = "bg-background";
             }
 
+            // A cell below the minimum keeps whatever preview fill it already
+            // has, because an 8x8 board really does include columns 1 to 4 and
+            // repainting those cells would stop the selection reading as a
+            // rectangle. Opacity and cursor carry "you cannot pick this one".
             return (
               <button
                 key={i}
                 type="button"
-                className={`${bgClass} transition-colors duration-75`}
+                className={`${bgClass} transition-colors duration-75 ${
+                  belowMin ? "opacity-50 cursor-not-allowed" : "cursor-pointer"
+                }`}
                 onMouseEnter={() => {
                   setHoverCell(belowMin ? null : { col, row });
                 }}
