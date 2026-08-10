@@ -178,6 +178,70 @@ const getSocketForContext = (ctx: WSContext): BotSocket | undefined => {
   return undefined;
 };
 
+/**
+ * Whether this connection is still the one the clientId maps to. Identity is
+ * compared on the context and on its raw socket, because the raw object is
+ * stable per connection while the context object's identity may not be.
+ */
+const ownsClientIdMapping = (ctx: WSContext, clientId: string): boolean => {
+  const currentCtx = clientIdToContext.get(clientId);
+  return (
+    !!currentCtx &&
+    (currentCtx === ctx ||
+      (!!currentCtx.raw &&
+        typeof currentCtx.raw === "object" &&
+        currentCtx.raw === ctx.raw))
+  );
+};
+
+/**
+ * Why this socket cannot honestly be ponged, or null if it can.
+ *
+ * A pong is a claim, not an acknowledgement. ws-client.ts pings every 30s and
+ * closes the connection when a pong does not come back, so the pong is the
+ * client's ONLY evidence that it is still serving bots. Answering one for a
+ * client we no longer have registered tells it a lie it cannot check: its bots
+ * are gone from /api/bots, it believes it is attached, and nothing short of a
+ * human restarting it ends the outage. Closing instead costs at most one ping
+ * interval, because the client's existing reconnect path reattaches.
+ *
+ * BOTH registries have to agree, and this is the part that reading the close
+ * handler does not give you. They live in different modules and are written by
+ * different code paths: unregisterClient() drops the bot store's entry and
+ * never touches clientIdToContext. So the mapping-identity test alone - the one
+ * the close handler uses, which is the right test for "may I tear down?" -
+ * answers TRUE for a client that has been deregistered out from under an open
+ * socket, which is exactly the state this exists to catch. Measured: with only
+ * that test in place, the zombie in bot-11-pong-honesty.test.ts still gets its
+ * pong.
+ *
+ * A socket that has not attached has claimed nothing yet and is left alone; the
+ * official client does not ping before attaching in any case, because
+ * startPingLoop() runs from the attached handler.
+ *
+ * THE MAPPING ARM IS UNREACHABLE TODAY and is kept only as depth, which is
+ * worth saying plainly rather than letting a reader assume it carries weight.
+ * The one route to it is a newer attach taking the clientId, and that marks the
+ * old socket superseded, whose frames are dropped before this function is
+ * called, so its ping is answered with silence and it heals on the client's own
+ * no-pong timeout instead. Measured in bot-11-pong-honesty.test.ts, which also
+ * records that deleting this arm reddens nothing. It mirrors the close
+ * handler's layered test for the same reason that one gives: identity still
+ * holds if flag-marking ever fails.
+ */
+const unpongableReason = (ctx: WSContext, socket: BotSocket): string | null => {
+  if (!socket.clientId) {
+    return null;
+  }
+  if (!getClient(socket.clientId)) {
+    return "this client is no longer registered";
+  }
+  if (!ownsClientIdMapping(ctx, socket.clientId)) {
+    return "another connection now owns this client id";
+  }
+  return null;
+};
+
 // ============================================================================
 // Message Sending
 // ============================================================================
@@ -1215,6 +1279,20 @@ const handleMessage = (
 ): void => {
   // Handle keepalive ping before typed parse (ping is outside the typed protocol)
   if (typeof raw === "string" && raw === '{"type":"ping"}') {
+    const unpongable = unpongableReason(ctx, socket);
+    if (unpongable) {
+      console.info("[custom-bot-ws] closing a socket we cannot honestly pong", {
+        clientId: socket.clientId,
+        reason: unpongable,
+      });
+      try {
+        ctx.close(1011, unpongable);
+      } catch {
+        // Ignore close errors
+      }
+      return;
+    }
+
     try {
       ctx.send('{"type":"pong"}');
     } catch {
