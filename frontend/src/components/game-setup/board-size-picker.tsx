@@ -16,7 +16,24 @@ const MAX_WIDTH = 12;
  * Removing the sizes is Nil's call over adding a second message for them.
  */
 const MAX_HEIGHT = 10;
-const MIN_SIZE = 4;
+/**
+ * The bottom-end twin of MAX_HEIGHT, and for the same reason: a size no
+ * official bot plays should not be offered.
+ *
+ * Every official bot declares a minimum of 5 for classic and standard, so a
+ * player who picked any board with a side of 4 got an empty bot list while the
+ * bots were perfectly healthy. Measured against production on 2026-08-10: at
+ * standard and at classic, every one of the 15 selectable sizes with a side of
+ * 4 listed zero bots, and every size with both sides at 5 or above listed three.
+ *
+ * NOT a dead region everywhere, unlike the height cap. Freestyle bots do
+ * declare 4, so this withdraws sizes that one variant could play — the picker
+ * is variant-blind and has a single call site, so the withdrawal is site-wide.
+ * Nil's call, over making the picker variant-aware, on the measurement that of
+ * the 1500 most recent games on production (2026-07-30 to 2026-08-10, 1062 of
+ * them freestyle) ZERO used a side of 4; the smallest side actually played is 6.
+ */
+const MIN_SIZE = 5;
 
 interface BoardSizePickerProps {
   width: number;
