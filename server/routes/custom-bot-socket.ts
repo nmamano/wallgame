@@ -451,7 +451,7 @@ const handleAttach = (
         gameId: game.gameId,
         compositeId,
       });
-      void resyncBgsFromHistory(game.gameId, compositeId).catch(
+      void resyncBgsFromHistory(game.gameId, compositeId, "reattach").catch(
         (error: unknown) => {
           console.error("[custom-bot-ws] resync after reattach failed", {
             error,
@@ -523,7 +523,9 @@ const handleGameSessionStarted = (
       markBgsReady(bgsId);
       resolver.resolve({ success: true });
     } else {
-      resolver.reject(new Error(error || "Session start failed"));
+      resolver.reject(
+        new BgsStartFailure("engine-refused", error || "Session start failed"),
+      );
     }
   } else {
     // Late response after timeout - silently discard
@@ -769,6 +771,47 @@ const incrementUnexpectedMessage = (socket: BotSocket): void => {
 // ============================================================================
 
 /**
+ * Why a session start failed, as a value rather than a message.
+ *
+ * Six ways to fail used to arrive as six English strings, and the caller that
+ * forfeits a bot over them recorded ONE cause for all of them. Board task
+ * e6c86b8b measured the result: seven production forfeits whose failing branch
+ * is known and whose actual reason is unrecoverable, because Fly keeps no
+ * historical logs. Matching on message text would be the same mistake one layer
+ * up, so the reason is carried as data.
+ *
+ * `duplicate-id` and `at-capacity` are split deliberately even though one call
+ * produces both: they mean opposite things. A duplicate id is self-inflicted -
+ * the caller's own end step left the session behind - and retrying it is futile.
+ * At capacity is load, and retrying may work. That distinction is exactly what
+ * the follow-up fix is gated on.
+ */
+export type BgsStartFailureReason =
+  | "client-not-found"
+  | "no-connection"
+  | "duplicate-id"
+  | "at-capacity"
+  | "timeout"
+  | "engine-refused"
+  | "client-disconnected";
+
+export class BgsStartFailure extends Error {
+  constructor(
+    readonly reason: BgsStartFailureReason,
+    message: string,
+  ) {
+    super(message);
+    this.name = "BgsStartFailure";
+  }
+}
+
+/** The reason of a BgsStartFailure, or "unknown" for anything else. */
+export const startFailureReason = (
+  error: unknown,
+): BgsStartFailureReason | "unknown" =>
+  error instanceof BgsStartFailure ? error.reason : "unknown";
+
+/**
  * Start a new Bot Game Session.
  * Returns a promise that resolves when the bot confirms session started.
  */
@@ -780,19 +823,36 @@ export const startBgsSession = async (
 ): Promise<{ success: boolean }> => {
   const client = getClientForBot(compositeId);
   if (!client) {
-    throw new Error(`Bot client not found: ${compositeId}`);
+    throw new BgsStartFailure(
+      "client-not-found",
+      `Bot client not found: ${compositeId}`,
+    );
   }
 
   const [clientId, botId] = compositeId.split(":");
   const ctx = clientIdToContext.get(clientId);
   if (!ctx) {
-    throw new Error(`No connection for client: ${clientId}`);
+    throw new BgsStartFailure(
+      "no-connection",
+      `No connection for client: ${clientId}`,
+    );
   }
 
-  // Create BGS
+  // Create BGS. Ask which of the two failures it was BEFORE calling, because
+  // createBgs returns the same null for both and the answer stops existing the
+  // moment it succeeds.
+  const idAlreadyTaken = getBgs(bgsId) !== undefined;
   const bgs = createBgs(bgsId, compositeId, gameId, config);
   if (!bgs) {
-    throw new Error("Failed to create BGS - at capacity or duplicate ID");
+    throw idAlreadyTaken
+      ? new BgsStartFailure(
+          "duplicate-id",
+          `Failed to create BGS - duplicate ID: ${bgsId}`,
+        )
+      : new BgsStartFailure(
+          "at-capacity",
+          "Failed to create BGS - at capacity",
+        );
   }
 
   // Track BGS on client
@@ -813,9 +873,14 @@ export const startBgsSession = async (
       clearPendingRequest(bgsId);
       endBgs(bgsId);
       removeClientBgsSession(clientId, bgsId);
-      reject(new Error("start_game_session timeout"));
+      reject(new BgsStartFailure("timeout", "start_game_session timeout"));
     }, BGS_REQUEST_TIMEOUT_MS);
 
+    // NOT wrapped to relabel whatever arrives. A first draft mapped every
+    // rejection here to "engine-refused", which would have branded a client
+    // DISCONNECT (endBgsAndRejectResolvers) as the engine refusing the session -
+    // inventing a diagnosis in the very code meant to stop guessing at one.
+    // Each real failure site constructs its own reason instead.
     pendingResolvers.set(bgsId, {
       resolve: resolve as (result: unknown) => void,
       reject,
@@ -831,7 +896,12 @@ export const startBgsSession = async (
       createdAt: Date.now(),
       resolve: (success: boolean, error?: string) => {
         if (!success) {
-          reject(new Error(error ?? "Session start failed"));
+          reject(
+            new BgsStartFailure(
+              "engine-refused",
+              error ?? "Session start failed",
+            ),
+          );
         }
       },
     });
@@ -1252,7 +1322,11 @@ const endBgsAndRejectResolvers = (compositeId: string): void => {
     if (resolver) {
       clearTimeout(resolver.timeoutId);
       pendingResolvers.delete(session.bgsId);
-      resolver.reject(new Error("Bot client disconnected"));
+      // Typed so a start waiting on this client records WHY. Harmless for the
+      // other request types, which never read the reason.
+      resolver.reject(
+        new BgsStartFailure("client-disconnected", "Bot client disconnected"),
+      );
     }
     removeClientBgsSession(clientId, session.bgsId);
   }

@@ -21,14 +21,22 @@
  * the engine (capped at 256 per process) — visible in the production bot log
  * as a "Starting game session" with no matching "Ending game session".
  *
+ * The third test pins the forfeit RECORD rather than the forfeit: which caller
+ * asked for the rebuild, and why the restart failed (board task e6c86b8b).
+ *
  * Harness (server bootstrap, sockets, helpers) mirrors
- * bot-6-bgs-init-race.test.ts, including its database note: no assertion here
- * depends on persistence, so a box without a container runtime runs it with a
- * placeholder DATABASE_URL.
+ * bot-6-bgs-init-race.test.ts, but its database note NO LONGER HOLDS for the
+ * whole file. The first two tests still depend on nothing persisted. The third
+ * asserts the game_details row itself — the durable record a later
+ * investigation would query — so it REQUIRES a container runtime and fails
+ * loudly without one rather than skipping. A skipped assertion here would be
+ * indistinguishable from a passing one, and the column it guards exists
+ * precisely because the non-durable version of this evidence proved useless.
  */
 
 import { describe, it, beforeAll, afterAll, expect } from "bun:test";
 import { WebSocket } from "ws";
+import postgres from "postgres";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
@@ -48,6 +56,8 @@ import type {
 // ================================
 
 let container: StartedTestContainer | undefined;
+/** Set only when a real Postgres is running; see the cause test below. */
+let dbUrl: string | undefined;
 let server: ReturnType<typeof Bun.serve> | null = null;
 let baseUrl: string;
 
@@ -461,6 +471,7 @@ describe("takeback replay race", () => {
     try {
       const handle = await setupEphemeralDb();
       container = handle.container;
+      dbUrl = handle.connectionUrl;
       console.log("[bot-9] using ephemeral Postgres container");
     } catch (error) {
       // Fall back ONLY when no container runtime exists. Any other failure
@@ -607,6 +618,7 @@ describe("takeback replay race", () => {
     botSocket: BotSocket;
     humanSocket: HumanSocket;
     bgsId: string;
+    gameId: string;
   }> {
     const compositeId = `${clientId}:${botId}`;
     const botSocket = await openBotSocket();
@@ -637,7 +649,7 @@ describe("takeback replay race", () => {
     expect(initialEval.expectedPly).toBe(0);
     botSocket.sendEvaluateResponse(bgsId, 0, "---", 0);
 
-    return { botSocket, humanSocket, bgsId };
+    return { botSocket, humanSocket, bgsId, gameId };
   }
 
   it("does not resign the bot when a second takeback interrupts the first replay", async () => {
@@ -793,6 +805,111 @@ describe("takeback replay race", () => {
         winner: 1,
         reason: "resignation",
       });
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+      await sleep(100);
+    }
+  }, 60_000);
+
+  /**
+   * The cause recorded on a forfeit must name WHICH CALLER asked for the
+   * rebuild and WHY the restart failed (board task e6c86b8b).
+   *
+   * Before this, every failure inside resyncBgsFromHistory recorded the literal
+   * "bgs-restart-failed-after-takeback" — a function with five callers, only
+   * three of them takebacks, asserting a takeback it could not know. Seven
+   * production forfeits carry that string and their real caller and reason are
+   * unrecoverable, because Fly keeps no historical logs.
+   *
+   * WHAT MAKES THIS TEST WORTH ANYTHING: it asserts the DURABLE record, the
+   * game_details row a later investigation would actually query — not the
+   * console line, which is the artifact that was already proven useless. Run
+   * against the previous commit it fails on the exact string, which is the
+   * defect being fixed.
+   */
+  it("records the resync caller and the start-failure reason on the game", async () => {
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    try {
+      const game = await startBotGame(
+        "host-user-cause",
+        "test-client-cause",
+        "cause-bot",
+      );
+      botSocket = game.botSocket;
+      humanSocket = game.humanSocket;
+
+      // Two rounds, so the game keeps >= MIN_MOVES_FOR_A_COUNTED_GAME after the
+      // takeback rewinds it. Below that persistCompletedGame returns early and
+      // there is no row to assert against — the game would end and record
+      // nothing, which reads exactly like a passing test.
+      await playRounds(humanSocket, botSocket, game.bgsId, 2);
+
+      const states = recordStates(humanSocket);
+
+      humanSocket.ws.send(JSON.stringify({ type: "takeback-offer" }));
+
+      await botSocket.waitForMessage("end_game_session");
+      botSocket.ws.send(
+        JSON.stringify({
+          type: "game_session_ended",
+          bgsId: game.bgsId,
+          success: true,
+          error: "",
+        }),
+      );
+
+      // The engine REFUSES the restart. One failure, no second takeback, so
+      // resigning is the correct behaviour here — what is under test is the
+      // string written down when it happens.
+      const restart = await botSocket.waitForMessage("start_game_session");
+      botSocket.sendGameSessionStarted(restart.bgsId, false);
+
+      const endSession = await botSocket.waitForMessage("end_game_session");
+      botSocket.ws.send(
+        JSON.stringify({
+          type: "game_session_ended",
+          bgsId: endSession.bgsId,
+          success: true,
+          error: "",
+        }),
+      );
+
+      await sleep(500);
+      const finished = states.filter((s) => s.state.status === "finished");
+      expect(finished.length).toBeGreaterThan(0);
+      // The seat outcome must NOT change: game_players.outcome_reason stays
+      // "resignation" and only the cause column gains detail.
+      expect(finished[0].state.result).toEqual({
+        winner: 1,
+        reason: "resignation",
+      });
+
+      if (!dbUrl) {
+        throw new Error(
+          "no database: this test asserts the persisted bot_resign_cause, so a " +
+            "run without a container runtime cannot verify the thing it exists " +
+            "to verify. Start Docker and re-run.",
+        );
+      }
+
+      const sql = postgres(dbUrl);
+      try {
+        const rows = await sql`
+          SELECT bot_resign_cause FROM game_details WHERE game_id = ${game.gameId}
+        `;
+        expect(rows.length).toBe(1);
+        // Caller AND reason. "takeback" because a takeback asked for the
+        // rebuild; "engine-refused" because the bot answered success:false,
+        // as opposed to a timeout, a duplicate id, or a client disconnect.
+        expect(rows[0].bot_resign_cause).toBe(
+          "bgs-restart-failed:takeback:engine-refused",
+        );
+      } finally {
+        await sql.end();
+      }
     } finally {
       humanSocket?.close();
       botSocket?.close();

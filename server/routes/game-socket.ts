@@ -53,6 +53,7 @@ import {
   requestEvaluation,
   applyBgsMove,
   notifyBotGameEnded,
+  startFailureReason,
 } from "./custom-bot-socket";
 import { notifyEvalBarMove, handleEvalBarGameEnd } from "./eval-socket";
 import { addActiveGame, isBotClientInGrace } from "../games/custom-bot-store";
@@ -507,18 +508,40 @@ const executeBotTurnV3 = async (sessionId: string): Promise<void> => {
 };
 
 /**
+ * Why a BGS rebuild was asked for. Three values rather than one per call site:
+ * the diagnostic question is which MECHANISM was in play, and the three
+ * takeback entry points (offer, accept, and the requestTakeback action frame)
+ * are one mechanism seen from three frames. Kept short and distinct - these are
+ * read as a group-by.
+ */
+export type ResyncTrigger = "takeback" | "reattach" | "lead-in";
+
+/**
  * V3: Rebuild a bot game session to match the game's current history: end the
  * BGS, start a fresh one from the authored config, replay the history, and
  * play the bot's turn if it is due. Generation-token guarded, so concurrent
  * resyncs supersede each other safely.
  *
- * Used when a takeback is accepted in a bot game, and by the bot-client
- * reattach path to heal every active game after a connection drop (the
- * rebuild is idempotent against whatever state the client lost or kept).
+ * Used when a takeback is accepted in a bot game, by the bot-client reattach
+ * path to heal every active game after a connection drop (the rebuild is
+ * idempotent against whatever state the client lost or kept), and to build the
+ * session for a puzzle whose lead-in gives it history before any BGS exists.
  */
 export const resyncBgsFromHistory = async (
   sessionId: string,
   botCompositeId: string,
+  /**
+   * WHICH CALLER ASKED FOR THIS REBUILD, recorded on any forfeit it causes.
+   *
+   * Required, with no default, on purpose. This function has five callers and
+   * only three are takebacks, but every failure inside it used to record
+   * "...-after-takeback" - a literal, not a measurement. Board task e6c86b8b
+   * found seven production forfeits carrying that string with no way to tell a
+   * takeback from a bot-client reattach or a puzzle lead-in rebuild. A default
+   * would quietly recreate exactly that: the caller that forgot to say would be
+   * the one nobody could diagnose.
+   */
+  trigger: ResyncTrigger,
 ): Promise<void> => {
   const bgsId = sessionId;
 
@@ -590,14 +613,17 @@ export const resyncBgsFromHistory = async (
         });
         return;
       }
-      console.error("[ws] failed to restart BGS after takeback", {
+      const reason = startFailureReason(error);
+      console.error("[ws] failed to restart BGS during resync", {
         error,
         sessionId,
+        trigger,
+        reason,
       });
       await resignBotOnFailure(
         session,
         botPlayer.playerId,
-        "bgs-restart-failed-after-takeback",
+        `bgs-restart-failed:${trigger}:${reason}`,
       );
       return;
     }
@@ -621,13 +647,14 @@ export const resyncBgsFromHistory = async (
         });
         return;
       }
-      console.error("[ws] failed to get initial eval after takeback", {
+      console.error("[ws] failed to get initial eval during resync", {
         sessionId,
+        trigger,
       });
       await resignBotOnFailure(
         session,
         botPlayer.playerId,
-        "initial-eval-failed-after-takeback",
+        `bgs-initial-eval-failed:${trigger}`,
       );
       return;
     }
@@ -668,14 +695,15 @@ export const resyncBgsFromHistory = async (
           });
           return;
         }
-        console.error("[ws] failed to replay move during takeback", {
+        console.error("[ws] failed to replay move during resync", {
           sessionId,
           moveIndex: i,
+          trigger,
         });
         await resignBotOnFailure(
           session,
           botPlayer.playerId,
-          "move-replay-failed-during-takeback",
+          `bgs-move-replay-failed:${trigger}`,
         );
         return;
       }
@@ -817,7 +845,7 @@ const initializeBotGameOnStart = async (sessionId: string): Promise<void> => {
       historyLength: session.gameState.history.length,
       botCompositeId: botPlayer.botCompositeId,
     });
-    await resyncBgsFromHistory(sessionId, botPlayer.botCompositeId);
+    await resyncBgsFromHistory(sessionId, botPlayer.botCompositeId, "lead-in");
     return;
   }
 
@@ -1515,7 +1543,11 @@ const handleTakebackOffer = (socket: SessionSocket) => {
       playerId: opponent.playerId,
     });
     // V3: Handle takeback by ending BGS and starting new one
-    void resyncBgsFromHistory(socket.sessionId, opponent.botCompositeId);
+    void resyncBgsFromHistory(
+      socket.sessionId,
+      opponent.botCompositeId,
+      "takeback",
+    );
     console.info("[ws] takeback-offer auto-accepted (bot opponent)", {
       sessionId: socket.sessionId,
       playerId,
@@ -1568,7 +1600,11 @@ const handleTakebackAccept = (socket: SessionSocket) => {
       ? session.players.joiner
       : null;
   if (botPlayer?.botCompositeId) {
-    void resyncBgsFromHistory(socket.sessionId, botPlayer.botCompositeId);
+    void resyncBgsFromHistory(
+      socket.sessionId,
+      botPlayer.botCompositeId,
+      "takeback",
+    );
   }
 
   console.info("[ws] takeback-accept processed", {
@@ -2133,7 +2169,11 @@ const handleActionRequest = async (
           playerId: opponent.playerId,
         });
         // V3: Handle takeback by ending BGS and starting new one
-        void resyncBgsFromHistory(socket.sessionId, opponent.botCompositeId);
+        void resyncBgsFromHistory(
+          socket.sessionId,
+          opponent.botCompositeId,
+          "takeback",
+        );
         sendActionAck(socket, message);
         console.info(
           "[ws] action-requestTakeback auto-accepted (bot opponent)",
