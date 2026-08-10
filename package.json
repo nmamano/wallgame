@@ -14,6 +14,7 @@
     "harness:nudge": "bun run build && bun scripts/browser-harness/drive-account-nudge.ts",
     "harness:puzzles": "bun run build && bun scripts/browser-harness/drive-puzzles-page.ts",
     "harness:campaign": "bun run build && bun scripts/browser-harness/drive-campaign-progress.ts",
+    "harness:bots": "bun run build && bun scripts/browser-harness/drive-bots-empty-state.ts",
     "harness:pwa": "bun run build && bun scripts/browser-harness/drive-pwa-manifest.ts",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",

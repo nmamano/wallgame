@@ -90,6 +90,16 @@ function parseCommand(command: string): string[] {
 }
 
 /**
+ * How many of the engine's most recent stderr lines to keep.
+ *
+ * One process serves every bot, so by the time a client notices an engine is
+ * gone its last words are far up a log shared with three other engines. Keeping
+ * them on the instance lets the "not advertising this bot" line carry the
+ * engine's own explanation with it.
+ */
+const RETAINED_STDERR_LINES = 10;
+
+/**
  * V3: Long-lived engine process that communicates via JSON-lines.
  *
  * The EngineProcess maintains a subprocess and handles async message passing.
@@ -114,18 +124,32 @@ export class EngineProcess {
   >();
   private isAlive = true;
   private lineBuffer = "";
+  /** The bot this engine serves. Prefixes every line it produces. */
+  private readonly label: string;
+  /** Set once the process exits. Null while it is still running. */
+  private exitCode: number | null = null;
+  /** True once kill() ran, so a deliberate teardown is not read as a death. */
+  private killed = false;
+  private stderrTail: string[] = [];
+  private exitHandlers: ((exitCode: number | null) => void)[] = [];
 
-  private constructor(proc: Subprocess<"pipe", "pipe", "pipe">) {
+  private constructor(proc: Subprocess<"pipe", "pipe", "pipe">, label: string) {
     this.proc = proc;
     this.stdin = proc.stdin;
+    this.label = label;
 
     // Start reading stdout for responses
     void this.readResponses();
+    // ...and stderr, which is where the engine explains itself when it dies.
+    void this.readStderr();
 
     // Handle process exit
     void proc.exited.then((exitCode) => {
-      logger.info(`Engine process exited with code ${exitCode}`);
+      logger.info(
+        `[${this.label}] engine process exited with code ${exitCode}`,
+      );
       this.isAlive = false;
+      this.exitCode = exitCode;
       // Reject all pending requests
       for (const [, resolver] of this.pendingRequests) {
         resolver.reject(
@@ -133,7 +157,59 @@ export class EngineProcess {
         );
       }
       this.pendingRequests.clear();
+
+      // A deliberate kill is a shutdown, not a death. Firing the handlers for
+      // it would make close() look like an engine failure and trigger the
+      // re-attach path on the way out.
+      if (this.killed) return;
+      for (const handler of this.exitHandlers) handler(exitCode);
     });
+  }
+
+  /**
+   * Read the engine's stderr.
+   *
+   * Two things changed here, and both are the point of board task 5f302c24.
+   * This was logged at `debug` while the logger defaults to `info`, so every
+   * line the engine wrote was captured and then dropped at the threshold — an
+   * engine could die without leaving a word in the log. And chunks are now
+   * split into lines: a read can carry several lines or half of one, so
+   * logging the raw chunk interleaves four engines into an unreadable mess.
+   */
+  private async readStderr(): Promise<void> {
+    const reader = (this.proc.stderr as ReadableStream<Uint8Array>).getReader();
+    const decoder = new TextDecoder();
+    let buffer = "";
+
+    const emit = (line: string) => {
+      logger.info(`[${this.label}] engine: ${line}`);
+      this.stderrTail.push(line);
+      if (this.stderrTail.length > RETAINED_STDERR_LINES) {
+        this.stderrTail.shift();
+      }
+    };
+
+    try {
+      for (;;) {
+        const { done, value } = await reader.read();
+        if (done) break;
+        if (!value) continue;
+
+        buffer += decoder.decode(value, { stream: true });
+        let newlineIndex: number;
+        while ((newlineIndex = buffer.indexOf("\n")) !== -1) {
+          const line = buffer.slice(0, newlineIndex).trimEnd();
+          buffer = buffer.slice(newlineIndex + 1);
+          if (line) emit(line);
+        }
+      }
+      // A dying engine often writes its last line without a trailing newline,
+      // and that line is the one worth having.
+      const remainder = buffer.trim();
+      if (remainder) emit(remainder);
+    } catch (error) {
+      logger.error(`[${this.label}] error reading engine stderr:`, error);
+    }
   }
 
   /**
@@ -144,7 +220,10 @@ export class EngineProcess {
   // synchronous one, which is a different thing for any caller that does not
   // await. The Promise return type is the published contract either way.
   // eslint-disable-next-line @typescript-eslint/require-await
-  static async spawn(engineCommand: string): Promise<EngineProcess> {
+  static async spawn(
+    engineCommand: string,
+    label: string,
+  ): Promise<EngineProcess> {
     const args = parseCommand(engineCommand);
     if (args.length === 0) {
       throw new Error("Empty engine command");
@@ -153,8 +232,13 @@ export class EngineProcess {
     const cmd = args[0];
     const cmdArgs = args.slice(1);
 
-    logger.debug(`Spawning engine: ${cmd} ${cmdArgs.join(" ")}`);
+    logger.debug(`[${label}] spawning engine: ${cmd} ${cmdArgs.join(" ")}`);
 
+    // Note for anyone reading this expecting a try/catch: a missing binary
+    // makes this throw SYNCHRONOUSLY (ENOENT), which is one of the two failure
+    // shapes the caller has to handle. The other is a process that spawns
+    // cleanly and then exits, which shows up as `alive` going false rather than
+    // as a throw. Neither is detectable here, so both are the caller's problem.
     const proc = spawn({
       cmd: [cmd, ...cmdArgs],
       stdin: "pipe",
@@ -162,22 +246,7 @@ export class EngineProcess {
       stderr: "pipe",
     });
 
-    // Log stderr output
-    const stderrStream = proc.stderr as ReadableStream<Uint8Array>;
-    void (async () => {
-      const reader = stderrStream.getReader();
-      const decoder = new TextDecoder();
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-        if (value) {
-          const text = decoder.decode(value);
-          logger.debug(`Engine stderr: ${text.trim()}`);
-        }
-      }
-    })();
-
-    return new EngineProcess(proc);
+    return new EngineProcess(proc, label);
   }
 
   /**
@@ -300,8 +369,9 @@ export class EngineProcess {
    * Kill the engine process.
    */
   kill(): void {
+    this.killed = true;
     if (this.isAlive) {
-      logger.debug("Killing engine process");
+      logger.debug(`[${this.label}] killing engine process`);
       this.isAlive = false;
       try {
         void this.stdin.end();
@@ -327,6 +397,37 @@ export class EngineProcess {
   get alive(): boolean {
     return this.isAlive;
   }
+
+  /**
+   * The process's exit code, or null while it is still running.
+   *
+   * Note what this is NOT: a readiness signal. An engine that is loading its
+   * model for ten seconds is alive with a null exit code, and so is one wedged
+   * forever on a lock. Only death is observable from out here.
+   */
+  get exitStatus(): number | null {
+    return this.exitCode;
+  }
+
+  /** The engine's most recent stderr lines, oldest first. */
+  recentStderr(): string[] {
+    return [...this.stderrTail];
+  }
+
+  /**
+   * Run `handler` when the process dies on its own.
+   *
+   * Deliberate kills do not count — see the `killed` flag. If the process has
+   * ALREADY died, the handler runs immediately, which closes the window between
+   * a caller checking `alive` and subscribing.
+   */
+  onExit(handler: (exitCode: number | null) => void): void {
+    if (!this.isAlive && !this.killed) {
+      handler(this.exitCode);
+      return;
+    }
+    this.exitHandlers.push(handler);
+  }
 }
 
 /**
@@ -335,6 +436,7 @@ export class EngineProcess {
  */
 export async function spawnEngine(
   engineCommand: string,
+  label: string,
 ): Promise<EngineProcess> {
-  return EngineProcess.spawn(engineCommand);
+  return EngineProcess.spawn(engineCommand, label);
 }

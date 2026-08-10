@@ -29,7 +29,7 @@ afterEach(() => {
 
 describe("EngineProcess pendingRequests keying", () => {
   it("routes concurrent different-type requests for the same session to the right responses", async () => {
-    engine = await EngineProcess.spawn(ENGINE_CMD);
+    engine = await EngineProcess.spawn(ENGINE_CMD, "test-bot");
     const bgsId = "session-collision";
 
     // A slow evaluate_position is in flight when an end_game_session arrives for
@@ -54,7 +54,7 @@ describe("EngineProcess pendingRequests keying", () => {
   });
 
   it("still rejects a genuine same-type duplicate for the same session", async () => {
-    engine = await EngineProcess.spawn(ENGINE_CMD);
+    engine = await EngineProcess.spawn(ENGINE_CMD, "test-bot");
     const bgsId = "session-dup";
 
     const first = engine.send({
@@ -82,7 +82,7 @@ describe("EngineProcess pendingRequests keying", () => {
   });
 
   it("keeps separate sessions independent", async () => {
-    engine = await EngineProcess.spawn(ENGINE_CMD);
+    engine = await EngineProcess.spawn(ENGINE_CMD, "test-bot");
 
     const a = engine.send({
       type: "evaluate_position",

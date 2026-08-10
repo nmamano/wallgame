@@ -5,7 +5,17 @@ import {
   PopoverTrigger,
 } from "@/components/ui/popover";
 
-const GRID_SIZE = 12;
+const MAX_WIDTH = 12;
+/**
+ * Heights above this are not offered, because no official bot plays them.
+ *
+ * Every official bot declares a height range topping out at 10, so a player who
+ * picked 11 or 12 got an empty bot list while the bots were perfectly healthy —
+ * and, after board task 5f302c24, would be told "no official bot is available
+ * right now, try again later", which was advice that could never come true.
+ * Removing the sizes is Nil's call over adding a second message for them.
+ */
+const MAX_HEIGHT = 10;
 const MIN_SIZE = 4;
 
 interface BoardSizePickerProps {
@@ -57,14 +67,14 @@ export function BoardSizePicker({
         <div
           className="grid bg-border rounded-sm overflow-hidden"
           style={{
-            gridTemplateColumns: `repeat(${GRID_SIZE}, 28px)`,
+            gridTemplateColumns: `repeat(${MAX_WIDTH}, 28px)`,
             gridAutoRows: "28px",
             gap: "1px",
           }}
         >
-          {Array.from({ length: GRID_SIZE * GRID_SIZE }, (_, i) => {
-            const col = (i % GRID_SIZE) + 1;
-            const row = Math.floor(i / GRID_SIZE) + 1;
+          {Array.from({ length: MAX_WIDTH * MAX_HEIGHT }, (_, i) => {
+            const col = (i % MAX_WIDTH) + 1;
+            const row = Math.floor(i / MAX_WIDTH) + 1;
             const belowMin = col < MIN_SIZE || row < MIN_SIZE;
             const isInHoverRegion =
               hoverCell != null && col <= hoverCell.col && row <= hoverCell.row;

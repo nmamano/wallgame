@@ -19,6 +19,18 @@ import { useBotsQuery, useRecommendedBotsQuery } from "@/hooks/use-bots";
 
 type BotTabKey = "recommended" | "filtered";
 
+/**
+ * Shown whenever the listing for the player's current settings contains no
+ * OFFICIAL bot.
+ *
+ * The condition is the official subset rather than the row count, because a
+ * listed third-party bot must not hide the fact that every official bot is
+ * away. It is deliberately general: it says nothing about which bot is missing,
+ * only that none is here, so it stays true whatever the reason.
+ */
+const NO_OFFICIAL_BOT_MESSAGE =
+  "No official bot is available right now. Try again later.";
+
 const formatBoardSizeShort = (width: number, height: number): string =>
   `${width}x${height}`;
 
@@ -53,6 +65,28 @@ export function BotsPanel({
   );
 
   const [activeTab, setActiveTab] = useState<BotTabKey>("recommended");
+
+  // Each tab asks its own question of its own query, so each answers it
+  // separately: the recommended listing is variant-wide, the filtered one is
+  // narrowed to the exact board size.
+  const noOfficialRecommended =
+    !recommendedLoading && !recommendedRows.some((e) => e.bot.isOfficial);
+  const noOfficialMatching =
+    !matchingLoading && !matchingRows.some((b) => b.isOfficial);
+
+  /**
+   * The availability notice, placed where the player is already looking.
+   *
+   * With no rows at all it belongs in the empty table, replacing wording that
+   * used to blame the player's settings for a server-side outage. With custom
+   * rows present it goes above them instead, so the bot that IS there stays
+   * listed and playable.
+   */
+  const renderUnavailableCaption = () => (
+    <p className="text-xs text-muted-foreground mb-2">
+      {NO_OFFICIAL_BOT_MESSAGE}
+    </p>
+  );
 
   const handlePlayBot = (
     botId: string,
@@ -114,9 +148,13 @@ export function BotsPanel({
 
       {activeTab === "recommended" && (
         <div className="overflow-x-auto">
-          <p className="text-xs text-muted-foreground mb-2">
-            Showing recommended bots for: {variantDisplayName(config.variant)}
-          </p>
+          {noOfficialRecommended && recommendedRows.length > 0 ? (
+            renderUnavailableCaption()
+          ) : (
+            <p className="text-xs text-muted-foreground mb-2">
+              Showing recommended bots for: {variantDisplayName(config.variant)}
+            </p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -130,10 +168,7 @@ export function BotsPanel({
                 renderEmptyState("Loading recommended bots...", 3)}
               {!recommendedLoading &&
                 (recommendedRows.length === 0
-                  ? renderEmptyState(
-                      "No recommended bots for these settings.",
-                      3,
-                    )
+                  ? renderEmptyState(NO_OFFICIAL_BOT_MESSAGE, 3)
                   : recommendedRows.map((entry) => (
                       <TableRow
                         key={`${entry.bot.id}-${entry.boardWidth}x${entry.boardHeight}`}
@@ -171,10 +206,14 @@ export function BotsPanel({
 
       {activeTab === "filtered" && (
         <div className="overflow-x-auto">
-          <p className="text-xs text-muted-foreground mb-2">
-            Showing bots matching: {variantDisplayName(config.variant)}
-            {` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
-          </p>
+          {noOfficialMatching && matchingRows.length > 0 ? (
+            renderUnavailableCaption()
+          ) : (
+            <p className="text-xs text-muted-foreground mb-2">
+              Showing bots matching: {variantDisplayName(config.variant)}
+              {` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
+            </p>
+          )}
           <Table>
             <TableHeader>
               <TableRow>
@@ -188,7 +227,7 @@ export function BotsPanel({
                 renderEmptyState("Loading matching bots...", 3)}
               {!matchingLoading &&
                 (matchingRows.length === 0
-                  ? renderEmptyState("No bots match your current settings.", 3)
+                  ? renderEmptyState(NO_OFFICIAL_BOT_MESSAGE, 3)
                   : matchingRows.map((bot) => (
                       <TableRow
                         key={bot.id}

@@ -81,6 +81,21 @@ const RECONNECT_JITTER_MAX_MS = 2000;
 // Keepalive ping interval
 const PING_INTERVAL_MS = 30_000;
 
+/**
+ * How long to wait after spawning before deciding an engine came up.
+ *
+ * This is a LIVENESS window, not a readiness one, and the difference is what
+ * makes two seconds enough. An engine that fails to start dies almost at once —
+ * a bad flag, a missing model file, a TensorRT init failure all exit within
+ * milliseconds (measured: ~50ms). An engine that starts correctly stays ALIVE
+ * for the whole of its model load, so the window never has to cover that load.
+ *
+ * The window is shared: every engine is spawned first, then all of them are
+ * judged after one wait, so this costs two seconds of client startup in total
+ * rather than two seconds per bot.
+ */
+const ENGINE_STARTUP_GRACE_MS = 2000;
+
 // Standard notation for a move that takes no actions. Valid on the wire — the
 // server applies it as a pass — which is exactly why the naive policy must
 // never be allowed to answer with it.
@@ -91,6 +106,25 @@ const PASS_NOTATION = "---";
 const HEARTBEAT_FILE =
   process.env.WALLGAME_HEARTBEAT_FILE ??
   join(import.meta.dir, "../../.wallgame-bot-heartbeat");
+
+/**
+ * Who answers a message, and why.
+ *
+ * This replaces a lookup that returned `EngineProcess | undefined`, where
+ * `undefined` meant three unrelated things at once: this bot deliberately has
+ * no engine, this bot's engine failed to start, and this bgsId has no route.
+ * Collapsing them into one value is exactly what let a configured bot be
+ * answered by the built-in bot under its own name without anyone noticing.
+ *
+ * The load-bearing property: `built-in` is decided by the CONFIG — this bot
+ * declares no engine command — and never by the absence of a live entry in the
+ * engine map. So a bot whose config names an engine can only ever resolve to
+ * `engine` or `unavailable`, at startup and at every later moment.
+ */
+type Responder =
+  | { kind: "engine"; engine: EngineProcess }
+  | { kind: "built-in" }
+  | { kind: "unavailable"; reason: string };
 
 // V3 BGS client response type
 type BgsClientResponse =
@@ -109,6 +143,22 @@ export class BotClient {
 
   // V3: Long-lived engine processes (one per bot)
   private engines = new Map<string, EngineProcess>();
+
+  // Bots that are configured but NOT advertised, because their engine is not
+  // running. Withholding happens here and nowhere else — in particular the dead
+  // engine is deliberately LEFT in this.engines, because removing it would make
+  // the responder read the bot as engine-less and hand it to the built-in bot,
+  // which is the bug this all exists to prevent.
+  private withheldBotIds = new Set<string>();
+
+  // Set when a bot was withheld while the first attach was still in flight, so
+  // the re-attach has to wait for that attach to land. See requestReattach().
+  private reattachPending = false;
+
+  // Set when the client cannot go on: every engine dead. run() rejects with it
+  // so the process exits non-zero and the supervisor restarts with fresh
+  // engines, rather than reporting a clean shutdown.
+  private fatalError: Error | null = null;
 
   // V3: Session routing table (bgsId -> botId) for routing messages without botId
   private sessionRoutes = new Map<string, string>();
@@ -153,6 +203,17 @@ export class BotClient {
   async connect(): Promise<void> {
     // V3: Start engine processes first
     await this.startEngines();
+
+    // Nothing to offer, so do not attach at all. Attaching with an empty bot
+    // list would only make the server say NO_BOTS back; refusing here puts the
+    // reason — and each engine's own last words, logged above — in the client's
+    // log, where whoever restarts it will look.
+    if (this.servedBots.length === 0) {
+      this.shouldReconnect = false;
+      throw new Error(
+        `Not attaching: every configured engine failed to start (${this.options.bots.length} bot(s) withheld)`,
+      );
+    }
 
     const wsUrl = this.deriveWebSocketUrl(this.options.serverUrl);
     logger.info(`Connecting to ${wsUrl}`);
@@ -210,32 +271,192 @@ export class BotClient {
    * V3: Start engine processes for each bot
    */
   private async startEngines(): Promise<void> {
+    const spawnedBotIds: string[] = [];
+    const failures = new Map<string, string>();
+
     for (const bot of this.options.bots) {
       const engineCommand = this.options.engineCommands.get(bot.botId);
       if (!engineCommand) {
         logger.info(
-          `Bot ${bot.botId}: No engine command, will use built-in dumb bot`,
+          `Bot ${bot.botId}: no engine command configured, so the built-in bot answers for it`,
         );
         continue;
       }
 
       try {
         logger.info(`Starting engine for bot ${bot.botId}: ${engineCommand}`);
-        const engine = await spawnEngine(engineCommand);
+        const engine = await spawnEngine(engineCommand, bot.botId);
         this.engines.set(bot.botId, engine);
-        logger.info(`Engine started for bot ${bot.botId}`);
+        spawnedBotIds.push(bot.botId);
       } catch (error) {
-        logger.error(`Failed to start engine for bot ${bot.botId}:`, error);
-        // Continue without this engine - will use dumb bot fallback
+        // Failure shape A: the binary does not exist, so spawn threw. Nothing
+        // was created, so there is nothing to check after the window.
+        failures.set(
+          bot.botId,
+          error instanceof Error ? error.message : String(error),
+        );
       }
+    }
+
+    // One shared window for every engine that spawned, so a four-bot client
+    // waits once rather than four times.
+    if (spawnedBotIds.length > 0) {
+      await Bun.sleep(ENGINE_STARTUP_GRACE_MS);
+    }
+
+    for (const botId of spawnedBotIds) {
+      const engine = this.engines.get(botId);
+      if (!engine) continue;
+
+      if (!engine.alive) {
+        // Failure shape B: the binary ran and then exited. This is the likelier
+        // one in production — a missing model file, a CUDA init failure — and
+        // it looks perfectly healthy at the moment of spawn.
+        failures.set(
+          botId,
+          `engine exited with code ${engine.exitStatus} within ${ENGINE_STARTUP_GRACE_MS}ms of starting`,
+        );
+        continue;
+      }
+
+      logger.info(`Engine started for bot ${botId}`);
+      engine.onExit((exitCode) => this.handleEngineDeath(botId, exitCode));
+    }
+
+    for (const [botId, reason] of failures) {
+      this.withholdBot(botId, reason);
     }
   }
 
   /**
-   * V3: Get engine for a bot (or undefined for dumb bot fallback)
+   * Stop advertising a bot whose engine is not running, and say so loudly.
+   *
+   * The engine, if there is one, stays in this.engines on purpose. See the
+   * comment on withheldBotIds: taking it out would re-open the exact hole this
+   * change closes.
    */
-  private getEngine(botId: string): EngineProcess | undefined {
-    return this.engines.get(botId);
+  private withholdBot(botId: string, reason: string): void {
+    if (this.withheldBotIds.has(botId)) return;
+    this.withheldBotIds.add(botId);
+
+    logger.error(
+      `Bot ${botId} will NOT be advertised: ${reason}. Command: ${this.options.engineCommands.get(botId) ?? "(none)"}`,
+    );
+    // The engine's own account of what went wrong, next to the decision it
+    // caused. Before this task these lines were captured and then dropped at
+    // the log threshold, so a bot died without explanation.
+    for (const line of this.engines.get(botId)?.recentStderr() ?? []) {
+      logger.error(`  ${botId} said: ${line}`);
+    }
+  }
+
+  /**
+   * An engine that passed the startup window has since died.
+   *
+   * Advertising can only be changed by attaching again, and attach is sent only
+   * on connect — so the socket is closed and the existing reconnect path
+   * re-attaches with the reduced list. The server carries the surviving bots'
+   * games forward and resigns only this bot's, so the cost is the reconnect gap
+   * rather than anyone else's game.
+   */
+  private handleEngineDeath(botId: string, exitCode: number | null): void {
+    if (this.withheldBotIds.has(botId)) return;
+
+    this.withholdBot(
+      botId,
+      `engine exited with code ${exitCode} while running`,
+    );
+
+    if (this.servedBots.length === 0) {
+      this.fatalError = new Error(
+        "Every configured engine has died; exiting so the supervisor can restart with fresh ones",
+      );
+      logger.error(this.fatalError.message);
+      this.shouldReconnect = false;
+      this.ws?.close();
+      return;
+    }
+
+    logger.info(
+      `Re-attaching without ${botId}; the other bots keep their games`,
+    );
+    this.requestReattach();
+  }
+
+  /**
+   * Ask for a fresh attach, so a changed `servedBots` reaches the server.
+   *
+   * The whole mechanism is that the payload is computed at attach time, so a
+   * withdrawal takes effect at the NEXT attach — whenever that is. All this has
+   * to guarantee is that another attach happens after the withdrawal.
+   *
+   * The "connecting" case is why this is a method rather than a bare close().
+   * While the first attach is still in flight, `onclose` cannot tell a socket we
+   * closed on purpose from a connection that failed: it sees wasConnecting,
+   * rejects connect(), and does NOT schedule a reconnect. That rejection escapes
+   * run() and exits the process — which is option C, restart everything, and not
+   * the option A Nil chose. So in that window the re-attach is deferred to the
+   * moment the attach lands, and handleAttached performs it.
+   */
+  private requestReattach(): void {
+    if (this.state === "connecting") {
+      this.reattachPending = true;
+      logger.info(
+        "Attach still in flight; the reduced bot list goes out as soon as it lands",
+      );
+      return;
+    }
+    if (this.state === "disconnected") {
+      // A reconnect is already scheduled, or the client is shutting down.
+      // Either way the next attach reads servedBots, which is already reduced.
+      return;
+    }
+    this.ws?.close();
+  }
+
+  /**
+   * The bots this client actually advertises: everything configured, minus
+   * whatever is withheld. This is what goes in the attach payload, on the first
+   * attach and on every re-attach.
+   */
+  private get servedBots(): BotConfig[] {
+    return this.options.bots.filter(
+      (bot) => !this.withheldBotIds.has(bot.botId),
+    );
+  }
+
+  /**
+   * Decide who answers for a bot, and why. See the Responder type.
+   */
+  private resolveResponder(botId: string | undefined): Responder {
+    if (!botId) {
+      return {
+        kind: "unavailable",
+        reason: "no session route for this bgsId",
+      };
+    }
+
+    // Config first, always. A bot that declares no engine command IS the
+    // built-in bot — that is what the test configs ask for, and what board task
+    // 9c0ac857 will use on purpose.
+    if (!this.options.engineCommands.has(botId)) {
+      return { kind: "built-in" };
+    }
+
+    const engine = this.engines.get(botId);
+    if (!engine) {
+      return {
+        kind: "unavailable",
+        reason: `the engine for ${botId} failed to start`,
+      };
+    }
+    if (!engine.alive) {
+      return {
+        kind: "unavailable",
+        reason: `the engine for ${botId} is not running (exit code ${engine.exitStatus})`,
+      };
+    }
+    return { kind: "engine", engine };
   }
 
   /**
@@ -325,12 +546,15 @@ export class BotClient {
     await this.connect();
 
     // Keep running until shouldReconnect is false
-    return new Promise((resolve) => {
+    return new Promise((resolve, reject) => {
       this.runResolve = resolve;
       const checkInterval = setInterval(() => {
         if (this.state === "disconnected" && !this.shouldReconnect) {
           clearInterval(checkInterval);
-          resolve();
+          // A shutdown because every engine died is not a clean exit, and
+          // saying so is what gets a non-zero code out of index.ts.
+          if (this.fatalError) reject(this.fatalError);
+          else resolve();
         }
       }, 100);
     });
@@ -353,7 +577,9 @@ export class BotClient {
       type: "attach",
       protocolVersion: CUSTOM_BOT_PROTOCOL_VERSION,
       clientId: this.options.clientId,
-      bots: this.options.bots,
+      // Withheld bots are absent from here, which is the whole mechanism: a bot
+      // the server never hears about is a bot no player can be offered.
+      bots: this.servedBots,
       client: {
         name: this.options.clientName,
         version: this.options.clientVersion,
@@ -439,16 +665,19 @@ export class BotClient {
    * Handle successful attachment
    */
   private handleAttached(message: AttachedMessage): void {
-    const botCount = this.options.bots.length;
-    logger.info(`Successfully attached with ${botCount} bot(s)`);
+    const served = this.servedBots;
+    logger.info(`Successfully attached with ${served.length} bot(s)`);
     logger.info(`  Server: ${message.server.name} v${message.server.version}`);
     logger.info(`  Protocol: v${message.protocolVersion}`);
 
-    for (const bot of this.options.bots) {
-      const hasEngine = this.engines.has(bot.botId);
+    for (const bot of served) {
+      const responder = this.resolveResponder(bot.botId);
       logger.info(
-        `  Bot: ${bot.botId} (${bot.name}) - Engine: ${hasEngine ? "external" : "dumb-bot"}`,
+        `  Bot: ${bot.botId} (${bot.name}) - answered by: ${responder.kind}`,
       );
+    }
+    for (const botId of this.withheldBotIds) {
+      logger.info(`  Bot: ${botId} - WITHHELD, not advertised`);
     }
 
     this.state = "waiting";
@@ -464,6 +693,19 @@ export class BotClient {
       this.connectResolve();
       this.connectResolve = null;
       this.connectReject = null;
+    }
+
+    // An engine died while this attach was in flight, so the list the server
+    // just accepted is already out of date. Resolving connect() FIRST matters:
+    // the client is up, and the caller should be told so before the socket goes
+    // down again. State is "waiting" by now, so the close below takes the
+    // ordinary reconnect path rather than the failed-connection one.
+    if (this.reattachPending) {
+      this.reattachPending = false;
+      logger.info(
+        "Re-attaching straight away: a bot was withheld while this attach was in flight",
+      );
+      this.ws?.close();
     }
   }
 
@@ -532,16 +774,37 @@ export class BotClient {
     // Record session route for subsequent messages (evaluate, apply_move, end)
     this.sessionRoutes.set(message.bgsId, message.botId);
 
-    const engine = this.getEngine(message.botId);
+    const responder = this.resolveResponder(message.botId);
 
-    if (!engine) {
-      // Dumb bot fallback - stateful session tracking
-      logger.debug(`Using dumb bot for session ${message.bgsId}`);
+    if (responder.kind === "unavailable") {
+      // Withheld bots are not advertised, so this is a stale listing or a
+      // retry. Either way the answer is a refusal — never a move from something
+      // else under this bot's name.
+      logger.error(
+        `Refusing session ${message.bgsId} for bot ${message.botId}: ${responder.reason}`,
+      );
+      this.sessionRoutes.delete(message.bgsId);
+      await this.send({
+        type: "game_session_started",
+        bgsId: message.bgsId,
+        success: false,
+        error: responder.reason,
+      });
+      this.state = "waiting";
+      return;
+    }
+
+    if (responder.kind === "built-in") {
+      logger.info(
+        `Built-in bot serves session ${message.bgsId}: bot ${message.botId} declares no engine`,
+      );
       const response = dumbBotStartSession(message);
       await this.send(response);
       this.state = "waiting";
       return;
     }
+
+    const engine = responder.engine;
 
     try {
       const response = await engine.send(message);
@@ -588,17 +851,37 @@ export class BotClient {
     this.state = "processing";
 
     const botId = this.sessionRoutes.get(message.bgsId);
-    const engine = botId ? this.getEngine(botId) : undefined;
+    const responder = this.resolveResponder(botId);
 
-    if (!engine) {
-      // Dumb bot fallback (no engine-side session to leak)
-      logger.debug(`Using dumb bot for end session ${message.bgsId}`);
+    if (responder.kind === "unavailable") {
+      // No engine-side session to tear down: either there is no route, or the
+      // engine that held it is gone and took its state with it.
+      logger.warn(
+        `Cannot end session ${message.bgsId} with its engine: ${responder.reason}`,
+      );
+      this.sessionRoutes.delete(message.bgsId);
+      this.endShadowSession(message);
+      await this.send({
+        type: "game_session_ended",
+        bgsId: message.bgsId,
+        success: false,
+        error: responder.reason,
+      });
+      this.state = "waiting";
+      return;
+    }
+
+    if (responder.kind === "built-in") {
+      // Built-in bot (no engine-side session to leak)
+      logger.debug(`Built-in bot ends session ${message.bgsId}`);
       this.sessionRoutes.delete(message.bgsId);
       const response = dumbBotEndSession(message);
       await this.send(response);
       this.state = "waiting";
       return;
     }
+
+    const engine = responder.engine;
 
     try {
       const response = await engine.send(message);
@@ -636,16 +919,37 @@ export class BotClient {
     this.state = "processing";
 
     const botId = this.sessionRoutes.get(message.bgsId);
-    const engine = botId ? this.getEngine(botId) : undefined;
+    const responder = this.resolveResponder(botId);
 
-    if (!engine) {
-      // Dumb bot fallback
-      logger.debug(`Using dumb bot for evaluation ${message.bgsId}`);
+    if (responder.kind === "unavailable") {
+      // The move that must never come from somewhere else. Refusing loses the
+      // game; answering with a built-in move loses the player's trust in what
+      // the bot's name means.
+      logger.error(
+        `Refusing to move for session ${message.bgsId}: ${responder.reason}`,
+      );
+      await this.send({
+        type: "evaluate_response",
+        bgsId: message.bgsId,
+        ply: message.expectedPly,
+        evaluation: 0,
+        bestMove: "",
+        success: false,
+        error: responder.reason,
+      });
+      this.state = "waiting";
+      return;
+    }
+
+    if (responder.kind === "built-in") {
+      logger.debug(`Built-in bot evaluates ${message.bgsId}`);
       const response = dumbBotEvaluate(message);
       await this.send(response);
       this.state = "waiting";
       return;
     }
+
+    const engine = responder.engine;
 
     try {
       const response = await engine.send(message);
@@ -692,16 +996,32 @@ export class BotClient {
     this.state = "processing";
 
     const botId = this.sessionRoutes.get(message.bgsId);
-    const engine = botId ? this.getEngine(botId) : undefined;
+    const responder = this.resolveResponder(botId);
 
-    if (!engine) {
-      // Dumb bot fallback
-      logger.debug(`Using dumb bot for apply_move ${message.bgsId}`);
+    if (responder.kind === "unavailable") {
+      logger.error(
+        `Cannot apply ${message.move} to session ${message.bgsId}: ${responder.reason}`,
+      );
+      await this.send({
+        type: "move_applied",
+        bgsId: message.bgsId,
+        ply: message.expectedPly,
+        success: false,
+        error: responder.reason,
+      });
+      this.state = "waiting";
+      return;
+    }
+
+    if (responder.kind === "built-in") {
+      logger.debug(`Built-in bot applies move for ${message.bgsId}`);
       const response = dumbBotApplyMove(message);
       await this.send(response);
       this.state = "waiting";
       return;
     }
+
+    const engine = responder.engine;
 
     try {
       const response = await engine.send(message);
