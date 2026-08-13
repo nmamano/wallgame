@@ -9,10 +9,11 @@
  *
  * Note what the schema does NOT enforce, and what
  * `assertEngineCommandsCoverBots` exists for: a bot with no entry in
- * `engineCommands` parses cleanly and then falls back to the built-in dummy
- * implementation at runtime while still attaching and advertising itself. That
- * is a silent downgrade, so command coverage is checked separately and
- * fail-closed before any rollout.
+ * `engineCommands` parses cleanly and then falls back to the built-in naive
+ * implementation at runtime while still attaching and advertising itself. The
+ * one deliberate exception is the non-official Animal Cycle Dumb Bot. Every
+ * other missing command is a silent downgrade, so command coverage is checked
+ * separately and fails closed before any rollout.
  */
 
 import { z } from "zod";
@@ -57,9 +58,17 @@ export const configFileSchema = z
 export type ConfigBot = z.infer<typeof configBotSchema>;
 export type ConfigFile = z.infer<typeof configFileSchema>;
 
+export const BUILT_IN_NAIVE_BOT_ID = "animal-cycle-dumb";
+
+const usesBuiltInNaivePolicy = (bot: ConfigBot): boolean =>
+  bot.botId === BUILT_IN_NAIVE_BOT_ID &&
+  bot.official === false &&
+  Object.keys(bot.variants).length === 1 &&
+  bot.variants["animal-cycle"] !== undefined;
+
 /**
- * Every bot must have an engine command and every command must belong to a
- * bot — an EXACT set match, not containment in one direction.
+ * Every bot except the explicitly configured Animal Cycle Dumb Bot must have
+ * an engine command, and every command must belong to an engine-backed bot.
  *
  * A missing command silently downgrades that bot to the dummy engine; a
  * stray command is a typo'd bot id, which presents as the same downgrade for
@@ -122,9 +131,12 @@ export const assertEngineCommandsCoverBots = (config: ConfigFile): void => {
   if (duplicateBotIds.length > 0) {
     throw new Error(`duplicate botId(s): ${duplicateBotIds.join(", ")}`);
   }
+  const engineBotIds = config.bots
+    .filter((bot) => !usesBuiltInNaivePolicy(bot))
+    .map((bot) => bot.botId);
   const commandIds = Object.keys(config.engineCommands);
-  const missing = botIds.filter((id) => !commandIds.includes(id));
-  const stray = commandIds.filter((id) => !botIds.includes(id));
+  const missing = engineBotIds.filter((id) => !commandIds.includes(id));
+  const stray = commandIds.filter((id) => !engineBotIds.includes(id));
   if (missing.length > 0 || stray.length > 0) {
     throw new Error(
       `engineCommands must match bots exactly — ` +

@@ -14,6 +14,7 @@
 
 import { describe, it, expect } from "bun:test";
 import {
+  BUILT_IN_NAIVE_BOT_ID,
   configFileSchema,
   assertAnalysisCoverage,
   assertEngineCommandsCoverBots,
@@ -42,7 +43,7 @@ describe("engineCommands must cover the bots exactly", () => {
 
   it("throws when a bot has no engine command", () => {
     const config = base();
-    delete config.engineCommands[config.bots[0].botId];
+    delete config.engineCommands["dw-beginner"];
     expect(() => assertEngineCommandsCoverBots(config)).toThrow(
       /bots without a command/,
     );
@@ -50,7 +51,7 @@ describe("engineCommands must cover the bots exactly", () => {
 
   it("throws when a command key is a typo (stray command)", () => {
     const config = base();
-    const id = config.bots[0].botId;
+    const id = "dw-beginner";
     config.engineCommands[`${id}-typo`] = config.engineCommands[id];
     delete config.engineCommands[id];
     expect(() => assertEngineCommandsCoverBots(config)).toThrow(
@@ -62,6 +63,25 @@ describe("engineCommands must cover the bots exactly", () => {
     const config = base();
     config.bots.push({ ...config.bots[0] });
     expect(() => assertEngineCommandsCoverBots(config)).toThrow(/duplicate/);
+  });
+
+  it("rejects the engine-free Dumb Bot if it claims official status", () => {
+    const config = base();
+    const dumb = config.bots.find(
+      (bot) => bot.botId === BUILT_IN_NAIVE_BOT_ID,
+    )!;
+    dumb.official = true;
+    expect(() => assertEngineCommandsCoverBots(config)).toThrow(
+      /bots without a command/,
+    );
+  });
+
+  it("rejects an engine command for the built-in Dumb Bot", () => {
+    const config = base();
+    config.engineCommands[BUILT_IN_NAIVE_BOT_ID] = "unexpected-engine";
+    expect(() => assertEngineCommandsCoverBots(config)).toThrow(
+      /commands without a bot/,
+    );
   });
 });
 
@@ -98,7 +118,7 @@ describe("the analysis bots must cover the site's own questions", () => {
     // PuzzleBot on the two custom-setup ones - is deliberate, and this is what
     // keeps it deliberate.
     const config = base();
-    const weak = config.bots.find((b) => b.analysis !== true)!;
+    const weak = config.bots.find((b) => b.botId === "dw-beginner")!;
     weak.analysis = true;
     weak.official = true;
     expect(() => assertAnalysisCoverage(config)).toThrow(
@@ -111,7 +131,7 @@ describe("the tracked production bot config", () => {
   it("parses and covers every bot with an engine command", () => {
     const config = parsedProd();
     expect(() => assertEngineCommandsCoverBots(config)).not.toThrow();
-    expect(config.bots.length).toBe(4);
+    expect(config.bots.length).toBe(5);
   });
 
   it("rejects an unknown key on a bot", () => {
@@ -154,10 +174,29 @@ describe("the tracked production bot config", () => {
     // players took the first row of the list and it was Superhuman Bot, and
     // they won 1 game in 58 (production, 2026-08-07).
     const ladder = bots
-      .filter((b) => b.listOrder !== undefined)
+      .filter((b) => b.official !== false && b.listOrder !== undefined)
       .sort((a, b) => a.listOrder! - b.listOrder!)
       .map((b) => b.name);
     expect(ladder).toEqual(["Easy Bot", "Normal Bot", "Superhuman Bot"]);
+  });
+
+  it("connects only the non-official Animal Cycle Dumb Bot without an engine", () => {
+    const config = parsedProd();
+    const dumb = config.bots.find((bot) => bot.botId === BUILT_IN_NAIVE_BOT_ID);
+
+    expect(dumb).toMatchObject({
+      name: "Dumb Bot",
+      official: false,
+      username: null,
+      appearance: {
+        dogStyle: "dog-one-line-02.svg",
+        catStyle: "cat69.svg",
+        mouseStyle: "mouse64.svg",
+        elephantStyle: "elephant-16.svg",
+      },
+    });
+    expect(Object.keys(dumb!.variants)).toEqual(["animal-cycle"]);
+    expect(config.engineCommands[BUILT_IN_NAIVE_BOT_ID]).toBeUndefined();
   });
 
   it("recommends 8x8 and nothing bigger", () => {
@@ -181,6 +220,7 @@ describe("the tracked production bot config", () => {
     // 1, 2026-08-07). A bound is only guarded from the side you assert on.
     const EXPECTED_RANGE: Record<string, string> = {
       standard: "5-12 x 5-10",
+      "animal-cycle": "5-12 x 5-10",
       classic: "5-12 x 5-10",
       freestyle: "4-12 x 4-10",
       "custom-setup-standard": "4-12 x 4-10",

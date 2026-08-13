@@ -49,14 +49,14 @@ try {
 
 console.log(`VALID ${path}`);
 console.log(`server: ${config.server ?? "(default)"}`);
-console.log(`bots (${config.bots.length}), each with an engine command:`);
+console.log(`bots (${config.bots.length}), each with an explicit responder:`);
 for (const bot of config.bots) {
   const variants = Object.keys(bot.variants).join(", ");
   const command = config.engineCommands[bot.botId];
   // Surface the knobs a reviewer actually checks, without asserting on them:
   // which model, and how much search.
   const knobs =
-    command.match(
+    command?.match(
       // `--losing_fallback_eval` MUST precede the bare `--losing_fallback`: alternation takes the
       // first branch that matches at a position, so the short one would swallow the long one's
       // prefix and the threshold would silently vanish from the summary.
@@ -68,7 +68,11 @@ for (const bot of config.bots) {
       `listOrder=${bot.listOrder ?? "(last)"} ` +
       `color=${bot.appearance?.color ?? "(default)"} variants=[${variants}]`,
   );
-  console.log(`      engine: ${knobs.join(" ")}`);
+  console.log(
+    command
+      ? `      engine: ${knobs.join(" ")}`
+      : "      responder: built-in naive policy (no engine)",
+  );
   // The naive mix changes how the bot PLAYS without changing a single engine
   // flag, so a preflight that only summarised the command line would report a
   // deliberately weakened bot as identical to a full-strength one.

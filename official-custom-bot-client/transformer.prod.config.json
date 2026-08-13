@@ -2,6 +2,37 @@
   "server": "https://wallgame.io",
   "bots": [
     {
+      "botId": "animal-cycle-dumb",
+      "name": "Dumb Bot",
+      "official": false,
+      "username": null,
+      "appearance": {
+        "dogStyle": "dog-one-line-02.svg",
+        "catStyle": "cat69.svg",
+        "mouseStyle": "mouse64.svg",
+        "elephantStyle": "elephant-16.svg"
+      },
+      "variants": {
+        "animal-cycle": {
+          "boardWidth": {
+            "min": 5,
+            "max": 12
+          },
+          "boardHeight": {
+            "min": 5,
+            "max": 10
+          },
+          "recommended": [
+            {
+              "boardWidth": 8,
+              "boardHeight": 8
+            }
+          ]
+        }
+      },
+      "listOrder": 1
+    },
+    {
       "botId": "dw-beginner",
       "name": "Easy Bot",
       "naiveMoveRate": 0.6,
