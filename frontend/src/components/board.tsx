@@ -1484,7 +1484,8 @@ export function Board({
 
   return (
     <div
-      className={`flex items-center justify-center w-full ${className} ${maxWidth}`}
+      className={`flex items-center justify-center w-full select-none ${className} ${maxWidth}`}
+      style={{ WebkitUserSelect: "none", WebkitTouchCallout: "none" }}
     >
       <div
         className={
