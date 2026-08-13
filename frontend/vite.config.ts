@@ -32,6 +32,7 @@ export default defineConfig({
   // there is a single origin).
   server: {
     host: true,
+    allowedHosts: ["auntie"],
     proxy: {
       "/api": {
         target: "http://127.0.0.1:3000",
