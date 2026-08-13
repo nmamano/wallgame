@@ -41,15 +41,6 @@ export interface UsePuzzleGameResult {
     typeof useBoardInteractions
   >["handlePawnDragEnd"];
   handleCellDrop: ReturnType<typeof useBoardInteractions>["handleCellDrop"];
-  resolveBoardIntent: ReturnType<
-    typeof useBoardInteractions
-  >["resolveBoardIntent"];
-  executeBoardIntent: ReturnType<
-    typeof useBoardInteractions
-  >["executeBoardIntent"];
-  projectBoardIntent: ReturnType<
-    typeof useBoardInteractions
-  >["projectBoardIntent"];
   canCommit: ReturnType<typeof useBoardInteractions>["canCommit"];
   canUndo: ReturnType<typeof useBoardInteractions>["canUndo"];
 
@@ -573,9 +564,6 @@ export function usePuzzleGame(puzzle: Puzzle): UsePuzzleGameResult {
     handlePawnDragStart: boardInteractions.handlePawnDragStart,
     handlePawnDragEnd: boardInteractions.handlePawnDragEnd,
     handleCellDrop: boardInteractions.handleCellDrop,
-    resolveBoardIntent: boardInteractions.resolveBoardIntent,
-    executeBoardIntent: boardInteractions.executeBoardIntent,
-    projectBoardIntent: boardInteractions.projectBoardIntent,
     // Arrows
     arrows: boardInteractions.arrows,
     // Annotation handlers

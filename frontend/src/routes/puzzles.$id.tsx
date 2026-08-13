@@ -410,9 +410,6 @@ function PuzzlePageContent({
     handlePawnDragStart,
     handlePawnDragEnd,
     handleCellDrop,
-    resolveBoardIntent,
-    executeBoardIntent,
-    projectBoardIntent,
     handleCommit,
     handleUndo,
     canCommit,
@@ -701,9 +698,6 @@ function PuzzlePageContent({
             onPawnDragStart={handlePawnDragStart}
             onPawnDragEnd={handlePawnDragEnd}
             onCellDrop={handleCellDrop}
-            resolveBoardIntent={resolveBoardIntent}
-            executeBoardIntent={executeBoardIntent}
-            projectBoardIntent={projectBoardIntent}
             selectedPawnId={selectedPawnId}
             draggingPawnId={draggingPawnId}
             controllablePlayerId={puzzle.humanPlaysAs}

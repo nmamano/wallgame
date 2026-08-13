@@ -41,21 +41,6 @@ export interface DoubleStepOptions {
   action: LocalAction;
 }
 
-export type ResolvedLocalIntent =
-  | { kind: "add"; nextQueue: LocalQueue; autoCommit: boolean }
-  | { kind: "remove"; nextQueue: LocalQueue }
-  | { kind: "commit-double-step"; actions: LocalQueue }
-  | { kind: "reject"; reason: string }
-  | { kind: "no-op" };
-
-export interface ResolveLocalIntentOptions extends EnqueueContext {
-  mode: "staged" | "premove";
-  currentCell?: readonly [number, number];
-  originalCell?: readonly [number, number];
-  pawnBlocked?: boolean;
-  blockedReason?: string;
-}
-
 export const cloneAction = (action: LocalAction): LocalAction => {
   const target: LocalAction["target"] = [action.target[0], action.target[1]];
   if (action.type === "wall") {
@@ -173,105 +158,6 @@ export const resolveDoubleStep = ({
     }
   }
   return null;
-};
-
-/**
- * Resolves the exact queue effect shared by taps, mouse drops and touch
- * previews. Callers execute this result; they must not reinterpret the action.
- */
-export const resolveLocalIntent = ({
-  state,
-  playerId,
-  queue,
-  action,
-  maxActions = MAX_LOCAL_ACTIONS,
-  mode,
-  currentCell,
-  originalCell,
-  pawnBlocked = false,
-  blockedReason = "Illegal move.",
-}: ResolveLocalIntentOptions): ResolvedLocalIntent => {
-  if (!state || !playerId) return { kind: "no-op" };
-
-  if (action.type !== "wall") {
-    if (pawnBlocked) return { kind: "reject", reason: blockedReason };
-    if (
-      currentCell?.[0] === action.target[0] &&
-      currentCell[1] === action.target[1]
-    ) {
-      return { kind: "no-op" };
-    }
-
-    const existing = queue.find((queued) => queued.type === action.type);
-    if (existing && originalCell) {
-      if (
-        originalCell[0] === action.target[0] &&
-        originalCell[1] === action.target[1]
-      ) {
-        return {
-          kind: "remove",
-          nextQueue: queue.filter((queued) => queued.type !== action.type),
-        };
-      }
-      const distance =
-        Math.abs(existing.target[0] - action.target[0]) +
-        Math.abs(existing.target[1] - action.target[1]);
-      if (distance > 1) {
-        return {
-          kind: "reject",
-          reason:
-            "You can only move 1 cell when you already have a staged action.",
-        };
-      }
-    } else {
-      const doubleStep = resolveDoubleStep({ state, playerId, action });
-      if (doubleStep) {
-        if (mode === "staged" && maxActions < 2) {
-          return {
-            kind: "reject",
-            reason: "Only one action remains in this turn.",
-          };
-        }
-        if (queue.length > 0) {
-          return {
-            kind: "reject",
-            reason:
-              "You can't make a double move after staging another action.",
-          };
-        }
-        return mode === "staged"
-          ? { kind: "commit-double-step", actions: doubleStep }
-          : {
-              kind: "add",
-              nextQueue: doubleStep,
-              autoCommit: false,
-            };
-      }
-    }
-  }
-
-  const nextQueue = enqueueToggle(queue, action);
-  if (nextQueue.length < queue.length) {
-    return { kind: "remove", nextQueue };
-  }
-  if (!canEnqueue({ state, playerId, queue, action, maxActions })) {
-    return {
-      kind: "reject",
-      reason:
-        mode === "premove"
-          ? action.type === "wall"
-            ? "Premove wall placement is illegal."
-            : "Premove is illegal."
-          : action.type === "wall"
-            ? "Illegal wall placement."
-            : "Illegal move.",
-    };
-  }
-  return {
-    kind: "add",
-    nextQueue,
-    autoCommit: mode === "staged" && nextQueue.length === maxActions,
-  };
 };
 
 export const promote = ({

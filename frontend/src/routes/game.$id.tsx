@@ -421,21 +421,6 @@ function GamePageContent() {
                     onCellDrop={
                       board.interactionLocked ? undefined : board.onCellDrop
                     }
-                    resolveBoardIntent={
-                      board.interactionLocked
-                        ? undefined
-                        : board.resolveBoardIntent
-                    }
-                    executeBoardIntent={
-                      board.interactionLocked
-                        ? undefined
-                        : board.executeBoardIntent
-                    }
-                    projectBoardIntent={
-                      board.interactionLocked
-                        ? undefined
-                        : board.projectBoardIntent
-                    }
                     lastMove={
                       !Array.isArray(board.lastMove)
                         ? board.lastMove
@@ -664,9 +649,6 @@ function GamePageContent() {
                   onPawnDragStart={board.onPawnDragStart}
                   onPawnDragEnd={board.onPawnDragEnd}
                   onCellDrop={board.onCellDrop}
-                  resolveBoardIntent={board.resolveBoardIntent}
-                  executeBoardIntent={board.executeBoardIntent}
-                  projectBoardIntent={board.projectBoardIntent}
                   stagedActions={board.stagedActions}
                   premovedActions={board.premovedActions}
                   pendingActionsCount={board.pendingActionsCount}

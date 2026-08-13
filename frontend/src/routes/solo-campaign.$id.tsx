@@ -93,9 +93,6 @@ function SoloCampaignLevelContent({
     handlePawnDragStart,
     handlePawnDragEnd,
     handleCellDrop,
-    resolveBoardIntent,
-    executeBoardIntent,
-    projectBoardIntent,
     handleCommit,
     handleUndo,
     canCommit,
@@ -235,9 +232,6 @@ function SoloCampaignLevelContent({
             onPawnDragStart={handlePawnDragStart}
             onPawnDragEnd={handlePawnDragEnd}
             onCellDrop={handleCellDrop}
-            resolveBoardIntent={resolveBoardIntent}
-            executeBoardIntent={executeBoardIntent}
-            projectBoardIntent={projectBoardIntent}
             selectedPawnId={selectedPawnId}
             draggingPawnId={draggingPawnId}
             controllablePlayerId={level.userPlaysAs}
