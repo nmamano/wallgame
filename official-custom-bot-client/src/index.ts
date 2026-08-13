@@ -50,7 +50,7 @@ CONFIG FILE FORMAT:
         "username": null,
         "appearance": {
           "color": "#ff6b6b",
-          "dogStyle": "dog-one-line-01.svg",
+          "dogStyle": "dog-one-line-02.svg",
           "catStyle": "cat1",
           "mouseStyle": "mouse1",
           "elephantStyle": "elephant-01.svg",

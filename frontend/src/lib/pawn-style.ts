@@ -3,16 +3,34 @@ import { assetUrl } from "@/lib/asset-url";
 export type PawnStyleType = "dog" | "cat" | "mouse" | "elephant" | "home";
 
 export const DEFAULT_PAWN_STYLES: Record<PawnStyleType, string> = {
-  dog: "pawns/animal-cycle/dog.svg",
+  dog: "dog-puppy-03.svg",
   cat: "cat3.svg",
   mouse: "mouse20.svg",
-  elephant: "pawns/animal-cycle/elephant.svg",
+  elephant: "elephant-14.svg",
   home: "home2.svg",
 };
 
 export const RETIRED_PAWN_STYLES: Record<PawnStyleType, ReadonlySet<string>> = {
-  dog: new Set(),
-  cat: new Set(["cat126.svg", "cat150.svg", "cat188.svg", "cat237.svg"]),
+  dog: new Set(["dog-one-line-01.svg"]),
+  cat: new Set([
+    "cat17.svg",
+    "cat31.svg",
+    "cat47.svg",
+    "cat52.svg",
+    "cat54.svg",
+    "cat94.svg",
+    "cat105.svg",
+    "cat126.svg",
+    "cat150.svg",
+    "cat168.svg",
+    "cat174.svg",
+    "cat179.svg",
+    "cat188.svg",
+    "cat219.svg",
+    "cat237.svg",
+    "cat244.svg",
+    "cat245.svg",
+  ]),
   mouse: new Set(["mouse26.svg", "mouse33.svg", "mouse68.svg", "mouse74.svg"]),
   elephant: new Set(),
   home: new Set(),
@@ -37,6 +55,12 @@ export const normalizePawnStyleSelection = (
   !pawnStyle || pawnStyle === "default" || isRetiredPawnStyle(pawnStyle, type)
     ? "default"
     : pawnStyle;
+
+/** Board surfaces use undefined to ask the source resolver for the type default. */
+export const normalizeBoardPawnStyle = (
+  pawnStyle: string | undefined,
+): string | undefined =>
+  pawnStyle && pawnStyle !== "default" ? pawnStyle : undefined;
 
 const ensureSvgExtension = (value: string): string => {
   if (value.includes(".")) {

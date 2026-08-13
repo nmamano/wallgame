@@ -1,6 +1,7 @@
 import { mkdir, readdir, readFile, writeFile } from "node:fs/promises";
 import path from "node:path";
 import { chromium } from "playwright";
+import { restoreBackingFillMarkers } from "./pawn-backing-fill-markers";
 
 const ROOT = path.resolve(import.meta.dir, "../..");
 const SOURCE_ROOT = path.join(ROOT, "frontend/public/pawns");
@@ -26,14 +27,6 @@ type MaskShape =
 // the regions confirmed during production review. Coordinates use the 300px
 // generation canvas, so this remains deterministic across regenerations.
 const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
-  // The sitting dog's tail contour is intentionally open. Restore only the
-  // torso interior that the outside flood reaches through that opening.
-  "dog-one-line-01": [
-    {
-      kind: "path",
-      d: "M111 94C143 91 183 105 207 142C228 173 231 212 213 242H102C115 219 115 190 104 161C96 138 97 112 111 94Z",
-    },
-  ],
   "dog-one-line-11": [
     {
       kind: "path",
@@ -59,25 +52,12 @@ const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
     },
   ],
   cat9: [{ kind: "ellipse", x: 165, y: 143, rx: 36, ry: 32 }],
-  cat31: [{ kind: "ellipse", x: 150, y: 143, rx: 12, ry: 10 }],
-  cat47: [{ kind: "ellipse", x: 155, y: 151, rx: 11, ry: 9 }],
-  cat52: [{ kind: "ellipse", x: 151, y: 176, rx: 14, ry: 11 }],
-  cat54: [{ kind: "ellipse", x: 151, y: 157, rx: 12, ry: 9 }],
   cat58: [{ kind: "ellipse", x: 193, y: 176, rx: 15, ry: 12 }],
   cat73: [{ kind: "ellipse", x: 169, y: 151, rx: 36, ry: 31 }],
   cat75: [{ kind: "ellipse", x: 151, y: 160, rx: 12, ry: 9 }],
   cat84: [{ kind: "ellipse", x: 150, y: 240, rx: 18, ry: 12 }],
-  cat94: [{ kind: "ellipse", x: 150, y: 160, rx: 14, ry: 11 }],
-  cat105: [{ kind: "ellipse", x: 150, y: 157, rx: 12, ry: 9 }],
   cat111: [{ kind: "ellipse", x: 150, y: 207, rx: 18, ry: 12 }],
-  cat168: [{ kind: "ellipse", x: 150, y: 164, rx: 12, ry: 9 }],
-  cat174: [{ kind: "ellipse", x: 168, y: 153, rx: 12, ry: 9 }],
-  cat179: [{ kind: "ellipse", x: 150, y: 164, rx: 12, ry: 9 }],
   cat181: [{ kind: "ellipse", x: 150, y: 174, rx: 14, ry: 11 }],
-  cat245: [
-    { kind: "ellipse", x: 145, y: 184, rx: 91, ry: 61 },
-    { kind: "ellipse", x: 191, y: 121, rx: 48, ry: 42 },
-  ],
   mouse4: [
     { kind: "ellipse", x: 140, y: 193, rx: 49, ry: 68 },
     { kind: "ellipse", x: 165, y: 126, rx: 43, ry: 39 },
@@ -108,6 +88,10 @@ const FOREGROUND_CORRECTIONS: Readonly<
   cat73: [{ kind: "ellipse", x: 105, y: 153, rx: 6, ry: 5 }],
 };
 
+// Product SVGs mark regions whose visible white comes from the backing rather
+// than the color-filtered foreground. They stay transparent at runtime. The
+// backing generator restores only those marked regions in its private render
+// clone so a clean regeneration retains the vendor silhouette.
 const requestedType = process.argv[2];
 const requestedIds = new Set(process.argv.slice(3).map(Number));
 const selectedTypes: readonly PawnType[] = requestedType
@@ -139,6 +123,7 @@ try {
 
     for (const filename of files) {
       const svg = await readFile(path.join(sourceDir, filename), "utf8");
+      const backingMaskSvg = restoreBackingFillMarkers(svg, filename);
       const pngBase64 = await page.evaluate(
         async ({
           svg,
@@ -292,7 +277,7 @@ try {
           return outputCanvas.toDataURL("image/png").split(",")[1];
         },
         {
-          svg,
+          svg: backingMaskSvg,
           size: SIZE,
           outlineRadius: OUTLINE_RADIUS,
           alphaThreshold: ALPHA_THRESHOLD,

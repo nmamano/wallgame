@@ -53,7 +53,7 @@ describe("sortPawnNames", () => {
 
 describe("the real pawn art", () => {
   for (const [type, expectedCount] of [
-    ["cat", 290],
+    ["cat", 277],
     ["mouse", 85],
     ["home", 10],
   ] as const) {

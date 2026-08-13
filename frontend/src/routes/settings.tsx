@@ -253,21 +253,6 @@ function Settings() {
                   </Select>
                 </div>
 
-                {/* Dog Pawn */}
-                <div className="space-y-2">
-                  <Label htmlFor="dog-pawn">Dog Pawn</Label>
-                  <PawnSelector
-                    value={dogPawn}
-                    onChange={setDogPawn}
-                    pawns={DOG_PAWNS}
-                    basePath={assetUrl("/pawns/dog/")}
-                    label="Dog Pawn"
-                    defaultLabel="Current temporary default"
-                    displayLabel={dogPawnDisplayLabel}
-                    color={pawnColor}
-                  />
-                </div>
-
                 {/* Cat Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="cat-pawn">Cat Pawn</Label>
@@ -296,6 +281,21 @@ function Settings() {
                   />
                 </div>
 
+                {/* Dog Pawn */}
+                <div className="space-y-2">
+                  <Label htmlFor="dog-pawn">Dog Pawn</Label>
+                  <PawnSelector
+                    value={dogPawn}
+                    onChange={setDogPawn}
+                    pawns={DOG_PAWNS}
+                    basePath={assetUrl("/pawns/dog/")}
+                    label="Dog Pawn"
+                    defaultLabel="Default Dog"
+                    displayLabel={dogPawnDisplayLabel}
+                    color={pawnColor}
+                  />
+                </div>
+
                 {/* Elephant Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="elephant-pawn">Elephant Pawn</Label>
@@ -305,7 +305,7 @@ function Settings() {
                     pawns={ELEPHANT_PAWNS}
                     basePath={assetUrl("/pawns/elephant/")}
                     label="Elephant Pawn"
-                    defaultLabel="Current temporary default"
+                    defaultLabel="Default Elephant"
                     color={pawnColor}
                   />
                 </div>

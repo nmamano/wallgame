@@ -148,7 +148,7 @@ try {
   if (failures.length)
     throw new Error(`failed contact images: ${JSON.stringify(failures)}`);
   await page.screenshot({
-    path: path.join(output, "all-75-contact-sheet.png"),
+    path: path.join(output, "all-approved-contact-sheet.png"),
     fullPage: true,
   });
 
@@ -157,11 +157,6 @@ try {
       label: "Elephant 01 · Y-flip and pt/viewBox check",
       before: path.join(PROOF_ROOT, "elephant/SVG/Image-_1_.svg"),
       after: path.join(ROOT, "frontend/public/pawns/elephant/elephant-01.svg"),
-    },
-    {
-      label: "Dog One Line 01 · Y-flip and pt/viewBox check",
-      before: path.join(PROOF_ROOT, "dog-line/Image-_1_.svg"),
-      after: path.join(ROOT, "frontend/public/pawns/dog/dog-one-line-01.svg"),
     },
   ];
   const previewCards = (

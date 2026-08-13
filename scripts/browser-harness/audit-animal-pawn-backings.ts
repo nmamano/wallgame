@@ -10,7 +10,6 @@ const NEW_PACK_SOLIDITY_FLOOR = 0.95;
 // is deliberately not applied to Cat, Mouse or Home: their enclosed negative
 // space is part of the art and can produce legitimate lower solidity.
 const NEW_PACK_SOLIDITY_EXCEPTIONS: Readonly<Record<string, number>> = {
-  "dog/dog-one-line-01.png": 0.9607105013663488,
   "dog/dog-one-line-11.png": 0.9775163462239616,
   "dog/dog-one-line-15.png": 0.9990029661756276,
   "dog/dog-one-line-17.png": 0.9998507399036206,
@@ -22,11 +21,9 @@ const NEW_PACK_SOLIDITY_EXCEPTIONS: Readonly<Record<string, number>> = {
   "elephant/elephant-15.png": 0.9996337305947651,
   "elephant/elephant-20.png": 0.9995026030440693,
 };
-const [proofRoot, knownBadPath] = process.argv.slice(2);
-if (!proofRoot || !knownBadPath) {
-  throw new Error(
-    "usage: bun audit-animal-pawn-backings.ts <proof-root> <known-bad-01.png>",
-  );
+const [proofRoot] = process.argv.slice(2);
+if (!proofRoot) {
+  throw new Error("usage: bun audit-animal-pawn-backings.ts <proof-root>");
 }
 
 const dataUrl = async (filename: string, mime: string) =>
@@ -128,11 +125,6 @@ try {
       );
     }
   }
-  results["known-bad/dog-one-line-01.png"] = await measure(
-    path.join(ROOT, "frontend/public/pawns/dog/dog-one-line-01.svg"),
-    knownBadPath,
-  );
-
   const sortedDistribution = Object.entries(results)
     .map(([name, result]) => ({ name, ...result }))
     .sort(
@@ -142,9 +134,9 @@ try {
   const newPackResults = Object.entries(results).filter(([name]) =>
     /^(dog|elephant)\//.test(name),
   );
-  if (newPackResults.length !== 75) {
+  if (newPackResults.length !== 74) {
     throw new Error(
-      `Expected 75 new-pack backings, found ${newPackResults.length}`,
+      `Expected 74 approved new-pack backings, found ${newPackResults.length}`,
     );
   }
   const failures = newPackResults.flatMap(([name, result]) => {

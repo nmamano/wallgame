@@ -123,6 +123,10 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
 ### Freestyle
 
 A randomized setup with neutral starting walls.
+
+### Animal Cycle
+
+Player 1 controls the Dog and Mouse. Player 2 controls the Cat and Elephant. Dog beats Cat, Cat beats Mouse, Mouse beats Elephant, and Elephant beats Dog. The first capture wins. Movement and wall placement follow the standard rules.
 `;
 
 export const Route = createFileRoute("/learn")({

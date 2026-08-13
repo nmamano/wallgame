@@ -52,6 +52,7 @@ import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { useAccountNudge } from "@/hooks/use-account-nudge";
 import { sounds, play } from "@/lib/sounds";
 import { assetUrl } from "@/lib/asset-url";
+import { normalizeBoardPawnStyle } from "@/lib/pawn-style";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
@@ -2193,14 +2194,14 @@ export function useGamePageController(gameId: string) {
       ) {
         const selected =
           pawn.type === "dog" ? player?.dogSkin : player?.elephantSkin;
-        pawnStyle = selected && selected !== "default" ? selected : undefined;
+        pawnStyle = normalizeBoardPawnStyle(selected);
       } else if (
         sourceState.config.variant === "animal-cycle" &&
         (pawn.type === "cat" || pawn.type === "mouse")
       ) {
         const selected =
           pawn.type === "cat" ? player?.catSkin : player?.mouseSkin;
-        pawnStyle = selected && selected !== "default" ? selected : undefined;
+        pawnStyle = normalizeBoardPawnStyle(selected);
       } else if (sourceState.config.variant === "animal-cycle") {
         pawnStyle = assetUrl(`/pawns/animal-cycle/${pawn.type}.svg`);
       } else if (

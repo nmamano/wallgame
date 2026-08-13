@@ -13,3 +13,9 @@ https://uppbeat.io/t/ian-aisling/a-legend
 License code: W9XP9L3NUPBCYFBS
 https://uppbeat.io/t/aaron-paul-low/tea-for-two
 License code: X0N7LOSHFEN7ASRE
+
+Pawn vector pack provenance:
+- Dog One Line pawn art came from `SVG _2_.zip`, purchased 2026-08-13, and became the `dog-one-line-*` asset family.
+- Dog Puppy pawn art came from `Dog_Puppy_Svg.zip`, purchased 2026-08-13, and became the `dog-puppy-*` asset family.
+- Elephant pawn art came from `SVG _1_.zip`, purchased 2026-08-13, and became the `elephant-*` asset family.
+- These archives contained no license, README, or terms file.

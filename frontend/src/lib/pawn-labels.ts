@@ -1,3 +1,5 @@
+import { DOG_PAWNS } from "./pawns";
+
 export const defaultPawnDisplayLabel = (
   filename: string,
   pawnType: string,
@@ -7,8 +9,6 @@ export const defaultPawnDisplayLabel = (
 };
 
 export const dogPawnDisplayLabel = (filename: string): string => {
-  const number = /\d+/.exec(filename)?.[0] ?? filename;
-  if (filename.startsWith("dog-one-line-")) return `One Line ${number}`;
-  if (filename.startsWith("dog-puppy-")) return `Puppy ${number}`;
-  return filename;
+  const index = DOG_PAWNS.indexOf(filename);
+  return index === -1 ? filename : `Dog ${index + 1}`;
 };

@@ -13,9 +13,9 @@ describe("purchased animal pawn completeness and sanitation", () => {
     expect(names("dog").sort()).toEqual(
       [
         ...Array.from(
-          { length: 25 },
+          { length: 24 },
           (_, index) =>
-            `dog-one-line-${String(index + 1).padStart(2, "0")}.svg`,
+            `dog-one-line-${String(index + 2).padStart(2, "0")}.svg`,
         ),
         ...Array.from(
           { length: 25 },
