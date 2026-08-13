@@ -15,6 +15,7 @@ import {
   type SurvivalSetupInput,
 } from "../../../shared/domain/survival-setup";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
+import { buildAnimalCycleInitialState } from "../../../shared/domain/animal-cycle-setup";
 import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
 import type {
   PlayerId,
@@ -32,7 +33,10 @@ import {
 } from "../../../shared/domain/standard-notation";
 import type { MoveHistoryRow } from "@/components/move-list-panel";
 import { pawnId } from "../../../shared/domain/game-utils";
-import { requirePawnCell } from "../../../shared/domain/pawns";
+import {
+  isMovablePawnType,
+  requirePawnCell,
+} from "../../../shared/domain/pawns";
 import { type PlayerColor } from "@/lib/player-colors";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import {
@@ -47,6 +51,7 @@ import { invalidatePuzzleProgress } from "@/hooks/use-puzzle-progress";
 import { usePuzzleVote } from "@/hooks/use-puzzle-vote";
 import { useAccountNudge } from "@/hooks/use-account-nudge";
 import { sounds, play } from "@/lib/sounds";
+import { assetUrl } from "@/lib/asset-url";
 import { MusicController } from "@/lib/music";
 import { useSound } from "@/components/sound-provider";
 import { useMetaGameActions } from "@/hooks/use-meta-game-actions";
@@ -2156,7 +2161,9 @@ export function useGamePageController(gameId: string) {
       const player = players.find((p) => p.playerId === visualPlayerId);
 
       let pawnStyle: string | undefined;
-      if (
+      if (sourceState.config.variant === "animal-cycle") {
+        pawnStyle = assetUrl(`/pawns/animal-cycle/${pawn.type}.svg`);
+      } else if (
         pawn.type === "cat" &&
         player?.catSkin &&
         player.catSkin !== "default"
@@ -2196,11 +2203,11 @@ export function useGamePageController(gameId: string) {
     if (stagedActions.length && stagingPlayerId) {
       const stagedPawnTypes = new Set(
         stagedActions
-          .filter((action) => action.type === "cat" || action.type === "mouse")
+          .filter((action) => isMovablePawnType(action.type))
           .map((action) => action.type),
       );
       pawnsWithIds.forEach((pawn) => {
-        if (pawn.type !== "cat" && pawn.type !== "mouse") return;
+        if (!isMovablePawnType(pawn.type)) return;
         if (
           pawn.playerId === stagingPlayerId &&
           stagedPawnTypes.has(pawn.type) &&
@@ -2215,11 +2222,11 @@ export function useGamePageController(gameId: string) {
     if (premovedActions.length && premovePlayerId) {
       const premovePawnTypes = new Set(
         premovedActions
-          .filter((action) => action.type === "cat" || action.type === "mouse")
+          .filter((action) => isMovablePawnType(action.type))
           .map((action) => action.type),
       );
       pawnsWithIds.forEach((pawn) => {
-        if (pawn.type !== "cat" && pawn.type !== "mouse") return;
+        if (!isMovablePawnType(pawn.type)) return;
         if (
           pawn.playerId === premovePlayerId &&
           premovePawnTypes.has(pawn.type) &&
@@ -2875,6 +2882,12 @@ export function useGamePageController(gameId: string) {
           resolvedConfig.boardHeight,
         );
       }
+      if (resolvedConfig.variant === "animal-cycle") {
+        return buildAnimalCycleInitialState(
+          resolvedConfig.boardWidth,
+          resolvedConfig.boardHeight,
+        );
+      }
       if (resolvedConfig.variant === "survival") {
         // The game setup UI would need survival-specific controls to let users
         // configure these settings.
@@ -3334,6 +3347,9 @@ export function useGamePageController(gameId: string) {
         ? (historyState ?? gameState)
         : previewState;
     if (!sourceState) {
+      return base;
+    }
+    if (sourceState.config.variant === "animal-cycle") {
       return base;
     }
     const goalFor = (playerId: PlayerId) =>

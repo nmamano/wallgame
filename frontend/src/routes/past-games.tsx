@@ -32,6 +32,7 @@ import type {
   PastGamesActivityResponse,
   PastGamesResponse,
 } from "../../../shared/contracts/games";
+import { variantDisplayName } from "../../../shared/domain/game-types";
 import {
   buildPastGamesFilterQuery,
   defaultPastGamesFilters,
@@ -201,6 +202,7 @@ function PastGames() {
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
+                  <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
                   <SelectItem value="freestyle">Freestyle</SelectItem>
                 </SelectContent>
@@ -412,7 +414,7 @@ function PastGames() {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium capitalize">
-                        {row.variant}
+                        {variantDisplayName(row.variant)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={row.rated ? "default" : "secondary"}>

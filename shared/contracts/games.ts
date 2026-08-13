@@ -20,7 +20,12 @@ export const timeControlValues = [
   "classical",
   "unlimited",
 ] as const;
-export const variantValues = ["standard", "classic", "freestyle"] as const;
+export const variantValues = [
+  "standard",
+  "animal-cycle",
+  "classic",
+  "freestyle",
+] as const;
 export const customSetupVariantValues = [
   "custom-setup-standard",
   "custom-setup-classic",

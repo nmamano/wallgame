@@ -495,6 +495,7 @@ function GameSetup() {
                     </SelectTrigger>
                     <SelectContent>
                       <SelectItem value="standard">Standard</SelectItem>
+                      <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                       <SelectItem value="classic">Classic</SelectItem>
                       <SelectItem value="freestyle">Freestyle</SelectItem>
                     </SelectContent>
@@ -503,6 +504,8 @@ function GameSetup() {
                 <p className="text-sm text-muted-foreground">
                   {gameConfig.variant === "standard" &&
                     "Catch the mouse first."}
+                  {gameConfig.variant === "animal-cycle" &&
+                    "Bigger beats smaller, except the mouse scares the elephant. First capture wins."}
                   {gameConfig.variant === "classic" &&
                     "Reach the corner first."}
                   {gameConfig.variant === "freestyle" &&

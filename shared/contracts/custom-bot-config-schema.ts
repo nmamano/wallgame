@@ -70,6 +70,7 @@ export const botAppearanceSchema = z
 const variantsSchema = z
   .object({
     standard: variantConfigSchema.optional(),
+    "animal-cycle": variantConfigSchema.optional(),
     classic: variantConfigSchema.optional(),
     freestyle: variantConfigSchema.optional(),
     "custom-setup-standard": variantConfigSchema.optional(),

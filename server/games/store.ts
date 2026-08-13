@@ -7,6 +7,7 @@ import {
   type SurvivalSetupInput,
 } from "../../shared/domain/survival-setup";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
+import { buildAnimalCycleInitialState } from "../../shared/domain/animal-cycle-setup";
 import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
@@ -905,6 +906,13 @@ export const buildCompleteConfig = (
     return {
       ...baseConfig,
       variantConfig: buildClassicInitialState(boardWidth, boardHeight),
+    };
+  }
+
+  if (variant === "animal-cycle") {
+    return {
+      ...baseConfig,
+      variantConfig: buildAnimalCycleInitialState(boardWidth, boardHeight),
     };
   }
 

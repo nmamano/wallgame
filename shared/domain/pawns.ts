@@ -25,8 +25,10 @@ import type {
  * this rather than testing for "mouse": before homes were typed honestly they
  * rode along in the mouse slot, so a mouse-only guard happened to cover them.
  */
-export const isMovablePawnType = (type: PawnType): type is GamePawnType =>
-  type === "cat" || type === "mouse";
+export const isMovablePawnType = (
+  type: PawnType | "wall",
+): type is GamePawnType =>
+  type === "dog" || type === "cat" || type === "mouse" || type === "elephant";
 
 /**
  * Which live pawn shape a variant uses. Exhaustive over `Variant`: adding a
@@ -38,6 +40,8 @@ export function pawnFamilyForVariant(variant: Variant): PawnFamily {
     case "freestyle":
     case "custom-setup-standard":
       return "standard";
+    case "animal-cycle":
+      return "animal-cycle";
     case "classic":
     case "custom-setup-classic":
       return "classic";
@@ -63,6 +67,12 @@ export function pawnCell(
   type: PawnType,
 ): Cell | undefined {
   switch (pawns.kind) {
+    case "animal-cycle":
+      if (playerId === 1 && type === "dog") return pawns.pawns[1].dog;
+      if (playerId === 1 && type === "mouse") return pawns.pawns[1].mouse;
+      if (playerId === 2 && type === "cat") return pawns.pawns[2].cat;
+      if (playerId === 2 && type === "elephant") return pawns.pawns[2].elephant;
+      return undefined;
     case "standard":
       if (type === "cat") return pawns.pawns[playerId].cat;
       if (type === "mouse") return pawns.pawns[playerId].mouse;
@@ -128,6 +138,13 @@ export function withPawnCell(
   const next = clonePawns(pawns);
   const moved = cloneCell(cell);
   switch (next.kind) {
+    case "animal-cycle":
+      if (playerId === 1 && type === "dog") next.pawns[1].dog = moved;
+      else if (playerId === 1 && type === "mouse") next.pawns[1].mouse = moved;
+      else if (playerId === 2 && type === "cat") next.pawns[2].cat = moved;
+      else if (playerId === 2 && type === "elephant")
+        next.pawns[2].elephant = moved;
+      return next;
     case "standard":
       if (type === "cat") next.pawns[playerId].cat = moved;
       else next.pawns[playerId].mouse = moved;
@@ -152,6 +169,20 @@ export function withPawnCell(
  */
 export function clonePawns(pawns: GamePawns): GamePawns {
   switch (pawns.kind) {
+    case "animal-cycle":
+      return {
+        kind: "animal-cycle",
+        pawns: {
+          1: {
+            dog: cloneCell(pawns.pawns[1].dog),
+            mouse: cloneCell(pawns.pawns[1].mouse),
+          },
+          2: {
+            cat: cloneCell(pawns.pawns[2].cat),
+            elephant: cloneCell(pawns.pawns[2].elephant),
+          },
+        },
+      };
     case "standard":
       return {
         kind: "standard",
@@ -199,6 +230,13 @@ export function clonePawns(pawns: GamePawns): GamePawns {
  */
 export function boardPawns(pawns: GamePawns): Pawn[] {
   switch (pawns.kind) {
+    case "animal-cycle":
+      return [
+        { playerId: 1, type: "dog", cell: pawns.pawns[1].dog },
+        { playerId: 1, type: "mouse", cell: pawns.pawns[1].mouse },
+        { playerId: 2, type: "cat", cell: pawns.pawns[2].cat },
+        { playerId: 2, type: "elephant", cell: pawns.pawns[2].elephant },
+      ];
     case "standard":
       return [
         { playerId: 1, type: "cat", cell: pawns.pawns[1].cat },

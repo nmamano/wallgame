@@ -170,7 +170,11 @@ export function GameConfigurationPanel({
   };
 
   const renderVariantParameters = () => {
-    if (config.variant === "standard" || config.variant === "classic") {
+    if (
+      config.variant === "standard" ||
+      config.variant === "animal-cycle" ||
+      config.variant === "classic"
+    ) {
       return (
         <div className="space-y-3 p-3 border rounded-md bg-muted/30">
           <div className="grid grid-cols-2 gap-4">
@@ -260,6 +264,7 @@ export function GameConfigurationPanel({
             </SelectTrigger>
             <SelectContent>
               <SelectItem value="standard">Standard</SelectItem>
+              <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
               <SelectItem value="classic">Classic</SelectItem>
               <SelectItem value="freestyle">Freestyle</SelectItem>
             </SelectContent>

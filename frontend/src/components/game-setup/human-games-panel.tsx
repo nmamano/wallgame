@@ -12,6 +12,7 @@ import type {
   TimeControlConfig,
   TimeControlPreset,
 } from "../../../../shared/domain/game-types";
+import { variantDisplayName } from "../../../../shared/domain/game-types";
 import { formatTimeControl as formatTimeControlUtil } from "../../../../shared/domain/game-utils";
 import { assetUrl } from "@/lib/asset-url";
 
@@ -133,7 +134,7 @@ export function HumanGamesPanel({
                           : ""
                       }`}
                     >
-                      {game.config.variant}
+                      {variantDisplayName(game.config.variant)}
                     </span>
                   </TableCell>
                   <TableCell className="text-center">

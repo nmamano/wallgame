@@ -1,4 +1,5 @@
 import { isClassicVariant } from "./game-types";
+import { animalCycleCaptureWinner } from "./animal-cycle";
 import type {
   PlayerId,
   GameStatus,
@@ -15,6 +16,7 @@ import type {
   StandardInitialState,
   ClassicInitialState,
   SurvivalInitialState,
+  AnimalCycleInitialState,
   GamePawns,
 } from "./game-types";
 import { Grid } from "./grid";
@@ -23,6 +25,7 @@ import {
   boardPawns,
   clonePawns,
   hasPawn,
+  isMovablePawnType,
   pawnCell,
   pawnFamilyForVariant,
   requirePawnCell,
@@ -48,6 +51,12 @@ export function isSurvivalInitialState(
   state: GameInitialState,
 ): state is SurvivalInitialState {
   return "turnsToSurvive" in state;
+}
+
+export function isAnimalCycleInitialState(
+  state: GameInitialState,
+): state is AnimalCycleInitialState {
+  return "pawns" in state && "dog" in state.pawns.p1;
 }
 
 export interface MoveInHistory {
@@ -127,6 +136,23 @@ export class GameState {
         cat: [variantConfig.cat[0], variantConfig.cat[1]],
         mouse: [variantConfig.mouse[0], variantConfig.mouse[1]],
       };
+    } else if (family === "animal-cycle") {
+      if (!isAnimalCycleInitialState(variantConfig)) {
+        throw new Error("Animal Cycle requires an Animal Cycle initial state");
+      }
+      this.pawns = {
+        kind: "animal-cycle",
+        pawns: {
+          1: {
+            dog: [...variantConfig.pawns.p1.dog],
+            mouse: [...variantConfig.pawns.p1.mouse],
+          },
+          2: {
+            cat: [...variantConfig.pawns.p2.cat],
+            elephant: [...variantConfig.pawns.p2.elephant],
+          },
+        },
+      };
     } else if (family === "classic") {
       if (!isClassicInitialState(variantConfig)) {
         throw new Error("Classic game requires a classic initial state");
@@ -189,7 +215,7 @@ export class GameState {
     this.turn = setupTurn?.playerId ?? 1;
     this.actionsRemaining = spentAction ? 1 : 2;
     this.previousPawnPosition =
-      spentAction?.type === "cat" || spentAction?.type === "mouse"
+      spentAction && spentAction.type !== "wall"
         ? { type: spentAction.type, cell: spentAction.source }
         : undefined;
     this.initialTurn = this.turn;
@@ -231,6 +257,11 @@ export class GameState {
     }
     if (this.config.variant === "survival") {
       return requirePawnCell(p, 2, "mouse");
+    }
+    if (this.config.variant === "animal-cycle") {
+      return playerId === 1
+        ? requirePawnCell(p, 2, "cat")
+        : requirePawnCell(p, 1, "mouse");
     }
     const opponent: PlayerId = playerId === 1 ? 2 : 1;
     return requirePawnCell(p, opponent, "mouse");
@@ -352,6 +383,8 @@ export class GameState {
     // the whole shape means wall legality and the win checks below read one
     // consistent state instead of reassembling it from halves.
     let nextPawns = clonePawns(this.pawns);
+    const appliedActions: Move["actions"] = [];
+    let animalCycleWinner: PlayerId | undefined;
 
     const isClassic = isClassicVariant(this.config.variant);
     let actionsUsed = 0;
@@ -374,7 +407,7 @@ export class GameState {
           "A pawn cannot immediately return to its previous cell",
         );
       }
-      if (action.type === "cat" || action.type === "mouse") {
+      if (isMovablePawnType(action.type)) {
         if (!this.isPawnActive(player, action.type)) {
           throw new Error("Pawn not available for this player");
         }
@@ -524,10 +557,15 @@ export class GameState {
         }
 
         nextPawns = withPawnCell(nextPawns, player, action.type, targetPos);
+        appliedActions.push(action);
         // Only the within-move half is optional. A seeded restriction describes
         // a real previous move and stays in force even in stored-history mode.
         if (!this.allowStoredHistoryBacktracks) {
           previousPawnPosition = { type: action.type, cell: currentPos };
+        }
+        if (nextPawns.kind === "animal-cycle") {
+          animalCycleWinner = animalCycleCaptureWinner(nextPawns);
+          if (animalCycleWinner) break;
         }
       } else if (action.type === "wall") {
         actionsUsed += 1;
@@ -545,6 +583,25 @@ export class GameState {
           ...wall,
           playerId: player,
         };
+
+        if (nextPawns.kind === "animal-cycle") {
+          const firstPairValid = nextGrid.canBuildWall(
+            [nextPawns.pawns[1].dog, nextPawns.pawns[1].mouse],
+            [nextPawns.pawns[2].cat, nextPawns.pawns[2].elephant],
+            wall,
+          );
+          const secondPairValid = nextGrid.canBuildWall(
+            [nextPawns.pawns[2].cat, nextPawns.pawns[2].elephant],
+            [nextPawns.pawns[1].mouse, nextPawns.pawns[1].dog],
+            wall,
+          );
+          if (!firstPairValid || !secondPairValid) {
+            throw new Error("Illegal wall placement");
+          }
+          nextGrid.addWall(wallWithPlayer);
+          appliedActions.push(action);
+          continue;
+        }
 
         const p1Cat = requirePawnCell(nextPawns, 1, "cat");
         // Survival has no player 2 cat. canBuildWall takes a pair, so the one
@@ -565,6 +622,7 @@ export class GameState {
         }
 
         nextGrid.addWall(wallWithPlayer);
+        appliedActions.push(action);
       }
     }
 
@@ -603,7 +661,7 @@ export class GameState {
     const nextMoveIndex = this.moveCount + 1;
     const moveInHistory: MoveInHistory = {
       index: nextMoveIndex,
-      move: move,
+      move: animalCycleWinner ? { actions: appliedActions } : move,
       grid: nextGrid.clone(),
       // Deep copy: the snapshot must not share cells with the live state.
       pawns: clonePawns(nextPawns),
@@ -623,6 +681,12 @@ export class GameState {
     // handoff, and used to skip the count with it and report N-1 while holding
     // N moves of history.
     this.moveCount = nextMoveIndex;
+
+    if (animalCycleWinner) {
+      this.status = "finished";
+      this.result = { winner: animalCycleWinner, reason: "capture" };
+      return;
+    }
 
     if (myCatCaught) {
       // One-move-rule: if P1 reaches their goal first, P2 gets a draw

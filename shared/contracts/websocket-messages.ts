@@ -100,8 +100,10 @@ export type ClientMessage =
  * rejected, so a client one version ahead is not cut off mid-game.
  */
 const gameActionSchema = z.discriminatedUnion("type", [
+  z.object({ type: z.literal("dog"), target: cellSchema }),
   z.object({ type: z.literal("cat"), target: cellSchema }),
   z.object({ type: z.literal("mouse"), target: cellSchema }),
+  z.object({ type: z.literal("elephant"), target: cellSchema }),
   z.object({
     type: z.literal("wall"),
     target: cellSchema,

@@ -25,6 +25,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import type { LiveGameSummary } from "../../../shared/contracts/games";
 import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
 import { getBoardSizeBucket } from "../../../shared/domain/past-games";
+import { variantDisplayName } from "../../../shared/domain/game-types";
 
 export const Route = createFileRoute("/live-games")({
   component: LiveGames,
@@ -202,6 +203,7 @@ function LiveGames() {
                 <SelectContent>
                   <SelectItem value="all">All</SelectItem>
                   <SelectItem value="standard">Standard</SelectItem>
+                  <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
                   <SelectItem value="freestyle">Freestyle</SelectItem>
                 </SelectContent>
@@ -359,7 +361,7 @@ function LiveGames() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium capitalize">
-                      {game.variant}
+                      {variantDisplayName(game.variant)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={game.rated ? "default" : "secondary"}>

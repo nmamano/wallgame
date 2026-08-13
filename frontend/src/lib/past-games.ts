@@ -5,7 +5,7 @@ import {
 } from "../../../shared/domain/past-games";
 
 export interface PastGamesFilters {
-  variant: "all" | "standard" | "classic" | "freestyle";
+  variant: "all" | "standard" | "animal-cycle" | "classic" | "freestyle";
   rated: "all" | "yes" | "no";
   timeControl: "all" | "bullet" | "blitz" | "rapid" | "classical";
   boardSize: "all" | "small" | "medium" | "large";

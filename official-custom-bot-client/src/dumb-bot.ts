@@ -9,6 +9,8 @@
 
 import type {
   Cell,
+  AnimalCycleInitialState,
+  GamePawns,
   ClassicInitialState,
   PlayerId,
   StandardInitialState,
@@ -17,6 +19,12 @@ import type {
 } from "../../shared/domain/game-types";
 import { Grid } from "../../shared/domain/grid";
 import { computeDummyAiMove } from "../../shared/domain/dummy-ai";
+import { computeAnimalCycleNaiveMove } from "../../shared/domain/animal-cycle-ai";
+import {
+  pawnCell,
+  requirePawnCell,
+  withPawnCell,
+} from "../../shared/domain/pawns";
 import {
   moveFromStandardNotation,
   moveToStandardNotation,
@@ -44,10 +52,7 @@ interface DumbBotSession {
   boardWidth: number;
   boardHeight: number;
   grid: Grid; // Grid with pathfinding support
-  pawns: {
-    p1: { cat: Cell; mouse: Cell };
-    p2: { cat: Cell; mouse: Cell };
-  };
+  pawns: GamePawns;
   ply: number;
 }
 
@@ -64,14 +69,15 @@ function createSession(bgsId: string, config: BgsConfig): DumbBotSession {
   const grid = new Grid(boardWidth, boardHeight, variant);
 
   // Extract pawn positions based on variant
-  let pawns: DumbBotSession["pawns"];
+  let pawns: GamePawns;
 
   if (variant === "survival") {
     // Survival has flat cat/mouse structure
     const survivalState = initialState as SurvivalInitialState;
     pawns = {
-      p1: { cat: survivalState.cat, mouse: survivalState.mouse },
-      p2: { cat: survivalState.cat, mouse: survivalState.mouse }, // Survival is 1-player
+      kind: "survival",
+      cat: survivalState.cat,
+      mouse: survivalState.mouse,
     };
     // Apply initial walls
     for (const wall of survivalState.walls || []) {
@@ -81,19 +87,29 @@ function createSession(bgsId: string, config: BgsConfig): DumbBotSession {
     // Classic has cat/home structure (home stored in mouse slot for compatibility)
     const classicState = initialState as ClassicInitialState;
     pawns = {
-      p1: { cat: classicState.pawns.p1.cat, mouse: classicState.pawns.p1.home },
-      p2: { cat: classicState.pawns.p2.cat, mouse: classicState.pawns.p2.home },
+      kind: "classic",
+      pawns: {
+        1: classicState.pawns.p1,
+        2: classicState.pawns.p2,
+      },
     };
     // Apply initial walls
     for (const wall of classicState.walls || []) {
       grid.addWall(wall);
     }
+  } else if (variant === "animal-cycle") {
+    const cycleState = initialState as AnimalCycleInitialState;
+    pawns = {
+      kind: "animal-cycle",
+      pawns: { 1: cycleState.pawns.p1, 2: cycleState.pawns.p2 },
+    };
+    for (const wall of cycleState.walls) grid.addWall(wall);
   } else {
     // Standard/Freestyle have cat/mouse structure
     const standardState = initialState as StandardInitialState;
     pawns = {
-      p1: standardState.pawns.p1,
-      p2: standardState.pawns.p2,
+      kind: "standard",
+      pawns: { 1: standardState.pawns.p1, 2: standardState.pawns.p2 },
     };
     // Apply initial walls
     for (const wall of standardState.walls || []) {
@@ -200,16 +216,33 @@ export function handleEvaluatePosition(
   const currentPlayer: PlayerId = session.ply % 2 === 0 ? 1 : 2;
   const opponent: PlayerId = currentPlayer === 1 ? 2 : 1;
 
-  const myCatPos = session.pawns[currentPlayer === 1 ? "p1" : "p2"].cat;
+  if (session.pawns.kind === "animal-cycle") {
+    const move = computeAnimalCycleNaiveMove(
+      session.grid,
+      session.pawns,
+      currentPlayer,
+    );
+    return {
+      type: "evaluate_response",
+      bgsId: msg.bgsId,
+      ply: session.ply,
+      bestMove: moveToStandardNotation(move, session.boardHeight),
+      evaluation: 0,
+      success: true,
+      error: "",
+    };
+  }
+
+  const myCatPos = requirePawnCell(session.pawns, currentPlayer, "cat");
 
   // Determine goal based on variant:
   // - Standard/Freestyle/Survival: chase opponent's mouse
   // - Classic: reach own home (stored in mouse slot)
   let goalPos: Cell;
   if (session.variant === "classic") {
-    goalPos = session.pawns[currentPlayer === 1 ? "p1" : "p2"].mouse;
+    goalPos = requirePawnCell(session.pawns, currentPlayer, "home");
   } else {
-    goalPos = session.pawns[opponent === 1 ? "p1" : "p2"].mouse;
+    goalPos = requirePawnCell(session.pawns, opponent, "mouse");
   }
 
   const move = computeDummyAiMove(session.grid, myCatPos, goalPos);
@@ -237,18 +270,19 @@ export function handleEvaluatePosition(
  *   -0.5 if P2 is closer to their goal
  */
 function computeDistanceEvaluation(session: DumbBotSession): number {
-  const p1CatPos = session.pawns.p1.cat;
-  const p2CatPos = session.pawns.p2.cat;
+  if (session.pawns.kind === "animal-cycle") return 0;
+  const p1CatPos = requirePawnCell(session.pawns, 1, "cat");
+  const p2CatPos = pawnCell(session.pawns, 2, "cat") ?? p1CatPos;
 
   // Determine goals based on variant
   let p1Goal: Cell;
   let p2Goal: Cell;
   if (session.variant === "classic") {
-    p1Goal = session.pawns.p1.mouse; // Own home
-    p2Goal = session.pawns.p2.mouse; // Own home
+    p1Goal = requirePawnCell(session.pawns, 1, "home");
+    p2Goal = requirePawnCell(session.pawns, 2, "home");
   } else {
-    p1Goal = session.pawns.p2.mouse; // Opponent's mouse
-    p2Goal = session.pawns.p1.mouse; // Opponent's mouse
+    p1Goal = requirePawnCell(session.pawns, 2, "mouse");
+    p2Goal = requirePawnCell(session.pawns, 1, "mouse");
   }
 
   const p1Distance = session.grid.distance(p1CatPos, p1Goal);
@@ -295,18 +329,19 @@ export function handleApplyMove(msg: ApplyMoveMessage): MoveAppliedMessage {
   try {
     // Determine whose turn it is
     const playerToMove: PlayerId = session.ply % 2 === 0 ? 1 : 2;
-    const pawns = playerToMove === 1 ? session.pawns.p1 : session.pawns.p2;
-
     // Parse the move from standard notation
     const move = moveFromStandardNotation(msg.move, session.boardHeight);
 
     // Apply each action
     for (const action of move.actions) {
-      if (action.type === "cat") {
-        pawns.cat = action.target;
-      } else if (action.type === "mouse") {
-        pawns.mouse = action.target;
-      } else if (action.type === "wall" && action.wallOrientation) {
+      if (action.type !== "wall") {
+        session.pawns = withPawnCell(
+          session.pawns,
+          playerToMove,
+          action.type,
+          action.target,
+        );
+      } else if (action.wallOrientation) {
         session.grid.addWall({
           cell: action.target,
           orientation: action.wallOrientation,

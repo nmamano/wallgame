@@ -8,6 +8,7 @@ import {
 } from "react";
 import type {
   Action,
+  GamePawnType,
   PawnType,
   PlayerId,
   WallOrientation,
@@ -179,19 +180,13 @@ function buildArrowsForQueue(
   arrowType: Arrow["type"],
 ): Arrow[] {
   if (!gameState || queue.length === 0 || !ownerId) return [];
-  const cat = pawnCell(gameState.pawns, ownerId, "cat");
-  const mouse = pawnCell(gameState.pawns, ownerId, "mouse");
+  const workingPositions: Partial<Record<GamePawnType, Cell>> = {};
+  for (const type of ["dog", "cat", "mouse", "elephant"] as const) {
+    const cell = pawnCell(gameState.pawns, ownerId, type);
+    if (cell) workingPositions[type] = [cell[0], cell[1]];
+  }
 
-  // Arrows only ever describe cat and mouse moves. A variant that lacks one
-  // simply never produces an action for it.
-  const workingPositions: Partial<Record<"cat" | "mouse", Cell>> = {
-    ...(cat ? { cat: [cat[0], cat[1]] as Cell } : {}),
-    ...(mouse ? { mouse: [mouse[0], mouse[1]] as Cell } : {}),
-  };
-
-  const moveActions = queue.filter(
-    (action) => action.type === "cat" || action.type === "mouse",
-  );
+  const moveActions = queue.filter((action) => isMovablePawnType(action.type));
 
   // Special case: two moves of the same pawn type -> single long arrow
   if (
@@ -199,7 +194,7 @@ function buildArrowsForQueue(
     moveActions.length === 2 &&
     moveActions.every((action) => action.type === moveActions[0].type)
   ) {
-    const pawnType = moveActions[0].type as "cat" | "mouse";
+    const pawnType = moveActions[0].type as GamePawnType;
     const fromCell = workingPositions[pawnType];
     if (!fromCell) return [];
     const toCell = moveActions[1].target;
@@ -211,7 +206,7 @@ function buildArrowsForQueue(
   // Normal case: one arrow per pawn move
   const arrows: Arrow[] = [];
   queue.forEach((action) => {
-    if (action.type !== "cat" && action.type !== "mouse") {
+    if (!isMovablePawnType(action.type)) {
       return;
     }
     const fromCell = workingPositions[action.type];

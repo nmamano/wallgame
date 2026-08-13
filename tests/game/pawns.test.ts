@@ -78,6 +78,7 @@ describe("pawnFamilyForVariant", () => {
    */
   const expected: Record<Variant, PawnFamily> = {
     standard: "standard",
+    "animal-cycle": "animal-cycle",
     freestyle: "standard",
     "custom-setup-standard": "standard",
     classic: "classic",

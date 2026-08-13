@@ -37,6 +37,7 @@ export type PlayerId = 1 | 2;
 
 export type Variant =
   | "standard" // Catch the mouse first
+  | "animal-cycle" // First directed animal capture wins
   | "classic" // Reach the opposite corner first
   | "custom-setup-standard" // Standard rules from an explicit position
   | "custom-setup-classic" // Classic rules from an explicit position
@@ -66,9 +67,11 @@ export const isCustomSetupVariant = (
  * them nothing about the game in front of them.
  */
 export const variantDisplayName = (variant: Variant): string =>
-  isCustomSetupVariant(variant)
-    ? "Puzzle"
-    : variant.charAt(0).toUpperCase() + variant.slice(1);
+  variant === "animal-cycle"
+    ? "Animal Cycle"
+    : isCustomSetupVariant(variant)
+      ? "Puzzle"
+      : variant.charAt(0).toUpperCase() + variant.slice(1);
 
 /**
  * Variant-specific initial state types.
@@ -84,6 +87,14 @@ export interface StandardInitialState {
   walls: WallPosition[];
 }
 
+export interface AnimalCycleInitialState {
+  pawns: {
+    p1: { dog: Cell; mouse: Cell };
+    p2: { cat: Cell; elephant: Cell };
+  };
+  walls: WallPosition[];
+}
+
 /** Initial state for Classic variant (cat races to home) */
 export interface ClassicInitialState {
   pawns: {
@@ -95,7 +106,7 @@ export interface ClassicInitialState {
 
 export type SetupAction =
   | {
-      type: GamePawnType;
+      type: "cat" | "mouse";
       source: Cell;
       target: Cell;
     }
@@ -130,6 +141,7 @@ export interface SurvivalInitialState {
 /** Union of all variant-specific initial states */
 export type GameInitialState =
   | StandardInitialState
+  | AnimalCycleInitialState
   | ClassicInitialState
   | CustomSetupStandardInitialState
   | CustomSetupClassicInitialState
@@ -210,7 +222,7 @@ export interface GameSnapshot {
 
 export type WallOrientation = "vertical" | "horizontal";
 
-export type PawnType = "cat" | "mouse" | "home";
+export type PawnType = "dog" | "cat" | "mouse" | "elephant" | "home";
 export type GamePawnType = Exclude<PawnType, "home">;
 
 // Cell represents an immutable [row, col] coordinate to prevent accidental writes
@@ -318,6 +330,13 @@ export interface Pawn {
  */
 export type GamePawns =
   | { kind: "standard"; pawns: Record<PlayerId, { cat: Cell; mouse: Cell }> }
+  | {
+      kind: "animal-cycle";
+      pawns: {
+        1: { dog: Cell; mouse: Cell };
+        2: { cat: Cell; elephant: Cell };
+      };
+    }
   | { kind: "classic"; pawns: Record<PlayerId, { cat: Cell; home: Cell }> }
   | { kind: "survival"; cat: Cell; mouse: Cell };
 

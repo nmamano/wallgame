@@ -302,7 +302,7 @@ export function ReadyToJoinTable({
                               : ""
                           }`}
                         >
-                          {game.config.variant}
+                          {variantDisplayName(game.config.variant)}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">

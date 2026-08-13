@@ -15,6 +15,7 @@ import type {
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { generateFreestyleInitialState } from "../../../shared/domain/freestyle-setup";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
+import { buildAnimalCycleInitialState } from "../../../shared/domain/animal-cycle-setup";
 import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
 import type {
   PawnSkinType,
@@ -387,11 +388,13 @@ function useSettingsInternal(
     const boardWidth = currentVariantParams?.boardWidth ?? 8;
     const boardHeight = currentVariantParams?.boardHeight ?? 8;
     const variantConfig =
-      resolvedVariant === "freestyle"
-        ? generateFreestyleInitialState(boardWidth, boardHeight)
-        : resolvedVariant === "classic"
-          ? buildClassicInitialState(boardWidth, boardHeight)
-          : buildStandardInitialState(boardWidth, boardHeight);
+      resolvedVariant === "animal-cycle"
+        ? buildAnimalCycleInitialState(boardWidth, boardHeight)
+        : resolvedVariant === "freestyle"
+          ? generateFreestyleInitialState(boardWidth, boardHeight)
+          : resolvedVariant === "classic"
+            ? buildClassicInitialState(boardWidth, boardHeight)
+            : buildStandardInitialState(boardWidth, boardHeight);
     return {
       timeControl: timeControlConfigFromPreset(
         dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,

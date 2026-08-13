@@ -79,10 +79,14 @@ export function actionToStandardNotation(
   action: Action,
   totalRows: number,
 ): string {
+  if (action.type === "dog")
+    return `D${cellToStandardNotation(action.target, totalRows)}`;
   if (action.type === "cat")
     return `C${cellToStandardNotation(action.target, totalRows)}`;
   if (action.type === "mouse")
     return `M${cellToStandardNotation(action.target, totalRows)}`;
+  if (action.type === "elephant")
+    return `E${cellToStandardNotation(action.target, totalRows)}`;
   if (action.type === "wall") {
     const symbol = action.wallOrientation === "vertical" ? ">" : "^";
     return `${symbol}${cellToStandardNotation(action.target, totalRows)}`;
@@ -103,9 +107,19 @@ export function actionFromStandardNotation(
       type: "cat",
       target: cellFromStandardNotation(notation.slice(1), totalRows),
     };
+  } else if (firstChar === "D") {
+    return {
+      type: "dog",
+      target: cellFromStandardNotation(notation.slice(1), totalRows),
+    };
   } else if (firstChar === "M") {
     return {
       type: "mouse",
+      target: cellFromStandardNotation(notation.slice(1), totalRows),
+    };
+  } else if (firstChar === "E") {
+    return {
+      type: "elephant",
       target: cellFromStandardNotation(notation.slice(1), totalRows),
     };
   } else if (firstChar === ">" || firstChar === "^") {
@@ -144,12 +158,16 @@ export function moveToStandardNotation(move: Move, totalRows: number): string {
   // An action's target is absolute, so the LAST action for a pawn already names
   // its final cell; there is no need to walk the steps.
   let catTarget: Cell | undefined;
+  let dogTarget: Cell | undefined;
   let mouseTarget: Cell | undefined;
+  let elephantTarget: Cell | undefined;
   const walls: Action[] = [];
 
   for (const action of move.actions) {
-    if (action.type === "cat") catTarget = action.target;
+    if (action.type === "dog") dogTarget = action.target;
+    else if (action.type === "cat") catTarget = action.target;
     else if (action.type === "mouse") mouseTarget = action.target;
+    else if (action.type === "elephant") elephantTarget = action.target;
     else if (action.type === "wall") walls.push(action);
   }
 
@@ -163,9 +181,13 @@ export function moveToStandardNotation(move: Move, totalRows: number): string {
 
   // Cat, then mouse, then walls — the order the engine also emits.
   const terms: string[] = [];
+  if (dogTarget) terms.push(`D${cellToStandardNotation(dogTarget, totalRows)}`);
   if (catTarget) terms.push(`C${cellToStandardNotation(catTarget, totalRows)}`);
   if (mouseTarget) {
     terms.push(`M${cellToStandardNotation(mouseTarget, totalRows)}`);
+  }
+  if (elephantTarget) {
+    terms.push(`E${cellToStandardNotation(elephantTarget, totalRows)}`);
   }
   for (const wall of walls) {
     terms.push(actionToStandardNotation(wall, totalRows));

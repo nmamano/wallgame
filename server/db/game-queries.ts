@@ -73,6 +73,7 @@ const normalizeWinReason = (value?: string | null): WinReason => {
 const normalizeVariant = (value: string): Variant => {
   if (
     value === "standard" ||
+    value === "animal-cycle" ||
     value === "classic" ||
     value === "freestyle" ||
     value === "survival" ||

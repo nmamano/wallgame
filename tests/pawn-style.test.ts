@@ -28,8 +28,10 @@ describe("resolvePawnBackingSrc", () => {
 describe("default pawn styles", () => {
   test("uses Nil's selected SVGs instead of browser icons", () => {
     expect(DEFAULT_PAWN_STYLES).toEqual({
+      dog: "pawns/animal-cycle/dog.svg",
       cat: "cat3.svg",
       mouse: "mouse20.svg",
+      elephant: "pawns/animal-cycle/elephant.svg",
       home: "home2.svg",
     });
   });
