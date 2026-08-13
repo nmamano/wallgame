@@ -251,8 +251,10 @@ export const timeControlSchema = z.object({
 export const appearanceSchema = z
   .object({
     pawnColor: z.string().max(32).optional(),
+    dogSkin: z.string().max(64).optional(),
     catSkin: z.string().max(64).optional(),
     mouseSkin: z.string().max(64).optional(),
+    elephantSkin: z.string().max(64).optional(),
     homeSkin: z.string().max(64).optional(),
   })
   .optional();

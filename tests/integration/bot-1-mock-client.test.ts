@@ -577,6 +577,10 @@ function createTestBotConfig(botId: string, name: string): BotConfig {
     botId,
     name,
     username: null, // Public bot
+    appearance: {
+      dogStyle: "dog-puppy-07.svg",
+      elephantStyle: "elephant-19.svg",
+    },
     variants: {
       standard: {
         boardWidth: { min: 3, max: 15 },
@@ -697,6 +701,16 @@ describe("custom bot WebSocket integration V3", () => {
       const initialState = await humanSocket.waitForMessage("state");
       expect(initialState.state.status).toBe("playing");
       expect(initialState.state.turn).toBe(1); // Human's turn first
+      const initialMatchStatus =
+        await humanSocket.waitForMessage("match-status");
+      expect(
+        initialMatchStatus.snapshot.players.find(
+          (player) => player.configType === "bot",
+        )?.appearance,
+      ).toMatchObject({
+        dogSkin: "dog-puppy-07.svg",
+        elephantSkin: "elephant-19.svg",
+      });
 
       const humanPlayerId = 1;
       const botPlayerId = 2;

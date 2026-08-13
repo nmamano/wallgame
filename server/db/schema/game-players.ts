@@ -42,8 +42,10 @@ export const gamePlayersTable = pgTable(
     ), // Only non-NULL for built-in bots
     ratingAtStart: integer("rating_at_start"), // Rating at game start, NULL for custom bots
     pawnColor: varchar("pawn_color", { length: 64 }),
+    dogSkin: varchar("dog_skin", { length: 255 }),
     catSkin: varchar("cat_skin", { length: 255 }),
     mouseSkin: varchar("mouse_skin", { length: 255 }),
+    elephantSkin: varchar("elephant_skin", { length: 255 }),
     homeSkin: varchar("home_skin", { length: 255 }),
     outcomeRank: integer("outcome_rank").notNull(), // e.g., 1 for winner
     outcomeReason: varchar("outcome_reason", { length: 255 }).notNull(), // "timeout", "resignation", "knockout", "agreement", "tie", "abandoned"

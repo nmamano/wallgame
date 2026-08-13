@@ -3,7 +3,7 @@ import { readdirSync } from "node:fs";
 import path from "node:path";
 
 const ROOT = path.resolve(import.meta.dir, "..");
-const PAWN_TYPES = ["cat", "mouse", "home"] as const;
+const PAWN_TYPES = ["dog", "cat", "mouse", "elephant", "home"] as const;
 
 describe("generated pawn backings", () => {
   for (const type of PAWN_TYPES) {

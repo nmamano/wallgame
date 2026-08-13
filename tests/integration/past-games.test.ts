@@ -15,7 +15,11 @@ import {
 } from "bun:test";
 import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
-import type { Move, PlayerId } from "../../shared/domain/game-types";
+import type {
+  Move,
+  PlayerAppearance,
+  PlayerId,
+} from "../../shared/domain/game-types";
 import type {
   PastGamesActivityResponse,
   PastGamesResponse,
@@ -166,6 +170,8 @@ async function createCompletedGame(args: {
   joinerDisplayName?: string;
   hostAuthUserId?: string;
   joinerAuthUserId?: string;
+  hostAppearance?: PlayerAppearance;
+  joinerAppearance?: PlayerAppearance;
   startedAt?: number;
 }): Promise<string> {
   const { session } = createGameSession({
@@ -174,12 +180,14 @@ async function createCompletedGame(args: {
     hostDisplayName: args.hostDisplayName ?? "host",
     hostIsPlayer1: true,
     hostAuthUserId: args.hostAuthUserId,
+    hostAppearance: args.hostAppearance,
   });
 
   joinGameSession({
     id: session.id,
     displayName: args.joinerDisplayName ?? "joiner",
     authUserId: args.joinerAuthUserId,
+    appearance: args.joinerAppearance,
   });
 
   const startTimestamp = args.startedAt ?? Date.now();
@@ -247,8 +255,26 @@ describe("past games persistence", () => {
       boardHeight: 6,
     };
 
+    const hostAppearance = {
+      pawnColor: "green",
+      dogSkin: "dog-one-line-11.svg",
+      catSkin: "cat3.svg",
+      mouseSkin: "mouse20.svg",
+      elephantSkin: "elephant-19.svg",
+      homeSkin: "home2.svg",
+    };
+    const joinerAppearance = {
+      pawnColor: "blue",
+      dogSkin: "dog-puppy-07.svg",
+      catSkin: "cat4.svg",
+      mouseSkin: "mouse2.svg",
+      elephantSkin: "elephant-05.svg",
+      homeSkin: "home3.svg",
+    };
     const gameId = await createCompletedGame({
       config,
+      hostAppearance,
+      joinerAppearance,
       startedAt: Date.now() - 5000,
     });
 
@@ -268,6 +294,8 @@ describe("past games persistence", () => {
     }
     expect(replay.state.moveCount).toBe(2);
     expect(replay.views).toBe(1);
+    expect(replay.matchStatus.players[0]?.appearance).toEqual(hostAppearance);
+    expect(replay.matchStatus.players[1]?.appearance).toEqual(joinerAppearance);
 
     const [afterFirstView] = await db
       .select({ views: gamesTable.views })

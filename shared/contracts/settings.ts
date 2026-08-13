@@ -15,7 +15,13 @@ export const updatePawnColorSchema = z.object({
   pawnColor: z.string(),
 });
 
-export const pawnSkinTypeValues = ["cat", "mouse", "home"] as const;
+export const pawnSkinTypeValues = [
+  "dog",
+  "cat",
+  "mouse",
+  "elephant",
+  "home",
+] as const;
 export type PawnSkinType = (typeof pawnSkinTypeValues)[number];
 
 export const updatePawnSchema = z.object({

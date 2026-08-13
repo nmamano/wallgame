@@ -53,10 +53,14 @@ export interface SettingsState {
   setBoardTheme: (value: string) => void;
   pawnColor: string;
   setPawnColor: (value: string) => void;
+  dogPawn: string;
+  setDogPawn: (value: string) => void;
   catPawn: string;
   setCatPawn: (value: string) => void;
   mousePawn: string;
   setMousePawn: (value: string) => void;
+  elephantPawn: string;
+  setElephantPawn: (value: string) => void;
   homePawn: string;
   setHomePawn: (value: string) => void;
   gameConfig: GameConfiguration;
@@ -84,8 +88,10 @@ export interface SettingsState {
 const STORAGE_KEYS = {
   BOARD_THEME: "wall-game-board-theme",
   PAWN_COLOR: "wall-game-pawn-color",
+  DOG_PAWN: "wall-game-dog-pawn",
   CAT_PAWN: "wall-game-cat-pawn",
   MOUSE_PAWN: "wall-game-mouse-pawn",
+  ELEPHANT_PAWN: "wall-game-elephant-pawn",
   HOME_PAWN: "wall-game-home-pawn",
   GAME_CONFIG: "wall-game-default-config",
   VARIANT_SETTINGS: "wall-game-variant-settings",
@@ -157,6 +163,10 @@ function useSettingsInternal(
     STORAGE_KEYS.PAWN_COLOR,
     "default",
   );
+  const [localDogPawn, setLocalDogPawn] = useLocalStorageState<string>(
+    STORAGE_KEYS.DOG_PAWN,
+    "default",
+  );
   const [localCatPawn, setLocalCatPawn] = useLocalStorageState<string>(
     STORAGE_KEYS.CAT_PAWN,
     "default",
@@ -165,6 +175,8 @@ function useSettingsInternal(
     STORAGE_KEYS.MOUSE_PAWN,
     "default",
   );
+  const [localElephantPawn, setLocalElephantPawn] =
+    useLocalStorageState<string>(STORAGE_KEYS.ELEPHANT_PAWN, "default");
   const [localHomePawn, setLocalHomePawn] = useLocalStorageState<string>(
     STORAGE_KEYS.HOME_PAWN,
     "default",
@@ -362,7 +374,7 @@ function useSettingsInternal(
   }, [isLoggedIn, dbSettings?.variantSettings]);
 
   // Derive pawn settings from DB (only for logged-in users).
-  // Intentionally NOT memoized: the array has at most 3 entries, and useMemo's
+  // Intentionally NOT memoized: the array has at most 5 entries, and useMemo's
   // dependency on dbSettings?.pawnSettings can miss re-renders triggered by
   // optimistic cache updates (setQueryData in onMutate).
   const pawnSettingsFromDb: Partial<Record<PawnSkinType, string>> | null =
@@ -632,6 +644,10 @@ function useSettingsInternal(
   const pawnColor = isLoggedIn
     ? (dbSettings?.pawnColor ?? "default")
     : localPawnColor;
+  const dogPawn = normalizePawnStyleSelection(
+    isLoggedIn ? pawnSettingsFromDb?.dog : localDogPawn,
+    "dog",
+  );
   const catPawn = normalizePawnStyleSelection(
     isLoggedIn ? pawnSettingsFromDb?.cat : localCatPawn,
     "cat",
@@ -639,6 +655,10 @@ function useSettingsInternal(
   const mousePawn = normalizePawnStyleSelection(
     isLoggedIn ? pawnSettingsFromDb?.mouse : localMousePawn,
     "mouse",
+  );
+  const elephantPawn = normalizePawnStyleSelection(
+    isLoggedIn ? pawnSettingsFromDb?.elephant : localElephantPawn,
+    "elephant",
   );
   const homePawn = normalizePawnStyleSelection(
     isLoggedIn ? pawnSettingsFromDb?.home : localHomePawn,
@@ -705,6 +725,14 @@ function useSettingsInternal(
     }
   };
 
+  const setDogPawn = (value: string) => {
+    if (isLoggedIn) {
+      updatePawnMutation.mutate({ pawnType: "dog", pawnShape: value });
+    } else {
+      setLocalDogPawn(value);
+    }
+  };
+
   const setMousePawn = (value: string) => {
     if (isLoggedIn) {
       updatePawnMutation.mutate({ pawnType: "mouse", pawnShape: value });
@@ -718,6 +746,14 @@ function useSettingsInternal(
       updatePawnMutation.mutate({ pawnType: "home", pawnShape: value });
     } else {
       setLocalHomePawn(value);
+    }
+  };
+
+  const setElephantPawn = (value: string) => {
+    if (isLoggedIn) {
+      updatePawnMutation.mutate({ pawnType: "elephant", pawnShape: value });
+    } else {
+      setLocalElephantPawn(value);
     }
   };
 
@@ -838,10 +874,14 @@ function useSettingsInternal(
     setBoardTheme,
     pawnColor,
     setPawnColor,
+    dogPawn,
+    setDogPawn,
     catPawn,
     setCatPawn,
     mousePawn,
     setMousePawn,
+    elephantPawn,
+    setElephantPawn,
     homePawn,
     setHomePawn,
     gameConfig,

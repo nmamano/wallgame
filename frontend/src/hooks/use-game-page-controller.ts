@@ -108,8 +108,10 @@ import { useBoardInteractions } from "@/hooks/use-board-interactions";
 
 export interface LocalPreferences {
   pawnColor: PlayerColor;
+  dogSkin: string | undefined;
   catSkin: string | undefined;
   mouseSkin: string | undefined;
+  elephantSkin: string | undefined;
   homeSkin: string | undefined;
   displayName: string;
 }
@@ -124,8 +126,10 @@ export interface GamePlayer {
   color: PlayerColor;
   type: PlayerType;
   isOnline: boolean;
+  dogSkin?: string;
   catSkin?: string;
   mouseSkin?: string;
+  elephantSkin?: string;
   homeSkin?: string;
 }
 
@@ -259,6 +263,10 @@ function buildSeatViewsFromSnapshot(
         ? ("you" as PlayerType)
         : ("friend" as PlayerType),
     isOnline: player.connected,
+    dogSkin:
+      player.playerId === primaryLocalPlayerId
+        ? localPreferences.dogSkin
+        : player.appearance?.dogSkin,
     catSkin:
       player.playerId === primaryLocalPlayerId
         ? localPreferences.catSkin
@@ -267,6 +275,10 @@ function buildSeatViewsFromSnapshot(
       player.playerId === primaryLocalPlayerId
         ? localPreferences.mouseSkin
         : player.appearance?.mouseSkin,
+    elephantSkin:
+      player.playerId === primaryLocalPlayerId
+        ? localPreferences.elephantSkin
+        : player.appearance?.elephantSkin,
     homeSkin:
       player.playerId === primaryLocalPlayerId
         ? localPreferences.homeSkin
@@ -325,15 +337,19 @@ export function useGamePageController(gameId: string) {
   const localPreferences = useMemo<LocalPreferences>(
     () => ({
       pawnColor: resolvePlayerColor(settings.pawnColor),
+      dogSkin: settings.dogPawn,
       catSkin: settings.catPawn,
       mouseSkin: settings.mousePawn,
+      elephantSkin: settings.elephantPawn,
       homeSkin: settings.homePawn,
       displayName: settings.displayName,
     }),
     [
       settings.pawnColor,
+      settings.dogPawn,
       settings.catPawn,
       settings.mousePawn,
+      settings.elephantPawn,
       settings.homePawn,
       settings.displayName,
     ],
@@ -791,6 +807,10 @@ export function useGamePageController(gameId: string) {
               : DEFAULT_PLAYER_COLORS[(index + 1) as PlayerId],
           type,
           isOnline: type === "you" || type.includes("bot"),
+          dogSkin:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? localPreferences.dogSkin
+              : undefined,
           catSkin:
             index + 1 === nextPrimaryLocalPlayerId
               ? localPreferences.catSkin
@@ -798,6 +818,10 @@ export function useGamePageController(gameId: string) {
           mouseSkin:
             index + 1 === nextPrimaryLocalPlayerId
               ? localPreferences.mouseSkin
+              : undefined,
+          elephantSkin:
+            index + 1 === nextPrimaryLocalPlayerId
+              ? localPreferences.elephantSkin
               : undefined,
           homeSkin:
             index + 1 === nextPrimaryLocalPlayerId
@@ -1081,8 +1105,10 @@ export function useGamePageController(gameId: string) {
         return {
           ...player,
           color: resolvedColor,
+          dogSkin: localPreferences.dogSkin,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
+          elephantSkin: localPreferences.elephantSkin,
           homeSkin: localPreferences.homeSkin,
         };
       }
@@ -2161,7 +2187,21 @@ export function useGamePageController(gameId: string) {
       const player = players.find((p) => p.playerId === visualPlayerId);
 
       let pawnStyle: string | undefined;
-      if (sourceState.config.variant === "animal-cycle") {
+      if (
+        sourceState.config.variant === "animal-cycle" &&
+        (pawn.type === "dog" || pawn.type === "elephant")
+      ) {
+        const selected =
+          pawn.type === "dog" ? player?.dogSkin : player?.elephantSkin;
+        pawnStyle = selected && selected !== "default" ? selected : undefined;
+      } else if (
+        sourceState.config.variant === "animal-cycle" &&
+        (pawn.type === "cat" || pawn.type === "mouse")
+      ) {
+        const selected =
+          pawn.type === "cat" ? player?.catSkin : player?.mouseSkin;
+        pawnStyle = selected && selected !== "default" ? selected : undefined;
+      } else if (sourceState.config.variant === "animal-cycle") {
         pawnStyle = assetUrl(`/pawns/animal-cycle/${pawn.type}.svg`);
       } else if (
         pawn.type === "cat" &&
@@ -2678,8 +2718,10 @@ export function useGamePageController(gameId: string) {
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
+          dogSkin: settings.dogPawn,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          elephantSkin: settings.elephantPawn,
           homeSkin: settings.homePawn,
         },
       });
@@ -2718,8 +2760,10 @@ export function useGamePageController(gameId: string) {
     primaryLocalPlayerId,
     settings.displayName,
     settings.pawnColor,
+    settings.dogPawn,
     settings.catPawn,
     settings.mousePawn,
+    settings.elephantPawn,
     settings.homePawn,
     addSystemMessage,
     navigate,
@@ -3661,8 +3705,10 @@ export function useGamePageController(gameId: string) {
         color: DEFAULT_PLAYER_COLORS[1],
         type: "friend" as PlayerType,
         isOnline: true,
+        dogSkin: undefined,
         catSkin: undefined,
         mouseSkin: undefined,
+        elephantSkin: undefined,
       },
       {
         id: "p2",
@@ -3672,8 +3718,10 @@ export function useGamePageController(gameId: string) {
         color: DEFAULT_PLAYER_COLORS[2],
         type: "friend" as PlayerType,
         isOnline: true,
+        dogSkin: undefined,
         catSkin: undefined,
         mouseSkin: undefined,
+        elephantSkin: undefined,
       },
     ];
   }, [isReadOnlySession, players]);

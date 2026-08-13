@@ -16,7 +16,14 @@ import {
 import { Alert, AlertDescription } from "@/components/ui/alert";
 import { Info, Loader2 } from "lucide-react";
 import { PawnSelector } from "@/components/pawn-selector";
-import { CAT_PAWNS, HOME_PAWNS, MOUSE_PAWNS } from "@/lib/pawns";
+import {
+  CAT_PAWNS,
+  DOG_PAWNS,
+  ELEPHANT_PAWNS,
+  HOME_PAWNS,
+  MOUSE_PAWNS,
+} from "@/lib/pawns";
+import { dogPawnDisplayLabel } from "@/lib/pawn-labels";
 import {
   SELECTABLE_PLAYER_COLORS,
   colorDisplayNames,
@@ -41,10 +48,14 @@ function Settings() {
     setBoardTheme,
     pawnColor,
     setPawnColor,
+    dogPawn,
+    setDogPawn,
     catPawn,
     setCatPawn,
     mousePawn,
     setMousePawn,
+    elephantPawn,
+    setElephantPawn,
     homePawn,
     setHomePawn,
     displayName,
@@ -242,6 +253,21 @@ function Settings() {
                   </Select>
                 </div>
 
+                {/* Dog Pawn */}
+                <div className="space-y-2">
+                  <Label htmlFor="dog-pawn">Dog Pawn</Label>
+                  <PawnSelector
+                    value={dogPawn}
+                    onChange={setDogPawn}
+                    pawns={DOG_PAWNS}
+                    basePath={assetUrl("/pawns/dog/")}
+                    label="Dog Pawn"
+                    defaultLabel="Current temporary default"
+                    displayLabel={dogPawnDisplayLabel}
+                    color={pawnColor}
+                  />
+                </div>
+
                 {/* Cat Pawn */}
                 <div className="space-y-2">
                   <Label htmlFor="cat-pawn">Cat Pawn</Label>
@@ -266,6 +292,20 @@ function Settings() {
                     basePath={assetUrl("/pawns/mouse/")}
                     label="Mouse Pawn"
                     defaultLabel="Default Mouse"
+                    color={pawnColor}
+                  />
+                </div>
+
+                {/* Elephant Pawn */}
+                <div className="space-y-2">
+                  <Label htmlFor="elephant-pawn">Elephant Pawn</Label>
+                  <PawnSelector
+                    value={elephantPawn}
+                    onChange={setElephantPawn}
+                    pawns={ELEPHANT_PAWNS}
+                    basePath={assetUrl("/pawns/elephant/")}
+                    label="Elephant Pawn"
+                    defaultLabel="Current temporary default"
                     color={pawnColor}
                   />
                 </div>

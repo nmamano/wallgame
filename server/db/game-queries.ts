@@ -206,7 +206,9 @@ const fetchReplayPlayers = (gameIds: string[]) =>
       ratingAtStart: gamePlayersTable.ratingAtStart,
       pawnColor: gamePlayersTable.pawnColor,
       catSkin: gamePlayersTable.catSkin,
+      dogSkin: gamePlayersTable.dogSkin,
       mouseSkin: gamePlayersTable.mouseSkin,
+      elephantSkin: gamePlayersTable.elephantSkin,
       homeSkin: gamePlayersTable.homeSkin,
       outcomeRank: gamePlayersTable.outcomeRank,
       outcomeReason: gamePlayersTable.outcomeReason,
@@ -322,7 +324,9 @@ const assembleReplayGame = (
     players: orderedPlayers.map((player) => {
       const pawnColor = player.pawnColor ?? "default";
       const catSkin = player.catSkin ?? "default";
+      const dogSkin = player.dogSkin ?? "default";
       const mouseSkin = player.mouseSkin ?? "default";
+      const elephantSkin = player.elephantSkin ?? "default";
       const homeSkin = player.homeSkin ?? "default";
       return {
         role: player.playerRole as "host" | "joiner",
@@ -333,8 +337,10 @@ const assembleReplayGame = (
         configType: player.playerConfigType === "bot" ? "bot" : "human",
         appearance: {
           pawnColor,
+          dogSkin,
           catSkin,
           mouseSkin,
+          elephantSkin,
           homeSkin,
         },
         elo: player.ratingAtStart ?? undefined,

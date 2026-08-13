@@ -9,7 +9,7 @@ const FOREGROUND_OUTPUT_ROOT = path.join(
   ROOT,
   "frontend/public/pawn-foreground-fixes",
 );
-const PAWN_TYPES = ["cat", "mouse", "home"] as const;
+const PAWN_TYPES = ["dog", "cat", "mouse", "elephant", "home"] as const;
 const SIZE = 300;
 const OUTLINE_RADIUS = 8;
 const ALPHA_THRESHOLD = 24;
@@ -26,6 +26,38 @@ type MaskShape =
 // the regions confirmed during production review. Coordinates use the 300px
 // generation canvas, so this remains deterministic across regenerations.
 const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
+  // The sitting dog's tail contour is intentionally open. Restore only the
+  // torso interior that the outside flood reaches through that opening.
+  "dog-one-line-01": [
+    {
+      kind: "path",
+      d: "M111 94C143 91 183 105 207 142C228 173 231 212 213 242H102C115 219 115 190 104 161C96 138 97 112 111 94Z",
+    },
+  ],
+  "dog-one-line-11": [
+    {
+      kind: "path",
+      d: "M86 107C118 104 141 132 158 139C184 149 222 133 249 151L242 205C208 192 177 199 147 211C119 222 91 201 79 174C69 151 72 123 86 107Z",
+    },
+  ],
+  "dog-one-line-15": [
+    {
+      kind: "path",
+      d: "M75 101C108 99 127 126 150 137C176 150 204 134 229 131C248 143 254 170 244 199C218 185 196 181 174 191C146 204 111 217 88 199C67 181 60 123 75 101Z",
+    },
+  ],
+  "dog-one-line-20": [
+    {
+      kind: "path",
+      d: "M73 77C105 78 118 105 145 106C174 106 204 100 226 118L220 183C196 171 174 169 151 182C128 195 104 209 84 194C69 180 63 101 73 77Z",
+    },
+  ],
+  "dog-one-line-23": [
+    {
+      kind: "path",
+      d: "M88 104C117 103 133 129 156 138C182 148 210 137 234 151L228 211C204 199 181 196 157 207C132 218 107 226 88 207C72 189 72 124 88 104Z",
+    },
+  ],
   cat9: [{ kind: "ellipse", x: 165, y: 143, rx: 36, ry: 32 }],
   cat31: [{ kind: "ellipse", x: 150, y: 143, rx: 12, ry: 10 }],
   cat47: [{ kind: "ellipse", x: 155, y: 151, rx: 11, ry: 9 }],
@@ -62,6 +94,9 @@ const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
     },
   ],
 };
+
+const FLOOD_SEAL_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> =
+  {};
 
 // Opaque nose marks in these two source drawings read as holes after the player
 // color filter. A tiny same-color foreground patch covers only that mark. The
@@ -111,6 +146,7 @@ try {
           outlineRadius,
           alphaThreshold,
           maskCorrections,
+          floodSealCorrections,
         }) => {
           const image = new Image();
           image.src = `data:image/svg+xml;base64,${btoa(
@@ -139,6 +175,30 @@ try {
           sourceContext.drawImage(image, drawX, drawY, drawWidth, drawHeight);
           const sourcePixels = sourceContext.getImageData(0, 0, size, size);
 
+          const sealCanvas = document.createElement("canvas");
+          sealCanvas.width = sealCanvas.height = size;
+          const sealContext = sealCanvas.getContext("2d");
+          if (!sealContext) throw new Error("Canvas is unavailable");
+          sealContext.fillStyle = "white";
+          for (const correction of floodSealCorrections) {
+            sealContext.beginPath();
+            if (correction.kind === "ellipse") {
+              sealContext.ellipse(
+                correction.x,
+                correction.y,
+                correction.rx,
+                correction.ry,
+                0,
+                0,
+                Math.PI * 2,
+              );
+              sealContext.fill();
+            } else {
+              sealContext.fill(new Path2D(correction.d));
+            }
+          }
+          const sealPixels = sealContext.getImageData(0, 0, size, size).data;
+
           const outside = new Uint8Array(size * size);
           const queue = new Int32Array(size * size);
           let head = 0;
@@ -146,7 +206,8 @@ try {
           const enqueue = (index: number) => {
             if (
               outside[index] ||
-              sourcePixels.data[index * 4 + 3] > alphaThreshold
+              sourcePixels.data[index * 4 + 3] > alphaThreshold ||
+              sealPixels[index * 4 + 3] > alphaThreshold
             ) {
               return;
             }
@@ -237,6 +298,8 @@ try {
           alphaThreshold: ALPHA_THRESHOLD,
           maskCorrections:
             MASK_CORRECTIONS[filename.replace(/\.svg$/i, "")] ?? [],
+          floodSealCorrections:
+            FLOOD_SEAL_CORRECTIONS[filename.replace(/\.svg$/i, "")] ?? [],
         },
       );
 

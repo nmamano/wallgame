@@ -17,6 +17,12 @@ describe("resolvePawnBackingSrc", () => {
     expect(resolvePawnBackingSrc("/pawns/home/home10.svg#mark")).toContain(
       "/pawn-backings/home/home10.png",
     );
+    expect(resolvePawnBackingSrc("/pawns/dog/dog-puppy-01.svg")).toContain(
+      "/pawn-backings/dog/dog-puppy-01.png",
+    );
+    expect(resolvePawnBackingSrc("/pawns/elephant/elephant-25.svg")).toContain(
+      "/pawn-backings/elephant/elephant-25.png",
+    );
   });
 
   test("does not invent a backing for an off-site or non-pawn image", () => {

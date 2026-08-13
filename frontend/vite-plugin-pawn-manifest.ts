@@ -20,7 +20,7 @@ const VIRTUAL_ID = "virtual:pawn-manifest";
 // A leading NUL is Rollup's convention for "this id is mine, do not touch it".
 const RESOLVED_ID = `\0${VIRTUAL_ID}`;
 
-export const PAWN_TYPES = ["cat", "mouse", "home"] as const;
+export const PAWN_TYPES = ["dog", "cat", "mouse", "elephant", "home"] as const;
 
 export const pawnManifestPlugin = (publicDir: string): Plugin => {
   const dirFor = (type: string) => path.join(publicDir, "pawns", type);

@@ -192,12 +192,20 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
       const player = playersById.get(visualPlayerId);
 
       const pawnStyle = (() => {
+        if (pawn.type === "dog") {
+          const style = player?.appearance?.dogSkin;
+          return style && style !== "default" ? style : undefined;
+        }
         if (pawn.type === "cat") {
           const style = player?.appearance?.catSkin;
           return style && style !== "default" ? style : undefined;
         }
         if (pawn.type === "mouse") {
           const style = player?.appearance?.mouseSkin;
+          return style && style !== "default" ? style : undefined;
+        }
+        if (pawn.type === "elephant") {
+          const style = player?.appearance?.elephantSkin;
           return style && style !== "default" ? style : undefined;
         }
         const style = player?.appearance?.homeSkin;

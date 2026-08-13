@@ -407,8 +407,10 @@ function PuzzlesSection() {
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
+          dogSkin: settings.dogPawn,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          elephantSkin: settings.elephantPawn,
           homeSkin: settings.homePawn,
         },
       });

@@ -88,10 +88,13 @@ export const resolvePawnStyleSrc = (
 
 export const resolvePawnBackingSrc = (src: string): string | null => {
   if (/^https?:\/\//i.test(src)) return null;
-  const match = /\/pawns\/(cat|mouse|home)\/([^/?]+)\.svg(?:[?#]|$)/i.exec(src);
+  const match =
+    /\/pawns\/(dog|cat|mouse|elephant|home)\/([^/?]+)\.svg(?:[?#]|$)/i.exec(
+      src,
+    );
   if (!match) return null;
   return src.replace(
-    /\/pawns\/(cat|mouse|home)\/([^/?]+)\.svg(?:[?#].*)?$/i,
+    /\/pawns\/(dog|cat|mouse|elephant|home)\/([^/?]+)\.svg(?:[?#].*)?$/i,
     "/pawn-backings/$1/$2.png",
   );
 };

@@ -735,13 +735,17 @@ const mapBotAppearance = (
 
   const result: PlayerAppearance = {};
   const color = appearance.color?.trim();
+  const dogSkin = appearance.dogStyle?.trim();
   const catSkin = appearance.catStyle?.trim();
   const mouseSkin = appearance.mouseStyle?.trim();
+  const elephantSkin = appearance.elephantStyle?.trim();
   const homeSkin = appearance.homeStyle?.trim();
 
   if (color) result.pawnColor = color;
+  if (dogSkin) result.dogSkin = dogSkin;
   if (catSkin) result.catSkin = catSkin;
   if (mouseSkin) result.mouseSkin = mouseSkin;
+  if (elephantSkin) result.elephantSkin = elephantSkin;
   if (homeSkin) result.homeSkin = homeSkin;
 
   return result;

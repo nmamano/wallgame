@@ -61,8 +61,10 @@ export const variantConfigSchema = z
 export const botAppearanceSchema = z
   .object({
     color: z.string(),
+    dogStyle: z.string(),
     catStyle: z.string(),
     mouseStyle: z.string(),
+    elephantStyle: z.string(),
     homeStyle: z.string(),
   })
   .partial();

@@ -185,8 +185,10 @@ export type GameStatus = "playing" | "finished" | "aborted";
 
 export interface PlayerAppearance {
   pawnColor?: string;
+  dogSkin?: string;
   catSkin?: string;
   mouseSkin?: string;
+  elephantSkin?: string;
   homeSkin?: string;
 }
 

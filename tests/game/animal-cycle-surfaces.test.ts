@@ -6,6 +6,7 @@ import {
   variantValues,
 } from "../../shared/contracts/games";
 import { botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-schema";
+import { updatePawnSchema } from "../../shared/contracts/settings";
 
 const directConfig = {
   variant: "animal-cycle",
@@ -39,6 +40,10 @@ describe("Animal Cycle public surfaces", () => {
       botId: "naive-cycle",
       name: "Naive Animal Cycle",
       username: null,
+      appearance: {
+        dogStyle: "dog-puppy-07.svg",
+        elephantStyle: "elephant-19.svg",
+      },
       variants: {
         "animal-cycle": {
           boardWidth: { min: 4, max: 20 },
@@ -48,6 +53,26 @@ describe("Animal Cycle public surfaces", () => {
       },
     });
     expect(parsed.success).toBe(true);
+    if (!parsed.success) throw parsed.error;
+    expect(parsed.data.appearance).toEqual({
+      dogStyle: "dog-puppy-07.svg",
+      elephantStyle: "elephant-19.svg",
+    });
+  });
+
+  it("accepts Dog and Elephant account-setting updates", () => {
+    expect(
+      updatePawnSchema.parse({
+        pawnType: "dog",
+        pawnShape: "dog-puppy-07.svg",
+      }),
+    ).toEqual({ pawnType: "dog", pawnShape: "dog-puppy-07.svg" });
+    expect(
+      updatePawnSchema.parse({
+        pawnType: "elephant",
+        pawnShape: "elephant-19.svg",
+      }),
+    ).toEqual({ pawnType: "elephant", pawnShape: "elephant-19.svg" });
   });
 
   it("uses the exact player-facing name", () => {

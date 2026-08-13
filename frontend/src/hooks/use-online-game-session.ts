@@ -304,8 +304,10 @@ export function useOnlineGameSession({
         displayName: localPreferences.displayName,
         appearance: {
           pawnColor: localPreferences.pawnColor,
+          dogSkin: localPreferences.dogSkin,
           catSkin: localPreferences.catSkin,
           mouseSkin: localPreferences.mouseSkin,
+          elephantSkin: localPreferences.elephantSkin,
           homeSkin: localPreferences.homeSkin,
         },
       });
@@ -355,8 +357,10 @@ export function useOnlineGameSession({
     gameHandshake,
     isClaimingSeat,
     localPreferences.catSkin,
+    localPreferences.dogSkin,
     localPreferences.displayName,
     localPreferences.mouseSkin,
+    localPreferences.elephantSkin,
     localPreferences.homeSkin,
     localPreferences.pawnColor,
     refetchAccess,

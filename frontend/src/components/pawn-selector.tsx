@@ -11,7 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { colorFilterMap } from "@/lib/player-colors";
 import { PawnImage } from "@/components/pawn-image";
-import { DEFAULT_PAWN_STYLES, type PawnStyleType } from "@/lib/pawn-style";
+import { resolvePawnStyleSrc, type PawnStyleType } from "@/lib/pawn-style";
+import { defaultPawnDisplayLabel } from "@/lib/pawn-labels";
 
 interface PawnSelectorProps {
   value: string;
@@ -21,6 +22,7 @@ interface PawnSelectorProps {
   label: string;
   defaultLabel?: string;
   color?: string; // Player color to apply to pawns
+  displayLabel?: (filename: string) => string;
 }
 
 export function PawnSelector({
@@ -31,6 +33,7 @@ export function PawnSelector({
   label,
   defaultLabel = "Default",
   color,
+  displayLabel,
 }: PawnSelectorProps) {
   const [open, setOpen] = useState(false);
   const scrollAreaRef = useRef<HTMLDivElement>(null);
@@ -41,16 +44,12 @@ export function PawnSelector({
   // Extract the pawn type from the label (e.g., "Cat Pawn" -> "Cat")
   const pawnType = label.split(" ")[0];
   const pawnStyleType = pawnType.toLowerCase() as PawnStyleType;
-  const defaultPreviewSrc = `${normalizedBasePath}${DEFAULT_PAWN_STYLES[pawnStyleType]}`;
+  const defaultPreviewSrc = resolvePawnStyleSrc(undefined, pawnStyleType);
 
   // Helper function to get display name from filename
   const getDisplayName = (filename: string) => {
-    // Extract number from filename (e.g., "cat1.svg" -> "1", "mouse42.svg" -> "42")
-    const match = /\d+/.exec(filename);
-    if (match) {
-      return `${pawnType} ${match[0]}`;
-    }
-    return filename;
+    if (displayLabel) return displayLabel(filename);
+    return defaultPawnDisplayLabel(filename, pawnType);
   };
 
   // Get display name for the selected value
@@ -153,7 +152,7 @@ export function PawnSelector({
                 >
                   <PawnImage
                     src={`${normalizedBasePath}${pawn}`}
-                    alt={pawn}
+                    alt={getDisplayName(pawn)}
                     className="h-full w-full"
                     loading="lazy"
                     imageStyle={

@@ -168,8 +168,10 @@ function GameSetup() {
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
+          dogSkin: settings.dogPawn,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          elephantSkin: settings.elephantPawn,
           homeSkin: settings.homePawn,
         },
       });
@@ -362,8 +364,10 @@ function GameSetup() {
         displayName: settings.displayName,
         appearance: {
           pawnColor: settings.pawnColor,
+          dogSkin: settings.dogPawn,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          elephantSkin: settings.elephantPawn,
           homeSkin: settings.homePawn,
         },
       });
@@ -407,8 +411,10 @@ function GameSetup() {
         hostDisplayName: settings.displayName,
         hostAppearance: {
           pawnColor: settings.pawnColor,
+          dogSkin: settings.dogPawn,
           catSkin: settings.catPawn,
           mouseSkin: settings.mousePawn,
+          elephantSkin: settings.elephantPawn,
           homeSkin: settings.homePawn,
         },
       });

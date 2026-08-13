@@ -84,19 +84,26 @@ const normalizeAppearance = (
   appearance: PlayerAppearance | undefined,
 ): {
   pawnColor: string;
+  dogSkin: string;
   catSkin: string;
   mouseSkin: string;
+  elephantSkin: string;
   homeSkin: string;
 } => {
   const pawnColor = appearance?.pawnColor?.trim();
+  const dogSkin = appearance?.dogSkin?.trim();
   const catSkin = appearance?.catSkin?.trim();
   const mouseSkin = appearance?.mouseSkin?.trim();
+  const elephantSkin = appearance?.elephantSkin?.trim();
   const homeSkin = appearance?.homeSkin?.trim();
 
   return {
     pawnColor: pawnColor && pawnColor.length > 0 ? pawnColor : "default",
+    dogSkin: dogSkin && dogSkin.length > 0 ? dogSkin : "default",
     catSkin: catSkin && catSkin.length > 0 ? catSkin : "default",
     mouseSkin: mouseSkin && mouseSkin.length > 0 ? mouseSkin : "default",
+    elephantSkin:
+      elephantSkin && elephantSkin.length > 0 ? elephantSkin : "default",
     homeSkin: homeSkin && homeSkin.length > 0 ? homeSkin : "default",
   };
 };

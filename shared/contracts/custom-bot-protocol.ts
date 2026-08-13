@@ -54,8 +54,10 @@ export interface VariantConfig {
 /** Visual appearance of a bot */
 export interface BotAppearance {
   color?: string;
+  dogStyle?: string;
   catStyle?: string;
   mouseStyle?: string;
+  elephantStyle?: string;
   homeStyle?: string;
 }
 

@@ -16,3 +16,14 @@ export const MOUSE_PAWNS = sortPawnNames(
   manifest.mouse.filter((name) => !isRetiredPawnStyle(name, "mouse")),
 );
 export const HOME_PAWNS = sortPawnNames(manifest.home);
+
+const dogPackOrder = (name: string): number =>
+  name.startsWith("dog-one-line-") ? 0 : name.startsWith("dog-puppy-") ? 1 : 2;
+
+/** Dog art stays grouped by purchased pack, then numeric within each pack. */
+export const DOG_PAWNS = [...manifest.dog].sort(
+  (left, right) =>
+    dogPackOrder(left) - dogPackOrder(right) ||
+    left.localeCompare(right, undefined, { numeric: true }),
+);
+export const ELEPHANT_PAWNS = sortPawnNames(manifest.elephant);

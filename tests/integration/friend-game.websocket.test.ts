@@ -656,13 +656,17 @@ describe("friend game WebSocket integration", () => {
     // Define appearance data for testing
     const userAAppearance = {
       pawnColor: "green",
+      dogSkin: "dog-one-line-11.svg",
       catSkin: "cat1.svg",
       mouseSkin: "mouse5.svg",
+      elephantSkin: "elephant-19.svg",
     };
     const userBAppearance = {
       pawnColor: "blue",
+      dogSkin: "dog-puppy-07.svg",
       catSkin: "cat2.svg",
       mouseSkin: "mouse3.svg",
+      elephantSkin: "elephant-05.svg",
     };
 
     // User A creates a friend game with appearance
@@ -1409,13 +1413,17 @@ describe("friend game WebSocket integration", () => {
     // Define appearance data for testing
     const userAAppearance = {
       pawnColor: "red",
+      dogSkin: "dog-one-line-23.svg",
       catSkin: "cat3.svg",
       mouseSkin: "mouse1.svg",
+      elephantSkin: "elephant-25.svg",
     };
     const userBAppearance = {
       pawnColor: "blue",
+      dogSkin: "dog-puppy-10.svg",
       catSkin: "cat4.svg",
       mouseSkin: "mouse2.svg",
+      elephantSkin: "elephant-01.svg",
     };
 
     // 1. User A creates a matchmaking game with appearance

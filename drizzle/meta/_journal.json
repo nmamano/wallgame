@@ -190,6 +190,13 @@
       "when": 1785943142105,
       "tag": "0026_colorful_white_tiger",
       "breakpoints": true
+    },
+    {
+      "idx": 27,
+      "version": "7",
+      "when": 1786647302725,
+      "tag": "0027_animal_pawn_appearance",
+      "breakpoints": true
     }
   ]
 }
