@@ -14,16 +14,20 @@ import type {
   Cell,
 } from "../../../shared/domain/game-types";
 import type { GameState } from "../../../shared/domain/game-state";
+import { pawnId } from "../../../shared/domain/game-utils";
 import {
   isMovablePawnType,
   pawnCell,
   requirePawnCell,
 } from "../../../shared/domain/pawns";
-import type { BoardPawn, Arrow } from "@/components/board";
+import type {
+  BoardPawn,
+  Arrow,
+  BoardIntentProjection,
+} from "@/components/board";
 import {
-  canEnqueue,
-  enqueueToggle,
-  resolveDoubleStep,
+  resolveLocalIntent,
+  type ResolvedLocalIntent,
   promote,
   MAX_LOCAL_ACTIONS,
 } from "@/game/local-actions";
@@ -131,6 +135,12 @@ export interface BoardInteractionsResult {
     targetRow: number,
     targetCol: number,
   ) => void;
+  resolveBoardIntent: (action: Action, pawnId?: string) => ResolvedLocalIntent;
+  executeBoardIntent: (intent: ResolvedLocalIntent, action: Action) => void;
+  projectBoardIntent: (
+    intent: ResolvedLocalIntent,
+    action: Action,
+  ) => BoardIntentProjection | null;
 
   // Annotation handlers for Board component
   onWallSlotRightClick: (
@@ -384,76 +394,157 @@ export function useBoardInteractions(
     setError,
   ]);
 
-  /**
-   * Attempts to enqueue an action. Returns the outcome.
-   */
-  const enqueueAction = useCallback(
-    (
-      action: Action,
-      mode: QueueMode,
-      errorMessage?: string,
-    ): "added" | "removed" | "rejected" => {
-      if (!gameState || !controllablePlayerId || !mode) {
-        setError("Game is still loading");
-        return "rejected";
+  const resolveBoardIntent = useCallback(
+    (action: Action, sourcePawnId?: string): ResolvedLocalIntent => {
+      if (!queueMode || !gameState || !controllablePlayerId) {
+        return { kind: "no-op" };
       }
-
       const queue =
-        mode === "staged"
+        queueMode === "staged"
           ? stagedActionsRef.current
           : premovedActionsRef.current;
-      const setQueue =
-        mode === "staged" ? setStagedActions : setPremovedActions;
-
-      const nextQueue = enqueueToggle(queue, action);
-      const removed = nextQueue.length < queue.length;
-
-      if (removed) {
-        setQueue(nextQueue);
-        setError(null);
-        if (sfxEnabled) {
-          play(action.type === "wall" ? sounds.wallUndo : sounds.pawnUndo);
-        }
-        return "removed";
-      }
-
-      if (
-        !canEnqueue({
-          state: gameState,
-          playerId: controllablePlayerId,
-          queue,
-          action,
-          maxActions: mode === "staged" ? maxStagedActions : MAX_LOCAL_ACTIONS,
-        })
-      ) {
-        setError(
-          errorMessage ??
-            (mode === "premove" ? "Premove is illegal." : "Illegal move."),
-        );
-        return "rejected";
-      }
-
-      setQueue(nextQueue);
-      setError(null);
-      if (sfxEnabled) {
-        play(action.type === "wall" ? sounds.wall : sounds.pawn);
-      }
-
-      // Auto-commit when the current turn's remaining action budget is filled.
-      if (mode === "staged" && nextQueue.length === maxStagedActions) {
-        commitStagedActions(nextQueue);
-      }
-
-      return "added";
+      const pawn =
+        action.type === "wall"
+          ? undefined
+          : boardPawns.find(
+              (candidate) =>
+                candidate.id === sourcePawnId ||
+                (candidate.playerId === controllablePlayerId &&
+                  candidate.type === action.type),
+            );
+      const originalCell =
+        action.type === "wall"
+          ? undefined
+          : requirePawnCell(gameState.pawns, controllablePlayerId, action.type);
+      return resolveLocalIntent({
+        state: gameState,
+        playerId: controllablePlayerId,
+        queue,
+        action,
+        maxActions:
+          queueMode === "staged" ? maxStagedActions : MAX_LOCAL_ACTIONS,
+        mode: queueMode,
+        ...(pawn ? { currentCell: pawn.cell } : {}),
+        ...(originalCell ? { originalCell } : {}),
+        pawnBlocked:
+          action.type !== "wall" &&
+          isPawnMoveBlocked(action.type, mouseMoveLocked),
+        blockedReason: mouseMoveLockedMessage,
+      });
     },
     [
-      gameState,
+      boardPawns,
       controllablePlayerId,
+      gameState,
       maxStagedActions,
-      sfxEnabled,
-      setError,
-      commitStagedActions,
+      mouseMoveLocked,
+      mouseMoveLockedMessage,
+      queueMode,
     ],
+  );
+
+  const executeBoardIntent = useCallback(
+    (intent: ResolvedLocalIntent, action: Action) => {
+      if (!queueMode) return;
+      if (intent.kind === "reject") {
+        setError(intent.reason);
+        return;
+      }
+      if (intent.kind === "no-op") return;
+      if (intent.kind === "commit-double-step") {
+        if (sfxEnabled) play(sounds.pawn);
+        commitStagedActions(intent.actions);
+        return;
+      }
+      const setQueue =
+        queueMode === "staged" ? setStagedActions : setPremovedActions;
+      setQueue(intent.nextQueue);
+      setError(null);
+      if (sfxEnabled) {
+        const sound =
+          intent.kind === "remove"
+            ? action.type === "wall"
+              ? sounds.wallUndo
+              : sounds.pawnUndo
+            : action.type === "wall"
+              ? sounds.wall
+              : sounds.pawn;
+        play(sound);
+      }
+      clearSelection();
+      if (intent.kind === "add" && intent.autoCommit) {
+        commitStagedActions(intent.nextQueue);
+      }
+    },
+    [clearSelection, commitStagedActions, queueMode, setError, sfxEnabled],
+  );
+
+  const projectBoardIntent = useCallback(
+    (
+      intent: ResolvedLocalIntent,
+      sourceAction: Action,
+    ): BoardIntentProjection | null => {
+      if (!queueMode || !gameState || !controllablePlayerId) return null;
+      if (intent.kind === "reject" || intent.kind === "no-op") return null;
+      const actions =
+        intent.kind === "commit-double-step"
+          ? intent.actions
+          : intent.nextQueue;
+      const previewState =
+        queueMode === "staged" ? ("staged" as const) : ("premoved" as const);
+      const pawnCells: BoardIntentProjection["pawnCells"] = {};
+      for (const action of actions) {
+        if (action.type === "wall") continue;
+        const pawn = gameState
+          .getPawns()
+          .find(
+            (candidate) =>
+              candidate.playerId === controllablePlayerId &&
+              candidate.type === action.type,
+          );
+        if (pawn) {
+          pawnCells[pawnId(pawn)] = {
+            cell: [action.target[0], action.target[1]],
+            previewState,
+          };
+        }
+      }
+      if (intent.kind === "remove" && sourceAction.type !== "wall") {
+        const pawn = gameState
+          .getPawns()
+          .find(
+            (candidate) =>
+              candidate.playerId === controllablePlayerId &&
+              candidate.type === sourceAction.type,
+          );
+        if (pawn) {
+          pawnCells[pawnId(pawn)] = {
+            cell: [pawn.cell[0], pawn.cell[1]],
+            previewState: undefined,
+          };
+        }
+      }
+      return {
+        actions,
+        mode: queueMode,
+        arrows: buildArrowsForQueue(
+          gameState,
+          actions,
+          controllablePlayerId,
+          previewState,
+        ),
+        walls: actions
+          .filter((action) => action.type === "wall")
+          .map((action) => ({
+            cell: [action.target[0], action.target[1]],
+            orientation: action.wallOrientation!,
+            playerId: controllablePlayerId,
+            state: previewState,
+          })),
+        pawnCells,
+      };
+    },
+    [controllablePlayerId, gameState, queueMode],
   );
 
   /**
@@ -467,143 +558,19 @@ export function useBoardInteractions(
 
       const pawn = boardPawns.find((p) => p.id === pawnId);
       if (!pawn || pawn.playerId !== controllablePlayerId) return;
-      // Same cell = no-op
-      if (pawn.cell[0] === targetRow && pawn.cell[1] === targetCol) return;
-
-      // Refuses to move: a home never does, a mouse when the variant locks it.
-      // Spelled out rather than via isPawnMoveBlocked so that the type guard
-      // narrows pawn.type to something an Action can actually carry.
-      if (
-        !isMovablePawnType(pawn.type) ||
-        (mouseMoveLocked && pawn.type === "mouse")
-      ) {
-        setError(mouseMoveLockedMessage);
-        clearSelection();
-        return;
-      }
-
-      const pawnType = pawn.type;
-
-      const queue =
-        queueMode === "staged"
-          ? stagedActionsRef.current
-          : premovedActionsRef.current;
-      const setQueue =
-        queueMode === "staged" ? setStagedActions : setPremovedActions;
-
-      // Check if there's already a staged action for this pawn type
-      const existingStagedPawnAction = queue.find(
-        (action) => action.type === pawnType,
-      );
-
-      if (existingStagedPawnAction && gameState) {
-        // Get the pawn's ORIGINAL position from gameState
-        const originalCell = requirePawnCell(
-          gameState.pawns,
-          controllablePlayerId,
-          pawnType,
-        );
-
-        // Case 1: Dragging back to original position = undo the staged action
-        if (originalCell[0] === targetRow && originalCell[1] === targetCol) {
-          setQueue((prev) => prev.filter((a) => a.type !== pawnType));
-          clearSelection();
-          setError(null);
-          if (sfxEnabled) {
-            play(sounds.pawnUndo);
-          }
-          return;
-        }
-
-        // Case 2: Moving from staged position - only allow distance 1
-        // Use the staged action's target position, not pawn.cell, since
-        // boardPawns might have original positions when passed from parent
-        const stagedPosition = existingStagedPawnAction.target;
-        const distanceFromStaged =
-          Math.abs(stagedPosition[0] - targetRow) +
-          Math.abs(stagedPosition[1] - targetCol);
-
-        if (distanceFromStaged > 1) {
-          setError(
-            "You can only move 1 cell when you already have a staged action.",
-          );
-          return;
-        }
-
-        const baseAction: Action = {
-          type: pawnType,
-          target: [targetRow, targetCol],
-        };
-        const outcome = enqueueAction(
-          baseAction,
-          queueMode,
-          queueMode === "premove" ? "Premove is illegal." : "Illegal move.",
-        );
-        if (outcome !== "rejected") {
-          clearSelection();
-        }
-        return;
-      }
-
-      // No existing staged action for this pawn - check for double step
-      const baseAction: Action = {
-        type: pawnType,
+      if (!isMovablePawnType(pawn.type)) return;
+      const action: Action = {
+        type: pawn.type,
         target: [targetRow, targetCol],
       };
-
-      const doubleStepSequence = resolveDoubleStep({
-        state: gameState,
-        playerId: controllablePlayerId,
-        action: baseAction,
-      });
-
-      if (doubleStepSequence) {
-        if (queueMode === "staged" && maxStagedActions < 2) {
-          setError("Only one action remains in this turn.");
-          return;
-        }
-        if (queue.length > 0) {
-          setError(
-            "You can't make a double move after staging another action.",
-          );
-          return;
-        }
-        if (sfxEnabled) {
-          play(sounds.pawn);
-        }
-        if (queueMode === "staged") {
-          commitStagedActions(doubleStepSequence);
-        } else {
-          setPremovedActions(doubleStepSequence);
-          setError(null);
-        }
-        clearSelection();
-        return;
-      }
-
-      // Regular single action
-      const outcome = enqueueAction(
-        baseAction,
-        queueMode,
-        queueMode === "premove" ? "Premove is illegal." : "Illegal move.",
-      );
-      if (outcome !== "rejected") {
-        clearSelection();
-      }
+      executeBoardIntent(resolveBoardIntent(action, pawnId), action);
     },
     [
       boardPawns,
-      clearSelection,
-      commitStagedActions,
       controllablePlayerId,
-      enqueueAction,
-      gameState,
-      mouseMoveLocked,
-      mouseMoveLockedMessage,
-      maxStagedActions,
       queueMode,
-      setError,
-      sfxEnabled,
+      executeBoardIntent,
+      resolveBoardIntent,
     ],
   );
 
@@ -713,15 +680,9 @@ export function useBoardInteractions(
         target: [row, col] as Cell,
         wallOrientation: orientation,
       };
-      enqueueAction(
-        newAction,
-        queueMode,
-        queueMode === "premove"
-          ? "Premove wall placement is illegal."
-          : "Illegal wall placement.",
-      );
+      executeBoardIntent(resolveBoardIntent(newAction), newAction);
     },
-    [enqueueAction, queueMode],
+    [executeBoardIntent, queueMode, resolveBoardIntent],
   );
 
   const handlePawnDragStart = useCallback(
@@ -824,6 +785,9 @@ export function useBoardInteractions(
     handlePawnDragStart,
     handlePawnDragEnd,
     handleCellDrop,
+    resolveBoardIntent,
+    executeBoardIntent,
+    projectBoardIntent,
 
     // Annotation handlers
     onWallSlotRightClick: toggleWallAnnotation,

@@ -7,6 +7,7 @@ import type {
   MutableRefObject,
   MouseEvent,
   TouchEvent as ReactTouchEvent,
+  PointerEvent as ReactPointerEvent,
 } from "react";
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
@@ -35,6 +36,8 @@ import {
 import type { Pawn } from "../../../shared/domain/game-types";
 import { isMovablePawnType } from "../../../shared/domain/pawns";
 import { pawnId } from "../../../shared/domain/game-utils";
+import type { Action } from "../../../shared/domain/game-types";
+import type { ResolvedLocalIntent } from "@/game/local-actions";
 
 type WallState =
   | "placed"
@@ -99,6 +102,12 @@ export interface BoardProps {
   onPawnDragStart?: (pawnId: string) => void;
   onPawnDragEnd?: () => void;
   onCellDrop?: (pawnId: string, targetRow: number, targetCol: number) => void;
+  resolveBoardIntent?: (action: Action, pawnId?: string) => ResolvedLocalIntent;
+  executeBoardIntent?: (intent: ResolvedLocalIntent, action: Action) => void;
+  projectBoardIntent?: (
+    intent: ResolvedLocalIntent,
+    action: Action,
+  ) => BoardIntentProjection | null;
   className?: string;
   draggingPawnId?: string | null;
   selectedPawnId?: string | null;
@@ -126,6 +135,19 @@ export interface BoardProps {
   /** Edge-to-edge mode: strips internal padding and border-radius */
   flush?: boolean;
 }
+
+export interface BoardIntentProjection {
+  actions: Action[];
+  mode: "staged" | "premove";
+  arrows: Arrow[];
+  walls: WallPositionWithState[];
+  pawnCells: Record<
+    string,
+    { cell: Cell; previewState: "staged" | "premoved" | undefined }
+  >;
+}
+
+const TOUCH_SLIDE_HINT_DISMISSED_KEY = "wallgame-touch-slide-hint-dismissed-v1";
 
 interface WallMaps {
   vertical: Map<string, WallPositionWithState>;
@@ -267,6 +289,9 @@ export function Board({
   onPawnDragStart,
   onPawnDragEnd,
   onCellDrop,
+  resolveBoardIntent,
+  executeBoardIntent,
+  projectBoardIntent,
   className = "p-4",
   draggingPawnId = null,
   selectedPawnId = null,
@@ -287,10 +312,14 @@ export function Board({
   flush = false,
 }: BoardProps) {
   // Generate IDs for pawns internally
-  const pawnsWithIds: BoardPawn[] = pawns.map((pawn) => ({
-    ...pawn,
-    id: pawnId(pawn),
-  }));
+  const pawnsWithIds = useMemo<BoardPawn[]>(
+    () =>
+      pawns.map((pawn) => ({
+        ...pawn,
+        id: pawnId(pawn),
+      })),
+    [pawns],
+  );
 
   const isPawnInteractionDisabled = (type: Pawn["type"]) =>
     pawnInteractionDisabled(type, disableMousePawnInteraction);
@@ -332,11 +361,91 @@ export function Board({
     x: number;
     y: number;
   } | null>(null);
-  const [suppressNextClick, setSuppressNextClick] = useState(false); // Suppress exactly one ghost click after drag
+  const suppressNextClickRef = useRef(false);
   const touchPosRef = useRef<{ x: number; y: number } | null>(null); // Live position for calculations
   const touchStartPos = useRef<{ x: number; y: number } | null>(null);
   const isDraggingRef = useRef(false);
   const dragStartNotifiedRef = useRef(false); // Track if we notified parent of drag start
+  const [touchIntent, setTouchIntent] = useState<{
+    action: Action;
+    intent: ResolvedLocalIntent;
+  } | null>(null);
+  const pointerGestureRef = useRef<{
+    pointerId: number;
+    startX: number;
+    startY: number;
+    pawnId?: string;
+    pawnType?: Pawn["type"];
+    dragging: boolean;
+    cancelled: boolean;
+  } | null>(null);
+  const touchIntentRef = useRef<typeof touchIntent>(null);
+  const updateTouchIntent = useCallback((next: typeof touchIntent) => {
+    touchIntentRef.current = next;
+    setTouchIntent(next);
+  }, []);
+  const [showTouchHint, setShowTouchHint] = useState(false);
+  const [pointerGestureState, setPointerGestureState] = useState<
+    "idle" | "pressed" | "dragging"
+  >("idle");
+  const [pointerGestureId, setPointerGestureId] = useState<number | null>(null);
+  const touchProjection = useMemo(
+    () =>
+      touchIntent && projectBoardIntent
+        ? projectBoardIntent(touchIntent.intent, touchIntent.action)
+        : null,
+    [projectBoardIntent, touchIntent],
+  );
+  const renderedPawns = useMemo(
+    () =>
+      pawnsWithIds.map((pawn) => {
+        const projected = touchProjection?.pawnCells[pawn.id];
+        return projected
+          ? {
+              ...pawn,
+              cell: projected.cell,
+              previewState: projected.previewState,
+            }
+          : pawn;
+      }),
+    [pawnsWithIds, touchProjection],
+  );
+  const renderedWalls = useMemo(
+    () =>
+      touchProjection
+        ? [
+            ...walls.filter(
+              (wall) => wall.state !== "staged" && wall.state !== "premoved",
+            ),
+            ...touchProjection.walls,
+          ]
+        : walls,
+    [touchProjection, walls],
+  );
+  const renderedArrows = useMemo(
+    () =>
+      touchProjection
+        ? [
+            ...arrows.filter(
+              (arrow) => arrow.type !== "staged" && arrow.type !== "premoved",
+            ),
+            ...touchProjection.arrows,
+          ]
+        : arrows,
+    [arrows, touchProjection],
+  );
+
+  useEffect(() => {
+    if (!resolveBoardIntent || !executeBoardIntent) return;
+    if (!window.matchMedia("(pointer: coarse)").matches) return;
+    if (window.localStorage.getItem(TOUCH_SLIDE_HINT_DISMISSED_KEY)) return;
+    setShowTouchHint(true);
+  }, [executeBoardIntent, resolveBoardIntent]);
+
+  const dismissTouchHint = useCallback(() => {
+    window.localStorage.setItem(TOUCH_SLIDE_HINT_DISMISSED_KEY, "1");
+    setShowTouchHint(false);
+  }, []);
 
   useEffect(() => {
     const node = gridRef.current;
@@ -430,7 +539,7 @@ export function Board({
     return heightSansGaps / rows;
   }, [rows, gridMetrics.cellHeight, gridMetrics.height, gridMetrics.gapY]);
 
-  const wallMaps = useMemo(() => buildWallMaps(walls), [walls]);
+  const wallMaps = useMemo(() => buildWallMaps(renderedWalls), [renderedWalls]);
   const resolveWallColor = useCallback(
     (wall: WallPositionWithState) => getWallColor(wall, playerColors),
     [playerColors],
@@ -438,7 +547,7 @@ export function Board({
 
   // Get pawns for a cell
   const getPawnsForCell = (row: number, col: number): BoardPawn[] => {
-    return pawnsWithIds.filter((p) => p.cell[0] === row && p.cell[1] === col);
+    return renderedPawns.filter((p) => p.cell[0] === row && p.cell[1] === col);
   };
 
   const dragEnabled = Boolean(onCellDrop);
@@ -447,21 +556,21 @@ export function Board({
   // Include both placed and staged walls so distance calculations account for staged walls
   const gameGrid = useMemo(() => {
     const g = new Grid(cols, rows, "standard");
-    walls.forEach((pWall) => {
+    renderedWalls.forEach((pWall) => {
       if (pWall.state === "placed" || pWall.state === "staged") {
         g.addWall(pWall);
       }
     });
     return g;
-  }, [walls, cols, rows]);
+  }, [renderedWalls, cols, rows]);
 
   // Calculate valid drop cells when dragging or when a pawn is selected
   const validDropCells = useMemo(() => {
     // Use draggingPawnId if dragging, otherwise use selectedPawnId
-    const activePawnId = draggingPawnId ?? selectedPawnId;
+    const activePawnId = draggingPawnId ?? selectedPawnId ?? touchDragPawnId;
     if (!activePawnId || !dragEnabled) return new Set<string>();
 
-    const pawn = pawnsWithIds.find((p) => p.id === activePawnId);
+    const pawn = renderedPawns.find((p) => p.id === activePawnId);
     if (!pawn) return new Set<string>();
 
     const validCells = new Set<string>();
@@ -491,8 +600,9 @@ export function Board({
   }, [
     draggingPawnId,
     selectedPawnId,
+    touchDragPawnId,
     dragEnabled,
-    pawnsWithIds,
+    renderedPawns,
     stagedActionsCount,
     gameGrid,
     rows,
@@ -700,6 +810,9 @@ export function Board({
           1,
         )}`}
         preserveAspectRatio="none"
+        data-rendered-arrow-type={arrow.type}
+        data-rendered-arrow-from={`${arrow.from[0]}-${arrow.from[1]}`}
+        data-rendered-arrow-to={`${arrow.to[0]}-${arrow.to[1]}`}
       >
         <defs>
           <marker
@@ -1000,6 +1113,221 @@ export function Board({
     [cellWidthPx, cellHeightPx, gridMetrics.gapX, gridMetrics.gapY, rows, cols],
   );
 
+  const resolveTargetAtPoint = useCallback(
+    (clientX: number, clientY: number, pawnType?: Pawn["type"]) => {
+      const hit = document.elementFromPoint(
+        clientX,
+        clientY,
+      ) as HTMLElement | null;
+      const wall = hit?.closest<HTMLElement>("[data-wall-row]");
+      if (!pawnType && wall) {
+        return {
+          type: "wall" as const,
+          target: [
+            Number(wall.dataset.wallRow),
+            Number(wall.dataset.wallCol),
+          ] as Cell,
+          wallOrientation: wall.dataset.wallOrientation as WallOrientation,
+        };
+      }
+      if (pawnType) {
+        const cell = getCellFromPoint(clientX, clientY);
+        if (cell && isMovablePawnType(pawnType)) {
+          return {
+            type: pawnType,
+            target: [cell.row, cell.col] as Cell,
+          } satisfies Action;
+        }
+      }
+      return null;
+    },
+    [getCellFromPoint],
+  );
+
+  const cancelPointerGesture = useCallback(
+    (suppressClick = true) => {
+      const gesture = pointerGestureRef.current;
+      if (gesture) {
+        gesture.cancelled = true;
+        if (suppressClick) {
+          suppressNextClickRef.current = true;
+          window.setTimeout(() => {
+            suppressNextClickRef.current = false;
+          }, 0);
+        }
+      }
+      pointerGestureRef.current = null;
+      setPointerGestureState("idle");
+      setPointerGestureId(null);
+      updateTouchIntent(null);
+      setTouchPosition(null);
+      setTouchDragPawnId(null);
+    },
+    [updateTouchIntent],
+  );
+
+  const beginPointerGesture = useCallback(
+    (
+      event: ReactPointerEvent<HTMLElement>,
+      source?: { pawnId: string; pawnType: Pawn["type"] },
+    ) => {
+      if (
+        event.pointerType === "mouse" ||
+        !event.isPrimary ||
+        !resolveBoardIntent ||
+        !executeBoardIntent ||
+        pointerGestureRef.current
+      ) {
+        return;
+      }
+      // Keep capture on the stable board node. A projected pawn can move to a
+      // different cell while the contact is down, which reparents its DOM node.
+      gridRef.current?.setPointerCapture(event.pointerId);
+      pointerGestureRef.current = {
+        pointerId: event.pointerId,
+        startX: event.clientX,
+        startY: event.clientY,
+        ...(source ? { pawnId: source.pawnId, pawnType: source.pawnType } : {}),
+        dragging: false,
+        cancelled: false,
+      };
+      setPointerGestureState("pressed");
+      setPointerGestureId(event.pointerId);
+      if (source) setTouchDragPawnId(source.pawnId);
+      const action = resolveTargetAtPoint(
+        event.clientX,
+        event.clientY,
+        source?.pawnType,
+      );
+      updateTouchIntent(
+        action
+          ? {
+              action,
+              intent: resolveBoardIntent(action, source?.pawnId),
+            }
+          : null,
+      );
+    },
+    [
+      executeBoardIntent,
+      resolveBoardIntent,
+      resolveTargetAtPoint,
+      updateTouchIntent,
+    ],
+  );
+
+  useEffect(() => {
+    if (!resolveBoardIntent || !executeBoardIntent) return;
+    const onPointerDown = (event: PointerEvent) => {
+      const gesture = pointerGestureRef.current;
+      if (
+        gesture &&
+        event.pointerId !== gesture.pointerId &&
+        event.pointerType !== "mouse"
+      ) {
+        cancelPointerGesture(true);
+      }
+    };
+    const onPointerMove = (event: PointerEvent) => {
+      const gesture = pointerGestureRef.current;
+      if (
+        !gesture ||
+        event.pointerId !== gesture.pointerId ||
+        gesture.cancelled
+      )
+        return;
+      const distance = Math.hypot(
+        event.clientX - gesture.startX,
+        event.clientY - gesture.startY,
+      );
+      if (!gesture.dragging && distance > 10) {
+        gesture.dragging = true;
+        setPointerGestureState("dragging");
+      }
+      if (!gesture.dragging) return;
+      event.preventDefault();
+      if (gesture.pawnId)
+        setTouchPosition({ x: event.clientX, y: event.clientY });
+      const action = resolveTargetAtPoint(
+        event.clientX,
+        event.clientY,
+        gesture.pawnType,
+      );
+      updateTouchIntent(
+        action
+          ? {
+              action,
+              intent: resolveBoardIntent(action, gesture.pawnId),
+            }
+          : null,
+      );
+    };
+    const finish = (event: PointerEvent, cancelled: boolean) => {
+      const gesture = pointerGestureRef.current;
+      if (!gesture || event.pointerId !== gesture.pointerId) return;
+      const displayed = touchIntentRef.current;
+      if (!cancelled && gesture.dragging && displayed) {
+        const current = resolveBoardIntent(displayed.action, gesture.pawnId);
+        if (
+          JSON.stringify(current) === JSON.stringify(displayed.intent) &&
+          (current.kind === "add" ||
+            current.kind === "remove" ||
+            current.kind === "commit-double-step")
+        ) {
+          executeBoardIntent(current, displayed.action);
+          dismissTouchHint();
+          suppressNextClickRef.current = true;
+        }
+      }
+      cancelPointerGesture(cancelled || gesture.dragging);
+    };
+    const onPointerUp = (event: PointerEvent) => finish(event, false);
+    const onPointerCancel = (event: PointerEvent) => finish(event, true);
+    const onLostPointerCapture = (event: PointerEvent) => {
+      const gesture = pointerGestureRef.current;
+      if (gesture && event.pointerId === gesture.pointerId) {
+        cancelPointerGesture(true);
+      }
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    document.addEventListener("pointermove", onPointerMove, { passive: false });
+    // Capture pointerup before the browser releases implicit pointer capture.
+    // Some touch engines emit lostpointercapture before a bubble-phase
+    // document listener would see pointerup.
+    document.addEventListener("pointerup", onPointerUp, true);
+    document.addEventListener("pointercancel", onPointerCancel, true);
+    document.addEventListener("lostpointercapture", onLostPointerCapture, true);
+    return () => {
+      document.removeEventListener("pointerdown", onPointerDown, true);
+      document.removeEventListener("pointermove", onPointerMove);
+      document.removeEventListener("pointerup", onPointerUp, true);
+      document.removeEventListener("pointercancel", onPointerCancel, true);
+      document.removeEventListener(
+        "lostpointercapture",
+        onLostPointerCapture,
+        true,
+      );
+      if (pointerGestureRef.current) cancelPointerGesture(true);
+    };
+  }, [
+    cancelPointerGesture,
+    dismissTouchHint,
+    executeBoardIntent,
+    resolveBoardIntent,
+    resolveTargetAtPoint,
+    updateTouchIntent,
+  ]);
+
+  useEffect(() => {
+    const gesture = pointerGestureRef.current;
+    const displayed = touchIntentRef.current;
+    if (!gesture || !displayed || !resolveBoardIntent) return;
+    updateTouchIntent({
+      action: displayed.action,
+      intent: resolveBoardIntent(displayed.action, gesture.pawnId),
+    });
+  }, [resolveBoardIntent, updateTouchIntent]);
+
   // Touch event handlers
   const handleTouchStart = useCallback(
     (
@@ -1008,6 +1336,7 @@ export function Board({
       pawnPlayerId: PlayerId,
       pawnType: Pawn["type"],
     ) => {
+      if (resolveBoardIntent && executeBoardIntent) return;
       if (pawnInteractionDisabled(pawnType, disableMousePawnInteraction))
         return;
       const isControllable =
@@ -1030,6 +1359,8 @@ export function Board({
       forceReadOnly,
       controllablePlayerId,
       dragEnabled,
+      executeBoardIntent,
+      resolveBoardIntent,
     ],
   );
 
@@ -1048,6 +1379,7 @@ export function Board({
 
   // Global touch move/end handlers (attached to document for reliability)
   useEffect(() => {
+    if (resolveBoardIntent && executeBoardIntent) return;
     if (!touchDragPawnId) return;
 
     const handleGlobalTouchMove = (event: TouchEvent) => {
@@ -1105,7 +1437,7 @@ export function Board({
 
       // Suppress exactly one ghost click if we actually dragged
       if (wasDragging) {
-        setSuppressNextClick(true);
+        suppressNextClickRef.current = true;
       }
     };
 
@@ -1120,7 +1452,7 @@ export function Board({
       document.removeEventListener("touchend", handleGlobalTouchEnd);
       document.removeEventListener("touchcancel", handleGlobalTouchEnd);
     };
-  }, [touchDragPawnId]); // Only depends on touchDragPawnId now
+  }, [executeBoardIntent, resolveBoardIntent, touchDragPawnId]);
 
   const resolvePawnVisual = (pawn: BoardPawn) => {
     const pawnStyle = pawn.pawnStyle;
@@ -1138,7 +1470,7 @@ export function Board({
   const renderDragGhost = () => {
     if (!touchDragPawnId || !touchPosition) return null;
 
-    const pawn = pawnsWithIds.find((p) => p.id === touchDragPawnId);
+    const pawn = renderedPawns.find((p) => p.id === touchDragPawnId);
     if (!pawn) return null;
 
     const pawnColor = resolvePawnColor(pawn);
@@ -1411,8 +1743,8 @@ export function Board({
       event.stopPropagation();
       if (!isControllable) return;
       // Suppress exactly one ghost click after touch drag
-      if (suppressNextClick) {
-        setSuppressNextClick(false);
+      if (suppressNextClickRef.current) {
+        suppressNextClickRef.current = false;
         return;
       }
       onPawnClick?.(pawn.id);
@@ -1475,6 +1807,13 @@ export function Board({
         onTouchStart={(e) =>
           handleTouchStart(e, pawn.id, pawn.playerId, pawn.type)
         }
+        onPointerDown={(event) => {
+          if (!isControllable || isMouseInteractionDisabled) return;
+          beginPointerGesture(event, {
+            pawnId: pawn.id,
+            pawnType: pawn.type,
+          });
+        }}
         aria-disabled={!isControllable}
       >
         {content}
@@ -1484,7 +1823,7 @@ export function Board({
 
   return (
     <div
-      className={`flex items-center justify-center w-full ${className} ${maxWidth}`}
+      className={`relative flex items-center justify-center w-full ${className} ${maxWidth}`}
     >
       <div
         className={
@@ -1575,7 +1914,22 @@ export function Board({
             style={{
               gridTemplateColumns: colTemplate,
               gap: gapValue,
+              touchAction:
+                resolveBoardIntent && executeBoardIntent ? "none" : undefined,
             }}
+            data-touch-intent-kind={touchIntent?.intent.kind}
+            data-touch-gesture-state={pointerGestureState}
+            data-touch-pointer-id={pointerGestureId ?? undefined}
+            data-touch-projection-mode={touchProjection?.mode}
+            data-touch-projection-actions={touchProjection?.actions.length}
+            data-touch-projection-sequence={touchProjection?.actions
+              .map(
+                (action) =>
+                  `${action.type}:${action.target[0]}:${action.target[1]}:${
+                    action.type === "wall" ? action.wallOrientation : "pawn"
+                  }`,
+              )
+              .join("|")}
           >
             {/* Wall click areas - horizontal (between rows) */}
             {cellWidthPx > 0 &&
@@ -1588,7 +1942,17 @@ export function Board({
                   return (
                     <div
                       key={`horizontal-wall-click-${rowIndex}-${colIndex}`}
-                      className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
+                      className={`absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20 ${
+                        touchIntent?.action.type === "wall" &&
+                        touchIntent.action.target[0] === rowIndex + 1 &&
+                        touchIntent.action.target[1] === colIndex &&
+                        touchIntent.action.wallOrientation === "horizontal"
+                          ? "bg-blue-200/20 dark:bg-primary/20"
+                          : ""
+                      }`}
+                      data-wall-row={rowIndex + 1}
+                      data-wall-col={colIndex}
+                      data-wall-orientation="horizontal"
                       style={{
                         width: `${rect.width + 2}px`,
                         height: `${gapHeight}px`,
@@ -1596,13 +1960,18 @@ export function Board({
                         left: `${rect.left - 1}px`,
                         zIndex: 15,
                       }}
-                      onClick={() =>
+                      onPointerDown={(event) => beginPointerGesture(event)}
+                      onClick={() => {
+                        if (suppressNextClickRef.current) {
+                          suppressNextClickRef.current = false;
+                          return;
+                        }
                         onWallClick?.(
                           rowIndex + 1,
                           colIndex,
                           "horizontal" as WallOrientation,
-                        )
-                      }
+                        );
+                      }}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         // Don't add wall annotation if we're in an arrow drag
@@ -1629,7 +1998,17 @@ export function Board({
                   return (
                     <div
                       key={`vertical-wall-click-${rowIndex}-${colIndex}`}
-                      className="absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20"
+                      className={`absolute cursor-pointer hover:bg-blue-200/20 dark:hover:bg-primary/20 ${
+                        touchIntent?.action.type === "wall" &&
+                        touchIntent.action.target[0] === rowIndex &&
+                        touchIntent.action.target[1] === colIndex &&
+                        touchIntent.action.wallOrientation === "vertical"
+                          ? "bg-blue-200/20 dark:bg-primary/20"
+                          : ""
+                      }`}
+                      data-wall-row={rowIndex}
+                      data-wall-col={colIndex}
+                      data-wall-orientation="vertical"
                       style={{
                         width: `${gapWidth}px`,
                         height: `${rect.height + 2}px`,
@@ -1637,13 +2016,18 @@ export function Board({
                         left: `${rect.right}px`,
                         zIndex: 15,
                       }}
-                      onClick={() =>
+                      onPointerDown={(event) => beginPointerGesture(event)}
+                      onClick={() => {
+                        if (suppressNextClickRef.current) {
+                          suppressNextClickRef.current = false;
+                          return;
+                        }
                         onWallClick?.(
                           rowIndex,
                           colIndex,
                           "vertical" as WallOrientation,
-                        )
-                      }
+                        );
+                      }}
                       onContextMenu={(event) => {
                         event.preventDefault();
                         // Don't add wall annotation if we're in an arrow drag
@@ -1660,7 +2044,7 @@ export function Board({
               )}
 
             {/* Render arrows */}
-            {arrows.map((arrow, index) => renderArrow(arrow, index))}
+            {renderedArrows.map((arrow, index) => renderArrow(arrow, index))}
             {/* Render last move arrow */}
             {renderLastMoveArrows()}
             {/* Render annotations */}
@@ -1669,7 +2053,7 @@ export function Board({
             {renderMoveHighlights()}
 
             {/* Render walls */}
-            {walls.map((pWall, index) => {
+            {renderedWalls.map((pWall, index) => {
               if (cellWidthPx === 0 || cellHeightPx === 0) {
                 return null;
               }
@@ -1742,6 +2126,10 @@ export function Board({
                   key={`wall-${index}`}
                   style={style}
                   className={`shadow-md ${borderStyle}`}
+                  data-rendered-wall-row={pWall.cell[0]}
+                  data-rendered-wall-col={pWall.cell[1]}
+                  data-rendered-wall-orientation={pWall.orientation}
+                  data-rendered-wall-state={pWall.state}
                   onContextMenu={(e) => {
                     e.preventDefault();
                     // Don't add wall annotation if we're in an arrow drag
@@ -1775,11 +2163,21 @@ export function Board({
                       isLight
                         ? "bg-amber-300/45 dark:bg-muted hover:bg-amber-400/70 dark:hover:bg-accent/40"
                         : "bg-amber-200/50 dark:bg-muted/50 hover:bg-amber-300/60 dark:hover:bg-accent/30"
+                    } ${
+                      touchIntent?.action.type !== "wall" &&
+                      touchIntent?.action.target[0] === rowIndex &&
+                      touchIntent.action.target[1] === colIndex
+                        ? isLight
+                          ? "bg-amber-400/70 dark:bg-accent/40"
+                          : "bg-amber-300/60 dark:bg-accent/30"
+                        : ""
                     }`}
+                    data-board-cell-row={rowIndex}
+                    data-board-cell-col={colIndex}
                     onClick={() => {
                       // Suppress exactly one ghost click after touch drag
-                      if (suppressNextClick) {
-                        setSuppressNextClick(false);
+                      if (suppressNextClickRef.current) {
+                        suppressNextClickRef.current = false;
                         return;
                       }
                       onCellClick?.(rowIndex, colIndex);
@@ -1839,6 +2237,19 @@ export function Board({
       </div>
       {/* Touch drag ghost */}
       {renderDragGhost()}
+      {showTouchHint && (
+        <div className="absolute right-2 top-2 z-50 flex max-w-48 items-center gap-2 rounded-full border border-border bg-background/95 px-3 py-1.5 text-xs text-muted-foreground shadow-md">
+          <span>Hold and slide for precise placement.</span>
+          <button
+            type="button"
+            className="text-foreground"
+            aria-label="Dismiss touch placement hint"
+            onClick={dismissTouchHint}
+          >
+            ×
+          </button>
+        </div>
+      )}
     </div>
   );
 }

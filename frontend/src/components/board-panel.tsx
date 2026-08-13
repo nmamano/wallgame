@@ -61,6 +61,9 @@ interface BoardPanelProps {
   onPawnDragStart: (pawnId: string) => void;
   onPawnDragEnd: () => void;
   onCellDrop: (pawnId: string, targetRow: number, targetCol: number) => void;
+  resolveBoardIntent: NonNullable<BoardProps["resolveBoardIntent"]>;
+  executeBoardIntent: NonNullable<BoardProps["executeBoardIntent"]>;
+  projectBoardIntent: NonNullable<BoardProps["projectBoardIntent"]>;
 
   // Staged actions
   stagedActions: unknown[];
@@ -124,6 +127,9 @@ export function BoardPanel({
   onPawnDragStart,
   onPawnDragEnd,
   onCellDrop,
+  resolveBoardIntent,
+  executeBoardIntent,
+  projectBoardIntent,
   stagedActions,
   premovedActions,
   pendingActionsCount,
@@ -209,6 +215,9 @@ export function BoardPanel({
         onPawnDragStart={interactionLocked ? undefined : onPawnDragStart}
         onPawnDragEnd={onPawnDragEnd}
         onCellDrop={interactionLocked ? undefined : onCellDrop}
+        resolveBoardIntent={interactionLocked ? undefined : resolveBoardIntent}
+        executeBoardIntent={interactionLocked ? undefined : executeBoardIntent}
+        projectBoardIntent={interactionLocked ? undefined : projectBoardIntent}
         lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
         lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
         lastWalls={lastWalls}
