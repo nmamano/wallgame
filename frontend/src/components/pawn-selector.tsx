@@ -10,6 +10,7 @@ import {
 import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { colorFilterMap } from "@/lib/player-colors";
+import { PawnImage } from "@/components/pawn-image";
 
 interface PawnSelectorProps {
   value: string;
@@ -99,11 +100,11 @@ export function PawnSelector({
           {/* Preview of selected pawn */}
           {selectedPreviewSrc && (
             <div className="h-8 w-8 ml-2 shrink-0">
-              <img
+              <PawnImage
                 src={selectedPreviewSrc}
                 alt="Selected"
-                className="h-full w-full object-contain"
-                style={colorFilter ? { filter: colorFilter } : undefined}
+                className="h-full w-full"
+                imageStyle={colorFilter ? { filter: colorFilter } : undefined}
               />
             </div>
           )}
@@ -144,12 +145,14 @@ export function PawnSelector({
                   }}
                   data-pawn-value={pawn}
                 >
-                  <img
+                  <PawnImage
                     src={`${normalizedBasePath}${pawn}`}
                     alt={pawn}
-                    className="h-full w-full object-contain"
+                    className="h-full w-full"
                     loading="lazy"
-                    style={colorFilter ? { filter: colorFilter } : undefined}
+                    imageStyle={
+                      colorFilter ? { filter: colorFilter } : undefined
+                    }
                   />
                 </Button>
               ))}

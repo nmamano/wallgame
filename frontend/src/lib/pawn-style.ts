@@ -50,3 +50,13 @@ export const resolvePawnStyleSrc = (
 
   return assetUrl(`/pawns/${type}/${ensureSvgExtension(normalized)}`);
 };
+
+export const resolvePawnBackingSrc = (src: string): string | null => {
+  if (/^https?:\/\//i.test(src)) return null;
+  const match = /\/pawns\/(cat|mouse|home)\/([^/?]+)\.svg(?:[?#]|$)/i.exec(src);
+  if (!match) return null;
+  return src.replace(
+    /\/pawns\/(cat|mouse|home)\/([^/?]+)\.svg(?:[?#].*)?$/i,
+    "/pawn-backings/$1/$2.png",
+  );
+};

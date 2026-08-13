@@ -2,6 +2,7 @@ import { Badge } from "@/components/ui/badge";
 import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
 import { resolvePawnStyleSrc } from "@/lib/pawn-style";
+import { PawnImage } from "@/components/pawn-image";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/lib/gameViewModel";
@@ -97,11 +98,11 @@ export function PlayerTimerCard({
             }}
           >
             {catSvgPath ? (
-              <img
+              <PawnImage
                 src={catSvgPath}
                 alt="avatar"
-                className="w-full h-full object-contain rounded-full"
-                style={colorFilter}
+                className="w-full h-full rounded-full"
+                imageStyle={colorFilter}
               />
             ) : player.type.includes("bot") ? (
               <Bot size={12} />
@@ -167,11 +168,11 @@ export function PlayerTimerCard({
           }}
         >
           {catSvgPath ? (
-            <img
+            <PawnImage
               src={catSvgPath}
               alt="player avatar"
-              className="w-full h-full object-contain rounded-full"
-              style={colorFilter}
+              className="w-full h-full rounded-full"
+              imageStyle={colorFilter}
             />
           ) : player.type.includes("bot") ? (
             <Bot size={16} className="lg:w-5 lg:h-5" />

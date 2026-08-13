@@ -20,6 +20,7 @@ import {
   colorHexMap,
 } from "@/lib/player-colors";
 import { resolvePawnStyleSrc } from "@/lib/pawn-style";
+import { PawnImage } from "@/components/pawn-image";
 import { Grid } from "../../../shared/domain/grid";
 import type {
   PlayerId,
@@ -1153,12 +1154,13 @@ export function Board({
     const content = (() => {
       if (src) {
         return (
-          <img
+          <PawnImage
             src={src}
             alt="pawn"
             draggable={false}
-            className="w-full h-full object-contain drop-shadow-lg"
-            style={
+            className="w-full h-full"
+            imageClassName="drop-shadow-lg"
+            imageStyle={
               colorFilterMap[pawnColor]
                 ? { filter: colorFilterMap[pawnColor] }
                 : undefined
@@ -1449,12 +1451,13 @@ export function Board({
     const content = (() => {
       if (src) {
         return (
-          <img
+          <PawnImage
             src={src}
             alt="pawn"
             draggable={false}
-            className="w-full h-full object-contain drop-shadow-md select-none"
-            style={
+            className="w-full h-full select-none"
+            imageClassName="drop-shadow-md"
+            imageStyle={
               colorFilterMap[pawnColor]
                 ? { filter: colorFilterMap[pawnColor] }
                 : undefined
