@@ -22,6 +22,7 @@ import type {
   VariantParameters,
   VariantSetting,
 } from "../../../shared/contracts/settings";
+import { normalizePawnStyleSelection } from "@/lib/pawn-style";
 type VariantSettingsMap = Record<string, Partial<VariantParameters>>;
 
 // Validate display name
@@ -628,15 +629,18 @@ function useSettingsInternal(
   const pawnColor = isLoggedIn
     ? (dbSettings?.pawnColor ?? "default")
     : localPawnColor;
-  const catPawn = isLoggedIn
-    ? (pawnSettingsFromDb?.cat ?? "default")
-    : localCatPawn;
-  const mousePawn = isLoggedIn
-    ? (pawnSettingsFromDb?.mouse ?? "default")
-    : localMousePawn;
-  const homePawn = isLoggedIn
-    ? (pawnSettingsFromDb?.home ?? "default")
-    : localHomePawn;
+  const catPawn = normalizePawnStyleSelection(
+    isLoggedIn ? pawnSettingsFromDb?.cat : localCatPawn,
+    "cat",
+  );
+  const mousePawn = normalizePawnStyleSelection(
+    isLoggedIn ? pawnSettingsFromDb?.mouse : localMousePawn,
+    "mouse",
+  );
+  const homePawn = normalizePawnStyleSelection(
+    isLoggedIn ? pawnSettingsFromDb?.home : localHomePawn,
+    "home",
+  );
   const gameConfig = isLoggedIn
     ? (gameConfigFromDb ??
       ({ ...defaultGameConfig, rated: false } as GameConfiguration))

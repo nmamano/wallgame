@@ -8,6 +8,32 @@ export const DEFAULT_PAWN_STYLES: Record<PawnStyleType, string> = {
   home: "home2.svg",
 };
 
+export const RETIRED_PAWN_STYLES: Record<PawnStyleType, ReadonlySet<string>> = {
+  cat: new Set(["cat126.svg", "cat150.svg", "cat188.svg", "cat237.svg"]),
+  mouse: new Set(["mouse26.svg", "mouse33.svg", "mouse68.svg", "mouse74.svg"]),
+  home: new Set(),
+};
+
+export const isRetiredPawnStyle = (
+  pawnStyle: string,
+  type: PawnStyleType,
+): boolean => {
+  const filename = pawnStyle
+    .split(/[/?#]/)
+    .filter(Boolean)
+    .at(-1)
+    ?.toLowerCase();
+  return filename ? RETIRED_PAWN_STYLES[type].has(filename) : false;
+};
+
+export const normalizePawnStyleSelection = (
+  pawnStyle: string | undefined,
+  type: PawnStyleType,
+): string =>
+  !pawnStyle || pawnStyle === "default" || isRetiredPawnStyle(pawnStyle, type)
+    ? "default"
+    : pawnStyle;
+
 const ensureSvgExtension = (value: string): string => {
   if (value.includes(".")) {
     return value;
@@ -36,10 +62,9 @@ export const resolvePawnStyleSrc = (
   pawnStyle: string | undefined,
   type: PawnStyleType,
 ): string => {
+  const selection = normalizePawnStyleSelection(pawnStyle, type);
   const requestedStyle =
-    !pawnStyle || pawnStyle === "default"
-      ? DEFAULT_PAWN_STYLES[type]
-      : pawnStyle;
+    selection === "default" ? DEFAULT_PAWN_STYLES[type] : selection;
   const normalized = normalizePath(requestedStyle);
   if (!normalized) {
     return assetUrl(`/pawns/${type}/${DEFAULT_PAWN_STYLES[type]}`);

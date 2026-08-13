@@ -1,6 +1,10 @@
 import { describe, expect, test } from "bun:test";
 import { resolvePawnBackingSrc } from "../frontend/src/lib/pawn-style";
-import { DEFAULT_PAWN_STYLES } from "../frontend/src/lib/pawn-style";
+import {
+  DEFAULT_PAWN_STYLES,
+  isRetiredPawnStyle,
+  normalizePawnStyleSelection,
+} from "../frontend/src/lib/pawn-style";
 
 describe("resolvePawnBackingSrc", () => {
   test("maps each local pawn SVG to its generated backing", () => {
@@ -28,5 +32,27 @@ describe("default pawn styles", () => {
       mouse: "mouse20.svg",
       home: "home2.svg",
     });
+  });
+
+  test("retired saved selections fall back to default", () => {
+    for (const name of [
+      "cat126.svg",
+      "cat150.svg",
+      "cat188.svg",
+      "cat237.svg",
+    ]) {
+      expect(isRetiredPawnStyle(name, "cat")).toBe(true);
+      expect(normalizePawnStyleSelection(name, "cat")).toBe("default");
+    }
+    for (const name of [
+      "mouse26.svg",
+      "mouse33.svg",
+      "mouse68.svg",
+      "mouse74.svg",
+    ]) {
+      expect(isRetiredPawnStyle(name, "mouse")).toBe(true);
+      expect(normalizePawnStyleSelection(name, "mouse")).toBe("default");
+    }
+    expect(normalizePawnStyleSelection("cat3.svg", "cat")).toBe("cat3.svg");
   });
 });

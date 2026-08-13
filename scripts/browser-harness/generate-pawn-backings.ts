@@ -38,19 +38,10 @@ const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
   cat94: [{ kind: "ellipse", x: 150, y: 160, rx: 14, ry: 11 }],
   cat105: [{ kind: "ellipse", x: 150, y: 157, rx: 12, ry: 9 }],
   cat111: [{ kind: "ellipse", x: 150, y: 207, rx: 18, ry: 12 }],
-  cat126: [{ kind: "ellipse", x: 150, y: 160, rx: 12, ry: 9 }],
-  cat150: [{ kind: "ellipse", x: 150, y: 161, rx: 12, ry: 9 }],
   cat168: [{ kind: "ellipse", x: 150, y: 164, rx: 12, ry: 9 }],
   cat174: [{ kind: "ellipse", x: 168, y: 153, rx: 12, ry: 9 }],
   cat179: [{ kind: "ellipse", x: 150, y: 164, rx: 12, ry: 9 }],
   cat181: [{ kind: "ellipse", x: 150, y: 174, rx: 14, ry: 11 }],
-  cat188: [{ kind: "ellipse", x: 150, y: 157, rx: 13, ry: 10 }],
-  cat237: [
-    {
-      kind: "path",
-      d: "M82 252C64 225 55 193 56 157C57 116 77 83 106 58L115 91C130 82 145 76 162 68L160 102C193 116 214 143 215 173C216 208 198 237 181 257Z",
-    },
-  ],
   cat245: [
     { kind: "ellipse", x: 145, y: 184, rx: 91, ry: 61 },
     { kind: "ellipse", x: 191, y: 121, rx: 48, ry: 42 },
@@ -58,34 +49,18 @@ const MASK_CORRECTIONS: Readonly<Record<string, readonly MaskShape[]>> = {
   mouse4: [
     { kind: "ellipse", x: 140, y: 193, rx: 49, ry: 68 },
     { kind: "ellipse", x: 165, y: 126, rx: 43, ry: 39 },
+    { kind: "ellipse", x: 105, y: 92, rx: 27, ry: 39 },
   ],
   mouse18: [
     { kind: "ellipse", x: 149, y: 199, rx: 43, ry: 65 },
     { kind: "ellipse", x: 160, y: 126, rx: 42, ry: 38 },
   ],
-  mouse26: [{ kind: "ellipse", x: 151, y: 145, rx: 17, ry: 13 }],
-  mouse33: [
-    { kind: "ellipse", x: 143, y: 194, rx: 54, ry: 62 },
-    { kind: "ellipse", x: 143, y: 126, rx: 48, ry: 42 },
-  ],
-  mouse68: [{ kind: "ellipse", x: 139, y: 137, rx: 19, ry: 15 }],
-  mouse74: [
-    { kind: "ellipse", x: 150, y: 122, rx: 57, ry: 51 },
-    { kind: "ellipse", x: 151, y: 208, rx: 57, ry: 66 },
-  ],
   home9: [
     {
       kind: "path",
-      d: "M58 142L149 45L242 142L224 159V267H77V159Z",
+      d: "M58 143L149 55L242 143L224 158V256H77V158Z",
     },
   ],
-};
-
-// These roofs have a long, shallow top edge. The global 8px sticker radius is
-// visually heavy there, while the sides and base need the standard outline.
-const NARROW_TOP_OUTLINE: Readonly<Record<string, number>> = {
-  home5: 4,
-  home8: 4,
 };
 
 // Opaque nose marks in these two source drawings read as holes after the player
@@ -99,6 +74,7 @@ const FOREGROUND_CORRECTIONS: Readonly<
 };
 
 const requestedType = process.argv[2];
+const requestedIds = new Set(process.argv.slice(3).map(Number));
 const selectedTypes: readonly PawnType[] = requestedType
   ? PAWN_TYPES.filter((type) => type === requestedType)
   : PAWN_TYPES;
@@ -119,6 +95,11 @@ try {
     await mkdir(foregroundOutputDir, { recursive: true });
     const files = (await readdir(sourceDir))
       .filter((name) => name.endsWith(".svg"))
+      .filter(
+        (name) =>
+          requestedIds.size === 0 ||
+          requestedIds.has(Number(/\d+/.exec(name)?.[0])),
+      )
       .sort((a, b) => a.localeCompare(b, undefined, { numeric: true }));
 
     for (const filename of files) {
@@ -130,7 +111,6 @@ try {
           outlineRadius,
           alphaThreshold,
           maskCorrections,
-          narrowTopOutline,
         }) => {
           const image = new Image();
           image.src = `data:image/svg+xml;base64,${btoa(
@@ -138,13 +118,25 @@ try {
           )}`;
           await image.decode();
 
+          // Match CSS object-contain. Many home SVGs are wider than they are
+          // tall; drawing them directly into a square stretched the generated
+          // backing vertically while the foreground kept its true aspect ratio.
+          const scale = Math.min(
+            size / image.naturalWidth,
+            size / image.naturalHeight,
+          );
+          const drawWidth = image.naturalWidth * scale;
+          const drawHeight = image.naturalHeight * scale;
+          const drawX = (size - drawWidth) / 2;
+          const drawY = (size - drawHeight) / 2;
+
           const sourceCanvas = document.createElement("canvas");
           sourceCanvas.width = sourceCanvas.height = size;
           const sourceContext = sourceCanvas.getContext("2d", {
             willReadFrequently: true,
           });
           if (!sourceContext) throw new Error("Canvas is unavailable");
-          sourceContext.drawImage(image, 0, 0, size, size);
+          sourceContext.drawImage(image, drawX, drawY, drawWidth, drawHeight);
           const sourcePixels = sourceContext.getImageData(0, 0, size, size);
 
           const outside = new Uint8Array(size * size);
@@ -184,7 +176,7 @@ try {
           maskCanvas.width = maskCanvas.height = size;
           const maskContext = maskCanvas.getContext("2d");
           if (!maskContext) throw new Error("Canvas is unavailable");
-          maskContext.drawImage(image, 0, 0, size, size);
+          maskContext.drawImage(image, drawX, drawY, drawWidth, drawHeight);
           maskContext.globalCompositeOperation = "source-in";
           maskContext.fillStyle = "white";
           maskContext.fillRect(0, 0, size, size);
@@ -223,36 +215,6 @@ try {
           }
           outputContext.drawImage(maskCanvas, 0, 0);
 
-          if (narrowTopOutline !== null) {
-            const narrower = document.createElement("canvas");
-            narrower.width = narrower.height = size;
-            const narrowerContext = narrower.getContext("2d");
-            if (!narrowerContext) throw new Error("Canvas is unavailable");
-            for (let step = 0; step < 40; step++) {
-              const angle = (step / 40) * Math.PI * 2;
-              narrowerContext.drawImage(
-                maskCanvas,
-                Math.cos(angle) * narrowTopOutline,
-                Math.sin(angle) * narrowTopOutline,
-              );
-            }
-            narrowerContext.drawImage(maskCanvas, 0, 0);
-            // Only replace the top half. The normal radius remains on the sides
-            // and base, and the mask itself makes the seam invisible.
-            outputContext.clearRect(0, 0, size, size / 2);
-            outputContext.drawImage(
-              narrower,
-              0,
-              0,
-              size,
-              size / 2,
-              0,
-              0,
-              size,
-              size / 2,
-            );
-          }
-
           const outputPixels = outputContext.getImageData(0, 0, size, size);
           for (let index = 0; index < size * size; index++) {
             if (
@@ -275,8 +237,6 @@ try {
           alphaThreshold: ALPHA_THRESHOLD,
           maskCorrections:
             MASK_CORRECTIONS[filename.replace(/\.svg$/i, "")] ?? [],
-          narrowTopOutline:
-            NARROW_TOP_OUTLINE[filename.replace(/\.svg$/i, "")] ?? null,
         },
       );
 
