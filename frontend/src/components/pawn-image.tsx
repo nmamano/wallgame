@@ -1,6 +1,7 @@
 import type { CSSProperties } from "react";
 import { cn } from "@/lib/utils";
 import { resolvePawnBackingSrc } from "@/lib/pawn-style";
+import { resolvePawnForegroundFixSrc } from "@/lib/pawn-foreground-fix";
 
 interface PawnImageProps {
   src: string;
@@ -22,6 +23,7 @@ export function PawnImage({
   loading,
 }: PawnImageProps) {
   const backingSrc = resolvePawnBackingSrc(src);
+  const foregroundFixSrc = resolvePawnForegroundFixSrc(src);
 
   if (!backingSrc) {
     return (
@@ -60,6 +62,16 @@ export function PawnImage({
         draggable={draggable}
         loading={loading}
       />
+      {foregroundFixSrc && (
+        <img
+          src={foregroundFixSrc}
+          alt=""
+          aria-hidden="true"
+          draggable={false}
+          className="pointer-events-none absolute inset-0 h-full w-full object-contain"
+          style={imageStyle}
+        />
+      )}
     </span>
   );
 }

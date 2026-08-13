@@ -9,13 +9,11 @@ import type {
   TouchEvent as ReactTouchEvent,
 } from "react";
 import { useMemo, useCallback, useEffect, useRef, useState } from "react";
-import { Cat, House, Rat } from "lucide-react";
 import { StyledPillar, type EdgeColorKey } from "./styled-pillar";
 import { CrispPillar } from "./crisp-pillar";
 import { useBoardTheme } from "./board-theme-provider";
 import {
   type PlayerColor,
-  colorClassMap,
   colorFilterMap,
   colorHexMap,
 } from "@/lib/player-colors";
@@ -1129,10 +1127,7 @@ export function Board({
     const visualType = pawn.visualType ?? pawn.type;
     const src = resolvePawnStyleSrc(pawnStyle, visualType);
 
-    const Icon =
-      visualType === "mouse" ? Rat : visualType === "home" ? House : Cat;
-
-    return { src, Icon };
+    return src;
   };
 
   const resolvePawnColor = (pawn: BoardPawn) =>
@@ -1147,31 +1142,23 @@ export function Board({
     if (!pawn) return null;
 
     const pawnColor = resolvePawnColor(pawn);
-    const { src, Icon } = resolvePawnVisual(pawn);
+    const src = resolvePawnVisual(pawn);
 
     const ghostSize = Math.min(cellWidthPx, cellHeightPx) * 0.8 || 48;
 
     const content = (() => {
-      if (src) {
-        return (
-          <PawnImage
-            src={src}
-            alt="pawn"
-            draggable={false}
-            className="w-full h-full"
-            imageClassName="drop-shadow-lg"
-            imageStyle={
-              colorFilterMap[pawnColor]
-                ? { filter: colorFilterMap[pawnColor] }
-                : undefined
-            }
-          />
-        );
-      }
       return (
-        <Icon
-          strokeWidth={2.5}
-          className={`${colorClassMap[pawnColor] || "text-red-600"} w-full h-full`}
+        <PawnImage
+          src={src}
+          alt="pawn"
+          draggable={false}
+          className="w-full h-full"
+          imageClassName="drop-shadow-lg"
+          imageStyle={
+            colorFilterMap[pawnColor]
+              ? { filter: colorFilterMap[pawnColor] }
+              : undefined
+          }
         />
       );
     })();
@@ -1446,34 +1433,21 @@ export function Board({
       onPawnDragEnd?.();
     };
 
-    const { src, Icon } = resolvePawnVisual(pawn);
+    const src = resolvePawnVisual(pawn);
 
     const content = (() => {
-      if (src) {
-        return (
-          <PawnImage
-            src={src}
-            alt="pawn"
-            draggable={false}
-            className="w-full h-full select-none"
-            imageClassName="drop-shadow-md"
-            imageStyle={
-              colorFilterMap[pawnColor]
-                ? { filter: colorFilterMap[pawnColor] }
-                : undefined
-            }
-          />
-        );
-      }
-      // Remove fixed pixel size for lg, let it fill container
-      const sizePx = size === "lg" ? undefined : 24;
       return (
-        <Icon
-          size={sizePx}
-          strokeWidth={2.5}
-          className={`${
-            colorClassMap[pawnColor] || "text-red-600"
-          } w-full h-full select-none`}
+        <PawnImage
+          src={src}
+          alt="pawn"
+          draggable={false}
+          className="w-full h-full select-none"
+          imageClassName="drop-shadow-md"
+          imageStyle={
+            colorFilterMap[pawnColor]
+              ? { filter: colorFilterMap[pawnColor] }
+              : undefined
+          }
         />
       );
     })();

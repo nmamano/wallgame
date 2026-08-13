@@ -1,5 +1,6 @@
 import { describe, expect, test } from "bun:test";
 import { resolvePawnBackingSrc } from "../frontend/src/lib/pawn-style";
+import { DEFAULT_PAWN_STYLES } from "../frontend/src/lib/pawn-style";
 
 describe("resolvePawnBackingSrc", () => {
   test("maps each local pawn SVG to its generated backing", () => {
@@ -17,5 +18,15 @@ describe("resolvePawnBackingSrc", () => {
   test("does not invent a backing for an off-site or non-pawn image", () => {
     expect(resolvePawnBackingSrc("https://example.com/cat.svg")).toBeNull();
     expect(resolvePawnBackingSrc("/avatars/cat1.svg")).toBeNull();
+  });
+});
+
+describe("default pawn styles", () => {
+  test("uses Nil's selected SVGs instead of browser icons", () => {
+    expect(DEFAULT_PAWN_STYLES).toEqual({
+      cat: "cat3.svg",
+      mouse: "mouse20.svg",
+      home: "home2.svg",
+    });
   });
 });

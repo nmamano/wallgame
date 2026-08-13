@@ -11,6 +11,7 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { colorFilterMap } from "@/lib/player-colors";
 import { PawnImage } from "@/components/pawn-image";
+import { DEFAULT_PAWN_STYLES, type PawnStyleType } from "@/lib/pawn-style";
 
 interface PawnSelectorProps {
   value: string;
@@ -39,6 +40,8 @@ export function PawnSelector({
 
   // Extract the pawn type from the label (e.g., "Cat Pawn" -> "Cat")
   const pawnType = label.split(" ")[0];
+  const pawnStyleType = pawnType.toLowerCase() as PawnStyleType;
+  const defaultPreviewSrc = `${normalizedBasePath}${DEFAULT_PAWN_STYLES[pawnStyleType]}`;
 
   // Helper function to get display name from filename
   const getDisplayName = (filename: string) => {
@@ -58,7 +61,7 @@ export function PawnSelector({
   const colorFilter =
     color && colorFilterMap[color] ? colorFilterMap[color] : undefined;
   const selectedPreviewSrc =
-    value === "default" ? null : `${normalizedBasePath}${value}`;
+    value === "default" ? defaultPreviewSrc : `${normalizedBasePath}${value}`;
 
   // Scroll to selected item when dialog opens
   useEffect(() => {
@@ -98,16 +101,14 @@ export function PawnSelector({
         <Button variant="outline" className="w-full justify-between h-12">
           <span className="truncate">{displayValue}</span>
           {/* Preview of selected pawn */}
-          {selectedPreviewSrc && (
-            <div className="h-8 w-8 ml-2 shrink-0">
-              <PawnImage
-                src={selectedPreviewSrc}
-                alt="Selected"
-                className="h-full w-full"
-                imageStyle={colorFilter ? { filter: colorFilter } : undefined}
-              />
-            </div>
-          )}
+          <div className="h-8 w-8 ml-2 shrink-0">
+            <PawnImage
+              src={selectedPreviewSrc}
+              alt="Selected"
+              className="h-full w-full"
+              imageStyle={colorFilter ? { filter: colorFilter } : undefined}
+            />
+          </div>
         </Button>
       </DialogTrigger>
       <DialogContent className="max-w-4xl h-[80vh] flex flex-col">
@@ -129,7 +130,12 @@ export function PawnSelector({
                 }}
                 data-pawn-value="default"
               >
-                <span className="text-sm font-medium">Default</span>
+                <PawnImage
+                  src={defaultPreviewSrc}
+                  alt={defaultLabel}
+                  className="h-full w-full"
+                  imageStyle={colorFilter ? { filter: colorFilter } : undefined}
+                />
               </Button>
               {pawns.map((pawn) => (
                 <Button

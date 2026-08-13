@@ -2,6 +2,12 @@ import { assetUrl } from "@/lib/asset-url";
 
 export type PawnStyleType = "cat" | "mouse" | "home";
 
+export const DEFAULT_PAWN_STYLES: Record<PawnStyleType, string> = {
+  cat: "cat3.svg",
+  mouse: "mouse20.svg",
+  home: "home2.svg",
+};
+
 const ensureSvgExtension = (value: string): string => {
   if (value.includes(".")) {
     return value;
@@ -29,14 +35,14 @@ const normalizePath = (value: string): string => {
 export const resolvePawnStyleSrc = (
   pawnStyle: string | undefined,
   type: PawnStyleType,
-): string | null => {
-  if (!pawnStyle) {
-    return null;
-  }
-
-  const normalized = normalizePath(pawnStyle);
+): string => {
+  const requestedStyle =
+    !pawnStyle || pawnStyle === "default"
+      ? DEFAULT_PAWN_STYLES[type]
+      : pawnStyle;
+  const normalized = normalizePath(requestedStyle);
   if (!normalized) {
-    return null;
+    return assetUrl(`/pawns/${type}/${DEFAULT_PAWN_STYLES[type]}`);
   }
 
   // An off-site pawn is whatever the URL says; a site path still has to move
