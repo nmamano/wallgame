@@ -120,7 +120,7 @@ Cat and mouse pawns start in the corners.
 
 A traditional variant where the mice are called "goals" and are fixed in the bottom corners. You win by reaching the goal (the opposite corner) before the opponent reaches theirs.
 
-### Freestyle
+### Standard · Random Start
 
 A randomized setup with neutral starting walls.
 

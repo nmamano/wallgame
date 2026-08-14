@@ -129,6 +129,7 @@ export function getNextLevelId(currentId: string): string | null {
 export function buildLevelConfig(level: SoloCampaignLevel): GameConfiguration {
   return {
     variant: "survival",
+    randomStart: false,
     timeControl: SOLO_TIME_CONTROL,
     rated: false,
     boardWidth: level.boardWidth,

@@ -46,6 +46,7 @@ export const updateVariantParametersSchema = z.object({
   parameters: z.object({
     boardWidth: z.number(),
     boardHeight: z.number(),
+    randomStart: z.boolean(),
   }),
 });
 
@@ -70,6 +71,7 @@ export interface PawnSetting {
 export interface VariantParameters {
   boardWidth: number;
   boardHeight: number;
+  randomStart: boolean;
 }
 
 export interface VariantSetting {
@@ -77,6 +79,7 @@ export interface VariantSetting {
   default_parameters: {
     boardWidth?: number;
     boardHeight?: number;
+    randomStart?: boolean;
   };
 }
 

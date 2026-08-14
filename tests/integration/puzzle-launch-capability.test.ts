@@ -57,6 +57,23 @@ const standardOnlyBot = (botId: string): BotConfig => ({
   },
 });
 
+const ordinaryBot = (
+  botId: string,
+  variant: "standard" | "freestyle",
+): BotConfig => ({
+  botId,
+  name: `${variant} Bot`,
+  username: null,
+  officialToken: TEST_OFFICIAL_TOKEN,
+  variants: {
+    [variant]: {
+      boardWidth: { min: 4, max: 12 },
+      boardHeight: { min: 4, max: 10 },
+      recommended: [{ boardWidth: 8, boardHeight: 8 }],
+    },
+  },
+});
+
 async function attachBot(clientId: string, bots: BotConfig[]) {
   const socket = new WebSocket(
     `${baseUrl.replace("http", "ws")}/ws/custom-bot`,
@@ -121,7 +138,11 @@ describe("puzzle launch checks the bot can play the position", () => {
     const { app, websocket } = (await import("../../server/app")).createApp();
     server = Bun.serve({ fetch: app.fetch, websocket, port: 0 });
     baseUrl = `http://localhost:${server.port}`;
-    socket = await attachBot(clientId, [standardOnlyBot("capability-bot")]);
+    socket = await attachBot(clientId, [
+      standardOnlyBot("capability-bot"),
+      ordinaryBot("fixed-standard-bot", "standard"),
+      ordinaryBot("random-standard-bot", "freestyle"),
+    ]);
     // The bot registry writes through to the DB asynchronously on attach.
     await sleep(200);
     classicPuzzleId = await seedPuzzle(0, 901);
@@ -154,6 +175,59 @@ describe("puzzle launch checks the bot can play the position", () => {
     const res = await play(`${clientId}:no-such-bot`, classicPuzzleId);
     const body = await res.text();
     expect({ status: res.status, body }).toMatchObject({ status: 404 });
+  });
+
+  it("uses the same Random Start capability for listing and launch", async () => {
+    const randomList = await fetch(
+      `${baseUrl}/api/bots?variant=standard&randomStart=true&boardWidth=8&boardHeight=8`,
+    );
+    expect(randomList.status).toBe(200);
+    const randomBots = (await randomList.json()) as {
+      bots: { id: string }[];
+    };
+    expect(randomBots.bots.map((bot) => bot.id)).toContain(
+      `${clientId}:random-standard-bot`,
+    );
+    expect(randomBots.bots.map((bot) => bot.id)).not.toContain(
+      `${clientId}:fixed-standard-bot`,
+    );
+
+    const fixedList = await fetch(
+      `${baseUrl}/api/bots?variant=standard&randomStart=false&boardWidth=8&boardHeight=8`,
+    );
+    expect(fixedList.status).toBe(200);
+    const fixedBots = (await fixedList.json()) as {
+      bots: { id: string }[];
+    };
+    expect(fixedBots.bots.map((bot) => bot.id)).toContain(
+      `${clientId}:fixed-standard-bot`,
+    );
+    expect(fixedBots.bots.map((bot) => bot.id)).not.toContain(
+      `${clientId}:random-standard-bot`,
+    );
+
+    const directPlay = (botId: string) =>
+      fetch(`${baseUrl}/api/bots/play`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          botId,
+          config: {
+            variant: "standard",
+            randomStart: true,
+            boardWidth: 8,
+            boardHeight: 8,
+          },
+          hostDisplayName: "Tester",
+          hostIsPlayer1: true,
+        }),
+      });
+    expect((await directPlay(`${clientId}:fixed-standard-bot`)).status).toBe(
+      409,
+    );
+    expect((await directPlay(`${clientId}:random-standard-bot`)).status).toBe(
+      201,
+    );
   });
 
   it("ACCEPTS the same launch once a bot declares the variant", async () => {

@@ -131,7 +131,12 @@ describe("resolveSavedPuzzleLaunch (fail-closed launch boundary)", () => {
 describe("createBotGameSchema union (no client-authoritative bypass)", () => {
   const directRequest = {
     botId: "client:bot",
-    config: { variant: "standard", boardWidth: 8, boardHeight: 8 },
+    config: {
+      variant: "standard",
+      randomStart: false,
+      boardWidth: 8,
+      boardHeight: 8,
+    },
     hostDisplayName: "human",
     hostIsPlayer1: true,
   };

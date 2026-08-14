@@ -17,7 +17,10 @@ import {
   type PlayerId,
   type Variant,
 } from "../../shared/domain/game-types";
-import { botSupportsPosition } from "../../shared/domain/bot-capability";
+import {
+  botCapabilityVariant,
+  botSupportsGameConfiguration,
+} from "../../shared/domain/bot-capability";
 import type {
   BotConfig,
   BotAppearance,
@@ -476,6 +479,7 @@ const sortableRow = <T>(row: T, bot: RegisteredBot): SortableRow<T> => ({
  */
 export const getMatchingBots = (
   variant: Variant,
+  randomStart: boolean,
   boardWidth?: number,
   boardHeight?: number,
   username?: string,
@@ -494,7 +498,14 @@ export const getMatchingBots = (
     // Does this bot declare this variant, at this size? Same rule the launch
     // path re-asks later, and the same one the client uses to decide what a
     // puzzle card offers — see shared/domain/bot-capability.ts.
-    if (!botSupportsPosition(bot.variants, variant, boardWidth, boardHeight)) {
+    if (
+      !botSupportsGameConfiguration(bot.variants, {
+        variant,
+        randomStart,
+        boardWidth,
+        boardHeight,
+      })
+    ) {
       continue;
     }
 
@@ -520,6 +531,7 @@ export const getMatchingBots = (
  */
 export const getRecommendedBots = (
   variant: Variant,
+  randomStart: boolean,
   username?: string,
 ): RecommendedBotEntry[] => {
   const results: SortableRow<RecommendedBotEntry>[] = [];
@@ -534,7 +546,8 @@ export const getRecommendedBots = (
     }
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
+    const variantConfig =
+      bot.variants[botCapabilityVariant(variant, randomStart)];
     if (!variantConfig) continue;
 
     // V3: Check client is still connected (grace clients are hidden)

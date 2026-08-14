@@ -14,6 +14,11 @@
 
 import type { Variant } from "./game-types";
 
+export const botCapabilityVariant = (
+  variant: Variant,
+  randomStart: boolean,
+): Variant => (variant === "standard" && randomStart ? "freestyle" : variant);
+
 /** The shape of a bot's declared support, as it travels on the wire. */
 export interface DeclaredVariantSupport {
   boardWidth: { min: number; max: number };
@@ -42,3 +47,19 @@ export const botSupportsPosition = (
     withinRange(boardHeight, declared.boardHeight)
   );
 };
+
+export const botSupportsGameConfiguration = (
+  variants: Partial<Record<Variant, DeclaredVariantSupport | undefined>>,
+  config: {
+    variant: Variant;
+    randomStart: boolean;
+    boardWidth?: number;
+    boardHeight?: number;
+  },
+): boolean =>
+  botSupportsPosition(
+    variants,
+    botCapabilityVariant(config.variant, config.randomStart),
+    config.boardWidth,
+    config.boardHeight,
+  );

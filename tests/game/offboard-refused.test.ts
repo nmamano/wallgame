@@ -43,6 +43,7 @@ const OFF_BOARD = "A pawn cannot leave the board";
 
 const standard = (width: number, height: number): GameConfiguration => ({
   variant: "standard",
+  randomStart: false,
   timeControl: timeControlConfigFromPreset("unlimited"),
   rated: false,
   boardWidth: width,

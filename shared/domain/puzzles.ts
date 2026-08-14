@@ -97,6 +97,7 @@ export function buildPuzzleConfig(puzzle: Puzzle): GameConfiguration {
 
   return {
     variant: "classic",
+    randomStart: false,
     timeControl: PUZZLE_TIME_CONTROL,
     rated: false,
     boardWidth: puzzle.boardWidth,

@@ -355,6 +355,7 @@ describe("ranking integration", () => {
         preset: "rapid",
       },
       variant: "standard",
+      randomStart: false,
       rated: true,
       boardWidth: 3,
       boardHeight: 3,

@@ -142,6 +142,7 @@ export interface PastGamePlayerView {
 export interface PastGameRowView {
   gameId: string;
   variant: PastGameSummary["variant"];
+  randomStart: boolean;
   rated: boolean;
   timeControlLabel: string;
   boardSizeLabel: string;
@@ -203,6 +204,7 @@ export const presentPastGameRow = (game: PastGameSummary): PastGameRowView => {
   return {
     gameId: game.gameId,
     variant: game.variant,
+    randomStart: game.randomStart,
     rated: game.rated,
     timeControlLabel,
     boardSizeLabel: formatBoardSize(game),

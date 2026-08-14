@@ -9,14 +9,15 @@ import {
   type GameAction,
 } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
-import { generateFreestyleInitialState } from "../../../shared/domain/freestyle-setup";
+import {
+  buildOrdinaryInitialState,
+  normalizeLegacyGameConfiguration,
+} from "../../../shared/domain/game-configuration";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
 } from "../../../shared/domain/survival-setup";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
-import { buildAnimalCycleInitialState } from "../../../shared/domain/animal-cycle-setup";
-import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
 import type {
   PlayerId,
   WallPosition,
@@ -189,6 +190,7 @@ const DEFAULT_CONFIG: GameConfiguration = {
   },
   rated: false,
   variant: "standard",
+  randomStart: true,
   boardWidth: 9,
   boardHeight: 9,
   variantConfig: buildStandardInitialState(9, 9),
@@ -2702,6 +2704,7 @@ export function useGamePageController(gameId: string) {
     try {
       const { bots } = await fetchBots({
         variant: config.variant,
+        randomStart: config.randomStart,
         boardWidth: config.boardWidth,
         boardHeight: config.boardHeight,
       });
@@ -2854,10 +2857,10 @@ export function useGamePageController(gameId: string) {
         setHasLocalConfig(true);
         try {
           const parsed = JSON.parse(stored) as StoredLocalGameConfig;
-          resolvedConfig = {
+          resolvedConfig = normalizeLegacyGameConfiguration({
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
-          } as GameConfiguration;
+          } as GameConfiguration);
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;
@@ -2916,23 +2919,8 @@ export function useGamePageController(gameId: string) {
       (participantIndex) => participants[participantIndex],
     );
 
-    // Build variantConfig based on variant
+    // A local Random Start game gets a fresh opening, including each rematch.
     const variantConfig: GameInitialState = (() => {
-      if (resolvedConfig.variant === "freestyle") {
-        // Freestyle is deliberately randomized: every game gets a brand-new
-        // starting position, rematches included. Any layout carried in the
-        // stored config is from the previous game and is intentionally ignored.
-        return generateFreestyleInitialState(
-          resolvedConfig.boardWidth,
-          resolvedConfig.boardHeight,
-        );
-      }
-      if (resolvedConfig.variant === "animal-cycle") {
-        return buildAnimalCycleInitialState(
-          resolvedConfig.boardWidth,
-          resolvedConfig.boardHeight,
-        );
-      }
       if (resolvedConfig.variant === "survival") {
         // The game setup UI would need survival-specific controls to let users
         // configure these settings.
@@ -2944,17 +2932,7 @@ export function useGamePageController(gameId: string) {
         };
         return buildSurvivalInitialState(survivalInput);
       }
-      if (resolvedConfig.variant === "classic") {
-        return buildClassicInitialState(
-          resolvedConfig.boardWidth,
-          resolvedConfig.boardHeight,
-        );
-      }
-      // Standard variant
-      return buildStandardInitialState(
-        resolvedConfig.boardWidth,
-        resolvedConfig.boardHeight,
-      );
+      return buildOrdinaryInitialState(resolvedConfig);
     })();
 
     const configWithVariant: GameConfiguration = {

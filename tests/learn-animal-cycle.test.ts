@@ -14,13 +14,18 @@ Cat and mouse pawns start in the corners.
 
 A traditional variant where the mice are called "goals" and are fixed in the bottom corners. You win by reaching the goal (the opposite corner) before the opponent reaches theirs.
 
-### Freestyle
+### Standard · Random Start
 
 A randomized setup with neutral starting walls.
 `);
     expect(
       [...(variants?.matchAll(/^### (.+)$/gm) ?? [])].map((match) => match[1]),
-    ).toEqual(["Standard", "Classic", "Freestyle", "Animal Cycle"]);
+    ).toEqual([
+      "Standard",
+      "Classic",
+      "Standard · Random Start",
+      "Animal Cycle",
+    ]);
     expect(variants).toContain(
       "Player 1 controls the Dog and Mouse. Player 2 controls the Cat and Elephant.",
     );

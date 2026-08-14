@@ -19,6 +19,7 @@ const TEST_CONFIG: GameConfiguration = {
   boardWidth: 9,
   rated: false,
   variant: "standard",
+  randomStart: false,
   timeControl: {
     initialSeconds: 180,
     incrementSeconds: 2,

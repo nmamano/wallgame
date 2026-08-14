@@ -168,6 +168,7 @@ const startConfig = () => ({
  */
 const productionGameConfig = (): GameConfiguration => ({
   variant: VARIANT as Variant,
+  randomStart: false,
   timeControl: BOT_GAME_TIME_CONTROL,
   rated: false,
   boardWidth: WIDTH,

@@ -94,6 +94,7 @@ describe("computeBestMoveDelta", () => {
     distances: { p1: 4, p2: 5 },
     config: {
       variant: "custom-setup-standard",
+      randomStart: false,
       timeControl: {
         initialSeconds: 0,
         incrementSeconds: 0,

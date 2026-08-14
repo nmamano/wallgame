@@ -177,6 +177,7 @@ export const persistCompletedGame = async (
 
     const configParameters = {
       timeControl: session.config.timeControl,
+      randomStart: session.config.randomStart,
       initialState: state.getInitialState(), // Contains all variant-specific config
     };
 

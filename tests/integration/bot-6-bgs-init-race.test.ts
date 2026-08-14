@@ -530,6 +530,7 @@ describe("BGS initialization race", () => {
         preset: "rapid",
       },
       variant: "standard",
+      randomStart: false,
       rated: false,
       boardWidth: 3,
       boardHeight: 3,

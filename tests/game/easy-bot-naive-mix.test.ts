@@ -45,6 +45,7 @@ const CONFIG: GameConfiguration = {
   boardHeight: BOARD,
   rated: false,
   variant: "standard",
+  randomStart: false,
   timeControl: { initialSeconds: 180, incrementSeconds: 2, preset: "blitz" },
   variantConfig: buildStandardInitialState(BOARD, BOARD),
 };

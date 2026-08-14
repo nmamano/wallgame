@@ -65,6 +65,7 @@ const DEFAULT_CONFIG: PartialGameConfiguration = {
     preset: "rapid",
   },
   variant: "standard",
+  randomStart: false,
   rated: false,
   boardWidth: 9,
   boardHeight: 9,

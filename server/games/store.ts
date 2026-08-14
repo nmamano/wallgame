@@ -1,14 +1,14 @@
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
-import { generateFreestyleInitialState } from "../../shared/domain/freestyle-setup";
+import {
+  buildOrdinaryInitialState,
+  normalizeLegacyVariant,
+} from "../../shared/domain/game-configuration";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
 } from "../../shared/domain/survival-setup";
-import { buildStandardInitialState } from "../../shared/domain/standard-setup";
-import { buildAnimalCycleInitialState } from "../../shared/domain/animal-cycle-setup";
-import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import {
@@ -142,7 +142,7 @@ export interface GameSession {
    * game record so completion can be verified server-side later.
    *
    * Deliberately NOT propagated by `createRematchSession`: a rematch is a
-   * different game (seats swap, and for freestyle the layout is regenerated),
+   * different game (seats swap, and for Random Start the layout is regenerated),
    * so crediting it as the original puzzle would be wrong.
    */
   puzzleId?: string;
@@ -850,8 +850,9 @@ export const getSession = (id: string): GameSession => ensureSession(id);
 /** Partial config type for API requests that may not include variantConfig */
 export type PartialGameConfiguration = Omit<
   GameConfiguration,
-  "variantConfig"
+  "variantConfig" | "randomStart"
 > & {
+  randomStart?: boolean;
   variantConfig?: GameConfiguration["variantConfig"];
   // Legacy survival field for backward compatibility
   survival?: SurvivalSetupInput;
@@ -864,26 +865,34 @@ export type PartialGameConfiguration = Omit<
 export const buildCompleteConfig = (
   baseConfig: PartialGameConfiguration,
 ): GameConfiguration => {
+  const normalizedBase = {
+    ...baseConfig,
+    ...normalizeLegacyVariant(baseConfig.variant, baseConfig.randomStart),
+  };
+  if (normalizedBase.variant === "classic" && normalizedBase.randomStart) {
+    throw new Error("Classic Random Start is not available yet.");
+  }
+  if (
+    normalizedBase.variant === "animal-cycle" &&
+    normalizedBase.randomStart &&
+    Math.min(normalizedBase.boardWidth, normalizedBase.boardHeight) < 4
+  ) {
+    throw new Error(
+      "Animal Cycle Random Start requires both board dimensions to be at least 4.",
+    );
+  }
   // If variantConfig already exists, use it
   if (baseConfig.variantConfig) {
-    return baseConfig as GameConfiguration;
+    return normalizedBase as GameConfiguration;
   }
 
-  const { boardWidth, boardHeight, variant } = baseConfig;
+  const { boardWidth, boardHeight, variant } = normalizedBase;
 
   if (
     variant === "custom-setup-classic" ||
     variant === "custom-setup-standard"
   ) {
     throw new Error(`${variant} requires an explicit variantConfig`);
-  }
-
-  // Build variantConfig based on variant
-  if (variant === "freestyle") {
-    return {
-      ...baseConfig,
-      variantConfig: generateFreestyleInitialState(boardWidth, boardHeight),
-    };
   }
 
   if (variant === "survival" && baseConfig.survival) {
@@ -897,30 +906,23 @@ export const buildCompleteConfig = (
       mousePosition: baseConfig.survival.mousePosition,
     };
     return {
-      ...baseConfig,
+      ...normalizedBase,
       variantConfig: buildSurvivalInitialState(survivalInput),
     };
   }
 
-  if (variant === "classic") {
+  if (
+    variant === "standard" ||
+    variant === "classic" ||
+    variant === "animal-cycle"
+  ) {
     return {
-      ...baseConfig,
-      variantConfig: buildClassicInitialState(boardWidth, boardHeight),
+      ...normalizedBase,
+      variantConfig: buildOrdinaryInitialState(normalizedBase),
     };
   }
 
-  if (variant === "animal-cycle") {
-    return {
-      ...baseConfig,
-      variantConfig: buildAnimalCycleInitialState(boardWidth, boardHeight),
-    };
-  }
-
-  // Standard variant (default)
-  return {
-    ...baseConfig,
-    variantConfig: buildStandardInitialState(boardWidth, boardHeight),
-  };
+  throw new Error(`Unsupported variant: ${variant}`);
 };
 
 const createGameState = (config: PartialGameConfiguration): GameState => {
@@ -1481,6 +1483,7 @@ const buildLiveGameSummary = (session: GameSession): LiveGameSummary => {
   return {
     id: session.id,
     variant: session.config.variant,
+    randomStart: session.config.randomStart,
     rated: session.config.rated,
     timeControl: session.config.timeControl,
     boardWidth: session.config.boardWidth,
@@ -1753,6 +1756,7 @@ export const serializeGameState = (
       boardWidth: state.config.boardWidth,
       boardHeight: state.config.boardHeight,
       variant: state.config.variant,
+      randomStart: state.config.randomStart,
       rated: session.config.rated,
       timeControl: session.config.timeControl,
       variantConfig: state.config.variantConfig,
@@ -1796,19 +1800,19 @@ export const createRematchSession = (
     token: nanoid(),
     socketToken: nanoid(),
   };
-  // Freestyle is deliberately randomized, so every rematch gets a brand-new
+  // Random Start is deliberately randomized, so every rematch gets a brand-new
   // starting position rather than replaying the previous one from the other
   // side: drop the layout and let `createGameState` generate a fresh one.
   const newRematchNumber = previous.rematchNumber + 1;
   let configForNewGame: PartialGameConfiguration = previous.config;
-  if (previous.config.variant === "freestyle") {
+  if (previous.config.randomStart) {
     // eslint-disable-next-line @typescript-eslint/no-unused-vars
     const { variantConfig, ...rest } = previous.config;
     configForNewGame = rest;
   }
 
   // Build the state first so the session records the config the game is actually
-  // played with: for freestyle `configForNewGame` has no variantConfig and
+  // played with: for Random Start `configForNewGame` has no variantConfig and
   // `createGameState` generates one, which the session must then carry so the
   // players, spectators and replay all see the board that was actually played.
   const gameState = createGameState(configForNewGame);

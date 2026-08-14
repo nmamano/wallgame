@@ -61,6 +61,7 @@ let eq: typeof import("drizzle-orm").eq;
 
 const CONFIG: PartialGameConfiguration = {
   variant: "standard",
+  randomStart: false,
   boardWidth: 8,
   boardHeight: 8,
   timeControl: timeControlConfigFromPreset("unlimited"),
@@ -293,6 +294,7 @@ describe("a stored row that already holds a backtrack", () => {
     // show that stored-history mode is what saved the row.
     const config: GameConfiguration = {
       variant: "standard",
+      randomStart: false,
       timeControl: timeControlConfigFromPreset("unlimited"),
       rated: false,
       boardWidth: 8,

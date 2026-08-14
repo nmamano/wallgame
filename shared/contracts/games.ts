@@ -264,14 +264,53 @@ export const boardSizeValues = ["small", "medium", "large"] as const;
 export const playerConfigTypeValues = ["friend"] as const;
 export type PlayerConfigType = (typeof playerConfigTypeValues)[number];
 
+const currentCreateConfigSchema = z.object({
+  timeControl: timeControlSchema,
+  rated: z.boolean().optional().default(false),
+  variant: z.enum(["standard", "animal-cycle", "classic"]),
+  randomStart: z.boolean(),
+  boardWidth: z.number().int().min(3).max(20),
+  boardHeight: z.number().int().min(3).max(20),
+});
+
+const legacyFreestyleCreateConfigSchema = z.object({
+  timeControl: timeControlSchema,
+  rated: z.boolean().optional().default(false),
+  variant: z.literal("freestyle"),
+  randomStart: z.boolean().optional(),
+  boardWidth: z.number().int().min(3).max(20),
+  boardHeight: z.number().int().min(3).max(20),
+});
+
 export const createGameSchema = z.object({
-  config: z.object({
-    timeControl: timeControlSchema,
-    rated: z.boolean().optional().default(false),
-    variant: z.enum(variantValues),
-    boardWidth: z.number().int().min(3).max(20),
-    boardHeight: z.number().int().min(3).max(20),
-  }),
+  config: z
+    .union([currentCreateConfigSchema, legacyFreestyleCreateConfigSchema])
+    .transform((config) =>
+      config.variant === "freestyle"
+        ? { ...config, variant: "standard" as const, randomStart: true }
+        : config,
+    )
+    .superRefine((config, ctx) => {
+      if (config.variant === "classic" && config.randomStart) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["randomStart"],
+          message: "Classic Random Start is not available yet.",
+        });
+      }
+      if (
+        config.variant === "animal-cycle" &&
+        config.randomStart &&
+        Math.min(config.boardWidth, config.boardHeight) < 4
+      ) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["randomStart"],
+          message:
+            "Animal Cycle Random Start requires both board dimensions to be at least 4.",
+        });
+      }
+    }),
   matchType: z.enum(matchTypeValues).default("friend"),
   hostDisplayName: z.string().max(50).optional(),
   hostAppearance: appearanceSchema,
@@ -426,6 +465,7 @@ export type ResolveGameAccessResponse =
 export interface LiveGameSummary {
   id: string;
   variant: Variant;
+  randomStart: boolean;
   rated: boolean;
   timeControl: TimeControlConfig;
   boardWidth: number;
@@ -518,6 +558,7 @@ export interface PastGamePlayerSummary {
 export interface PastGameSummary {
   gameId: string;
   variant: Variant;
+  randomStart: boolean;
   rated: boolean;
   timeControl: string;
   boardWidth: number;
@@ -551,6 +592,11 @@ export interface PastGamesActivityResponse {
 
 export const botsQuerySchema = z.object({
   variant: z.enum([...variantValues, ...customSetupVariantValues]),
+  randomStart: z
+    .enum(["true", "false"])
+    .optional()
+    .default("false")
+    .transform((value) => value === "true"),
   // V3: timeControl removed - bot games are untimed
   boardWidth: z.coerce.number().int().min(3).max(20).optional(),
   boardHeight: z.coerce.number().int().min(3).max(20).optional(),
@@ -590,12 +636,51 @@ export const createBotGameDirectSchema = z
     botId: z.string(),
     /** V3: Bot game config has no timeControl - bot games are untimed */
     config: z.union([
-      z.object({
-        variant: z.enum(variantValues),
-        boardWidth: z.number().int().min(3).max(20),
-        boardHeight: z.number().int().min(3).max(20),
-      }),
-      customSetupConfigSchema,
+      z
+        .union([
+          z.object({
+            variant: z.enum(["standard", "animal-cycle", "classic"]),
+            randomStart: z.boolean(),
+            boardWidth: z.number().int().min(3).max(20),
+            boardHeight: z.number().int().min(3).max(20),
+          }),
+          z.object({
+            variant: z.literal("freestyle"),
+            randomStart: z.boolean().optional(),
+            boardWidth: z.number().int().min(3).max(20),
+            boardHeight: z.number().int().min(3).max(20),
+          }),
+        ])
+        .transform((config) =>
+          config.variant === "freestyle"
+            ? { ...config, variant: "standard" as const, randomStart: true }
+            : config,
+        )
+        .superRefine((config, ctx) => {
+          if (config.variant === "classic" && config.randomStart) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["randomStart"],
+              message: "Classic Random Start is not available yet.",
+            });
+          }
+          if (
+            config.variant === "animal-cycle" &&
+            config.randomStart &&
+            Math.min(config.boardWidth, config.boardHeight) < 4
+          ) {
+            ctx.addIssue({
+              code: z.ZodIssueCode.custom,
+              path: ["randomStart"],
+              message:
+                "Animal Cycle Random Start requires both board dimensions to be at least 4.",
+            });
+          }
+        }),
+      customSetupConfigSchema.transform((config) => ({
+        ...config,
+        randomStart: false as const,
+      })),
     ]),
     hostDisplayName: z.string().max(50).optional(),
     hostAppearance: appearanceSchema,

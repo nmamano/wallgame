@@ -32,7 +32,7 @@ import {
   type Move,
   type PlayerAppearance,
 } from "../../shared/domain/game-types";
-import { botSupportsPosition } from "../../shared/domain/bot-capability";
+import { botSupportsGameConfiguration } from "../../shared/domain/bot-capability";
 import { BOT_GAME_TIME_CONTROL } from "../../shared/domain/game-utils";
 import { resolveSavedPuzzleLaunch } from "../../shared/domain/puzzle-lead-in";
 import { savedPuzzleDbRowSchema } from "../../shared/contracts/puzzles";
@@ -482,6 +482,7 @@ export const botsRoute = new Hono()
       // V3: timeControl is ignored - bot games have no time control
       const bots = getMatchingBots(
         query.variant,
+        query.randomStart,
         query.boardWidth,
         query.boardHeight,
       );
@@ -496,7 +497,7 @@ export const botsRoute = new Hono()
     try {
       const query = c.req.valid("query");
       // V3: timeControl is ignored - bot games have no time control
-      const bots = getRecommendedBots(query.variant);
+      const bots = getRecommendedBots(query.variant, query.randomStart);
       return c.json({ bots });
     } catch (error) {
       console.error("Failed to list recommended bots:", error);
@@ -553,7 +554,7 @@ export const botsRoute = new Hono()
               return c.json({ error: "Puzzle not found" }, 404);
             }
             const resolved = resolveSavedPuzzleLaunch(row);
-            gameConfig = resolved.config;
+            gameConfig = { ...resolved.config, randomStart: false };
             hostIsPlayer1 = resolved.humanIsPlayer1;
             leadInMove = resolved.leadInMove;
             resolvedPuzzleId = row.id;
@@ -602,14 +603,7 @@ export const botsRoute = new Hono()
         // play THIS puzzle". Refusing here is what turns a mismatch into a
         // clean launch failure the client can offer a fallback for, instead of
         // a created game whose first engine call fails.
-        if (
-          !botSupportsPosition(
-            bot.variants,
-            gameConfig.variant,
-            gameConfig.boardWidth,
-            gameConfig.boardHeight,
-          )
-        ) {
+        if (!botSupportsGameConfiguration(bot.variants, gameConfig)) {
           return c.json(
             { error: "That bot cannot play this position right now" },
             409,

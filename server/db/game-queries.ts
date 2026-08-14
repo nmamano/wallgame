@@ -30,6 +30,7 @@ import type {
   WinReason,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
+import { normalizeLegacyVariant } from "../../shared/domain/game-configuration";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
   BOARD_SIZE_AREA_MEDIUM_MAX,
@@ -233,13 +234,21 @@ const assembleReplayGame = (
     details?.configParameters,
   );
   const variant = normalizeVariant(game.variant);
+  const storedParameters = details?.configParameters as
+    | { randomStart?: boolean }
+    | undefined;
+  const normalized = normalizeLegacyVariant(
+    variant,
+    storedParameters?.randomStart,
+  );
   const variantConfig = resolveVariantConfig(
     details?.configParameters,
     game.gameId,
   );
 
   const config: GameConfiguration = {
-    variant,
+    variant: normalized.variant,
+    randomStart: normalized.randomStart,
     timeControl,
     rated: game.rated,
     boardWidth: game.boardWidth,
@@ -582,8 +591,10 @@ export const queryPastGames = async (
       startedAt: gamesTable.startedAt,
       movesCount: gamesTable.movesCount,
       views: gamesTable.views,
+      configParameters: gameDetailsTable.configParameters,
     })
     .from(gamesTable)
+    .leftJoin(gameDetailsTable, eq(gameDetailsTable.gameId, gamesTable.gameId))
     .where(whereClause)
     .orderBy(desc(gamesTable.startedAt))
     .limit(limit)
@@ -633,23 +644,31 @@ export const queryPastGames = async (
   });
 
   return {
-    games: pageGames.map((game) => ({
-      gameId: game.gameId,
-      variant: normalizeVariant(game.variant),
-      rated: game.rated,
-      timeControl: game.timeControl,
-      boardWidth: game.boardWidth,
-      boardHeight: game.boardHeight,
-      movesCount: game.movesCount,
-      startedAt: game.startedAt.getTime(),
-      views: game.views,
-      players: (playersByGame.get(game.gameId) ?? [])
-        .sort((a, b) => a.playerOrder - b.playerOrder)
-        .map((player) => ({
-          ...player,
-          playerOrder: player.playerOrder as PlayerId,
-        })),
-    })),
+    games: pageGames.map((game) => {
+      const stored = game.configParameters as { randomStart?: boolean } | null;
+      const normalized = normalizeLegacyVariant(
+        normalizeVariant(game.variant),
+        stored?.randomStart,
+      );
+      return {
+        gameId: game.gameId,
+        variant: normalized.variant,
+        randomStart: normalized.randomStart,
+        rated: game.rated,
+        timeControl: game.timeControl,
+        boardWidth: game.boardWidth,
+        boardHeight: game.boardHeight,
+        movesCount: game.movesCount,
+        startedAt: game.startedAt.getTime(),
+        views: game.views,
+        players: (playersByGame.get(game.gameId) ?? [])
+          .sort((a, b) => a.playerOrder - b.playerOrder)
+          .map((player) => ({
+            ...player,
+            playerOrder: player.playerOrder as PlayerId,
+          })),
+      };
+    }),
     page: args.page,
     pageSize: args.pageSize,
     hasMore,

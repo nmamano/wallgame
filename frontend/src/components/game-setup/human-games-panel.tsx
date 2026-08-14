@@ -134,7 +134,10 @@ export function HumanGamesPanel({
                           : ""
                       }`}
                     >
-                      {variantDisplayName(game.config.variant)}
+                      {variantDisplayName(
+                        game.config.variant,
+                        game.config.randomStart,
+                      )}
                     </span>
                   </TableCell>
                   <TableCell className="text-center">

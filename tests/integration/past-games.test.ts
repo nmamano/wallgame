@@ -314,14 +314,15 @@ describe("past games persistence", () => {
     expect(replay2.views).toBe(2);
   });
 
-  it("persists freestyle initial state for past games", async () => {
+  it("persists Random Start and its exact initial state for past games", async () => {
     const config: PartialGameConfiguration = {
       timeControl: {
         initialSeconds: 120,
         incrementSeconds: 0,
         preset: "rapid",
       },
-      variant: "freestyle",
+      variant: "standard",
+      randomStart: true,
       rated: false,
       boardWidth: 12,
       boardHeight: 10,
@@ -370,12 +371,14 @@ describe("past games persistence", () => {
     await persistCompletedGame(session);
 
     const res = await fetch(
-      `${baseUrl}/api/games/past?variant=freestyle&page=1&pageSize=1`,
+      `${baseUrl}/api/games/past?variant=standard&page=1&pageSize=1`,
     );
     expect(res.status).toBe(200);
     const pastGames = (await res.json()) as PastGamesResponse;
     expect(pastGames.games.length).toBe(1);
     expect(pastGames.games[0]?.gameId).toBe(session.id);
+    expect(pastGames.games[0]?.variant).toBe("standard");
+    expect(pastGames.games[0]?.randomStart).toBe(true);
 
     const replayRes = await fetch(`${baseUrl}/api/games/${session.id}`);
     expect(replayRes.status).toBe(200);
@@ -385,6 +388,8 @@ describe("past games persistence", () => {
       throw new Error("Expected replay response");
     }
 
+    expect(replay.state.config.variant).toBe("standard");
+    expect(replay.state.config.randomStart).toBe(true);
     expect(replay.state.initialState).toEqual(initialState);
     expect(
       replay.state.initialState.walls.every((wall) => wall.playerId == null),

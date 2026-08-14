@@ -75,7 +75,10 @@ export function GameInfoPanel({
             <div className="flex items-center gap-1.5 lg:gap-2">
               <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
               <span className="font-medium capitalize text-sm lg:text-base">
-                {variantDisplayName(config?.variant ?? defaultVariant)}
+                {variantDisplayName(
+                  config?.variant ?? defaultVariant,
+                  config?.randomStart,
+                )}
               </span>
             </div>
             <div className="flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm text-muted-foreground">

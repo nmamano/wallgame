@@ -504,6 +504,7 @@ describe("takeback replay race", () => {
       preset: "rapid",
     },
     variant: "standard",
+    randomStart: false,
     rated: false,
     boardWidth: 3,
     boardHeight: 3,

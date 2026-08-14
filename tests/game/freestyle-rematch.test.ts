@@ -31,11 +31,12 @@ beforeAll(async () => {
   createRematchSession = store.createRematchSession;
 });
 
-const freestyleConfig = (): PartialGameConfiguration => ({
+const randomStartConfig = (): PartialGameConfiguration => ({
   boardHeight: 10,
   boardWidth: 12,
   rated: false,
-  variant: "freestyle",
+  variant: "standard",
+  randomStart: true,
   timeControl: { initialSeconds: 180, incrementSeconds: 2, preset: "blitz" },
 });
 
@@ -57,9 +58,9 @@ const finish = (id: string) =>
 const layoutOf = (config: { variantConfig?: unknown }) =>
   JSON.stringify(config.variantConfig);
 
-describe("freestyle rematch", () => {
+describe("Random Start rematch", () => {
   it("generates a new starting position for every rematch in the series", () => {
-    const first = startedSession(freestyleConfig());
+    const first = startedSession(randomStartConfig());
     finish(first.id);
 
     const layouts = [layoutOf(first.config)];
@@ -83,12 +84,47 @@ describe("freestyle rematch", () => {
 
   it("keeps replaying the same board for variants that are not randomized", () => {
     const first = startedSession({
-      ...freestyleConfig(),
+      ...randomStartConfig(),
       variant: "standard",
+      randomStart: false,
     });
     finish(first.id);
 
     const { newSession } = createRematchSession(first.id);
     expect(layoutOf(newSession.config)).toBe(layoutOf(first.config));
+  });
+
+  it("refreshes Animal Cycle Random Start but preserves fixed Animal Cycle", () => {
+    const randomized = startedSession({
+      ...randomStartConfig(),
+      variant: "animal-cycle",
+    });
+    finish(randomized.id);
+    const { newSession: randomRematch } = createRematchSession(randomized.id);
+    expect(layoutOf(randomRematch.config)).not.toBe(
+      layoutOf(randomized.config),
+    );
+
+    const fixed = startedSession({
+      ...randomStartConfig(),
+      variant: "animal-cycle",
+      randomStart: false,
+    });
+    finish(fixed.id);
+    const { newSession: fixedRematch } = createRematchSession(fixed.id);
+    expect(layoutOf(fixedRematch.config)).toBe(layoutOf(fixed.config));
+  });
+
+  it("normalizes legacy Freestyle and refreshes it on rematch", () => {
+    const legacy = startedSession({
+      ...randomStartConfig(),
+      variant: "freestyle",
+      randomStart: undefined,
+    });
+    expect(legacy.config.variant).toBe("standard");
+    expect(legacy.config.randomStart).toBe(true);
+    finish(legacy.id);
+    const { newSession } = createRematchSession(legacy.id);
+    expect(layoutOf(newSession.config)).not.toBe(layoutOf(legacy.config));
   });
 });

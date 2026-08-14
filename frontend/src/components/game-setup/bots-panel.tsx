@@ -48,9 +48,10 @@ export function BotsPanel({
   errorMessage,
 }: BotsPanelProps) {
   const { data: recommendedData, isLoading: recommendedLoading } =
-    useRecommendedBotsQuery(config.variant);
+    useRecommendedBotsQuery(config.variant, config.randomStart);
   const { data: matchingData, isLoading: matchingLoading } = useBotsQuery({
     variant: config.variant,
+    randomStart: config.randomStart,
     boardWidth: config.boardWidth,
     boardHeight: config.boardHeight,
   });
@@ -152,7 +153,8 @@ export function BotsPanel({
             renderUnavailableCaption()
           ) : (
             <p className="text-xs text-muted-foreground mb-2">
-              Showing recommended bots for: {variantDisplayName(config.variant)}
+              Showing recommended bots for:{" "}
+              {variantDisplayName(config.variant, config.randomStart)}
             </p>
           )}
           <Table>
@@ -210,7 +212,8 @@ export function BotsPanel({
             renderUnavailableCaption()
           ) : (
             <p className="text-xs text-muted-foreground mb-2">
-              Showing bots matching: {variantDisplayName(config.variant)}
+              Showing bots matching:{" "}
+              {variantDisplayName(config.variant, config.randomStart)}
               {` | ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
             </p>
           )}

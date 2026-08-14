@@ -66,12 +66,17 @@ export const isCustomSetupVariant = (
  * detail - what a player is looking at is a puzzle, and "Custom-Setup-Standard" tells
  * them nothing about the game in front of them.
  */
-export const variantDisplayName = (variant: Variant): string =>
-  variant === "animal-cycle"
-    ? "Animal Cycle"
-    : isCustomSetupVariant(variant)
-      ? "Puzzle"
-      : variant.charAt(0).toUpperCase() + variant.slice(1);
+export const variantDisplayName = (
+  variant: Variant,
+  randomStart = false,
+): string =>
+  variant === "freestyle" || (variant === "standard" && randomStart)
+    ? "Standard · Random Start"
+    : variant === "animal-cycle"
+      ? "Animal Cycle"
+      : isCustomSetupVariant(variant)
+        ? "Puzzle"
+        : variant.charAt(0).toUpperCase() + variant.slice(1);
 
 /**
  * Variant-specific initial state types.
@@ -159,6 +164,7 @@ export type TimeControlPreset =
 
 export interface GameConfiguration {
   variant: Variant;
+  randomStart: boolean;
   timeControl: TimeControlConfig;
   rated: boolean;
   boardWidth: number;

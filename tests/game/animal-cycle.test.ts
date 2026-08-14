@@ -25,6 +25,7 @@ const config = (
     .pawns,
 ): GameConfiguration => ({
   variant: "animal-cycle",
+  randomStart: false,
   boardWidth: 8,
   boardHeight: 8,
   rated: false,

@@ -227,6 +227,7 @@ const INCIDENTS: Incident[] = [
 
 const configFor = (incident: Incident): GameConfiguration => ({
   variant: incident.variant,
+  randomStart: false,
   timeControl: timeControlConfigFromPreset("unlimited"),
   rated: false,
   boardWidth: incident.board,
@@ -349,6 +350,7 @@ describe("stored-history mode", () => {
   // reader, not a referee: its job is to show what happened.
   const config: GameConfiguration = {
     variant: "standard",
+    randomStart: false,
     timeControl: timeControlConfigFromPreset("unlimited"),
     rated: false,
     boardWidth: 8,
@@ -433,6 +435,7 @@ describe("stored-history mode", () => {
     // previous move, and stored-history mode must not touch it.
     const seeded: GameConfiguration = {
       variant: "custom-setup-standard",
+      randomStart: false,
       timeControl: timeControlConfigFromPreset("unlimited"),
       rated: false,
       boardWidth: 8,

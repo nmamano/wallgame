@@ -145,6 +145,7 @@ export const settingsMutations = {
           parameters: {
             boardWidth: parameters.boardWidth,
             boardHeight: parameters.boardHeight,
+            randomStart: parameters.randomStart,
           },
         },
       }),
@@ -195,6 +196,7 @@ export const createGameSession = async (args: {
           timeControl,
           rated: args.config.rated,
           variant,
+          randomStart: args.config.randomStart,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
         },
@@ -380,7 +382,7 @@ export const puzzleBotsQueryOptionsFor = (args: {
   boardHeight: number;
 }) => ({
   queryKey: ["bots", args.variant, args.boardWidth, args.boardHeight] as const,
-  queryFn: () => fetchBots(args),
+  queryFn: () => fetchBots({ ...args, randomStart: false }),
   staleTime: PUZZLE_LIST_STALE_MS,
 });
 
@@ -438,6 +440,7 @@ export const reportScriptedPuzzleCompletion = async (
 
 export const fetchBots = async (args: {
   variant: Variant;
+  randomStart: boolean;
   boardWidth?: number;
   boardHeight?: number;
 }): Promise<{ bots: ListedBot[] }> => {
@@ -448,6 +451,7 @@ export const fetchBots = async (args: {
     api.bots.$get({
       query: {
         variant: args.variant,
+        randomStart: String(args.randomStart) as "true" | "false",
         boardWidth:
           args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
         boardHeight:
@@ -460,6 +464,7 @@ export const fetchBots = async (args: {
 /** V3: Recommended bots - no timeControl (bot games are untimed) */
 export const fetchRecommendedBots = async (args: {
   variant: Variant;
+  randomStart: boolean;
 }): Promise<{ bots: RecommendedBotEntry[] }> => {
   // Bot discovery uses the true variant: bots register exactly what they serve
   // (custom-setup included), so collapsing here would list the wrong bots.
@@ -469,6 +474,7 @@ export const fetchRecommendedBots = async (args: {
     api.bots.recommended.$get({
       query: {
         variant: args.variant,
+        randomStart: String(args.randomStart) as "true" | "false",
       },
     }),
   );
@@ -507,6 +513,7 @@ export const playVsBot = async (args: {
           }
         : {
             variant: args.config.variant,
+            randomStart: args.config.randomStart,
             boardWidth: args.config.boardWidth,
             boardHeight: args.config.boardHeight,
           };

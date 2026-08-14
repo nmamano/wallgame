@@ -28,6 +28,7 @@ const MALFORMED = [
 const CONFIG = {
   timeControl: { preset: "blitz", initialSeconds: 300, incrementSeconds: 3 },
   variant: "standard",
+  randomStart: false,
   boardWidth: 8,
   boardHeight: 8,
 };
@@ -45,7 +46,12 @@ const SHAPES = [
     schema: createBotGameSchema,
     body: {
       botId: "client:bot",
-      config: { variant: "standard", boardWidth: 8, boardHeight: 8 },
+      config: {
+        variant: "standard",
+        randomStart: false,
+        boardWidth: 8,
+        boardHeight: 8,
+      },
     },
   },
   {

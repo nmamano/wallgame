@@ -205,7 +205,9 @@ function LiveGames() {
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
-                  <SelectItem value="freestyle">Freestyle</SelectItem>
+                  <SelectItem value="freestyle">
+                    Standard · Random Start
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -361,7 +363,7 @@ function LiveGames() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium capitalize">
-                      {variantDisplayName(game.variant)}
+                      {variantDisplayName(game.variant, game.randomStart)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={game.rated ? "default" : "secondary"}>

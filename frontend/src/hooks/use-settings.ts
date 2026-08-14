@@ -13,10 +13,12 @@ import type {
   NonSurvivalVariant,
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
-import { generateFreestyleInitialState } from "../../../shared/domain/freestyle-setup";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
-import { buildAnimalCycleInitialState } from "../../../shared/domain/animal-cycle-setup";
-import { buildClassicInitialState } from "../../../shared/domain/classic-setup";
+import {
+  buildOrdinaryInitialState,
+  normalizeLegacyGameConfiguration,
+  normalizeLegacyVariant,
+} from "../../../shared/domain/game-configuration";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -25,6 +27,18 @@ import type {
 } from "../../../shared/contracts/settings";
 import { normalizePawnStyleSelection } from "@/lib/pawn-style";
 type VariantSettingsMap = Record<string, Partial<VariantParameters>>;
+
+const normalizeStoredGamePreference = (
+  config: GameConfiguration,
+): GameConfiguration => {
+  const normalized = normalizeLegacyGameConfiguration(config);
+  const storedRandomStart = (config as { randomStart?: boolean }).randomStart;
+  return {
+    ...normalized,
+    randomStart:
+      normalized.variant === "classic" ? false : (storedRandomStart ?? true),
+  };
+};
 
 // Validate display name
 function isValidDisplayName(name: string): { valid: boolean; error?: string } {
@@ -118,17 +132,18 @@ const defaultGameConfig: GameConfiguration = {
     preset: "rapid",
   },
   rated: false,
-  variant: "freestyle",
+  variant: "standard",
+  randomStart: true,
   boardWidth: 8,
   boardHeight: 8,
-  // Placeholder only. Freestyle boards are always generated per game - the
+  // Placeholder only. Random Start boards are always generated per game - the
   // server builds its own, and local games call the generator again - so this
   // value is never the board anyone plays on. It exists to satisfy the type.
-  variantConfig: generateFreestyleInitialState(8, 8),
+  variantConfig: buildStandardInitialState(8, 8),
 };
 
 const DEFAULT_TIME_CONTROL_PRESET: TimeControlPreset = "rapid";
-const DEFAULT_VARIANT: NonSurvivalVariant = "freestyle";
+const DEFAULT_VARIANT: NonSurvivalVariant = "standard";
 
 /**
  * Unified settings hook that always calls the same hooks in the same order
@@ -393,26 +408,31 @@ function useSettingsInternal(
     if (!isLoggedIn) return null;
     if (!dbSettings) return null;
     const currentVariant = dbSettings.defaultVariant ?? DEFAULT_VARIANT;
-    const resolvedVariant =
+    const supportedVariant =
       currentVariant === "survival" ? DEFAULT_VARIANT : currentVariant;
-    const currentVariantParams = variantSettingsFromDb[resolvedVariant];
+    const normalized = normalizeLegacyVariant(supportedVariant, undefined);
+    const resolvedVariant = normalized.variant as NonSurvivalVariant;
+    const currentVariantParams = variantSettingsFromDb[currentVariant];
 
     const boardWidth = currentVariantParams?.boardWidth ?? 8;
     const boardHeight = currentVariantParams?.boardHeight ?? 8;
-    const variantConfig =
-      resolvedVariant === "animal-cycle"
-        ? buildAnimalCycleInitialState(boardWidth, boardHeight)
-        : resolvedVariant === "freestyle"
-          ? generateFreestyleInitialState(boardWidth, boardHeight)
-          : resolvedVariant === "classic"
-            ? buildClassicInitialState(boardWidth, boardHeight)
-            : buildStandardInitialState(boardWidth, boardHeight);
+    const randomStart =
+      resolvedVariant === "classic"
+        ? false
+        : (currentVariantParams?.randomStart ?? true);
+    const variantConfig = buildOrdinaryInitialState({
+      variant: resolvedVariant,
+      randomStart,
+      boardWidth,
+      boardHeight,
+    });
     return {
       timeControl: timeControlConfigFromPreset(
         dbSettings.defaultTimeControl ?? DEFAULT_TIME_CONTROL_PRESET,
       ),
       rated: dbSettings.defaultRatedStatus ?? false,
       variant: resolvedVariant,
+      randomStart,
       boardWidth,
       boardHeight,
       variantConfig,
@@ -667,7 +687,7 @@ function useSettingsInternal(
   const gameConfig = isLoggedIn
     ? (gameConfigFromDb ??
       ({ ...defaultGameConfig, rated: false } as GameConfiguration))
-    : localGameConfig;
+    : normalizeStoredGamePreference(localGameConfig);
 
   // Aggregate mutation states (excluding display name mutation - it has its own error state)
   const isSavingSettings =
@@ -777,13 +797,15 @@ function useSettingsInternal(
       // When variant changes, load saved parameters for the new variant
       if (newConfig.variant !== gameConfig.variant) {
         const variantParams = variantSettingsFromDb[newConfig.variant];
-        if (variantParams) {
-          newConfig = {
-            ...newConfig,
-            boardWidth: variantParams.boardWidth ?? 8,
-            boardHeight: variantParams.boardHeight ?? 8,
-          };
-        }
+        newConfig = {
+          ...newConfig,
+          boardWidth: variantParams?.boardWidth ?? 8,
+          boardHeight: variantParams?.boardHeight ?? 8,
+          randomStart:
+            newConfig.variant === "classic"
+              ? false
+              : (variantParams?.randomStart ?? true),
+        };
         // Mutation's onMutate handles the optimistic update
         updateDefaultVariantMutation.mutate(newConfig.variant);
       }
@@ -815,13 +837,15 @@ function useSettingsInternal(
       if (
         newConfig.variant === gameConfig.variant &&
         (newConfig.boardWidth !== gameConfig.boardWidth ||
-          newConfig.boardHeight !== gameConfig.boardHeight)
+          newConfig.boardHeight !== gameConfig.boardHeight ||
+          newConfig.randomStart !== gameConfig.randomStart)
       ) {
         updateVariantParametersMutation.mutate({
           variant: newConfig.variant,
           parameters: {
             boardWidth: newConfig.boardWidth ?? 8,
             boardHeight: newConfig.boardHeight ?? 8,
+            randomStart: newConfig.randomStart,
           },
         });
       }
@@ -836,31 +860,36 @@ function useSettingsInternal(
           [gameConfig.variant]: {
             boardWidth: gameConfig.boardWidth,
             boardHeight: gameConfig.boardHeight,
+            randomStart: gameConfig.randomStart,
           },
         }));
 
         // Load saved parameters for the new variant
         const variantParams = localVariantSettings[newConfig.variant];
-        if (variantParams) {
-          newConfig = {
-            ...newConfig,
-            boardWidth: variantParams.boardWidth ?? 8,
-            boardHeight: variantParams.boardHeight ?? 8,
-          };
-        }
+        newConfig = {
+          ...newConfig,
+          boardWidth: variantParams?.boardWidth ?? 8,
+          boardHeight: variantParams?.boardHeight ?? 8,
+          randomStart:
+            newConfig.variant === "classic"
+              ? false
+              : (variantParams?.randomStart ?? true),
+        };
       }
 
       // Save variant parameters when dimensions change (but variant stays the same)
       if (
         newConfig.variant === gameConfig.variant &&
         (newConfig.boardWidth !== gameConfig.boardWidth ||
-          newConfig.boardHeight !== gameConfig.boardHeight)
+          newConfig.boardHeight !== gameConfig.boardHeight ||
+          newConfig.randomStart !== gameConfig.randomStart)
       ) {
         setLocalVariantSettings((prev) => ({
           ...prev,
           [newConfig.variant]: {
             boardWidth: newConfig.boardWidth,
             boardHeight: newConfig.boardHeight,
+            randomStart: newConfig.randomStart,
           },
         }));
       }

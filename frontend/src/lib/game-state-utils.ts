@@ -7,19 +7,27 @@ import { Grid } from "../../../shared/domain/grid";
 import { clonePawns } from "../../../shared/domain/pawns";
 import { GameState } from "../../../shared/domain/game-state";
 import { moveFromStandardNotation } from "../../../shared/domain/standard-notation";
+import {
+  normalizeLegacyGameConfiguration,
+  normalizeLegacyVariant,
+} from "../../../shared/domain/game-configuration";
 
 export const buildGameConfigurationFromSerialized = (
   serialized: SerializedGameState,
 ): GameConfiguration => {
-  return serialized.config;
+  return normalizeLegacyGameConfiguration(serialized.config);
 };
 
 export const hydrateGameStateFromSerialized = (
   serialized: SerializedGameState,
   baseConfig: GameConfiguration,
 ): GameState => {
-  const resolvedVariant =
+  const storedVariant =
     serialized.config.variant ?? baseConfig.variant ?? "standard";
+  const normalized = normalizeLegacyVariant(
+    storedVariant,
+    serialized.config.randomStart,
+  );
   const rated = baseConfig.rated;
   const timeControl = serialized.config.timeControl;
 
@@ -30,7 +38,8 @@ export const hydrateGameStateFromSerialized = (
   const config: GameConfiguration = {
     boardWidth: serialized.config.boardWidth,
     boardHeight: serialized.config.boardHeight,
-    variant: resolvedVariant,
+    variant: normalized.variant,
+    randomStart: normalized.randomStart,
     timeControl,
     rated,
     variantConfig,

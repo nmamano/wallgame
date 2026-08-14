@@ -256,6 +256,7 @@ export function GameConfigurationPanel({
               onChange({
                 ...config,
                 variant: value,
+                randomStart: value === "classic" ? false : true,
               } as GameConfiguration);
             }}
           >
@@ -266,13 +267,34 @@ export function GameConfigurationPanel({
               <SelectItem value="standard">Standard</SelectItem>
               <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
               <SelectItem value="classic">Classic</SelectItem>
-              <SelectItem value="freestyle">Freestyle</SelectItem>
             </SelectContent>
           </Select>
         </div>
       </div>
 
       <div className="space-y-3">
+        <div className="flex items-center justify-between">
+          <div className="space-y-1">
+            <Label htmlFor="random-start">Random Start</Label>
+            <p
+              id="random-start-description"
+              className="text-sm text-muted-foreground"
+            >
+              {config.variant === "classic"
+                ? "Random Start is not available for Classic yet."
+                : "Start from a fresh randomized position."}
+            </p>
+          </div>
+          <Switch
+            id="random-start"
+            checked={config.randomStart}
+            onCheckedChange={(checked) =>
+              updateConfig({ randomStart: checked })
+            }
+            disabled={config.variant === "classic"}
+            aria-describedby="random-start-description"
+          />
+        </div>
         <div className="flex items-center justify-between">
           <div className="space-y-1">
             <Label htmlFor="rated">Rated Status</Label>

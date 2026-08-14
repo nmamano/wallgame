@@ -403,6 +403,7 @@ async function openAutoBot(
 const gameConfig: GameConfiguration = {
   timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
   variant: "standard",
+  randomStart: false,
   rated: false,
   boardWidth: 3,
   boardHeight: 3,

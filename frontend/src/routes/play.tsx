@@ -491,6 +491,7 @@ function GameSetup() {
                       handleGameConfigChange({
                         ...gameConfig,
                         variant: value,
+                        randomStart: value === "classic" ? false : true,
                       } as GameConfiguration)
                     }
                   >
@@ -504,7 +505,6 @@ function GameSetup() {
                       <SelectItem value="standard">Standard</SelectItem>
                       <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                       <SelectItem value="classic">Classic</SelectItem>
-                      <SelectItem value="freestyle">Freestyle</SelectItem>
                     </SelectContent>
                   </Select>
                 </div>
@@ -515,8 +515,34 @@ function GameSetup() {
                     "Bigger beats smaller, except the mouse scares the elephant. First capture wins."}
                   {gameConfig.variant === "classic" &&
                     "Reach the corner first."}
-                  {gameConfig.variant === "freestyle" &&
-                    "Randomized setup with neutral starting walls."}
+                </p>
+              </div>
+
+              <div className="space-y-2">
+                <div className="flex items-center gap-3">
+                  <Label htmlFor="random-start" className="min-w-[120px]">
+                    Random Start
+                  </Label>
+                  <Switch
+                    id="random-start"
+                    checked={gameConfig.randomStart}
+                    onCheckedChange={(checked) =>
+                      handleGameConfigChange({
+                        ...gameConfig,
+                        randomStart: checked,
+                      })
+                    }
+                    disabled={gameConfig.variant === "classic"}
+                    aria-describedby="random-start-description"
+                  />
+                </div>
+                <p
+                  id="random-start-description"
+                  className="text-sm text-muted-foreground"
+                >
+                  {gameConfig.variant === "classic"
+                    ? "Random Start is not available for Classic yet."
+                    : "Start from a fresh randomized position."}
                 </p>
               </div>
 

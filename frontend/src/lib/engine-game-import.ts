@@ -360,6 +360,7 @@ export function importEngineGame(
   );
   const config: GameConfiguration = {
     variant,
+    randomStart: false,
     timeControl: BOT_GAME_TIME_CONTROL,
     rated: false,
     boardWidth: record.columns,

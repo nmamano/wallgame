@@ -179,6 +179,7 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
     distances: pawns.attackDistances,
     config: {
       variant: "custom-setup-standard",
+      randomStart: false,
       timeControl: TIME_CONTROL,
       rated: false,
       boardWidth: BOARD_SIZE,

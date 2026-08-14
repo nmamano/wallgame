@@ -14,6 +14,7 @@ import { fetchBots, fetchRecommendedBots, playVsBot } from "@/lib/api";
 /** V3: Bot query settings - no timeControl (bot games are untimed) */
 export interface BotsQuerySettings {
   variant: Variant;
+  randomStart: boolean;
   boardWidth?: number;
   boardHeight?: number;
 }
@@ -23,6 +24,7 @@ export const useBotsQuery = (settings: BotsQuerySettings) => {
     queryKey: [
       "bots",
       settings.variant,
+      settings.randomStart,
       settings.boardWidth ?? null,
       settings.boardHeight ?? null,
     ],
@@ -31,10 +33,13 @@ export const useBotsQuery = (settings: BotsQuerySettings) => {
 };
 
 /** V3: Recommended bots query - no timeControl (bot games are untimed) */
-export const useRecommendedBotsQuery = (variant: Variant) => {
+export const useRecommendedBotsQuery = (
+  variant: Variant,
+  randomStart: boolean,
+) => {
   return useQuery<{ bots: RecommendedBotEntry[] }>({
-    queryKey: ["bots", "recommended", variant],
-    queryFn: () => fetchRecommendedBots({ variant }),
+    queryKey: ["bots", "recommended", variant, randomStart],
+    queryFn: () => fetchRecommendedBots({ variant, randomStart }),
   });
 };
 

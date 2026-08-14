@@ -64,6 +64,7 @@ function startTestServer() {
 const GAME_CONFIG: PartialGameConfiguration = {
   timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
   variant: "standard",
+  randomStart: false,
   rated: false,
   boardWidth: 3,
   boardHeight: 3,

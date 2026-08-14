@@ -204,7 +204,9 @@ function PastGames() {
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
-                  <SelectItem value="freestyle">Freestyle</SelectItem>
+                  <SelectItem value="freestyle">
+                    Standard · Random Start
+                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>
@@ -414,7 +416,7 @@ function PastGames() {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium capitalize">
-                        {variantDisplayName(row.variant)}
+                        {variantDisplayName(row.variant, row.randomStart)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={row.rated ? "default" : "secondary"}>

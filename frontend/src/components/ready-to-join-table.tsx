@@ -124,12 +124,13 @@ export function ReadyToJoinTable({
   // Bot queries - V3: no timeControl (bot games are untimed)
   const { data: matchingData, isLoading: matchingLoading } = useBotsQuery({
     variant: config.variant,
+    randomStart: config.randomStart,
     boardWidth: config.boardWidth,
     boardHeight: config.boardHeight,
   });
 
   const { data: recommendedData, isLoading: recommendedLoading } =
-    useRecommendedBotsQuery(config.variant);
+    useRecommendedBotsQuery(config.variant, config.randomStart);
 
   const recommendedRows = useMemo<RecommendedBotEntry[]>(() => {
     return recommendedData?.bots ?? [];
@@ -302,7 +303,10 @@ export function ReadyToJoinTable({
                               : ""
                           }`}
                         >
-                          {variantDisplayName(game.config.variant)}
+                          {variantDisplayName(
+                            game.config.variant,
+                            game.config.randomStart,
+                          )}
                         </span>
                       </TableCell>
                       <TableCell className="text-center">
@@ -366,7 +370,8 @@ export function ReadyToJoinTable({
         {activeTab === "bots-recommended" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing recommended bots for: {variantDisplayName(config.variant)}
+              Showing recommended bots for:{" "}
+              {variantDisplayName(config.variant, config.randomStart)}
             </p>
             <Table>
               <TableHeader>
@@ -425,7 +430,8 @@ export function ReadyToJoinTable({
         {activeTab === "bots-filtered" && (
           <div className="overflow-x-auto">
             <p className="text-xs text-muted-foreground mb-2">
-              Showing bots matching: {variantDisplayName(config.variant)}
+              Showing bots matching:{" "}
+              {variantDisplayName(config.variant, config.randomStart)}
               {` / ${formatBoardSizeShort(config.boardWidth, config.boardHeight)}`}
             </p>
             <Table>

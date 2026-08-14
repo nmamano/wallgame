@@ -1,6 +1,9 @@
 import { describe, expect, it } from "bun:test";
 
-import { botSupportsPosition } from "../../shared/domain/bot-capability";
+import {
+  botSupportsGameConfiguration,
+  botSupportsPosition,
+} from "../../shared/domain/bot-capability";
 
 /**
  * One rule, asked by the client to decide what a puzzle card offers and by the
@@ -98,5 +101,56 @@ describe("botSupportsPosition", () => {
     expect(botSupportsPosition(superhumanBot, "custom-setup-classic")).toBe(
       false,
     );
+  });
+});
+
+describe("Random Start bot capability", () => {
+  const splitBot = {
+    standard: {
+      boardWidth: { min: 5, max: 12 },
+      boardHeight: { min: 5, max: 10 },
+    },
+    freestyle: {
+      boardWidth: { min: 7, max: 12 },
+      boardHeight: { min: 7, max: 10 },
+    },
+  } as const;
+
+  it("uses standard support for fixed starts and freestyle support for random starts", () => {
+    expect(
+      botSupportsGameConfiguration(splitBot, {
+        variant: "standard",
+        randomStart: false,
+        boardWidth: 5,
+        boardHeight: 5,
+      }),
+    ).toBe(true);
+    expect(
+      botSupportsGameConfiguration(splitBot, {
+        variant: "standard",
+        randomStart: true,
+        boardWidth: 5,
+        boardHeight: 5,
+      }),
+    ).toBe(false);
+    expect(
+      botSupportsGameConfiguration(splitBot, {
+        variant: "standard",
+        randomStart: true,
+        boardWidth: 8,
+        boardHeight: 8,
+      }),
+    ).toBe(true);
+  });
+
+  it("does not make standard-only bots eligible for Random Start", () => {
+    expect(
+      botSupportsGameConfiguration(superhumanBot, {
+        variant: "standard",
+        randomStart: true,
+        boardWidth: 8,
+        boardHeight: 8,
+      }),
+    ).toBe(false);
   });
 });

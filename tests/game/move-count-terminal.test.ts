@@ -35,6 +35,7 @@ const standardConfig = (size: number): GameConfiguration => ({
   boardWidth: size,
   rated: false,
   variant: "standard",
+  randomStart: false,
   timeControl: { initialSeconds: 180, incrementSeconds: 0, preset: "blitz" },
   variantConfig: buildStandardInitialState(size, size),
 });
@@ -162,6 +163,7 @@ describe("moveCount on a game decided by a move", () => {
         boardWidth: 3,
         rated: false,
         variant: "survival",
+        randomStart: false,
         timeControl: {
           initialSeconds: 180,
           incrementSeconds: 0,

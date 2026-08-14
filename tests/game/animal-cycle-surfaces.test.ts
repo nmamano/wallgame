@@ -10,6 +10,7 @@ import { updatePawnSchema } from "../../shared/contracts/settings";
 
 const directConfig = {
   variant: "animal-cycle",
+  randomStart: false,
   boardWidth: 8,
   boardHeight: 8,
 };

@@ -37,6 +37,7 @@ const config = (
   boardWidth: 9,
   rated: false,
   variant,
+  randomStart: false,
   timeControl: { initialSeconds: 180, incrementSeconds: 2, preset: "blitz" },
   variantConfig,
 });
