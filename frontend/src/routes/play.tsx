@@ -443,6 +443,7 @@ function GameSetup() {
   const timeControlDisabled = activeTab === "vs-ai";
   const ratedDisabled =
     !isLoggedIn || activeTab === "vs-ai" || activeTab === "local-play";
+  const hideDisabledAIControls = isSmallScreen && activeTab === "vs-ai";
 
   // --- Render ---
 
@@ -519,101 +520,106 @@ function GameSetup() {
                 </p>
               </div>
 
-              {/* Time Control (always shown; disabled for bot games) */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="time-control" className="min-w-[120px]">
-                    Time Control
-                  </Label>
-                  <Select
-                    value={
-                      timeControlDisabled
-                        ? "none"
-                        : (gameConfig.timeControl.preset ?? "blitz")
-                    }
-                    onValueChange={(value: string) => {
-                      if (timeControlDisabled) return;
-                      handleGameConfigChange({
-                        ...gameConfig,
-                        timeControl: timeControlConfigFromPreset(
-                          value as TimeControlPreset,
-                        ),
-                      });
-                    }}
-                    disabled={timeControlDisabled}
-                  >
-                    <SelectTrigger
-                      id="time-control"
-                      className="bg-background w-[200px]"
+              {/* Mobile bot setup keeps the bot choice central by omitting this
+                  disabled control. Other tabs and desktop remain unchanged. */}
+              {!hideDisabledAIControls && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="time-control" className="min-w-[120px]">
+                      Time Control
+                    </Label>
+                    <Select
+                      value={
+                        timeControlDisabled
+                          ? "none"
+                          : (gameConfig.timeControl.preset ?? "blitz")
+                      }
+                      onValueChange={(value: string) => {
+                        if (timeControlDisabled) return;
+                        handleGameConfigChange({
+                          ...gameConfig,
+                          timeControl: timeControlConfigFromPreset(
+                            value as TimeControlPreset,
+                          ),
+                        });
+                      }}
+                      disabled={timeControlDisabled}
                     >
-                      <SelectValue />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {timeControlDisabled && (
-                        <SelectItem value="none">None</SelectItem>
-                      )}
-                      <SelectItem value="bullet">Bullet (1+0)</SelectItem>
-                      <SelectItem value="blitz">Blitz (3+2)</SelectItem>
-                      <SelectItem value="rapid">Rapid (10+2)</SelectItem>
-                      <SelectItem value="classical">
-                        Classical (30+0)
-                      </SelectItem>
-                    </SelectContent>
-                  </Select>
+                      <SelectTrigger
+                        id="time-control"
+                        className="bg-background w-[200px]"
+                      >
+                        <SelectValue />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {timeControlDisabled && (
+                          <SelectItem value="none">None</SelectItem>
+                        )}
+                        <SelectItem value="bullet">Bullet (1+0)</SelectItem>
+                        <SelectItem value="blitz">Blitz (3+2)</SelectItem>
+                        <SelectItem value="rapid">Rapid (10+2)</SelectItem>
+                        <SelectItem value="classical">
+                          Classical (30+0)
+                        </SelectItem>
+                      </SelectContent>
+                    </Select>
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {timeControlDisabled && "Bot games are untimed."}
+                    {!timeControlDisabled &&
+                      gameConfig.timeControl.preset === "bullet" &&
+                      "1 minute, no increment."}
+                    {!timeControlDisabled &&
+                      gameConfig.timeControl.preset === "blitz" &&
+                      "3 minutes, 2 second increment."}
+                    {!timeControlDisabled &&
+                      gameConfig.timeControl.preset === "rapid" &&
+                      "10 minutes, 2 second increment."}
+                    {!timeControlDisabled &&
+                      gameConfig.timeControl.preset === "classical" &&
+                      "30 minutes, no increment."}
+                  </p>
                 </div>
-                <p className="text-sm text-muted-foreground">
-                  {timeControlDisabled && "Bot games are untimed."}
-                  {!timeControlDisabled &&
-                    gameConfig.timeControl.preset === "bullet" &&
-                    "1 minute, no increment."}
-                  {!timeControlDisabled &&
-                    gameConfig.timeControl.preset === "blitz" &&
-                    "3 minutes, 2 second increment."}
-                  {!timeControlDisabled &&
-                    gameConfig.timeControl.preset === "rapid" &&
-                    "10 minutes, 2 second increment."}
-                  {!timeControlDisabled &&
-                    gameConfig.timeControl.preset === "classical" &&
-                    "30 minutes, no increment."}
-                </p>
-              </div>
+              )}
 
-              {/* Rated (always shown; disabled for bot/local games or logged-out) */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label htmlFor="rated" className="min-w-[120px]">
-                    Rated
-                  </Label>
-                  <Switch
-                    id="rated"
-                    checked={ratedDisabled ? false : gameConfig.rated}
-                    onCheckedChange={(checked) => {
-                      if (ratedDisabled) return;
-                      handleGameConfigChange({
-                        ...gameConfig,
-                        rated: checked,
-                      });
-                    }}
-                    disabled={ratedDisabled}
-                  />
-                </div>
-                <p className="text-sm text-muted-foreground">
-                  {/* Telling a framed player to log in points at a door that
+              {/* Mobile bot setup omits this disabled control for the same reason. */}
+              {!hideDisabledAIControls && (
+                <div className="space-y-2">
+                  <div className="flex items-center gap-3">
+                    <Label htmlFor="rated" className="min-w-[120px]">
+                      Rated
+                    </Label>
+                    <Switch
+                      id="rated"
+                      checked={ratedDisabled ? false : gameConfig.rated}
+                      onCheckedChange={(checked) => {
+                        if (ratedDisabled) return;
+                        handleGameConfigChange({
+                          ...gameConfig,
+                          rated: checked,
+                        });
+                      }}
+                      disabled={ratedDisabled}
+                    />
+                  </div>
+                  <p className="text-sm text-muted-foreground">
+                    {/* Telling a framed player to log in points at a door that
                       is not there; see lib/embedded-mode.ts. */}
-                  {!isLoggedIn &&
-                    (isEmbedded()
-                      ? "Rated games are not available here."
-                      : "Log in to play rated games.")}
-                  {isLoggedIn &&
-                    (activeTab === "vs-ai" || activeTab === "local-play") &&
-                    "Rated games are only available vs other players."}
-                  {isLoggedIn &&
-                    canRatedGame &&
-                    (gameConfig.rated
-                      ? "The game will affect your rating."
-                      : "The game will not affect your rating.")}
-                </p>
-              </div>
+                    {!isLoggedIn &&
+                      (isEmbedded()
+                        ? "Rated games are not available here."
+                        : "Log in to play rated games.")}
+                    {isLoggedIn &&
+                      (activeTab === "vs-ai" || activeTab === "local-play") &&
+                      "Rated games are only available vs other players."}
+                    {isLoggedIn &&
+                      canRatedGame &&
+                      (gameConfig.rated
+                        ? "The game will affect your rating."
+                        : "The game will not affect your rating.")}
+                  </p>
+                </div>
+              )}
 
               {/* Board size */}
               <div className="space-y-2">
