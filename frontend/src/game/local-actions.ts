@@ -35,6 +35,10 @@ export interface PromoteResult {
   premoveCleared: boolean;
 }
 
+export interface TurnStartPromotion extends PromoteResult {
+  autoCommit: boolean;
+}
+
 export interface DoubleStepOptions {
   state: GameState | null;
   playerId: PlayerId | null;
@@ -58,6 +62,39 @@ export const cloneAction = (action: LocalAction): LocalAction => {
 
 export const cloneQueue = (queue: LocalQueue): LocalQueue =>
   queue.map(cloneAction);
+
+/** The action points consumed by a submitted queue from this exact state. */
+export const actionPointsUsed = (
+  state: GameState,
+  playerId: PlayerId,
+  actions: LocalQueue,
+): number => {
+  const positions = new Map<GamePawnType, [number, number]>();
+  let used = 0;
+  for (const action of actions) {
+    if (action.type === "wall") {
+      used += 1;
+      continue;
+    }
+    const current =
+      positions.get(action.type) ??
+      resolvePawnCell(state, playerId, action.type);
+    used +=
+      Math.abs(current[0] - action.target[0]) +
+      Math.abs(current[1] - action.target[1]);
+    positions.set(action.type, [action.target[0], action.target[1]]);
+  }
+  return used;
+};
+
+export const fillsActionBudget = (
+  state: GameState,
+  playerId: PlayerId,
+  actions: LocalQueue,
+  availableActions: number,
+): boolean =>
+  actions.length > 0 &&
+  actionPointsUsed(state, playerId, actions) === availableActions;
 
 const simulateActions = (
   state: GameState,
@@ -148,14 +185,22 @@ export const resolveDoubleStep = ({
   if (distance !== 2) {
     return null;
   }
-  const paths = buildDoubleStepPaths(action.type, currentCell, action.target);
-  if (!paths.length) {
-    return null;
+  if (state.config.variant === "animal-cycle") {
+    // An Animal Cycle direct distance-two UI intent is one submitted action
+    // that consumes two action points. Expanding it changes capture timing
+    // because each submitted action is an endpoint.
+    return simulateActions(state, playerId, [action])
+      ? [cloneAction(action)]
+      : null;
   }
-  for (const path of paths) {
-    if (simulateActions(state, playerId, path)) {
-      return cloneQueue(path);
-    }
+
+  // Preserve the established Standard-family UI encoding.
+  for (const path of buildDoubleStepPaths(
+    action.type,
+    currentCell,
+    action.target,
+  )) {
+    if (simulateActions(state, playerId, path)) return cloneQueue(path);
   }
   return null;
 };
@@ -207,5 +252,25 @@ export const promote = ({
     accepted,
     dropped,
     premoveCleared: accepted.length + dropped.length === pending.length,
+  };
+};
+
+/** Promote a premove queue and decide whether the turn's budget is complete. */
+export const promotePremovesAtTurnStart = (
+  options: PromoteOptions,
+): TurnStartPromotion => {
+  const promotion = promote(options);
+  return {
+    ...promotion,
+    autoCommit: Boolean(
+      options.state &&
+      options.playerId &&
+      fillsActionBudget(
+        options.state,
+        options.playerId,
+        promotion.stagedNext,
+        options.maxActions ?? MAX_LOCAL_ACTIONS,
+      ),
+    ),
   };
 };

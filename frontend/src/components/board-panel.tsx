@@ -61,6 +61,7 @@ interface BoardPanelProps {
   onPawnDragStart: (pawnId: string) => void;
   onPawnDragEnd: () => void;
   onCellDrop: (pawnId: string, targetRow: number, targetCol: number) => void;
+  isCellDropValid: NonNullable<BoardProps["isCellDropValid"]>;
 
   // Staged actions
   stagedActions: unknown[];
@@ -124,6 +125,7 @@ export function BoardPanel({
   onPawnDragStart,
   onPawnDragEnd,
   onCellDrop,
+  isCellDropValid,
   stagedActions,
   premovedActions,
   pendingActionsCount,
@@ -209,6 +211,7 @@ export function BoardPanel({
         onPawnDragStart={interactionLocked ? undefined : onPawnDragStart}
         onPawnDragEnd={onPawnDragEnd}
         onCellDrop={interactionLocked ? undefined : onCellDrop}
+        isCellDropValid={interactionLocked ? undefined : isCellDropValid}
         lastMove={!Array.isArray(lastMove) ? lastMove : undefined}
         lastMoves={Array.isArray(lastMove) ? lastMove : undefined}
         lastWalls={lastWalls}

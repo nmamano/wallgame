@@ -33,7 +33,19 @@ A randomized setup with neutral starting walls.
       "Dog beats Cat, Cat beats Mouse, Mouse beats Elephant, and Elephant beats Dog.",
     );
     expect(variants).toContain(
-      "The first capture wins. Movement and wall placement follow the standard rules.",
+      "The first capture wins immediately when an action ends on an opposing animal.",
+    );
+    expect(variants).toContain(
+      "Your two animals can never share a cell or cross each other.",
+    );
+    expect(variants).toContain(
+      "On an L-shaped two-cell move, one open route that avoids your other animal is enough.",
+    );
+    expect(variants).toContain(
+      "You may cross an opposing animal without capturing it; only the cell where each action ends is checked for a capture.",
+    );
+    expect(variants).toContain(
+      "You may also pass without taking an action. Walls follow the standard rules.",
     );
   });
 });

@@ -1,5 +1,8 @@
 import { isClassicVariant } from "./game-types";
-import { animalCycleCaptureWinner } from "./animal-cycle";
+import {
+  animalCycleCaptureWinner,
+  animalCycleTeammateCell,
+} from "./animal-cycle";
 import type {
   PlayerId,
   GameStatus,
@@ -425,6 +428,14 @@ export class GameState {
         const currentPos = requirePawnCell(nextPawns, player, action.type);
         const targetPos = action.target;
 
+        const animalCycleTeammate =
+          nextPawns.kind === "animal-cycle"
+            ? animalCycleTeammateCell(nextPawns, player, action.type)
+            : undefined;
+        if (animalCycleTeammate && cellEq(targetPos, animalCycleTeammate)) {
+          throw new Error("Animal Cycle teammates cannot share a cell");
+        }
+
         // A pawn target was the one coordinate nothing checked. Walls have been
         // bounded all along - `canBuildWall` starts with `inBounds` - but a pawn
         // could be sent off the edge, and was: against 66f6688 a crafted
@@ -499,6 +510,9 @@ export class GameState {
           }
 
           for (const mid of candidates) {
+            if (animalCycleTeammate && cellEq(mid, animalCycleTeammate)) {
+              continue;
+            }
             // Check step 1: current -> mid
             let step1Valid = true;
             if (mid[1] > currentPos[1]) {

@@ -22,10 +22,11 @@ import {
 } from "../../../shared/domain/pawns";
 import type { BoardPawn, Arrow } from "@/components/board";
 import {
+  fillsActionBudget,
   canEnqueue,
   enqueueToggle,
   resolveDoubleStep,
-  promote,
+  promotePremovesAtTurnStart,
   MAX_LOCAL_ACTIONS,
 } from "@/game/local-actions";
 import { sounds, play } from "@/lib/sounds";
@@ -132,6 +133,11 @@ export interface BoardInteractionsResult {
     targetRow: number,
     targetCol: number,
   ) => void;
+  isCellDropValid: (
+    pawnId: string,
+    targetRow: number,
+    targetCol: number,
+  ) => boolean;
 
   // Annotation handlers for Board component
   onWallSlotRightClick: (
@@ -347,7 +353,7 @@ export function useBoardInteractions(
     const pending = premovedActionsRef.current;
     if (pending.length === 0) return;
 
-    const promotion = promote({
+    const promotion = promotePremovesAtTurnStart({
       state: gameState,
       playerId: controllablePlayerId,
       current: stagedActionsRef.current,
@@ -361,7 +367,7 @@ export function useBoardInteractions(
       setError(null);
 
       // Auto-commit if we have enough actions
-      if (promotion.stagedNext.length === maxStagedActions) {
+      if (promotion.autoCommit) {
         commitStagedActions(promotion.stagedNext);
       }
     } else if (promotion.premoveCleared) {
@@ -435,7 +441,15 @@ export function useBoardInteractions(
       }
 
       // Auto-commit when the current turn's remaining action budget is filled.
-      if (mode === "staged" && nextQueue.length === maxStagedActions) {
+      if (
+        mode === "staged" &&
+        fillsActionBudget(
+          gameState,
+          controllablePlayerId,
+          nextQueue,
+          maxStagedActions,
+        )
+      ) {
         commitStagedActions(nextQueue);
       }
 
@@ -762,6 +776,71 @@ export function useBoardInteractions(
     [draggingPawnId, queueMode, stagePawnAction],
   );
 
+  const isCellDropValid = useCallback(
+    (pawnId: string, targetRow: number, targetCol: number): boolean => {
+      if (!queueMode || !gameState || !controllablePlayerId) return false;
+      const pawn = boardPawns.find((candidate) => candidate.id === pawnId);
+      if (
+        !pawn ||
+        pawn.playerId !== controllablePlayerId ||
+        !isMovablePawnType(pawn.type) ||
+        (mouseMoveLocked && pawn.type === "mouse")
+      ) {
+        return false;
+      }
+      const queue =
+        queueMode === "staged"
+          ? stagedActionsRef.current
+          : premovedActionsRef.current;
+      const action: Action = {
+        type: pawn.type,
+        target: [targetRow, targetCol],
+      };
+      const existing = queue.find((candidate) => candidate.type === pawn.type);
+      if (existing) {
+        return canEnqueue({
+          state: gameState,
+          playerId: controllablePlayerId,
+          queue,
+          action,
+        });
+      }
+      const source = requirePawnCell(
+        gameState.pawns,
+        controllablePlayerId,
+        pawn.type,
+      );
+      const distance =
+        Math.abs(source[0] - targetRow) + Math.abs(source[1] - targetCol);
+      if (distance === 2) {
+        const availableActions = queueMode === "staged" ? maxStagedActions : 2;
+        return (
+          queue.length === 0 &&
+          availableActions >= 2 &&
+          resolveDoubleStep({
+            state: gameState,
+            playerId: controllablePlayerId,
+            action,
+          }) !== null
+        );
+      }
+      return canEnqueue({
+        state: gameState,
+        playerId: controllablePlayerId,
+        queue,
+        action,
+      });
+    },
+    [
+      boardPawns,
+      controllablePlayerId,
+      gameState,
+      maxStagedActions,
+      mouseMoveLocked,
+      queueMode,
+    ],
+  );
+
   // ============================================================================
   // Computed Arrows
   // ============================================================================
@@ -819,6 +898,7 @@ export function useBoardInteractions(
     handlePawnDragStart,
     handlePawnDragEnd,
     handleCellDrop,
+    isCellDropValid,
 
     // Annotation handlers
     onWallSlotRightClick: toggleWallAnnotation,

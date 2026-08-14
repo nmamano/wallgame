@@ -14,6 +14,7 @@ import type {
   PlayerId,
 } from "../../shared/domain/game-types";
 import { pawnCell } from "../../shared/domain/pawns";
+import { computeAnimalCycleNaiveMove } from "../../shared/domain/animal-cycle-ai";
 import {
   clearAllSessions,
   handleEvaluatePosition,
@@ -23,6 +24,7 @@ import {
 const config = (
   pawns: AnimalCycleInitialState["pawns"] = buildAnimalCycleInitialState(8, 8)
     .pawns,
+  walls: AnimalCycleInitialState["walls"] = [],
 ): GameConfiguration => ({
   variant: "animal-cycle",
   randomStart: false,
@@ -34,7 +36,7 @@ const config = (
     incrementSeconds: 2,
     preset: "blitz",
   },
-  variantConfig: { pawns, walls: [] },
+  variantConfig: { pawns, walls },
 });
 
 const act = (
@@ -214,31 +216,127 @@ describe("Animal Cycle", () => {
     });
   }
 
-  it("does not treat Dog and Mouse teammate overlap as a capture", () => {
+  it.each([
+    {
+      owner: 1 as const,
+      pawns: {
+        p1: { dog: [2, 1] as Cell, mouse: [2, 2] as Cell },
+        p2: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+      },
+      action1: to("dog", [2, 2]),
+      action2: [to("dog", [3, 1]), to("mouse", [3, 1])],
+    },
+    {
+      owner: 2 as const,
+      pawns: {
+        p1: { dog: [0, 0] as Cell, mouse: [7, 0] as Cell },
+        p2: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+      },
+      action1: to("elephant", [2, 1]),
+      action2: [to("cat", [3, 1]), to("elephant", [3, 1])],
+    },
+  ])(
+    "rejects owner $owner teammate overlap after action 1 and action 2",
+    ({ owner, pawns, action1, action2 }) => {
+      const action1State = new GameState(config(pawns), 0);
+      action1State.turn = owner;
+      expect(() => act(action1State, owner, [action1])).toThrow(
+        "Animal Cycle teammates cannot share a cell",
+      );
+
+      const action2State = new GameState(config(pawns), 0);
+      action2State.turn = owner;
+      expect(() => act(action2State, owner, [...action2])).toThrow(
+        "Animal Cycle teammates cannot share a cell",
+      );
+    },
+  );
+
+  it.each([
+    {
+      owner: 1 as const,
+      pawns: {
+        p1: { dog: [2, 1] as Cell, mouse: [2, 2] as Cell },
+        p2: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+      },
+      mover: "dog" as const,
+      midpoint: [2, 2] as Cell,
+      target: [2, 3] as Cell,
+    },
+    {
+      owner: 2 as const,
+      pawns: {
+        p1: { dog: [0, 0] as Cell, mouse: [7, 0] as Cell },
+        p2: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+      },
+      mover: "cat" as const,
+      midpoint: [2, 2] as Cell,
+      target: [2, 3] as Cell,
+    },
+  ])(
+    "rejects owner $owner straight teammate crossing in collapsed and explicit encodings",
+    ({ owner, pawns, mover, midpoint, target }) => {
+      const collapsed = new GameState(config(pawns), 0);
+      collapsed.turn = owner;
+      expect(() => act(collapsed, owner, [to(mover, target)])).toThrow(
+        "Invalid double move: blocked or no path",
+      );
+
+      const explicit = new GameState(config(pawns), 0);
+      explicit.turn = owner;
+      expect(() =>
+        act(explicit, owner, [to(mover, midpoint), to(mover, target)]),
+      ).toThrow("Animal Cycle teammates cannot share a cell");
+    },
+  );
+
+  it("accepts an L move when one wall-open route avoids the teammate", () => {
     const state = new GameState(
       config({
-        p1: { dog: [2, 1], mouse: [2, 2] },
+        p1: { dog: [2, 2], mouse: [2, 3] },
         p2: { cat: [0, 7], elephant: [7, 7] },
       }),
       0,
     );
-    const after = act(state, 1, [to("dog", [2, 2])]);
-    expect(after.status).toBe("playing");
-    expect(after.result).toBeUndefined();
+    expect(() => act(state, 1, [to("dog", [3, 3])])).not.toThrow();
   });
 
-  it("does not treat Cat and Elephant teammate overlap as a capture", () => {
-    const state = new GameState(
-      config({
-        p1: { dog: [0, 0], mouse: [7, 0] },
-        p2: { cat: [2, 2], elephant: [2, 1] },
-      }),
-      0,
+  it("rejects an L move when the teammate blocks one route and a wall blocks the other", () => {
+    const animalConfig = config(
+      {
+        p1: { dog: [2, 2], mouse: [2, 3] },
+        p2: { cat: [0, 7], elephant: [7, 7] },
+      },
+      [{ cell: [3, 2], orientation: "horizontal" }],
     );
-    state.turn = 2;
-    const after = act(state, 2, [to("elephant", [2, 2])]);
+    expect(() =>
+      act(new GameState(animalConfig, 0), 1, [to("dog", [3, 3])]),
+    ).toThrow("Invalid double move: blocked or no path");
+  });
+
+  it("crosses an opposing animal atomically without capture, but explicit action 1 captures", () => {
+    const pawns: AnimalCycleInitialState["pawns"] = {
+      p1: { dog: [2, 1], mouse: [7, 0] },
+      p2: { cat: [2, 2], elephant: [7, 7] },
+    };
+    const atomic = act(new GameState(config(pawns), 0), 1, [to("dog", [2, 3])]);
+    expect(atomic.status).toBe("playing");
+    expect(atomic.result).toBeUndefined();
+
+    const explicit = act(new GameState(config(pawns), 0), 1, [
+      to("dog", [2, 2]),
+      to("dog", [2, 3]),
+    ]);
+    expect(explicit.result).toEqual({ winner: 1, reason: "capture" });
+    expect(explicit.history[0].move.actions).toEqual([to("dog", [2, 2])]);
+  });
+
+  it("keeps a zero-action pass in history and hands over the turn", () => {
+    const state = new GameState(config(), 0);
+    const after = act(state, 1, []);
+    expect(after.history[0].move.actions).toEqual([]);
+    expect(after.turn).toBe(2);
     expect(after.status).toBe("playing");
-    expect(after.result).toBeUndefined();
   });
 
   it("keeps action 1's predator owner as winner and omits hostile action 2", () => {
@@ -333,5 +431,40 @@ describe("Animal Cycle", () => {
     });
     expect(evaluated.success).toBe(true);
     expect(evaluated.bestMove).toBe("Dc8");
+  });
+
+  it("keeps the naive bot off teammate endpoints and teammate-only routes", () => {
+    const state = new GameState(
+      config({
+        p1: { dog: [2, 1], mouse: [2, 2] },
+        p2: { cat: [2, 3], elephant: [7, 7] },
+      }),
+      0,
+    );
+    const move = computeAnimalCycleNaiveMove(
+      state.grid,
+      state.pawns as Extract<typeof state.pawns, { kind: "animal-cycle" }>,
+      1,
+    );
+    expect(move.actions).not.toContainEqual(to("dog", [2, 2]));
+    expect(move.actions).not.toContainEqual(to("dog", [2, 3]));
+    expect(() => act(state, 1, move.actions)).not.toThrow();
+  });
+
+  it("preserves the naive bot's exact empty-action pass fallback", () => {
+    const pawns = new GameState(config(), 0).pawns as Extract<
+      GameState["pawns"],
+      { kind: "animal-cycle" }
+    >;
+    expect(
+      computeAnimalCycleNaiveMove(
+        {
+          accessibleNeighbors: () => [],
+          distance: () => -1,
+        },
+        pawns,
+        1,
+      ),
+    ).toEqual({ actions: [] });
   });
 });

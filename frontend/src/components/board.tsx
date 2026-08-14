@@ -99,6 +99,11 @@ export interface BoardProps {
   onPawnDragStart?: (pawnId: string) => void;
   onPawnDragEnd?: () => void;
   onCellDrop?: (pawnId: string, targetRow: number, targetCol: number) => void;
+  isCellDropValid?: (
+    pawnId: string,
+    targetRow: number,
+    targetCol: number,
+  ) => boolean;
   className?: string;
   draggingPawnId?: string | null;
   selectedPawnId?: string | null;
@@ -267,6 +272,7 @@ export function Board({
   onPawnDragStart,
   onPawnDragEnd,
   onCellDrop,
+  isCellDropValid,
   className = "p-4",
   draggingPawnId = null,
   selectedPawnId = null,
@@ -473,6 +479,9 @@ export function Board({
           [pawn.cell[0], pawn.cell[1]],
           [row, col],
         );
+        if (isCellDropValid && !isCellDropValid(pawn.id, row, col)) {
+          continue;
+        }
         if (stagedActionsCount === 0) {
           // With 0 staged actions: highlight cells at distance 1 OR 2
           if (distance === 1 || distance === 2) {
@@ -495,6 +504,7 @@ export function Board({
     pawnsWithIds,
     stagedActionsCount,
     gameGrid,
+    isCellDropValid,
     rows,
     cols,
   ]);

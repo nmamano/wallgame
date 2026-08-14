@@ -421,6 +421,11 @@ function GamePageContent() {
                     onCellDrop={
                       board.interactionLocked ? undefined : board.onCellDrop
                     }
+                    isCellDropValid={
+                      board.interactionLocked
+                        ? undefined
+                        : board.isCellDropValid
+                    }
                     lastMove={
                       !Array.isArray(board.lastMove)
                         ? board.lastMove
@@ -649,6 +654,7 @@ function GamePageContent() {
                   onPawnDragStart={board.onPawnDragStart}
                   onPawnDragEnd={board.onPawnDragEnd}
                   onCellDrop={board.onCellDrop}
+                  isCellDropValid={board.isCellDropValid}
                   stagedActions={board.stagedActions}
                   premovedActions={board.premovedActions}
                   pendingActionsCount={board.pendingActionsCount}

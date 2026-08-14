@@ -7,6 +7,7 @@ import type {
   PlayerId,
 } from "./game-types";
 import { cellEq } from "./game-utils";
+import { animalCycleTeammateCell } from "./animal-cycle";
 
 type AnimalCyclePawns = Extract<GamePawns, { kind: "animal-cycle" }>;
 
@@ -58,11 +59,13 @@ export function computeAnimalCycleNaiveMove(
   let best: { action: Action; score: number } | undefined;
 
   for (const piece of optionsFor(pawns, playerId)) {
+    const teammate = animalCycleTeammateCell(pawns, playerId, piece.type);
     const reachable = new Map<string, Cell>();
     for (const first of grid.accessibleNeighbors(piece.from)) {
+      if (cellEq(first, teammate)) continue;
       reachable.set(`${first[0]}:${first[1]}`, first);
       for (const second of grid.accessibleNeighbors(first)) {
-        if (!cellEq(second, piece.from)) {
+        if (!cellEq(second, piece.from) && !cellEq(second, teammate)) {
           reachable.set(`${second[0]}:${second[1]}`, second);
         }
       }
