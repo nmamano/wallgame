@@ -1,5 +1,5 @@
 import { useEffect } from "react";
-import { ToastAction } from "@/components/ui/toast";
+import { ToastAction, ToastClose } from "@/components/ui/toast";
 import { toast } from "@/hooks/use-toast";
 import {
   NUDGE_SHOWN_EVENT,
@@ -48,6 +48,7 @@ const REGISTER_URL = "/api/register";
  * which is another way of saying "until you close it".
  */
 const NUDGE_DURATION_MS = 20_000;
+const NUDGE_SELECTOR = ".account-nudge";
 
 /**
  * Reading `window.localStorage` can itself throw - some privacy modes make the
@@ -97,14 +98,42 @@ export function useAccountNudge({
     // denominator.
     browserSendEvent(NUDGE_SHOWN_EVENT);
 
-    toast({
+    let active = true;
+    let removeOutsideListener: (() => void) | undefined;
+    let removeDurationTimer: (() => void) | undefined;
+    const deactivate = () => {
+      if (!active) return;
+      active = false;
+      removeOutsideListener?.();
+      removeDurationTimer?.();
+      removeOutsideListener = undefined;
+      removeDurationTimer = undefined;
+    };
+
+    const { dismiss } = toast({
+      className: "account-nudge [&>button[toast-close]]:hidden",
       title: NUDGE_TITLE,
-      description: NUDGE_DESCRIPTION,
+      description: (
+        <>
+          {NUDGE_DESCRIPTION}
+          <ToastClose
+            aria-label="Dismiss registration notice"
+            className="h-11 w-11 p-0 text-foreground/70 opacity-100 hover:text-foreground"
+            onClick={(event) => {
+              event.currentTarget.closest("ol")?.focus();
+              deactivate();
+            }}
+          />
+        </>
+      ),
       duration: NUDGE_DURATION_MS,
+      onEscapeKeyDown: deactivate,
+      onSwipeEnd: deactivate,
       action: (
         <ToastAction
           altText="Sign up for a free account"
           onClick={() => {
+            deactivate();
             // Before the navigation, not after: assigning to location.href can
             // tear the page down before a queued request leaves.
             browserSendEvent(NUDGE_SIGNUP_CLICK_EVENT);
@@ -115,6 +144,28 @@ export function useAccountNudge({
         </ToastAction>
       ),
     });
+
+    const onPointerDown = (event: PointerEvent) => {
+      const target = event.target;
+      const notice = document.querySelector(NUDGE_SELECTOR);
+      if (!(target instanceof Node) || !notice || notice.contains(target)) {
+        return;
+      }
+
+      // Leave the pointer event alone. The control the user intentionally
+      // pressed still receives its normal click; this notice only gets out of
+      // the way before that click is dispatched.
+      deactivate();
+      dismiss();
+    };
+    document.addEventListener("pointerdown", onPointerDown, true);
+    removeOutsideListener = () =>
+      document.removeEventListener("pointerdown", onPointerDown, true);
+
+    const durationTimer = window.setTimeout(deactivate, NUDGE_DURATION_MS);
+    removeDurationTimer = () => window.clearTimeout(durationTimer);
+
+    return deactivate;
   }, [
     gameId,
     gameStatus,

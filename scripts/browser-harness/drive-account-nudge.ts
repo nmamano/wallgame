@@ -40,8 +40,6 @@ const SHOT_DIR = "/tmp/wallgame-account-nudge";
 /** Where a phone's viewport actually lands once Safari's chrome is deducted. */
 const PHONE = { width: 393, height: 650 };
 const DESKTOP = { width: 1280, height: 800 };
-/** Must match NUDGE_DURATION_MS in use-account-nudge.tsx. */
-const EXPECTED_DURATION_MS = 20_000;
 const NUDGE_TITLE = "Playing as a guest";
 
 const json = async (page: Page, expression: string) => {
@@ -279,6 +277,134 @@ interface HitTest {
   }[];
 }
 
+interface NoticeAccess {
+  closeName: string | null;
+  closeOpacity: string | null;
+  closeSize: { width: number; height: number } | null;
+  focusedText: string;
+}
+
+const NOTICE_ACCESS = `(() => {
+  const toast = document.querySelector(".account-nudge");
+  const close = toast?.querySelector('button[aria-label="Dismiss registration notice"]');
+  const rect = close?.getBoundingClientRect();
+  return {
+    closeName: close?.getAttribute("aria-label") ?? null,
+    closeOpacity: close ? getComputedStyle(close).opacity : null,
+    closeSize: rect ? { width: rect.width, height: rect.height } : null,
+    focusedText: (document.activeElement?.textContent || document.activeElement?.getAttribute?.("aria-label") || document.activeElement?.tagName || "").trim(),
+  };
+})()`;
+
+const noticePresent = (page: Page) =>
+  json(
+    page,
+    `Boolean(document.querySelector(".account-nudge"))`,
+  ) as Promise<boolean>;
+
+const pointerAt = async (page: Page, x: number, y: number) => {
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x,
+    y,
+    button: "left",
+    clickCount: 1,
+  });
+};
+
+const pointerByText = async (page: Page, text: string) => {
+  const point = (await json(
+    page,
+    `(() => {
+      const matches = [...document.querySelectorAll("button, a")].filter(
+        (e) => (e.textContent || "").trim() === ${JSON.stringify(text)} && !e.disabled,
+      );
+      const el = matches[matches.length - 1];
+      if (!el) return null;
+      const r = el.getBoundingClientRect();
+      return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+    })()`,
+  )) as { x: number; y: number } | null;
+  if (!point) return false;
+  await pointerAt(page, point.x, point.y);
+  return true;
+};
+
+const pressKey = async (page: Page, key: string, code: string) => {
+  const windowsVirtualKeyCode =
+    { Enter: 13, Escape: 27, Tab: 9, Space: 32, F8: 119 }[code] ?? 0;
+  await page.send("Input.dispatchKeyEvent", {
+    type: "rawKeyDown",
+    key,
+    code,
+    windowsVirtualKeyCode,
+  });
+  await page.send("Input.dispatchKeyEvent", {
+    type: "keyUp",
+    key,
+    code,
+    windowsVirtualKeyCode,
+  });
+};
+
+const watchNoticeCloseTransitions = (page: Page) =>
+  page.evaluate(`(() => {
+    window.__noticeCloseTransitions = 0;
+    window.__noticeStateObserver?.disconnect();
+    const notice = document.querySelector(".account-nudge");
+    window.__noticeStateObserver = new MutationObserver((records) => {
+      for (const record of records) {
+        if (record.attributeName === "data-state" && notice.dataset.state === "closed") {
+          window.__noticeCloseTransitions += 1;
+        }
+      }
+    });
+    window.__noticeStateObserver.observe(notice, { attributes: true });
+  })()`);
+
+const noticeCloseTransitions = async (page: Page) =>
+  Number(await page.evaluate(`window.__noticeCloseTransitions || 0`));
+
+const swipeNoticeRight = async (page: Page) => {
+  const point = (await json(
+    page,
+    `(() => {
+      const r = document.querySelector(".account-nudge")?.getBoundingClientRect();
+      return r ? { x: r.left + r.width / 2, y: r.top + r.height / 2 } : null;
+    })()`,
+  )) as { x: number; y: number } | null;
+  if (!point) return false;
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mousePressed",
+    x: point.x,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseMoved",
+    x: point.x + 80,
+    y: point.y,
+    button: "left",
+    buttons: 1,
+  });
+  await page.send("Input.dispatchMouseEvent", {
+    type: "mouseReleased",
+    x: point.x + 80,
+    y: point.y,
+    button: "left",
+    clickCount: 1,
+  });
+  return true;
+};
+
 /**
  * A required invariant. Recorded rather than thrown on the spot, so one run
  * reports every failure instead of only the first - and then the run fails.
@@ -479,6 +605,43 @@ const main = async () => {
       coveredEndgame(phone).length === 0,
       JSON.stringify(coveredEndgame(phone)),
     );
+    const access = (await json(page, NOTICE_ACCESS)) as NoticeAccess;
+    say(`phone notice access: ${JSON.stringify(access)}`);
+    must(
+      "the visible dismiss control has an accessible name",
+      access.closeName === "Dismiss registration notice",
+      String(access.closeName),
+    );
+    must(
+      "the dismiss control is visible without hover",
+      access.closeOpacity === "1",
+      String(access.closeOpacity),
+    );
+    must(
+      "the dismiss control has a 44x44 touch target",
+      access.closeSize?.width === 44 && access.closeSize.height === 44,
+      JSON.stringify(access.closeSize),
+    );
+
+    const noticeRect = (await json(
+      page,
+      `(() => {
+        const notice = document.querySelector(".account-nudge") || [...document.querySelectorAll("li")].find((li) => (li.textContent || "").includes(${JSON.stringify(NUDGE_TITLE)}));
+        const r = notice.getBoundingClientRect();
+        return { x: r.left + r.width / 2, y: r.top + r.height / 2 };
+      })()`,
+    )) as { x: number; y: number };
+    await pointerAt(page, noticeRect.x, noticeRect.y);
+    await wait(250);
+    must(
+      "pressing the notice content does not dismiss it",
+      Boolean(
+        await json(
+          page,
+          `[...document.querySelectorAll("li")].some((li) => (li.textContent || "").includes(${JSON.stringify(NUDGE_TITLE)}))`,
+        ),
+      ),
+    );
     await page.screenshot(`${SHOT_DIR}/phone.png`);
 
     // Reachable is not the same as working. Click the endgame control while
@@ -493,7 +656,8 @@ const main = async () => {
       .filter((t) => ENDGAME_CONTROL.test(t) && !/^exit$/i.test(t));
     say(`endgame controls offered: ${JSON.stringify(offered)}`);
     const target = offered.find((t) => /accept/i.test(t)) ?? "";
-    const clicked = target ? await clickByText(page, target) : false;
+    await watchNoticeCloseTransitions(page);
+    const clicked = target ? await pointerByText(page, target) : false;
     must("a rematch control was found and clicked", clicked, target);
     await wait(1800);
     const afterClick = String(await page.evaluate("location.pathname"));
@@ -516,9 +680,14 @@ const main = async () => {
     // that navigating did not add one and did not move the marker. Once per
     // session is proven by the unit tests.
     must(
-      "exactly the one original nudge remains after the rematch navigation",
-      after.nudges === 1,
+      "the outside press dismissed the original nudge",
+      after.nudges === 0,
       String(after.nudges),
+    );
+    must(
+      "the outside press caused exactly one dismiss transition",
+      (await noticeCloseTransitions(page)) === 1,
+      String(await noticeCloseTransitions(page)),
     );
     must(
       "the first-game marker still names game one",
@@ -526,19 +695,8 @@ const main = async () => {
       `${after.first} vs ${firstGameId}`,
     );
 
-    // Radix's own dismissal, not the toast hook's removal delay.
-    await wait(
-      Math.max(0, EXPECTED_DURATION_MS + 2000 - (Date.now() - appearedAt)),
-    );
-    const stillThere = Boolean(
-      await json(
-        page,
-        `[...document.querySelectorAll("li")].some((li) => (li.textContent || "").includes(${JSON.stringify(NUDGE_TITLE)}))`,
-      ),
-    );
-    must(
-      `the nudge is gone ${Math.round(EXPECTED_DURATION_MS / 1000)}s after it appeared`,
-      !stillThere,
+    say(
+      `outside dismissal happened ${Date.now() - appearedAt}ms after appearance`,
     );
 
     // --- The click half, on a nudge of its own. ---
@@ -588,6 +746,144 @@ const main = async () => {
       "clicking Sign up really requested /api/register",
       registerCalls.length === 1,
       JSON.stringify(stub.log()),
+    );
+
+    // --- Keyboard and focus, on a third nudge. ---
+    // Sign up intentionally closes nudge two. Start a fresh game so Escape is
+    // tested on an untouched notice and cannot hide a broken registration
+    // action.
+    await page.evaluate(`
+      localStorage.removeItem("wall-game-first-finished-game");
+      sessionStorage.removeItem("wall-game-account-nudge-shown");
+    `);
+    const startedThird = await clickByText(page, "Accept");
+    must("a third game started for the keyboard test", startedThird);
+    await wait(1200);
+    await playToCountedFinish(page, say);
+    await wait(600);
+    must(
+      "a third nudge was earned for the keyboard test",
+      await noticePresent(page),
+    );
+    must(
+      "opening the notice does not steal focus",
+      !(await json(
+        page,
+        `document.querySelector(".account-nudge")?.contains(document.activeElement)`,
+      )),
+    );
+
+    const focusBeforeOpen = String(
+      await page.evaluate(`(() => {
+        const fallback = [...document.querySelectorAll("button")].find((b) => (b.textContent || "").trim() === "Accept");
+        fallback?.focus();
+        return (document.activeElement?.textContent || "").trim();
+      })()`),
+    );
+    must(
+      "an endgame control can hold focus while the notice is open",
+      focusBeforeOpen === "Accept",
+      focusBeforeOpen,
+    );
+
+    await pressKey(page, "F8", "F8");
+    await wait(250);
+    const focusedInViewport = Boolean(
+      await page.evaluate(`document.activeElement?.tagName === "OL"`),
+    );
+    must("F8 moves keyboard focus to the notice viewport", focusedInViewport);
+    await pressKey(page, "Tab", "Tab");
+    await wait(150);
+    const focusedInNotice = Boolean(
+      await json(
+        page,
+        `document.querySelector(".account-nudge")?.contains(document.activeElement)`,
+      ),
+    );
+    must("Tab moves focus from the viewport into the notice", focusedInNotice);
+
+    await pressKey(page, "Escape", "Escape");
+    await wait(500);
+    must("Escape dismisses the focused notice", !(await noticePresent(page)));
+    const focusAfterEscape = (await json(
+      page,
+      `({
+        tag: document.activeElement?.tagName || null,
+        connected: Boolean(document.activeElement?.isConnected),
+      })`,
+    )) as { tag: string | null; connected: boolean };
+    must(
+      "Escape leaves focus on the connected notice viewport fallback",
+      focusAfterEscape.tag === "OL" && focusAfterEscape.connected,
+      JSON.stringify(focusAfterEscape),
+    );
+
+    // The visible X is a separate keyboard path from Escape. Focus it and use
+    // Enter so its accessible-button semantics, not only its geometry, run.
+    await page.evaluate(`
+      localStorage.removeItem("wall-game-first-finished-game");
+      sessionStorage.removeItem("wall-game-account-nudge-shown");
+    `);
+    must(
+      "a fourth game started for the visible-dismiss test",
+      await clickByText(page, "Accept"),
+    );
+    await wait(1200);
+    await playToCountedFinish(page, say);
+    await wait(600);
+    must(
+      "a fourth nudge was earned for the visible-dismiss test",
+      await noticePresent(page),
+    );
+    const focusedClose = Boolean(
+      await page.evaluate(`(() => {
+        const close = document.querySelector('button[aria-label="Dismiss registration notice"]');
+        close?.focus();
+        return document.activeElement === close;
+      })()`),
+    );
+    must("the visible dismiss control accepts keyboard focus", focusedClose);
+    await pressKey(page, " ", "Space");
+    await wait(500);
+    must(
+      "the visible dismiss control closes the notice",
+      !(await noticePresent(page)),
+    );
+    const focusAfterClose = (await json(
+      page,
+      `({ tag: document.activeElement?.tagName || null, connected: Boolean(document.activeElement?.isConnected) })`,
+    )) as { tag: string | null; connected: boolean };
+    must(
+      "keyboard dismissal leaves focus on the connected viewport fallback",
+      focusAfterClose.tag === "OL" && focusAfterClose.connected,
+      JSON.stringify(focusAfterClose),
+    );
+
+    // Radix also supports a right swipe. Exercise it because this notice owns
+    // a document listener that must stop when Radix closes the notice itself.
+    await page.evaluate(`
+      localStorage.removeItem("wall-game-first-finished-game");
+      sessionStorage.removeItem("wall-game-account-nudge-shown");
+    `);
+    must(
+      "a fifth game started for the swipe-dismiss test",
+      await clickByText(page, "Accept"),
+    );
+    await wait(1200);
+    await playToCountedFinish(page, say);
+    await wait(600);
+    must(
+      "a fifth nudge was earned for the swipe-dismiss test",
+      await noticePresent(page),
+    );
+    await watchNoticeCloseTransitions(page);
+    must("the notice accepted a right swipe", await swipeNoticeRight(page));
+    await wait(500);
+    must("the right swipe closes the notice", !(await noticePresent(page)));
+    must(
+      "the right swipe caused exactly one dismiss transition",
+      (await noticeCloseTransitions(page)) === 1,
+      String(await noticeCloseTransitions(page)),
     );
 
     const failed = checks.filter((c) => !c.ok);
