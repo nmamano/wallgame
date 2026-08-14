@@ -163,15 +163,27 @@ const preyOntoPredator: CaptureCase[] = [
 ];
 
 describe("Animal Cycle", () => {
-  it("builds the required teams in symmetric corners", () => {
-    expect(buildAnimalCycleInitialState(8, 8)).toEqual({
-      pawns: {
-        p1: { dog: [0, 0], mouse: [7, 0] },
-        p2: { cat: [0, 7], elephant: [7, 7] },
-      },
-      walls: [],
-    });
-  });
+  it.each([
+    { boardWidth: 8, boardHeight: 8 },
+    { boardWidth: 5, boardHeight: 10 },
+  ])(
+    "starts each player's animals in opposite corners on a $boardWidth x $boardHeight board",
+    ({ boardWidth, boardHeight }) => {
+      expect(buildAnimalCycleInitialState(boardWidth, boardHeight)).toEqual({
+        pawns: {
+          p1: {
+            dog: [boardHeight - 1, 0],
+            mouse: [0, boardWidth - 1],
+          },
+          p2: {
+            cat: [0, 0],
+            elephant: [boardHeight - 1, boardWidth - 1],
+          },
+        },
+        walls: [],
+      });
+    },
+  );
 
   for (const edge of legalCaptures) {
     it(`ends immediately when action 1 creates ${edge.name}`, () => {

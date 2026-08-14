@@ -5,9 +5,12 @@ export const buildAnimalCycleInitialState = (
   boardHeight: number,
 ): AnimalCycleInitialState => ({
   pawns: {
-    p1: { dog: [0, 0], mouse: [boardHeight - 1, 0] },
+    p1: {
+      dog: [boardHeight - 1, 0],
+      mouse: [0, boardWidth - 1],
+    },
     p2: {
-      cat: [0, boardWidth - 1],
+      cat: [0, 0],
       elephant: [boardHeight - 1, boardWidth - 1],
     },
   },
