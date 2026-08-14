@@ -448,6 +448,24 @@ function GameSetup() {
   // --- Render ---
 
   const Wrapper = isSmallScreen ? "div" : Card;
+  const boardSizeControl = (
+    <div className="space-y-2">
+      <div className="flex items-center gap-3">
+        <Label className="min-w-[120px]">Board Size</Label>
+        <BoardSizePicker
+          width={gameConfig.boardWidth}
+          height={gameConfig.boardHeight}
+          onChange={(w, h) =>
+            handleGameConfigChange({
+              ...gameConfig,
+              boardWidth: w,
+              boardHeight: h,
+            })
+          }
+        />
+      </div>
+    </div>
+  );
 
   return (
     <div className={isSmallScreen ? "py-2" : "container mx-auto py-8 px-4"}>
@@ -545,6 +563,8 @@ function GameSetup() {
                     : "Start from a fresh randomized position."}
                 </p>
               </div>
+
+              {isSmallScreen && boardSizeControl}
 
               {/* Mobile bot setup keeps the bot choice central by omitting this
                   disabled control. Other tabs and desktop remain unchanged. */}
@@ -647,23 +667,7 @@ function GameSetup() {
                 </div>
               )}
 
-              {/* Board size */}
-              <div className="space-y-2">
-                <div className="flex items-center gap-3">
-                  <Label className="min-w-[120px]">Board Size</Label>
-                  <BoardSizePicker
-                    width={gameConfig.boardWidth}
-                    height={gameConfig.boardHeight}
-                    onChange={(w, h) =>
-                      handleGameConfigChange({
-                        ...gameConfig,
-                        boardWidth: w,
-                        boardHeight: h,
-                      })
-                    }
-                  />
-                </div>
-              </div>
+              {!isSmallScreen && boardSizeControl}
             </div>
 
             {/* --- Tab-specific content --- */}
