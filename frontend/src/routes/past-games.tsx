@@ -98,7 +98,7 @@ function PastGames() {
   const Wrapper = isSmallScreen ? "div" : Card;
 
   const initialFilters = useMemo(
-    () => parsePastGamesNavState(router.location.state),
+    () => parsePastGamesNavState(router.location.state) ?? {},
     [router.location.state],
   );
 

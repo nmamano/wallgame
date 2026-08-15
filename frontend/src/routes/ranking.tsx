@@ -121,7 +121,7 @@ function Ranking() {
   const Wrapper = isSmallScreen ? "div" : Card;
 
   const initialFilters = useMemo(
-    () => parseRankingNavState(router.location.state),
+    () => parseRankingNavState(router.location.state) ?? {},
     [router.location.state],
   );
 
