@@ -1,0 +1,83 @@
+{
+  "kind": "phase7-animal-universal-feasibility-v2-corrected-ownership",
+  "createdUtc": "2026-08-15T22:22:09Z",
+  "rulesSourceCommit": "526bb8f825a6e4819ef3e5ada1f754cb41f3e650",
+  "rulesSourceTree": "ce3d23dfaf9862715a831cfe863993675d0c8527",
+  "experimentSupportCommit": "4db0202311078586a06727f7f406f25d90ed8e57",
+  "experimentSupportTree": "684bc99c94075b566a11457323db666f51b54a41",
+  "modelBaseline": {
+    "generation": 93,
+    "architecture": "transformer-pointwise-d256-l10-h8",
+    "inputPlanes": 16,
+    "animalVariantPlaneAtMigration": "zero initialized"
+  },
+  "seed": 730071,
+  "generations": [94, 95, 96],
+  "gamesPerGeneration": 5000,
+  "training": {
+    "samplesPerAction": 1000,
+    "epochsPerGeneration": 1,
+    "maxTrainingWindow": 12,
+    "trainingGameCap": 20000,
+    "batchSize": 512,
+    "inferenceBatchSize": 256,
+    "threads": 16
+  },
+  "curriculumPerGeneration": {
+    "standard": {
+      "initialCondition": "fixed",
+      "games": 2000,
+      "sizes": {
+        "8x8": 400,
+        "9x9": 200,
+        "8x9": 100,
+        "9x8": 100,
+        "9x10": 100,
+        "10x9": 100,
+        "10x10": 400,
+        "11x10": 100,
+        "12x10": 500
+      }
+    },
+    "classic": {
+      "initialCondition": "fixed",
+      "games": 2000,
+      "sizes": {
+        "8x8": 400,
+        "9x9": 200,
+        "8x9": 100,
+        "9x8": 100,
+        "9x10": 100,
+        "10x9": 100,
+        "10x10": 400,
+        "11x10": 100,
+        "12x10": 500
+      }
+    },
+    "animal-cycle": {
+      "initialCondition": "fixed",
+      "games": 1000,
+      "sizes": { "7x7": 1000 },
+      "ownership": {
+        "player1": ["cat", "elephant"],
+        "player2": ["mouse", "dog"]
+      }
+    }
+  },
+  "randomStartTrainingGames": 0,
+  "replayAudit": "one sidecar per generated game",
+  "preservedPreCorrectionCorpus": {
+    "artifactRoot": "~/nil/wallgame-phase7-feasibility/deep-wallwars/build-tests/phase7-feasibility-34e5f567",
+    "csvFiles": 3000,
+    "auditSidecars": 3000,
+    "animalFiles": 0,
+    "sha256Manifest": "metrics/pre-correction-data.sha256",
+    "sha256ManifestLines": 6000,
+    "sha256ManifestSha256": "f554aa7cbe68ce47ee3398793156f891c229225ab1ea0a23787aeea93518b1cb",
+    "standard": "complete: 2000/2000",
+    "classic": "partial: 1000/2000",
+    "reuseStatus": "eligible only after every file hash revalidates; Standard and Classic conversion paths are outside the Animal-only variant gates changed by the rules correction",
+    "openGate": "Classic 10x9 label audit measured a 10.4% seat gap against the unchanged 10.0% maximum"
+  },
+  "activation": false
+}

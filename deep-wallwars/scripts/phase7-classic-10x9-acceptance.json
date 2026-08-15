@@ -1,0 +1,21 @@
+{
+  "kind": "phase7-label-audit-one-bucket-acceptance-v1",
+  "approvedBy": "Nil",
+  "recordedUtc": "2026-08-15T22:43:15Z",
+  "scope": "Phase 7 feasibility experiment only",
+  "dataDirectory": "generation_93_classic_10x9",
+  "games": 100,
+  "auditSidecars": 100,
+  "observed": {
+    "redOneHot": 0,
+    "redPositions": 0,
+    "blueOneHot": 2022,
+    "bluePositions": 19529,
+    "seatGapPercent": 10.354,
+    "permanentMaximumPercent": 10.0
+  },
+  "decision": "Accept the frozen bucket as-is. Do not regenerate it and do not change the permanent audit gate.",
+  "hashManifest": "metrics/pre-correction-data.sha256",
+  "hashManifestSha256": "f554aa7cbe68ce47ee3398793156f891c229225ab1ea0a23787aeea93518b1cb",
+  "frozenExperimentManifestSha256": "0675d45282e2bcb8bc573d749619cffbfe3e32888b56e77daf27e4ea220542a6"
+}

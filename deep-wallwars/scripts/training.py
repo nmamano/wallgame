@@ -6,6 +6,8 @@ import os
 import re
 import shutil
 import functools
+import hashlib
+import json
 from pathlib import Path
 
 # Force all prints to flush immediately for real-time logging
@@ -166,6 +168,11 @@ parser.add_argument(
     "--animal-cycle-size",
     help="Fixed Animal Cycle game size for --animal-cycle-games (COLSxROWS)",
     default="7x7",
+)
+parser.add_argument(
+    "--label-audit-acceptance",
+    help="Experiment-only JSON record for one explicitly accepted label-audit failure",
+    default="",
 )
 parser.add_argument(
     "-s",
@@ -769,6 +776,37 @@ def _transfer_value_linear(base_state, new_state,
                 new_w[0, new_idx] = old_w[0, old_idx]
 
 
+def accepted_label_audit_failure(output_dir):
+    if not args.label_audit_acceptance:
+        return False
+
+    acceptance_path = Path(args.label_audit_acceptance).resolve()
+    acceptance = json.loads(acceptance_path.read_text())
+    if acceptance.get("kind") != "phase7-label-audit-one-bucket-acceptance-v1":
+        raise RuntimeError("Invalid label-audit acceptance kind")
+
+    expected_dir = (Path(args.data) / acceptance["dataDirectory"]).resolve()
+    if Path(output_dir).resolve() != expected_dir:
+        return False
+
+    hash_manifest = Path(args.data).parent / acceptance["hashManifest"]
+    actual_hash = hashlib.sha256(hash_manifest.read_bytes()).hexdigest()
+    if actual_hash != acceptance["hashManifestSha256"]:
+        raise RuntimeError(
+            f"Accepted bucket hash-manifest mismatch: {actual_hash}"
+        )
+
+    print(
+        "AUDIT FAILURE ACCEPTED FOR THIS FROZEN PHASE 7 BUCKET ONLY: "
+        f"{acceptance['dataDirectory']} ({acceptance['observed']['blueOneHot']}/"
+        f"{acceptance['observed']['bluePositions']} one-hot, "
+        f"{acceptance['observed']['seatGapPercent']}% seat gap)."
+    )
+    print(f"  acceptance evidence: {acceptance_path}")
+    print(f"  preserved corpus manifest: {actual_hash}")
+    return True
+
+
 def run_label_audit(output_dir):
     """Label-corruption gate (see plans/data-pipeline-incident.md).
 
@@ -779,7 +817,7 @@ def run_label_audit(output_dir):
     audit_script = Path(__file__).resolve().parent / "audit_labels.py"
     print(f"Auditing labels in {output_dir}...")
     result = subprocess.run([sys.executable, str(audit_script), output_dir])
-    if result.returncode != 0:
+    if result.returncode != 0 and not accepted_label_audit_failure(output_dir):
         print(f"Error: label audit FAILED for {output_dir} (details above).")
         print("Training halted so corrupted labels are never trained on.")
         exit(1)
