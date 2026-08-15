@@ -1,11 +1,15 @@
 #include "state_conversions.hpp"
 
+#include "play.hpp"
+
 #include <folly/Overload.h>
 
 #include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
+
+#include <nlohmann/json.hpp>
 
 std::size_t universal_policy_index(Board const& board, Turn turn, Action const& action) {
     std::size_t const board_size = board.columns() * board.rows();
@@ -170,18 +174,44 @@ TrainingDataPrinter::TrainingDataPrinter(std::filesystem::path directory, float 
     std::filesystem::create_directory(m_directory);
 }
 
-void TrainingDataPrinter::operator()(std::vector<NodeInfo> const& records,
-                                     Board const& final_board, int index) const {
-    float score_for_red = final_board.score_for(Player::Red);
+void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const {
+    float score_for_red = game.final_board.score_for(Player::Red);
 
     std::ofstream output_file{m_directory / ("game_" + std::to_string(index) + ".csv")};
+    nlohmann::json audit = {
+        {"actualWinner", game.actual_winner == Winner::Red ? "red"
+             : game.actual_winner == Winner::Blue ? "blue"
+             : game.actual_winner == Winner::Draw ? "draw" : "undecided"},
+        {"endReason", game.end_reason == TrainingEndReason::Terminal ? "terminal"
+             : game.end_reason == TrainingEndReason::NoLegalAction ? "no-legal-action"
+                                                                    : "move-limit"},
+        {"heuristicScoreForRed", score_for_red},
+        {"decisions", nlohmann::json::array()},
+    };
 
-    for (NodeInfo const& node_info : records) {
+    for (TrainingDecision const& decision : game.decisions) {
+        NodeInfo const& node_info = decision.node;
         ModelInput model_input = convert_to_model_input(node_info.board, node_info.turn);
         ModelOutput model_output =
             convert_to_model_output(node_info, score_for_red, m_winner_contribution);
         print_training_data_point(output_file, model_input, model_output);
+        auto const legal_mask = legal_policy_mask(node_info);
+        nlohmann::json legal = nlohmann::json::array();
+        for (std::size_t policy_index = 0; policy_index < legal_mask.size(); ++policy_index) {
+            if (legal_mask[policy_index]) legal.push_back(policy_index);
+        }
+        audit["decisions"].push_back({
+            {"player", node_info.turn.player == Player::Red ? "red" : "blue"},
+            {"action", node_info.turn.action == Turn::First ? "first" : "second"},
+            {"chosenPolicyIndex",
+             universal_policy_index(node_info.board, node_info.turn, decision.chosen_action)},
+            {"legalPolicyIndices", std::move(legal)},
+            {"valueLabel", model_output.value},
+        });
     }
+
+    std::ofstream{m_directory / ("game_" + std::to_string(index) + ".audit.json")}
+        << audit.dump(2) << '\n';
 
     // Note: the terminal position is intentionally NOT emitted. It was never
     // searched, so it has no meaningful policy label; the game outcome already

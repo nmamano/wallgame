@@ -8,6 +8,7 @@
 #include <vector>
 
 #include "simple_policy.hpp"
+#include "state_conversions.hpp"
 
 // Regression tests for the training-data corruption fixed in 2026-07:
 // previously both MCTS trees wrote game_<index>.csv (second write truncated
@@ -58,6 +59,78 @@ struct MouseLeftPolicy {
 
 }  // namespace
 
+TEST_CASE("Animal Cycle self-play emits deterministic replayable universal records",
+          "[TrainingRecords][AnimalCycle]") {
+    std::vector<Board> const starts = {
+        Board{5, 5, Variant::AnimalCycle},
+        Board{8, 8, Variant::AnimalCycle,
+              {{Player::Red, Pawn::Dog, {1, 6}},
+               {Player::Red, Pawn::Mouse, {6, 1}},
+               {Player::Blue, Pawn::Cat, {1, 1}},
+               {Player::Blue, Pawn::Elephant, {6, 6}}}},
+        Board{12, 10, Variant::AnimalCycle,
+              {{Player::Red, Pawn::Dog, {2, 8}},
+               {Player::Red, Pawn::Mouse, {9, 1}},
+               {Player::Blue, Pawn::Cat, {2, 1}},
+               {Player::Blue, Pawn::Elephant, {9, 8}}}},
+    };
+
+    for (Board const& start : starts) {
+        auto run = [&]() {
+            std::optional<TrainingGame> completed;
+            TrainingPlayOptions opts{
+                .model1 = SimplePolicy{1.0, 1.5, 0.75},
+                .model2 = SimplePolicy{1.0, 1.5, 0.75},
+                .samples = 1,
+                .max_parallel_games = 1,
+                .max_parallel_samples = 1,
+                .move_limit = 2,
+                .temperature = 1,
+                .on_complete = [&](TrainingGame const& game, int) { completed = game; },
+                .seed = 20260815,
+            };
+            folly::CPUThreadPoolExecutor pool(2);
+            folly::coro::blockingWait(training_play(start, 1, opts).scheduleOn(&pool));
+            REQUIRE(completed);
+            return *completed;
+        };
+
+        TrainingGame first = run();
+        TrainingGame second = run();
+        REQUIRE(first.decisions.size() == second.decisions.size());
+        CHECK(first.end_reason == TrainingEndReason::MoveLimit);
+        CHECK(first.actual_winner == Winner::Undecided);
+
+        Board replay = start;
+        for (std::size_t i = 0; i < first.decisions.size(); ++i) {
+            auto const& decision = first.decisions[i];
+            CHECK(decision.node.board == replay);
+            CHECK(decision.chosen_action == second.decisions[i].chosen_action);
+
+            auto const mask = legal_policy_mask(decision.node);
+            auto const chosen = universal_policy_index(
+                decision.node.board, decision.node.turn, decision.chosen_action);
+            REQUIRE(chosen < mask.size());
+            CHECK(mask[chosen]);
+
+            auto const input = convert_to_model_input(decision.node.board, decision.node.turn);
+            std::size_t const board_size = replay.columns() * replay.rows();
+            CHECK(std::all_of(input.begin() + 10 * board_size,
+                              input.begin() + 11 * board_size,
+                              [](float value) { return value == 1.0f; }));
+            CHECK(std::all_of(input.begin() + 11 * board_size, input.end(),
+                              [](float value) { return value == 0.0f; }));
+
+            float const score = first.final_board.score_for(Player::Red);
+            auto const label = convert_to_model_output(decision.node, score, 1.0f);
+            CHECK(label.value == (decision.node.turn.player == Player::Red ? score : -score));
+
+            replay.do_action(decision.node.turn.player, decision.chosen_action);
+        }
+        CHECK(replay == first.final_board);
+    }
+}
+
 TEST_CASE("training_play records searched decisions exactly once per game",
           "[TrainingRecords]") {
     Board board{5, 5};
@@ -74,9 +147,9 @@ TEST_CASE("training_play records searched decisions exactly once per game",
         .move_limit = 100,
         .temperature = 1,
         .on_complete =
-            [&](std::vector<NodeInfo> const& records, Board const&, int) {
+            [&](TrainingGame const& game, int) {
                 ++calls;
-                captured = records;
+                for (auto const& decision : game.decisions) captured.push_back(decision.node);
             },
         .seed = 7,
     };
@@ -141,10 +214,10 @@ TEST_CASE("training_play does not end a game at the midpoint of a walk-past",
         .move_limit = 1,
         .temperature = 1,
         .on_complete =
-            [&](std::vector<NodeInfo> const& records, Board const& board_at_end, int) {
+            [&](TrainingGame const& game, int) {
                 ++calls;
-                captured = records;
-                final_board = board_at_end;
+                for (auto const& decision : game.decisions) captured.push_back(decision.node);
+                final_board = game.final_board;
             },
         .seed = 7,
     };

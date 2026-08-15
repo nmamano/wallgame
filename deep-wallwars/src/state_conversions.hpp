@@ -7,6 +7,8 @@
 #include "gamestate.hpp"
 #include "mcts.hpp"
 
+struct TrainingGame;
+
 struct ModelOutput {
     std::vector<float> prior;
     float value;
@@ -47,8 +49,7 @@ public:
     // Writes one game's combined decision records (see CompletionCallback in
     // play.hpp) to game_<index>.csv. Called exactly once per game; every
     // record's policy label is the searching tree's visit distribution.
-    void operator()(std::vector<NodeInfo> const& records, Board const& final_board,
-                    int index) const;
+    void operator()(TrainingGame const& game, int index) const;
 
 private:
     std::filesystem::path m_directory;

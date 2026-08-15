@@ -96,11 +96,15 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
     MCTS mcts1{evaluate1,
                board,
                {.max_parallelism = opts.max_parallel_samples,
+                .starting_turn = opts.starting_turn,
+                .starting_previous_position = opts.starting_previous_position,
                 .seed = opts.seed * static_cast<std::uint32_t>(index)}};
 
     MCTS mcts2{evaluate2,
                board,
                {.max_parallelism = opts.max_parallel_samples,
+                .starting_turn = opts.starting_turn,
+                .starting_previous_position = opts.starting_previous_position,
                 .seed = opts.seed * static_cast<std::uint32_t>(index)}};
 
     XLOGF(INFO, "Starting game {}.", index);
@@ -108,63 +112,40 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
     // One combined chronological record per game. Every decision is recorded
     // from the tree that SEARCHED it, captured pre-commit while the root still
     // points at the decision node with its full visit statistics.
-    std::vector<NodeInfo> records;
+    std::vector<TrainingDecision> decisions;
 
-    for (int num_moves = 1; opts.move_limit == 0 || num_moves <= opts.move_limit; ++num_moves) {
-        for (int i = 0; i < 2; ++i) {
-            co_await mcts1.sample(opts.samples);
-            records.push_back(mcts1.root_info());
-            auto action = mcts1.commit_to_action(opts.temperature);
-            if (!action) {
-                records.pop_back();  // no action was played from this record
-                XLOGF(INFO, "Blue player won game {} in {} moves.", index, num_moves);
-                opts.on_complete(records, mcts1.current_board(), index);
-                co_return {Winner::Blue, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
-            }
+    int const action_limit = opts.move_limit == 0 ? 0 : opts.move_limit * 4;
+    for (int action_number = 1; action_limit == 0 || action_number <= action_limit;
+         ++action_number) {
+        MCTS& active = mcts1.current_turn().player == Player::Red ? mcts1 : mcts2;
+        MCTS& other = mcts1.current_turn().player == Player::Red ? mcts2 : mcts1;
+        Player const player = active.current_turn().player;
 
-            mcts2.force_action(*action);
-
-            // Judged against the TURN, because this runs after every single action and a capture
-            // only counts once the turn ends. Reading the bare position here would end the game at
-            // the midpoint of a walk-past and label the training record with a win nobody scored.
-            if (Winner winner = mcts1.current_board().winner(mcts1.current_turn());
-                winner != Winner::Undecided) {
-                if (winner == Winner::Red) {
-                    XLOGF(INFO, "Red player won game {} in {} moves.", index, 2 * num_moves - 1);
-                } else {
-                    XLOGF(INFO, "Red player drew game {} in {} moves.", index, 2 * num_moves - 1);
-                }
-
-                opts.on_complete(records, mcts1.current_board(), index);
-                co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
-            }
+        co_await active.sample(opts.samples);
+        NodeInfo node = active.root_info();
+        auto action = active.commit_to_action(opts.temperature);
+        if (!action) {
+            Winner const winner = winner_from_player(other_player(player));
+            opts.on_complete({std::move(decisions), active.current_board(), winner,
+                              TrainingEndReason::NoLegalAction}, index);
+            co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
+        decisions.push_back({std::move(node), *action});
+        other.force_action(*action);
 
-        for (int i = 0; i < 2; ++i) {
-            co_await mcts2.sample(opts.samples);
-            records.push_back(mcts2.root_info());
-            auto action = mcts2.commit_to_action(opts.temperature);
-            if (!action) {
-                records.pop_back();  // no action was played from this record
-                // Blue has no available action, so RED wins. (The previous
-                // Winner::Blue return value contradicted the log line.)
-                XLOGF(INFO, "Red player won game {} in {} moves.", index, 2 * num_moves);
-                opts.on_complete(records, mcts2.current_board(), index);
-                co_return {Winner::Red, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
-            }
-            mcts1.force_action(*action);
-
-            if (Winner winner = mcts2.current_board().winner(mcts2.current_turn());
-                winner != Winner::Undecided) {
-                XLOGF(INFO, "Blue player won game {} in {} moves.", index, 2 * num_moves);
-                opts.on_complete(records, mcts2.current_board(), index);
-                co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
-            }
+        // Judged against the turn after every action. Standard may walk through a capture cell
+        // at mid-turn; Animal Cycle terminals are immediate under its own winner(turn) contract.
+        if (Winner winner = active.current_board().winner(active.current_turn());
+            winner != Winner::Undecided) {
+            opts.on_complete({std::move(decisions), active.current_board(), winner,
+                              TrainingEndReason::Terminal}, index);
+            co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
     }
 
     XLOGF(INFO, "Game {} was ended because it hit the move limit of {}", index, opts.move_limit);
-    opts.on_complete(records, mcts1.current_board(), index);
+    opts.on_complete({std::move(decisions), mcts1.current_board(), Winner::Undecided,
+                      TrainingEndReason::MoveLimit}, index);
     co_return {Winner::Undecided, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
 }
 

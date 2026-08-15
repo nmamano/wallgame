@@ -45,6 +45,8 @@ DEFINE_bool(boost_mouse_priors, false, "Boost mouse move priors to encourage exp
 DEFINE_int32(columns, 5, "Number of columns");
 DEFINE_int32(rows, 5, "Number of rows");
 DEFINE_string(variant, "classic", "Game variant: classic or standard");
+DEFINE_string(initial_state_config, "",
+              "BGS-format JSON config for an authoritative self-play initial state");
 
 DEFINE_int32(game_columns, 0,
              "Effective game columns, embedded in the -columns/-rows model frame with padding "
@@ -54,6 +56,7 @@ DEFINE_int32(game_rows, 0, "Effective game rows (0 = same as -rows)");
 DEFINE_int32(games, 100, "Number of games to play");
 DEFINE_int32(start_game, 1, "Starting game number for output file naming (for resuming)");
 DEFINE_int32(samples, 500, "Number of MCTS samples per action");
+DEFINE_int32(move_limit, 100, "Maximum full moves per self-play game (0 = unlimited)");
 DEFINE_int32(j, 8, "Number of threads");
 
 DEFINE_double(move_prior, 0.3, "Move prior of simple agent");
@@ -273,6 +276,41 @@ Board make_mode_board(Variant variant) {
 
 void train(EvaluationFunction const& eval_fn, Variant variant) {
     Board board = make_mode_board(variant);
+    Turn starting_turn{Player::Red, Turn::First};
+    std::optional<PreviousPosition> starting_previous_position;
+    if (!FLAGS_initial_state_config.empty()) {
+        std::ifstream config_stream(FLAGS_initial_state_config);
+        if (!config_stream) {
+            throw std::runtime_error("Could not open initial-state config: " +
+                                     FLAGS_initial_state_config);
+        }
+        nlohmann::json config = nlohmann::json::parse(config_stream);
+        auto validation = engine_adapter::validate_bgs_config(config, FLAGS_rows, FLAGS_columns);
+        if (!validation.valid) {
+            throw std::runtime_error("Invalid initial-state config: " + validation.error_message);
+        }
+        if (config["variant"] != variant_name(variant)) {
+            throw std::runtime_error("Initial-state config variant does not match --variant");
+        }
+        auto converted = engine_adapter::convert_bgs_config_to_board(
+            config, FLAGS_rows, FLAGS_columns);
+        board = std::move(std::get<0>(converted));
+        starting_turn = std::get<1>(converted);
+        if (config["initialState"].contains("turn") &&
+            !config["initialState"]["turn"]["actionsTaken"].empty()) {
+            auto const& action = config["initialState"]["turn"]["actionsTaken"][0];
+            std::string const type = action["type"];
+            if (type != "wall") {
+                Cell source{action["source"][0].get<int>(), action["source"][1].get<int>()};
+                starting_previous_position = PreviousPosition{
+                    type == "dog" ? Pawn::Dog
+                    : type == "cat" ? Pawn::Cat
+                    : type == "mouse" ? Pawn::Mouse
+                                      : Pawn::Elephant,
+                    engine_adapter::transform_to_model(source, std::get<2>(converted))};
+            }
+        }
+    }
     TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
 
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
@@ -285,7 +323,10 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
                                                 .model1 = eval_fn,
                                                 .model2 = eval_fn,
                                                 .samples = FLAGS_samples,
+                                                .move_limit = FLAGS_move_limit,
                                                 .start_game = FLAGS_start_game,
+                                                .starting_turn = starting_turn,
+                                                .starting_previous_position = starting_previous_position,
                                                 .on_complete = training_data_printer,
                                                 .seed = FLAGS_seed,
                                             })

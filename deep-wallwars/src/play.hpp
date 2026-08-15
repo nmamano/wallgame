@@ -14,8 +14,21 @@
 // (red decisions from red's tree, blue decisions from blue's tree), so every
 // policy label is a true visit distribution - never a fast-forwarded one-hot.
 // final_board is the terminal position (used to derive the game outcome).
-using CompletionCallback =
-    std::function<void(std::vector<NodeInfo> const&, Board const& final_board, int index)>;
+struct TrainingDecision {
+    NodeInfo node;
+    Action chosen_action;
+};
+
+enum class TrainingEndReason { Terminal, NoLegalAction, MoveLimit };
+
+struct TrainingGame {
+    std::vector<TrainingDecision> decisions;
+    Board final_board;
+    Winner actual_winner;
+    TrainingEndReason end_reason;
+};
+
+using CompletionCallback = std::function<void(TrainingGame const&, int index)>;
 
 struct NamedModel {
     EvaluationFunction model;
@@ -42,7 +55,10 @@ struct TrainingPlayOptions {
     double temperature = 1;
     int start_game = 1;  // Starting index for output file numbering
 
-    CompletionCallback on_complete = [](std::vector<NodeInfo> const&, Board const&, int) {};
+    Turn starting_turn = {Player::Red, Turn::First};
+    std::optional<PreviousPosition> starting_previous_position;
+
+    CompletionCallback on_complete = [](TrainingGame const&, int) {};
 
     std::uint32_t seed = 42;
 };

@@ -35,9 +35,10 @@ parser.add_argument("--models", help="Path to store the models", default="../mod
 parser.add_argument("--data", help="Path to store training data", default="../data")
 parser.add_argument("-c", "--columns", help="Number of columns", default=6, type=int)
 parser.add_argument("-r", "--rows", help="Number of rows", default=6, type=int)
+parser.add_argument("--seed", help="Deterministic self-play seed", default=42, type=int)
 parser.add_argument(
     "--variant",
-    help="Game variant (classic, standard, or universal)",
+    help="Game variant (classic, standard, animal-cycle, or universal)",
     default="classic",
 )
 parser.add_argument(
@@ -181,9 +182,10 @@ parser.add_argument(
 )
 args = parser.parse_args()
 
-variant_move_channels = {"classic": 4, "standard": 8, "universal": 8}
+variant_move_channels = {"classic": 4, "standard": 8, "animal-cycle": 8, "universal": 8}
 if args.variant not in variant_move_channels:
-    print(f"Error: Unsupported variant '{args.variant}'. Use 'classic', 'standard' or 'universal'.")
+    print(f"Error: Unsupported variant '{args.variant}'. Use 'classic', 'standard', "
+          "'animal-cycle' or 'universal'.")
     exit(1)
 move_channels = variant_move_channels[args.variant]
 
@@ -825,6 +827,8 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         str(start_game),
         "-samples",
         str(samples),
+        "-seed",
+        str(args.seed),
     ]
 
     if boost_mouse_priors:
