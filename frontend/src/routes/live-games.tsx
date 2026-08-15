@@ -20,8 +20,9 @@ import {
   TableRow,
 } from "@/components/ui/table";
 import { Badge } from "@/components/ui/badge";
-import { Eye, Users, Loader2 } from "lucide-react";
+import { Clock3, Eye, Users, Loader2 } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
+import { formatTimeSince } from "@/lib/live-games";
 import type { LiveGameSummary } from "../../../shared/contracts/games";
 import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
 import { getBoardSizeBucket } from "../../../shared/domain/past-games";
@@ -69,7 +70,13 @@ function LiveGames() {
 
   const [games, setGames] = useState<LiveGameSummary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
+  const [now, setNow] = useState(() => Date.now());
   const wsRef = useRef<WebSocket | null>(null);
+
+  useEffect(() => {
+    const interval = window.setInterval(() => setNow(Date.now()), 30_000);
+    return () => window.clearInterval(interval);
+  }, []);
 
   useEffect(() => {
     const url = new URL(window.location.origin);
@@ -316,12 +323,13 @@ function LiveGames() {
                 <TableHead>Board Size</TableHead>
                 <TableHead>Players</TableHead>
                 <TableHead>Moves</TableHead>
+                <TableHead>Last Move</TableHead>
               </TableRow>
             </TableHeader>
             <TableBody>
               {!isConnected && games.length === 0 ? (
                 <TableRow>
-                  <TableCell colSpan={8} className="py-12 text-center">
+                  <TableCell colSpan={9} className="py-12 text-center">
                     <div className="flex items-center justify-center text-muted-foreground">
                       <Loader2 className="w-6 h-6 animate-spin mr-2" />
                       Loading live games...
@@ -331,7 +339,7 @@ function LiveGames() {
               ) : filteredGames.length === 0 ? (
                 <TableRow>
                   <TableCell
-                    colSpan={8}
+                    colSpan={9}
                     className="py-12 text-center text-muted-foreground"
                   >
                     {games.length === 0
@@ -371,6 +379,12 @@ function LiveGames() {
                     <TableCell>{formatBoardSize(game)}</TableCell>
                     <TableCell>{formatPlayers(game)}</TableCell>
                     <TableCell>{getDisplayedMoveCount(game)}</TableCell>
+                    <TableCell>
+                      <div className="flex items-center gap-2 whitespace-nowrap text-muted-foreground">
+                        <Clock3 className="h-4 w-4" />
+                        <span>{formatTimeSince(game.lastMoveAt, now)}</span>
+                      </div>
+                    </TableCell>
                   </TableRow>
                 ))
               )}
