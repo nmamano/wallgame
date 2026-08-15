@@ -19,7 +19,7 @@ import sys
 import torch
 
 sys.path.insert(0, os.path.dirname(os.path.abspath(__file__)))
-from model import WallgameTransformer  # noqa: E402
+from model import MODEL_INPUT_CHANNELS, WallgameTransformer  # noqa: E402
 
 REPO_DW = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
 BUILD_TESTS = os.path.join(REPO_DW, "build-tests")
@@ -104,7 +104,7 @@ def main():
     checkpoint = guarded_path(args.outdir, "transformer_s3.pt")
     torch.save(transformer.state_dict(), checkpoint)
 
-    cols, rows, ch = args.columns, args.rows, 9
+    cols, rows, ch = args.columns, args.rows, MODEL_INPUT_CHANNELS
     onnx_b1 = guarded_path(args.outdir, "transformer_b1.onnx")
     onnx_bN = guarded_path(args.outdir, f"transformer_b{args.big_batch}.onnx")
     export(transformer, torch.randn(1, ch, cols, rows), onnx_b1)

@@ -51,7 +51,7 @@ for f in files:
     lines = open(f).read().strip().split("\n")
     state = [float(x) for x in lines[0].split(",")]
     priors = [float(x) for x in lines[1].split(",")]
-    assert len(state) == 9 * N, f"{f}: state {len(state)} != {9*N}"
+    assert len(state) == 16 * N, f"{f}: state {len(state)} != {16*N}"
     assert len(priors) == expected_priors, f"{f}: priors {len(priors)} != {expected_priors}"
 
     walls = state[4 * N : 6 * N]  # plane 4 = right walls, 5 = down walls

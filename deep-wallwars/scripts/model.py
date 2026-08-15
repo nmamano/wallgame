@@ -2,7 +2,7 @@ import torch
 import torch.nn as nn
 import torch.nn.functional as fn
 
-input_channels = 9
+MODEL_INPUT_CHANNELS = 16
 
 
 class ResNet(nn.Module):
@@ -12,7 +12,7 @@ class ResNet(nn.Module):
 
         self.start = nn.Sequential(
             nn.Conv2d(
-                input_channels, hidden_channels, kernel_size=3, padding=1, bias=False
+                MODEL_INPUT_CHANNELS, hidden_channels, kernel_size=3, padding=1, bias=False
             ),
             nn.BatchNorm2d(hidden_channels),
             nn.ReLU(),
@@ -117,7 +117,7 @@ class ConvHeadResNet(nn.Module):
     """
 
     def __init__(self, columns, rows, hidden_channels, layers, move_channels=8,
-                 channels=input_channels):
+                 channels=MODEL_INPUT_CHANNELS):
         super().__init__()
         self.columns = columns
         self.rows = rows
@@ -162,7 +162,7 @@ class ConvHeadResNet(nn.Module):
 class WallgameTransformer(nn.Module):
     """Transformer with per-token heads; same I/O contract as ResNet.
 
-    Input: (B, channels, columns, rows), identical to ResNet.
+    Input: (B, 16, columns, rows) for the universal runtime contract.
     Output: (priors (B, 2*columns*rows + move_channels), value (B, 1)).
     Same log_output flag semantics as ResNet (log_softmax for training,
     softmax for export); value is tanh'd in-model.
@@ -183,7 +183,7 @@ class WallgameTransformer(nn.Module):
         heads=8,
         stem="pointwise",
         stem_blocks=2,
-        channels=input_channels,
+        channels=MODEL_INPUT_CHANNELS,
     ):
         super().__init__()
         self.columns = columns

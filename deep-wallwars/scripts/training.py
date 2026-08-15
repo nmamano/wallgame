@@ -20,11 +20,11 @@ print("Importing fastai...")
 from fastai.data.all import DataLoader, DataLoaders
 from fastai.learner import Learner
 from fastai.callback.schedule import lr_find
-from model import ConvHeadResNet, ResNet, WallgameTransformer
+from model import MODEL_INPUT_CHANNELS, ConvHeadResNet, ResNet, WallgameTransformer
 from data import get_datasets
 
 default_cuda_device = "cuda:0"
-input_channels = 9
+input_channels = MODEL_INPUT_CHANNELS
 bootstrap_epochs = 10
 
 parser = argparse.ArgumentParser()
@@ -494,7 +494,11 @@ def warm_start_model(path, device, expected_priors):
     for key, value in base_state.items():
         if key in state and state[key].shape == value.shape:
             state[key] = value
-        elif key == "start.0.weight" and state[key].shape[1] == input_channels and value.shape[1] == input_channels - 1:
+        elif (
+            key == "start.0.weight"
+            and state[key].shape[1] == input_channels
+            and value.shape[1] in (8, 9)
+        ):
             print(f"Expanding {key} from {value.shape[1]} to {state[key].shape[1]} channels")
             state[key].zero_()
             state[key][:, :value.shape[1], :, :] = value

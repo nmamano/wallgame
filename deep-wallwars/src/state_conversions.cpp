@@ -4,6 +4,7 @@
 
 #include <filesystem>
 #include <fstream>
+#include <stdexcept>
 
 ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_red,
                                     float winner_contribution) {
@@ -47,26 +48,42 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
 }
 
 std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num_channels) {
+    if (num_channels != 8 && num_channels != kUniversalModelInputChannels) {
+        throw std::invalid_argument(
+            "Model input must use the 8-plane legacy or 16-plane universal contract");
+    }
     std::size_t board_size = board.columns() * board.rows();
     std::vector<float> state(num_channels * board_size);
 
     auto blocked_directions = board.blocked_directions();
     std::vector<std::pair<Cell, int>> queue_vec;
     std::fill(state.begin(), state.begin() + 4 * board_size, 1.0f);
-    auto const [player_pawn, player_target] = board.model_landmarks(turn.player);
-    auto const [opponent_pawn, opponent_target] =
-        board.model_landmarks(other_player(turn.player));
-    board.fill_relative_distances(player_pawn, {state.begin(), board_size}, blocked_directions,
-                                  queue_vec);
-    board.fill_relative_distances(player_target, {state.begin() + board_size, board_size},
-                                  blocked_directions, queue_vec);
-
-    board.fill_relative_distances(opponent_pawn,
-                                  {state.begin() + 2 * board_size, board_size}, blocked_directions,
-                                  queue_vec);
-    board.fill_relative_distances(opponent_target,
-                                  {state.begin() + 3 * board_size, board_size}, blocked_directions,
-                                  queue_vec);
+    std::array<Cell, 4> landmarks;
+    if (board.variant() == Variant::AnimalCycle) {
+        landmarks = turn.player == Player::Red
+            ? std::array{
+                  board.pawn_position(Player::Red, Pawn::Dog),
+                  board.pawn_position(Player::Blue, Pawn::Cat),
+                  board.pawn_position(Player::Blue, Pawn::Elephant),
+                  board.pawn_position(Player::Red, Pawn::Mouse),
+              }
+            : std::array{
+                  board.pawn_position(Player::Blue, Pawn::Cat),
+                  board.pawn_position(Player::Red, Pawn::Mouse),
+                  board.pawn_position(Player::Red, Pawn::Dog),
+                  board.pawn_position(Player::Blue, Pawn::Elephant),
+              };
+    } else {
+        auto const [player_pawn, player_target] = board.model_landmarks(turn.player);
+        auto const [opponent_pawn, opponent_target] =
+            board.model_landmarks(other_player(turn.player));
+        landmarks = {player_pawn, player_target, opponent_pawn, opponent_target};
+    }
+    for (std::size_t plane = 0; plane < landmarks.size(); ++plane) {
+        board.fill_relative_distances(
+            landmarks[plane], {state.begin() + plane * board_size, board_size},
+            blocked_directions, queue_vec);
+    }
 
     for (int column = 0; column < board.columns(); ++column) {
         for (int row = 0; row < board.rows(); ++row) {
@@ -87,9 +104,21 @@ std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num
         std::fill(state.begin() + 7 * board_size, state.begin() + 8 * board_size, 1.0);
     }
 
-    // Plane 8: variant indicator (only for 9-channel universal models)
-    if (num_channels >= 9 && board.allows_mouse_moves()) {
-        std::fill(state.begin() + 8 * board_size, state.begin() + 9 * board_size, 1.0);
+    if (num_channels == kUniversalModelInputChannels) {
+        int variant_plane = 0;
+        switch (board.variant()) {
+            case Variant::Standard:
+                variant_plane = 8;
+                break;
+            case Variant::Classic:
+                variant_plane = 9;
+                break;
+            case Variant::AnimalCycle:
+                variant_plane = 10;
+                break;
+        }
+        std::fill(state.begin() + variant_plane * board_size,
+                  state.begin() + (variant_plane + 1) * board_size, 1.0f);
     }
 
     return state;

@@ -92,6 +92,7 @@ if (Catch2_FOUND)
         test/engine_adapter.cpp
         test/play.cpp
         test/request_dispatcher.cpp
+        test/state_conversions.cpp
         test/tensorrt_model.cpp
     )
 

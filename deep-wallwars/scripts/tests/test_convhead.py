@@ -9,7 +9,7 @@ Non-square dims everywhere order matters.
 import pytest
 import torch
 
-from model import ConvHeadResNet, arrange_policy
+from model import MODEL_INPUT_CHANNELS, ConvHeadResNet, arrange_policy
 
 COLS, ROWS = 12, 10  # non-square on purpose
 
@@ -42,7 +42,7 @@ def test_flatten_order_equals_arrange_policy():
 @pytest.mark.parametrize("cols,rows", [(12, 10), (8, 8), (5, 5)])
 def test_forward_shapes(cols, rows):
     m = tiny(cols, rows)
-    x = torch.randn(3, 9, cols, rows)
+    x = torch.randn(3, MODEL_INPUT_CHANNELS, cols, rows)
     priors, value = m(x)
     assert priors.shape == (3, 2 * cols * rows + 8)
     assert value.shape == (3, 1)
@@ -57,7 +57,7 @@ def test_stores_board_dims_for_resume_checks():
 def test_log_output_flag_probabilities():
     m = tiny()
     m.eval()  # BatchNorm: eval mode for deterministic comparison
-    x = torch.randn(2, 9, COLS, ROWS)
+    x = torch.randn(2, MODEL_INPUT_CHANNELS, COLS, ROWS)
     m.log_output = False
     priors, _ = m(x)
     assert torch.allclose(priors.sum(dim=1), torch.ones(2), atol=1e-5)
@@ -73,7 +73,7 @@ def test_onnx_export_names_and_shapes(tmp_path):
     m.log_output = False
     m.eval()
     path = str(tmp_path / "convhead.onnx")
-    dummy = torch.randn(2, 9, COLS, ROWS)
+    dummy = torch.randn(2, MODEL_INPUT_CHANNELS, COLS, ROWS)
     torch.onnx.export(
         m, dummy, path, input_names=["States"], output_names=["Priors", "Values"]
     )
@@ -87,6 +87,13 @@ def test_onnx_export_names_and_shapes(tmp_path):
     assert outs["Priors"][-1] == 2 * COLS * ROWS + 8
     assert outs["Values"][-1] == 1
     assert "States" in {i.name for i in g.graph.input}
+    states = next(i for i in g.graph.input if i.name == "States")
+    assert [d.dim_value for d in states.type.tensor_type.shape.dim] == [
+        2,
+        MODEL_INPUT_CHANNELS,
+        COLS,
+        ROWS,
+    ]
 
 
 def test_param_count_no_size_tied_weights():
