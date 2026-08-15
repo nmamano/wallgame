@@ -3,15 +3,17 @@ import type { SavedPuzzle } from "../../../shared/contracts/puzzles";
 /**
  * Ordering of the generated puzzle list (S-G4).
  *
- * Numeric order is the DEFAULT and is the server's own: the listing arrives
- * ordered by `sortIndex`, so that option returns the list as given rather
- * than re-deriving an order from display names.
+ * Numeric order is the server's own: the listing arrives ordered by
+ * `sortIndex`, so that option returns the list as given rather than
+ * re-deriving an order from display names.
  *
  * "Most liked" ranks by likes minus dislikes, with the puzzle's number as the
  * tiebreak — every puzzle starts at zero, so without a deterministic tiebreak
  * an unvoted list would be at the mercy of sort stability.
  */
 export type PuzzleSortMode = "number" | "most-liked";
+
+export const DEFAULT_PUZZLE_SORT_MODE: PuzzleSortMode = "most-liked";
 
 export const PUZZLE_SORT_OPTIONS: { value: PuzzleSortMode; label: string }[] = [
   { value: "number", label: "Puzzle number" },

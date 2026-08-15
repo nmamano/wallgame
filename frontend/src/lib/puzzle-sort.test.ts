@@ -1,5 +1,9 @@
 import { describe, expect, it } from "bun:test";
-import { sortPuzzles, voteScore } from "./puzzle-sort";
+import {
+  DEFAULT_PUZZLE_SORT_MODE,
+  sortPuzzles,
+  voteScore,
+} from "./puzzle-sort";
 
 /**
  * Ordering of the generated puzzle list (S-G4).
@@ -16,7 +20,11 @@ const puzzle = (sortIndex: number, likes: number, dislikes: number) => ({
 });
 
 describe("sorting puzzles", () => {
-  it("keeps the server's order for the default option", () => {
+  it("uses most liked as the default", () => {
+    expect(DEFAULT_PUZZLE_SORT_MODE).toBe("most-liked");
+  });
+
+  it("keeps the server's order for the puzzle number option", () => {
     const list = [puzzle(3, 9, 0), puzzle(1, 0, 0), puzzle(2, 0, 5)];
     expect(sortPuzzles(list, "number").map((p) => p.id)).toEqual([
       "p3",

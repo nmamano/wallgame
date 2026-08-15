@@ -31,6 +31,7 @@ import {
   campaignActionLabel,
 } from "@/lib/puzzle-action-label";
 import {
+  DEFAULT_PUZZLE_SORT_MODE,
   PUZZLE_SORT_OPTIONS,
   sortPuzzles,
   type PuzzleSortMode,
@@ -363,7 +364,9 @@ function PuzzlesSection() {
   const isLoggedIn = !!userData?.user;
   const settings = useSettings(isLoggedIn, userPending);
   const { isPuzzleCompleted, isVerifiedSolve } = usePuzzleProgress();
-  const [sortMode, setSortMode] = useState<PuzzleSortMode>("number");
+  const [sortMode, setSortMode] = useState<PuzzleSortMode>(
+    DEFAULT_PUZZLE_SORT_MODE,
+  );
   const { voteFor, isVotePending, isVoteFailed } = usePuzzleCardVotes();
   // Same options object the route loader warms, so this reads the primed
   // cache entry rather than issuing the request a second time.
