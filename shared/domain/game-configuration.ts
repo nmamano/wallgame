@@ -2,7 +2,10 @@ import {
   generateAnimalCycleRandomInitialState,
   buildAnimalCycleInitialState,
 } from "./animal-cycle-setup";
-import { buildClassicInitialState } from "./classic-setup";
+import {
+  buildClassicInitialState,
+  generateClassicRandomInitialState,
+} from "./classic-setup";
 import { generateFreestyleInitialState } from "./freestyle-setup";
 import type {
   GameConfiguration,
@@ -46,10 +49,9 @@ export const buildOrdinaryInitialState = (
       : buildAnimalCycleInitialState(config.boardWidth, config.boardHeight);
   }
   if (config.variant === "classic") {
-    if (config.randomStart) {
-      throw new Error("Classic Random Start is not available yet.");
-    }
-    return buildClassicInitialState(config.boardWidth, config.boardHeight);
+    return config.randomStart
+      ? generateClassicRandomInitialState(config.boardWidth, config.boardHeight)
+      : buildClassicInitialState(config.boardWidth, config.boardHeight);
   }
   throw new Error(`${config.variant} requires a variant-specific setup.`);
 };

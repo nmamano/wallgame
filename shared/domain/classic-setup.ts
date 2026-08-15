@@ -1,4 +1,5 @@
 import type { ClassicInitialState } from "./game-types";
+import { generateFreestyleInitialState } from "./freestyle-setup";
 
 /**
  * Build the default initial state for Classic variant.
@@ -27,5 +28,28 @@ export const buildClassicInitialState = (
       },
     },
     walls: [],
+  };
+};
+
+/**
+ * Generate Classic from the exact Standard Random Start distribution.
+ *
+ * Standard cats chase the opposing player's mouse. Classic uses those same
+ * opposing mouse cells as fixed homes, so only the goal representation changes:
+ * P1 home is P2 mouse, and P2 home is P1 mouse.
+ */
+export const generateClassicRandomInitialState = (
+  boardWidth: number,
+  boardHeight: number,
+  rng: () => number = Math.random,
+): ClassicInitialState => {
+  const standard = generateFreestyleInitialState(boardWidth, boardHeight, rng);
+
+  return {
+    pawns: {
+      p1: { cat: standard.pawns.p1.cat, home: standard.pawns.p2.mouse },
+      p2: { cat: standard.pawns.p2.cat, home: standard.pawns.p1.mouse },
+    },
+    walls: standard.walls,
   };
 };

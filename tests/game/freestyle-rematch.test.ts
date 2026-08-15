@@ -115,6 +115,19 @@ describe("Random Start rematch", () => {
     expect(layoutOf(fixedRematch.config)).toBe(layoutOf(fixed.config));
   });
 
+  it("gives Classic Random Start a fresh generated state on rematch", () => {
+    const first = startedSession({
+      ...randomStartConfig(),
+      variant: "classic",
+    });
+    finish(first.id);
+
+    const { newSession } = createRematchSession(first.id);
+    expect(newSession.config.variant).toBe("classic");
+    expect(newSession.config.randomStart).toBe(true);
+    expect(layoutOf(newSession.config)).not.toBe(layoutOf(first.config));
+  });
+
   it("normalizes legacy Freestyle and refreshes it on rematch", () => {
     const legacy = startedSession({
       ...randomStartConfig(),

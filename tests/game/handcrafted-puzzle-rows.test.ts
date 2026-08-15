@@ -126,9 +126,9 @@ describe("handcrafted puzzles as saved rows", () => {
   });
 
   describe("which puzzles a bot can play", () => {
-    /** PuzzleBot's real declaration as of 2026-08-04. */
+    /** PuzzleBot's normalized rules declaration. */
     const puzzleBot = {
-      "custom-setup-classic": {
+      classic: {
         boardWidth: { min: 4, max: 12 },
         boardHeight: { min: 4, max: 10 },
       },

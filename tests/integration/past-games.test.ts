@@ -314,87 +314,89 @@ describe("past games persistence", () => {
     expect(replay2.views).toBe(2);
   });
 
-  it("persists Random Start and its exact initial state for past games", async () => {
-    const config: PartialGameConfiguration = {
-      timeControl: {
-        initialSeconds: 120,
-        incrementSeconds: 0,
-        preset: "rapid",
-      },
-      variant: "standard",
-      randomStart: true,
-      rated: false,
-      boardWidth: 12,
-      boardHeight: 10,
-    };
+  for (const variant of ["standard", "classic"] as const) {
+    it(`persists ${variant} Random Start and its exact initial state for replay`, async () => {
+      const config: PartialGameConfiguration = {
+        timeControl: {
+          initialSeconds: 120,
+          incrementSeconds: 0,
+          preset: "rapid",
+        },
+        variant,
+        randomStart: true,
+        rated: false,
+        boardWidth: 12,
+        boardHeight: 10,
+      };
 
-    const { session } = createGameSession({
-      config,
-      matchType: "friend",
-      hostDisplayName: "host",
-      hostIsPlayer1: true,
+      const { session } = createGameSession({
+        config,
+        matchType: "friend",
+        hostDisplayName: "host",
+        hostIsPlayer1: true,
+      });
+
+      joinGameSession({
+        id: session.id,
+        displayName: "joiner",
+      });
+
+      const initialState = session.gameState.getInitialState();
+      expect(initialState.walls.length).toBeGreaterThan(0);
+      expect(initialState.walls.every((wall) => wall.playerId == null)).toBe(
+        true,
+      );
+
+      const passMove: Move = { actions: [] };
+      const startTimestamp = Date.now();
+
+      applyPlayerMove({
+        id: session.id,
+        playerId: 1,
+        move: passMove,
+        timestamp: startTimestamp,
+      });
+
+      applyPlayerMove({
+        id: session.id,
+        playerId: 2,
+        move: passMove,
+        timestamp: startTimestamp + 1000,
+      });
+
+      acceptDraw({
+        id: session.id,
+        playerId: 1,
+      });
+
+      await persistCompletedGame(session);
+
+      const res = await fetch(
+        `${baseUrl}/api/games/past?variant=${variant}&page=1&pageSize=1`,
+      );
+      expect(res.status).toBe(200);
+      const pastGames = (await res.json()) as PastGamesResponse;
+      expect(pastGames.games.length).toBe(1);
+      expect(pastGames.games[0]?.gameId).toBe(session.id);
+      expect(pastGames.games[0]?.variant).toBe(variant);
+      expect(pastGames.games[0]?.randomStart).toBe(true);
+
+      const replayRes = await fetch(`${baseUrl}/api/games/${session.id}`);
+      expect(replayRes.status).toBe(200);
+      const replay = (await replayRes.json()) as ResolveGameAccessResponse;
+      expect(replay.kind).toBe("replay");
+      if (replay.kind !== "replay") {
+        throw new Error("Expected replay response");
+      }
+
+      expect(replay.state.config.variant).toBe(variant);
+      expect(replay.state.config.randomStart).toBe(true);
+      expect(replay.state.initialState).toEqual(initialState);
+      expect(
+        replay.state.initialState.walls.every((wall) => wall.playerId == null),
+      ).toBe(true);
     });
-
-    joinGameSession({
-      id: session.id,
-      displayName: "joiner",
-    });
-
-    const initialState = session.gameState.getInitialState();
-    expect(initialState.walls.length).toBeGreaterThan(0);
-    expect(initialState.walls.every((wall) => wall.playerId == null)).toBe(
-      true,
-    );
-
-    const passMove: Move = { actions: [] };
-    const startTimestamp = Date.now();
-
-    applyPlayerMove({
-      id: session.id,
-      playerId: 1,
-      move: passMove,
-      timestamp: startTimestamp,
-    });
-
-    applyPlayerMove({
-      id: session.id,
-      playerId: 2,
-      move: passMove,
-      timestamp: startTimestamp + 1000,
-    });
-
-    acceptDraw({
-      id: session.id,
-      playerId: 1,
-    });
-
-    await persistCompletedGame(session);
-
-    const res = await fetch(
-      `${baseUrl}/api/games/past?variant=standard&page=1&pageSize=1`,
-    );
-    expect(res.status).toBe(200);
-    const pastGames = (await res.json()) as PastGamesResponse;
-    expect(pastGames.games.length).toBe(1);
-    expect(pastGames.games[0]?.gameId).toBe(session.id);
-    expect(pastGames.games[0]?.variant).toBe("standard");
-    expect(pastGames.games[0]?.randomStart).toBe(true);
-
-    const replayRes = await fetch(`${baseUrl}/api/games/${session.id}`);
-    expect(replayRes.status).toBe(200);
-    const replay = (await replayRes.json()) as ResolveGameAccessResponse;
-    expect(replay.kind).toBe("replay");
-    if (replay.kind !== "replay") {
-      throw new Error("Expected replay response");
-    }
-
-    expect(replay.state.config.variant).toBe("standard");
-    expect(replay.state.config.randomStart).toBe(true);
-    expect(replay.state.initialState).toEqual(initialState);
-    expect(
-      replay.state.initialState.walls.every((wall) => wall.playerId == null),
-    ).toBe(true);
-  });
+  }
 
   it("filters and paginates past games", async () => {
     const alphaAuth = "auth-alpha";

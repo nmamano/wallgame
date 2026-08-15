@@ -509,7 +509,7 @@ function GameSetup() {
                       handleGameConfigChange({
                         ...gameConfig,
                         variant: value,
-                        randomStart: value === "classic" ? false : true,
+                        randomStart: true,
                       } as GameConfiguration)
                     }
                   >
@@ -550,7 +550,6 @@ function GameSetup() {
                         randomStart: checked,
                       })
                     }
-                    disabled={gameConfig.variant === "classic"}
                     aria-describedby="random-start-description"
                   />
                 </div>
@@ -558,9 +557,7 @@ function GameSetup() {
                   id="random-start-description"
                   className="text-sm text-muted-foreground"
                 >
-                  {gameConfig.variant === "classic"
-                    ? "Random Start is not available for Classic yet."
-                    : "Start from a fresh randomized position."}
+                  Start from a fresh randomized position.
                 </p>
               </div>
 

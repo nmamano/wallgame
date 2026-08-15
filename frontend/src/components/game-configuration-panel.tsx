@@ -256,7 +256,7 @@ export function GameConfigurationPanel({
               onChange({
                 ...config,
                 variant: value,
-                randomStart: value === "classic" ? false : true,
+                randomStart: true,
               } as GameConfiguration);
             }}
           >
@@ -280,9 +280,7 @@ export function GameConfigurationPanel({
               id="random-start-description"
               className="text-sm text-muted-foreground"
             >
-              {config.variant === "classic"
-                ? "Random Start is not available for Classic yet."
-                : "Start from a fresh randomized position."}
+              Start from a fresh randomized position.
             </p>
           </div>
           <Switch
@@ -291,7 +289,6 @@ export function GameConfigurationPanel({
             onCheckedChange={(checked) =>
               updateConfig({ randomStart: checked })
             }
-            disabled={config.variant === "classic"}
             aria-describedby="random-start-description"
           />
         </div>

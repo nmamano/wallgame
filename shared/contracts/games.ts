@@ -287,13 +287,6 @@ export const createGameSchema = z.object({
         : config,
     )
     .superRefine((config, ctx) => {
-      if (config.variant === "classic" && config.randomStart) {
-        ctx.addIssue({
-          code: z.ZodIssueCode.custom,
-          path: ["randomStart"],
-          message: "Classic Random Start is not available yet.",
-        });
-      }
       if (
         config.variant === "animal-cycle" &&
         config.randomStart &&
@@ -658,13 +651,6 @@ export const createBotGameDirectSchema = z
             : config,
         )
         .superRefine((config, ctx) => {
-          if (config.variant === "classic" && config.randomStart) {
-            ctx.addIssue({
-              code: z.ZodIssueCode.custom,
-              path: ["randomStart"],
-              message: "Classic Random Start is not available yet.",
-            });
-          }
           if (
             config.variant === "animal-cycle" &&
             config.randomStart &&

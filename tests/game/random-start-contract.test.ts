@@ -32,12 +32,12 @@ describe("Random Start contracts", () => {
     expect(parsed.config.randomStart).toBe(true);
   });
 
-  it("rejects enabled Classic and undersized Animal Cycle", () => {
+  it("accepts enabled Classic and rejects undersized Animal Cycle", () => {
     expect(
       createGameSchema.safeParse({
         config: { ...base, variant: "classic", randomStart: true },
       }).success,
-    ).toBe(false);
+    ).toBe(true);
     expect(
       createGameSchema.safeParse({
         config: {

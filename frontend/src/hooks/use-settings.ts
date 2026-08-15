@@ -416,10 +416,7 @@ function useSettingsInternal(
 
     const boardWidth = currentVariantParams?.boardWidth ?? 8;
     const boardHeight = currentVariantParams?.boardHeight ?? 8;
-    const randomStart =
-      resolvedVariant === "classic"
-        ? false
-        : (currentVariantParams?.randomStart ?? true);
+    const randomStart = currentVariantParams?.randomStart ?? true;
     const variantConfig = buildOrdinaryInitialState({
       variant: resolvedVariant,
       randomStart,
@@ -801,10 +798,7 @@ function useSettingsInternal(
           ...newConfig,
           boardWidth: variantParams?.boardWidth ?? 8,
           boardHeight: variantParams?.boardHeight ?? 8,
-          randomStart:
-            newConfig.variant === "classic"
-              ? false
-              : (variantParams?.randomStart ?? true),
+          randomStart: variantParams?.randomStart ?? true,
         };
         // Mutation's onMutate handles the optimistic update
         updateDefaultVariantMutation.mutate(newConfig.variant);
@@ -870,10 +864,7 @@ function useSettingsInternal(
           ...newConfig,
           boardWidth: variantParams?.boardWidth ?? 8,
           boardHeight: variantParams?.boardHeight ?? 8,
-          randomStart:
-            newConfig.variant === "classic"
-              ? false
-              : (variantParams?.randomStart ?? true),
+          randomStart: variantParams?.randomStart ?? true,
         };
       }
 

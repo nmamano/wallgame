@@ -869,9 +869,6 @@ export const buildCompleteConfig = (
     ...baseConfig,
     ...normalizeLegacyVariant(baseConfig.variant, baseConfig.randomStart),
   };
-  if (normalizedBase.variant === "classic" && normalizedBase.randomStart) {
-    throw new Error("Classic Random Start is not available yet.");
-  }
   if (
     normalizedBase.variant === "animal-cycle" &&
     normalizedBase.randomStart &&
