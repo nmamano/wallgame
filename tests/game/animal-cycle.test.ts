@@ -66,50 +66,50 @@ interface CaptureCase {
 const legalCaptures: CaptureCase[] = [
   {
     name: "Dog captures Cat",
-    playerId: 1,
+    playerId: 2,
     mover: "dog",
     from: [2, 1],
     target: [2, 2],
-    winner: 1,
+    winner: 2,
     pawns: {
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     },
   },
   {
     name: "Cat captures Mouse",
-    playerId: 2,
+    playerId: 1,
     mover: "cat",
     from: [2, 2],
     target: [2, 1],
-    winner: 2,
+    winner: 1,
     pawns: {
-      p1: { dog: [0, 0], mouse: [2, 1] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [2, 1], dog: [0, 0] },
     },
   },
   {
     name: "Mouse captures Elephant",
-    playerId: 1,
+    playerId: 2,
     mover: "mouse",
     from: [2, 1],
     target: [2, 2],
-    winner: 1,
+    winner: 2,
     pawns: {
-      p1: { dog: [0, 0], mouse: [2, 1] },
-      p2: { cat: [0, 7], elephant: [2, 2] },
+      p1: { cat: [0, 7], elephant: [2, 2] },
+      p2: { mouse: [2, 1], dog: [0, 0] },
     },
   },
   {
     name: "Elephant captures Dog",
-    playerId: 2,
+    playerId: 1,
     mover: "elephant",
     from: [2, 2],
     target: [2, 1],
-    winner: 2,
+    winner: 1,
     pawns: {
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [0, 7], elephant: [2, 2] },
+      p1: { cat: [0, 7], elephant: [2, 2] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     },
   },
 ];
@@ -117,50 +117,50 @@ const legalCaptures: CaptureCase[] = [
 const preyOntoPredator: CaptureCase[] = [
   {
     name: "Cat moves onto Dog; Dog owner wins",
-    playerId: 2,
+    playerId: 1,
     mover: "cat",
     from: [2, 2],
     target: [2, 1],
-    winner: 1,
+    winner: 2,
     pawns: {
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     },
   },
   {
     name: "Mouse moves onto Cat; Cat owner wins",
-    playerId: 1,
+    playerId: 2,
     mover: "mouse",
     from: [2, 1],
     target: [2, 2],
-    winner: 2,
+    winner: 1,
     pawns: {
-      p1: { dog: [0, 0], mouse: [2, 1] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [2, 1], dog: [0, 0] },
     },
   },
   {
     name: "Elephant moves onto Mouse; Mouse owner wins",
-    playerId: 2,
+    playerId: 1,
     mover: "elephant",
     from: [2, 2],
     target: [2, 1],
-    winner: 1,
+    winner: 2,
     pawns: {
-      p1: { dog: [0, 0], mouse: [2, 1] },
-      p2: { cat: [0, 7], elephant: [2, 2] },
+      p1: { cat: [0, 7], elephant: [2, 2] },
+      p2: { mouse: [2, 1], dog: [0, 0] },
     },
   },
   {
     name: "Dog moves onto Elephant; Elephant owner wins",
-    playerId: 1,
+    playerId: 2,
     mover: "dog",
     from: [2, 1],
     target: [2, 2],
-    winner: 2,
+    winner: 1,
     pawns: {
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [0, 7], elephant: [2, 2] },
+      p1: { cat: [0, 7], elephant: [2, 2] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     },
   },
 ];
@@ -175,12 +175,12 @@ describe("Animal Cycle", () => {
       expect(buildAnimalCycleInitialState(boardWidth, boardHeight)).toEqual({
         pawns: {
           p1: {
-            dog: [boardHeight - 1, 0],
-            mouse: [0, boardWidth - 1],
-          },
-          p2: {
             cat: [0, 0],
             elephant: [boardHeight - 1, boardWidth - 1],
+          },
+          p2: {
+            mouse: [0, boardWidth - 1],
+            dog: [boardHeight - 1, 0],
           },
         },
         walls: [],
@@ -218,19 +218,19 @@ describe("Animal Cycle", () => {
 
   it.each([
     {
-      owner: 1 as const,
+      owner: 2 as const,
       pawns: {
-        p1: { dog: [2, 1] as Cell, mouse: [2, 2] as Cell },
-        p2: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+        p1: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+        p2: { mouse: [2, 2] as Cell, dog: [2, 1] as Cell },
       },
       action1: to("dog", [2, 2]),
       action2: [to("dog", [3, 1]), to("mouse", [3, 1])],
     },
     {
-      owner: 2 as const,
+      owner: 1 as const,
       pawns: {
-        p1: { dog: [0, 0] as Cell, mouse: [7, 0] as Cell },
-        p2: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+        p1: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+        p2: { mouse: [7, 0] as Cell, dog: [0, 0] as Cell },
       },
       action1: to("elephant", [2, 1]),
       action2: [to("cat", [3, 1]), to("elephant", [3, 1])],
@@ -254,20 +254,20 @@ describe("Animal Cycle", () => {
 
   it.each([
     {
-      owner: 1 as const,
+      owner: 2 as const,
       pawns: {
-        p1: { dog: [2, 1] as Cell, mouse: [2, 2] as Cell },
-        p2: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+        p1: { cat: [0, 7] as Cell, elephant: [7, 7] as Cell },
+        p2: { mouse: [2, 2] as Cell, dog: [2, 1] as Cell },
       },
       mover: "dog" as const,
       midpoint: [2, 2] as Cell,
       target: [2, 3] as Cell,
     },
     {
-      owner: 2 as const,
+      owner: 1 as const,
       pawns: {
-        p1: { dog: [0, 0] as Cell, mouse: [7, 0] as Cell },
-        p2: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+        p1: { cat: [2, 1] as Cell, elephant: [2, 2] as Cell },
+        p2: { mouse: [7, 0] as Cell, dog: [0, 0] as Cell },
       },
       mover: "cat" as const,
       midpoint: [2, 2] as Cell,
@@ -293,41 +293,48 @@ describe("Animal Cycle", () => {
   it("accepts an L move when one wall-open route avoids the teammate", () => {
     const state = new GameState(
       config({
-        p1: { dog: [2, 2], mouse: [2, 3] },
-        p2: { cat: [0, 7], elephant: [7, 7] },
+        p1: { cat: [0, 7], elephant: [7, 7] },
+        p2: { mouse: [2, 3], dog: [2, 2] },
       }),
       0,
     );
-    expect(() => act(state, 1, [to("dog", [3, 3])])).not.toThrow();
+    state.turn = 2;
+    expect(() => act(state, 2, [to("dog", [3, 3])])).not.toThrow();
   });
 
   it("rejects an L move when the teammate blocks one route and a wall blocks the other", () => {
     const animalConfig = config(
       {
-        p1: { dog: [2, 2], mouse: [2, 3] },
-        p2: { cat: [0, 7], elephant: [7, 7] },
+        p1: { cat: [0, 7], elephant: [7, 7] },
+        p2: { mouse: [2, 3], dog: [2, 2] },
       },
       [{ cell: [3, 2], orientation: "horizontal" }],
     );
-    expect(() =>
-      act(new GameState(animalConfig, 0), 1, [to("dog", [3, 3])]),
-    ).toThrow("Invalid double move: blocked or no path");
+    const state = new GameState(animalConfig, 0);
+    state.turn = 2;
+    expect(() => act(state, 2, [to("dog", [3, 3])])).toThrow(
+      "Invalid double move: blocked or no path",
+    );
   });
 
   it("crosses an opposing animal atomically without capture, but explicit action 1 captures", () => {
     const pawns: AnimalCycleInitialState["pawns"] = {
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     };
-    const atomic = act(new GameState(config(pawns), 0), 1, [to("dog", [2, 3])]);
+    const atomicState = new GameState(config(pawns), 0);
+    atomicState.turn = 2;
+    const atomic = act(atomicState, 2, [to("dog", [2, 3])]);
     expect(atomic.status).toBe("playing");
     expect(atomic.result).toBeUndefined();
 
-    const explicit = act(new GameState(config(pawns), 0), 1, [
+    const explicitState = new GameState(config(pawns), 0);
+    explicitState.turn = 2;
+    const explicit = act(explicitState, 2, [
       to("dog", [2, 2]),
       to("dog", [2, 3]),
     ]);
-    expect(explicit.result).toEqual({ winner: 1, reason: "capture" });
+    expect(explicit.result).toEqual({ winner: 2, reason: "capture" });
     expect(explicit.history[0].move.actions).toEqual([to("dog", [2, 2])]);
   });
 
@@ -342,15 +349,16 @@ describe("Animal Cycle", () => {
   it("keeps action 1's predator owner as winner and omits hostile action 2", () => {
     const state = new GameState(
       config({
-        p1: { dog: [2, 1], mouse: [4, 1] },
-        p2: { cat: [2, 2], elephant: [4, 2] },
+        p1: { cat: [2, 2], elephant: [4, 2] },
+        p2: { mouse: [4, 1], dog: [2, 1] },
       }),
       0,
     );
-    const after = act(state, 1, [to("dog", [2, 2]), to("mouse", [4, 2])]);
+    state.turn = 2;
+    const after = act(state, 2, [to("dog", [2, 2]), to("mouse", [4, 2])]);
 
-    expect(after.result).toEqual({ winner: 1, reason: "capture" });
-    expect(pawnCell(after.pawns, 1, "mouse")).toEqual([4, 1]);
+    expect(after.result).toEqual({ winner: 2, reason: "capture" });
+    expect(pawnCell(after.pawns, 2, "mouse")).toEqual([4, 1]);
     expect(after.history[0].move.actions).toEqual([to("dog", [2, 2])]);
     expect(moveToStandardNotation(after.history[0].move, 8)).toBe("Dc6");
     expect(() => act(after, 1, [])).toThrow("Game is not playing");
@@ -358,38 +366,41 @@ describe("Animal Cycle", () => {
 
   it("keeps the stationary predator owner when prey action 1 precedes a reversing action 2", () => {
     const pawns: AnimalCycleInitialState["pawns"] = {
-      p1: { dog: [2, 1], mouse: [3, 2] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [3, 2], dog: [2, 1] },
     };
     const state = new GameState(config(pawns), 0);
-    const after = act(state, 1, [to("mouse", [2, 2]), to("dog", [2, 2])]);
+    state.turn = 2;
+    const after = act(state, 2, [to("mouse", [2, 2]), to("dog", [2, 2])]);
 
     // Action 1 moves P1's prey onto P2's stationary Cat. P2 wins as the
     // predator owner. If action 2 ran, P1's Dog would capture that Cat and
     // displace the first result.
-    expect(after.result).toEqual({ winner: 2, reason: "capture" });
-    expect(pawnCell(after.pawns, 1, "mouse")).toEqual([2, 2]);
-    expect(pawnCell(after.pawns, 1, "dog")).toEqual([2, 1]);
+    expect(after.result).toEqual({ winner: 1, reason: "capture" });
+    expect(pawnCell(after.pawns, 2, "mouse")).toEqual([2, 2]);
+    expect(pawnCell(after.pawns, 2, "dog")).toEqual([2, 1]);
     expect(after.history[0].move.actions).toEqual([to("mouse", [2, 2])]);
     expect(moveToStandardNotation(after.history[0].move, 8)).toBe("Mc6");
 
     const replay = new GameState(config(pawns), 0);
-    const replayed = act(replay, 1, moveFromStandardNotation("Mc6", 8).actions);
-    expect(replayed.result).toEqual({ winner: 2, reason: "capture" });
-    expect(pawnCell(replayed.pawns, 1, "dog")).toEqual([2, 1]);
+    replay.turn = 2;
+    const replayed = act(replay, 2, moveFromStandardNotation("Mc6", 8).actions);
+    expect(replayed.result).toEqual({ winner: 1, reason: "capture" });
+    expect(pawnCell(replayed.pawns, 2, "dog")).toEqual([2, 1]);
     expect(replayed.history[0].move.actions).toEqual([to("mouse", [2, 2])]);
   });
 
   it("records both actions when action 2 is the first capture", () => {
     const state = new GameState(
       config({
-        p1: { dog: [2, 0], mouse: [4, 1] },
-        p2: { cat: [2, 2], elephant: [4, 2] },
+        p1: { cat: [2, 2], elephant: [4, 2] },
+        p2: { mouse: [4, 1], dog: [2, 0] },
       }),
       0,
     );
-    const after = act(state, 1, [to("dog", [2, 1]), to("mouse", [4, 2])]);
-    expect(after.result).toEqual({ winner: 1, reason: "capture" });
+    state.turn = 2;
+    const after = act(state, 2, [to("dog", [2, 1]), to("mouse", [4, 2])]);
+    expect(after.result).toEqual({ winner: 2, reason: "capture" });
     expect(after.history[0].move.actions).toHaveLength(2);
   });
 
@@ -406,8 +417,8 @@ describe("Animal Cycle", () => {
     clearAllSessions();
     const initialState: AnimalCycleInitialState = {
       pawns: {
-        p1: { dog: [0, 0], mouse: [7, 0] },
-        p2: { cat: [0, 2], elephant: [7, 7] },
+        p1: { cat: [0, 2], elephant: [7, 7] },
+        p2: { mouse: [7, 0], dog: [0, 0] },
       },
       walls: [],
     };
@@ -430,14 +441,14 @@ describe("Animal Cycle", () => {
       expectedPly: 0,
     });
     expect(evaluated.success).toBe(true);
-    expect(evaluated.bestMove).toBe("Dc8");
+    expect(evaluated.bestMove).toBe("Cb7");
   });
 
   it("keeps the naive bot off teammate endpoints and teammate-only routes", () => {
     const state = new GameState(
       config({
-        p1: { dog: [2, 1], mouse: [2, 2] },
-        p2: { cat: [2, 3], elephant: [7, 7] },
+        p1: { cat: [2, 1], elephant: [2, 2] },
+        p2: { mouse: [0, 7], dog: [7, 7] },
       }),
       0,
     );
@@ -446,8 +457,8 @@ describe("Animal Cycle", () => {
       state.pawns as Extract<typeof state.pawns, { kind: "animal-cycle" }>,
       1,
     );
-    expect(move.actions).not.toContainEqual(to("dog", [2, 2]));
-    expect(move.actions).not.toContainEqual(to("dog", [2, 3]));
+    expect(move.actions).not.toContainEqual(to("cat", [2, 2]));
+    expect(move.actions).not.toContainEqual(to("cat", [2, 3]));
     expect(() => act(state, 1, move.actions)).not.toThrow();
   });
 

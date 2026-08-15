@@ -96,16 +96,16 @@ std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num
     if (board.variant() == Variant::AnimalCycle) {
         landmarks = turn.player == Player::Red
             ? std::array{
-                  board.pawn_position(Player::Red, Pawn::Dog),
-                  board.pawn_position(Player::Blue, Pawn::Cat),
-                  board.pawn_position(Player::Blue, Pawn::Elephant),
-                  board.pawn_position(Player::Red, Pawn::Mouse),
+                  board.pawn_position(Player::Red, Pawn::Cat),
+                  board.pawn_position(Player::Blue, Pawn::Mouse),
+                  board.pawn_position(Player::Blue, Pawn::Dog),
+                  board.pawn_position(Player::Red, Pawn::Elephant),
               }
             : std::array{
-                  board.pawn_position(Player::Blue, Pawn::Cat),
-                  board.pawn_position(Player::Red, Pawn::Mouse),
-                  board.pawn_position(Player::Red, Pawn::Dog),
-                  board.pawn_position(Player::Blue, Pawn::Elephant),
+                  board.pawn_position(Player::Blue, Pawn::Mouse),
+                  board.pawn_position(Player::Red, Pawn::Elephant),
+                  board.pawn_position(Player::Red, Pawn::Cat),
+                  board.pawn_position(Player::Blue, Pawn::Dog),
               };
     } else {
         auto const [player_pawn, player_target] = board.model_landmarks(turn.player);

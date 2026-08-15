@@ -6,10 +6,10 @@ export function animalCycleCaptureWinner(
   pawns: Extract<GamePawns, { kind: "animal-cycle" }>,
 ): PlayerId | undefined {
   const { 1: p1, 2: p2 } = pawns.pawns;
-  if (cellEq(p1.dog, p2.cat)) return 1;
-  if (cellEq(p2.cat, p1.mouse)) return 2;
-  if (cellEq(p1.mouse, p2.elephant)) return 1;
-  if (cellEq(p2.elephant, p1.dog)) return 2;
+  if (cellEq(p1.cat, p2.mouse)) return 1;
+  if (cellEq(p2.mouse, p1.elephant)) return 2;
+  if (cellEq(p1.elephant, p2.dog)) return 1;
+  if (cellEq(p2.dog, p1.cat)) return 2;
   return undefined;
 }
 
@@ -20,11 +20,11 @@ export function animalCycleTeammateCell(
   pawnType: GamePawnType,
 ): Cell {
   if (playerId === 1) {
-    if (pawnType === "dog") return pawns.pawns[1].mouse;
-    if (pawnType === "mouse") return pawns.pawns[1].dog;
+    if (pawnType === "cat") return pawns.pawns[1].elephant;
+    if (pawnType === "elephant") return pawns.pawns[1].cat;
   } else {
-    if (pawnType === "cat") return pawns.pawns[2].elephant;
-    if (pawnType === "elephant") return pawns.pawns[2].cat;
+    if (pawnType === "mouse") return pawns.pawns[2].dog;
+    if (pawnType === "dog") return pawns.pawns[2].mouse;
   }
   throw new Error("Pawn not available for this Animal Cycle player");
 }

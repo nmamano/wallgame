@@ -27,8 +27,8 @@ Cycle, planes 0-3 contain these animals:
 
 | Player to move | Plane 0 | Plane 1 | Plane 2 | Plane 3 |
 | --- | --- | --- | --- | --- |
-| Player 1 (Red) | Dog | Cat | Elephant | Mouse |
-| Player 2 (Blue) | Cat | Mouse | Dog | Elephant |
+| Player 1 (Red) | Cat | Mouse | Dog | Elephant |
+| Player 2 (Blue) | Mouse | Elephant | Cat | Dog |
 
 The current player's movable animals are planes 0 and 3. This gives the
 player-relative capture cycle `0 -> 1 -> 3 -> 2 -> 0`.

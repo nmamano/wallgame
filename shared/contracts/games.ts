@@ -71,8 +71,8 @@ const classicInitialStateSchema = z.object({
 
 const animalCycleInitialStateSchema = z.object({
   pawns: z.object({
-    p1: z.object({ dog: cellSchema, mouse: cellSchema }),
-    p2: z.object({ cat: cellSchema, elephant: cellSchema }),
+    p1: z.object({ cat: cellSchema, elephant: cellSchema }),
+    p2: z.object({ mouse: cellSchema, dog: cellSchema }),
   }),
   walls: z.array(neutralWallSchema),
   turn: setupTurnSchema.optional(),

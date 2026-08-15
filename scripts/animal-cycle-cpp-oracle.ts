@@ -47,26 +47,26 @@ const positions: {
   playerId?: PlayerId;
 }[] = [
   {
-    name: "p2-cat-elephant-8x8",
+    name: "p2-mouse-dog-8x8",
     width: 8,
     height: 8,
     state: buildAnimalCycleInitialState(8, 8),
     playerId: 2,
-    probes: ["Cb7", "Eg2", "---"],
+    probes: ["Mg7", "Db2", "---"],
   },
   {
     name: "fixed-5x5",
     width: 5,
     height: 5,
     state: buildAnimalCycleInitialState(5, 5),
-    probes: ["Da2", "Me4", ">b3", "---"],
+    probes: ["Ca4", "Ee2", ">b3", "---"],
   },
   {
     name: "seeded-random-8x8",
     width: 8,
     height: 8,
     state: generateAnimalCycleRandomInitialState(8, 8, seeded(20260815)),
-    probes: ["Db2", "Mg7", "^d5", "---"],
+    probes: ["Cc5", "Ef2", "^d5", "---"],
   },
   {
     name: "authored-12x10",
@@ -74,15 +74,15 @@ const positions: {
     height: 10,
     state: {
       pawns: {
-        p1: { dog: [8, 1], mouse: [1, 10] },
-        p2: { cat: [1, 1], elephant: [8, 10] },
+        p1: { cat: [1, 1], elephant: [8, 10] },
+        p2: { mouse: [1, 10], dog: [8, 1] },
       },
       walls: [
         { cell: [5, 4], orientation: "vertical" },
         { cell: [6, 7], orientation: "horizontal" },
       ],
     },
-    probes: ["Db3", "Mj9", ">f5", "---"],
+    probes: ["Cb8", "Ek1", ">f5", "---"],
   },
   {
     name: "endpoint-and-crossing",
@@ -90,12 +90,12 @@ const positions: {
     height: 8,
     state: {
       pawns: {
-        p1: { dog: [2, 1], mouse: [2, 2] },
-        p2: { cat: [2, 4], elephant: [7, 7] },
+        p1: { cat: [2, 4], elephant: [7, 7] },
+        p2: { mouse: [2, 2], dog: [2, 1] },
       },
       walls: [],
     },
-    probes: ["Dc6", "Dd6", "Db5", "---"],
+    probes: ["Ce5", "Eg2", "Db5", "---"],
   },
   {
     name: "capture-precedence",
@@ -103,12 +103,12 @@ const positions: {
     height: 8,
     state: {
       pawns: {
-        p1: { dog: [2, 1], mouse: [4, 1] },
-        p2: { cat: [2, 2], elephant: [4, 2] },
+        p1: { cat: [4, 2], elephant: [2, 2] },
+        p2: { mouse: [4, 1], dog: [2, 1] },
       },
       walls: [],
     },
-    probes: ["Dc6.Mc4", "Mc4.Dc6"],
+    probes: ["Cb4.Eb6", "Eb6.Cb4"],
   },
   {
     name: "four-directed-path-wall",
@@ -116,8 +116,8 @@ const positions: {
     height: 4,
     state: {
       pawns: {
-        p1: { dog: [0, 0], mouse: [3, 3] },
-        p2: { cat: [0, 2], elephant: [3, 1] },
+        p1: { cat: [0, 2], elephant: [3, 1] },
+        p2: { mouse: [3, 3], dog: [0, 0] },
       },
       walls: [{ cell: [1, 0], orientation: "horizontal" }],
     },
@@ -129,22 +129,22 @@ const positions: {
     height: 8,
     state: {
       pawns: {
-        p1: { dog: [2, 1], mouse: [7, 0] },
-        p2: { cat: [2, 2], elephant: [7, 7] },
+        p1: { cat: [2, 2], elephant: [7, 7] },
+        p2: { mouse: [7, 0], dog: [2, 1] },
       },
       walls: [],
     },
+    playerId: 2,
     probes: ["Dc6"],
   },
   {
     name: "cat-captures-mouse",
     width: 8,
     height: 8,
-    playerId: 2,
     state: {
       pawns: {
-        p1: { dog: [0, 0], mouse: [2, 1] },
-        p2: { cat: [2, 2], elephant: [7, 7] },
+        p1: { cat: [2, 2], elephant: [7, 7] },
+        p2: { mouse: [2, 1], dog: [0, 0] },
       },
       walls: [],
     },
@@ -156,22 +156,22 @@ const positions: {
     height: 8,
     state: {
       pawns: {
-        p1: { dog: [0, 0], mouse: [2, 1] },
-        p2: { cat: [0, 7], elephant: [2, 2] },
+        p1: { cat: [0, 7], elephant: [2, 2] },
+        p2: { mouse: [2, 1], dog: [0, 0] },
       },
       walls: [],
     },
+    playerId: 2,
     probes: ["Mc6"],
   },
   {
     name: "elephant-captures-dog",
     width: 8,
     height: 8,
-    playerId: 2,
     state: {
       pawns: {
-        p1: { dog: [2, 1], mouse: [7, 0] },
-        p2: { cat: [0, 7], elephant: [2, 2] },
+        p1: { cat: [0, 7], elephant: [2, 2] },
+        p2: { mouse: [7, 0], dog: [2, 1] },
       },
       walls: [],
     },
@@ -223,17 +223,17 @@ const corpus = positions.map(
 
 const stacked = [
   {
-    name: "dog-cat-before-cat-mouse",
+    name: "cat-mouse-before-dog-cat",
     pawns: {
       kind: "animal-cycle" as const,
       pawns: {
         1: {
-          dog: [2, 2] as [number, number],
-          mouse: [2, 2] as [number, number],
-        },
-        2: {
           cat: [2, 2] as [number, number],
           elephant: [7, 7] as [number, number],
+        },
+        2: {
+          mouse: [2, 2] as [number, number],
+          dog: [2, 2] as [number, number],
         },
       },
     },
@@ -244,12 +244,12 @@ const stacked = [
       kind: "animal-cycle" as const,
       pawns: {
         1: {
-          dog: [4, 4] as [number, number],
-          mouse: [4, 4] as [number, number],
-        },
-        2: {
           cat: [0, 0] as [number, number],
           elephant: [4, 4] as [number, number],
+        },
+        2: {
+          mouse: [4, 4] as [number, number],
+          dog: [4, 4] as [number, number],
         },
       },
     },

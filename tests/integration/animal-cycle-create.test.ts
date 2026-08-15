@@ -54,7 +54,7 @@ describe("Animal Cycle HTTP creation", () => {
           },
         },
         matchType: "friend",
-        hostDisplayName: "Dog and Mouse",
+        hostDisplayName: "Cat and Elephant",
         hostIsPlayer1: true,
       }),
     });
@@ -65,8 +65,8 @@ describe("Animal Cycle HTTP creation", () => {
     const initialState = body.snapshot.config
       .variantConfig as AnimalCycleInitialState;
     expect(initialState.pawns).toEqual({
-      p1: { dog: [7, 0], mouse: [0, 7] },
-      p2: { cat: [0, 0], elephant: [7, 7] },
+      p1: { cat: [0, 0], elephant: [7, 7] },
+      p2: { mouse: [0, 7], dog: [7, 0] },
     });
 
     const joinResponse = await fetch(
@@ -74,7 +74,7 @@ describe("Animal Cycle HTTP creation", () => {
       {
         method: "POST",
         headers: { "content-type": "application/json" },
-        body: JSON.stringify({ displayName: "Cat and Elephant" }),
+        body: JSON.stringify({ displayName: "Mouse and Dog" }),
       },
     );
     expect(joinResponse.status).toBe(200);
@@ -104,18 +104,18 @@ describe("Animal Cycle HTTP creation", () => {
       return hostState.state;
     };
 
-    await play(0, "Da3");
+    await play(0, "Cc8");
     await play(1, "---");
-    await play(0, "Da5");
+    await play(0, "Ce8");
     await play(1, "---");
-    await play(0, "Da7");
+    await play(0, "Cg8");
     await play(1, "---");
-    const terminal = await play(0, "Da8.Mg8");
+    const terminal = await play(0, "Ch8.Eg1");
 
     expect(terminal.status).toBe("finished");
     expect(terminal.result).toEqual({ winner: 1, reason: "capture" });
-    expect(pawnCell(terminal.pawns, 1, "mouse")).toEqual([0, 7]);
-    expect(terminal.history.at(-1)?.notation).toBe("Da8");
+    expect(pawnCell(terminal.pawns, 1, "cat")).toEqual([0, 7]);
+    expect(terminal.history.at(-1)?.notation).toBe("Ch8");
 
     await Bun.sleep(50);
     const [stored] = await db
@@ -123,7 +123,7 @@ describe("Animal Cycle HTTP creation", () => {
       .from(gameDetailsTable)
       .where(eq(gameDetailsTable.gameId, body.gameId));
     expect(stored).toBeDefined();
-    expect((stored.moves as string[]).at(-1)).toBe("Da8");
+    expect((stored.moves as string[]).at(-1)).toBe("Ch8");
     expect(
       (stored.configParameters as { initialState: unknown }).initialState,
     ).toEqual(body.snapshot.config.variantConfig);
@@ -133,8 +133,8 @@ describe("Animal Cycle HTTP creation", () => {
     const replay = await getReplayGameReadonly(body.gameId);
     expect(replay?.matchStatus.config.variant).toBe("animal-cycle");
     expect(replay?.state.result).toEqual({ winner: 1, reason: "capture" });
-    expect(replay?.state.history.at(-1)?.notation).toBe("Da8");
-    expect(replay && pawnCell(replay.state.pawns, 1, "mouse")).toEqual([0, 7]);
+    expect(replay?.state.history.at(-1)?.notation).toBe("Ch8");
+    expect(replay && pawnCell(replay.state.pawns, 1, "cat")).toEqual([0, 7]);
 
     const { createRematchSession } = await import("../../server/games/store");
     const rematch = createRematchSession(body.gameId);

@@ -573,14 +573,14 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     if (variant == Variant::AnimalCycle) {
         json const& pawns = initial_state["pawns"];
         Board board(model_columns, model_rows, variant,
-                    {{Player::Red, Pawn::Dog,
-                      transform_to_model(parse_cell(pawns["p1"]["dog"]), padding_config)},
-                     {Player::Red, Pawn::Mouse,
-                      transform_to_model(parse_cell(pawns["p1"]["mouse"]), padding_config)},
-                     {Player::Blue, Pawn::Cat,
-                      transform_to_model(parse_cell(pawns["p2"]["cat"]), padding_config)},
-                     {Player::Blue, Pawn::Elephant,
-                      transform_to_model(parse_cell(pawns["p2"]["elephant"]), padding_config)}});
+                    {{Player::Red, Pawn::Cat,
+                      transform_to_model(parse_cell(pawns["p1"]["cat"]), padding_config)},
+                     {Player::Red, Pawn::Elephant,
+                      transform_to_model(parse_cell(pawns["p1"]["elephant"]), padding_config)},
+                     {Player::Blue, Pawn::Mouse,
+                      transform_to_model(parse_cell(pawns["p2"]["mouse"]), padding_config)},
+                     {Player::Blue, Pawn::Dog,
+                      transform_to_model(parse_cell(pawns["p2"]["dog"]), padding_config)}});
         place_padding_walls(board, padding_config);
         for (auto const& wall_json : initial_state["walls"]) {
             Wall model_wall = transform_to_model(parse_wall(wall_json), padding_config);

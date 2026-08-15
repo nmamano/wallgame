@@ -1,15 +1,15 @@
 {
   "positions": [
     {
-      "name": "p2-cat-elephant-8x8",
+      "name": "p2-mouse-dog-8x8",
       "config": {
         "variant": "animal-cycle",
         "boardWidth": 8,
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [7, 0], "mouse": [0, 7] },
-            "p2": { "cat": [0, 0], "elephant": [7, 7] }
+            "p1": { "cat": [0, 0], "elephant": [7, 7] },
+            "p2": { "mouse": [0, 7], "dog": [7, 0] }
           },
           "walls": [],
           "turn": { "playerId": 2, "actionsTaken": [] }
@@ -17,17 +17,17 @@
       },
       "probes": [
         {
-          "notation": "Cb7",
+          "notation": "Mg7",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Cb7",
+          "appliedNotation": "Mg7",
           "appliedActions": 1
         },
         {
-          "notation": "Eg2",
+          "notation": "Db2",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Eg2",
+          "appliedNotation": "Db2",
           "appliedActions": 1
         },
         {
@@ -47,8 +47,8 @@
         "boardHeight": 5,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [4, 0], "mouse": [0, 4] },
-            "p2": { "cat": [0, 0], "elephant": [4, 4] }
+            "p1": { "cat": [0, 0], "elephant": [4, 4] },
+            "p2": { "mouse": [0, 4], "dog": [4, 0] }
           },
           "walls": [],
           "turn": { "playerId": 1, "actionsTaken": [] }
@@ -56,17 +56,17 @@
       },
       "probes": [
         {
-          "notation": "Da2",
+          "notation": "Ca4",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Da2",
+          "appliedNotation": "Ca4",
           "appliedActions": 1
         },
         {
-          "notation": "Me4",
+          "notation": "Ee2",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Me4",
+          "appliedNotation": "Ee2",
           "appliedActions": 1
         },
         {
@@ -93,8 +93,8 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [5, 2], "mouse": [2, 5] },
-            "p2": { "cat": [2, 2], "elephant": [5, 5] }
+            "p1": { "cat": [2, 2], "elephant": [5, 5] },
+            "p2": { "mouse": [2, 5], "dog": [5, 2] }
           },
           "walls": [
             { "cell": [0, 4], "orientation": "vertical" },
@@ -111,17 +111,17 @@
       },
       "probes": [
         {
-          "notation": "Db2",
+          "notation": "Cc5",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Db2",
+          "appliedNotation": "Cc5",
           "appliedActions": 1
         },
         {
-          "notation": "Mg7",
+          "notation": "Ef2",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Mg7",
+          "appliedNotation": "Ef2",
           "appliedActions": 1
         },
         {
@@ -148,8 +148,8 @@
         "boardHeight": 10,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [8, 1], "mouse": [1, 10] },
-            "p2": { "cat": [1, 1], "elephant": [8, 10] }
+            "p1": { "cat": [1, 1], "elephant": [8, 10] },
+            "p2": { "mouse": [1, 10], "dog": [8, 1] }
           },
           "walls": [
             { "cell": [5, 4], "orientation": "vertical" },
@@ -160,17 +160,17 @@
       },
       "probes": [
         {
-          "notation": "Db3",
+          "notation": "Cb8",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Db3",
+          "appliedNotation": "Cb8",
           "appliedActions": 1
         },
         {
-          "notation": "Mj9",
+          "notation": "Ek1",
           "accepted": true,
           "winner": null,
-          "appliedNotation": "Mj9",
+          "appliedNotation": "Ek1",
           "appliedActions": 1
         },
         {
@@ -197,8 +197,8 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [2, 1], "mouse": [2, 2] },
-            "p2": { "cat": [2, 4], "elephant": [7, 7] }
+            "p1": { "cat": [2, 4], "elephant": [7, 7] },
+            "p2": { "mouse": [2, 2], "dog": [2, 1] }
           },
           "walls": [],
           "turn": { "playerId": 1, "actionsTaken": [] }
@@ -206,21 +206,23 @@
       },
       "probes": [
         {
-          "notation": "Dc6",
-          "accepted": false,
-          "error": "Animal Cycle teammates cannot share a cell"
+          "notation": "Ce5",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Ce5",
+          "appliedActions": 1
         },
         {
-          "notation": "Dd6",
-          "accepted": false,
-          "error": "Invalid double move: blocked or no path"
+          "notation": "Eg2",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Eg2",
+          "appliedActions": 1
         },
         {
           "notation": "Db5",
-          "accepted": true,
-          "winner": null,
-          "appliedNotation": "Db5",
-          "appliedActions": 1
+          "accepted": false,
+          "error": "Pawn not available for this player"
         },
         {
           "notation": "---",
@@ -239,8 +241,8 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [2, 1], "mouse": [4, 1] },
-            "p2": { "cat": [2, 2], "elephant": [4, 2] }
+            "p1": { "cat": [4, 2], "elephant": [2, 2] },
+            "p2": { "mouse": [4, 1], "dog": [2, 1] }
           },
           "walls": [],
           "turn": { "playerId": 1, "actionsTaken": [] }
@@ -248,17 +250,17 @@
       },
       "probes": [
         {
-          "notation": "Dc6.Mc4",
+          "notation": "Cb4.Eb6",
           "accepted": true,
           "winner": 1,
-          "appliedNotation": "Dc6",
+          "appliedNotation": "Cb4",
           "appliedActions": 1
         },
         {
-          "notation": "Mc4.Dc6",
+          "notation": "Eb6.Cb4",
           "accepted": true,
           "winner": 1,
-          "appliedNotation": "Mc4",
+          "appliedNotation": "Eb6",
           "appliedActions": 1
         }
       ]
@@ -271,8 +273,8 @@
         "boardHeight": 4,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [0, 0], "mouse": [3, 3] },
-            "p2": { "cat": [0, 2], "elephant": [3, 1] }
+            "p1": { "cat": [0, 2], "elephant": [3, 1] },
+            "p2": { "mouse": [3, 3], "dog": [0, 0] }
           },
           "walls": [{ "cell": [1, 0], "orientation": "horizontal" }],
           "turn": { "playerId": 1, "actionsTaken": [] }
@@ -294,18 +296,18 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [2, 1], "mouse": [7, 0] },
-            "p2": { "cat": [2, 2], "elephant": [7, 7] }
+            "p1": { "cat": [2, 2], "elephant": [7, 7] },
+            "p2": { "mouse": [7, 0], "dog": [2, 1] }
           },
           "walls": [],
-          "turn": { "playerId": 1, "actionsTaken": [] }
+          "turn": { "playerId": 2, "actionsTaken": [] }
         }
       },
       "probes": [
         {
           "notation": "Dc6",
           "accepted": true,
-          "winner": 1,
+          "winner": 2,
           "appliedNotation": "Dc6",
           "appliedActions": 1
         }
@@ -319,18 +321,18 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [0, 0], "mouse": [2, 1] },
-            "p2": { "cat": [2, 2], "elephant": [7, 7] }
+            "p1": { "cat": [2, 2], "elephant": [7, 7] },
+            "p2": { "mouse": [2, 1], "dog": [0, 0] }
           },
           "walls": [],
-          "turn": { "playerId": 2, "actionsTaken": [] }
+          "turn": { "playerId": 1, "actionsTaken": [] }
         }
       },
       "probes": [
         {
           "notation": "Cb6",
           "accepted": true,
-          "winner": 2,
+          "winner": 1,
           "appliedNotation": "Cb6",
           "appliedActions": 1
         }
@@ -344,18 +346,18 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [0, 0], "mouse": [2, 1] },
-            "p2": { "cat": [0, 7], "elephant": [2, 2] }
+            "p1": { "cat": [0, 7], "elephant": [2, 2] },
+            "p2": { "mouse": [2, 1], "dog": [0, 0] }
           },
           "walls": [],
-          "turn": { "playerId": 1, "actionsTaken": [] }
+          "turn": { "playerId": 2, "actionsTaken": [] }
         }
       },
       "probes": [
         {
           "notation": "Mc6",
           "accepted": true,
-          "winner": 1,
+          "winner": 2,
           "appliedNotation": "Mc6",
           "appliedActions": 1
         }
@@ -369,18 +371,18 @@
         "boardHeight": 8,
         "initialState": {
           "pawns": {
-            "p1": { "dog": [2, 1], "mouse": [7, 0] },
-            "p2": { "cat": [0, 7], "elephant": [2, 2] }
+            "p1": { "cat": [0, 7], "elephant": [2, 2] },
+            "p2": { "mouse": [7, 0], "dog": [2, 1] }
           },
           "walls": [],
-          "turn": { "playerId": 2, "actionsTaken": [] }
+          "turn": { "playerId": 1, "actionsTaken": [] }
         }
       },
       "probes": [
         {
           "notation": "Eb6",
           "accepted": true,
-          "winner": 2,
+          "winner": 1,
           "appliedNotation": "Eb6",
           "appliedActions": 1
         }
@@ -389,12 +391,12 @@
   ],
   "stacked": [
     {
-      "name": "dog-cat-before-cat-mouse",
+      "name": "cat-mouse-before-dog-cat",
       "pawns": {
         "kind": "animal-cycle",
         "pawns": {
-          "1": { "dog": [2, 2], "mouse": [2, 2] },
-          "2": { "cat": [2, 2], "elephant": [7, 7] }
+          "1": { "cat": [2, 2], "elephant": [7, 7] },
+          "2": { "mouse": [2, 2], "dog": [2, 2] }
         }
       },
       "winner": 1
@@ -404,11 +406,11 @@
       "pawns": {
         "kind": "animal-cycle",
         "pawns": {
-          "1": { "dog": [4, 4], "mouse": [4, 4] },
-          "2": { "cat": [0, 0], "elephant": [4, 4] }
+          "1": { "cat": [0, 0], "elephant": [4, 4] },
+          "2": { "mouse": [4, 4], "dog": [4, 4] }
         }
       },
-      "winner": 1
+      "winner": 2
     }
   ]
 }

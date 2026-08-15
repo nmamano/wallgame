@@ -37,11 +37,12 @@ describe("Animal Cycle server authority and stored history", () => {
   it("refuses a teammate-crossing frame without changing turn, pawns, or history", () => {
     const session = start({
       pawns: {
-        p1: { dog: [2, 1], mouse: [2, 2] },
-        p2: { cat: [0, 7], elephant: [7, 7] },
+        p1: { cat: [0, 7], elephant: [7, 7] },
+        p2: { mouse: [2, 2], dog: [2, 1] },
       },
       walls: [],
     });
+    session.gameState.turn = 2;
     const before = JSON.stringify({
       turn: session.gameState.turn,
       pawns: session.gameState.pawns,
@@ -50,7 +51,7 @@ describe("Animal Cycle server authority and stored history", () => {
     expect(() =>
       applyPlayerMove({
         id: session.id,
-        playerId: 1,
+        playerId: 2,
         move: { actions: [{ type: "dog", target: [2, 3] }] },
         timestamp: Date.now(),
       }),
@@ -68,14 +69,15 @@ describe("Animal Cycle server authority and stored history", () => {
   it("stores an accepted atomic opponent crossing and a later pass exactly", () => {
     const session = start({
       pawns: {
-        p1: { dog: [2, 1], mouse: [7, 0] },
-        p2: { cat: [2, 2], elephant: [7, 7] },
+        p1: { cat: [2, 2], elephant: [7, 7] },
+        p2: { mouse: [7, 0], dog: [2, 1] },
       },
       walls: [],
     });
+    session.gameState.turn = 2;
     const afterCrossing = applyPlayerMove({
       id: session.id,
-      playerId: 1,
+      playerId: 2,
       move: { actions: [{ type: "dog", target: [2, 3] }] },
       timestamp: Date.now(),
     });
@@ -86,11 +88,11 @@ describe("Animal Cycle server authority and stored history", () => {
 
     const afterPass = applyPlayerMove({
       id: session.id,
-      playerId: 2,
+      playerId: 1,
       move: { actions: [] },
       timestamp: Date.now(),
     });
     expect(afterPass.history[1].move.actions).toEqual([]);
-    expect(afterPass.turn).toBe(1);
+    expect(afterPass.turn).toBe(2);
   });
 });

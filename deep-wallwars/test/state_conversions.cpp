@@ -27,10 +27,10 @@ Board animal_board() {
         5,
         Variant::AnimalCycle,
         {
-            {Player::Red, Pawn::Dog, {0, 0}},
-            {Player::Red, Pawn::Mouse, {1, 3}},
-            {Player::Blue, Pawn::Cat, {4, 1}},
-            {Player::Blue, Pawn::Elephant, {5, 4}},
+            {Player::Red, Pawn::Cat, {4, 1}},
+            {Player::Red, Pawn::Elephant, {5, 4}},
+            {Player::Blue, Pawn::Mouse, {1, 3}},
+            {Player::Blue, Pawn::Dog, {0, 0}},
         },
     };
 }
@@ -72,24 +72,24 @@ TEST_CASE("Animal Cycle planes follow player-relative capture order",
     auto blue = convert_to_model_input(board, {Player::Blue, Turn::First});
 
     std::array red_landmarks{
-        board.pawn_position(Player::Red, Pawn::Dog),
-        board.pawn_position(Player::Blue, Pawn::Cat),
-        board.pawn_position(Player::Blue, Pawn::Elephant),
-        board.pawn_position(Player::Red, Pawn::Mouse),
+        board.pawn_position(Player::Red, Pawn::Cat),
+        board.pawn_position(Player::Blue, Pawn::Mouse),
+        board.pawn_position(Player::Blue, Pawn::Dog),
+        board.pawn_position(Player::Red, Pawn::Elephant),
     };
     std::array blue_landmarks{
-        board.pawn_position(Player::Blue, Pawn::Cat),
-        board.pawn_position(Player::Red, Pawn::Mouse),
-        board.pawn_position(Player::Red, Pawn::Dog),
-        board.pawn_position(Player::Blue, Pawn::Elephant),
+        board.pawn_position(Player::Blue, Pawn::Mouse),
+        board.pawn_position(Player::Red, Pawn::Elephant),
+        board.pawn_position(Player::Red, Pawn::Cat),
+        board.pawn_position(Player::Blue, Pawn::Dog),
     };
     for (int plane = 0; plane < 4; ++plane) {
         REQUIRE(at(red, board, plane, red_landmarks[plane]) == 0.0f);
         REQUIRE(at(blue, board, plane, blue_landmarks[plane]) == 0.0f);
     }
 
-    REQUIRE(board.movable_pawns(Player::Red) == std::vector{Pawn::Dog, Pawn::Mouse});
-    REQUIRE(board.movable_pawns(Player::Blue) == std::vector{Pawn::Cat, Pawn::Elephant});
+    REQUIRE(board.movable_pawns(Player::Red) == std::vector{Pawn::Cat, Pawn::Elephant});
+    REQUIRE(board.movable_pawns(Player::Blue) == std::vector{Pawn::Mouse, Pawn::Dog});
 }
 
 TEST_CASE("Nine-channel universal inputs fail closed", "[State Conversions]") {
@@ -131,11 +131,11 @@ TEST_CASE("Animal movable pawns retain their locked policy slots", "[Training Co
     Board board = animal_board();
     std::size_t const moves = 2 * 6 * 5;
     CHECK(universal_policy_index(board, {Player::Red, Turn::First},
-                                 PawnMove{Pawn::Dog, Direction::Right}) == moves);
+                                 PawnMove{Pawn::Cat, Direction::Right}) == moves);
     CHECK(universal_policy_index(board, {Player::Red, Turn::First},
-                                 PawnMove{Pawn::Mouse, Direction::Left}) == moves + 6);
+                                 PawnMove{Pawn::Elephant, Direction::Left}) == moves + 6);
     CHECK(universal_policy_index(board, {Player::Blue, Turn::First},
-                                 PawnMove{Pawn::Cat, Direction::Down}) == moves + 1);
+                                 PawnMove{Pawn::Mouse, Direction::Down}) == moves + 1);
     CHECK(universal_policy_index(board, {Player::Blue, Turn::First},
-                                 PawnMove{Pawn::Elephant, Direction::Up}) == moves + 7);
+                                 PawnMove{Pawn::Dog, Direction::Up}) == moves + 7);
 }

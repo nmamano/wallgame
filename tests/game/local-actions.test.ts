@@ -155,23 +155,24 @@ describe("resolveDoubleStep", () => {
 
   it("emits one atomic action for direct Animal crossing of an opponent", () => {
     const state = buildAnimalState({
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     });
+    state.turn = 2;
     const action = { type: "dog", target: [2, 3] } as const;
-    expect(resolveDoubleStep({ state, playerId: 1, action })).toEqual([action]);
-    expect(applyMoveSequence(state, 1, [action]).result).toBeUndefined();
+    expect(resolveDoubleStep({ state, playerId: 2, action })).toEqual([action]);
+    expect(applyMoveSequence(state, 2, [action]).result).toBeUndefined();
   });
 
   it("does not stage forbidden Animal teammate endpoints or crossing routes", () => {
     const straight = buildAnimalState({
-      p1: { dog: [2, 1], mouse: [2, 2] },
-      p2: { cat: [0, 7], elephant: [7, 7] },
+      p1: { cat: [0, 7], elephant: [7, 7] },
+      p2: { mouse: [2, 2], dog: [2, 1] },
     });
     expect(
       canEnqueue({
         state: straight,
-        playerId: 1,
+        playerId: 2,
         queue: [],
         action: { type: "dog", target: [2, 2] },
       }),
@@ -179,34 +180,34 @@ describe("resolveDoubleStep", () => {
     expect(
       resolveDoubleStep({
         state: straight,
-        playerId: 1,
+        playerId: 2,
         action: { type: "dog", target: [2, 3] },
       }),
     ).toBeNull();
 
     const blockedL = buildAnimalState(
       {
-        p1: { dog: [2, 2], mouse: [2, 3] },
-        p2: { cat: [0, 7], elephant: [7, 7] },
+        p1: { cat: [0, 7], elephant: [7, 7] },
+        p2: { mouse: [2, 3], dog: [2, 2] },
       },
       [{ cell: [3, 2], orientation: "horizontal" }],
     );
     expect(
       resolveDoubleStep({
         state: blockedL,
-        playerId: 1,
+        playerId: 2,
         action: { type: "dog", target: [3, 3] },
       }),
     ).toBeNull();
 
     const openL = buildAnimalState({
-      p1: { dog: [2, 2], mouse: [2, 3] },
-      p2: { cat: [0, 7], elephant: [7, 7] },
+      p1: { cat: [0, 7], elephant: [7, 7] },
+      p2: { mouse: [2, 3], dog: [2, 2] },
     });
     expect(
       resolveDoubleStep({
         state: openL,
-        playerId: 1,
+        playerId: 2,
         action: { type: "dog", target: [3, 3] },
       }),
     ).toEqual([{ type: "dog", target: [3, 3] }]);
@@ -222,13 +223,14 @@ describe("resolveDoubleStep", () => {
 describe("promote", () => {
   it("auto-sends one atomic Animal distance-two premove when its turn begins", () => {
     const state = buildAnimalState({
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [2, 2], elephant: [7, 7] },
+      p1: { cat: [2, 2], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     });
+    state.turn = 2;
     const atomic = { type: "dog", target: [2, 3] } as const;
     const promotion = promotePremovesAtTurnStart({
       state,
-      playerId: 1,
+      playerId: 2,
       current: [],
       pending: [atomic],
       maxActions: 2,
@@ -240,7 +242,7 @@ describe("promote", () => {
 
     expect(promotion.accepted).toEqual([atomic]);
     expect(sent).toEqual([[atomic]]);
-    const after = applyMoveSequence(state, 1, sent[0]);
+    const after = applyMoveSequence(state, 2, sent[0]);
     expect(after.status).toBe("playing");
     expect(after.result).toBeUndefined();
     expect(after.history[0].move.actions).toEqual([atomic]);
@@ -248,13 +250,13 @@ describe("promote", () => {
 
   it("keeps an ordinary one-step premove staged until the action budget is full", () => {
     const state = buildAnimalState({
-      p1: { dog: [2, 1], mouse: [7, 0] },
-      p2: { cat: [0, 7], elephant: [7, 7] },
+      p1: { cat: [0, 7], elephant: [7, 7] },
+      p2: { mouse: [7, 0], dog: [2, 1] },
     });
     const step = { type: "dog", target: [2, 2] } as const;
     const promotion = promotePremovesAtTurnStart({
       state,
-      playerId: 1,
+      playerId: 2,
       current: [],
       pending: [step],
       maxActions: 2,

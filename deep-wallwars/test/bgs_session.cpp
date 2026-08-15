@@ -127,10 +127,10 @@ static json make_animal_cycle_config(int width = 8, int height = 8) {
     config["variant"] = "animal-cycle";
     config["boardWidth"] = width;
     config["boardHeight"] = height;
-    config["initialState"]["pawns"]["p1"]["dog"] = {height - 1, 0};
-    config["initialState"]["pawns"]["p1"]["mouse"] = {0, width - 1};
-    config["initialState"]["pawns"]["p2"]["cat"] = {0, 0};
-    config["initialState"]["pawns"]["p2"]["elephant"] = {height - 1, width - 1};
+    config["initialState"]["pawns"]["p1"]["cat"] = {0, 0};
+    config["initialState"]["pawns"]["p1"]["elephant"] = {height - 1, width - 1};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {0, width - 1};
+    config["initialState"]["pawns"]["p2"]["dog"] = {height - 1, 0};
     config["initialState"]["walls"] = json::array();
     return config;
 }

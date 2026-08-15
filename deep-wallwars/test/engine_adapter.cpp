@@ -100,10 +100,10 @@ TEST_CASE("Animal Cycle stacked capture precedence matches TypeScript", "[Animal
             return Cell{value[1].get<int>(), value[0].get<int>()};
         };
         Board board(8, 8, Variant::AnimalCycle,
-                    {{Player::Red, Pawn::Dog, cell(pawns["1"]["dog"])},
-                     {Player::Red, Pawn::Mouse, cell(pawns["1"]["mouse"])},
-                     {Player::Blue, Pawn::Cat, cell(pawns["2"]["cat"])},
-                     {Player::Blue, Pawn::Elephant, cell(pawns["2"]["elephant"])}});
+                    {{Player::Red, Pawn::Cat, cell(pawns["1"]["cat"])},
+                     {Player::Red, Pawn::Elephant, cell(pawns["1"]["elephant"])},
+                     {Player::Blue, Pawn::Mouse, cell(pawns["2"]["mouse"])},
+                     {Player::Blue, Pawn::Dog, cell(pawns["2"]["dog"])}});
         Winner expected = fixture["winner"].get<int>() == 1 ? Winner::Red : Winner::Blue;
         CAPTURE(fixture["name"]);
         CHECK(board.animal_cycle_winner() == expected);

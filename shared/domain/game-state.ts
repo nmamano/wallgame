@@ -59,7 +59,7 @@ export function isSurvivalInitialState(
 export function isAnimalCycleInitialState(
   state: GameInitialState,
 ): state is AnimalCycleInitialState {
-  return "pawns" in state && "dog" in state.pawns.p1;
+  return "pawns" in state && "elephant" in state.pawns.p1;
 }
 
 export interface MoveInHistory {
@@ -147,12 +147,12 @@ export class GameState {
         kind: "animal-cycle",
         pawns: {
           1: {
-            dog: [...variantConfig.pawns.p1.dog],
-            mouse: [...variantConfig.pawns.p1.mouse],
+            cat: [...variantConfig.pawns.p1.cat],
+            elephant: [...variantConfig.pawns.p1.elephant],
           },
           2: {
-            cat: [...variantConfig.pawns.p2.cat],
-            elephant: [...variantConfig.pawns.p2.elephant],
+            mouse: [...variantConfig.pawns.p2.mouse],
+            dog: [...variantConfig.pawns.p2.dog],
           },
         },
       };
@@ -600,13 +600,13 @@ export class GameState {
 
         if (nextPawns.kind === "animal-cycle") {
           const firstPairValid = nextGrid.canBuildWall(
-            [nextPawns.pawns[1].dog, nextPawns.pawns[1].mouse],
-            [nextPawns.pawns[2].cat, nextPawns.pawns[2].elephant],
+            [nextPawns.pawns[1].cat, nextPawns.pawns[1].elephant],
+            [nextPawns.pawns[2].mouse, nextPawns.pawns[2].dog],
             wall,
           );
           const secondPairValid = nextGrid.canBuildWall(
-            [nextPawns.pawns[2].cat, nextPawns.pawns[2].elephant],
-            [nextPawns.pawns[1].mouse, nextPawns.pawns[1].dog],
+            [nextPawns.pawns[2].mouse, nextPawns.pawns[2].dog],
+            [nextPawns.pawns[1].elephant, nextPawns.pawns[1].cat],
             wall,
           );
           if (!firstPairValid || !secondPairValid) {

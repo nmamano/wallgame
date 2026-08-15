@@ -40,7 +40,7 @@ const seededRng = (seed: number): (() => number) => {
 };
 
 const ownedTypes = (playerId: PlayerId): GamePawnType[] =>
-  playerId === 1 ? ["dog", "mouse"] : ["cat", "elephant"];
+  playerId === 1 ? ["cat", "elephant"] : ["mouse", "dog"];
 
 const hasLegalNonPassPawnAction = (
   initialState: AnimalCycleInitialState,
@@ -91,12 +91,12 @@ describe("Animal Cycle Random Start", () => {
       expect(buildAnimalCycleInitialState(boardWidth, boardHeight)).toEqual({
         pawns: {
           p1: {
-            dog: [boardHeight - 1, 0],
-            mouse: [0, boardWidth - 1],
-          },
-          p2: {
             cat: [0, 0],
             elephant: [boardHeight - 1, boardWidth - 1],
+          },
+          p2: {
+            mouse: [0, boardWidth - 1],
+            dog: [boardHeight - 1, 0],
           },
         },
         walls: [],
@@ -110,27 +110,27 @@ describe("Animal Cycle Random Start", () => {
           boardHeight,
         );
         const { pawns, walls } = initialState;
-        const top = pawns.p2.cat[0];
-        const left = pawns.p2.cat[1];
-        const size = pawns.p1.dog[0] - top + 1;
+        const top = pawns.p1.cat[0];
+        const left = pawns.p1.cat[1];
+        const size = pawns.p2.dog[0] - top + 1;
         const square = { top, left, size };
 
         expect(pawns).toEqual({
           p1: {
-            dog: [top + size - 1, left],
-            mouse: [top, left + size - 1],
-          },
-          p2: {
             cat: [top, left],
             elephant: [top + size - 1, left + size - 1],
+          },
+          p2: {
+            mouse: [top, left + size - 1],
+            dog: [top + size - 1, left],
           },
         });
         expect(
           new Set([
-            pawns.p1.dog.join(":"),
-            pawns.p1.mouse.join(":"),
-            pawns.p2.cat.join(":"),
-            pawns.p2.elephant.join(":"),
+            pawns.p2.dog.join(":"),
+            pawns.p2.mouse.join(":"),
+            pawns.p1.cat.join(":"),
+            pawns.p1.elephant.join(":"),
           ]).size,
         ).toBe(4);
         expect(size).toBeGreaterThanOrEqual(4);
@@ -174,12 +174,12 @@ describe("Animal Cycle Random Start", () => {
           grid.addWall(wall);
         }
         expect(hasImmediateAnimalCycleCapture(grid, pawns)).toBe(false);
-        expect(grid.distance(pawns.p1.dog, pawns.p2.cat)).toBeGreaterThan(0);
+        expect(grid.distance(pawns.p2.dog, pawns.p1.cat)).toBeGreaterThan(0);
         expect(
-          grid.distance(pawns.p1.mouse, pawns.p2.elephant),
+          grid.distance(pawns.p2.mouse, pawns.p1.elephant),
         ).toBeGreaterThan(0);
-        expect(grid.distance(pawns.p2.cat, pawns.p1.mouse)).toBeGreaterThan(0);
-        expect(grid.distance(pawns.p2.elephant, pawns.p1.dog)).toBeGreaterThan(
+        expect(grid.distance(pawns.p1.cat, pawns.p2.mouse)).toBeGreaterThan(0);
+        expect(grid.distance(pawns.p1.elephant, pawns.p2.dog)).toBeGreaterThan(
           0,
         );
       }
@@ -188,10 +188,10 @@ describe("Animal Cycle Random Start", () => {
 
   it("varies the centered square size and rejects dimensions below four", () => {
     expect(
-      generateAnimalCycleRandomInitialState(10, 10, () => 0).pawns.p1.dog,
+      generateAnimalCycleRandomInitialState(10, 10, () => 0).pawns.p2.dog,
     ).toEqual([6, 3]);
     expect(
-      generateAnimalCycleRandomInitialState(10, 10, () => 0.999).pawns.p1.dog,
+      generateAnimalCycleRandomInitialState(10, 10, () => 0.999).pawns.p2.dog,
     ).toEqual([8, 1]);
     expect(() => generateAnimalCycleRandomInitialState(3, 8)).toThrow(
       "requires both board dimensions to be at least 4",
@@ -210,23 +210,23 @@ describe("Animal Cycle Random Start", () => {
       for (const wall of walls) grid.addWall(wall);
 
       const cells = [
-        pawns.p1.dog,
-        pawns.p1.mouse,
-        pawns.p2.cat,
-        pawns.p2.elephant,
+        pawns.p2.dog,
+        pawns.p2.mouse,
+        pawns.p1.cat,
+        pawns.p1.elephant,
       ];
       expect(new Set(cells.map((cell) => cell.join(":"))).size).toBe(4);
-      expect(grid.distance(pawns.p1.dog, pawns.p2.cat)).toBeGreaterThanOrEqual(
+      expect(grid.distance(pawns.p2.dog, pawns.p1.cat)).toBeGreaterThanOrEqual(
         0,
       );
       expect(
-        grid.distance(pawns.p1.mouse, pawns.p2.elephant),
+        grid.distance(pawns.p2.mouse, pawns.p1.elephant),
       ).toBeGreaterThanOrEqual(0);
       expect(
-        grid.distance(pawns.p2.cat, pawns.p1.mouse),
+        grid.distance(pawns.p1.cat, pawns.p2.mouse),
       ).toBeGreaterThanOrEqual(0);
       expect(
-        grid.distance(pawns.p2.elephant, pawns.p1.dog),
+        grid.distance(pawns.p1.elephant, pawns.p2.dog),
       ).toBeGreaterThanOrEqual(0);
 
       for (const playerId of [1, 2] as const) {
@@ -280,8 +280,8 @@ describe("Animal Cycle Random Start", () => {
                 expect(distance).toBeGreaterThanOrEqual(0);
               const initialState: AnimalCycleInitialState = {
                 pawns: {
-                  p1: { dog: [...dog], mouse: [...mouse] },
-                  p2: { cat: [...cat], elephant: [...elephant] },
+                  p1: { cat: [...cat], elephant: [...elephant] },
+                  p2: { mouse: [...mouse], dog: [...dog] },
                 },
                 walls,
               };
@@ -305,8 +305,8 @@ describe("Animal Cycle Random Start", () => {
     // is no served authored Animal route today, so this slice adds no validator.
     const compact: AnimalCycleInitialState = {
       pawns: {
-        p1: { dog: [1, 0], mouse: [0, 0] },
-        p2: { cat: [1, 2], elephant: [3, 2] },
+        p1: { cat: [1, 2], elephant: [3, 2] },
+        p2: { mouse: [0, 0], dog: [1, 0] },
       },
       walls: [
         { cell: [0, 0], orientation: "vertical" },
@@ -326,25 +326,25 @@ describe("Animal Cycle Random Start", () => {
     for (const wall of compact.walls) grid.addWall(wall);
     expect(
       new Set([
-        compact.pawns.p1.dog.join(":"),
-        compact.pawns.p1.mouse.join(":"),
-        compact.pawns.p2.cat.join(":"),
-        compact.pawns.p2.elephant.join(":"),
+        compact.pawns.p2.dog.join(":"),
+        compact.pawns.p2.mouse.join(":"),
+        compact.pawns.p1.cat.join(":"),
+        compact.pawns.p1.elephant.join(":"),
       ]).size,
     ).toBe(4);
-    expect(grid.distance(compact.pawns.p1.dog, compact.pawns.p2.cat)).toBe(2);
+    expect(grid.distance(compact.pawns.p2.dog, compact.pawns.p1.cat)).toBe(2);
     expect(
-      grid.distance(compact.pawns.p1.mouse, compact.pawns.p2.elephant),
+      grid.distance(compact.pawns.p2.mouse, compact.pawns.p1.elephant),
     ).toBe(5);
-    expect(grid.distance(compact.pawns.p2.cat, compact.pawns.p1.mouse)).toBe(3);
-    expect(grid.distance(compact.pawns.p2.elephant, compact.pawns.p1.dog)).toBe(
+    expect(grid.distance(compact.pawns.p1.cat, compact.pawns.p2.mouse)).toBe(3);
+    expect(grid.distance(compact.pawns.p1.elephant, compact.pawns.p2.dog)).toBe(
       4,
     );
 
     expect(
       hasLegalNonPassPawnAction(
         compact,
-        1,
+        2,
         1,
         { type: "dog", cell: [1, 1] },
         4,
@@ -360,10 +360,10 @@ describe("Animal Cycle Random Start", () => {
         8,
         seededRng(sample),
       );
-      const top = pawns.p2.cat[0];
-      const bottom = pawns.p1.dog[0];
-      const left = pawns.p2.cat[1];
-      const right = pawns.p1.mouse[1];
+      const top = pawns.p1.cat[0];
+      const bottom = pawns.p2.dog[0];
+      const left = pawns.p1.cat[1];
+      const right = pawns.p2.mouse[1];
       expect(bottom - top).toBe(right - left);
       expect(top + bottom).toBe(7);
       expect(left + right).toBe(7);
@@ -381,10 +381,10 @@ describe("Animal Cycle Random Start", () => {
         8,
         seededRng(seed),
       );
-      const top = pawns.p2.cat[0];
-      const bottom = pawns.p1.dog[0];
-      const left = pawns.p2.cat[1];
-      const right = pawns.p1.mouse[1];
+      const top = pawns.p1.cat[0];
+      const bottom = pawns.p2.dog[0];
+      const left = pawns.p1.cat[1];
+      const right = pawns.p2.mouse[1];
       foundOutsideSquare = walls.some(
         ({ cell: [row, column] }) =>
           row < top || row > bottom || column < left || column > right,
@@ -398,9 +398,9 @@ describe("Animal Cycle Random Start", () => {
       const initialState = generateAnimalCycleRandomInitialState(8, 10);
       const { pawns, walls } = initialState;
       const square = {
-        top: pawns.p2.cat[0],
-        left: pawns.p2.cat[1],
-        size: pawns.p1.dog[0] - pawns.p2.cat[0] + 1,
+        top: pawns.p1.cat[0],
+        left: pawns.p1.cat[1],
+        size: pawns.p2.dog[0] - pawns.p1.cat[0] + 1,
       };
       const keys = new Set(walls.map(wallKey));
       for (const wall of walls) {

@@ -7,12 +7,12 @@ export const buildAnimalCycleInitialState = (
 ): AnimalCycleInitialState => ({
   pawns: {
     p1: {
-      dog: [boardHeight - 1, 0],
-      mouse: [0, boardWidth - 1],
-    },
-    p2: {
       cat: [0, 0],
       elephant: [boardHeight - 1, boardWidth - 1],
+    },
+    p2: {
+      mouse: [0, boardWidth - 1],
+      dog: [boardHeight - 1, 0],
     },
   },
   walls: [],
@@ -111,10 +111,10 @@ const hasPathForEveryAnimal = (
   grid: Grid,
   pawns: AnimalCycleInitialState["pawns"],
 ): boolean =>
-  grid.distance(pawns.p1.dog, pawns.p2.cat) >= 0 &&
-  grid.distance(pawns.p1.mouse, pawns.p2.elephant) >= 0 &&
-  grid.distance(pawns.p2.cat, pawns.p1.mouse) >= 0 &&
-  grid.distance(pawns.p2.elephant, pawns.p1.dog) >= 0;
+  grid.distance(pawns.p1.cat, pawns.p2.mouse) >= 0 &&
+  grid.distance(pawns.p2.mouse, pawns.p1.elephant) >= 0 &&
+  grid.distance(pawns.p1.elephant, pawns.p2.dog) >= 0 &&
+  grid.distance(pawns.p2.dog, pawns.p1.cat) >= 0;
 
 const withinTwoSteps = (grid: Grid, source: Cell, target: Cell): boolean => {
   if (
@@ -137,10 +137,10 @@ export const hasImmediateAnimalCycleCapture = (
   grid: Grid,
   pawns: AnimalCycleInitialState["pawns"],
 ): boolean =>
-  withinTwoSteps(grid, pawns.p1.dog, pawns.p2.cat) ||
-  withinTwoSteps(grid, pawns.p1.mouse, pawns.p2.elephant) ||
-  withinTwoSteps(grid, pawns.p2.cat, pawns.p1.mouse) ||
-  withinTwoSteps(grid, pawns.p2.elephant, pawns.p1.dog);
+  withinTwoSteps(grid, pawns.p1.cat, pawns.p2.mouse) ||
+  withinTwoSteps(grid, pawns.p2.mouse, pawns.p1.elephant) ||
+  withinTwoSteps(grid, pawns.p1.elephant, pawns.p2.dog) ||
+  withinTwoSteps(grid, pawns.p2.dog, pawns.p1.cat);
 
 export const generateAnimalCycleRandomInitialState = (
   boardWidth: number,
@@ -151,8 +151,8 @@ export const generateAnimalCycleRandomInitialState = (
   const bottom = square.top + square.size - 1;
   const right = square.left + square.size - 1;
   const pawns: AnimalCycleInitialState["pawns"] = {
-    p1: { dog: [bottom, square.left], mouse: [square.top, right] },
-    p2: { cat: [square.top, square.left], elephant: [bottom, right] },
+    p1: { cat: [square.top, square.left], elephant: [bottom, right] },
+    p2: { mouse: [square.top, right], dog: [bottom, square.left] },
   };
   const grid = new Grid(boardWidth, boardHeight, "animal-cycle");
   if (hasImmediateAnimalCycleCapture(grid, pawns)) {
@@ -193,13 +193,13 @@ export const generateAnimalCycleRandomInitialState = (
     let legal = true;
     for (const wall of orbit) {
       const firstPairValid = trial.canBuildWall(
-        [pawns.p1.dog, pawns.p1.mouse],
-        [pawns.p2.cat, pawns.p2.elephant],
+        [pawns.p1.cat, pawns.p1.elephant],
+        [pawns.p2.mouse, pawns.p2.dog],
         wall,
       );
       const secondPairValid = trial.canBuildWall(
-        [pawns.p2.cat, pawns.p2.elephant],
-        [pawns.p1.mouse, pawns.p1.dog],
+        [pawns.p2.mouse, pawns.p2.dog],
+        [pawns.p1.elephant, pawns.p1.cat],
         wall,
       );
       if (!firstPairValid || !secondPairValid) {

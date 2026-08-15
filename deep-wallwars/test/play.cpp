@@ -64,15 +64,15 @@ TEST_CASE("Animal Cycle self-play emits deterministic replayable universal recor
     std::vector<Board> const starts = {
         Board{5, 5, Variant::AnimalCycle},
         Board{8, 8, Variant::AnimalCycle,
-              {{Player::Red, Pawn::Dog, {1, 6}},
-               {Player::Red, Pawn::Mouse, {6, 1}},
-               {Player::Blue, Pawn::Cat, {1, 1}},
-               {Player::Blue, Pawn::Elephant, {6, 6}}}},
+              {{Player::Red, Pawn::Cat, {1, 1}},
+               {Player::Red, Pawn::Elephant, {6, 6}},
+               {Player::Blue, Pawn::Mouse, {6, 1}},
+               {Player::Blue, Pawn::Dog, {1, 6}}}},
         Board{12, 10, Variant::AnimalCycle,
-              {{Player::Red, Pawn::Dog, {2, 8}},
-               {Player::Red, Pawn::Mouse, {9, 1}},
-               {Player::Blue, Pawn::Cat, {2, 1}},
-               {Player::Blue, Pawn::Elephant, {9, 8}}}},
+              {{Player::Red, Pawn::Cat, {2, 1}},
+               {Player::Red, Pawn::Elephant, {9, 8}},
+               {Player::Blue, Pawn::Mouse, {9, 1}},
+               {Player::Blue, Pawn::Dog, {2, 8}}}},
     };
 
     for (Board const& start : starts) {

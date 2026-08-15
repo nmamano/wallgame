@@ -86,8 +86,8 @@ export interface StandardInitialState {
 
 export interface AnimalCycleInitialState {
   pawns: {
-    p1: { dog: Cell; mouse: Cell };
-    p2: { cat: Cell; elephant: Cell };
+    p1: { cat: Cell; elephant: Cell };
+    p2: { mouse: Cell; dog: Cell };
   };
   walls: WallPosition[];
 }
@@ -335,8 +335,8 @@ export type GamePawns =
   | {
       kind: "animal-cycle";
       pawns: {
-        1: { dog: Cell; mouse: Cell };
-        2: { cat: Cell; elephant: Cell };
+        1: { cat: Cell; elephant: Cell };
+        2: { mouse: Cell; dog: Cell };
       };
     }
   | { kind: "classic"; pawns: Record<PlayerId, { cat: Cell; home: Cell }> }

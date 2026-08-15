@@ -371,10 +371,10 @@ TEST_CASE("Animal Cycle non-terminal score uses the nearest directed capture for
     Board board{6,
                 6,
                 Variant::AnimalCycle,
-                {{Player::Red, Pawn::Dog, {0, 0}},
-                 {Player::Red, Pawn::Mouse, {0, 5}},
-                 {Player::Blue, Pawn::Cat, {2, 0}},
-                 {Player::Blue, Pawn::Elephant, {5, 5}}}};
+                {{Player::Red, Pawn::Cat, {0, 0}},
+                 {Player::Red, Pawn::Elephant, {0, 5}},
+                 {Player::Blue, Pawn::Mouse, {2, 0}},
+                 {Player::Blue, Pawn::Dog, {5, 5}}}};
 
     REQUIRE(board.winner() == Winner::Undecided);
     CHECK(board.score_for(Player::Red) == Catch::Approx(1.0 - 2.0 / 7.0));
@@ -386,14 +386,14 @@ TEST_CASE("Animal Cycle capture is terminal after the capturing action", "[Train
     Board board{5,
                 5,
                 Variant::AnimalCycle,
-                {{Player::Red, Pawn::Dog, {0, 0}},
-                 {Player::Red, Pawn::Mouse, {0, 4}},
-                 {Player::Blue, Pawn::Cat, {1, 0}},
-                 {Player::Blue, Pawn::Elephant, {4, 4}}}};
+                {{Player::Red, Pawn::Cat, {1, 0}},
+                 {Player::Red, Pawn::Elephant, {4, 4}},
+                 {Player::Blue, Pawn::Mouse, {0, 4}},
+                 {Player::Blue, Pawn::Dog, {0, 0}}}};
 
     REQUIRE(board.winner() == Winner::Undecided);
-    board.do_action(Player::Red, PawnMove{Pawn::Dog, Direction::Right});
-    CHECK(board.winner(Turn{Player::Red, Turn::Second}) == Winner::Red);
-    CHECK(board.score_for(Player::Red, Turn{Player::Red, Turn::Second}) == 1.0);
-    CHECK(board.score_for(Player::Blue, Turn{Player::Red, Turn::Second}) == -1.0);
+    board.do_action(Player::Blue, PawnMove{Pawn::Dog, Direction::Right});
+    CHECK(board.winner(Turn{Player::Blue, Turn::Second}) == Winner::Blue);
+    CHECK(board.score_for(Player::Blue, Turn{Player::Blue, Turn::Second}) == 1.0);
+    CHECK(board.score_for(Player::Red, Turn{Player::Blue, Turn::Second}) == -1.0);
 }

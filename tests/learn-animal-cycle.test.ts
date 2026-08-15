@@ -22,10 +22,10 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
       "A randomized setup with neutral starting walls.",
     );
     expect(variants).toContain(
-      "Player 1 controls the Dog and Mouse. Player 2 controls the Cat and Elephant.",
+      "Player 1 controls the Cat and Elephant. Player 2 controls the Mouse and Dog.",
     );
     expect(variants).toContain(
-      "Dog beats Cat, Cat beats Mouse, Mouse beats Elephant, and Elephant beats Dog.",
+      "Cat beats Mouse, Mouse beats Elephant, Elephant beats Dog, and Dog beats Cat.",
     );
     expect(variants).toContain(
       "The first capture wins immediately when an action ends on an opposing animal.",

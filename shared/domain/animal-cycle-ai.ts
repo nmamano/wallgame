@@ -23,30 +23,30 @@ const optionsFor = (
   playerId === 1
     ? [
         {
-          type: "dog",
-          from: pawns.pawns[1].dog,
-          prey: pawns.pawns[2].cat,
-          predator: pawns.pawns[2].elephant,
+          type: "cat",
+          from: pawns.pawns[1].cat,
+          prey: pawns.pawns[2].mouse,
+          predator: pawns.pawns[2].dog,
         },
         {
-          type: "mouse",
-          from: pawns.pawns[1].mouse,
-          prey: pawns.pawns[2].elephant,
-          predator: pawns.pawns[2].cat,
+          type: "elephant",
+          from: pawns.pawns[1].elephant,
+          prey: pawns.pawns[2].dog,
+          predator: pawns.pawns[2].mouse,
         },
       ]
     : [
         {
-          type: "cat",
-          from: pawns.pawns[2].cat,
-          prey: pawns.pawns[1].mouse,
-          predator: pawns.pawns[1].dog,
+          type: "mouse",
+          from: pawns.pawns[2].mouse,
+          prey: pawns.pawns[1].elephant,
+          predator: pawns.pawns[1].cat,
         },
         {
-          type: "elephant",
-          from: pawns.pawns[2].elephant,
-          prey: pawns.pawns[1].dog,
-          predator: pawns.pawns[1].mouse,
+          type: "dog",
+          from: pawns.pawns[2].dog,
+          prey: pawns.pawns[1].cat,
+          predator: pawns.pawns[1].elephant,
         },
       ];
 
