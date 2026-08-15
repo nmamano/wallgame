@@ -1,8 +1,4 @@
-import {
-  createFileRoute,
-  useNavigate,
-  useRouterState,
-} from "@tanstack/react-router";
+import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
 import { useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
@@ -95,7 +91,6 @@ const fetchPastGamesActivity = async (
 };
 
 function PastGames() {
-  const navigate = useNavigate();
   const router = useRouterState();
   const isSmallScreen = useMediaQuery("(max-width: 639px)");
   const Wrapper = isSmallScreen ? "div" : Card;
@@ -129,10 +124,6 @@ function PastGames() {
   const games = data?.games ?? [];
   const rows = games.map((game) => presentPastGameRow(game));
   const hasMore = data?.hasMore ?? false;
-
-  const handleWatchGame = (gameId: string) => {
-    void navigate({ to: `/game/${gameId}` });
-  };
 
   const updateFilters = (next: Partial<Filters>) => {
     setFilters((prev) => ({ ...prev, ...next }));
@@ -404,12 +395,14 @@ function PastGames() {
                   rows.map((row) => (
                     <TableRow key={row.gameId} className="hover:bg-muted/20">
                       <TableCell>
-                        <Button
-                          size="sm"
-                          variant="ghost"
-                          onClick={() => handleWatchGame(row.gameId)}
-                        >
-                          <Eye className="w-4 h-4" />
+                        <Button asChild size="sm" variant="ghost">
+                          <Link
+                            to="/game/$id"
+                            params={{ id: row.gameId }}
+                            aria-label={`Watch game ${row.gameId}`}
+                          >
+                            <Eye className="w-4 h-4" />
+                          </Link>
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium capitalize">
