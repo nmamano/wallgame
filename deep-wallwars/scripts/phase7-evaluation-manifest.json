@@ -1,0 +1,38 @@
+{
+  "kind": "phase7-feasibility-evaluation-v1",
+  "dateFrozenUtc": "2026-08-15",
+  "baselineGeneration": 93,
+  "candidateGenerations": [94, 95, 96],
+  "engineSeed": 730171,
+  "randomStartSeedFormula": "engineSeed * 1000003 + zeroBasedGameIndex",
+  "gamesPerCondition": 20,
+  "seatAssignment": "candidate is P1 in even-numbered games and P2 in odd-numbered games",
+  "moveLimit": 300,
+  "strengthProbe": {
+    "samplesPerMovePerModel": 250,
+    "rootNoiseFactorPerModel": 0.25,
+    "purpose": "small feasibility comparison using the existing benchmark defaults; not a launch-strength estimate"
+  },
+  "policyValueProbe": {
+    "samplesPerMovePerModel": 1,
+    "rootNoiseFactorPerModel": 0,
+    "purpose": "policy-head top-choice play and one-sample network value signal on the same deterministic conditions"
+  },
+  "conditions": [
+    { "variant": "standard", "setup": "fixed", "size": "8x8" },
+    { "variant": "standard", "setup": "random-start", "size": "8x8" },
+    { "variant": "standard", "setup": "fixed", "size": "12x10" },
+    { "variant": "standard", "setup": "random-start", "size": "12x10" },
+    { "variant": "classic", "setup": "fixed", "size": "8x8" },
+    { "variant": "classic", "setup": "random-start", "size": "8x8" },
+    { "variant": "classic", "setup": "fixed", "size": "12x10" },
+    { "variant": "classic", "setup": "random-start", "size": "12x10" },
+    { "variant": "animal-cycle", "setup": "fixed", "size": "7x7" },
+    { "variant": "animal-cycle", "setup": "random-start", "size": "7x7" }
+  ],
+  "evidence": {
+    "perGame": "initial state, derived seed, moves, P1-perspective evaluations, outcome, termination reason, and legality errors",
+    "aggregate": "W/L/D by candidate seat, legality, termination reasons, mean P1 evaluation, and mean absolute evaluation",
+    "trainingSignals": "policy and value losses are read separately from the frozen training log"
+  }
+}

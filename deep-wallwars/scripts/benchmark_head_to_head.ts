@@ -21,8 +21,16 @@
  *     [--our-noise 0.6] [--opp-noise 0]
  */
 import { EngineProcess } from "../../official-custom-bot-client/src/engine-runner";
+import {
+  buildAnimalCycleInitialState,
+  generateAnimalCycleRandomInitialState,
+} from "../../shared/domain/animal-cycle-setup";
 import { GameState } from "../../shared/domain/game-state";
-import { buildClassicInitialState } from "../../shared/domain/classic-setup";
+import {
+  buildClassicInitialState,
+  generateClassicRandomInitialState,
+} from "../../shared/domain/classic-setup";
+import { generateStandardRandomInitialState } from "../../shared/domain/random-start-setup";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import type {
@@ -92,6 +100,7 @@ function makeRng(seed: number): () => number {
   };
 }
 const VARIANT = arg("variant", "standard") as Variant;
+const SETUP_MODE = arg("setup", "fixed");
 const GAMES = parseInt(arg("games", "20"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
 const MOVE_LIMIT = 300;
@@ -99,11 +108,31 @@ const SEND_TIMEOUT_MS = 60000;
 const W = parseInt(arg("width", "8"), 10), H = parseInt(arg("height", "8"), 10);
 const FAKE_TS = 0; // constant timestamp => referee never deducts clock time
 
-function makeConfig(): GameConfiguration {
+if (!["standard", "classic", "animal-cycle"].includes(VARIANT)) {
+  throw new Error(`unsupported benchmark variant: ${VARIANT}`);
+}
+if (SETUP_MODE !== "fixed" && SETUP_MODE !== "random-start") {
+  throw new Error(`unsupported --setup: ${SETUP_MODE}`);
+}
+
+function makeConfig(gameIdx: number): GameConfiguration {
+  const randomStart = SETUP_MODE === "random-start";
+  const rng = makeRng(SEED * 1_000_003 + gameIdx);
   const variantConfig =
-    VARIANT === "classic" ? buildClassicInitialState(W, H) : buildStandardInitialState(W, H);
+    VARIANT === "classic"
+      ? randomStart
+        ? generateClassicRandomInitialState(W, H, rng)
+        : buildClassicInitialState(W, H)
+      : VARIANT === "animal-cycle"
+        ? randomStart
+          ? generateAnimalCycleRandomInitialState(W, H, rng)
+          : buildAnimalCycleInitialState(W, H)
+        : randomStart
+          ? generateStandardRandomInitialState(W, H, rng)
+          : buildStandardInitialState(W, H);
   return {
     variant: VARIANT,
+    randomStart,
     timeControl: { initialSeconds: 100000, incrementSeconds: 0, preset: "rapid" },
     rated: false,
     boardWidth: W,
@@ -126,6 +155,16 @@ interface GameOutcome {
   outcome: Side;
   reason: string;
   moves: string[];
+  candidateEvaluations: number[];
+  baselineEvaluations: number[];
+  initialProbe: {
+    candidateBestMove: string;
+    baselineBestMove: string;
+    candidateEvaluation: number;
+    baselineEvaluation: number;
+  };
+  legalityErrors: string[];
+  initialState: GameConfiguration["variantConfig"];
 }
 
 async function playGame(
@@ -135,7 +174,7 @@ async function playGame(
   oursIsP1: boolean,
   naive: EngineProcess | null,
 ): Promise<GameOutcome> {
-  const config = makeConfig();
+  const config = makeConfig(gameIdx);
   let referee = new GameState(config, FAKE_TS);
   const initialState = referee.getInitialState();
   const bgsConfig = { variant: VARIANT, boardWidth: W, boardHeight: H, initialState };
@@ -149,11 +188,50 @@ async function playGame(
   };
 
   const naiveId = `g${gameIdx}-naive`;
-  await send(ours, { type: "start_game_session", bgsId: oursId, botId: "ours", config: bgsConfig });
-  await send(opp, { type: "start_game_session", bgsId: oppId, botId: "opp", config: bgsConfig });
+  const started = await Promise.all([
+    send(ours, {
+      type: "start_game_session",
+      bgsId: oursId,
+      botId: "ours",
+      config: bgsConfig,
+    }),
+    send(opp, {
+      type: "start_game_session",
+      bgsId: oppId,
+      botId: "opp",
+      config: bgsConfig,
+    }),
+  ]);
+  if (started.some((response) => !response.success)) {
+    throw new Error(
+      `engine session start failed: ${started
+        .filter((response) => !response.success)
+        .map((response) => response.error)
+        .join("; ")}`,
+    );
+  }
   if (naive) {
     await send(naive, { type: "start_game_session", bgsId: naiveId, botId: "naive", config: bgsConfig });
   }
+  const initialResponses = await Promise.all([
+    send(ours, { type: "evaluate_position", bgsId: oursId, expectedPly: 0 }),
+    send(opp, { type: "evaluate_position", bgsId: oppId, expectedPly: 0 }),
+  ]);
+  if (initialResponses.some((response) => !response.success || !response.bestMove)) {
+    throw new Error(
+      `initial position probe failed: ${initialResponses
+        .filter((response) => !response.success || !response.bestMove)
+        .map((response) => response.error || "engine returned no move")
+        .join("; ")}`,
+    );
+  }
+  const [candidateInitial, baselineInitial] = initialResponses;
+  const initialProbe = {
+    candidateBestMove: candidateInitial.bestMove,
+    baselineBestMove: baselineInitial.bestMove,
+    candidateEvaluation: candidateInitial.evaluation,
+    baselineEvaluation: baselineInitial.evaluation,
+  };
   // One stream of coin flips per game, derived from the seed, so game 7 rolls
   // the same way whatever the noise level under test is.
   const roll = makeRng(SEED * 1000 + gameIdx);
@@ -161,12 +239,41 @@ async function playGame(
   let outcome: Side = "draw";
   let reason = "move-limit"; // default if the loop exits via the ply cap
   const moves: string[] = [];
+  const candidateEvaluations: number[] = [];
+  const baselineEvaluations: number[] = [];
+  const legalityErrors: string[] = [];
+  for (const [label, response] of [
+    ["candidate", candidateInitial],
+    ["baseline", baselineInitial],
+  ] as const) {
+    try {
+      referee.applyGameAction({
+        kind: "move",
+        move: moveFromStandardNotation(response.bestMove, H),
+        playerId: referee.turn,
+        timestamp: FAKE_TS,
+      });
+    } catch (error) {
+      legalityErrors.push(
+        `${label} initial ${response.bestMove}: ${error instanceof Error ? error.message : String(error)}`,
+      );
+    }
+  }
   try {
     for (let ply = 0; referee.status === "playing" && ply < MOVE_LIMIT; ply++) {
       const mover = referee.turn; // 1 or 2, matches ply parity
       const me = seat[mover];
       const isOurTurn = mover === (oursIsP1 ? 1 : 2);
-      let ev = await send(me.eng, { type: "evaluate_position", bgsId: me.bgsId, expectedPly: ply });
+      let ev =
+        ply === 0
+          ? isOurTurn
+            ? candidateInitial
+            : baselineInitial
+          : await send(me.eng, {
+              type: "evaluate_position",
+              bgsId: me.bgsId,
+              expectedPly: ply,
+            });
       // The naive swap, exactly as the client does it: the engine is asked
       // first and its answer is replaced. Asking it anyway is not waste - it
       // is what keeps its own tree advancing, and it is what the client does.
@@ -178,14 +285,81 @@ async function playGame(
         // No legal move => mover loses.
         outcome = mover === (oursIsP1 ? 1 : 2) ? "opp" : "ours";
         reason = "no-legal-move";
-        return { outcome, reason, moves };
+        legalityErrors.push(ev.error || "engine returned no move");
+        return {
+          outcome,
+          reason,
+          moves,
+          candidateEvaluations,
+          baselineEvaluations,
+          initialProbe,
+          legalityErrors,
+          initialState,
+        };
       }
+      (isOurTurn ? candidateEvaluations : baselineEvaluations).push(
+        ev.evaluation,
+      );
       moves.push(ev.bestMove);
       const move = moveFromStandardNotation(ev.bestMove, H);
-      referee = referee.applyGameAction({ kind: "move", move, playerId: mover, timestamp: FAKE_TS });
+      try {
+        referee = referee.applyGameAction({
+          kind: "move",
+          move,
+          playerId: mover,
+          timestamp: FAKE_TS,
+        });
+      } catch (error) {
+        outcome = mover === (oursIsP1 ? 1 : 2) ? "opp" : "ours";
+        reason = "illegal-engine-move";
+        legalityErrors.push(
+          `${ev.bestMove}: ${error instanceof Error ? error.message : String(error)}`,
+        );
+        return {
+          outcome,
+          reason,
+          moves,
+          candidateEvaluations,
+          baselineEvaluations,
+          initialProbe,
+          legalityErrors,
+          initialState,
+        };
+      }
       // Advance BOTH engines to keep them in lockstep (tree reuse).
-      await send(seat[1].eng, { type: "apply_move", bgsId: seat[1].bgsId, expectedPly: ply, move: ev.bestMove });
-      await send(seat[2].eng, { type: "apply_move", bgsId: seat[2].bgsId, expectedPly: ply, move: ev.bestMove });
+      const applied = await Promise.all([
+        send(seat[1].eng, {
+          type: "apply_move",
+          bgsId: seat[1].bgsId,
+          expectedPly: ply,
+          move: ev.bestMove,
+        }),
+        send(seat[2].eng, {
+          type: "apply_move",
+          bgsId: seat[2].bgsId,
+          expectedPly: ply,
+          move: ev.bestMove,
+        }),
+      ]);
+      if (applied.some((response) => !response.success)) {
+        reason = "engine-apply-failure";
+        legalityErrors.push(
+          ...applied
+            .filter((response) => !response.success)
+            .map((response) => response.error || "engine rejected applied move"),
+        );
+        outcome = "draw";
+        return {
+          outcome,
+          reason,
+          moves,
+          candidateEvaluations,
+          baselineEvaluations,
+          initialProbe,
+          legalityErrors,
+          initialState,
+        };
+      }
       if (naive) {
         await send(naive, { type: "apply_move", bgsId: naiveId, expectedPly: ply, move: ev.bestMove });
       }
@@ -203,33 +377,100 @@ async function playGame(
       await send(naive, { type: "end_game_session", bgsId: naiveId }).catch(() => {});
     }
   }
-  return { outcome, reason, moves };
+  return {
+    outcome,
+    reason,
+    moves,
+    candidateEvaluations,
+    baselineEvaluations,
+    initialProbe,
+    legalityErrors,
+    initialState,
+  };
 }
 
 async function main() {
-  const ours = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OURS} --samples ${OUR_SAMPLES} --seed ${SEED}${noiseFlag(OUR_NOISE)}`);
-  const opp = await EngineProcess.spawn(`${BGS_ENGINE} --model ${OPP} --samples ${OPP_SAMPLES} --seed ${SEED}${noiseFlag(OPP_NOISE)}`);
+  const ours = await EngineProcess.spawn(
+    `${BGS_ENGINE} --model ${OURS} --samples ${OUR_SAMPLES} --seed ${SEED}${noiseFlag(OUR_NOISE)}`,
+    "phase7-candidate",
+  );
+  const opp = await EngineProcess.spawn(
+    `${BGS_ENGINE} --model ${OPP} --samples ${OPP_SAMPLES} --seed ${SEED}${noiseFlag(OPP_NOISE)}`,
+    "phase7-baseline",
+  );
   // Only spawned when asked for: a third GPU process per run is not free, and
   // a rate of 0 must measure exactly what it measured before this flag existed.
   const naive =
     OUR_NAIVE_RATE > 0
-      ? await EngineProcess.spawn(`${BGS_ENGINE} --model simple --samples 1 --seed ${SEED} --root_noise_factor 0`)
+      ? await EngineProcess.spawn(
+          `${BGS_ENGINE} --model simple --samples 1 --seed ${SEED} --root_noise_factor 0`,
+          "phase7-naive",
+        )
       : null;
   const tally = { ours: 0, opp: 0, draw: 0 };
   // Per-seat: when our model is P1 (red/first) vs P2 (blue/second).
   const bySeat = { P1: { ours: 0, opp: 0, draw: 0 }, P2: { ours: 0, opp: 0, draw: 0 } };
   const reasons: Record<string, number> = {};
+  let legalGames = 0;
+  const valueSignal = {
+    pairedInitialPositions: 0,
+    initialTopMoveAgreements: 0,
+    candidateInitialSum: 0,
+    baselineInitialSum: 0,
+    absoluteInitialDifferenceSum: 0,
+    candidateMoverPositions: 0,
+    candidateMoverEvaluationSum: 0,
+    baselineMoverPositions: 0,
+    baselineMoverEvaluationSum: 0,
+  };
   const dumpFile = process.argv.includes("--dump") ? arg("dump") : null;
   const dumped: any[] = [];
   try {
     for (let g = 0; g < GAMES; g++) {
       const oursIsP1 = g % 2 === 0;
-      const { outcome: res, reason, moves } = await playGame(ours, opp, g, oursIsP1, naive);
+      const game = await playGame(ours, opp, g, oursIsP1, naive);
+      const { outcome: res, reason, moves } = game;
       tally[res]++;
       bySeat[oursIsP1 ? "P1" : "P2"][res]++;
       reasons[reason] = (reasons[reason] ?? 0) + 1;
-      if (dumpFile && res === "draw") {
-        dumped.push({ game: g, oursIsP1, outcome: res, reason, plies: moves.length, moves });
+      if (game.legalityErrors.length === 0) legalGames++;
+      valueSignal.pairedInitialPositions++;
+      if (
+        game.initialProbe.candidateBestMove ===
+        game.initialProbe.baselineBestMove
+      ) {
+        valueSignal.initialTopMoveAgreements++;
+      }
+      valueSignal.candidateInitialSum +=
+        game.initialProbe.candidateEvaluation;
+      valueSignal.baselineInitialSum += game.initialProbe.baselineEvaluation;
+      valueSignal.absoluteInitialDifferenceSum += Math.abs(
+        game.initialProbe.candidateEvaluation -
+          game.initialProbe.baselineEvaluation,
+      );
+      for (const evaluation of game.candidateEvaluations) {
+        valueSignal.candidateMoverPositions++;
+        valueSignal.candidateMoverEvaluationSum += evaluation;
+      }
+      for (const evaluation of game.baselineEvaluations) {
+        valueSignal.baselineMoverPositions++;
+        valueSignal.baselineMoverEvaluationSum += evaluation;
+      }
+      if (dumpFile) {
+        dumped.push({
+          game: g,
+          seed: SEED * 1_000_003 + g,
+          oursIsP1,
+          outcome: res,
+          reason,
+          plies: moves.length,
+          moves,
+          candidateEvaluations: game.candidateEvaluations,
+          baselineEvaluations: game.baselineEvaluations,
+          initialProbe: game.initialProbe,
+          legalityErrors: game.legalityErrors,
+          initialState: game.initialState,
+        });
       }
       console.error(`game ${g} (ours ${oursIsP1 ? "P1" : "P2"}): ${res} [${reason}, ${moves.length} plies]  [W/L/D ${tally.ours}/${tally.opp}/${tally.draw}]`);
     }
@@ -241,13 +482,40 @@ async function main() {
     naive?.kill();
   }
   console.log(JSON.stringify({
-    variant: VARIANT, ours: OURS.split("/").pop(), our_samples: OUR_SAMPLES,
+    variant: VARIANT, setup: SETUP_MODE, width: W, height: H,
+    seed: SEED, ours: OURS.split("/").pop(), our_samples: OUR_SAMPLES,
     our_noise: OUR_NOISE === "" ? "(engine default)" : Number(OUR_NOISE),
     our_naive_rate: OUR_NAIVE_RATE,
     opp: OPP.split("/").pop(), opp_samples: OPP_SAMPLES,
     opp_noise: OPP_NOISE === "" ? "(engine default)" : Number(OPP_NOISE),
     games: GAMES,
     wld: `${tally.ours}/${tally.opp}/${tally.draw}`, tally,
+    legality: { legal_games: legalGames, illegal_games: GAMES - legalGames },
+    value_signal: {
+      paired_initial_positions: valueSignal.pairedInitialPositions,
+      initial_top_move_agreement_rate:
+        valueSignal.initialTopMoveAgreements /
+        valueSignal.pairedInitialPositions,
+      candidate_mean_initial_p1_evaluation:
+        valueSignal.candidateInitialSum /
+        valueSignal.pairedInitialPositions,
+      baseline_mean_initial_p1_evaluation:
+        valueSignal.baselineInitialSum /
+        valueSignal.pairedInitialPositions,
+      mean_absolute_initial_evaluation_difference:
+        valueSignal.absoluteInitialDifferenceSum /
+        valueSignal.pairedInitialPositions,
+      candidate_mover_positions: valueSignal.candidateMoverPositions,
+      candidate_mean_mover_p1_evaluation:
+        valueSignal.candidateMoverEvaluationSum /
+        valueSignal.candidateMoverPositions,
+      baseline_mover_positions: valueSignal.baselineMoverPositions,
+      baseline_mean_mover_p1_evaluation:
+        valueSignal.baselineMoverEvaluationSum /
+        valueSignal.baselineMoverPositions,
+    },
+    policy_only:
+      OUR_SAMPLES === 1 && OPP_SAMPLES === 1 && OUR_NOISE === "0" && OPP_NOISE === "0",
     our_wld_as_P1_red: `${bySeat.P1.ours}/${bySeat.P1.opp}/${bySeat.P1.draw}`,
     our_wld_as_P2_blue: `${bySeat.P2.ours}/${bySeat.P2.opp}/${bySeat.P2.draw}`,
   }));
