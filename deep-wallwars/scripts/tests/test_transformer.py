@@ -8,6 +8,8 @@ because square boards cannot distinguish col*rows+row from row*cols+col.
 import pytest
 import torch
 
+from export_transformer import should_export_resnet_reference
+
 from model import (
     MODEL_INPUT_CHANNELS,
     ResNet,
@@ -152,6 +154,11 @@ def test_onnx_export_names_and_shapes(tmp_path):
         COLS,
         ROWS,
     ]
+
+
+def test_trained_checkpoint_export_skips_legacy_resnet_reference():
+    assert should_export_resnet_reference(None)
+    assert not should_export_resnet_reference("model_1.pt")
 
 
 def test_param_count_default_config_sane():

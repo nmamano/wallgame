@@ -58,6 +58,11 @@ def load_transformer_weights(path):
     sys.exit(f"FATAL: unsupported checkpoint type {type(obj).__name__} in {path}")
 
 
+def should_export_resnet_reference(checkpoint):
+    """The legacy ResNet is an S3 comparison, not part of trained parity."""
+    return checkpoint is None
+
+
 def export(model, dummy, path):
     model.log_output = False
     model.eval()
@@ -110,11 +115,16 @@ def main():
     export(transformer, torch.randn(1, ch, cols, rows), onnx_b1)
     export(transformer, torch.randn(args.big_batch, ch, cols, rows), onnx_bN)
 
-    # ResNet batch-256 reference, regenerated from the trained checkpoint.
-    # Read-only on the .pt; trusted local artifact, hence weights_only=False.
-    resnet = torch.load(RESNET_PT, weights_only=False, map_location="cpu")
-    resnet_onnx = guarded_path(args.outdir, f"resnet48_b{args.big_batch}.onnx")
-    export(resnet, torch.randn(args.big_batch, ch, cols, rows), resnet_onnx)
+    resnet_pt_source = None
+    resnet_onnx = {}
+    if should_export_resnet_reference(args.pt):
+        # The legacy ResNet is only an S3 comparison. A trained-transformer
+        # parity run can use a different board shape and input-plane count.
+        resnet = torch.load(RESNET_PT, weights_only=False, map_location="cpu")
+        resnet_path = guarded_path(args.outdir, f"resnet48_b{args.big_batch}.onnx")
+        export(resnet, torch.randn(args.big_batch, ch, cols, rows), resnet_path)
+        resnet_pt_source = RESNET_PT
+        resnet_onnx = {str(args.big_batch): resnet_path}
 
     manifest = {
         "seed": args.seed,
@@ -122,8 +132,8 @@ def main():
         "input_channels": ch,
         "checkpoint": checkpoint,
         "transformer_onnx": {"1": onnx_b1, str(args.big_batch): onnx_bN},
-        "resnet_pt_source": RESNET_PT,
-        "resnet_onnx": {str(args.big_batch): resnet_onnx},
+        "resnet_pt_source": resnet_pt_source,
+        "resnet_onnx": resnet_onnx,
         "torch_version": torch.__version__,
         "note": "fresh seeded random transformer weights; parity/throughput are "
         "architecture properties here. Trained-weight parity re-runs in S4 smoke.",
