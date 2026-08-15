@@ -1,5 +1,3 @@
-from fastai.data.all import RandomSplitter, get_files
-import torch
 from torch import tensor
 from random import sample
 
@@ -8,10 +6,17 @@ def tensor_from_csv_line(line):
 
 
 def parse_file(file, input_channels, columns, rows, move_channels):
+    if input_channels != 16:
+        raise ValueError(
+            f"Replay loader accepts only the 16-plane format, not {input_channels} planes. "
+            "Convert old sources with migrate_replay_data.py before loading them."
+        )
+    if move_channels != 8:
+        raise ValueError(
+            f"Universal replay labels require 8 pawn-move channels, not {move_channels}."
+        )
     expected_num_values = input_channels * columns * rows
     expected_priors = 2 * columns * rows + move_channels
-    # For universal training: classic data has 4 move channels, we need 8
-    classic_priors = 2 * columns * rows + 4
     result = []
     with open(file) as f:
         lines = f.readlines()
@@ -27,11 +32,7 @@ def parse_file(file, input_channels, columns, rows, move_channels):
             priors = tensor_from_csv_line(lines[i + 1])
             values = tensor_from_csv_line(lines[i + 2])
 
-            # Pad classic data (4 move channels) to universal format (8 move channels)
-            if len(priors) == classic_priors and move_channels == 8:
-                # Append 4 zeros for mouse move channels (unused in classic)
-                priors = torch.cat([priors, torch.zeros(4)])
-            elif len(priors) != expected_priors:
+            if len(priors) != expected_priors:
                 print(f"ERROR in file {file}, line index {i + 1}: Prior size mismatch.")
                 print(f"Expected {expected_priors} priors (walls + moves).")
                 print(f"Found {len(priors)} values.")
@@ -57,7 +58,11 @@ def parse_files(files, input_channels, columns, rows, move_channels):
     ]
 
 
-def get_datasets(paths, games, input_channels, columns, rows, move_channels, splitter=RandomSplitter()):
+def get_datasets(paths, games, input_channels, columns, rows, move_channels, splitter=None):
+    from fastai.data.all import RandomSplitter, get_files
+
+    if splitter is None:
+        splitter = RandomSplitter()
     files = [file for path in paths for file in get_files(path)]
     if games < len(files):
         files = sample(files, games)

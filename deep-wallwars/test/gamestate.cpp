@@ -365,3 +365,35 @@ TEST_CASE("score_for survives a mid-turn where BOTH sides sit on a goal", "[Game
     CHECK(red_mid == 0.0);
     CHECK(blue_mid == 0.0);
 }
+
+TEST_CASE("Animal Cycle non-terminal score uses the nearest directed capture for each side",
+          "[Training Contract]") {
+    Board board{6,
+                6,
+                Variant::AnimalCycle,
+                {{Player::Red, Pawn::Dog, {0, 0}},
+                 {Player::Red, Pawn::Mouse, {0, 5}},
+                 {Player::Blue, Pawn::Cat, {2, 0}},
+                 {Player::Blue, Pawn::Elephant, {5, 5}}}};
+
+    REQUIRE(board.winner() == Winner::Undecided);
+    CHECK(board.score_for(Player::Red) == Catch::Approx(1.0 - 2.0 / 7.0));
+    CHECK(board.score_for(Player::Blue) == Catch::Approx(-1.0 + 2.0 / 7.0));
+    CHECK(board.score_for(Player::Blue) == Catch::Approx(-board.score_for(Player::Red)));
+}
+
+TEST_CASE("Animal Cycle capture is terminal after the capturing action", "[Training Contract]") {
+    Board board{5,
+                5,
+                Variant::AnimalCycle,
+                {{Player::Red, Pawn::Dog, {0, 0}},
+                 {Player::Red, Pawn::Mouse, {0, 4}},
+                 {Player::Blue, Pawn::Cat, {1, 0}},
+                 {Player::Blue, Pawn::Elephant, {4, 4}}}};
+
+    REQUIRE(board.winner() == Winner::Undecided);
+    board.do_action(Player::Red, PawnMove{Pawn::Dog, Direction::Right});
+    CHECK(board.winner(Turn{Player::Red, Turn::Second}) == Winner::Red);
+    CHECK(board.score_for(Player::Red, Turn{Player::Red, Turn::Second}) == 1.0);
+    CHECK(board.score_for(Player::Blue, Turn{Player::Red, Turn::Second}) == -1.0);
+}

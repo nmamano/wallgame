@@ -15,6 +15,13 @@ struct ModelOutput {
 using ModelInput = std::vector<float>;
 
 inline constexpr int kUniversalModelInputChannels = 16;
+inline constexpr int kUniversalMovePriorChannels = 8;
+
+// Stable universal policy layout: right walls, down walls, then four directions for each of the
+// current player's two movable-pawn slots. Classic uses only the first slot; its second slot stays
+// zero. Pass has no logit.
+std::size_t universal_policy_index(Board const& board, Turn turn, Action const& action);
+std::vector<bool> legal_policy_mask(NodeInfo const& node_info);
 
 // Converts current position in the MCTS tree into the output that we would have expected from the
 // ML model. This is used for training. The expected output value is a convex combination of the

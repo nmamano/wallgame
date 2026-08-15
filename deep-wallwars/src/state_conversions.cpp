@@ -2,16 +2,48 @@
 
 #include <folly/Overload.h>
 
+#include <algorithm>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
 
+std::size_t universal_policy_index(Board const& board, Turn turn, Action const& action) {
+    std::size_t const board_size = board.columns() * board.rows();
+    return folly::variant_match(
+        action,
+        [&](PawnMove move) -> std::size_t {
+            auto const movable = board.movable_pawns(turn.player);
+            auto const pawn = std::find(movable.begin(), movable.end(), move.pawn);
+            if (pawn == movable.end()) {
+                throw std::invalid_argument("Policy action refers to a non-movable pawn");
+            }
+            std::size_t const pawn_offset = pawn == movable.begin() ? 0 : 4;
+            return 2 * board_size + pawn_offset + static_cast<int>(move.dir);
+        },
+        [&](Wall wall) -> std::size_t {
+            return static_cast<int>(wall.type) * board_size + board.index_from_cell(wall.cell);
+        });
+}
+
+std::vector<bool> legal_policy_mask(NodeInfo const& node_info) {
+    std::size_t const board_size = node_info.board.columns() * node_info.board.rows();
+    std::vector<bool> mask(2 * board_size + kUniversalMovePriorChannels);
+    for (EdgeInfo const& edge_info : node_info.edges) {
+        std::size_t const index =
+            universal_policy_index(node_info.board, node_info.turn, edge_info.action);
+        if (mask[index]) {
+            throw std::invalid_argument("Two legal actions map to the same policy index");
+        }
+        mask[index] = true;
+    }
+    return mask;
+}
+
 ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_red,
                                     float winner_contribution) {
     std::size_t board_size = node_info.board.columns() * node_info.board.rows();
-    std::size_t wall_prior_size = 2 * board_size;
-    std::size_t move_prior_size = node_info.board.move_prior_size();
-    std::vector<float> priors(wall_prior_size + move_prior_size);
+    std::vector<float> priors(2 * board_size + kUniversalMovePriorChannels);
+    auto const legal_mask = legal_policy_mask(node_info);
 
     // Note: the sum of samples in the children is not equal to the sum of samples in the parent
     // because some samples *end* in the parent. *Typically* only one sample does but due to the
@@ -19,6 +51,9 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
     int total_samples = 0;
     for (EdgeInfo const& edge_info : node_info.edges) {
         total_samples += edge_info.num_samples;
+    }
+    if (total_samples <= 0) {
+        throw std::invalid_argument("Training policy label has no sampled legal action");
     }
 
     for (EdgeInfo const& edge_info : node_info.edges) {
@@ -28,17 +63,12 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
 
         float prior = float(edge_info.num_samples) / total_samples;
 
-        folly::variant_match(
-            edge_info.action,
-            [&](PawnMove move) {
-                auto movable = node_info.board.movable_pawns(node_info.turn.player);
-                int pawn_offset = move.pawn == movable[0] ? 0 : 4;
-                priors[wall_prior_size + pawn_offset + int(move.dir)] = prior;
-            },
-            [&](Wall wall) {
-                priors[int(wall.type) * board_size +
-                       node_info.board.index_from_cell(wall.cell)] = prior;
-            });
+        std::size_t const index =
+            universal_policy_index(node_info.board, node_info.turn, edge_info.action);
+        if (!legal_mask[index]) {
+            throw std::logic_error("Policy label index is absent from its legal mask");
+        }
+        priors[index] = prior;
     }
 
     float const z_value = node_info.turn.player == Player::Red ? score_for_red : -score_for_red;

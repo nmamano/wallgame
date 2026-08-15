@@ -61,3 +61,30 @@ Classic, Standard, and historical custom-position data interpreted with
 Standard rules. That historical fixture is test-data semantics only; it is not
 a runtime variant or compatibility alias. The fp32 CPU parity gate is a maximum
 absolute difference of `2e-6` for policy probabilities and values.
+
+## Replay-data format
+
+New replay data uses the same four-line CSV record structure as before: a
+state line, a policy line, one value, and a blank separator. The state line is
+exactly `16 * columns * rows` values. The policy line is always
+`2 * columns * rows + 8` values, including Classic, whose final four pawn-move
+values are zero. Runtime training loaders accept only this format.
+
+`migrate_replay_data.py` is the only nine-plane reader. It is an offline,
+write-once directory converter, and it refuses a source directory unless its
+name carries an explicit `_standard_` or `_classic_` rules identity that agrees
+with the requested conversion. It applies this mapping:
+
+- Source state planes 0-7 keep their text tokens exactly.
+- Standard source plane 8 stays in destination plane 8.
+- Classic requires a zero source plane 8, writes a zero destination plane 8,
+  and writes ones to destination plane 9.
+- Destination Animal Cycle plane 10 and reserved planes 11-15 are zero.
+- Old Classic policy labels gain four zero pawn-move values offline.
+
+Animal Cycle records are generated directly in the sixteen-plane format and
+set plane 10. The converter never creates Animal Cycle data. Each conversion
+leaves its source untouched and writes a deterministic JSON manifest with
+per-file sizes and SHA-256 hashes plus deterministic source-tree and
+output-tree hashes. The manifest does not make nine-plane data loadable at
+runtime.

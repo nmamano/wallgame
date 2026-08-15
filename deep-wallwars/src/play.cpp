@@ -248,6 +248,7 @@ folly::coro::Task<> training_play(Board board, int games, TrainingPlayOptions op
     int red_wins = 0;
     int draws = 0;
     int blue_wins = 0;
+    int move_limit_games = 0;
     int wasted_inferences = 0;
 
     for (GameResult result : results) {
@@ -257,15 +258,15 @@ folly::coro::Task<> training_play(Board board, int games, TrainingPlayOptions op
             ++draws;
         } else if (result.winner == Winner::Blue) {
             ++blue_wins;
+        } else {
+            ++move_limit_games;
         }
 
         wasted_inferences += result.wasted_inferences;
     }
 
-    int total_games = red_wins + draws + blue_wins;
-
-    XLOGF(INFO, "Red's W/L/D statistic over {}/{} games is: {} / {} / {}", total_games, games,
-          red_wins, blue_wins, draws);
+    XLOGF(INFO, "Actual terminal W/L/D is {} / {} / {}; move-limit games: {} ({} total)",
+          red_wins, blue_wins, draws, move_limit_games, games);
     XLOGF(INFO, "{} inferences were wasted.", wasted_inferences);
 }
 

@@ -97,3 +97,45 @@ TEST_CASE("Nine-channel universal inputs fail closed", "[State Conversions]") {
     REQUIRE_THROWS_AS(convert_to_model_input(board, {Player::Red, Turn::First}, 9),
                       std::invalid_argument);
 }
+
+TEST_CASE("Universal policy indices and legal masks replay-audit every rules variant",
+          "[Training Contract]") {
+    for (Variant variant : {Variant::Classic, Variant::Standard, Variant::AnimalCycle}) {
+        Board board = variant == Variant::AnimalCycle ? animal_board() : Board{6, 5, variant};
+        Turn const turn{Player::Red, Turn::First};
+        NodeInfo info{board, turn, 0.0f, 1, {}};
+        for (Action const& action : board.legal_actions(turn.player)) {
+            info.edges.push_back({action, 1, 0.0f, 0.0f});
+        }
+
+        auto const mask = legal_policy_mask(info);
+        REQUIRE(mask.size() == 2 * 6 * 5 + 8);
+        CHECK(std::count(mask.begin(), mask.end(), true) == info.edges.size());
+        for (EdgeInfo const& edge : info.edges) {
+            CHECK(mask[universal_policy_index(board, turn, edge.action)]);
+        }
+
+        auto const output = convert_to_model_output(info, 0.5f, 1.0f);
+        CHECK(output.prior.size() == mask.size());
+        for (std::size_t index = 0; index < mask.size(); ++index) {
+            if (!mask[index]) CHECK(output.prior[index] == 0.0f);
+        }
+        if (variant == Variant::Classic) {
+            CHECK(std::all_of(output.prior.end() - 4, output.prior.end(),
+                              [](float prior) { return prior == 0.0f; }));
+        }
+    }
+}
+
+TEST_CASE("Animal movable pawns retain their locked policy slots", "[Training Contract]") {
+    Board board = animal_board();
+    std::size_t const moves = 2 * 6 * 5;
+    CHECK(universal_policy_index(board, {Player::Red, Turn::First},
+                                 PawnMove{Pawn::Dog, Direction::Right}) == moves);
+    CHECK(universal_policy_index(board, {Player::Red, Turn::First},
+                                 PawnMove{Pawn::Mouse, Direction::Left}) == moves + 6);
+    CHECK(universal_policy_index(board, {Player::Blue, Turn::First},
+                                 PawnMove{Pawn::Cat, Direction::Down}) == moves + 1);
+    CHECK(universal_policy_index(board, {Player::Blue, Turn::First},
+                                 PawnMove{Pawn::Elephant, Direction::Up}) == moves + 7);
+}
