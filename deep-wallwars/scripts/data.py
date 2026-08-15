@@ -63,7 +63,7 @@ def get_datasets(paths, games, input_channels, columns, rows, move_channels, spl
 
     if splitter is None:
         splitter = RandomSplitter()
-    files = [file for path in paths for file in get_files(path)]
+    files = [file for path in paths for file in get_files(path) if file.suffix == ".csv"]
     if games < len(files):
         files = sample(files, games)
     training_files, valid_files = splitter(files)
