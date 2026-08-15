@@ -3,7 +3,7 @@ import {
   useNavigate,
   useRouterState,
 } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -36,12 +36,14 @@ import type {
   RankingResponse,
   RankingRow,
 } from "../../../shared/contracts/ranking";
+import { useLocalStorageState } from "@/hooks/use-local-storage";
 
 export const Route = createFileRoute("/ranking")({
   component: Ranking,
 });
 
 const PAGE_SIZE = 100;
+const FILTERS_STORAGE_KEY = "ranking_filters";
 type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
 
 interface RankingFilters {
@@ -123,11 +125,19 @@ function Ranking() {
     [router.location.state],
   );
 
-  const [filters, setFilters] = useState<RankingFilters>(() => ({
-    ...defaultFilters,
-    ...initialFilters,
-  }));
+  const [filters, setFilters] = useLocalStorageState<RankingFilters>(
+    FILTERS_STORAGE_KEY,
+    () => ({
+      ...defaultFilters,
+      ...initialFilters,
+    }),
+  );
   const [page, setPage] = useState<number>(1);
+
+  useEffect(() => {
+    if (Object.keys(initialFilters).length === 0) return;
+    setFilters((previous) => ({ ...previous, ...initialFilters }));
+  }, [initialFilters, setFilters]);
 
   const { data, isPending, error } = useQuery({
     queryKey: [

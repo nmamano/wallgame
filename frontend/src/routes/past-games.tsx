@@ -1,5 +1,5 @@
 import { createFileRoute, Link, useRouterState } from "@tanstack/react-router";
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
@@ -38,12 +38,14 @@ import {
 } from "@/lib/past-games";
 import { PastGamesActivityChart } from "@/components/past-games-activity-chart";
 import { parsePastGamesNavState } from "@/lib/navigation-state";
+import { useLocalStorageState } from "@/hooks/use-local-storage";
 
 export const Route = createFileRoute("/past-games")({
   component: PastGames,
 });
 
 const PAGE_SIZE = 100;
+const FILTERS_STORAGE_KEY = "past_games_filters";
 
 type ViewMode = "list" | "plot";
 
@@ -100,11 +102,19 @@ function PastGames() {
     [router.location.state],
   );
 
-  const [filters, setFilters] = useState<Filters>(() => ({
-    ...defaultPastGamesFilters,
-    ...initialFilters,
-  }));
+  const [filters, setFilters] = useLocalStorageState<Filters>(
+    FILTERS_STORAGE_KEY,
+    () => ({
+      ...defaultPastGamesFilters,
+      ...initialFilters,
+    }),
+  );
   const [page, setPage] = useState<number>(1);
+
+  useEffect(() => {
+    if (Object.keys(initialFilters).length === 0) return;
+    setFilters((previous) => ({ ...previous, ...initialFilters }));
+  }, [initialFilters, setFilters]);
   const [view, setView] = useState<ViewMode>("list");
 
   const filterKey = pastGamesFilterKey(filters);

@@ -23,6 +23,7 @@ import { Badge } from "@/components/ui/badge";
 import { Clock3, Eye, Users, Loader2 } from "lucide-react";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { formatTimeSince } from "@/lib/live-games";
+import { useLocalStorageState } from "@/hooks/use-local-storage";
 import type { LiveGameSummary } from "../../../shared/contracts/games";
 import type { LiveGamesServerMessage } from "../../../shared/contracts/websocket-messages";
 import { getBoardSizeBucket } from "../../../shared/domain/past-games";
@@ -31,6 +32,26 @@ import { variantDisplayName } from "../../../shared/domain/game-types";
 export const Route = createFileRoute("/live-games")({
   component: LiveGames,
 });
+
+interface LiveGamesFilters {
+  variant: string;
+  rated: string;
+  timeControl: string;
+  boardSize: string;
+  eloMin: string;
+  eloMax: string;
+}
+
+const DEFAULT_FILTERS: LiveGamesFilters = {
+  variant: "all",
+  rated: "all",
+  timeControl: "all",
+  boardSize: "all",
+  eloMin: "",
+  eloMax: "",
+};
+
+const FILTERS_STORAGE_KEY = "live_games_filters";
 
 function formatTimeControl(game: LiveGameSummary): string {
   const preset = game.timeControl.preset ?? "custom";
@@ -59,14 +80,10 @@ function LiveGames() {
   const isSmallScreen = useMediaQuery("(max-width: 639px)");
   const Wrapper = isSmallScreen ? "div" : Card;
 
-  const [filters, setFilters] = useState({
-    variant: "all",
-    rated: "all",
-    timeControl: "all",
-    boardSize: "all",
-    eloMin: "",
-    eloMax: "",
-  });
+  const [filters, setFilters] = useLocalStorageState<LiveGamesFilters>(
+    FILTERS_STORAGE_KEY,
+    DEFAULT_FILTERS,
+  );
 
   const [games, setGames] = useState<LiveGameSummary[]>([]);
   const [isConnected, setIsConnected] = useState(false);
