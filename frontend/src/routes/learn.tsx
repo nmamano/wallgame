@@ -122,9 +122,9 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
 
 ### Animal Cycle
 
-Player 1 controls the Cat and Elephant. Player 2 controls the Mouse and Dog. Cat beats Mouse, Mouse beats Elephant, Elephant beats Dog, and Dog beats Cat. The first capture wins immediately when an action ends on an opposing animal.
+Player 1 controls the Cat and Elephant. Player 2 controls the Mouse and Dog. Cat beats Mouse, Mouse beats Elephant, Elephant beats Dog, and Dog beats Cat. The first capture wins.
 
-Your two animals can never share a cell or cross each other. On an L-shaped two-cell move, one open route that avoids your other animal is enough. You may cross an opposing animal without capturing it; only the cell where each action ends is checked for a capture. You may also pass without taking an action. Walls follow the standard rules.
+Your two animals can never share a cell or cross each other.
 `;
 
 export const Route = createFileRoute("/learn")({
