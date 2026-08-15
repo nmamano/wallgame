@@ -360,7 +360,7 @@ function LiveGames() {
                       </div>
                     </TableCell>
                     <TableCell className="font-medium capitalize">
-                      {variantDisplayName(game.variant, game.randomStart)}
+                      {variantDisplayName(game.variant)}
                     </TableCell>
                     <TableCell>
                       <Badge variant={game.rated ? "default" : "secondary"}>

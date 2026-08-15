@@ -413,7 +413,7 @@ function PastGames() {
                         </Button>
                       </TableCell>
                       <TableCell className="font-medium capitalize">
-                        {variantDisplayName(row.variant, row.randomStart)}
+                        {variantDisplayName(row.variant)}
                       </TableCell>
                       <TableCell>
                         <Badge variant={row.rated ? "default" : "secondary"}>
