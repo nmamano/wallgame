@@ -31,7 +31,7 @@ const MAX_HEIGHT = 10;
  * is variant-blind and has a single call site, so the withdrawal is site-wide.
  * Nil's call, over making the picker variant-aware, on the measurement that of
  * the 1500 most recent games on production (2026-07-30 to 2026-08-10, 1062 of
- * them freestyle) ZERO used a side of 4; the smallest side actually played is 6.
+ * them Standard Random Start) ZERO used a side of 4; the smallest side actually played is 6.
  */
 const MIN_SIZE = 5;
 

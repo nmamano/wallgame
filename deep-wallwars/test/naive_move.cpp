@@ -265,7 +265,7 @@ TEST_CASE("the losing fallback leaves a turn that has already spent an action to
     // a Second-action one, and it avoids depending on the pawn `source` coordinate convention, which
     // this test has no reason to pin.
     auto config = bgs_test::make_standard_config(6, 6);
-    config["variant"] = "custom-setup-standard";
+    config["variant"] = "standard";
     config["initialState"]["turn"] = {
         {"playerId", 1},
         {"actionsTaken",

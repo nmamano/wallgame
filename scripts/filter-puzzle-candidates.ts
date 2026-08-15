@@ -189,7 +189,7 @@ const main = async () => {
             variant: candidate.config.variant,
             boardWidth: candidate.config.boardWidth,
             boardHeight: candidate.config.boardHeight,
-            initialState: candidate.config.variantConfig,
+            initialState: candidate.config.initialState,
           },
         },
         "game_session_started",

@@ -5,14 +5,7 @@
  * official bots. It uses a separate WebSocket connection from the game
  * connection, allowing spectators and replay viewers to get evaluations.
  *
- * V2 Connection flow (deprecated):
- * 1. Client connects to /ws/eval/:gameId
- * 2. Client sends handshake request with variant info
- * 3. Server validates access and finds an official eval bot
- * 4. Server accepts or rejects the handshake
- * 5. Client can then request evaluations for positions
- *
- * V3 Connection flow (BGS-based):
+ * Connection flow (BGS-based):
  * 1. Client connects to /ws/eval/:gameId
  * 2. Client sends handshake request with variant info
  * 3. Server validates access and creates/reuses a BGS for evaluation
@@ -22,7 +15,7 @@
  * 7. BGS is closed when game ends (live) or immediately after history sent (replays)
  */
 
-import type { SerializedGameState, Variant } from "../domain/game-types";
+import type { Variant } from "../domain/game-types";
 
 // ============================================================================
 // Client -> Server Messages
@@ -40,24 +33,12 @@ export interface EvalHandshakeRequest {
   boardHeight: number;
 }
 
-/** Request evaluation for a specific position */
-export interface EvalPositionRequest {
-  type: "eval-request";
-  /** Client-generated request ID for matching responses */
-  requestId: string;
-  /** The game state to evaluate */
-  state: SerializedGameState;
-}
-
 /** Ping to keep connection alive */
 export interface EvalPing {
   type: "ping";
 }
 
-export type EvalClientMessage =
-  | EvalHandshakeRequest
-  | EvalPositionRequest
-  | EvalPing;
+export type EvalClientMessage = EvalHandshakeRequest | EvalPing;
 
 // ============================================================================
 // Server -> Client Messages
@@ -82,20 +63,6 @@ export interface EvalHandshakeRejected {
   message: string;
 }
 
-/** Successful evaluation response */
-export interface EvalResponse {
-  type: "eval-response";
-  /** Matches the requestId from the request */
-  requestId: string;
-  /**
-   * Position evaluation from P1's perspective.
-   * Range: [-1, +1] where +1 = P1 winning, 0 = even, -1 = P2 winning.
-   */
-  evaluation: number;
-  /** Best move in standard notation (for future use) */
-  bestMove?: string;
-}
-
 export type EvalErrorCode =
   | "TIMEOUT"
   | "BOT_DISCONNECTED"
@@ -118,7 +85,7 @@ export interface EvalPong {
 }
 
 // ============================================================================
-// V3 BGS-based Eval Messages (Server -> Client)
+// BGS-based Eval Messages (Server -> Client)
 // ============================================================================
 
 /**
@@ -184,7 +151,6 @@ export interface EvalPendingMessage {
 export type EvalServerMessage =
   | EvalHandshakeAccepted
   | EvalHandshakeRejected
-  | EvalResponse
   | EvalError
   | EvalPong
   // V3 BGS-based messages

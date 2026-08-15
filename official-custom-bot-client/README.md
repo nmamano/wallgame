@@ -240,7 +240,7 @@ Key fields:
 - `timeLeft`: Remaining time in milliseconds per player
 - `pawns`: Current positions of cats and mice (row, col from top-left)
 - `walls`: All walls on the board
-- `config.variant`: "standard", "classic", or "freestyle"
+- `config.variant`: "standard", "classic", or "animal-cycle"
 
 ## Behavior Notes
 

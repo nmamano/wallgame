@@ -21,11 +21,6 @@ export const timeControlValues = [
   "unlimited",
 ] as const;
 export const variantValues = ["standard", "animal-cycle", "classic"] as const;
-export const legacyVariantValues = ["freestyle"] as const;
-export const customSetupVariantValues = [
-  "custom-setup-standard",
-  "custom-setup-classic",
-] as const;
 
 export const cellSchema = z
   .tuple([z.number().int().min(0).max(19), z.number().int().min(0).max(19)])
@@ -40,7 +35,7 @@ const neutralWallSchema = z
 
 const setupActionSchema = z.discriminatedUnion("type", [
   z.object({
-    type: z.enum(["cat", "mouse"]),
+    type: z.enum(["dog", "cat", "mouse", "elephant"]),
     source: cellSchema,
     target: cellSchema,
   }),
@@ -74,46 +69,62 @@ const classicInitialStateSchema = z.object({
   turn: setupTurnSchema,
 });
 
-export const customSetupConfigSchema = z
+const animalCycleInitialStateSchema = z.object({
+  pawns: z.object({
+    p1: z.object({ dog: cellSchema, mouse: cellSchema }),
+    p2: z.object({ cat: cellSchema, elephant: cellSchema }),
+  }),
+  walls: z.array(neutralWallSchema),
+  turn: setupTurnSchema.optional(),
+});
+
+const suppliedStandardInitialStateSchema = standardInitialStateSchema.extend({
+  turn: setupTurnSchema.optional(),
+});
+const suppliedClassicInitialStateSchema = classicInitialStateSchema.extend({
+  turn: setupTurnSchema.optional(),
+});
+
+export const authoredPositionConfigSchema = z
   .discriminatedUnion("variant", [
     z.object({
-      variant: z.literal("custom-setup-standard"),
+      variant: z.literal("standard"),
       boardWidth: z.number().int().min(3).max(20),
       boardHeight: z.number().int().min(3).max(20),
-      variantConfig: standardInitialStateSchema,
+      initialState: standardInitialStateSchema,
     }),
     z.object({
-      variant: z.literal("custom-setup-classic"),
+      variant: z.literal("classic"),
       boardWidth: z.number().int().min(3).max(20),
       boardHeight: z.number().int().min(3).max(20),
-      variantConfig: classicInitialStateSchema,
+      initialState: classicInitialStateSchema,
     }),
   ])
   .superRefine((config, ctx) => {
     const cells =
-      config.variant === "custom-setup-classic"
+      config.variant === "classic"
         ? [
-            config.variantConfig.pawns.p1.cat,
-            config.variantConfig.pawns.p1.home,
-            config.variantConfig.pawns.p2.cat,
-            config.variantConfig.pawns.p2.home,
+            config.initialState.pawns.p1.cat,
+            config.initialState.pawns.p1.home,
+            config.initialState.pawns.p2.cat,
+            config.initialState.pawns.p2.home,
           ]
         : [
-            config.variantConfig.pawns.p1.cat,
-            config.variantConfig.pawns.p1.mouse,
-            config.variantConfig.pawns.p2.cat,
-            config.variantConfig.pawns.p2.mouse,
+            config.initialState.pawns.p1.cat,
+            config.initialState.pawns.p1.mouse,
+            config.initialState.pawns.p2.cat,
+            config.initialState.pawns.p2.mouse,
           ];
     for (const [index, [row, col]] of cells.entries()) {
       if (row >= config.boardHeight || col >= config.boardWidth) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["variantConfig", "pawns"],
+          path: ["initialState", "pawns"],
           message: `pawn ${index + 1} is outside the board`,
         });
       }
     }
-    for (const [index, wall] of config.variantConfig.walls.entries()) {
+    for (const [index, wall] of config.initialState.walls.entries()) {
       const [row, col] = wall.cell;
       const outside =
         row >= config.boardHeight ||
@@ -124,30 +135,30 @@ export const customSetupConfigSchema = z
       if (outside) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["variantConfig", "walls", index],
+          path: ["initialState", "walls", index],
           message: "wall is outside the playable board boundary",
         });
       }
     }
 
     const wallKeys = new Set<string>();
-    for (const [index, wall] of config.variantConfig.walls.entries()) {
+    for (const [index, wall] of config.initialState.walls.entries()) {
       const key = `${wall.cell[0]}:${wall.cell[1]}:${wall.orientation}`;
       if (wallKeys.has(key)) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["variantConfig", "walls", index],
+          path: ["initialState", "walls", index],
           message: "duplicate wall",
         });
       }
       wallKeys.add(key);
     }
 
-    const [actionTaken] = config.variantConfig.turn.actionsTaken;
+    const [actionTaken] = config.initialState.turn.actionsTaken;
     if (!actionTaken) return;
 
     if (actionTaken.type === "wall") {
-      const matchingWall = config.variantConfig.walls.some(
+      const matchingWall = config.initialState.walls.some(
         (wall) =>
           wall.cell[0] === actionTaken.target[0] &&
           wall.cell[1] === actionTaken.target[1] &&
@@ -156,7 +167,7 @@ export const customSetupConfigSchema = z
       if (!matchingWall) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
-          path: ["variantConfig", "turn", "actionsTaken", 0],
+          path: ["initialState", "turn", "actionsTaken", 0],
           message: "the spent wall action is not present in the position",
         });
       }
@@ -169,23 +180,23 @@ export const customSetupConfigSchema = z
     const distance =
       Math.abs(sourceRow - actionTaken.target[0]) +
       Math.abs(sourceCol - actionTaken.target[1]);
-    if (
-      config.variant === "custom-setup-classic" &&
-      actionTaken.type === "mouse"
-    ) {
+    const allowedPawnAction =
+      actionTaken.type === "cat" ||
+      (config.variant === "standard" && actionTaken.type === "mouse");
+    if (!allowedPawnAction) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["variantConfig", "turn", "actionsTaken", 0],
-        message: "classic setup turns cannot contain a mouse action",
+        path: ["initialState", "turn", "actionsTaken", 0],
+        message: `${config.variant} cannot contain a ${actionTaken.type} action`,
       });
       return;
     }
-    const playerKey = config.variantConfig.turn.playerId === 1 ? "p1" : "p2";
+    const playerKey = config.initialState.turn.playerId === 1 ? "p1" : "p2";
     const pawnPosition =
       actionTaken.type === "cat"
-        ? config.variantConfig.pawns[playerKey].cat
-        : config.variant === "custom-setup-standard"
-          ? config.variantConfig.pawns[playerKey].mouse
+        ? config.initialState.pawns[playerKey].cat
+        : config.variant === "standard"
+          ? config.initialState.pawns[playerKey].mouse
           : actionTaken.target;
     const targetMatchesPosition =
       pawnPosition[0] === actionTaken.target[0] &&
@@ -193,27 +204,27 @@ export const customSetupConfigSchema = z
     const [targetRow, targetCol] = actionTaken.target;
     const blockingWall =
       sourceCol < targetCol
-        ? config.variantConfig.walls.some(
+        ? config.initialState.walls.some(
             (wall) =>
               wall.orientation === "vertical" &&
               wall.cell[0] === sourceRow &&
               wall.cell[1] === sourceCol,
           )
         : sourceCol > targetCol
-          ? config.variantConfig.walls.some(
+          ? config.initialState.walls.some(
               (wall) =>
                 wall.orientation === "vertical" &&
                 wall.cell[0] === targetRow &&
                 wall.cell[1] === targetCol,
             )
           : sourceRow < targetRow
-            ? config.variantConfig.walls.some(
+            ? config.initialState.walls.some(
                 (wall) =>
                   wall.orientation === "horizontal" &&
                   wall.cell[0] === targetRow &&
                   wall.cell[1] === targetCol,
               )
-            : config.variantConfig.walls.some(
+            : config.initialState.walls.some(
                 (wall) =>
                   wall.orientation === "horizontal" &&
                   wall.cell[0] === sourceRow &&
@@ -227,7 +238,7 @@ export const customSetupConfigSchema = z
     ) {
       ctx.addIssue({
         code: z.ZodIssueCode.custom,
-        path: ["variantConfig", "turn", "actionsTaken", 0],
+        path: ["initialState", "turn", "actionsTaken", 0],
         message:
           "the spent pawn action must be one unblocked in-bounds step ending at the authored pawn position",
       });
@@ -267,25 +278,17 @@ const currentCreateConfigSchema = z.object({
   randomStart: z.boolean(),
   boardWidth: z.number().int().min(3).max(20),
   boardHeight: z.number().int().min(3).max(20),
-});
-
-const legacyFreestyleCreateConfigSchema = z.object({
-  timeControl: timeControlSchema,
-  rated: z.boolean().optional().default(false),
-  variant: z.literal("freestyle"),
-  randomStart: z.boolean().optional(),
-  boardWidth: z.number().int().min(3).max(20),
-  boardHeight: z.number().int().min(3).max(20),
+  initialState: z
+    .union([
+      suppliedStandardInitialStateSchema,
+      suppliedClassicInitialStateSchema,
+      animalCycleInitialStateSchema,
+    ])
+    .optional(),
 });
 
 export const createGameSchema = z.object({
-  config: z
-    .union([currentCreateConfigSchema, legacyFreestyleCreateConfigSchema])
-    .transform((config) =>
-      config.variant === "freestyle"
-        ? { ...config, variant: "standard" as const, randomStart: true }
-        : config,
-    )
+  config: currentCreateConfigSchema
     .superRefine((config, ctx) => {
       if (
         config.variant === "animal-cycle" &&
@@ -299,7 +302,23 @@ export const createGameSchema = z.object({
             "Animal Cycle Random Start requires both board dimensions to be at least 4.",
         });
       }
-    }),
+      if (!config.initialState) return;
+      const pawns = config.initialState.pawns;
+      const matchesVariant =
+        (config.variant === "standard" && "mouse" in pawns.p1) ||
+        (config.variant === "classic" && "home" in pawns.p1) ||
+        (config.variant === "animal-cycle" && "dog" in pawns.p1);
+      if (!matchesVariant) {
+        ctx.addIssue({
+          code: z.ZodIssueCode.custom,
+          path: ["initialState"],
+          message: `initialState does not match ${config.variant}`,
+        });
+      }
+    })
+    .transform(({ initialState, ...config }) =>
+      initialState ? { ...config, variantConfig: initialState } : config,
+    ),
   matchType: z.enum(matchTypeValues).default("friend"),
   hostDisplayName: z.string().max(50).optional(),
   hostAppearance: appearanceSchema,
@@ -580,11 +599,7 @@ export interface PastGamesActivityResponse {
 // ============================================================================
 
 export const botsQuerySchema = z.object({
-  variant: z.enum([
-    ...variantValues,
-    ...legacyVariantValues,
-    ...customSetupVariantValues,
-  ]),
+  variant: z.enum(variantValues),
   randomStart: z
     .enum(["true", "false"])
     .optional()
@@ -631,25 +646,12 @@ export const createBotGameDirectSchema = z
     /** V3: Bot game config has no timeControl - bot games are untimed */
     config: z.union([
       z
-        .union([
-          z.object({
-            variant: z.enum(["standard", "animal-cycle", "classic"]),
-            randomStart: z.boolean(),
-            boardWidth: z.number().int().min(3).max(20),
-            boardHeight: z.number().int().min(3).max(20),
-          }),
-          z.object({
-            variant: z.literal("freestyle"),
-            randomStart: z.boolean().optional(),
-            boardWidth: z.number().int().min(3).max(20),
-            boardHeight: z.number().int().min(3).max(20),
-          }),
-        ])
-        .transform((config) =>
-          config.variant === "freestyle"
-            ? { ...config, variant: "standard" as const, randomStart: true }
-            : config,
-        )
+        .object({
+          variant: z.enum(["standard", "animal-cycle", "classic"]),
+          randomStart: z.boolean(),
+          boardWidth: z.number().int().min(3).max(20),
+          boardHeight: z.number().int().min(3).max(20),
+        })
         .superRefine((config, ctx) => {
           if (
             config.variant === "animal-cycle" &&
@@ -664,9 +666,12 @@ export const createBotGameDirectSchema = z
             });
           }
         }),
-      customSetupConfigSchema.transform((config) => ({
-        ...config,
+      authoredPositionConfigSchema.transform((config) => ({
+        variant: config.variant,
+        boardWidth: config.boardWidth,
+        boardHeight: config.boardHeight,
         randomStart: false as const,
+        variantConfig: config.initialState,
       })),
     ]),
     hostDisplayName: z.string().max(50).optional(),

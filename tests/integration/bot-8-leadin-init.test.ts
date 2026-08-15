@@ -342,7 +342,7 @@ describe("lead-in game BGS initialization (S-P1)", () => {
     // (minus the DB row fetch): P2 seed row -> pre-position session with
     // the bot as P1 -> scripted lead-in applied as real ply 0.
     const p2Row = seedRows.find(
-      (row) => row.config.variantConfig.turn.playerId === 2,
+      (row) => row.config.initialState.turn.playerId === 2,
     )!;
     const launch = resolveSavedPuzzleLaunch(p2Row);
     const { session, hostSocketToken } = store.createGameSession({

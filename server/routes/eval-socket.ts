@@ -832,18 +832,6 @@ const handleMessage = async (
       await handleHandshake(ctx, socket, message);
       break;
 
-    case "eval-request":
-      // V3: Ad-hoc eval requests are deprecated.
-      // History-based eval bar doesn't need per-position requests.
-      send(ctx, {
-        type: "eval-error",
-        requestId: message.requestId,
-        code: "INTERNAL_ERROR",
-        message:
-          "Ad-hoc eval requests are not supported in V3. Use the eval-history message instead.",
-      });
-      break;
-
     case "ping":
       send(ctx, { type: "pong" });
       break;

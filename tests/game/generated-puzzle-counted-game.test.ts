@@ -35,7 +35,7 @@ describe("generated puzzles stay recordable as completions", () => {
     expect(humanFirst.length).toBeGreaterThan(0);
 
     for (const candidate of humanFirst) {
-      const init = candidate.config.variantConfig;
+      const init = candidate.config.initialState;
       const grid = new Grid(
         candidate.config.boardWidth,
         candidate.config.boardHeight,

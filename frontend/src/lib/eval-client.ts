@@ -1,7 +1,4 @@
-import type {
-  Variant,
-  SerializedGameState,
-} from "../../../shared/domain/game-types";
+import type { Variant } from "../../../shared/domain/game-types";
 import type {
   EvalClientMessage,
   EvalServerMessage,
@@ -14,13 +11,7 @@ export type { EvalHistoryEntry } from "../../../shared/contracts/eval-protocol";
 export interface EvalClientHandlers {
   onHandshakeAccepted?: () => void;
   onHandshakeRejected?: (code: string, message: string) => void;
-  // V2 (deprecated): per-request eval response
-  onEvalResponse?: (
-    requestId: string,
-    evaluation: number,
-    bestMove?: string,
-  ) => void;
-  // V3: full evaluation history received (after BGS initialization)
+  // Full evaluation history received after BGS initialization.
   onEvalHistory?: (entries: EvalHistoryEntry[]) => void;
   // V3: streaming update when new move is made in live game
   onEvalUpdate?: (ply: number, evaluation: number, bestMove: string) => void;
@@ -118,19 +109,6 @@ export class EvalClient {
             this.handlers.onHandshakeRejected?.(payload.code, payload.message);
             break;
 
-          case "eval-response":
-            console.debug("[eval-client] received eval response", {
-              gameId: this.gameId,
-              requestId: payload.requestId,
-              evaluation: payload.evaluation,
-            });
-            this.handlers.onEvalResponse?.(
-              payload.requestId,
-              payload.evaluation,
-              payload.bestMove,
-            );
-            break;
-
           case "eval-error":
             console.warn("[eval-client] received eval error", {
               gameId: this.gameId,
@@ -144,7 +122,6 @@ export class EvalClient {
             // Ignore pong responses
             break;
 
-          // V3 BGS-based messages
           case "eval-pending":
             console.debug("[eval-client] BGS initialization pending", {
               gameId: this.gameId,
@@ -210,26 +187,6 @@ export class EvalClient {
       return;
     }
     this.socket.send(JSON.stringify(message));
-  }
-
-  /**
-   * Request an evaluation for the given game state.
-   * Returns the request ID for matching the response.
-   *
-   * @deprecated V2 protocol - in V3, evaluations are pushed from server via
-   * onEvalHistory (initial) and onEvalUpdate (streaming). This method is kept
-   * for backward compatibility during migration.
-   */
-  requestEval(requestId: string, state: SerializedGameState): void {
-    if (!this.handshakeCompleted) {
-      console.warn("[eval-client] cannot request eval before handshake");
-      return;
-    }
-    this.send({
-      type: "eval-request",
-      requestId,
-      state,
-    });
   }
 
   /**

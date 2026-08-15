@@ -51,7 +51,7 @@ const main = async () => {
       `renumbered ${result.renumbered} existing rows`,
       `inserted ${result.inserted} authored puzzles as ${result.insertedNames[0]} .. ${result.insertedNames[result.insertedNames.length - 1]}`,
       `rewrote ${result.movedCompletions} completions onto row ids`,
-      "inserted rows are ENABLED and play their authored line; the opponent only changes when a bot declares custom-setup-classic",
+      "inserted rows are ENABLED and play their authored line; the opponent only changes when a bot declares classic",
     ].join("\n"),
   );
   process.exit(0);

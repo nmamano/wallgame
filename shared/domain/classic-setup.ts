@@ -1,5 +1,5 @@
 import type { ClassicInitialState } from "./game-types";
-import { generateFreestyleInitialState } from "./freestyle-setup";
+import { generateStandardRandomInitialState } from "./random-start-setup";
 
 /**
  * Build the default initial state for Classic variant.
@@ -43,7 +43,11 @@ export const generateClassicRandomInitialState = (
   boardHeight: number,
   rng: () => number = Math.random,
 ): ClassicInitialState => {
-  const standard = generateFreestyleInitialState(boardWidth, boardHeight, rng);
+  const standard = generateStandardRandomInitialState(
+    boardWidth,
+    boardHeight,
+    rng,
+  );
 
   return {
     pawns: {

@@ -51,7 +51,7 @@ RESTART_COOLDOWN="${WALLGAME_MONITOR_RESTART_COOLDOWN:-1800}" # seconds between 
 BOTS=(
   "dw-transformer:standard:Superhuman Bot"
   "dw-easy:standard:Easy Bot"
-  "dw-puzzle:custom-setup-standard:PuzzleBot"
+  "dw-puzzle:standard:PuzzleBot"
 )
 
 # --- Helpers -----------------------------------------------------------------

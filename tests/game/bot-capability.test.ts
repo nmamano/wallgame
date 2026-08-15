@@ -3,7 +3,6 @@ import { describe, expect, it } from "bun:test";
 import {
   botSupportsGameConfiguration,
   botSupportsPosition,
-  normalizeBotVariantCapabilities,
 } from "../../shared/domain/bot-capability";
 
 /**
@@ -37,68 +36,42 @@ const superhumanBot = {
 
 describe("botSupportsPosition", () => {
   it("accepts a position inside a declared range", () => {
-    expect(botSupportsPosition(puzzleBot, "custom-setup-standard", 6, 6)).toBe(
-      true,
-    );
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 9, 6)).toBe(
-      true,
-    );
+    expect(botSupportsPosition(puzzleBot, "standard", 6, 6)).toBe(true);
+    expect(botSupportsPosition(puzzleBot, "classic", 9, 6)).toBe(true);
   });
 
-  it("reads legacy position names as their active rules variant", () => {
-    expect(
-      botSupportsPosition(superhumanBot, "custom-setup-classic", 5, 5),
-    ).toBe(true);
+  it("reads a declared rules variant", () => {
+    expect(botSupportsPosition(superhumanBot, "classic", 5, 5)).toBe(true);
   });
 
   it("refuses a board smaller than the bot will take", () => {
     // The three authored puzzles that are three rows tall.
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 7, 3)).toBe(
-      false,
-    );
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 5, 3)).toBe(
-      false,
-    );
+    expect(botSupportsPosition(puzzleBot, "classic", 7, 3)).toBe(false);
+    expect(botSupportsPosition(puzzleBot, "classic", 5, 3)).toBe(false);
   });
 
   it("checks both dimensions, not just one", () => {
     // A wide-but-short board must fail on height alone.
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 12, 3)).toBe(
-      false,
-    );
+    expect(botSupportsPosition(puzzleBot, "classic", 12, 3)).toBe(false);
     // And a tall-but-narrow one on width alone.
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 3, 10)).toBe(
-      false,
-    );
+    expect(botSupportsPosition(puzzleBot, "classic", 3, 10)).toBe(false);
   });
 
   it("is inclusive at both edges of a range", () => {
     // Off-by-one here would silently drop the 4x4 puzzles, which sit exactly
     // on the floor.
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 4, 4)).toBe(
-      true,
-    );
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 12, 10)).toBe(
-      true,
-    );
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 13, 10)).toBe(
-      false,
-    );
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 12, 11)).toBe(
-      false,
-    );
+    expect(botSupportsPosition(puzzleBot, "classic", 4, 4)).toBe(true);
+    expect(botSupportsPosition(puzzleBot, "classic", 12, 10)).toBe(true);
+    expect(botSupportsPosition(puzzleBot, "classic", 13, 10)).toBe(false);
+    expect(botSupportsPosition(puzzleBot, "classic", 12, 11)).toBe(false);
   });
 
   it("treats an omitted dimension as 'do not narrow on it'", () => {
     // The listing endpoint asks which variants a bot serves without naming a
     // board; that must not be read as a board of size undefined.
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic")).toBe(true);
-    expect(botSupportsPosition(puzzleBot, "custom-setup-classic", 4)).toBe(
-      true,
-    );
-    expect(botSupportsPosition(superhumanBot, "custom-setup-classic")).toBe(
-      true,
-    );
+    expect(botSupportsPosition(puzzleBot, "classic")).toBe(true);
+    expect(botSupportsPosition(puzzleBot, "classic", 4)).toBe(true);
+    expect(botSupportsPosition(superhumanBot, "classic")).toBe(true);
   });
 });
 
@@ -107,10 +80,6 @@ describe("Random Start bot capability", () => {
     standard: {
       boardWidth: { min: 5, max: 12 },
       boardHeight: { min: 5, max: 10 },
-    },
-    freestyle: {
-      boardWidth: { min: 7, max: 12 },
-      boardHeight: { min: 7, max: 10 },
     },
   } as const;
 
@@ -150,37 +119,5 @@ describe("Random Start bot capability", () => {
         boardHeight: 8,
       }),
     ).toBe(true);
-  });
-});
-
-describe("legacy bot capability normalization", () => {
-  it("collapses setup-shaped keys into rules-only declarations", () => {
-    const normalized = normalizeBotVariantCapabilities({
-      standard: {
-        boardWidth: { min: 5, max: 12 },
-        boardHeight: { min: 5, max: 10 },
-        recommended: [{ boardWidth: 8, boardHeight: 8 }],
-      },
-      freestyle: {
-        boardWidth: { min: 4, max: 12 },
-        boardHeight: { min: 4, max: 10 },
-        recommended: [{ boardWidth: 6, boardHeight: 6 }],
-      },
-      "custom-setup-classic": {
-        boardWidth: { min: 4, max: 9 },
-        boardHeight: { min: 4, max: 9 },
-        recommended: [{ boardWidth: 6, boardHeight: 6 }],
-      },
-    });
-
-    expect(Object.keys(normalized).sort()).toEqual(["classic", "standard"]);
-    expect(normalized.standard).toEqual({
-      boardWidth: { min: 4, max: 12 },
-      boardHeight: { min: 4, max: 10 },
-      recommended: [
-        { boardWidth: 8, boardHeight: 8 },
-        { boardWidth: 6, boardHeight: 6 },
-      ],
-    });
   });
 });

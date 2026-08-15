@@ -18,7 +18,6 @@
 
 import { z } from "zod";
 import { botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-schema";
-import { rulesVariantFor, type Variant } from "../../shared/domain/game-types";
 
 /**
  * A bot as written in a config file: the full runtime bot shape minus the
@@ -113,7 +112,7 @@ export const assertAnalysisCoverage = (config: ConfigFile): void => {
   for (const bot of analysisBots) {
     const placement = bot.placement ?? "opponent";
     for (const variant of Object.keys(bot.variants)) {
-      const route = `${placement}:${rulesVariantFor(variant as Variant)}`;
+      const route = `${placement}:${variant}`;
       const other = claimedBy.get(route);
       if (other && other !== bot.botId) {
         throw new Error(

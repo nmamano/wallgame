@@ -272,7 +272,9 @@ folly::coro::Task<json> handle_evaluate_position(
     // Get current pawn positions for notation
     Board const& board = session->mcts->current_board();
     Cell cat_pos = board.position(current_player);
-    Cell mouse_pos = board.mouse(current_player);
+    Cell mouse_pos = board.has_pawn(current_player, Pawn::Mouse)
+        ? board.mouse(current_player)
+        : board.home(current_player);
 
     std::string game_notation;
 

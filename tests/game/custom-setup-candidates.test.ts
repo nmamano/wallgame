@@ -56,7 +56,7 @@ describe("generated candidates: attack-race pairing", () => {
 
   it("places four distinct pawn cells with both ATTACK races in [3,6]", () => {
     for (const candidate of candidates) {
-      const init = candidate.config.variantConfig;
+      const init = candidate.config.initialState;
       const cells = [
         init.pawns.p1.cat,
         init.pawns.p1.mouse,
@@ -93,7 +93,7 @@ describe("computeBestMoveDelta", () => {
     humanPlaysAs: 1,
     distances: { p1: 4, p2: 5 },
     config: {
-      variant: "custom-setup-standard",
+      variant: "standard",
       randomStart: false,
       timeControl: {
         initialSeconds: 0,
@@ -103,7 +103,7 @@ describe("computeBestMoveDelta", () => {
       rated: false,
       boardWidth: 6,
       boardHeight: 6,
-      variantConfig: {
+      initialState: {
         pawns: {
           p1: { cat: [0, 0], mouse: [5, 5] },
           p2: { cat: [5, 0], mouse: [0, 4] },

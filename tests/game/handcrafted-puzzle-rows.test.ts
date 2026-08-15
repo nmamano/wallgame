@@ -51,18 +51,18 @@ describe("handcrafted puzzles as saved rows", () => {
     for (const row of rows) {
       const authored = PUZZLES[row.legacyScriptedId!];
       const config = row.config;
-      if (config.variant !== "custom-setup-classic") {
+      if (config.variant !== "classic") {
         throw new Error("authored puzzles are classic races, not mouse hunts");
       }
       expect(config.boardWidth).toBe(authored.boardWidth);
       expect(config.boardHeight).toBe(authored.boardHeight);
-      expect(config.variantConfig.pawns.p1.cat).toEqual(authored.p1Cat);
-      expect(config.variantConfig.pawns.p1.home).toEqual(authored.p1Home);
-      expect(config.variantConfig.pawns.p2.cat).toEqual(authored.p2Cat);
-      expect(config.variantConfig.pawns.p2.home).toEqual(authored.p2Home);
-      expect(config.variantConfig.walls).toEqual(authored.initialWalls);
+      expect(config.initialState.pawns.p1.cat).toEqual(authored.p1Cat);
+      expect(config.initialState.pawns.p1.home).toEqual(authored.p1Home);
+      expect(config.initialState.pawns.p2.cat).toEqual(authored.p2Cat);
+      expect(config.initialState.pawns.p2.home).toEqual(authored.p2Home);
+      expect(config.initialState.walls).toEqual(authored.initialWalls);
       // Whoever the puzzle was written for still moves first.
-      expect(config.variantConfig.turn.playerId).toBe(authored.humanPlaysAs);
+      expect(config.initialState.turn.playerId).toBe(authored.humanPlaysAs);
     }
   });
 
@@ -72,8 +72,10 @@ describe("handcrafted puzzles as saved rows", () => {
       const state = new GameState(
         {
           ...row.config,
+          randomStart: false,
           timeControl: { initialSeconds: 600, incrementSeconds: 0 },
           rated: false,
+          variantConfig: row.config.initialState,
         } as never,
         0,
       );
@@ -112,7 +114,7 @@ describe("handcrafted puzzles as saved rows", () => {
     // Because seeding them off would delete ten working puzzles from the site:
     // the code that used to render them is gone, and disabled rows are
     // filtered out of the listing. Nothing about how they PLAY changes here —
-    // until a bot declares custom-setup-classic they all resolve to their
+    // until a bot declares classic they all resolve to their
     // authored line, which is exactly what players get today. The acceptance
     // gate is the bot rollout, not this flag.
     expect(rows.every((row) => row.enabled === true)).toBe(true);
@@ -154,7 +156,7 @@ describe("handcrafted puzzles as saved rows", () => {
 
     it("treats every human-as-P1 row as launchable against a bot", () => {
       for (const row of rows) {
-        if (row.config.variantConfig.turn.playerId !== 1) continue;
+        if (row.config.initialState.turn.playerId !== 1) continue;
         expect(isBotLaunchReady(row)).toBe(true);
       }
     });
@@ -193,7 +195,14 @@ describe("handcrafted puzzles as saved rows", () => {
       const launch = resolveSavedPuzzleLaunch(rowFor("1"));
       expect(launch.humanIsPlayer1).toBe(true);
       expect(launch.leadInMove).toBeNull();
-      expect(launch.config).toEqual(rowFor("1").config);
+      const config = rowFor("1").config;
+      expect(launch.config).toEqual({
+        variant: config.variant,
+        boardWidth: config.boardWidth,
+        boardHeight: config.boardHeight,
+        randomStart: false,
+        variantConfig: config.initialState,
+      });
     });
   });
 

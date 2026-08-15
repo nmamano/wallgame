@@ -74,9 +74,6 @@ const variantsSchema = z
     standard: variantConfigSchema.optional(),
     "animal-cycle": variantConfigSchema.optional(),
     classic: variantConfigSchema.optional(),
-    freestyle: variantConfigSchema.optional(),
-    "custom-setup-standard": variantConfigSchema.optional(),
-    "custom-setup-classic": variantConfigSchema.optional(),
   })
   .strict()
   .refine(
@@ -93,7 +90,7 @@ export const botConfigBaseSchema = z.object({
   username: z.string().trim().min(1).nullable(),
   appearance: botAppearanceSchema.optional(),
   variants: variantsSchema,
-  /** Missing on legacy and third-party declarations means ordinary opponent. */
+  /** Missing declarations mean an ordinary opponent. */
   placement: z.enum(["opponent", "puzzle"]).optional(),
   /**
    * This bot answers the site's own questions within its placement route.

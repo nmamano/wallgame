@@ -28,7 +28,6 @@ import {
   type CreateBotGameConfig,
 } from "../../shared/contracts/games";
 import {
-  isCustomSetupVariant,
   type Move,
   type PlayerAppearance,
 } from "../../shared/domain/game-types";
@@ -578,13 +577,6 @@ export const botsRoute = new Hono()
         } else {
           gameConfig = parsed.config;
           hostIsPlayer1 = parsed.hostIsPlayer1;
-        }
-
-        if (isCustomSetupVariant(gameConfig.variant) && !bot.isOfficial) {
-          return c.json(
-            { error: "Custom setup games require an official bot" },
-            400,
-          );
         }
 
         // A puzzle needs the ANALYSIS bot, not merely one of ours. The

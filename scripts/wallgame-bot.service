@@ -70,6 +70,6 @@ WantedBy=default.target
 #    Expect "Engine started for bot" for every bot, then "Successfully attached
 #    with N bot(s)". Then confirm the SERVER registered them - a unit being
 #    "active" is not evidence of that:
-#      /api/bots?variant=standard, /api/bots?variant=custom-setup-standard
+#      /api/bots?variant=standard, /api/bots?variant=standard
 # 5. Rollback: `systemctl --user disable --now wallgame-bot`, then restart
 #    however it was started before.

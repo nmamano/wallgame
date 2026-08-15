@@ -39,7 +39,9 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
     while (true) {
         if (take_turn) {
             Cell ai_cell = mcts.current_board().position(ai_player);
-            Cell ai_mouse = mcts.current_board().mouse(ai_player);
+            Cell ai_mouse = mcts.current_board().has_pawn(ai_player, Pawn::Mouse)
+                ? mcts.current_board().mouse(ai_player)
+                : mcts.current_board().home(ai_player);
             auto ai_move = co_await mcts.sample_and_commit_to_move(opts.samples);
             if (ai_move) {
                 recorder.record_move(ai_player, *ai_move);

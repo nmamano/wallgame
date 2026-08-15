@@ -1,10 +1,7 @@
 import { nanoid } from "nanoid";
 import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
-import {
-  buildOrdinaryInitialState,
-  normalizeLegacyVariant,
-} from "../../shared/domain/game-configuration";
+import { buildOrdinaryInitialState } from "../../shared/domain/game-configuration";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
@@ -16,7 +13,6 @@ import {
   isCountedResult,
   MIN_MOVES_FOR_A_COUNTED_GAME,
 } from "../../shared/domain/game-utils";
-import { isCustomSetupVariant } from "../../shared/domain/game-types";
 import type {
   GameConfiguration,
   GameSnapshot,
@@ -867,7 +863,7 @@ export const buildCompleteConfig = (
 ): GameConfiguration => {
   const normalizedBase = {
     ...baseConfig,
-    ...normalizeLegacyVariant(baseConfig.variant, baseConfig.randomStart),
+    randomStart: baseConfig.randomStart ?? false,
   };
   if (
     normalizedBase.variant === "animal-cycle" &&
@@ -884,13 +880,6 @@ export const buildCompleteConfig = (
   }
 
   const { boardWidth, boardHeight, variant } = normalizedBase;
-
-  if (
-    variant === "custom-setup-classic" ||
-    variant === "custom-setup-standard"
-  ) {
-    throw new Error(`${variant} requires an explicit variantConfig`);
-  }
 
   if (variant === "survival" && baseConfig.survival) {
     const survivalInput: SurvivalSetupInput = {
@@ -1215,6 +1204,7 @@ export const getSessionSnapshot = (id: string): GameSnapshot => {
   const session = ensureSession(id);
   return {
     id: session.id,
+    puzzleId: session.puzzleId,
     status: session.status,
     config: session.config,
     matchType: session.matchType,
@@ -1358,6 +1348,7 @@ export const resolveSessionForSocketToken = (args: {
 export const listSessions = (): GameSnapshot[] => {
   return [...sessions.values()].map((session) => ({
     id: session.id,
+    puzzleId: session.puzzleId,
     status: session.status,
     config: session.config,
     matchType: session.matchType,
@@ -1380,6 +1371,7 @@ export const listMatchmakingGames = (): GameSnapshot[] => {
     )
     .map((session) => ({
       id: session.id,
+      puzzleId: session.puzzleId,
       status: session.status,
       config: session.config,
       matchType: session.matchType,
@@ -1506,7 +1498,7 @@ export const listLiveGames = (limit = 100): LiveGameSummary[] => {
         (session.status === "ready" || session.status === "in-progress") &&
         !session.cancelled &&
         // Puzzle attempts are solo practice, not spectator content.
-        !isCustomSetupVariant(session.config.variant),
+        session.puzzleId === undefined,
     )
     .map((session) => buildLiveGameSummary(session))
     .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
@@ -1523,7 +1515,7 @@ export const getLiveGameSummary = (gameId: string): LiveGameSummary | null => {
     !session ||
     (session.status !== "ready" && session.status !== "in-progress") ||
     // Puzzle attempts are solo practice, not spectator content.
-    isCustomSetupVariant(session.config.variant)
+    session.puzzleId !== undefined
   ) {
     return null;
   }

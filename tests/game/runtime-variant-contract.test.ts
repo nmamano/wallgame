@@ -10,9 +10,7 @@ import {
   updateDefaultVariantSchema,
   updateVariantParametersSchema,
 } from "../../shared/contracts/settings";
-import { rulesVariantFor } from "../../shared/domain/game-types";
-
-describe("runtime rules variants and legacy setup compatibility", () => {
+describe("runtime rules variants", () => {
   it("exposes only active pawn-rules variants on runtime selection contracts", () => {
     expect(variantValues).toEqual(["standard", "animal-cycle", "classic"]);
     expect(
@@ -40,9 +38,9 @@ describe("runtime rules variants and legacy setup compatibility", () => {
     ).toBe(false);
   });
 
-  it("keeps legacy create and bot capability identifiers readable", () => {
+  it("rejects removed setup-shaped variant identifiers", () => {
     expect(
-      createGameSchema.parse({
+      createGameSchema.safeParse({
         config: {
           variant: "freestyle",
           randomStart: true,
@@ -51,17 +49,14 @@ describe("runtime rules variants and legacy setup compatibility", () => {
           rated: false,
           timeControl: { initialSeconds: 0, incrementSeconds: 0 },
         },
-      }).config,
-    ).toMatchObject({ variant: "standard", randomStart: true });
+      }).success,
+    ).toBe(false);
     for (const variant of [
       "freestyle",
       "custom-setup-standard",
       "custom-setup-classic",
     ] as const) {
-      expect(botsQuerySchema.safeParse({ variant }).success).toBe(true);
+      expect(botsQuerySchema.safeParse({ variant }).success).toBe(false);
     }
-    expect(rulesVariantFor("freestyle")).toBe("standard");
-    expect(rulesVariantFor("custom-setup-standard")).toBe("standard");
-    expect(rulesVariantFor("custom-setup-classic")).toBe("classic");
   });
 });

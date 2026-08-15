@@ -8,12 +8,11 @@ import {
   eq,
   gte,
   inArray,
+  isNull,
   lte,
-  notInArray,
   sql,
   type SQL,
 } from "drizzle-orm";
-import { customSetupVariantValues } from "../../shared/contracts/games";
 import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
 import type {
@@ -30,7 +29,6 @@ import type {
   WinReason,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
-import { normalizeLegacyVariant } from "../../shared/domain/game-configuration";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
   BOARD_SIZE_AREA_MEDIUM_MAX,
@@ -71,19 +69,16 @@ const normalizeWinReason = (value?: string | null): WinReason => {
     : "draw-agreement";
 };
 
-const normalizeVariant = (value: string): Variant => {
+const parseStoredVariant = (value: string): Variant => {
   if (
     value === "standard" ||
     value === "animal-cycle" ||
     value === "classic" ||
-    value === "freestyle" ||
-    value === "survival" ||
-    value === "custom-setup-standard" ||
-    value === "custom-setup-classic"
+    value === "survival"
   ) {
     return value;
   }
-  return "standard";
+  throw new Error(`Unsupported stored variant: ${value}`);
 };
 
 const resolveResultFromPlayers = (
@@ -236,22 +231,18 @@ const assembleReplayGame = (
     game.timeControl,
     details?.configParameters,
   );
-  const variant = normalizeVariant(game.variant);
+  const variant = parseStoredVariant(game.variant);
   const storedParameters = details?.configParameters as
     | { randomStart?: boolean }
     | undefined;
-  const normalized = normalizeLegacyVariant(
-    variant,
-    storedParameters?.randomStart,
-  );
   const variantConfig = resolveVariantConfig(
     details?.configParameters,
     game.gameId,
   );
 
   const config: GameConfiguration = {
-    variant: normalized.variant,
-    randomStart: normalized.randomStart,
+    variant,
+    randomStart: storedParameters?.randomStart ?? false,
     timeControl,
     rated: game.rated,
     boardWidth: game.boardWidth,
@@ -328,6 +319,7 @@ const assembleReplayGame = (
 
   const matchStatus: GameSnapshot = {
     id: game.gameId,
+    puzzleId: game.puzzleId ?? undefined,
     status: "completed",
     config,
     matchType: game.matchType as GameSnapshot["matchType"],
@@ -477,12 +469,7 @@ export const getRandomShowcaseGames = async (
   const games = await db
     .select(replayGameSelect)
     .from(gamesTable)
-    .where(
-      and(
-        gte(gamesTable.movesCount, 10),
-        notInArray(gamesTable.variant, [...customSetupVariantValues]),
-      ),
-    )
+    .where(and(gte(gamesTable.movesCount, 10), isNull(gamesTable.puzzleId)))
     .orderBy(sql`random()`)
     .limit(count);
 
@@ -507,7 +494,7 @@ const buildPastGamesConditions = (args: PastGamesFilter): SQL[] => {
   // history - they never appear in Past Games.
   const conditions: SQL[] = [
     gte(gamesTable.movesCount, 2),
-    notInArray(gamesTable.variant, [...customSetupVariantValues]),
+    isNull(gamesTable.puzzleId),
   ];
 
   if (args.variant) {
@@ -650,14 +637,11 @@ export const queryPastGames = async (
   return {
     games: pageGames.map((game) => {
       const stored = game.configParameters as { randomStart?: boolean } | null;
-      const normalized = normalizeLegacyVariant(
-        normalizeVariant(game.variant),
-        stored?.randomStart,
-      );
+      const variant = parseStoredVariant(game.variant);
       return {
         gameId: game.gameId,
-        variant: normalized.variant,
-        randomStart: normalized.randomStart,
+        variant,
+        randomStart: stored?.randomStart ?? false,
         rated: game.rated,
         timeControl: game.timeControl,
         boardWidth: game.boardWidth,

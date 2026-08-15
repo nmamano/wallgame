@@ -80,10 +80,7 @@ describe("pawnFamilyForVariant", () => {
   const expected: Record<Variant, PawnFamily> = {
     standard: "standard",
     "animal-cycle": "animal-cycle",
-    freestyle: "standard",
-    "custom-setup-standard": "standard",
     classic: "classic",
-    "custom-setup-classic": "classic",
     survival: "survival",
   };
 
@@ -91,15 +88,6 @@ describe("pawnFamilyForVariant", () => {
     for (const [variant, family] of Object.entries(expected)) {
       expect(pawnFamilyForVariant(variant as Variant)).toBe(family);
     }
-  });
-
-  it("covers both custom-setup variants, which share their parent's shape", () => {
-    expect(pawnFamilyForVariant("custom-setup-standard")).toBe(
-      pawnFamilyForVariant("standard"),
-    );
-    expect(pawnFamilyForVariant("custom-setup-classic")).toBe(
-      pawnFamilyForVariant("classic"),
-    );
   });
 });
 

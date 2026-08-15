@@ -45,6 +45,7 @@ let resignGame: typeof import("../../server/games/store").resignGame;
 let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
+let savedPuzzlesTable: typeof import("../../server/db/schema/saved-puzzles").savedPuzzlesTable;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let eq: typeof import("drizzle-orm").eq;
@@ -56,6 +57,8 @@ async function importServerModules() {
   const persistenceModule = await import("../../server/games/persistence");
   const gamesSchemaModule = await import("../../server/db/schema/games");
   const usersSchemaModule = await import("../../server/db/schema/users");
+  const savedPuzzlesSchemaModule =
+    await import("../../server/db/schema/saved-puzzles");
   const drizzleOrm = await import("drizzle-orm");
 
   db = dbModule.db;
@@ -67,6 +70,7 @@ async function importServerModules() {
   acceptDraw = storeModule.acceptDraw;
   persistCompletedGame = persistenceModule.persistCompletedGame;
   gamesTable = gamesSchemaModule.gamesTable;
+  savedPuzzlesTable = savedPuzzlesSchemaModule.savedPuzzlesTable;
   usersTable = usersSchemaModule.usersTable;
   userAuthTable = usersSchemaModule.userAuthTable;
   eq = drizzleOrm.eq;
@@ -754,9 +758,16 @@ describe("past games activity", () => {
 
     // Straight to the table: the base exclusions are about rows the game flow
     // would not normally produce here.
+    await db.insert(savedPuzzlesTable).values({
+      id: "activity-puzzle-seed",
+      displayName: "Activity Puzzle",
+      sortIndex: 9999,
+      config: {},
+    });
     await db.insert(gamesTable).values({
       gameId: "activity-puzzle",
-      variant: "custom-setup-standard",
+      variant: "standard",
+      puzzleId: "activity-puzzle-seed",
       rated: false,
       timeControl: "rapid",
       boardWidth: 6,

@@ -186,7 +186,7 @@ describe("handcrafted puzzle migration, on production-shaped data", () => {
       "10",
     ]);
     // Live immediately, playing their authored line exactly as before: no bot
-    // declares custom-setup-classic yet, so the opponent is unchanged.
+    // declares authored Classic yet, so the opponent is unchanged.
     expect(authored.every((row) => row.enabled === true)).toBe(true);
     expect(authored.every((row) => row.source === null)).toBe(true);
     expect(authored.map((row) => row.author)).toEqual([

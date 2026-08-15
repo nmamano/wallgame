@@ -37,13 +37,10 @@ export const isMovablePawnType = (
 export function pawnFamilyForVariant(variant: Variant): PawnFamily {
   switch (variant) {
     case "standard":
-    case "freestyle":
-    case "custom-setup-standard":
       return "standard";
     case "animal-cycle":
       return "animal-cycle";
     case "classic":
-    case "custom-setup-classic":
       return "classic";
     case "survival":
       return "survival";

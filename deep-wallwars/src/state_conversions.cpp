@@ -52,15 +52,18 @@ std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num
     auto blocked_directions = board.blocked_directions();
     std::vector<std::pair<Cell, int>> queue_vec;
     std::fill(state.begin(), state.begin() + 4 * board_size, 1.0f);
-    board.fill_relative_distances(board.position(turn.player), {state.begin(), board_size},
-                                  blocked_directions, queue_vec);
-    board.fill_relative_distances(board.goal(turn.player), {state.begin() + board_size, board_size},
+    auto const [player_pawn, player_target] = board.model_landmarks(turn.player);
+    auto const [opponent_pawn, opponent_target] =
+        board.model_landmarks(other_player(turn.player));
+    board.fill_relative_distances(player_pawn, {state.begin(), board_size}, blocked_directions,
+                                  queue_vec);
+    board.fill_relative_distances(player_target, {state.begin() + board_size, board_size},
                                   blocked_directions, queue_vec);
 
-    board.fill_relative_distances(board.position(other_player(turn.player)),
+    board.fill_relative_distances(opponent_pawn,
                                   {state.begin() + 2 * board_size, board_size}, blocked_directions,
                                   queue_vec);
-    board.fill_relative_distances(board.goal(other_player(turn.player)),
+    board.fill_relative_distances(opponent_target,
                                   {state.begin() + 3 * board_size, board_size}, blocked_directions,
                                   queue_vec);
 

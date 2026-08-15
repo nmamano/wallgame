@@ -363,9 +363,9 @@ export const savedPuzzlesQueryOptions = {
  * Which bots can play ONE puzzle, asked with that puzzle's real variant and
  * board size.
  *
- * This used to be a single hardcoded question — custom-setup-standard at 6x6 —
+ * This used to be a single hardcoded question — authored Standard at 6x6 —
  * which was true only while every puzzle was a generated 6x6 standard
- * position. The handcrafted set is `custom-setup-classic` on boards from 4x4
+ * position. The handcrafted set is `authored Classic` on boards from 4x4
  * to 9x6, so a fixed query would have reported the wrong availability for
  * every one of them: either offering a bot that cannot play the position, or
  * hiding one that can.
@@ -501,25 +501,26 @@ export const playVsBot = async (args: {
   }
 
   const config =
-    args.config.variant === "custom-setup-classic"
+    !("randomStart" in args.config) && args.config.variant === "standard"
       ? {
           variant: args.config.variant,
           boardWidth: args.config.boardWidth,
           boardHeight: args.config.boardHeight,
-          variantConfig: args.config
-            .variantConfig as CustomSetupClassicInitialState,
+          initialState: args.config
+            .initialState as CustomSetupStandardInitialState,
         }
-      : args.config.variant === "custom-setup-standard"
+      : !("randomStart" in args.config) && args.config.variant === "classic"
         ? {
             variant: args.config.variant,
             boardWidth: args.config.boardWidth,
             boardHeight: args.config.boardHeight,
-            variantConfig: args.config
-              .variantConfig as CustomSetupStandardInitialState,
+            initialState: args.config
+              .initialState as CustomSetupClassicInitialState,
           }
         : {
             variant: args.config.variant,
-            randomStart: args.config.randomStart,
+            randomStart:
+              "randomStart" in args.config ? args.config.randomStart : false,
             boardWidth: args.config.boardWidth,
             boardHeight: args.config.boardHeight,
           };

@@ -12,6 +12,19 @@
 
 #include "simple_policy.hpp"
 
+namespace {
+Board standard_board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat,
+                     Cell blue_mouse) {
+    return Board{columns,
+                 rows,
+                 Variant::Standard,
+                 {{Player::Red, Pawn::Cat, red_cat},
+                  {Player::Red, Pawn::Mouse, red_mouse},
+                  {Player::Blue, Pawn::Cat, blue_cat},
+                  {Player::Blue, Pawn::Mouse, blue_mouse}}};
+}
+}  // namespace
+
 // For testing, only generates moves downwards
 struct DownPolicy {
     std::shared_ptr<int> samples = std::make_shared<int>(0);
@@ -137,7 +150,7 @@ struct OnlyPolicy {
 // left the tree a turn behind the real game, after which every later move was refused (board task
 // 8911a6d5).
 TEST_CASE("force_move walks a mouse past a cat", "[MCTS]") {
-    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    Board board = standard_board(5, 5, {0, 0}, {2, 2}, {3, 2}, {4, 4});
     MCTS mcts{SimplePolicy{1.0, 1.0, 1.0}, std::move(board)};
 
     mcts.force_move(
@@ -152,7 +165,7 @@ TEST_CASE("force_move walks a mouse past a cat", "[MCTS]") {
 // for the capture to count at the turn boundary, and a wall is the one action that leaves it there.
 TEST_CASE("peek_best_move finishes a capture with a wall", "[MCTS]") {
     // Red's cat one step left of Blue's mouse, and stepping right is its only action.
-    Board board{5, 5, Cell{2, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+    Board board = standard_board(5, 5, {2, 2}, {0, 0}, {4, 4}, {3, 2});
     MCTS mcts{OnlyPolicy{Pawn::Cat, Direction::Right}, std::move(board)};
 
     folly::coro::blockingWait(mcts.sample(2));
@@ -168,7 +181,7 @@ TEST_CASE("peek_best_move finishes a capture with a wall", "[MCTS]") {
 // the game over at the turn boundary.
 TEST_CASE("peek_best_move walks a mouse past a cat instead of stranding it", "[MCTS]") {
     // Red's mouse one step left of Blue's cat, and stepping right is its only action.
-    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    Board board = standard_board(5, 5, {0, 0}, {2, 2}, {3, 2}, {4, 4});
     MCTS mcts{OnlyPolicy{Pawn::Mouse, Direction::Right}, std::move(board)};
 
     folly::coro::blockingWait(mcts.sample(2));

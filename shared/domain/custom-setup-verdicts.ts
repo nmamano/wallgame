@@ -27,7 +27,7 @@
 import { GameState } from "./game-state";
 import { requirePawnCell } from "./pawns";
 import { moveFromStandardNotation } from "./standard-notation";
-import type { PlayerId } from "./game-types";
+import type { GameConfiguration, PlayerId } from "./game-types";
 import {
   positionKey,
   type GeneratedCustomSetupCandidate,
@@ -48,7 +48,7 @@ export const evaluationInputKey = (
     `${candidate.config.boardWidth}x${candidate.config.boardHeight}`,
     `mover:${candidate.humanPlaysAs}`,
     positionKey(
-      candidate.config.variantConfig as Parameters<typeof positionKey>[0],
+      candidate.config.initialState as Parameters<typeof positionKey>[0],
     ),
   ].join("#");
 
@@ -100,7 +100,13 @@ export const computeBestMoveDelta = (
   candidate: GeneratedCustomSetupCandidate,
   bestMove: string,
 ): { beforeDistance: number; afterDistance: number; delta: number } => {
-  const state = new GameState(candidate.config, 0);
+  const state = new GameState(
+    {
+      ...candidate.config,
+      variantConfig: candidate.config.initialState,
+    } as GameConfiguration,
+    0,
+  );
   const mover = candidate.humanPlaysAs;
 
   const beforeDistance = state.grid.distance(

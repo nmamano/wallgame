@@ -5,14 +5,10 @@ import { type BoardPawn } from "@/components/board";
 import { type MatchingPlayer } from "@/components/matching-stage-panel";
 import {
   isClassicVariant as usesClassicRules,
-  isCustomSetupVariant,
   type GameAction,
 } from "../../../shared/domain/game-types";
 import { GameState } from "../../../shared/domain/game-state";
-import {
-  buildOrdinaryInitialState,
-  normalizeLegacyGameConfiguration,
-} from "../../../shared/domain/game-configuration";
+import { buildOrdinaryInitialState } from "../../../shared/domain/game-configuration";
 import {
   buildSurvivalInitialState,
   type SurvivalSetupInput,
@@ -237,7 +233,7 @@ function buildSeatViewsFromSnapshot(
   // In a puzzle the opponent is not a rated player you are competing with, it is the
   // oracle you are being measured against. Showing its real bot identity and a normal
   // rating invites you to read the game as a match, which is the wrong frame.
-  const isPuzzle = isCustomSetupVariant(snapshot.config.variant);
+  const isPuzzle = snapshot.puzzleId !== undefined;
   const ordered = [...snapshot.players].sort((a, b) => {
     if (a.role === "host" && b.role !== "host") return -1;
     if (b.role === "host" && a.role !== "host") return 1;
@@ -1829,7 +1825,9 @@ export function useGamePageController(gameId: string) {
    * makes no sense when one side is the puzzle, and a match score is counting nothing.
    */
   const isPuzzleGame =
-    gameState !== null && isCustomSetupVariant(gameState.config.variant);
+    gameState !== null &&
+    (matchSnapshot?.puzzleId ?? getGameHandshake(gameId)?.puzzleId) !==
+      undefined;
   const survivalSettings =
     gameState?.config.variant === "survival"
       ? (gameState.config.variantConfig as SurvivalInitialState)
@@ -2861,10 +2859,10 @@ export function useGamePageController(gameId: string) {
         setHasLocalConfig(true);
         try {
           const parsed = JSON.parse(stored) as StoredLocalGameConfig;
-          resolvedConfig = normalizeLegacyGameConfiguration({
+          resolvedConfig = {
             ...DEFAULT_CONFIG,
             ...(parsed?.config ?? {}),
-          } as GameConfiguration);
+          } as GameConfiguration;
           resolvedPlayers = Array.isArray(parsed?.players)
             ? parsed.players
             : DEFAULT_PLAYERS;

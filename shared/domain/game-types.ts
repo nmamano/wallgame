@@ -37,34 +37,15 @@ export type PlayerId = 1 | 2;
 
 export type RulesVariant = "standard" | "animal-cycle" | "classic";
 
-export type LegacySetupVariant =
-  | "custom-setup-standard"
-  | "custom-setup-classic"
-  | "freestyle";
-
 export type Variant =
   | "standard" // Catch the mouse first
   | "animal-cycle" // First directed animal capture wins
   | "classic" // Reach the opposite corner first
-  | "custom-setup-standard" // Standard rules from an explicit position
-  | "custom-setup-classic" // Classic rules from an explicit position
-  | "freestyle" // Randomized setup with starting walls
   | "survival"; // Player 2 wins by surviving a set number of turns
 
-export type CustomSetupVariant =
-  | "custom-setup-standard"
-  | "custom-setup-classic";
-
-export type NonSurvivalVariant = Exclude<
-  Variant,
-  "survival" | CustomSetupVariant
->;
+export type NonSurvivalVariant = Exclude<Variant, "survival">;
 
 export const rulesVariantFor = (variant: Variant): RulesVariant => {
-  if (variant === "freestyle" || variant === "custom-setup-standard") {
-    return "standard";
-  }
-  if (variant === "custom-setup-classic") return "classic";
   if (variant === "survival") {
     throw new Error("Survival is not an active two-player rules variant.");
   }
@@ -72,12 +53,7 @@ export const rulesVariantFor = (variant: Variant): RulesVariant => {
 };
 
 export const isClassicVariant = (variant: Variant): boolean =>
-  variant === "classic" || variant === "custom-setup-classic";
-
-export const isCustomSetupVariant = (
-  variant: Variant,
-): variant is CustomSetupVariant =>
-  variant === "custom-setup-classic" || variant === "custom-setup-standard";
+  variant === "classic";
 
 /**
  * How a variant is named to players. The custom-setup variants are an implementation
@@ -88,13 +64,11 @@ export const variantDisplayName = (
   variant: Variant,
   randomStart = false,
 ): string =>
-  variant === "freestyle" || (variant === "standard" && randomStart)
+  variant === "standard" && randomStart
     ? "Standard · Random Start"
     : variant === "animal-cycle"
       ? "Animal Cycle"
-      : isCustomSetupVariant(variant)
-        ? "Puzzle"
-        : variant.charAt(0).toUpperCase() + variant.slice(1);
+      : variant.charAt(0).toUpperCase() + variant.slice(1);
 
 /**
  * Variant-specific initial state types.
@@ -129,7 +103,7 @@ export interface ClassicInitialState {
 
 export type SetupAction =
   | {
-      type: "cat" | "mouse";
+      type: GamePawnType;
       source: Cell;
       target: Cell;
     }
@@ -237,6 +211,8 @@ export type MatchScore = Record<PlayerId, number>;
 
 export interface GameSnapshot {
   id: string;
+  /** Saved-puzzle identity is metadata, not a rules variant. */
+  puzzleId?: string;
   status: SessionStatus;
   config: GameConfiguration;
   matchType: MatchType;

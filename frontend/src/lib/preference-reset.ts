@@ -5,7 +5,7 @@
  * and every returning player keeps the old one forever, which is exactly the
  * situation this exists for: until 2026-08-07 the site recommended 12x10
  * alongside 8x8, so anyone who picked the big board is still starting there -
- * on a phone, where it does not fit - and would never see the 8x8 freestyle
+ * on a phone, where it does not fit - and would never see the 8x8 Standard Random Start
  * default again.
  *
  * WHO THIS DOES NOT REACH, stated plainly because the reach is not obvious
@@ -49,7 +49,7 @@ export interface ResettableStorage extends IdStorage {
  * Bump to retire the current stored game setup for every browser exactly once.
  *
  * 1 - 2026-08-07, when 12x10 stopped being recommended (Nil: too small for
- *     mobile, 8x8 freestyle is the better first game).
+ *     mobile, 8x8 Standard Random Start is the better first game).
  */
 export const PREFERENCE_GENERATION = 1;
 

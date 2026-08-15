@@ -2,7 +2,7 @@ import { describe, expect, it, beforeAll } from "bun:test";
 import type { PartialGameConfiguration } from "../../server/games/store";
 
 /**
- * Freestyle is deliberately randomized, so a rematch gets a brand-new starting
+ * Standard Random Start is deliberately randomized, so a rematch gets a brand-new starting
  * position rather than replaying the previous board from the other side.
  *
  * The board used to alternate: odd rematches reused the previous layout so both
@@ -126,18 +126,5 @@ describe("Random Start rematch", () => {
     expect(newSession.config.variant).toBe("classic");
     expect(newSession.config.randomStart).toBe(true);
     expect(layoutOf(newSession.config)).not.toBe(layoutOf(first.config));
-  });
-
-  it("normalizes legacy Freestyle and refreshes it on rematch", () => {
-    const legacy = startedSession({
-      ...randomStartConfig(),
-      variant: "freestyle",
-      randomStart: undefined,
-    });
-    expect(legacy.config.variant).toBe("standard");
-    expect(legacy.config.randomStart).toBe(true);
-    finish(legacy.id);
-    const { newSession } = createRematchSession(legacy.id);
-    expect(layoutOf(newSession.config)).not.toBe(layoutOf(legacy.config));
   });
 });

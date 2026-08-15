@@ -171,33 +171,6 @@ export function useEvalBar(options: UseEvalBarOptions): EvalBarState {
             return [...prev, { ply, evaluation: evalValue, bestMove }];
           });
         },
-        // V2 fallback: handle legacy eval-response (deprecated, kept for migration)
-        onEvalResponse: (requestId, evalValue, bestMove) => {
-          console.debug(
-            `[useEvalBar] Received V2 eval response for ${requestId}`,
-          );
-          // Extract ply from requestId (gameId:moveCount:timestamp)
-          const parts = requestId.split(":");
-          const ply = parseInt(parts[1], 10);
-          if (!isNaN(ply)) {
-            setEvalHistory((prev) => {
-              const existing = prev.find((e) => e.ply === ply);
-              if (existing) {
-                return prev.map((e) =>
-                  e.ply === ply
-                    ? { ply, evaluation: evalValue, bestMove: bestMove ?? "" }
-                    : e,
-                );
-              }
-              return [
-                ...prev,
-                { ply, evaluation: evalValue, bestMove: bestMove ?? "" },
-              ];
-            });
-          }
-          setIsPending(false);
-          setToggleState("on");
-        },
         onError: (message) => {
           setToggleState("error");
           setDisplayMode("off");

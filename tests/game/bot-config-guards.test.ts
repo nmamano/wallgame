@@ -21,6 +21,7 @@ import {
   type ConfigFile,
 } from "../../official-custom-bot-client/src/config-schema";
 import prodConfig from "../../official-custom-bot-client/transformer.prod.config.json";
+import { botSupportsGameConfiguration } from "../../shared/domain/bot-capability";
 
 const parsedProd = (): ConfigFile => {
   const parsed = configFileSchema.safeParse(prodConfig);
@@ -170,6 +171,31 @@ describe("the tracked production bot config", () => {
     expect(strong?.official).not.toBe(false);
   });
 
+  it("lists Superhuman for every supported setup and keeps PuzzleBot puzzle-only", () => {
+    const bots = parsedProd().bots;
+    const strong = bots.find((bot) => bot.botId === "dw-transformer")!;
+    const puzzle = bots.find((bot) => bot.botId === "dw-puzzle")!;
+
+    expect(strong.placement).toBe("opponent");
+    expect(puzzle.placement).toBe("puzzle");
+    for (const variant of ["standard", "classic"] as const) {
+      for (const randomStart of [false, true]) {
+        const config = {
+          variant,
+          randomStart,
+          boardWidth: 8,
+          boardHeight: 8,
+        };
+        expect(botSupportsGameConfiguration(strong.variants, config)).toBe(
+          true,
+        );
+        expect(botSupportsGameConfiguration(puzzle.variants, config)).toBe(
+          true,
+        );
+      }
+    }
+  });
+
   it("presents the ladder gentlest-first, with the id that carries history unchanged", () => {
     // `dw-easy` is now displayed as NORMAL Bot. The id is deliberately not
     // renamed to match: ratings, past games and the built_in_bots row all key
@@ -231,12 +257,9 @@ describe("the tracked production bot config", () => {
     // every small board and passes a maximum check untouched (Project Reviewer
     // 1, 2026-08-07). A bound is only guarded from the side you assert on.
     const EXPECTED_RANGE: Record<string, string> = {
-      standard: "5-12 x 5-10",
+      standard: "4-12 x 4-10",
       "animal-cycle": "5-12 x 5-10",
       classic: "5-12 x 5-10",
-      freestyle: "4-12 x 4-10",
-      "custom-setup-standard": "4-12 x 4-10",
-      "custom-setup-classic": "4-12 x 4-10",
     };
 
     const oversized: string[] = [];
@@ -276,17 +299,14 @@ describe("the tracked production bot config", () => {
 
   it("keeps the two weak bots off the puzzle variants and out of analysis", () => {
     // Two independent reasons neither can end up as the puzzle or evaluation
-    // engine: they do not declare `analysis`, and they do not advertise the
-    // custom-setup variants puzzles are played on. Official no longer excludes
-    // them from anything - that is exactly what the analysis flag is for.
+    // engine: they do not declare `analysis`, and their placement is the
+    // ordinary opponent route. Official status does not select puzzle work.
     for (const id of ["dw-beginner", "dw-easy"]) {
       const bot = parsedProd().bots.find((b) => b.botId === id);
       expect(bot).toBeDefined();
       expect(bot!.official).not.toBe(false);
       expect(bot!.analysis).not.toBe(true);
-      const variants = Object.keys(bot!.variants);
-      expect(variants).not.toContain("custom-setup-standard");
-      expect(variants).not.toContain("custom-setup-classic");
+      expect(bot!.placement ?? "opponent").toBe("opponent");
     }
   });
 

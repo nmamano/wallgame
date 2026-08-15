@@ -6,28 +6,9 @@ import {
   buildClassicInitialState,
   generateClassicRandomInitialState,
 } from "./classic-setup";
-import { generateFreestyleInitialState } from "./freestyle-setup";
-import type {
-  GameConfiguration,
-  GameInitialState,
-  Variant,
-} from "./game-types";
+import { generateStandardRandomInitialState } from "./random-start-setup";
+import type { GameConfiguration, GameInitialState } from "./game-types";
 import { buildStandardInitialState } from "./standard-setup";
-
-export const normalizeLegacyVariant = (
-  variant: Variant,
-  randomStart: boolean | undefined,
-): { variant: Variant; randomStart: boolean } =>
-  variant === "freestyle"
-    ? { variant: "standard", randomStart: true }
-    : { variant, randomStart: randomStart ?? false };
-
-export const normalizeLegacyGameConfiguration = (
-  config: GameConfiguration,
-): GameConfiguration => ({
-  ...config,
-  ...normalizeLegacyVariant(config.variant, config.randomStart),
-});
 
 export const buildOrdinaryInitialState = (
   config: Pick<
@@ -37,7 +18,10 @@ export const buildOrdinaryInitialState = (
 ): GameInitialState => {
   if (config.variant === "standard") {
     return config.randomStart
-      ? generateFreestyleInitialState(config.boardWidth, config.boardHeight)
+      ? generateStandardRandomInitialState(
+          config.boardWidth,
+          config.boardHeight,
+        )
       : buildStandardInitialState(config.boardWidth, config.boardHeight);
   }
   if (config.variant === "animal-cycle") {
@@ -53,5 +37,7 @@ export const buildOrdinaryInitialState = (
       ? generateClassicRandomInitialState(config.boardWidth, config.boardHeight)
       : buildClassicInitialState(config.boardWidth, config.boardHeight);
   }
-  throw new Error(`${config.variant} requires a variant-specific setup.`);
+  throw new Error(
+    `${config.variant} does not use this two-player setup builder.`,
+  );
 };

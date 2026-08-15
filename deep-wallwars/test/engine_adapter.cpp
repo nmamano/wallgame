@@ -240,26 +240,6 @@ TEST_CASE("place_padding_walls - Classic variant blocks padding column horizonta
     CHECK(board.is_blocked(Wall{Cell{0, 2}, Wall::Down}));
 }
 
-TEST_CASE("convert_state_to_board - Classic uses model corner goals", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "classic";
-    state["config"]["boardWidth"] = 6;
-    state["config"]["boardHeight"] = 6;
-    state["turn"] = 1;
-    state["pawns"]["1"]["cat"] = {0, 0};
-    state["pawns"]["1"]["mouse"] = {5, 0};
-    state["pawns"]["2"]["cat"] = {0, 5};
-    state["pawns"]["2"]["mouse"] = {5, 5};
-    state["walls"] = json::array();
-
-    auto [board, turn, padding_config] = convert_state_to_board(state, 8, 8);
-
-    CHECK(board.mouse(Player::Red) == Cell{0, 7});
-    CHECK(board.mouse(Player::Blue) == Cell{7, 7});
-    CHECK(board.position(Player::Red) == Cell{1, 2});
-    CHECK(board.position(Player::Blue) == Cell{6, 2});
-}
-
 TEST_CASE("place_padding_walls - no walls placed when no padding needed", "[Padding]") {
     auto config = create_padding_config(8, 8, 8, 8, Variant::Classic);
 
@@ -398,80 +378,6 @@ TEST_CASE("transform_move_notation - compound move", "[Padding]") {
 }
 
 // ============================================================================
-// Validation Tests
-// ============================================================================
-
-TEST_CASE("validate_request - accepts smaller boards", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "classic";
-    state["config"]["boardWidth"] = 5;
-    state["config"]["boardHeight"] = 5;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK(result.valid);
-}
-
-TEST_CASE("validate_request - rejects larger boards", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "classic";
-    state["config"]["boardWidth"] = 9;
-    state["config"]["boardHeight"] = 9;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK_FALSE(result.valid);
-    CHECK(result.error_message.find("supports boards up to") != std::string::npos);
-}
-
-TEST_CASE("validate_request - rejects too small boards", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "classic";
-    state["config"]["boardWidth"] = 3;
-    state["config"]["boardHeight"] = 3;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK_FALSE(result.valid);
-    CHECK(result.error_message.find("at least 4x4") != std::string::npos);
-}
-
-TEST_CASE("validate_request - accepts standard variant", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "standard";
-    state["config"]["boardWidth"] = 8;
-    state["config"]["boardHeight"] = 8;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK(result.valid);
-}
-
-// STALE EXPECTATION, INVERTED 2026-07-30. This case asserted that freestyle is
-// rejected, which was true when it was written and stopped being true when
-// freestyle support shipped: engine_adapter.cpp:409 and :795 now name freestyle
-// among the supported variants, gamestate.cpp:27 accepts it, and all three
-// production bots advertise it in transformer.prod.config.json. The test was
-// pinning a constraint the product had deliberately removed.
-TEST_CASE("validate_request - accepts freestyle variant", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "freestyle";
-    state["config"]["boardWidth"] = 8;
-    state["config"]["boardHeight"] = 8;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK(result.valid);
-    CHECK(result.error_message.empty());
-}
-
-TEST_CASE("validate_request - rejects an unsupported variant", "[Padding]") {
-    json state;
-    state["config"]["variant"] = "survival";
-    state["config"]["boardWidth"] = 8;
-    state["config"]["boardHeight"] = 8;
-
-    auto result = validate_request(state, 8, 8);
-    CHECK_FALSE(result.valid);
-    CHECK(result.error_message.find("survival") != std::string::npos);
-}
-
-// ============================================================================
 // Padded Training Board Tests (S6, transformer-ready loop)
 // ============================================================================
 
@@ -487,8 +393,8 @@ TEST_CASE("make_padded_training_board - classic 8x8 in 12x10", "[Padding]") {
     CHECK(board.position(Player::Blue) == Cell{9, 2});
 
     // Classic goals at the MODEL bottom corners (serving semantics).
-    CHECK(board.mouse(Player::Red) == Cell{0, 9});
-    CHECK(board.mouse(Player::Blue) == Cell{11, 9});
+    CHECK(board.home(Player::Red) == Cell{11, 9});
+    CHECK(board.home(Player::Blue) == Cell{0, 9});
 
     // Movement into padding blocked at boundaries: from padding row 1 into
     // game row 2, and across the left padding boundary (col 1 <-> col 2).
@@ -529,8 +435,8 @@ TEST_CASE("make_padded_training_board - equal dims is the standard board", "[Pad
 
     CHECK(padded.position(Player::Red) == plain.position(Player::Red));
     CHECK(padded.position(Player::Blue) == plain.position(Player::Blue));
-    CHECK(padded.mouse(Player::Red) == plain.mouse(Player::Red));
-    CHECK(padded.mouse(Player::Blue) == plain.mouse(Player::Blue));
+    CHECK(padded.home(Player::Red) == plain.home(Player::Red));
+    CHECK(padded.home(Player::Blue) == plain.home(Player::Blue));
     // No padding walls: a fresh board has no interior walls anywhere.
     CHECK_FALSE(padded.is_blocked(Wall{Cell{5, 5}, Wall::Right}));
     CHECK_FALSE(padded.is_blocked(Wall{Cell{0, 0}, Wall::Down}));

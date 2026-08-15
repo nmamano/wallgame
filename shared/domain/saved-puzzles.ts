@@ -9,7 +9,7 @@ import {
   applyCandidateVerdicts,
   type CandidateVerdictFile,
 } from "./custom-setup-verdicts";
-import { customSetupConfigSchema } from "../contracts/games";
+import { authoredPositionConfigSchema } from "../contracts/games";
 import {
   SYNTHETIC_AUTHOR,
   type SavedPuzzleSeedRow,
@@ -97,16 +97,16 @@ export const buildSavedPuzzleSeedRows = (
       throw new Error(`No verdict for kept candidate ${candidate.id}`);
     }
     const sortIndex = index + 1;
-    const config = customSetupConfigSchema.parse({
+    const config = authoredPositionConfigSchema.parse({
       variant: candidate.config.variant,
       boardWidth: candidate.config.boardWidth,
       boardHeight: candidate.config.boardHeight,
-      variantConfig: candidate.config.variantConfig,
+      initialState: candidate.config.initialState,
     });
     // P1-moves-first axiom (S-P1): a human-as-P2 puzzle cannot be seeded
     // without a plausible bot lead-in — fail closed, no wall fallback.
     const leadIn = computeLeadIn(config);
-    if (config.variantConfig.turn.playerId === 2) {
+    if (config.initialState.turn.playerId === 2) {
       if (!leadIn) {
         throw new Error(
           `no pawn lead-in heuristic applies to candidate ${candidate.id}`,

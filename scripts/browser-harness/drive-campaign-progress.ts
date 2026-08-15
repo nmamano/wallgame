@@ -64,7 +64,7 @@ const puzzles = [
     dislikes: 0,
     myVote: null,
     config: {
-      variant: "custom-setup-standard",
+      variant: "standard",
       boardWidth: 6,
       boardHeight: 6,
       variantConfig: {
@@ -90,7 +90,7 @@ const bots = {
       isAnalysisBot: true,
       appearance: { color: "purple" },
       variants: {
-        "custom-setup-standard": {
+        standard: {
           boardWidth: { min: 4, max: 12 },
           boardHeight: { min: 4, max: 10 },
           recommended: [{ boardWidth: 6, boardHeight: 6 }],

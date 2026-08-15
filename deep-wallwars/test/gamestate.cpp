@@ -5,6 +5,19 @@
 #include <catch2/catch_test_macros.hpp>
 #include <random>
 
+namespace {
+Board standard_board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat,
+                     Cell blue_mouse) {
+    return Board{columns,
+                 rows,
+                 Variant::Standard,
+                 {{Player::Red, Pawn::Cat, red_cat},
+                  {Player::Red, Pawn::Mouse, red_mouse},
+                  {Player::Blue, Pawn::Cat, blue_cat},
+                  {Player::Blue, Pawn::Mouse, blue_mouse}}};
+}
+}  // namespace
+
 TEST_CASE("Legal walls", "[Game State]") {
     Board tiny{2, 2};
 
@@ -21,6 +34,11 @@ TEST_CASE("Empty board", "[Game State]") {
 
     REQUIRE(board.goal(Player::Red) == Cell{2, 2});
     REQUIRE(board.goal(Player::Blue) == Cell{0, 2});
+    REQUIRE(board.home(Player::Red) == Cell{2, 2});
+    REQUIRE(board.home(Player::Blue) == Cell{0, 2});
+    REQUIRE_FALSE(board.has_pawn(Player::Red, Pawn::Mouse));
+    REQUIRE_FALSE(board.has_pawn(Player::Blue, Pawn::Mouse));
+    REQUIRE_FALSE(board.pawn_is_movable(Pawn::Home));
 
     REQUIRE(board.legal_directions(Player::Red).size() == 2);
     REQUIRE(board.legal_directions(Player::Blue).size() == 2);
@@ -31,6 +49,17 @@ TEST_CASE("Empty board", "[Game State]") {
     REQUIRE(board.legal_actions(Player::Blue).size() == 14);
 
     REQUIRE(board.winner() == Winner::Undecided);
+}
+
+TEST_CASE("A variant rejects pawn kinds outside its roster", "[Game State]") {
+    CHECK_THROWS((Board{3,
+                        3,
+                        Variant::Classic,
+                        {{Player::Red, Pawn::Cat, {0, 0}},
+                         {Player::Red, Pawn::Home, {2, 2}},
+                         {Player::Red, Pawn::Mouse, {0, 2}},
+                         {Player::Blue, Pawn::Cat, {2, 0}},
+                         {Player::Blue, Pawn::Home, {0, 2}}}}));
 }
 
 TEST_CASE("Big board", "[Game State]") {
@@ -110,7 +139,7 @@ TEST_CASE("Standard variant basics", "[Game State]") {
 }
 
 TEST_CASE("Standard variant mouse capture ends game", "[Game State]") {
-    Board board{3, 3, {0, 0}, {1, 0}, {2, 0}, {2, 2}, Variant::Standard};
+    Board board = standard_board(3, 3, {0, 0}, {1, 0}, {2, 0}, {2, 2});
 
     board.take_step(Player::Red, Pawn::Mouse, Direction::Right);
 
@@ -119,7 +148,7 @@ TEST_CASE("Standard variant mouse capture ends game", "[Game State]") {
 }
 
 TEST_CASE("Advance to win", "[Game State]") {
-    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
+    Board board{3, 3};
 
     board.take_step(Player::Red, Direction::Right);
     REQUIRE(board.winner() == Winner::Undecided);
@@ -133,14 +162,14 @@ TEST_CASE("Advance to win", "[Game State]") {
 }
 
 TEST_CASE("Block walls", "[Game State]") {
-    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
+    Board board{3, 3};
     board.place_wall(Player::Blue, {{0, 0}, Direction::Right});
     REQUIRE(board.is_blocked({{0, 0}, Direction::Right}));
     REQUIRE(board.legal_directions(Player::Red).size() == 1);
 }
 
 TEST_CASE("Distance", "[Game State]") {
-    Board board{3, 3, {0, 0}, {0, 2}, {2, 0}, {2, 2}};
+    Board board{3, 3};
     REQUIRE(board.distance({0, 0}, {2, 2}) == 4);
     REQUIRE(board.distance({2, 1}, {2, 2}) == 1);
 }
@@ -240,7 +269,7 @@ TEST_CASE("Fill relative distances matches distance", "[Game State]") {
 // bot session mid-turn (board task 8911a6d5).
 TEST_CASE("A mouse may walk past a cat mid-turn", "[Game State]") {
     // Red's mouse with Blue's cat one step to its right, Red to move.
-    Board board{5, 5, Cell{0, 0}, Cell{2, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    Board board = standard_board(5, 5, {0, 0}, {2, 2}, {3, 2}, {4, 4});
 
     REQUIRE(board.winner() == Winner::Undecided);
 
@@ -266,7 +295,7 @@ TEST_CASE("A mouse may walk past a cat mid-turn", "[Game State]") {
 TEST_CASE("A cat may walk over a mouse mid-turn", "[Game State]") {
     // Red's cat one step left of Blue's mouse. Blue's cat is far from Red's mouse, so the
     // one-move-rule draw does not apply and the capture would be a clean Red win.
-    Board board{5, 5, Cell{2, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+    Board board = standard_board(5, 5, {2, 2}, {0, 0}, {4, 4}, {3, 2});
 
     REQUIRE(board.winner() == Winner::Undecided);
 
@@ -286,7 +315,7 @@ TEST_CASE("A cat may walk over a mouse mid-turn", "[Game State]") {
 TEST_CASE("score_for does not read a mid-turn walk-past as decided", "[Game State]") {
     // The position from the middle of Red's turn in the first case above: Red's mouse standing on
     // Blue's cat, with Red still holding an action.
-    Board board{5, 5, Cell{0, 0}, Cell{3, 2}, Cell{3, 2}, Cell{4, 4}, Variant::Standard};
+    Board board = standard_board(5, 5, {0, 0}, {3, 2}, {3, 2}, {4, 4});
 
     // At a turn boundary this is a real capture and Red has lost outright.
     CHECK(board.score_for(Player::Red) == -1.0);
@@ -309,7 +338,7 @@ TEST_CASE("score_for does not read a mid-turn walk-past as decided", "[Game Stat
 
 TEST_CASE("score_for does not read a mid-turn capture as decided", "[Game State]") {
     // The mirror orientation: Red's cat standing on Blue's mouse, Red still holding an action.
-    Board board{5, 5, Cell{3, 2}, Cell{0, 0}, Cell{4, 4}, Cell{3, 2}, Variant::Standard};
+    Board board = standard_board(5, 5, {3, 2}, {0, 0}, {4, 4}, {3, 2});
 
     // At a turn boundary Red has won outright.
     CHECK(board.score_for(Player::Red) == 1.0);
@@ -327,7 +356,7 @@ TEST_CASE("score_for survives a mid-turn where BOTH sides sit on a goal", "[Game
     // that both wins and strands. Only reachable now that a midpoint is never terminal, and it is
     // what makes suppressing the winner check on its own unsafe: both distances read zero, and the
     // untouched formula divides zero by zero.
-    Board board{5, 5, Cell{3, 2}, Cell{1, 1}, Cell{1, 1}, Cell{3, 2}, Variant::Standard};
+    Board board = standard_board(5, 5, {3, 2}, {1, 1}, {1, 1}, {3, 2});
 
     double const red_mid = board.score_for(Player::Red, Turn{Player::Red, Turn::Second});
     double const blue_mid = board.score_for(Player::Blue, Turn{Player::Red, Turn::Second});

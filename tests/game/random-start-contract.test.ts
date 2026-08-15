@@ -23,13 +23,34 @@ describe("Random Start contracts", () => {
     ).toBe(false);
   });
 
-  it("accepts and normalizes legacy Freestyle create inputs", () => {
+  it("accepts Standard Random Start create inputs", () => {
     const parsed = createGameSchema.parse({
-      config: { ...base, variant: "freestyle" },
+      config: { ...base, variant: "standard", randomStart: true },
       matchType: "friend",
     });
     expect(parsed.config.variant).toBe("standard");
     expect(parsed.config.randomStart).toBe(true);
+  });
+
+  it("accepts an arbitrary supplied Standard position without changing its coordinates", () => {
+    const initialState = buildStandardInitialState(8, 8);
+    initialState.pawns.p1.cat = [3, 5];
+    initialState.pawns.p2.mouse = [6, 1];
+    initialState.walls.push({ cell: [4, 2], orientation: "vertical" });
+
+    const parsed = createGameSchema.parse({
+      config: {
+        ...base,
+        variant: "standard",
+        randomStart: false,
+        initialState,
+      },
+    });
+
+    expect("variantConfig" in parsed.config).toBe(true);
+    if (!("variantConfig" in parsed.config))
+      throw new Error("missing position");
+    expect(parsed.config.variantConfig).toEqual(initialState);
   });
 
   it("accepts enabled Classic and rejects undersized Animal Cycle", () => {
@@ -71,10 +92,10 @@ describe("Random Start contracts", () => {
     expect(variantDisplayName("standard", true)).toBe(
       "Standard · Random Start",
     );
-    expect(variantDisplayName("freestyle")).toBe("Standard · Random Start");
+    expect(variantDisplayName("standard")).toBe("Standard");
   });
 
-  it("normalizes a legacy stored config without changing its initial state", () => {
+  it("reconstructs a current stored Random Start game without changing its initial state", () => {
     const initialState = buildStandardInitialState(8, 8);
     initialState.walls.push({ cell: [3, 3], orientation: "vertical" });
     const serialized = {
@@ -91,11 +112,12 @@ describe("Random Start contracts", () => {
       initialState,
       history: [],
       config: {
-        variant: "freestyle",
+        variant: "standard",
         rated: false,
         timeControl: { initialSeconds: 0, incrementSeconds: 0 },
         boardWidth: 8,
         boardHeight: 8,
+        randomStart: true,
         variantConfig: initialState,
       },
     } as unknown as SerializedGameState;

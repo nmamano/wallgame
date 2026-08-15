@@ -3,10 +3,8 @@
  *
  * They were written as `classic` positions — each player races a cat to their
  * own home — and lived only in code, played as a scripted line. As rows they
- * become `custom-setup-classic`, which is the same game stated as an explicit
- * starting position: the engine already implements it, mapping each player's
- * goal onto the opposing "mouse" slot so a race-home board becomes a board the
- * model understands (deep-wallwars/src/engine_adapter.cpp).
+ * remain `classic` and carry their explicit starting position in
+ * `variantConfig`. Setup provenance is not a rules identity.
  *
  * What survives the move is everything a player sees: the author, the tier,
  * and the position itself. What is dropped is the 1350-1850 rating — Nil,
@@ -20,7 +18,7 @@
  */
 
 import { PUZZLES, getPuzzleIds, ratingToDifficulty } from "./puzzles";
-import { customSetupConfigSchema } from "../contracts/games";
+import { authoredPositionConfigSchema } from "../contracts/games";
 import type { SavedPuzzleSeedRow } from "../contracts/puzzles";
 
 export type HandcraftedSeedRow = Omit<SavedPuzzleSeedRow, "id">;
@@ -42,23 +40,19 @@ export type HandcraftedSeedRow = Omit<SavedPuzzleSeedRow, "id">;
  * seeding them off would DELETE ten working puzzles from the site for the
  * length of the acceptance pass.
  *
- * The gate is the BOT ROLLOUT instead, which is where the behaviour actually
- * changes. Until PuzzleBot declares custom-setup-classic, no bot can play any
- * of these, so every one of them resolves to its authored line — byte for byte
- * what players get today. Enabling them changes nothing; declaring the variant
- * is what swaps the opponent, and that is one config line and a restart, which
- * is both easier to rehearse beforehand and easier to undo.
+ * Bot eligibility is selected by puzzle placement and the Classic capability,
+ * while `legacyScriptedId` keeps the authored-line fallback.
  */
 export const buildHandcraftedSeedRows = (
   firstSortIndex: number,
 ): HandcraftedSeedRow[] =>
   getPuzzleIds().map((scriptedId, index) => {
     const puzzle = PUZZLES[scriptedId];
-    const config = customSetupConfigSchema.parse({
-      variant: "custom-setup-classic",
+    const config = authoredPositionConfigSchema.parse({
+      variant: "classic",
       boardWidth: puzzle.boardWidth,
       boardHeight: puzzle.boardHeight,
-      variantConfig: {
+      initialState: {
         pawns: {
           p1: { cat: puzzle.p1Cat, home: puzzle.p1Home },
           p2: { cat: puzzle.p2Cat, home: puzzle.p2Home },

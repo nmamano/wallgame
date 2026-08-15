@@ -12,19 +12,6 @@ namespace engine_adapter {
 
 using json = nlohmann::json;
 
-// ============================================================================
-// Types matching the official custom-bot client Engine API v2
-// ============================================================================
-
-struct EngineConfig {
-    std::string model_path;
-    int think_time_seconds;
-    int samples = 500;              // MCTS samples per action
-    std::uint32_t seed = 42;
-    int model_rows = 8;
-    int model_columns = 8;
-};
-
 struct ValidationResult {
     bool valid;
     std::string error_message;  // Only populated if !valid
@@ -87,77 +74,18 @@ std::string transform_move_notation(
     PaddingConfig const& config);
 
 // ============================================================================
-// State Conversion Functions
+// Bot Game Session (BGS) Support
 // ============================================================================
 
-// Validates that the request is compatible with deep-wallwars capabilities
-// - Normalizes legacy Freestyle and custom-setup names to Classic or Standard
-// - Supports boards from 4x4 up to model dimensions
-ValidationResult validate_request(json const& state_json, int model_rows, int model_columns);
-
-// Converts a SerializedGameState JSON object to a deep-wallwars Board
-// Uses padding to embed smaller game boards within the model dimensions
-// Precondition: validate_request(state_json, model_rows, model_columns) must return valid=true
-// Returns: {Board, Turn, PaddingConfig} representing the current game state
-std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
-    json const& state_json,
-    int model_rows,
-    int model_columns);
-
-// ============================================================================
-// Engine Functions
-// ============================================================================
-
-// Result of finding the best move: (move notation, evaluation)
-struct MoveResult {
-    std::string notation;
-    float evaluation;
-};
-
-// Runs MCTS to find the best move for the current position
-// Returns the move in standard notation (e.g., "Ce4.Md5.>f3") and position evaluation
-// The notation is transformed from model coordinates to game coordinates using padding_config
-// Evaluation is returned from P1's perspective (+1 = P1 winning, -1 = P2 winning)
-// Returns std::nullopt if no legal move is available
-std::optional<MoveResult> find_best_move(
-    Board const& board,
-    Turn turn,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config,
-    PaddingConfig const& padding_config);
-
-// Evaluates the position and returns true if the engine should accept a draw
-// Accepts if the engine's position is worse (negative evaluation from engine's perspective)
-bool should_accept_draw(
-    Board const& board,
-    Turn turn,
-    int my_player_id,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config);
-
-// ============================================================================
-// Request Handling (V2)
-// ============================================================================
-
-// Processes an engine request (move or draw) and returns the JSON response
-json handle_engine_request(
-    json const& request,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config);
-
-// ============================================================================
-// V3 Bot Game Session (BGS) Support
-// ============================================================================
-
-// Validates a V3 BgsConfig for compatibility with deep-wallwars
-// - Supports Classic, Standard, and Freestyle variants
+// Validates a BgsConfig for compatibility with deep-wallwars
+// - Supports Classic and Standard variants
 // - Supports boards from 4x4 up to model dimensions
 ValidationResult validate_bgs_config(
     json const& bgs_config,
     int model_rows,
     int model_columns);
 
-// Converts a V3 BgsConfig JSON to a deep-wallwars Board at the supplied position.
+// Converts a BgsConfig JSON to a deep-wallwars Board at the supplied position.
 // BgsConfig format: {variant, boardWidth, boardHeight, initialState}
 // initialState is authoritative for pawns/homes, walls, and optional turn.
 // A missing turn means P1 with no spent action. actionsTaken supports exactly

@@ -116,7 +116,7 @@ const INCIDENTS: Incident[] = [
   },
   {
     gameId: "rlC_1u9E",
-    variant: "freestyle",
+    variant: "standard",
     board: 8,
     pawn: "mouse",
     storedTerm: "Ma8",
@@ -434,7 +434,7 @@ describe("stored-history mode", () => {
     // `previousPawnPosition`. That restriction is a real rule about a real
     // previous move, and stored-history mode must not touch it.
     const seeded: GameConfiguration = {
-      variant: "custom-setup-standard",
+      variant: "standard",
       randomStart: false,
       timeControl: timeControlConfigFromPreset("unlimited"),
       rated: false,

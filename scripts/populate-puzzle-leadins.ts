@@ -103,7 +103,7 @@ const main = async () => {
 
   for (const row of rows) {
     const expected = computeLeadIn(row.config);
-    const humanPlaysAs = row.config.variantConfig.turn.playerId;
+    const humanPlaysAs = row.config.initialState.turn.playerId;
     if (humanPlaysAs === 1) {
       p1Count++;
       if (row.leadIn !== null) {
@@ -183,7 +183,7 @@ const main = async () => {
     savedPuzzleDbRowSchema.parse(raw),
   );
   for (const row of readBack) {
-    const isP2 = row.config.variantConfig.turn.playerId === 2;
+    const isP2 = row.config.initialState.turn.playerId === 2;
     if (isP2 === (row.leadIn === null)) {
       console.error(
         `abort: read-back invariant violated for ${row.displayName} (${row.id})`,

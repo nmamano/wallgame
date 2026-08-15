@@ -42,10 +42,10 @@ const seedRows = buildSavedPuzzleSeedRows(
   verdictFile as CandidateVerdictFile,
 );
 const p1Rows = seedRows.filter(
-  (row) => row.config.variantConfig.turn.playerId === 1,
+  (row) => row.config.initialState.turn.playerId === 1,
 );
 const p2Rows = seedRows.filter(
-  (row) => row.config.variantConfig.turn.playerId === 2,
+  (row) => row.config.initialState.turn.playerId === 2,
 );
 
 describe("lead-in heuristic over the persisted batch", () => {
@@ -91,11 +91,11 @@ describe("resolveSavedPuzzleLaunch (fail-closed launch boundary)", () => {
     });
     // The move's target is the curated cell of the lead-in piece.
     expect(launch.leadInMove!.actions).toHaveLength(1);
-    if (p2Row.config.variant !== "custom-setup-standard") {
-      throw new Error("generated puzzles are custom-setup-standard");
+    if (p2Row.config.variant !== "standard") {
+      throw new Error("generated puzzles are standard");
     }
     expect(launch.leadInMove!.actions[0].target).toEqual(
-      p2Row.config.variantConfig.pawns.p1[p2Row.leadIn!.piece],
+      p2Row.config.initialState.pawns.p1[p2Row.leadIn!.piece],
     );
   });
 
@@ -103,7 +103,13 @@ describe("resolveSavedPuzzleLaunch (fail-closed launch boundary)", () => {
     const launch = resolveSavedPuzzleLaunch(p1Row);
     expect(launch.humanIsPlayer1).toBe(true);
     expect(launch.leadInMove).toBeNull();
-    expect(launch.config).toEqual(p1Row.config);
+    expect(launch.config).toEqual({
+      variant: p1Row.config.variant,
+      boardWidth: p1Row.config.boardWidth,
+      boardHeight: p1Row.config.boardHeight,
+      randomStart: false,
+      variantConfig: p1Row.config.initialState,
+    });
   });
 
   it("refuses a P2 puzzle with no lead-in (migration->population gap)", () => {
@@ -208,7 +214,10 @@ describe("session-level lead-in launch (service path, no DB)", () => {
     const curated = new GameState(
       {
         ...row.config,
+        randomStart: false,
+        rated: false,
         timeControl: BOT_GAME_TIME_CONTROL,
+        variantConfig: row.config.initialState,
       } as GameConfiguration,
       0,
     );
@@ -217,7 +226,7 @@ describe("session-level lead-in launch (service path, no DB)", () => {
     // The initial (replayable) config is the PRE-position, one lead-in
     // move behind the curated board.
     const { preConfig } = buildLeadInLaunch(row.config, row.leadIn!);
-    expect(session.config.variantConfig).toEqual(preConfig.variantConfig);
+    expect(session.config.variantConfig).toEqual(preConfig.initialState);
   });
 
   it("a P1 puzzle opens with empty history and the human (P1) to move", () => {

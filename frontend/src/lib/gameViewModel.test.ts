@@ -43,7 +43,7 @@ const seedRows = buildSavedPuzzleSeedRows(
 /** A P2 puzzle right after the bot's real ply-0 lead-in. */
 const leadInArrivalState = (): GameState => {
   const p2Row = seedRows.find(
-    (row) => row.config.variantConfig.turn.playerId === 2,
+    (row) => row.config.initialState.turn.playerId === 2,
   )!;
   const launch = resolveSavedPuzzleLaunch(p2Row);
   const preState = new GameState(

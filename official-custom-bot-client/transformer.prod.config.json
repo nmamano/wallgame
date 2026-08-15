@@ -62,22 +62,6 @@
         },
         "standard": {
           "boardWidth": {
-            "min": 5,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 5,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            }
-          ]
-        },
-        "freestyle": {
-          "boardWidth": {
             "min": 4,
             "max": 12
           },
@@ -124,22 +108,6 @@
           ]
         },
         "standard": {
-          "boardWidth": {
-            "min": 5,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 5,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            }
-          ]
-        },
-        "freestyle": {
           "boardWidth": {
             "min": 4,
             "max": 12

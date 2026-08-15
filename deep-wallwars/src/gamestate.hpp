@@ -33,8 +33,7 @@ enum class Variant {
     Standard
 };
 
-// Parses rules identities only. External compatibility names are normalized by
-// the protocol adapter before they enter core game code.
+// Parses the complete set of rules identities supported by this engine.
 std::optional<Variant> parse_variant(std::string_view variant);
 std::string_view variant_name(Variant variant);
 
@@ -77,7 +76,16 @@ struct Wall {
 
 enum class Pawn {
     Cat,
-    Mouse
+    Mouse,
+    Home
+};
+
+struct PawnPlacement {
+    Player player;
+    Pawn pawn;
+    Cell cell;
+
+    bool operator==(PawnPlacement const& other) const = default;
 };
 
 struct PawnMove {
@@ -155,8 +163,7 @@ public:
     // Explicit default-board constructor for offline play and generation. BGS
     // serving uses the position constructor with every cell from initialState.
     Board(int columns, int rows, Variant variant = Variant::Classic);
-    Board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat, Cell blue_mouse,
-          Variant variant = Variant::Classic);
+    Board(int columns, int rows, Variant variant, std::vector<PawnPlacement> placements);
 
     bool operator==(Board const& other) const = default;
 
@@ -173,9 +180,7 @@ public:
 
     void do_action(Player player, Action action);
 
-    // Whether `player`'s cat is standing on its goal. In the standard variant the goal is the
-    // opponent's mouse, so this is a capture; in the classic variant the mouse never moves and this
-    // is the cat reaching its corner.
+    // Whether `player`'s cat is standing on the goal defined by its variant.
     bool reached_goal(Player player) const;
 
     // The winner judged from the position alone, which is what the rules ask at the END of a turn.
@@ -199,8 +204,15 @@ public:
 
     Cell position(Player player) const;
     Cell mouse(Player player) const;
+    Cell home(Player player) const;
     Cell goal(Player player) const;
     Cell pawn_position(Player player, Pawn pawn) const;
+    bool has_pawn(Player player, Pawn pawn) const;
+    bool pawn_is_movable(Pawn pawn) const;
+    std::vector<Pawn> pawn_roster(Player player) const;
+    std::vector<Pawn> movable_pawns(Player player) const;
+    std::vector<std::pair<Cell, Cell>> required_path_endpoints() const;
+    std::pair<Cell, Cell> model_landmarks(Player player) const;
     Variant variant() const;
     bool allows_mouse_moves() const;
     int move_prior_size() const;
@@ -233,24 +245,17 @@ public:
 
 private:
     struct State {
-        bool has_red_cat : 1 = false;
-        bool has_blue_cat : 1 = false;
         bool has_red_right_wall : 1 = false;
         bool has_red_down_wall : 1 = false;
         bool has_blue_right_wall : 1 = false;
         bool has_blue_down_wall : 1 = false;
-        bool has_red_mouse : 1 = false;
-        bool has_blue_mouse : 1 = false;
 
         bool operator==(State const& other) const = default;
     };
 
-    struct PlayerState {
-        Cell cat;
-        Cell mouse;
-
-        bool operator==(PlayerState const& other) const = default;
-    } m_red, m_blue;
+    using PawnSlots = std::array<std::optional<Cell>, 3>;
+    PawnSlots m_red_pawns;
+    PawnSlots m_blue_pawns;
 
     friend std::hash<Board>;
 
@@ -262,6 +267,8 @@ private:
 
     State& state_at(Cell cell);
     State state_at(Cell cell) const;
+    PawnSlots& pawn_slots(Player player);
+    PawnSlots const& pawn_slots(Player player) const;
 
     struct StackFrame {
         Cell cell;

@@ -28,7 +28,7 @@
  */
 
 import { z } from "zod";
-import { cellSchema, customSetupConfigSchema } from "./games";
+import { authoredPositionConfigSchema, cellSchema } from "./games";
 
 const nonempty = z.string().min(1);
 
@@ -81,7 +81,7 @@ const savedPuzzleRowBase = z.object({
   displayName: nonempty,
   sortIndex: z.number().int(),
   enabled: z.boolean(),
-  config: customSetupConfigSchema,
+  config: authoredPositionConfigSchema,
   leadIn: savedPuzzleLeadInSchema.nullable(),
   /** Descriptive only. "synthetic" for the pipeline, a person for the rest. */
   author: nonempty,
@@ -144,9 +144,9 @@ const leadInMatchesSeat = {
  * somebody wants to play it, and never by a constant in here.
  */
 const hasLeadInOnlyIfHumanIsP2 = (row: {
-  config: z.infer<typeof customSetupConfigSchema>;
+  config: z.infer<typeof authoredPositionConfigSchema>;
   leadIn: unknown;
-}) => row.leadIn === null || row.config.variantConfig.turn.playerId === 2;
+}) => row.leadIn === null || row.config.initialState.turn.playerId === 2;
 
 /**
  * Whether this row could be handed to a bot at all.
@@ -161,10 +161,10 @@ const hasLeadInOnlyIfHumanIsP2 = (row: {
  * this variant and size. That is `botSupportsPosition`, asked of a live bot.
  */
 export const isBotLaunchReady = (row: {
-  config: z.infer<typeof customSetupConfigSchema>;
+  config: z.infer<typeof authoredPositionConfigSchema>;
   leadIn: unknown;
 }): boolean =>
-  row.config.variantConfig.turn.playerId === 1 || row.leadIn !== null;
+  row.config.initialState.turn.playerId === 1 || row.leadIn !== null;
 
 /** What the seeder inserts (createdAt is the DB default). */
 export const savedPuzzleSeedRowSchema = savedPuzzleRowBase
@@ -210,7 +210,7 @@ export const savedPuzzleSchema = z
     id: nonempty,
     displayName: nonempty,
     sortIndex: z.number().int(),
-    config: customSetupConfigSchema,
+    config: authoredPositionConfigSchema,
     author: nonempty,
     difficulty: puzzleDifficultySchema,
     /**
@@ -238,7 +238,7 @@ export type SavedPuzzleSeedRow = z.infer<typeof savedPuzzleSeedRowSchema>;
 export type SavedPuzzleDbRow = z.infer<typeof savedPuzzleDbRowSchema>;
 export type SavedPuzzle = z.infer<typeof savedPuzzleSchema>;
 export type SavedPuzzlesResponse = z.infer<typeof savedPuzzlesResponseSchema>;
-export type SavedPuzzleConfig = z.infer<typeof customSetupConfigSchema>;
+export type SavedPuzzleConfig = z.infer<typeof authoredPositionConfigSchema>;
 export type PuzzleVoteState = z.infer<typeof puzzleVoteStateSchema>;
 export type PuzzleVoteRequest = z.infer<typeof puzzleVoteRequestSchema>;
 

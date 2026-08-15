@@ -120,7 +120,13 @@ TEST_CASE("training_play does not end a game at the midpoint of a walk-past",
           "[TrainingRecords]") {
     // Red's mouse sits one step to the right of Blue's cat, and the only action either side has is
     // to walk its own mouse left - so Red's whole turn is: onto the cat, then past it.
-    Board board{6, 6, Cell{0, 0}, Cell{4, 2}, Cell{3, 2}, Cell{5, 5}, Variant::Standard};
+    Board board{6,
+                6,
+                Variant::Standard,
+                {{Player::Red, Pawn::Cat, {0, 0}},
+                 {Player::Red, Pawn::Mouse, {4, 2}},
+                 {Player::Blue, Pawn::Cat, {3, 2}},
+                 {Player::Blue, Pawn::Mouse, {5, 5}}}};
 
     int calls = 0;
     std::vector<NodeInfo> captured;

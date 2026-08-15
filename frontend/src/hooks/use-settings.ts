@@ -14,11 +14,7 @@ import type {
 } from "../../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
-import {
-  buildOrdinaryInitialState,
-  normalizeLegacyGameConfiguration,
-  normalizeLegacyVariant,
-} from "../../../shared/domain/game-configuration";
+import { buildOrdinaryInitialState } from "../../../shared/domain/game-configuration";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -31,12 +27,11 @@ type VariantSettingsMap = Record<string, Partial<VariantParameters>>;
 const normalizeStoredGamePreference = (
   config: GameConfiguration,
 ): GameConfiguration => {
-  const normalized = normalizeLegacyGameConfiguration(config);
   const storedRandomStart = (config as { randomStart?: boolean }).randomStart;
   return {
-    ...normalized,
+    ...config,
     randomStart:
-      normalized.variant === "classic" ? false : (storedRandomStart ?? true),
+      config.variant === "classic" ? false : (storedRandomStart ?? true),
   };
 };
 
@@ -410,8 +405,7 @@ function useSettingsInternal(
     const currentVariant = dbSettings.defaultVariant ?? DEFAULT_VARIANT;
     const supportedVariant =
       currentVariant === "survival" ? DEFAULT_VARIANT : currentVariant;
-    const normalized = normalizeLegacyVariant(supportedVariant, undefined);
-    const resolvedVariant = normalized.variant as NonSurvivalVariant;
+    const resolvedVariant = supportedVariant;
     const currentVariantParams = variantSettingsFromDb[currentVariant];
 
     const boardWidth = currentVariantParams?.boardWidth ?? 8;

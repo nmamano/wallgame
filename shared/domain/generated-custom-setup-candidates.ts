@@ -8,16 +8,19 @@ import type {
 } from "./game-types";
 
 /**
- * Every generated candidate is a custom-setup-standard position - the generator
+ * Every generated candidate is an authored Standard position - the generator
  * places both pawn pairs and all of the walls itself, and can emit nothing
  * else. Saying that in the type, instead of the full GameConfiguration union,
- * is what lets a reader reach `config.variantConfig.turn` without first proving
+ * is what lets a reader reach `config.initialState.turn` without first proving
  * which variant it got.
  */
-export interface GeneratedCandidateConfig extends GameConfiguration {
-  variant: "custom-setup-standard";
-  variantConfig: CustomSetupStandardInitialState;
-}
+export type GeneratedCandidateConfig = Omit<
+  GameConfiguration,
+  "variant" | "variantConfig"
+> & {
+  variant: "standard";
+  initialState: CustomSetupStandardInitialState;
+};
 
 export interface GeneratedCustomSetupCandidate {
   id: string;
@@ -178,13 +181,13 @@ const generateCandidate = (index: number): GeneratedCustomSetupCandidate => {
     humanPlaysAs,
     distances: pawns.attackDistances,
     config: {
-      variant: "custom-setup-standard",
+      variant: "standard",
       randomStart: false,
       timeControl: TIME_CONTROL,
       rated: false,
       boardWidth: BOARD_SIZE,
       boardHeight: BOARD_SIZE,
-      variantConfig: initialState,
+      initialState,
     },
   };
 };

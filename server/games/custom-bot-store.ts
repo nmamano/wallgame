@@ -12,15 +12,10 @@
  */
 
 import type { ServerWebSocket } from "bun";
-import {
-  isCustomSetupVariant,
-  type PlayerId,
-  type Variant,
-} from "../../shared/domain/game-types";
+import type { PlayerId, Variant } from "../../shared/domain/game-types";
 import {
   botCapabilityVariant,
   botSupportsGameConfiguration,
-  normalizeBotVariantCapabilities,
 } from "../../shared/domain/bot-capability";
 import type {
   BotConfig,
@@ -200,7 +195,7 @@ export const registerClient = (
       listOrder: botConfig.listOrder,
       username: botConfig.username,
       appearance: botConfig.appearance ?? {},
-      variants: normalizeBotVariantCapabilities(botConfig.variants),
+      variants: botConfig.variants,
       activeGames: new Map(),
     };
 
@@ -494,7 +489,6 @@ export const getMatchingBots = (
 
   for (const [compositeId, bot] of botIndex) {
     if (bot.placement !== placement) continue;
-    if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
       if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {
@@ -546,7 +540,6 @@ export const getRecommendedBots = (
 
   for (const [compositeId, bot] of botIndex) {
     if (bot.placement !== placement) continue;
-    if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
       if (!username || bot.username.toLowerCase() !== username.toLowerCase()) {

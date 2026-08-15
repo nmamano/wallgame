@@ -2,7 +2,7 @@ import type { Cell, StandardInitialState, WallPosition } from "./game-types";
 import { Grid } from "./grid";
 
 /**
- * Freestyle is the Standard variant with a randomized starting position.
+ * Standard Random Start is the Standard variant with a randomized starting position.
  *
  * The position is always left-right mirrored: every pawn and every wall placed
  * in the left half of the board gets a mirror image in the right half. That
@@ -76,7 +76,7 @@ const randomPawnCell = (
   randomInt(rng, 0, pawnBandWidth(boardWidth) - 1),
 ];
 
-export const generateFreestyleInitialState = (
+export const generateStandardRandomInitialState = (
   boardWidth: number,
   boardHeight: number,
   rng: () => number = Math.random,
@@ -102,7 +102,7 @@ export const generateFreestyleInitialState = (
     },
   };
 
-  const grid = new Grid(boardWidth, boardHeight, "freestyle");
+  const grid = new Grid(boardWidth, boardHeight, "standard");
   const cats: [Cell, Cell] = [pawns.p1.cat, pawns.p2.cat];
   // Wall legality uses opponent mice as the path targets.
   const mice: [Cell, Cell] = [pawns.p2.mouse, pawns.p1.mouse];

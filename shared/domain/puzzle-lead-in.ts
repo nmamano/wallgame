@@ -42,7 +42,10 @@ const manhattan = (a: Cell, b: Cell): number =>
 const toPlayableConfig = (config: SavedPuzzleConfig): GameConfiguration =>
   ({
     ...config,
+    randomStart: false,
+    rated: false,
     timeControl: NOMINAL_TIME_CONTROL,
+    variantConfig: config.initialState,
   }) as GameConfiguration;
 
 /**
@@ -53,18 +56,18 @@ const toPlayableConfig = (config: SavedPuzzleConfig): GameConfiguration =>
 export const computeLeadIn = (
   config: SavedPuzzleConfig,
 ): SavedPuzzleLeadIn | null => {
-  if (config.variantConfig.turn.playerId !== 2) {
+  if (config.initialState.turn.playerId !== 2) {
     return null;
   }
-  if (config.variant !== "custom-setup-standard") {
+  if (config.variant !== "standard") {
     // The heuristic reasons about cat->mouse races; classic has homes.
     throw new Error(
-      `lead-in heuristic only supports custom-setup-standard, got ${config.variant}`,
+      `lead-in heuristic only supports Standard positions, got ${config.variant}`,
     );
   }
 
   const state = new GameState(toPlayableConfig(config), 0);
-  // Guarded above: this heuristic only runs on custom-setup-standard, so all
+  // Guarded above: this heuristic only runs on authored Standard positions, so all
   // four cat/mouse pawns exist.
   const botCat = requirePawnCell(state.pawns, 1, "cat");
   const botMouse = requirePawnCell(state.pawns, 1, "mouse");
@@ -126,21 +129,21 @@ export const buildLeadInLaunch = (
   config: SavedPuzzleConfig,
   leadIn: SavedPuzzleLeadIn,
 ): LeadInLaunch => {
-  if (config.variant !== "custom-setup-standard") {
+  if (config.variant !== "standard") {
     throw new Error(
-      `lead-in launch only supports custom-setup-standard, got ${config.variant}`,
+      `lead-in launch only supports Standard positions, got ${config.variant}`,
     );
   }
-  const curatedTarget = config.variantConfig.pawns.p1[leadIn.piece];
+  const curatedTarget = config.initialState.pawns.p1[leadIn.piece];
   return {
     preConfig: {
       ...config,
-      variantConfig: {
-        ...config.variantConfig,
+      initialState: {
+        ...config.initialState,
         pawns: {
-          ...config.variantConfig.pawns,
+          ...config.initialState.pawns,
           p1: {
-            ...config.variantConfig.pawns.p1,
+            ...config.initialState.pawns.p1,
             [leadIn.piece]: leadIn.from,
           },
         },
@@ -155,7 +158,13 @@ export const buildLeadInLaunch = (
 
 export interface SavedPuzzleLaunch {
   /** What the game session is created from (pre-position for P2 puzzles). */
-  config: SavedPuzzleConfig;
+  config: {
+    variant: SavedPuzzleConfig["variant"];
+    boardWidth: number;
+    boardHeight: number;
+    randomStart: false;
+    variantConfig: SavedPuzzleConfig["initialState"];
+  };
   humanIsPlayer1: boolean;
   /** The bot's scripted ply-0 move, applied at creation; null for P1 puzzles. */
   leadInMove: Move | null;
@@ -170,7 +179,7 @@ export interface SavedPuzzleLaunch {
 export const resolveSavedPuzzleLaunch = (
   row: Pick<SavedPuzzleDbRow, "config" | "leadIn">,
 ): SavedPuzzleLaunch => {
-  const humanPlaysAs = row.config.variantConfig.turn.playerId;
+  const humanPlaysAs = row.config.initialState.turn.playerId;
   if (humanPlaysAs === 2) {
     if (!row.leadIn) {
       throw new Error(
@@ -179,14 +188,34 @@ export const resolveSavedPuzzleLaunch = (
     }
     validateLeadInReplay(row.config, row.leadIn);
     const { preConfig, move } = buildLeadInLaunch(row.config, row.leadIn);
-    return { config: preConfig, humanIsPlayer1: false, leadInMove: move };
+    return {
+      config: {
+        variant: preConfig.variant,
+        boardWidth: preConfig.boardWidth,
+        boardHeight: preConfig.boardHeight,
+        randomStart: false,
+        variantConfig: preConfig.initialState,
+      },
+      humanIsPlayer1: false,
+      leadInMove: move,
+    };
   }
   if (row.leadIn) {
     throw new Error(
       "human-as-P1 puzzle unexpectedly has a lead-in — refusing to launch",
     );
   }
-  return { config: row.config, humanIsPlayer1: true, leadInMove: null };
+  return {
+    config: {
+      variant: row.config.variant,
+      boardWidth: row.config.boardWidth,
+      boardHeight: row.config.boardHeight,
+      randomStart: false,
+      variantConfig: row.config.initialState,
+    },
+    humanIsPlayer1: true,
+    leadInMove: null,
+  };
 };
 
 /**

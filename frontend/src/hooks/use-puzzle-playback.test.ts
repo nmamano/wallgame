@@ -33,7 +33,7 @@ const puzzle = (over: Partial<SavedPuzzle> = {}): SavedPuzzle =>
     dislikes: 0,
     myVote: null,
     config: {
-      variant: "custom-setup-classic",
+      variant: "classic",
       boardWidth: 4,
       boardHeight: 4,
       variantConfig: {
@@ -184,7 +184,7 @@ describe("resolveShapeBot", () => {
     const wrongSize = {
       ...declaringBot,
       variants: {
-        "custom-setup-classic": {
+        classic: {
           boardWidth: { min: 6, max: 12 },
           boardHeight: { min: 6, max: 10 },
           recommended: [],

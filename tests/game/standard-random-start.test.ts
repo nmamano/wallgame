@@ -1,10 +1,10 @@
 import { describe, expect, it } from "bun:test";
-import { generateFreestyleInitialState } from "../../shared/domain/freestyle-setup";
+import { generateStandardRandomInitialState } from "../../shared/domain/random-start-setup";
 import { Grid } from "../../shared/domain/grid";
 import type { Cell, WallPosition } from "../../shared/domain/game-types";
 
 /**
- * Freestyle generates a random starting position for any board size the server
+ * Standard Random Start generates a random starting position for any board size the server
  * accepts (3x3 up to 20x20). Two properties have to hold for every one of them:
  * the position must be left-right mirrored, and both players must still be able
  * to reach their goal. These tests sample the whole size range.
@@ -41,11 +41,11 @@ const mirrorCell = (cell: Cell, boardWidth: number): Cell => [
   boardWidth - 1 - cell[1],
 ];
 
-describe("generateFreestyleInitialState", () => {
+describe("generateStandardRandomInitialState", () => {
   for (const [boardWidth, boardHeight] of SIZES) {
     describe(`${boardWidth}x${boardHeight}`, () => {
       const samples = Array.from({ length: SAMPLES }, () =>
-        generateFreestyleInitialState(boardWidth, boardHeight),
+        generateStandardRandomInitialState(boardWidth, boardHeight),
       );
 
       it("keeps every pawn on the board and on its own cell", () => {
@@ -89,11 +89,11 @@ describe("generateFreestyleInitialState", () => {
 
       it("leaves both players an equal-length path to their goal", () => {
         for (const { pawns, walls } of samples) {
-          const grid = new Grid(boardWidth, boardHeight, "freestyle");
+          const grid = new Grid(boardWidth, boardHeight, "standard");
           for (const wall of walls) {
             grid.addWall(wall);
           }
-          // In standard/freestyle a cat chases the opponent's mouse.
+          // In standard/Standard Random Start a cat chases the opponent's mouse.
           const p1Distance = grid.distance(pawns.p1.cat, pawns.p2.mouse);
           const p2Distance = grid.distance(pawns.p2.cat, pawns.p1.mouse);
           expect(p1Distance).not.toBe(-1);
@@ -108,7 +108,8 @@ describe("generateFreestyleInitialState", () => {
       Array.from(
         { length: SAMPLES },
         () =>
-          generateFreestyleInitialState(boardWidth, boardHeight).walls.length,
+          generateStandardRandomInitialState(boardWidth, boardHeight).walls
+            .length,
       );
 
     // 12x10 keeps its original tuning of 4-10 wall pairs. A pair is two wall

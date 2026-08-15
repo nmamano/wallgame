@@ -736,10 +736,7 @@ export const resyncBgsFromHistory = async (
   }
 };
 
-/**
- * V3: Register bot games for rematch and initialize BGS.
- * This replaces the V2 registerRematchBotGames function.
- */
+/** Register bot games for rematch and initialize BGS. */
 const registerRematchBotGamesV3 = async (
   session: RematchSessionResult["newSession"],
   startBotTurn: boolean,
@@ -1830,7 +1827,6 @@ const getPlayersPerTeam = (variant: string): number => {
   switch (variant) {
     case "standard":
     case "classic":
-    case "freestyle":
     case "survival":
     default:
       return 1;

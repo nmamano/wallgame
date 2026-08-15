@@ -72,13 +72,6 @@ add_executable(deep_ww
 )
 target_link_libraries(deep_ww PRIVATE core)
 
-# V2 Engine adapter executable for official custom-bot client
-add_executable(deep_ww_engine
-    src/engine_main.cpp
-)
-target_link_libraries(deep_ww_engine PRIVATE core gflags)
-add_dependencies(deep_ww_engine model_trt)
-
 # V3 BGS Engine executable for Bot Game Session protocol
 add_executable(deep_ww_bgs_engine
     src/bgs_engine_main.cpp

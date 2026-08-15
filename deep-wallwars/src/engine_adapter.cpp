@@ -12,21 +12,23 @@
 
 namespace engine_adapter {
 
-// External names are accepted in one compatibility layer. Everything below
-// this adapter receives a rules identity and cannot branch on setup provenance.
-static std::optional<Variant> parse_external_variant(std::string_view variant) {
-    if (variant == "freestyle" || variant == "custom-setup-standard") {
-        return Variant::Standard;
-    }
-    if (variant == "custom-setup-classic") {
-        return Variant::Classic;
-    }
-    return parse_variant(variant);
-}
-
 static bool is_protocol_cell(json const& cell) {
     return cell.is_array() && cell.size() == 2 && cell[0].is_number_integer() &&
         cell[1].is_number_integer();
+}
+
+// Protocol cells use [row, column]. Board cells store {column, row}.
+static Cell parse_cell(json const& cell_json) {
+    return Cell{cell_json[1].get<int>(), cell_json[0].get<int>()};
+}
+
+static Wall parse_wall(json const& wall_json) {
+    Cell const cell = parse_cell(wall_json["cell"]);
+    if (wall_json["orientation"] == "vertical") {
+        return Wall{cell, Wall::Right};
+    }
+    // A protocol horizontal wall is above its named cell.
+    return Wall{Cell{cell.column, cell.row - 1}, Wall::Down};
 }
 
 // ============================================================================
@@ -284,20 +286,26 @@ Board make_padded_training_board(int model_columns, int model_rows, int game_col
     Cell red_cat = transform_to_model(Cell{0, 0}, config);
     Cell blue_cat = transform_to_model(Cell{game_columns - 1, 0}, config);
 
-    Cell red_mouse;
-    Cell blue_mouse;
+    Cell red_secondary;
+    Cell blue_secondary;
     if (variant == Variant::Classic) {
         // Serving semantics (convert_bgs_config_to_board): classic goals are
         // at the MODEL bottom corners; place_padding_walls leaves the bottom
         // row open as the path to them.
-        red_mouse = Cell{0, model_rows - 1};
-        blue_mouse = Cell{model_columns - 1, model_rows - 1};
+        red_secondary = Cell{model_columns - 1, model_rows - 1};
+        blue_secondary = Cell{0, model_rows - 1};
     } else {
-        red_mouse = transform_to_model(Cell{0, game_rows - 1}, config);
-        blue_mouse = transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
+        red_secondary = transform_to_model(Cell{0, game_rows - 1}, config);
+        blue_secondary = transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
     }
 
-    Board board{model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant};
+    Pawn const secondary_pawn =
+        variant == Variant::Classic ? Pawn::Home : Pawn::Mouse;
+    Board board{model_columns, model_rows, variant,
+                {{Player::Red, Pawn::Cat, red_cat},
+                 {Player::Red, secondary_pawn, red_secondary},
+                 {Player::Blue, Pawn::Cat, blue_cat},
+                 {Player::Blue, secondary_pawn, blue_secondary}}};
     place_padding_walls(board, config);
     return board;
 }
@@ -417,383 +425,6 @@ std::string transform_move_notation(
 // Validation
 // ============================================================================
 
-ValidationResult validate_request(json const& state_json, int model_rows, int model_columns) {
-    // Check variant (classic and standard supported)
-    std::string variant = state_json["config"]["variant"].get<std::string>();
-    auto parsed_variant = parse_external_variant(variant);
-    if (!parsed_variant || (*parsed_variant != Variant::Classic &&
-                            *parsed_variant != Variant::Standard)) {
-        return {false,
-                "Deep-wallwars only supports the 'classic', 'standard', and 'freestyle' variants (not '" +
-                    variant + "')"};
-    }
-
-    // Check board dimensions (must be at least 4x4 and at most model dimensions)
-    int width = state_json["config"]["boardWidth"].get<int>();
-    int height = state_json["config"]["boardHeight"].get<int>();
-
-    if (width < 4 || height < 4) {
-        return {false, "Board dimensions must be at least 4x4 (got " +
-                std::to_string(width) + "x" + std::to_string(height) + ")"};
-    }
-
-    if (width > model_columns || height > model_rows) {
-        return {false, "This engine supports boards up to " +
-                std::to_string(model_columns) + "x" + std::to_string(model_rows) +
-                " (got " + std::to_string(width) + "x" + std::to_string(height) + ")"};
-    }
-
-    return {true, ""};
-}
-
-// ============================================================================
-// State Conversion
-// ============================================================================
-
-// Parse a Cell from the official API format [row, col]
-Cell parse_cell(json const& cell_json, int rows) {
-    int official_row = cell_json[0].get<int>();
-    int col = cell_json[1].get<int>();
-
-    // Official API: row 0 is top
-    // Deep-wallwars: row 0 is top (same)
-    // So no conversion needed for rows in this case
-    return Cell{col, official_row};
-}
-
-// Parse a Wall from the official API format
-// API: {cell: [row, col], orientation: "vertical"|"horizontal"}
-// Deep-wallwars vertical wall (Right): blocks movement to the right
-// Deep-wallwars horizontal wall (Down): blocks movement downward
-Wall parse_wall(json const& wall_json, int rows) {
-    Cell cell = parse_cell(wall_json["cell"], rows);
-    std::string orientation = wall_json["orientation"].get<std::string>();
-
-    if (orientation == "vertical") {
-        // Vertical wall blocks movement to the right
-        return Wall{cell, Wall::Right};
-    } else {
-        // Horizontal wall blocks movement downward
-        // API: horizontal wall above cell -> blocks (row-1, col) <-> (row, col)
-        // Deep-wallwars: Down wall at (col, row) blocks (col, row) <-> (col, row+1)
-        // So API horizontal wall "above" cell (r, c) is a Down wall at (c, r-1)
-        return Wall{Cell{cell.column, cell.row - 1}, Wall::Down};
-    }
-}
-
-std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
-    json const& state_json,
-    int model_rows,
-    int model_columns) {
-
-    int game_width = state_json["config"]["boardWidth"].get<int>();
-    int game_height = state_json["config"]["boardHeight"].get<int>();
-    std::string variant_str = state_json["config"]["variant"].get<std::string>();
-    auto parsed_variant = parse_external_variant(variant_str);
-    Variant variant = parsed_variant.value_or(Variant::Classic);
-
-    // Create padding configuration
-    PaddingConfig padding_config = create_padding_config(
-        model_rows, model_columns, game_height, game_width, variant);
-
-    // Parse pawn positions (in game coordinates)
-    // API uses PlayerId (1 or 2), deep-wallwars uses Player (Red or Blue)
-    // We map Player 1 -> Red, Player 2 -> Blue
-    json const& pawns = state_json["pawns"];
-
-    Cell red_cat_game = parse_cell(pawns["1"]["cat"], game_height);
-    Cell blue_cat_game = parse_cell(pawns["2"]["cat"], game_height);
-    Cell red_mouse_game = parse_cell(pawns["1"]["mouse"], game_height);
-    Cell blue_mouse_game = parse_cell(pawns["2"]["mouse"], game_height);
-
-    // Transform to model coordinates
-    Cell red_cat = transform_to_model(red_cat_game, padding_config);
-    Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
-    Cell red_mouse;
-    Cell blue_mouse;
-    if (variant == Variant::Classic) {
-        // Classic goals are at the model corners.
-        red_mouse = Cell{0, model_rows - 1};
-        blue_mouse = Cell{model_columns - 1, model_rows - 1};
-    } else {
-        red_mouse = transform_to_model(red_mouse_game, padding_config);
-        blue_mouse = transform_to_model(blue_mouse_game, padding_config);
-    }
-
-    // Create the board with model dimensions
-    Board board(model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant);
-
-    // Place padding walls
-    place_padding_walls(board, padding_config);
-
-    // Place game walls (transformed to model coordinates)
-    json const& walls_array = state_json["walls"];
-    for (auto const& wall_json : walls_array) {
-        Wall game_wall = parse_wall(wall_json, game_height);
-        Wall model_wall = transform_to_model(game_wall, padding_config);
-        int player_id = wall_json.value("playerId", 0);
-        Player wall_owner = (player_id == 1) ? Player::Red : Player::Blue;
-        board.place_wall(wall_owner, model_wall);
-    }
-
-    // Determine current turn
-    int current_player_id = state_json["turn"].get<int>();
-
-    Player current_player = (current_player_id == 1) ? Player::Red : Player::Blue;
-
-    // Assume we're at the start of that player's turn (First action)
-    Turn turn{current_player, Turn::First};
-
-    return {board, turn, padding_config};
-}
-
-// ============================================================================
-// Move Generation
-// ============================================================================
-
-std::optional<MoveResult> find_best_move(
-    Board const& board,
-    Turn turn,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config,
-    PaddingConfig const& padding_config) {
-
-    XLOGF(DBG, "Finding best move for player {} at turn action {}",
-          turn.player == Player::Red ? "Red" : "Blue",
-          turn.action == Turn::First ? "First" : "Second");
-
-    // Create MCTS instance
-    MCTS::Options mcts_opts;
-    mcts_opts.starting_turn = turn;
-    mcts_opts.seed = config.seed;
-    mcts_opts.max_parallelism = 4;  // Reasonable default
-
-    MCTS mcts(eval_fn, board, mcts_opts);
-
-    // We need a thread pool to run the coroutine
-    folly::CPUThreadPoolExecutor thread_pool(4);
-
-    // Run MCTS sampling
-    folly::coro::blockingWait(mcts.sample(config.samples).scheduleOn(&thread_pool));
-
-    // IMPORTANT: Capture evaluation BEFORE committing!
-    // commit_to_action() advances the root to a child node, which changes
-    // whose perspective root_value() returns from. We must capture it while
-    // the root is still at the original position (current player's perspective).
-    float raw_evaluation = mcts.root_value();
-
-    // Now commit to actions to get the move
-    auto action_1 = mcts.commit_to_action();
-    if (!action_1) {
-        XLOG(ERR, "MCTS returned no first action - no legal moves available");
-        return std::nullopt;
-    }
-
-    std::optional<Move> move_opt;
-    // Asked of the MOVER, and only the mover: a capture is judged when the turn ENDS, so a wall
-    // keeps it, while our own mouse stepping onto the enemy cat is a legal walk-past that the turn
-    // has to continue through (board task 8911a6d5).
-    if (mcts.current_board().reached_goal(turn.player)) {
-        // First action won the game, just pick any legal wall for second action
-        auto legal_walls = mcts.current_board().legal_walls();
-        if (legal_walls.empty()) {
-            XLOG(ERR, "Game won but no legal walls available");
-            return std::nullopt;
-        }
-        move_opt = Move{*action_1, legal_walls[0]};
-    } else {
-        // Sample and commit for second action
-        folly::coro::blockingWait(mcts.sample(config.samples).scheduleOn(&thread_pool));
-        auto action_2 = mcts.commit_to_action();
-        if (!action_2) {
-            XLOG(ERR, "MCTS returned no second action");
-            return std::nullopt;
-        }
-        move_opt = Move{*action_1, *action_2};
-    }
-
-    // Get the evaluation from MCTS root value and clamp to [-1, +1]
-    // MCTS returns value from current turn player's perspective (turn.player).
-    // Engine API requires P1's perspective, so negate if it's P2's turn.
-    float evaluation = (turn.player == Player::Red) ? raw_evaluation : -raw_evaluation;
-    evaluation = std::clamp(evaluation, -1.0f, 1.0f);
-
-    // Get current position of the player's pawn (in model coordinates)
-    Cell current_pos = board.position(turn.player);
-    Cell current_mouse = board.mouse(turn.player);
-
-    // Convert to standard notation (in model coordinates)
-    std::string model_notation =
-        move_opt->standard_notation(current_pos, current_mouse, board.rows());
-
-    // Transform notation from model coordinates to game coordinates
-    std::string notation = transform_move_notation(
-        model_notation, current_pos, current_mouse, padding_config);
-
-    XLOGF(INFO, "Best move: {} (model: {}), evaluation: {}", notation, model_notation, evaluation);
-    return MoveResult{notation, evaluation};
-}
-
-// ============================================================================
-// Draw Evaluation
-// ============================================================================
-
-bool should_accept_draw(
-    Board const& board,
-    Turn turn,
-    int my_player_id,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config) {
-
-    XLOGF(DBG, "Evaluating position to decide on draw offer");
-
-    // Create MCTS instance to evaluate the position
-    MCTS::Options mcts_opts;
-    mcts_opts.starting_turn = turn;
-    mcts_opts.seed = config.seed;
-    mcts_opts.max_parallelism = 4;
-
-    MCTS mcts(eval_fn, board, mcts_opts);
-
-    // Run some samples to get a position evaluation
-    // Use fewer samples than for move generation since this is just an evaluation
-    int eval_samples = std::min(config.samples / 2, 200);
-
-    folly::CPUThreadPoolExecutor thread_pool(4);
-    folly::coro::blockingWait(mcts.sample(eval_samples).scheduleOn(&thread_pool));
-
-    float root_value = mcts.root_value();
-
-    XLOGF(INFO, "Position evaluation: {} (from perspective of current player)", root_value);
-
-    // root_value is from the perspective of the current player
-    // If the current player is us and root_value is negative, we're losing
-    Player my_player = (my_player_id == 1) ? Player::Red : Player::Blue;
-
-    if (turn.player == my_player) {
-        // It's our turn, so root_value is from our perspective
-        // Accept draw if we're losing (negative value)
-        bool accept = root_value < 0.0f;
-        XLOGF(INFO, "Draw decision: {} (our turn, value={})",
-              accept ? "accept" : "decline", root_value);
-        return accept;
-    } else {
-        // It's opponent's turn, so root_value is from their perspective
-        // Accept draw if opponent is winning (positive value for them = bad for us)
-        bool accept = root_value > 0.0f;
-        XLOGF(INFO, "Draw decision: {} (opponent's turn, value={})",
-              accept ? "accept" : "decline", root_value);
-        return accept;
-    }
-}
-
-// ============================================================================
-// Request Handling
-// ============================================================================
-
-json handle_engine_request(
-    json const& request,
-    EvaluationFunction const& eval_fn,
-    EngineConfig const& config) {
-
-    int engine_api_version = request["engineApiVersion"].get<int>();
-    std::string request_id = request["requestId"].get<std::string>();
-    std::string kind = request["kind"].get<std::string>();
-    json const& state_json = request["state"];
-    int my_player_id = request["playerId"].get<int>();
-
-    XLOGF(INFO, "Handling {} request (id: {})", kind, request_id);
-
-    // Validate version
-    if (engine_api_version != 2) {
-        XLOGF(ERR, "Unsupported engine API version: {}", engine_api_version);
-        std::cerr << "Error: Unsupported engine API version " << engine_api_version << "\n";
-        return json{
-            {"engineApiVersion", 2},
-            {"requestId", request_id},
-            {"response", {{"action", "resign"}}}
-        };
-    }
-
-    int model_rows = config.model_rows;
-    int model_columns = config.model_columns;
-
-    // Validate request compatibility
-    ValidationResult validation = validate_request(
-        state_json, model_rows, model_columns);
-    if (!validation.valid) {
-        XLOGF(WARN, "Request validation failed: {}", validation.error_message);
-        std::cerr << "Error: " << validation.error_message << "\n";
-
-        // Return appropriate response based on request kind
-        if (kind == "move") {
-            return json{
-                {"engineApiVersion", 2},
-                {"requestId", request_id},
-                {"response", {{"action", "resign"}}}
-            };
-        } else {
-            return json{
-                {"engineApiVersion", 2},
-                {"requestId", request_id},
-                {"response", {{"action", "decline-draw"}}}
-            };
-        }
-    }
-
-    // Convert state (with padding support)
-    auto [board, turn, padding_config] = convert_state_to_board(
-        state_json, model_rows, model_columns);
-
-    // Handle request based on kind
-    if (kind == "move") {
-        auto move_result = find_best_move(board, turn, eval_fn, config, padding_config);
-
-        if (!move_result) {
-            XLOG(WARN, "No legal move found, resigning");
-            std::cerr << "Warning: No legal move found\n";
-            return json{
-                {"engineApiVersion", 2},
-                {"requestId", request_id},
-                {"response", {{"action", "resign"}}}
-            };
-        }
-
-        return json{
-            {"engineApiVersion", 2},
-            {"requestId", request_id},
-            {"response", {
-                {"action", "move"},
-                {"moveNotation", move_result->notation},
-                {"evaluation", move_result->evaluation}
-            }}
-        };
-    } else if (kind == "draw") {
-        // Note: In V2, draws are auto-declined by the client, but we handle them anyway
-        bool accept = should_accept_draw(board, turn, my_player_id, eval_fn, config);
-
-        return json{
-            {"engineApiVersion", 2},
-            {"requestId", request_id},
-            {"response", {
-                {"action", accept ? "accept-draw" : "decline-draw"}
-            }}
-        };
-    } else {
-        XLOGF(ERR, "Unknown request kind: {}", kind);
-        std::cerr << "Error: Unknown request kind '" << kind << "'\n";
-        return json{
-            {"engineApiVersion", 2},
-            {"requestId", request_id},
-            {"response", {{"action", "resign"}}}
-        };
-    }
-}
-
-// ============================================================================
-// V3 Bot Game Session (BGS) Support
-// ============================================================================
-
 ValidationResult validate_bgs_config(
     json const& bgs_config,
     int model_rows,
@@ -809,11 +440,11 @@ ValidationResult validate_bgs_config(
 
     // Check variant (classic and standard supported)
     std::string variant = bgs_config["variant"].get<std::string>();
-    auto parsed_variant = parse_external_variant(variant);
+    auto parsed_variant = parse_variant(variant);
     if (!parsed_variant || (*parsed_variant != Variant::Classic &&
                             *parsed_variant != Variant::Standard)) {
         return {false,
-                "Deep-wallwars only supports the 'classic', 'standard', and 'freestyle' variants (not '" +
+                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
                     variant + "')"};
     }
 
@@ -883,7 +514,7 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     int game_width = bgs_config["boardWidth"].get<int>();
     int game_height = bgs_config["boardHeight"].get<int>();
     std::string const external_variant = bgs_config["variant"].get<std::string>();
-    auto parsed_variant = parse_external_variant(external_variant);
+    auto parsed_variant = parse_variant(external_variant);
     Variant variant = parsed_variant.value_or(Variant::Classic);
 
     // Create padding configuration
@@ -894,42 +525,39 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
 
     // Parse pawn positions based on variant
     // V3 format uses "p1"/"p2" instead of "1"/"2"
-    Cell red_cat_game, blue_cat_game, red_mouse_game, blue_mouse_game;
+    Cell red_cat_game, blue_cat_game, red_secondary_game, blue_secondary_game;
 
     if (variant == Variant::Classic) {
         // Classic has cat and home positions
         json const& pawns = initial_state["pawns"];
-        red_cat_game = parse_cell(pawns["p1"]["cat"], game_height);
-        blue_cat_game = parse_cell(pawns["p2"]["cat"], game_height);
+        red_cat_game = parse_cell(pawns["p1"]["cat"]);
+        blue_cat_game = parse_cell(pawns["p2"]["cat"]);
         // Home positions stored in "home" field for classic
-        red_mouse_game = parse_cell(pawns["p1"]["home"], game_height);
-        blue_mouse_game = parse_cell(pawns["p2"]["home"], game_height);
+        red_secondary_game = parse_cell(pawns["p1"]["home"]);
+        blue_secondary_game = parse_cell(pawns["p2"]["home"]);
     } else {
         // Standard has cat and mouse positions
         json const& pawns = initial_state["pawns"];
-        red_cat_game = parse_cell(pawns["p1"]["cat"], game_height);
-        blue_cat_game = parse_cell(pawns["p2"]["cat"], game_height);
-        red_mouse_game = parse_cell(pawns["p1"]["mouse"], game_height);
-        blue_mouse_game = parse_cell(pawns["p2"]["mouse"], game_height);
+        red_cat_game = parse_cell(pawns["p1"]["cat"]);
+        blue_cat_game = parse_cell(pawns["p2"]["cat"]);
+        red_secondary_game = parse_cell(pawns["p1"]["mouse"]);
+        blue_secondary_game = parse_cell(pawns["p2"]["mouse"]);
     }
 
     // Transform to model coordinates
     Cell red_cat = transform_to_model(red_cat_game, padding_config);
     Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
-    Cell red_mouse, blue_mouse;
-
-    if (variant == Variant::Classic) {
-        // Board::winner models each player's goal as the opposing mouse:
-        // Red reaches blue_mouse and Blue reaches red_mouse.
-        red_mouse = transform_to_model(blue_mouse_game, padding_config);
-        blue_mouse = transform_to_model(red_mouse_game, padding_config);
-    } else {
-        red_mouse = transform_to_model(red_mouse_game, padding_config);
-        blue_mouse = transform_to_model(blue_mouse_game, padding_config);
-    }
+    Cell red_secondary = transform_to_model(red_secondary_game, padding_config);
+    Cell blue_secondary = transform_to_model(blue_secondary_game, padding_config);
 
     // Create the board with model dimensions
-    Board board(model_columns, model_rows, red_cat, red_mouse, blue_cat, blue_mouse, variant);
+    Pawn const secondary_pawn =
+        variant == Variant::Classic ? Pawn::Home : Pawn::Mouse;
+    Board board(model_columns, model_rows, variant,
+                {{Player::Red, Pawn::Cat, red_cat},
+                 {Player::Red, secondary_pawn, red_secondary},
+                 {Player::Blue, Pawn::Cat, blue_cat},
+                 {Player::Blue, secondary_pawn, blue_secondary}});
 
     // Place padding walls
     place_padding_walls(board, padding_config);
@@ -937,7 +565,7 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     // Place initial walls from the config
     json const& walls_array = initial_state["walls"];
     for (auto const& wall_json : walls_array) {
-        Wall game_wall = parse_wall(wall_json, game_height);
+        Wall game_wall = parse_wall(wall_json);
         Wall model_wall = transform_to_model(game_wall, padding_config);
         if (board.is_blocked(model_wall)) {
             throw std::runtime_error(

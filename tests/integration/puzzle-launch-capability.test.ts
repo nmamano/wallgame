@@ -11,8 +11,8 @@
  * the exact shape of a bug already on the board (a bot game created but never
  * started), so it is worth refusing loudly instead.
  *
- * Puzzles now span TWO variants: the generated set is custom-setup-standard,
- * the authored set is custom-setup-classic. A bot serving only one of them is
+ * Puzzles now span TWO variants: the generated set is standard,
+ * the authored set is classic. A bot serving only one of them is
  * therefore a normal state, not a corrupt one.
  */
 
@@ -50,7 +50,7 @@ const standardOnlyBot = (botId: string): BotConfig => ({
   analysis: true,
   placement: "puzzle",
   variants: {
-    "custom-setup-standard": {
+    standard: {
       boardWidth: { min: 4, max: 12 },
       boardHeight: { min: 4, max: 10 },
       recommended: [{ boardWidth: 6, boardHeight: 6 }],
@@ -60,7 +60,7 @@ const standardOnlyBot = (botId: string): BotConfig => ({
 
 const ordinaryBot = (
   botId: string,
-  variant: "standard" | "freestyle",
+  variant: "classic" | "standard",
 ): BotConfig => ({
   botId,
   name: `${variant} Bot`,
@@ -124,7 +124,7 @@ async function play(botId: string, puzzleId: string) {
 
 describe("puzzle launch checks the bot can play the position", () => {
   let socket: WebSocket;
-  /** A 4x4 custom-setup-classic puzzle (authored puzzle 1). */
+  /** A 4x4 classic puzzle (authored puzzle 1). */
   let classicPuzzleId: string;
   /** A 5x3 board, below every engine's floor (authored puzzle 3). */
   let tooSmallPuzzleId: string;
@@ -142,7 +142,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     socket = await attachBot(clientId, [
       standardOnlyBot("capability-bot"),
       ordinaryBot("fixed-standard-bot", "standard"),
-      ordinaryBot("random-standard-bot", "freestyle"),
+      ordinaryBot("random-standard-bot", "standard"),
     ]);
     // The bot registry writes through to the DB asynchronously on attach.
     await sleep(200);
@@ -157,7 +157,7 @@ describe("puzzle launch checks the bot can play the position", () => {
   });
 
   it("refuses a classic puzzle when the bot only declares the standard setup", async () => {
-    // Puzzle 1 is a 4x4 custom-setup-classic board — a size this bot accepts,
+    // Puzzle 1 is a 4x4 classic board — a size this bot accepts,
     // so ONLY the variant differs. That is what makes the refusal meaningful
     // rather than an accident of board size.
     const res = await play(compositeId, classicPuzzleId);
@@ -178,7 +178,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     expect({ status: res.status, body }).toMatchObject({ status: 404 });
   });
 
-  it("normalizes legacy setup keys to the same Standard rules capability", async () => {
+  it("uses one Standard capability for fixed and Random Start and isolates puzzle placement", async () => {
     const randomList = await fetch(
       `${baseUrl}/api/bots?variant=standard&randomStart=true&boardWidth=8&boardHeight=8`,
     );
@@ -254,7 +254,7 @@ describe("puzzle launch checks the bot can play the position", () => {
         ...standardOnlyBot("classic-bot"),
         variants: {
           ...standardOnlyBot("classic-bot").variants,
-          "custom-setup-classic": {
+          classic: {
             boardWidth: { min: 4, max: 12 },
             boardHeight: { min: 4, max: 10 },
             recommended: [{ boardWidth: 6, boardHeight: 6 }],

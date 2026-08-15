@@ -78,7 +78,7 @@ describe("saved puzzle seed rows", () => {
         variant: candidate.config.variant,
         boardWidth: candidate.config.boardWidth,
         boardHeight: candidate.config.boardHeight,
-        variantConfig: candidate.config.variantConfig,
+        initialState: candidate.config.initialState,
       });
       expect(source.fingerprint).toBe(verdict.fingerprint);
       expect(row.sourceFingerprint).toBe(verdict.fingerprint);

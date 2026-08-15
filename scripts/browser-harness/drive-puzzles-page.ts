@@ -54,7 +54,7 @@ const bots = {
       isOfficial: true,
       isAnalysisBot: true,
       appearance: {},
-      variants: { "custom-setup-standard": {} },
+      variants: { standard: {} },
     },
   ],
 };

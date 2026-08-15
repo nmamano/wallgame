@@ -127,7 +127,7 @@ function botConfigFor(botId: string): BotConfig {
     name: `Bot ${botId}`,
     username: null,
     variants: {
-      freestyle: {
+      standard: {
         boardWidth: { min: 3, max: 15 },
         boardHeight: { min: 3, max: 15 },
         recommended: [{ boardWidth: 8, boardHeight: 8 }],
@@ -214,7 +214,7 @@ interface PlayVsBotResponse {
   socketToken: string;
 }
 
-/** The incident's configuration exactly: freestyle 8x8 (bot games are untimed). */
+/** The incident's configuration exactly: Standard Random Start 8x8 (bot games are untimed). */
 async function createIncidentShapeGame(
   botCompositeId: string,
 ): Promise<PlayVsBotResponse> {
@@ -223,7 +223,12 @@ async function createIncidentShapeGame(
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({
       botId: botCompositeId,
-      config: { variant: "freestyle", boardWidth: 8, boardHeight: 8 },
+      config: {
+        variant: "standard",
+        randomStart: true,
+        boardWidth: 8,
+        boardHeight: 8,
+      },
       hostDisplayName: "Guest",
       hostIsPlayer1: true,
     }),

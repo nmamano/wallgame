@@ -6,13 +6,13 @@
 # were parked rather than diagnosed:
 #
 #   "~parse_move_notation*"                          (5 cases, bgs_session.cpp)
-#   "~validate_request - rejects freestyle variant"  (engine_adapter.cpp)
+#   one obsolete request-validation case
 #
 # Task e5fec60c closed all six, so the exclusions are gone. Five were stale
 # tests: the fixture's cat sits at a1, not the a8 their comments claimed, so
 # they were feeding the parser a cell six rows away. One was stale in the other
-# direction - it asserted freestyle is rejected, which stopped being true when
-# freestyle support shipped. The last was a real parser defect: std::stoi stops
+# direction - it asserted an outdated variant contract. The last was a real parser defect:
+# std::stoi stops
 # at the first non-digit without reporting it, so "Ca2Mh1" parsed as "Ca2" and
 # silently dropped an action. Fixed in src/engine_adapter.cpp.
 #
