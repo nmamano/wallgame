@@ -23,7 +23,7 @@ interface PlayerTimerCardProps {
   player: GamePlayer;
   isActive: boolean;
   timeLeft: number;
-  goalDistance: number | null;
+  goalDistance?: number | null;
   minWidthRem?: number;
   score?: number | null;
   gameStatus?: "playing" | "finished" | "aborted";
@@ -124,16 +124,18 @@ export function PlayerTimerCard({
           </span>
         </div>
 
-        {/* Right: match score + distance + timer */}
+        {/* Right: match score + applicable variant details + timer */}
         <div className="flex items-center gap-3 flex-shrink-0">
           {typeof score === "number" && (
             <span className="text-[9px] text-muted-foreground tabular-nums">
               match: {scoreLabel}
             </span>
           )}
-          <span className="text-[9px] text-muted-foreground tabular-nums">
-            dist: {goalDistanceLabel}
-          </span>
+          {goalDistance !== undefined && (
+            <span className="text-[9px] text-muted-foreground tabular-nums">
+              dist: {goalDistanceLabel}
+            </span>
+          )}
           <span
             className={`text-sm font-mono font-bold tabular-nums whitespace-nowrap ${
               shouldShowActiveState
@@ -208,37 +210,41 @@ export function PlayerTimerCard({
         </div>
       </div>
 
-      {/* Middle: Match score and distance. With no score to show (a puzzle is one
-          position, not a series) the distance takes the full width rather than
-          leaving a gap where the badge was. */}
-      <div className="flex-1 min-w-0 px-1 lg:px-2">
-        <div
-          className={`grid gap-2 lg:gap-3 ${
-            typeof score === "number" ? "grid-cols-2" : "grid-cols-1"
-          }`}
-        >
-          {typeof score === "number" && (
-            <div className="flex items-center justify-center">
-              <Badge
-                variant="outline"
-                className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
-              >
-                Match<span className="hidden lg:inline"> Score</span>:{" "}
-                {scoreLabel}
-              </Badge>
-            </div>
-          )}
-          <div className="flex items-center justify-center">
-            <Badge
-              variant="outline"
-              className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
-              title="Distance to goal"
-            >
-              Distance {goalDistanceLabel}
-            </Badge>
+      {/* Middle: Show only values that apply to this game variant. */}
+      {(typeof score === "number" || goalDistance !== undefined) && (
+        <div className="flex-1 min-w-0 px-1 lg:px-2">
+          <div
+            className={`grid gap-2 lg:gap-3 ${
+              typeof score === "number" && goalDistance !== undefined
+                ? "grid-cols-2"
+                : "grid-cols-1"
+            }`}
+          >
+            {typeof score === "number" && (
+              <div className="flex items-center justify-center">
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
+                >
+                  Match<span className="hidden lg:inline"> Score</span>:{" "}
+                  {scoreLabel}
+                </Badge>
+              </div>
+            )}
+            {goalDistance !== undefined && (
+              <div className="flex items-center justify-center">
+                <Badge
+                  variant="outline"
+                  className={`text-[10px] lg:text-xs px-1.5 lg:px-2 py-0 lg:py-0.5 h-5 lg:h-auto whitespace-nowrap ${middleBadgeClass}`}
+                  title="Distance to goal"
+                >
+                  Distance {goalDistanceLabel}
+                </Badge>
+              </div>
+            )}
           </div>
         </div>
-      </div>
+      )}
 
       {/* Right side: Timer */}
       <div className="flex items-center gap-2 lg:gap-3 flex-shrink-0">

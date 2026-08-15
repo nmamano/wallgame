@@ -41,6 +41,7 @@ function GamePageContent() {
     controller;
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
+  const showsGoalDistance = info.config?.variant !== "animal-cycle";
 
   // The saved puzzle's name, carried client-side in the launch handshake
   // (doc §G: nothing on the game record). Spectators and shared links have
@@ -367,7 +368,10 @@ function GamePageContent() {
                         timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
                       }
                       goalDistance={
-                        timers.goalDistances[timers.topPlayer.playerId] ?? null
+                        showsGoalDistance
+                          ? (timers.goalDistances[timers.topPlayer.playerId] ??
+                            null)
+                          : undefined
                       }
                       score={timers.getPlayerMatchScore(timers.topPlayer)}
                       gameStatus={board.gameStatus}
@@ -463,8 +467,11 @@ function GamePageContent() {
                         ] ?? 0
                       }
                       goalDistance={
-                        timers.goalDistances[timers.bottomPlayer.playerId] ??
-                        null
+                        showsGoalDistance
+                          ? (timers.goalDistances[
+                              timers.bottomPlayer.playerId
+                            ] ?? null)
+                          : undefined
                       }
                       score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                       gameStatus={board.gameStatus}
@@ -609,7 +616,10 @@ function GamePageContent() {
                     }
                     minWidthRem={minTimerPanelWidth}
                     goalDistance={
-                      timers.goalDistances[timers.topPlayer.playerId] ?? null
+                      showsGoalDistance
+                        ? (timers.goalDistances[timers.topPlayer.playerId] ??
+                          null)
+                        : undefined
                     }
                     score={timers.getPlayerMatchScore(timers.topPlayer)}
                     gameStatus={board.gameStatus}
@@ -686,7 +696,10 @@ function GamePageContent() {
                     }
                     minWidthRem={minTimerPanelWidth}
                     goalDistance={
-                      timers.goalDistances[timers.bottomPlayer.playerId] ?? null
+                      showsGoalDistance
+                        ? (timers.goalDistances[timers.bottomPlayer.playerId] ??
+                          null)
+                        : undefined
                     }
                     score={timers.getPlayerMatchScore(timers.bottomPlayer)}
                     gameStatus={board.gameStatus}
