@@ -2305,29 +2305,22 @@ export function useGamePageController(gameId: string) {
   const formattedHistory = useMemo<MoveHistoryRow[]>(() => {
     if (!gameState) return [];
     const rows = gameState.config.boardHeight;
-    const useAnimalIcons = gameState.config.variant === "animal-cycle";
     const entries = gameState.history.map((entry, index) => ({
       number: Math.ceil(entry.index / 2),
       notation: moveToStandardNotation(entry.move, rows),
       plyIndex: index,
-      useAnimalIcons,
     }));
     const paired: MoveHistoryRow[] = [];
     for (let i = 0; i < entries.length; i += 2) {
       paired.push({
         num: entries[i].number,
         white: entries[i]
-          ? {
-              notation: entries[i].notation,
-              plyIndex: entries[i].plyIndex,
-              useAnimalIcons: entries[i].useAnimalIcons,
-            }
+          ? { notation: entries[i].notation, plyIndex: entries[i].plyIndex }
           : undefined,
         black: entries[i + 1]
           ? {
               notation: entries[i + 1].notation,
               plyIndex: entries[i + 1].plyIndex,
-              useAnimalIcons: entries[i + 1].useAnimalIcons,
             }
           : undefined,
       });

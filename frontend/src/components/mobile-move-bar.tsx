@@ -8,7 +8,6 @@ import {
 } from "lucide-react";
 import type { MoveHistoryRow } from "@/components/move-list-panel";
 import type { HistoryNav } from "@/types/history";
-import { MoveNotation } from "@/components/move-notation";
 
 interface MobileMoveBarProps {
   formattedHistory: MoveHistoryRow[];
@@ -43,26 +42,17 @@ export function MobileMoveBar({
   }, [historyNav.cursor]);
 
   // Flatten rows into a list of individual moves for the horizontal strip
-  const moves: {
-    notation: string;
-    plyIndex: number;
-    useAnimalIcons: boolean;
-    moveNumber: string;
-  }[] = [];
+  const moves: { notation: string; plyIndex: number }[] = [];
   for (const row of formattedHistory) {
     if (row.white)
       moves.push({
-        notation: row.white.notation,
+        notation: `${row.num}. ${row.white.notation}`,
         plyIndex: row.white.plyIndex,
-        useAnimalIcons: row.white.useAnimalIcons,
-        moveNumber: `${row.num}.`,
       });
     if (row.black)
       moves.push({
-        notation: row.black.notation,
+        notation: `${row.num}… ${row.black.notation}`,
         plyIndex: row.black.plyIndex,
-        useAnimalIcons: row.black.useAnimalIcons,
-        moveNumber: `${row.num}…`,
       });
   }
 
@@ -119,13 +109,7 @@ export function MobileMoveBar({
                 }`}
                 onClick={() => historyNav.goTo(move.plyIndex)}
               >
-                <span className="inline-flex items-center gap-1">
-                  <span>{move.moveNumber}</span>
-                  <MoveNotation
-                    notation={move.notation}
-                    useAnimalIcons={move.useAnimalIcons}
-                  />
-                </span>
+                {move.notation}
               </button>
             );
           })
