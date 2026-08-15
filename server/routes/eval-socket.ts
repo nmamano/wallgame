@@ -335,7 +335,12 @@ const handleDatabaseGameHandshake = async (
   }
 
   // Find an official eval bot
-  const evalBotResult = findEvalBot(variant, boardWidth, boardHeight);
+  const evalBotResult = findEvalBot(
+    variant,
+    boardWidth,
+    boardHeight,
+    replayData.puzzleId === null ? "opponent" : "puzzle",
+  );
   if (!evalBotResult) {
     send(ctx, {
       type: "eval-handshake-rejected",
@@ -443,7 +448,12 @@ const handleHandshake = async (
   }
 
   // Find an official eval bot
-  const evalBotResult = findEvalBot(variant, boardWidth, boardHeight);
+  const evalBotResult = findEvalBot(
+    variant,
+    boardWidth,
+    boardHeight,
+    session.puzzleId === undefined ? "opponent" : "puzzle",
+  );
   if (!evalBotResult) {
     send(ctx, {
       type: "eval-handshake-rejected",

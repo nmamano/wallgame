@@ -18,6 +18,7 @@
 
 import { z } from "zod";
 import { botConfigBaseSchema } from "../../shared/contracts/custom-bot-config-schema";
+import { rulesVariantFor, type Variant } from "../../shared/domain/game-types";
 
 /**
  * A bot as written in a config file: the full runtime bot shape minus the
@@ -86,11 +87,9 @@ const usesBuiltInNaivePolicy = (bot: ConfigBot): boolean =>
  * 2. An analysis bot that is not official. The server grants `isAnalysisBot`
  *    only alongside a valid official token, so the declaration is dropped on
  *    arrival and the bot looks like it asked for nothing.
- * 3. TWO analysis bots declaring the same variant. `findEvalBot` takes the
- *    first match, so which engine answers becomes a function of registration
- *    order. The production config avoids this deliberately - Superhuman Bot
- *    takes the three ordinary variants and PuzzleBot the two custom-setup ones
- *    - and this is the check that keeps that deliberate.
+ * 3. TWO analysis bots claiming the same placement and rules variant.
+ *    `findEvalBot` would otherwise depend on registration order. Puzzle and
+ *    opponent routes may overlap because placement selects between them.
  */
 export const assertAnalysisCoverage = (config: ConfigFile): void => {
   const analysisBots = config.bots.filter((bot) => bot.analysis === true);
@@ -112,15 +111,17 @@ export const assertAnalysisCoverage = (config: ConfigFile): void => {
 
   const claimedBy = new Map<string, string>();
   for (const bot of analysisBots) {
+    const placement = bot.placement ?? "opponent";
     for (const variant of Object.keys(bot.variants)) {
-      const other = claimedBy.get(variant);
-      if (other) {
+      const route = `${placement}:${rulesVariantFor(variant as Variant)}`;
+      const other = claimedBy.get(route);
+      if (other && other !== bot.botId) {
         throw new Error(
-          `two analysis bots declare "${variant}" (${other} and ${bot.botId}) — ` +
-            `the evaluation bar would pick whichever attached first`,
+          `two analysis bots claim "${route}" (${other} and ${bot.botId}) — ` +
+            `routing would pick whichever attached first`,
         );
       }
-      claimedBy.set(variant, bot.botId);
+      claimedBy.set(route, bot.botId);
     }
   }
 };

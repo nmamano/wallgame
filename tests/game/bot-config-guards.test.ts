@@ -111,18 +111,30 @@ describe("the analysis bots must cover the site's own questions", () => {
     expect(() => assertAnalysisCoverage(config)).toThrow(/also be official/);
   });
 
-  it("throws when two analysis bots claim the same variant", () => {
-    // findEvalBot takes the first match, so this is the config that makes the
-    // answer depend on which bot the client happened to register first. The
-    // production split - Superhuman Bot on the three ordinary variants,
-    // PuzzleBot on the two custom-setup ones - is deliberate, and this is what
-    // keeps it deliberate.
+  it("allows rules overlap across explicit placements", () => {
+    const config = base();
+    const strong = config.bots.find((b) => b.botId === "dw-transformer")!;
+    const puzzle = config.bots.find((b) => b.botId === "dw-puzzle")!;
+    expect(Object.keys(strong.variants).sort()).toEqual([
+      "classic",
+      "standard",
+    ]);
+    expect(Object.keys(puzzle.variants).sort()).toEqual([
+      "classic",
+      "standard",
+    ]);
+    expect(strong.placement).toBe("opponent");
+    expect(puzzle.placement).toBe("puzzle");
+    expect(() => assertAnalysisCoverage(config)).not.toThrow();
+  });
+
+  it("throws when two analysis bots claim the same placement and variant", () => {
     const config = base();
     const weak = config.bots.find((b) => b.botId === "dw-beginner")!;
     weak.analysis = true;
     weak.official = true;
     expect(() => assertAnalysisCoverage(config)).toThrow(
-      /two analysis bots declare/,
+      /two analysis bots claim/,
     );
   });
 });
@@ -246,6 +258,12 @@ describe("the tracked production bot config", () => {
           `${config.boardWidth.min}-${config.boardWidth.max} x ` +
           `${config.boardHeight.min}-${config.boardHeight.max}`;
         expected[label] = EXPECTED_RANGE[variant];
+        if (
+          bot.botId === "dw-puzzle" ||
+          (bot.botId === "dw-transformer" && variant === "standard")
+        ) {
+          expected[label] = "4-12 x 4-10";
+        }
       }
     }
 

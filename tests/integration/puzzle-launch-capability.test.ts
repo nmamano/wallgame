@@ -48,6 +48,7 @@ const standardOnlyBot = (botId: string): BotConfig => ({
   // Puzzles are launched against the analysis bot, so a fixture that only
   // carried the token would now be refused by the launch route.
   analysis: true,
+  placement: "puzzle",
   variants: {
     "custom-setup-standard": {
       boardWidth: { min: 4, max: 12 },
@@ -177,7 +178,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     expect({ status: res.status, body }).toMatchObject({ status: 404 });
   });
 
-  it("uses the same Random Start capability for listing and launch", async () => {
+  it("normalizes legacy setup keys to the same Standard rules capability", async () => {
     const randomList = await fetch(
       `${baseUrl}/api/bots?variant=standard&randomStart=true&boardWidth=8&boardHeight=8`,
     );
@@ -188,7 +189,7 @@ describe("puzzle launch checks the bot can play the position", () => {
     expect(randomBots.bots.map((bot) => bot.id)).toContain(
       `${clientId}:random-standard-bot`,
     );
-    expect(randomBots.bots.map((bot) => bot.id)).not.toContain(
+    expect(randomBots.bots.map((bot) => bot.id)).toContain(
       `${clientId}:fixed-standard-bot`,
     );
 
@@ -202,9 +203,16 @@ describe("puzzle launch checks the bot can play the position", () => {
     expect(fixedBots.bots.map((bot) => bot.id)).toContain(
       `${clientId}:fixed-standard-bot`,
     );
-    expect(fixedBots.bots.map((bot) => bot.id)).not.toContain(
+    expect(fixedBots.bots.map((bot) => bot.id)).toContain(
       `${clientId}:random-standard-bot`,
     );
+    expect(fixedBots.bots.map((bot) => bot.id)).not.toContain(compositeId);
+
+    const puzzleList = await fetch(
+      `${baseUrl}/api/bots?variant=standard&placement=puzzle&boardWidth=8&boardHeight=8`,
+    );
+    const puzzleBots = (await puzzleList.json()) as { bots: { id: string }[] };
+    expect(puzzleBots.bots.map((bot) => bot.id)).toEqual([compositeId]);
 
     const directPlay = (botId: string) =>
       fetch(`${baseUrl}/api/bots/play`, {
@@ -222,8 +230,9 @@ describe("puzzle launch checks the bot can play the position", () => {
           hostIsPlayer1: true,
         }),
       });
+    expect((await directPlay(compositeId)).status).toBe(400);
     expect((await directPlay(`${clientId}:fixed-standard-bot`)).status).toBe(
-      409,
+      201,
     );
     expect((await directPlay(`${clientId}:random-standard-bot`)).status).toBe(
       201,

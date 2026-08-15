@@ -188,22 +188,6 @@
         },
         "standard": {
           "boardWidth": {
-            "min": 5,
-            "max": 12
-          },
-          "boardHeight": {
-            "min": 5,
-            "max": 10
-          },
-          "recommended": [
-            {
-              "boardWidth": 8,
-              "boardHeight": 8
-            }
-          ]
-        },
-        "freestyle": {
-          "boardWidth": {
             "min": 4,
             "max": 12
           },
@@ -219,6 +203,7 @@
           ]
         }
       },
+      "placement": "opponent",
       "analysis": true,
       "listOrder": 3
     },
@@ -234,7 +219,7 @@
         "homeStyle": "home8.svg"
       },
       "variants": {
-        "custom-setup-standard": {
+        "standard": {
           "boardWidth": {
             "min": 4,
             "max": 12
@@ -250,7 +235,7 @@
             }
           ]
         },
-        "custom-setup-classic": {
+        "classic": {
           "boardWidth": {
             "min": 4,
             "max": 12
@@ -267,6 +252,7 @@
           ]
         }
       },
+      "placement": "puzzle",
       "analysis": true
     }
   ],

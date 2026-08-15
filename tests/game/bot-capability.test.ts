@@ -3,6 +3,7 @@ import { describe, expect, it } from "bun:test";
 import {
   botSupportsGameConfiguration,
   botSupportsPosition,
+  normalizeBotVariantCapabilities,
 } from "../../shared/domain/bot-capability";
 
 /**
@@ -13,11 +14,11 @@ import {
  * The declarations below are PuzzleBot's real ones as of 2026-08-04.
  */
 const puzzleBot = {
-  "custom-setup-standard": {
+  standard: {
     boardWidth: { min: 4, max: 12 },
     boardHeight: { min: 4, max: 10 },
   },
-  "custom-setup-classic": {
+  classic: {
     boardWidth: { min: 4, max: 12 },
     boardHeight: { min: 4, max: 10 },
   },
@@ -44,13 +45,10 @@ describe("botSupportsPosition", () => {
     );
   });
 
-  it("refuses a variant the bot never declared", () => {
-    // Before this feature PuzzleBot declared only the standard custom setup,
-    // so every authored puzzle would have come back unplayable — which is
-    // exactly what the config change fixed.
+  it("reads legacy position names as their active rules variant", () => {
     expect(
       botSupportsPosition(superhumanBot, "custom-setup-classic", 5, 5),
-    ).toBe(false);
+    ).toBe(true);
   });
 
   it("refuses a board smaller than the bot will take", () => {
@@ -99,7 +97,7 @@ describe("botSupportsPosition", () => {
       true,
     );
     expect(botSupportsPosition(superhumanBot, "custom-setup-classic")).toBe(
-      false,
+      true,
     );
   });
 });
@@ -116,7 +114,7 @@ describe("Random Start bot capability", () => {
     },
   } as const;
 
-  it("uses standard support for fixed starts and freestyle support for random starts", () => {
+  it("uses one Standard rules capability for fixed and Random Start positions", () => {
     expect(
       botSupportsGameConfiguration(splitBot, {
         variant: "standard",
@@ -132,7 +130,7 @@ describe("Random Start bot capability", () => {
         boardWidth: 5,
         boardHeight: 5,
       }),
-    ).toBe(false);
+    ).toBe(true);
     expect(
       botSupportsGameConfiguration(splitBot, {
         variant: "standard",
@@ -143,7 +141,7 @@ describe("Random Start bot capability", () => {
     ).toBe(true);
   });
 
-  it("does not make standard-only bots eligible for Random Start", () => {
+  it("does not treat Random Start as a separate rules family", () => {
     expect(
       botSupportsGameConfiguration(superhumanBot, {
         variant: "standard",
@@ -151,6 +149,38 @@ describe("Random Start bot capability", () => {
         boardWidth: 8,
         boardHeight: 8,
       }),
-    ).toBe(false);
+    ).toBe(true);
+  });
+});
+
+describe("legacy bot capability normalization", () => {
+  it("collapses setup-shaped keys into rules-only declarations", () => {
+    const normalized = normalizeBotVariantCapabilities({
+      standard: {
+        boardWidth: { min: 5, max: 12 },
+        boardHeight: { min: 5, max: 10 },
+        recommended: [{ boardWidth: 8, boardHeight: 8 }],
+      },
+      freestyle: {
+        boardWidth: { min: 4, max: 12 },
+        boardHeight: { min: 4, max: 10 },
+        recommended: [{ boardWidth: 6, boardHeight: 6 }],
+      },
+      "custom-setup-classic": {
+        boardWidth: { min: 4, max: 9 },
+        boardHeight: { min: 4, max: 9 },
+        recommended: [{ boardWidth: 6, boardHeight: 6 }],
+      },
+    });
+
+    expect(Object.keys(normalized).sort()).toEqual(["classic", "standard"]);
+    expect(normalized.standard).toEqual({
+      boardWidth: { min: 4, max: 12 },
+      boardHeight: { min: 4, max: 10 },
+      recommended: [
+        { boardWidth: 8, boardHeight: 8 },
+        { boardWidth: 6, boardHeight: 6 },
+      ],
+    });
   });
 });

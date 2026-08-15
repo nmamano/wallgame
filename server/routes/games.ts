@@ -485,6 +485,8 @@ export const botsRoute = new Hono()
         query.randomStart,
         query.boardWidth,
         query.boardHeight,
+        undefined,
+        query.placement,
       );
       return c.json({ bots });
     } catch (error) {
@@ -497,7 +499,12 @@ export const botsRoute = new Hono()
     try {
       const query = c.req.valid("query");
       // V3: timeControl is ignored - bot games have no time control
-      const bots = getRecommendedBots(query.variant, query.randomStart);
+      const bots = getRecommendedBots(
+        query.variant,
+        query.randomStart,
+        undefined,
+        query.placement,
+      );
       return c.json({ bots });
     } catch (error) {
       console.error("Failed to list recommended bots:", error);
@@ -588,9 +595,18 @@ export const botsRoute = new Hono()
         // way (use-puzzle-playback.ts); this is the half that a hand-made
         // request cannot skip, and it matters because puzzle completions feed
         // campaign progress.
-        if (resolvedPuzzleId !== undefined && !bot.isAnalysisBot) {
+        if (
+          resolvedPuzzleId !== undefined &&
+          (!bot.isAnalysisBot || bot.placement !== "puzzle")
+        ) {
           return c.json(
             { error: "Puzzles require the official analysis bot" },
+            400,
+          );
+        }
+        if (resolvedPuzzleId === undefined && bot.placement !== "opponent") {
+          return c.json(
+            { error: "That bot is not available as an ordinary opponent" },
             400,
           );
         }

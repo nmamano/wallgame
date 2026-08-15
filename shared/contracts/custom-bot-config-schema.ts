@@ -93,9 +93,10 @@ export const botConfigBaseSchema = z.object({
   username: z.string().trim().min(1).nullable(),
   appearance: botAppearanceSchema.optional(),
   variants: variantsSchema,
+  /** Missing on legacy and third-party declarations means ordinary opponent. */
+  placement: z.enum(["opponent", "puzzle"]).optional(),
   /**
-   * This bot answers the site's own questions: the evaluation bar's best move,
-   * and the opponent a puzzle is played against.
+   * This bot answers the site's own questions within its placement route.
    *
    * SEPARATE FROM `officialToken` on purpose. That token means "we made this
    * bot", which is a question about trust, and it is the right gate for the

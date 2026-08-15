@@ -37,6 +37,7 @@ import type {
   GameShowcaseResponse,
 } from "../../../shared/contracts/games";
 import type {
+  BotPlacement,
   ListedBot,
   RecommendedBotEntry,
 } from "../../../shared/contracts/custom-bot-protocol";
@@ -377,8 +378,15 @@ export const puzzleBotsQueryOptionsFor = (args: {
   boardWidth: number;
   boardHeight: number;
 }) => ({
-  queryKey: ["bots", args.variant, args.boardWidth, args.boardHeight] as const,
-  queryFn: () => fetchBots({ ...args, randomStart: false }),
+  queryKey: [
+    "bots",
+    "puzzle",
+    args.variant,
+    args.boardWidth,
+    args.boardHeight,
+  ] as const,
+  queryFn: () =>
+    fetchBots({ ...args, randomStart: false, placement: "puzzle" }),
   staleTime: PUZZLE_LIST_STALE_MS,
 });
 
@@ -439,6 +447,7 @@ export const fetchBots = async (args: {
   randomStart: boolean;
   boardWidth?: number;
   boardHeight?: number;
+  placement?: BotPlacement;
 }): Promise<{ bots: ListedBot[] }> => {
   if (args.variant === "survival") {
     throw new Error("Survival games are not supported by this endpoint.");
@@ -452,6 +461,7 @@ export const fetchBots = async (args: {
           args.boardWidth !== undefined ? String(args.boardWidth) : undefined,
         boardHeight:
           args.boardHeight !== undefined ? String(args.boardHeight) : undefined,
+        placement: args.placement,
       },
     }),
   );

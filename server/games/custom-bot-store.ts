@@ -20,10 +20,12 @@ import {
 import {
   botCapabilityVariant,
   botSupportsGameConfiguration,
+  normalizeBotVariantCapabilities,
 } from "../../shared/domain/bot-capability";
 import type {
   BotConfig,
   BotAppearance,
+  BotPlacement,
   VariantConfig,
   ListedBot,
   RecommendedBotEntry,
@@ -73,6 +75,7 @@ export interface RegisteredBot {
    * still rests entirely on the token.
    */
   isAnalysisBot: boolean;
+  placement: BotPlacement;
   /** Ascending list position, gentlest first. Undefined sorts last. */
   listOrder: number | undefined;
   username: string | null; // null = public bot
@@ -193,10 +196,11 @@ export const registerClient = (
       // token is the authority. A community client can put `analysis: true` in
       // its own file and it buys nothing.
       isAnalysisBot: isOfficial && botConfig.analysis === true,
+      placement: botConfig.placement ?? "opponent",
       listOrder: botConfig.listOrder,
       username: botConfig.username,
       appearance: botConfig.appearance ?? {},
-      variants: botConfig.variants,
+      variants: normalizeBotVariantCapabilities(botConfig.variants),
       activeGames: new Map(),
     };
 
@@ -426,6 +430,7 @@ const toListedBot = (compositeId: string, bot: RegisteredBot): ListedBot => ({
   name: bot.name,
   isOfficial: bot.isOfficial,
   isAnalysisBot: bot.isAnalysisBot,
+  placement: bot.placement,
   appearance: bot.appearance,
   variants: bot.variants,
 });
@@ -483,10 +488,12 @@ export const getMatchingBots = (
   boardWidth?: number,
   boardHeight?: number,
   username?: string,
+  placement: BotPlacement = "opponent",
 ): ListedBot[] => {
   const results: SortableRow<ListedBot>[] = [];
 
   for (const [compositeId, bot] of botIndex) {
+    if (bot.placement !== placement) continue;
     if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
@@ -533,10 +540,12 @@ export const getRecommendedBots = (
   variant: Variant,
   randomStart: boolean,
   username?: string,
+  placement: BotPlacement = "opponent",
 ): RecommendedBotEntry[] => {
   const results: SortableRow<RecommendedBotEntry>[] = [];
 
   for (const [compositeId, bot] of botIndex) {
+    if (bot.placement !== placement) continue;
     if (isCustomSetupVariant(variant) && !bot.isOfficial) continue;
     // Check visibility
     if (bot.username !== null) {
@@ -607,13 +616,9 @@ export const getRecommendedBots = (
  * Find the bot that evaluates positions for the given game. Returns the first
  * matching analysis bot, or null if none is available.
  *
- * "First matching" is exact rather than arbitrary because the analysis bots
- * declare DISJOINT variants - Superhuman Bot the three ordinary ones,
- * PuzzleBot the two custom-setup ones - so the variant filter below leaves at
- * most one candidate. That is a deliberate property of the bot configuration
- * and this function depends on it: two analysis bots sharing a variant would
- * make the answer depend on registration order. If a second bot is ever given
- * `analysis` on an already-covered variant, this needs a real tie-break first.
+ * Analysis routes are unique by placement plus rules variant. Superhuman and
+ * PuzzleBot may therefore both declare Classic and Standard without making
+ * registration order decide which engine answers.
  *
  * It reads `isAnalysisBot` rather than `isOfficial` because those parted ways
  * when Easy Bot became official: a bot can be ours, badged as ours and listed
@@ -624,13 +629,15 @@ export const findEvalBot = (
   variant: Variant,
   boardWidth: number,
   boardHeight: number,
+  placement: BotPlacement = "opponent",
 ): { compositeId: string; bot: RegisteredBot } | null => {
   for (const [compositeId, bot] of botIndex) {
     // Only an analysis bot can provide evaluations
     if (!bot.isAnalysisBot) continue;
+    if (bot.placement !== placement) continue;
 
     // Check if bot supports this variant
-    const variantConfig = bot.variants[variant];
+    const variantConfig = bot.variants[botCapabilityVariant(variant, false)];
     if (!variantConfig) continue;
 
     // Check board dimensions

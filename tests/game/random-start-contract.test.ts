@@ -60,9 +60,9 @@ describe("Random Start contracts", () => {
     ).toBe(true);
   });
 
-  it("keeps Random Start bot capability opt-in exact", () => {
+  it("routes setup modes through their pawn-rules capability", () => {
     expect(botCapabilityVariant("standard", false)).toBe("standard");
-    expect(botCapabilityVariant("standard", true)).toBe("freestyle");
+    expect(botCapabilityVariant("standard", true)).toBe("standard");
     expect(botCapabilityVariant("animal-cycle", true)).toBe("animal-cycle");
   });
 

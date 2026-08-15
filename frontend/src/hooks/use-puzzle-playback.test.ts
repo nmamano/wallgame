@@ -59,8 +59,9 @@ const declaringBot = {
   id: "client:puzzlebot",
   isOfficial: true,
   isAnalysisBot: true,
+  placement: "puzzle",
   variants: {
-    "custom-setup-classic": {
+    classic: {
       boardWidth: { min: 4, max: 12 },
       boardHeight: { min: 4, max: 10 },
       recommended: [],

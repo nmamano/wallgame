@@ -90,6 +90,7 @@ export const resolveShapeBot = (
   return query.bots.find(
     (bot) =>
       bot.isAnalysisBot &&
+      bot.placement === "puzzle" &&
       botSupportsPosition(
         bot.variants,
         config.variant,

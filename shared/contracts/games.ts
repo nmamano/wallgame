@@ -600,6 +600,7 @@ export const botsQuerySchema = z.object({
   // V3: timeControl removed - bot games are untimed
   boardWidth: z.coerce.number().int().min(3).max(20).optional(),
   boardHeight: z.coerce.number().int().min(3).max(20).optional(),
+  placement: z.enum(["opponent", "puzzle"]).optional().default("opponent"),
 });
 
 /**

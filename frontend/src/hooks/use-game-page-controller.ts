@@ -2708,9 +2708,12 @@ export function useGamePageController(gameId: string) {
         randomStart: config.randomStart,
         boardWidth: config.boardWidth,
         boardHeight: config.boardHeight,
+        placement: "puzzle",
       });
       // The puzzle bot, not merely one of ours - see use-puzzle-playback.ts.
-      const officialBot = bots.find((bot) => bot.isAnalysisBot);
+      const officialBot = bots.find(
+        (bot) => bot.isAnalysisBot && bot.placement === "puzzle",
+      );
       if (!officialBot) {
         addSystemMessage(
           "PuzzleBot is offline right now, so the puzzle cannot be retried.",

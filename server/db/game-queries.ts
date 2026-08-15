@@ -153,6 +153,7 @@ export interface ReplayGameData {
   matchStatus: GameSnapshot;
   state: SerializedGameState;
   views: number;
+  puzzleId: string | null;
 }
 
 const replayGameSelect = {
@@ -166,10 +167,12 @@ const replayGameSelect = {
   startedAt: gamesTable.startedAt,
   views: gamesTable.views,
   movesCount: gamesTable.movesCount,
+  puzzleId: gamesTable.puzzleId,
 };
 
 interface ReplayGameRow {
   gameId: string;
+  puzzleId: string | null;
   variant: string;
   timeControl: string;
   rated: boolean;
@@ -362,6 +365,7 @@ const assembleReplayGame = (
     matchStatus,
     state: serialized,
     views: game.views,
+    puzzleId: game.puzzleId,
   };
 };
 

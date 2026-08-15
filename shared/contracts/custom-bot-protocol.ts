@@ -61,6 +61,9 @@ export interface BotAppearance {
   homeStyle?: string;
 }
 
+/** Where the site may place a bot. Missing legacy declarations mean opponent. */
+export type BotPlacement = "opponent" | "puzzle";
+
 /**
  * Configuration for a single bot.
  *
@@ -82,10 +85,11 @@ export interface BotConfig {
   appearance?: BotAppearance;
   /** Supported variants and their configurations */
   variants: Partial<Record<Variant, VariantConfig>>;
+  /** Puzzle bots are never offered as ordinary opponents. */
+  placement?: BotPlacement;
   /**
-   * Asks to be the bot that answers for the site - the evaluation bar's best
-   * move, and the opponent in a puzzle. Granted only alongside a valid
-   * official token.
+   * Asks to answer for the site within this bot's placement route. Granted
+   * only alongside a valid official token.
    */
   analysis?: boolean;
   /** Ascending position in the bot list, gentlest first. Absent sorts last. */
@@ -286,11 +290,12 @@ export interface ListedBot {
   name: string;
   isOfficial: boolean;
   /**
-   * This bot supplies the evaluation bar's best move and plays puzzles. Always
-   * false unless the bot is also official - see `analysis` in
+   * This bot supplies analysis within its placement route. Always false unless
+   * the bot is also official - see `analysis` in
    * custom-bot-config-schema.ts for why the two are not the same question.
    */
   isAnalysisBot: boolean;
+  placement: BotPlacement;
   appearance: BotAppearance;
   variants: Partial<Record<Variant, VariantConfig>>;
 }
