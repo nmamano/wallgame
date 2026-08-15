@@ -46,7 +46,7 @@ type RankingQuery = Parameters<typeof api.ranking.$get>[0]["query"];
 
 interface RankingFilters {
   /** "all" is the global rating, across every variant AND time control. */
-  variant: "all" | "standard" | "animal-cycle" | "classic" | "freestyle";
+  variant: "all" | "standard" | "animal-cycle" | "classic";
   timeControl: "bullet" | "blitz" | "rapid" | "classical";
   player: string;
 }
@@ -225,9 +225,6 @@ function Ranking() {
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
-                  <SelectItem value="freestyle">
-                    Standard · Random Start
-                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

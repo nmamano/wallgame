@@ -11,14 +11,15 @@ import { getAnonymousId } from "./anonymous-id";
 import { hc, type ClientResponse } from "hono/client";
 import { type ApiRoutes } from "@server/app";
 import { queryOptions } from "@tanstack/react-query";
+import { rulesVariantFor } from "../../../shared/domain/game-types";
 import type {
+  RulesVariant,
   GameSnapshot,
   GameConfiguration,
   PlayerAppearance,
   TimeControlPreset,
   TimeControlConfig,
   Variant,
-  NonSurvivalVariant,
   CustomSetupClassicInitialState,
   CustomSetupStandardInitialState,
   MatchType,
@@ -69,13 +70,8 @@ async function handleResponse<T>(
   return res.json() as Promise<T>;
 }
 
-const assertNonSurvivalVariant = (variant: Variant): NonSurvivalVariant => {
-  if (variant === "survival")
-    throw new Error("Survival games are not supported by this endpoint.");
-  if (variant === "custom-setup-classic") return "classic";
-  if (variant === "custom-setup-standard") return "standard";
-  return variant;
-};
+const assertNonSurvivalVariant = (variant: Variant): RulesVariant =>
+  rulesVariantFor(variant);
 
 export const userQueryOptions = queryOptions({
   queryKey: ["get-current-user"],

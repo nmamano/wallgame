@@ -35,6 +35,13 @@
 
 export type PlayerId = 1 | 2;
 
+export type RulesVariant = "standard" | "animal-cycle" | "classic";
+
+export type LegacySetupVariant =
+  | "custom-setup-standard"
+  | "custom-setup-classic"
+  | "freestyle";
+
 export type Variant =
   | "standard" // Catch the mouse first
   | "animal-cycle" // First directed animal capture wins
@@ -52,6 +59,17 @@ export type NonSurvivalVariant = Exclude<
   Variant,
   "survival" | CustomSetupVariant
 >;
+
+export const rulesVariantFor = (variant: Variant): RulesVariant => {
+  if (variant === "freestyle" || variant === "custom-setup-standard") {
+    return "standard";
+  }
+  if (variant === "custom-setup-classic") return "classic";
+  if (variant === "survival") {
+    throw new Error("Survival is not an active two-player rules variant.");
+  }
+  return variant;
+};
 
 export const isClassicVariant = (variant: Variant): boolean =>
   variant === "classic" || variant === "custom-setup-classic";

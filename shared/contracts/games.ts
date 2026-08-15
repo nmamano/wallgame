@@ -20,12 +20,8 @@ export const timeControlValues = [
   "classical",
   "unlimited",
 ] as const;
-export const variantValues = [
-  "standard",
-  "animal-cycle",
-  "classic",
-  "freestyle",
-] as const;
+export const variantValues = ["standard", "animal-cycle", "classic"] as const;
+export const legacyVariantValues = ["freestyle"] as const;
 export const customSetupVariantValues = [
   "custom-setup-standard",
   "custom-setup-classic",
@@ -591,7 +587,11 @@ export interface PastGamesActivityResponse {
 // ============================================================================
 
 export const botsQuerySchema = z.object({
-  variant: z.enum([...variantValues, ...customSetupVariantValues]),
+  variant: z.enum([
+    ...variantValues,
+    ...legacyVariantValues,
+    ...customSetupVariantValues,
+  ]),
   randomStart: z
     .enum(["true", "false"])
     .optional()

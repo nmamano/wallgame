@@ -204,9 +204,6 @@ function PastGames() {
                   <SelectItem value="standard">Standard</SelectItem>
                   <SelectItem value="animal-cycle">Animal Cycle</SelectItem>
                   <SelectItem value="classic">Classic</SelectItem>
-                  <SelectItem value="freestyle">
-                    Standard · Random Start
-                  </SelectItem>
                 </SelectContent>
               </Select>
             </div>

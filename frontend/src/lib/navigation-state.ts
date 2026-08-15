@@ -1,9 +1,7 @@
 import { z } from "zod";
 
 const pastGamesFiltersSchema = z.object({
-  variant: z
-    .enum(["all", "standard", "animal-cycle", "classic", "freestyle"])
-    .optional(),
+  variant: z.enum(["all", "standard", "animal-cycle", "classic"]).optional(),
   rated: z.enum(["all", "yes", "no"]).optional(),
   timeControl: z
     .enum(["all", "bullet", "blitz", "rapid", "classical"])
@@ -38,9 +36,7 @@ export const parsePastGamesNavState = (
 // so it carries no time control, and the page hides that selector when it is
 // chosen rather than leaving a stale value on screen that nothing reads.
 const rankingFiltersSchema = z.object({
-  variant: z
-    .enum(["all", "standard", "animal-cycle", "classic", "freestyle"])
-    .optional(),
+  variant: z.enum(["all", "standard", "animal-cycle", "classic"]).optional(),
   timeControl: z.enum(["bullet", "blitz", "rapid", "classical"]).optional(),
   player: z.string().optional(),
 });
