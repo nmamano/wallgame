@@ -12,6 +12,23 @@
 
 namespace engine_adapter {
 
+// External names are accepted in one compatibility layer. Everything below
+// this adapter receives a rules identity and cannot branch on setup provenance.
+static std::optional<Variant> parse_external_variant(std::string_view variant) {
+    if (variant == "freestyle" || variant == "custom-setup-standard") {
+        return Variant::Standard;
+    }
+    if (variant == "custom-setup-classic") {
+        return Variant::Classic;
+    }
+    return parse_variant(variant);
+}
+
+static bool is_protocol_cell(json const& cell) {
+    return cell.is_array() && cell.size() == 2 && cell[0].is_number_integer() &&
+        cell[1].is_number_integer();
+}
+
 // ============================================================================
 // Padding Support
 // ============================================================================
@@ -403,7 +420,7 @@ std::string transform_move_notation(
 ValidationResult validate_request(json const& state_json, int model_rows, int model_columns) {
     // Check variant (classic and standard supported)
     std::string variant = state_json["config"]["variant"].get<std::string>();
-    auto parsed_variant = parse_variant(variant);
+    auto parsed_variant = parse_external_variant(variant);
     if (!parsed_variant || (*parsed_variant != Variant::Classic &&
                             *parsed_variant != Variant::Standard)) {
         return {false,
@@ -472,7 +489,7 @@ std::tuple<Board, Turn, PaddingConfig> convert_state_to_board(
     int game_width = state_json["config"]["boardWidth"].get<int>();
     int game_height = state_json["config"]["boardHeight"].get<int>();
     std::string variant_str = state_json["config"]["variant"].get<std::string>();
-    auto parsed_variant = parse_variant(variant_str);
+    auto parsed_variant = parse_external_variant(variant_str);
     Variant variant = parsed_variant.value_or(Variant::Classic);
 
     // Create padding configuration
@@ -792,7 +809,7 @@ ValidationResult validate_bgs_config(
 
     // Check variant (classic and standard supported)
     std::string variant = bgs_config["variant"].get<std::string>();
-    auto parsed_variant = parse_variant(variant);
+    auto parsed_variant = parse_external_variant(variant);
     if (!parsed_variant || (*parsed_variant != Variant::Classic &&
                             *parsed_variant != Variant::Standard)) {
         return {false,
@@ -800,14 +817,44 @@ ValidationResult validate_bgs_config(
                     variant + "')"};
     }
 
-    bool const is_custom_setup =
-        variant == "custom-setup-classic" ||
-        variant == "custom-setup-standard";
-    if (is_custom_setup &&
-        (!bgs_config["initialState"].contains("turn") ||
-         !bgs_config["initialState"]["turn"].contains("playerId") ||
-         !bgs_config["initialState"]["turn"].contains("actionsTaken"))) {
-        return {false, "Custom setup is missing explicit turn state"};
+    json const& initial_state = bgs_config["initialState"];
+    if (initial_state.contains("turn")) {
+        json const& turn = initial_state["turn"];
+        if (!turn.is_object() || !turn.contains("playerId") ||
+            !turn["playerId"].is_number_integer() ||
+            (turn["playerId"] != 1 && turn["playerId"] != 2) ||
+            !turn.contains("actionsTaken") || !turn["actionsTaken"].is_array() ||
+            turn["actionsTaken"].size() > 1) {
+            return {false,
+                    "initialState.turn requires playerId 1 or 2 and zero or one actionsTaken"};
+        }
+
+        if (!turn["actionsTaken"].empty()) {
+            json const& action = turn["actionsTaken"][0];
+            if (!action.is_object() || !action.contains("type") ||
+                !action["type"].is_string()) {
+                return {false, "initialState.turn action is missing its type"};
+            }
+            std::string const type = action["type"].get<std::string>();
+            if (type == "cat" || type == "mouse") {
+                if (!action.contains("source") || !is_protocol_cell(action["source"]) ||
+                    !action.contains("target") || !is_protocol_cell(action["target"])) {
+                    return {false, "A spent pawn action requires source and target cells"};
+                }
+            } else if (type == "wall") {
+                if (!action.contains("target") || !is_protocol_cell(action["target"]) ||
+                    !action.contains("wallOrientation") ||
+                    !action["wallOrientation"].is_string() ||
+                    (action["wallOrientation"] != "vertical" &&
+                     action["wallOrientation"] != "horizontal")) {
+                    return {false,
+                            "A spent wall action requires a target cell and wallOrientation"};
+                }
+            }
+            if (type != "cat" && type != "mouse" && type != "wall") {
+                return {false, "Unsupported initialState.turn action type '" + type + "'"};
+            }
+        }
     }
 
     // Check board dimensions (must be at least 4x4 and at most model dimensions)
@@ -835,8 +882,8 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
 
     int game_width = bgs_config["boardWidth"].get<int>();
     int game_height = bgs_config["boardHeight"].get<int>();
-    std::string variant_str = bgs_config["variant"].get<std::string>();
-    auto parsed_variant = parse_variant(variant_str);
+    std::string const external_variant = bgs_config["variant"].get<std::string>();
+    auto parsed_variant = parse_external_variant(external_variant);
     Variant variant = parsed_variant.value_or(Variant::Classic);
 
     // Create padding configuration
@@ -871,16 +918,11 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     Cell blue_cat = transform_to_model(blue_cat_game, padding_config);
     Cell red_mouse, blue_mouse;
 
-    if (variant_str == "custom-setup-classic") {
+    if (variant == Variant::Classic) {
         // Board::winner models each player's goal as the opposing mouse:
         // Red reaches blue_mouse and Blue reaches red_mouse.
         red_mouse = transform_to_model(blue_mouse_game, padding_config);
         blue_mouse = transform_to_model(red_mouse_game, padding_config);
-    } else if (variant == Variant::Classic) {
-        // Default Classic uses model-corner goals for compatibility with the
-        // model's established small-board embedding.
-        red_mouse = Cell{0, model_rows - 1};
-        blue_mouse = Cell{model_columns - 1, model_rows - 1};
     } else {
         red_mouse = transform_to_model(red_mouse_game, padding_config);
         blue_mouse = transform_to_model(blue_mouse_game, padding_config);

@@ -91,7 +91,7 @@ std::string transform_move_notation(
 // ============================================================================
 
 // Validates that the request is compatible with deep-wallwars capabilities
-// - Supports Classic, Standard, and Freestyle variants
+// - Normalizes legacy Freestyle and custom-setup names to Classic or Standard
 // - Supports boards from 4x4 up to model dimensions
 ValidationResult validate_request(json const& state_json, int model_rows, int model_columns);
 
@@ -157,10 +157,16 @@ ValidationResult validate_bgs_config(
     int model_rows,
     int model_columns);
 
-// Converts a V3 BgsConfig JSON to a deep-wallwars Board at the initial position
+// Converts a V3 BgsConfig JSON to a deep-wallwars Board at the supplied position.
 // BgsConfig format: {variant, boardWidth, boardHeight, initialState}
-// initialState contains pawns and walls in the V3 format
-// Returns: {Board, Turn, PaddingConfig} at ply 0 (P1's turn, First action)
+// initialState is authoritative for pawns/homes, walls, and optional turn.
+// A missing turn means P1 with no spent action. actionsTaken supports exactly
+// [] or one complete protocol action. A spent pawn action uses its source cell
+// to preserve the no-immediate-return rule; its target is validated but the
+// supplied board already contains the resulting position. A spent wall only
+// selects the second action. This describes the current turn seed, not an
+// equivalent reconstruction of prior history, repetition state, or evaluation
+// provenance.
 std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
     json const& bgs_config,
     int model_rows,

@@ -3,6 +3,7 @@
 #include "engine_adapter.hpp"
 #include "mcts.hpp"
 #include "simple_policy.hpp"
+#include "state_conversions.hpp"
 
 #include <catch2/catch_test_macros.hpp>
 #include <folly/experimental/coro/BlockingWait.h>
@@ -160,6 +161,31 @@ TEST_CASE("validate_bgs_config - Unsupported variant", "[BGS Validation]") {
     CHECK(result.error_message.find("survival") != std::string::npos);
 }
 
+TEST_CASE("validate_bgs_config - actionsTaken is one current-turn seed", "[BGS Validation]") {
+    auto config = make_standard_config();
+    config["initialState"]["turn"] = {
+        {"playerId", 1},
+        {"actionsTaken",
+         json::array({
+             json{{"type", "wall"},
+                  {"target", {2, 2}},
+                  {"wallOrientation", "vertical"}},
+             json{{"type", "wall"},
+                  {"target", {3, 3}},
+                  {"wallOrientation", "horizontal"}},
+         })}};
+    auto too_many = validate_bgs_config(config, 8, 8);
+    CHECK_FALSE(too_many.valid);
+    CHECK(too_many.error_message.find("zero or one") != std::string::npos);
+
+    config["initialState"]["turn"]["actionsTaken"] = json::array({
+        json{{"type", "cat"}, {"target", {6, 0}}},
+    });
+    auto missing_source = validate_bgs_config(config, 8, 8);
+    CHECK_FALSE(missing_source.valid);
+    CHECK(missing_source.error_message.find("source and target") != std::string::npos);
+}
+
 // ============================================================================
 // Tests: convert_bgs_config_to_board
 // ============================================================================
@@ -184,6 +210,148 @@ TEST_CASE("convert_bgs_config_to_board - Classic variant", "[BGS Config]") {
     CHECK(board.variant() == Variant::Classic);
     // Classic embeds at bottom, centered
     CHECK(padding.row_offset == 3);  // 8 - 5 = 3
+}
+
+TEST_CASE("BGS rules aliases preserve one explicit Classic position", "[BGS Config]") {
+    // Puzzle 8 has both homes on the center cell. This is the smallest fixture
+    // that proves an ordinary Classic request does not replace supplied homes
+    // with model-frame corners.
+    auto ordinary = make_classic_config(5, 5);
+    ordinary["initialState"]["pawns"]["p1"]["cat"] = {4, 1};
+    ordinary["initialState"]["pawns"]["p2"]["cat"] = {0, 3};
+    ordinary["initialState"]["pawns"]["p1"]["home"] = {2, 2};
+    ordinary["initialState"]["pawns"]["p2"]["home"] = {2, 2};
+    ordinary["initialState"]["turn"] = {
+        {"playerId", 1}, {"actionsTaken", json::array()}};
+
+    auto legacy_authored = ordinary;
+    legacy_authored["variant"] = "custom-setup-classic";
+
+    auto const [ordinary_board, ordinary_turn, ordinary_padding] =
+        convert_bgs_config_to_board(ordinary, 8, 8);
+    auto const [legacy_board, legacy_turn, legacy_padding] =
+        convert_bgs_config_to_board(legacy_authored, 8, 8);
+
+    CHECK(ordinary_board == legacy_board);
+    CHECK(ordinary_turn == legacy_turn);
+    CHECK(ordinary_padding.variant == legacy_padding.variant);
+    CHECK(convert_to_model_input(ordinary_board, ordinary_turn) ==
+          convert_to_model_input(legacy_board, legacy_turn));
+    CHECK(ordinary_board.legal_actions(ordinary_turn.player) ==
+          legacy_board.legal_actions(legacy_turn.player));
+
+    Cell const model_center = transform_to_model(Cell{2, 2}, ordinary_padding);
+    CHECK(ordinary_board.goal(Player::Red) == model_center);
+    CHECK(ordinary_board.goal(Player::Blue) == model_center);
+}
+
+TEST_CASE("BGS rules aliases preserve one explicit Standard position", "[BGS Config]") {
+    // This non-opening state represents both a Random Start sent under the
+    // ordinary rules name and a historical authored setup sent under a legacy
+    // name. Input provenance must not change the engine position.
+    auto ordinary = make_standard_config(6, 6);
+    ordinary["initialState"]["pawns"]["p1"]["cat"] = {4, 2};
+    ordinary["initialState"]["pawns"]["p1"]["mouse"] = {5, 4};
+    ordinary["initialState"]["pawns"]["p2"]["cat"] = {1, 3};
+    ordinary["initialState"]["pawns"]["p2"]["mouse"] = {0, 1};
+    ordinary["initialState"]["walls"] = json::array({
+        {{"cell", {3, 3}}, {"orientation", "vertical"}},
+    });
+    ordinary["initialState"]["turn"] = {
+        {"playerId", 2},
+        {"actionsTaken", json::array({
+             json{{"type", "cat"}, {"source", {1, 2}}, {"target", {1, 3}}},
+         })}};
+
+    auto legacy_authored = ordinary;
+    legacy_authored["variant"] = "custom-setup-standard";
+    auto legacy_random = ordinary;
+    legacy_random["variant"] = "freestyle";
+
+    auto const [ordinary_board, ordinary_turn, ordinary_padding] =
+        convert_bgs_config_to_board(ordinary, 8, 8);
+    for (json const* equivalent : {&legacy_authored, &legacy_random}) {
+        auto const [alias_board, alias_turn, alias_padding] =
+            convert_bgs_config_to_board(*equivalent, 8, 8);
+        CHECK(alias_board == ordinary_board);
+        CHECK(alias_turn == ordinary_turn);
+        CHECK(alias_padding.variant == ordinary_padding.variant);
+        CHECK(convert_to_model_input(alias_board, alias_turn) ==
+              convert_to_model_input(ordinary_board, ordinary_turn));
+        CHECK(alias_board.legal_actions(alias_turn.player) ==
+              ordinary_board.legal_actions(ordinary_turn.player));
+    }
+    CHECK(ordinary_turn == Turn{Player::Blue, Turn::Second});
+}
+
+TEST_CASE("BGS mid-turn seed preserves no-immediate-return across aliases", "[BGS Session]") {
+    auto ordinary = make_standard_config(6, 6);
+    ordinary["initialState"]["pawns"]["p2"]["cat"] = {1, 3};
+    ordinary["initialState"]["turn"] = {
+        {"playerId", 2},
+        {"actionsTaken", json::array({
+             json{{"type", "cat"}, {"source", {1, 2}}, {"target", {1, 3}}},
+         })}};
+    auto legacy = ordinary;
+    legacy["variant"] = "custom-setup-standard";
+
+    auto root_actions = [](json const& config, std::string const& session_id) {
+        BgsEngineConfig engine_config;
+        engine_config.model_rows = 8;
+        engine_config.model_columns = 8;
+        SessionManager manager(SimplePolicy{1.0f, 1.0f, 1.0f}, engine_config);
+        auto const [created, error] = manager.create_session(session_id, "bot", config);
+        INFO(error);
+        REQUIRE(created);
+
+        std::vector<Action> actions;
+        NodeInfo const root = manager.get_session(session_id)->mcts->root_info();
+        for (EdgeInfo const& edge : root.edges) {
+            actions.push_back(edge.action);
+        }
+        return actions;
+    };
+
+    auto const ordinary_actions = root_actions(ordinary, "ordinary_midturn");
+    auto const legacy_actions = root_actions(legacy, "legacy_midturn");
+    CHECK(ordinary_actions == legacy_actions);
+    CHECK(std::ranges::find(ordinary_actions,
+                            Action{PawnMove{Pawn::Cat, Direction::Left}}) ==
+          ordinary_actions.end());
+}
+
+TEST_CASE("BGS aliases preserve fixed-seed evaluation and move", "[BGS Session]") {
+    auto ordinary = make_standard_config(6, 6);
+    ordinary["initialState"]["pawns"]["p1"]["cat"] = {4, 2};
+    ordinary["initialState"]["pawns"]["p1"]["mouse"] = {5, 4};
+    ordinary["initialState"]["pawns"]["p2"]["cat"] = {1, 3};
+    ordinary["initialState"]["pawns"]["p2"]["mouse"] = {0, 1};
+    ordinary["initialState"]["turn"] = {
+        {"playerId", 2},
+        {"actionsTaken", json::array({
+             json{{"type", "cat"}, {"source", {1, 2}}, {"target", {1, 3}}},
+         })}};
+    auto legacy = ordinary;
+    legacy["variant"] = "custom-setup-standard";
+
+    auto evaluate = [](json const& config) {
+        BgsEngineConfig engine_config;
+        engine_config.model_rows = 8;
+        engine_config.model_columns = 8;
+        engine_config.samples_per_move = 8;
+        engine_config.root_noise_factor = 0.0f;
+        SessionManager manager(RankedPolicy{}, engine_config);
+        auto const [created, error] = manager.create_session("same_seed", "bot", config);
+        INFO(error);
+        REQUIRE(created);
+        return folly::coro::blockingWait(
+            handle_evaluate_position(manager, engine_config, "same_seed", 0));
+    };
+
+    json const ordinary_response = evaluate(ordinary);
+    json const legacy_response = evaluate(legacy);
+    REQUIRE(ordinary_response["success"] == true);
+    CHECK(legacy_response == ordinary_response);
 }
 
 TEST_CASE("convert_bgs_config_to_board - No padding needed", "[BGS Config]") {

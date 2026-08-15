@@ -33,6 +33,8 @@ enum class Variant {
     Standard
 };
 
+// Parses rules identities only. External compatibility names are normalized by
+// the protocol adapter before they enter core game code.
 std::optional<Variant> parse_variant(std::string_view variant);
 std::string_view variant_name(Variant variant);
 
@@ -150,6 +152,8 @@ std::istream& operator>>(std::istream& in, Direction& dir);
 
 class Board {
 public:
+    // Explicit default-board constructor for offline play and generation. BGS
+    // serving uses the position constructor with every cell from initialState.
     Board(int columns, int rows, Variant variant = Variant::Classic);
     Board(int columns, int rows, Cell red_cat, Cell red_mouse, Cell blue_cat, Cell blue_mouse,
           Variant variant = Variant::Classic);

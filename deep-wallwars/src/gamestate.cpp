@@ -21,11 +21,10 @@ static constexpr std::array<char, 10> kRowLabels = {'1', '2', '3', '4', '5',
                                                     '6', '7', '8', '9', 'X'};
 
 std::optional<Variant> parse_variant(std::string_view variant) {
-    if (variant == "classic" || variant == "custom-setup-classic") {
+    if (variant == "classic") {
         return Variant::Classic;
     }
-    if (variant == "standard" || variant == "freestyle" ||
-        variant == "custom-setup-standard") {
+    if (variant == "standard") {
         return Variant::Standard;
     }
     return std::nullopt;

@@ -268,7 +268,10 @@ TEST_CASE("the losing fallback leaves a turn that has already spent an action to
     config["variant"] = "custom-setup-standard";
     config["initialState"]["turn"] = {
         {"playerId", 1},
-        {"actionsTaken", json::array({json{{"type", "wall"}}})}};
+        {"actionsTaken",
+         json::array({json{{"type", "wall"},
+                           {"target", {2, 2}},
+                           {"wallOrientation", "vertical"}}})}};
 
     BgsEngineConfig falling_back;
     falling_back.samples_per_move = 1;
