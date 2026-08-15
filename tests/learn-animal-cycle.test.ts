@@ -1,7 +1,7 @@
 import { describe, expect, test } from "bun:test";
 
-describe("Learn Animal Cycle variant entry", () => {
-  test("adds only Animal Cycle after the existing variant copy", async () => {
+describe("Learn variant entries", () => {
+  test("lists only the pawn-rules variants", async () => {
     const source = await Bun.file("frontend/src/routes/learn.tsx").text();
     const variants = /const variantsContent = `([\s\S]*?)`;/.exec(source)?.[1];
     expect(variants).toBeDefined();
@@ -13,19 +13,14 @@ Cat and mouse pawns start in the corners.
 ### Classic
 
 A traditional variant where the mice are called "goals" and are fixed in the bottom corners. You win by reaching the goal (the opposite corner) before the opponent reaches theirs.
-
-### Standard · Random Start
-
-A randomized setup with neutral starting walls.
 `);
     expect(
       [...(variants?.matchAll(/^### (.+)$/gm) ?? [])].map((match) => match[1]),
-    ).toEqual([
-      "Standard",
-      "Classic",
-      "Standard · Random Start",
-      "Animal Cycle",
-    ]);
+    ).toEqual(["Standard", "Classic", "Animal Cycle"]);
+    expect(variants).not.toContain("Standard · Random Start");
+    expect(variants).not.toContain(
+      "A randomized setup with neutral starting walls.",
+    );
     expect(variants).toContain(
       "Player 1 controls the Dog and Mouse. Player 2 controls the Cat and Elephant.",
     );
