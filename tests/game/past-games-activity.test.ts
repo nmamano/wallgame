@@ -143,6 +143,11 @@ describe("buildActivityAxis", () => {
       max: 400,
       ticks: [0, 100, 200, 300, 400],
     });
+
+    expect(buildActivityAxis(401)).toEqual({
+      max: 500,
+      ticks: [0, 125, 250, 375, 500],
+    });
   });
 
   it("never labels a fraction of a game", () => {

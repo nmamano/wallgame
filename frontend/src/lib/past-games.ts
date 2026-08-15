@@ -97,7 +97,7 @@ const AXIS_DIVISIONS = 4;
  */
 const niceAxisStep = (rough: number): number => {
   const magnitude = 10 ** Math.floor(Math.log10(rough));
-  for (const step of [1, 2, 2.5, 5, 10]) {
+  for (const step of [1, 1.25, 2, 2.5, 5, 10]) {
     const candidate = step * magnitude;
     if (candidate >= rough) {
       return Math.max(1, Math.ceil(candidate));
