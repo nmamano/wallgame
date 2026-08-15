@@ -7,10 +7,12 @@ import {
   ChevronsRight,
 } from "lucide-react";
 import type { HistoryNav } from "@/types/history";
+import { MoveNotation } from "@/components/move-notation";
 
 export interface MoveHistoryCell {
   notation: string;
   plyIndex: number;
+  useAnimalIcons: boolean;
 }
 
 export interface MoveHistoryRow {
@@ -83,7 +85,10 @@ export function MoveListPanel({
         onClick={() => historyNav.goTo(cell.plyIndex)}
         aria-pressed={isSelected}
       >
-        {cell.notation}
+        <MoveNotation
+          notation={cell.notation}
+          useAnimalIcons={cell.useAnimalIcons}
+        />
       </button>
     );
   };
