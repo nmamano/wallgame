@@ -45,13 +45,15 @@ STATE_FILE="${WALLGAME_MONITOR_STATE:-${XDG_STATE_HOME:-$HOME/.local/state}/wall
 FAIL_THRESHOLD="${WALLGAME_MONITOR_FAIL_THRESHOLD:-2}" # consecutive misses before declaring DOWN
 RESTART_COOLDOWN="${WALLGAME_MONITOR_RESTART_COOLDOWN:-1800}" # seconds between restart attempts
 
-# bot id : variant it is listed under : display name. A bot only appears under
-# the variants it declares, so PuzzleBot has to be queried where it actually is
-# rather than on the public ones.
+# bot id | variant | placement | display name. A bot only appears under the
+# variants and placement it declares, so PuzzleBot must be queried through the
+# puzzle-only listing rather than the ordinary opponent listing.
 BOTS=(
-  "dw-transformer:standard:Superhuman Bot"
-  "dw-easy:standard:Easy Bot"
-  "dw-puzzle:standard:PuzzleBot"
+  "dw-beginner|standard|opponent|Easy Bot"
+  "dw-easy|standard|opponent|Normal Bot"
+  "dw-transformer|standard|opponent|Superhuman Bot"
+  "dw-puzzle|standard|puzzle|PuzzleBot"
+  "animal-cycle-dumb|animal-cycle|opponent|Dumb Bot"
 )
 
 # --- Helpers -----------------------------------------------------------------
@@ -80,28 +82,33 @@ now="$(date -Is)"
 now_epoch="$(date +%s)"
 
 # --- Health check ------------------------------------------------------------
-# One request per distinct variant, not per bot. `reachable` tracks whether the
-# site answered at all: without it, a site outage is indistinguishable from
-# every bot being dead, and we would restart a perfectly healthy client.
+# One request per distinct variant/placement pair, not per bot. `reachable`
+# tracks whether the site answered at all: without it, a site outage is
+# indistinguishable from every bot being dead, and we would restart a perfectly
+# healthy client.
 
 declare -A listings=()
 reachable=1
 for entry in "${BOTS[@]}"; do
-  variant="$(cut -d: -f2 <<< "$entry")"
-  if [ -z "${listings[$variant]+set}" ]; then
-    resp="$(curl -s -m 20 "$API_BASE/api/bots?variant=$variant")"
+  variant="$(cut -d'|' -f2 <<< "$entry")"
+  placement="$(cut -d'|' -f3 <<< "$entry")"
+  listing_key="$variant|$placement"
+  if [ -z "${listings[$listing_key]+set}" ]; then
+    resp="$(curl -s -m 20 "$API_BASE/api/bots?variant=$variant&randomStart=false&placement=$placement")"
     [ -z "$resp" ] && reachable=0
-    listings[$variant]="$resp"
+    listings[$listing_key]="$resp"
   fi
 done
 
 missing=""
 if [ "$reachable" = "1" ]; then
   for entry in "${BOTS[@]}"; do
-    bot_id="$(cut -d: -f1 <<< "$entry")"
-    variant="$(cut -d: -f2 <<< "$entry")"
-    label="$(cut -d: -f3 <<< "$entry")"
-    if ! printf '%s' "${listings[$variant]}" | grep -q "\"botId\":\"$bot_id\""; then
+    bot_id="$(cut -d'|' -f1 <<< "$entry")"
+    variant="$(cut -d'|' -f2 <<< "$entry")"
+    placement="$(cut -d'|' -f3 <<< "$entry")"
+    label="$(cut -d'|' -f4 <<< "$entry")"
+    listing_key="$variant|$placement"
+    if ! printf '%s' "${listings[$listing_key]}" | grep -q "\"botId\":\"$bot_id\""; then
       missing="$missing $label"
     fi
   done
