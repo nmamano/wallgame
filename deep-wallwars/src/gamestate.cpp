@@ -27,6 +27,9 @@ std::optional<Variant> parse_variant(std::string_view variant) {
     if (variant == "standard") {
         return Variant::Standard;
     }
+    if (variant == "animal-cycle") {
+        return Variant::AnimalCycle;
+    }
     return std::nullopt;
 }
 
@@ -36,6 +39,8 @@ std::string_view variant_name(Variant variant) {
             return "classic";
         case Variant::Standard:
             return "standard";
+        case Variant::AnimalCycle:
+            return "animal-cycle";
     }
     return "unknown";
 }
@@ -55,7 +60,9 @@ Direction flip_horizontal(Direction dir) {
 }
 
 PawnMove flip_horizontal(PawnMove move) {
-    return PawnMove{move.pawn, flip_horizontal(move.dir)};
+    return PawnMove{move.pawn, flip_horizontal(move.dir),
+                    move.second_dir ? std::optional{flip_horizontal(*move.second_dir)}
+                                    : std::nullopt};
 }
 
 Winner winner_from_player(Player player) {
@@ -182,24 +189,32 @@ std::string wall_notation(Wall wall, int rows) {
     return out.str();
 }
 
-std::string Move::standard_notation(Cell cat_start, Cell mouse_start, int rows) const {
-    std::stringstream out;
+static char pawn_notation(Pawn pawn) {
+    switch (pawn) {
+        case Pawn::Dog: return 'D';
+        case Pawn::Cat: return 'C';
+        case Pawn::Mouse: return 'M';
+        case Pawn::Elephant: return 'E';
+        case Pawn::Home: break;
+    }
+    throw std::runtime_error("Invalid pawn");
+}
 
-    // Collect direction and wall actions separately
-    std::optional<Cell> cat_destination;
-    std::optional<Cell> mouse_destination;
+std::string Move::standard_notation(Board const& board, Player player) const {
+    std::stringstream out;
+    std::array<std::optional<Cell>, 4> destinations;
     std::vector<Wall> walls;
 
     auto apply_pawn_move = [&](PawnMove move) {
-        std::optional<Cell>& destination = move.pawn == Pawn::Cat ? cat_destination
-                                                                  : mouse_destination;
-        Cell start = move.pawn == Pawn::Cat ? cat_start : mouse_start;
+        auto& destination = destinations[static_cast<size_t>(move.pawn)];
+        Cell start = board.pawn_position(player, move.pawn);
 
         if (destination) {
             destination = destination->step(move.dir);
         } else {
             destination = start.step(move.dir);
         }
+        if (move.second_dir) destination = destination->step(*move.second_dir);
     };
 
     // Process first action
@@ -208,7 +223,6 @@ std::string Move::standard_notation(Cell cat_start, Cell mouse_start, int rows) 
         [&](PawnMove move) { apply_pawn_move(move); },
         [&](Wall wall) { walls.push_back(wall); });
 
-    // Process second action
     folly::variant_match(
         second,
         [&](PawnMove move) { apply_pawn_move(move); },
@@ -225,22 +239,19 @@ std::string Move::standard_notation(Cell cat_start, Cell mouse_start, int rows) 
 
     // Output in order: cat move, mouse move, then walls, separated by periods
     bool first_action = true;
-    if (cat_destination) {
-        out << 'C' << cell_notation(*cat_destination, rows);
-        first_action = false;
-    }
-    if (mouse_destination) {
-        if (!first_action) {
-            out << '.';
+    for (Pawn pawn : {Pawn::Dog, Pawn::Cat, Pawn::Mouse, Pawn::Elephant}) {
+        auto const& destination = destinations[static_cast<size_t>(pawn)];
+        if (destination) {
+            if (!first_action) out << '.';
+            out << pawn_notation(pawn) << cell_notation(*destination, board.rows());
+            first_action = false;
         }
-        out << 'M' << cell_notation(*mouse_destination, rows);
-        first_action = false;
     }
     for (Wall const& wall : walls) {
         if (!first_action) {
             out << '.';
         }
-        out << wall_notation(wall, rows);
+        out << wall_notation(wall, board.rows());
         first_action = false;
     }
 
@@ -321,6 +332,7 @@ std::ostream& operator<<(std::ostream& out, Wall wall) {
 
 std::ostream& operator<<(std::ostream& out, PawnMove const& move) {
     out << move.pawn << ":" << move.dir;
+    if (move.second_dir) out << "+" << *move.second_dir;
     return out;
 }
 
@@ -444,11 +456,17 @@ Board::Board(int columns, int rows, Variant variant)
                                              {Player::Red, Pawn::Home, {columns - 1, rows - 1}},
                                              {Player::Blue, Pawn::Cat, {columns - 1, 0}},
                                              {Player::Blue, Pawn::Home, {0, rows - 1}}}
-                : std::vector<PawnPlacement>{{Player::Red, Pawn::Cat, {0, 0}},
-                                             {Player::Red, Pawn::Mouse, {0, rows - 1}},
-                                             {Player::Blue, Pawn::Cat, {columns - 1, 0}},
-                                             {Player::Blue, Pawn::Mouse,
-                                              {columns - 1, rows - 1}}}} {}
+                : variant == Variant::Standard
+                    ? std::vector<PawnPlacement>{{Player::Red, Pawn::Cat, {0, 0}},
+                                                 {Player::Red, Pawn::Mouse, {0, rows - 1}},
+                                                 {Player::Blue, Pawn::Cat, {columns - 1, 0}},
+                                                 {Player::Blue, Pawn::Mouse,
+                                                  {columns - 1, rows - 1}}}
+                    : std::vector<PawnPlacement>{{Player::Red, Pawn::Dog, {0, rows - 1}},
+                                                 {Player::Red, Pawn::Mouse, {columns - 1, 0}},
+                                                 {Player::Blue, Pawn::Cat, {0, 0}},
+                                                 {Player::Blue, Pawn::Elephant,
+                                                  {columns - 1, rows - 1}}}} {}
 
 bool Board::is_blocked(Wall wall) const {
     if (wall.cell.column < 0 || wall.cell.row < 0 || wall.cell.column >= m_columns ||
@@ -490,7 +508,15 @@ std::vector<Direction> Board::legal_directions(Player player, Pawn pawn) const {
         return {};
     }
     Cell const pos = pawn_position(player, pawn);
-    auto dirs = kDirections | views::filter([&](Direction dir) { return !is_blocked({pos, dir}); });
+    auto dirs = kDirections | views::filter([&](Direction dir) {
+        if (is_blocked({pos, dir})) return false;
+        if (m_variant == Variant::AnimalCycle) {
+            auto pawns = movable_pawns(player);
+            Pawn teammate = pawns[0] == pawn ? pawns[1] : pawns[0];
+            if (pos.step(dir) == pawn_position(player, teammate)) return false;
+        }
+        return true;
+    });
     return {dirs.begin(), dirs.end()};
 }
 
@@ -553,6 +579,28 @@ void Board::find_bridges(Cell start, Cell target, std::vector<int>& levels, std:
 }
 
 std::vector<Wall> Board::legal_walls() const {
+    if (m_variant == Variant::AnimalCycle) {
+        std::vector<Wall> result;
+        for (int column = 0; column < m_columns; ++column) {
+            for (int row = 0; row < m_rows; ++row) {
+                for (Wall::Type type : {Wall::Down, Wall::Right}) {
+                    Wall wall{{column, row}, type};
+                    if (is_blocked(wall)) continue;
+                    bool legal =
+                        path_exists(pawn_position(Player::Red, Pawn::Dog),
+                                    pawn_position(Player::Blue, Pawn::Cat), wall) &&
+                        path_exists(pawn_position(Player::Blue, Pawn::Cat),
+                                    pawn_position(Player::Red, Pawn::Mouse), wall) &&
+                        path_exists(pawn_position(Player::Red, Pawn::Mouse),
+                                    pawn_position(Player::Blue, Pawn::Elephant), wall) &&
+                        path_exists(pawn_position(Player::Blue, Pawn::Elephant),
+                                    pawn_position(Player::Red, Pawn::Dog), wall);
+                    if (legal) result.push_back(wall);
+                }
+            }
+        }
+        return result;
+    }
     std::set<Wall> illegal_walls;
     std::vector<int> levels(m_columns * m_rows, -1);
     std::vector<StackFrame> stack(m_columns * m_rows);
@@ -638,7 +686,20 @@ void Board::do_action(Player player, Action action) {
     folly::variant_match(
         action,
         [&](PawnMove move) {
+            if (m_variant == Variant::AnimalCycle) {
+                auto const pawns = movable_pawns(player);
+                Pawn const teammate = pawns[0] == move.pawn ? pawns[1] : pawns[0];
+                Cell const teammate_cell = pawn_position(player, teammate);
+                Cell const intermediate = pawn_position(player, move.pawn).step(move.dir);
+                if (intermediate == teammate_cell ||
+                    (move.second_dir && intermediate.step(*move.second_dir) == teammate_cell)) {
+                    throw std::runtime_error("Animal Cycle teammates cannot share a cell");
+                }
+            }
             take_step(player, move.pawn, move.dir);
+            if (move.second_dir) {
+                take_step(player, move.pawn, *move.second_dir);
+            }
         },
         [&](Wall wall) { place_wall(player, wall); });
 }
@@ -648,6 +709,7 @@ bool Board::reached_goal(Player player) const {
 }
 
 Winner Board::winner() const {
+    if (m_variant == Variant::AnimalCycle) return animal_cycle_winner();
     if (reached_goal(Player::Red)) {
         int dist = distance(position(Player::Blue), goal(Player::Blue));
         if (dist <= 2 && dist != -1) {
@@ -664,6 +726,7 @@ Winner Board::winner() const {
 }
 
 Winner Board::winner(Turn turn) const {
+    if (m_variant == Variant::AnimalCycle) return winner();
     if (turn.action == Turn::Second) {
         return Winner::Undecided;
     }
@@ -689,6 +752,22 @@ double Board::score_for(Player player, Turn turn) const {
 
     if (current_winner == Winner::Blue) {
         return player == Player::Blue ? 1.0 : -1.0;
+    }
+
+    if (m_variant == Variant::AnimalCycle) {
+        double red_dist = std::min(
+            distance(pawn_position(Player::Red, Pawn::Dog),
+                     pawn_position(Player::Blue, Pawn::Cat)),
+            distance(pawn_position(Player::Red, Pawn::Mouse),
+                     pawn_position(Player::Blue, Pawn::Elephant)));
+        double blue_dist = std::min(
+            distance(pawn_position(Player::Blue, Pawn::Cat),
+                     pawn_position(Player::Red, Pawn::Mouse)),
+            distance(pawn_position(Player::Blue, Pawn::Elephant),
+                     pawn_position(Player::Red, Pawn::Dog)));
+        double mine = player == Player::Red ? red_dist : blue_dist;
+        double theirs = player == Player::Red ? blue_dist : red_dist;
+        return mine < theirs ? 1.0 - mine / theirs : -1.0 + theirs / mine;
     }
 
     double dist = distance(position(player), goal(player));
@@ -818,10 +897,16 @@ int Board::index_from_cell(Cell cell) const {
 }
 
 Cell Board::position(Player player) const {
+    if (m_variant == Variant::AnimalCycle) {
+        return pawn_position(player, player == Player::Red ? Pawn::Dog : Pawn::Cat);
+    }
     return pawn_position(player, Pawn::Cat);
 }
 
 Cell Board::mouse(Player player) const {
+    if (m_variant == Variant::AnimalCycle && player == Player::Blue) {
+        return pawn_position(player, Pawn::Elephant);
+    }
     return pawn_position(player, Pawn::Mouse);
 }
 
@@ -835,6 +920,10 @@ Cell Board::goal(Player player) const {
             return home(player);
         case Variant::Standard:
             return mouse(other_player(player));
+        case Variant::AnimalCycle:
+            return player == Player::Red
+                ? pawn_position(Player::Blue, Pawn::Cat)
+                : pawn_position(Player::Red, Pawn::Mouse);
     }
     throw std::runtime_error("Unsupported variant");
 }
@@ -857,16 +946,23 @@ bool Board::pawn_is_movable(Pawn pawn) const {
             return pawn == Pawn::Cat;
         case Variant::Standard:
             return pawn == Pawn::Cat || pawn == Pawn::Mouse;
+        case Variant::AnimalCycle:
+            return pawn == Pawn::Dog || pawn == Pawn::Cat || pawn == Pawn::Mouse ||
+                pawn == Pawn::Elephant;
     }
     return false;
 }
 
-std::vector<Pawn> Board::pawn_roster(Player) const {
+std::vector<Pawn> Board::pawn_roster(Player player) const {
     switch (m_variant) {
         case Variant::Classic:
             return {Pawn::Cat, Pawn::Home};
         case Variant::Standard:
             return {Pawn::Cat, Pawn::Mouse};
+        case Variant::AnimalCycle:
+            return player == Player::Red
+                ? std::vector{Pawn::Dog, Pawn::Mouse}
+                : std::vector{Pawn::Cat, Pawn::Elephant};
     }
     return {};
 }
@@ -880,12 +976,36 @@ std::vector<Pawn> Board::movable_pawns(Player player) const {
 }
 
 std::vector<std::pair<Cell, Cell>> Board::required_path_endpoints() const {
+    if (m_variant == Variant::AnimalCycle) {
+        return {
+            {pawn_position(Player::Red, Pawn::Dog),
+             pawn_position(Player::Blue, Pawn::Cat)},
+            {pawn_position(Player::Blue, Pawn::Cat),
+             pawn_position(Player::Red, Pawn::Mouse)},
+            {pawn_position(Player::Red, Pawn::Mouse),
+             pawn_position(Player::Blue, Pawn::Elephant)},
+            {pawn_position(Player::Blue, Pawn::Elephant),
+             pawn_position(Player::Red, Pawn::Dog)},
+        };
+    }
     return {{position(Player::Blue), goal(Player::Blue)},
             {position(Player::Red), goal(Player::Red)}};
 }
 
 std::pair<Cell, Cell> Board::model_landmarks(Player player) const {
     return {position(player), goal(player)};
+}
+
+Winner Board::animal_cycle_winner() const {
+    if (pawn_position(Player::Red, Pawn::Dog) ==
+        pawn_position(Player::Blue, Pawn::Cat)) return Winner::Red;
+    if (pawn_position(Player::Blue, Pawn::Cat) ==
+        pawn_position(Player::Red, Pawn::Mouse)) return Winner::Blue;
+    if (pawn_position(Player::Red, Pawn::Mouse) ==
+        pawn_position(Player::Blue, Pawn::Elephant)) return Winner::Red;
+    if (pawn_position(Player::Blue, Pawn::Elephant) ==
+        pawn_position(Player::Red, Pawn::Dog)) return Winner::Blue;
+    return Winner::Undecided;
 }
 
 Variant Board::variant() const {
@@ -933,13 +1053,38 @@ Wall Board::flip_horizontal(Wall wall) const {
 }
 
 std::uint64_t std::hash<Board>::operator()(Board const& board) const {
-    std::uint64_t position_hash = folly::hash::hash_combine(
-        board.position(Player::Red), board.goal(Player::Red), board.position(Player::Blue),
-        board.goal(Player::Blue), board.variant());
+    std::uint64_t position_hash = board.variant() == Variant::AnimalCycle
+        ? folly::hash::hash_combine(
+              board.pawn_position(Player::Red, Pawn::Dog),
+              board.pawn_position(Player::Red, Pawn::Mouse),
+              board.pawn_position(Player::Blue, Pawn::Cat),
+              board.pawn_position(Player::Blue, Pawn::Elephant), board.variant())
+        : folly::hash::hash_combine(
+              board.position(Player::Red), board.goal(Player::Red),
+              board.position(Player::Blue), board.goal(Player::Blue), board.variant());
 
     return folly::hash::hash_range(
         board.m_board.begin(), board.m_board.end(), position_hash,
         [](Board::State state) { return std::bit_cast<std::uint8_t>(state); });
+}
+
+bool Board::path_exists(Cell start, Cell target, std::optional<Wall> extra_wall) const {
+    std::vector<bool> visited(m_columns * m_rows, false);
+    std::deque<Cell> queue{start};
+    while (!queue.empty()) {
+        Cell cell = queue.front(); queue.pop_front();
+        if (cell == target) return true;
+        int index = index_from_cell(cell);
+        if (visited[index]) continue;
+        visited[index] = true;
+        for (Direction dir : kDirections) {
+            Wall edge{cell, dir};
+            if (is_blocked(edge) || (extra_wall && edge == *extra_wall)) continue;
+            Cell next = cell.step(dir);
+            if (!visited[index_from_cell(next)]) queue.push_back(next);
+        }
+    }
+    return false;
 }
 
 std::optional<Player> Board::wall_owner(Wall wall) const {

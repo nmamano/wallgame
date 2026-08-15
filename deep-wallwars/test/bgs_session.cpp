@@ -122,6 +122,19 @@ static json make_classic_config(int width = 8, int height = 8) {
     return config;
 }
 
+static json make_animal_cycle_config(int width = 8, int height = 8) {
+    json config;
+    config["variant"] = "animal-cycle";
+    config["boardWidth"] = width;
+    config["boardHeight"] = height;
+    config["initialState"]["pawns"]["p1"]["dog"] = {height - 1, 0};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {0, width - 1};
+    config["initialState"]["pawns"]["p2"]["cat"] = {0, 0};
+    config["initialState"]["pawns"]["p2"]["elephant"] = {height - 1, width - 1};
+    config["initialState"]["walls"] = json::array();
+    return config;
+}
+
 // ============================================================================
 // Tests: validate_bgs_config
 // ============================================================================
@@ -137,6 +150,29 @@ TEST_CASE("validate_bgs_config - Valid classic config", "[BGS Validation]") {
     auto config = make_classic_config(5, 5);
     auto result = validate_bgs_config(config, 8, 8);
     CHECK(result.valid);
+}
+
+TEST_CASE("Animal Cycle apply accepts pass but search never proposes it", "[Animal Cycle]") {
+    BgsEngineConfig engine_config;
+    engine_config.samples_per_move = 20;
+    engine_config.root_noise_factor = 0;
+    SessionManager manager(SimplePolicy{1.0f, 1.0f, 1.0f}, engine_config);
+    auto created = manager.create_session("animal-pass", "bot", make_animal_cycle_config());
+    REQUIRE(created.first);
+
+    auto applied = folly::coro::blockingWait(handle_apply_move(manager, "animal-pass", 0, "---"));
+    REQUIRE(applied["success"].get<bool>());
+    auto session = manager.get_session("animal-pass");
+    REQUIRE(session);
+    CHECK(session->ply == 1);
+    Turn const expected_turn{Player::Blue, Turn::First};
+    CHECK(session->mcts->current_turn() == expected_turn);
+
+    auto evaluated = folly::coro::blockingWait(
+        handle_evaluate_position(manager, engine_config, "animal-pass", 1));
+    REQUIRE(evaluated["success"].get<bool>());
+    CHECK_FALSE(evaluated["bestMove"].get<std::string>().empty());
+    CHECK(evaluated["bestMove"].get<std::string>() != "---");
 }
 
 TEST_CASE("validate_bgs_config - Board too large", "[BGS Validation]") {
@@ -670,8 +706,7 @@ TEST_CASE("peek_best_move - A deep search is still decided by visits, not priors
     // 2026-07-30 and produced "Cc5" there too, so at a high sample count the
     // fallback provably did not move the engine's choice.
     Board const& root_board = mcts.current_board();
-    auto const [cat_start, mouse_start] = root_board.model_landmarks(Player::Red);
-    CHECK(move->standard_notation(cat_start, mouse_start, root_board.rows()) == "Cc5");
+    CHECK(move->standard_notation(root_board, Player::Red) == "Cc5");
 }
 
 // ============================================================================

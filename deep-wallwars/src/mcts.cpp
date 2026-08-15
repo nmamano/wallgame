@@ -264,7 +264,10 @@ folly::coro::Task<std::optional<Move>> MCTS::sample_and_commit_to_move(int itera
     // turn ENDS, so this says "won unless we walk the cat off again" and a wall keeps it. The mirror
     // case - our own mouse stepping onto the enemy cat - decides nothing and must NOT stop the turn,
     // or the mouse is stranded on the cat and the game is handed over (board task 8911a6d5).
-    if (current_board().reached_goal(mover)) {
+    bool const terminal_after_first = current_board().variant() == Variant::AnimalCycle
+        ? current_board().winner(current_turn()) != Winner::Undecided
+        : current_board().reached_goal(mover);
+    if (terminal_after_first) {
         auto legal_walls = current_board().legal_walls();
 
         if (legal_walls.empty()) {
@@ -382,7 +385,10 @@ std::optional<Move> MCTS::peek_best_move() const {
     // Check if the first action captured. Judged for the MOVER, and only for the mover: a capture
     // counts when the turn ENDS, so a wall preserves it, while our own mouse stepping onto the enemy
     // cat is a legal walk-past that the turn has to continue through (board task 8911a6d5).
-    if (child->board.reached_goal(m_root->turn.player)) {
+    bool const terminal_after_first = child->board.variant() == Variant::AnimalCycle
+        ? child->board.winner(child->turn) != Winner::Undecided
+        : child->board.reached_goal(m_root->turn.player);
+    if (terminal_after_first) {
         // First action won - return an arbitrary legal wall for second action
         auto legal_walls = child->board.legal_walls();
         if (legal_walls.empty()) {

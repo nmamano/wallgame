@@ -1,8 +1,114 @@
 #include "engine_adapter.hpp"
 
 #include <catch2/catch_test_macros.hpp>
+#include <folly/Overload.h>
+#include <filesystem>
+#include <fstream>
 
 using namespace engine_adapter;
+
+static nlohmann::json animal_cycle_oracle() {
+    auto path = std::filesystem::path(__FILE__).parent_path().parent_path().parent_path() /
+        "tests/fixtures/animal-cycle-cpp-oracle.json";
+    std::ifstream input(path);
+    REQUIRE(input.good());
+    return nlohmann::json::parse(input);
+}
+
+static std::string oracle_notation(
+    Board const& board, Player player, std::vector<Action> const& actions,
+    PaddingConfig const& padding) {
+    if (actions.empty()) return "---";
+    std::vector<std::string> parts;
+    for (Action const& action : actions) {
+        parts.push_back(folly::variant_match(
+            action,
+            [&](PawnMove move) {
+                Cell target = board.pawn_position(player, move.pawn).step(move.dir);
+                if (move.second_dir) target = target.step(*move.second_dir);
+                char symbol = move.pawn == Pawn::Dog ? 'D'
+                            : move.pawn == Pawn::Cat ? 'C'
+                            : move.pawn == Pawn::Mouse ? 'M' : 'E';
+                return std::string(1, symbol) + cell_notation(target, board.rows());
+            },
+            [&](Wall wall) { return wall_notation(wall, board.rows()); }));
+    }
+    std::string result;
+    for (std::string const& part : parts) {
+        if (!result.empty()) result += '.';
+        result += part;
+    }
+    return transform_move_notation(
+        result, board.position(player), board.mouse(player), padding);
+}
+
+TEST_CASE("Animal Cycle matches the focused TypeScript oracle", "[Animal Cycle oracle]") {
+    auto oracle = animal_cycle_oracle();
+    for (auto const& fixture : oracle["positions"]) {
+        DYNAMIC_SECTION(fixture["name"].get<std::string>()) {
+            auto const& config = fixture["config"];
+            int model_rows = 10;
+            int model_columns = 12;
+            auto validation = validate_bgs_config(config, model_rows, model_columns);
+            REQUIRE(validation.valid);
+            auto [root, turn, padding] =
+                convert_bgs_config_to_board(config, model_rows, model_columns);
+            CHECK(root.variant() == Variant::AnimalCycle);
+
+            for (auto const& probe : fixture["probes"]) {
+                CAPTURE(probe["notation"]);
+                Board board = root;
+                try {
+                    auto parsed = parse_move_notation(
+                        probe["notation"].get<std::string>(), board, turn, padding);
+                    if (!parsed && !probe["accepted"].get<bool>()) {
+                        SUCCEED();
+                        continue;
+                    }
+                    REQUIRE(parsed.has_value());
+                    if (!probe["accepted"].get<bool>()) {
+                        FAIL("C++ accepted a probe that the TypeScript oracle rejects");
+                    }
+                    CHECK(parsed->size() == probe["appliedActions"].get<size_t>());
+                    CHECK(oracle_notation(board, turn.player, *parsed, padding) ==
+                          probe["appliedNotation"].get<std::string>());
+                    for (Action const& action : *parsed) {
+                        board.do_action(turn.player, action);
+                        if (board.winner(Turn{turn.player, Turn::Second}) != Winner::Undecided) {
+                            break;
+                        }
+                    }
+                    Winner expected = Winner::Undecided;
+                    if (!probe["winner"].is_null()) {
+                        expected = probe["winner"].get<int>() == 1 ? Winner::Red : Winner::Blue;
+                    }
+                    CHECK(board.winner(Turn{turn.player, Turn::Second}) == expected);
+                } catch (std::exception const&) {
+                    if (probe["accepted"].get<bool>()) throw;
+                    SUCCEED();
+                }
+            }
+        }
+    }
+}
+
+TEST_CASE("Animal Cycle stacked capture precedence matches TypeScript", "[Animal Cycle oracle]") {
+    auto oracle = animal_cycle_oracle();
+    for (auto const& fixture : oracle["stacked"]) {
+        auto const& pawns = fixture["pawns"]["pawns"];
+        auto cell = [](nlohmann::json const& value) {
+            return Cell{value[1].get<int>(), value[0].get<int>()};
+        };
+        Board board(8, 8, Variant::AnimalCycle,
+                    {{Player::Red, Pawn::Dog, cell(pawns["1"]["dog"])},
+                     {Player::Red, Pawn::Mouse, cell(pawns["1"]["mouse"])},
+                     {Player::Blue, Pawn::Cat, cell(pawns["2"]["cat"])},
+                     {Player::Blue, Pawn::Elephant, cell(pawns["2"]["elephant"])}});
+        Winner expected = fixture["winner"].get<int>() == 1 ? Winner::Red : Winner::Blue;
+        CAPTURE(fixture["name"]);
+        CHECK(board.animal_cycle_winner() == expected);
+    }
+}
 
 // ============================================================================
 // PaddingConfig Creation Tests

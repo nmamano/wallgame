@@ -30,7 +30,8 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
         folly::variant_match(
             edge_info.action,
             [&](PawnMove move) {
-                int pawn_offset = move.pawn == Pawn::Cat ? 0 : 4;
+                auto movable = node_info.board.movable_pawns(node_info.turn.player);
+                int pawn_offset = move.pawn == movable[0] ? 0 : 4;
                 priors[wall_prior_size + pawn_offset + int(move.dir)] = prior;
             },
             [&](Wall wall) {

@@ -1,0 +1,414 @@
+{
+  "positions": [
+    {
+      "name": "p2-cat-elephant-8x8",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [7, 0], "mouse": [0, 7] },
+            "p2": { "cat": [0, 0], "elephant": [7, 7] }
+          },
+          "walls": [],
+          "turn": { "playerId": 2, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Cb7",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Cb7",
+          "appliedActions": 1
+        },
+        {
+          "notation": "Eg2",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Eg2",
+          "appliedActions": 1
+        },
+        {
+          "notation": "---",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "---",
+          "appliedActions": 0
+        }
+      ]
+    },
+    {
+      "name": "fixed-5x5",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 5,
+        "boardHeight": 5,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [4, 0], "mouse": [0, 4] },
+            "p2": { "cat": [0, 0], "elephant": [4, 4] }
+          },
+          "walls": [],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Da2",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Da2",
+          "appliedActions": 1
+        },
+        {
+          "notation": "Me4",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Me4",
+          "appliedActions": 1
+        },
+        {
+          "notation": ">b3",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": ">b3",
+          "appliedActions": 1
+        },
+        {
+          "notation": "---",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "---",
+          "appliedActions": 0
+        }
+      ]
+    },
+    {
+      "name": "seeded-random-8x8",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [5, 2], "mouse": [2, 5] },
+            "p2": { "cat": [2, 2], "elephant": [5, 5] }
+          },
+          "walls": [
+            { "cell": [0, 4], "orientation": "vertical" },
+            { "cell": [1, 3], "orientation": "horizontal" },
+            { "cell": [3, 0], "orientation": "horizontal" },
+            { "cell": [3, 6], "orientation": "vertical" },
+            { "cell": [4, 0], "orientation": "vertical" },
+            { "cell": [5, 7], "orientation": "horizontal" },
+            { "cell": [7, 2], "orientation": "vertical" },
+            { "cell": [7, 4], "orientation": "horizontal" }
+          ],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Db2",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Db2",
+          "appliedActions": 1
+        },
+        {
+          "notation": "Mg7",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Mg7",
+          "appliedActions": 1
+        },
+        {
+          "notation": "^d5",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "^d5",
+          "appliedActions": 1
+        },
+        {
+          "notation": "---",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "---",
+          "appliedActions": 0
+        }
+      ]
+    },
+    {
+      "name": "authored-12x10",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 12,
+        "boardHeight": 10,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [8, 1], "mouse": [1, 10] },
+            "p2": { "cat": [1, 1], "elephant": [8, 10] }
+          },
+          "walls": [
+            { "cell": [5, 4], "orientation": "vertical" },
+            { "cell": [6, 7], "orientation": "horizontal" }
+          ],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Db3",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Db3",
+          "appliedActions": 1
+        },
+        {
+          "notation": "Mj9",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Mj9",
+          "appliedActions": 1
+        },
+        {
+          "notation": ">f5",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": ">f5",
+          "appliedActions": 1
+        },
+        {
+          "notation": "---",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "---",
+          "appliedActions": 0
+        }
+      ]
+    },
+    {
+      "name": "endpoint-and-crossing",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [2, 1], "mouse": [2, 2] },
+            "p2": { "cat": [2, 4], "elephant": [7, 7] }
+          },
+          "walls": [],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Dc6",
+          "accepted": false,
+          "error": "Animal Cycle teammates cannot share a cell"
+        },
+        {
+          "notation": "Dd6",
+          "accepted": false,
+          "error": "Invalid double move: blocked or no path"
+        },
+        {
+          "notation": "Db5",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "Db5",
+          "appliedActions": 1
+        },
+        {
+          "notation": "---",
+          "accepted": true,
+          "winner": null,
+          "appliedNotation": "---",
+          "appliedActions": 0
+        }
+      ]
+    },
+    {
+      "name": "capture-precedence",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [2, 1], "mouse": [4, 1] },
+            "p2": { "cat": [2, 2], "elephant": [4, 2] }
+          },
+          "walls": [],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Dc6.Mc4",
+          "accepted": true,
+          "winner": 1,
+          "appliedNotation": "Dc6",
+          "appliedActions": 1
+        },
+        {
+          "notation": "Mc4.Dc6",
+          "accepted": true,
+          "winner": 1,
+          "appliedNotation": "Mc4",
+          "appliedActions": 1
+        }
+      ]
+    },
+    {
+      "name": "four-directed-path-wall",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 4,
+        "boardHeight": 4,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [0, 0], "mouse": [3, 3] },
+            "p2": { "cat": [0, 2], "elephant": [3, 1] }
+          },
+          "walls": [{ "cell": [1, 0], "orientation": "horizontal" }],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": ">a4",
+          "accepted": false,
+          "error": "Illegal wall placement"
+        }
+      ]
+    },
+    {
+      "name": "dog-captures-cat",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [2, 1], "mouse": [7, 0] },
+            "p2": { "cat": [2, 2], "elephant": [7, 7] }
+          },
+          "walls": [],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Dc6",
+          "accepted": true,
+          "winner": 1,
+          "appliedNotation": "Dc6",
+          "appliedActions": 1
+        }
+      ]
+    },
+    {
+      "name": "cat-captures-mouse",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [0, 0], "mouse": [2, 1] },
+            "p2": { "cat": [2, 2], "elephant": [7, 7] }
+          },
+          "walls": [],
+          "turn": { "playerId": 2, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Cb6",
+          "accepted": true,
+          "winner": 2,
+          "appliedNotation": "Cb6",
+          "appliedActions": 1
+        }
+      ]
+    },
+    {
+      "name": "mouse-captures-elephant",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [0, 0], "mouse": [2, 1] },
+            "p2": { "cat": [0, 7], "elephant": [2, 2] }
+          },
+          "walls": [],
+          "turn": { "playerId": 1, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Mc6",
+          "accepted": true,
+          "winner": 1,
+          "appliedNotation": "Mc6",
+          "appliedActions": 1
+        }
+      ]
+    },
+    {
+      "name": "elephant-captures-dog",
+      "config": {
+        "variant": "animal-cycle",
+        "boardWidth": 8,
+        "boardHeight": 8,
+        "initialState": {
+          "pawns": {
+            "p1": { "dog": [2, 1], "mouse": [7, 0] },
+            "p2": { "cat": [0, 7], "elephant": [2, 2] }
+          },
+          "walls": [],
+          "turn": { "playerId": 2, "actionsTaken": [] }
+        }
+      },
+      "probes": [
+        {
+          "notation": "Eb6",
+          "accepted": true,
+          "winner": 2,
+          "appliedNotation": "Eb6",
+          "appliedActions": 1
+        }
+      ]
+    }
+  ],
+  "stacked": [
+    {
+      "name": "dog-cat-before-cat-mouse",
+      "pawns": {
+        "kind": "animal-cycle",
+        "pawns": {
+          "1": { "dog": [2, 2], "mouse": [2, 2] },
+          "2": { "cat": [2, 2], "elephant": [7, 7] }
+        }
+      },
+      "winner": 1
+    },
+    {
+      "name": "mouse-elephant-before-elephant-dog",
+      "pawns": {
+        "kind": "animal-cycle",
+        "pawns": {
+          "1": { "dog": [4, 4], "mouse": [4, 4] },
+          "2": { "cat": [0, 0], "elephant": [4, 4] }
+        }
+      },
+      "winner": 1
+    }
+  ]
+}

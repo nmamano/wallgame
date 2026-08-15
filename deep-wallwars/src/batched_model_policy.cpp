@@ -41,19 +41,21 @@ folly::coro::Task<Evaluation> BatchedModelPolicy::operator()(
         }
     };
 
-    add_pawn_moves(Pawn::Cat, board.position(turn.player), int(wall_prior_size));
+    auto movable = board.movable_pawns(turn.player);
+    add_pawn_moves(movable[0], board.pawn_position(turn.player, movable[0]), int(wall_prior_size));
     if (board.allows_mouse_moves()) {
         int offset = int(wall_prior_size + 4);
-        for (Direction dir : board.legal_directions(turn.player, Pawn::Mouse)) {
-            Cell next = board.mouse(turn.player).step(dir);
-            if (is_backtrack(Pawn::Mouse, next)) {
+        Pawn second = movable[1];
+        for (Direction dir : board.legal_directions(turn.player, second)) {
+            Cell next = board.pawn_position(turn.player, second).step(dir);
+            if (is_backtrack(second, next)) {
                 continue;
             }
             float prior = inference_result.prior[offset + int(dir)];
             if (m_boost_mouse_priors) {
                 prior += 0.2f;
             }
-            eval.edges.emplace_back(PawnMove{Pawn::Mouse, dir}, prior);
+            eval.edges.emplace_back(PawnMove{second, dir}, prior);
             total_prior += prior;
         }
     }

@@ -47,7 +47,7 @@ PaddingConfig create_padding_config(
     config.game_columns = game_columns;
     config.variant = variant;
 
-    if (variant == Variant::Standard) {
+    if (variant != Variant::Classic) {
         // Standard: embed at top-left
         config.row_offset = 0;
         config.col_offset = 0;
@@ -80,7 +80,8 @@ static bool is_direction_blocked(Board const& board, Cell from, Direction dir) {
 
 // Find directions to move from `from` to `to` (1 or 2 steps)
 // Returns empty vector if unreachable in 1-2 steps
-static std::vector<Direction> find_path(Cell from, Cell to, Board const& board) {
+static std::vector<Direction> find_path(Cell from, Cell to, Board const& board,
+                                        Player player, Pawn pawn) {
     int dc = to.column - from.column;
     int dr = to.row - from.row;
     int manhattan = std::abs(dc) + std::abs(dr);
@@ -103,10 +104,26 @@ static std::vector<Direction> find_path(Cell from, Cell to, Board const& board) 
 
         if (std::abs(dc) == 2) {
             // 2 steps in same horizontal direction
+            Cell const mid = from.step(h_dir);
+            if (is_direction_blocked(board, from, h_dir) ||
+                is_direction_blocked(board, mid, h_dir)) return {};
+            if (board.variant() == Variant::AnimalCycle) {
+                auto movable = board.movable_pawns(player);
+                Pawn teammate = movable[0] == pawn ? movable[1] : movable[0];
+                if (mid == board.pawn_position(player, teammate)) return {};
+            }
             return {h_dir, h_dir};
         }
         if (std::abs(dr) == 2) {
             // 2 steps in same vertical direction
+            Cell const mid = from.step(v_dir);
+            if (is_direction_blocked(board, from, v_dir) ||
+                is_direction_blocked(board, mid, v_dir)) return {};
+            if (board.variant() == Variant::AnimalCycle) {
+                auto movable = board.movable_pawns(player);
+                Pawn teammate = movable[0] == pawn ? movable[1] : movable[0];
+                if (mid == board.pawn_position(player, teammate)) return {};
+            }
             return {v_dir, v_dir};
         }
 
@@ -114,9 +131,17 @@ static std::vector<Direction> find_path(Cell from, Cell to, Board const& board) 
         Cell after_h = from.step(h_dir);
         Cell after_v = from.step(v_dir);
 
-        bool h_first_ok = !is_direction_blocked(board, from, h_dir) &&
+        auto const movable = board.movable_pawns(player);
+        Pawn const teammate = movable[0] == pawn ? movable[1] : movable[0];
+        auto avoids_teammate = [&](Cell mid) {
+            return board.variant() != Variant::AnimalCycle ||
+                mid != board.pawn_position(player, teammate);
+        };
+        bool h_first_ok = avoids_teammate(after_h) &&
+                          !is_direction_blocked(board, from, h_dir) &&
                           !is_direction_blocked(board, after_h, v_dir);
-        bool v_first_ok = !is_direction_blocked(board, from, v_dir) &&
+        bool v_first_ok = avoids_teammate(after_v) &&
+                          !is_direction_blocked(board, from, v_dir) &&
                           !is_direction_blocked(board, after_v, h_dir);
 
         if (h_first_ok) return {h_dir, v_dir};
@@ -154,7 +179,7 @@ void place_padding_walls(Board& board, PaddingConfig const& config) {
 
     // For Standard variant: embed at top-left
     // Block right and bottom boundaries of the game area
-    if (config.variant == Variant::Standard) {
+    if (config.variant != Variant::Classic) {
         // Block bottom boundary (horizontal walls below game area)
         for (int col = 0; col < config.game_columns; ++col) {
             Wall wall{Cell{col, config.game_rows - 1}, Wall::Down};
@@ -357,8 +382,9 @@ std::string transform_move_notation(
             : remaining.substr(dot_pos + 1);
 
         // Parse the component type and coordinates
-        if (component[0] == 'C' || component[0] == 'M') {
-            // Pawn move: C/M followed by coordinates
+        if (component[0] == 'D' || component[0] == 'C' || component[0] == 'M' ||
+            component[0] == 'E') {
+            // Pawn move: D/C/M/E followed by coordinates
             char pawn_type = component[0];
             std::string coords = component.substr(1);
 
@@ -441,10 +467,9 @@ ValidationResult validate_bgs_config(
     // Check variant (classic and standard supported)
     std::string variant = bgs_config["variant"].get<std::string>();
     auto parsed_variant = parse_variant(variant);
-    if (!parsed_variant || (*parsed_variant != Variant::Classic &&
-                            *parsed_variant != Variant::Standard)) {
+    if (!parsed_variant) {
         return {false,
-                "Deep-wallwars only supports the 'classic' and 'standard' variants (not '" +
+                "Deep-wallwars only supports Classic, Standard, and Animal Cycle rules (not '" +
                     variant + "')"};
     }
 
@@ -467,7 +492,7 @@ ValidationResult validate_bgs_config(
                 return {false, "initialState.turn action is missing its type"};
             }
             std::string const type = action["type"].get<std::string>();
-            if (type == "cat" || type == "mouse") {
+            if (type == "dog" || type == "cat" || type == "mouse" || type == "elephant") {
                 if (!action.contains("source") || !is_protocol_cell(action["source"]) ||
                     !action.contains("target") || !is_protocol_cell(action["target"])) {
                     return {false, "A spent pawn action requires source and target cells"};
@@ -482,7 +507,8 @@ ValidationResult validate_bgs_config(
                             "A spent wall action requires a target cell and wallOrientation"};
                 }
             }
-            if (type != "cat" && type != "mouse" && type != "wall") {
+            if (type != "dog" && type != "cat" && type != "mouse" &&
+                type != "elephant" && type != "wall") {
                 return {false, "Unsupported initialState.turn action type '" + type + "'"};
             }
         }
@@ -535,13 +561,42 @@ std::tuple<Board, Turn, PaddingConfig> convert_bgs_config_to_board(
         // Home positions stored in "home" field for classic
         red_secondary_game = parse_cell(pawns["p1"]["home"]);
         blue_secondary_game = parse_cell(pawns["p2"]["home"]);
-    } else {
+    } else if (variant == Variant::Standard) {
         // Standard has cat and mouse positions
         json const& pawns = initial_state["pawns"];
         red_cat_game = parse_cell(pawns["p1"]["cat"]);
         blue_cat_game = parse_cell(pawns["p2"]["cat"]);
         red_secondary_game = parse_cell(pawns["p1"]["mouse"]);
         blue_secondary_game = parse_cell(pawns["p2"]["mouse"]);
+    }
+
+    if (variant == Variant::AnimalCycle) {
+        json const& pawns = initial_state["pawns"];
+        Board board(model_columns, model_rows, variant,
+                    {{Player::Red, Pawn::Dog,
+                      transform_to_model(parse_cell(pawns["p1"]["dog"]), padding_config)},
+                     {Player::Red, Pawn::Mouse,
+                      transform_to_model(parse_cell(pawns["p1"]["mouse"]), padding_config)},
+                     {Player::Blue, Pawn::Cat,
+                      transform_to_model(parse_cell(pawns["p2"]["cat"]), padding_config)},
+                     {Player::Blue, Pawn::Elephant,
+                      transform_to_model(parse_cell(pawns["p2"]["elephant"]), padding_config)}});
+        place_padding_walls(board, padding_config);
+        for (auto const& wall_json : initial_state["walls"]) {
+            Wall model_wall = transform_to_model(parse_wall(wall_json), padding_config);
+            if (board.is_blocked(model_wall)) {
+                throw std::runtime_error("Authored wall overlaps padding or another authored wall");
+            }
+            board.place_wall(wall_json.value("playerId", 1) == 1 ? Player::Red : Player::Blue,
+                             model_wall);
+        }
+        Turn turn{Player::Red, Turn::First};
+        if (initial_state.contains("turn")) {
+            auto const& setup_turn = initial_state["turn"];
+            turn.player = setup_turn["playerId"].get<int>() == 1 ? Player::Red : Player::Blue;
+            turn.action = setup_turn["actionsTaken"].empty() ? Turn::First : Turn::Second;
+        }
+        return {std::move(board), turn, padding_config};
     }
 
     // Transform to model coordinates
@@ -645,15 +700,23 @@ static std::vector<Action> parse_notation_part(
     Cell game_cell{game_col, game_row};
     Cell model_cell = transform_to_model(game_cell, padding_config);
 
-    if (type_char == 'C' || type_char == 'M') {
+    if (type_char == 'D' || type_char == 'C' || type_char == 'M' || type_char == 'E') {
         // Pawn move - find path from current position to target (1 or 2 steps)
-        Pawn pawn = (type_char == 'C') ? Pawn::Cat : Pawn::Mouse;
+        Pawn pawn = type_char == 'D' ? Pawn::Dog
+                  : type_char == 'C' ? Pawn::Cat
+                  : type_char == 'M' ? Pawn::Mouse
+                                     : Pawn::Elephant;
+        if (!board.has_pawn(player, pawn) || !board.pawn_is_movable(pawn)) return {};
         Cell current_pos = board.pawn_position(player, pawn);
-        auto path = find_path(current_pos, model_cell, board);
+        auto path = find_path(current_pos, model_cell, board, player, pawn);
 
         std::vector<Action> actions;
-        for (Direction dir : path) {
-            actions.push_back(PawnMove{pawn, dir});
+        if (path.size() == 1) {
+            actions.push_back(PawnMove{pawn, path[0]});
+        } else if (path.size() == 2 && board.variant() == Variant::AnimalCycle) {
+            actions.push_back(PawnMove{pawn, path[0], path[1]});
+        } else {
+            for (Direction dir : path) actions.push_back(PawnMove{pawn, dir});
         }
         return actions;
     } else if (type_char == '>') {
@@ -708,9 +771,19 @@ std::optional<std::vector<Action>> parse_move_notation(
         }
 
         for (const auto& action : actions) {
+            auto const* pawn_move = std::get_if<PawnMove>(&action);
+            auto legal = current_board.legal_actions(turn.player);
+            if ((!pawn_move || !pawn_move->second_dir) &&
+                std::ranges::find(legal, action) == legal.end()) {
+                throw std::runtime_error("Move action is not legal");
+            }
             all_actions.push_back(action);
             // Update board state for subsequent parsing
             current_board.do_action(turn.player, action);
+            if (current_board.variant() == Variant::AnimalCycle &&
+                current_board.winner(Turn{turn.player, Turn::Second}) != Winner::Undecided) {
+                return all_actions;
+            }
         }
     }
 

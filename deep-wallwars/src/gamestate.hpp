@@ -30,7 +30,8 @@ enum class Player {
 
 enum class Variant {
     Classic,
-    Standard
+    Standard,
+    AnimalCycle
 };
 
 // Parses the complete set of rules identities supported by this engine.
@@ -75,8 +76,10 @@ struct Wall {
 };
 
 enum class Pawn {
+    Dog,
     Cat,
     Mouse,
+    Elephant,
     Home
 };
 
@@ -91,6 +94,7 @@ struct PawnPlacement {
 struct PawnMove {
     Pawn pawn;
     Direction dir;
+    std::optional<Direction> second_dir;
 
     bool operator==(PawnMove const& other) const = default;
 };
@@ -119,11 +123,13 @@ struct hash<Wall> {
 
 using Action = std::variant<PawnMove, Wall>;
 
+class Board;
+
 struct Move {
     Action first;
     Action second;
 
-    std::string standard_notation(Cell cat_start, Cell mouse_start, int rows) const;
+    std::string standard_notation(Board const& board, Player player) const;
 };
 
 // Helper functions for official notation output with row coordinate flipping
@@ -182,6 +188,7 @@ public:
 
     // Whether `player`'s cat is standing on the goal defined by its variant.
     bool reached_goal(Player player) const;
+    Winner animal_cycle_winner() const;
 
     // The winner judged from the position alone, which is what the rules ask at the END of a turn.
     // Prefer the overload below wherever the turn is known.
@@ -253,7 +260,7 @@ private:
         bool operator==(State const& other) const = default;
     };
 
-    using PawnSlots = std::array<std::optional<Cell>, 3>;
+    using PawnSlots = std::array<std::optional<Cell>, 5>;
     PawnSlots m_red_pawns;
     PawnSlots m_blue_pawns;
 
@@ -280,6 +287,7 @@ private:
 
     void find_bridges(Cell start, Cell target, std::vector<int>& levels, std::set<Wall>& bridges,
                       std::vector<StackFrame>& stack) const;
+    bool path_exists(Cell start, Cell target, std::optional<Wall> extra_wall = {}) const;
 };
 
 namespace std {

@@ -38,10 +38,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
     bool take_turn = !human_goes_first;
     while (true) {
         if (take_turn) {
-            Cell ai_cell = mcts.current_board().position(ai_player);
-            Cell ai_mouse = mcts.current_board().has_pawn(ai_player, Pawn::Mouse)
-                ? mcts.current_board().mouse(ai_player)
-                : mcts.current_board().home(ai_player);
+            Board notation_board = mcts.current_board();
             auto ai_move = co_await mcts.sample_and_commit_to_move(opts.samples);
             if (ai_move) {
                 recorder.record_move(ai_player, *ai_move);
@@ -50,7 +47,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
                 break;
             }
 
-            std::cout << ai_move->standard_notation(ai_cell, ai_mouse, mcts.current_board().rows())
+            std::cout << ai_move->standard_notation(notation_board, ai_player)
                       << "\n";
             if (auto winner = mcts.current_board().winner(); winner != Winner::Undecided) {
                 recorder.record_winner(winner);
