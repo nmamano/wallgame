@@ -17,16 +17,13 @@ import { GameState } from "../../shared/domain/game-state";
 import { clonePawns } from "../../shared/domain/pawns";
 import type {
   GameConfiguration,
-  GameResult,
   GameSnapshot,
   GameInitialState,
-  MatchScore,
   PlayerId,
   SerializedGameState,
   TimeControlConfig,
   TimeControlPreset,
   Variant,
-  WinReason,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
 import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
@@ -43,31 +40,11 @@ import type {
   PastGamesFilter,
   PastGamesResponse,
 } from "../../shared/contracts/games";
-
-const buildMatchScore = (result: GameResult | undefined): MatchScore => {
-  if (!result?.winner) {
-    return { 1: 0.5, 2: 0.5 };
-  }
-  return result.winner === 1 ? { 1: 1, 2: 0 } : { 1: 0, 2: 1 };
-};
-
-const winReasonValues: WinReason[] = [
-  "capture",
-  "timeout",
-  "resignation",
-  "draw-agreement",
-  "one-move-rule",
-  "survival",
-];
-
-const normalizeWinReason = (value?: string | null): WinReason => {
-  if (!value) {
-    return "draw-agreement";
-  }
-  return winReasonValues.includes(value as WinReason)
-    ? (value as WinReason)
-    : "draw-agreement";
-};
+import {
+  resolveReplayMatchScore,
+  resolveResultFromPlayers,
+  type SeriesStandingRow,
+} from "./replay-match-score";
 
 const parseStoredVariant = (value: string): Variant => {
   if (
@@ -79,34 +56,6 @@ const parseStoredVariant = (value: string): Variant => {
     return value;
   }
   throw new Error(`Unsupported stored variant: ${value}`);
-};
-
-const resolveResultFromPlayers = (
-  players: {
-    playerOrder: number;
-    outcomeRank: number;
-    outcomeReason: string;
-  }[],
-): GameResult | undefined => {
-  if (!players.length) {
-    return undefined;
-  }
-  const allWinners = players.every((player) => player.outcomeRank === 1);
-  if (allWinners) {
-    return {
-      reason: normalizeWinReason(players[0]?.outcomeReason),
-    };
-  }
-  const winner = players.find((player) => player.outcomeRank === 1);
-  if (!winner) {
-    return {
-      reason: normalizeWinReason(players[0]?.outcomeReason),
-    };
-  }
-  return {
-    winner: winner.playerOrder as PlayerId,
-    reason: normalizeWinReason(winner.outcomeReason),
-  };
 };
 
 const resolveTimeControl = (
@@ -163,9 +112,11 @@ const replayGameSelect = {
   views: gamesTable.views,
   movesCount: gamesTable.movesCount,
   puzzleId: gamesTable.puzzleId,
+  seriesId: gamesTable.seriesId,
+  rematchNumber: gamesTable.rematchNumber,
 };
 
-interface ReplayGameRow {
+export interface ReplayGameRow {
   gameId: string;
   puzzleId: string | null;
   variant: string;
@@ -177,6 +128,9 @@ interface ReplayGameRow {
   startedAt: Date;
   views: number;
   movesCount: number;
+  /** Null on rows written before a rematch chain was recorded at all. */
+  seriesId: string | null;
+  rematchNumber: number | null;
 }
 
 /**
@@ -215,17 +169,37 @@ const fetchReplayPlayers = (gameIds: string[]) =>
     .from(gamePlayersTable)
     .where(inArray(gamePlayersTable.gameId, gameIds));
 
+/**
+ * Every stored game of the given series, with each player's role and result.
+ * One query for the whole batch, like the two above.
+ */
+const fetchSeriesStandings = (seriesIds: string[]) =>
+  db
+    .select({
+      seriesId: gamesTable.seriesId,
+      gameId: gamesTable.gameId,
+      rematchNumber: gamesTable.rematchNumber,
+      playerRole: gamePlayersTable.playerRole,
+      outcomeRank: gamePlayersTable.outcomeRank,
+    })
+    .from(gamesTable)
+    .innerJoin(gamePlayersTable, eq(gamePlayersTable.gameId, gamesTable.gameId))
+    .where(inArray(gamesTable.seriesId, seriesIds));
+
 type ReplayDetailsRow = Awaited<ReturnType<typeof fetchReplayDetails>>[number];
-type ReplayPlayerRow = Awaited<ReturnType<typeof fetchReplayPlayers>>[number];
+export type ReplayPlayerRow = Awaited<
+  ReturnType<typeof fetchReplayPlayers>
+>[number];
 
 /** Pure assembly: replays the moves and shapes the response. Touches no tables. */
 const assembleReplayGame = (
   game: ReplayGameRow,
   details: ReplayDetailsRow | undefined,
   players: ReplayPlayerRow[],
+  seriesStandings: SeriesStandingRow[],
 ): ReplayGameData => {
   const result = resolveResultFromPlayers(players);
-  const matchScore = buildMatchScore(result);
+  const matchScore = resolveReplayMatchScore(game, players, seriesStandings);
 
   const timeControl = resolveTimeControl(
     game.timeControl,
@@ -377,10 +351,28 @@ const buildReplayGamesFromRows = async (
   }
 
   const gameIds = games.map((game) => game.gameId);
-  const [details, players] = await Promise.all([
+  const seriesIds = [
+    ...new Set(
+      games
+        .map((game) => game.seriesId)
+        .filter((seriesId): seriesId is string => seriesId !== null),
+    ),
+  ];
+  const [details, players, standings] = await Promise.all([
     fetchReplayDetails(gameIds),
     fetchReplayPlayers(gameIds),
+    seriesIds.length > 0 ? fetchSeriesStandings(seriesIds) : [],
   ]);
+  const standingsBySeriesId = new Map<string, SeriesStandingRow[]>();
+  for (const row of standings) {
+    if (row.seriesId === null) continue;
+    const existing = standingsBySeriesId.get(row.seriesId);
+    if (existing) {
+      existing.push(row);
+    } else {
+      standingsBySeriesId.set(row.seriesId, [row]);
+    }
+  }
 
   const detailsByGameId = new Map(details.map((row) => [row.gameId, row]));
   const playersByGameId = new Map<string, ReplayPlayerRow[]>();
@@ -401,6 +393,9 @@ const buildReplayGamesFromRows = async (
           game,
           detailsByGameId.get(game.gameId),
           playersByGameId.get(game.gameId) ?? [],
+          (game.seriesId !== null
+            ? standingsBySeriesId.get(game.seriesId)
+            : undefined) ?? [],
         ),
       );
     } catch (error) {
