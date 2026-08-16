@@ -669,6 +669,25 @@ TEST_CASE("make_padded_training_board - standard 8x8 in 12x10", "[Padding]") {
     CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Down}));
 }
 
+TEST_CASE("make_padded_training_board - animal 7x7 in 12x10", "[Padding]") {
+    Board board = make_padded_training_board(12, 10, 7, 7, Variant::AnimalCycle);
+
+    CHECK(board.columns() == 12);
+    CHECK(board.rows() == 10);
+
+    // Animal Cycle uses Standard-style top-left padding. The fixed game
+    // corners retain the authoritative ownership after transformation.
+    CHECK(board.pawn_position(Player::Red, Pawn::Cat) == Cell{0, 0});
+    CHECK(board.pawn_position(Player::Red, Pawn::Elephant) == Cell{6, 6});
+    CHECK(board.pawn_position(Player::Blue, Pawn::Mouse) == Cell{6, 0});
+    CHECK(board.pawn_position(Player::Blue, Pawn::Dog) == Cell{0, 6});
+
+    CHECK(board.is_blocked(Wall{Cell{6, 3}, Wall::Right}));
+    CHECK(board.is_blocked(Wall{Cell{3, 6}, Wall::Down}));
+    CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Right}));
+    CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Down}));
+}
+
 // ============================================================================
 // Moves the game board cannot hold (board a74a9963)
 // ============================================================================
