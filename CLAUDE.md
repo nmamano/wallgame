@@ -27,7 +27,7 @@ wallgame/
 ├── drizzle/                  # Database migrations (SQL)
 ├── scripts/                  # Build & migration scripts
 ├── assets/                   # Game assets, fonts, models
-└── info/                     # Design documentation (26 .md files)
+└── info/                     # Design documentation
 ```
 
 ## Commands
@@ -72,7 +72,7 @@ React single-page application for the game UI.
 ```
 frontend/src/
 ├── routes/          # TanStack Router file-based pages
-├── components/      # React UI components (26 directories)
+├── components/      # React UI components
 ├── hooks/           # Game orchestration hooks
 ├── lib/             # Controllers, game client, utilities
 ├── game/            # Local game state logic
@@ -133,7 +133,7 @@ Advanced AI engine using Monte Carlo Tree Search with neural network evaluation.
 
 ```
 deep-wallwars/
-├── src/             # C++ source files (25+ files)
+├── src/             # C++ source files
 │   ├── game/        # Game logic
 │   ├── mcts/        # Monte Carlo Tree Search
 │   └── nn/          # Neural network integration
@@ -181,7 +181,7 @@ Run with `bun run test` (or `bun run test:wsl` from a Windows shell).
 
 ### Database (`drizzle/`)
 
-Drizzle ORM migrations. 15+ SQL migration files.
+Drizzle ORM migrations.
 
 Schema defined in `server/db/schema/` (users, games, ratings, puzzles, etc.)
 
@@ -296,7 +296,7 @@ See `/info/` for detailed design docs including:
 
 ## Deployment
 
-- **Platform:** Fly.io (https://wallgame.fly.dev)
+- **Platform:** Fly.io. Live site: https://wallgame.io (use that in links, not wallgame.fly.dev)
 - **Database:** Neon PostgreSQL
 - **Config:** `fly.toml`, `Dockerfile`
 - **Migrations:** Auto-run via `release_command` in fly.toml
