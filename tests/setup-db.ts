@@ -130,6 +130,8 @@ export async function startContainerWithRetry(
  * depend on the database (e.g., server/db, server/app).
  */
 export async function setupEphemeralDb(): Promise<TestDbHandle> {
+  const containerStartedAt = performance.now();
+
   // Use GenericContainer instead of PostgreSqlContainer for better Bun compatibility
   const container = await startContainerWithRetry(() =>
     new GenericContainer("postgres:16-alpine")
@@ -145,6 +147,8 @@ export async function setupEphemeralDb(): Promise<TestDbHandle> {
       .withStartupTimeout(CONTAINER_ATTEMPT_TIMEOUT_MS)
       .start(),
   );
+
+  const containerReadyAt = performance.now();
 
   const host = container.getHost();
 
@@ -167,7 +171,29 @@ export async function setupEphemeralDb(): Promise<TestDbHandle> {
   await migrate(db, { migrationsFolder: "drizzle" });
   await migrationClient.end();
 
+  reportDbTiming({
+    mode: "container",
+    start_ms: containerReadyAt - containerStartedAt,
+    migrate_ms: performance.now() - containerReadyAt,
+  });
+
   return { container, connectionUrl: url };
+}
+
+/**
+ * One machine-readable line per DB-setup phase, so the runner can total what
+ * the suite spends on infrastructure rather than on tests. scripts/run-tests.ts
+ * greps captured output for the `[db-timing]` prefix and sums the key=value
+ * pairs; board 8ef2a23c wants the speedup measured, not assumed.
+ */
+function reportDbTiming(timings: Record<string, number | string>): void {
+  const pairs = Object.entries(timings)
+    .map(
+      ([key, value]) =>
+        `${key}=${typeof value === "number" ? String(Math.round(value)) : value}`,
+    )
+    .join(" ");
+  console.log(`[db-timing] ${pairs}`);
 }
 
 /**
@@ -181,5 +207,7 @@ export async function teardownEphemeralDb(
     return; // Container was never initialized (setup failed)
   }
 
+  const stopStartedAt = performance.now();
   await container.stop();
+  reportDbTiming({ stop_ms: performance.now() - stopStartedAt });
 }

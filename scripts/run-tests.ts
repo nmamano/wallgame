@@ -58,6 +58,24 @@ function collectTestFiles(): string[] {
   return files;
 }
 
+/**
+ * `tests/setup-db.ts` prints one `[db-timing] key=value ...` line per DB-setup
+ * phase (container start, migrations, template clone, stop). Summing them
+ * across all captured output splits the suite's wall time into infrastructure
+ * and actual tests, which is what board 8ef2a23c asks to measure.
+ */
+function collectDbTimings(totals: Map<string, number>, output: string): void {
+  for (const line of output.matchAll(/\[db-timing\] ([^\n]+)/g)) {
+    for (const pair of line[1].trim().split(/\s+/)) {
+      const [key, value] = pair.split("=");
+      const ms = Number(value);
+      if (key && Number.isFinite(ms)) {
+        totals.set(key, (totals.get(key) ?? 0) + ms);
+      }
+    }
+  }
+}
+
 async function runTests() {
   const testFiles = collectTestFiles();
 
@@ -65,11 +83,16 @@ async function runTests() {
 
   let passed = 0;
   let failed = 0;
+  const fileTimes: { file: string; ms: number }[] = [];
+  const dbTimings = new Map<string, number>();
+  const suiteStartedAt = performance.now();
 
   for (const file of testFiles) {
     console.log(`\n${"=".repeat(60)}`);
     console.log(`Running: ${file}`);
     console.log("=".repeat(60));
+
+    const fileStartedAt = performance.now();
 
     // Run tests and capture output
     const proc = Bun.spawn([process.execPath, "test", file], {
@@ -83,21 +106,45 @@ async function runTests() {
     ]);
 
     const exitCode = await proc.exited;
+    const elapsedMs = performance.now() - fileStartedAt;
+    fileTimes.push({ file, ms: elapsedMs });
+    collectDbTimings(dbTimings, stdout);
+    collectDbTimings(dbTimings, stderr);
+    const elapsed = `${(elapsedMs / 1000).toFixed(1)}s`;
 
     if (exitCode === 0) {
       passed++;
-      console.log(`✓ ${file} passed`);
+      console.log(`✓ ${file} passed (${elapsed})`);
     } else {
       failed++;
-      console.log(`✗ ${file} failed`);
+      console.log(`✗ ${file} failed (${elapsed})`);
       // Only show detailed output on failure
       if (stdout.trim()) console.log(stdout.trim());
       if (stderr.trim()) console.error(stderr.trim());
     }
   }
 
+  const totalSeconds = (performance.now() - suiteStartedAt) / 1000;
+
   console.log(`\n${"=".repeat(60)}`);
   console.log(`Results: ${passed} passed, ${failed} failed`);
+  console.log(`Total: ${totalSeconds.toFixed(1)}s`);
+
+  if (dbTimings.size > 0) {
+    const dbTotalMs = [...dbTimings.values()].reduce((sum, ms) => sum + ms, 0);
+    const phases = [...dbTimings.entries()]
+      .map(([key, ms]) => `${key}=${(ms / 1000).toFixed(1)}s`)
+      .join(" ");
+    console.log(
+      `DB infrastructure: ${(dbTotalMs / 1000).toFixed(1)}s (${phases})`,
+    );
+  }
+
+  const slowest = [...fileTimes].sort((a, b) => b.ms - a.ms).slice(0, 5);
+  console.log("Slowest files:");
+  for (const { file, ms } of slowest) {
+    console.log(`  ${(ms / 1000).toFixed(1)}s ${file}`);
+  }
   console.log("=".repeat(60));
 
   process.exit(failed > 0 ? 1 : 0);
