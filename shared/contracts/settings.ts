@@ -54,6 +54,12 @@ export const updateVariantParametersSchema = z.object({
 export interface SettingsResponse {
   displayName: string;
   capitalizedDisplayName?: string;
+  /**
+   * False while the account still carries the name generated at sign-up. The
+   * app asks such a player to choose one before they continue. Required, so a
+   * caller cannot silently read a missing field as "already chosen".
+   */
+  hasChosenDisplayName: boolean;
   boardTheme: string;
   pawnColor: string;
   pawnSettings: PawnSetting[];
@@ -91,4 +97,11 @@ export interface UpdateDisplayNameResponse {
   success: boolean;
   displayName: string;
   capitalizedDisplayName: string;
+  /**
+   * Always true on success - naming yourself IS choosing. Echoed rather than
+   * assumed by the client so the cache records a fact the server stated, and so
+   * the blocking picker closes on this response instead of waiting for a
+   * refetch that could be slow or fail.
+   */
+  hasChosenDisplayName: boolean;
 }

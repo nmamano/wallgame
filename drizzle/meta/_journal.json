@@ -197,6 +197,13 @@
       "when": 1786647302725,
       "tag": "0027_animal_pawn_appearance",
       "breakpoints": true
+    },
+    {
+      "idx": 28,
+      "version": "7",
+      "when": 1786862644809,
+      "tag": "0028_user_chose_display_name",
+      "breakpoints": true
     }
   ]
 }

@@ -125,6 +125,7 @@ export const settingsRoute = new Hono()
       return c.json({
         displayName: userInfo.displayName,
         capitalizedDisplayName: userInfo.capitalizedDisplayName,
+        hasChosenDisplayName: userInfo.hasChosenDisplayName,
         boardTheme: settings.boardTheme,
         pawnColor: settings.pawnColor,
         pawnSettings: pawnSettings,
@@ -460,11 +461,17 @@ export const settingsRoute = new Hono()
         // Update display name
         // Store lowercase version for uniqueness checks
         // Store user's exact capitalization for display
+        //
+        // This is the only place a display name is ever written, so it is also
+        // where "the player chose their own name" is recorded. The sign-up
+        // picker and this settings page reach the same statement through the
+        // same route; there is no second write path that could disagree.
         await db
           .update(usersTable)
           .set({
             displayName: displayNameLower,
             capitalizedDisplayName: displayNameTrimmed, // User's exact capitalization
+            hasChosenDisplayName: true,
           })
           .where(eq(usersTable.userId, userId));
 
@@ -472,6 +479,7 @@ export const settingsRoute = new Hono()
           success: true,
           displayName: displayNameLower,
           capitalizedDisplayName: displayNameTrimmed,
+          hasChosenDisplayName: true,
         });
       } catch (error) {
         console.error("Error updating display name:", error);

@@ -12,6 +12,7 @@ export interface UserInfo {
   userId: number;
   displayName: string;
   capitalizedDisplayName: string;
+  hasChosenDisplayName: boolean;
   createdAt: Date;
   isDeleted: boolean;
 }
@@ -160,6 +161,7 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
       userId: userAuthTable.userId,
       displayName: usersTable.displayName,
       capitalizedDisplayName: usersTable.capitalizedDisplayName,
+      hasChosenDisplayName: usersTable.hasChosenDisplayName,
       createdAt: usersTable.createdAt,
       isDeleted: usersTable.isDeleted,
     })
@@ -176,6 +178,7 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
       .select({
         displayName: usersTable.displayName,
         capitalizedDisplayName: usersTable.capitalizedDisplayName,
+        hasChosenDisplayName: usersTable.hasChosenDisplayName,
         createdAt: usersTable.createdAt,
         isDeleted: usersTable.isDeleted,
       })
@@ -194,6 +197,7 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
       userId,
       displayName: newUserInfo[0].displayName,
       capitalizedDisplayName: newUserInfo[0].capitalizedDisplayName,
+      hasChosenDisplayName: newUserInfo[0].hasChosenDisplayName,
       createdAt: newUserInfo[0].createdAt,
       isDeleted: newUserInfo[0].isDeleted,
     };
@@ -203,6 +207,7 @@ export async function getUserFromKinde(kindeUser: UserType): Promise<UserInfo> {
     userId: userData[0].userId,
     displayName: userData[0].displayName,
     capitalizedDisplayName: userData[0].capitalizedDisplayName,
+    hasChosenDisplayName: userData[0].hasChosenDisplayName,
     createdAt: userData[0].createdAt,
     isDeleted: userData[0].isDeleted,
   };

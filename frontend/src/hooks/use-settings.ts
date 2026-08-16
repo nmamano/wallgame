@@ -18,6 +18,7 @@ import { buildOrdinaryInitialState } from "../../../shared/domain/game-configura
 import type {
   PawnSkinType,
   SettingsResponse,
+  UpdateDisplayNameResponse,
   VariantParameters,
   VariantSetting,
 } from "../../../shared/contracts/settings";
@@ -79,6 +80,17 @@ export interface SettingsState {
   // Always gate display name UI on isLoggedIn to avoid calling these unnecessarily.
   displayName: string;
   setDisplayName: (value: string) => void;
+  /**
+   * Whether this player has already named themselves.
+   *
+   * `undefined` means "not known": logged out, auth still settling, settings
+   * still loading, or the settings request FAILED. It is deliberately not
+   * collapsed to false, because a failed request leaves React Query no longer
+   * pending with no data, and treating that as "has not chosen" would put an
+   * undismissable name picker in front of every logged-in player. Gate on
+   * `=== false`, never on `!hasChosenDisplayName`.
+   */
+  hasChosenDisplayName: boolean | undefined;
   displayNameError: string | null; // Server errors or validation errors from handleChangeDisplayName
   displayNameValidationError: string | null; // Real-time validation errors (shown before clicking button)
   handleChangeDisplayName: () => void;
@@ -269,7 +281,7 @@ function useSettingsInternal(
   // but if you call updateDisplayNameMutation.mutate() directly elsewhere,
   // you must check isLoggedIn first.
   const updateDisplayNameMutation = useMutation<
-    { success: boolean; displayName?: string; capitalizedDisplayName?: string },
+    UpdateDisplayNameResponse,
     Error,
     string
   >({
@@ -285,11 +297,7 @@ function useSettingsInternal(
         throw new Error("You must be logged in to change your display name.");
       }
 
-      return settingsMutations.updateDisplayName(displayName) as Promise<{
-        success: boolean;
-        displayName?: string;
-        capitalizedDisplayName?: string;
-      }>;
+      return settingsMutations.updateDisplayName(displayName);
     },
     onSuccess: (data) => {
       // Apply server response (with proper capitalization/normalization)
@@ -307,6 +315,13 @@ function useSettingsInternal(
               displayName: data.displayName ?? prev.displayName,
               capitalizedDisplayName:
                 data.capitalizedDisplayName ?? prev.capitalizedDisplayName,
+              // Recorded here, from the server's own response, rather than left
+              // to the invalidate below. The sign-up picker closes on this
+              // value, so waiting for a refetch would leave a blocking dialog
+              // on screen after a write that already succeeded - and keep it
+              // there for good if the refetch fails.
+              hasChosenDisplayName:
+                data.hasChosenDisplayName ?? prev.hasChosenDisplayName,
             };
           },
         );
@@ -907,6 +922,11 @@ function useSettingsInternal(
           // No-op for logged-out users - display name cannot be changed when not logged in
           // Callers should gate display name UI on isLoggedIn to avoid calling this
         },
+    // Read straight off the cached response, so it is undefined until a settings
+    // load has actually succeeded. See the field's note on SettingsState.
+    hasChosenDisplayName: isLoggedIn
+      ? dbSettings?.hasChosenDisplayName
+      : undefined,
     displayNameError: isLoggedIn ? displayNameError : null,
     displayNameValidationError: isLoggedIn ? displayNameValidationError : null,
     handleChangeDisplayName: isLoggedIn

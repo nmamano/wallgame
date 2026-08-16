@@ -10,6 +10,7 @@ import { BoardThemeProvider } from "@/components/board-theme-provider";
 import { SoundProvider } from "@/components/sound-provider";
 import { Navigation } from "@/components/navigation";
 import { Toaster } from "@/components/ui/toaster";
+import { UsernamePickerGate } from "@/components/username-picker";
 import { useMediaQuery } from "@/hooks/use-media-query";
 
 interface MyRouterContext {
@@ -38,6 +39,7 @@ function Root() {
             <Outlet />
           </div>
           <Toaster />
+          <UsernamePickerGate />
           {/* Can help with debugging -- don't need it right now. */}
           {/* <TanStackRouterDevtools /> */}
         </SoundProvider>

@@ -16,6 +16,7 @@
     "harness:campaign": "bun run build && bun scripts/browser-harness/drive-campaign-progress.ts",
     "harness:bots": "bun run build && bun scripts/browser-harness/drive-bots-empty-state.ts",
     "harness:pwa": "bun run build && bun scripts/browser-harness/drive-pwa-manifest.ts",
+    "harness:username": "bun run build && bun scripts/browser-harness/drive-username-picker.ts",
     "format": "bun x prettier --write .",
     "format:check": "bun x prettier --check .",
     "lint": "NODE_OPTIONS=--max-old-space-size=4096 bun x eslint . --fix --cache --cache-location .eslintcache",
