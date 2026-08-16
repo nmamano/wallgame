@@ -5,6 +5,7 @@ import {
   puzzleProgressQueryOptions,
 } from "./use-puzzle-progress";
 import { PUZZLE_PROGRESS_QUERY_KEY } from "@/lib/api";
+import type { PuzzleProgressResponse } from "../../../shared/contracts/puzzles";
 
 /**
  * Freshness of the solved markers (S-G3).
@@ -42,5 +43,20 @@ describe("puzzle progress freshness", () => {
 
   it("uses the same key the API module exposes for invalidation", () => {
     expect(puzzleProgressQueryOptions.queryKey).toBe(PUZZLE_PROGRESS_QUERY_KEY);
+  });
+
+  it("carries campaign completion in the unified payload (S-FOLD)", () => {
+    // Campaign markers ride in THIS query since S-FOLD retired the separate
+    // CAMPAIGN_PROGRESS_QUERY_KEY - the /puzzles campaign section reads
+    // `completedCampaignLevelIds` out of the unified response. The typed
+    // literal is the assertion: rename or drop the field server-side and this
+    // stops compiling. (Runtime coverage of the real re-read lives in
+    // scripts/browser-harness/drive-campaign-progress.ts.)
+    const payload: PuzzleProgressResponse = {
+      verifiedSolvedSavedPuzzleIds: [],
+      assertedCompletedSavedPuzzleIds: [],
+      completedCampaignLevelIds: ["1"],
+    };
+    expect(payload.completedCampaignLevelIds).toEqual(["1"]);
   });
 });
