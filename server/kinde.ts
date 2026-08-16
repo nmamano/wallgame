@@ -69,7 +69,16 @@ export const sessionManager = (c: Context): SessionManager => ({
   },
 });
 
-interface Env {
+/**
+ * The context shape the auth middlewares add.
+ *
+ * Exported so a caller that WRAPS one of them can type its own handler the
+ * same way. Without it a wrapper is `MiddlewareHandler` over hono's default
+ * `any` env, and passing that context on trips
+ * `@typescript-eslint/no-unsafe-argument` - and the honest fix is to share this
+ * type rather than to restate a narrower copy at the call site.
+ */
+export interface Env {
   Variables: {
     user?: UserType;
   };

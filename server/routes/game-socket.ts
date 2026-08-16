@@ -33,6 +33,8 @@ import {
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
+import { getOptionalUserMiddleware, type Env as KindeEnv } from "../kinde";
+import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import { persistThenBroadcastFinish } from "../games/finish-sequence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
 import type { PlayerId } from "../../shared/domain/game-types";
@@ -80,6 +82,11 @@ interface SessionSocket {
   socketToken: string | null; // null for spectators
   role: "host" | "joiner" | "spectator";
   id: string; // Unique identifier for this socket connection
+  /**
+   * A logged-in spectator's account display name; see `GameSocketMeta`.
+   * Display only - never an authorization input.
+   */
+  authDisplayName?: string;
 }
 
 let nextSocketId = 0;
@@ -1900,8 +1907,14 @@ const validateChatChannelAccess = (
  */
 const getChatSenderName = (socket: SessionSocket): string => {
   if (socket.role === "spectator") {
-    // A spectator has no seat to carry a name, so the session holds one.
-    return assignSpectatorGuestName(socket.sessionId, socket.id);
+    // A logged-in spectator chats under their account, resolved once at the
+    // handshake by the same rule a seat uses. Anonymous spectators, and
+    // accounts with no users row yet, fall through to the guest pool - which
+    // the session holds for them, since they have no seat to carry a name.
+    return (
+      socket.authDisplayName ??
+      assignSpectatorGuestName(socket.sessionId, socket.id)
+    );
   }
 
   const session = getSession(socket.sessionId);
@@ -2427,6 +2440,17 @@ interface GameSocketMeta {
   socketToken: string | null; // null for spectators
   player: SessionPlayer | null; // null for spectators
   isSpectator: boolean;
+  /**
+   * A logged-in SPECTATOR's account display name. Absent for an anonymous
+   * spectator, for an account with no users row yet, and for players - who
+   * carry their name on their seat instead.
+   *
+   * Optional rather than an empty-string sentinel, so "not applicable here"
+   * cannot be mistaken for a real name. It is for DISPLAY ONLY and must never
+   * become an authorization input: a seat token is the only thing that grants
+   * anything on this socket.
+   */
+  authDisplayName?: string;
 }
 
 const checkOrigin = (c: Context): boolean => {
@@ -2452,6 +2476,74 @@ const originCheckMiddleware: MiddlewareHandler = async (c, next) => {
     return c.text("Unauthorized origin", 403);
   }
   await next();
+};
+
+/**
+ * Optional account lookup, for SPECTATOR upgrades only.
+ *
+ * A player socket is skipped deliberately, and not merely to save a cookie
+ * check. Their seat token already carries both identity and authority, so the
+ * lookup could only produce an unused value - and `getOptionalUserMiddleware`
+ * calls `await next()` a SECOND time inside its own catch (kinde.ts:157-161),
+ * so anything that throws downstream of it runs the rest of the chain twice.
+ * Putting the player handshake behind that, for a value players do not use,
+ * would widen a chat-naming change into the move path.
+ *
+ * The token test is the same one `gameSocketAuth` uses to decide the role, so
+ * the two cannot disagree about who is a spectator.
+ */
+const spectatorOptionalAuth: MiddlewareHandler<KindeEnv> = async (c, next) => {
+  if (c.req.query("token")) {
+    return next();
+  }
+  return getOptionalUserMiddleware(c, next);
+};
+
+/**
+ * The name a SPECTATOR should chat under, or undefined for an anonymous one.
+ *
+ * A spectator has no seat, so nothing else on the socket says who they are.
+ * `getOptionalUserMiddleware` has already put the account on the context if the
+ * request carried a valid session; this turns that into the same name a SEAT
+ * would get, via the same helper (`getDisplayNameForAuthUser`, which prefers
+ * capitalizedDisplayName). Resolved once here rather than per message: it
+ * cannot change while the socket is open, and the chat path should not carry a
+ * database read.
+ *
+ * BEST-EFFORT ON PURPOSE, and the try/catch is load-bearing rather than
+ * defensive habit. The caller wraps `getSession` AND `next()` in one broad
+ * catch that answers "Game not found", so a database hiccup in here would tell
+ * a spectator that a game which demonstrably exists does not - optional
+ * identity must never make WATCHING depend on the user database. On failure the
+ * spectator is simply anonymous and gets a guest name, which is exactly today's
+ * behaviour.
+ *
+ * Undefined is also the ordinary answer for a logged-in account with no users
+ * row yet: that is the sign-up display-name flow, and it is a contract of
+ * `getDisplayNameForAuthUser`, not a failure - so only the throw is logged.
+ */
+const resolveSpectatorDisplayName = async (
+  c: Context,
+): Promise<string | undefined> => {
+  const user = c.get("user") as { id?: string } | undefined;
+  if (!user?.id) {
+    return undefined;
+  }
+  try {
+    return await getDisplayNameForAuthUser(user.id);
+  } catch (error) {
+    // No account identifier is ADDED here, deliberately: which spectator it
+    // was says nothing useful about a database failure. That is not a claim
+    // that the line carries none - the error is logged and a driver error can
+    // carry its own details.
+    console.warn(
+      "[ws] spectator display-name lookup failed, using a guest name",
+      {
+        error,
+      },
+    );
+    return undefined;
+  }
 };
 
 const gameSocketAuth: MiddlewareHandler = async (c, next) => {
@@ -2501,6 +2593,7 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
         socketToken: null,
         player: null,
         isSpectator: true,
+        authDisplayName: await resolveSpectatorDisplayName(c),
       } satisfies GameSocketMeta);
       recordSocketConnect(sessionId, { role, outcome: "authorized" });
       await next();
@@ -2545,6 +2638,13 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
 export const registerGameSocketRoute = (app: Hono) => {
   app.get(
     "/ws/games/:id",
+    // Ahead of gameSocketAuth so a SPECTATOR can be named by their account
+    // rather than from the guest pool. Optional by design: it sets the user
+    // when the request carries a valid session, leaves it undefined otherwise,
+    // and never fails the request - so an expired cookie degrades to anonymous
+    // spectating rather than breaking it. Players skip it entirely; see the
+    // wrapper.
+    spectatorOptionalAuth,
     gameSocketAuth,
     upgradeWebSocket((c) => {
       const meta = c.get("gameSocketMeta") as GameSocketMeta | undefined;
@@ -2567,13 +2667,20 @@ export const registerGameSocketRoute = (app: Hono) => {
               socketToken: null,
               role: "spectator",
               id: generateSocketId(),
+              authDisplayName: meta.authDisplayName,
             };
             addSocket(entry);
             incrementSpectatorCount(sessionId);
             broadcastLiveGamesUpsert(sessionId); // Update spectator count in list
             // Named on arrival, not on their first message, so a spectator is
             // somebody for as long as they are here.
-            assignSpectatorGuestName(sessionId, entry.id);
+            //
+            // Only for an anonymous one. A logged-in spectator already has a
+            // name, and taking a guest name for them as well would spend one
+            // from a pool that `namesInUse` is trying to keep distinct.
+            if (entry.authDisplayName === undefined) {
+              assignSpectatorGuestName(sessionId, entry.id);
+            }
             console.info("[ws] spectator connected", { sessionId });
             sendWelcome(entry);
             sendStateOnce(entry);

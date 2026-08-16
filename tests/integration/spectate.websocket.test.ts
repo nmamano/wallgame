@@ -311,8 +311,18 @@ async function openGameSocket(
 
 /**
  * Opens a spectator WebSocket connection (no token).
+ *
+ * `authUserId` makes the spectator a LOGGED-IN one. In test mode the server
+ * mints a user from the `x-test-user-id` header (kinde.ts:82, gated on
+ * NODE_ENV=test, which tests/setup-db.ts sets), so this drives the same
+ * server-side identity path a real Kinde cookie would, over a real upgrade
+ * request. Omitting it is an anonymous spectator, which is what every existing
+ * caller wants.
  */
-async function openSpectatorSocket(gameId: string): Promise<TestSocket> {
+async function openSpectatorSocket(
+  gameId: string,
+  options?: { authUserId?: string },
+): Promise<TestSocket> {
   return new Promise((resolve, reject) => {
     // No token = spectator mode
     const wsUrl = baseUrl.replace("http", "ws") + `/ws/games/${gameId}`;
@@ -320,6 +330,9 @@ async function openSpectatorSocket(gameId: string): Promise<TestSocket> {
     const ws = new WebSocket(wsUrl, {
       headers: {
         Origin: "http://localhost:5173",
+        ...(options?.authUserId
+          ? { "x-test-user-id": options.authUserId }
+          : {}),
       },
     });
 
@@ -1162,6 +1175,115 @@ describe("Spectator WebSocket", () => {
       spectatorSocket.close();
       hostSocket.close();
       joinerSocket.close();
+    }
+  });
+});
+
+/**
+ * A logged-in user watching a live game used to chat as "Guest <animal>".
+ *
+ * The identity was never lost - it was never asked for. gameSocketAuth decided
+ * the role from the presence of a seat token alone, the socket route carried no
+ * auth middleware, and SessionSocket had no field an identity could live in, so
+ * getChatSenderName had nothing to read and named every spectator from the
+ * guest pool.
+ *
+ * These tests drive the real server path over a real upgrade request. The
+ * logged-in half cannot be done through a browser here - signing in goes
+ * through Kinde and there are no test credentials - so they use the same
+ * `x-test-user-id` seam five other integration tests already use.
+ */
+describe("Spectator chat identity", () => {
+  /** Creates the account and gives it a display name. */
+  async function putDisplayName(authUserId: string, displayName: string) {
+    const response = await fetch(`${baseUrl}/api/settings/display-name`, {
+      method: "PUT",
+      headers: {
+        "x-test-user-id": authUserId,
+        "Content-Type": "application/json",
+      },
+      body: JSON.stringify({ displayName }),
+    });
+    if (!response.ok) {
+      throw new Error(
+        `display-name setup failed: ${response.status} ${await response.text()}`,
+      );
+    }
+  }
+
+  /** A game with both seats filled and ready, so spectators may connect. */
+  async function readyGame(suffix: string) {
+    const hostId = `host-chat-${suffix}`;
+    const joinerId = `joiner-chat-${suffix}`;
+    const createRes = await createFriendGame(hostId, DEFAULT_CONFIG, {
+      hostIsPlayer1: true,
+    });
+    await joinFriendGame(joinerId, createRes.gameId);
+    await markHostReady(createRes.gameId, createRes.hostToken);
+    return createRes.gameId;
+  }
+
+  /** Sends one audience message and returns the broadcast the server echoes. */
+  async function sayInAudience(socket: TestSocket, text: string) {
+    socket.ws.send(
+      JSON.stringify({ type: "chat-message", channel: "audience", text }),
+    );
+    return socket.waitForMessage("chat-message", {
+      ignore: ["match-status", "state"],
+    });
+  }
+
+  it("names a logged-in spectator by their account", async () => {
+    const authUserId = "spectator-logged-in-1";
+    // Mixed case on purpose. The row stores displayName lowercased and
+    // capitalizedDisplayName as typed, so asserting the capitalized form proves
+    // the same precedence rule a SEAT uses (getDisplayNameForAuthUser returns
+    // capitalizedDisplayName ?? displayName) rather than merely echoing the
+    // header id back.
+    await putDisplayName(authUserId, "WandaWatcher");
+    const gameId = await readyGame("li1");
+
+    const spectator = await openSpectatorSocket(gameId, { authUserId });
+    try {
+      await spectator.waitForMessage("state", { ignore: ["match-status"] });
+      const chat = await sayInAudience(spectator, "hello from an account");
+      expect(chat.senderName).toBe("WandaWatcher");
+      expect(chat.senderName).not.toContain("Guest");
+    } finally {
+      spectator.close();
+    }
+  });
+
+  it("still names an anonymous spectator as a guest", async () => {
+    // The control. Without it the fix is satisfied by anything that stops
+    // producing guest names, including trusting something it should not.
+    const gameId = await readyGame("anon1");
+
+    const spectator = await openSpectatorSocket(gameId);
+    try {
+      await spectator.waitForMessage("state", { ignore: ["match-status"] });
+      const chat = await sayInAudience(spectator, "hello from nobody");
+      expect(chat.senderName).toContain("Guest");
+    } finally {
+      spectator.close();
+    }
+  });
+
+  it("falls back to a guest name for an account with no users row", async () => {
+    // A Kinde account can exist before its users row does - that is the
+    // sign-up display-name flow - so getDisplayNameForAuthUser returns
+    // undefined by contract, not by failure. Chat must name them anyway.
+    const gameId = await readyGame("norow1");
+
+    const spectator = await openSpectatorSocket(gameId, {
+      authUserId: "spectator-without-a-users-row",
+    });
+    try {
+      await spectator.waitForMessage("state", { ignore: ["match-status"] });
+      const chat = await sayInAudience(spectator, "hello from a new account");
+      expect(chat.senderName).toContain("Guest");
+    } finally {
+      spectator.close();
     }
   });
 });
