@@ -29,7 +29,10 @@ import {
   isForcedToAuthoredLine,
   type PuzzlePlayback,
 } from "@/hooks/use-puzzle-playback";
-import { resolveSavedPuzzle, savedPuzzleSlug } from "@/lib/puzzle-links";
+import {
+  resolveSavedPuzzle,
+  savedPuzzleSlug,
+} from "../../../shared/domain/puzzle-links";
 import {
   puzzleLaunchReducer,
   initialPuzzleLaunchState,

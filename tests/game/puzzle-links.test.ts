@@ -6,7 +6,7 @@ import {
   puzzleShareUrl,
   resolveSavedPuzzle,
   type PuzzleKind,
-} from "../../frontend/src/lib/puzzle-links";
+} from "../../shared/domain/puzzle-links";
 import { getLevelIds } from "../../shared/domain/solo-campaign-levels";
 
 /**

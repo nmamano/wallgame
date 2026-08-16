@@ -24,7 +24,7 @@ import { saveGameHandshake } from "@/lib/game-session";
 import { usePuzzleCardVotes } from "@/hooks/use-puzzle-vote";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { SharePuzzleButton } from "@/components/share-puzzle-button";
-import { savedPuzzleSlug } from "@/lib/puzzle-links";
+import { savedPuzzleSlug } from "../../../shared/domain/puzzle-links";
 import {
   PUZZLE_ACTION_SIZING_LABEL,
   puzzleActionLabel,

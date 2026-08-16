@@ -83,6 +83,9 @@ async function importServerModules() {
   eq = (await import("drizzle-orm")).eq;
   const { puzzlesRoute } = await import("../../server/routes/puzzles");
   app = new Hono().route("/api/puzzles", puzzlesRoute);
+  // The sitemap reads the same table, so it is checked here rather than in a
+  // file of its own: another integration file is another Postgres container.
+  (await import("../../server/routes/seo")).registerSeoRoutes(app);
 }
 
 async function seedUser(displayName: string): Promise<number> {
@@ -453,5 +456,71 @@ describe("aggregates across users", () => {
       }[];
     };
     expect(puzzles[0]).toMatchObject({ likes: 1, dislikes: 1, myVote: -1 });
+  });
+});
+
+/**
+ * Board 0dc8236e. The sitemap lists puzzle pages generated from the database,
+ * so it must move with the table: a retired puzzle leaves for the same reason
+ * it leaves the public listing.
+ *
+ * Asserted against a REAL database on purpose. The unit tests in
+ * tests/seo-endpoints.test.ts prove the document is built correctly from a
+ * list of paths; only this one proves the list is the right list.
+ */
+describe("the sitemap's puzzle pages", () => {
+  it("lists the enabled puzzles and not the retired one", async () => {
+    const body = await (await app.request("/sitemap.xml")).text();
+    const locations = [...body.matchAll(/<loc>([^<]*)<\/loc>/g)].map(
+      (match) => match[1],
+    );
+
+    const puzzleLocations = locations.filter((location) =>
+      location.includes("/puzzles/"),
+    );
+    // Only per-puzzle pages: the "/puzzles" listing has no trailing slash and
+    // is asserted with the other canonical pages in the next test.
+    expect(puzzleLocations).not.toHaveLength(0);
+
+    const rows = await db
+      .select({
+        id: savedPuzzlesTable.id,
+        displayName: savedPuzzlesTable.displayName,
+        enabled: savedPuzzlesTable.enabled,
+      })
+      .from(savedPuzzlesTable);
+
+    const { savedPuzzleSlug } =
+      await import("../../shared/domain/puzzle-links");
+    for (const row of rows) {
+      const url = `https://wallgame.io/puzzles/${savedPuzzleSlug(row)}`;
+      if (row.enabled) {
+        expect(puzzleLocations).toContain(url);
+      } else {
+        expect(puzzleLocations).not.toContain(url);
+      }
+    }
+    // The known-bad half: the retired row really is one of the rows checked,
+    // so the exclusion above had something to exclude.
+    expect(rows.some((row) => !row.enabled)).toBe(true);
+  });
+
+  it("keeps the canonical pages ahead of the puzzles", async () => {
+    const body = await (await app.request("/sitemap.xml")).text();
+    const locations = [...body.matchAll(/<loc>([^<]*)<\/loc>/g)].map(
+      (match) => match[1],
+    );
+
+    expect(locations.slice(0, 9)).toEqual([
+      "https://wallgame.io/",
+      "https://wallgame.io/play",
+      "https://wallgame.io/puzzles",
+      "https://wallgame.io/learn",
+      "https://wallgame.io/ranking",
+      "https://wallgame.io/live-games",
+      "https://wallgame.io/past-games",
+      "https://wallgame.io/about",
+      "https://wallgame.io/study-board",
+    ]);
   });
 });

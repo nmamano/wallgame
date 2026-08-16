@@ -1,7 +1,10 @@
 import { useEffect, useRef, useState } from "react";
 import { Button } from "@/components/ui/button";
 import { Check, Share2 } from "lucide-react";
-import { puzzleShareUrl, type PuzzleKind } from "@/lib/puzzle-links";
+import {
+  puzzleShareUrl,
+  type PuzzleKind,
+} from "../../../shared/domain/puzzle-links";
 
 interface SharePuzzleButtonProps {
   kind: PuzzleKind;

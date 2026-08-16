@@ -61,27 +61,42 @@ describe("GET /robots.txt", () => {
   });
 });
 
-describe("GET /sitemap.xml", () => {
-  it("serves XML rather than the SPA shell", async () => {
-    const { app } = createApp();
+describe("buildSitemapXml", () => {
+  it("appends puzzle pages after the canonical ones, changing neither", async () => {
+    const { buildSitemapXml } = await import("../server/routes/seo");
 
-    const response = await app.request("/sitemap.xml");
-    const body = await response.text();
+    const withPuzzles = sitemapLocations(
+      buildSitemapXml(["/puzzles/1", "/puzzles/2"]),
+    );
+    const without = sitemapLocations(buildSitemapXml());
 
-    expect(response.status).toBe(200);
-    expect(response.headers.get("content-type")).toMatch(/^application\/xml\b/);
-    expect(body.toLowerCase()).not.toContain("<!doctype html");
-    expect(body).toStartWith('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(withPuzzles.slice(0, without.length)).toEqual(without);
+    expect(withPuzzles.slice(without.length)).toEqual([
+      "https://wallgame.io/puzzles/1",
+      "https://wallgame.io/puzzles/2",
+    ]);
   });
 
-  it("advertises exactly the canonical pages", async () => {
-    const { app } = createApp();
+  /**
+   * The escaping the file has always carried, finally exercised. Until the
+   * list came from the database every value was a constant with no XML
+   * metacharacter in it, so nothing could tell whether escapeXml was wired up.
+   */
+  it("escapes a slug that would otherwise break the document", async () => {
+    const { buildSitemapXml } = await import("../server/routes/seo");
 
-    const body = await (await app.request("/sitemap.xml")).text();
+    const xml = buildSitemapXml(["/puzzles/a&b<c"]);
 
-    // An exact list, not a subset check: a subset check would silently accept a
-    // private or legacy URL that someone later appends to the route list.
-    expect(sitemapLocations(body)).toEqual([
+    expect(xml).toContain("https://wallgame.io/puzzles/a&amp;b&lt;c");
+    expect(xml).not.toContain("a&b<c");
+  });
+
+  it("advertises exactly the canonical pages when there are no puzzles", async () => {
+    const { buildSitemapXml } = await import("../server/routes/seo");
+
+    // An exact list, not a subset check: a subset check would silently accept
+    // a private or legacy URL that someone later appends to the route list.
+    expect(sitemapLocations(buildSitemapXml())).toEqual([
       "https://wallgame.io/",
       "https://wallgame.io/play",
       "https://wallgame.io/puzzles",
@@ -95,10 +110,9 @@ describe("GET /sitemap.xml", () => {
   });
 
   it("omits the legacy redirects and the per-visitor pages", async () => {
-    const { app } = createApp();
+    const { buildSitemapXml } = await import("../server/routes/seo");
 
-    const body = await (await app.request("/sitemap.xml")).text();
-    const locations = sitemapLocations(body);
+    const locations = sitemapLocations(buildSitemapXml(["/puzzles/1"]));
 
     // Named separately from the exact-set assertion above because when one of
     // these does appear, the failure should say which kind of mistake it was.
@@ -110,5 +124,52 @@ describe("GET /sitemap.xml", () => {
     ]) {
       expect(locations).not.toContain(`https://wallgame.io${path}`);
     }
+  });
+
+  it("stays well-formed XML with puzzles in it", async () => {
+    const { buildSitemapXml } = await import("../server/routes/seo");
+
+    const xml = buildSitemapXml(["/puzzles/1"]);
+
+    expect(xml).toStartWith('<?xml version="1.0" encoding="UTF-8"?>');
+    expect(xml).toContain(
+      '<urlset xmlns="http://www.sitemaps.org/schemas/sitemap/0.9">',
+    );
+    expect(xml.trimEnd()).toEndWith("</urlset>");
+    const opens = (xml.match(/<url>/g) ?? []).length;
+    const closes = (xml.match(/<\/url>/g) ?? []).length;
+    expect(opens).toBe(closes);
+  });
+});
+
+describe("GET /sitemap.xml", () => {
+  /**
+   * Every request in this file reaches a DATABASE_URL that nothing answers, so
+   * the route takes its failure path. That is deliberate: the failure status
+   * is the thing worth asserting here, and the document itself is asserted
+   * against buildSitemapXml above, with the real database covered in
+   * tests/integration/puzzle-votes.test.ts.
+   */
+  it("withholds the sitemap rather than serving an incomplete one", async () => {
+    const { app } = createApp();
+
+    const response = await app.request("/sitemap.xml");
+    const body = await response.text();
+
+    expect(response.status).toBe(503);
+    expect(response.headers.get("retry-after")).toBe("3600");
+    // Not a 200 carrying the canonical pages: that would assert a current set
+    // the server cannot vouch for (review, 2026-08-16).
+    expect(sitemapLocations(body)).toEqual([]);
+  });
+
+  it("answers in plain text rather than the SPA shell when it fails", async () => {
+    const { app } = createApp();
+
+    const response = await app.request("/sitemap.xml");
+    const body = await response.text();
+
+    expect(response.headers.get("content-type")).toMatch(/^text\/plain\b/);
+    expect(body.toLowerCase()).not.toContain("<!doctype html");
   });
 });
