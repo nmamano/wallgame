@@ -9,6 +9,8 @@
 #include <iostream>
 #include <sstream>
 #include <stdexcept>
+#include <utility>
+#include <vector>
 
 namespace engine_adapter {
 
@@ -324,13 +326,25 @@ Board make_padded_training_board(int model_columns, int model_rows, int game_col
         blue_secondary = transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
     }
 
-    Pawn const secondary_pawn =
-        variant == Variant::Classic ? Pawn::Home : Pawn::Mouse;
-    Board board{model_columns, model_rows, variant,
-                {{Player::Red, Pawn::Cat, red_cat},
-                 {Player::Red, secondary_pawn, red_secondary},
-                 {Player::Blue, Pawn::Cat, blue_cat},
-                 {Player::Blue, secondary_pawn, blue_secondary}}};
+    std::vector<PawnPlacement> placements;
+    if (variant == Variant::AnimalCycle) {
+        placements = {
+            {Player::Red, Pawn::Cat, red_cat},
+            {Player::Red, Pawn::Elephant, blue_secondary},
+            {Player::Blue, Pawn::Mouse, blue_cat},
+            {Player::Blue, Pawn::Dog, red_secondary},
+        };
+    } else {
+        Pawn const secondary_pawn =
+            variant == Variant::Classic ? Pawn::Home : Pawn::Mouse;
+        placements = {
+            {Player::Red, Pawn::Cat, red_cat},
+            {Player::Red, secondary_pawn, red_secondary},
+            {Player::Blue, Pawn::Cat, blue_cat},
+            {Player::Blue, secondary_pawn, blue_secondary},
+        };
+    }
+    Board board{model_columns, model_rows, variant, std::move(placements)};
     place_padding_walls(board, config);
     return board;
 }
