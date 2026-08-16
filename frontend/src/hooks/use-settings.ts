@@ -15,6 +15,7 @@ import type {
 import { timeControlConfigFromPreset } from "../../../shared/domain/game-utils";
 import { buildStandardInitialState } from "../../../shared/domain/standard-setup";
 import { buildOrdinaryInitialState } from "../../../shared/domain/game-configuration";
+import { clampBoardSizeForVariant } from "../../../shared/contracts/games";
 import type {
   PawnSkinType,
   SettingsResponse,
@@ -229,8 +230,12 @@ function useSettingsInternal(
           if (variantParams) {
             return {
               ...defaultGameConfig,
-              boardWidth: variantParams.boardWidth ?? 8,
-              boardHeight: variantParams.boardHeight ?? 8,
+              ...clampBoardSizeForVariant({
+                variant: defaultGameConfig.variant,
+                randomStart: defaultGameConfig.randomStart,
+                boardWidth: variantParams.boardWidth ?? 8,
+                boardHeight: variantParams.boardHeight ?? 8,
+              }),
               rated: false,
             };
           }
@@ -423,9 +428,15 @@ function useSettingsInternal(
     const resolvedVariant = supportedVariant;
     const currentVariantParams = variantSettingsFromDb[currentVariant];
 
-    const boardWidth = currentVariantParams?.boardWidth ?? 8;
-    const boardHeight = currentVariantParams?.boardHeight ?? 8;
     const randomStart = currentVariantParams?.randomStart ?? true;
+    // A stored board too small for this variant is brought inside the rules
+    // rather than sent to the server to be refused (board c8e27470).
+    const { boardWidth, boardHeight } = clampBoardSizeForVariant({
+      variant: resolvedVariant,
+      randomStart,
+      boardWidth: currentVariantParams?.boardWidth ?? 8,
+      boardHeight: currentVariantParams?.boardHeight ?? 8,
+    });
     const variantConfig = buildOrdinaryInitialState({
       variant: resolvedVariant,
       randomStart,
@@ -690,10 +701,22 @@ function useSettingsInternal(
     isLoggedIn ? pawnSettingsFromDb?.home : localHomePawn,
     "home",
   );
-  const gameConfig = isLoggedIn
+  const resolvedGameConfig = isLoggedIn
     ? (gameConfigFromDb ??
       ({ ...defaultGameConfig, rated: false } as GameConfiguration))
     : normalizeStoredGamePreference(localGameConfig);
+
+  /**
+   * The last gate before a stored setup is offered to the player, whatever
+   * shape it arrived in - account settings, per-variant defaults, or a whole
+   * config left in localStorage by an older build. A board too small for its
+   * variant is raised to the smallest legal one instead of being sent to the
+   * server to be refused (board c8e27470).
+   */
+  const gameConfig: GameConfiguration = {
+    ...resolvedGameConfig,
+    ...clampBoardSizeForVariant(resolvedGameConfig),
+  };
 
   // Aggregate mutation states (excluding display name mutation - it has its own error state)
   const isSavingSettings =
@@ -803,11 +826,16 @@ function useSettingsInternal(
       // When variant changes, load saved parameters for the new variant
       if (newConfig.variant !== gameConfig.variant) {
         const variantParams = variantSettingsFromDb[newConfig.variant];
+        const randomStart = variantParams?.randomStart ?? true;
         newConfig = {
           ...newConfig,
-          boardWidth: variantParams?.boardWidth ?? 8,
-          boardHeight: variantParams?.boardHeight ?? 8,
-          randomStart: variantParams?.randomStart ?? true,
+          ...clampBoardSizeForVariant({
+            variant: newConfig.variant,
+            randomStart,
+            boardWidth: variantParams?.boardWidth ?? 8,
+            boardHeight: variantParams?.boardHeight ?? 8,
+          }),
+          randomStart,
         };
         // Mutation's onMutate handles the optimistic update
         updateDefaultVariantMutation.mutate(newConfig.variant);
@@ -869,11 +897,16 @@ function useSettingsInternal(
 
         // Load saved parameters for the new variant
         const variantParams = localVariantSettings[newConfig.variant];
+        const randomStart = variantParams?.randomStart ?? true;
         newConfig = {
           ...newConfig,
-          boardWidth: variantParams?.boardWidth ?? 8,
-          boardHeight: variantParams?.boardHeight ?? 8,
-          randomStart: variantParams?.randomStart ?? true,
+          ...clampBoardSizeForVariant({
+            variant: newConfig.variant,
+            randomStart,
+            boardWidth: variantParams?.boardWidth ?? 8,
+            boardHeight: variantParams?.boardHeight ?? 8,
+          }),
+          randomStart,
         };
       }
 

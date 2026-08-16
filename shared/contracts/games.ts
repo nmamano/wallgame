@@ -271,6 +271,51 @@ export const boardSizeValues = ["small", "medium", "large"] as const;
 export const playerConfigTypeValues = ["friend"] as const;
 export type PlayerConfigType = (typeof playerConfigTypeValues)[number];
 
+/**
+ * The smallest board side a variant will accept, and the one place that rule
+ * is written down.
+ *
+ * Animal Cycle Random Start needs 4 a side to lay out four animals; anything
+ * else needs the general minimum of 3. Board c8e27470: this rule was enforced
+ * ONLY when creating a game, while saved per-variant defaults were stored
+ * unbounded, so an account could hold a board that game creation then refused
+ * - with a 400 the player could not read. Both the settings write path and the
+ * client-side clamp now ask this function rather than restating it.
+ */
+export const BOARD_SIDE_MIN = 3;
+export const BOARD_SIDE_MAX = 20;
+export const ANIMAL_CYCLE_RANDOM_START_MIN_SIDE = 4;
+
+export const minimumBoardSideFor = (config: {
+  variant: string;
+  randomStart: boolean;
+}): number =>
+  config.variant === "animal-cycle" && config.randomStart
+    ? ANIMAL_CYCLE_RANDOM_START_MIN_SIDE
+    : BOARD_SIDE_MIN;
+
+/**
+ * A stored board size brought inside what the rules allow.
+ *
+ * Raising a too-small board is what repairs an account that already holds one:
+ * bounding the write path alone would only stop NEW bad values, leaving the
+ * player who has one stuck on an error every time they pick that variant.
+ */
+export const clampBoardSizeForVariant = (config: {
+  variant: string;
+  randomStart: boolean;
+  boardWidth: number;
+  boardHeight: number;
+}): { boardWidth: number; boardHeight: number } => {
+  const min = minimumBoardSideFor(config);
+  const bring = (side: number) =>
+    Math.min(BOARD_SIDE_MAX, Math.max(min, Math.round(side)));
+  return {
+    boardWidth: bring(config.boardWidth),
+    boardHeight: bring(config.boardHeight),
+  };
+};
+
 const currentCreateConfigSchema = z.object({
   timeControl: timeControlSchema,
   rated: z.boolean().optional().default(false),
@@ -291,9 +336,8 @@ export const createGameSchema = z.object({
   config: currentCreateConfigSchema
     .superRefine((config, ctx) => {
       if (
-        config.variant === "animal-cycle" &&
-        config.randomStart &&
-        Math.min(config.boardWidth, config.boardHeight) < 4
+        Math.min(config.boardWidth, config.boardHeight) <
+        minimumBoardSideFor(config)
       ) {
         ctx.addIssue({
           code: z.ZodIssueCode.custom,
@@ -654,9 +698,8 @@ export const createBotGameDirectSchema = z
         })
         .superRefine((config, ctx) => {
           if (
-            config.variant === "animal-cycle" &&
-            config.randomStart &&
-            Math.min(config.boardWidth, config.boardHeight) < 4
+            Math.min(config.boardWidth, config.boardHeight) <
+            minimumBoardSideFor(config)
           ) {
             ctx.addIssue({
               code: z.ZodIssueCode.custom,
