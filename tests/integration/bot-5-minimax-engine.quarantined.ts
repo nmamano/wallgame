@@ -1,4 +1,13 @@
 /**
+ * QUARANTINED 2026-08-16: not collected by the runner (only *.test.ts files
+ * are), because its ONLY test is `it.skip` - blocked on task 1bd83f99, the
+ * negamax engine failing to answer `evaluate_position` at ply 15. Until then
+ * the file spent ~12s per suite run compiling the C++ engine and starting a
+ * server to execute nothing. It stays a .ts file under tests/ so typecheck
+ * keeps it compiling. To re-arm once 1bd83f99 is fixed: git mv it back to
+ * bot-5-minimax-engine.test.ts and remove the .skip.
+ */
+/**
  * Integration test for the classic minimax engine (minimax-engine/minimax_bgs_engine)
  * served via the official custom bot client over the V3 BGS protocol.
  *
