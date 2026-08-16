@@ -21,6 +21,17 @@
  *
  * Paths are resolved against the current directory, as they were before.
  */
+import type { StartedTestContainer } from "testcontainers";
+import postgres from "postgres";
+import { drizzle } from "drizzle-orm/postgres-js";
+import { migrate } from "drizzle-orm/postgres-js/migrator";
+import {
+  containerConnectionUrl,
+  SHARED_PG_URL_ENV,
+  startPostgresContainer,
+  TEMPLATE_DB_NAME,
+} from "../tests/setup-db";
+
 function collectTestFiles(): string[] {
   const listed = Bun.spawnSync([
     "git",
@@ -76,15 +87,65 @@ function collectDbTimings(totals: Map<string, number>, output: string): void {
   }
 }
 
+/**
+ * One Postgres container for the whole run, owned by this runner.
+ *
+ * Before this existed, every integration file started its own container and
+ * ran every migration: measured 2026-08-16, 78.1s of the suite's 243.0s went
+ * to that churn (ops-private/task-8ef2a23c-before-20260816.log). Now a
+ * `wallgame_template` database is created and migrated ONCE, and each file
+ * clones it in ~50ms through SHARED_PG_URL_ENV (see tests/setup-db.ts).
+ * Isolation is unchanged: every file still gets its own database and its own
+ * process. Per-file databases die with the container, so nothing tracks them.
+ *
+ * The container also makes each run's flake window smaller: one container
+ * bring-up per run instead of thirty, and bring-up under memory pressure is
+ * the documented way overlapping CI runs kill each other on this box.
+ */
+async function startSharedPostgres(): Promise<{
+  container: StartedTestContainer;
+  adminUrl: string;
+  setupMs: number;
+}> {
+  const startedAt = performance.now();
+  const container = await startPostgresContainer();
+  const adminUrl = containerConnectionUrl(container);
+
+  const admin = postgres(adminUrl, { max: 1 });
+  try {
+    await admin.unsafe(`CREATE DATABASE "${TEMPLATE_DB_NAME}"`);
+  } finally {
+    await admin.end();
+  }
+
+  // Migrated here, once, and never touched again: CREATE DATABASE ... TEMPLATE
+  // requires that nothing is connected to the template when a file clones it.
+  const templateUrl = containerConnectionUrl(container, TEMPLATE_DB_NAME);
+  const templateClient = postgres(templateUrl, { max: 1 });
+  try {
+    await migrate(drizzle(templateClient), { migrationsFolder: "drizzle" });
+  } finally {
+    await templateClient.end();
+  }
+
+  return { container, adminUrl, setupMs: performance.now() - startedAt };
+}
+
 async function runTests() {
   const testFiles = collectTestFiles();
 
   console.log(`Found ${testFiles.length} test files\n`);
 
+  const shared = await startSharedPostgres();
+  console.log(
+    `Shared Postgres ready (template migrated) in ${(shared.setupMs / 1000).toFixed(1)}s`,
+  );
+
   let passed = 0;
   let failed = 0;
   const fileTimes: { file: string; ms: number }[] = [];
   const dbTimings = new Map<string, number>();
+  dbTimings.set("shared_setup_ms", shared.setupMs);
   const suiteStartedAt = performance.now();
 
   for (const file of testFiles) {
@@ -98,6 +159,7 @@ async function runTests() {
     const proc = Bun.spawn([process.execPath, "test", file], {
       stdout: "pipe",
       stderr: "pipe",
+      env: { ...process.env, [SHARED_PG_URL_ENV]: shared.adminUrl },
     });
 
     const [stdout, stderr] = await Promise.all([
@@ -146,6 +208,12 @@ async function runTests() {
     console.log(`  ${(ms / 1000).toFixed(1)}s ${file}`);
   }
   console.log("=".repeat(60));
+
+  // Stop the container BEFORE process.exit: exit() does not unwind the stack,
+  // so a finally around the loop would never run. If this process dies without
+  // reaching here (crash, Ctrl-C), testcontainers' reaper removes the
+  // container within seconds - same guarantee the per-file path relied on.
+  await shared.container.stop();
 
   process.exit(failed > 0 ? 1 : 0);
 }

@@ -8,10 +8,11 @@
  * This file deliberately does NOT use `setupEphemeralDb`. That helper applies
  * every migration at once, which means the database a test sees never contains
  * a row written before the migration under test. Real production data does.
- * So this starts its own container, migrates to the migration BEFORE this
- * slice's, writes rows the way the old code did, and only then applies the new
- * one - and every later test then runs against a database that has legacy rows
- * in it, which is the state production will actually be in.
+ * So this takes a BLANK database (setupBlankEphemeralDb), migrates to the
+ * migration BEFORE this slice's, writes rows the way the old code did, and
+ * only then applies the new one - and every later test then runs against a
+ * database that has legacy rows in it, which is the state production will
+ * actually be in.
  */
 
 import { describe, it, expect, beforeAll, afterAll } from "bun:test";
@@ -24,12 +25,9 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import {
-  GenericContainer,
-  Wait,
-  type StartedTestContainer,
-} from "testcontainers";
+import type { StartedTestContainer } from "testcontainers";
 import postgres from "postgres";
+import { setupBlankEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 import type { Move } from "../../shared/domain/game-types";
@@ -108,22 +106,9 @@ const CONFIG: PartialGameConfiguration = {
 };
 
 beforeAll(async () => {
-  container = await new GenericContainer("postgres:16-alpine")
-    .withEnvironment({
-      POSTGRES_DB: "testdb",
-      POSTGRES_USER: "test",
-      POSTGRES_PASSWORD: "test",
-    })
-    .withExposedPorts(5432)
-    .withWaitStrategy(
-      Wait.forLogMessage(/database system is ready to accept connections/, 2),
-    )
-    .withStartupTimeout(120_000)
-    .start();
-
-  const url = `postgres://test:test@${container.getHost()}:${container.getMappedPort(5432)}/testdb`;
-  process.env.DATABASE_URL = url;
-  process.env.NODE_ENV = "test";
+  const handle = await setupBlankEphemeralDb();
+  container = handle.container;
+  const url = handle.connectionUrl;
 
   // 1. The schema as it was before this slice.
   const beforeFolder = migrationsFolderWithoutThisSlice();
@@ -162,7 +147,7 @@ beforeAll(async () => {
 
 afterAll(async () => {
   await sql?.end();
-  await container?.stop();
+  await teardownEphemeralDb(container);
 });
 
 /** An opening that is legal for either seat, mirroring past-games.test.ts. */

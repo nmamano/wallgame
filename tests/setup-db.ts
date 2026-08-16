@@ -15,13 +15,28 @@ import { drizzle } from "drizzle-orm/postgres-js";
 import { migrate } from "drizzle-orm/postgres-js/migrator";
 
 export interface TestDbHandle {
-  container: StartedTestContainer;
+  /** Absent when the database lives in the suite-owned shared container. */
+  container: StartedTestContainer | undefined;
   connectionUrl: string;
 }
 
 const DB_NAME = "testdb";
 const DB_USER = "test";
 const DB_PASSWORD = "test";
+
+/**
+ * When scripts/run-tests.ts owns one Postgres container for the whole run, it
+ * tells every child process where it is through this env variable (an admin
+ * connection URL into that container). setupEphemeralDb then CLONES a
+ * database from the pre-migrated template (~50ms, measured 2026-08-16)
+ * instead of starting a container (~2.3s) and migrating it (~0.5s) per file.
+ * Board 8ef2a23c.
+ *
+ * A standalone run (`bun test tests/integration/x.test.ts`) has no runner and
+ * no env variable, and keeps the per-file container path unchanged.
+ */
+export const SHARED_PG_URL_ENV = "WALLGAME_TEST_PG_URL";
+export const TEMPLATE_DB_NAME = "wallgame_template";
 
 /**
  * How long ONE attempt at starting the container may take, and how many
@@ -130,30 +145,16 @@ export async function startContainerWithRetry(
  * depend on the database (e.g., server/db, server/app).
  */
 export async function setupEphemeralDb(): Promise<TestDbHandle> {
+  const sharedPgUrl = process.env[SHARED_PG_URL_ENV];
+  if (sharedPgUrl) {
+    return setupSharedDb(sharedPgUrl, TEMPLATE_DB_NAME);
+  }
+
   const containerStartedAt = performance.now();
-
-  // Use GenericContainer instead of PostgreSqlContainer for better Bun compatibility
-  const container = await startContainerWithRetry(() =>
-    new GenericContainer("postgres:16-alpine")
-      .withEnvironment({
-        POSTGRES_DB: DB_NAME,
-        POSTGRES_USER: DB_USER,
-        POSTGRES_PASSWORD: DB_PASSWORD,
-      })
-      .withExposedPorts(5432)
-      .withWaitStrategy(
-        Wait.forLogMessage(/database system is ready to accept connections/, 2),
-      )
-      .withStartupTimeout(CONTAINER_ATTEMPT_TIMEOUT_MS)
-      .start(),
-  );
-
+  const container = await startPostgresContainer();
   const containerReadyAt = performance.now();
 
-  const host = container.getHost();
-
-  const port = container.getMappedPort(5432);
-  const url = `postgres://${DB_USER}:${DB_PASSWORD}@${host}:${port}/${DB_NAME}`;
+  const url = containerConnectionUrl(container, DB_NAME);
 
   // Set environment variables so the app uses this DB
   process.env.DATABASE_URL = url;
@@ -178,6 +179,116 @@ export async function setupEphemeralDb(): Promise<TestDbHandle> {
   });
 
   return { container, connectionUrl: url };
+}
+
+/**
+ * A database with NO migrations applied, for tests that exercise migrations
+ * themselves: the staged-migration files run part of the journal, insert
+ * legacy rows, then run the rest, so a pre-migrated template would defeat
+ * them. Under the suite runner this is a blank database in the shared
+ * container; standalone it is a fresh container's default database - exactly
+ * what those files hand-rolled before.
+ */
+export async function setupBlankEphemeralDb(): Promise<TestDbHandle> {
+  const sharedPgUrl = process.env[SHARED_PG_URL_ENV];
+  if (sharedPgUrl) {
+    return setupSharedDb(sharedPgUrl, undefined);
+  }
+
+  const containerStartedAt = performance.now();
+  const container = await startPostgresContainer();
+
+  const url = containerConnectionUrl(container, DB_NAME);
+  process.env.DATABASE_URL = url;
+  process.env.NODE_ENV = "test";
+
+  reportDbTiming({
+    mode: "container",
+    start_ms: performance.now() - containerStartedAt,
+  });
+
+  return { container, connectionUrl: url };
+}
+
+/**
+ * The one way a Postgres test container is started. The per-file paths above
+ * and the suite-owned container in scripts/run-tests.ts both come through
+ * here, so the retry-with-deadline behavior (and its known-bad coverage in
+ * tests/setup-db-retry.test.ts) applies to every start.
+ */
+export async function startPostgresContainer(): Promise<StartedTestContainer> {
+  // Use GenericContainer instead of PostgreSqlContainer for better Bun compatibility
+  return startContainerWithRetry(() =>
+    new GenericContainer("postgres:16-alpine")
+      .withEnvironment({
+        POSTGRES_DB: DB_NAME,
+        POSTGRES_USER: DB_USER,
+        POSTGRES_PASSWORD: DB_PASSWORD,
+      })
+      .withExposedPorts(5432)
+      .withWaitStrategy(
+        Wait.forLogMessage(/database system is ready to accept connections/, 2),
+      )
+      .withStartupTimeout(CONTAINER_ATTEMPT_TIMEOUT_MS)
+      .start(),
+  );
+}
+
+export function containerConnectionUrl(
+  container: StartedTestContainer,
+  dbName: string = DB_NAME,
+): string {
+  const host = container.getHost();
+  const port = container.getMappedPort(5432);
+  return `postgres://${DB_USER}:${DB_PASSWORD}@${host}:${port}/${dbName}`;
+}
+
+let cloneSequence = 0;
+
+/**
+ * Creates this file's own database inside the suite-owned container - from
+ * the migrated template, or blank when `templateName` is undefined.
+ *
+ * Nothing ever drops these databases, on purpose: they live inside a
+ * container that the runner stops when the run ends, so dropping them buys
+ * no isolation and adds a cleanup step that can itself fail. The pid in the
+ * name keeps two files' databases apart; the sequence keeps two calls in one
+ * file apart.
+ */
+async function setupSharedDb(
+  sharedPgUrl: string,
+  templateName: string | undefined,
+): Promise<TestDbHandle> {
+  const createStartedAt = performance.now();
+  cloneSequence += 1;
+  const dbName = `test_${String(process.pid)}_${String(cloneSequence)}`;
+
+  const admin = postgres(sharedPgUrl, { max: 1 });
+  try {
+    // CREATE DATABASE cannot take bind parameters; both names are generated
+    // here or are exported constants, never caller input.
+    await admin.unsafe(
+      templateName
+        ? `CREATE DATABASE "${dbName}" TEMPLATE "${templateName}"`
+        : `CREATE DATABASE "${dbName}"`,
+    );
+  } finally {
+    await admin.end();
+  }
+
+  const url = new URL(sharedPgUrl);
+  url.pathname = `/${dbName}`;
+  const connectionUrl = url.toString();
+
+  process.env.DATABASE_URL = connectionUrl;
+  process.env.NODE_ENV = "test";
+
+  reportDbTiming({
+    mode: templateName ? "clone" : "blank",
+    create_ms: performance.now() - createStartedAt,
+  });
+
+  return { container: undefined, connectionUrl };
 }
 
 /**
