@@ -4,8 +4,17 @@ name: CI
 # ran it: .husky/pre-push checks formatting, lint and the build, but not tests,
 # so a broken test cost nothing visible. This is the gate that makes it cost
 # something.
+#
+# Push runs are main-only on purpose. transport/* branches carry C++ work in
+# progress from the desktop - including commits that are known-bad BY DESIGN
+# (the known-bad phase of the transport process) - so CI there can only fail
+# or be cancelled, and each one emailed Nil. Measured over the 100 runs before
+# 2026-08-16: main was 55 runs with 0 cancelled, while transport/* branches
+# produced all 14 cancelled runs and 2 intended failures. A branch that wants
+# CI opens a pull request.
 on:
   push:
+    branches: [main]
   pull_request:
 
 concurrency:
@@ -70,7 +79,17 @@ jobs:
       - name: Build frontend
         run: bun run build
 
-      # Every integration file starts its own Postgres through Testcontainers,
-      # which needs the Docker daemon that ubuntu-latest already provides.
+      # The runner starts ONE Postgres through Testcontainers (each test file
+      # clones a migrated template database inside it), which needs the Docker
+      # daemon that ubuntu-latest already provides.
+      #
+      # The reaper (Ryuk) is Testcontainers' cleanup container, and failing to
+      # start it aborts the run - which happened on this runner on 2026-08-05
+      # ("Failed to connect to Reaper", run 31037300193) and could only ever
+      # be infrastructure noise: this VM is destroyed minutes later, so there
+      # is nothing for a reaper to clean up. Locally it stays on, because a
+      # crashed run there really would leak a container.
       - name: Test
         run: bun run test
+        env:
+          TESTCONTAINERS_RYUK_DISABLED: "true"
