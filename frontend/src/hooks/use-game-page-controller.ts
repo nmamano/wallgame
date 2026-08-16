@@ -1395,6 +1395,14 @@ export function useGamePageController(gameId: string) {
    */
   const [transportState, setTransportState] = useState<TransportState>("open");
   /**
+   * Staging stays open while the socket is down - the player keeps planning
+   * and keeps the actions they already chose, and the queue is submitted once
+   * the socket returns. Only SENDING is withheld, and it is withheld visibly:
+   * a Finish move button that looks live and quietly does nothing is the same
+   * dishonesty as the stale board this change removes.
+   */
+  const isReconnecting = transportState !== "open";
+  /**
    * LOCAL play only: which of the two people sharing this device is playing
    * the current turn. An online seat must not be recorded here - see
    * `resolveActiveLocalPlayerId`, which derives that from the game state.
@@ -1914,6 +1922,8 @@ export function useGamePageController(gameId: string) {
     controllablePlayerId: actionablePlayerId,
     canStage: canActNow && !viewingHistory && !interactionLocked,
     canPremove: canBufferPremoves && !viewingHistory,
+    // Staging stays open while the socket is down; only SENDING is withheld.
+    canSubmit: !isReconnecting,
     maxStagedActions: gameState?.actionsRemaining ?? 2,
     mouseMoveLocked,
     mouseMoveLockedMessage,
@@ -1961,6 +1971,9 @@ export function useGamePageController(gameId: string) {
   const commitStagedActions = useCallback(
     (actions?: Action[]) => {
       if (historyCursor !== null) return;
+      // Also guarded here, not only on the button, so a caller that is not the
+      // button cannot send into a closed socket and drop the queue.
+      if (isReconnecting) return;
       const moveActions = actions ?? stagedActions;
       if (moveActions.length === 0) return;
       if (submitMoveToController(moveActions)) {
@@ -1969,6 +1982,7 @@ export function useGamePageController(gameId: string) {
     },
     [
       historyCursor,
+      isReconnecting,
       stagedActions,
       submitMoveToController,
       clearBoardStagedActions,
@@ -3484,14 +3498,6 @@ export function useGamePageController(gameId: string) {
         )
       : null;
   const manualActionsDisabled = !controllerAllowsInteraction;
-  /**
-   * Staging stays open while the socket is down - the player keeps planning
-   * and keeps the actions they already chose, and the queue is submitted once
-   * the socket returns. Only SENDING is withheld, and it is withheld visibly:
-   * a Finish move button that looks live and quietly does nothing is the same
-   * dishonesty as the stale board this change removes.
-   */
-  const isReconnecting = transportState !== "open";
   const hasActionMessage =
     Boolean(actionError) || Boolean(selectedPawn) || isReconnecting;
   const actionStatusText = isReconnecting

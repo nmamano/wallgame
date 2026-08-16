@@ -74,6 +74,19 @@ export interface BoardInteractionsOptions {
    */
   canPremove?: boolean;
 
+  /**
+   * Whether a completed turn may be SENT right now. False while the game
+   * socket is down.
+   *
+   * Separate from `canStage` on purpose: the player keeps building a turn
+   * during an outage and keeps what they have built. Withholding this instead
+   * of `canStage` is what makes that promise true on the AUTO-commit path -
+   * filling the action budget calls `commitStagedActions` with no button
+   * involved, and before this gate existed that call reached a closed socket
+   * and then cleared the queue, losing the move.
+   */
+  canSubmit?: boolean;
+
   /** Number of actions left in the current authored turn. */
   maxStagedActions?: 1 | 2;
 
@@ -234,6 +247,7 @@ export function useBoardInteractions(
     boardPawns,
     controllablePlayerId,
     canStage,
+    canSubmit = true,
     canPremove = false,
     maxStagedActions = MAX_LOCAL_ACTIONS,
     mouseMoveLocked = false,
@@ -328,15 +342,24 @@ export function useBoardInteractions(
 
   /**
    * Commits staged actions by calling onMoveReady and clearing state.
+   *
+   * The single funnel for SENDING a turn, so the outage gate lives here rather
+   * than on the button: the auto-commit that fires when the action budget
+   * fills comes through this same call.
    */
   const commitStagedActions = useCallback(
     (actions: Action[]) => {
+      if (!canSubmit) {
+        // Keep the queue. It is submitted once the connection returns.
+        setError("Waiting for the connection - your move is still queued.");
+        return;
+      }
       onMoveReady(actions);
       setStagedActions([]);
       clearSelection();
       setError(null);
     },
-    [onMoveReady, clearSelection, setError],
+    [canSubmit, onMoveReady, clearSelection, setError],
   );
 
   /**
