@@ -559,14 +559,31 @@ const clearAbandonTimer = (sessionId: string): void => {
 };
 
 /**
+ * Whether this game's own clock will end it, so no timeout policy has to.
+ *
+ * ONE domain fact, used by both policies. A clock does not start until the
+ * first move - `scheduleTimeoutTimer` returns early before that, and
+ * `applyPlayerMove` charges time only at `moveCount > 0` - so a timed game
+ * nobody has moved in is no better protected than an untimed one.
+ *
+ * The abandonment policy always asked exactly this. The idle policy asked the
+ * cruder "is it timed", which was right while it only had to exclude STARTED
+ * timed games and over-excluded the unstarted ones: a timed game at move zero
+ * with both seats connected and silent was claimed by neither policy and sat in
+ * the live list for good (board 62b736ca). Sharing the question is what closes
+ * that hole by construction rather than by naming another special case.
+ */
+const clockWillEndGame = (session: GameSession): boolean =>
+  !isUnlimitedTimeControl(session.gameState.timeControl) &&
+  session.gameState.moveCount > 0;
+
+/**
  * The seat that has walked away from a game nothing else would ever end, or
  * null if the game is fine.
  *
- * A game is safe only if a running clock will end it on its own, and a clock
- * does not start until the first move - `scheduleTimeoutTimer` returns early
- * before that. So two kinds of game qualify: untimed ones, and timed ones that
- * nobody has moved in yet. In both, an absent player would otherwise sit there
- * indefinitely.
+ * Two kinds of game qualify, both by `clockWillEndGame` above: untimed ones,
+ * and timed ones that nobody has moved in yet. In both, an absent player would
+ * otherwise sit there indefinitely.
  *
  * Bot seats never qualify: they connect over the bot-client socket and have
  * their own disconnect grace in custom-bot-socket.ts.
@@ -579,10 +596,7 @@ export const findAbandonedSeat = (sessionId: string): SessionPlayer | null => {
   if (session?.gameState.status !== "playing") {
     return null;
   }
-  const clockWillEndIt =
-    !isUnlimitedTimeControl(session.gameState.timeControl) &&
-    session.gameState.moveCount > 0;
-  if (clockWillEndIt) {
+  if (clockWillEndGame(session)) {
     return null;
   }
   for (const player of [session.players.host, session.players.joiner]) {
@@ -609,11 +623,29 @@ export const findAbandonedSeat = (sessionId: string): SessionPlayer | null => {
  * wait, and a seat that leaves starts the short one over.
  */
 const isUnwatchedUnstartedGame = (session: GameSession): boolean =>
-  isUnlimitedTimeControl(session.gameState.timeControl) &&
-  session.gameState.moveCount < MIN_MOVES_FOR_A_COUNTED_GAME &&
+  isUnstartedForItsTimeControl(session) &&
   ![session.players.host, session.players.joiner].some(
     (player) => player.connected,
   );
+
+/**
+ * Whether this game has not got going, by the only measure its time control
+ * allows.
+ *
+ * The asymmetry is real, not sloppiness. For an UNTIMED game "not got going" is
+ * under two moves, which is also the abort boundary. For a TIMED game the only
+ * unstarted count is ZERO: at move one the clock is already running, and from
+ * there the clock owns the game (`clockWillEndGame`).
+ *
+ * Nil ruled on 2026-08-16 that the five-minute band extends to timed games at
+ * move zero. That reverses clause 4 of the 2026-08-09 ruling ("the 5-minute
+ * band is untimed-only"), which was written when a timed game at move zero was
+ * believed to be somebody else's problem and turned out to be nobody's.
+ */
+const isUnstartedForItsTimeControl = (session: GameSession): boolean =>
+  isUnlimitedTimeControl(session.gameState.timeControl)
+    ? session.gameState.moveCount < MIN_MOVES_FOR_A_COUNTED_GAME
+    : session.gameState.moveCount === 0;
 
 const applyAbandonToSession = (sessionId: string, playerId: PlayerId): void => {
   // Resigning gets the abort-vs-loss distinction for free: a game abandoned
@@ -752,6 +784,26 @@ const registerSession = (session: GameSession): void => {
  */
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 
+/**
+ * The idle wait for a TIMED game that nobody has started.
+ *
+ * Nil ruled five minutes on 2026-08-16, extending the existing five-minute
+ * band to timed games at move zero. Such a game has no clock running and,
+ * with both seats connected and silent, was reached by no policy at all: it sat
+ * in the live list indefinitely (board 62b736ca).
+ *
+ * Five minutes of thought before the first move is not a real cost here,
+ * because a timed game's own clock is what would normally charge for thinking
+ * and it is not running yet. Nobody is convicted either: at move zero
+ * `resignGame` records an abort, so no rating moves.
+ *
+ * Equal to UNWATCHED_TIMEOUT_MS and deliberately NOT the same constant,
+ * following the ABANDON/IDLE precedent above: the two answer different
+ * questions - one about a game nobody is watching, one about a game nobody is
+ * moving in - and either could be ruled on separately tomorrow.
+ */
+const UNSTARTED_TIMED_TIMEOUT_MS = 5 * 60 * 1000;
+
 const idleTimers = new Map<string, Timer>();
 
 const clearIdleTimer = (sessionId: string): void => {
@@ -796,7 +848,13 @@ export const findIdleSeat = (sessionId: string): SessionPlayer | null => {
     return null;
   }
   const state = session.gameState;
-  if (!isUnlimitedTimeControl(state.timeControl)) {
+  // Was a blanket "timed games are never claimed", which is clause 4 of the
+  // 2026-08-09 ruling. It excluded one game too many: a timed game at move zero
+  // has no clock running, so nothing else would ever end it, and with both seats
+  // connected and silent the abandonment policy could not see it either. Asking
+  // the same question the abandonment policy asks keeps started timed games
+  // exactly as protected as clause 4 left them (board 62b736ca).
+  if (clockWillEndGame(session)) {
     return null;
   }
   if (findAbandonedSeat(sessionId)) {
@@ -859,9 +917,22 @@ const refreshIdleTimer = (sessionId: string): void => {
     return;
   }
 
+  // The condition is written in full - timed AND unstarted - even though
+  // `findIdleSeat` above already guarantees the second half for a timed game.
+  // A deadline that rests on a caller's accident is one relaxation away from
+  // silently misapplying, and spelling it out costs one clause.
+  const deadlineMs =
+    !isUnlimitedTimeControl(session.gameState.timeControl) &&
+    isUnstartedForItsTimeControl(session)
+      ? UNSTARTED_TIMED_TIMEOUT_MS
+      : IDLE_TIMEOUT_MS;
+
+  // Derived from `lastMoveTime`, which the GameState constructor seeds to the
+  // game's start time, so this is well defined at move zero and re-arming can
+  // never push a deadline out.
   const remainingMs = Math.max(
     0,
-    IDLE_TIMEOUT_MS - (Date.now() - session.gameState.lastMoveTime),
+    deadlineMs - (Date.now() - session.gameState.lastMoveTime),
   );
 
   const timer = setTimeout(() => {

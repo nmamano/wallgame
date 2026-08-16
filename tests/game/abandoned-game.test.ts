@@ -285,11 +285,28 @@ describe("a game nobody is moving in", () => {
     expect(findIdleSeat(session.id)).toBeNull();
   });
 
-  it("leaves a timed game alone before anybody has moved", () => {
-    // The abandonment policy DOES claim this game when a seat is known gone.
-    // The idle policy never does, at any move count - the manager's boundary.
+  /**
+   * Was "leaves a timed game alone before anybody has moved", asserting null.
+   * That encoded clause 4 of the 2026-08-09 ruling, and it is the bug of board
+   * 62b736ca stated as intended behaviour: no clock runs before the first move,
+   * so with both seats connected and silent NOTHING ended this game.
+   * Nil reversed clause 4 for move zero on 2026-08-16.
+   */
+  it("claims a timed game nobody has started", () => {
     const session = startedSession(TIMED);
     bothSeatsLookConnected(session);
+
+    expect(getSession(session.id).gameState.moveCount).toBe(0);
+    expect(findIdleSeat(session.id)?.role).toBe("host");
+  });
+
+  it("stands down as soon as a timed game's clock starts", () => {
+    // The other side of the same boundary, and the whole of "started games keep
+    // their current behavior": one move starts the clock, and from there the
+    // clock owns the game.
+    const session = startedSession(TIMED);
+    bothSeatsLookConnected(session);
+    playMoves(session.id, 1);
 
     expect(findIdleSeat(session.id)).toBeNull();
   });
@@ -359,6 +376,7 @@ const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const UNWATCHED_TIMEOUT_MS = 5 * 60 * 1000;
 const BOT_GAME_DISCONNECT_GRACE_MS = 60 * 1000;
+const UNSTARTED_TIMED_TIMEOUT_MS = 5 * 60 * 1000;
 
 /**
  * Everything below drives real timers, so it needs fake ones. Everything above
@@ -522,14 +540,43 @@ describe("a game nobody ever opened", () => {
     });
   });
 
-  it("never puts a timed game in the five-minute band", () => {
-    // Clause 4. A timed game nobody opened is still claimed by the
-    // abandonment policy - no clock runs before the first move - but on the
-    // thirty-minute deadline it has always had.
+  /**
+   * Was "never puts a timed game in the five-minute band", asserting thirty
+   * minutes. That was clause 4 of the 2026-08-09 ruling; Nil extended the band
+   * to timed games at move zero on 2026-08-16.
+   *
+   * LONG_TIMED rather than the blitz TIMED fixture: a three-minute clock would
+   * be a second candidate for having ended the game, and with four hours on the
+   * clock the five-minute band is the only mechanism that can be responsible.
+   */
+  it("puts a timed game nobody opened in the five-minute band", () => {
     withFakeTimers(() => {
-      const session = startedSession(TIMED);
+      const session = startedSession(LONG_TIMED);
 
-      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS - 1);
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    });
+  });
+
+  it("gives a waiting friend-link host of a TIMED game the full thirty minutes", () => {
+    // The guard that sent the original literal rule back to Nil for a ruling,
+    // now checked on the timed side too. The five-minute band still requires
+    // that NO seat is connected, and the host is sitting on the waiting screen
+    // while the guest opens the link from a chat app.
+    withFakeTimers(() => {
+      const session = startedSession(LONG_TIMED);
+      setConnected(session, "host", true);
+
+      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(ABANDON_TIMEOUT_MS - UNWATCHED_TIMEOUT_MS - 2);
       expect(isLive(session.id)).toBe(true);
 
       timers.advanceTimersByTime(2);
@@ -788,15 +835,92 @@ describe("the idle timeout ending a game", () => {
     });
   });
 
-  it("never touches a timed game nobody has started", () => {
+  /**
+   * THE BUG OF BOARD 62b736ca, end to end.
+   *
+   * This test used to advance thirty minutes and assert the game was STILL
+   * LIVE, which is the hole written down as intended behaviour: a timed game at
+   * move zero has no clock running, and with both seats connected there is no
+   * disconnected seat for the abandonment policy to charge, so neither
+   * mechanism reached it and it sat in the live list for good.
+   *
+   * LONG_TIMED is what makes the reading mean anything. On the three-minute
+   * blitz fixture the game's own clock would be a rival explanation for its
+   * ending; with four hours on the clock, and no clock running at move zero
+   * anyway, the five-minute idle band is the only candidate.
+   */
+  it("ends a timed game nobody has started, as an abort, after five minutes", () => {
     withFakeTimers(() => {
-      const session = startedSession(TIMED);
+      const session = startedSession(LONG_TIMED);
       bothSeatsLookConnected(session);
+      expect(getSession(session.id).gameState.moveCount).toBe(0);
+
+      timers.advanceTimersByTime(UNSTARTED_TIMED_TIMEOUT_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      // Nobody moved, so nobody is convicted and no rating moves.
+      expect(getSession(session.id).gameState.result).toEqual({
+        reason: "aborted",
+      });
+    });
+  });
+
+  it("never touches a timed game once its clock is running", () => {
+    // "Started games keep their current behavior." One move is enough to hand
+    // the game to its clock, and LONG_TIMED means that clock cannot be what
+    // ends it inside the window - so the silence is the assertion.
+    withFakeTimers(() => {
+      const session = startedSession(LONG_TIMED);
+      bothSeatsLookConnected(session);
+      playMoves(session.id, 1);
 
       timers.advanceTimersByTime(IDLE_TIMEOUT_MS + 1);
 
-      expect(listLiveGames().some((game) => game.id === session.id)).toBe(true);
+      expect(isLive(session.id)).toBe(true);
       expect(getSession(session.id).gameState.status).toBe("playing");
+    });
+  });
+
+  it("keeps an UNTIMED game nobody has started on its thirty minutes", () => {
+    // The control for the new band: the short wait is timed-only, so the
+    // untimed case must not be dragged into it. This is also what keeps a
+    // puzzle safe, since a puzzle is untimed and puts the human on turn under
+    // two moves.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      bothSeatsLookConnected(session);
+
+      timers.advanceTimersByTime(UNSTARTED_TIMED_TIMEOUT_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(
+        IDLE_TIMEOUT_MS - UNSTARTED_TIMED_TIMEOUT_MS - 2,
+      );
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+    });
+  });
+
+  it("gives a timed bot game the sixty-second band, not the five-minute one", () => {
+    // The two rulings composing. A timed bot game at move zero whose human seat
+    // is gone is claimed by the abandonment policy, and the shortest applicable
+    // band wins.
+    withFakeTimers(() => {
+      const session = startedSession(LONG_TIMED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+      setConnected(session, "host", false);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
     });
   });
 
