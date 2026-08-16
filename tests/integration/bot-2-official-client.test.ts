@@ -3,10 +3,12 @@
  *
  * 1. bot-1-mock-client.test.ts: Mocks the bot client's WS messages.
  *    It tests the server-client protocol.
- * 2. bot-2-official-client.test.ts: Uses the official bot client WITHOUT an external engine.
- *    It tests the built-in dumb-bot fallback end-to-end.
- * 3. bot-3-dummy-engine.test.ts: Uses the official bot client with the dummy engine
- *    and tests engine integration in detail (state tracking, multiple rounds).
+ * 2. bot-2-official-client.test.ts: Uses the official bot client.
+ *    Most tests run WITHOUT an external engine and test the built-in
+ *    dumb-bot fallback end-to-end.
+ * 3. (merged into this file) The final describe uses the official bot client
+ *    with the dummy engine and tests engine integration (classic variant).
+ *    Formerly bot-3-dummy-engine.test.ts.
  * 4. bot-4-deep-wallwars-engine.test.ts: Uses the official bot client with the
  *    C++ deep-wallwars engine. It tests the Deep Wallwars adapter.
  *    Note that this requires C++ compilation and GPU setup.
@@ -17,7 +19,8 @@
  *
  * Uses Testcontainers to spin up an ephemeral PostgreSQL database.
  * Spawns the actual CLI client process WITHOUT an external engine - testing the
- * built-in dumb-bot fallback that uses simple AI logic.
+ * built-in dumb-bot fallback that uses simple AI logic. The final describe
+ * instead spawns the real dummy engine subprocess (see its header).
  *
  * V3 Protocol Flow:
  * 1. Spawns CLI client with --client-id and a config file (no engine)
@@ -508,19 +511,19 @@ async function waitForBotRegistration(
 // --- Main Tests ---
 // ================================
 
+beforeAll(async () => {
+  const handle = await setupEphemeralDb();
+  container = handle.container;
+  await importServerModules();
+  startTestServer();
+}, 120_000);
+
+afterAll(async () => {
+  await stopTestServer();
+  await teardownEphemeralDb(container);
+}, 60_000);
+
 describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
-  beforeAll(async () => {
-    const handle = await setupEphemeralDb();
-    container = handle.container;
-    await importServerModules();
-    startTestServer();
-  }, 120_000);
-
-  afterAll(async () => {
-    await stopTestServer();
-    await teardownEphemeralDb(container);
-  }, 60_000);
-
   it("plays a game using the actual CLI client with built-in dumb-bot", async () => {
     const hostUserId = "host-user-v3";
     const clientId = "test-client-v3";
@@ -808,4 +811,127 @@ describe("custom bot client CLI integration V3 (dumb-bot fallback)", () => {
       }
     }
   }, 30000);
+});
+
+// ================================
+// --- Real Engine Tests ---
+// ================================
+
+/**
+ * Merged from bot-3-dummy-engine.test.ts: unlike the describe above, which
+ * relies on the client's built-in dumb-bot fallback (no engineCommands), this
+ * exercises the official client WITH a real engine subprocess - the client
+ * spawns the dummy engine via engineCommands and relays its moves over the
+ * V3 BGS protocol (stateful engine processes).
+ *
+ * Tests:
+ * - Engine state tracking across multiple moves
+ * - Classic variant support
+ * - Bot registration with specific variant configurations
+ */
+describe("custom bot client CLI integration V3 (real dummy engine)", () => {
+  it("plays classic variant with dummy engine", async () => {
+    const hostUserId = "host-classic-v3";
+    const clientId = "test-client-classic-v3";
+    const botId = "classic-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botClient: BotClientProcess | null = null;
+    let humanSocket: HumanSocket | null = null;
+    let configFile: BotConfigFile | null = null;
+
+    // Classic variant - goal is to reach opponent's corner
+    const gameConfig: PartialGameConfiguration = {
+      timeControl: {
+        initialSeconds: 600,
+        incrementSeconds: 0,
+        preset: "rapid",
+      },
+      variant: "classic",
+      randomStart: false,
+      rated: false,
+      boardWidth: 5,
+      boardHeight: 5,
+    };
+
+    try {
+      // Start bot client with dummy engine
+      configFile = await createBotConfigFile({
+        serverUrl: baseUrl,
+        botId,
+        botName: botId,
+        engine: "bun ../dummy-engine/src/index.ts",
+      });
+      botClient = spawnBotClient(configFile.path, clientId);
+
+      // Wait for bot to register
+      await waitForBotRegistration(compositeId, {
+        variant: "classic",
+      });
+
+      // Verify bot appears in classic variant listing
+      const { bots } = await listBots({ variant: "classic" });
+      expect(bots.some((b) => b.id === compositeId)).toBe(true);
+
+      // Create game (human is Player 1, moves first)
+      const {
+        gameId,
+        socketToken: hostSocketToken,
+        playerId,
+      } = await createGameVsBot(hostUserId, compositeId, gameConfig, true);
+
+      expect(gameId).toBeDefined();
+      expect(playerId).toBe(1);
+
+      humanSocket = await openHumanSocket(hostUserId, gameId, hostSocketToken);
+
+      const initialState = await humanSocket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(initialState.state.status).toBe("playing");
+      expect(initialState.state.config.variant).toBe("classic");
+
+      // Wait for engine process to start (external process takes longer than built-in dumb-bot)
+      await sleep(500);
+
+      const humanPlayerId = 1;
+      let currentState = initialState;
+
+      // Play a few rounds
+      for (let i = 0; i < 3; i++) {
+        currentState = await waitForTurn(
+          humanSocket,
+          humanPlayerId,
+          currentState,
+        );
+        if (currentState.state.status !== "playing") break;
+
+        const moveCountBefore = currentState.state.moveCount;
+        currentState = await submitHumanMove(humanSocket, "---", 5);
+        if (currentState.state.status !== "playing") break;
+
+        // Wait for the engine to respond - state after its move has a higher move count
+        currentState = await humanSocket.waitForState(
+          (state) =>
+            state.state.moveCount > moveCountBefore + 1 ||
+            state.state.status !== "playing",
+        );
+      }
+
+      // Verify game is still playing (or ended naturally)
+      if (currentState.state.status === "playing") {
+        // Human resigns to end cleanly
+        humanSocket.ws.send(JSON.stringify({ type: "resign" }));
+        await humanSocket.waitForState((s) => s.state.status === "finished");
+      }
+    } finally {
+      humanSocket?.close();
+      if (botClient) {
+        botClient.kill();
+        await botClient.waitForExit();
+      }
+      if (configFile) {
+        await configFile.cleanup();
+      }
+    }
+  }, 60000);
 });
