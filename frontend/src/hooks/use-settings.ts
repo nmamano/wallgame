@@ -75,7 +75,7 @@ export interface SettingsState {
   homePawn: string;
   setHomePawn: (value: string) => void;
   gameConfig: GameConfiguration;
-  setGameConfig: (config: GameConfiguration) => void;
+  setGameConfig: (config: GameConfiguration) => GameConfiguration;
   // Display name (only relevant for logged-in users)
   // NOTE: For logged-out users, setDisplayName and handleChangeDisplayName are no-ops.
   // Always gate display name UI on isLoggedIn to avoid calling these unnecessarily.
@@ -806,7 +806,21 @@ function useSettingsInternal(
     }
   };
 
-  const setGameConfig = (incoming: GameConfiguration) => {
+  /**
+   * Applies a setup change and RETURNS the config it settled on.
+   *
+   * The return value is the point. The setup page keeps its own copy of the
+   * config and reads it when creating a game, so a value normalised only in
+   * here never reached the request (board c8e27470, found in review): turning
+   * Random Start on over a legal 3x3 Animal Cycle board left the page holding
+   * 3x3 with Random Start, which game creation refuses. One setter that hands
+   * back the settled config keeps the visible state, the persisted value and
+   * the created game in agreement.
+   */
+  const setGameConfig = (incoming: GameConfiguration): GameConfiguration => {
+    // Legality first, so every branch below works with a config that a game
+    // can actually be created from.
+    incoming = { ...incoming, ...clampBoardSizeForVariant(incoming) };
     if (isLoggedIn) {
       // IMPORTANT: For logged-in users, gameConfig is derived from dbSettings (via gameConfigFromDb),
       // not stored in local state. This function only calls mutations; it never directly updates
@@ -880,6 +894,7 @@ function useSettingsInternal(
           },
         });
       }
+      return newConfig;
     } else {
       // For logged-out users, handle variant settings in localStorage
       let newConfig = { ...incoming };
@@ -928,6 +943,7 @@ function useSettingsInternal(
       }
 
       setLocalGameConfig(newConfig);
+      return newConfig;
     }
   };
 

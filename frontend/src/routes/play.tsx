@@ -130,8 +130,13 @@ function GameSetup() {
   };
 
   const handleGameConfigChange = (newConfig: GameConfiguration) => {
-    setGameConfig(newConfig);
-    settings.setGameConfig(newConfig);
+    // The settings hook is the authority on what a setup change settles to -
+    // it clamps a board too small for the variant and loads the saved
+    // parameters of a variant being switched to. Storing what it RETURNS is
+    // what keeps this page's copy, the persisted value and the created game
+    // in agreement; storing the raw input left an illegal board here and a
+    // 400 on Create (board c8e27470).
+    setGameConfig(settings.setGameConfig(newConfig));
   };
 
   // Navigation
