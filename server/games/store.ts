@@ -10,6 +10,7 @@ import type { GameAction } from "../../shared/domain/game-types";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
 import {
   isUnlimitedTimeControl,
+  endedBeforeBothPlayersMoved,
   isCountedResult,
   MIN_MOVES_FOR_A_COUNTED_GAME,
 } from "../../shared/domain/game-utils";
@@ -2104,10 +2105,29 @@ export const processRatingUpdate = async (
   // Aborted games are not games. Rating them here while persistence threw them
   // away is what let a rated game move both players' ratings and win/loss
   // records without ever appearing in past games.
-  if (!isCountedResult(result)) {
-    console.info("[ratings] Skipping update - game was aborted", {
+  //
+  // BOTH HALVES OF THE PERSISTENCE GATE, because one of them was missing and
+  // the pair had drifted apart. `persistCompletedGame` skips on the move count
+  // AND on an uncounted result; this asked only the second. They agree only
+  // while "too few moves" implies "aborted", which resign, timeout and draw
+  // guarantee - they share one `isAbort` in game-state.ts - and which the WIN
+  // conditions inside `applyMove` do not: they set the move count and then
+  // return a counted result with no such test, so a game can end on ply 1 with
+  // {reason: "capture"} or {reason: "survival"}. Measured 2026-08-16: such a
+  // game was skipped by persistence and accepted here, which is a rating with
+  // no record behind it - the same failure the paragraph above describes,
+  // through the door the fix for it did not close.
+  //
+  // Derived from MIN_MOVES_FOR_A_COUNTED_GAME rather than written out, as
+  // game-utils.ts requires of every consumer of the threshold.
+  if (
+    endedBeforeBothPlayersMoved(gameState.moveCount) ||
+    !isCountedResult(result)
+  ) {
+    console.info("[ratings] Skipping update - game does not count", {
       sessionId: id,
       moveCount: gameState.moveCount,
+      reason: result.reason,
     });
     return undefined;
   }

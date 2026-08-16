@@ -121,6 +121,25 @@ export const persistCompletedGame = async (
   if (state.status !== "finished") {
     return;
   }
+  // A GAME THAT ENDS BELOW THE THRESHOLD LEAVES NO ROW, AND THAT IS INTENDED.
+  //
+  // Nil ruled it on 2026-08-16 (board 733c18e6): an abandoned lobby SHOULD
+  // vanish. So such a game never reaches Past Games and contributes nothing to
+  // a series score, and the auto-abort bands added by 6803c5e1 and 62b736ca
+  // end exactly these games. Nothing here is a bug to be fixed later.
+  //
+  // What that costs, and where the cost is paid. Vanishing is only safe while
+  // NOTHING ELSE records the game either - a rating moving with no row to
+  // explain it is the one outcome nobody can audit. Two gates enforce that, and
+  // they must be read as a pair:
+  //   here                      - skip below the threshold, or on an uncounted result
+  //   processRatingUpdate (store.ts) - the SAME two questions
+  // They were not always the same. The rating gate asked only about the result,
+  // which agrees with this one for resign, timeout and draw (they share one
+  // `isAbort` in game-state.ts) but NOT for the win conditions inside
+  // `applyMove`, which return a counted result at any move count - a capture or
+  // a survival limit on ply 1. Measured 2026-08-16: such a game was dropped
+  // here and rated there. Board 733c18e6 closed that; keep the two in step.
   if (endedBeforeBothPlayersMoved(state.moveCount)) {
     return;
   }
