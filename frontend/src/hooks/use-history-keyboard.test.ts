@@ -6,7 +6,6 @@ import {
 
 const context = (over: Partial<HistoryKeyContext> = {}): HistoryKeyContext => ({
   gameStatus: "finished",
-  historyCursor: null,
   targetIsTextEntry: false,
   hasModifier: false,
   ...over,
@@ -25,15 +24,21 @@ describe("historyKeyDirection", () => {
   });
 
   /**
-   * The one exception, and the reason the rule is not simply "not playing":
-   * a player who clicked a past move in a live game is reading the history,
-   * so the arrows follow them - including the step that returns them to the
-   * live position.
+   * No exception for a player already browsing a live game's history.
+   * Reviewer 2 rejected that on 2026-08-16 as a widening of a board task that
+   * says exactly "only when game is not active"; the earlier version of this
+   * file asserted the opposite.
    */
-  it("follows a player who already opened the history of a live game", () => {
-    const browsing = context({ gameStatus: "playing", historyCursor: 3 });
-    expect(historyKeyDirection("ArrowLeft", browsing)).toBe("back");
-    expect(historyKeyDirection("ArrowRight", browsing)).toBe("forward");
+  it("stays inert during a live game even while the history is open", () => {
+    const live = context({ gameStatus: "playing" });
+    expect(historyKeyDirection("ArrowLeft", live)).toBeNull();
+    expect(historyKeyDirection("ArrowRight", live)).toBeNull();
+  });
+
+  it("steps through an aborted game as well as a finished one", () => {
+    expect(
+      historyKeyDirection("ArrowLeft", context({ gameStatus: "aborted" })),
+    ).toBe("back");
   });
 
   it("leaves typing alone", () => {
@@ -54,9 +59,13 @@ describe("historyKeyDirection", () => {
     }
   });
 
-  it("works before the first state arrives and on a replay", () => {
+  /**
+   * Before the first state arrives the page has not established that the game
+   * is over, so it must not claim the keys on a guess.
+   */
+  it("stays inert until the status is known", () => {
     expect(
       historyKeyDirection("ArrowLeft", context({ gameStatus: null })),
-    ).toBe("back");
+    ).toBeNull();
   });
 });

@@ -7,19 +7,24 @@ import type { HistoryNav } from "@/types/history";
  *
  * Only when the game is NOT active (Nil, board 90c329b0). During a live game
  * the arrows stay inert: a player mid-turn is aiming at the board, and
- * silently rewinding the position under them is the opposite of helpful. The
- * one exception is a player who has ALREADY opened the history of a live game
- * by clicking a move - they are reading, not playing, so the arrows follow
- * them there and the same keys take them back to the live position.
+ * silently rewinding the position under them is the opposite of helpful.
+ *
+ * An earlier version made an exception for a player already browsing the
+ * history of a live game. Reviewer 2 rejected it on 2026-08-16 as a
+ * subjective widening of a board task that says exactly "only when game is
+ * not active", and they were right: nobody asked for it. It can come back if
+ * Nil wants it.
+ *
+ * An unknown status is inert too. Before the first state arrives the page has
+ * not established that the game is over, and claiming the arrow keys on a
+ * guess is the wrong way to be wrong.
  */
 
 export type HistoryKeyDirection = "back" | "forward";
 
 export interface HistoryKeyContext {
-  /** null before the first state arrives. */
+  /** null before the first state arrives; inert until it is known. */
   gameStatus: GameStatus | null;
-  /** null means the live position; a number means a ply is being viewed. */
-  historyCursor: number | null;
   /** The keystroke is typing, not navigating - the chat box owns it. */
   targetIsTextEntry: boolean;
   /** Ctrl/Meta/Alt are browser and OS shortcuts; do not take them. */
@@ -41,9 +46,9 @@ export const historyKeyDirection = (
   if (context.targetIsTextEntry) return null;
   if (context.hasModifier) return null;
 
-  const gameIsActive = context.gameStatus === "playing";
-  const alreadyBrowsingHistory = context.historyCursor !== null;
-  if (gameIsActive && !alreadyBrowsingHistory) return null;
+  const gameIsKnownInactive =
+    context.gameStatus === "finished" || context.gameStatus === "aborted";
+  if (!gameIsKnownInactive) return null;
 
   return key === "ArrowLeft" ? "back" : "forward";
 };
@@ -70,7 +75,6 @@ export const useHistoryKeyboard = (options: {
       if (event.defaultPrevented) return;
       const direction = historyKeyDirection(event.key, {
         gameStatus,
-        historyCursor: historyNav.cursor,
         targetIsTextEntry: isTextEntry(event.target),
         hasModifier: event.ctrlKey || event.metaKey || event.altKey,
       });
