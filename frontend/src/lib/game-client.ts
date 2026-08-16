@@ -18,7 +18,17 @@ import type {
   ActionNackCode,
 } from "../../../shared/contracts/controller-actions";
 
+/**
+ * What the page can tell the player about the connection.
+ *
+ * "reconnecting" is the state that did not exist before board 97f9d99c: a
+ * closed game socket was permanent and silent, so the page went on rendering a
+ * live game it could no longer send to or hear from.
+ */
+export type TransportState = "connecting" | "open" | "reconnecting";
+
 export interface GameClientHandlers {
+  onTransportState?: (state: TransportState) => void;
   onState?: (state: SerializedGameState) => void;
   onMatchStatus?: (snapshot: GameSnapshot) => void;
   onWelcome?: (socketId: string) => void;
@@ -61,6 +71,22 @@ interface InflightActionRequest {
 
 const ACTION_RESPONSE_TIMEOUT_MS = 5000;
 
+/**
+ * How long to wait before each reconnect attempt, in order; the last entry
+ * repeats for as long as the outage lasts.
+ *
+ * The delay is capped and the ATTEMPT COUNT is not. A fixed cap would strand a
+ * player whose outage outlived it - a lift, a tunnel, a laptop asleep over
+ * lunch - and leaving them on a board that can never recover is the fault this
+ * whole change exists to remove. Giving up is only honest with a visible
+ * gave-up state and a Retry the player can press, which is more machinery than
+ * the problem needs.
+ */
+const RECONNECT_DELAYS_MS = [500, 1000, 2000, 4000, 8000, 10000] as const;
+
+const reconnectDelayFor = (attempt: number): number =>
+  RECONNECT_DELAYS_MS[Math.min(attempt, RECONNECT_DELAYS_MS.length - 1)];
+
 const buildSocketUrl = (gameId: string, token: string): string => {
   const base = new URL(window.location.origin);
   base.protocol = base.protocol === "https:" ? "wss:" : "ws:";
@@ -74,6 +100,20 @@ export class GameClient {
   private handlers: GameClientHandlers = {};
   private readonly inflightRequests = new Map<string, InflightActionRequest>();
   private pingInterval: number | null = null;
+  /**
+   * Which attempt owns the client right now.
+   *
+   * Every listener captures the generation it was registered for and ignores
+   * anything that does not match. A websocket keeps delivering to its own
+   * listeners after it has been replaced, so without this a dying socket's
+   * close event would clear the LIVE socket's ping timer and start a second
+   * reconnect chain beside the one already running.
+   */
+  private generation = 0;
+  private reconnectTimer: number | null = null;
+  private reconnectAttempt = 0;
+  private closedByClient = false;
+  private connected = false;
 
   constructor(
     private readonly params: {
@@ -82,21 +122,41 @@ export class GameClient {
     },
   ) {}
 
+  /**
+   * Idempotent: a second call is ignored rather than opening a rival socket.
+   */
   connect(handlers: GameClientHandlers): void {
+    if (this.connected) {
+      return;
+    }
+    this.connected = true;
     this.handlers = handlers;
     if (typeof window === "undefined") {
       handlers.onError?.("WebSocket not available in this environment.");
       return;
     }
+    this.openSocket("connecting");
+  }
+
+  private openSocket(reportedState: TransportState): void {
+    const generation = ++this.generation;
     const url = buildSocketUrl(this.params.gameId, this.params.socketToken);
     console.debug("[game-client] opening websocket", {
       gameId: this.params.gameId,
+      generation,
     });
+    this.handlers.onTransportState?.(reportedState);
     this.socket = new WebSocket(url);
     this.socket.addEventListener("open", () => {
+      if (generation !== this.generation) return;
       console.debug("[game-client] websocket open", {
         gameId: this.params.gameId,
+        generation,
       });
+      // A reconnect that reached "open" costs the next outage nothing: the
+      // schedule restarts at its shortest delay.
+      this.reconnectAttempt = 0;
+      this.handlers.onTransportState?.("open");
       // Start ping interval to keep connection alive (Fly.io has ~60s idle timeout)
       this.pingInterval = window.setInterval(() => {
         if (this.socket?.readyState === WebSocket.OPEN) {
@@ -105,6 +165,7 @@ export class GameClient {
       }, 30000);
     });
     this.socket.addEventListener("message", (event) => {
+      if (generation !== this.generation) return;
       const raw = typeof event.data === "string" ? event.data : null;
       if (!raw) return;
       try {
@@ -170,22 +231,45 @@ export class GameClient {
       }
     });
     this.socket.addEventListener("close", () => {
+      if (generation !== this.generation) return;
       console.debug("[game-client] websocket closed", {
         gameId: this.params.gameId,
+        generation,
       });
       this.clearPingInterval();
       this.resolveAllInflightAsTransportError("Connection to server closed.");
-      this.handlers.onError?.("Connection to server closed.");
+      if (this.closedByClient) {
+        return;
+      }
+      this.scheduleReconnect();
     });
     this.socket.addEventListener("error", (event) => {
+      if (generation !== this.generation) return;
       console.error("[game-client] websocket error", {
         gameId: this.params.gameId,
         readyState: this.socket?.readyState,
         event,
       });
       this.resolveAllInflightAsTransportError("WebSocket error occurred.");
-      this.handlers.onError?.("WebSocket error occurred.");
+      // No reconnect is started here. A failed socket always follows its error
+      // with a close, and starting a chain from both would run two.
     });
+  }
+
+  private scheduleReconnect(): void {
+    const delay = reconnectDelayFor(this.reconnectAttempt);
+    this.reconnectAttempt += 1;
+    this.handlers.onTransportState?.("reconnecting");
+    console.debug("[game-client] scheduling reconnect", {
+      gameId: this.params.gameId,
+      attempt: this.reconnectAttempt,
+      delay,
+    });
+    this.reconnectTimer = window.setTimeout(() => {
+      this.reconnectTimer = null;
+      if (this.closedByClient) return;
+      this.openSocket("reconnecting");
+    }, delay);
   }
 
   private send(payload: ClientMessage): void {
@@ -281,7 +365,16 @@ export class GameClient {
     this.send({ type: "chat-message", channel, text });
   }
 
+  /**
+   * A close the caller ASKED for, which must not look like one it suffered.
+   *
+   * The flag is set and the pending retry cancelled BEFORE the socket is
+   * closed, so the close event that follows cannot start a reconnect to a game
+   * the page has left.
+   */
   close(reason = "unspecified"): void {
+    this.closedByClient = true;
+    this.clearReconnectTimer();
     this.clearPingInterval();
     if (!this.socket) {
       return;
@@ -292,6 +385,13 @@ export class GameClient {
       stack: new Error().stack,
     });
     this.socket.close(1000, "Client closing connection");
+  }
+
+  private clearReconnectTimer(): void {
+    if (this.reconnectTimer !== null) {
+      window.clearTimeout(this.reconnectTimer);
+      this.reconnectTimer = null;
+    }
   }
 
   private clearPingInterval(): void {

@@ -71,6 +71,8 @@ interface BoardPanelProps {
   hasActionMessage: boolean;
   actionError: string | null;
   actionStatusText: string | null;
+  /** The game socket is down and trying to come back; do not let a move be sent. */
+  isReconnecting?: boolean;
   clearStagedActions: () => void;
   commitStagedActions: () => void;
 
@@ -132,6 +134,7 @@ export function BoardPanel({
   activeLocalPlayerId,
   hasActionMessage,
   actionError,
+  isReconnecting = false,
   actionStatusText,
   clearStagedActions,
   commitStagedActions,
@@ -278,7 +281,8 @@ export function BoardPanel({
                 onClick={() => commitStagedActions()}
                 disabled={
                   gameState?.status !== "playing" ||
-                  gameState?.turn !== activeLocalPlayerId
+                  gameState?.turn !== activeLocalPlayerId ||
+                  isReconnecting
                 }
               >
                 <span className="truncate block">

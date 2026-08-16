@@ -672,6 +672,7 @@ function GamePageContent() {
                   hasActionMessage={board.hasActionMessage}
                   actionError={board.actionError}
                   actionStatusText={board.actionStatusText}
+                  isReconnecting={board.isReconnecting}
                   clearStagedActions={board.clearStagedActions}
                   commitStagedActions={board.commitStagedActions}
                   annotations={board.annotations}

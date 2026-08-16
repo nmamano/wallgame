@@ -63,6 +63,7 @@ import {
   type PlayerControllerContext,
 } from "@/lib/player-controllers";
 import { RemotePlayerController } from "@/lib/remote-player-controller";
+import type { TransportState } from "@/lib/game-client";
 import { useOnlineGameSession } from "@/hooks/use-online-game-session";
 import {
   saveGameHandshake,
@@ -100,6 +101,7 @@ import {
   canActNow as selectCanActNow,
   shouldQueueAsPremove,
   isViewingHistory as selectIsViewingHistory,
+  resolveActiveLocalPlayerId,
   type ControllerSelectorState,
 } from "@/game/controller-selectors";
 import { useBoardInteractions } from "@/hooks/use-board-interactions";
@@ -775,7 +777,7 @@ export function useGamePageController(gameId: string) {
       setChatChannel("game");
       setStagedActions([]);
       setPremovedActions([]);
-      setActiveLocalPlayerId(null);
+      setLocalActivePlayerId(null);
       pendingTurnRequestRef.current = null;
 
       Object.values(seatActionsRef.current).forEach((controller) =>
@@ -945,11 +947,12 @@ export function useGamePageController(gameId: string) {
             play(hasWall ? sounds.wall : sounds.pawn);
           }
         }
-        if (seat.playerId === resolvedState.turn) {
-          setActiveLocalPlayerId(seat.playerId);
-        } else {
-          setActiveLocalPlayerId(null);
-        }
+        // Turn ownership is NOT recorded here. It is derived from
+        // gameState.turn and this seat's id (resolveActiveLocalPlayerId).
+        // Writing it from the socket is what board 97f9d99c cost: once the
+        // copy was cleared and the socket was down, only an inbound state
+        // message could restore it, and that message needs the opponent to
+        // move - impossible while the turn is yours.
       },
       onMatchStatus: (snapshot) => {
         applyMatchSnapshotIfCurrent(snapshot);
@@ -1006,6 +1009,9 @@ export function useGamePageController(gameId: string) {
       },
       onWelcome: (socketId) => {
         mySocketIdRef.current = socketId;
+      },
+      onTransportState: (state) => {
+        setTransportState(state);
       },
       onChatMessage: (msg) => chatHandlerRef.current?.onMessage(msg),
       onChatError: (err) => chatHandlerRef.current?.onError(err),
@@ -1382,7 +1388,18 @@ export function useGamePageController(gameId: string) {
   }, [isSpectatorSession]);
 
   const [actionError, setActionError] = useState<string | null>(null);
-  const [activeLocalPlayerId, setActiveLocalPlayerId] =
+  /**
+   * The game socket's own state. "open" until a socket says otherwise, so a
+   * page with no socket at all (local play, replay) is never called
+   * disconnected.
+   */
+  const [transportState, setTransportState] = useState<TransportState>("open");
+  /**
+   * LOCAL play only: which of the two people sharing this device is playing
+   * the current turn. An online seat must not be recorded here - see
+   * `resolveActiveLocalPlayerId`, which derives that from the game state.
+   */
+  const [localActivePlayerId, setLocalActivePlayerId] =
     useState<PlayerId | null>(null);
   const [loadError, setLoadError] = useState<string | null>(null);
   const [isLoadingConfig, setIsLoadingConfig] = useState(true);
@@ -1446,6 +1463,16 @@ export function useGamePageController(gameId: string) {
     !controllerAllowsInteraction ||
     (!isMultiplayerMatch && unsupportedPlayers.length > 0) ||
     (isMultiplayerMatch && !matchReadyForPlay);
+
+  /**
+   * Who this page may act as right now. Derived for an online seat, cached
+   * only for local play - board 97f9d99c.
+   */
+  const activeLocalPlayerId = resolveActiveLocalPlayerId({
+    remoteSeatPlayerId: remoteConnection?.seat.playerId ?? null,
+    gameTurn: gameState?.turn ?? null,
+    localActivePlayerId,
+  });
 
   const resolveBoardControlPlayerId = useCallback(
     () => activeLocalPlayerId ?? defaultLocalPlayerId ?? null,
@@ -2954,7 +2981,7 @@ export function useGamePageController(gameId: string) {
       seatActionsRef.current = { 1: null, 2: null };
       pendingTurnRequestRef.current = null;
       gameStateRef.current = null;
-      setActiveLocalPlayerId(null);
+      setLocalActivePlayerId(null);
       // Meta game actions will be reset via useEffect in the hook when game finishes
       resetViewModel();
     };
@@ -3123,7 +3150,7 @@ export function useGamePageController(gameId: string) {
       pendingTurnRequestRef.current = playerId;
 
       if (isLocalController(controller)) {
-        setActiveLocalPlayerId(playerId);
+        setLocalActivePlayerId(playerId);
       }
 
       controller
@@ -3161,7 +3188,7 @@ export function useGamePageController(gameId: string) {
             pendingTurnRequestRef.current = null;
           }
           if (isLocalController(controller)) {
-            setActiveLocalPlayerId((prev) => (prev === playerId ? null : prev));
+            setLocalActivePlayerId((prev) => (prev === playerId ? null : prev));
           }
         });
     },
@@ -3457,12 +3484,22 @@ export function useGamePageController(gameId: string) {
         )
       : null;
   const manualActionsDisabled = !controllerAllowsInteraction;
-  const hasActionMessage = Boolean(actionError) || Boolean(selectedPawn);
-  const actionStatusText =
-    actionError ??
-    (selectedPawn
-      ? `Selected ${selectedPawn.type} (${cellToStandardNotation(selectedPawn.cell, rows)})`
-      : null);
+  /**
+   * Staging stays open while the socket is down - the player keeps planning
+   * and keeps the actions they already chose, and the queue is submitted once
+   * the socket returns. Only SENDING is withheld, and it is withheld visibly:
+   * a Finish move button that looks live and quietly does nothing is the same
+   * dishonesty as the stale board this change removes.
+   */
+  const isReconnecting = transportState !== "open";
+  const hasActionMessage =
+    Boolean(actionError) || Boolean(selectedPawn) || isReconnecting;
+  const actionStatusText = isReconnecting
+    ? "Reconnecting to the server..."
+    : (actionError ??
+      (selectedPawn
+        ? `Selected ${selectedPawn.type} (${cellToStandardNotation(selectedPawn.cell, rows)})`
+        : null));
 
   const pendingActionsCount = canActNow
     ? stagedActions.length
@@ -3853,6 +3890,7 @@ export function useGamePageController(gameId: string) {
     hasActionMessage,
     actionError,
     actionStatusText,
+    isReconnecting,
     clearStagedActions,
     commitStagedActions,
     // Annotation handlers and state (for board right-click interactions)
