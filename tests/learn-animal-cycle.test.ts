@@ -27,19 +27,17 @@ A traditional variant where the mice are called "goals" and are fixed in the bot
     expect(variants).toContain(
       "Cat beats Mouse, Mouse beats Elephant, Elephant beats Dog, and Dog beats Cat.",
     );
-    expect(variants).toContain(
-      "The first capture wins immediately when an action ends on an opposing animal.",
-    );
+    expect(variants).toContain("The first capture wins.");
     expect(variants).toContain(
       "Your two animals can never share a cell or cross each other.",
     );
-    expect(variants).toContain(
+    expect(variants).not.toContain(
       "On an L-shaped two-cell move, one open route that avoids your other animal is enough.",
     );
-    expect(variants).toContain(
+    expect(variants).not.toContain(
       "You may cross an opposing animal without capturing it; only the cell where each action ends is checked for a capture.",
     );
-    expect(variants).toContain(
+    expect(variants).not.toContain(
       "You may also pass without taking an action. Walls follow the standard rules.",
     );
   });
