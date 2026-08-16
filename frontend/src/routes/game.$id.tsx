@@ -14,6 +14,7 @@ import { MobileMoveBar } from "@/components/mobile-move-bar";
 import { MobileGameDrawer } from "@/components/mobile-game-drawer";
 import { PuzzleVoteControl } from "@/components/puzzle-vote-control";
 import { useGamePageController } from "@/hooks/use-game-page-controller";
+import { useHistoryKeyboard } from "@/hooks/use-history-keyboard";
 import { useMediaQuery } from "@/hooks/use-media-query";
 import { useEvalBar } from "@/hooks/use-eval-bar";
 import { useMobileViewport } from "@/hooks/use-mobile-viewport";
@@ -56,6 +57,11 @@ function GamePageContent() {
     accessKind !== "spectator" &&
     accessKind !== "replay" &&
     board.gameStatus === "playing";
+
+  useHistoryKeyboard({
+    gameStatus: board.gameStatus,
+    historyNav: chat.historyNav,
+  });
 
   const evalBar = useEvalBar({
     gameId: id,
