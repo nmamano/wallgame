@@ -8,6 +8,10 @@ dist/
 .wallgame-bot-heartbeat
 
 ignore/
+# Repo-root scratch space for local review artifacts and one-off evidence files.
+# Anchored with a leading slash so it covers only this directory, not every folder
+# named tmp elsewhere in the tree.
+/tmp/
 **/.tanstack/tmp/
 .cursor/debug.log
 .eslintcache
