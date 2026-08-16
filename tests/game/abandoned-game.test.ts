@@ -624,11 +624,15 @@ describe("a bot game whose human seat left", () => {
   it("keeps the game when the human comes back inside the grace period", () => {
     // Reconnecting must CANCEL the grace, not postpone it.
     //
-    // The check lands at t=61 s rather than a further thirty minutes on
-    // purpose: the idle timer is a separate mechanism with its own deadline
-    // running from the last move, and it can legitimately end this game thirty
-    // minutes after that move. Asserting survival that far out would be
-    // asserting the absence of a policy this test is not about.
+    // The check lands just past the ORIGINAL deadline, t=60,001 ms, rather than
+    // a further thirty minutes: the idle timer is a separate mechanism with its
+    // own deadline running from the last move, and it can legitimately end this
+    // game thirty minutes after that move. Asserting survival that far out
+    // would be asserting the absence of a policy this test is not about.
+    //
+    // The two advances are written to SUM to that instant. A second advance of
+    // a whole grace period would land at t=90 s, which still passes and would
+    // no longer be the proof the comment claims.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
       setBotCompositeId(session.id, "joiner", "client-1:superhuman");
@@ -636,10 +640,13 @@ describe("a bot game whose human seat left", () => {
       playMoves(session.id, 2);
       setConnected(session, "host", false);
 
-      timers.advanceTimersByTime(30 * 1000);
+      const reconnectAtMs = 30 * 1000;
+      timers.advanceTimersByTime(reconnectAtMs);
       setConnected(session, "host", true);
 
-      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
+      timers.advanceTimersByTime(
+        BOT_GAME_DISCONNECT_GRACE_MS - reconnectAtMs + 1,
+      );
       expect(isLive(session.id)).toBe(true);
       expect(getSession(session.id).gameState.status).toBe("playing");
     });
