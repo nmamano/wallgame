@@ -935,8 +935,50 @@ export const startBgsSession = async (
     const timeoutId = setTimeout(() => {
       pendingResolvers.delete(bgsId);
       clearPendingRequest(bgsId);
+
+      // TELL THE ENGINE BEFORE FORGETTING, or nothing ever will.
+      //
+      // The request that timed out here can still complete on the engine, which
+      // then holds a session the server has stopped tracking. Deep Wallwars caps
+      // at 256 sessions per process and refuses every new game after that.
+      //
+      // The local delete below is exactly what disables the only cleanup path:
+      // notifyBotGameEnded (this file) ends a session by looking it up with
+      // getBgs(gameId), so once endBgs has run, the game ending later finds
+      // nothing and sends nothing. Telling the engine HERE is therefore the
+      // whole fix - it is the last moment at which anything can.
+      //
+      // Written before the delete for a reader's benefit and to stay correct if
+      // this is ever routed through endBgsSession(), which DOES consult the
+      // store. Be honest about today though: send() takes the socket context
+      // directly and never looks at the BGS, so as written the two lines could
+      // be swapped with no change in behaviour. The order is not what makes
+      // this work; sending at all is.
+      //
+      // Sent directly rather than through endBgsSession(), for two reasons:
+      // that function awaits a confirmation, which would put a second wait on a
+      // path that is already a timeout, and it early-returns when getBgs is
+      // undefined - so after the delete it is a no-op anyway.
+      //
+      // Best-effort by construction: send() catches its own socket errors, so
+      // nothing can throw out of this callback, and no reply is awaited. A
+      // client that never created the session answers game_session_ended with
+      // success false, which handleGameSessionEnded already tolerates.
+      //
+      // This does NOT make a bgsId safe to REUSE. Proving that a later start
+      // cannot collide with this session needs attempt identity, which the
+      // protocol cannot carry today (game_session_started has no request id) -
+      // see board 38f836ca, where the retry that needs it is designed. Nothing
+      // retries a start today, which is why the archive to 2026-08-16 shows
+      // zero of these across 7,378 games.
+      send(ctx, { type: "end_game_session", bgsId });
+
       endBgs(bgsId);
       removeClientBgsSession(clientId, bgsId);
+      console.info("[custom-bot-ws] start timed out; asked engine to end BGS", {
+        bgsId,
+        clientId,
+      });
       reject(new BgsStartFailure("timeout", "start_game_session timeout"));
     }, BGS_REQUEST_TIMEOUT_MS);
 

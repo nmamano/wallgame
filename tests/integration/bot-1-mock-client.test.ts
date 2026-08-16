@@ -297,6 +297,16 @@ interface BotSocket {
     expectedType: T,
     options?: { ignore?: CustomBotServerMessage["type"][] },
   ) => Promise<Extract<CustomBotServerMessage, { type: T }>>;
+  /**
+   * Everything buffered since the last drain, emptied.
+   *
+   * `waitForMessage` cannot answer two questions these BGS-lifecycle tests
+   * need. It gives up after 5 s, which is shorter than the server's 10 s
+   * BGS_REQUEST_TIMEOUT_MS, so it cannot see a message the server sends when
+   * that timeout fires. And it cannot assert an ABSENCE at all: a test that
+   * needs "no end_game_session was sent here" has nothing to wait for.
+   */
+  drainMessages: () => CustomBotServerMessage[];
   sendAttach: (
     clientId: string,
     bots: BotConfig[],
@@ -358,6 +368,8 @@ async function openBotSocket(): Promise<BotSocket> {
       resolve({
         ws,
         close: () => ws.close(),
+
+        drainMessages: () => buffer.splice(0, buffer.length),
 
         sendAttach: (
           clientId: string,
@@ -1072,4 +1084,191 @@ describe("custom bot WebSocket integration V3", () => {
 
     botSocket.close();
   }, 15000);
+
+  /**
+   * The engine-session leak of board 8e148564.
+   *
+   * When start_game_session does not answer inside BGS_REQUEST_TIMEOUT_MS, the
+   * server used to delete its local BGS and send the engine nothing. The
+   * engine's own request could still complete afterwards, leaving it holding a
+   * session the server had forgotten - and Deep Wallwars refuses new games past
+   * 256 sessions per process.
+   *
+   * The local delete was itself what made cleanup impossible: notifyBotGameEnded
+   * ends a session by looking it up with getBgs(gameId), so once the timeout
+   * handler had deleted it, the game ending later found nothing and sent
+   * nothing. Ordering the wire message before the delete is the fix.
+   *
+   * Measured 2026-08-16 across 7,378 games: this has fired ZERO times in
+   * production. It is a correctness fix, not an incident response, which is why
+   * the change is one send and not a drain protocol.
+   *
+   * These tests use drainMessages rather than waitForMessage because the server
+   * acts at ten seconds and waitForMessage gives up at five.
+   */
+  const startTimeoutGameConfig: GameConfiguration = {
+    timeControl: { initialSeconds: 600, incrementSeconds: 0, preset: "rapid" },
+    variant: "standard",
+    randomStart: false,
+    rated: false,
+    boardWidth: 3,
+    boardHeight: 3,
+    variantConfig: buildStandardInitialState(3, 3),
+  };
+
+  it("asks the engine to end a BGS whose start timed out", async () => {
+    const clientId = "test-client-start-timeout";
+    const botId = "timeout-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [
+        createTestBotConfig(botId, "Timeout Bot"),
+      ]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const { gameId, socketToken } = await createGameVsBot(
+        "host-start-timeout",
+        compositeId,
+        startTimeoutGameConfig,
+        true,
+      );
+      humanSocket = await openHumanSocket(
+        "host-start-timeout",
+        gameId,
+        socketToken,
+      );
+
+      const start = await botSocket.waitForMessage("start_game_session");
+      const { bgsId } = start;
+
+      // The whole fixture: answer NOTHING, so the server's start request times
+      // out. A wedged engine is exactly the case that used to leak.
+      botSocket.drainMessages();
+      await sleep(12_000);
+
+      const afterTimeout = botSocket.drainMessages();
+      const ends = afterTimeout.filter((m) => m.type === "end_game_session");
+      expect(ends).toHaveLength(1);
+      expect(ends[0]).toMatchObject({ type: "end_game_session", bgsId });
+
+      // A late response now arrives, as it would from an engine that finished
+      // after the server gave up. The server must not act on it: the BGS is
+      // gone and the game is already over.
+      botSocket.sendGameSessionStarted(bgsId, true);
+      await sleep(500);
+      const afterLate = botSocket.drainMessages();
+      expect(
+        afterLate.filter((m) => m.type === "evaluate_position"),
+      ).toHaveLength(0);
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+    }
+  }, 60_000);
+
+  it("sends no end_game_session when the start succeeds normally", async () => {
+    // The control. Without it the test above is satisfied by a server that
+    // sends end_game_session on EVERY start, which would tear down every
+    // healthy game - so the new send has to be observed being conditional.
+    const clientId = "test-client-start-ok";
+    const botId = "ok-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [createTestBotConfig(botId, "OK Bot")]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const { gameId, socketToken } = await createGameVsBot(
+        "host-start-ok",
+        compositeId,
+        startTimeoutGameConfig,
+        true,
+      );
+      humanSocket = await openHumanSocket("host-start-ok", gameId, socketToken);
+
+      const start = await botSocket.waitForMessage("start_game_session");
+      botSocket.sendGameSessionStarted(start.bgsId, true);
+
+      // The initial look-ahead must be answered or the game does not stay
+      // healthy: an unanswered evaluate_position times out at ten seconds too,
+      // resigns the bot, and ends the game - which sends end_game_session
+      // through the ordinary game-end cleanup and would fail this test for a
+      // reason that has nothing to do with the change. The first run did
+      // exactly that. After this the human is on turn, so the server asks the
+      // bot nothing more and the game simply waits.
+      const initialEval = await botSocket.waitForMessage("evaluate_position");
+      botSocket.sendEvaluateResponse(initialEval.bgsId, 0, "---", 0.0);
+      botSocket.drainMessages();
+
+      // Well past the ten-second BGS timeout, so a server that sent the end
+      // unconditionally, or that failed to cancel the start timer on success,
+      // would have shown it by now. The game is timed with 600 s and at move
+      // zero, so neither its clock nor the five-minute unstarted-timed band can
+      // end it inside this window either.
+      await sleep(12_000);
+
+      const seen = botSocket.drainMessages();
+      expect(seen.filter((m) => m.type === "end_game_session")).toHaveLength(0);
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+    }
+  }, 60_000);
+
+  it("still ends the BGS through game-end cleanup when the engine refuses", async () => {
+    // The explicit success:false path, and the finding that kept it out of this
+    // fix. handleGameSessionStarted clears the resolver without calling endBgs,
+    // so the local BGS survives the refusal - which means the game ending
+    // immediately afterwards DOES find it and sends the remote end. That is a
+    // transient window, not a leak, and it must stay that way: this test is
+    // what would notice if a later change deleted the BGS on refusal and
+    // silently recreated the leak on a second path.
+    //
+    // All 7 production rows of this shape (2026-08-13) ended cleanly.
+    const clientId = "test-client-refuse";
+    const botId = "refuse-bot";
+    const compositeId = `${clientId}:${botId}`;
+    let botSocket: BotSocket | null = null;
+    let humanSocket: HumanSocket | null = null;
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [
+        createTestBotConfig(botId, "Refusing Bot"),
+      ]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "standard" });
+
+      const { gameId, socketToken } = await createGameVsBot(
+        "host-refuse",
+        compositeId,
+        startTimeoutGameConfig,
+        true,
+      );
+      humanSocket = await openHumanSocket("host-refuse", gameId, socketToken);
+
+      const start = await botSocket.waitForMessage("start_game_session");
+      botSocket.drainMessages();
+      botSocket.sendGameSessionStarted(start.bgsId, false, "engine refused");
+
+      await sleep(2_000);
+
+      const seen = botSocket.drainMessages();
+      const ends = seen.filter((m) => m.type === "end_game_session");
+      expect(ends).toHaveLength(1);
+      expect(ends[0]).toMatchObject({ bgsId: start.bgsId });
+    } finally {
+      humanSocket?.close();
+      botSocket?.close();
+    }
+  }, 60_000);
 });
