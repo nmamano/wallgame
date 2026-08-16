@@ -142,32 +142,46 @@ export const getUserMiddleware = createMiddleware<Env>(async (c, next) => {
  */
 export const getOptionalUserMiddleware = createMiddleware<Env>(
   async (c, next) => {
+    // THE TRY COVERS RESOLVING WHO THIS IS, AND NOTHING ELSE.
+    //
+    // It used to wrap `await next()` as well, and the catch called `next()`
+    // again - so a rejecting `next()` ran the rest of the chain and the handler
+    // a SECOND time, and threw the first failure away. A middleware whose whole
+    // job is to be optional must never do that; on anything with a side effect
+    // it would do it twice (board 8649e958, found by Wall Game Reviewer 1).
+    //
+    // Measured on hono 4.13.2, 2026-08-16: compose never rejects the promise
+    // `next()` returns - a downstream throw goes to the app's error handling
+    // instead - so the retry was unreachable through a Hono app and no request
+    // is known to have run twice. It was still wrong, and it was one framework
+    // detail away from being live.
+    //
+    // What the catch is genuinely for is below it: reading the cookie and the
+    // profile can fail on an expired or malformed session, and a request that
+    // works perfectly well for a guest must not break because of it.
     try {
       // Mock auth for testing
       const testUser = getTestUserFromHeader(c);
       if (testUser) {
         c.set("user", testUser);
-        await next();
-        return;
-      }
-
-      // Try to get authenticated user, but don't fail if not logged in
-      const manager = sessionManager(c);
-      const isAuthenticated = await kindeClient.isAuthenticated(manager);
-
-      if (isAuthenticated) {
-        const user = await kindeClient.getUserProfile(manager);
-        if (user?.id) {
-          c.set("user", user);
+      } else {
+        // Try to get authenticated user, but don't fail if not logged in
+        const manager = sessionManager(c);
+        if (await kindeClient.isAuthenticated(manager)) {
+          const user = await kindeClient.getUserProfile(manager);
+          if (user?.id) {
+            c.set("user", user);
+          }
         }
+        // If not authenticated, user remains undefined (guest)
       }
-      // If not authenticated, user remains undefined (guest)
-
-      await next();
     } catch (error) {
       // Don't fail on auth errors for optional auth - just proceed as guest
       console.warn("Optional auth check failed, proceeding as guest:", error);
-      await next();
     }
+
+    // Exactly once, whatever happened above, and outside the catch so a
+    // downstream failure surfaces to the caller instead of being retried.
+    await next();
   },
 );
