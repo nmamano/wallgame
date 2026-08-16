@@ -1094,10 +1094,12 @@ describe("custom bot WebSocket integration V3", () => {
    * session the server had forgotten - and Deep Wallwars refuses new games past
    * 256 sessions per process.
    *
-   * The local delete was itself what made cleanup impossible: notifyBotGameEnded
-   * ends a session by looking it up with getBgs(gameId), so once the timeout
-   * handler had deleted it, the game ending later found nothing and sent
-   * nothing. Ordering the wire message before the delete is the fix.
+   * The timeout handler has to send explicitly because endBgs removes the
+   * record that every later ORDINARY cleanup path uses to DISCOVER the remote
+   * session: notifyBotGameEnded looks it up with getBgs(gameId), so once the
+   * timeout handler had deleted it, the game ending later found nothing and
+   * sent nothing. The placement before endBgs preserves the natural cleanup
+   * order, but the direct send() does not depend on that order today.
    *
    * Measured 2026-08-16 across 7,378 games: this has fired ZERO times in
    * production. It is a correctness fix, not an incident response, which is why

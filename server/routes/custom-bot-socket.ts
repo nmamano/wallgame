@@ -942,18 +942,22 @@ export const startBgsSession = async (
       // then holds a session the server has stopped tracking. Deep Wallwars caps
       // at 256 sessions per process and refuses every new game after that.
       //
-      // The local delete below is exactly what disables the only cleanup path:
-      // notifyBotGameEnded (this file) ends a session by looking it up with
+      // This handler must send explicitly because endBgs below removes the
+      // record that every later ORDINARY cleanup path uses to DISCOVER the
+      // remote session: notifyBotGameEnded (this file) looks it up with
       // getBgs(gameId), so once endBgs has run, the game ending later finds
-      // nothing and sends nothing. Telling the engine HERE is therefore the
-      // whole fix - it is the last moment at which anything can.
+      // nothing and sends nothing.
       //
-      // Written before the delete for a reader's benefit and to stay correct if
-      // this is ever routed through endBgsSession(), which DOES consult the
-      // store. Be honest about today though: send() takes the socket context
-      // directly and never looks at the BGS, so as written the two lines could
-      // be swapped with no change in behaviour. The order is not what makes
-      // this work; sending at all is.
+      // Note what that does and does not say. It is not that nothing else
+      // COULD send - the ctx captured here is still perfectly able to, after
+      // the delete or at any later time. What is lost is discovery: no code
+      // that starts from the store can find the session to send for it.
+      //
+      // The placement before endBgs preserves the natural cleanup order and
+      // supports a future store-aware routing helper, but the direct send()
+      // does not depend on that order today - it takes the socket context and
+      // never reads the store, so these two lines could be swapped with no
+      // change in behaviour.
       //
       // Sent directly rather than through endBgsSession(), for two reasons:
       // that function awaits a confirmation, which would put a second wait on a
