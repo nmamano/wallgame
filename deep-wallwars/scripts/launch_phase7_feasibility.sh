@@ -23,13 +23,14 @@ sha256sum "$run_dir/metrics"/{frozen-phase7-corrected-manifest.json,classic-10x9
 
 export PATH=/usr/src/tensorrt/bin:/usr/lib/wsl/lib:$HOME/.local/bin:$PATH
 start_utc=$(date -u +%Y-%m-%dT%H:%M:%SZ)
-printf '%s\n' "$start_utc" > "$run_dir/metrics/resume-start-utc.txt"
-df -h /mnt/c > "$run_dir/metrics/disk-before-resume.txt"
-/usr/lib/wsl/lib/nvidia-smi --query-gpu=timestamp,temperature.gpu,power.draw,power.limit,memory.used,memory.total,utilization.gpu --format=csv > "$run_dir/metrics/gpu-before-resume.csv"
+printf '%s\n' "$start_utc" > "$run_dir/metrics/padding-fix-resume-start-utc.txt"
+git rev-parse HEAD > "$run_dir/metrics/padding-fix-resume-source-head.txt"
+df -h /mnt/c > "$run_dir/metrics/disk-before-padding-fix-resume.txt"
+/usr/lib/wsl/lib/nvidia-smi --query-gpu=timestamp,temperature.gpu,power.draw,power.limit,memory.used,memory.total,utilization.gpu --format=csv > "$run_dir/metrics/gpu-before-padding-fix-resume.csv"
 
-/usr/lib/wsl/lib/nvidia-smi dmon -s pucvmet -d 5 -o DT > "$run_dir/metrics/gpu-dmon-resume.log" &
+/usr/lib/wsl/lib/nvidia-smi dmon -s pucvmet -d 5 -o DT > "$run_dir/metrics/gpu-dmon-padding-fix-resume.log" &
 gpu_pid=$!
-vmstat -t 5 > "$run_dir/metrics/vmstat-resume.log" &
+vmstat -t 5 > "$run_dir/metrics/vmstat-padding-fix-resume.log" &
 vmstat_pid=$!
 cleanup() {
   kill "$gpu_pid" "$vmstat_pid" 2>/dev/null || true
@@ -47,7 +48,7 @@ trap cleanup EXIT
   --threads 16 --seed 730071 \
   --deep_ww build-phase7/deep_ww --models "$run_dir/models" \
   --data "$run_dir/data" --log "$run_dir/metrics/training.log" \
-  2>&1 | tee "$run_dir/metrics/training-resume-stdout.log"
+  2>&1 | tee "$run_dir/metrics/training-padding-fix-resume-stdout.log"
 
 for generation in 93 94 95; do
   for variant in standard classic; do
@@ -64,7 +65,7 @@ for generation in 93 94 95; do
   test "$(find "$dir" -maxdepth 1 -name 'game_*.audit.json' | wc -l)" -eq 1000
 done
 
-df -h /mnt/c > "$run_dir/metrics/disk-after-resume.txt"
-/usr/lib/wsl/lib/nvidia-smi --query-gpu=timestamp,temperature.gpu,power.draw,power.limit,memory.used,memory.total,utilization.gpu --format=csv > "$run_dir/metrics/gpu-after-resume.csv"
-date -u +%Y-%m-%dT%H:%M:%SZ > "$run_dir/metrics/resume-stop-utc.txt"
+df -h /mnt/c > "$run_dir/metrics/disk-after-padding-fix-resume.txt"
+/usr/lib/wsl/lib/nvidia-smi --query-gpu=timestamp,temperature.gpu,power.draw,power.limit,memory.used,memory.total,utilization.gpu --format=csv > "$run_dir/metrics/gpu-after-padding-fix-resume.csv"
+date -u +%Y-%m-%dT%H:%M:%SZ > "$run_dir/metrics/padding-fix-resume-stop-utc.txt"
 sha256sum "$run_dir"/models/model_{94,95,96}.pt > "$run_dir/metrics/model-sha256.txt"
