@@ -50,6 +50,8 @@ import type {
 } from "../../../shared/contracts/settings";
 import type { MeResponse } from "../../../shared/contracts/user";
 
+import { messageFromApiErrorBody } from "@/lib/api-error";
+
 const client = hc<ApiRoutes>("/");
 
 export const api = client.api;
@@ -61,12 +63,8 @@ async function handleResponse<T>(
 ): Promise<T> {
   const res = await request;
   if (!res.ok) {
-    const data = (await res.json().catch(() => null)) as {
-      error?: string;
-    } | null;
-    throw new Error(
-      data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
-    );
+    const data: unknown = await res.json().catch(() => null);
+    throw new Error(messageFromApiErrorBody(data, res.status, res.statusText));
   }
   return res.json() as Promise<T>;
 }

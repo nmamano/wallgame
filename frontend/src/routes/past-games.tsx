@@ -39,6 +39,7 @@ import {
 import { PastGamesActivityChart } from "@/components/past-games-activity-chart";
 import { parsePastGamesNavState } from "@/lib/navigation-state";
 import { useLocalStorageState } from "@/hooks/use-local-storage";
+import { messageFromApiErrorBody } from "@/lib/api-error";
 
 export const Route = createFileRoute("/past-games")({
   component: PastGames,
@@ -50,12 +51,8 @@ const FILTERS_STORAGE_KEY = "past_games_filters";
 type ViewMode = "list" | "plot";
 
 const readError = async (res: Response): Promise<never> => {
-  const data = (await res.json().catch(() => null)) as {
-    error?: string;
-  } | null;
-  throw new Error(
-    data?.error ?? `Request failed: ${res.status} ${res.statusText}`,
-  );
+  const data: unknown = await res.json().catch(() => null);
+  throw new Error(messageFromApiErrorBody(data, res.status, res.statusText));
 };
 
 const fetchPastGames = async (
