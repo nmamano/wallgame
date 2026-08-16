@@ -110,6 +110,20 @@ export const resolvePawnStyleSrc = (
   return assetUrl(`/pawns/${type}/${ensureSvgExtension(normalized)}`);
 };
 
+/**
+ * The art the board paints for one pawn.
+ *
+ * The board and a player's avatar show the same piece, so they resolve it here
+ * rather than each in their own way - two expressions could drift, and Nil's
+ * rule of 2026-08-16 is that no such mechanism should exist. `visualType`
+ * matters: a classic home is drawn as a house though its owner plays a cat.
+ */
+export const resolveBoardPawnSrc = (pawn: {
+  type: PawnStyleType;
+  visualType?: PawnStyleType;
+  pawnStyle?: string;
+}): string => resolvePawnStyleSrc(pawn.pawnStyle, pawn.visualType ?? pawn.type);
+
 export const resolvePawnBackingSrc = (src: string): string | null => {
   if (/^https?:\/\//i.test(src)) return null;
   const match =

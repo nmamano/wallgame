@@ -1,8 +1,9 @@
 import { Badge } from "@/components/ui/badge";
 import { Bot, User } from "lucide-react";
 import { colorFilterMap, colorHexMap } from "@/lib/player-colors";
-import { resolvePawnStyleSrc } from "@/lib/pawn-style";
+import { resolveBoardPawnSrc } from "@/lib/pawn-style";
 import { PawnImage } from "@/components/pawn-image";
+import type { BoardPawn } from "@/components/board";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import type { PlayerColor } from "@/lib/player-colors";
 import type { PlayerType } from "@/lib/gameViewModel";
@@ -15,12 +16,17 @@ export interface GamePlayer {
   color: PlayerColor;
   type: PlayerType;
   isOnline: boolean;
-  catSkin?: string;
-  mouseSkin?: string;
 }
 
 interface PlayerTimerCardProps {
   player: GamePlayer;
+  /**
+   * The very pawn object the board draws for this player, chosen by
+   * `avatarPawn`. The card resolves its art with the board's own resolver, so
+   * the two pictures cannot disagree. Absent only before the board has pawns,
+   * and then the card falls back to a plain person or robot glyph.
+   */
+  avatarPawn?: BoardPawn;
   isActive: boolean;
   timeLeft: number;
   goalDistance?: number | null;
@@ -40,6 +46,7 @@ function formatTime(seconds: number): string {
 
 export function PlayerTimerCard({
   player,
+  avatarPawn,
   isActive,
   timeLeft,
   goalDistance,
@@ -55,12 +62,11 @@ export function PlayerTimerCard({
   const baseName = player.name.replace(nameSuffixRegex, "").trim();
   const trimmedBaseName =
     baseName.length > 10 ? `${baseName.slice(0, 8)}..` : baseName;
-  // Determine if we should show cat SVG for this player
-  const shouldShowCatSvg =
-    player.catSkin && player.catSkin !== "default" && player.catSkin.length > 0;
-  const catSvgPath = shouldShowCatSvg
-    ? resolvePawnStyleSrc(player.catSkin, "cat")
-    : null;
+  // The player's own animal, drawn whether or not they chose a look for it:
+  // the board resolver answers "default" with the default art of that type, so
+  // a player who never opened the pawn picker still sees their piece rather
+  // than an anonymous glyph (board e17b6a2b).
+  const avatarSrc = avatarPawn ? resolveBoardPawnSrc(avatarPawn) : null;
   const colorFilter = colorFilterMap[player.color]
     ? { filter: colorFilterMap[player.color] }
     : undefined;
@@ -97,9 +103,9 @@ export function PlayerTimerCard({
               color: colorHexMap[player.color],
             }}
           >
-            {catSvgPath ? (
+            {avatarSrc ? (
               <PawnImage
-                src={catSvgPath}
+                src={avatarSrc}
                 alt="avatar"
                 className="w-full h-full rounded-full"
                 imageStyle={colorFilter}
@@ -169,9 +175,9 @@ export function PlayerTimerCard({
             color: colorHexMap[player.color],
           }}
         >
-          {catSvgPath ? (
+          {avatarSrc ? (
             <PawnImage
-              src={catSvgPath}
+              src={avatarSrc}
               alt="player avatar"
               className="w-full h-full rounded-full"
               imageStyle={colorFilter}

@@ -17,7 +17,7 @@ import {
   colorFilterMap,
   colorHexMap,
 } from "@/lib/player-colors";
-import { resolvePawnStyleSrc } from "@/lib/pawn-style";
+import { resolveBoardPawnSrc } from "@/lib/pawn-style";
 import { PawnImage } from "@/components/pawn-image";
 import { Grid } from "../../../shared/domain/grid";
 import type {
@@ -1132,13 +1132,7 @@ export function Board({
     };
   }, [touchDragPawnId]); // Only depends on touchDragPawnId now
 
-  const resolvePawnVisual = (pawn: BoardPawn) => {
-    const pawnStyle = pawn.pawnStyle;
-    const visualType = pawn.visualType ?? pawn.type;
-    const src = resolvePawnStyleSrc(pawnStyle, visualType);
-
-    return src;
-  };
+  const resolvePawnVisual = (pawn: BoardPawn) => resolveBoardPawnSrc(pawn);
 
   const resolvePawnColor = (pawn: BoardPawn) =>
     playerColors[pawn.visualPlayerId ?? pawn.playerId];

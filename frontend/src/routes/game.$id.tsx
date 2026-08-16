@@ -19,6 +19,7 @@ import { useMediaQuery } from "@/hooks/use-media-query";
 import { useEvalBar } from "@/hooks/use-eval-bar";
 import { useMobileViewport } from "@/hooks/use-mobile-viewport";
 import { parseBestMoveOverlay } from "@/lib/best-move-overlay";
+import { avatarPawn } from "../../../shared/domain/pawns";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import { getGameHandshake, getPuzzleBannerName } from "@/lib/game-session";
 
@@ -43,6 +44,17 @@ function GamePageContent() {
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
   const showsGoalDistance = info.config?.variant !== "animal-cycle";
+
+  // Each player's card shows a piece taken from the list the board draws below
+  // it, so the two always agree - including on the art, which comes from the
+  // same pawn object.
+  const avatarPawns = useMemo(
+    () => ({
+      1: avatarPawn(board.boardPawns, 1),
+      2: avatarPawn(board.boardPawns, 2),
+    }),
+    [board.boardPawns],
+  );
 
   // The saved puzzle's name, carried client-side in the launch handshake
   // (doc §G: nothing on the game record). Spectators and shared links have
@@ -369,6 +381,7 @@ function GamePageContent() {
                   <div className="w-full px-1 shrink-0">
                     <PlayerTimerCard
                       player={timers.topPlayer}
+                      avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                       isActive={timers.gameTurn === timers.topPlayer.playerId}
                       timeLeft={
                         timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
@@ -464,6 +477,7 @@ function GamePageContent() {
                   <div className="w-full px-1 shrink-0 mt-2">
                     <PlayerTimerCard
                       player={timers.bottomPlayer}
+                      avatarPawn={avatarPawns[timers.bottomPlayer.playerId]}
                       isActive={
                         timers.gameTurn === timers.bottomPlayer.playerId
                       }
@@ -616,6 +630,7 @@ function GamePageContent() {
                 {timers.topPlayer && (
                   <PlayerTimerCard
                     player={timers.topPlayer}
+                    avatarPawn={avatarPawns[timers.topPlayer.playerId]}
                     isActive={timers.gameTurn === timers.topPlayer.playerId}
                     timeLeft={
                       timers.displayedTimeLeft[timers.topPlayer.playerId] ?? 0
@@ -696,6 +711,7 @@ function GamePageContent() {
                 {timers.bottomPlayer && (
                   <PlayerTimerCard
                     player={timers.bottomPlayer}
+                    avatarPawn={avatarPawns[timers.bottomPlayer.playerId]}
                     isActive={timers.gameTurn === timers.bottomPlayer.playerId}
                     timeLeft={
                       timers.displayedTimeLeft[timers.bottomPlayer.playerId] ??

@@ -1,6 +1,7 @@
 import { describe, expect, it } from "bun:test";
 import { GameState } from "../../shared/domain/game-state";
 import {
+  avatarPawn,
   boardPawns,
   clonePawns,
   hasPawn,
@@ -15,6 +16,7 @@ import type {
   GameConfiguration,
   GameInitialState,
   PawnFamily,
+  PlayerId,
   Variant,
 } from "../../shared/domain/game-types";
 
@@ -56,6 +58,15 @@ const classicConfig = () =>
     pawns: {
       p1: { cat: [0, 0], home: [8, 8] },
       p2: { cat: [0, 8], home: [8, 0] },
+    },
+    walls: [],
+  });
+
+const animalCycleConfig = () =>
+  config("animal-cycle", {
+    pawns: {
+      p1: { cat: [0, 0], elephant: [8, 0] },
+      p2: { mouse: [8, 8], dog: [0, 8] },
     },
     walls: [],
   });
@@ -121,6 +132,72 @@ describe("boardPawns", () => {
       "1:cat",
       "2:mouse",
     ]);
+  });
+});
+
+describe("avatarPawn", () => {
+  /**
+   * A player card has room for one animal, and the card used to draw a cat for
+   * everybody. An Animal Cycle player 2 owns a mouse and a dog, so that card
+   * showed a piece the player never had (board f6942230).
+   *
+   * Every assertion below reads the ANSWER OF `boardPawns` - the same list the
+   * board draws - rather than a table of expected animals kept here. That is
+   * the point of the fix: Nil's rule of 2026-08-16 is that the card and the
+   * board must have no mechanism that can part them, and a copied expectation
+   * table in the test would quietly bless one that had.
+   */
+  const fixtures: Record<Variant, () => GameConfiguration> = {
+    standard: standardConfig,
+    "animal-cycle": animalCycleConfig,
+    classic: classicConfig,
+    survival: survivalConfig,
+  };
+
+  it("picks a piece the board really draws for that seat", () => {
+    for (const [variant, makeConfig] of Object.entries(fixtures)) {
+      const { pawns } = new GameState(makeConfig(), 0);
+      const drawn = boardPawns(pawns);
+      for (const playerId of [1, 2] as PlayerId[]) {
+        const chosen = avatarPawn(drawn, playerId);
+        expect({
+          variant,
+          playerId,
+          drawnByBoard: drawn.includes(chosen!),
+        }).toEqual({ variant, playerId, drawnByBoard: true });
+        expect(hasPawn(pawns, playerId, chosen!.type)).toBe(true);
+      }
+    }
+  });
+
+  it("never picks a classic home, which nobody plays", () => {
+    const drawn = boardPawns(new GameState(classicConfig(), 0).pawns);
+    // The home is in the list, and is still not what stands for the player.
+    expect(drawn.some((pawn) => pawn.type === "home")).toBe(true);
+    expect(avatarPawn(drawn, 1)?.type).toBe("cat");
+    expect(avatarPawn(drawn, 2)?.type).toBe("cat");
+  });
+
+  it("skips the home wherever it sits in the list", () => {
+    // Measured 2026-08-16: the test above passes with the movable-pawn check
+    // DELETED, because today a classic cat happens to precede its home. So it
+    // proves the order, not the check. Reversed, the check is the only thing
+    // left holding the answer up - and this is the list order a future variant
+    // is free to choose.
+    const homeFirst = [
+      ...boardPawns(new GameState(classicConfig(), 0).pawns),
+    ].reverse();
+    expect(homeFirst[0].type).toBe("home");
+    expect(avatarPawn(homeFirst, 1)?.type).toBe("cat");
+    expect(avatarPawn(homeFirst, 2)?.type).toBe("cat");
+  });
+
+  it("gives Animal Cycle player 2 the mouse and player 1 the cat", () => {
+    // Nil's ruling, 2026-08-16. It holds because the mouse leads player 2's
+    // pieces in `boardPawns`, not because it is written down twice.
+    const drawn = boardPawns(new GameState(animalCycleConfig(), 0).pawns);
+    expect(avatarPawn(drawn, 1)?.type).toBe("cat");
+    expect(avatarPawn(drawn, 2)?.type).toBe("mouse");
   });
 });
 

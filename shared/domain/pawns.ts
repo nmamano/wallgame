@@ -255,3 +255,32 @@ export function boardPawns(pawns: GamePawns): Pawn[] {
       ];
   }
 }
+
+/**
+ * The one pawn that stands for a player away from the board - in the avatar on
+ * their card, which has room for a single animal though a player may own two.
+ *
+ * It picks out of the list the board itself draws, and deliberately owns no
+ * table of its own. Nil's rule, 2026-08-16: "banner and board always must
+ * match, there should be no mechanism to break that." A per-variant mapping
+ * beside `boardPawns` would be exactly such a mechanism, because a new variant
+ * could move one and leave the other behind. Here the two cannot part: a
+ * variant that changes its pawn set changes the avatar in the same edit.
+ *
+ * The first MOVABLE pawn of that player. A classic home is skipped because
+ * nobody plays it, and the order of `boardPawns` is stable and chosen per
+ * variant, which is what hands player 1 the cat and hands an Animal Cycle
+ * player 2 the mouse rather than the cat they never had (board f6942230).
+ *
+ * Generic in the element so a view can pass its own enriched copy of that list
+ * - a board pawn carrying the resolved art, say - and get the same object back
+ * rather than a bare type it would have to look up again.
+ */
+export function avatarPawn<T extends { playerId: PlayerId; type: PawnType }>(
+  pawns: readonly T[],
+  playerId: PlayerId,
+): T | undefined {
+  return pawns.find(
+    (pawn) => pawn.playerId === playerId && isMovablePawnType(pawn.type),
+  );
+}
