@@ -2,6 +2,7 @@ import { db } from "../db";
 import { gamesTable } from "../db/schema/games";
 import { gameDetailsTable } from "../db/schema/game-details";
 import { gamePlayersTable } from "../db/schema/game-players";
+import { builtInBotsTable } from "../db/schema/built-in-bots";
 import { userAuthTable } from "../db/schema/users";
 import { eq } from "drizzle-orm";
 import { moveToStandardNotation } from "../../shared/domain/standard-notation";
@@ -187,6 +188,34 @@ export const persistCompletedGame = async (
       moves: moveNotations,
       botResignCause: botResignCause ?? null,
     });
+
+    // game_players.bot_id has a foreign key onto built_in_bots, but the row a
+    // bot gets there is written FIRE-AND-FORGET at client attach
+    // (custom-bot-store's persistBotsToDatabase). A game that ends fast enough
+    // beats that write and this transaction dies on the constraint - observed
+    // on a slow CI runner 2026-08-16 (run 31920740927, an engine-refusal game
+    // that lasted under a second). So the seat's stub row is guaranteed here,
+    // in the same transaction; whichever write lands second converges the
+    // metadata, because registration upserts with DO UPDATE and this one backs
+    // off with DO NOTHING.
+    const botSeatStubs = [session.players.host, session.players.joiner].flatMap(
+      (player) =>
+        player.botCompositeId
+          ? [
+              {
+                botId: player.botCompositeId,
+                displayName: player.displayName,
+                isOfficial: false,
+              },
+            ]
+          : [],
+    );
+    if (botSeatStubs.length > 0) {
+      await tx
+        .insert(builtInBotsTable)
+        .values(botSeatStubs)
+        .onConflictDoNothing();
+    }
 
     await tx.insert(gamePlayersTable).values([
       {
