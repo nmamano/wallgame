@@ -65,7 +65,8 @@ run_condition() {
       --dump "$eval_dir/games/${key}.json" \
       > "$eval_dir/logs/${key}.stdout.log" \
       2> "$eval_dir/logs/${key}.log"
-  tail -n 1 "$eval_dir/logs/${key}.stdout.log" | jq -e . \
+  tail -n 1 "$eval_dir/logs/${key}.stdout.log" | \
+    python3 -c 'import json, sys; json.dump(json.load(sys.stdin), sys.stdout, separators=(",", ":")); print()' \
     > "$eval_dir/results/${key}.json"
 }
 
