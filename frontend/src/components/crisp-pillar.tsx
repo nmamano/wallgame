@@ -10,9 +10,19 @@
  *    lands exactly on the centre of the intersection. Two walls meeting at a
  *    corner get a fillet on the far side. Everything else fills the square.
  *
- *  - What colour is each pixel?  The colour of the wall it is closest to.
- *    Straight-through joints get a flat seam, corners get a 45 degree mitre,
- *    tees get a Y and crossings an X - all of it falls out of that one rule.
+ *  - What colour is each pixel?  The colour of the nearest wall that RUNS
+ *    THROUGH the pillar - one whose opposite number is also present, so it
+ *    passes out the far side as one unbroken wall. A wall that merely stops
+ *    here yields to those; only when nothing runs through (a lone wall, or a
+ *    corner) does it colour anything. Straight-through joints get a flat seam,
+ *    corners a 45 degree mitre, crossings an X, and a tee is simply the run,
+ *    unbroken, with the stem butting into its face.
+ *
+ *    The precedence is the whole point. Nearest-wall alone gave the stem of a
+ *    tee the triangle (0,0)-(100,0)-(50,50) - a wedge of its colour driven
+ *    point-first into the middle of the run, which reads as a chevron notch
+ *    rather than as two walls meeting (board task c003ec83; Nil, 2026-08-03).
+ *    A wall that stops at another wall does not eat into it.
  *
  * Everything is expressed in the SVG's own 0..100 viewBox, so it scales with
  * the element and holds at any board size or device pixel ratio.
@@ -52,6 +62,20 @@ const CORNER_POINT: Record<string, [number, number]> = {
 };
 
 const wallsTouching = (colors: PillarColors) => EDGES.filter((e) => colors[e]);
+
+/**
+ * The walls that decide the colouring: those that run straight through, or all
+ * of them when none does.
+ *
+ * A wall with its opposite number present is one continuous wall passing
+ * across the pillar, so nothing that stops here may break it. With no such
+ * wall - a lone end, or a corner - there is nothing to yield to and every
+ * touching wall colours its own side as before.
+ */
+const colouringWalls = (walls: EdgeColorKey[]): EdgeColorKey[] => {
+  const throughWalls = walls.filter((wall) => walls.includes(OPPOSITE[wall]));
+  return throughWalls.length > 0 ? throughWalls : walls;
+};
 
 /** Which corner two walls meet at, e.g. north + east -> "north-east". */
 const meetingCorner = (a: EdgeColorKey, b: EdgeColorKey) => {
@@ -138,12 +162,17 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
   const walls = wallsTouching(colors);
   if (walls.length === 0) return null;
 
+  // The painted REGION still comes from every wall that touches - a tee is a
+  // full square whichever wall colours it - but only the walls that run
+  // through decide what colour those pixels are.
   const outline = shapePath(walls);
-  const distinctColors = new Set(walls.map((e) => colors[e]!));
+  const painters = colouringWalls(walls);
+  const distinctColors = new Set(painters.map((e) => colors[e]!));
 
-  // One colour means no seams to draw.
+  // One colour means no seams to draw. A tee reaches this line: the run is one
+  // colour and the stem is not consulted.
   if (distinctColors.size === 1) {
-    return <path d={outline} fill={walls.map((e) => colors[e]!)[0]} />;
+    return <path d={outline} fill={colors[painters[0]]!} />;
   }
 
   return (
@@ -154,10 +183,10 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
         </clipPath>
       </defs>
       <g clipPath={`url(#${clipId})`}>
-        {walls.map((wall) => (
+        {painters.map((wall) => (
           <polygon
             key={wall}
-            points={territoryOf(wall, walls)
+            points={territoryOf(wall, painters)
               .map((p) => `${p.x},${p.y}`)
               .join(" ")}
             fill={colors[wall]!}
