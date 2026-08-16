@@ -61,6 +61,43 @@ const CORNER_POINT: Record<string, [number, number]> = {
   "south-west": [0, 100],
 };
 
+/** The whole pillar square, as `shapePath` returns it for anything but an end or an elbow. */
+const FULL_SQUARE = "M 0 0 L 100 0 L 100 100 L 0 100 Z";
+
+/**
+ * How far a FULL-SQUARE pillar's art is widened, in viewBox units, to cover the
+ * wall divs that overlap it.
+ *
+ * Half a stroke lands outside the shape, so 12 buys 6 units of reach - about
+ * 0.86 CSS px on a 14.4 px pillar, comfortably past the 0.441 px by which a
+ * div background and SVG art are known to disagree on identical geometry
+ * (measured 2026-08-05, recorded on this board).
+ *
+ * Bisected against a pixel probe on 2026-08-16, at desktop and 393x650, at DPR
+ * 1, 1.25, 1.75 and 2.
+ *
+ * IT IS 12 RATHER THAN 8 BECAUSE THE FIRST PROBE WAS TOO BLUNT. That probe
+ * only counted near-pure stem colour, and by that measure 8 read as clean
+ * everywhere. A stricter one, counting any lift of the stem's channel above
+ * the run colour, found a single BLENDED pixel below the butt face at DPR 2
+ * and at DPR 1.75 - so the residue was never confined to fractional DPR; it
+ * was confined to what the instrument could see.
+ *
+ * 12 reaches zero at all eight combinations, and 16 and 20 measure identically
+ * to 12 - a plateau, not the first value that happened to pass. None of them
+ * spilled any colour outside the pillar.
+ *
+ * What remains at fractional DPR is blending ON the butt face itself, where
+ * two walls genuinely meet and the edge lands mid-device-pixel. No coordinate
+ * or width change touches that; it is the same paint-time effect this board
+ * already closed as a no-fix.
+ *
+ * Only the square gets it. On the end cap's arc or the elbow's fillet, widening
+ * would push a visible silhouette outward rather than fill an overlap, and
+ * those shapes are not what this fixes.
+ */
+const PILLAR_OVERDRAW = 12;
+
 const wallsTouching = (colors: PillarColors) => EDGES.filter((e) => colors[e]);
 
 /**
@@ -114,7 +151,7 @@ function shapePath(walls: EdgeColorKey[]): string {
     return `M ${cornerX} ${cornerY} L ${fromX} ${fromY} A 100 100 0 0 ${sweep} ${toX} ${toY} Z`;
   }
 
-  return "M 0 0 L 100 0 L 100 100 L 0 100 Z";
+  return FULL_SQUARE;
 }
 
 /** Sutherland-Hodgman clip of a convex polygon to the half-plane f(p) <= 0. */
@@ -169,10 +206,29 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
   const painters = colouringWalls(walls);
   const distinctColors = new Set(painters.map((e) => colors[e]!));
 
-  // One colour means no seams to draw. A tee reaches this line: the run is one
-  // colour and the stem is not consulted.
+  // One colour means no internal seams to draw. A tee reaches this line: the
+  // run is one colour and the stem is not consulted.
+  //
+  // A full square is widened to cover the wall divs overlapping it. Those divs
+  // reach about 1 CSS px into this pillar on every side (measured 2026-08-16:
+  // the stem's box ends at 242.000 where the pillar starts at 241.000), and a
+  // div background and SVG art do not rasterise identically even on identical
+  // geometry. Unwidened, the stem's overlap showed as a column of PURE #dc2626
+  // down the pillar's edge - pure, not a blend, so it was the art failing to
+  // reach rather than antialiasing. It only became visible when the colouring
+  // rule sent a tee down this branch: before, every territory matched the wall
+  // beneath it, so the same shortfall had nothing to expose.
   if (distinctColors.size === 1) {
-    return <path d={outline} fill={colors[painters[0]]!} />;
+    const only = colors[painters[0]]!;
+    const square = outline === FULL_SQUARE;
+    return (
+      <path
+        d={outline}
+        fill={only}
+        stroke={square ? only : undefined}
+        strokeWidth={square ? PILLAR_OVERDRAW : undefined}
+      />
+    );
   }
 
   return (

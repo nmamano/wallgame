@@ -11,6 +11,11 @@
  * polygon the artwork requests, so its vertices are the thing that changed.
  * The paired screenshot is for the human judgement no number replaces.
  *
+ * Reports stroke and stroke-width as well as fill and geometry. It did not, and
+ * on 2026-08-16 that made it blind: adding a stroke to the tee's path produced
+ * an EMPTY diff here while the pixels had genuinely moved. A silent instrument
+ * is worse than none, because its silence gets quoted as a clean result.
+ *
  * INSTRUMENT, not a gate. Run before and after the change and diff the output:
  *   node scripts/browser-harness/crisp-junction-gallery.mjs > tmp/gallery-before.txt
  * Env: SHOT_TAG names the screenshot, PROBE_THEME picks crisp|default.
@@ -230,7 +235,8 @@ try {
           paths: [...hit.querySelectorAll("path")]
             .filter((el) => el.getAttribute("fill"))
             .map(
-              (el) => `${el.getAttribute("fill")} [${el.getAttribute("d")}]`,
+              (el) =>
+                `${el.getAttribute("fill")} stroke=${el.getAttribute("stroke")}/${el.getAttribute("stroke-width")} [${el.getAttribute("d")}]`,
             ),
         };
       });

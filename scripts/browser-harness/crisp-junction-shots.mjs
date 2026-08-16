@@ -25,7 +25,7 @@
  * Run it (build first - `bun run build`, which needs the shared build lock):
  *   node scripts/browser-harness/crisp-junction-shots.mjs
  * Env: SHOT_TAG (default "shot") names the output files, PROBE_THEME
- * (default "crisp") picks the theme.
+ * (default "crisp") picks the theme, SHOT_DPRS overrides the DPR list.
  */
 import { chromium } from "playwright-core";
 import { mkdirSync } from "node:fs";
@@ -43,7 +43,14 @@ const VIEWPORTS = [
   { name: "desktop", width: 1280, height: 900 },
   { name: "mobile", width: 393, height: 650 },
 ];
-const DPRS = [1, 2];
+/**
+ * Device pixel ratios to capture. FRACTIONAL ONES MATTER HERE: this board's
+ * recorded raster disagreement between a div background and SVG art is worst
+ * at 1.25 and 1.75 (Windows at 125%/150%), which is exactly where a fix tuned
+ * at 1 and 2 could still leave the wall colour showing through.
+ *   SHOT_DPRS=1.25,1.75 node scripts/browser-harness/crisp-junction-shots.mjs
+ */
+const DPRS = (process.env.SHOT_DPRS ?? "1,2").split(",").map(Number);
 
 const server = await startStaticDistServer(DIST, {
   port: PORT,
@@ -208,7 +215,7 @@ try {
       if (!artwork.found) throw new Error("no joint artwork at the junction");
       await page.waitForTimeout(200);
 
-      const label = `${TAG}-${THEME}-${viewport.name}-dpr${dpr}`;
+      const label = `${TAG}-${THEME}-${viewport.name}-dpr${String(dpr).replace(".", "_")}`;
       console.log(
         `\n[${label}] junction at ${artwork.rect.cx.toFixed(1)},${artwork.rect.cy.toFixed(1)}`,
       );
