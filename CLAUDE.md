@@ -2,7 +2,7 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
-See `.cursor/rules/` for general agent rules and `/info/` for detailed design documentation.
+See `/info/` for detailed design documentation.
 
 ## Project Overview
 
@@ -86,6 +86,8 @@ frontend/src/
 - `src/hooks/use-game-page-controller.ts` - Main game orchestrator
 - `src/hooks/use-online-game-session.ts` - WebSocket handshake
 - `src/lib/controllers/` - Player controller implementations
+
+Before writing a new UI component, check `src/components/unused-components/` - it holds parked ready-made components; see `RE_ADDING_COMPONENTS.md` there for how to re-add one.
 
 ### Server (`server/`)
 
@@ -227,6 +229,7 @@ Server (Hono)
 - Type-driven: prefer required fields over optionals
 - Explicit over implicit: avoid race conditions with clear state transitions
 - All frontend-server boundary types go in `shared/contracts/` with Zod schemas
+- No temporary or dual flows; when moving or renaming shared types, update all references at once instead of re-exporting for compatibility
 
 ## Implementation Quality Rules
 
