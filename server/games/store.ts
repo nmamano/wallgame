@@ -220,6 +220,15 @@ export const setBotCompositeId = (
     role === "host" ? session.players.host : session.players.joiner;
   player.botCompositeId = compositeId;
   player.configType = "bot";
+  // Learning that a seat is a bot CHANGES WHICH DEADLINE THE GAME IS ON, so it
+  // is a state change like a connect or a move and asks the same question they
+  // ask. Without this the sixty-second band would never reach the game that
+  // needs it most: createGameSession registers the session - and arms its timer
+  // - before the caller sets the bot identity (routes/games.ts:628 then :654),
+  // so a bot game that nobody ever opens is armed while it still looks
+  // human-vs-human and takes the five-minute band instead. That is the exact
+  // shape of every live game in the 2026-08-16 sample.
+  refreshAbandonTimer(sessionId);
 };
 
 /**
@@ -500,6 +509,45 @@ const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
  */
 const UNWATCHED_TIMEOUT_MS = 5 * 60 * 1000;
 
+/**
+ * The wait for a BOT game whose human seat has gone.
+ *
+ * Nil ruled about sixty seconds on 2026-08-16, for the live-games page: a
+ * browser that leaves a bot game used to keep it alive for the full thirty
+ * minutes, and one zombie per quitter is what the page mostly showed. Measured
+ * that day, every live game was a guest against an official bot at move zero.
+ *
+ * Why a bot game earns a shorter wait than any other. The thirty minutes exist
+ * to protect somebody: a human opponent mid-game, or a friend-link host waiting
+ * for a guest to open the link. A bot game has neither. It cannot be rated
+ * either - `processRatingUpdate` needs an `authUserId` on both seats and a bot
+ * seat has none - so ending one early costs the player the game and nothing
+ * else, and they can start another immediately.
+ *
+ * What it costs, stated rather than buried: a phone in a lift, or a lid closed
+ * for two minutes, now loses a bot game that used to survive. Tab churn is not
+ * exposed - `seatHasOtherSocket` in game-socket.ts already absorbs refreshes and
+ * a reconnect whose new socket opens before the old close is delivered - so the
+ * exposure is genuine network loss lasting more than a minute.
+ *
+ * A timed bot game already under way never reaches here: `findAbandonedSeat`
+ * stands down once a clock is running, and the clock ends it within the absent
+ * player's remaining time. Overriding that would take a classical player's
+ * remaining hours away over one blip.
+ */
+const BOT_GAME_DISCONNECT_GRACE_MS = 60 * 1000;
+
+/**
+ * Whether either seat is played by a bot.
+ *
+ * Any `botCompositeId` counts, official or custom: the property the short wait
+ * rests on is that no human opponent is waiting, and that holds for both.
+ */
+const isBotGame = (session: GameSession): boolean =>
+  [session.players.host, session.players.joiner].some(
+    (player) => player.botCompositeId !== undefined,
+  );
+
 const abandonTimers = new Map<string, Timer>();
 
 const clearAbandonTimer = (sessionId: string): void => {
@@ -616,11 +664,17 @@ const refreshAbandonTimer = (sessionId: string): void => {
     return;
   }
 
+  // Shortest applicable band wins, so the order here is the policy. A bot game
+  // that is also unwatched and unstarted takes the sixty seconds, not the five
+  // minutes: both describe it, and the bot band is the tighter statement.
   const session = sessions.get(sessionId);
-  const timeoutMs =
-    session && isUnwatchedUnstartedGame(session)
-      ? UNWATCHED_TIMEOUT_MS
-      : ABANDON_TIMEOUT_MS;
+  const timeoutMs = !session
+    ? ABANDON_TIMEOUT_MS
+    : isBotGame(session)
+      ? BOT_GAME_DISCONNECT_GRACE_MS
+      : isUnwatchedUnstartedGame(session)
+        ? UNWATCHED_TIMEOUT_MS
+        : ABANDON_TIMEOUT_MS;
 
   const timer = setTimeout(() => {
     abandonTimers.delete(sessionId);

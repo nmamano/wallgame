@@ -358,6 +358,7 @@ describe("a game nobody is moving in", () => {
 const ABANDON_TIMEOUT_MS = 30 * 60 * 1000;
 const IDLE_TIMEOUT_MS = 30 * 60 * 1000;
 const UNWATCHED_TIMEOUT_MS = 5 * 60 * 1000;
+const BOT_GAME_DISCONNECT_GRACE_MS = 60 * 1000;
 
 /**
  * Everything below drives real timers, so it needs fake ones. Everything above
@@ -408,16 +409,30 @@ describe("a game nobody ever opened", () => {
     });
   });
 
-  it("aborts the bot game of board 916af5bd in five minutes", () => {
+  /**
+   * Was "aborts the bot game of board 916af5bd in five minutes", advancing five
+   * minutes and asserting the game was gone. Under the sixty-second bot band
+   * that test STAYS GREEN while pinning nothing - a game that ended at 60 s is
+   * also gone at 5 min - so it is restated on the deadline it now has, with both
+   * sides asserted.
+   */
+  it("aborts the bot game of board 916af5bd in sixty seconds", () => {
     // The incident shape: a bot game whose browser never opened its websocket.
     // A bot seat never opens a game socket either, so what decides this is
     // that no HUMAN is there.
+    //
+    // This is also the test that pins the re-arm in `setBotCompositeId`. The
+    // session is registered - and its timer armed - by `startedSession` above,
+    // BEFORE the bot identity exists, exactly as routes/games.ts does it. With
+    // no re-arm the game is still on the five-minute band here and survives.
     withFakeTimers(() => {
       const session = startedSession(UNLIMITED);
       setBotCompositeId(session.id, "joiner", "client-1:superhuman");
 
-      timers.advanceTimersByTime(UNWATCHED_TIMEOUT_MS + 1);
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS - 1);
+      expect(isLive(session.id)).toBe(true);
 
+      timers.advanceTimersByTime(2);
       expect(isLive(session.id)).toBe(false);
       expect(getSession(session.id).gameState.result).toEqual({
         reason: "aborted",
@@ -519,6 +534,124 @@ describe("a game nobody ever opened", () => {
 
       timers.advanceTimersByTime(2);
       expect(isLive(session.id)).toBe(false);
+    });
+  });
+});
+
+/**
+ * The sixty-second band for a bot game whose human seat left.
+ *
+ * Nil's ruling of 2026-08-16, for the live-games page: a browser that leaves a
+ * bot game used to hold it for the full thirty minutes, and one zombie per
+ * quitter was most of what the page showed. Measured that day, all four live
+ * games were a guest against an official bot at move zero.
+ *
+ * Every test asserts BOTH sides of the deadline it claims. A game that merely
+ * ends eventually satisfies a much weaker rule than the one ruled on, and the
+ * old five-minute bot test proved exactly that by staying green when the answer
+ * changed to sixty seconds.
+ */
+describe("a bot game whose human seat left", () => {
+  it("ends sixty seconds after the human disconnects, charging the absent seat", () => {
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+      playMoves(session.id, 2);
+      setConnected(session, "host", false);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS - 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+      // Two moves played, so this is a counted game and the seat that walked
+      // away loses it. The human is player 1, so the bot wins.
+      expect(getSession(session.id).gameState.result).toEqual({
+        winner: 2,
+        reason: "resignation",
+      });
+    });
+  });
+
+  it("keeps the game when the human comes back inside the grace period", () => {
+    // Reconnecting must CANCEL the grace, not postpone it.
+    //
+    // The check lands at t=61 s rather than a further thirty minutes on
+    // purpose: the idle timer is a separate mechanism with its own deadline
+    // running from the last move, and it can legitimately end this game thirty
+    // minutes after that move. Asserting survival that far out would be
+    // asserting the absence of a policy this test is not about.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+      playMoves(session.id, 2);
+      setConnected(session, "host", false);
+
+      timers.advanceTimersByTime(30 * 1000);
+      setConnected(session, "host", true);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
+    });
+  });
+
+  it("leaves a human-vs-human game on its thirty minutes", () => {
+    // The control. The short band must not leak out of bot games: here a real
+    // opponent is sitting at the board, which is what the thirty minutes are
+    // for.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setConnected(session, "host", true);
+      setConnected(session, "joiner", true);
+      playMoves(session.id, 2);
+      setConnected(session, "joiner", false);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(
+        ABANDON_TIMEOUT_MS - BOT_GAME_DISCONNECT_GRACE_MS - 2,
+      );
+      expect(isLive(session.id)).toBe(true);
+
+      timers.advanceTimersByTime(2);
+      expect(isLive(session.id)).toBe(false);
+    });
+  });
+
+  it("leaves a human thinking about their first move against a bot alone", () => {
+    // Puzzle safety, and the reason the short bands live in the abandonment
+    // path rather than the idle one. Nobody is disconnected here, so no
+    // abandonment timer is armed at all and the sixty seconds are never
+    // consulted; the game belongs to the idle policy at thirty minutes.
+    withFakeTimers(() => {
+      const session = startedSession(UNLIMITED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
+    });
+  });
+
+  it("leaves a timed bot game under way to its clock", () => {
+    // `findAbandonedSeat` stands down once a clock is running, so the sixty
+    // seconds never reach this game. LONG_TIMED, so the clock cannot be what
+    // ends it inside the window and the silence is the assertion.
+    withFakeTimers(() => {
+      const session = startedSession(LONG_TIMED);
+      setBotCompositeId(session.id, "joiner", "client-1:superhuman");
+      setConnected(session, "host", true);
+      playMoves(session.id, 2);
+      setConnected(session, "host", false);
+
+      timers.advanceTimersByTime(BOT_GAME_DISCONNECT_GRACE_MS + 1);
+      expect(isLive(session.id)).toBe(true);
+      expect(getSession(session.id).gameState.status).toBe("playing");
     });
   });
 });
