@@ -30,6 +30,11 @@ import {
   releaseSpectatorGuestName,
   registerTimeoutCallback,
 } from "../games/store";
+import {
+  NEW_GAMES_PAUSED_MESSAGE,
+  NewGamesPausedError,
+  readDrainState,
+} from "../games/drain";
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
@@ -1735,6 +1740,18 @@ const handleRematchOffer = (socket: SessionSocket) => {
   const playerId = ensureAuthorizedPlayer(socket, "rematch-offer");
   if (playerId === null || socket.socketToken === null) return;
 
+  // A rematch is a new game, so a drain refuses it - and it refuses here, at the
+  // OFFER, rather than letting the offer travel and fail on the opponent's
+  // accept. `registerSession` would catch it either way; this is only about who
+  // learns, and when. The game just finished is untouched: refusing a rematch
+  // takes nothing away from it.
+  if (readDrainState().draining) {
+    socket.ctx.send(
+      JSON.stringify({ type: "error", message: NEW_GAMES_PAUSED_MESSAGE }),
+    );
+    return;
+  }
+
   const session = getSession(socket.sessionId);
   const opponentRole = socket.role === "host" ? "joiner" : "host";
   const opponent =
@@ -1793,17 +1810,18 @@ const handleRematchAccept = (socket: SessionSocket) => {
       newGameId: outcome.result.newSession.id,
     });
   } catch (error) {
+    // A drain that begins between the offer and the accept lands here. Say the
+    // same thing the offer would have said, rather than the generic failure.
+    const message =
+      error instanceof NewGamesPausedError
+        ? error.message
+        : "Unable to start a rematch right now.";
     console.error("[ws] rematch-accept failed", {
       error,
       sessionId: socket.sessionId,
       playerId,
     });
-    socket.ctx.send(
-      JSON.stringify({
-        type: "error",
-        message: "Unable to start a rematch right now.",
-      }),
-    );
+    socket.ctx.send(JSON.stringify({ type: "error", message }));
   }
 };
 

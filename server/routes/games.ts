@@ -12,9 +12,11 @@ import {
   resolveSessionForToken,
   listMatchmakingGames,
   listLiveGames,
+  countGamesInFlight,
   setBotCompositeId,
   type PlayerConfigType,
 } from "../games/store";
+import { NewGamesPausedError, readDrainState } from "../games/drain";
 import {
   createGameSchema,
   joinGameSchema,
@@ -132,6 +134,29 @@ export const gamesRoute = new Hono()
       return c.json({ error: "Internal server error" }, 500);
     }
   })
+  /**
+   * What a deploy needs to know, in one request: is the drain on, when does it
+   * lapse, and how many games are still being played.
+   *
+   * Both halves in one answer on purpose - asked separately, a poll can read a
+   * drain that has since lapsed beside a count taken while it was still on, and
+   * conclude the site is safe to restart when it is not.
+   *
+   * Unauthenticated, because it says nothing that /live does not already show.
+   */
+  .get("/drain", (c) => {
+    const state = readDrainState();
+    return c.json({
+      draining: state.draining,
+      expiresAtMs: state.expiresAtMs,
+      /**
+       * Deliberately NOT the length of /live: this counts puzzle attempts too,
+       * because a restart destroys those as surely as a match. The deploy gate
+       * needs "what would be lost", not "what could be watched".
+       */
+      gamesInFlight: countGamesInFlight(),
+    });
+  })
   .get("/showcase", zValidator("query", showcaseQuerySchema), async (c) => {
     try {
       const { count } = c.req.valid("query");
@@ -244,6 +269,11 @@ export const gamesRoute = new Hono()
           201,
         );
       } catch (error) {
+        // A drain is not a fault: the player reads the refusal and 503 tells any
+        // client it is worth trying again later.
+        if (error instanceof NewGamesPausedError) {
+          return c.json({ error: error.message }, 503);
+        }
         console.error("Failed to create game:", error);
         return c.json({ error: "Internal server error" }, 500);
       }
@@ -722,6 +752,9 @@ export const botsRoute = new Hono()
           201,
         );
       } catch (error) {
+        if (error instanceof NewGamesPausedError) {
+          return c.json({ error: error.message }, 503);
+        }
         console.error("Failed to create bot game:", error);
         return c.json({ error: "Internal server error" }, 500);
       }

@@ -33,6 +33,7 @@ import type {
 import { applyRatingsForFinishedGame } from "../db/rating-write";
 import { Outcome } from "./rating-system";
 import { isBotClientConnected } from "./custom-bot-store";
+import { assertNewGamesAllowed } from "./drain";
 import { pickGuestName } from "./guest-names";
 
 // Match type determines how players join the game
@@ -751,7 +752,22 @@ const refreshAbandonTimer = (sessionId: string): void => {
  * session and the idle policy stands down. The first seat to connect arms it
  * through `updateConnectionState`, and a game cannot be played without one.
  */
+/**
+ * The one door every new server game goes through - and therefore the one place
+ * the drain has to be checked.
+ *
+ * Both creators call it, `createGameSession` (matchmaking, friend games, bot
+ * games, bot-backed puzzle attempts) and `createRematchSession`, and nothing
+ * else does. Checking here rather than in each route is what keeps a future
+ * creation path from quietly escaping the drain: it would have to register its
+ * session, and registering is refused.
+ *
+ * The check is safe at this point because everything before it is construction.
+ * `createGameSession` writes nothing to the database until the game is played,
+ * so a refusal here leaves no row, no timer and no session behind.
+ */
 const registerSession = (session: GameSession): void => {
+  assertNewGamesAllowed();
   sessions.set(session.id, session);
   refreshAbandonTimer(session.id);
 };
@@ -1617,15 +1633,61 @@ const buildLiveGameSummary = (session: GameSession): LiveGameSummary => {
   };
 };
 
+/**
+ * What a spectator may watch.
+ *
+ * A puzzle attempt is solo practice rather than spectator content, so the live
+ * list hides it. That exclusion is about an AUDIENCE, and says nothing about
+ * whether the game would survive a restart - which is the other question, asked
+ * by `countGamesInFlight` below. Sharing one predicate between the two was the
+ * first version of the drain, and Reviewer 1 refused it on 2026-08-17: it would
+ * have reported an empty site while somebody was solving a puzzle.
+ */
+const isSpectatableSession = (session: GameSession): boolean =>
+  (session.status === "ready" || session.status === "in-progress") &&
+  !session.cancelled &&
+  session.puzzleId === undefined;
+
+/**
+ * A session that is over: nobody can lose anything by restarting now.
+ *
+ * Written as the two ENDINGS rather than as a list of live states, so the count
+ * below errs the safe way. A status added later counts as in flight until
+ * somebody decides otherwise: over-counting only delays a deploy, while
+ * under-counting takes a game away from whoever was playing it.
+ */
+const isSessionOver = (session: GameSession): boolean =>
+  session.cancelled ||
+  session.status === "completed" ||
+  session.status === "aborted";
+
+/**
+ * How many sessions a restart would destroy - the number a deploy has to see
+ * reach zero.
+ *
+ * It counts MORE than the live list, in two ways that both cost somebody a game
+ * if forgotten:
+ *
+ * - PUZZLE ATTEMPTS. A bot-backed puzzle is an in-memory session like any other,
+ *   so a restart loses the attempt even though no spectator could have watched
+ *   it.
+ * - WAITING LOBBIES. Reviewer 1, 2026-08-17: a friend lobby sits at "waiting"
+ *   until the invited player arrives, and joining one stays allowed during a
+ *   drain (Nil's ruling). An uncounted lobby is therefore a race - the gate reads
+ *   zero, the friend joins a second later, and the deploy lands on a game that
+ *   has just begun. Counting the lobby closes it without refusing the friend.
+ *   Nothing waits forever: a lobby whose host has gone is ended by the
+ *   abandonment timers above, so the count still converges.
+ *
+ * Uncapped as well, unlike the list: a count that stopped at 100 would tell a
+ * deploy the drain had converged when it had not.
+ */
+export const countGamesInFlight = (): number =>
+  [...sessions.values()].filter((session) => !isSessionOver(session)).length;
+
 export const listLiveGames = (limit = 100): LiveGameSummary[] => {
   return [...sessions.values()]
-    .filter(
-      (session) =>
-        (session.status === "ready" || session.status === "in-progress") &&
-        !session.cancelled &&
-        // Puzzle attempts are solo practice, not spectator content.
-        session.puzzleId === undefined,
-    )
+    .filter(isSpectatableSession)
     .map((session) => buildLiveGameSummary(session))
     .sort((a, b) => b.averageElo - a.averageElo || b.lastMoveAt - a.lastMoveAt)
     .slice(0, limit);
