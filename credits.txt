@@ -1,6 +1,16 @@
 Action audio effects by JDSherbert.
 Other audio effects by freesound_community, FoxBoyTails, floraphonic.
 
+JDSherbert audio provenance:
+- Pack: "Tabletop Games Sound Effect Pack" - https://jdsherbert.itch.io/tabletop-games-sfx-pack
+- 56 royalty-free effects, full version, purchased. All 56 are in assets/audio/wav_sd/,
+  under their original filenames. Six are shipped, renamed, in frontend/public/audio/:
+  pawn.wav, pawn_undo.wav, wall.wav, wall_undo.wav, game_start.mp3, game_end.mp3.
+- The download includes a LICENSE.pdf. It is NOT in this repository. Whoever next
+  downloads the pack from the itch.io library should place it beside the audio at
+  assets/audio/wav_sd/LICENSE.pdf, so the terms travel with the files they cover.
+  Recorded 2026-08-19 after the terms could not be located in the repo.
+
 Music by YannZ – https://yannz41.itch.io  
 Spotify: https://open.spotify.com/intl-it/artist/76CUcHd0t0XViSm9YBbHBw  
 Contact: yziango@gmail.com
