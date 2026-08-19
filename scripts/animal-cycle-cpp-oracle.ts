@@ -39,7 +39,9 @@ import {
 } from "../shared/domain/standard-notation";
 import type {
   AnimalCycleInitialState,
+  Cell,
   GameConfiguration,
+  GamePawnType,
   PlayerId,
 } from "../shared/domain/game-types";
 
@@ -288,9 +290,200 @@ const stacked = [
   winner: animalCycleCaptureWinner(pawns),
 }));
 
-const rendered = await format(JSON.stringify({ positions: corpus, stacked }), {
-  parser: "json",
+/*
+The two EMITTERS, compared across the languages.
+
+The `positions` corpus above compares the two PARSERS, and the C++ side of it
+writes its own local string from the parsed actions. So neither half ever ran
+`Move::standard_notation`, which is the function the engine uses to announce the
+bot's OWN move (bgs_session.cpp). That is the direction that reaches the server,
+and until 2026-08-19 it wrote a fixed animal order the server cannot always apply.
+
+Each case below is a move the ENGINE could pick. TypeScript plays it, writes it,
+and records whether the server accepts the result; the C++ test builds the same
+Move on the same board, calls `Move::standard_notation`, and must produce the same
+string. One side generates, the other is checked against it.
+
+The board is 7x7, the size Animal Cycle is served at in production, and the cases
+are stated in game coordinates with no padding, so the two coordinate systems
+agree and a difference here is a difference in ORDER, not in geometry. Walls are
+vertical for the same reason: a vertical wall is the one shape both notations name
+by the same cell.
+*/
+const botMoveCases: {
+  name: string;
+  pawns: AnimalCycleInitialState["pawns"];
+  playerId: PlayerId;
+  actions: {
+    type: GamePawnType | "wall";
+    target: Cell;
+    wallOrientation?: "vertical";
+  }[];
+}[] = [
+  {
+    name: "elephant-vacates-cat-follows",
+    pawns: {
+      p1: { cat: [3, 3], elephant: [3, 4] },
+      p2: { mouse: [0, 0], dog: [6, 0] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "elephant", target: [3, 5] },
+      { type: "cat", target: [3, 4] },
+    ],
+  },
+  {
+    name: "cat-vacates-elephant-follows",
+    pawns: {
+      p1: { cat: [3, 4], elephant: [3, 5] },
+      p2: { mouse: [0, 0], dog: [6, 0] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "cat", target: [3, 3] },
+      { type: "elephant", target: [3, 4] },
+    ],
+  },
+  {
+    name: "mouse-vacates-dog-follows",
+    pawns: {
+      p1: { cat: [0, 6], elephant: [6, 6] },
+      p2: { mouse: [3, 3], dog: [3, 2] },
+    },
+    playerId: 2,
+    actions: [
+      { type: "mouse", target: [2, 3] },
+      { type: "dog", target: [3, 3] },
+    ],
+  },
+  {
+    name: "wall-then-pawn",
+    pawns: {
+      p1: { cat: [3, 3], elephant: [6, 6] },
+      p2: { mouse: [0, 0], dog: [0, 6] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "wall", target: [3, 3], wallOrientation: "vertical" },
+      { type: "cat", target: [4, 3] },
+    ],
+  },
+  {
+    /*
+    The wall-first case that carries the HARM, not just the order.
+
+    The one above has a non-capturing pawn, so both orders parse and both
+    apply: it fails only on the string, which is a formatting mismatch. Here
+    the cat CAPTURES, and a capture ends the move on both sides - the engine's
+    parser returns as soon as the position has a winner. Written pawn-first,
+    the wall is behind that stop and is never applied at all, so the parse
+    yields ONE action where the move had two, and the wall the player built is
+    simply gone. That is the engine-side harm, and it is what the C++ test
+    checks by counting the parsed actions.
+    */
+    name: "wall-then-capturing-pawn",
+    pawns: {
+      p1: { cat: [3, 3], elephant: [6, 6] },
+      p2: { mouse: [3, 2], dog: [0, 6] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "wall", target: [0, 0], wallOrientation: "vertical" },
+      { type: "cat", target: [3, 2] },
+    ],
+  },
+  {
+    name: "pawn-then-wall",
+    pawns: {
+      p1: { cat: [3, 3], elephant: [6, 6] },
+      p2: { mouse: [0, 0], dog: [0, 6] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "cat", target: [4, 3] },
+      { type: "wall", target: [3, 3], wallOrientation: "vertical" },
+    ],
+  },
+  {
+    name: "two-walls-stay-sorted",
+    pawns: {
+      p1: { cat: [3, 3], elephant: [6, 6] },
+      p2: { mouse: [0, 0], dog: [0, 6] },
+    },
+    playerId: 1,
+    actions: [
+      { type: "wall", target: [3, 3], wallOrientation: "vertical" },
+      { type: "wall", target: [2, 3], wallOrientation: "vertical" },
+    ],
+  },
+];
+
+const botMoves = botMoveCases.map((testCase) => {
+  const state = new GameState(
+    {
+      variant: "animal-cycle",
+      randomStart: false,
+      boardWidth: 7,
+      boardHeight: 7,
+      rated: false,
+      timeControl: {
+        initialSeconds: 0,
+        incrementSeconds: 0,
+        preset: "unlimited",
+      },
+      variantConfig: { pawns: testCase.pawns, walls: [] },
+    },
+    0,
+  );
+  state.turn = testCase.playerId;
+  const after = state.applyGameAction({
+    kind: "move",
+    move: { actions: testCase.actions },
+    playerId: testCase.playerId,
+    timestamp: 1,
+  });
+  const notation = moveToStandardNotation(after.history[0].move, 7);
+
+  // Is the string the emitter wrote one the server can actually apply? Measured
+  // by replaying it, not asserted: a target string no reader accepts would be a
+  // worthless thing to hold the engine to, and under the pre-2026-08-19 emitter
+  // this field really does come back false for the vacate-then-follow cases.
+  let serverAccepts = true;
+  try {
+    const replayState = new GameState(state.config, 0);
+    replayState.turn = testCase.playerId;
+    replayState.applyGameAction({
+      kind: "move",
+      move: moveFromStandardNotation(notation, 7),
+      playerId: testCase.playerId,
+      timestamp: 1,
+    });
+  } catch {
+    serverAccepts = false;
+  }
+
+  return {
+    name: testCase.name,
+    rows: 7,
+    columns: 7,
+    player: testCase.playerId,
+    pawns: testCase.pawns,
+    actions: testCase.actions,
+    notation,
+    serverAccepts,
+    // How many actions the notation actually names, taken from the move the
+    // game RECORDED rather than from the list above: a capture ends a move, so
+    // the two can differ. The C++ side counts the actions it parses out of the
+    // engine's own string against this, which is how a dropped wall is caught.
+    appliedActions: after.history[0].move.actions.length,
+    winner: after.result?.winner ?? null,
+  };
 });
+
+const rendered = await format(
+  JSON.stringify({ positions: corpus, stacked, botMoves }),
+  { parser: "json" },
+);
 const fixture = new URL(
   "../tests/fixtures/animal-cycle-cpp-oracle.json",
   import.meta.url,

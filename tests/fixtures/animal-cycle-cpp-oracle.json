@@ -412,5 +412,133 @@
       },
       "winner": 2
     }
+  ],
+  "botMoves": [
+    {
+      "name": "elephant-vacates-cat-follows",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 3], "elephant": [3, 4] },
+        "p2": { "mouse": [0, 0], "dog": [6, 0] }
+      },
+      "actions": [
+        { "type": "elephant", "target": [3, 5] },
+        { "type": "cat", "target": [3, 4] }
+      ],
+      "notation": "Ef4.Ce4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    },
+    {
+      "name": "cat-vacates-elephant-follows",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 4], "elephant": [3, 5] },
+        "p2": { "mouse": [0, 0], "dog": [6, 0] }
+      },
+      "actions": [
+        { "type": "cat", "target": [3, 3] },
+        { "type": "elephant", "target": [3, 4] }
+      ],
+      "notation": "Cd4.Ee4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    },
+    {
+      "name": "mouse-vacates-dog-follows",
+      "rows": 7,
+      "columns": 7,
+      "player": 2,
+      "pawns": {
+        "p1": { "cat": [0, 6], "elephant": [6, 6] },
+        "p2": { "mouse": [3, 3], "dog": [3, 2] }
+      },
+      "actions": [
+        { "type": "mouse", "target": [2, 3] },
+        { "type": "dog", "target": [3, 3] }
+      ],
+      "notation": "Md5.Dd4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    },
+    {
+      "name": "wall-then-pawn",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 3], "elephant": [6, 6] },
+        "p2": { "mouse": [0, 0], "dog": [0, 6] }
+      },
+      "actions": [
+        { "type": "wall", "target": [3, 3], "wallOrientation": "vertical" },
+        { "type": "cat", "target": [4, 3] }
+      ],
+      "notation": ">d4.Cd3",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    },
+    {
+      "name": "wall-then-capturing-pawn",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 3], "elephant": [6, 6] },
+        "p2": { "mouse": [3, 2], "dog": [0, 6] }
+      },
+      "actions": [
+        { "type": "wall", "target": [0, 0], "wallOrientation": "vertical" },
+        { "type": "cat", "target": [3, 2] }
+      ],
+      "notation": ">a7.Cc4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": 1
+    },
+    {
+      "name": "pawn-then-wall",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 3], "elephant": [6, 6] },
+        "p2": { "mouse": [0, 0], "dog": [0, 6] }
+      },
+      "actions": [
+        { "type": "cat", "target": [4, 3] },
+        { "type": "wall", "target": [3, 3], "wallOrientation": "vertical" }
+      ],
+      "notation": "Cd3.>d4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    },
+    {
+      "name": "two-walls-stay-sorted",
+      "rows": 7,
+      "columns": 7,
+      "player": 1,
+      "pawns": {
+        "p1": { "cat": [3, 3], "elephant": [6, 6] },
+        "p2": { "mouse": [0, 0], "dog": [0, 6] }
+      },
+      "actions": [
+        { "type": "wall", "target": [3, 3], "wallOrientation": "vertical" },
+        { "type": "wall", "target": [2, 3], "wallOrientation": "vertical" }
+      ],
+      "notation": ">d5.>d4",
+      "serverAccepts": true,
+      "appliedActions": 2,
+      "winner": null
+    }
   ]
 }

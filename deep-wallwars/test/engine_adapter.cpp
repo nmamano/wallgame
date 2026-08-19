@@ -110,6 +110,127 @@ TEST_CASE("Animal Cycle stacked capture precedence matches TypeScript", "[Animal
     }
 }
 
+/*
+The two EMITTERS, held against each other.
+
+The oracle test above compares the two PARSERS, and it writes its own local
+string from the parsed actions, so `Move::standard_notation` never ran in it.
+That function is how the engine announces the bot's OWN move (bgs_session.cpp),
+which is the direction that reaches the wallgame server, and it used to write a
+fixed animal order the server cannot always apply: in Animal Cycle a bot may move
+one animal out of a cell and the other one into it, and the follower written
+first arrives at a cell its teammate has not left.
+
+The fixture cases come from the TypeScript side, which plays each move, writes it
+with its own emitter, and records that the server then accepts the string. Here
+the same move is built on the same board and must produce the same string. Then
+it is parsed back, because a string that no reader can apply would be a worthless
+thing to agree on.
+*/
+TEST_CASE("Animal Cycle bot moves are written in the played order", "[Animal Cycle oracle]") {
+    auto oracle = animal_cycle_oracle();
+    REQUIRE_FALSE(oracle["botMoves"].empty());
+
+    auto pawn_from_name = [](std::string const& name) {
+        if (name == "dog") return Pawn::Dog;
+        if (name == "cat") return Pawn::Cat;
+        if (name == "mouse") return Pawn::Mouse;
+        return Pawn::Elephant;
+    };
+    // The fixture states a destination; a Move states a direction. Every case is
+    // one step, so the delta names the direction with no path-finding.
+    auto direction_between = [](Cell from, Cell to) {
+        if (to.column > from.column) return Direction::Right;
+        if (to.column < from.column) return Direction::Left;
+        if (to.row > from.row) return Direction::Down;
+        return Direction::Up;
+    };
+
+    for (auto const& fixture : oracle["botMoves"]) {
+        DYNAMIC_SECTION(fixture["name"].get<std::string>()) {
+            auto cell = [](nlohmann::json const& value) {
+                return Cell{value[1].get<int>(), value[0].get<int>()};
+            };
+            auto const& pawns = fixture["pawns"];
+            int const rows = fixture["rows"].get<int>();
+            int const columns = fixture["columns"].get<int>();
+            Player const player =
+                fixture["player"].get<int>() == 1 ? Player::Red : Player::Blue;
+
+            Board board(columns, rows, Variant::AnimalCycle,
+                        {{Player::Red, Pawn::Cat, cell(pawns["p1"]["cat"])},
+                         {Player::Red, Pawn::Elephant, cell(pawns["p1"]["elephant"])},
+                         {Player::Blue, Pawn::Mouse, cell(pawns["p2"]["mouse"])},
+                         {Player::Blue, Pawn::Dog, cell(pawns["p2"]["dog"])}});
+
+            std::vector<Action> actions;
+            for (auto const& action : fixture["actions"]) {
+                std::string const type = action["type"].get<std::string>();
+                if (type == "wall") {
+                    // Vertical only, by construction of the fixture: a vertical
+                    // wall is named by the same cell in both notations.
+                    REQUIRE(action["wallOrientation"].get<std::string>() == "vertical");
+                    actions.push_back(Wall{cell(action["target"]), Wall::Right});
+                } else {
+                    Pawn const pawn = pawn_from_name(type);
+                    actions.push_back(PawnMove{
+                        pawn,
+                        direction_between(board.pawn_position(player, pawn),
+                                          cell(action["target"]))});
+                }
+            }
+            REQUIRE(actions.size() == 2);
+
+            Move const move{actions[0], actions[1]};
+            std::string const expected = fixture["notation"].get<std::string>();
+            std::string const written = move.standard_notation(board, player);
+            auto const padding = create_padding_config(rows, columns, rows, columns,
+                                                       Variant::AnimalCycle);
+            auto const turn = Turn{player, Turn::First};
+
+            CHECK(fixture["serverAccepts"].get<bool>());
+            CHECK(written == expected);
+
+            // The string the ENGINE wrote has to be usable, not merely equal to
+            // something. Under the fixed animal order this is what fails: the
+            // follower is named first and there is no path into a cell its
+            // teammate still occupies, so the bot's own move cannot be applied
+            // by anyone - which is the defect, stated as the engine states it.
+            auto const parsed_written = parse_move_notation(written, board, turn, padding);
+            CHECK(parsed_written.has_value());
+            // And it has to carry the WHOLE move. A capture ends a move - the
+            // parser returns as soon as the position has a winner - so a wall
+            // written behind a capturing pawn is never applied and simply
+            // disappears. Counting the parsed actions is what catches that; a
+            // string comparison alone would call it a formatting difference.
+            if (parsed_written) {
+                CHECK(parsed_written->size() == fixture["appliedActions"].get<size_t>());
+            }
+            // And the string TypeScript wrote has to be usable here too. That is
+            // the other direction, the one the server sends.
+            auto const parsed_expected =
+                parse_move_notation(expected, board, turn, padding);
+            REQUIRE(parsed_expected.has_value());
+
+            // Does the capture case still capture? Without this the harm case
+            // above could quietly stop being a capture - the wall would then
+            // survive either order and the count check would pass while
+            // measuring nothing.
+            Board played = board;
+            for (Action const& action : *parsed_expected) {
+                played.do_action(player, action);
+                if (played.winner(Turn{player, Turn::Second}) != Winner::Undecided) break;
+            }
+            Winner expected_winner = Winner::Undecided;
+            if (!fixture["winner"].is_null()) {
+                expected_winner =
+                    fixture["winner"].get<int>() == 1 ? Winner::Red : Winner::Blue;
+            }
+            CHECK(played.winner(Turn{player, Turn::Second}) == expected_winner);
+        }
+    }
+}
+
 // ============================================================================
 // PaddingConfig Creation Tests
 // ============================================================================
