@@ -6,15 +6,32 @@ JDSherbert audio provenance:
 - 56 royalty-free effects, full version, purchased. All 56 are in assets/audio/wav_sd/,
   under their original filenames. Six are shipped, renamed, in frontend/public/audio/:
   pawn.wav, pawn_undo.wav, wall.wav, wall_undo.wav, game_start.mp3, game_end.mp3.
-- The download includes a LICENSE.pdf. It is NOT in this repository. Whoever next
-  downloads the pack from the itch.io library should place it beside the audio at
-  assets/audio/wav_sd/LICENSE.pdf, so the terms travel with the files they cover.
-  Recorded 2026-08-19 after the terms could not be located in the repo.
+- LICENSE.pdf is stored beside each pack, supplied by Nil 2026-08-19:
+  assets/audio/wav_sd/LICENSE.pdf and assets/audio/pixel_game_essentials/LICENSE.pdf.
+  The two files are byte-identical - one licence covers both packs - and each is kept
+  next to the audio it governs rather than once at the root, so the terms travel with
+  the files even if a folder is copied elsewhere.
+- Second JDSherbert pack, added 2026-08-19: "Pixel Game Essentials SFX Pack", in
+  assets/audio/pixel_game_essentials/. Two files, supplied by Nil, used by the
+  social video tool: "Level Complete 1" (stored as level-complete-1.m4a) for the
+  win screen and "Die 1" (stored as die-1.m4a) for the capture shake. The tabletop
+  pack has no sustained or tonal sound in any of its 56 recordings, so a victory
+  could not be built from it.
+  These two are renamed rather than kept under their original filenames, unlike
+  wav_sd/. The pre-commit hook does not quote paths, so a filename containing a
+  space fails the Prettier step (hit 2026-08-19). Prefer space-free names here.
 
 Music by YannZ – https://yannz41.itch.io  
 Spotify: https://open.spotify.com/intl-it/artist/76CUcHd0t0XViSm9YBbHBw  
 Contact: yziango@gmail.com
 
+
+Which song file is which (decoded from the ID3 tags, 2026-08-19 - the filenames
+say nothing):
+- song1.mp3  "Deja Vus (2nd loop)" by YannZ, from Contemplative Fantasy
+- song2.mp3  "Tea For Two" by Aaron Paul Low, 109s (Uppbeat)
+- song3.mp3  "A Legend" by Ian Aisling, 60s (Uppbeat)
+- song4.mp3  "Skippy Mr. Sunshine" by Fernweh Goldfish, 152s (Uppbeat)
 
 Music from #Uppbeat (free for Creators!):
 https://uppbeat.io/t/fernweh-goldfish/skippy-mr-sunshine
