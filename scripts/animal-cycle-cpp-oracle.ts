@@ -1,3 +1,31 @@
+/*
+An `appliedNotation` that holds the same terms as the C++ oracle in a DIFFERENT
+ORDER is expected, not a regression.
+
+Since 2026-08-19 `moveToStandardNotation` writes the terms in the order the turn
+was played; only walls among themselves stay sorted. The C++ emitter,
+`Move::standard_notation` in deep-wallwars/src/gamestate.cpp, still writes the
+pawns in the fixed order Dog, Cat, Mouse, Elephant and every wall after them. Two
+kinds of difference therefore show up here, and both are the C++ side being
+behind:
+
+- two pawns, written in the played order here and in the fixed animal order
+  there ("Eg5.Cf5" against "Cf5.Eg5");
+- a wall and a pawn, written in the played order here and always pawn-first
+  there (">e4.Ce3" against "Ce3.>e4").
+
+The order carries meaning in both cases, because both readers apply the terms in
+sequence. A pawn that follows its teammate into a cell has to be written second,
+or the cell is still occupied when it arrives; the fixed order sent the follower
+in first and cost a real game (qYrQ6B1I, 2026-08-19). A wall has to stay in front
+of a capturing pawn, because a capture stops the move and a term behind it is
+never reached. The same two defects are still in the C++ emitter for the engine's
+own moves; they are tracked separately, because a change there needs a GPU build.
+
+Compare the POSITION and the winner, not the string, when the terms match and
+only their order does not.
+*/
+
 import { GameState } from "../shared/domain/game-state";
 import { format } from "prettier";
 import {
