@@ -10,19 +10,25 @@
  *    lands exactly on the centre of the intersection. Two walls meeting at a
  *    corner get a fillet on the far side. Everything else fills the square.
  *
- *  - What colour is each pixel?  The colour of the nearest wall that RUNS
- *    THROUGH the pillar - one whose opposite number is also present, so it
- *    passes out the far side as one unbroken wall. A wall that merely stops
- *    here yields to those; only when nothing runs through (a lone wall, or a
- *    corner) does it colour anything. Straight-through joints get a flat seam,
- *    corners a 45 degree mitre, crossings an X, and a tee is simply the run,
- *    unbroken, with the stem butting into its face.
+ *  - What colour is each pixel?  The colour of the NEAREST wall, measured to
+ *    the side of the square that wall enters from. Every wall that touches
+ *    colours its own territory, whether it runs through or stops here.
+ *    Straight-through joints get a flat seam, corners a 45 degree mitre,
+ *    crossings an X, and a tee a WEDGE of the arriving wall's colour, apex at
+ *    the centre of the pillar - the triangle (0,0)-(100,0)-(50,50) for a stem
+ *    from the north.
  *
- *    The precedence is the whole point. Nearest-wall alone gave the stem of a
- *    tee the triangle (0,0)-(100,0)-(50,50) - a wedge of its colour driven
- *    point-first into the middle of the run, which reads as a chevron notch
- *    rather than as two walls meeting (board task c003ec83; Nil, 2026-08-03).
- *    A wall that stops at another wall does not eat into it.
+ *    The wedge and the X are the same rule seen twice. Nil chose this
+ *    rendering when he picked the Crisp theme (2026-08-02), kept the X
+ *    explicitly (2026-08-16, board task ab1b8358) and restored the wedge
+ *    (2026-08-19: "we agreed on the wedge").
+ *
+ *    DO NOT DELETE THE WEDGE AGAIN. de9c5292 removed it behind a precedence
+ *    rule - only walls with their opposite number present could colour - on
+ *    the reading that a tee showed "a chevron notch of red poking down into
+ *    the blue". That sentence was ours, not Nil's; his words were only that
+ *    the junctions looked janky, and every other jank he named that week was
+ *    sub-pixel. Board task c003ec83 holds the record.
  *
  * Everything is expressed in the SVG's own 0..100 viewBox, so it scales with
  * the element and holds at any board size or device pixel ratio.
@@ -98,21 +104,44 @@ const FULL_SQUARE = "M 0 0 L 100 0 L 100 100 L 0 100 Z";
  */
 const PILLAR_OVERDRAW = 12;
 
-const wallsTouching = (colors: PillarColors) => EDGES.filter((e) => colors[e]);
-
 /**
- * The walls that decide the colouring: those that run straight through, or all
- * of them when none does.
+ * How far past the pillar box a MULTI-colour pillar's art is computed and
+ * clipped, in viewBox units.
  *
- * A wall with its opposite number present is one continuous wall passing
- * across the pillar, so nothing that stops here may break it. With no such
- * wall - a lone end, or a corner - there is nothing to yield to and every
- * touching wall colours its own side as before.
+ * The same reach the single-colour branch buys with its stroke, by the same
+ * argument: half a stroke lands outside the shape, so a stroke of 12 and a fill
+ * that extends 6 cover the same ground. One number, one remedy, two branches.
+ *
+ * It exists because the wedge exposed the shortfall on the other branch. A tee
+ * paints blue over a RED stem div near the pillar's left and right edges, where
+ * the wedge is only about 0.1 px deep, and the blue fill stopped about 0.44 px
+ * short of the box - so the div showed through as 2 pixels of pure #dc2626 at
+ * desktop DPR 2 and a blend at 1.75 (measured 2026-08-19). Everywhere else the
+ * div under an edge carries the SAME colour as the art over it, which is why
+ * this went unseen until a tee put two colours in one pillar.
+ *
+ * The territory boundaries do not move. Each is a half-plane in absolute
+ * coordinates, so a wider starting square extends every territory outward and
+ * shifts none of them: the wedge's apex stays at (50,50).
+ *
+ * Nothing escapes the pillar. The outermost SVG clips to its own bounds, which
+ * is measured rather than assumed - the single-colour branch has carried a
+ * 12-unit stroke since 8cdadac2 and the probe reads zero spill at desktop and
+ * 393x650, at DPR 1, 1.25, 1.75 and 2.
+ *
+ * Only a full square gets the wider clip. An elbow's fillet is a real
+ * silhouette, so it keeps its own outline - the same line 8cdadac2 drew.
  */
-const colouringWalls = (walls: EdgeColorKey[]): EdgeColorKey[] => {
-  const throughWalls = walls.filter((wall) => walls.includes(OPPOSITE[wall]));
-  return throughWalls.length > 0 ? throughWalls : walls;
-};
+const TERRITORY_REACH = PILLAR_OVERDRAW / 2;
+
+const OVERDRAWN_SQUARE = [
+  `M ${-TERRITORY_REACH} ${-TERRITORY_REACH}`,
+  `L ${100 + TERRITORY_REACH} ${-TERRITORY_REACH}`,
+  `L ${100 + TERRITORY_REACH} ${100 + TERRITORY_REACH}`,
+  `L ${-TERRITORY_REACH} ${100 + TERRITORY_REACH} Z`,
+].join(" ");
+
+const wallsTouching = (colors: PillarColors) => EDGES.filter((e) => colors[e]);
 
 /** Which corner two walls meet at, e.g. north + east -> "north-east". */
 const meetingCorner = (a: EdgeColorKey, b: EdgeColorKey) => {
@@ -176,11 +205,13 @@ function clipToHalfPlane(polygon: Point[], f: (p: Point) => number): Point[] {
 
 /** The part of the pillar closer to `wall` than to any other wall touching it. */
 function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
+  const near = -TERRITORY_REACH;
+  const far = 100 + TERRITORY_REACH;
   let polygon: Point[] = [
-    { x: 0, y: 0 },
-    { x: 100, y: 0 },
-    { x: 100, y: 100 },
-    { x: 0, y: 100 },
+    { x: near, y: near },
+    { x: far, y: near },
+    { x: far, y: far },
+    { x: near, y: far },
   ];
   for (const other of walls) {
     if (other === wall) continue;
@@ -199,28 +230,23 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
   const walls = wallsTouching(colors);
   if (walls.length === 0) return null;
 
-  // The painted REGION still comes from every wall that touches - a tee is a
-  // full square whichever wall colours it - but only the walls that run
-  // through decide what colour those pixels are.
   const outline = shapePath(walls);
-  const painters = colouringWalls(walls);
-  const distinctColors = new Set(painters.map((e) => colors[e]!));
+  const square = outline === FULL_SQUARE;
+  const distinctColors = new Set(walls.map((e) => colors[e]!));
 
-  // One colour means no internal seams to draw. A tee reaches this line: the
-  // run is one colour and the stem is not consulted.
-  //
-  // A full square is widened to cover the wall divs overlapping it. Those divs
-  // reach about 1 CSS px into this pillar on every side (measured 2026-08-16:
-  // the stem's box ends at 242.000 where the pillar starts at 241.000), and a
-  // div background and SVG art do not rasterise identically even on identical
-  // geometry. Unwidened, the stem's overlap showed as a column of PURE #dc2626
-  // down the pillar's edge - pure, not a blend, so it was the art failing to
-  // reach rather than antialiasing. It only became visible when the colouring
-  // rule sent a tee down this branch: before, every territory matched the wall
-  // beneath it, so the same shortfall had nothing to expose.
+  // A full square reaches past its own box on BOTH branches, to cover the wall
+  // divs that overlap it. Those divs reach about 1 CSS px into this pillar on
+  // every side (measured 2026-08-16: the stem's box ends at 242.000 where the
+  // pillar starts at 241.000), and a div background and SVG art do not
+  // rasterise identically even on identical geometry. Unwidened, a wall's
+  // overlap showed as a column of PURE wall colour down the pillar's edge -
+  // pure, not a blend, so it was the art failing to reach rather than
+  // antialiasing.
+
+  // One colour means no internal seams to draw - one flat shape does it, and a
+  // stroke of its own colour buys the reach.
   if (distinctColors.size === 1) {
-    const only = colors[painters[0]]!;
-    const square = outline === FULL_SQUARE;
+    const only = colors[walls[0]]!;
     return (
       <path
         d={outline}
@@ -231,18 +257,21 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
     );
   }
 
+  // More than one colour: each wall paints its own territory, and the clip is
+  // what stops them. A square clip is widened with the territories so the reach
+  // survives it; an elbow's fillet is a real silhouette and keeps its outline.
   return (
     <g>
       <defs>
         <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-          <path d={outline} />
+          <path d={square ? OVERDRAWN_SQUARE : outline} />
         </clipPath>
       </defs>
       <g clipPath={`url(#${clipId})`}>
-        {painters.map((wall) => (
+        {walls.map((wall) => (
           <polygon
             key={wall}
-            points={territoryOf(wall, painters)
+            points={territoryOf(wall, walls)
               .map((p) => `${p.x},${p.y}`)
               .join(" ")}
             fill={colors[wall]!}

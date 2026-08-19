@@ -30,6 +30,11 @@ const PORT = 5183;
 const TAG = process.env.SHOT_TAG ?? "gallery";
 const THEME = process.env.PROBE_THEME ?? "crisp";
 const OUT = "tmp/crisp-junction";
+/**
+ * The per-configuration crops are compared byte for byte across builds, and a
+ * fix tuned at one DPR says nothing about the others, so the ratio is a knob.
+ */
+const DPR = Number(process.env.GALLERY_DPR ?? 2);
 
 const RED = "Red";
 const BLUE = "Blue";
@@ -60,6 +65,17 @@ const CONFIGS = [
     ],
   },
   {
+    // The same tee turned a quarter: a vertical run with the stem arriving from
+    // the west. territoryOf treats the four sides alike, so this SHOULD mirror
+    // "tee" exactly - which is the reason to print it rather than assert it.
+    name: "tee-vertical",
+    walls: [
+      ["north", BLUE],
+      ["south", BLUE],
+      ["west", RED],
+    ],
+  },
+  {
     name: "cross",
     walls: [
       ["west", BLUE],
@@ -85,7 +101,7 @@ const browser = await chromium.launch({
 try {
   const page = await browser.newPage({
     viewport: { width: 1280, height: 1000 },
-    deviceScaleFactor: 2,
+    deviceScaleFactor: DPR,
   });
   await page.goto(BASE, { waitUntil: "domcontentloaded" });
   await page.evaluate((t) => {
@@ -155,11 +171,15 @@ try {
     throw new Error("no pillar had all four wall slots around it");
   }
 
-  // Spread the configurations out so no two share a wall.
+  // Spread the configurations out so no two share a wall. Two pillars share one
+  // only when they sit in the same row or column one pitch apart, so a step in
+  // BOTH axes is enough; the earlier "two pitches apart in both axes" rule was
+  // stricter than the requirement and ran out of intersections at six
+  // configurations (2026-08-19).
   const chosen = [];
   for (const p of points) {
     if (
-      chosen.every((c) => Math.abs(c.x - p.x) > 90 && Math.abs(c.y - p.y) > 90)
+      chosen.every((c) => Math.abs(c.x - p.x) > 20 && Math.abs(c.y - p.y) > 20)
     ) {
       chosen.push(p);
     }
@@ -226,9 +246,11 @@ try {
           );
         });
         if (!hit) return { name, found: false };
+        const r = hit.getBoundingClientRect();
         return {
           name,
           found: true,
+          rect: { x: r.left, y: r.top, width: r.width, height: r.height },
           polygons: [...hit.querySelectorAll("polygon")].map(
             (el) => `${el.getAttribute("fill")} [${el.getAttribute("points")}]`,
           ),
@@ -255,6 +277,26 @@ try {
     }
     for (const p of entry.paths) console.log(`  path    ${p}`);
     for (const p of entry.polygons) console.log(`  polygon ${p}`);
+  }
+
+  // One crop per configuration, so "the other four did not move" is a file
+  // comparison rather than a reading of the board shot. The SVG report cannot
+  // settle it on its own: widening a clip changes an attribute for four
+  // configurations whose PIXELS are expected to stay put, and only the pixels
+  // answer that. Compare with sha256 across two builds - and check first that
+  // two runs of the SAME build agree, or an equal pair proves nothing.
+  const PAD = 10;
+  for (const entry of report) {
+    if (!entry.found) continue;
+    await page.screenshot({
+      path: `${OUT}/${TAG}-${THEME}-dpr${String(DPR).replace(".", "_")}-cfg-${entry.name}.png`,
+      clip: {
+        x: entry.rect.x - PAD,
+        y: entry.rect.y - PAD,
+        width: entry.rect.width + PAD * 2,
+        height: entry.rect.height + PAD * 2,
+      },
+    });
   }
 
   await page.screenshot({
