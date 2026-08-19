@@ -30,6 +30,25 @@
  *    the junctions looked janky, and every other jank he named that week was
  *    sub-pixel. Board task c003ec83 holds the record.
  *
+ * HOW IT IS COMPOSED, and the invariant that keeps seams out:
+ *
+ *   EVERY SHAPE IS A SUBSET OF THE SHAPE DRAWN BEFORE IT, AND THE FIRST SHAPE
+ *   COVERS THE WHOLE PILLAR.
+ *
+ * So no edge ever meets the board background; each one blends a wall colour
+ * into a wall colour. The pillar is a stack of nested layers, not a set of
+ * tiles laid side by side.
+ *
+ * That is the difference between this and every earlier attempt. Abutting
+ * shapes were the root cause, and a 1-unit stroke, a 12-unit stroke and a
+ * widened clip were three ways of shoving abutting edges into each other so
+ * that the gap between them closed. Two antialiased edges that meet cover their
+ * shared pixel less than fully, and the board shows through the remainder - so
+ * a tee's apex carried a hairline 11 percent darker than the wall even though
+ * the regions on both sides of it were the SAME blue (measured 2026-08-19,
+ * board task df2cf5b5; Nil: "i dont like the weird seams with different
+ * color"). Nesting removes the gap instead of narrowing it.
+ *
  * Everything is expressed in the SVG's own 0..100 viewBox, so it scales with
  * the element and holds at any board size or device pixel ratio.
  */
@@ -71,74 +90,36 @@ const CORNER_POINT: Record<string, [number, number]> = {
 const FULL_SQUARE = "M 0 0 L 100 0 L 100 100 L 0 100 Z";
 
 /**
- * How far a FULL-SQUARE pillar's art is widened, in viewBox units, to cover the
- * wall divs that overlap it.
+ * How far past its own box a SQUARE pillar's art is drawn, in viewBox units.
  *
- * Half a stroke lands outside the shape, so 12 buys 6 units of reach - about
- * 0.86 CSS px on a 14.4 px pillar, comfortably past the 0.441 px by which a
- * div background and SVG art are known to disagree on identical geometry
- * (measured 2026-08-05, recorded on this board).
+ * 6 units is about 0.86 CSS px on a 14.4 px pillar, comfortably past the
+ * 0.441 px by which a div background and SVG art are known to disagree on
+ * identical geometry (measured 2026-08-05, recorded on board task c003ec83).
  *
- * Bisected against a pixel probe on 2026-08-16, at desktop and 393x650, at DPR
- * 1, 1.25, 1.75 and 2.
+ * The wall divs overlap this pillar by 0.984 CSS px on every side and sit UNDER
+ * it (z-index 10 against 12, measured 2026-08-19), so art that stops at the box
+ * edge lets a div of another colour show through. That was 2 pixels of pure
+ * wall colour at desktop DPR 2.
  *
- * IT IS 12 RATHER THAN 8 BECAUSE THE FIRST PROBE WAS TOO BLUNT. That probe
- * only counted near-pure stem colour, and by that measure 8 read as clean
- * everywhere. A stricter one, counting any lift of the stem's channel above
- * the run colour, found a single BLENDED pixel below the butt face at DPR 2
- * and at DPR 1.75 - so the residue was never confined to fractional DPR; it
- * was confined to what the instrument could see.
+ * It moves no boundary. Every boundary inside the pillar is a half-plane in
+ * absolute coordinates, so starting from a wider square extends each region
+ * outward and shifts none of them - a tee's wedge still points at (50,50).
  *
- * 12 reaches zero at all eight combinations, and 16 and 20 measure identically
- * to 12 - a plateau, not the first value that happened to pass. None of them
- * spilled any colour outside the pillar.
+ * Nothing escapes the pillar: the outermost SVG clips to its own bounds. That
+ * is measured, not assumed - the probe reads zero spill at desktop and 393x650,
+ * at DPR 1, 1.25, 1.75 and 2, with its injected control firing first.
  *
- * What remains at fractional DPR is blending ON the butt face itself, where
- * two walls genuinely meet and the edge lands mid-device-pixel. No coordinate
- * or width change touches that; it is the same paint-time effect this board
- * already closed as a no-fix.
- *
- * Only the square gets it. On the end cap's arc or the elbow's fillet, widening
- * would push a visible silhouette outward rather than fill an overlap, and
- * those shapes are not what this fixes.
+ * Only a square gets it. An end cap's arc and an elbow's fillet are real
+ * silhouettes, and widening those would push the outline outward rather than
+ * fill an overlap.
  */
-const PILLAR_OVERDRAW = 12;
-
-/**
- * How far past the pillar box a MULTI-colour pillar's art is computed and
- * clipped, in viewBox units.
- *
- * The same reach the single-colour branch buys with its stroke, by the same
- * argument: half a stroke lands outside the shape, so a stroke of 12 and a fill
- * that extends 6 cover the same ground. One number, one remedy, two branches.
- *
- * It exists because the wedge exposed the shortfall on the other branch. A tee
- * paints blue over a RED stem div near the pillar's left and right edges, where
- * the wedge is only about 0.1 px deep, and the blue fill stopped about 0.44 px
- * short of the box - so the div showed through as 2 pixels of pure #dc2626 at
- * desktop DPR 2 and a blend at 1.75 (measured 2026-08-19). Everywhere else the
- * div under an edge carries the SAME colour as the art over it, which is why
- * this went unseen until a tee put two colours in one pillar.
- *
- * The territory boundaries do not move. Each is a half-plane in absolute
- * coordinates, so a wider starting square extends every territory outward and
- * shifts none of them: the wedge's apex stays at (50,50).
- *
- * Nothing escapes the pillar. The outermost SVG clips to its own bounds, which
- * is measured rather than assumed - the single-colour branch has carried a
- * 12-unit stroke since 8cdadac2 and the probe reads zero spill at desktop and
- * 393x650, at DPR 1, 1.25, 1.75 and 2.
- *
- * Only a full square gets the wider clip. An elbow's fillet is a real
- * silhouette, so it keeps its own outline - the same line 8cdadac2 drew.
- */
-const TERRITORY_REACH = PILLAR_OVERDRAW / 2;
+const PILLAR_REACH = 6;
 
 const OVERDRAWN_SQUARE = [
-  `M ${-TERRITORY_REACH} ${-TERRITORY_REACH}`,
-  `L ${100 + TERRITORY_REACH} ${-TERRITORY_REACH}`,
-  `L ${100 + TERRITORY_REACH} ${100 + TERRITORY_REACH}`,
-  `L ${-TERRITORY_REACH} ${100 + TERRITORY_REACH} Z`,
+  `M ${-PILLAR_REACH} ${-PILLAR_REACH}`,
+  `L ${100 + PILLAR_REACH} ${-PILLAR_REACH}`,
+  `L ${100 + PILLAR_REACH} ${100 + PILLAR_REACH}`,
+  `L ${-PILLAR_REACH} ${100 + PILLAR_REACH} Z`,
 ].join(" ");
 
 const wallsTouching = (colors: PillarColors) => EDGES.filter((e) => colors[e]);
@@ -205,8 +186,8 @@ function clipToHalfPlane(polygon: Point[], f: (p: Point) => number): Point[] {
 
 /** The part of the pillar closer to `wall` than to any other wall touching it. */
 function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
-  const near = -TERRITORY_REACH;
-  const far = 100 + TERRITORY_REACH;
+  const near = -PILLAR_REACH;
+  const far = 100 + PILLAR_REACH;
   let polygon: Point[] = [
     { x: near, y: near },
     { x: far, y: near },
@@ -223,6 +204,40 @@ function territoryOf(wall: EdgeColorKey, walls: EdgeColorKey[]): Point[] {
   return polygon;
 }
 
+/**
+ * The pillar as a stack of NESTED shapes, largest first.
+ *
+ * Layer k covers the territories of its own wall AND of every wall after it, so
+ * each layer is a strict subset of the one below. That nesting is the whole
+ * design: an edge drawn inside an opaque shape blends one wall colour into
+ * another, while two shapes that merely ABUT leave the board showing between two
+ * antialiased edges. Every seam this file has ever had came from abutting -
+ * including the hairline under a tee's apex, which sat between two regions of
+ * the SAME blue and still read 11 percent dark.
+ *
+ * A layer repeating the colour below it would paint that colour over itself, so
+ * it is dropped. That is what collapses a tee to two shapes: the run's two arms
+ * become one flat base and the boundary between them stops existing.
+ */
+const paintLayers = (walls: EdgeColorKey[], colors: PillarColors) =>
+  walls
+    .map((wall, index) => ({ color: colors[wall]!, cover: walls.slice(index) }))
+    .filter(
+      (layer, index, all) =>
+        index === 0 || layer.color !== all[index - 1].color,
+    );
+
+/** One path, one subpath per territory - a single shape with a single edge. */
+const territoriesPath = (cover: EdgeColorKey[], walls: EdgeColorKey[]) =>
+  cover
+    .map(
+      (wall) =>
+        `M ${territoryOf(wall, walls)
+          .map((p) => `${p.x} ${p.y}`)
+          .join(" L ")} Z`,
+    )
+    .join(" ");
+
 export function CrispPillar({ colors }: { colors: PillarColors }) {
   const rawId = useId();
   const clipId = `pillar-${rawId.replace(/:/g, "")}`;
@@ -232,56 +247,35 @@ export function CrispPillar({ colors }: { colors: PillarColors }) {
 
   const outline = shapePath(walls);
   const square = outline === FULL_SQUARE;
-  const distinctColors = new Set(walls.map((e) => colors[e]!));
+  const [base, ...covers] = paintLayers(walls, colors);
 
-  // A full square reaches past its own box on BOTH branches, to cover the wall
-  // divs that overlap it. Those divs reach about 1 CSS px into this pillar on
-  // every side (measured 2026-08-16: the stem's box ends at 242.000 where the
-  // pillar starts at 241.000), and a div background and SVG art do not
-  // rasterise identically even on identical geometry. Unwidened, a wall's
-  // overlap showed as a column of PURE wall colour down the pillar's edge -
-  // pure, not a blend, so it was the art failing to reach rather than
-  // antialiasing.
+  // Keyed by DEPTH, not by colour. Colours repeat down the stack - a cross with
+  // red and blue on alternating sides draws red, blue, red, blue - so a colour
+  // key collides and React reconciles the wrong layers (Reviewer 3, 2026-08-19).
+  const stack = covers.map((layer, depth) => (
+    <path
+      key={depth}
+      d={territoriesPath(layer.cover, walls)}
+      fill={layer.color}
+    />
+  ));
 
-  // One colour means no internal seams to draw - one flat shape does it, and a
-  // stroke of its own colour buys the reach.
-  if (distinctColors.size === 1) {
-    const only = colors[walls[0]]!;
-    return (
-      <path
-        d={outline}
-        fill={only}
-        stroke={square ? only : undefined}
-        strokeWidth={square ? PILLAR_OVERDRAW : undefined}
-      />
-    );
-  }
-
-  // More than one colour: each wall paints its own territory, and the clip is
-  // what stops them. A square clip is widened with the territories so the reach
-  // survives it; an elbow's fillet is a real silhouette and keeps its outline.
+  // A square needs no clip: nothing leaves the widened square, and the SVG
+  // bounds the rest. A silhouette does - and the BASE stays outside that clip,
+  // because clipping a shape to its own outline antialiases that edge twice and
+  // darkens it.
+  const clipped = !square && covers.length > 0;
   return (
-    <g>
-      <defs>
-        <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
-          <path d={square ? OVERDRAWN_SQUARE : outline} />
-        </clipPath>
-      </defs>
-      <g clipPath={`url(#${clipId})`}>
-        {walls.map((wall) => (
-          <polygon
-            key={wall}
-            points={territoryOf(wall, walls)
-              .map((p) => `${p.x},${p.y}`)
-              .join(" ")}
-            fill={colors[wall]!}
-            // Widen each territory by half a unit so neighbours overlap
-            // instead of leaving an antialiased hairline between them.
-            stroke={colors[wall]!}
-            strokeWidth={1}
-          />
-        ))}
-      </g>
-    </g>
+    <>
+      {clipped && (
+        <defs>
+          <clipPath id={clipId} clipPathUnits="userSpaceOnUse">
+            <path d={outline} />
+          </clipPath>
+        </defs>
+      )}
+      <path d={square ? OVERDRAWN_SQUARE : outline} fill={base.color} />
+      {clipped ? <g clipPath={`url(#${clipId})`}>{stack}</g> : stack}
+    </>
   );
 }
