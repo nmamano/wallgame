@@ -1,0 +1,3917 @@
+{
+  "schema": "wallgame-policy-elo-app-v2",
+  "generatedAtUtc": "2026-08-20T17:21:14Z",
+  "settings": {
+    "samples": 1,
+    "rootNoiseFactor": 0,
+    "moveSelection": "policy argmax",
+    "fit": "Bradley-Terry MM, 3000 iterations, one virtual draw versus a unit-strength anchor per player",
+    "normalization": "weakest=0 inside each connected component",
+    "archiveRule": "no-legal-move, legality errors, unfinished outcomes, and malformed rows excluded"
+  },
+  "artifactCoverage": [
+    {
+      "start": 0,
+      "end": 0,
+      "status": "missing",
+      "label": "Artifact missing"
+    },
+    {
+      "start": 1,
+      "end": 92,
+      "status": "legacy",
+      "label": "9-plane \u00b7 legacy engine only"
+    },
+    {
+      "start": 93,
+      "end": 116,
+      "status": "available",
+      "label": "16-plane \u00b7 rated"
+    }
+  ],
+  "variantLabels": {
+    "classic": "Classic",
+    "standard": "Standard",
+    "animal-cycle": "Animal Cycle"
+  },
+  "conditions": [
+    {
+      "id": "classic-fixed-8x8",
+      "label": "Classic 8x8",
+      "color": "#87c7ff",
+      "variant": "classic",
+      "setup": "fixed",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 2,
+      "legacyExperiment": "rr72_policy_2026-08-01",
+      "components": [
+        {
+          "id": "classic-fixed-8x8-component-1",
+          "generations": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36
+          ],
+          "ratings": [
+            {
+              "generation": 1,
+              "elo": 0.0,
+              "games": 70
+            },
+            {
+              "generation": 2,
+              "elo": 154.46,
+              "games": 70
+            },
+            {
+              "generation": 3,
+              "elo": 127.018,
+              "games": 70
+            },
+            {
+              "generation": 4,
+              "elo": 140.881,
+              "games": 70
+            },
+            {
+              "generation": 5,
+              "elo": 140.881,
+              "games": 70
+            },
+            {
+              "generation": 6,
+              "elo": 127.018,
+              "games": 70
+            },
+            {
+              "generation": 7,
+              "elo": 180.886,
+              "games": 70
+            },
+            {
+              "generation": 8,
+              "elo": 315.275,
+              "games": 70
+            },
+            {
+              "generation": 9,
+              "elo": 315.275,
+              "games": 70
+            },
+            {
+              "generation": 10,
+              "elo": 243.749,
+              "games": 70
+            },
+            {
+              "generation": 11,
+              "elo": 361.414,
+              "games": 70
+            },
+            {
+              "generation": 12,
+              "elo": 372.79,
+              "games": 70
+            },
+            {
+              "generation": 13,
+              "elo": 633.054,
+              "games": 70
+            },
+            {
+              "generation": 14,
+              "elo": 504.124,
+              "games": 70
+            },
+            {
+              "generation": 15,
+              "elo": 633.054,
+              "games": 70
+            },
+            {
+              "generation": 16,
+              "elo": 731.241,
+              "games": 70
+            },
+            {
+              "generation": 17,
+              "elo": 756.726,
+              "games": 70
+            },
+            {
+              "generation": 18,
+              "elo": 765.13,
+              "games": 70
+            },
+            {
+              "generation": 19,
+              "elo": 790.119,
+              "games": 70
+            },
+            {
+              "generation": 20,
+              "elo": 823.05,
+              "games": 70
+            },
+            {
+              "generation": 21,
+              "elo": 798.387,
+              "games": 70
+            },
+            {
+              "generation": 22,
+              "elo": 790.119,
+              "games": 70
+            },
+            {
+              "generation": 23,
+              "elo": 888.463,
+              "games": 70
+            },
+            {
+              "generation": 24,
+              "elo": 855.75,
+              "games": 70
+            },
+            {
+              "generation": 25,
+              "elo": 929.774,
+              "games": 70
+            },
+            {
+              "generation": 26,
+              "elo": 896.673,
+              "games": 70
+            },
+            {
+              "generation": 27,
+              "elo": 1053.329,
+              "games": 70
+            },
+            {
+              "generation": 28,
+              "elo": 1034.498,
+              "games": 70
+            },
+            {
+              "generation": 29,
+              "elo": 946.547,
+              "games": 70
+            },
+            {
+              "generation": 30,
+              "elo": 1016.176,
+              "games": 70
+            },
+            {
+              "generation": 31,
+              "elo": 1159.083,
+              "games": 70
+            },
+            {
+              "generation": 32,
+              "elo": 963.524,
+              "games": 70
+            },
+            {
+              "generation": 33,
+              "elo": 1196.792,
+              "games": 70
+            },
+            {
+              "generation": 34,
+              "elo": 1082.732,
+              "games": 70
+            },
+            {
+              "generation": 35,
+              "elo": 1016.176,
+              "games": 70
+            },
+            {
+              "generation": 36,
+              "elo": 1092.899,
+              "games": 70
+            }
+          ],
+          "cleanGames": 1260,
+          "excludedGames": 0,
+          "edges": 630,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "rr72_policy_2026-08-01": {
+              "clean": 1260,
+              "excluded": 0,
+              "rawFiles": [
+                "games.jsonl"
+              ]
+            }
+          }
+        },
+        {
+          "id": "classic-fixed-8x8-component-2",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 178.742,
+              "games": 12
+            },
+            {
+              "generation": 94,
+              "elo": 207.059,
+              "games": 8
+            },
+            {
+              "generation": 95,
+              "elo": 303.769,
+              "games": 10
+            },
+            {
+              "generation": 96,
+              "elo": 62.209,
+              "games": 10
+            },
+            {
+              "generation": 97,
+              "elo": 320.89,
+              "games": 12
+            },
+            {
+              "generation": 98,
+              "elo": 502.912,
+              "games": 12
+            },
+            {
+              "generation": 99,
+              "elo": 0.0,
+              "games": 12
+            },
+            {
+              "generation": 100,
+              "elo": 304.994,
+              "games": 12
+            },
+            {
+              "generation": 101,
+              "elo": 547.707,
+              "games": 12
+            },
+            {
+              "generation": 102,
+              "elo": 156.805,
+              "games": 12
+            },
+            {
+              "generation": 103,
+              "elo": 261.447,
+              "games": 12
+            },
+            {
+              "generation": 104,
+              "elo": 387.537,
+              "games": 12
+            },
+            {
+              "generation": 105,
+              "elo": 581.479,
+              "games": 12
+            },
+            {
+              "generation": 106,
+              "elo": 437.039,
+              "games": 12
+            },
+            {
+              "generation": 107,
+              "elo": 481.954,
+              "games": 12
+            },
+            {
+              "generation": 108,
+              "elo": 335.422,
+              "games": 12
+            },
+            {
+              "generation": 109,
+              "elo": 272.767,
+              "games": 12
+            },
+            {
+              "generation": 110,
+              "elo": 334.865,
+              "games": 12
+            },
+            {
+              "generation": 111,
+              "elo": 414.513,
+              "games": 10
+            },
+            {
+              "generation": 112,
+              "elo": 381.941,
+              "games": 10
+            },
+            {
+              "generation": 113,
+              "elo": 538.195,
+              "games": 10
+            },
+            {
+              "generation": 114,
+              "elo": 470.347,
+              "games": 8
+            },
+            {
+              "generation": 115,
+              "elo": 650.57,
+              "games": 8
+            },
+            {
+              "generation": 116,
+              "elo": 741.308,
+              "games": 6
+            }
+          ],
+          "cleanGames": 130,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 46,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-8x8_g100_vs_g99.jsonl",
+                "classic-fixed-8x8_g101_vs_g100.jsonl",
+                "classic-fixed-8x8_g102_vs_g101.jsonl",
+                "classic-fixed-8x8_g103_vs_g102.jsonl",
+                "classic-fixed-8x8_g104_vs_g103.jsonl",
+                "classic-fixed-8x8_g105_vs_g104.jsonl",
+                "classic-fixed-8x8_g106_vs_g105.jsonl",
+                "classic-fixed-8x8_g107_vs_g106.jsonl",
+                "classic-fixed-8x8_g108_vs_g107.jsonl",
+                "classic-fixed-8x8_g109_vs_g108.jsonl",
+                "classic-fixed-8x8_g110_vs_g109.jsonl",
+                "classic-fixed-8x8_g111_vs_g110.jsonl",
+                "classic-fixed-8x8_g112_vs_g111.jsonl",
+                "classic-fixed-8x8_g113_vs_g112.jsonl",
+                "classic-fixed-8x8_g114_vs_g113.jsonl",
+                "classic-fixed-8x8_g115_vs_g114.jsonl",
+                "classic-fixed-8x8_g116_vs_g115.jsonl",
+                "classic-fixed-8x8_g94_vs_g93.jsonl",
+                "classic-fixed-8x8_g95_vs_g94.jsonl",
+                "classic-fixed-8x8_g96_vs_g95.jsonl",
+                "classic-fixed-8x8_g97_vs_g96.jsonl",
+                "classic-fixed-8x8_g98_vs_g97.jsonl",
+                "classic-fixed-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 78,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-8x8_g100_vs_g94.jsonl",
+                "classic-fixed-8x8_g100_vs_g97.jsonl",
+                "classic-fixed-8x8_g101_vs_g95.jsonl",
+                "classic-fixed-8x8_g101_vs_g98.jsonl",
+                "classic-fixed-8x8_g102_vs_g96.jsonl",
+                "classic-fixed-8x8_g102_vs_g99.jsonl",
+                "classic-fixed-8x8_g103_vs_g100.jsonl",
+                "classic-fixed-8x8_g103_vs_g97.jsonl",
+                "classic-fixed-8x8_g104_vs_g101.jsonl",
+                "classic-fixed-8x8_g104_vs_g98.jsonl",
+                "classic-fixed-8x8_g105_vs_g102.jsonl",
+                "classic-fixed-8x8_g105_vs_g99.jsonl",
+                "classic-fixed-8x8_g106_vs_g100.jsonl",
+                "classic-fixed-8x8_g106_vs_g103.jsonl",
+                "classic-fixed-8x8_g107_vs_g101.jsonl",
+                "classic-fixed-8x8_g107_vs_g104.jsonl",
+                "classic-fixed-8x8_g108_vs_g102.jsonl",
+                "classic-fixed-8x8_g108_vs_g105.jsonl",
+                "classic-fixed-8x8_g109_vs_g103.jsonl",
+                "classic-fixed-8x8_g109_vs_g106.jsonl",
+                "classic-fixed-8x8_g110_vs_g104.jsonl",
+                "classic-fixed-8x8_g110_vs_g107.jsonl",
+                "classic-fixed-8x8_g111_vs_g105.jsonl",
+                "classic-fixed-8x8_g111_vs_g108.jsonl",
+                "classic-fixed-8x8_g112_vs_g106.jsonl",
+                "classic-fixed-8x8_g112_vs_g109.jsonl",
+                "classic-fixed-8x8_g113_vs_g107.jsonl",
+                "classic-fixed-8x8_g113_vs_g110.jsonl",
+                "classic-fixed-8x8_g114_vs_g108.jsonl",
+                "classic-fixed-8x8_g114_vs_g111.jsonl",
+                "classic-fixed-8x8_g115_vs_g109.jsonl",
+                "classic-fixed-8x8_g115_vs_g112.jsonl",
+                "classic-fixed-8x8_g116_vs_g110.jsonl",
+                "classic-fixed-8x8_g116_vs_g113.jsonl",
+                "classic-fixed-8x8_g96_vs_g93.jsonl",
+                "classic-fixed-8x8_g97_vs_g94.jsonl",
+                "classic-fixed-8x8_g98_vs_g95.jsonl",
+                "classic-fixed-8x8_g99_vs_g93.jsonl",
+                "classic-fixed-8x8_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 6,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-8x8_g95_vs_g93.jsonl",
+                "classic-fixed-8x8_g97_vs_g93.jsonl",
+                "classic-fixed-8x8_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "classic-random-8x8",
+      "label": "Classic 8x8 \u00b7 Random Start",
+      "color": "#3c99ed",
+      "variant": "classic",
+      "setup": "random-start",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 12,
+      "components": [
+        {
+          "id": "classic-random-8x8-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 45.102,
+              "games": 384
+            },
+            {
+              "generation": 94,
+              "elo": 74.107,
+              "games": 256
+            },
+            {
+              "generation": 95,
+              "elo": 27.51,
+              "games": 320
+            },
+            {
+              "generation": 96,
+              "elo": 34.772,
+              "games": 320
+            },
+            {
+              "generation": 97,
+              "elo": 48.952,
+              "games": 384
+            },
+            {
+              "generation": 98,
+              "elo": 0.0,
+              "games": 384
+            },
+            {
+              "generation": 99,
+              "elo": 9.056,
+              "games": 384
+            },
+            {
+              "generation": 100,
+              "elo": 55.597,
+              "games": 384
+            },
+            {
+              "generation": 101,
+              "elo": 16.216,
+              "games": 384
+            },
+            {
+              "generation": 102,
+              "elo": 54.036,
+              "games": 384
+            },
+            {
+              "generation": 103,
+              "elo": 40.597,
+              "games": 384
+            },
+            {
+              "generation": 104,
+              "elo": 26.998,
+              "games": 384
+            },
+            {
+              "generation": 105,
+              "elo": 49.844,
+              "games": 384
+            },
+            {
+              "generation": 106,
+              "elo": 24.988,
+              "games": 384
+            },
+            {
+              "generation": 107,
+              "elo": 19.992,
+              "games": 384
+            },
+            {
+              "generation": 108,
+              "elo": 32.393,
+              "games": 384
+            },
+            {
+              "generation": 109,
+              "elo": 33.057,
+              "games": 384
+            },
+            {
+              "generation": 110,
+              "elo": 56.943,
+              "games": 385
+            },
+            {
+              "generation": 111,
+              "elo": 42.937,
+              "games": 320
+            },
+            {
+              "generation": 112,
+              "elo": 48.532,
+              "games": 320
+            },
+            {
+              "generation": 113,
+              "elo": 49.213,
+              "games": 321
+            },
+            {
+              "generation": 114,
+              "elo": 59.649,
+              "games": 256
+            },
+            {
+              "generation": 115,
+              "elo": 38.298,
+              "games": 256
+            },
+            {
+              "generation": 116,
+              "elo": 11.946,
+              "games": 192
+            }
+          ],
+          "cleanGames": 4161,
+          "excludedGames": 1,
+          "edges": 65,
+          "minCleanGamesPerEdge": 64,
+          "maxCleanGamesPerEdge": 65,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 276,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-8x8_g100_vs_g99.jsonl",
+                "classic-random-8x8_g101_vs_g100.jsonl",
+                "classic-random-8x8_g102_vs_g101.jsonl",
+                "classic-random-8x8_g103_vs_g102.jsonl",
+                "classic-random-8x8_g104_vs_g103.jsonl",
+                "classic-random-8x8_g105_vs_g104.jsonl",
+                "classic-random-8x8_g106_vs_g105.jsonl",
+                "classic-random-8x8_g107_vs_g106.jsonl",
+                "classic-random-8x8_g108_vs_g107.jsonl",
+                "classic-random-8x8_g109_vs_g108.jsonl",
+                "classic-random-8x8_g110_vs_g109.jsonl",
+                "classic-random-8x8_g111_vs_g110.jsonl",
+                "classic-random-8x8_g112_vs_g111.jsonl",
+                "classic-random-8x8_g113_vs_g112.jsonl",
+                "classic-random-8x8_g114_vs_g113.jsonl",
+                "classic-random-8x8_g115_vs_g114.jsonl",
+                "classic-random-8x8_g116_vs_g115.jsonl",
+                "classic-random-8x8_g94_vs_g93.jsonl",
+                "classic-random-8x8_g95_vs_g94.jsonl",
+                "classic-random-8x8_g96_vs_g95.jsonl",
+                "classic-random-8x8_g97_vs_g96.jsonl",
+                "classic-random-8x8_g98_vs_g97.jsonl",
+                "classic-random-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
+              "clean": 1820,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-8x8_g100_vs_g94.jsonl",
+                "classic-random-8x8_g100_vs_g97.jsonl",
+                "classic-random-8x8_g100_vs_g99.jsonl",
+                "classic-random-8x8_g101_vs_g100.jsonl",
+                "classic-random-8x8_g101_vs_g95.jsonl",
+                "classic-random-8x8_g101_vs_g98.jsonl",
+                "classic-random-8x8_g102_vs_g101.jsonl",
+                "classic-random-8x8_g102_vs_g96.jsonl",
+                "classic-random-8x8_g102_vs_g99.jsonl",
+                "classic-random-8x8_g103_vs_g100.jsonl",
+                "classic-random-8x8_g103_vs_g102.jsonl",
+                "classic-random-8x8_g103_vs_g97.jsonl",
+                "classic-random-8x8_g104_vs_g101.jsonl",
+                "classic-random-8x8_g104_vs_g103.jsonl",
+                "classic-random-8x8_g104_vs_g98.jsonl",
+                "classic-random-8x8_g105_vs_g102.jsonl",
+                "classic-random-8x8_g105_vs_g104.jsonl",
+                "classic-random-8x8_g105_vs_g99.jsonl",
+                "classic-random-8x8_g106_vs_g100.jsonl",
+                "classic-random-8x8_g106_vs_g103.jsonl",
+                "classic-random-8x8_g106_vs_g105.jsonl",
+                "classic-random-8x8_g107_vs_g101.jsonl",
+                "classic-random-8x8_g107_vs_g104.jsonl",
+                "classic-random-8x8_g107_vs_g106.jsonl",
+                "classic-random-8x8_g108_vs_g102.jsonl",
+                "classic-random-8x8_g108_vs_g105.jsonl",
+                "classic-random-8x8_g108_vs_g107.jsonl",
+                "classic-random-8x8_g109_vs_g103.jsonl",
+                "classic-random-8x8_g109_vs_g106.jsonl",
+                "classic-random-8x8_g109_vs_g108.jsonl",
+                "classic-random-8x8_g110_vs_g104.jsonl",
+                "classic-random-8x8_g110_vs_g107.jsonl",
+                "classic-random-8x8_g110_vs_g109.jsonl",
+                "classic-random-8x8_g111_vs_g105.jsonl",
+                "classic-random-8x8_g111_vs_g108.jsonl",
+                "classic-random-8x8_g111_vs_g110.jsonl",
+                "classic-random-8x8_g112_vs_g106.jsonl",
+                "classic-random-8x8_g112_vs_g109.jsonl",
+                "classic-random-8x8_g112_vs_g111.jsonl",
+                "classic-random-8x8_g113_vs_g107.jsonl",
+                "classic-random-8x8_g113_vs_g110.jsonl",
+                "classic-random-8x8_g113_vs_g112.jsonl",
+                "classic-random-8x8_g114_vs_g108.jsonl",
+                "classic-random-8x8_g114_vs_g111.jsonl",
+                "classic-random-8x8_g114_vs_g113.jsonl",
+                "classic-random-8x8_g115_vs_g109.jsonl",
+                "classic-random-8x8_g115_vs_g112.jsonl",
+                "classic-random-8x8_g115_vs_g114.jsonl",
+                "classic-random-8x8_g116_vs_g110.jsonl",
+                "classic-random-8x8_g116_vs_g113.jsonl",
+                "classic-random-8x8_g116_vs_g115.jsonl",
+                "classic-random-8x8_g94_vs_g93.jsonl",
+                "classic-random-8x8_g95_vs_g93.jsonl",
+                "classic-random-8x8_g95_vs_g94.jsonl",
+                "classic-random-8x8_g96_vs_g93.jsonl",
+                "classic-random-8x8_g96_vs_g95.jsonl",
+                "classic-random-8x8_g97_vs_g93.jsonl",
+                "classic-random-8x8_g97_vs_g94.jsonl",
+                "classic-random-8x8_g97_vs_g96.jsonl",
+                "classic-random-8x8_g98_vs_g93.jsonl",
+                "classic-random-8x8_g98_vs_g95.jsonl",
+                "classic-random-8x8_g98_vs_g97.jsonl",
+                "classic-random-8x8_g99_vs_g93.jsonl",
+                "classic-random-8x8_g99_vs_g96.jsonl",
+                "classic-random-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+              "clean": 1560,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-8x8_g100_vs_g94.jsonl",
+                "classic-random-8x8_g100_vs_g97.jsonl",
+                "classic-random-8x8_g100_vs_g99.jsonl",
+                "classic-random-8x8_g101_vs_g100.jsonl",
+                "classic-random-8x8_g101_vs_g95.jsonl",
+                "classic-random-8x8_g101_vs_g98.jsonl",
+                "classic-random-8x8_g102_vs_g101.jsonl",
+                "classic-random-8x8_g102_vs_g96.jsonl",
+                "classic-random-8x8_g102_vs_g99.jsonl",
+                "classic-random-8x8_g103_vs_g100.jsonl",
+                "classic-random-8x8_g103_vs_g102.jsonl",
+                "classic-random-8x8_g103_vs_g97.jsonl",
+                "classic-random-8x8_g104_vs_g101.jsonl",
+                "classic-random-8x8_g104_vs_g103.jsonl",
+                "classic-random-8x8_g104_vs_g98.jsonl",
+                "classic-random-8x8_g105_vs_g102.jsonl",
+                "classic-random-8x8_g105_vs_g104.jsonl",
+                "classic-random-8x8_g105_vs_g99.jsonl",
+                "classic-random-8x8_g106_vs_g100.jsonl",
+                "classic-random-8x8_g106_vs_g103.jsonl",
+                "classic-random-8x8_g106_vs_g105.jsonl",
+                "classic-random-8x8_g107_vs_g101.jsonl",
+                "classic-random-8x8_g107_vs_g104.jsonl",
+                "classic-random-8x8_g107_vs_g106.jsonl",
+                "classic-random-8x8_g108_vs_g102.jsonl",
+                "classic-random-8x8_g108_vs_g105.jsonl",
+                "classic-random-8x8_g108_vs_g107.jsonl",
+                "classic-random-8x8_g109_vs_g103.jsonl",
+                "classic-random-8x8_g109_vs_g106.jsonl",
+                "classic-random-8x8_g109_vs_g108.jsonl",
+                "classic-random-8x8_g110_vs_g104.jsonl",
+                "classic-random-8x8_g110_vs_g107.jsonl",
+                "classic-random-8x8_g110_vs_g109.jsonl",
+                "classic-random-8x8_g111_vs_g105.jsonl",
+                "classic-random-8x8_g111_vs_g108.jsonl",
+                "classic-random-8x8_g111_vs_g110.jsonl",
+                "classic-random-8x8_g112_vs_g106.jsonl",
+                "classic-random-8x8_g112_vs_g109.jsonl",
+                "classic-random-8x8_g112_vs_g111.jsonl",
+                "classic-random-8x8_g113_vs_g107.jsonl",
+                "classic-random-8x8_g113_vs_g110.jsonl",
+                "classic-random-8x8_g113_vs_g112.jsonl",
+                "classic-random-8x8_g114_vs_g108.jsonl",
+                "classic-random-8x8_g114_vs_g111.jsonl",
+                "classic-random-8x8_g114_vs_g113.jsonl",
+                "classic-random-8x8_g115_vs_g109.jsonl",
+                "classic-random-8x8_g115_vs_g112.jsonl",
+                "classic-random-8x8_g115_vs_g114.jsonl",
+                "classic-random-8x8_g116_vs_g110.jsonl",
+                "classic-random-8x8_g116_vs_g113.jsonl",
+                "classic-random-8x8_g116_vs_g115.jsonl",
+                "classic-random-8x8_g94_vs_g93.jsonl",
+                "classic-random-8x8_g95_vs_g93.jsonl",
+                "classic-random-8x8_g95_vs_g94.jsonl",
+                "classic-random-8x8_g96_vs_g93.jsonl",
+                "classic-random-8x8_g96_vs_g95.jsonl",
+                "classic-random-8x8_g97_vs_g93.jsonl",
+                "classic-random-8x8_g97_vs_g94.jsonl",
+                "classic-random-8x8_g97_vs_g96.jsonl",
+                "classic-random-8x8_g98_vs_g93.jsonl",
+                "classic-random-8x8_g98_vs_g95.jsonl",
+                "classic-random-8x8_g98_vs_g97.jsonl",
+                "classic-random-8x8_g99_vs_g93.jsonl",
+                "classic-random-8x8_g99_vs_g96.jsonl",
+                "classic-random-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 467,
+              "excluded": 1,
+              "rawFiles": [
+                "classic-random-8x8_g100_vs_g94.jsonl",
+                "classic-random-8x8_g100_vs_g97.jsonl",
+                "classic-random-8x8_g101_vs_g95.jsonl",
+                "classic-random-8x8_g101_vs_g98.jsonl",
+                "classic-random-8x8_g102_vs_g96.jsonl",
+                "classic-random-8x8_g102_vs_g99.jsonl",
+                "classic-random-8x8_g103_vs_g100.jsonl",
+                "classic-random-8x8_g103_vs_g97.jsonl",
+                "classic-random-8x8_g104_vs_g101.jsonl",
+                "classic-random-8x8_g104_vs_g98.jsonl",
+                "classic-random-8x8_g105_vs_g102.jsonl",
+                "classic-random-8x8_g105_vs_g99.jsonl",
+                "classic-random-8x8_g106_vs_g100.jsonl",
+                "classic-random-8x8_g106_vs_g103.jsonl",
+                "classic-random-8x8_g107_vs_g101.jsonl",
+                "classic-random-8x8_g107_vs_g104.jsonl",
+                "classic-random-8x8_g108_vs_g102.jsonl",
+                "classic-random-8x8_g108_vs_g105.jsonl",
+                "classic-random-8x8_g109_vs_g103.jsonl",
+                "classic-random-8x8_g109_vs_g106.jsonl",
+                "classic-random-8x8_g110_vs_g104.jsonl",
+                "classic-random-8x8_g110_vs_g107.jsonl",
+                "classic-random-8x8_g111_vs_g105.jsonl",
+                "classic-random-8x8_g111_vs_g108.jsonl",
+                "classic-random-8x8_g112_vs_g106.jsonl",
+                "classic-random-8x8_g112_vs_g109.jsonl",
+                "classic-random-8x8_g113_vs_g107.jsonl",
+                "classic-random-8x8_g113_vs_g110.jsonl",
+                "classic-random-8x8_g114_vs_g108.jsonl",
+                "classic-random-8x8_g114_vs_g111.jsonl",
+                "classic-random-8x8_g115_vs_g109.jsonl",
+                "classic-random-8x8_g115_vs_g112.jsonl",
+                "classic-random-8x8_g116_vs_g110.jsonl",
+                "classic-random-8x8_g116_vs_g113.jsonl",
+                "classic-random-8x8_g96_vs_g93.jsonl",
+                "classic-random-8x8_g97_vs_g94.jsonl",
+                "classic-random-8x8_g98_vs_g95.jsonl",
+                "classic-random-8x8_g99_vs_g93.jsonl",
+                "classic-random-8x8_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20": {
+              "clean": 2,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-8x8_g113_vs_g110.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 36,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-8x8_g95_vs_g93.jsonl",
+                "classic-random-8x8_g97_vs_g93.jsonl",
+                "classic-random-8x8_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "classic-fixed-12x10",
+      "label": "Classic 10x12",
+      "color": "#b6a4ff",
+      "variant": "classic",
+      "setup": "fixed",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 2,
+      "components": [
+        {
+          "id": "classic-fixed-12x10-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 165.389,
+              "games": 12
+            },
+            {
+              "generation": 94,
+              "elo": 27.87,
+              "games": 8
+            },
+            {
+              "generation": 95,
+              "elo": 115.993,
+              "games": 10
+            },
+            {
+              "generation": 96,
+              "elo": 96.047,
+              "games": 10
+            },
+            {
+              "generation": 97,
+              "elo": 205.579,
+              "games": 12
+            },
+            {
+              "generation": 98,
+              "elo": 287.965,
+              "games": 12
+            },
+            {
+              "generation": 99,
+              "elo": 213.546,
+              "games": 12
+            },
+            {
+              "generation": 100,
+              "elo": 279.498,
+              "games": 12
+            },
+            {
+              "generation": 101,
+              "elo": 315.932,
+              "games": 12
+            },
+            {
+              "generation": 102,
+              "elo": 614.119,
+              "games": 12
+            },
+            {
+              "generation": 103,
+              "elo": 345.373,
+              "games": 12
+            },
+            {
+              "generation": 104,
+              "elo": 362.505,
+              "games": 12
+            },
+            {
+              "generation": 105,
+              "elo": 280.54,
+              "games": 12
+            },
+            {
+              "generation": 106,
+              "elo": 195.792,
+              "games": 12
+            },
+            {
+              "generation": 107,
+              "elo": 304.062,
+              "games": 12
+            },
+            {
+              "generation": 108,
+              "elo": 232.434,
+              "games": 12
+            },
+            {
+              "generation": 109,
+              "elo": 108.546,
+              "games": 12
+            },
+            {
+              "generation": 110,
+              "elo": 343.487,
+              "games": 12
+            },
+            {
+              "generation": 111,
+              "elo": 146.212,
+              "games": 10
+            },
+            {
+              "generation": 112,
+              "elo": 189.473,
+              "games": 10
+            },
+            {
+              "generation": 113,
+              "elo": 398.415,
+              "games": 10
+            },
+            {
+              "generation": 114,
+              "elo": 0.0,
+              "games": 8
+            },
+            {
+              "generation": 115,
+              "elo": 495.435,
+              "games": 8
+            },
+            {
+              "generation": 116,
+              "elo": 389.735,
+              "games": 6
+            }
+          ],
+          "cleanGames": 130,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 46,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-12x10_g100_vs_g99.jsonl",
+                "classic-fixed-12x10_g101_vs_g100.jsonl",
+                "classic-fixed-12x10_g102_vs_g101.jsonl",
+                "classic-fixed-12x10_g103_vs_g102.jsonl",
+                "classic-fixed-12x10_g104_vs_g103.jsonl",
+                "classic-fixed-12x10_g105_vs_g104.jsonl",
+                "classic-fixed-12x10_g106_vs_g105.jsonl",
+                "classic-fixed-12x10_g107_vs_g106.jsonl",
+                "classic-fixed-12x10_g108_vs_g107.jsonl",
+                "classic-fixed-12x10_g109_vs_g108.jsonl",
+                "classic-fixed-12x10_g110_vs_g109.jsonl",
+                "classic-fixed-12x10_g111_vs_g110.jsonl",
+                "classic-fixed-12x10_g112_vs_g111.jsonl",
+                "classic-fixed-12x10_g113_vs_g112.jsonl",
+                "classic-fixed-12x10_g114_vs_g113.jsonl",
+                "classic-fixed-12x10_g115_vs_g114.jsonl",
+                "classic-fixed-12x10_g116_vs_g115.jsonl",
+                "classic-fixed-12x10_g94_vs_g93.jsonl",
+                "classic-fixed-12x10_g95_vs_g94.jsonl",
+                "classic-fixed-12x10_g96_vs_g95.jsonl",
+                "classic-fixed-12x10_g97_vs_g96.jsonl",
+                "classic-fixed-12x10_g98_vs_g97.jsonl",
+                "classic-fixed-12x10_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 78,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-12x10_g100_vs_g94.jsonl",
+                "classic-fixed-12x10_g100_vs_g97.jsonl",
+                "classic-fixed-12x10_g101_vs_g95.jsonl",
+                "classic-fixed-12x10_g101_vs_g98.jsonl",
+                "classic-fixed-12x10_g102_vs_g96.jsonl",
+                "classic-fixed-12x10_g102_vs_g99.jsonl",
+                "classic-fixed-12x10_g103_vs_g100.jsonl",
+                "classic-fixed-12x10_g103_vs_g97.jsonl",
+                "classic-fixed-12x10_g104_vs_g101.jsonl",
+                "classic-fixed-12x10_g104_vs_g98.jsonl",
+                "classic-fixed-12x10_g105_vs_g102.jsonl",
+                "classic-fixed-12x10_g105_vs_g99.jsonl",
+                "classic-fixed-12x10_g106_vs_g100.jsonl",
+                "classic-fixed-12x10_g106_vs_g103.jsonl",
+                "classic-fixed-12x10_g107_vs_g101.jsonl",
+                "classic-fixed-12x10_g107_vs_g104.jsonl",
+                "classic-fixed-12x10_g108_vs_g102.jsonl",
+                "classic-fixed-12x10_g108_vs_g105.jsonl",
+                "classic-fixed-12x10_g109_vs_g103.jsonl",
+                "classic-fixed-12x10_g109_vs_g106.jsonl",
+                "classic-fixed-12x10_g110_vs_g104.jsonl",
+                "classic-fixed-12x10_g110_vs_g107.jsonl",
+                "classic-fixed-12x10_g111_vs_g105.jsonl",
+                "classic-fixed-12x10_g111_vs_g108.jsonl",
+                "classic-fixed-12x10_g112_vs_g106.jsonl",
+                "classic-fixed-12x10_g112_vs_g109.jsonl",
+                "classic-fixed-12x10_g113_vs_g107.jsonl",
+                "classic-fixed-12x10_g113_vs_g110.jsonl",
+                "classic-fixed-12x10_g114_vs_g108.jsonl",
+                "classic-fixed-12x10_g114_vs_g111.jsonl",
+                "classic-fixed-12x10_g115_vs_g109.jsonl",
+                "classic-fixed-12x10_g115_vs_g112.jsonl",
+                "classic-fixed-12x10_g116_vs_g110.jsonl",
+                "classic-fixed-12x10_g116_vs_g113.jsonl",
+                "classic-fixed-12x10_g96_vs_g93.jsonl",
+                "classic-fixed-12x10_g97_vs_g94.jsonl",
+                "classic-fixed-12x10_g98_vs_g95.jsonl",
+                "classic-fixed-12x10_g99_vs_g93.jsonl",
+                "classic-fixed-12x10_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 6,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-fixed-12x10_g95_vs_g93.jsonl",
+                "classic-fixed-12x10_g97_vs_g93.jsonl",
+                "classic-fixed-12x10_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "classic-random-12x10",
+      "label": "Classic 10x12 \u00b7 Random Start",
+      "color": "#8168eb",
+      "variant": "classic",
+      "setup": "random-start",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_classic_2026-08-20",
+      "components": [
+        {
+          "id": "classic-random-12x10-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 99.228,
+              "games": 384
+            },
+            {
+              "generation": 94,
+              "elo": 79.44,
+              "games": 256
+            },
+            {
+              "generation": 95,
+              "elo": 20.032,
+              "games": 320
+            },
+            {
+              "generation": 96,
+              "elo": 73.682,
+              "games": 320
+            },
+            {
+              "generation": 97,
+              "elo": 29.511,
+              "games": 384
+            },
+            {
+              "generation": 98,
+              "elo": 19.564,
+              "games": 384
+            },
+            {
+              "generation": 99,
+              "elo": 38.766,
+              "games": 384
+            },
+            {
+              "generation": 100,
+              "elo": 10.555,
+              "games": 384
+            },
+            {
+              "generation": 101,
+              "elo": 9.58,
+              "games": 384
+            },
+            {
+              "generation": 102,
+              "elo": 34.085,
+              "games": 384
+            },
+            {
+              "generation": 103,
+              "elo": 48.097,
+              "games": 384
+            },
+            {
+              "generation": 104,
+              "elo": 19.219,
+              "games": 384
+            },
+            {
+              "generation": 105,
+              "elo": 28.837,
+              "games": 384
+            },
+            {
+              "generation": 106,
+              "elo": 27.056,
+              "games": 384
+            },
+            {
+              "generation": 107,
+              "elo": 2.621,
+              "games": 384
+            },
+            {
+              "generation": 108,
+              "elo": 27.47,
+              "games": 384
+            },
+            {
+              "generation": 109,
+              "elo": 48.756,
+              "games": 384
+            },
+            {
+              "generation": 110,
+              "elo": 6.506,
+              "games": 385
+            },
+            {
+              "generation": 111,
+              "elo": 37.28,
+              "games": 320
+            },
+            {
+              "generation": 112,
+              "elo": 7.127,
+              "games": 320
+            },
+            {
+              "generation": 113,
+              "elo": 12.434,
+              "games": 321
+            },
+            {
+              "generation": 114,
+              "elo": 2.3,
+              "games": 256
+            },
+            {
+              "generation": 115,
+              "elo": 24.077,
+              "games": 256
+            },
+            {
+              "generation": 116,
+              "elo": 0.0,
+              "games": 192
+            }
+          ],
+          "cleanGames": 4161,
+          "excludedGames": 1,
+          "edges": 65,
+          "minCleanGamesPerEdge": 64,
+          "maxCleanGamesPerEdge": 65,
+          "sources": {
+            "tf_phase7_policy_classic_2026-08-20": {
+              "clean": 2599,
+              "excluded": 1,
+              "rawFiles": [
+                "classic_12x10_g100_vs_g94.jsonl",
+                "classic_12x10_g100_vs_g97.jsonl",
+                "classic_12x10_g100_vs_g99.jsonl",
+                "classic_12x10_g101_vs_g100.jsonl",
+                "classic_12x10_g101_vs_g95.jsonl",
+                "classic_12x10_g101_vs_g98.jsonl",
+                "classic_12x10_g102_vs_g101.jsonl",
+                "classic_12x10_g102_vs_g96.jsonl",
+                "classic_12x10_g102_vs_g99.jsonl",
+                "classic_12x10_g103_vs_g100.jsonl",
+                "classic_12x10_g103_vs_g102.jsonl",
+                "classic_12x10_g103_vs_g97.jsonl",
+                "classic_12x10_g104_vs_g101.jsonl",
+                "classic_12x10_g104_vs_g103.jsonl",
+                "classic_12x10_g104_vs_g98.jsonl",
+                "classic_12x10_g105_vs_g102.jsonl",
+                "classic_12x10_g105_vs_g104.jsonl",
+                "classic_12x10_g105_vs_g99.jsonl",
+                "classic_12x10_g106_vs_g100.jsonl",
+                "classic_12x10_g106_vs_g103.jsonl",
+                "classic_12x10_g106_vs_g105.jsonl",
+                "classic_12x10_g107_vs_g101.jsonl",
+                "classic_12x10_g107_vs_g104.jsonl",
+                "classic_12x10_g107_vs_g106.jsonl",
+                "classic_12x10_g108_vs_g102.jsonl",
+                "classic_12x10_g108_vs_g105.jsonl",
+                "classic_12x10_g108_vs_g107.jsonl",
+                "classic_12x10_g109_vs_g103.jsonl",
+                "classic_12x10_g109_vs_g106.jsonl",
+                "classic_12x10_g109_vs_g108.jsonl",
+                "classic_12x10_g110_vs_g104.jsonl",
+                "classic_12x10_g110_vs_g107.jsonl",
+                "classic_12x10_g110_vs_g109.jsonl",
+                "classic_12x10_g111_vs_g105.jsonl",
+                "classic_12x10_g111_vs_g108.jsonl",
+                "classic_12x10_g111_vs_g110.jsonl",
+                "classic_12x10_g112_vs_g106.jsonl",
+                "classic_12x10_g112_vs_g109.jsonl",
+                "classic_12x10_g112_vs_g111.jsonl",
+                "classic_12x10_g113_vs_g107.jsonl",
+                "classic_12x10_g113_vs_g110.jsonl",
+                "classic_12x10_g113_vs_g112.jsonl",
+                "classic_12x10_g114_vs_g108.jsonl",
+                "classic_12x10_g114_vs_g111.jsonl",
+                "classic_12x10_g114_vs_g113.jsonl",
+                "classic_12x10_g115_vs_g109.jsonl",
+                "classic_12x10_g115_vs_g112.jsonl",
+                "classic_12x10_g115_vs_g114.jsonl",
+                "classic_12x10_g116_vs_g110.jsonl",
+                "classic_12x10_g116_vs_g113.jsonl",
+                "classic_12x10_g116_vs_g115.jsonl",
+                "classic_12x10_g94_vs_g93.jsonl",
+                "classic_12x10_g95_vs_g93.jsonl",
+                "classic_12x10_g95_vs_g94.jsonl",
+                "classic_12x10_g96_vs_g93.jsonl",
+                "classic_12x10_g96_vs_g95.jsonl",
+                "classic_12x10_g97_vs_g93.jsonl",
+                "classic_12x10_g97_vs_g94.jsonl",
+                "classic_12x10_g97_vs_g96.jsonl",
+                "classic_12x10_g98_vs_g93.jsonl",
+                "classic_12x10_g98_vs_g95.jsonl",
+                "classic_12x10_g98_vs_g97.jsonl",
+                "classic_12x10_g99_vs_g93.jsonl",
+                "classic_12x10_g99_vs_g96.jsonl",
+                "classic_12x10_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+              "clean": 1560,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-12x10_g100_vs_g94.jsonl",
+                "classic-random-12x10_g100_vs_g97.jsonl",
+                "classic-random-12x10_g100_vs_g99.jsonl",
+                "classic-random-12x10_g101_vs_g100.jsonl",
+                "classic-random-12x10_g101_vs_g95.jsonl",
+                "classic-random-12x10_g101_vs_g98.jsonl",
+                "classic-random-12x10_g102_vs_g101.jsonl",
+                "classic-random-12x10_g102_vs_g96.jsonl",
+                "classic-random-12x10_g102_vs_g99.jsonl",
+                "classic-random-12x10_g103_vs_g100.jsonl",
+                "classic-random-12x10_g103_vs_g102.jsonl",
+                "classic-random-12x10_g103_vs_g97.jsonl",
+                "classic-random-12x10_g104_vs_g101.jsonl",
+                "classic-random-12x10_g104_vs_g103.jsonl",
+                "classic-random-12x10_g104_vs_g98.jsonl",
+                "classic-random-12x10_g105_vs_g102.jsonl",
+                "classic-random-12x10_g105_vs_g104.jsonl",
+                "classic-random-12x10_g105_vs_g99.jsonl",
+                "classic-random-12x10_g106_vs_g100.jsonl",
+                "classic-random-12x10_g106_vs_g103.jsonl",
+                "classic-random-12x10_g106_vs_g105.jsonl",
+                "classic-random-12x10_g107_vs_g101.jsonl",
+                "classic-random-12x10_g107_vs_g104.jsonl",
+                "classic-random-12x10_g107_vs_g106.jsonl",
+                "classic-random-12x10_g108_vs_g102.jsonl",
+                "classic-random-12x10_g108_vs_g105.jsonl",
+                "classic-random-12x10_g108_vs_g107.jsonl",
+                "classic-random-12x10_g109_vs_g103.jsonl",
+                "classic-random-12x10_g109_vs_g106.jsonl",
+                "classic-random-12x10_g109_vs_g108.jsonl",
+                "classic-random-12x10_g110_vs_g104.jsonl",
+                "classic-random-12x10_g110_vs_g107.jsonl",
+                "classic-random-12x10_g110_vs_g109.jsonl",
+                "classic-random-12x10_g111_vs_g105.jsonl",
+                "classic-random-12x10_g111_vs_g108.jsonl",
+                "classic-random-12x10_g111_vs_g110.jsonl",
+                "classic-random-12x10_g112_vs_g106.jsonl",
+                "classic-random-12x10_g112_vs_g109.jsonl",
+                "classic-random-12x10_g112_vs_g111.jsonl",
+                "classic-random-12x10_g113_vs_g107.jsonl",
+                "classic-random-12x10_g113_vs_g110.jsonl",
+                "classic-random-12x10_g113_vs_g112.jsonl",
+                "classic-random-12x10_g114_vs_g108.jsonl",
+                "classic-random-12x10_g114_vs_g111.jsonl",
+                "classic-random-12x10_g114_vs_g113.jsonl",
+                "classic-random-12x10_g115_vs_g109.jsonl",
+                "classic-random-12x10_g115_vs_g112.jsonl",
+                "classic-random-12x10_g115_vs_g114.jsonl",
+                "classic-random-12x10_g116_vs_g110.jsonl",
+                "classic-random-12x10_g116_vs_g113.jsonl",
+                "classic-random-12x10_g116_vs_g115.jsonl",
+                "classic-random-12x10_g94_vs_g93.jsonl",
+                "classic-random-12x10_g95_vs_g93.jsonl",
+                "classic-random-12x10_g95_vs_g94.jsonl",
+                "classic-random-12x10_g96_vs_g93.jsonl",
+                "classic-random-12x10_g96_vs_g95.jsonl",
+                "classic-random-12x10_g97_vs_g93.jsonl",
+                "classic-random-12x10_g97_vs_g94.jsonl",
+                "classic-random-12x10_g97_vs_g96.jsonl",
+                "classic-random-12x10_g98_vs_g93.jsonl",
+                "classic-random-12x10_g98_vs_g95.jsonl",
+                "classic-random-12x10_g98_vs_g97.jsonl",
+                "classic-random-12x10_g99_vs_g93.jsonl",
+                "classic-random-12x10_g99_vs_g96.jsonl",
+                "classic-random-12x10_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
+              "clean": 2,
+              "excluded": 0,
+              "rawFiles": [
+                "classic-random-12x10_g113_vs_g110.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "standard-fixed-8x8",
+      "label": "Standard 8x8",
+      "color": "#ffd36d",
+      "variant": "standard",
+      "setup": "fixed",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 2,
+      "legacyExperiment": "rr72_policy_2026-08-01",
+      "components": [
+        {
+          "id": "standard-fixed-8x8-component-1",
+          "generations": [
+            1,
+            2,
+            3,
+            4,
+            5,
+            6,
+            7,
+            8,
+            9,
+            10,
+            11,
+            12,
+            13,
+            14,
+            15,
+            16,
+            17,
+            18,
+            19,
+            20,
+            21,
+            22,
+            23,
+            24,
+            25,
+            26,
+            27,
+            28,
+            29,
+            30,
+            31,
+            32,
+            33,
+            34,
+            35,
+            36
+          ],
+          "ratings": [
+            {
+              "generation": 1,
+              "elo": 0.0,
+              "games": 69
+            },
+            {
+              "generation": 2,
+              "elo": 59.945,
+              "games": 66
+            },
+            {
+              "generation": 3,
+              "elo": 88.742,
+              "games": 53
+            },
+            {
+              "generation": 4,
+              "elo": 58.291,
+              "games": 70
+            },
+            {
+              "generation": 5,
+              "elo": 59.663,
+              "games": 69
+            },
+            {
+              "generation": 6,
+              "elo": 69.316,
+              "games": 70
+            },
+            {
+              "generation": 7,
+              "elo": 80.163,
+              "games": 70
+            },
+            {
+              "generation": 8,
+              "elo": 122.088,
+              "games": 70
+            },
+            {
+              "generation": 9,
+              "elo": 122.088,
+              "games": 70
+            },
+            {
+              "generation": 10,
+              "elo": 172.111,
+              "games": 70
+            },
+            {
+              "generation": 11,
+              "elo": 111.798,
+              "games": 70
+            },
+            {
+              "generation": 12,
+              "elo": 277.048,
+              "games": 70
+            },
+            {
+              "generation": 13,
+              "elo": 378.031,
+              "games": 70
+            },
+            {
+              "generation": 14,
+              "elo": 201.267,
+              "games": 70
+            },
+            {
+              "generation": 15,
+              "elo": 350.835,
+              "games": 70
+            },
+            {
+              "generation": 16,
+              "elo": 431.549,
+              "games": 70
+            },
+            {
+              "generation": 17,
+              "elo": 532.372,
+              "games": 68
+            },
+            {
+              "generation": 18,
+              "elo": 517.814,
+              "games": 70
+            },
+            {
+              "generation": 19,
+              "elo": 567.793,
+              "games": 70
+            },
+            {
+              "generation": 20,
+              "elo": 607.813,
+              "games": 69
+            },
+            {
+              "generation": 21,
+              "elo": 704.497,
+              "games": 69
+            },
+            {
+              "generation": 22,
+              "elo": 720.643,
+              "games": 69
+            },
+            {
+              "generation": 23,
+              "elo": 736.882,
+              "games": 69
+            },
+            {
+              "generation": 24,
+              "elo": 866.476,
+              "games": 69
+            },
+            {
+              "generation": 25,
+              "elo": 761.501,
+              "games": 69
+            },
+            {
+              "generation": 26,
+              "elo": 761.214,
+              "games": 68
+            },
+            {
+              "generation": 27,
+              "elo": 720.289,
+              "games": 68
+            },
+            {
+              "generation": 28,
+              "elo": 712.191,
+              "games": 68
+            },
+            {
+              "generation": 29,
+              "elo": 795.052,
+              "games": 69
+            },
+            {
+              "generation": 30,
+              "elo": 857.107,
+              "games": 69
+            },
+            {
+              "generation": 31,
+              "elo": 786.386,
+              "games": 68
+            },
+            {
+              "generation": 32,
+              "elo": 885.722,
+              "games": 69
+            },
+            {
+              "generation": 33,
+              "elo": 820.785,
+              "games": 68
+            },
+            {
+              "generation": 34,
+              "elo": 857.107,
+              "games": 69
+            },
+            {
+              "generation": 35,
+              "elo": 812.527,
+              "games": 70
+            },
+            {
+              "generation": 36,
+              "elo": 803.614,
+              "games": 69
+            }
+          ],
+          "cleanGames": 1237,
+          "excludedGames": 23,
+          "edges": 630,
+          "minCleanGamesPerEdge": 1,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "rr72_policy_2026-08-01": {
+              "clean": 1237,
+              "excluded": 23,
+              "rawFiles": [
+                "games.jsonl"
+              ]
+            }
+          }
+        },
+        {
+          "id": "standard-fixed-8x8-component-2",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 299.304,
+              "games": 12
+            },
+            {
+              "generation": 94,
+              "elo": 228.162,
+              "games": 8
+            },
+            {
+              "generation": 95,
+              "elo": 174.564,
+              "games": 10
+            },
+            {
+              "generation": 96,
+              "elo": 63.682,
+              "games": 10
+            },
+            {
+              "generation": 97,
+              "elo": 160.564,
+              "games": 12
+            },
+            {
+              "generation": 98,
+              "elo": 160.824,
+              "games": 12
+            },
+            {
+              "generation": 99,
+              "elo": 145.714,
+              "games": 12
+            },
+            {
+              "generation": 100,
+              "elo": 135.545,
+              "games": 12
+            },
+            {
+              "generation": 101,
+              "elo": 129.577,
+              "games": 12
+            },
+            {
+              "generation": 102,
+              "elo": 50.333,
+              "games": 12
+            },
+            {
+              "generation": 103,
+              "elo": 79.832,
+              "games": 12
+            },
+            {
+              "generation": 104,
+              "elo": 59.472,
+              "games": 12
+            },
+            {
+              "generation": 105,
+              "elo": 162.747,
+              "games": 12
+            },
+            {
+              "generation": 106,
+              "elo": 57.441,
+              "games": 12
+            },
+            {
+              "generation": 107,
+              "elo": 0.0,
+              "games": 12
+            },
+            {
+              "generation": 108,
+              "elo": 205.393,
+              "games": 12
+            },
+            {
+              "generation": 109,
+              "elo": 152.597,
+              "games": 12
+            },
+            {
+              "generation": 110,
+              "elo": 359.53,
+              "games": 12
+            },
+            {
+              "generation": 111,
+              "elo": 280.266,
+              "games": 10
+            },
+            {
+              "generation": 112,
+              "elo": 118.178,
+              "games": 10
+            },
+            {
+              "generation": 113,
+              "elo": 370.229,
+              "games": 10
+            },
+            {
+              "generation": 114,
+              "elo": 47.607,
+              "games": 8
+            },
+            {
+              "generation": 115,
+              "elo": 290.168,
+              "games": 8
+            },
+            {
+              "generation": 116,
+              "elo": 149.718,
+              "games": 6
+            }
+          ],
+          "cleanGames": 130,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 46,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-8x8_g100_vs_g99.jsonl",
+                "standard-fixed-8x8_g101_vs_g100.jsonl",
+                "standard-fixed-8x8_g102_vs_g101.jsonl",
+                "standard-fixed-8x8_g103_vs_g102.jsonl",
+                "standard-fixed-8x8_g104_vs_g103.jsonl",
+                "standard-fixed-8x8_g105_vs_g104.jsonl",
+                "standard-fixed-8x8_g106_vs_g105.jsonl",
+                "standard-fixed-8x8_g107_vs_g106.jsonl",
+                "standard-fixed-8x8_g108_vs_g107.jsonl",
+                "standard-fixed-8x8_g109_vs_g108.jsonl",
+                "standard-fixed-8x8_g110_vs_g109.jsonl",
+                "standard-fixed-8x8_g111_vs_g110.jsonl",
+                "standard-fixed-8x8_g112_vs_g111.jsonl",
+                "standard-fixed-8x8_g113_vs_g112.jsonl",
+                "standard-fixed-8x8_g114_vs_g113.jsonl",
+                "standard-fixed-8x8_g115_vs_g114.jsonl",
+                "standard-fixed-8x8_g116_vs_g115.jsonl",
+                "standard-fixed-8x8_g94_vs_g93.jsonl",
+                "standard-fixed-8x8_g95_vs_g94.jsonl",
+                "standard-fixed-8x8_g96_vs_g95.jsonl",
+                "standard-fixed-8x8_g97_vs_g96.jsonl",
+                "standard-fixed-8x8_g98_vs_g97.jsonl",
+                "standard-fixed-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 78,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-8x8_g100_vs_g94.jsonl",
+                "standard-fixed-8x8_g100_vs_g97.jsonl",
+                "standard-fixed-8x8_g101_vs_g95.jsonl",
+                "standard-fixed-8x8_g101_vs_g98.jsonl",
+                "standard-fixed-8x8_g102_vs_g96.jsonl",
+                "standard-fixed-8x8_g102_vs_g99.jsonl",
+                "standard-fixed-8x8_g103_vs_g100.jsonl",
+                "standard-fixed-8x8_g103_vs_g97.jsonl",
+                "standard-fixed-8x8_g104_vs_g101.jsonl",
+                "standard-fixed-8x8_g104_vs_g98.jsonl",
+                "standard-fixed-8x8_g105_vs_g102.jsonl",
+                "standard-fixed-8x8_g105_vs_g99.jsonl",
+                "standard-fixed-8x8_g106_vs_g100.jsonl",
+                "standard-fixed-8x8_g106_vs_g103.jsonl",
+                "standard-fixed-8x8_g107_vs_g101.jsonl",
+                "standard-fixed-8x8_g107_vs_g104.jsonl",
+                "standard-fixed-8x8_g108_vs_g102.jsonl",
+                "standard-fixed-8x8_g108_vs_g105.jsonl",
+                "standard-fixed-8x8_g109_vs_g103.jsonl",
+                "standard-fixed-8x8_g109_vs_g106.jsonl",
+                "standard-fixed-8x8_g110_vs_g104.jsonl",
+                "standard-fixed-8x8_g110_vs_g107.jsonl",
+                "standard-fixed-8x8_g111_vs_g105.jsonl",
+                "standard-fixed-8x8_g111_vs_g108.jsonl",
+                "standard-fixed-8x8_g112_vs_g106.jsonl",
+                "standard-fixed-8x8_g112_vs_g109.jsonl",
+                "standard-fixed-8x8_g113_vs_g107.jsonl",
+                "standard-fixed-8x8_g113_vs_g110.jsonl",
+                "standard-fixed-8x8_g114_vs_g108.jsonl",
+                "standard-fixed-8x8_g114_vs_g111.jsonl",
+                "standard-fixed-8x8_g115_vs_g109.jsonl",
+                "standard-fixed-8x8_g115_vs_g112.jsonl",
+                "standard-fixed-8x8_g116_vs_g110.jsonl",
+                "standard-fixed-8x8_g116_vs_g113.jsonl",
+                "standard-fixed-8x8_g96_vs_g93.jsonl",
+                "standard-fixed-8x8_g97_vs_g94.jsonl",
+                "standard-fixed-8x8_g98_vs_g95.jsonl",
+                "standard-fixed-8x8_g99_vs_g93.jsonl",
+                "standard-fixed-8x8_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 6,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-8x8_g95_vs_g93.jsonl",
+                "standard-fixed-8x8_g97_vs_g93.jsonl",
+                "standard-fixed-8x8_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        1,
+        2,
+        3,
+        4,
+        5,
+        6,
+        7,
+        8,
+        9,
+        10,
+        11,
+        12,
+        13,
+        14,
+        15,
+        16,
+        17,
+        18,
+        19,
+        20,
+        21,
+        22,
+        23,
+        24,
+        25,
+        26,
+        27,
+        28,
+        29,
+        30,
+        31,
+        32,
+        33,
+        34,
+        35,
+        36,
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "standard-random-8x8",
+      "label": "Standard 8x8 \u00b7 Random Start",
+      "color": "#e6a72e",
+      "variant": "standard",
+      "setup": "random-start",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_standard_2026-08-20",
+      "components": [
+        {
+          "id": "standard-random-8x8-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 25.439,
+              "games": 384
+            },
+            {
+              "generation": 94,
+              "elo": 21.165,
+              "games": 256
+            },
+            {
+              "generation": 95,
+              "elo": 43.899,
+              "games": 320
+            },
+            {
+              "generation": 96,
+              "elo": 6.755,
+              "games": 320
+            },
+            {
+              "generation": 97,
+              "elo": 15.377,
+              "games": 384
+            },
+            {
+              "generation": 98,
+              "elo": 8.647,
+              "games": 384
+            },
+            {
+              "generation": 99,
+              "elo": 2.569,
+              "games": 384
+            },
+            {
+              "generation": 100,
+              "elo": 0.0,
+              "games": 384
+            },
+            {
+              "generation": 101,
+              "elo": 21.832,
+              "games": 384
+            },
+            {
+              "generation": 102,
+              "elo": 38.852,
+              "games": 384
+            },
+            {
+              "generation": 103,
+              "elo": 13.92,
+              "games": 384
+            },
+            {
+              "generation": 104,
+              "elo": 29.641,
+              "games": 384
+            },
+            {
+              "generation": 105,
+              "elo": 6.215,
+              "games": 384
+            },
+            {
+              "generation": 106,
+              "elo": 11.79,
+              "games": 384
+            },
+            {
+              "generation": 107,
+              "elo": 20.88,
+              "games": 385
+            },
+            {
+              "generation": 108,
+              "elo": 7.973,
+              "games": 384
+            },
+            {
+              "generation": 109,
+              "elo": 20.411,
+              "games": 384
+            },
+            {
+              "generation": 110,
+              "elo": 8.718,
+              "games": 385
+            },
+            {
+              "generation": 111,
+              "elo": 27.867,
+              "games": 320
+            },
+            {
+              "generation": 112,
+              "elo": 25.507,
+              "games": 320
+            },
+            {
+              "generation": 113,
+              "elo": 2.101,
+              "games": 320
+            },
+            {
+              "generation": 114,
+              "elo": 15.0,
+              "games": 256
+            },
+            {
+              "generation": 115,
+              "elo": 22.01,
+              "games": 256
+            },
+            {
+              "generation": 116,
+              "elo": 38.052,
+              "games": 192
+            }
+          ],
+          "cleanGames": 4161,
+          "excludedGames": 1,
+          "edges": 65,
+          "minCleanGamesPerEdge": 64,
+          "maxCleanGamesPerEdge": 65,
+          "sources": {
+            "tf_phase7_policy_standard_2026-08-20": {
+              "clean": 2599,
+              "excluded": 1,
+              "rawFiles": [
+                "standard_8x8_g100_vs_g94.jsonl",
+                "standard_8x8_g100_vs_g97.jsonl",
+                "standard_8x8_g100_vs_g99.jsonl",
+                "standard_8x8_g101_vs_g100.jsonl",
+                "standard_8x8_g101_vs_g95.jsonl",
+                "standard_8x8_g101_vs_g98.jsonl",
+                "standard_8x8_g102_vs_g101.jsonl",
+                "standard_8x8_g102_vs_g96.jsonl",
+                "standard_8x8_g102_vs_g99.jsonl",
+                "standard_8x8_g103_vs_g100.jsonl",
+                "standard_8x8_g103_vs_g102.jsonl",
+                "standard_8x8_g103_vs_g97.jsonl",
+                "standard_8x8_g104_vs_g101.jsonl",
+                "standard_8x8_g104_vs_g103.jsonl",
+                "standard_8x8_g104_vs_g98.jsonl",
+                "standard_8x8_g105_vs_g102.jsonl",
+                "standard_8x8_g105_vs_g104.jsonl",
+                "standard_8x8_g105_vs_g99.jsonl",
+                "standard_8x8_g106_vs_g100.jsonl",
+                "standard_8x8_g106_vs_g103.jsonl",
+                "standard_8x8_g106_vs_g105.jsonl",
+                "standard_8x8_g107_vs_g101.jsonl",
+                "standard_8x8_g107_vs_g104.jsonl",
+                "standard_8x8_g107_vs_g106.jsonl",
+                "standard_8x8_g108_vs_g102.jsonl",
+                "standard_8x8_g108_vs_g105.jsonl",
+                "standard_8x8_g108_vs_g107.jsonl",
+                "standard_8x8_g109_vs_g103.jsonl",
+                "standard_8x8_g109_vs_g106.jsonl",
+                "standard_8x8_g109_vs_g108.jsonl",
+                "standard_8x8_g110_vs_g104.jsonl",
+                "standard_8x8_g110_vs_g107.jsonl",
+                "standard_8x8_g110_vs_g109.jsonl",
+                "standard_8x8_g111_vs_g105.jsonl",
+                "standard_8x8_g111_vs_g108.jsonl",
+                "standard_8x8_g111_vs_g110.jsonl",
+                "standard_8x8_g112_vs_g106.jsonl",
+                "standard_8x8_g112_vs_g109.jsonl",
+                "standard_8x8_g112_vs_g111.jsonl",
+                "standard_8x8_g113_vs_g107.jsonl",
+                "standard_8x8_g113_vs_g110.jsonl",
+                "standard_8x8_g113_vs_g112.jsonl",
+                "standard_8x8_g114_vs_g108.jsonl",
+                "standard_8x8_g114_vs_g111.jsonl",
+                "standard_8x8_g114_vs_g113.jsonl",
+                "standard_8x8_g115_vs_g109.jsonl",
+                "standard_8x8_g115_vs_g112.jsonl",
+                "standard_8x8_g115_vs_g114.jsonl",
+                "standard_8x8_g116_vs_g110.jsonl",
+                "standard_8x8_g116_vs_g113.jsonl",
+                "standard_8x8_g116_vs_g115.jsonl",
+                "standard_8x8_g94_vs_g93.jsonl",
+                "standard_8x8_g95_vs_g93.jsonl",
+                "standard_8x8_g95_vs_g94.jsonl",
+                "standard_8x8_g96_vs_g93.jsonl",
+                "standard_8x8_g96_vs_g95.jsonl",
+                "standard_8x8_g97_vs_g93.jsonl",
+                "standard_8x8_g97_vs_g94.jsonl",
+                "standard_8x8_g97_vs_g96.jsonl",
+                "standard_8x8_g98_vs_g93.jsonl",
+                "standard_8x8_g98_vs_g95.jsonl",
+                "standard_8x8_g98_vs_g97.jsonl",
+                "standard_8x8_g99_vs_g93.jsonl",
+                "standard_8x8_g99_vs_g96.jsonl",
+                "standard_8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+              "clean": 1560,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-random-8x8_g100_vs_g94.jsonl",
+                "standard-random-8x8_g100_vs_g97.jsonl",
+                "standard-random-8x8_g100_vs_g99.jsonl",
+                "standard-random-8x8_g101_vs_g100.jsonl",
+                "standard-random-8x8_g101_vs_g95.jsonl",
+                "standard-random-8x8_g101_vs_g98.jsonl",
+                "standard-random-8x8_g102_vs_g101.jsonl",
+                "standard-random-8x8_g102_vs_g96.jsonl",
+                "standard-random-8x8_g102_vs_g99.jsonl",
+                "standard-random-8x8_g103_vs_g100.jsonl",
+                "standard-random-8x8_g103_vs_g102.jsonl",
+                "standard-random-8x8_g103_vs_g97.jsonl",
+                "standard-random-8x8_g104_vs_g101.jsonl",
+                "standard-random-8x8_g104_vs_g103.jsonl",
+                "standard-random-8x8_g104_vs_g98.jsonl",
+                "standard-random-8x8_g105_vs_g102.jsonl",
+                "standard-random-8x8_g105_vs_g104.jsonl",
+                "standard-random-8x8_g105_vs_g99.jsonl",
+                "standard-random-8x8_g106_vs_g100.jsonl",
+                "standard-random-8x8_g106_vs_g103.jsonl",
+                "standard-random-8x8_g106_vs_g105.jsonl",
+                "standard-random-8x8_g107_vs_g101.jsonl",
+                "standard-random-8x8_g107_vs_g104.jsonl",
+                "standard-random-8x8_g107_vs_g106.jsonl",
+                "standard-random-8x8_g108_vs_g102.jsonl",
+                "standard-random-8x8_g108_vs_g105.jsonl",
+                "standard-random-8x8_g108_vs_g107.jsonl",
+                "standard-random-8x8_g109_vs_g103.jsonl",
+                "standard-random-8x8_g109_vs_g106.jsonl",
+                "standard-random-8x8_g109_vs_g108.jsonl",
+                "standard-random-8x8_g110_vs_g104.jsonl",
+                "standard-random-8x8_g110_vs_g107.jsonl",
+                "standard-random-8x8_g110_vs_g109.jsonl",
+                "standard-random-8x8_g111_vs_g105.jsonl",
+                "standard-random-8x8_g111_vs_g108.jsonl",
+                "standard-random-8x8_g111_vs_g110.jsonl",
+                "standard-random-8x8_g112_vs_g106.jsonl",
+                "standard-random-8x8_g112_vs_g109.jsonl",
+                "standard-random-8x8_g112_vs_g111.jsonl",
+                "standard-random-8x8_g113_vs_g107.jsonl",
+                "standard-random-8x8_g113_vs_g110.jsonl",
+                "standard-random-8x8_g113_vs_g112.jsonl",
+                "standard-random-8x8_g114_vs_g108.jsonl",
+                "standard-random-8x8_g114_vs_g111.jsonl",
+                "standard-random-8x8_g114_vs_g113.jsonl",
+                "standard-random-8x8_g115_vs_g109.jsonl",
+                "standard-random-8x8_g115_vs_g112.jsonl",
+                "standard-random-8x8_g115_vs_g114.jsonl",
+                "standard-random-8x8_g116_vs_g110.jsonl",
+                "standard-random-8x8_g116_vs_g113.jsonl",
+                "standard-random-8x8_g116_vs_g115.jsonl",
+                "standard-random-8x8_g94_vs_g93.jsonl",
+                "standard-random-8x8_g95_vs_g93.jsonl",
+                "standard-random-8x8_g95_vs_g94.jsonl",
+                "standard-random-8x8_g96_vs_g93.jsonl",
+                "standard-random-8x8_g96_vs_g95.jsonl",
+                "standard-random-8x8_g97_vs_g93.jsonl",
+                "standard-random-8x8_g97_vs_g94.jsonl",
+                "standard-random-8x8_g97_vs_g96.jsonl",
+                "standard-random-8x8_g98_vs_g93.jsonl",
+                "standard-random-8x8_g98_vs_g95.jsonl",
+                "standard-random-8x8_g98_vs_g97.jsonl",
+                "standard-random-8x8_g99_vs_g93.jsonl",
+                "standard-random-8x8_g99_vs_g96.jsonl",
+                "standard-random-8x8_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
+              "clean": 2,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-random-8x8_g110_vs_g107.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "standard-fixed-12x10",
+      "label": "Standard 10x12",
+      "color": "#ff9f83",
+      "variant": "standard",
+      "setup": "fixed",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 2,
+      "components": [
+        {
+          "id": "standard-fixed-12x10-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 137.09,
+              "games": 12
+            },
+            {
+              "generation": 94,
+              "elo": 289.558,
+              "games": 8
+            },
+            {
+              "generation": 95,
+              "elo": 155.235,
+              "games": 10
+            },
+            {
+              "generation": 96,
+              "elo": 0.0,
+              "games": 10
+            },
+            {
+              "generation": 97,
+              "elo": 370.558,
+              "games": 12
+            },
+            {
+              "generation": 98,
+              "elo": 384.444,
+              "games": 12
+            },
+            {
+              "generation": 99,
+              "elo": 355.012,
+              "games": 12
+            },
+            {
+              "generation": 100,
+              "elo": 146.387,
+              "games": 12
+            },
+            {
+              "generation": 101,
+              "elo": 299.397,
+              "games": 12
+            },
+            {
+              "generation": 102,
+              "elo": 423.058,
+              "games": 12
+            },
+            {
+              "generation": 103,
+              "elo": 299.994,
+              "games": 12
+            },
+            {
+              "generation": 104,
+              "elo": 291.896,
+              "games": 12
+            },
+            {
+              "generation": 105,
+              "elo": 260.243,
+              "games": 12
+            },
+            {
+              "generation": 106,
+              "elo": 157.028,
+              "games": 12
+            },
+            {
+              "generation": 107,
+              "elo": 235.508,
+              "games": 12
+            },
+            {
+              "generation": 108,
+              "elo": 172.424,
+              "games": 12
+            },
+            {
+              "generation": 109,
+              "elo": 251.174,
+              "games": 12
+            },
+            {
+              "generation": 110,
+              "elo": 294.521,
+              "games": 12
+            },
+            {
+              "generation": 111,
+              "elo": 174.361,
+              "games": 10
+            },
+            {
+              "generation": 112,
+              "elo": 484.063,
+              "games": 10
+            },
+            {
+              "generation": 113,
+              "elo": 190.396,
+              "games": 10
+            },
+            {
+              "generation": 114,
+              "elo": 213.542,
+              "games": 8
+            },
+            {
+              "generation": 115,
+              "elo": 300.545,
+              "games": 8
+            },
+            {
+              "generation": 116,
+              "elo": 98.22,
+              "games": 6
+            }
+          ],
+          "cleanGames": 130,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 46,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-12x10_g100_vs_g99.jsonl",
+                "standard-fixed-12x10_g101_vs_g100.jsonl",
+                "standard-fixed-12x10_g102_vs_g101.jsonl",
+                "standard-fixed-12x10_g103_vs_g102.jsonl",
+                "standard-fixed-12x10_g104_vs_g103.jsonl",
+                "standard-fixed-12x10_g105_vs_g104.jsonl",
+                "standard-fixed-12x10_g106_vs_g105.jsonl",
+                "standard-fixed-12x10_g107_vs_g106.jsonl",
+                "standard-fixed-12x10_g108_vs_g107.jsonl",
+                "standard-fixed-12x10_g109_vs_g108.jsonl",
+                "standard-fixed-12x10_g110_vs_g109.jsonl",
+                "standard-fixed-12x10_g111_vs_g110.jsonl",
+                "standard-fixed-12x10_g112_vs_g111.jsonl",
+                "standard-fixed-12x10_g113_vs_g112.jsonl",
+                "standard-fixed-12x10_g114_vs_g113.jsonl",
+                "standard-fixed-12x10_g115_vs_g114.jsonl",
+                "standard-fixed-12x10_g116_vs_g115.jsonl",
+                "standard-fixed-12x10_g94_vs_g93.jsonl",
+                "standard-fixed-12x10_g95_vs_g94.jsonl",
+                "standard-fixed-12x10_g96_vs_g95.jsonl",
+                "standard-fixed-12x10_g97_vs_g96.jsonl",
+                "standard-fixed-12x10_g98_vs_g97.jsonl",
+                "standard-fixed-12x10_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 78,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-12x10_g100_vs_g94.jsonl",
+                "standard-fixed-12x10_g100_vs_g97.jsonl",
+                "standard-fixed-12x10_g101_vs_g95.jsonl",
+                "standard-fixed-12x10_g101_vs_g98.jsonl",
+                "standard-fixed-12x10_g102_vs_g96.jsonl",
+                "standard-fixed-12x10_g102_vs_g99.jsonl",
+                "standard-fixed-12x10_g103_vs_g100.jsonl",
+                "standard-fixed-12x10_g103_vs_g97.jsonl",
+                "standard-fixed-12x10_g104_vs_g101.jsonl",
+                "standard-fixed-12x10_g104_vs_g98.jsonl",
+                "standard-fixed-12x10_g105_vs_g102.jsonl",
+                "standard-fixed-12x10_g105_vs_g99.jsonl",
+                "standard-fixed-12x10_g106_vs_g100.jsonl",
+                "standard-fixed-12x10_g106_vs_g103.jsonl",
+                "standard-fixed-12x10_g107_vs_g101.jsonl",
+                "standard-fixed-12x10_g107_vs_g104.jsonl",
+                "standard-fixed-12x10_g108_vs_g102.jsonl",
+                "standard-fixed-12x10_g108_vs_g105.jsonl",
+                "standard-fixed-12x10_g109_vs_g103.jsonl",
+                "standard-fixed-12x10_g109_vs_g106.jsonl",
+                "standard-fixed-12x10_g110_vs_g104.jsonl",
+                "standard-fixed-12x10_g110_vs_g107.jsonl",
+                "standard-fixed-12x10_g111_vs_g105.jsonl",
+                "standard-fixed-12x10_g111_vs_g108.jsonl",
+                "standard-fixed-12x10_g112_vs_g106.jsonl",
+                "standard-fixed-12x10_g112_vs_g109.jsonl",
+                "standard-fixed-12x10_g113_vs_g107.jsonl",
+                "standard-fixed-12x10_g113_vs_g110.jsonl",
+                "standard-fixed-12x10_g114_vs_g108.jsonl",
+                "standard-fixed-12x10_g114_vs_g111.jsonl",
+                "standard-fixed-12x10_g115_vs_g109.jsonl",
+                "standard-fixed-12x10_g115_vs_g112.jsonl",
+                "standard-fixed-12x10_g116_vs_g110.jsonl",
+                "standard-fixed-12x10_g116_vs_g113.jsonl",
+                "standard-fixed-12x10_g96_vs_g93.jsonl",
+                "standard-fixed-12x10_g97_vs_g94.jsonl",
+                "standard-fixed-12x10_g98_vs_g95.jsonl",
+                "standard-fixed-12x10_g99_vs_g93.jsonl",
+                "standard-fixed-12x10_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 6,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-fixed-12x10_g95_vs_g93.jsonl",
+                "standard-fixed-12x10_g97_vs_g93.jsonl",
+                "standard-fixed-12x10_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "standard-random-12x10",
+      "label": "Standard 10x12 \u00b7 Random Start",
+      "color": "#eb644d",
+      "variant": "standard",
+      "setup": "random-start",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_standard_2026-08-20",
+      "components": [
+        {
+          "id": "standard-random-12x10-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 58.314,
+              "games": 384
+            },
+            {
+              "generation": 94,
+              "elo": 58.11,
+              "games": 256
+            },
+            {
+              "generation": 95,
+              "elo": 47.466,
+              "games": 320
+            },
+            {
+              "generation": 96,
+              "elo": 45.77,
+              "games": 320
+            },
+            {
+              "generation": 97,
+              "elo": 44.248,
+              "games": 384
+            },
+            {
+              "generation": 98,
+              "elo": 25.996,
+              "games": 384
+            },
+            {
+              "generation": 99,
+              "elo": 25.359,
+              "games": 384
+            },
+            {
+              "generation": 100,
+              "elo": 17.492,
+              "games": 384
+            },
+            {
+              "generation": 101,
+              "elo": 33.077,
+              "games": 384
+            },
+            {
+              "generation": 102,
+              "elo": 42.812,
+              "games": 384
+            },
+            {
+              "generation": 103,
+              "elo": 0.0,
+              "games": 384
+            },
+            {
+              "generation": 104,
+              "elo": 28.995,
+              "games": 384
+            },
+            {
+              "generation": 105,
+              "elo": 21.526,
+              "games": 384
+            },
+            {
+              "generation": 106,
+              "elo": 9.316,
+              "games": 384
+            },
+            {
+              "generation": 107,
+              "elo": 24.87,
+              "games": 384
+            },
+            {
+              "generation": 108,
+              "elo": 22.46,
+              "games": 384
+            },
+            {
+              "generation": 109,
+              "elo": 3.761,
+              "games": 384
+            },
+            {
+              "generation": 110,
+              "elo": 19.532,
+              "games": 384
+            },
+            {
+              "generation": 111,
+              "elo": 48.999,
+              "games": 320
+            },
+            {
+              "generation": 112,
+              "elo": 36.832,
+              "games": 320
+            },
+            {
+              "generation": 113,
+              "elo": 63.024,
+              "games": 320
+            },
+            {
+              "generation": 114,
+              "elo": 30.714,
+              "games": 256
+            },
+            {
+              "generation": 115,
+              "elo": 31.9,
+              "games": 256
+            },
+            {
+              "generation": 116,
+              "elo": 12.793,
+              "games": 192
+            }
+          ],
+          "cleanGames": 4160,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 64,
+          "maxCleanGamesPerEdge": 64,
+          "sources": {
+            "tf_phase7_policy_standard_2026-08-20": {
+              "clean": 2600,
+              "excluded": 0,
+              "rawFiles": [
+                "standard_12x10_g100_vs_g94.jsonl",
+                "standard_12x10_g100_vs_g97.jsonl",
+                "standard_12x10_g100_vs_g99.jsonl",
+                "standard_12x10_g101_vs_g100.jsonl",
+                "standard_12x10_g101_vs_g95.jsonl",
+                "standard_12x10_g101_vs_g98.jsonl",
+                "standard_12x10_g102_vs_g101.jsonl",
+                "standard_12x10_g102_vs_g96.jsonl",
+                "standard_12x10_g102_vs_g99.jsonl",
+                "standard_12x10_g103_vs_g100.jsonl",
+                "standard_12x10_g103_vs_g102.jsonl",
+                "standard_12x10_g103_vs_g97.jsonl",
+                "standard_12x10_g104_vs_g101.jsonl",
+                "standard_12x10_g104_vs_g103.jsonl",
+                "standard_12x10_g104_vs_g98.jsonl",
+                "standard_12x10_g105_vs_g102.jsonl",
+                "standard_12x10_g105_vs_g104.jsonl",
+                "standard_12x10_g105_vs_g99.jsonl",
+                "standard_12x10_g106_vs_g100.jsonl",
+                "standard_12x10_g106_vs_g103.jsonl",
+                "standard_12x10_g106_vs_g105.jsonl",
+                "standard_12x10_g107_vs_g101.jsonl",
+                "standard_12x10_g107_vs_g104.jsonl",
+                "standard_12x10_g107_vs_g106.jsonl",
+                "standard_12x10_g108_vs_g102.jsonl",
+                "standard_12x10_g108_vs_g105.jsonl",
+                "standard_12x10_g108_vs_g107.jsonl",
+                "standard_12x10_g109_vs_g103.jsonl",
+                "standard_12x10_g109_vs_g106.jsonl",
+                "standard_12x10_g109_vs_g108.jsonl",
+                "standard_12x10_g110_vs_g104.jsonl",
+                "standard_12x10_g110_vs_g107.jsonl",
+                "standard_12x10_g110_vs_g109.jsonl",
+                "standard_12x10_g111_vs_g105.jsonl",
+                "standard_12x10_g111_vs_g108.jsonl",
+                "standard_12x10_g111_vs_g110.jsonl",
+                "standard_12x10_g112_vs_g106.jsonl",
+                "standard_12x10_g112_vs_g109.jsonl",
+                "standard_12x10_g112_vs_g111.jsonl",
+                "standard_12x10_g113_vs_g107.jsonl",
+                "standard_12x10_g113_vs_g110.jsonl",
+                "standard_12x10_g113_vs_g112.jsonl",
+                "standard_12x10_g114_vs_g108.jsonl",
+                "standard_12x10_g114_vs_g111.jsonl",
+                "standard_12x10_g114_vs_g113.jsonl",
+                "standard_12x10_g115_vs_g109.jsonl",
+                "standard_12x10_g115_vs_g112.jsonl",
+                "standard_12x10_g115_vs_g114.jsonl",
+                "standard_12x10_g116_vs_g110.jsonl",
+                "standard_12x10_g116_vs_g113.jsonl",
+                "standard_12x10_g116_vs_g115.jsonl",
+                "standard_12x10_g94_vs_g93.jsonl",
+                "standard_12x10_g95_vs_g93.jsonl",
+                "standard_12x10_g95_vs_g94.jsonl",
+                "standard_12x10_g96_vs_g93.jsonl",
+                "standard_12x10_g96_vs_g95.jsonl",
+                "standard_12x10_g97_vs_g93.jsonl",
+                "standard_12x10_g97_vs_g94.jsonl",
+                "standard_12x10_g97_vs_g96.jsonl",
+                "standard_12x10_g98_vs_g93.jsonl",
+                "standard_12x10_g98_vs_g95.jsonl",
+                "standard_12x10_g98_vs_g97.jsonl",
+                "standard_12x10_g99_vs_g93.jsonl",
+                "standard_12x10_g99_vs_g96.jsonl",
+                "standard_12x10_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+              "clean": 1560,
+              "excluded": 0,
+              "rawFiles": [
+                "standard-random-12x10_g100_vs_g94.jsonl",
+                "standard-random-12x10_g100_vs_g97.jsonl",
+                "standard-random-12x10_g100_vs_g99.jsonl",
+                "standard-random-12x10_g101_vs_g100.jsonl",
+                "standard-random-12x10_g101_vs_g95.jsonl",
+                "standard-random-12x10_g101_vs_g98.jsonl",
+                "standard-random-12x10_g102_vs_g101.jsonl",
+                "standard-random-12x10_g102_vs_g96.jsonl",
+                "standard-random-12x10_g102_vs_g99.jsonl",
+                "standard-random-12x10_g103_vs_g100.jsonl",
+                "standard-random-12x10_g103_vs_g102.jsonl",
+                "standard-random-12x10_g103_vs_g97.jsonl",
+                "standard-random-12x10_g104_vs_g101.jsonl",
+                "standard-random-12x10_g104_vs_g103.jsonl",
+                "standard-random-12x10_g104_vs_g98.jsonl",
+                "standard-random-12x10_g105_vs_g102.jsonl",
+                "standard-random-12x10_g105_vs_g104.jsonl",
+                "standard-random-12x10_g105_vs_g99.jsonl",
+                "standard-random-12x10_g106_vs_g100.jsonl",
+                "standard-random-12x10_g106_vs_g103.jsonl",
+                "standard-random-12x10_g106_vs_g105.jsonl",
+                "standard-random-12x10_g107_vs_g101.jsonl",
+                "standard-random-12x10_g107_vs_g104.jsonl",
+                "standard-random-12x10_g107_vs_g106.jsonl",
+                "standard-random-12x10_g108_vs_g102.jsonl",
+                "standard-random-12x10_g108_vs_g105.jsonl",
+                "standard-random-12x10_g108_vs_g107.jsonl",
+                "standard-random-12x10_g109_vs_g103.jsonl",
+                "standard-random-12x10_g109_vs_g106.jsonl",
+                "standard-random-12x10_g109_vs_g108.jsonl",
+                "standard-random-12x10_g110_vs_g104.jsonl",
+                "standard-random-12x10_g110_vs_g107.jsonl",
+                "standard-random-12x10_g110_vs_g109.jsonl",
+                "standard-random-12x10_g111_vs_g105.jsonl",
+                "standard-random-12x10_g111_vs_g108.jsonl",
+                "standard-random-12x10_g111_vs_g110.jsonl",
+                "standard-random-12x10_g112_vs_g106.jsonl",
+                "standard-random-12x10_g112_vs_g109.jsonl",
+                "standard-random-12x10_g112_vs_g111.jsonl",
+                "standard-random-12x10_g113_vs_g107.jsonl",
+                "standard-random-12x10_g113_vs_g110.jsonl",
+                "standard-random-12x10_g113_vs_g112.jsonl",
+                "standard-random-12x10_g114_vs_g108.jsonl",
+                "standard-random-12x10_g114_vs_g111.jsonl",
+                "standard-random-12x10_g114_vs_g113.jsonl",
+                "standard-random-12x10_g115_vs_g109.jsonl",
+                "standard-random-12x10_g115_vs_g112.jsonl",
+                "standard-random-12x10_g115_vs_g114.jsonl",
+                "standard-random-12x10_g116_vs_g110.jsonl",
+                "standard-random-12x10_g116_vs_g113.jsonl",
+                "standard-random-12x10_g116_vs_g115.jsonl",
+                "standard-random-12x10_g94_vs_g93.jsonl",
+                "standard-random-12x10_g95_vs_g93.jsonl",
+                "standard-random-12x10_g95_vs_g94.jsonl",
+                "standard-random-12x10_g96_vs_g93.jsonl",
+                "standard-random-12x10_g96_vs_g95.jsonl",
+                "standard-random-12x10_g97_vs_g93.jsonl",
+                "standard-random-12x10_g97_vs_g94.jsonl",
+                "standard-random-12x10_g97_vs_g96.jsonl",
+                "standard-random-12x10_g98_vs_g93.jsonl",
+                "standard-random-12x10_g98_vs_g95.jsonl",
+                "standard-random-12x10_g98_vs_g97.jsonl",
+                "standard-random-12x10_g99_vs_g93.jsonl",
+                "standard-random-12x10_g99_vs_g96.jsonl",
+                "standard-random-12x10_g99_vs_g98.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "animal-cycle-fixed-7x7",
+      "label": "Animal Cycle 7x7",
+      "color": "#a8ef8a",
+      "variant": "animal-cycle",
+      "setup": "fixed",
+      "width": 7,
+      "height": 7,
+      "gamesPerPair": 2,
+      "components": [
+        {
+          "id": "animal-cycle-fixed-7x7-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 98.273,
+              "games": 12
+            },
+            {
+              "generation": 94,
+              "elo": 27.128,
+              "games": 8
+            },
+            {
+              "generation": 95,
+              "elo": 0.0,
+              "games": 10
+            },
+            {
+              "generation": 96,
+              "elo": 212.304,
+              "games": 10
+            },
+            {
+              "generation": 97,
+              "elo": 191.503,
+              "games": 12
+            },
+            {
+              "generation": 98,
+              "elo": 354.374,
+              "games": 12
+            },
+            {
+              "generation": 99,
+              "elo": 548.033,
+              "games": 12
+            },
+            {
+              "generation": 100,
+              "elo": 1120.258,
+              "games": 12
+            },
+            {
+              "generation": 101,
+              "elo": 485.041,
+              "games": 12
+            },
+            {
+              "generation": 102,
+              "elo": 628.844,
+              "games": 12
+            },
+            {
+              "generation": 103,
+              "elo": 639.151,
+              "games": 12
+            },
+            {
+              "generation": 104,
+              "elo": 707.764,
+              "games": 12
+            },
+            {
+              "generation": 105,
+              "elo": 555.847,
+              "games": 12
+            },
+            {
+              "generation": 106,
+              "elo": 756.407,
+              "games": 12
+            },
+            {
+              "generation": 107,
+              "elo": 597.369,
+              "games": 12
+            },
+            {
+              "generation": 108,
+              "elo": 560.554,
+              "games": 12
+            },
+            {
+              "generation": 109,
+              "elo": 521.602,
+              "games": 12
+            },
+            {
+              "generation": 110,
+              "elo": 523.317,
+              "games": 12
+            },
+            {
+              "generation": 111,
+              "elo": 537.358,
+              "games": 10
+            },
+            {
+              "generation": 112,
+              "elo": 512.587,
+              "games": 10
+            },
+            {
+              "generation": 113,
+              "elo": 606.521,
+              "games": 10
+            },
+            {
+              "generation": 114,
+              "elo": 552.159,
+              "games": 8
+            },
+            {
+              "generation": 115,
+              "elo": 529.553,
+              "games": 8
+            },
+            {
+              "generation": 116,
+              "elo": 545.683,
+              "games": 6
+            }
+          ],
+          "cleanGames": 130,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 2,
+          "maxCleanGamesPerEdge": 2,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 46,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-fixed-7x7_g100_vs_g99.jsonl",
+                "animal-cycle-fixed-7x7_g101_vs_g100.jsonl",
+                "animal-cycle-fixed-7x7_g102_vs_g101.jsonl",
+                "animal-cycle-fixed-7x7_g103_vs_g102.jsonl",
+                "animal-cycle-fixed-7x7_g104_vs_g103.jsonl",
+                "animal-cycle-fixed-7x7_g105_vs_g104.jsonl",
+                "animal-cycle-fixed-7x7_g106_vs_g105.jsonl",
+                "animal-cycle-fixed-7x7_g107_vs_g106.jsonl",
+                "animal-cycle-fixed-7x7_g108_vs_g107.jsonl",
+                "animal-cycle-fixed-7x7_g109_vs_g108.jsonl",
+                "animal-cycle-fixed-7x7_g110_vs_g109.jsonl",
+                "animal-cycle-fixed-7x7_g111_vs_g110.jsonl",
+                "animal-cycle-fixed-7x7_g112_vs_g111.jsonl",
+                "animal-cycle-fixed-7x7_g113_vs_g112.jsonl",
+                "animal-cycle-fixed-7x7_g114_vs_g113.jsonl",
+                "animal-cycle-fixed-7x7_g115_vs_g114.jsonl",
+                "animal-cycle-fixed-7x7_g116_vs_g115.jsonl",
+                "animal-cycle-fixed-7x7_g94_vs_g93.jsonl",
+                "animal-cycle-fixed-7x7_g95_vs_g94.jsonl",
+                "animal-cycle-fixed-7x7_g96_vs_g95.jsonl",
+                "animal-cycle-fixed-7x7_g97_vs_g96.jsonl",
+                "animal-cycle-fixed-7x7_g98_vs_g97.jsonl",
+                "animal-cycle-fixed-7x7_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 78,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-fixed-7x7_g100_vs_g94.jsonl",
+                "animal-cycle-fixed-7x7_g100_vs_g97.jsonl",
+                "animal-cycle-fixed-7x7_g101_vs_g95.jsonl",
+                "animal-cycle-fixed-7x7_g101_vs_g98.jsonl",
+                "animal-cycle-fixed-7x7_g102_vs_g96.jsonl",
+                "animal-cycle-fixed-7x7_g102_vs_g99.jsonl",
+                "animal-cycle-fixed-7x7_g103_vs_g100.jsonl",
+                "animal-cycle-fixed-7x7_g103_vs_g97.jsonl",
+                "animal-cycle-fixed-7x7_g104_vs_g101.jsonl",
+                "animal-cycle-fixed-7x7_g104_vs_g98.jsonl",
+                "animal-cycle-fixed-7x7_g105_vs_g102.jsonl",
+                "animal-cycle-fixed-7x7_g105_vs_g99.jsonl",
+                "animal-cycle-fixed-7x7_g106_vs_g100.jsonl",
+                "animal-cycle-fixed-7x7_g106_vs_g103.jsonl",
+                "animal-cycle-fixed-7x7_g107_vs_g101.jsonl",
+                "animal-cycle-fixed-7x7_g107_vs_g104.jsonl",
+                "animal-cycle-fixed-7x7_g108_vs_g102.jsonl",
+                "animal-cycle-fixed-7x7_g108_vs_g105.jsonl",
+                "animal-cycle-fixed-7x7_g109_vs_g103.jsonl",
+                "animal-cycle-fixed-7x7_g109_vs_g106.jsonl",
+                "animal-cycle-fixed-7x7_g110_vs_g104.jsonl",
+                "animal-cycle-fixed-7x7_g110_vs_g107.jsonl",
+                "animal-cycle-fixed-7x7_g111_vs_g105.jsonl",
+                "animal-cycle-fixed-7x7_g111_vs_g108.jsonl",
+                "animal-cycle-fixed-7x7_g112_vs_g106.jsonl",
+                "animal-cycle-fixed-7x7_g112_vs_g109.jsonl",
+                "animal-cycle-fixed-7x7_g113_vs_g107.jsonl",
+                "animal-cycle-fixed-7x7_g113_vs_g110.jsonl",
+                "animal-cycle-fixed-7x7_g114_vs_g108.jsonl",
+                "animal-cycle-fixed-7x7_g114_vs_g111.jsonl",
+                "animal-cycle-fixed-7x7_g115_vs_g109.jsonl",
+                "animal-cycle-fixed-7x7_g115_vs_g112.jsonl",
+                "animal-cycle-fixed-7x7_g116_vs_g110.jsonl",
+                "animal-cycle-fixed-7x7_g116_vs_g113.jsonl",
+                "animal-cycle-fixed-7x7_g96_vs_g93.jsonl",
+                "animal-cycle-fixed-7x7_g97_vs_g94.jsonl",
+                "animal-cycle-fixed-7x7_g98_vs_g95.jsonl",
+                "animal-cycle-fixed-7x7_g99_vs_g93.jsonl",
+                "animal-cycle-fixed-7x7_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 6,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-fixed-7x7_g95_vs_g93.jsonl",
+                "animal-cycle-fixed-7x7_g97_vs_g93.jsonl",
+                "animal-cycle-fixed-7x7_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    },
+    {
+      "id": "animal-cycle-random-7x7",
+      "label": "Animal Cycle 7x7 \u00b7 Random Start",
+      "color": "#59c96d",
+      "variant": "animal-cycle",
+      "setup": "random-start",
+      "width": 7,
+      "height": 7,
+      "gamesPerPair": 12,
+      "components": [
+        {
+          "id": "animal-cycle-random-7x7-component-1",
+          "generations": [
+            93,
+            94,
+            95,
+            96,
+            97,
+            98,
+            99,
+            100,
+            101,
+            102,
+            103,
+            104,
+            105,
+            106,
+            107,
+            108,
+            109,
+            110,
+            111,
+            112,
+            113,
+            114,
+            115,
+            116
+          ],
+          "ratings": [
+            {
+              "generation": 93,
+              "elo": 0.0,
+              "games": 384
+            },
+            {
+              "generation": 94,
+              "elo": 39.47,
+              "games": 256
+            },
+            {
+              "generation": 95,
+              "elo": 240.641,
+              "games": 320
+            },
+            {
+              "generation": 96,
+              "elo": 316.323,
+              "games": 320
+            },
+            {
+              "generation": 97,
+              "elo": 400.666,
+              "games": 384
+            },
+            {
+              "generation": 98,
+              "elo": 444.142,
+              "games": 384
+            },
+            {
+              "generation": 99,
+              "elo": 472.813,
+              "games": 384
+            },
+            {
+              "generation": 100,
+              "elo": 491.254,
+              "games": 384
+            },
+            {
+              "generation": 101,
+              "elo": 529.708,
+              "games": 384
+            },
+            {
+              "generation": 102,
+              "elo": 580.357,
+              "games": 384
+            },
+            {
+              "generation": 103,
+              "elo": 555.068,
+              "games": 384
+            },
+            {
+              "generation": 104,
+              "elo": 565.158,
+              "games": 384
+            },
+            {
+              "generation": 105,
+              "elo": 547.548,
+              "games": 384
+            },
+            {
+              "generation": 106,
+              "elo": 579.983,
+              "games": 384
+            },
+            {
+              "generation": 107,
+              "elo": 597.153,
+              "games": 384
+            },
+            {
+              "generation": 108,
+              "elo": 647.585,
+              "games": 384
+            },
+            {
+              "generation": 109,
+              "elo": 712.938,
+              "games": 384
+            },
+            {
+              "generation": 110,
+              "elo": 722.693,
+              "games": 384
+            },
+            {
+              "generation": 111,
+              "elo": 686.847,
+              "games": 320
+            },
+            {
+              "generation": 112,
+              "elo": 717.44,
+              "games": 320
+            },
+            {
+              "generation": 113,
+              "elo": 747.099,
+              "games": 320
+            },
+            {
+              "generation": 114,
+              "elo": 751.213,
+              "games": 256
+            },
+            {
+              "generation": 115,
+              "elo": 803.322,
+              "games": 256
+            },
+            {
+              "generation": 116,
+              "elo": 857.634,
+              "games": 192
+            }
+          ],
+          "cleanGames": 4160,
+          "excludedGames": 0,
+          "edges": 65,
+          "minCleanGamesPerEdge": 64,
+          "maxCleanGamesPerEdge": 64,
+          "sources": {
+            "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+              "clean": 276,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-random-7x7_g100_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g114.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g115.jsonl",
+                "animal-cycle-random-7x7_g94_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g95_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
+              "clean": 1820,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-random-7x7_g100_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g100_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g100_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g114.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g115.jsonl",
+                "animal-cycle-random-7x7_g94_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g95_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g95_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+              "clean": 1560,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-random-7x7_g100_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g100_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g100_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g114.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g115.jsonl",
+                "animal-cycle-random-7x7_g94_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g95_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g95_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g98.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+              "clean": 468,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-random-7x7_g100_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g100_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g101_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g96.jsonl",
+                "animal-cycle-random-7x7_g102_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g103_vs_g97.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g104_vs_g98.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g105_vs_g99.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g100.jsonl",
+                "animal-cycle-random-7x7_g106_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g101.jsonl",
+                "animal-cycle-random-7x7_g107_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g102.jsonl",
+                "animal-cycle-random-7x7_g108_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g103.jsonl",
+                "animal-cycle-random-7x7_g109_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g104.jsonl",
+                "animal-cycle-random-7x7_g110_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g105.jsonl",
+                "animal-cycle-random-7x7_g111_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g106.jsonl",
+                "animal-cycle-random-7x7_g112_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g107.jsonl",
+                "animal-cycle-random-7x7_g113_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g108.jsonl",
+                "animal-cycle-random-7x7_g114_vs_g111.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g109.jsonl",
+                "animal-cycle-random-7x7_g115_vs_g112.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g110.jsonl",
+                "animal-cycle-random-7x7_g116_vs_g113.jsonl",
+                "animal-cycle-random-7x7_g96_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g94.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g95.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g99_vs_g96.jsonl"
+              ]
+            },
+            "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+              "clean": 36,
+              "excluded": 0,
+              "rawFiles": [
+                "animal-cycle-random-7x7_g95_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g97_vs_g93.jsonl",
+                "animal-cycle-random-7x7_g98_vs_g93.jsonl"
+              ]
+            }
+          }
+        }
+      ],
+      "evidenceGenerations": [
+        93,
+        94,
+        95,
+        96,
+        97,
+        98,
+        99,
+        100,
+        101,
+        102,
+        103,
+        104,
+        105,
+        106,
+        107,
+        108,
+        109,
+        110,
+        111,
+        112,
+        113,
+        114,
+        115,
+        116
+      ],
+      "unconnectedExcludedGames": 0,
+      "unconnectedSources": {}
+    }
+  ],
+  "incrementalPlan": {
+    "status": "data-only; freeze hashes and loadability with policy_elo_plan.py before execution",
+    "availableGenerations": [
+      93,
+      94,
+      95,
+      96,
+      97,
+      98,
+      99,
+      100,
+      101,
+      102,
+      103,
+      104,
+      105,
+      106,
+      107,
+      108,
+      109,
+      110,
+      111,
+      112,
+      113,
+      114,
+      115,
+      116
+    ],
+    "desiredEdgesPerCondition": 62,
+    "pairings": [],
+    "summary": {
+      "pairings": 0,
+      "acceptedGamesNeeded": 0
+    }
+  }
+}

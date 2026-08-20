@@ -1,0 +1,87 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width,initial-scale=1">
+    <title>Policy Elo · Wall Game</title>
+    <link rel="icon" href="data:,">
+    <link rel="stylesheet" href="/styles.css">
+  </head>
+  <body>
+    <main class="shell">
+      <header class="masthead">
+        <div>
+          <div class="eyebrow"><span class="pulse"></span> Training evidence</div>
+          <h1>Policy strength across generations</h1>
+          <p class="lede">One-sample policy play, shown only where archived games connect the evidence.</p>
+        </div>
+        <div class="updated" id="updated">Loading archive…</div>
+      </header>
+
+      <section class="metrics" aria-label="Evidence summary">
+        <article><span>Clean games</span><strong id="clean-games">—</strong><small>rating input</small></article>
+        <article><span>Policy lines</span><strong id="line-count">10</strong><small>independent toggles</small></article>
+        <article><span>Loadable range</span><strong id="loadable-range">—</strong><small>current engine contract</small></article>
+        <article><span>Excluded</span><strong id="excluded-games">—</strong><small>never rated as losses</small></article>
+      </section>
+
+      <section class="workspace">
+        <aside class="controls">
+          <div class="control-head">
+            <div><span class="kicker">Lines</span><h2>Compare conditions</h2></div>
+            <button class="text-button" id="toggle-all">Hide all</button>
+          </div>
+          <div id="line-controls"></div>
+          <div class="evidence-key">
+            <span class="kicker">Evidence key</span>
+            <div><i class="solid"></i> Fixed setup</div>
+            <div><i class="dash"></i> Random Start</div>
+            <div><i class="gap"></i> Evidence gap</div>
+          </div>
+        </aside>
+
+        <div class="chart-panel">
+          <div class="chart-head">
+            <div>
+              <span class="kicker">Interactive plot</span>
+              <h2>Relative policy Elo</h2>
+            </div>
+            <div class="view-switch" role="group" aria-label="Line filter">
+              <button class="active" data-view="all">All</button>
+              <button data-view="fixed">Fixed</button>
+              <button data-view="random-start">Random Start</button>
+            </div>
+          </div>
+          <div class="plot-wrap" id="plot-wrap">
+            <svg id="plot" role="img" aria-label="Policy Elo by model generation"></svg>
+            <div class="tooltip" id="tooltip" hidden></div>
+          </div>
+          <div class="axis-note">
+            <span>Generation 0 stays on the axis even though no artifact exists.</span>
+            <strong>Component-local scales: vertical levels across gaps are not comparable.</strong>
+          </div>
+          <div class="weight-note" id="weight-note"></div>
+        </div>
+      </section>
+
+      <section class="details">
+        <article class="coverage-card">
+          <span class="kicker">Artifact coverage</span>
+          <h2>The gap is a model contract, not a plotting choice.</h2>
+          <div class="coverage-track" id="coverage-track" aria-hidden="true"></div>
+          <div class="coverage-labels" id="coverage-labels"></div>
+        </article>
+        <article class="settings-card">
+          <span class="kicker">Experiment settings</span>
+          <h2>What every point means</h2>
+          <dl id="settings"></dl>
+          <details class="provenance">
+            <summary id="provenance-summary">Evidence sources</summary>
+            <div id="provenance-list"></div>
+          </details>
+        </article>
+      </section>
+    </main>
+    <script src="/app.js" defer></script>
+  </body>
+</html>
