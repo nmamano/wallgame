@@ -1,5 +1,7 @@
 #include "engine_adapter.hpp"
 
+#include "state_conversions.hpp"
+
 #include <catch2/catch_test_macros.hpp>
 #include <folly/Overload.h>
 #include <filesystem>
@@ -686,6 +688,62 @@ TEST_CASE("make_padded_training_board - animal 7x7 in 12x10", "[Padding]") {
     CHECK(board.is_blocked(Wall{Cell{3, 6}, Wall::Down}));
     CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Right}));
     CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Down}));
+}
+
+/*
+Training and serving build their boards in two separate functions and nothing
+makes them agree. make_padded_training_board fixes the pawns at the game corners;
+convert_bgs_config_to_board reads them out of the game config. They must still
+agree on WHICH PLAYER OWNS WHICH PAWN, because convert_to_model_input writes one
+network plane per (player, pawn) pair. If the two drift apart, two planes swap and
+the served model reads a board it was never trained on - a player-visible fault
+that every test looking at only one of the two functions would pass through.
+
+So the same Animal Cycle position is built both ways and the MODEL INPUT must come
+out identical, plane for plane. The comparison is on the tensor and not on the pawn
+cells, because the tensor is what the network actually sees.
+*/
+TEST_CASE("Animal Cycle training and serving agree on the model input", "[Padding]") {
+    int const model_columns = 12;
+    int const model_rows = 10;
+    int const game_size = 7;
+
+    Board training = make_padded_training_board(model_columns, model_rows, game_size, game_size,
+                                                Variant::AnimalCycle);
+
+    // The corners the training board fixes, restated in the protocol's [row, column]
+    // order. Building the config by assignment keeps the nesting unambiguous.
+    nlohmann::json config;
+    config["variant"] = "animal-cycle";
+    config["boardWidth"] = game_size;
+    config["boardHeight"] = game_size;
+    config["initialState"]["pawns"]["p1"]["cat"] = {0, 0};
+    config["initialState"]["pawns"]["p1"]["elephant"] = {game_size - 1, game_size - 1};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {0, game_size - 1};
+    config["initialState"]["pawns"]["p2"]["dog"] = {game_size - 1, 0};
+    config["initialState"]["walls"] = nlohmann::json::array();
+
+    auto validation = validate_bgs_config(config, model_rows, model_columns);
+    REQUIRE(validation.valid);
+    auto converted = convert_bgs_config_to_board(config, model_rows, model_columns);
+    Board const& serving = std::get<0>(converted);
+
+    // Both movers, because the plane order depends on who is to move: a swap that
+    // happened to cancel out for one player would still show for the other.
+    for (Player mover : {Player::Red, Player::Blue}) {
+        CAPTURE(static_cast<int>(mover));
+        Turn const probe{mover, Turn::First};
+        CHECK(convert_to_model_input(training, probe) == convert_to_model_input(serving, probe));
+    }
+
+    // State the contract by name as well, so a failure reports WHICH pawn moved
+    // instead of only that some float differs.
+    for (Player player : {Player::Red, Player::Blue}) {
+        for (Pawn pawn : training.pawn_roster(player)) {
+            CAPTURE(static_cast<int>(player), static_cast<int>(pawn));
+            CHECK(training.pawn_position(player, pawn) == serving.pawn_position(player, pawn));
+        }
+    }
 }
 
 // ============================================================================
