@@ -8,10 +8,20 @@ export PATH="$HOME/.bun/bin:$PATH"
 # local gate that only approximates the remote one drifts from it, and then a
 # green push still fails CI - which is exactly what happened on 2026-08-08.
 #
-# Tests are the one thing left to CI. They need Docker (each integration file
+# INTEGRATION tests are left to CI. They need Docker (each integration file
 # starts its own Postgres through Testcontainers) and take minutes, which is too
 # much to put in front of every push. That is a considered split, not an
-# oversight: `bun run test` is what catches a broken test, and it runs remotely.
+# oversight: `bun run test` is what catches a broken integration test remotely.
+#
+# tests/game/ is different and used to be swept up in that split by mistake. It
+# needs no Docker and runs 477 tests in about 4 seconds, so leaving it to CI
+# bought nothing and cost a red main: on 2026-08-20 e6968725 changed the served
+# model to 116 without updating the guard in tests/game/bot-config-guards.test.ts,
+# pushed green here, and main stayed red until 2026-08-21. Four seconds would
+# have caught it.
+#
+# This is a SUBSET, not a substitute. A green hook still does not mean green CI -
+# the integration suite has not run yet at this point.
 
 echo "🔍🔍 Running Prettier check..."
 bun run format:check
@@ -24,6 +34,9 @@ bun run lint:check
 
 echo "🧩🧩 Typechecking six projects (server+shared, tests, scripts, harness, frontend tests, bot client)..."
 bun run typecheck
+
+echo "🧪🧪 Running the Docker-free unit tests (tests/game)..."
+bun test tests/game/
 
 echo "🔍🔍 Checking build..."
 bun run build
