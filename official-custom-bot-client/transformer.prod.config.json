@@ -227,7 +227,7 @@
     }
   ],
   "engineCommands": {
-    "experimental-animal-115": "/home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-phase7/deep_ww_bgs_engine --model /home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-tests/phase7-feasibility-34e5f567/models/model_115.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
+    "experimental-animal-115": "/home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-phase7/deep_ww_bgs_engine --model /home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-tests/phase7-feasibility-34e5f567/models/model_116.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
     "dw-beginner": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.4",
     "dw-easy": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.25",
     "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
