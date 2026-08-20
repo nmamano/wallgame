@@ -257,8 +257,20 @@ describe("the tracked production bot config", () => {
         recommended: [{ boardWidth: 7, boardHeight: 7 }],
       },
     });
+    // The generation is deliberately NOT pinned. Training always continues from
+    // the latest generation even when serving stays on an older one, so the
+    // served model moves by design, and an exact number here can only ever go
+    // red on a swap that was intended: it did on 2026-08-20, when e6968725 moved
+    // Ruthless to model 116 and left this line on 115, and CI stayed red until
+    // 2026-08-21. Which generation serves is reviewed in the config diff and
+    // recorded in ops-private/wallgame-bot-client.md, not guarded here.
+    //
+    // What must not drift silently is the search depth. Ruthless is the
+    // full-search analysis bot; the policy-only bots run --samples 1. Dropping
+    // this to 1 would quietly turn the site's strongest opponent into a weak
+    // one while every other assertion in this test still passed.
     expect(config.engineCommands[ruthless!.botId]).toMatch(
-      /model_115\.trt --samples 1000(\s|$)/,
+      /model_\d+\.trt --samples 1000(\s|$)/,
     );
   });
 
