@@ -36,8 +36,14 @@ jobs:
       # tests/integration/bot-5-minimax-engine.test.ts compiles
       # minimax_bgs_engine, and minimax-engine/CMakeLists.txt requires the
       # system nlohmann_json package. cmake and g++ already ship on the runner.
-      - name: Install the engine's C++ dependency
-        run: sudo apt-get update && sudo apt-get install -y nlohmann-json3-dev
+      #
+      # ffmpeg is for scripts/game-video/app/server.test.ts. Those tests stub
+      # the RENDERER but not ffmpeg, because the app resolves a real one from
+      # PATH on purpose - it refuses the scratch copy under tmp/, which gets
+      # cleaned. Without it every render settles as "error" and 8 assertions
+      # fail. The runner stopped shipping ffmpeg, so install it here.
+      - name: Install the engine's C++ dependency and ffmpeg
+        run: sudo apt-get update && sudo apt-get install -y nlohmann-json3-dev ffmpeg
 
       - name: Install dependencies
         run: bun install --frozen-lockfile
