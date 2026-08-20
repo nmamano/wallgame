@@ -331,40 +331,56 @@ Board make_padded_training_board(int model_columns, int model_rows, int game_col
     PaddingConfig config =
         create_padding_config(model_rows, model_columns, game_rows, game_columns, variant);
 
-    Cell red_cat = transform_to_model(Cell{0, 0}, config);
-    Cell blue_cat = transform_to_model(Cell{game_columns - 1, 0}, config);
+    // Every cell below holds MODEL-frame coordinates. The prefix says which board
+    // the corner is a corner OF: game_* starts as a corner of the game area and is
+    // mapped in with transform_to_model, model_* is a corner of the model board
+    // itself and is never transformed. Which player owns a corner depends on the
+    // variant, so no name here states an owner. Board::pawn_roster is the authority
+    // on ownership, and the Board constructor throws on any pawn outside it.
+    Cell const game_top_left = transform_to_model(Cell{0, 0}, config);
+    Cell const game_top_right = transform_to_model(Cell{game_columns - 1, 0}, config);
 
-    Cell red_secondary;
-    Cell blue_secondary;
+    std::vector<PawnPlacement> placements;
     if (variant == Variant::Classic) {
         // Classic goals go on the MODEL bottom corners, out in the padding, and
         // place_padding_walls answers that by leaving the bottom row open as the path
-        // to them. Serving does NOT do this: convert_bgs_config_to_board takes both
-        // homes from the game config, which puts them on the game board.
-        red_secondary = Cell{model_columns - 1, model_rows - 1};
-        blue_secondary = Cell{0, model_rows - 1};
-    } else {
-        red_secondary = transform_to_model(Cell{0, game_rows - 1}, config);
-        blue_secondary = transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
-    }
-
-    std::vector<PawnPlacement> placements;
-    if (variant == Variant::AnimalCycle) {
+        // to them. That is why these two are NOT passed through transform_to_model,
+        // unlike every other corner in this function. Serving does NOT do this either:
+        // convert_bgs_config_to_board takes both homes from the game config, which
+        // puts them on the game board.
+        Cell const model_bottom_left = Cell{0, model_rows - 1};
+        Cell const model_bottom_right = Cell{model_columns - 1, model_rows - 1};
         placements = {
-            {Player::Red, Pawn::Cat, red_cat},
-            {Player::Red, Pawn::Elephant, blue_secondary},
-            {Player::Blue, Pawn::Mouse, blue_cat},
-            {Player::Blue, Pawn::Dog, red_secondary},
+            {Player::Red, Pawn::Cat, game_top_left},
+            {Player::Red, Pawn::Home, model_bottom_right},
+            {Player::Blue, Pawn::Cat, game_top_right},
+            {Player::Blue, Pawn::Home, model_bottom_left},
         };
     } else {
-        Pawn const secondary_pawn =
-            variant == Variant::Classic ? Pawn::Home : Pawn::Mouse;
-        placements = {
-            {Player::Red, Pawn::Cat, red_cat},
-            {Player::Red, secondary_pawn, red_secondary},
-            {Player::Blue, Pawn::Cat, blue_cat},
-            {Player::Blue, secondary_pawn, blue_secondary},
-        };
+        Cell const game_bottom_left = transform_to_model(Cell{0, game_rows - 1}, config);
+        Cell const game_bottom_right =
+            transform_to_model(Cell{game_columns - 1, game_rows - 1}, config);
+        if (variant == Variant::AnimalCycle) {
+            // Animal Cycle is the one variant where a player does not hold a whole
+            // side of the board: Red holds top-left and bottom-right, Blue holds
+            // top-right and bottom-left. Serving agrees with this - see the
+            // AnimalCycle branch of convert_bgs_config_to_board - and the two must
+            // stay in step, because convert_to_model_input writes one network plane
+            // per (player, pawn) pair.
+            placements = {
+                {Player::Red, Pawn::Cat, game_top_left},
+                {Player::Red, Pawn::Elephant, game_bottom_right},
+                {Player::Blue, Pawn::Mouse, game_top_right},
+                {Player::Blue, Pawn::Dog, game_bottom_left},
+            };
+        } else {
+            placements = {
+                {Player::Red, Pawn::Cat, game_top_left},
+                {Player::Red, Pawn::Mouse, game_bottom_left},
+                {Player::Blue, Pawn::Cat, game_top_right},
+                {Player::Blue, Pawn::Mouse, game_bottom_right},
+            };
+        }
     }
     Board board{model_columns, model_rows, variant, std::move(placements)};
     place_padding_walls(board, config);
