@@ -20,6 +20,7 @@
  *     --width 8 --height 8 [--engine <path to deep_ww_bgs_engine>] \
  *     [--our-noise 0.6] [--opp-noise 0]
  */
+import { appendFileSync } from "node:fs";
 import { EngineProcess } from "../../official-custom-bot-client/src/engine-runner";
 import {
   buildAnimalCycleInitialState,
@@ -103,6 +104,8 @@ const VARIANT = arg("variant", "standard") as Variant;
 const SETUP_MODE = arg("setup", "fixed");
 const GAMES = parseInt(arg("games", "20"), 10);
 const SEED = parseInt(arg("seed", "7"), 10);
+const ARCHIVE_FILE = arg("archive");
+const EXPERIMENT = arg("experiment");
 const MOVE_LIMIT = 300;
 const SEND_TIMEOUT_MS = 60000;
 const W = parseInt(arg("width", "8"), 10), H = parseInt(arg("height", "8"), 10);
@@ -472,6 +475,43 @@ async function main() {
           initialState: game.initialState,
         });
       }
+      const candidateIsP1 = oursIsP1;
+      const whiteModel = candidateIsP1 ? OURS : OPP;
+      const blackModel = candidateIsP1 ? OPP : OURS;
+      const result =
+        res === "draw"
+          ? "1/2-1/2"
+          : (res === "ours") === candidateIsP1
+            ? "1-0"
+            : "0-1";
+      appendFileSync(
+        ARCHIVE_FILE,
+        `${JSON.stringify({
+          format: "wallgame-engine-strength-game-v1",
+          exp: EXPERIMENT,
+          variant: VARIANT,
+          setup: SETUP_MODE,
+          board: `${W}x${H}`,
+          game: g,
+          engineSeed: SEED,
+          randomStartSeed: SEED * 1_000_003 + g,
+          whiteModel,
+          blackModel,
+          candidateModel: OURS,
+          baselineModel: OPP,
+          candidateIsP1,
+          result,
+          outcome: res,
+          reason,
+          plies: moves.length,
+          moves,
+          candidateEvaluations: game.candidateEvaluations,
+          baselineEvaluations: game.baselineEvaluations,
+          initialProbe: game.initialProbe,
+          legalityErrors: game.legalityErrors,
+          initialState: game.initialState,
+        })}\n`,
+      );
       console.error(`game ${g} (ours ${oursIsP1 ? "P1" : "P2"}): ${res} [${reason}, ${moves.length} plies]  [W/L/D ${tally.ours}/${tally.opp}/${tally.draw}]`);
     }
     if (dumpFile) { await Bun.write(dumpFile, JSON.stringify(dumped, null, 1)); }

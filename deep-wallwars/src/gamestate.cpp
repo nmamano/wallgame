@@ -200,6 +200,29 @@ static char pawn_notation(Pawn pawn) {
     throw std::runtime_error("Invalid pawn");
 }
 
+/*
+The terms keep the order the move was PLAYED in, except for walls among themselves.
+
+Both readers apply the terms in sequence - `parse_move_notation` resolves each one
+against the board as it stands at that term, and the wallgame server feeds the same
+string through its own rules - so a term can depend on the one before it. In Animal
+Cycle a player may move one pawn out of a cell and the other one into it, and the
+fixed order Dog, Cat, Mouse, Elephant sends the follower in first, onto a cell its
+teammate has not left yet. Neither reader can apply that, and the move is refused.
+This emitter writes the bot's OWN move (bgs_session.cpp), so the refusal lands on the
+bot: its turn never takes effect. The wallgame server had the same defect in the
+other direction and was fixed on 2026-08-19; this is the mirror of that fix, and the
+rule is deliberately identical, so the two sides answer the question the same way.
+
+Walls stay canonical against each other only. A wall merely removes paths, so if the
+whole set leaves every player a route then so does every subset: any order of the
+same walls is equally legal. A wall may NOT move past a pawn, because a capture ends
+a move - a term written after a capturing pawn is never reached, and a wall written
+there would be lost.
+
+A pawn that steps twice is still ONE term naming where it ended, and it sits at that
+pawn's FIRST action.
+*/
 std::string Move::standard_notation(Board const& board, Player player) const {
     std::stringstream out;
     std::array<std::optional<Cell>, 4> destinations;
@@ -217,16 +240,15 @@ std::string Move::standard_notation(Board const& board, Player player) const {
         if (move.second_dir) destination = destination->step(*move.second_dir);
     };
 
-    // Process first action
-    folly::variant_match(
-        first,
-        [&](PawnMove move) { apply_pawn_move(move); },
-        [&](Wall wall) { walls.push_back(wall); });
+    std::array<Action, 2> const actions{first, second};
 
-    folly::variant_match(
-        second,
-        [&](PawnMove move) { apply_pawn_move(move); },
-        [&](Wall wall) { walls.push_back(wall); });
+    // First pass: where each pawn ended, and which walls were built.
+    for (Action const& action : actions) {
+        folly::variant_match(
+            action,
+            [&](PawnMove move) { apply_pawn_move(move); },
+            [&](Wall wall) { walls.push_back(wall); });
+    }
 
     // Sort walls: vertical (Right/>) before horizontal (Down/^), then by column, then by row
     // Note: sorting uses internal coordinates which works because we only care about ordering
@@ -237,21 +259,24 @@ std::string Move::standard_notation(Board const& board, Player player) const {
         return a.cell < b.cell;  // Then by cell position
     });
 
-    // Output in order: cat move, mouse move, then walls, separated by periods
+    // Second pass: the played order. A pawn gets its term at its first action; each
+    // wall slot takes the next wall in sorted order.
+    std::array<bool, 4> emitted{};
+    size_t wall_index = 0;
     bool first_action = true;
-    for (Pawn pawn : {Pawn::Dog, Pawn::Cat, Pawn::Mouse, Pawn::Elephant}) {
-        auto const& destination = destinations[static_cast<size_t>(pawn)];
-        if (destination) {
-            if (!first_action) out << '.';
-            out << pawn_notation(pawn) << cell_notation(*destination, board.rows());
-            first_action = false;
+    for (Action const& action : actions) {
+        std::string term;
+        if (auto const* move = std::get_if<PawnMove>(&action)) {
+            size_t const index = static_cast<size_t>(move->pawn);
+            if (emitted[index]) continue;
+            emitted[index] = true;
+            term = std::string(1, pawn_notation(move->pawn)) +
+                cell_notation(*destinations[index], board.rows());
+        } else {
+            term = wall_notation(walls[wall_index++], board.rows());
         }
-    }
-    for (Wall const& wall : walls) {
-        if (!first_action) {
-            out << '.';
-        }
-        out << wall_notation(wall, board.rows());
+        if (!first_action) out << '.';
+        out << term;
         first_action = false;
     }
 

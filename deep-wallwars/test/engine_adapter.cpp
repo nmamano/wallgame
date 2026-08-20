@@ -4,6 +4,9 @@
 #include <folly/Overload.h>
 #include <filesystem>
 #include <fstream>
+#include <string>
+#include <utility>
+#include <vector>
 
 using namespace engine_adapter;
 
@@ -305,10 +308,18 @@ TEST_CASE("place_padding_walls - Standard variant blocks bottom and right", "[Pa
     CHECK_FALSE(board.is_blocked(Wall{Cell{2, 2}, Wall::Right}));
 }
 
-TEST_CASE("place_padding_walls - Classic variant leaves bottom row vertical walls open", "[Padding]") {
+TEST_CASE("place_padding_walls - Classic bottom row stays open to a goal in the padding",
+          "[Padding]") {
     auto config = create_padding_config(8, 8, 5, 5, Variant::Classic);
 
+    // A plain 8x8 Classic board homes at the MODEL bottom corners, so with a 5x5 game
+    // embedded in it both goals sit out in the padding. That is what keeps the corridor
+    // open, and it is the shape make_padded_training_board builds. A served board homes
+    // on the game board instead and is sealed - the test below this one.
     Board board(8, 8, Variant::Classic);
+    REQUIRE_FALSE(transform_to_game(board.goal(Player::Red), config).has_value());
+    REQUIRE_FALSE(transform_to_game(board.goal(Player::Blue), config).has_value());
+
     place_padding_walls(board, config);
 
     // Bottom row (row 7) vertical walls should NOT be blocked (path to goal)
@@ -498,7 +509,9 @@ TEST_CASE("make_padded_training_board - classic 8x8 in 12x10", "[Padding]") {
     CHECK(board.position(Player::Red) == Cell{2, 2});
     CHECK(board.position(Player::Blue) == Cell{9, 2});
 
-    // Classic goals at the MODEL bottom corners (serving semantics).
+    // Classic goals at the MODEL bottom corners. This is the TRAINING board's own
+    // semantics, not serving's: a served board takes both homes from the game config,
+    // which always puts them on the game board.
     CHECK(board.home(Player::Red) == Cell{11, 9});
     CHECK(board.home(Player::Blue) == Cell{0, 9});
 
@@ -552,6 +565,162 @@ TEST_CASE("make_padded_training_board - animal 7x7 in 12x10", "[Padding]") {
     CHECK(board.is_blocked(Wall{Cell{3, 6}, Wall::Down}));
     CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Right}));
     CHECK_FALSE(board.is_blocked(Wall{Cell{3, 3}, Wall::Down}));
+}
+
+// ============================================================================
+// Moves the game board cannot hold (board a74a9963)
+// ============================================================================
+
+/*
+A serving board is the MODEL board with the game embedded in it, so every cell of the
+padding is a cell the real game has not got. Board::legal_walls walks the whole model
+board and offers every wall the padding left open, which makes each of those a move
+MCTS may pick and the session may send.
+
+Classic 8x8 on the 12x10 serving model seats the game in columns 2..9 and rows 2..9.
+Two kinds of wall used to get out, both on the bottom row, which is the row the Classic
+padding held open:
+  - a wall in a padding column, which transform_move_notation cannot express, so the
+    model notation went out unchanged and named a column the game has not got (">k1");
+  - a wall on the game board's own right edge, model column 9, which transforms cleanly
+    into ">h1" and so reads as an ordinary move while naming a wall off the board.
+*/
+
+static json classic_config_with(int width, int height, json pawns) {
+    json config;
+    config["variant"] = "classic";
+    config["boardWidth"] = width;
+    config["boardHeight"] = height;
+    config["initialState"]["pawns"] = std::move(pawns);
+    config["initialState"]["walls"] = json::array();
+    return config;
+}
+
+// The position production deals for an ordinary Classic game, as
+// shared/domain/classic-setup.ts builds it: cats on the top corners, each home on the
+// diagonally opposite bottom corner, no walls. Protocol cells are [row, column].
+static json production_classic_start(int width, int height) {
+    json pawns;
+    pawns["p1"]["cat"] = {0, 0};
+    pawns["p1"]["home"] = {height - 1, width - 1};
+    pawns["p2"]["cat"] = {0, width - 1};
+    pawns["p2"]["home"] = {height - 1, 0};
+    return classic_config_with(width, height, pawns);
+}
+
+// Classic Random Start draws cats and homes from the Standard random distribution
+// (shared/domain/classic-setup.ts), so a home lands anywhere rather than on a corner.
+static json classic_random_start(int width, int height) {
+    json pawns;
+    pawns["p1"]["cat"] = {2, 3};
+    pawns["p1"]["home"] = {5, 6};
+    pawns["p2"]["cat"] = {1, 6};
+    pawns["p2"]["home"] = {4, 1};
+    return classic_config_with(width, height, pawns);
+}
+
+// A wall the game board cannot hold, either way of getting out.
+static bool off_the_game_board(Wall wall, PaddingConfig const& config) {
+    std::optional<Cell> const game_cell = transform_to_game(wall.cell, config);
+    if (!game_cell) {
+        return true;
+    }
+    return wall.type == Wall::Right && game_cell->column == config.game_columns - 1;
+}
+
+// Exactly what the session would put on the wire for this wall.
+static std::string sent_for(Wall wall, Board const& board, PaddingConfig const& config) {
+    return transform_move_notation(wall_notation(wall, board.rows()),
+                                   board.position(Player::Red), board.home(Player::Red), config);
+}
+
+static std::string joined(std::vector<std::string> const& items) {
+    std::string result;
+    for (std::string const& item : items) {
+        if (!result.empty()) {
+            result += ' ';
+        }
+        result += item;
+    }
+    return result;
+}
+
+TEST_CASE("Classic serving offers no wall off the game board", "[Padding]") {
+    // The ordinary start is in here on purpose. Nothing in the rules held this to
+    // Random Start: the same walls are on offer from the position production deals.
+    std::vector<std::pair<std::string, json>> const positions{
+        {"production start", production_classic_start(8, 8)},
+        {"random start", classic_random_start(8, 8)},
+    };
+
+    for (auto const& [name, config] : positions) {
+        DYNAMIC_SECTION(name) {
+            auto [board, turn, padding] = convert_bgs_config_to_board(config, 10, 12);
+            REQUIRE(padding.needs_padding());
+
+            std::vector<std::string> sent;
+            for (Wall const& wall : board.legal_walls()) {
+                if (off_the_game_board(wall, padding)) {
+                    sent.push_back(sent_for(wall, board, padding));
+                }
+            }
+
+            INFO("the search may pick these, and the session would send: " << joined(sent));
+            CHECK(sent.empty());
+        }
+    }
+}
+
+TEST_CASE("Classic serving offers no wall off the game board, at any size", "[Padding]") {
+    // Every Classic size production offers, from official-custom-bot-client's config.
+    // Board width is what decides this, not height: the row that used to stay open runs
+    // across the board, so a 5-wide game was offered seven walls it could not hold and
+    // only a 12-wide game - as wide as the model, so no side padding - was ever clean.
+    for (int height = 5; height <= 10; ++height) {
+        for (int width = 5; width <= 12; ++width) {
+            json const config = production_classic_start(width, height);
+            REQUIRE(validate_bgs_config(config, 10, 12).valid);
+            auto [board, turn, padding] = convert_bgs_config_to_board(config, 10, 12);
+
+            std::vector<std::string> sent;
+            for (Wall const& wall : board.legal_walls()) {
+                if (off_the_game_board(wall, padding)) {
+                    sent.push_back(sent_for(wall, board, padding));
+                }
+            }
+
+            INFO(width << "x" << height << " offers: " << joined(sent));
+            CHECK(sent.empty());
+        }
+    }
+}
+
+TEST_CASE("Classic serving seals the game board's edge", "[Padding]") {
+    auto [board, turn, padding] =
+        convert_bgs_config_to_board(production_classic_start(8, 8), 10, 12);
+
+    // Both homes are on the game board, so nothing on this board wants the padding.
+    // A sealed edge is also what keeps a pawn from walking out into it.
+    int const left_of_the_board = padding.col_offset - 1;
+    int const right_edge = padding.col_offset + padding.game_columns - 1;
+    for (int row = padding.row_offset; row < padding.model_rows; ++row) {
+        INFO("row " << row);
+        CHECK(board.is_blocked(Wall{Cell{left_of_the_board, row}, Wall::Right}));
+        CHECK(board.is_blocked(Wall{Cell{right_edge, row}, Wall::Right}));
+    }
+}
+
+TEST_CASE("Classic training keeps its way to the goals in the padding", "[Padding]") {
+    Board board = make_padded_training_board(12, 10, 8, 8, Variant::Classic);
+
+    // Both homes are model bottom corners, out beyond the embedded 8x8.
+    REQUIRE(board.home(Player::Red) == Cell{11, 9});
+    REQUIRE(board.home(Player::Blue) == Cell{0, 9});
+
+    // distance is -1 when no path exists. Sealing the served board must not seal this
+    // one: with the corridor shut, neither player could ever reach a goal.
+    CHECK(board.distance(board.position(Player::Red), board.home(Player::Red)) != -1);
+    CHECK(board.distance(board.position(Player::Blue), board.home(Player::Blue)) != -1);
 }
 
 TEST_CASE("make_padded_training_board - equal dims is the standard board", "[Padding]") {
