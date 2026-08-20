@@ -152,6 +152,133 @@ TEST_CASE("validate_bgs_config - Valid classic config", "[BGS Validation]") {
     CHECK(result.valid);
 }
 
+namespace {
+
+// A standard board with Red's mouse one step from the right edge.
+json make_edge_mouse_config() {
+    json config;
+    config["variant"] = "standard";
+    config["boardWidth"] = 5;
+    config["boardHeight"] = 5;
+    // Each pawn is [row, column], as in make_standard_config.
+    config["initialState"]["pawns"]["p1"]["cat"] = {0, 0};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {2, 3};
+    config["initialState"]["pawns"]["p2"]["cat"] = {4, 0};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {4, 4};
+    config["initialState"]["walls"] = json::array();
+    return config;
+}
+
+// Offers exactly one action - the mover's mouse steps right - and NOTHING once that mouse is on the
+// edge. A turn started from the cell before the edge therefore has a first action and no second.
+struct MouseRightOnlyPolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        Cell const cell = board.pawn_position(turn.player, Pawn::Mouse);
+        if (!board.is_blocked(Wall{cell, Direction::Right})) {
+            edges.emplace_back(PawnMove{Pawn::Mouse, Direction::Right}, 1.0f);
+        }
+        co_return Evaluation{0.0f, std::move(edges)};
+    }
+};
+
+// A standard board where Red's cat is ONE step from winning. Standard defines goal(Red) as Blue's
+// mouse, so stepping right onto it ends the game. Walls are free everywhere, so a second action is
+// always available - stopping at one action is therefore a CHOICE, not a lack of options.
+json make_forced_win_config() {
+    json config;
+    config["variant"] = "standard";
+    config["boardWidth"] = 6;
+    config["boardHeight"] = 6;
+    // Each pawn is [row, column].
+    config["initialState"]["pawns"]["p1"]["cat"] = {3, 2};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {0, 0};
+    config["initialState"]["pawns"]["p2"]["cat"] = {5, 5};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {3, 3};
+    config["initialState"]["walls"] = json::array();
+    return config;
+}
+
+// Prefers the mover's cat stepping RIGHT, with walls underneath so a second action always exists.
+struct CatRightPolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        for (Wall wall : board.legal_walls()) {
+            edges.emplace_back(wall, 0.01f);
+        }
+        for (auto dir : board.legal_directions(turn.player, Pawn::Cat)) {
+            edges.emplace_back(PawnMove{Pawn::Cat, dir}, dir == Direction::Right ? 0.9f : 0.02f);
+        }
+        co_return Evaluation{0.0f, std::move(edges)};
+    }
+};
+
+}  // namespace
+
+/*
+PLAYED THE WIN, not merely "did not refuse". This is the tracked guard for the defect that a review
+caught and a test did not, on 2026-08-20.
+
+The first version of the never-refuse fix answered `Cd6` at the archived repro position. That is a
+legal, completed turn - the cat steps to d5 and CONTINUES to d6, walking off the very square that
+wins the game - and an assertion that only checked "success, non-empty, one term" passed it. The
+notation collapses two cat steps into ONE term naming the final cell, so even a single-term check
+cannot tell the two apart. Only the DESTINATION can.
+
+So this asserts the exact winning cell. Do not weaken it to "a legal turn" for an engine that
+merely stops refusing.
+*/
+TEST_CASE("evaluate_position plays the win instead of moving on past it", "[BGS]") {
+    BgsEngineConfig engine_config;
+    engine_config.samples_per_move = 4;
+    engine_config.root_noise_factor = 0;
+    SessionManager manager(CatRightPolicy{}, engine_config);
+    REQUIRE(manager.create_session("forced-win", "bot", make_forced_win_config()).first);
+
+    auto response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, engine_config, "forced-win", 0));
+
+    REQUIRE(response["success"].get<bool>());
+    auto const best = response["bestMove"].get<std::string>();
+
+    // Blue's mouse sits at row 3, column 3 of a 6-row game board. Columns count a, b, c, d; official
+    // rows grow upward, so row 3 is written 6 - 3 = 3. The cat must END on d3 and stay there.
+    CHECK(best == "Cd3");
+    // Stated separately so a failure says WHICH property broke: one term, and the right cell.
+    CHECK(best.find('.') == std::string::npos);
+}
+
+/*
+The engine must never refuse a turn it is able to play.
+
+On 2026-08-20 a real Classic game reached a position where all four legal moves were single cat
+steps - one of them winning outright - and the engine answered success=false "No legal move
+available", so the bot lost a won game. The rules allow a single action or none at all, so a short
+turn is an ANSWER; the handler used to demand two actions and treat anything less as impossible.
+*/
+TEST_CASE("evaluate_position answers with one action when nothing can follow it", "[BGS]") {
+    BgsEngineConfig engine_config;
+    engine_config.samples_per_move = 4;
+    engine_config.root_noise_factor = 0;
+    SessionManager manager(MouseRightOnlyPolicy{}, engine_config);
+    REQUIRE(manager.create_session("one-action", "bot", make_edge_mouse_config()).first);
+
+    auto response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, engine_config, "one-action", 0));
+
+    REQUIRE(response["success"].get<bool>());
+    CHECK(response["error"].get<std::string>().empty());
+
+    auto const best = response["bestMove"].get<std::string>();
+    // A real action, not a pass: there IS something legal to do here.
+    CHECK(best != "---");
+    CHECK(best.starts_with("M"));
+    // ONE term. A second term would have to be illegal, because nothing is legal after the step.
+    CHECK(best.find('.') == std::string::npos);
+}
+
 TEST_CASE("Animal Cycle apply accepts pass but search never proposes it", "[Animal Cycle]") {
     BgsEngineConfig engine_config;
     engine_config.samples_per_move = 20;

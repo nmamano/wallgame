@@ -22,7 +22,7 @@ folly::coro::Task<std::optional<Action>> best_action(
            })->action;
 }
 
-folly::coro::Task<std::optional<Move>> best_move(
+folly::coro::Task<std::vector<Action>> best_turn(
     EvaluationFunction const& policy,
     Board const& board,
     Turn turn,
@@ -33,7 +33,8 @@ folly::coro::Task<std::optional<Move>> best_move(
     // MCTS::peek_best_move, which reads the two actions off a First-action root.
     auto action1 = co_await best_action(policy, board, turn, previous_position);
     if (!action1) {
-        co_return std::nullopt;
+        // Nothing legal to do at all, which the rules answer with a pass.
+        co_return std::vector<Action>{};
     }
 
     // Built BEFORE the action is applied, because it records where the pawn came FROM. This is what
@@ -49,25 +50,27 @@ folly::coro::Task<std::optional<Move>> best_move(
     Board after_first = board;
     after_first.do_action(turn.player, *action1);
 
-    if (after_first.reached_goal(turn.player)) {
-        // The capture is made, and it is judged when the turn ENDS, so the second action only has to
-        // leave the cat where it is - but the protocol still wants a complete turn. Same behaviour
-        // as MCTS::peek_best_move here, including asking about the MOVER rather than about the
-        // position: our own mouse stepping onto the enemy cat is a legal walk-past and the turn has
-        // to continue through it (board task 8911a6d5).
-        std::vector<Wall> const legal_walls = after_first.legal_walls();
-        if (legal_walls.empty()) {
-            co_return std::nullopt;
-        }
-        co_return Move{*action1, legal_walls[0]};
+    if (turn_must_end_after_action(after_first, turn.player)) {
+        // The capture is made, so the turn simply stops here. An earlier version appended an
+        // arbitrary legal wall to fill a second slot the protocol was believed to require, and
+        // refused outright when no wall was left; a one-action turn is the honest answer and it
+        // cannot refuse.
+        //
+        // The predicate is SHARED with the BGS handler and the search on purpose. This used to be a
+        // bare `reached_goal`, which is blind to an Animal Cycle capture, and the handler papered
+        // over that by re-testing the first action itself. It no longer does, so a private copy of
+        // this question here would let the naive fallback append a second action after a winning
+        // Animal Cycle capture and walk away from the win.
+        co_return std::vector<Action>{*action1};
     }
 
     auto action2 = co_await best_action(policy, after_first, turn.next(), second_previous_position);
     if (!action2) {
-        co_return std::nullopt;
+        // Nothing legal is left after the first action, so the turn is one action long.
+        co_return std::vector<Action>{*action1};
     }
 
-    co_return Move{*action1, *action2};
+    co_return std::vector<Action>{*action1, *action2};
 }
 
 }  // namespace naive

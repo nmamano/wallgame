@@ -397,3 +397,111 @@ TEST_CASE("Animal Cycle capture is terminal after the capturing action", "[Train
     CHECK(board.score_for(Player::Blue, Turn{Player::Blue, Turn::Second}) == 1.0);
     CHECK(board.score_for(Player::Red, Turn{Player::Blue, Turn::Second}) == -1.0);
 }
+
+/*
+The notation emitter writes the actions a turn HAS, and a turn may legally have two, one, or none.
+
+`Move::standard_notation` is the two-action case and must be unchanged by that generalisation, so it
+is checked here against the same actions passed directly.
+*/
+TEST_CASE("turn_notation writes short turns", "[Game State]") {
+    Board board = standard_board(5, 5, {0, 0}, {2, 2}, {4, 4}, {3, 2});
+
+    SECTION("no actions at all is the pass token") {
+        CHECK(turn_notation({}, board, Player::Red) == "---");
+    }
+
+    SECTION("one action is one term, with no separator") {
+        std::array<Action, 1> const actions{PawnMove{Pawn::Cat, Direction::Right}};
+        std::string const written = turn_notation(actions, board, Player::Red);
+
+        CHECK(written.starts_with("C"));
+        CHECK(written.find('.') == std::string::npos);
+    }
+
+    SECTION("two actions read exactly as Move::standard_notation does") {
+        Action const first = PawnMove{Pawn::Cat, Direction::Right};
+        Action const second = PawnMove{Pawn::Cat, Direction::Down};
+        std::array<Action, 2> const actions{first, second};
+
+        CHECK(turn_notation(actions, board, Player::Red) ==
+              Move{first, second}.standard_notation(board, Player::Red));
+    }
+}
+
+/*
+The one terminal-after-action predicate the BGS handler, the naive fallback and the search all
+now share. It answers "did that action make the game terminal?", NOT "did the mover win" - the
+third section below is a case where the mover decided the game against itself.
+
+Both halves are pinned here, including the trap that made a private copy dangerous: for a
+non-Animal variant the game really is decided, and `winner(Turn{player, Second})` still answers
+Undecided, because it is deliberately blind to a mid-turn position. Anything that asks THAT
+question here gets "no" every time.
+*/
+TEST_CASE("turn_must_end_after_action covers both variants and a losing capture", "[Game State]") {
+    SECTION("Standard: reaching the goal wins, and the Turn::Second query cannot see it") {
+        Board const before = standard_board(5, 5, {0, 0}, {1, 1}, {4, 0}, {3, 3});
+        Cell const red_goal = before.goal(Player::Red);
+        CHECK_FALSE(turn_must_end_after_action(before, Player::Red));
+
+        Board const after = standard_board(5, 5, red_goal, {1, 1}, {4, 0}, {3, 3});
+        CHECK(turn_must_end_after_action(after, Player::Red));
+
+        // The trap, stated as an assertion so it cannot be forgotten again.
+        CHECK(after.winner(Turn{Player::Red, Turn::Second}) == Winner::Undecided);
+    }
+
+    /*
+    The elephant, not the cat. Animal Cycle defines goal(Red) AS Blue's mouse, so `reached_goal`
+    already sees a CAT capture and a cat-based case would pass under either predicate. Red's
+    elephant taking Blue's dog also wins, and `reached_goal` is blind to it - that is the whole
+    reason this predicate cannot be a bare `reached_goal`.
+    */
+    SECTION("Animal Cycle: a capture reached_goal cannot see still decides the game") {
+        Board board{5,
+                    5,
+                    Variant::AnimalCycle,
+                    {{Player::Red, Pawn::Cat, Cell{0, 0}},
+                     {Player::Red, Pawn::Elephant, Cell{2, 2}},
+                     {Player::Blue, Pawn::Mouse, Cell{4, 4}},
+                     {Player::Blue, Pawn::Dog, Cell{3, 2}}}};
+
+        CHECK_FALSE(turn_must_end_after_action(board, Player::Red));
+
+        board.do_action(Player::Red, PawnMove{Pawn::Elephant, Direction::Right});
+        CHECK(turn_must_end_after_action(board, Player::Red));
+        CHECK(board.winner() == Winner::Red);
+        // The divergence, pinned.
+        CHECK_FALSE(board.reached_goal(Player::Red));
+    }
+
+    /*
+    The mover can DECIDE THE GAME AGAINST ITSELF, and the turn must still stop.
+
+    `legal_directions` excludes blocked paths and teammate collisions, and nothing else, so Red may
+    legally step its own cat onto Blue's dog - and `animal_cycle_winner` scores dog-takes-cat for
+    BLUE. This is the case that forbids narrowing the predicate to `winner == player`: doing so
+    would let the turn continue after a losing capture, which is worse than the bug the shared
+    predicate replaced. Raised by Reviewer 3 on 2026-08-20, after I wrongly judged it unreachable.
+    */
+    SECTION("Animal Cycle: a capture that loses the game also ends the turn") {
+        Board board{5,
+                    5,
+                    Variant::AnimalCycle,
+                    {{Player::Red, Pawn::Cat, Cell{2, 2}},
+                     {Player::Red, Pawn::Elephant, Cell{0, 4}},
+                     {Player::Blue, Pawn::Mouse, Cell{4, 4}},
+                     {Player::Blue, Pawn::Dog, Cell{3, 2}}}};
+
+        CHECK_FALSE(turn_must_end_after_action(board, Player::Red));
+
+        board.do_action(Player::Red, PawnMove{Pawn::Cat, Direction::Right});
+
+        // BLUE won, off RED's own action...
+        CHECK(board.winner() == Winner::Blue);
+        // ...and the predicate still says the turn is over. A `winner == player` test would say
+        // "carry on" here.
+        CHECK(turn_must_end_after_action(board, Player::Red));
+    }
+}

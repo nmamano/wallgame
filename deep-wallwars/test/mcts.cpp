@@ -176,6 +176,36 @@ TEST_CASE("peek_best_move finishes a capture with a wall", "[MCTS]") {
     CHECK(std::holds_alternative<Wall>(move->second));
 }
 
+/*
+A turn whose first action has NOTHING legal after it is a one-action turn, not a dead end.
+
+This is the shape that made the engine answer "No legal move available" in a real game on
+2026-08-20: every legal move at that position was a single cat step, one of them winning, and the
+two-action assembly reported the whole turn impossible. The rules allow a turn of one action, so the
+first action must survive the second one's absence.
+
+`peek_best_move` still answers nullopt here, and that is correct - it promises a complete two-action
+`Move` to callers that need one. The point is that it is no longer the only way to ask.
+*/
+TEST_CASE("peek_best_second_action reports no second action without losing the first", "[MCTS]") {
+    // Red's mouse one step from the right edge, and stepping right is its only action - so once it
+    // has stepped there is nothing legal left to do.
+    Board board = standard_board(5, 5, {0, 0}, {3, 2}, {0, 4}, {4, 4});
+    MCTS mcts{OnlyPolicy{Pawn::Mouse, Direction::Right}, std::move(board)};
+
+    folly::coro::blockingWait(mcts.sample(2));
+
+    auto action1 = mcts.peek_best_action();
+    REQUIRE(action1);
+    CHECK(std::get<PawnMove>(*action1).pawn == Pawn::Mouse);
+
+    // There is genuinely no second action...
+    CHECK_FALSE(mcts.peek_best_second_action(*action1).has_value());
+    // ...and asking for a complete two-action move is what cannot be answered. Before the fix this
+    // was the ONLY question the BGS handler asked, so the first action was thrown away with it.
+    CHECK_FALSE(mcts.peek_best_move().has_value());
+}
+
 // The mirror case must NOT take that shortcut. Our own mouse stepping onto the enemy cat decides
 // nothing, so filling the rest of the turn with a wall would strand the mouse on the cat and hand
 // the game over at the turn boundary.

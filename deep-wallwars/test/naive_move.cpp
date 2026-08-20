@@ -1,7 +1,7 @@
 /**
  * The losing-move fallback (board task b4c2b191).
  *
- * Two layers are tested separately: `naive::best_move` picking a move from a policy's priors, and
+ * Two layers are tested separately: `naive::best_turn` picking a turn from a policy's priors, and
  * the BGS adapter deciding WHEN to use it.
  */
 
@@ -88,7 +88,7 @@ struct WallLovingPolicy {
 };
 
 // ============================================================================
-// naive::best_action / best_move
+// naive::best_action / best_turn
 // ============================================================================
 
 TEST_CASE("naive::best_action returns the policy's highest prior, and it is legal", "[naive]") {
@@ -114,16 +114,16 @@ TEST_CASE("naive::best_action returns the policy's highest prior, and it is lega
     CHECK(*action == expected->action);
 }
 
-TEST_CASE("naive::best_move asks the second question about the position after the first action",
+TEST_CASE("naive::best_turn asks the second question about the position after the first action",
           "[naive]") {
     Board board{5, 5};
     RecordingPolicy policy;
     EvaluationFunction fn = policy;
     Cell const cat_before = board.pawn_position(Player::Red, Pawn::Cat);
 
-    auto move = folly::coro::blockingWait(
-        naive::best_move(fn, board, Turn{Player::Red, Turn::First}, std::nullopt));
-    REQUIRE(move.has_value());
+    auto actions = folly::coro::blockingWait(
+        naive::best_turn(fn, board, Turn{Player::Red, Turn::First}, std::nullopt));
+    REQUIRE(actions.size() == 2);
 
     REQUIRE(policy.calls->size() == 2);
     auto const& first = (*policy.calls)[0];
@@ -147,13 +147,13 @@ TEST_CASE("naive::best_move asks the second question about the position after th
     CHECK(second.board.pawn_position(Player::Red, Pawn::Cat) != cat_before);
 
     // Both actions legal IN SEQUENCE, checked against the Board rather than the policy's own list.
-    CHECK(bgs_test::is_legal_action(board, Player::Red, move->first));
+    CHECK(bgs_test::is_legal_action(board, Player::Red, actions[0]));
     Board after_first = board;
-    after_first.do_action(Player::Red, move->first);
-    CHECK(bgs_test::is_legal_action(after_first, Player::Red, move->second));
+    after_first.do_action(Player::Red, actions[0]);
+    CHECK(bgs_test::is_legal_action(after_first, Player::Red, actions[1]));
 }
 
-TEST_CASE("naive::best_move with SimplePolicy walks the cat toward its goal", "[naive]") {
+TEST_CASE("naive::best_turn with SimplePolicy walks the cat toward its goal", "[naive]") {
     // This is what "naive" is supposed to MEAN. A move that is merely legal would satisfy the tests
     // above while being useless as a graceful-loss policy.
     Board board{5, 5};
@@ -162,17 +162,90 @@ TEST_CASE("naive::best_move with SimplePolicy walks the cat toward its goal", "[
     int const distance_before =
         board.distance(board.position(Player::Red), board.goal(Player::Red));
 
-    auto move = folly::coro::blockingWait(
-        naive::best_move(fn, board, Turn{Player::Red, Turn::First}, std::nullopt));
-    REQUIRE(move.has_value());
+    auto actions = folly::coro::blockingWait(
+        naive::best_turn(fn, board, Turn{Player::Red, Turn::First}, std::nullopt));
+    REQUIRE(actions.size() == 2);
 
     Board after = board;
-    after.do_action(Player::Red, move->first);
-    CHECK(bgs_test::is_legal_action(after, Player::Red, move->second));
-    after.do_action(Player::Red, move->second);
+    after.do_action(Player::Red, actions[0]);
+    CHECK(bgs_test::is_legal_action(after, Player::Red, actions[1]));
+    after.do_action(Player::Red, actions[1]);
 
     int const distance_after = after.distance(after.position(Player::Red), after.goal(Player::Red));
     CHECK(distance_after < distance_before);
+}
+
+/**
+ * Prefers ONE named pawn stepping RIGHT above everything else, and always offers walls underneath
+ * it, so a second action is unquestionably available. A turn that failed to stop would therefore
+ * certainly produce one.
+ */
+struct PawnRightPolicy {
+    Pawn pawn;
+
+    folly::coro::Task<Evaluation> operator()(
+        Board const& board,
+        Turn turn,
+        std::optional<PreviousPosition>) {
+
+        std::vector<TreeEdge> edges;
+        for (Wall wall : board.legal_walls()) {
+            edges.emplace_back(wall, 0.01f);
+        }
+        for (auto dir : board.legal_directions(turn.player, pawn)) {
+            edges.emplace_back(PawnMove{pawn, dir}, dir == Direction::Right ? 0.9f : 0.02f);
+        }
+
+        co_return Evaluation{0.0f, std::move(edges)};
+    }
+};
+
+/*
+Reviewer 3's detector, 2026-08-20.
+
+In Animal Cycle a capture decides the game the instant it happens, so a naive first action that
+captures must END the turn. This function used to ask `reached_goal`, and the BGS handler covered
+for it by independently re-testing the first action. The handler no longer does - it takes these
+actions as given - so a private predicate here would append a second action after a winning capture
+and walk the pawn straight back off the win.
+
+The ELEPHANT taking the dog is the case that discriminates, and picking it is not arbitrary. Animal
+Cycle defines `goal(Red)` AS Blue's mouse, so `reached_goal(Red)` already sees a CAT capture: a test
+written around the cat passes with either predicate and proves nothing. This was measured, not
+reasoned - the first version of this test used the cat, and it still passed when the predicate was
+mutated back to `reached_goal`. Only the elephant's capture is invisible to the old question, and
+the two CHECKs below pin that divergence so the point cannot be lost again.
+*/
+TEST_CASE("naive::best_turn stops on an Animal Cycle capture", "[naive]") {
+    // Red's elephant one step left of Blue's dog. The cat and the mouse are kept far apart, so the
+    // cat-mouse pair that `reached_goal` looks at is nowhere near decided.
+    Board board{5,
+                5,
+                Variant::AnimalCycle,
+                {{Player::Red, Pawn::Cat, Cell{0, 0}},
+                 {Player::Red, Pawn::Elephant, Cell{2, 2}},
+                 {Player::Blue, Pawn::Mouse, Cell{4, 4}},
+                 {Player::Blue, Pawn::Dog, Cell{3, 2}}}};
+
+    EvaluationFunction fn = PawnRightPolicy{Pawn::Elephant};
+    auto actions = folly::coro::blockingWait(
+        naive::best_turn(fn, board, Turn{Player::Red, Turn::First}, std::nullopt));
+
+    // ONE action. Two would mean the capture was not recognised as the end of the turn.
+    REQUIRE(actions.size() == 1);
+    auto const& pawn_move = std::get<PawnMove>(actions[0]);
+    CHECK(pawn_move.pawn == Pawn::Elephant);
+    CHECK(pawn_move.dir == Direction::Right);
+
+    Board after = board;
+    after.do_action(Player::Red, actions[0]);
+
+    // It really is a win, so stopping was right...
+    CHECK(after.winner() == Winner::Red);
+    CHECK(turn_must_end_after_action(after, Player::Red));
+    // ...and the predicate this replaced cannot see it. If this CHECK ever fails, the test has
+    // stopped discriminating and must be rebuilt, not retuned.
+    CHECK_FALSE(after.reached_goal(Player::Red));
 }
 
 // ============================================================================

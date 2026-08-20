@@ -222,8 +222,17 @@ there would be lost.
 
 A pawn that steps twice is still ONE term naming where it ended, and it sits at that
 pawn's FIRST action.
+
+The turn holds two actions, one, or none, and the terms are whatever it holds. Nothing
+below reads a fixed count: an empty turn is the pass token `---`, and a one-action turn
+is a single term. See the header for why a short turn is a legal answer and not a
+failure to build a long one.
 */
-std::string Move::standard_notation(Board const& board, Player player) const {
+std::string turn_notation(std::span<Action const> actions, Board const& board, Player player) {
+    if (actions.empty()) {
+        return "---";
+    }
+
     std::stringstream out;
     std::array<std::optional<Cell>, 4> destinations;
     std::vector<Wall> walls;
@@ -239,8 +248,6 @@ std::string Move::standard_notation(Board const& board, Player player) const {
         }
         if (move.second_dir) destination = destination->step(*move.second_dir);
     };
-
-    std::array<Action, 2> const actions{first, second};
 
     // First pass: where each pawn ended, and which walls were built.
     for (Action const& action : actions) {
@@ -281,6 +288,18 @@ std::string Move::standard_notation(Board const& board, Player player) const {
     }
 
     return out.str();
+}
+
+std::string Move::standard_notation(Board const& board, Player player) const {
+    std::array<Action, 2> const actions{first, second};
+    return turn_notation(actions, board, player);
+}
+
+bool turn_must_end_after_action(Board const& board, Player player) {
+    if (board.variant() == Variant::AnimalCycle) {
+        return board.winner(Turn{player, Turn::Second}) != Winner::Undecided;
+    }
+    return board.reached_goal(player);
 }
 
 std::ostream& operator<<(std::ostream& out, Direction dir) {

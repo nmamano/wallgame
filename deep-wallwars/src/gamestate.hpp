@@ -132,6 +132,45 @@ struct Move {
     std::string standard_notation(Board const& board, Player player) const;
 };
 
+/*
+The notation for the actions a turn ACTUALLY has.
+
+The rules allow a turn of two actions, one action, or none at all, so the number of actions is an
+input here rather than a fixed two. An empty turn is `---`, the pass token both readers already
+accept: `engine_adapter::parse_move_notation` maps it to no actions, and so does the wallgame
+server's `moveFromStandardNotation`.
+
+`Move::standard_notation` is this function called with both of its actions.
+*/
+std::string turn_notation(std::span<Action const> actions, Board const& board, Player player);
+
+/*
+Whether the action `player` has just played made the game TERMINAL, so that no genuine second
+action may follow it in this turn.
+
+Note what this does NOT say: it does not say the mover won. In Animal Cycle the mover can end the
+game in the OPPONENT's favour by its own legal action - `legal_directions` excludes blocked paths
+and teammate collisions, and nothing else, so Red may step its cat onto Blue's dog and
+`animal_cycle_winner` returns Blue. The turn must stop after that too, which is why the Animal half
+asks "is the game decided" and NOT "did `player` win". Narrowing it to `winner == player` would let
+the turn continue after a losing capture, which is worse than the bug this replaced.
+
+This is the one question "is the game over after that action?" and it has exactly one answer, so it
+lives in one place. The two halves are not interchangeable, which is why reading it off `winner()`
+directly is a trap:
+
+  - In Animal Cycle a capture decides the game as soon as it happens, so the position itself knows.
+  - Everywhere else a capture is judged at the TURN BOUNDARY, and `Board::winner(Turn)` deliberately
+    reports Undecided for a Turn::Second query so that a mid-turn walk-past is not read as a win.
+    That query therefore always answers "no" here, which is correct for its own purpose and useless
+    for this one. From a legal non-terminal position only the MOVER can newly reach a terminal state
+    through its own action, so `reached_goal(player)` is the equivalent terminal-after-action query.
+
+Our own mouse stepping onto the enemy cat is a legal walk-past, decides nothing, and does NOT stop
+the turn (board task 8911a6d5).
+*/
+bool turn_must_end_after_action(Board const& board, Player player);
+
 // Helper functions for official notation output with row coordinate flipping
 // (internal rows grow downward, official rows grow upward)
 std::string cell_notation(Cell cell, int rows);

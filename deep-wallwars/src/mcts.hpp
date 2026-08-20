@@ -149,6 +149,17 @@ public:
     // one would mutate the tree; also nullopt when a position has no legal action at all.
     std::optional<Move> peek_best_move() const;
 
+    // The best SECOND action of a turn whose first action is already chosen, without modifying the
+    // tree. Ranks by visit count and falls back to the highest policy prior below `first` when
+    // nothing there has been expanded yet, exactly as `peek_best_move` does.
+    //
+    // Returns nullopt when the position after `first` has no legal action - most often because the
+    // only remaining action would undo `first`. That is a REAL STATE and not a failure: the rules
+    // allow a turn of one action, so the caller answers with `first` alone. Ask this instead of
+    // `peek_best_move` wherever a short turn is an acceptable answer; `peek_best_move` exists for
+    // the callers that need a complete two-action `Move` to hand to the tree.
+    std::optional<Action> peek_best_second_action(Action const& first) const;
+
     // Walks the most-visited path down from the root, which is the search's principal
     // variation - the line it expects both sides to play. Does not modify the tree; the
     // line is already there, so this costs nothing beyond the walk.
@@ -179,6 +190,13 @@ private:
     folly::coro::Task<float> sample_rec(TreeNode& current);
     void delete_subtree(TreeNode& node);
     void move_root(TreeEdge const& edge);
+
+    // The expanded node one action below the root, or nullptr when that edge is missing or has not
+    // been expanded yet.
+    TreeNode* child_after(Action const& action) const;
+    // Whether the game is already decided in `after_first`, so no genuine second action can
+    // follow. Not the same as "the mover won" - see `turn_must_end_after_action`.
+    bool turn_is_over_after(TreeNode const& after_first) const;
 
     folly::coro::Task<TreeNode*> create_tree_node(Board board, Turn turn,
                                                   std::optional<PreviousPosition> previous_position,

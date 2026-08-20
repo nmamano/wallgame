@@ -194,26 +194,6 @@ static json create_move_applied_response(
     };
 }
 
-static std::string action_notation(
-    Action const& action,
-    Board const& board,
-    Player player) {
-    return folly::variant_match(
-        action,
-        [&](PawnMove move) {
-            Cell const start = board.pawn_position(player, move.pawn);
-            Cell const destination = start.step(move.dir);
-            char const pawn_char = move.pawn == Pawn::Dog ? 'D'
-                                   : move.pawn == Pawn::Cat ? 'C'
-                                   : move.pawn == Pawn::Mouse ? 'M' : 'E';
-            return std::string(1, pawn_char) +
-                cell_notation(destination, board.rows());
-        },
-        [&](Wall wall) {
-            return wall_notation(wall, board.rows());
-        });
-}
-
 // ============================================================================
 // Request Handlers
 // ============================================================================
@@ -281,8 +261,6 @@ folly::coro::Task<json> handle_evaluate_position(
         ? board.home(current_player)
         : board.mouse(current_player);
 
-    std::string game_notation;
-
     // In a position the search scores as completely lost, every line loses, so the visit counts are
     // ranking moves whose outcomes are identical - and the move that wins that ranking can look
     // absurd to a human. Take it from the naive policy instead (board task b4c2b191). `raw_eval` is
@@ -301,62 +279,64 @@ folly::coro::Task<json> handle_evaluate_position(
                                   config.losing_fallback_eval.has_value() &&
                                   raw_eval <= *config.losing_fallback_eval;
 
-    std::optional<Action> action1_opt;
-    std::optional<Move> naive_move;
+    /*
+    The actions this turn will actually play - two, one, or none of them.
+
+    The rules let a player take a single action, or no action at all, so EVERY position has an
+    answer and this handler never has to refuse. It used to build a fixed two-action Move and report
+    the whole turn impossible whenever it could not find a second action. That lost real games: at
+    the position reproduced on 2026-08-20 the mover had four legal moves, one of which won outright,
+    and every one of them was a single cat move with nothing legal to follow it.
+
+    Nothing below can fail. `turn_notation` writes however many actions are here, and writes the
+    pass token `---` for none.
+    */
+    std::vector<Action> actions;
 
     if (use_naive_policy) {
         EvaluationFunction naive_policy = SimplePolicy{
             config.naive_move_prior, config.naive_good_move_bias, config.naive_bad_move_bias};
-        naive_move = co_await naive::best_move(naive_policy, board, current_turn, std::nullopt);
-        if (naive_move) {
-            action1_opt = naive_move->first;
-        }
+        actions = co_await naive::best_turn(naive_policy, board, current_turn, std::nullopt);
         XLOGF(DBG, "BGS {} ply {}: eval {:.3f} <= losing threshold {:.3f}, playing the naive policy",
               bgs_id, session->ply, raw_eval, *config.losing_fallback_eval);
-    } else {
-        // A custom setup may begin after the first action of a turn.
-        action1_opt = session->mcts->peek_best_action();
-    }
+    } else if (current_turn.action == Turn::Second) {
+        // A custom setup may begin after the first action of a turn, and then one action completes
+        // it.
+        if (auto const action = session->mcts->peek_best_action()) {
+            actions.push_back(*action);
+        }
+    } else if (auto const action1 = session->mcts->peek_best_action()) {
+        actions.push_back(*action1);
 
-    if (!action1_opt) {
-        co_return create_evaluate_response(
-            bgs_id, session->ply, "", 0.0f, false, "No legal move available");
-    }
-
-    if (current_turn.action == Turn::Second) {
-        std::string const model_notation = action_notation(
-            *action1_opt, board, current_player);
-        game_notation = engine_adapter::transform_move_notation(
-            model_notation, cat_pos, mouse_pos, session->padding_config);
-    } else {
-        // Simulate the first action to check whether it captures. Asked of the MOVER only: a capture
-        // is judged when the turn ENDS, so submitting the single action wins, whereas our own mouse
-        // stepping onto the enemy cat is a legal walk-past and the turn must go on (board task
-        // 8911a6d5).
+        // Simulate the first action to see whether it decided the game. A deciding action ENDS the
+        // turn: anything written after it either walks the pawn back off the deciding cell or is
+        // simply lost, so the turn stops at one action. Note this is not "did we win" - in Animal
+        // Cycle the mover can decide the game in the OPPONENT's favour with its own legal action,
+        // and the turn must stop after that too.
+        //
+        // This used to ask `winner(Turn{player, Second})` directly, which answers Undecided for
+        // every non-Animal variant by design - so the check was dead for Standard and Classic, and
+        // the win was only preserved further down by `peek_best_move` padding the turn with an
+        // arbitrary wall. `turn_must_end_after_action` is the question that was meant all along.
         Board test_board = board;
-        test_board.do_action(current_player, *action1_opt);
+        test_board.do_action(current_player, *action1);
+        bool const turn_is_over = turn_must_end_after_action(test_board, current_player);
 
-        if (test_board.winner(Turn{current_player, Turn::Second}) != Winner::Undecided) {
-            std::string const model_notation = action_notation(
-                *action1_opt, board, current_player);
-            game_notation = engine_adapter::transform_move_notation(
-                model_notation, cat_pos, mouse_pos, session->padding_config);
-        } else {
-            // Selected on `use_naive_policy` rather than on naive_move being set, so the intent is
-            // stated rather than inferred. When the fallback is in play naive_move is necessarily
-            // populated here: it produced action1_opt, and an empty one returned above.
-            std::optional<Move> const move_opt =
-                use_naive_policy ? naive_move : session->mcts->peek_best_move();
-            if (!move_opt) {
-                co_return create_evaluate_response(
-                    bgs_id, session->ply, "", 0.0f, false, "No legal move available");
+        // A missing second action is a one-action turn, not a dead end.
+        if (!turn_is_over) {
+            if (auto const action2 = session->mcts->peek_best_second_action(*action1)) {
+                actions.push_back(*action2);
             }
-
-            std::string model_notation = move_opt->standard_notation(board, current_player);
-            game_notation = engine_adapter::transform_move_notation(
-                model_notation, cat_pos, mouse_pos, session->padding_config);
         }
     }
+
+    if (actions.empty()) {
+        XLOGF(DBG, "BGS {} ply {}: nothing legal to do, passing", bgs_id, session->ply);
+    }
+
+    std::string const model_notation = turn_notation(actions, board, current_player);
+    std::string const game_notation = engine_adapter::transform_move_notation(
+        model_notation, cat_pos, mouse_pos, session->padding_config);
 
     // Convert evaluation to P1's perspective (negate if P2's turn)
     float evaluation = (current_player == Player::Red) ? raw_eval : -raw_eval;

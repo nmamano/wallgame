@@ -366,40 +366,36 @@ std::optional<Action> MCTS::peek_best_action() const {
     return te.action;
 }
 
-std::optional<Move> MCTS::peek_best_move() const {
-    // Get the best first action
-    auto action1 = peek_best_action();
-    if (!action1) {
-        return {};
+TreeNode* MCTS::child_after(Action const& action) const {
+    auto const edge = std::ranges::find_if(
+        m_root->edges, [&](TreeEdge const& te) { return te.action == action; });
+    if (edge == m_root->edges.end()) {
+        return nullptr;
     }
+    return edge->child.load();
+}
 
-    // Find the edge for the first action to access its child
-    auto const& first_edge = *std::ranges::find_if(
-        m_root->edges, [&](TreeEdge const& te) { return te.action == *action1; });
+bool MCTS::turn_is_over_after(TreeNode const& after_first) const {
+    // One shared predicate, defined in gamestate.hpp. `after_first.turn` is Turn::Second for the
+    // mover, which is the Turn its Animal Cycle half asks about, so this is the same question this
+    // function has always asked - just no longer a private copy of it.
+    //
+    // `peek_best_move` responds differently from the other two callers, and that is a difference of
+    // RESPONSE and not of question: it promises a complete two-action Move, so it pads an
+    // already-decided turn with a wall rather than returning one action.
+    return turn_must_end_after_action(after_first.board, m_root->turn.player);
+}
 
-    TreeNode* child = first_edge.child.load();
+std::optional<Action> MCTS::peek_best_second_action(Action const& first) const {
+    TreeNode* child = child_after(first);
     if (!child) {
         return {};
     }
 
-    // Check if the first action captured. Judged for the MOVER, and only for the mover: a capture
-    // counts when the turn ENDS, so a wall preserves it, while our own mouse stepping onto the enemy
-    // cat is a legal walk-past that the turn has to continue through (board task 8911a6d5).
-    bool const terminal_after_first = child->board.variant() == Variant::AnimalCycle
-        ? child->board.winner(child->turn) != Winner::Undecided
-        : child->board.reached_goal(m_root->turn.player);
-    if (terminal_after_first) {
-        // First action won - return an arbitrary legal wall for second action
-        auto legal_walls = child->board.legal_walls();
-        if (legal_walls.empty()) {
-            return {};
-        }
-        return Move{*action1, legal_walls[0]};
-    }
-
-    // Get the best second action from the child node.
     // An empty edge list here is a genuinely action-less position, which happens when our only
-    // possible second action would be to undo the first one - see the comment in sample_rec.
+    // possible second action would be to undo the first one - see the comment in sample_rec. It is
+    // a real state of the board and not a failure: the rules let the turn stop after one action, so
+    // the caller answers with the first action alone.
     if (child->edges.empty()) {
         return {};
     }
@@ -410,7 +406,7 @@ std::optional<Move> MCTS::peek_best_move() const {
         });
 
     if (!second_edge.child) {
-        // No second action below `action1` has been expanded, so there is no visit evidence at this
+        // No second action below `first` has been expanded, so there is no visit evidence at this
         // depth. That is the ordinary state below roughly a hundred samples: the root's child only
         // gets a second visit once the search returns to it, and until then EVERY grandchild edge is
         // still null - which is why the whole move used to be reported as unavailable and the engine
@@ -419,15 +415,42 @@ std::optional<Move> MCTS::peek_best_move() const {
         // Fall back to the policy head for the second action only. This branch is reached only when
         // nothing below `child` is expanded at all: any expanded edge would win the max_element above
         // on visit count, so once there is any visit evidence the search's choice stands.
-        auto action2 = max_prior_action(child->edges);
-        if (!action2) {
-            return {};
-        }
-
-        return Move{*action1, *action2};
+        return max_prior_action(child->edges);
     }
 
-    return Move{*action1, second_edge.action};
+    return second_edge.action;
+}
+
+std::optional<Move> MCTS::peek_best_move() const {
+    // Get the best first action
+    auto action1 = peek_best_action();
+    if (!action1) {
+        return {};
+    }
+
+    TreeNode* child = child_after(*action1);
+    if (!child) {
+        return {};
+    }
+
+    if (turn_is_over_after(*child)) {
+        // First action decided the game - which may have decided it for the OPPONENT, so this is
+        // not "we won". Either way nothing real can follow, and this function owes its callers a
+        // complete two-action Move, so it returns an arbitrary legal wall that leaves the pawn
+        // where it is.
+        auto legal_walls = child->board.legal_walls();
+        if (legal_walls.empty()) {
+            return {};
+        }
+        return Move{*action1, legal_walls[0]};
+    }
+
+    auto action2 = peek_best_second_action(*action1);
+    if (!action2) {
+        return {};
+    }
+
+    return Move{*action1, *action2};
 }
 
 std::vector<PvStep> MCTS::principal_variation(int max_actions, float delta,
