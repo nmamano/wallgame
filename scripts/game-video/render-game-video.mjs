@@ -7,8 +7,8 @@
  *
  *   node scripts/game-video/render-game-video.mjs --game https://wallgame.io/game/v5P09s6K
  *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --seconds-per-move 0.5
- *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --aspect square --no-shake
- *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --music song3
+ *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --aspect square
+ *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --music a-legend
  *
  * IT IS NOT READ-ONLY, AND AN EARLIER VERSION OF THIS COMMENT CLAIMED IT WAS.
  * GET /api/games/:id runs `UPDATE games SET views = views + 1`
@@ -41,6 +41,13 @@
  * The three sounds that are not the site's own live in one table, SOUNDS,
  * further down. That is the only place to change them.
  *
+ * THE MIX IS SETTLED AND IS NOT A PER-RENDER CHOICE. The levels, the fades,
+ * the frame rate and the capture scale were arrived at over about eight rounds
+ * with Nil's ear and are NAMED CONSTANTS, not flags. A flag is a promise that
+ * the value is the caller's to move; these are not, and a future reader who
+ * saw --win-gain would reasonably assume otherwise. Change the constant if the
+ * sound is wrong, and expect to justify it to the person who tuned it.
+ *
  * Needs: playwright-core with Chrome (no browser download), and ffmpeg.
  */
 import { chromium } from "playwright-core";
@@ -72,11 +79,12 @@ const flag = (name) => argv.includes(`--${name}`);
 const rawGame = arg("game");
 if (!rawGame) {
   console.error(
-    "usage: render-game-video.mjs --game <wallgame.io game url or id> [--seconds-per-move 0.8]\n" +
-      "       [--aspect fit|square|9x16] [--out FILE] [--no-shake] [--no-audio] [--origin URL]\n" +
-      "       [--music deja-vus|tea-for-two|a-legend|skippy|PATH] [--no-music]\n" +
-      "       [--music-volume 0.9] [--move-gain 1.6] [--shake-gain 0.6] [--win-gain 0.2]\n" +
-      "       [--board-theme crisp|default]",
+    "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
+      "       [--seconds-per-move 0.8] [--aspect fit|square|9x16]\n" +
+      "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
+      "       [--board-theme crisp|default] [--out FILE]\n" +
+      "  plumbing, for the app rather than for a person:\n" +
+      "       [--work DIR] [--ffmpeg PATH]",
   );
   process.exit(2);
 }
@@ -87,7 +95,7 @@ const GAME_ID = rawGame
   .filter(Boolean)
   .at(-1);
 
-const ORIGIN = arg("origin", "https://wallgame.io").replace(/\/$/, "");
+const ORIGIN = "https://wallgame.io";
 const SECONDS_PER_MOVE = Number(arg("seconds-per-move", "0.8"));
 /**
  * How the frame is shaped.
@@ -106,12 +114,13 @@ const SECONDS_PER_MOVE = Number(arg("seconds-per-move", "0.8"));
  * because the original argument still holds wherever it applies.
  */
 const ASPECT = arg("aspect", "fit");
-const FPS = Number(arg("fps", "30"));
-const SHAKE = !flag("no-shake");
-const AUDIO = !flag("no-audio");
+/** Output frame rate. */
+const FPS = 30;
+/** The shake on the winning move, and the soundtrack: both always on. */
+const SHAKE = true;
+const AUDIO = true;
 /** Absolute, because ffmpeg's concat demuxer resolves entries against the list file. */
 const WORK = resolve(arg("work", `tmp/game-video/${GAME_ID}-frames`));
-const KEEP = flag("keep-frames");
 
 /**
  * The board theme the capture browser uses.
@@ -130,7 +139,7 @@ const KEEP = flag("keep-frames");
 const BOARD_THEME = arg("board-theme", "crisp");
 
 /** See the note above the board capture: fixed on purpose, to load the page once. */
-const CAPTURE_DPR = Number(arg("capture-dpr", "3"));
+const CAPTURE_DPR = 3;
 
 /**
  * Music under the game.
@@ -182,7 +191,7 @@ const pickTrack = () => {
   if (existsSync(resolve(asked))) {
     return {
       file: resolve(asked),
-      title: arg("music-title") ?? asked,
+      title: asked,
       slug: "custom",
     };
   }
@@ -239,18 +248,15 @@ const MUSIC = TRACK
  */
 const OUT = resolve(arg("out", `tmp/game-video/${GAME_ID}.mp4`));
 
-const MUSIC_VOLUME = Number(arg("music-volume", "0.9"));
-const SHAKE_GAIN = Number(arg("shake-gain", "0.6"));
-const WIN_GAIN = Number(arg("win-gain", "0.2"));
+const MUSIC_VOLUME = 0.3;
+const SHAKE_GAIN = 0.6;
+const WIN_GAIN = 0.2;
 /** Multiplies the site's own pawn and wall levels, keeping their balance. */
-const MOVE_GAIN = Number(arg("move-gain", "1.6"));
+const MOVE_GAIN = 1.6;
 
-/** How hard the effects push the music down, and from what level. */
-const DUCK_THRESHOLD = Number(arg("duck-threshold", "0.05"));
-const DUCK_RATIO = Number(arg("duck-ratio", "8"));
-const MUSIC_FADE_IN = Number(arg("music-fade-in", "1.6"));
-/** How long the music takes to fade away before the end card. */
-const MUSIC_FADE_OUT = Number(arg("music-fade-out", "2.0"));
+/** Seconds the music takes to arrive, and to leave before the end card. */
+const MUSIC_FADE_IN = 1.6;
+const MUSIC_FADE_OUT = 2.0;
 
 if (!Number.isFinite(SECONDS_PER_MOVE) || SECONDS_PER_MOVE <= 0) {
   console.error(
@@ -1375,14 +1381,21 @@ const buildAudio = () => {
       Music under the game, and only under the game.
 
       It starts with the board rather than over the VS screen, because the
-      riser owns that moment. It is DUCKED by sidechain compression keyed on
-      the effects bus, not merely set quiet: a fixed low volume either buries
-      the music or lets a wall click disappear underneath it, and the point of
-      the effects is that they stay legible. The music dips when something
-      happens and returns when it does not.
-
-      It also fades OUT across the end card rather than stopping, so the track
+      riser owns that moment, and it fades OUT across the end card rather than stopping, so the track
       resolves under the win instead of being cut off mid-phrase.
+
+      NO DYNAMICS ARE APPLIED TO IT. There used to be a sidechain compressor
+      keyed on the effects, added when the music sat at 0.3 and might have
+      buried a click. At 0.8s per move with a 320ms release the music never
+      recovered between moves, so it pumped on every single move for the whole
+      video - Nil heard it and asked whether he was imagining it. He was not.
+      MUSIC_VOLUME WAS 0.9 AND IS NOW 0.3, AND THAT IS A RESTORATION RATHER
+      THAN A RETUNE. Measured 2026-08-20: the compressor had been holding the
+      music down by 9.45 dB CONTINUOUSLY - not a dip on each hit - so the mix
+      Nil approved was one where the music was ~9.5 dB below what the constant
+      said. Deleting the compressor without compensating would have made the
+      music louder than anything he ever agreed to, and what he asked for was
+      the pumping gone, not the music up. 0.3 puts it back where he had it.
     */
     const musicStart = VS_SECONDS;
     const musicSeconds = totalSeconds - musicStart;
@@ -1407,15 +1420,8 @@ const buildAudio = () => {
         `afade=t=out:st=${fadeOutAt.toFixed(3)}:d=${MUSIC_FADE_OUT},` +
         `volume=${MUSIC_VOLUME},adelay=${Math.round(musicStart * 1000)}:all=1[mus]`,
     );
-    // asplit, because the effects bus is needed twice: once as the key that
-    // pushes the music down, and once in the final mix.
-    chains.push(`[fx]asplit=2[fxKey][fxOut]`);
     chains.push(
-      `[mus][fxKey]sidechaincompress=threshold=${DUCK_THRESHOLD}:ratio=${DUCK_RATIO}:` +
-        `attack=8:release=320:makeup=1[ducked]`,
-    );
-    chains.push(
-      `[fxOut][ducked]amix=inputs=2:normalize=0:dropout_transition=0[mixed]`,
+      `[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mixed]`,
     );
     last = "[mixed]";
   }
@@ -1486,7 +1492,7 @@ const videoArgs = [
 ];
 ff(videoArgs);
 
-if (!KEEP) {
+{
   for (const f of readdirSync(WORK)) {
     if (/^(f-|board-)\d+\.png$/.test(f) || f === "frames.txt")
       unlinkSync(join(WORK, f));
