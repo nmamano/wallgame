@@ -1,0 +1,500 @@
+<!doctype html>
+<!--
+  The video stage for scripts/game-video/render-game-video.mjs.
+
+  This page is a CANVAS FOR COMPOSITION, not a second renderer. It never draws a
+  board, a pawn or a wall: every one of those arrives as a PNG that real Chrome
+  screenshotted off the real replay page, so there is no artwork here that could
+  disagree with the product. What this file owns is the parts the product has no
+  opinion about - the aspect ratio, the VS screen, the name plates and the end
+  card.
+
+  The renderer sets window.__stage(state) and screenshots the viewport.
+-->
+<html lang="en">
+  <head>
+    <meta charset="utf-8" />
+    <style>
+      @font-face {
+        font-family: "StageSans";
+        src: local("DejaVu Sans");
+      }
+      :root {
+        --ink: #f8fafc;
+        --dim: #94a3b8;
+        --bg: #0b0f1c;
+        --panel: #121a2e;
+      }
+      * {
+        margin: 0;
+        padding: 0;
+        box-sizing: border-box;
+      }
+      html,
+      body {
+        width: 100%;
+        height: 100%;
+        background: var(--bg);
+        overflow: hidden;
+        font-family: "Segoe UI", "DejaVu Sans", system-ui, sans-serif;
+        color: var(--ink);
+        -webkit-font-smoothing: antialiased;
+      }
+      #root {
+        position: relative;
+        width: 100vw;
+        height: 100vh;
+        overflow: hidden;
+        background:
+          radial-gradient(
+            circle at 50% 34%,
+            rgba(56, 78, 140, 0.32),
+            transparent 62%
+          ),
+          var(--bg);
+      }
+
+      /* ---------- shared ---------- */
+      .hidden {
+        display: none !important;
+      }
+
+      /* ---------- the VS screen ---------- */
+      /*
+        Both of Nil's references share one structure: two skewed banners offset
+        top-left and bottom-right, a portrait in each, and a heavy VS at the
+        centre crossing the split. That is what these rules build. The skew is
+        the diagonal split; the banners overshoot the frame on purpose so the
+        cut edges are never visible.
+      */
+      #vs {
+        position: absolute;
+        inset: 0;
+      }
+      #vs .beam {
+        position: absolute;
+        left: -12%;
+        width: 124%;
+        height: var(--beam-h);
+        transform: skewY(-7deg);
+        overflow: hidden;
+        box-shadow: 0 0 0 4px rgba(255, 255, 255, 0.1);
+      }
+      #vs .beam.top {
+        top: var(--beam-top);
+      }
+      #vs .beam.bottom {
+        top: var(--beam-bottom);
+      }
+      /*
+        The contents are un-skewed so faces and text stay upright while the
+        banner tilts. The padding is measured from the beam's own overshoot
+        (it starts at -12% and runs 124% wide), so a portrait sits inside the
+        visible frame rather than off the edge of it.
+      */
+      #vs .beam .inner {
+        position: absolute;
+        inset: 0;
+        transform: skewY(7deg);
+        display: flex;
+        align-items: center;
+        gap: 4%;
+        padding: 0 16%;
+      }
+      #vs .beam.bottom .inner {
+        flex-direction: row-reverse;
+      }
+      #vs .portrait {
+        width: var(--portrait);
+        height: var(--portrait);
+        flex: none;
+        object-fit: contain;
+        filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55));
+      }
+      #vs .who {
+        min-width: 0;
+      }
+      #vs .name {
+        font-size: var(--name-size);
+        font-weight: 800;
+        letter-spacing: -0.02em;
+        line-height: 1.02;
+        text-shadow: 0 3px 0 rgba(0, 0, 0, 0.45);
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+      }
+      #vs .beam.bottom .who {
+        text-align: right;
+      }
+      #vs .sub {
+        font-size: var(--sub-size);
+        font-weight: 700;
+        letter-spacing: 0.16em;
+        text-transform: uppercase;
+        opacity: 0.82;
+        margin-top: 0.35em;
+      }
+      #vs .vsmark {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        transform: translate(-50%, -50%) scale(var(--vs-scale));
+        font-size: var(--vs-size);
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: -0.04em;
+        color: #fff;
+        text-shadow:
+          0 0 0 #000,
+          6px 6px 0 #0b0f1c,
+          0 0 42px rgba(255, 214, 102, 0.85);
+        -webkit-text-stroke: calc(var(--vs-size) * 0.055) #10182c;
+        paint-order: stroke fill;
+      }
+      #vs .vsmark span {
+        color: #ffd166;
+      }
+
+      /* ---------- the board segment ---------- */
+      /*
+        The bands above and below the board are not slack - the plates live in
+        them, and the lower one also keeps the board clear of the caption and
+        button furniture that TikTok and Shorts paint over the bottom of every
+        video. What IS slack is anything past the plates, so the block is
+        pushed up by the reserved chrome band rather than centred in the whole
+        frame, and the plates are tall enough to carry the space they occupy.
+      */
+      #play {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--gap);
+        padding-bottom: var(--chrome);
+      }
+      #play .plate {
+        width: var(--board);
+        display: flex;
+        align-items: center;
+        gap: 2.4%;
+        padding: var(--plate-pad);
+        border-radius: 26px;
+        background: rgba(18, 26, 46, 0.9);
+        border: 2px solid rgba(148, 163, 184, 0.16);
+      }
+      #play .plate.bottom {
+        flex-direction: row;
+      }
+      #play .plate .avatar {
+        width: var(--avatar);
+        height: var(--avatar);
+        flex: none;
+        object-fit: contain;
+      }
+      #play .plate .nm {
+        font-size: var(--plate-name);
+        font-weight: 800;
+        letter-spacing: -0.01em;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+        flex: 1;
+      }
+      #play .plate .tag {
+        font-size: var(--plate-tag);
+        font-weight: 800;
+        letter-spacing: 0.14em;
+        text-transform: uppercase;
+        padding: 0.42em 0.85em;
+        border-radius: 999px;
+        flex: none;
+      }
+      #boardWrap {
+        width: var(--board);
+        height: var(--board);
+        border-radius: 26px;
+        overflow: hidden;
+        border: 2px solid rgba(148, 163, 184, 0.16);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      #boardImg {
+        width: 100%;
+        height: 100%;
+        display: block;
+        object-fit: fill;
+      }
+
+      /* ---------- persistent branding ---------- */
+      /*
+        Quiet during play, loud only on the end card. A feed watermark that
+        fights the board costs more attention than it earns.
+      */
+      #brand {
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: var(--brand-bottom);
+        text-align: center;
+        font-size: var(--brand-size);
+        font-weight: 700;
+        letter-spacing: 0.3em;
+        text-transform: lowercase;
+        /*
+          Readable at 1x on a phone-sized timeline, which is the only size
+          anyone watches at. It was rgba(...,0.42) on the principle that a
+          watermark must not fight the board; that principle still holds, but
+          0.42 crossed from quiet into invisible.
+        */
+        color: rgba(226, 232, 240, 0.72);
+      }
+
+      /* ---------- the end card ---------- */
+      #end {
+        position: absolute;
+        inset: 0;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        gap: var(--gap);
+        background:
+          radial-gradient(
+            circle at 50% 42%,
+            rgba(56, 78, 140, 0.4),
+            transparent 62%
+          ),
+          var(--bg);
+      }
+      #end .crown {
+        font-size: var(--end-kicker);
+        font-weight: 800;
+        letter-spacing: 0.34em;
+        text-transform: uppercase;
+        color: #ffd166;
+      }
+      #end .winner {
+        display: flex;
+        align-items: center;
+        gap: 3%;
+      }
+      #end .winner img {
+        width: var(--end-avatar);
+        height: var(--end-avatar);
+        object-fit: contain;
+      }
+      #end .winner .n {
+        font-size: var(--end-name);
+        font-weight: 900;
+        letter-spacing: -0.02em;
+      }
+      #end .how {
+        font-size: var(--end-how);
+        font-weight: 700;
+        color: var(--dim);
+        letter-spacing: 0.04em;
+      }
+      #end .cta {
+        margin-top: 4%;
+        font-size: var(--end-cta);
+        font-weight: 900;
+        letter-spacing: 0.12em;
+        color: #fff;
+      }
+      #end .cta .dot {
+        color: #ff8c42;
+      }
+      #end .cta2 {
+        margin-top: 1.4%;
+        font-size: var(--end-cta2);
+        font-weight: 700;
+        color: var(--dim);
+        letter-spacing: 0.06em;
+      }
+    </style>
+  </head>
+  <body>
+    <div id="root">
+      <div id="vs" class="hidden">
+        <div class="beam top" id="beamTop">
+          <div class="inner">
+            <img class="portrait" id="vsImgA" />
+            <div class="who">
+              <div class="name" id="vsNameA"></div>
+              <div class="sub" id="vsSubA"></div>
+            </div>
+          </div>
+        </div>
+        <div class="beam bottom" id="beamBottom">
+          <div class="inner">
+            <img class="portrait" id="vsImgB" />
+            <div class="who">
+              <div class="name" id="vsNameB"></div>
+              <div class="sub" id="vsSubB"></div>
+            </div>
+          </div>
+        </div>
+        <div class="vsmark" id="vsMark">V<span>S</span></div>
+      </div>
+
+      <div id="play" class="hidden">
+        <div class="plate top">
+          <img class="avatar" id="pAvT" />
+          <div class="nm" id="pNameT"></div>
+          <div class="tag" id="pTagT"></div>
+        </div>
+        <div id="boardWrap"><img id="boardImg" /></div>
+        <div class="plate bottom">
+          <img class="avatar" id="pAvB" />
+          <div class="nm" id="pNameB"></div>
+          <div class="tag" id="pTagB"></div>
+        </div>
+      </div>
+
+      <div id="end" class="hidden">
+        <div class="crown" id="endKicker">WINNER</div>
+        <div class="winner">
+          <img id="endAv" />
+          <div class="n" id="endName"></div>
+        </div>
+        <div class="how" id="endHow"></div>
+        <div class="cta">wallgame<span class="dot">.</span>io</div>
+        <div class="cta2" id="endCta2">free · no account · play in one tap</div>
+      </div>
+
+      <!--
+        The track name used to appear here so four comparison renders could be
+        told apart on screen. That comparison is over, and a viewer has no use
+        for it - the filename carries it now.
+      -->
+      <div id="brand" class="hidden">wallgame.io</div>
+    </div>
+
+    <script>
+      const $ = (id) => document.getElementById(id);
+      const show = (el, on) => el.classList.toggle("hidden", !on);
+
+      /**
+       * How far into the VS segment the mark punches down, as a fraction.
+       *
+       * The renderer reads this to line the sting's impact up with the visual
+       * one. It is published rather than copied, so the sound cannot drift
+       * away from the picture when the animation is retimed.
+       */
+      window.__VS_PUNCH_FRACTION = 0.55;
+      /** How long the punch takes, as a fraction of the same segment. */
+      window.__VS_PUNCH_DURATION = 0.26;
+
+      /**
+       * Paint one frame. Called once per screenshot by the renderer.
+       *
+       * `s.segment` picks which of the three layers is visible; `s.t` is a
+       * 0..1 progress used only by the animated segments. Everything else is
+       * data lifted from the game record or from a screenshot of the product.
+       */
+      window.__stage = (s) => {
+        show($("vs"), s.segment === "vs");
+        show($("play"), s.segment === "play");
+        show($("end"), s.segment === "end");
+        show($("brand"), s.segment === "play");
+
+        if (s.segment === "vs") {
+          const ease = (x) => 1 - Math.pow(1 - x, 3);
+          /*
+            Banners fly in from opposite sides and settle.
+
+            They are STAGGERED and they take their time. The first cut of this
+            ran both in together over about a second and read as janky - two
+            slabs arriving at once looks like a glitch rather than an
+            introduction. Landing them one after the other, over roughly half
+            again as long, reads as two players being announced.
+          */
+          const slideAt = (delay) =>
+            ease(Math.max(0, Math.min(1, (s.t - delay) / 0.42)));
+          $("beamTop").style.marginLeft = (1 - slideAt(0)) * -120 + "%";
+          $("beamBottom").style.marginLeft = (1 - slideAt(0.1)) * 120 + "%";
+
+          // The VS stamps down late and overshoots once - the loudest beat,
+          // and the moment the sting is built to hit.
+          const vp = Math.max(
+            0,
+            Math.min(
+              1,
+              (s.t - window.__VS_PUNCH_FRACTION) / window.__VS_PUNCH_DURATION,
+            ),
+          );
+          const overshoot =
+            vp < 1 ? 1.9 - 0.9 * ease(vp) - 0.14 * Math.sin(vp * Math.PI) : 1;
+          $("vsMark").style.setProperty("--vs-scale", vp === 0 ? 0 : overshoot);
+          $("vsMark").style.opacity = vp === 0 ? 0 : 1;
+
+          // The bottom banner is mirrored, so its gradient is mirrored too -
+          // otherwise it fades to dark exactly where its portrait sits.
+          $("beamTop").style.background = s.a.gradient;
+          $("beamBottom").style.background = s.b.gradientMirrored;
+          $("vsImgA").src = s.a.portrait;
+          $("vsImgB").src = s.b.portrait;
+          $("vsNameA").textContent = s.a.name;
+          $("vsNameB").textContent = s.b.name;
+          $("vsSubA").textContent = s.a.sub;
+          $("vsSubB").textContent = s.b.sub;
+        }
+
+        if (s.segment === "play") {
+          $("boardImg").src = s.board;
+          $("pAvT").src = s.top.portrait;
+          $("pAvB").src = s.bottom.portrait;
+          $("pNameT").textContent = s.top.name;
+          $("pNameB").textContent = s.bottom.name;
+          for (const [el, p] of [
+            [$("pTagT"), s.top],
+            [$("pTagB"), s.bottom],
+          ]) {
+            el.textContent = p.sub;
+            el.style.color = p.hex;
+            el.style.background = p.soft;
+          }
+          /*
+            Screen shake: a decaying wobble.
+
+            TRANSLATION AND ROTATION ONLY - NEVER SCALE. An earlier version
+            scaled to 1.045 during the shake and reset to `none` after it, so
+            the board settled 4.5% smaller than it started and the cut was
+            visible as a jump. Scale is not a shake, it is a zoom, and a zoom
+            that only exists during the effect cannot return to where it began.
+            The composition is inset from the frame, so a translation never
+            exposes an edge and no cover-up scale is needed.
+
+            It moves #play, not #root, so the background stays put and only the
+            board and plates shake against it.
+          */
+          const k = s.shake ?? 0;
+          if (k > 0) {
+            const amp = 16 * k;
+            const dx = Math.sin(s.shakePhase * 7.3) * amp;
+            const dy = Math.cos(s.shakePhase * 5.1) * amp * 0.7;
+            const rot = Math.sin(s.shakePhase * 6.1) * 0.7 * k;
+            $("play").style.transform =
+              "translate(" + dx + "px," + dy + "px) rotate(" + rot + "deg)";
+          } else {
+            $("play").style.transform = "none";
+          }
+        } else {
+          $("play").style.transform = "none";
+        }
+
+        if (s.segment === "end") {
+          $("endAv").src = s.winner.portrait;
+          $("endName").textContent = s.winner.name;
+          $("endName").style.color = s.winner.hex;
+          $("endHow").textContent = s.how;
+          $("endKicker").textContent = s.kicker;
+        }
+        return true;
+      };
+    </script>
+  </body>
+</html>
