@@ -248,10 +248,31 @@ void place_padding_walls(Board& board, PaddingConfig const& config) {
             }
         }
 
-        // Block left boundary (vertical walls) - EXCEPT bottom row for Classic
+        /*
+        A Classic goal can sit in the padding. make_padded_training_board puts both
+        homes on the model's bottom corners, and the bottom row is the only way in to
+        them, so on that board the bottom row's vertical walls have to stay open.
+
+        Serving is not that board. convert_bgs_config_to_board takes both homes from
+        the game config, so they always name cells the game board has, and the corridor
+        is dead space. Dead space the search can still build in: Board::legal_walls
+        walks the whole model board, so every wall the padding leaves open is a move
+        MCTS may pick and the session may send. That is how ">k1" left the engine on an
+        eight-column board (board a74a9963), and ">h1" with it - the same open door one
+        column further in, on the game board's own right edge.
+
+        So the corridor is opened only for a board that needs one.
+        */
+        auto const sits_in_padding = [&config](Cell cell) {
+            return !transform_to_game(cell, config).has_value();
+        };
+        bool const padding_holds_a_goal = sits_in_padding(board.goal(Player::Red)) ||
+            sits_in_padding(board.goal(Player::Blue));
+
+        // Block left boundary (vertical walls) - EXCEPT the corridor row
         if (config.col_offset > 0) {
             for (int row = config.row_offset; row < config.model_rows; ++row) {
-                if (row == config.model_rows - 1) {
+                if (padding_holds_a_goal && row == config.model_rows - 1) {
                     continue;
                 }
                 Wall wall{Cell{config.col_offset - 1, row}, Wall::Right};
@@ -261,11 +282,11 @@ void place_padding_walls(Board& board, PaddingConfig const& config) {
             }
         }
 
-        // Block right boundary (vertical walls) - EXCEPT bottom row for Classic
+        // Block right boundary (vertical walls) - EXCEPT the corridor row
         int right_boundary_col = config.col_offset + config.game_columns - 1;
         if (right_boundary_col < config.model_columns - 1) {
             for (int row = config.row_offset; row < config.model_rows; ++row) {
-                if (row == config.model_rows - 1) {
+                if (padding_holds_a_goal && row == config.model_rows - 1) {
                     continue;
                 }
                 Wall wall{Cell{right_boundary_col, row}, Wall::Right};
@@ -287,7 +308,7 @@ void place_padding_walls(Board& board, PaddingConfig const& config) {
                 if (!board.is_blocked(down_wall)) {
                     board.place_wall(Player::Red, down_wall);
                 }
-                if (row == config.model_rows - 1) {
+                if (padding_holds_a_goal && row == config.model_rows - 1) {
                     continue;
                 }
                 Wall right_wall{Cell{col, row}, Wall::Right};
@@ -314,9 +335,10 @@ Board make_padded_training_board(int model_columns, int model_rows, int game_col
     Cell red_secondary;
     Cell blue_secondary;
     if (variant == Variant::Classic) {
-        // Serving semantics (convert_bgs_config_to_board): classic goals are
-        // at the MODEL bottom corners; place_padding_walls leaves the bottom
-        // row open as the path to them.
+        // Classic goals go on the MODEL bottom corners, out in the padding, and
+        // place_padding_walls answers that by leaving the bottom row open as the path
+        // to them. Serving does NOT do this: convert_bgs_config_to_board takes both
+        // homes from the game config, which puts them on the game board.
         red_secondary = Cell{model_columns - 1, model_rows - 1};
         blue_secondary = Cell{0, model_rows - 1};
     } else {
@@ -397,11 +419,17 @@ std::string transform_move_notation(
                 result += pawn_type;
                 result += format_notation_coords(game_cell->column, game_cell->row, config.game_rows);
             } else {
-                // Cell is in padding area - this can happen for Classic variant
-                // when a pawn moves toward the goal corner outside the game area
-                // In this case, we keep the notation but map to the game boundary
-                // Actually, for Classic variant, the goals are at the model corners,
-                // so we need to map to the game corner
+                /*
+                The pawn is out in the padding, so its cell has no name in the game.
+                This is training-shaped behaviour: it belongs to a board whose Classic
+                goals sit on the model's bottom corners, where a pawn walks out along
+                the open bottom row and the nearest game corner is the honest reading.
+
+                A served board should never arrive here. place_padding_walls seals its
+                edge, because both of its homes are on the game board, so no pawn can
+                leave. The clamp is kept for the boards that do need it, not as cover
+                for a served position.
+                */
                 if (config.variant == Variant::Classic) {
                     // Map to the appropriate game corner
                     int game_col, game_row;
@@ -435,7 +463,17 @@ std::string transform_move_notation(
                 result += wall_type;
                 result += format_notation_coords(game_cell->column, game_cell->row, config.game_rows);
             } else {
-                // Wall in padding area - keep original (shouldn't happen in valid games)
+                /*
+                Out of reach for a serving board: place_padding_walls seals the game
+                board's edge unless a goal sits in the padding, so no wall the search
+                can pick lands out here.
+
+                It says so loudly rather than silently if that ever stops holding. A
+                component sent unchanged still names a MODEL column, and this branch
+                saying nothing is why players met ">k1" on an eight-column board for as
+                long as they did (board a74a9963).
+                */
+                XLOGF(ERR, "Wall {} is off the game board; sending it unchanged", component);
                 result += component;
             }
         } else {

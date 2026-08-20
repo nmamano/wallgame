@@ -52,17 +52,21 @@ Wall transform_to_model(Wall game_wall, PaddingConfig const& config);
 // Returns nullopt if the cell is in the padding area (outside game bounds)
 std::optional<Cell> transform_to_game(Cell model_cell, PaddingConfig const& config);
 
-// Place walls in the padding area to prevent movement into padding cells
-// For Classic variant, leaves bottom row vertical walls open (path to goal)
+// Place walls in the padding area to prevent movement into padding cells.
+// For Classic, the bottom row's vertical walls stay open as the path to a goal
+// that sits in the padding; when both goals are on the game board, that row is
+// sealed like the rest, so no wall the search can pick is off the game board.
 void place_padding_walls(Board& board, PaddingConfig const& config);
 
 // Create a self-play/training board for a smaller effective game embedded in
 // the model frame: cats at the game-space corners transformed to model
-// coordinates, padding walls placed. Goal semantics match serving
-// (convert_bgs_config_to_board): Classic goals sit at the MODEL bottom
-// corners (the padding leaves the bottom row open as the path to them);
-// Standard mice are transformed game-space corners. Equal dims returns the
-// standard board unchanged.
+// coordinates, padding walls placed. Classic goals sit at the MODEL bottom
+// corners, out in the padding, and the padding leaves the bottom row open as
+// the path to them; Standard mice are transformed game-space corners. Equal
+// dims returns the standard board unchanged.
+// Goal semantics here differ from serving: convert_bgs_config_to_board takes
+// the Classic homes from the game config, so a served goal is always a cell of
+// the game board and its padding needs no such corridor.
 Board make_padded_training_board(int model_columns, int model_rows, int game_columns,
                                  int game_rows, Variant variant);
 
