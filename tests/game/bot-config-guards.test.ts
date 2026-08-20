@@ -68,10 +68,12 @@ describe("engineCommands must cover the bots exactly", () => {
 
   it("rejects the engine-free Dumb Bot if it claims official status", () => {
     const config = base();
-    const dumb = config.bots.find(
-      (bot) => bot.botId === BUILT_IN_NAIVE_BOT_ID,
-    )!;
-    dumb.official = true;
+    config.bots.push({
+      ...structuredClone(config.bots[0]),
+      botId: BUILT_IN_NAIVE_BOT_ID,
+      name: "Dumb Bot",
+      official: true,
+    });
     expect(() => assertEngineCommandsCoverBots(config)).toThrow(
       /bots without a command/,
     );
@@ -79,6 +81,12 @@ describe("engineCommands must cover the bots exactly", () => {
 
   it("rejects an engine command for the built-in Dumb Bot", () => {
     const config = base();
+    config.bots.push({
+      ...structuredClone(config.bots[0]),
+      botId: BUILT_IN_NAIVE_BOT_ID,
+      name: "Dumb Bot",
+      official: false,
+    });
     config.engineCommands[BUILT_IN_NAIVE_BOT_ID] = "unexpected-engine";
     expect(() => assertEngineCommandsCoverBots(config)).toThrow(
       /commands without a bot/,
@@ -212,19 +220,28 @@ describe("the tracked production bot config", () => {
     // players took the first row of the list and it was Superhuman Bot, and
     // they won 1 game in 58 (production, 2026-08-07).
     const ladder = bots
-      .filter((b) => b.official !== false && b.listOrder !== undefined)
+      .filter(
+        (b) =>
+          b.official !== false &&
+          b.listOrder !== undefined &&
+          ("standard" in b.variants || "classic" in b.variants),
+      )
       .sort((a, b) => a.listOrder! - b.listOrder!)
       .map((b) => b.name);
     expect(ladder).toEqual(["Easy Bot", "Normal Bot", "Superhuman Bot"]);
   });
 
-  it("connects only the non-official Animal Cycle Dumb Bot without an engine", () => {
+  it("serves 7x7 Animal Cycle through the official Ruthless analysis bot", () => {
     const config = parsedProd();
-    const dumb = config.bots.find((bot) => bot.botId === BUILT_IN_NAIVE_BOT_ID);
+    const ruthless = config.bots.find(
+      (bot) => bot.botId === "experimental-animal-115",
+    );
 
-    expect(dumb).toMatchObject({
-      name: "Dumb Bot",
-      official: false,
+    expect(ruthless).toMatchObject({
+      name: "Ruthless Bot",
+      official: true,
+      analysis: true,
+      placement: "opponent",
       username: null,
       appearance: {
         dogStyle: "dog-one-line-02.svg",
@@ -233,8 +250,16 @@ describe("the tracked production bot config", () => {
         elephantStyle: "elephant-16.svg",
       },
     });
-    expect(Object.keys(dumb!.variants)).toEqual(["animal-cycle"]);
-    expect(config.engineCommands[BUILT_IN_NAIVE_BOT_ID]).toBeUndefined();
+    expect(ruthless!.variants).toEqual({
+      "animal-cycle": {
+        boardWidth: { min: 7, max: 7 },
+        boardHeight: { min: 7, max: 7 },
+        recommended: [{ boardWidth: 7, boardHeight: 7 }],
+      },
+    });
+    expect(config.engineCommands[ruthless!.botId]).toMatch(
+      /model_115\.trt --samples 1000(\s|$)/,
+    );
   });
 
   it("recommends 8x8 and nothing bigger", () => {
@@ -281,6 +306,12 @@ describe("the tracked production bot config", () => {
           `${config.boardWidth.min}-${config.boardWidth.max} x ` +
           `${config.boardHeight.min}-${config.boardHeight.max}`;
         expected[label] = EXPECTED_RANGE[variant];
+        if (
+          bot.botId === "experimental-animal-115" &&
+          variant === "animal-cycle"
+        ) {
+          expected[label] = "7-7 x 7-7";
+        }
         if (
           bot.botId === "dw-puzzle" ||
           (bot.botId === "dw-transformer" && variant === "standard")

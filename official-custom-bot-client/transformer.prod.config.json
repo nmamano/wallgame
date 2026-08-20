@@ -2,9 +2,9 @@
   "server": "https://wallgame.io",
   "bots": [
     {
-      "botId": "animal-cycle-dumb",
-      "name": "Dumb Bot",
-      "official": false,
+      "botId": "experimental-animal-115",
+      "name": "Ruthless Bot",
+      "official": true,
       "username": null,
       "appearance": {
         "dogStyle": "dog-one-line-02.svg",
@@ -15,22 +15,24 @@
       "variants": {
         "animal-cycle": {
           "boardWidth": {
-            "min": 5,
-            "max": 12
+            "min": 7,
+            "max": 7
           },
           "boardHeight": {
-            "min": 5,
-            "max": 10
+            "min": 7,
+            "max": 7
           },
           "recommended": [
             {
-              "boardWidth": 8,
-              "boardHeight": 8
+              "boardWidth": 7,
+              "boardHeight": 7
             }
           ]
         }
       },
-      "listOrder": 1
+      "placement": "opponent",
+      "analysis": true,
+      "listOrder": 2
     },
     {
       "botId": "dw-beginner",
@@ -225,6 +227,7 @@
     }
   ],
   "engineCommands": {
+    "experimental-animal-115": "/home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-phase7/deep_ww_bgs_engine --model /home/nilo/nil/wallgame-phase7-feasibility/deep-wallwars/build-tests/phase7-feasibility-34e5f567/models/model_115.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",
     "dw-beginner": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.4",
     "dw-easy": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1 --parallel_samples 32 --thread_pool_size 4 --root_noise_factor 0.25",
     "dw-transformer": "../deep-wallwars/build-tests/deep_ww_bgs_engine --model ../deep-wallwars/models_serving/tf_curriculum_model_93.trt --samples 1000 --parallel_samples 32 --thread_pool_size 4",

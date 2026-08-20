@@ -53,7 +53,7 @@ BOTS=(
   "dw-easy|standard|opponent|Normal Bot"
   "dw-transformer|standard|opponent|Superhuman Bot"
   "dw-puzzle|standard|puzzle|PuzzleBot"
-  "animal-cycle-dumb|animal-cycle|opponent|Dumb Bot"
+  "experimental-animal-115|animal-cycle|opponent|Ruthless Bot"
 )
 
 # --- Helpers -----------------------------------------------------------------
