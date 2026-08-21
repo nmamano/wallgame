@@ -9,6 +9,7 @@
 #include <iostream>
 #include <random>
 #include <ranges>
+#include <stdexcept>
 
 #include "game_recorder.hpp"
 #include "mcts.hpp"
@@ -127,7 +128,7 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
         if (!action) {
             Winner const winner = winner_from_player(other_player(player));
             opts.on_complete({std::move(decisions), active.current_board(), winner,
-                              TrainingEndReason::NoLegalAction}, index);
+                              TrainingEndReason::NoLegalAction, opts.initial_state_record}, index);
             co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
         decisions.push_back({std::move(node), *action});
@@ -138,14 +139,14 @@ folly::coro::Task<GameResult> training_play_single(Board const& board, Evaluatio
         if (Winner winner = active.current_board().winner(active.current_turn());
             winner != Winner::Undecided) {
             opts.on_complete({std::move(decisions), active.current_board(), winner,
-                              TrainingEndReason::Terminal}, index);
+                              TrainingEndReason::Terminal, opts.initial_state_record}, index);
             co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
     }
 
     XLOGF(INFO, "Game {} was ended because it hit the move limit of {}", index, opts.move_limit);
     opts.on_complete({std::move(decisions), mcts1.current_board(), Winner::Undecided,
-                      TrainingEndReason::MoveLimit}, index);
+                      TrainingEndReason::MoveLimit, opts.initial_state_record}, index);
     co_return {Winner::Undecided, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
 }
 
@@ -220,10 +221,25 @@ folly::coro::Task<> training_play(Board board, int games, TrainingPlayOptions op
     XLOGF(INFO, "Creating {} game tasks with max_parallel_games = {}", games,
           opts.max_parallel_games);
 
-    auto game_tasks = views::iota(opts.start_game, opts.start_game + games) | views::transform([&](int i) {
-                          return training_play_single(board, opts.model1, opts.model2, i, opts)
-                              .scheduleOn(executor);
-                      });
+    if (!opts.start_positions.empty() && opts.start_positions.size() != static_cast<size_t>(games)) {
+        throw std::invalid_argument("start_positions count must equal games");
+    }
+    auto start_positions = std::move(opts.start_positions);
+    opts.start_positions.clear();
+    auto game_tasks = views::iota(opts.start_game, opts.start_game + games) |
+        views::transform([&](int i) {
+            TrainingPlayOptions game_opts = opts;
+            Board game_board = board;
+            if (!start_positions.empty()) {
+                auto const& start = start_positions.at(i - opts.start_game);
+                game_board = start.board;
+                game_opts.starting_turn = start.turn;
+                game_opts.starting_previous_position = start.previous_position;
+                game_opts.initial_state_record = start.record_json;
+            }
+            return training_play_single(game_board, game_opts.model1, game_opts.model2, i,
+                                        std::move(game_opts)).scheduleOn(executor);
+        });
 
     auto results = co_await folly::coro::collectAllWindowed(game_tasks, opts.max_parallel_games);
     int red_wins = 0;

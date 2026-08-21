@@ -15,12 +15,14 @@ export const buildOrdinaryInitialState = (
     GameConfiguration,
     "variant" | "randomStart" | "boardWidth" | "boardHeight"
   >,
+  rng: () => number = Math.random,
 ): GameInitialState => {
   if (config.variant === "standard") {
     return config.randomStart
       ? generateStandardRandomInitialState(
           config.boardWidth,
           config.boardHeight,
+          rng,
         )
       : buildStandardInitialState(config.boardWidth, config.boardHeight);
   }
@@ -29,12 +31,17 @@ export const buildOrdinaryInitialState = (
       ? generateAnimalCycleRandomInitialState(
           config.boardWidth,
           config.boardHeight,
+          rng,
         )
       : buildAnimalCycleInitialState(config.boardWidth, config.boardHeight);
   }
   if (config.variant === "classic") {
     return config.randomStart
-      ? generateClassicRandomInitialState(config.boardWidth, config.boardHeight)
+      ? generateClassicRandomInitialState(
+          config.boardWidth,
+          config.boardHeight,
+          rng,
+        )
       : buildClassicInitialState(config.boardWidth, config.boardHeight);
   }
   throw new Error(

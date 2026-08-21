@@ -744,6 +744,115 @@ TEST_CASE("Animal Cycle training and serving agree on the model input", "[Paddin
             CHECK(training.pawn_position(player, pawn) == serving.pawn_position(player, pawn));
         }
     }
+
+    SECTION("arbitrary pawns and neutral walls stay identical through the shared conversion") {
+        nlohmann::json arbitrary = config;
+        arbitrary["boardWidth"] = 9;
+        arbitrary["boardHeight"] = 8;
+        arbitrary["initialState"]["pawns"]["p1"]["cat"] = {1, 2};
+        arbitrary["initialState"]["pawns"]["p1"]["elephant"] = {6, 7};
+        arbitrary["initialState"]["pawns"]["p2"]["mouse"] = {2, 6};
+        arbitrary["initialState"]["pawns"]["p2"]["dog"] = {5, 1};
+        arbitrary["initialState"]["walls"] = {
+            {{"cell", {3, 3}}, {"orientation", "vertical"}},
+            {{"cell", {5, 5}}, {"orientation", "horizontal"}},
+        };
+
+        auto arbitrary_validation = validate_bgs_config(arbitrary, model_rows, model_columns);
+        REQUIRE(arbitrary_validation.valid);
+        auto [materialized_training, materialized_turn, materialized_padding] =
+            convert_bgs_config_to_board(arbitrary, model_rows, model_columns);
+
+        Board expected{
+            model_columns, model_rows, Variant::AnimalCycle,
+            {{Player::Red, Pawn::Cat, transform_to_model(Cell{2, 1}, materialized_padding)},
+             {Player::Red, Pawn::Elephant,
+              transform_to_model(Cell{7, 6}, materialized_padding)},
+             {Player::Blue, Pawn::Mouse,
+              transform_to_model(Cell{6, 2}, materialized_padding)},
+             {Player::Blue, Pawn::Dog, transform_to_model(Cell{1, 5}, materialized_padding)}}};
+        place_padding_walls(expected, materialized_padding);
+        expected.place_wall(
+            Player::Red,
+            transform_to_model(Wall{Cell{3, 3}, Wall::Right}, materialized_padding));
+        expected.place_wall(
+            Player::Red,
+            transform_to_model(Wall{Cell{5, 4}, Wall::Down}, materialized_padding));
+
+        CHECK(convert_to_model_input(materialized_training, materialized_turn) ==
+              convert_to_model_input(expected, materialized_turn));
+        CHECK(materialized_training == expected);
+        CHECK(materialized_training != make_padded_training_board(
+                  model_columns, model_rows, 9, 8, Variant::AnimalCycle));
+    }
+
+    SECTION("Standard arbitrary pawns and neutral walls agree with the padded model frame") {
+        nlohmann::json standard;
+        standard["variant"] = "standard";
+        standard["boardWidth"] = 8;
+        standard["boardHeight"] = 9;
+        standard["initialState"]["pawns"]["p1"] = {{"cat", {1, 1}}, {"mouse", {7, 2}}};
+        standard["initialState"]["pawns"]["p2"] = {{"cat", {2, 6}}, {"mouse", {6, 5}}};
+        standard["initialState"]["walls"] = {
+            {{"cell", {3, 3}}, {"orientation", "vertical"}},
+            {{"cell", {5, 4}}, {"orientation", "horizontal"}},
+        };
+        REQUIRE(validate_bgs_config(standard, model_rows, model_columns).valid);
+        auto [actual, turn, padding] =
+            convert_bgs_config_to_board(standard, model_rows, model_columns);
+        Board expected{
+            model_columns, model_rows, Variant::Standard,
+            {{Player::Red, Pawn::Cat, transform_to_model(Cell{1, 1}, padding)},
+             {Player::Red, Pawn::Mouse, transform_to_model(Cell{2, 7}, padding)},
+             {Player::Blue, Pawn::Cat, transform_to_model(Cell{6, 2}, padding)},
+             {Player::Blue, Pawn::Mouse, transform_to_model(Cell{5, 6}, padding)}}};
+        place_padding_walls(expected, padding);
+        expected.place_wall(Player::Red,
+                            transform_to_model(Wall{Cell{3, 3}, Wall::Right}, padding));
+        expected.place_wall(Player::Red,
+                            transform_to_model(Wall{Cell{4, 4}, Wall::Down}, padding));
+        CHECK(actual == expected);
+        for (Player mover : {Player::Red, Player::Blue}) {
+            CHECK(convert_to_model_input(actual, {mover, Turn::First}) ==
+                  convert_to_model_input(expected, {mover, Turn::First}));
+        }
+        CHECK(actual != make_padded_training_board(
+                  model_columns, model_rows, 8, 9, Variant::Standard));
+    }
+
+    SECTION("Classic arbitrary pawns and neutral walls agree with the padded model frame") {
+        nlohmann::json classic;
+        classic["variant"] = "classic";
+        classic["boardWidth"] = 10;
+        classic["boardHeight"] = 8;
+        classic["initialState"]["pawns"]["p1"] = {{"cat", {1, 2}}, {"home", {7, 8}}};
+        classic["initialState"]["pawns"]["p2"] = {{"cat", {2, 7}}, {"home", {7, 1}}};
+        classic["initialState"]["walls"] = {
+            {{"cell", {3, 4}}, {"orientation", "vertical"}},
+            {{"cell", {5, 6}}, {"orientation", "horizontal"}},
+        };
+        REQUIRE(validate_bgs_config(classic, model_rows, model_columns).valid);
+        auto [actual, turn, padding] =
+            convert_bgs_config_to_board(classic, model_rows, model_columns);
+        Board expected{
+            model_columns, model_rows, Variant::Classic,
+            {{Player::Red, Pawn::Cat, transform_to_model(Cell{2, 1}, padding)},
+             {Player::Red, Pawn::Home, transform_to_model(Cell{8, 7}, padding)},
+             {Player::Blue, Pawn::Cat, transform_to_model(Cell{7, 2}, padding)},
+             {Player::Blue, Pawn::Home, transform_to_model(Cell{1, 7}, padding)}}};
+        place_padding_walls(expected, padding);
+        expected.place_wall(Player::Red,
+                            transform_to_model(Wall{Cell{4, 3}, Wall::Right}, padding));
+        expected.place_wall(Player::Red,
+                            transform_to_model(Wall{Cell{6, 4}, Wall::Down}, padding));
+        CHECK(actual == expected);
+        for (Player mover : {Player::Red, Player::Blue}) {
+            CHECK(convert_to_model_input(actual, {mover, Turn::First}) ==
+                  convert_to_model_input(expected, {mover, Turn::First}));
+        }
+        CHECK(actual != make_padded_training_board(
+                  model_columns, model_rows, 10, 8, Variant::Classic));
+    }
 }
 
 // ============================================================================

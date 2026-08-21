@@ -188,6 +188,9 @@ void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const 
         {"heuristicScoreForRed", score_for_red},
         {"decisions", nlohmann::json::array()},
     };
+    if (!game.initial_state_record.empty()) {
+        audit["initialStateRecord"] = nlohmann::json::parse(game.initial_state_record);
+    }
 
     for (TrainingDecision const& decision : game.decisions) {
         NodeInfo const& node_info = decision.node;

@@ -26,6 +26,7 @@ struct TrainingGame {
     Board final_board;
     Winner actual_winner;
     TrainingEndReason end_reason;
+    std::string initial_state_record;
 };
 
 using CompletionCallback = std::function<void(TrainingGame const&, int index)>;
@@ -57,6 +58,15 @@ struct TrainingPlayOptions {
 
     Turn starting_turn = {Player::Red, Turn::First};
     std::optional<PreviousPosition> starting_previous_position;
+    std::string initial_state_record;
+
+    struct StartPosition {
+        Board board;
+        Turn turn;
+        std::optional<PreviousPosition> previous_position;
+        std::string record_json;
+    };
+    std::vector<StartPosition> start_positions;
 
     CompletionCallback on_complete = [](TrainingGame const&, int) {};
 

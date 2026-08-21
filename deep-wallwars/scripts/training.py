@@ -22,6 +22,12 @@ from fastai.learner import Learner
 from fastai.callback.schedule import lr_find
 from model import MODEL_INPUT_CHANNELS, ConvHeadResNet, ResNet, WallgameTransformer
 from data import get_datasets
+from materialized_resume import (
+    load_expected_batch,
+    verify_materialized_prefix,
+    write_exact_suffix,
+)
+from training_windows import discover_universal_training_paths
 
 default_cuda_device = "cuda:0"
 input_channels = MODEL_INPUT_CHANNELS
@@ -168,6 +174,17 @@ parser.add_argument(
     default="7x7",
 )
 parser.add_argument(
+    "--materialized-initial-states",
+    action="store_true",
+    help="Sample every game's variant, dimensions, and initial state through shared/domain",
+)
+parser.add_argument(
+    "--stop-after-model",
+    type=int,
+    default=0,
+    help="Fail-safe upper bound on the model generation this process may write",
+)
+parser.add_argument(
     "-s",
     "--samples",
     help="Number of samples to use per action during self play",
@@ -200,6 +217,14 @@ if args.variant not in variant_move_channels:
           "'animal-cycle' or 'universal'.")
     exit(1)
 move_channels = variant_move_channels[args.variant]
+
+if args.materialized_initial_states:
+    if args.variant != "universal":
+        parser.error("--materialized-initial-states requires --variant universal")
+    if args.columns < 12 or args.rows < 10:
+        parser.error("materialized curriculum requires a model frame of at least 12x10")
+    if args.size_mix or args.game_columns or args.game_rows or args.animal_cycle_games:
+        parser.error("materialized curriculum supplies variants and dimensions per game")
 
 # Hard error BEFORE any side effects: warm-start helpers are ResNet-specific
 # (they remap ResNet's priors.4/value.4 Linear layers). Transformer/convhead
@@ -328,6 +353,13 @@ def restore_archived(path):
 
 
 def get_training_paths(generation):
+    if args.variant == "universal" and args.materialized_initial_states:
+        paths = discover_universal_training_paths(
+            args.data, generation, args.max_training_window
+        )
+        for path in paths:
+            restore_archived(path)
+        return paths
     lb = window_lower_bound(generation)
     paths = []
     for i in range(lb, generation):
@@ -910,6 +942,54 @@ def run_self_play(model1, model2, generation, variant, boost_mouse_priors=False,
         run_label_audit(output_dir)
 
 
+def run_materialized_self_play(model_path, data_generation):
+    output_dir = Path(args.data) / f"generation_{data_generation}_mixed"
+    output_dir.mkdir(parents=True, exist_ok=True)
+    full_batch = output_dir / "initial-states-full.jsonl"
+    generator = Path(__file__).with_name("generate_training_initial_states.ts")
+    user_bun = Path.home() / ".bun" / "bin" / "bun"
+    bun = str(user_bun) if user_bun.exists() else "bun"
+    subprocess.run(
+        [
+            bun, str(generator),
+            "--seed", str(args.seed + data_generation),
+            "--games", str(args.games),
+            "--start-game", "1",
+            "--output", str(full_batch),
+        ],
+        check=True,
+    )
+    expected = load_expected_batch(full_batch, args.games)
+    completed = verify_materialized_prefix(output_dir, expected)
+    remaining = args.games - completed
+    if remaining <= 0:
+        run_label_audit(str(output_dir))
+        return
+    start_game = completed + 1
+    states_file = output_dir / f"initial-states-{start_game}-{args.games}.jsonl"
+    write_exact_suffix(states_file, expected, start_game)
+    cmd = [
+        args.deep_ww,
+        "-model1", model_path,
+        "-output", str(output_dir),
+        "-columns", str(args.columns),
+        "-rows", str(args.rows),
+        "-variant", "standard",
+        "-j", str(args.threads),
+        "-games", str(remaining),
+        "-start_game", str(start_game),
+        "-samples", str(args.samples),
+        "-seed", str(args.seed + data_generation),
+        "-initial_states_file", str(states_file),
+    ]
+    print("  mixed self-play cmd: " + " ".join(cmd))
+    with open(args.log, "a") as log:
+        result = subprocess.run(cmd, stdout=log, stderr=log, text=True)
+    if result.returncode != 0:
+        raise RuntimeError(f"mixed self-play failed with return code {result.returncode}")
+    run_label_audit(str(output_dir))
+
+
 def predict_valuation(xs):
     return torch.where(xs[1] >= 0.05, 1.0, 0.0) + torch.where(xs[1] <= 0.05, -1.0, 0.0)
 
@@ -1120,27 +1200,34 @@ def init():
         start_generation = args.initial_generation + 1
 
     for generation in range(start_generation, start_generation + args.generations - 1):
+        if args.stop_after_model and generation > args.stop_after_model:
+            raise RuntimeError(
+                f"refusing to train model_{generation}: --stop-after-model={args.stop_after_model}"
+            )
         # Before self-play writes another few gigabytes, give back the data this
         # generation's training window has left behind.
         archive_stale_generations(generation)
         model_path = f"{args.models}/model_{generation - 1}.trt"
-        variants = ["standard", "classic"] if args.variant == "universal" else [args.variant]
-        existing_curriculum_games = args.games - args.animal_cycle_games
-        games_per_variant = existing_curriculum_games // len(variants)
-        for variant in variants:
-            if size_mix:
-                # Split this variant's games across sizes (integer floor; a few
-                # games per generation may be dropped to rounding, by design).
-                for (size_cols, size_rows), weight in size_mix:
+        if args.materialized_initial_states:
+            run_materialized_self_play(model_path, generation - 1)
+        else:
+            variants = ["standard", "classic"] if args.variant == "universal" else [args.variant]
+            existing_curriculum_games = args.games - args.animal_cycle_games
+            games_per_variant = existing_curriculum_games // len(variants)
+            for variant in variants:
+                if size_mix:
+                    # Split this variant's games across sizes (integer floor; a few
+                    # games per generation may be dropped to rounding, by design).
+                    for (size_cols, size_rows), weight in size_mix:
+                        run_self_play(model_path, "", generation - 1, variant,
+                                      games=games_per_variant * weight // 100,
+                                      game_size=(size_cols, size_rows))
+                else:
                     run_self_play(model_path, "", generation - 1, variant,
-                                  games=games_per_variant * weight // 100,
-                                  game_size=(size_cols, size_rows))
-            else:
-                run_self_play(model_path, "", generation - 1, variant,
-                              games=games_per_variant)
-        if args.animal_cycle_games:
-            run_self_play(model_path, "", generation - 1, "animal-cycle",
-                          games=args.animal_cycle_games, game_size=animal_cycle_size)
+                                  games=games_per_variant)
+            if args.animal_cycle_games:
+                run_self_play(model_path, "", generation - 1, "animal-cycle",
+                              games=args.animal_cycle_games, game_size=animal_cycle_size)
 
         train_model(model, generation, args.epochs, device, freeze_until_gen)
         save_model(model, f"model_{generation}", device)

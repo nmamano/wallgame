@@ -5,6 +5,7 @@
 
 #include <catch2/catch_test_macros.hpp>
 #include <optional>
+#include <map>
 #include <vector>
 
 #include "simple_policy.hpp"
@@ -58,6 +59,58 @@ struct MouseLeftPolicy {
 };
 
 }  // namespace
+
+TEST_CASE("training_play uses each materialized start position and preserves its provenance",
+          "[TrainingRecords][MaterializedStart]") {
+    Board standard{12, 10, Variant::Standard,
+                   {{Player::Red, Pawn::Cat, {2, 1}},
+                    {Player::Red, Pawn::Mouse, {1, 3}},
+                    {Player::Blue, Pawn::Cat, {9, 8}},
+                    {Player::Blue, Pawn::Mouse, {10, 6}}}};
+    standard.place_wall(Player::Red, Wall{Cell{4, 4}, Wall::Right});
+    Board animal{12, 10, Variant::AnimalCycle,
+                 {{Player::Red, Pawn::Cat, {1, 2}},
+                  {Player::Red, Pawn::Elephant, {6, 7}},
+                  {Player::Blue, Pawn::Mouse, {7, 1}},
+                  {Player::Blue, Pawn::Dog, {2, 6}}}};
+    animal.place_wall(Player::Red, Wall{Cell{5, 3}, Wall::Down});
+
+    std::map<int, TrainingGame> completed;
+    TrainingPlayOptions opts{
+        .model1 = SimplePolicy{1.0, 1.5, 0.75},
+        .model2 = SimplePolicy{1.0, 1.5, 0.75},
+        .samples = 1,
+        .max_parallel_games = 1,
+        .max_parallel_samples = 1,
+        .move_limit = 1,
+        .temperature = 1,
+        .start_game = 41,
+        .start_positions = {
+            {.board = standard,
+             .turn = {Player::Red, Turn::First},
+             .previous_position = std::nullopt,
+             .record_json = R"({"gameIndex":41,"variant":"standard"})"},
+            {.board = animal,
+             .turn = {Player::Blue, Turn::First},
+             .previous_position = std::nullopt,
+             .record_json = R"({"gameIndex":42,"variant":"animal-cycle"})"},
+        },
+        .on_complete = [&](TrainingGame const& game, int index) { completed.emplace(index, game); },
+        .seed = 17,
+    };
+    folly::CPUThreadPoolExecutor pool(2);
+    folly::coro::blockingWait(training_play(Board{12, 10}, 2, opts).scheduleOn(&pool));
+
+    REQUIRE(completed.size() == 2);
+    REQUIRE(!completed.at(41).decisions.empty());
+    REQUIRE(!completed.at(42).decisions.empty());
+    CHECK(completed.at(41).decisions.front().node.board == standard);
+    CHECK(completed.at(42).decisions.front().node.board == animal);
+    CHECK(completed.at(41).decisions.front().node.turn.player == Player::Red);
+    CHECK(completed.at(42).decisions.front().node.turn.player == Player::Blue);
+    CHECK(completed.at(41).initial_state_record.find("standard") != std::string::npos);
+    CHECK(completed.at(42).initial_state_record.find("animal-cycle") != std::string::npos);
+}
 
 TEST_CASE("Animal Cycle self-play emits deterministic replayable universal records",
           "[TrainingRecords][AnimalCycle]") {

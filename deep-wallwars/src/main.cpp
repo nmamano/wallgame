@@ -47,6 +47,8 @@ DEFINE_int32(rows, 5, "Number of rows");
 DEFINE_string(variant, "classic", "Game variant: classic or standard");
 DEFINE_string(initial_state_config, "",
               "BGS-format JSON config for an authoritative self-play initial state");
+DEFINE_string(initial_states_file, "",
+              "JSONL materialized initial states, one record per self-play game");
 
 DEFINE_int32(game_columns, 0,
              "Effective game columns, embedded in the -columns/-rows model frame with padding "
@@ -274,7 +276,76 @@ Board make_mode_board(Variant variant) {
                                                       game_rows, variant);
 }
 
-void train(EvaluationFunction const& eval_fn, Variant variant) {
+TrainingPlayOptions::StartPosition training_start_from_config(nlohmann::json const& config) {
+    auto validation = engine_adapter::validate_bgs_config(config, FLAGS_rows, FLAGS_columns);
+    if (!validation.valid) {
+        throw std::runtime_error("Invalid initial-state config: " + validation.error_message);
+    }
+    auto converted = engine_adapter::convert_bgs_config_to_board(config, FLAGS_rows, FLAGS_columns);
+    Turn turn = std::get<1>(converted);
+    std::optional<PreviousPosition> previous_position;
+    if (config["initialState"].contains("turn") &&
+        !config["initialState"]["turn"]["actionsTaken"].empty()) {
+        auto const& action = config["initialState"]["turn"]["actionsTaken"][0];
+        std::string const type = action["type"];
+        if (type != "wall") {
+            Cell source{action["source"][0].get<int>(), action["source"][1].get<int>()};
+            previous_position = PreviousPosition{
+                type == "dog" ? Pawn::Dog
+                : type == "cat" ? Pawn::Cat
+                : type == "mouse" ? Pawn::Mouse
+                                  : Pawn::Elephant,
+                engine_adapter::transform_to_model(source, std::get<2>(converted))};
+        }
+    }
+    return {.board = std::move(std::get<0>(converted)),
+            .turn = turn,
+            .previous_position = previous_position,
+            .record_json = config.dump()};
+}
+
+std::vector<TrainingPlayOptions::StartPosition> load_training_start_positions() {
+    if (FLAGS_initial_states_file.empty()) return {};
+    if (!FLAGS_initial_state_config.empty()) {
+        throw std::runtime_error("Use only one of --initial_state_config and --initial_states_file");
+    }
+    if (FLAGS_game_columns > 0 || FLAGS_game_rows > 0) {
+        throw std::runtime_error("Batch initial states supply their own game dimensions");
+    }
+    std::ifstream input(FLAGS_initial_states_file);
+    if (!input) throw std::runtime_error("Could not open initial-states file: " + FLAGS_initial_states_file);
+    std::vector<TrainingPlayOptions::StartPosition> positions;
+    std::string line;
+    for (int offset = 0; std::getline(input, line); ++offset) {
+        if (line.empty()) throw std::runtime_error("Initial-states file contains a blank line");
+        auto config = nlohmann::json::parse(line);
+        int const expected_index = FLAGS_start_game + offset;
+        if (!config.contains("gameIndex") || config["gameIndex"].get<int>() != expected_index) {
+            throw std::runtime_error("Initial-state gameIndex is not contiguous at " +
+                                     std::to_string(expected_index));
+        }
+        if (!config.contains("startMode") || !config.contains("dimensionMode") ||
+            !config.contains("seed") || !config.contains("gameSeed") ||
+            !config["seed"].is_number_integer() || !config["gameSeed"].is_number_integer()) {
+            throw std::runtime_error("Initial-state record lacks sampling provenance");
+        }
+        std::string const start_mode = config["startMode"];
+        std::string const dimension_mode = config["dimensionMode"];
+        if ((start_mode != "traditional" && start_mode != "random") ||
+            (dimension_mode != "low" && dimension_mode != "high" &&
+             dimension_mode != "random")) {
+            throw std::runtime_error("Initial-state record has invalid sampling provenance");
+        }
+        positions.push_back(training_start_from_config(config));
+    }
+    if (positions.size() != FLAGS_games) {
+        throw std::runtime_error("Initial-states record count does not match --games");
+    }
+    return positions;
+}
+
+void train(EvaluationFunction const& eval_fn, Variant variant,
+           std::vector<TrainingPlayOptions::StartPosition> start_positions) {
     Board board = make_mode_board(variant);
     Turn starting_turn{Player::Red, Turn::First};
     std::optional<PreviousPosition> starting_previous_position;
@@ -285,31 +356,13 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
                                      FLAGS_initial_state_config);
         }
         nlohmann::json config = nlohmann::json::parse(config_stream);
-        auto validation = engine_adapter::validate_bgs_config(config, FLAGS_rows, FLAGS_columns);
-        if (!validation.valid) {
-            throw std::runtime_error("Invalid initial-state config: " + validation.error_message);
-        }
         if (config["variant"] != variant_name(variant)) {
             throw std::runtime_error("Initial-state config variant does not match --variant");
         }
-        auto converted = engine_adapter::convert_bgs_config_to_board(
-            config, FLAGS_rows, FLAGS_columns);
-        board = std::move(std::get<0>(converted));
-        starting_turn = std::get<1>(converted);
-        if (config["initialState"].contains("turn") &&
-            !config["initialState"]["turn"]["actionsTaken"].empty()) {
-            auto const& action = config["initialState"]["turn"]["actionsTaken"][0];
-            std::string const type = action["type"];
-            if (type != "wall") {
-                Cell source{action["source"][0].get<int>(), action["source"][1].get<int>()};
-                starting_previous_position = PreviousPosition{
-                    type == "dog" ? Pawn::Dog
-                    : type == "cat" ? Pawn::Cat
-                    : type == "mouse" ? Pawn::Mouse
-                                      : Pawn::Elephant,
-                    engine_adapter::transform_to_model(source, std::get<2>(converted))};
-            }
-        }
+        auto start = training_start_from_config(config);
+        board = std::move(start.board);
+        starting_turn = start.turn;
+        starting_previous_position = start.previous_position;
     }
     TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
 
@@ -327,6 +380,7 @@ void train(EvaluationFunction const& eval_fn, Variant variant) {
                                                 .start_game = FLAGS_start_game,
                                                 .starting_turn = starting_turn,
                                                 .starting_previous_position = starting_previous_position,
+                                                .start_positions = std::move(start_positions),
                                                 .on_complete = training_data_printer,
                                                 .seed = FLAGS_seed,
                                             })
@@ -909,14 +963,6 @@ int main(int argc, char** argv) {
     }
     Variant variant = *parsed_variant;
 
-    Logger logger;
-    std::unique_ptr<nv::IRuntime> runtime{nv::createInferRuntime(logger)};
-
-    if (!runtime) {
-        XLOG(ERR, "Failed to create TensorRT runtime. CUDA may be not available or out of memory.");
-        return 1;
-    }
-
     Mode mode;
     if (FLAGS_ranking != "") {
         mode = Mode::Ranking;
@@ -971,6 +1017,27 @@ int main(int argc, char** argv) {
         // for move selection, while --model1 stays the deep analysis oracle.
     }
 
+    std::vector<TrainingPlayOptions::StartPosition> training_start_positions;
+    if (mode == Mode::Train) {
+        try {
+            training_start_positions = load_training_start_positions();
+        } catch (std::exception const& error) {
+            XLOGF(ERR, "{}", error.what());
+            return 1;
+        }
+    } else if (!FLAGS_initial_states_file.empty()) {
+        XLOG(ERR, "--initial_states_file is supported only in training mode");
+        return 1;
+    }
+
+    Logger logger;
+    std::unique_ptr<nv::IRuntime> runtime{nv::createInferRuntime(logger)};
+
+    if (!runtime) {
+        XLOG(ERR, "Failed to create TensorRT runtime. CUDA may be not available or out of memory.");
+        return 1;
+    }
+
     EvaluationFunction eval_fn1, eval_fn2;
     if (!FLAGS_model1.empty()) {
         eval_fn1 = create_and_validate_model(*runtime, FLAGS_model1, mode);
@@ -988,7 +1055,7 @@ int main(int argc, char** argv) {
     } else if (mode == Mode::Evaluate) {
         evaluate(eval_fn1, eval_fn2, variant);
     } else if (mode == Mode::Train) {
-        train(eval_fn1, variant);
+        train(eval_fn1, variant, std::move(training_start_positions));
     } else if (mode == Mode::Analyze) {
         if (!FLAGS_analyze_game_file.empty()) {
             analyze_external_games(eval_fn1);
