@@ -156,6 +156,18 @@ parser.add_argument(
     type=int,
 )
 parser.add_argument(
+    "--animal-cycle-games",
+    help="For a universal run, replace this many games from the existing "
+    "Standard/Classic split with fixed-start Animal Cycle games",
+    default=0,
+    type=int,
+)
+parser.add_argument(
+    "--animal-cycle-size",
+    help="Fixed Animal Cycle game size for --animal-cycle-games (COLSxROWS)",
+    default="7x7",
+)
+parser.add_argument(
     "-s",
     "--samples",
     help="Number of samples to use per action during self play",
@@ -260,6 +272,25 @@ def parse_size_mix(spec):
 
 size_mix = parse_size_mix(args.size_mix)
 
+if args.animal_cycle_games:
+    if args.variant != "universal":
+        print("Error: --animal-cycle-games requires --variant universal.")
+        exit(1)
+    if not (0 < args.animal_cycle_games < args.games):
+        print("Error: --animal-cycle-games must be between 1 and --games - 1.")
+        exit(1)
+    try:
+        animal_cols, animal_rows = (int(value) for value in args.animal_cycle_size.split("x"))
+    except (TypeError, ValueError):
+        print("Error: --animal-cycle-size must be COLSxROWS.")
+        exit(1)
+    if not (4 <= animal_cols <= args.columns and 4 <= animal_rows <= args.rows):
+        print(f"Error: Animal Cycle size {animal_cols}x{animal_rows} outside model frame.")
+        exit(1)
+    animal_cycle_size = (animal_cols, animal_rows)
+else:
+    animal_cycle_size = None
+
 
 ARCHIVE_SUFFIX = ".tar.zst"
 
@@ -301,7 +332,11 @@ def get_training_paths(generation):
     paths = []
     for i in range(lb, generation):
         if args.variant == "universal":
-            bases = [f"generation_{i}_standard", f"generation_{i}_classic"]
+            bases = [
+                f"generation_{i}_standard",
+                f"generation_{i}_classic",
+                f"generation_{i}_animal-cycle",
+            ]
         else:
             bases = [f"generation_{i}"]
         for base in bases:
@@ -1090,7 +1125,8 @@ def init():
         archive_stale_generations(generation)
         model_path = f"{args.models}/model_{generation - 1}.trt"
         variants = ["standard", "classic"] if args.variant == "universal" else [args.variant]
-        games_per_variant = args.games // len(variants)
+        existing_curriculum_games = args.games - args.animal_cycle_games
+        games_per_variant = existing_curriculum_games // len(variants)
         for variant in variants:
             if size_mix:
                 # Split this variant's games across sizes (integer floor; a few
@@ -1102,6 +1138,9 @@ def init():
             else:
                 run_self_play(model_path, "", generation - 1, variant,
                               games=games_per_variant)
+        if args.animal_cycle_games:
+            run_self_play(model_path, "", generation - 1, "animal-cycle",
+                          games=args.animal_cycle_games, game_size=animal_cycle_size)
 
         train_model(model, generation, args.epochs, device, freeze_until_gen)
         save_model(model, f"model_{generation}", device)
