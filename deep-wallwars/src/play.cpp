@@ -91,7 +91,7 @@ folly::coro::Task<GameRecorder> interactive_play(Board board, InteractivePlayOpt
     co_return recorder;
 }
 
-folly::coro::Task<GameResult> training_play_single(Board const& board, EvaluationFunction evaluate1,
+folly::coro::Task<GameResult> training_play_single(Board board, EvaluationFunction evaluate1,
                                                    EvaluationFunction evaluate2, int index,
                                                    TrainingPlayOptions opts) {
     MCTS mcts1{evaluate1,
