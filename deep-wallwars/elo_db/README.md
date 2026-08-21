@@ -50,6 +50,16 @@ that describes neither.
 
 ## Provenance of what is currently in here
 
+> **13 experiments are rescued but NOT in this database yet (2026-08-21).**
+> Their games sit in the `deep-wallwars/elo_db/sources/` directory of the MAIN
+> working tree ON THE 4090 (`~/nil/wallgame` on desktop-053vvpl-1), copied off
+> the second tree that is being collapsed. They are untracked there and are NOT
+> in this checkout, NOT in `experiments.json`, and therefore NOT in
+> `games.jsonl` - so no fit reads them today. Their settings, and which two of
+> them have no surviving runner, are recorded in
+> `provenance/phase7-2026-08/README.md`. The table below describes only what is
+> committed here.
+
 | Experiment | Games | Settings known? |
 |---|---|---|
 | `tf_full_2026-07-16` | 3,120 | **No.** Sample count unrecoverable, see below |
