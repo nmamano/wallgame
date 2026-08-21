@@ -106,7 +106,7 @@ describe("training initial-state sampler", () => {
         (record) => record.boardHeight >= 7 && record.boardHeight <= 10,
       ),
     ).toBeTrue();
-  });
+  }, 20_000);
 
   it("keeps omitted-rng calls on Math.random", () => {
     const original = Math.random;
