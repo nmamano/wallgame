@@ -237,8 +237,10 @@ folly::coro::Task<> training_play(Board board, int games, TrainingPlayOptions op
                 game_opts.starting_previous_position = start.previous_position;
                 game_opts.initial_state_record = start.record_json;
             }
-            return training_play_single(game_board, game_opts.model1, game_opts.model2, i,
-                                        std::move(game_opts)).scheduleOn(executor);
+            auto model1 = game_opts.model1;
+            auto model2 = game_opts.model2;
+            return training_play_single(std::move(game_board), std::move(model1), std::move(model2),
+                                        i, std::move(game_opts)).scheduleOn(executor);
         });
 
     auto results = co_await folly::coro::collectAllWindowed(game_tasks, opts.max_parallel_games);
