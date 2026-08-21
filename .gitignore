@@ -19,6 +19,8 @@ diff.txt
 deep-wallwars/data_*/
 deep-wallwars/logs/
 deep-wallwars/models_*/
+# Local training experiments contain large generated datasets and model files.
+/deep-wallwars/training-runs/
 bot-4-debug.log
 .cache/
 logs/*
