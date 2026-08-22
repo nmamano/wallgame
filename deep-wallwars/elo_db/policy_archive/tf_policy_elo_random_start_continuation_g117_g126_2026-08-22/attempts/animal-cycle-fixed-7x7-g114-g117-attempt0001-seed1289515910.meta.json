@@ -1,0 +1,23 @@
+{
+  "schema": "wallgame-policy-elo-journal-v1",
+  "experiment": "tf_policy_elo_random_start_continuation_g117_g126_2026-08-22",
+  "attemptId": "animal-cycle-fixed-7x7-g114-g117-attempt0001-seed1289515910",
+  "attemptIndex": 1,
+  "engineSeed": 1289515910,
+  "submittedGames": 2,
+  "pair": {
+    "conditionId": "animal-cycle-fixed-7x7",
+    "variant": "animal-cycle",
+    "setup": "fixed",
+    "width": 7,
+    "height": 7,
+    "generationA": 114,
+    "generationB": 117,
+    "modelA": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_114.trt",
+    "modelB": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_117.trt",
+    "existingAcceptedGames": 0,
+    "games": 2
+  },
+  "rawPath": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/policy-elo/tf_policy_elo_random_start_continuation_g117_g126_2026-08-22/run/raw/animal-cycle-fixed-7x7-g114-g117-attempt0001-seed1289515910.jsonl",
+  "startedAtUtc": "2026-08-22T13:14:07Z"
+}
