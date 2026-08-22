@@ -64,7 +64,10 @@ def main():
     results = []
     for generation in args.generations:
         model_root = args.run_root / "models" if generation <= 92 else args.extension_models
-        checkpoint = model_root / f"model_{generation}.pt"
+        checkpoint = (
+            model_root / f"model_{generation}.pt"
+            if generation <= 92 else args.run_root / "boundary-oracle" / "model_93_16plane.pt"
+        )
         onnx = model_root / f"model_{generation}.onnx"
         trt = model_root / f"model_{generation}.trt"
         manifest = (
