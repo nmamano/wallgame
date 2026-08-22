@@ -21,12 +21,33 @@ extend to a second architecture.
 elo_db/
   README.md          this file
   experiments.json   one entry per experiment: settings, date, script, notes
-  games.jsonl        one row per game - the single source of truth
+  games.jsonl        one row per game, for the experiments build.py can read
   ratings_*.json     output of scripts/fit_elo.py
+  results/           one results table per archive-only experiment (tracked)
   sources/           verbatim copies of the raw inputs, never edited
+  policy_archive/    the canonical archive of the g117-g126 policy run
   provenance/        copies of the scripts and logs that produced the sources
-  scripts/           build.py, fit_elo.py
+  scripts/           build.py, fit_elo.py, build_results_tables.py
 ```
+
+## Two ingestion paths
+
+There are now two kinds of experiment in here, and they reach a rating differently.
+
+**Legacy PGN experiments.** Their entry lists glob patterns in `sources`, and
+`scripts/build.py` parses those files into `games.jsonl`, which `fit_elo.py` then
+reads. For these, `games.jsonl` is the single row-per-game record.
+
+**Archive-only JSONL experiments.** These were produced by
+`benchmark_head_to_head.ts` and the policy Elo runners, in a JSONL format `build.py`
+does not parse. Their entry carries `"sources": []` - honestly, because `build.py`
+should parse nothing for them - and a `results` pointer to a tracked table under
+`results/`. The policy snapshot builder,
+`../scripts/build_policy_elo_app_data.py`, reads those tables.
+
+So `games.jsonl` is **not** a record of every game in this database. It is the
+derived record for the first kind only. The `results/` tables are the tracked record
+for the second kind. Ask which kind an experiment is before quoting a total.
 
 ## The data model
 
@@ -50,15 +71,21 @@ that describes neither.
 
 ## Provenance of what is currently in here
 
-> **13 experiments are rescued but NOT in this database yet (2026-08-21).**
-> Their games sit in the `deep-wallwars/elo_db/sources/` directory of the MAIN
-> working tree ON THE 4090 (`~/nil/wallgame` on desktop-053vvpl-1), copied off
-> the second tree that is being collapsed. They are untracked there and are NOT
-> in this checkout, NOT in `experiments.json`, and therefore NOT in
-> `games.jsonl` - so no fit reads them today. Their settings, and which two of
-> them have no surviving runner, are recorded in
-> `provenance/phase7-2026-08/README.md`. The table below describes only what is
-> committed here.
+> **The 13 rescued phase 7 experiments were registered on 2026-08-22.** Twelve of
+> them are in `experiments.json` with their settings, their measured structure and
+> a tracked results table under `results/`. The thirteenth,
+> `tf_policy_elo_616bc2f2_delta1_2026-08-20`, held zero files and was removed; it
+> is named in `provenance/phase7-2026-08/README.md` so its absence stays
+> explainable.
+>
+> Their raw games are NOT in this repository. Nil ruled on 2026-08-22 that tracked
+> evidence is a results table - the experiment reference, the two players, the
+> winner, and the condition and start fields - and not the raw games. The raw
+> JSONL stays on the 4090 desktop (`~/nil/wallgame` on desktop-053vvpl-1), ignored
+> by `.gitignore`, with each archive's box, path, size, file count, parsed rows and
+> content hash recorded under `localRawArchive` in `experiments.json`.
+>
+> The table below describes only the legacy PGN experiments.
 
 | Experiment | Games | Settings known? |
 |---|---|---|
@@ -109,9 +136,25 @@ turn a guess into data.
 2. Add an entry to `experiments.json` with the settings and the script that
    produced it. If a setting is genuinely unknown, write `null`, not a guess.
 3. Copy the script itself into `provenance/`.
-4. Run `python3 scripts/build.py` to rebuild `games.jsonl`.
+4. For a PGN experiment, list its glob patterns in `sources` and run
+   `python3 scripts/build.py` to rebuild `games.jsonl`.
+5. For a JSONL experiment `build.py` cannot parse, write `"sources": []`, add the
+   archive to `scripts/build_results_tables.py`, run it to produce
+   `results/<experiment>.csv`, and record that table under `results` in the entry
+   with its row count, byte count and sha256.
 
-Never hand-edit `games.jsonl`. It is derived, and `build.py` rewrites it whole.
+Every entry needs a `sources` key, even an empty one. `build.py` requires it, and
+that is deliberate: a missing key is then a real error about a real experiment
+rather than something a default quietly swallows.
+
+Never hand-edit `games.jsonl` or anything in `results/`. Both are derived, and
+their generators rewrite them whole.
+
+`scripts/verify_policy_elo_tables.py` checks the tracked tables against the
+fingerprints in `experiments.json` and against the shipped policy snapshot, from a
+plain checkout. Pass `--raw-sources` on the box that holds the raw archives to add a
+per-edge win/loss/draw comparison, which the shipped snapshot cannot support because
+it stores no per-edge counts.
 
 ## Naming across architectures
 

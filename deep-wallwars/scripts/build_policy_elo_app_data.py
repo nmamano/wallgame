@@ -15,6 +15,8 @@ import zlib
 from collections import Counter, defaultdict
 from pathlib import Path
 
+from elo_results_tables import generation, read_table, results_record
+
 ROOT = Path(__file__).resolve().parents[1]
 MODEL = re.compile(r"_g(\d+)_vs_g(\d+)")
 
@@ -64,8 +66,75 @@ def options():
     parser.add_argument("--conditions", type=Path, default=ROOT / "scripts/policy_elo_conditions.json")
     parser.add_argument("--legacy-games", type=Path, default=ROOT / "elo_db/games.jsonl")
     parser.add_argument("--policy-archive", type=Path, default=ROOT / "elo_db/policy_archive")
+    parser.add_argument("--results-tables", type=Path, default=ROOT / "elo_db/results",
+                        help="Tracked per-experiment results tables. Used unless --ssh "
+                             "or --remote-aggregate asks for the raw archives instead. "
+                             "It must be the canonical directory: a table is only "
+                             "evidence where experiments.json says it is.")
+    parser.add_argument("--experiments", type=Path, default=ROOT / "elo_db/experiments.json",
+                        help="Manifest holding each table's fingerprint. Every table is "
+                             "checked against it before any game is counted.")
     parser.add_argument("--timeout", type=int, default=600)
     return parser.parse_args()
+
+
+def table_edges(directory, config, experiments):
+    """Build the archive edges from the tracked results tables.
+
+    The raw JSONL archives for these experiments live only on the 4090 desktop -
+    `elo_db/.gitignore` names each directory and `experiments.json` records its box,
+    path, size and content hash. What the repository tracks is one CSV row per game,
+    written by `elo_db/scripts/build_results_tables.py`, carrying the players, the
+    winner, the condition and the evidence status.
+
+    That is enough to rebuild exactly what `REMOTE_AGGREGATOR` computes over the raw
+    games, so a normal checkout no longer needs SSH access to the desktop for these
+    eight experiments. `--ssh` and `--remote-aggregate` still read the raw archives
+    when someone wants to check the tables against them.
+
+    `read_table` validates each table against its `experiments.json` fingerprint and
+    rejects every malformed value BEFORE a single game is counted, so this path is
+    fail-closed on its own. A wrong winner therefore cannot reach a rebuilt snapshot
+    unless the manifest is edited to match it, which is a visible change that review
+    can check against the raw archives.
+    """
+    merged = {}
+    for experiment in config["archiveExperiments"]:
+        rows = read_table(
+            directory / f"{experiment}.csv",
+            experiment,
+            results_record(experiments, experiment),
+        )
+        for row in rows:
+            candidate_is_p1 = row["candidateIsP1"] == "true"
+            # The candidate is the edge's `a` end, as in the raw aggregator, where
+            # `a` comes from the file name and `winsA` counts outcome "ours".
+            a = generation(row["p1"] if candidate_is_p1 else row["p2"])
+            b = generation(row["p2"] if candidate_is_p1 else row["p1"])
+            edge = merged.setdefault((row["conditionId"], a, b), {
+                "condition": row["conditionId"], "a": a, "b": b,
+                "winsA": 0, "winsB": 0, "draws": 0, "clean": 0, "excluded": 0,
+                "sources": {},
+            })
+            source = edge["sources"].setdefault(
+                experiment, {"clean": 0, "excluded": 0, "rawFiles": []},
+            )
+            if row["sourceFile"] not in source["rawFiles"]:
+                source["rawFiles"].append(row["sourceFile"])
+
+            if row["evidenceStatus"] == "excluded":
+                edge["excluded"] += 1
+                source["excluded"] += 1
+                continue
+            edge["clean"] += 1
+            source["clean"] += 1
+            if row["winner"] == "draw":
+                edge["draws"] += 1
+            elif (row["winner"] == "p1") == candidate_is_p1:
+                edge["winsA"] += 1
+            else:
+                edge["winsB"] += 1
+    return list(merged.values())
 
 
 def remote_edges(opt):
@@ -325,7 +394,8 @@ def fit_component(edges, players, iterations=3000, prior=0.5):
 def build(opt):
     config = json.loads(opt.conditions.read_text())
     conditions = config["conditions"]
-    remote = remote_edges(opt)
+    remote = remote_edges(opt) if (opt.ssh or opt.remote_aggregate) else table_edges(
+        opt.results_tables, config, json.loads(opt.experiments.read_text()))
     canonical = canonical_edges(opt.policy_archive)
     remote_sources = {name for row in remote for name in row.get("sources", {})}
     canonical_sources = {name for row in canonical for name in row.get("sources", {})}

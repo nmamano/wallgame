@@ -1,0 +1,3 @@
+exp,sourceFile,conditionId,variant,setup,board,p1,p2,candidateIsP1,winner,evidenceStatus,exclusionReason,engineSeed,randomStartSeed,game
+tf_model116_vs93_1000_2026-08-19a,standard_fixed_8x8.jsonl,standard-fixed-8x8,standard,fixed,8x8,tf:116,tf:93,true,draw,accepted,,116093,116093348279,0
+tf_model116_vs93_1000_2026-08-19a,standard_fixed_8x8.jsonl,standard-fixed-8x8,standard,fixed,8x8,tf:93,tf:116,false,p1,accepted,,116093,116093348280,1

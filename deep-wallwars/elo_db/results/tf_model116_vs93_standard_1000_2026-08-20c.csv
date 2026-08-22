@@ -1,0 +1,6 @@
+exp,sourceFile,conditionId,variant,setup,board,p1,p2,candidateIsP1,winner,evidenceStatus,exclusionReason,engineSeed,randomStartSeed,game
+tf_model116_vs93_standard_1000_2026-08-20c,standard_random-start_8x8.jsonl,standard-random-8x8,standard,random-start,8x8,tf:116,tf:93,true,p1,accepted,,820116,820118460348,0
+tf_model116_vs93_standard_1000_2026-08-20c,standard_random-start_8x8.jsonl,standard-random-8x8,standard,random-start,8x8,tf:93,tf:116,false,p1,accepted,,820116,820118460349,1
+tf_model116_vs93_standard_1000_2026-08-20c,standard_random-start_8x8.jsonl,standard-random-8x8,standard,random-start,8x8,tf:116,tf:93,true,p2,accepted,,820116,820118460350,2
+tf_model116_vs93_standard_1000_2026-08-20c,standard_random-start_8x8.jsonl,standard-random-8x8,standard,random-start,8x8,tf:93,tf:116,false,p2,accepted,,820116,820118460351,3
+tf_model116_vs93_standard_1000_2026-08-20c,standard_random-start_8x8.jsonl,standard-random-8x8,standard,random-start,8x8,tf:116,tf:93,true,draw,accepted,,820116,820118460352,4
