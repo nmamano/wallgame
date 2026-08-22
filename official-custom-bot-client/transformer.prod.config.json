@@ -15,17 +15,21 @@
       "variants": {
         "animal-cycle": {
           "boardWidth": {
-            "min": 7,
-            "max": 7
+            "min": 4,
+            "max": 12
           },
           "boardHeight": {
-            "min": 7,
-            "max": 7
+            "min": 4,
+            "max": 10
           },
           "recommended": [
             {
               "boardWidth": 7,
               "boardHeight": 7
+            },
+            {
+              "boardWidth": 9,
+              "boardHeight": 9
             }
           ]
         }
