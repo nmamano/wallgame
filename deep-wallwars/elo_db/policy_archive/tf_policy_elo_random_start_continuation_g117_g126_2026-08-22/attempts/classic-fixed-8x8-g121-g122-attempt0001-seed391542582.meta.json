@@ -1,0 +1,23 @@
+{
+  "schema": "wallgame-policy-elo-journal-v1",
+  "experiment": "tf_policy_elo_random_start_continuation_g117_g126_2026-08-22",
+  "attemptId": "classic-fixed-8x8-g121-g122-attempt0001-seed391542582",
+  "attemptIndex": 1,
+  "engineSeed": 391542582,
+  "submittedGames": 2,
+  "pair": {
+    "conditionId": "classic-fixed-8x8",
+    "variant": "classic",
+    "setup": "fixed",
+    "width": 8,
+    "height": 8,
+    "generationA": 121,
+    "generationB": 122,
+    "modelA": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_121.trt",
+    "modelB": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_122.trt",
+    "existingAcceptedGames": 0,
+    "games": 2
+  },
+  "rawPath": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/policy-elo/tf_policy_elo_random_start_continuation_g117_g126_2026-08-22/run/raw/classic-fixed-8x8-g121-g122-attempt0001-seed391542582.jsonl",
+  "startedAtUtc": "2026-08-22T12:21:57Z"
+}

@@ -1,0 +1,79 @@
+{
+  "schema": "wallgame-policy-elo-completion-v1",
+  "experiment": "tf_policy_elo_random_start_continuation_g117_g126_2026-08-22",
+  "completedAtUtc": "2026-08-22T14:08:14Z",
+  "acceptedGames": 2100,
+  "quarantinedGames": 0,
+  "tornRecords": 0,
+  "pairings": 300,
+  "attempts": 300,
+  "supportedGenerations": [
+    93,
+    94,
+    95,
+    96,
+    97,
+    98,
+    99,
+    100,
+    101,
+    102,
+    103,
+    104,
+    105,
+    106,
+    107,
+    108,
+    109,
+    110,
+    111,
+    112,
+    113,
+    114,
+    115,
+    116,
+    117,
+    118,
+    119,
+    120,
+    121,
+    122,
+    123,
+    124,
+    125,
+    126
+  ],
+  "conditions": 10,
+  "componentsPerCondition": 1,
+  "incrementalPlan": {
+    "pairings": 0,
+    "acceptedGamesNeeded": 0
+  },
+  "archiveTreeSha256": "62d4b22a73682a40636da8ae1da49e225dc6dc0b06d1afaa7b48e8d65cdfb9f0",
+  "archiveFileCount": 611,
+  "archiveTreeManifest": {
+    "path": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g117_g126_2026-08-22/archive-tree-files.json",
+    "sha256": "91bd82e6faef1ac47c6e1fd6907e23e22e8f1f52de4604706ccf5921fb42936c"
+  },
+  "sourceHashes": {
+    "immutableInputs": "bce7c805b9af4055cbc337048cf0c3d49fa146f328304d04069e740d02135d35",
+    "postRunPlan": "a01dd9ff5865de0386eec0082fb98219192a0bfbefe808973852f21ef77bef09",
+    "policyEloSnapshot": "8f86a02e82b7b71e89f44c5925083a6da2b66311d0fdc0460f78b4c32c49175f",
+    "experimentsPreRun": "8dc119fe6049a8cec690b70cf60e9b7070d4be3cba45702f2d3c0bbd8f90e0f0"
+  },
+  "finalizationAttempts": [
+    {
+      "status": 127,
+      "reason": "4090 lacked rg; stopped before packaging"
+    },
+    {
+      "status": 1,
+      "reason": "4090 lacked ignored legacy games.jsonl; archive and graph validation passed before snapshot build stopped"
+    },
+    {
+      "status": 1,
+      "reason": "uncorrected builder exposed disconnected legacy 1-36 components; exact 93-126 snapshot assertion stopped publication"
+    }
+  ],
+  "notes": "Legacy generations 1-36 have evidence but no bridge fixing their vertical Elo offset to 93-126; they are disclosed and not rated."
+}
