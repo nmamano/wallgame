@@ -905,6 +905,30 @@
     "evidenceStatus": "accepted",
     "notes": "Random Start games added to every pairing across five Random Start conditions. The largest archive of the set."
   },
+  "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-22",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "pairingDeltas": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "pairingRule": "Every unordered generation pair from 1 through 126 whose delta is 1 through 15, minus exact accepted evidence.",
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "status": "running"
+    },
+    "localRawArchive": {
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/training-runs/policy-elo-backfill-20260822/raw",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "status": "running"
+    },
+    "evidenceStatus": "running",
+    "notes": "Primary generations 1-126 policy Elo backfill. The tracked table is populated from fsynced raw journals and records settings, p1, p2, winner, and status."
+  },
   "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
     "arch": "tf",
     "sources": [],
