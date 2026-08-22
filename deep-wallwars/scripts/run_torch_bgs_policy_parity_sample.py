@@ -4,6 +4,7 @@
 import argparse
 import json
 import subprocess
+import sys
 from pathlib import Path
 
 
@@ -96,7 +97,7 @@ def main():
             paths[kind] = path
         report = generation_root / "report.json"
         command = [
-            str(verifier), "--generation", str(generation), "--checkpoint", str(checkpoint),
+            sys.executable, str(verifier), "--generation", str(generation), "--checkpoint", str(checkpoint),
             "--migration-manifest", str(manifest), "--onnx", str(onnx), "--trt", str(trt),
             "--export-log", str(export_log), "--build-log", str(build_log),
             "--engine", str(args.production_engine), "--diagnostic-engine", str(args.diagnostic_engine),
