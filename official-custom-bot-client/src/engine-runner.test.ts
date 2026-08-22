@@ -102,7 +102,7 @@ describe("EngineProcess pendingRequests keying", () => {
 
   it("can close stdin and wait for a clean engine shutdown", async () => {
     engine = await EngineProcess.spawn(ENGINE_CMD, "test-bot");
-    await expect(engine.shutdown()).resolves.toBe(0);
+    expect(await engine.shutdown()).toBe(0);
     expect(engine.alive).toBe(false);
     engine = undefined;
   });
