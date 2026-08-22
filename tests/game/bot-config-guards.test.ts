@@ -231,7 +231,7 @@ describe("the tracked production bot config", () => {
     expect(ladder).toEqual(["Easy Bot", "Normal Bot", "Superhuman Bot"]);
   });
 
-  it("serves 7x7 Animal Cycle through the official Ruthless analysis bot", () => {
+  it("serves the full Animal Cycle range through the official Ruthless analysis bot", () => {
     const config = parsedProd();
     const ruthless = config.bots.find(
       (bot) => bot.botId === "experimental-animal-115",
@@ -252,9 +252,12 @@ describe("the tracked production bot config", () => {
     });
     expect(ruthless!.variants).toEqual({
       "animal-cycle": {
-        boardWidth: { min: 7, max: 7 },
-        boardHeight: { min: 7, max: 7 },
-        recommended: [{ boardWidth: 7, boardHeight: 7 }],
+        boardWidth: { min: 4, max: 12 },
+        boardHeight: { min: 4, max: 10 },
+        recommended: [
+          { boardWidth: 7, boardHeight: 7 },
+          { boardWidth: 9, boardHeight: 9 },
+        ],
       },
     });
     // The generation is deliberately NOT pinned. Training always continues from
@@ -274,10 +277,11 @@ describe("the tracked production bot config", () => {
     );
   });
 
-  it("recommends 8x8 and nothing bigger", () => {
+  it("keeps recommendations within each variant's canonical sizes", () => {
     // 62% of our search clicks are mobile, and 12x10 does not fit a phone
     // (Nil, 2026-08-07). The Recommended tab is what a first-time visitor
-    // clicks, so it offers one size.
+    // clicks, so Standard and Classic stay capped at 8x8. Animal Cycle has its
+    // own canonical recommendations, 7x7 and 9x9 (Nil, 2026-08-22).
     //
     // A recommendation is not a restriction: every bot still DECLARES the full
     // range and 12x10 stays reachable from the board-size control and the
@@ -295,8 +299,13 @@ describe("the tracked production bot config", () => {
     // 1, 2026-08-07). A bound is only guarded from the side you assert on.
     const EXPECTED_RANGE: Record<string, string> = {
       standard: "4-12 x 4-10",
-      "animal-cycle": "5-12 x 5-10",
+      "animal-cycle": "4-12 x 4-10",
       classic: "5-12 x 5-10",
+    };
+    const MAX_RECOMMENDED_SIDE: Record<string, number> = {
+      standard: 8,
+      classic: 8,
+      "animal-cycle": 9,
     };
 
     const oversized: string[] = [];
@@ -309,7 +318,8 @@ describe("the tracked production bot config", () => {
         const label = `${bot.botId}/${variant}`;
         if (config.recommended.length === 0) unrecommended.push(label);
         for (const rec of config.recommended) {
-          if (rec.boardWidth > 8 || rec.boardHeight > 8) {
+          const maxSide = MAX_RECOMMENDED_SIDE[variant];
+          if (rec.boardWidth > maxSide || rec.boardHeight > maxSide) {
             oversized.push(`${label} ${rec.boardWidth}x${rec.boardHeight}`);
           }
         }
@@ -318,12 +328,6 @@ describe("the tracked production bot config", () => {
           `${config.boardWidth.min}-${config.boardWidth.max} x ` +
           `${config.boardHeight.min}-${config.boardHeight.max}`;
         expected[label] = EXPECTED_RANGE[variant];
-        if (
-          bot.botId === "experimental-animal-115" &&
-          variant === "animal-cycle"
-        ) {
-          expected[label] = "7-7 x 7-7";
-        }
         if (
           bot.botId === "dw-puzzle" ||
           (bot.botId === "dw-transformer" && variant === "standard")
