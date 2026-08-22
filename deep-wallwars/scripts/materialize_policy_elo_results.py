@@ -56,6 +56,21 @@ def read_journals(raw_root, plan):
                 where = f"{relative}:{line_number}"
                 if identity not in expected:
                     raise MaterializeError(f"off-plan game ID {identity!r}: {where}")
+                raw_record_sha256 = hashlib.sha256(payload).hexdigest()
+                if row.get("accepted") is False:
+                    recovered = (
+                        path.parent / "failures" / "recovered"
+                        / f"{identity}.{raw_record_sha256}.json"
+                    )
+                    if not recovered.exists():
+                        raise MaterializeError(
+                            f"failed root row lacks exact recovered artifact: {where}"
+                        )
+                    if recovered.read_bytes() != raw_line:
+                        raise MaterializeError(
+                            f"recovered failure artifact differs from root row: {where}"
+                        )
+                    continue
                 if identity in records:
                     raise MaterializeError(f"duplicate raw game ID {identity}: {where}")
                 if row.get("accepted") is not True or row.get("failure") is not None:
@@ -91,7 +106,7 @@ def read_journals(raw_root, plan):
                     "row": row,
                     "sourceFile": relative,
                     "line": line_number,
-                    "rawRecordSha256": hashlib.sha256(payload).hexdigest(),
+                    "rawRecordSha256": raw_record_sha256,
                     "pairing": pairing,
                     "gameIndex": game_index,
                 }

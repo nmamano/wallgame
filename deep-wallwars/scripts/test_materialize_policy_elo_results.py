@@ -81,7 +81,48 @@ class MaterializeTest(unittest.TestCase):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
             plan = self.write_fixture(root, lambda rows: rows[0].update(accepted=False))
-            with self.assertRaisesRegex(materialize.MaterializeError, "failed or unaccepted"):
+            with self.assertRaisesRegex(materialize.MaterializeError, "lacks exact recovered"):
+                materialize.build_outputs(root, plan)
+
+    def write_recovered_failure(self, root, mismatch=False):
+        plan, pairing = fixture()
+        accepted = [raw_row(plan, pairing, index) for index in range(2)]
+        failed = dict(accepted[0], accepted=False, failure="illegal")
+        failed_line = json.dumps(failed, separators=(",", ":")) + "\n"
+        raw = root / "w" / "old.jsonl"
+        raw.parent.mkdir(parents=True)
+        raw.write_text(failed_line)
+        (root / "w" / "resume.jsonl").write_text(
+            "".join(json.dumps(row, separators=(",", ":")) + "\n" for row in accepted)
+        )
+        digest = materialize.hashlib.sha256(failed_line[:-1].encode()).hexdigest()
+        recovered = root / "w" / "failures" / "recovered" / f"{failed['gameId']}.{digest}.json"
+        recovered.parent.mkdir(parents=True)
+        recovered.write_text(failed_line if not mismatch else failed_line.replace("illegal", "other"))
+        return plan
+
+    def test_exact_recovered_failure_plus_accepted_replacement_succeeds(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            plan = self.write_recovered_failure(root)
+            table, fingerprints = materialize.build_outputs(root, plan)
+            self.assertEqual(table.count(b"\n") - 1, 2)
+            self.assertEqual(json.loads(fingerprints)["rows"], 2)
+
+    def test_missing_recovered_failure_copy_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            plan = self.write_recovered_failure(root)
+            recovered = next((root / "w" / "failures" / "recovered").iterdir())
+            recovered.unlink()
+            with self.assertRaisesRegex(materialize.MaterializeError, "lacks exact recovered"):
+                materialize.build_outputs(root, plan)
+
+    def test_mismatched_recovered_failure_copy_fails(self):
+        with tempfile.TemporaryDirectory() as temp:
+            root = Path(temp)
+            plan = self.write_recovered_failure(root, mismatch=True)
+            with self.assertRaisesRegex(materialize.MaterializeError, "differs from root row"):
                 materialize.build_outputs(root, plan)
 
     def test_duplicate_game_fails_closed(self):
