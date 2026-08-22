@@ -6,8 +6,6 @@ import json
 from pathlib import Path
 
 import numpy as np
-import onnx
-import onnxruntime as ort
 import torch
 
 from migrate_universal_checkpoint import verify_exact_migration
@@ -86,6 +84,8 @@ def fixtures(columns, rows):
 
 
 def export_onnx(model, states, path):
+    import onnx
+
     model.log_output = False
     model.eval()
     torch.onnx.export(
@@ -115,6 +115,8 @@ def model_outputs(model, states):
 
 
 def onnx_outputs(path, states):
+    import onnxruntime as ort
+
     session = ort.InferenceSession(str(path), providers=["CPUExecutionProvider"])
     return session.run(["Priors", "Values"], {"States": states})
 
@@ -130,6 +132,9 @@ def compare(name, left, right):
 
 
 def main():
+    import onnx
+    import onnxruntime as ort
+
     parser = argparse.ArgumentParser()
     parser.add_argument("--source", required=True)
     parser.add_argument("--migrated", required=True)
