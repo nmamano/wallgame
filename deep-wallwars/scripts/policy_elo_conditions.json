@@ -8,7 +8,7 @@
   "artifactCoverage": [
     {"start":0,"end":0,"status":"missing","label":"Artifact missing"},
     {"start":1,"end":92,"status":"legacy","label":"9-plane · legacy engine only"},
-    {"start":93,"end":116,"status":"available","label":"16-plane · rated"}
+    {"start":93,"end":126,"status":"available","label":"16-plane · rated"}
   ],
   "archiveExperiments": [
     "tf_phase7_policy_classic_2026-08-20",

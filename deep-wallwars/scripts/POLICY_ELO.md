@@ -40,3 +40,24 @@ The app snapshot builder is the federated fit reader. It combines the enriched
 canonical archive with the legacy and phase7 sources registered in
 `policy_elo_conditions.json`. Thus, reused clean evidence remains part of the fit
 without copying or rewriting its immutable source journals.
+
+## Concurrency and inference batching
+
+`policy_elo_batch.py --concurrency` currently controls the number of benchmark
+process pairs. It does not control the number of concurrent BGS sessions inside
+one long-lived model process. `benchmark_head_to_head.ts` starts one engine for
+each side of a pairing and plays that pairing's games sequentially. A large batch
+runner concurrency therefore creates duplicate TensorRT processes; it does not
+use the engine's shared inference queue as intended.
+
+Do not repeat this process-per-pair design for a large policy Elo run. First use
+one long-lived engine process per model and multiplex many concurrent, distinct
+BGS sessions through it. Samples=1 is deterministic per position, but different
+opponents, conditions, seats, and Random Start seeds still produce different
+positions that the model process can batch together. Fixed starts still need only
+the two unique seat assignments per model pair.
+
+Before the next strength run, verify the intended architecture with both process
+counts and the engine's measured inferences-per-batch statistics. A high game
+count or high runner concurrency alone is not evidence that inference batching is
+active.

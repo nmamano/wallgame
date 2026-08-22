@@ -108,14 +108,15 @@ class PolicyEloDataTest(unittest.TestCase):
             self.assertEqual(scanned["winsA"], 1)
             self.assertEqual(scanned["draws"], 1)
 
-    def test_build_federates_legacy_and_phase7_as_separate_components(self):
+    def test_build_excludes_disconnected_legacy_component_from_rated_scope(self):
         with tempfile.TemporaryDirectory() as directory:
             root = Path(directory)
             conditions = root / "conditions.json"
             conditions.write_text(json.dumps({
                 "artifactCoverage": [
                     {"start": 0, "end": 0, "status": "missing", "label": "missing"},
-                    {"start": 1, "end": 94, "status": "available", "label": "rated"},
+                    {"start": 1, "end": 92, "status": "legacy", "label": "legacy"},
+                    {"start": 93, "end": 94, "status": "available", "label": "rated"},
                 ],
                 "pairingDeltas": [1],
                 "variantLabels": {"classic": "Classic"},
@@ -131,6 +132,43 @@ class PolicyEloDataTest(unittest.TestCase):
                 for result in ("1-0", "0-1")
             ]
             legacy.write_text("\n".join(json.dumps(row) for row in legacy_rows) + "\n")
+            remote = [{
+                "condition": "classic-fixed-8x8", "a": 93, "b": 94,
+                "winsA": 1, "winsB": 1, "draws": 0, "clean": 2, "excluded": 0,
+                "sources": {"phase7": {"clean": 2, "excluded": 0, "rawFiles": ["pair.jsonl"]}},
+            }]
+            opt = SimpleNamespace(conditions=conditions, legacy_games=legacy, policy_archive=root / "archive")
+            with mock.patch.object(MODULE, "remote_edges", return_value=remote):
+                built = MODULE.build(opt)
+            [condition] = built["conditions"]
+            self.assertEqual([c["generations"] for c in condition["components"]], [[93, 94]])
+            self.assertEqual(condition["evidenceGenerations"], [93, 94])
+            self.assertEqual(sum(c["cleanGames"] for c in condition["components"]), 2)
+            self.assertEqual(built["ratingScope"]["unratedEvidenceGenerations"], [1, 2])
+            self.assertEqual(built["ratingScope"]["unratedEvidenceCleanGames"], 2)
+
+    def test_build_keeps_all_edges_whose_endpoints_are_supported(self):
+        with tempfile.TemporaryDirectory() as directory:
+            root = Path(directory)
+            conditions = root / "conditions.json"
+            conditions.write_text(json.dumps({
+                "artifactCoverage": [
+                    {"start": 1, "end": 94, "status": "available", "label": "rated"},
+                ],
+                "pairingDeltas": [1],
+                "variantLabels": {"classic": "Classic"},
+                "conditions": [{
+                    "id": "classic-fixed-8x8", "label": "Classic 8x8",
+                    "variant": "classic", "setup": "fixed", "width": 8, "height": 8,
+                    "gamesPerPair": 2,
+                }],
+            }))
+            legacy = root / "games.jsonl"
+            legacy.write_text("\n".join(json.dumps({
+                "exp": "rr72_policy_2026-08-01", "board": "8x8", "variant": "classic",
+                "white": {"arch": "tf", "gen": 1}, "black": {"arch": "tf", "gen": 2},
+                "result": result,
+            }) for result in ("1-0", "0-1")) + "\n")
             remote = [{
                 "condition": "classic-fixed-8x8", "a": 93, "b": 94,
                 "winsA": 1, "winsB": 1, "draws": 0, "clean": 2, "excluded": 0,

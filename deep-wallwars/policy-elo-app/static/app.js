@@ -171,6 +171,7 @@ async function init() {
   document.querySelector("#settings").innerHTML = [
     ["Search", `${data.settings.samples} sample`], ["Root noise", data.settings.rootNoiseFactor],
     ["Move choice", data.settings.moveSelection], ["Fit", "Bradley–Terry + draw prior"],
+    ["Rating scope", data.ratingScope.reason],
     ["Scale", "Weakest = 0 per component"], ["Failures", "Quarantined before fit"],
     ["Next batch", `${data.incrementalPlan.summary.pairings} short pairings · ${data.incrementalPlan.summary.acceptedGamesNeeded} clean games needed`],
   ].map(([key,value]) => `<dt>${key}</dt><dd>${value}</dd>`).join("");

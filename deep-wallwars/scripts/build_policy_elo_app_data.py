@@ -255,12 +255,16 @@ def component_sources(edges):
     return sources
 
 
-def incremental_plan(config, by_condition):
-    available = sorted({
+def available_generations(config):
+    return sorted({
         generation
         for coverage in config["artifactCoverage"] if coverage["status"] == "available"
         for generation in range(coverage["start"], coverage["end"] + 1)
     })
+
+
+def incremental_plan(config, by_condition):
+    available = available_generations(config)
     supported = set(available)
     desired = sorted({
         tuple(sorted((generation, generation-delta)))
@@ -329,9 +333,16 @@ def build(opt):
     if overlap:
         raise ValueError(f"evidence source appears in raw and canonical archives: {overlap}")
     rows = merge_edges(legacy_edges(opt.legacy_games) + remote + canonical)
+    rated_generations = available_generations(config)
+    rated_set = set(rated_generations)
+    unrated_rows = [
+        row for row in rows
+        if row["a"] not in rated_set or row["b"] not in rated_set
+    ]
     by_condition = defaultdict(list)
     for row in rows:
-        by_condition[row["condition"]].append(row)
+        if row["a"] in rated_set and row["b"] in rated_set:
+            by_condition[row["condition"]].append(row)
     output = []
     for condition in conditions:
         edges = by_condition[condition["id"]]
@@ -369,6 +380,24 @@ def build(opt):
             "archiveRule": "no-legal-move, legality errors, unfinished outcomes, and malformed rows excluded",
         },
         "artifactCoverage": config["artifactCoverage"],
+        "ratingScope": {
+            "ratedGenerations": rated_generations,
+            "unratedCoverage": [
+                item for item in config["artifactCoverage"] if item["status"] != "available"
+            ],
+            "unratedEvidenceGenerations": sorted({
+                generation
+                for row in unrated_rows if row["clean"] > 0
+                for generation in (row["a"], row["b"])
+                if generation not in rated_set
+            }),
+            "unratedEvidenceCleanGames": sum(row["clean"] for row in unrated_rows),
+            "unratedEvidenceExcludedGames": sum(row["excluded"] for row in unrated_rows),
+            "reason": (
+                "Legacy evidence is disconnected from the rated generations. "
+                "Without a bridge, its vertical Elo offset is unknown, so it is not plotted."
+            ),
+        },
         "variantLabels": config["variantLabels"],
         "conditions": output,
         "incrementalPlan": plan,
