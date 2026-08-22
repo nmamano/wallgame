@@ -236,6 +236,23 @@ class PlannerTest(unittest.TestCase):
         )
         self.assertNotIn((92, 93), planner.desired_pairings([93, 94], [1, 3, 6]))
 
+    def test_star_windows_assign_every_edge_once_with_eight_resident_models(self):
+        pairings = [
+            {"generationA": low, "generationB": 20}
+            for low in range(5, 20)
+        ]
+        windows, assignment = planner.star_windows(pairings)
+        self.assertEqual(len(windows), 3)
+        self.assertEqual(len(assignment), 15)
+        self.assertTrue(all(len(window["generations"]) <= 8 for window in windows))
+        self.assertEqual(
+            {tuple(edge) for window in windows for edge in window["edges"]},
+            {planner.edge(low, 20) for low in range(5, 20)},
+        )
+        planner.assign_window_seeds(windows, "test", {123})
+        self.assertEqual(len({window["engineSeed"] for window in windows}), 3)
+        self.assertNotIn(123, {window["engineSeed"] for window in windows})
+
     def test_duplicate_generation_requires_explicit_resolution(self):
         with tempfile.TemporaryDirectory() as temp:
             root = Path(temp)
@@ -340,7 +357,10 @@ class PlannerTest(unittest.TestCase):
             with mock.patch.object(sys, "argv", argv):
                 planner.main()
             built = json.loads(output.read_text())
-            self.assertEqual(built["summary"], {"pairings": 1, "games": 2})
+            self.assertEqual(built["summary"], {
+                "pairings": 1, "games": 2, "windows": 1, "maxResidentModels": 2,
+            })
+            self.assertEqual(built["pairings"][0]["windowId"], "g2-star-01")
             self.assertEqual(built["pairings"][0]["generationA"], 1)
             self.assertEqual(built["pairings"][0]["generationB"], 2)
             self.assertEqual(built["config"]["sha256"], planner.sha256(config))

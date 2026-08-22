@@ -132,6 +132,8 @@ export class EngineProcess {
   private killed = false;
   private stderrTail: string[] = [];
   private exitHandlers: ((exitCode: number | null) => void)[] = [];
+  private readonly stdoutFinished: Promise<void>;
+  private readonly stderrFinished: Promise<void>;
 
   private constructor(proc: Subprocess<"pipe", "pipe", "pipe">, label: string) {
     this.proc = proc;
@@ -139,9 +141,9 @@ export class EngineProcess {
     this.label = label;
 
     // Start reading stdout for responses
-    void this.readResponses();
+    this.stdoutFinished = this.readResponses();
     // ...and stderr, which is where the engine explains itself when it dies.
-    void this.readStderr();
+    this.stderrFinished = this.readStderr();
 
     // Handle process exit
     void proc.exited.then((exitCode) => {
@@ -389,6 +391,31 @@ export class EngineProcess {
       }
       this.pendingRequests.clear();
     }
+  }
+
+  /**
+   * Close stdin and wait for a clean engine exit.
+   *
+   * Strength runners use this instead of kill() so the engine can drain its
+   * requests and publish final batching statistics. Callers must apply their
+   * own deadline and fall back to kill() if the process does not exit.
+   */
+  async shutdown(): Promise<number> {
+    if (this.pendingRequests.size > 0) {
+      throw new Error(
+        `Cannot shut down engine with ${this.pendingRequests.size} pending request(s)`,
+      );
+    }
+    this.killed = true;
+    if (this.isAlive) {
+      void this.stdin.end();
+    }
+    const exitCode = await this.proc.exited;
+    await Promise.all([this.stdoutFinished, this.stderrFinished]);
+    if (exitCode !== 0) {
+      throw new Error(`Engine process exited with code ${exitCode}`);
+    }
+    return exitCode;
   }
 
   /**

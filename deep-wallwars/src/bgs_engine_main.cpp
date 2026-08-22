@@ -8,10 +8,12 @@
 #include <gflags/gflags.h>
 
 #include <cmath>
+#include <filesystem>
 #include <fstream>
 #include <iostream>
 #include <memory>
 #include <mutex>
+#include <stdexcept>
 #include <string>
 
 #include "batched_model.hpp"
@@ -30,6 +32,8 @@ namespace nv = nvinfer1;
 // ============================================================================
 
 DEFINE_string(model, "", "Path to TensorRT model file (.trt) or 'simple' for simple policy");
+DEFINE_string(batch_stats_output, "",
+              "Optional fail-if-existing JSON file written after all requests drain");
 DEFINE_bool(policy_probe_details, false,
             "Include offline policy-parity details in evaluate responses");
 DEFINE_int32(samples, 1000, "Number of MCTS samples per move");
@@ -228,10 +232,17 @@ int main(int argc, char** argv) {
                      "pass both or neither\n";
         return 1;
     }
+    if (!FLAGS_batch_stats_output.empty() &&
+        std::filesystem::exists(FLAGS_batch_stats_output)) {
+        XLOGF(ERR, "Batch stats output already exists: {}", FLAGS_batch_stats_output);
+        std::cerr << "Error: refusing to overwrite batch stats output\n";
+        return 1;
+    }
 
     try {
         // Create evaluation function
         EvaluationFunction eval_fn;
+        std::shared_ptr<BatchedModel> batch_stats_model;
         int model_rows = FLAGS_model_rows;
         int model_columns = FLAGS_model_columns;
 
@@ -290,6 +301,7 @@ int main(int argc, char** argv) {
             constexpr int kBatchedModelQueueSize = 4096;
             auto batched_model = std::make_shared<BatchedModel>(
                 std::move(models), kBatchedModelQueueSize);
+            batch_stats_model = batched_model;
 
             BatchedModelPolicy batched_model_policy(std::move(batched_model));
             eval_fn = CachedPolicy(std::move(batched_model_policy), FLAGS_cache_size);
@@ -394,6 +406,41 @@ int main(int argc, char** argv) {
         // handlers, and it runs after response_writer is already gone.
         XLOGF(INFO, "Draining {} in-flight request(s)", dispatcher.in_flight());
         dispatcher.drain();
+
+        if (!FLAGS_batch_stats_output.empty()) {
+            if (!batch_stats_model) {
+                throw std::runtime_error("batch stats require a TensorRT model");
+            }
+            auto const inferences = batch_stats_model->total_inferences();
+            auto const batches = batch_stats_model->total_batches();
+            nlohmann::json const stats{
+                {"schema", "wallgame-bgs-batch-stats-v1"},
+                {"model", FLAGS_model},
+                {"inferences", inferences},
+                {"batches", batches},
+                {"inferencesPerBatch",
+                 batches == 0 ? 0.0 : static_cast<double>(inferences) / batches},
+            };
+            std::filesystem::path const output{FLAGS_batch_stats_output};
+            std::filesystem::path const temporary = output.string() + ".tmp";
+            if (std::filesystem::exists(temporary)) {
+                throw std::runtime_error("batch stats temporary output already exists");
+            }
+            {
+                std::ofstream stream{temporary, std::ios::out | std::ios::trunc};
+                stream.exceptions(std::ios::failbit | std::ios::badbit);
+                stream << stats.dump(2) << '\n';
+                stream.flush();
+            }
+            // create_hard_link is the atomic fail-if-existing publish step on the
+            // Linux runner. rename() would overwrite a file created after the
+            // startup check and turn two runs into one unreadable artifact.
+            std::filesystem::create_hard_link(temporary, output);
+            std::filesystem::remove(temporary);
+            XLOGF(INFO, "Wrote batch stats: {} inferences / {} batches ({:.3f} per batch)",
+                  inferences, batches,
+                  batches == 0 ? 0.0 : static_cast<double>(inferences) / batches);
+        }
 
         XLOG(INFO, "Deep Wallwars V3 BGS Engine shutting down");
         return 0;

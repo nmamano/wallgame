@@ -259,6 +259,47 @@ def desired_pairings(available, deltas):
     }
 
 
+def star_windows(pairings, max_resident=8):
+    if max_resident < 2:
+        raise ValueError("max resident models must be at least two")
+    by_high = defaultdict(set)
+    for pairing in pairings:
+        low, high = edge(pairing["generationA"], pairing["generationB"])
+        by_high[high].add(low)
+
+    windows, assignment = [], {}
+    leaves_per_window = max_resident - 1
+    for high, lows in sorted(by_high.items()):
+        ordered = sorted(lows, reverse=True)
+        for index in range(0, len(ordered), leaves_per_window):
+            leaves = ordered[index:index + leaves_per_window]
+            window_id = f"g{high}-star-{index // leaves_per_window + 1:02d}"
+            edges = [edge(low, high) for low in leaves]
+            windows.append({
+                "id": window_id,
+                "generations": [high, *leaves],
+                "edges": [[low, upper] for low, upper in edges],
+            })
+            for assigned_edge in edges:
+                if assigned_edge in assignment:
+                    raise ValueError(f"pairing assigned twice: {assigned_edge}")
+                assignment[assigned_edge] = window_id
+    return windows, assignment
+
+
+def assign_window_seeds(windows, experiment, used_seeds):
+    used = set(used_seeds)
+    for window in windows:
+        seed = int(hashlib.sha256(
+            f'{experiment}\0{window["id"]}'.encode()
+        ).hexdigest()[:8], 16) & 0x7fffffff
+        while seed in used:
+            seed = (seed + 1) & 0x7fffffff
+        window["engineSeed"] = seed
+        used.add(seed)
+    return windows
+
+
 def main():
     opt = args()
     config = json.loads(opt.config.read_text())
@@ -305,6 +346,13 @@ def main():
             "componentsBefore": components(available, enough),
         })
 
+    windows, window_assignment = star_windows(planned)
+    assign_window_seeds(windows, opt.experiment, used_engine_seeds)
+    for pairing in planned:
+        pairing["windowId"] = window_assignment[
+            edge(pairing["generationA"], pairing["generationB"])
+        ]
+
     plan = {
         "schema": "wallgame-policy-elo-plan-v1", "experiment": opt.experiment,
         "settings": {"samples": 1, "rootNoiseFactor": 0, "moveSelection": "policy-argmax", "seatAlternation": True},
@@ -321,8 +369,13 @@ def main():
         },
         "duplicateArtifacts": duplicate_artifacts,
         "usedEngineSeeds": sorted(used_engine_seeds),
-        "conditions": condition_summaries, "pairings": planned,
-        "summary": {"pairings": len(planned), "games": sum(p["games"] for p in planned)},
+        "conditions": condition_summaries, "windows": windows, "pairings": planned,
+        "summary": {
+            "pairings": len(planned),
+            "games": sum(p["games"] for p in planned),
+            "windows": len(windows),
+            "maxResidentModels": max((len(window["generations"]) for window in windows), default=0),
+        },
     }
     opt.output.parent.mkdir(parents=True, exist_ok=True)
     opt.output.write_text(json.dumps(plan, indent=2) + "\n")
