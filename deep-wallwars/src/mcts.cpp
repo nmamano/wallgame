@@ -421,6 +421,36 @@ std::optional<Action> MCTS::peek_best_second_action(Action const& first) const {
     return second_edge.action;
 }
 
+std::optional<NodeInfo> MCTS::child_info(Action const& first) const {
+    TreeNode* child = child_after(first);
+    if (!child) {
+        return {};
+    }
+    TreeNode::Value const value = child->value;
+    NodeInfo result{
+        child->board,
+        child->turn,
+        value.total_samples == 0 ? 0.0f : value.total_weight / value.total_samples,
+        value.total_samples,
+        {},
+    };
+    result.edges.reserve(child->edges.size());
+    for (TreeEdge const& edge : child->edges) {
+        TreeNode* grandchild = edge.child;
+        int samples = 0;
+        float q_value = 0.0f;
+        if (grandchild) {
+            TreeNode::Value const grandchild_value = grandchild->value.load();
+            samples = grandchild_value.total_samples;
+            if (samples > 0) {
+                q_value = grandchild_value.total_weight / samples;
+            }
+        }
+        result.edges.emplace_back(edge.action, samples, q_value, edge.prior);
+    }
+    return result;
+}
+
 std::optional<Move> MCTS::peek_best_move() const {
     // Get the best first action
     auto action1 = peek_best_action();

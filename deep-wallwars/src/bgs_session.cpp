@@ -11,6 +11,7 @@
 
 #include "naive_move.hpp"
 #include "simple_policy.hpp"
+#include "state_conversions.hpp"
 
 namespace bgs {
 
@@ -180,6 +181,19 @@ static json create_evaluate_response(
     };
 }
 
+static json create_policy_probe_position(NodeInfo const& node) {
+    json legal = json::array();
+    for (EdgeInfo const& edge : node.edges) {
+        legal.push_back({
+            {"policyIndex", universal_policy_index(node.board, node.turn, edge.action)},
+        });
+    }
+    return {
+        {"input", convert_to_model_input(node.board, node.turn, 16)},
+        {"legalActions", std::move(legal)},
+    };
+}
+
 static json create_move_applied_response(
     std::string const& bgs_id,
     int ply,
@@ -345,8 +359,32 @@ folly::coro::Task<json> handle_evaluate_position(
     XLOGF(DBG, "BGS {} ply {}: best move {} eval {:.3f}",
           bgs_id, session->ply, game_notation, evaluation);
 
-    co_return create_evaluate_response(
+    json response = create_evaluate_response(
         bgs_id, session->ply, game_notation, evaluation, true);
+    if (config.policy_probe_details) {
+        json positions = json::array();
+        json chosen_indices = json::array();
+        NodeInfo const root = session->mcts->root_info();
+        positions.push_back(create_policy_probe_position(root));
+        if (!actions.empty()) {
+            chosen_indices.push_back(
+                universal_policy_index(root.board, root.turn, actions.front()));
+        }
+        if (actions.size() > 1) {
+            auto const child = session->mcts->child_info(actions.front());
+            if (!child) {
+                throw std::logic_error("policy probe lacks the selected root child");
+            }
+            positions.push_back(create_policy_probe_position(*child));
+            chosen_indices.push_back(
+                universal_policy_index(child->board, child->turn, actions[1]));
+        }
+        response["policyProbe"] = {
+            {"positions", std::move(positions)},
+            {"chosenPolicyIndices", std::move(chosen_indices)},
+        };
+    }
+    co_return response;
 }
 
 folly::coro::Task<json> handle_apply_move(
