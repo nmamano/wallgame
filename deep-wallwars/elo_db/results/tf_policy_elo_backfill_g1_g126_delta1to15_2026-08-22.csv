@@ -1,1 +1,1 @@
-exp,sourceFile,conditionId,variant,setup,board,settings,p1,p2,winner,status,reason,engineSeed,randomStartSeed,gameId,rawRecordSha256
+exp,sourceFile,conditionId,variant,setup,board,p1,p2,candidateIsP1,winner,evidenceStatus,exclusionReason,engineSeed,randomStartSeed,game
