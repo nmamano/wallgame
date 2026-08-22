@@ -29,10 +29,20 @@ The reusable capability they exercised - `--archive`, `--experiment` and
 
 ## Where the settings for each of the 13 experiments stand
 
-Settings are NOT yet written into `experiments.json`. That is deliberate: a
-wrong manifest entry is worse than a missing one, because the Elo fit filters
-on exact experiment name and then trusts the manifest for the settings. This is
-where each one's evidence is, for whoever writes those entries.
+**Written into `experiments.json` on 2026-08-22.** The caution that kept them out
+until then still applies to whoever edits those entries: a wrong manifest entry is
+worse than a missing one, because the Elo fit filters on exact experiment name and
+then trusts the manifest for the settings. The table below is where each one's
+evidence came from.
+
+Two things were found while writing those entries, and both correct this file:
+
+1. **Five of the archives carry their own `experiment.json`**, written when the run
+   started. That is a settings source this table did not have, because the table
+   answers "which script assigns this name", which is a different question. The five
+   are the four `tf_model116_*` archives and `tf_phase7_policy_standard_2026-08-20`.
+2. So **no non-empty experiment lacks settings**, and the "NOTHING DEFINES IT" row
+   for `tf_model116_vs93_1000_2026-08-19a` below is corrected in place.
 
 **How this table was built, because the first version of it was wrong.** A row
 says a file DEFINES an experiment only when that file assigns the name to a
@@ -54,13 +64,14 @@ by assignment, not by grep hit, if you extend this table.
 | `tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20` | same |
 | `tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20` | same |
 | `tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20` | same |
-| `tf_model116_vs93_1000_2026-08-19a` | **NOTHING DEFINES IT** |
-| `tf_policy_elo_616bc2f2_delta1_2026-08-20` | **NOTHING DEFINES IT** - and the directory is empty |
+| `tf_model116_vs93_1000_2026-08-19a` | no launcher, but its OWN `experiment.json` (corrected 2026-08-22) |
+| `tf_policy_elo_616bc2f2_delta1_2026-08-20` | nothing, and the directory was empty - removed 2026-08-22 |
 
-So 11 of the 13 have a settings source, and 8 of those are in
+So 12 of the 13 have a settings source, and 8 of those are in
 `deep-wallwars/scripts/policy_elo_conditions.json`, which was on main the whole
-time. Only the GAMES were in the other tree. Exactly one non-empty experiment,
-`tf_model116_vs93_1000_2026-08-19a`, has no settings source at all.
+time. Only the GAMES were in the other tree. **Every non-empty experiment has a
+settings source**; the earlier version of this file said one did not, because it
+looked only for a launcher script and not inside the archive.
 
 Three of the six runners here define none of the 13:
 `launch_phase7_evaluation.sh`, `launch_phase7_feasibility.sh` and
@@ -83,7 +94,20 @@ that disagreement is the finding.
 The lesson generalises: a runner may be in `ops-private` rather than in
 `scripts/`, so "not in scripts/" is not "does not exist".
 
-### The one with nothing found
+### The one with no launcher
+
+**Corrected 2026-08-22.** This section was written as though the experiment had no
+settings at all. It has them: `sources/tf_model116_vs93_1000_2026-08-19a/experiment.json`
+records samples 1000, noise factor 0.25, engine seed 116093, candidate generation
+116 against baseline 93, and a status of `aborted-after-launcher-archive-gap`. Those
+settings are now in the manifest, marked `evidenceStatus: excluded` and
+`supersededBy: tf_model116_vs93_1000_2026-08-19b`, because the archive's own note
+says it shares a seed and a condition with the replacement and must not be pooled
+with it. The lesson stands and gets sharper: look INSIDE the archive before
+concluding a setting is lost.
+
+What follows is the original reasoning about the missing LAUNCHER, which is still
+correct about the launcher.
 
 Do not read "nothing found" as "no script existed". `..._2026-08-19a` and
 `..._2026-08-19b` differ only by the trailing letter, and only the `b` form
@@ -100,16 +124,30 @@ the whole of the evidence.
 
 It is NOT the settings. Write `null` rather than the sibling's value unless a
 log confirms it: an inherited setting that is wrong is indistinguishable from a
-measured one once it is in the manifest, and the fit trusts the manifest.
+measured one once it is in the manifest, and the fit trusts the manifest. In the
+end nothing had to be inherited, because the archive carried its own record.
 
-### The empty one
+### The empty one, removed 2026-08-22
 
-`tf_policy_elo_616bc2f2_delta1_2026-08-20` holds zero files. Git cannot track an
-empty directory, so it will NOT survive a commit of `sources/`, and its absence
-will look like it was never rescued. It is named here so that absence stays
-explainable. It is also the only member of the `616bc2f2` family missing from
-`policy_elo_conditions.json`, which is consistent with a run that produced
-nothing.
+`tf_policy_elo_616bc2f2_delta1_2026-08-20` held zero files. It was deleted from the
+4090 working tree on 2026-08-22 under Nil's rule that nothing stays randomly
+untracked, and it is named here so its absence stays explainable rather than looking
+like it was never rescued.
+
+Four independent things say it was an empty run and not a loss:
+
+1. zero files and zero bytes;
+2. it is the only member of the `616bc2f2` family missing from
+   `archiveExperiments` in `policy_elo_conditions.json`;
+3. it is cited nowhere in the shipped policy Elo snapshot;
+4. git cannot track an empty directory, so no commit could ever have carried it.
+
+Note the near-collision that cost a moment's confusion: this is NOT
+`tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20`, which has 782 games in 161 files
+and is registered. The two names differ only by `phase7`.
+
+This is also why the directory count was reported as both 12 and 13 and both were
+right: 13 directories existed, and `git status` saw only the 12 with files in them.
 
 ## The three JSON files
 

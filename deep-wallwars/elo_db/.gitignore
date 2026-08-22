@@ -2,3 +2,27 @@
 games.jsonl
 # Derived: written by scripts/fit_elo.py.
 ratings_*.json
+
+# Raw game archives rescued from the retired phase 7 working tree, August 2026.
+#
+# Nil ruled on 2026-08-22 that the repository tracks a RESULTS TABLE per experiment -
+# the experiment reference, the two players, the winner, and the condition and start
+# fields - and not the raw games. Those tables are in results/ and ARE tracked; the
+# raw JSONL below stays on the 4090 desktop (54.15 MB, 1126 files, measured
+# 2026-08-22). experiments.json records each archive's box, path, size, file count,
+# parsed rows and content hash under `localRawArchive`.
+#
+# Listed one by one on purpose. A `tf_*` glob would silently swallow the next archive
+# somebody means to track, and git says nothing about a file it ignores.
+sources/tf_model116_vs115_animal_1000_2026-08-20/
+sources/tf_model116_vs93_1000_2026-08-19a/
+sources/tf_model116_vs93_1000_2026-08-19b/
+sources/tf_model116_vs93_standard_1000_2026-08-20c/
+sources/tf_phase7_policy_classic_2026-08-20/
+sources/tf_phase7_policy_standard_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20/
+sources/tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20/

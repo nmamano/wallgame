@@ -1,0 +1,3 @@
+exp,sourceFile,conditionId,variant,setup,board,p1,p2,candidateIsP1,winner,evidenceStatus,exclusionReason,engineSeed,randomStartSeed,game
+tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20,classic-random-8x8_g113_vs_g110.jsonl,classic-random-8x8,classic,random-start,8x8,tf:113,tf:110,true,p1,accepted,,657311097,657313068933291,0
+tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20,classic-random-8x8_g113_vs_g110.jsonl,classic-random-8x8,classic,random-start,8x8,tf:110,tf:113,false,p1,accepted,,657311097,657313068933292,1

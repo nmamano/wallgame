@@ -125,6 +125,7 @@
   },
   "tf_policy_elo_random_start_continuation_g117_g126_2026-08-22": {
     "arch": "tf",
+    "sources": [],
     "date": "2026-08-22",
     "candidate_code_sha": "cd269c6e91abe7dcfe8198bcbc3a87d7d958a82f",
     "engine_sha256": "f80b9ed1ac90d2a1a38cac2406939bfe840c8ddffe6035e75cca59f6a7664d2b",
@@ -204,5 +205,772 @@
       }
     },
     "notes": "Canonical archive destination and all immutable input hashes were registered before the runner. No future archive content hash is claimed here; completion-summary.json finalizes it after the run. Phase7 artifacts are authoritative for generation 93 duplicates and generations 94-126."
+  },
+  "tf_model116_vs115_animal_1000_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1000,
+    "noise_factor": 0.25,
+    "move_selection": null,
+    "engineSeed": 820116,
+    "settingsSource": {
+      "kind": "run-local experiment.json inside the archive",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs115_animal_1000_2026-08-20/experiment.json",
+      "note": "Local to the archive, which is not tracked. Its fields are copied here so they survive in the repository."
+    },
+    "runRecordStatus": "running",
+    "measured": {
+      "parsedRows": 100,
+      "gamesByCondition": {
+        "animal-cycle-random-7x7": 100
+      },
+      "pairings": 1,
+      "gamesByPairingDelta": {
+        "1": 100
+      },
+      "generationRange": {
+        "min": 115,
+        "max": 116,
+        "distinct": 2
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_model116_vs115_animal_1000_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 100,
+      "bytes": 18777,
+      "sha256": "c1ae27ef16c25ebe0bf9c500363f685d8b693c5a3531289b0d71f50332aea396",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 2,
+      "rawBytes": 180262,
+      "contentSha256": "888f9eda1d49d5323c446c0f0dcb515344adf57117b0c03177ce4245a06b8185",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs115_animal_1000_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Serving-strength comparison of model 116 against Ruthless model 115. Complete: 100 games planned, 100 recorded."
+  },
+  "tf_model116_vs93_1000_2026-08-19a": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-19",
+    "samples": 1000,
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "engineSeed": 116093,
+    "settingsSource": {
+      "kind": "run-local experiment.json inside the archive",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_1000_2026-08-19a/experiment.json",
+      "note": "Local to the archive, which is not tracked. Its fields are copied here so they survive in the repository."
+    },
+    "runRecordStatus": "aborted-after-launcher-archive-gap",
+    "measured": {
+      "parsedRows": 2,
+      "gamesByCondition": {
+        "standard-fixed-8x8": 2
+      },
+      "pairings": 1,
+      "gamesByPairingDelta": {
+        "23": 2
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 2
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_model116_vs93_1000_2026-08-19a.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 2,
+      "bytes": 440,
+      "sha256": "e8eb2adbf3f1d29acfc0360a7f6289e654334ab61f53e80acd4ac92bf244e2e5",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 2,
+      "rawBytes": 5575,
+      "contentSha256": "4ead7a1bde13ec19bdebd77fb50b8c6816ba28c414c16218922a30b79d51ef37",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_1000_2026-08-19a",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "excluded",
+    "exclusionReason": "aborted-after-launcher-archive-gap",
+    "supersededBy": "tf_model116_vs93_1000_2026-08-19b",
+    "notes": "ABORTED after two games. Its own record states the run was stopped because the launcher had not connected its full-game dump to elo_db, and that both completed games were recovered from the preserved dump. It uses the SAME engine seed and the same condition as the replacement run tf_model116_vs93_1000_2026-08-19b, so the two are not independent evidence and these two games must not be pooled with it."
+  },
+  "tf_model116_vs93_1000_2026-08-19b": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-19",
+    "samples": 1000,
+    "noise_factor": 0.25,
+    "move_selection": "argmax of visit counts (commit_to_action with no temperature)",
+    "engineSeed": 116093,
+    "settingsSource": {
+      "kind": "run-local experiment.json inside the archive",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_1000_2026-08-19b/experiment.json",
+      "note": "Local to the archive, which is not tracked. Its fields are copied here so they survive in the repository."
+    },
+    "runRecordStatus": "running",
+    "measured": {
+      "parsedRows": 110,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 2,
+        "animal-cycle-random-7x7": 20,
+        "classic-fixed-12x10": 2,
+        "classic-fixed-8x8": 2,
+        "classic-random-12x10": 20,
+        "classic-random-8x8": 20,
+        "standard-fixed-12x10": 2,
+        "standard-fixed-8x8": 2,
+        "standard-random-12x10": 20,
+        "standard-random-8x8": 20
+      },
+      "pairings": 1,
+      "gamesByPairingDelta": {
+        "23": 110
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 2
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_model116_vs93_1000_2026-08-19b.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 110,
+      "bytes": 18724,
+      "sha256": "95dbdd729c9038b295675bde737f631dd7e7cc7282142d67d8ae1c8c16afa3f6",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 11,
+      "rawBytes": 285571,
+      "contentSha256": "84fb795c6ad131fa1d1d922859bdc6f7e157d8c9a5710455f0df498e53010ced",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_1000_2026-08-19b",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Model 116 against production model 93 at serving search strength. Complete: 110 games planned across ten conditions, 110 recorded. Six games logged a legality error and are marked excluded in the results table."
+  },
+  "tf_model116_vs93_standard_1000_2026-08-20c": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1000,
+    "noise_factor": 0.25,
+    "move_selection": null,
+    "engineSeed": 820116,
+    "settingsSource": {
+      "kind": "run-local experiment.json inside the archive",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_standard_1000_2026-08-20c/experiment.json",
+      "note": "Local to the archive, which is not tracked. Its fields are copied here so they survive in the repository."
+    },
+    "runRecordStatus": "running",
+    "measured": {
+      "parsedRows": 5,
+      "gamesByCondition": {
+        "standard-random-8x8": 5
+      },
+      "pairings": 1,
+      "gamesByPairingDelta": {
+        "23": 5
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 2
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_model116_vs93_standard_1000_2026-08-20c.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 5,
+      "bytes": 1011,
+      "sha256": "7b8068445e68865ba88fa6a407ed506b7da1c0997bb84c62698d8a6ab58755e0",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 2,
+      "rawBytes": 11869,
+      "contentSha256": "f680bfeb48703b1873412e03d2dfba16ab6f1664a45ac49e9c6016f58576d8d1",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_model116_vs93_standard_1000_2026-08-20c",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "partial",
+    "exclusionReason": "stopped-deliberately-2026-08-20",
+    "notes": "ABORTED AND PARTIAL. 260 games were planned across two Standard Random Start conditions; 5 were recorded, all on 8x8. The Wall Game Trainer confirmed on 2026-08-22 that the run was stopped deliberately on 2026-08-20, when Nil gave priority to the one-sample curves. The status field inside the archive still reads 'running' and is stale."
+  },
+  "tf_phase7_policy_classic_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 2600,
+      "gamesByCondition": {
+        "classic-random-12x10": 2600
+      },
+      "pairings": 65,
+      "gamesByPairingDelta": {
+        "1": 920,
+        "2": 40,
+        "3": 840,
+        "4": 40,
+        "5": 40,
+        "6": 720
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_phase7_policy_classic_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 2600,
+      "bytes": 444970,
+      "sha256": "f4bc59bc6d0877d839b9c639dde5514de478c1dd50f9600ed1957b429ed4800a",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 65,
+      "rawBytes": 8530541,
+      "contentSha256": "f6d50de4e773e2ea39c683af861477ed2234990e7a92d91dbe879eb138a3d994",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_phase7_policy_classic_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Policy-strength curve for Classic. Settings agree across two independent sources: policy_elo_conditions.json, which has named this experiment in archiveExperiments since before it was registered, and the run script rescued from the phase 7 tree into the room's private runner archive (see provenance/phase7-2026-08/README.md). The script passes one sample, zero root noise, 40 games per pairing on a 12x10 Classic Random Start board, over generations 94-116 against deltas 1, 3 and 6 clamped at 93."
+  },
+  "tf_phase7_policy_standard_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": null,
+    "engineSeed": null,
+    "settingsSource": {
+      "kind": "run-local experiment.json inside the archive",
+      "path": "deep-wallwars/elo_db/sources/tf_phase7_policy_standard_2026-08-20/experiment.json",
+      "note": "Local to the archive, which is not tracked. Its fields are copied here so they survive in the repository."
+    },
+    "runRecordStatus": "running",
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 5200,
+      "gamesByCondition": {
+        "standard-random-12x10": 2600,
+        "standard-random-8x8": 2600
+      },
+      "pairings": 65,
+      "gamesByPairingDelta": {
+        "1": 1840,
+        "2": 80,
+        "3": 1680,
+        "4": 80,
+        "5": 80,
+        "6": 1440
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_phase7_policy_standard_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 5200,
+      "bytes": 896654,
+      "sha256": "221165046e8bdb462fe6ea33083918907ac886e5412c74d1a18c9c413cbce7d1",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 131,
+      "rawBytes": 14094289,
+      "contentSha256": "1090dd17653e2fbea40495c2293a6f8bc3cc03c29840df60cba954e1f4a7c9ab",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_phase7_policy_standard_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Policy-strength curves for Standard on 8x8 and 12x10. Settings agree across two independent sources: the run-local experiment.json inside the archive and policy_elo_conditions.json."
+  },
+  "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 102,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 6,
+        "animal-cycle-random-7x7": 36,
+        "classic-fixed-12x10": 6,
+        "classic-fixed-8x8": 6,
+        "classic-random-8x8": 36,
+        "standard-fixed-12x10": 6,
+        "standard-fixed-8x8": 6
+      },
+      "pairings": 3,
+      "gamesByPairingDelta": {
+        "2": 34,
+        "4": 34,
+        "5": 34
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 98,
+        "distinct": 4
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 102,
+      "bytes": 19848,
+      "sha256": "6c485e1e2f95359b8e53a5f6da8cb618c0b9033083203abd37afb92b142e9642",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 21,
+      "rawBytes": 197595,
+      "contentSha256": "0fb8583764e3174220012aceeb2b84030b97134ec02595d6442ea14b00ea5142",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "The three pairings produced by clamping deltas 3 and 6 at generation 93. Together with the delta1 and d3d6 archives this completes the 65-pairing set: 23 + 39 + 3."
+  },
+  "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 1326,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 78,
+        "animal-cycle-random-7x7": 468,
+        "classic-fixed-12x10": 78,
+        "classic-fixed-8x8": 78,
+        "classic-random-8x8": 468,
+        "standard-fixed-12x10": 78,
+        "standard-fixed-8x8": 78
+      },
+      "pairings": 39,
+      "gamesByPairingDelta": {
+        "3": 714,
+        "6": 612
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 1326,
+      "bytes": 255119,
+      "sha256": "c6d015e278329837f10b1de284a55b5529104bb91daa5585bf5606e8fa4a4784",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 273,
+      "rawBytes": 2666913,
+      "contentSha256": "cc25ac04b36ccf841904fe430f0e4057ef9604d63f697a631d760921b1d47d9d",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "The delta 3 and delta 6 half of the pairing set, 39 pairings."
+  },
+  "tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 2,
+      "gamesByCondition": {
+        "classic-random-8x8": 2
+      },
+      "pairings": 1,
+      "gamesByPairingDelta": {
+        "3": 2
+      },
+      "generationRange": {
+        "min": 110,
+        "max": 113,
+        "distinct": 2
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 2,
+      "bytes": 534,
+      "sha256": "668776a2585b63cbad73fd27c41d865226d10202aa1ee5933343e1ab2e4e0936",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 1,
+      "rawBytes": 4221,
+      "contentSha256": "96da6dd968991a9b03951dc65e246548c9986191c3ec7b7c900b25e884887210",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "A two-game top-up for one delta 3 pairing that came up short."
+  },
+  "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 782,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 46,
+        "animal-cycle-random-7x7": 276,
+        "classic-fixed-12x10": 46,
+        "classic-fixed-8x8": 46,
+        "classic-random-8x8": 276,
+        "standard-fixed-12x10": 46,
+        "standard-fixed-8x8": 46
+      },
+      "pairings": 23,
+      "gamesByPairingDelta": {
+        "1": 782
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 782,
+      "bytes": 151936,
+      "sha256": "edcaf72857c6bc2a19a262b4e7168c2de16effb6a2a0ce8a0044ac456a417310",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 161,
+      "rawBytes": 1583729,
+      "contentSha256": "82a9236a62b515a45fc51781b18ab1db7abaaf438d95f301463b3cc577987c9e",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "The delta 1 half of the pairing set, 23 pairings."
+  },
+  "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 7800,
+      "gamesByCondition": {
+        "animal-cycle-random-7x7": 1560,
+        "classic-random-12x10": 1560,
+        "classic-random-8x8": 1560,
+        "standard-random-12x10": 1560,
+        "standard-random-8x8": 1560
+      },
+      "pairings": 65,
+      "gamesByPairingDelta": {
+        "1": 2760,
+        "2": 120,
+        "3": 2520,
+        "4": 120,
+        "5": 120,
+        "6": 2160
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 7800,
+      "bytes": 1588547,
+      "sha256": "aa00be2cf7d4f3e2123d4446a5e735f92d5df903857d5032f0306af7bf96fd68",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 325,
+      "rawBytes": 19645821,
+      "contentSha256": "fe1e553212d68450604f833f0395e526ab6082d08f5fbb18086ea99819964a03",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Random Start games added to every pairing across five Random Start conditions. The largest archive of the set."
+  },
+  "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-20",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "settingsSource": {
+      "kind": "policy_elo_conditions.json",
+      "path": "deep-wallwars/scripts/policy_elo_conditions.json",
+      "note": "This file names the experiment in archiveExperiments and declares the settings every archive experiment shares."
+    },
+    "pairingDeltas": [
+      1,
+      3,
+      6
+    ],
+    "pairingRule": "Each generation N plays N-1, N-3 and N-6, clamped to generation 93 and deduplicated.",
+    "measured": {
+      "parsedRows": 3644,
+      "gamesByCondition": {
+        "animal-cycle-random-7x7": 1820,
+        "classic-random-12x10": 2,
+        "classic-random-8x8": 1820,
+        "standard-random-8x8": 2
+      },
+      "pairings": 65,
+      "gamesByPairingDelta": {
+        "1": 1288,
+        "2": 56,
+        "3": 1180,
+        "4": 56,
+        "5": 56,
+        "6": 1008
+      },
+      "generationRange": {
+        "min": 93,
+        "max": 116,
+        "distinct": 24
+      },
+      "measuredOn": "2026-08-22"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 3644,
+      "bytes": 737941,
+      "sha256": "a26b25846676b9a9cd8ccbed19657ae34a98b6aac8253eff8fb641ee5a4eba16",
+      "generator": "deep-wallwars/elo_db/scripts/build_results_tables.py"
+    },
+    "localRawArchive": {
+      "files": 132,
+      "rawBytes": 6945485,
+      "contentSha256": "a5c412f54aee555fca48a31037dac2713d39962fd8e05f418566cfab67444572",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/sources/tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-22",
+      "note": "Ignored by elo_db/.gitignore. Nil ruled on 2026-08-22 that the repository tracks the results table, not the raw games."
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/phase7-2026-08",
+      "note": "Rescued from the retired phase 7 working tree. That directory records which script defines each experiment."
+    },
+    "evidenceStatus": "accepted",
+    "notes": "Random Start games added across the Animal Cycle 7x7 and Classic 8x8 conditions, with two-game top-ups in two more."
   }
 }
