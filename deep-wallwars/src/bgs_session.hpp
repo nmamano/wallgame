@@ -65,6 +65,10 @@ struct BgsEngineConfig {
     float naive_good_move_bias = 1.5f;
     float naive_bad_move_bias = 0.75f;
 
+    // Offline verification only. Adds exact model inputs, legal policy indices,
+    // and selected indices to evaluate responses. Production leaves this off.
+    bool policy_probe_details = false;
+
     static constexpr int kMaxSessions = 256;
 };
 

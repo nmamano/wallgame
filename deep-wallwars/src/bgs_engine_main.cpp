@@ -30,6 +30,8 @@ namespace nv = nvinfer1;
 // ============================================================================
 
 DEFINE_string(model, "", "Path to TensorRT model file (.trt) or 'simple' for simple policy");
+DEFINE_bool(policy_probe_details, false,
+            "Include offline policy-parity details in evaluate responses");
 DEFINE_int32(samples, 1000, "Number of MCTS samples per move");
 DEFINE_int32(parallel_samples, 32, "Max parallel MCTS samples (controls GPU batch utilization)");
 DEFINE_uint32(seed, 42, "Random seed for MCTS");
@@ -303,6 +305,7 @@ int main(int argc, char** argv) {
         config.model_rows = model_rows;
         config.model_columns = model_columns;
         config.root_noise_factor = static_cast<float>(FLAGS_root_noise_factor);
+        config.policy_probe_details = FLAGS_policy_probe_details;
         // Left EMPTY unless asked for. The optional is the enablement, so there is no number that
         // could accidentally mean "on".
         if (FLAGS_losing_fallback) {

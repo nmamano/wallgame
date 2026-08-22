@@ -160,6 +160,10 @@ public:
     // the callers that need a complete two-action `Move` to hand to the tree.
     std::optional<Action> peek_best_second_action(Action const& first) const;
 
+    // Read-only diagnostic view of the already-expanded child below one root
+    // action. Used only by the offline checkpoint-to-serving parity gate.
+    std::optional<NodeInfo> child_info(Action const& first) const;
+
     // Walks the most-visited path down from the root, which is the search's principal
     // variation - the line it expects both sides to play. Does not modify the tree; the
     // line is already there, so this costs nothing beyond the walk.

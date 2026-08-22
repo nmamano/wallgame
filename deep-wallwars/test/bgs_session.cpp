@@ -1028,6 +1028,36 @@ TEST_CASE("handle_evaluate_position", "[BGS Handlers]") {
     CHECK(eval <= 1.0f);
 }
 
+TEST_CASE("policy probe details bind selected actions to exact model inputs", "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    cfg.samples_per_move = 1;
+    cfg.root_noise_factor = 0;
+    cfg.policy_probe_details = true;
+    SessionManager manager(RankedPolicy{}, cfg);
+
+    auto config = make_standard_config(6, 6);
+    manager.create_session("policy_probe", "bot_1", config);
+    auto response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, cfg, "policy_probe", 0));
+
+    REQUIRE(response["success"] == true);
+    REQUIRE(response.contains("policyProbe"));
+    auto const& positions = response["policyProbe"]["positions"];
+    auto const& chosen = response["policyProbe"]["chosenPolicyIndices"];
+    REQUIRE_FALSE(positions.empty());
+    REQUIRE(chosen.size() == positions.size());
+    for (std::size_t index = 0; index < positions.size(); ++index) {
+        CHECK(positions[index]["input"].size() == 16 * 8 * 8);
+        auto const& legal = positions[index]["legalActions"];
+        REQUIRE_FALSE(legal.empty());
+        CHECK(std::ranges::any_of(legal, [&](json const& action) {
+            return action["policyIndex"] == chosen[index];
+        }));
+    }
+}
+
 TEST_CASE("handle_evaluate_position - Ply mismatch", "[BGS Handlers]") {
     BgsEngineConfig cfg;
     cfg.model_rows = 8;
