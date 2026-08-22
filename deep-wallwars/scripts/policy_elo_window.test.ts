@@ -2,7 +2,7 @@ import { afterEach, describe, expect, it } from "bun:test";
 import { mkdtempSync, readFileSync, readdirSync, rmSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
-import { RawJournal, writeCompletion } from "./policy_elo_window";
+import { assertExpectedAccepted, RawJournal, writeCompletion } from "./policy_elo_window";
 
 let roots: string[] = [];
 
@@ -48,10 +48,45 @@ describe("RawJournal recovery", () => {
 
   it("rejects rows that reuse a game ID with different contents", () => {
     const root = temporaryRoot();
-    writeFileSync(join(root, "one.jsonl"), '{"gameId":"conflict","winner":"p1"}\n');
-    writeFileSync(join(root, "two.jsonl"), '{"gameId":"conflict","winner":"p2"}\n');
+    writeFileSync(
+      join(root, "one.jsonl"),
+      '{"gameId":"conflict","winner":"p1","accepted":true}\n',
+    );
+    writeFileSync(
+      join(root, "two.jsonl"),
+      '{"gameId":"conflict","winner":"p2","accepted":true}\n',
+    );
 
     expect(() => new RawJournal(root, "resume")).toThrow(/conflicting raw gameId/);
+  });
+
+  it("reruns a known-bad failed row and requires the accepted replacement", () => {
+    const root = temporaryRoot();
+    const failed = '{"gameId":"retry","accepted":false,"failure":"illegal"}';
+    writeFileSync(join(root, "old.jsonl"), `${failed}\n`);
+
+    const journal = new RawJournal(root, "resume");
+    expect(journal.has("retry")).toBe(false);
+    expect(readdirSync(join(root, "failures", "recovered"))).toHaveLength(1);
+    expect(() => assertExpectedAccepted(journal, new Set(["retry"]))).toThrow(
+      /missing=1 extra=0/,
+    );
+
+    journal.append({ gameId: "retry", accepted: true });
+    expect(journal.has("retry")).toBe(true);
+    expect(() => assertExpectedAccepted(journal, new Set(["retry"]))).not.toThrow();
+    journal.close();
+  });
+
+  it("refuses completion when accepted rows include an off-plan game", () => {
+    const root = temporaryRoot();
+    const journal = new RawJournal(root, "attempt");
+    journal.append({ gameId: "expected", accepted: true });
+    journal.append({ gameId: "extra", accepted: true });
+    expect(() => assertExpectedAccepted(journal, new Set(["expected"]))).toThrow(
+      /missing=0 extra=1/,
+    );
+    journal.close();
   });
 
   it("appends a durable completed row and rejects a second append", () => {

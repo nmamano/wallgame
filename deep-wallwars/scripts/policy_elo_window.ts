@@ -161,6 +161,7 @@ function randomStartSeed(identity: string): number {
 
 export class RawJournal {
   private readonly fd: number;
+  private readonly failureFd: number;
   private readonly seen = new Map<string, string>();
 
   constructor(
@@ -177,9 +178,16 @@ export class RawJournal {
       if (tail.length > 0) this.preserveTornTail(path, tail);
       for (const line of complete.toString("utf8").split("\n")) {
         if (!line) continue;
-        const row = JSON.parse(line) as { gameId?: string };
+        const row = JSON.parse(line) as { gameId?: string; accepted?: boolean };
         if (!row.gameId) throw new Error(`raw row lacks gameId: ${path}`);
+        if (typeof row.accepted !== "boolean") {
+          throw new Error(`raw row lacks boolean accepted status: ${path}`);
+        }
         const rowHash = hash(line);
+        if (!row.accepted) {
+          this.preserveFailedRow(row.gameId, rowHash, line);
+          continue;
+        }
         const priorHash = this.seen.get(row.gameId);
         if (priorHash && priorHash !== rowHash) {
           throw new Error(`conflicting raw gameId: ${row.gameId}`);
@@ -188,6 +196,28 @@ export class RawJournal {
       }
     }
     this.fd = openSync(join(root, `${attempt}.jsonl`), "ax");
+    const failuresRoot = join(root, "failures");
+    mkdirSync(failuresRoot, { recursive: true });
+    this.failureFd = openSync(join(failuresRoot, `${attempt}.jsonl`), "ax");
+  }
+
+  private preserveFailedRow(gameId: string, rowHash: string, line: string): void {
+    const failuresRoot = join(this.root, "failures", "recovered");
+    mkdirSync(failuresRoot, { recursive: true });
+    const target = join(failuresRoot, `${gameId}.${rowHash}.json`);
+    if (existsSync(target)) {
+      if (readFileSync(target, "utf8") !== `${line}\n`) {
+        throw new Error(`recovered failure artifact differs: ${target}`);
+      }
+      return;
+    }
+    const fd = openSync(target, "wx");
+    try {
+      writeSync(fd, `${line}\n`);
+      fsyncSync(fd);
+    } finally {
+      closeSync(fd);
+    }
   }
 
   private preserveTornTail(path: string, tail: Buffer): void {
@@ -216,17 +246,38 @@ export class RawJournal {
 
   append(row: Record<string, unknown>): void {
     const gameId = row.gameId;
-    if (typeof gameId !== "string" || this.seen.has(gameId)) {
+    const accepted = row.accepted;
+    if (typeof gameId !== "string" || typeof accepted !== "boolean") {
+      throw new Error(`invalid game row: ${String(gameId)}`);
+    }
+    if (accepted && this.seen.has(gameId)) {
       throw new Error(`invalid or duplicate gameId: ${String(gameId)}`);
     }
     const payload = `${JSON.stringify(row)}\n`;
-    writeSync(this.fd, payload);
-    fsyncSync(this.fd);
-    this.seen.set(gameId, hash(payload.slice(0, -1)));
+    const targetFd = accepted ? this.fd : this.failureFd;
+    writeSync(targetFd, payload);
+    fsyncSync(targetFd);
+    if (accepted) this.seen.set(gameId, hash(payload.slice(0, -1)));
+  }
+
+  acceptedIds(): Set<string> {
+    return new Set(this.seen.keys());
   }
 
   close(): void {
     closeSync(this.fd);
+    closeSync(this.failureFd);
+  }
+}
+
+export function assertExpectedAccepted(raw: RawJournal, expected: Set<string>): void {
+  const actual = raw.acceptedIds();
+  const missing = [...expected].filter((id) => !actual.has(id));
+  const extra = [...actual].filter((id) => !expected.has(id));
+  if (missing.length || extra.length) {
+    throw new Error(
+      `accepted game ID set differs: missing=${missing.length} extra=${extra.length}`,
+    );
   }
 }
 
@@ -419,6 +470,14 @@ async function main(): Promise<void> {
   }
 
   const raw = new RawJournal(join(runRoot, "raw", windowId), attempt);
+  const expectedAccepted = new Set<string>();
+  for (const pairing of pairings) {
+    for (let offset = 0; offset < pairing.games; offset++) {
+      expectedAccepted.add(
+        gameIdentity(plan.experiment, pairing, pairing.existingAcceptedGames + offset),
+      );
+    }
+  }
   const statsRoot = join(runRoot, "batch-stats", windowId, attempt);
   mkdirSync(statsRoot, { recursive: true });
   const engines = new Map<number, EngineProcess>();
@@ -502,6 +561,7 @@ async function main(): Promise<void> {
         inferencesPerBatch: stats.inferencesPerBatch,
       });
     }
+    assertExpectedAccepted(raw, expectedAccepted);
   } finally {
     for (const engine of engines.values()) engine.kill();
     raw.close();
