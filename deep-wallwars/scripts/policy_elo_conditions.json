@@ -3,12 +3,11 @@
   "samples": 1,
   "rootNoiseFactor": 0,
   "moveSelection": "policy-argmax",
-  "pairingDeltas": [1, 3, 6],
+  "pairingDeltas": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
   "variantLabels": {"classic":"Classic","standard":"Standard","animal-cycle":"Animal Cycle"},
   "artifactCoverage": [
     {"start":0,"end":0,"status":"missing","label":"Artifact missing"},
-    {"start":1,"end":92,"status":"legacy","label":"9-plane · legacy engine only"},
-    {"start":93,"end":126,"status":"available","label":"16-plane · rated"}
+    {"start":1,"end":126,"status":"available","label":"16-plane · migrated or native · rated"}
   ],
   "archiveExperiments": [
     "tf_phase7_policy_classic_2026-08-20",
@@ -18,7 +17,8 @@
     "tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20",
     "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20",
     "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20",
-    "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20"
+    "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20",
+    "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22"
   ],
   "archiveConditionAdapters": {
     "new:classic-fixed-8x8": "classic-fixed-8x8",

@@ -1,17 +1,18 @@
 #!/usr/bin/env python3
 """Check the tracked results tables against the shipped policy Elo snapshot.
 
-The point of the tables is checkout-only reconstruction: after the 2026-08-22
-landing, `build_policy_elo_app_data.py` builds the eight phase 7 policy experiments
-from `elo_db/results/*.csv` instead of reaching the 4090 desktop over SSH. This
-script proves the tables carry the same evidence the shipped snapshot was built
-from, and it needs no desktop access at all.
+The point of the tables is checkout-only reconstruction: after the 2026-08-23
+backfill landing, `build_policy_elo_app_data.py` builds the eight phase 7 policy
+experiments and the generations 1-126 primary backfill from
+`elo_db/results/*.csv` instead of reaching the 4090 desktop over SSH. This script
+proves the tables carry the same evidence the shipped snapshot was built from,
+and it needs no desktop access at all.
 
     python3 deep-wallwars/scripts/verify_policy_elo_tables.py
 
 It compares, per experiment: accepted (clean) games, excluded games, and the set of
-raw source files. It also asserts the three totals measured on 2026-08-22:
-21,456 rows, 21,453 accepted, 3 excluded.
+raw source files. It also asserts the three totals measured on 2026-08-23:
+141,580 rows, 141,577 accepted, 3 excluded.
 
 It does NOT compare `generatedAtUtc` or require a byte-identical snapshot file; a
 timestamp differing is not a difference in evidence.
@@ -35,8 +36,8 @@ SNAPSHOT = ROOT / "policy-elo-app/data/policy-elo.json"
 TABLES = ROOT / "elo_db/results"
 EXPERIMENTS = ROOT / "elo_db/experiments.json"
 
-EXPECTED_ROWS = 21456
-EXPECTED_CLEAN = 21453
+EXPECTED_ROWS = 141580
+EXPECTED_CLEAN = 141577
 EXPECTED_EXCLUDED = 3
 
 

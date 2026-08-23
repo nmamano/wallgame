@@ -912,22 +912,75 @@
     "samples": 1,
     "noise_factor": 0,
     "move_selection": "policy-argmax",
-    "pairingDeltas": [1, 2, 3, 4, 5, 6, 7, 8, 9, 10, 11, 12, 13, 14, 15],
+    "pairingDeltas": [
+      1,
+      2,
+      3,
+      4,
+      5,
+      6,
+      7,
+      8,
+      9,
+      10,
+      11,
+      12,
+      13,
+      14,
+      15
+    ],
     "pairingRule": "Every unordered generation pair from 1 through 126 whose delta is 1 through 15, minus exact accepted evidence.",
     "results": {
       "path": "deep-wallwars/elo_db/results/tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22.csv",
       "schema": "wallgame-elo-results-table-v1",
-      "status": "running"
+      "rows": 120124,
+      "bytes": 22036054,
+      "sha256": "78e621c53e8acf05321c25e9dd0ca328d75cdde78b622b4da3d3a56fb70c1b59",
+      "generator": "deep-wallwars/scripts/materialize_policy_elo_results.py"
     },
     "localRawArchive": {
       "box": "desktop-053vvpl-1",
       "path": "deep-wallwars/training-runs/policy-elo-backfill-20260822/raw",
       "tracked": false,
       "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
-      "status": "running"
+      "files": 676,
+      "rawBytes": 188005117,
+      "contentSha256": "eecc0a1c6bda12599f4f598f060c0263e16e9e24387b636fa4c1c5b5e308325e",
+      "measuredOn": "2026-08-23",
+      "note": "Gitignored fsynced raw journals on the 4090 WSL. The repository tracks the exact-v1 results table and per-row fingerprint manifest, not raw game histories."
     },
-    "evidenceStatus": "running",
-    "notes": "Primary generations 1-126 policy Elo backfill. Experiment settings live in this manifest. The exact-v1 tracked table is populated deterministically from fsynced accepted raw journals; a separate tracked manifest fingerprints every contributing raw record."
+    "evidenceStatus": "accepted",
+    "notes": "Primary generations 1-126 policy Elo backfill. Experiment settings live in this manifest. The exact-v1 tracked table is populated deterministically from fsynced accepted raw journals; a separate tracked manifest fingerprints every contributing raw record.",
+    "rawFingerprints": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22/raw-fingerprints.json",
+      "schema": "wallgame-policy-elo-raw-fingerprints-v1",
+      "rows": 120124,
+      "bytes": 31342332,
+      "sha256": "4d8ef4588d11a5cfd39d7414908643fb3e76237b1ca5b98b8ef3beaa41e19ccd",
+      "generator": "deep-wallwars/scripts/materialize_policy_elo_results.py"
+    },
+    "measured": {
+      "parsedRows": 120124,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 3480,
+        "animal-cycle-random-7x7": 20880,
+        "classic-fixed-12x10": 3480,
+        "classic-fixed-8x8": 2640,
+        "classic-random-12x10": 20880,
+        "classic-random-8x8": 20880,
+        "standard-fixed-12x10": 3480,
+        "standard-fixed-8x8": 2644,
+        "standard-random-12x10": 20880,
+        "standard-random-8x8": 20880
+      },
+      "pairings": 16562,
+      "generationRange": {
+        "min": 1,
+        "max": 126,
+        "distinct": 126
+      },
+      "measuredOn": "2026-08-23"
+    }
   },
   "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20": {
     "arch": "tf",
