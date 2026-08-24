@@ -18,7 +18,8 @@
     "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20",
     "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20",
     "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20",
-    "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22"
+    "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22",
+    "tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23"
   ],
   "archiveConditionAdapters": {
     "new:classic-fixed-8x8": "classic-fixed-8x8",

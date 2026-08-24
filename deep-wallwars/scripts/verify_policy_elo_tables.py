@@ -12,7 +12,7 @@ and it needs no desktop access at all.
 
 It compares, per experiment: accepted (clean) games, excluded games, and the set of
 raw source files. It also asserts the three totals measured on 2026-08-23:
-141,580 rows, 141,577 accepted, 3 excluded.
+287,198 rows, 287,195 accepted, 3 excluded.
 
 It does NOT compare `generatedAtUtc` or require a byte-identical snapshot file; a
 timestamp differing is not a difference in evidence.
@@ -36,8 +36,8 @@ SNAPSHOT = ROOT / "policy-elo-app/data/policy-elo.json"
 TABLES = ROOT / "elo_db/results"
 EXPERIMENTS = ROOT / "elo_db/experiments.json"
 
-EXPECTED_ROWS = 141580
-EXPECTED_CLEAN = 141577
+EXPECTED_ROWS = 287198
+EXPECTED_CLEAN = 287195
 EXPECTED_EXCLUDED = 3
 
 

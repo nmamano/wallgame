@@ -1049,5 +1049,107 @@
     },
     "evidenceStatus": "accepted",
     "notes": "Random Start games added across the Animal Cycle 7x7 and Classic 8x8 conditions, with two-game top-ups in two more."
+  },
+  "tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-08-23",
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "pairingRule": "Adaptive candidates from the primary fit: every unordered generation pair with delta >15 and absolute fitted Elo gap <400; this experiment contains only the completed subset when Nil stopped the run.",
+    "run": {
+      "status": "partial-stopped-by-nil",
+      "stoppedOn": "2026-08-24",
+      "stoppedBy": "Nil",
+      "stopBoundary": "between windows after durable completion",
+      "completedWindows": 464,
+      "plannedWindows": 920,
+      "completedPairings": 21679,
+      "plannedPairings": 39482,
+      "acceptedGames": 145618,
+      "plannedGames": 267664
+    },
+    "measured": {
+      "parsedRows": 145618,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 4272,
+        "animal-cycle-random-7x7": 35976,
+        "classic-fixed-12x10": 3534,
+        "classic-fixed-8x8": 5152,
+        "classic-random-12x10": 18864,
+        "classic-random-8x8": 23100,
+        "standard-fixed-12x10": 4470,
+        "standard-fixed-8x8": 5478,
+        "standard-random-12x10": 21060,
+        "standard-random-8x8": 23712
+      },
+      "pairings": 21679,
+      "generationRange": {
+        "min": 1,
+        "max": 94,
+        "distinct": 94
+      },
+      "measuredOn": "2026-08-24"
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 145618,
+      "bytes": 26170982,
+      "sha256": "d1567c32d5ea907a27816e885bd9a016031cce696c6b7a091e1a850958110dd4",
+      "generator": "deep-wallwars/scripts/materialize_policy_elo_results.py"
+    },
+    "rawFingerprints": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23/raw-fingerprints.json",
+      "schema": "wallgame-policy-elo-raw-fingerprints-v1",
+      "rows": 145618,
+      "bytes": 38249435,
+      "sha256": "d64d91a048f0c1b59e84572aed60e6b07078355ad8e4cf0e83ec1394bb0a76b6",
+      "generator": "deep-wallwars/scripts/materialize_policy_elo_results.py"
+    },
+    "localRawArchive": {
+      "files": 928,
+      "rawBytes": 215641247,
+      "contentSha256": "45214ea8a9a3a4047e902a44376d85f267de755f273910fc1938cbca2b45fa20",
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/training-runs/policy-elo-topup-20260823/raw",
+      "tracked": false,
+      "hashAlgorithm": "sha256 over the newline-joined sorted lines '<sha256 of file>  <path relative to the archive directory>', with a trailing newline",
+      "measuredOn": "2026-08-24",
+      "note": "Gitignored fsynced raw journals. Only games from 464 durable completed windows are in the tracked table."
+    },
+    "provenance": {
+      "frozenFullPlan": {
+        "box": "desktop-053vvpl-1",
+        "path": "deep-wallwars/training-runs/policy-elo-backfill-20260822/topup-plan.json",
+        "sha256": "7f85573d79acfe590bfd90d0207dc1e66f52a4302acaa112eb7b66bf98187d43",
+        "plannedWindows": 920,
+        "plannedGames": 267664
+      },
+      "partialPlan": {
+        "box": "desktop-053vvpl-1",
+        "path": "deep-wallwars/training-runs/policy-elo-topup-20260823/partial-plan.json",
+        "sha256": "4007bb74637cd8c5d7725743e30f3ae5ed0079c0ea8541ab1592bed9529c47e2"
+      },
+      "runManifest": {
+        "box": "desktop-053vvpl-1",
+        "path": "deep-wallwars/training-runs/policy-elo-topup-20260823/partial-run-manifest.json",
+        "sha256": "2d99c01634b1eac7737e6a22806922e640f8e80287b76af5774dcf75a422ef02"
+      },
+      "fitArtifact": {
+        "box": "desktop-053vvpl-1",
+        "path": "deep-wallwars/training-runs/policy-elo-backfill-20260822/primary-fit.json",
+        "sha256": "6c2f935484dce46a0f58010a291bc92f8bcdef38441b8f1d8d110700344b37d9"
+      },
+      "selectionValidation": {
+        "box": "desktop-053vvpl-1",
+        "path": "deep-wallwars/training-runs/policy-elo-backfill-20260822/topup-plan-validation.json",
+        "sha256": "5bd855f83d228aa66e6231ddd3abc421653185a4e515893785c07a1bb0678a9f"
+      }
+    },
+    "evidenceStatus": "accepted-partial",
+    "notes": "PARTIAL adaptive top-up. Nil stopped the run on 2026-08-24 after 464 of 920 planned windows because the completed evidence was sufficient. This entry does not claim completion of the frozen plan.",
+    "incrementalScopeNote": "The snapshot incremental figure covers only the configured delta 1..15 conditions, which are complete at 0/0; remaining adaptive delta >15 pairings from the frozen plan are not represented in that figure."
   }
 }
