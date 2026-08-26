@@ -1193,12 +1193,8 @@
     },
     "canonical_archive": {
       "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
-      "contentSha256": "8adbbc49d2df154214b1259f9ee75965cadc137dffd0779a62acd52894570e19",
-      "hashStatus": "finalized after completion",
-      "completionRecord": {
-        "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/completion-summary.json",
-        "sha256": "b92757c41dbc103f141c3b15c2e837f3d501dd3961947194da60ff4623a6b580"
-      }
+      "contentSha256": null,
+      "hashStatus": "pending; archive destination registered before runner"
     },
     "provenance": {
       "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
@@ -1233,56 +1229,6 @@
         }
       }
     },
-    "notes": "Canonical archive destination, exact same-method settings, frozen 420-pairing/2,940-game plan, model hashes, loadability map, runner, and launch provenance were registered before the runner. No future archive content hash is claimed before completion.",
-    "results": {
-      "path": "deep-wallwars/elo_db/results/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26.csv",
-      "schema": "wallgame-elo-results-table-v1",
-      "rows": 2940,
-      "bytes": 679189,
-      "sha256": "9c2a0bb165661c7a5f2e1f5b429a7a22777061c0f8bf34d93210303ad60c34f1",
-      "generator": "deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/complete-evidence.sh"
-    },
-    "rawFingerprints": {
-      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/raw-fingerprints.json",
-      "schema": "wallgame-policy-elo-raw-fingerprints-v1",
-      "rows": 2940,
-      "bytes": 740216,
-      "sha256": "2ceab6903b678c1edd742ac9c457abec8cf1087b251da44bdc1fdba7fdfd4c8a",
-      "generator": "deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/complete-evidence.sh"
-    },
-    "localRawArchive": {
-      "box": "desktop-053vvpl-1",
-      "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
-      "tracked": false,
-      "hashAlgorithm": "sha256 over sorted path, file sha256, and byte count records",
-      "files": 11,
-      "rawBytes": 9708159,
-      "contentSha256": "8adbbc49d2df154214b1259f9ee75965cadc137dffd0779a62acd52894570e19",
-      "measuredOn": "2026-08-26",
-      "note": "Gitignored fsynced raw journals on the 4090 WSL. The repository tracks the exact-v1 results table and per-row fingerprint manifest."
-    },
-    "evidenceStatus": "accepted",
-    "measured": {
-      "parsedRows": 2940,
-      "gamesByCondition": {
-        "animal-cycle-fixed-7x7": 84,
-        "animal-cycle-random-7x7": 504,
-        "classic-fixed-12x10": 84,
-        "classic-fixed-8x8": 84,
-        "classic-random-12x10": 504,
-        "classic-random-8x8": 504,
-        "standard-fixed-12x10": 84,
-        "standard-fixed-8x8": 84,
-        "standard-random-12x10": 504,
-        "standard-random-8x8": 504
-      },
-      "pairings": 420,
-      "generationRange": {
-        "min": 121,
-        "max": 140,
-        "distinct": 20
-      },
-      "measuredOn": "2026-08-26"
-    }
+    "notes": "Canonical archive destination, exact same-method settings, frozen 420-pairing/2,940-game plan, model hashes, loadability map, runner, and launch provenance were registered before the runner. No future archive content hash is claimed before completion."
   }
 }

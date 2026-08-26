@@ -1,0 +1,65 @@
+{
+  "schema": "wallgame-policy-elo-completion-v1",
+  "experiment": "tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
+  "completedAtUtc": "2026-08-26T16:41:53Z",
+  "acceptedGames": 2940,
+  "quarantinedGames": 0,
+  "tornRecords": 0,
+  "pairings": 420,
+  "attempts": 420,
+  "supportedGenerations": [
+    121,
+    122,
+    123,
+    124,
+    125,
+    126,
+    127,
+    128,
+    129,
+    130,
+    131,
+    132,
+    133,
+    134,
+    135,
+    136,
+    137,
+    138,
+    139,
+    140
+  ],
+  "conditions": 10,
+  "componentsPerCondition": 1,
+  "incrementalPlan": {
+    "pairings": 0,
+    "acceptedGamesNeeded": 0
+  },
+  "archiveTreeSha256": "8adbbc49d2df154214b1259f9ee75965cadc137dffd0779a62acd52894570e19",
+  "archiveFileCount": 11,
+  "archiveBytes": 9708159,
+  "archiveTreeManifest": {
+    "path": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/provenance/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/archive-tree-files.json",
+    "sha256": "b1d9e21df109cf721fba65d242c5139cf7dbd8d85a827aef3dfb7ff1f94cd136"
+  },
+  "sourceHashes": {
+    "immutableInputs": "0b23e94b89be6e72a956e35e258947e2995f4429a7d43c5e38e62baf80899b0a",
+    "plan": "9e2678b9a72dad0b50e5fa3f4719ff736b9b2dde249d89a7206704d5a44752b4",
+    "experimentsPreRun": "700f3c716ad2febb4a4303e9d9cae01b048cae0f3b15e329ed366db8862181ea",
+    "resultsTable": "9c2a0bb165661c7a5f2e1f5b429a7a22777061c0f8bf34d93210303ad60c34f1",
+    "rawFingerprints": "2ceab6903b678c1edd742ac9c457abec8cf1087b251da44bdc1fdba7fdfd4c8a"
+  },
+  "gamesByCondition": {
+    "animal-cycle-fixed-7x7": 84,
+    "animal-cycle-random-7x7": 504,
+    "classic-fixed-12x10": 84,
+    "classic-fixed-8x8": 84,
+    "classic-random-12x10": 504,
+    "classic-random-8x8": 504,
+    "standard-fixed-12x10": 84,
+    "standard-fixed-8x8": 84,
+    "standard-random-12x10": 504,
+    "standard-random-8x8": 504
+  },
+  "notes": "All planned games completed and were archived before this tracked table was materialized."
+}

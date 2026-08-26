@@ -1,0 +1,62 @@
+{
+  "schema": "wallgame-policy-elo-archive-tree-v1",
+  "experiment": "tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
+  "files": [
+    {
+      "path": "accepted/animal-cycle-fixed-7x7.jsonl",
+      "sha256": "e0b35ca5657d60a15bf30260d8178fac1b22694e116a3cde62704c0dab9405d5",
+      "bytes": 195715
+    },
+    {
+      "path": "accepted/animal-cycle-random-7x7.jsonl",
+      "sha256": "50e81db35e0ea3f51f3de17f46c7be8d5babce0ea94b139e5753df6d8b1504be",
+      "bytes": 1270920
+    },
+    {
+      "path": "accepted/classic-fixed-12x10.jsonl",
+      "sha256": "d052308609c23bd0d45338b7628960e10ee66cba8fc1e5e3f7f5a2c26347500b",
+      "bytes": 305689
+    },
+    {
+      "path": "accepted/classic-fixed-8x8.jsonl",
+      "sha256": "6290ea7ea808c829ef94f87c0e7c383828b924a31b7c62b54534b5b701525c18",
+      "bytes": 240848
+    },
+    {
+      "path": "accepted/classic-random-12x10.jsonl",
+      "sha256": "424e4f241ed28e2ecefddc0d6ad20c347ce201bd879534398c775fcde3a4ae37",
+      "bytes": 2040650
+    },
+    {
+      "path": "accepted/classic-random-8x8.jsonl",
+      "sha256": "33df9348ee21cd88e2a4c848039ba6f8de2f8c496e7442f0ced3a2d1828864f6",
+      "bytes": 1492822
+    },
+    {
+      "path": "accepted/standard-fixed-12x10.jsonl",
+      "sha256": "e207291849d69845a4dd1f0db66c2defa189f7ca696c5b095347cb1f16dd123e",
+      "bytes": 327212
+    },
+    {
+      "path": "accepted/standard-fixed-8x8.jsonl",
+      "sha256": "c88f31800062e590269b96b27d9cbd5b95080bea182613071fb30207d23d8141",
+      "bytes": 235733
+    },
+    {
+      "path": "accepted/standard-random-12x10.jsonl",
+      "sha256": "ad2ad8bf1a0cb8be9dc07a37b085d61a9e020afd93869a589e857bf05427edf4",
+      "bytes": 2085038
+    },
+    {
+      "path": "accepted/standard-random-8x8.jsonl",
+      "sha256": "9a7d2689372071786bd781d2172456f3896a85592c0e59091e9b8838768d9987",
+      "bytes": 1512684
+    },
+    {
+      "path": "run-attempts/20260826T125909Z-pid403366.jsonl",
+      "sha256": "b6c6ab1d0b94539f1375dffb84a0cef3d795da3c200bf1463cfd2d89831cb792",
+      "bytes": 848
+    }
+  ],
+  "treeSha256": "8adbbc49d2df154214b1259f9ee75965cadc137dffd0779a62acd52894570e19"
+}

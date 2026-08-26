@@ -7,7 +7,7 @@
   "variantLabels": {"classic":"Classic","standard":"Standard","animal-cycle":"Animal Cycle"},
   "artifactCoverage": [
     {"start":0,"end":0,"status":"missing","label":"Artifact missing"},
-    {"start":1,"end":126,"status":"available","label":"16-plane · migrated or native · rated"}
+    {"start":1,"end":140,"status":"available","label":"16-plane · migrated or native · rated"}
   ],
   "archiveExperiments": [
     "tf_phase7_policy_classic_2026-08-20",
@@ -19,7 +19,8 @@
     "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20",
     "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20",
     "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22",
-    "tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23"
+    "tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23",
+    "tf_policy_elo_random_start_continuation_g127_g140_2026-08-26"
   ],
   "archiveConditionAdapters": {
     "new:classic-fixed-8x8": "classic-fixed-8x8",
