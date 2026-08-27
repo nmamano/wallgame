@@ -25,7 +25,7 @@ elo_db/
   ratings_*.json     output of scripts/fit_elo.py
   results/           one results table per archive-only experiment (tracked)
   sources/           verbatim copies of the raw inputs, never edited
-  policy_archive/    the canonical archive of the g117-g126 policy run
+  policy_archive/    canonical raw policy-run archives (not tracked)
   provenance/        copies of the scripts and logs that produced the sources
   scripts/           build.py, fit_elo.py, build_results_tables.py
 ```
@@ -131,6 +131,22 @@ turn a guess into data.
    to pretend otherwise.
 
 ## Adding a new experiment
+
+For a policy-Elo plan, do not copy a launcher, completion script, or registry
+entry into the experiment directory. The plan is the single source of experiment
+metadata:
+
+```bash
+python3 ../scripts/register_experiment.py --plan <plan.json>
+../scripts/launch-policy-elo.sh --plan <plan.json>
+../scripts/complete-evidence.sh --plan <plan.json>
+```
+
+The registrar refuses duplicate names and conflicting output paths. Both runtime
+commands derive their counts, generation ladder, experiment name, engine identity,
+and paths from the plan.
+
+For other experiment types:
 
 1. Drop the raw output under `sources/<something>/`.
 2. Add an entry to `experiments.json` with the settings and the script that

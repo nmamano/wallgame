@@ -12,8 +12,7 @@ ratings_*.json
 # 2026-08-22). experiments.json records each archive's box, path, size, file count,
 # parsed rows and content hash under `localRawArchive`.
 #
-# Listed one by one on purpose. A `tf_*` glob would silently swallow the next archive
-# somebody means to track, and git says nothing about a file it ignores.
+# These legacy source archives are separate from the canonical policy archives.
 sources/tf_model116_vs115_animal_1000_2026-08-20/
 sources/tf_model116_vs93_1000_2026-08-19a/
 sources/tf_model116_vs93_1000_2026-08-19b/
@@ -32,5 +31,6 @@ sources/tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20/
 # wants only the data the Elo plot needs. Both archives now live on the 4090 desktop
 # at this same repo-relative path, untracked, and each experiment's
 # `canonical_archive.path` in experiments.json still resolves there.
-policy_archive/tf_policy_elo_random_start_continuation_g117_g126_2026-08-22/
-policy_archive/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/
+policy_archive/*/
+# Add tracked policy-archive exceptions below with `!policy_archive/<name>/` and
+# `!policy_archive/<name>/**`. There are no tracked exceptions as of 2026-08-27.
