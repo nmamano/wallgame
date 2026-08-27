@@ -26,3 +26,11 @@ sources/tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20/
 sources/tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20/
 sources/tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20/
 sources/tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20/
+
+# Policy-run archives, same rule. The g117-g126 archive was tracked here by mistake
+# (611 files, 14 MB) until 2026-08-26; Nil confirmed that day that the repository
+# wants only the data the Elo plot needs. Both archives now live on the 4090 desktop
+# at this same repo-relative path, untracked, and each experiment's
+# `canonical_archive.path` in experiments.json still resolves there.
+policy_archive/tf_policy_elo_random_start_continuation_g117_g126_2026-08-22/
+policy_archive/tf_policy_elo_random_start_continuation_g127_g140_2026-08-26/
