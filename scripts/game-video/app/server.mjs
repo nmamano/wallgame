@@ -787,7 +787,7 @@ const server = createServer(async (req, res) => {
   json(res, 404, { error: "no such path" });
 });
 
-server.listen(PORT, () => {
+server.listen(PORT, "127.0.0.1", () => {
   console.log(`game-video app listening on ${PORT}`);
   console.log(`renders kept in ${RENDERS}`);
   const ffmpeg = findFfmpeg();
