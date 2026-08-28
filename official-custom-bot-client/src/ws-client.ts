@@ -35,6 +35,7 @@ import { join } from "node:path";
 import { clampEvaluation } from "../../shared/custom-bot/engine-api";
 import type { EngineProcess } from "./engine-runner";
 import { spawnEngine } from "./engine-runner";
+import { PerKeyFifo } from "./per-key-fifo";
 import {
   handleStartGameSession as dumbBotStartSession,
   handleEndGameSession as dumbBotEndSession,
@@ -162,6 +163,11 @@ export class BotClient {
 
   // V3: Session routing table (bgsId -> botId) for routing messages without botId
   private sessionRoutes = new Map<string, string>();
+
+  // The engine protocol identifies a session only by bgsId. A stale End must
+  // finish before a replacement Start (and its Evaluate/Apply messages) can
+  // reuse that id. Different ids remain independent.
+  private bgsMessageQueue = new PerKeyFifo<string>();
 
   // Sessions where an engine plays the game but a SHADOW dumb-bot session is
   // kept alongside it, so a fraction of moves can come from the naive policy
@@ -642,16 +648,24 @@ export class BotClient {
         break;
       // V3 BGS messages
       case "start_game_session":
-        void this.handleStartGameSession(message);
+        this.enqueueBgsMessage(message.bgsId, () =>
+          this.handleStartGameSession(message),
+        );
         break;
       case "end_game_session":
-        void this.handleEndGameSession(message);
+        this.enqueueBgsMessage(message.bgsId, () =>
+          this.handleEndGameSession(message),
+        );
         break;
       case "evaluate_position":
-        void this.handleEvaluatePosition(message);
+        this.enqueueBgsMessage(message.bgsId, () =>
+          this.handleEvaluatePosition(message),
+        );
         break;
       case "apply_move":
-        void this.handleApplyMove(message);
+        this.enqueueBgsMessage(message.bgsId, () =>
+          this.handleApplyMove(message),
+        );
         break;
       default:
         logger.warn(
@@ -659,6 +673,14 @@ export class BotClient {
           (message as { type: string }).type,
         );
     }
+  }
+
+  private enqueueBgsMessage(bgsId: string, handler: () => Promise<void>): void {
+    void this.bgsMessageQueue
+      .enqueue(bgsId, handler)
+      .catch((error: unknown) => {
+        logger.error(`Unhandled BGS handler failure for ${bgsId}:`, error);
+      });
   }
 
   /**

@@ -88,7 +88,7 @@ const OFFICIAL_BOT_TOKEN = process.env.OFFICIAL_BOT_TOKEN;
 // ============================================================================
 
 /** Timeout for BGS requests (10 seconds as per V3 spec) */
-const BGS_REQUEST_TIMEOUT_MS = 10_000;
+export const BGS_REQUEST_TIMEOUT_MS = 10_000;
 
 /** Maximum unexpected messages before disconnect */
 const MAX_UNEXPECTED_MESSAGES = 100;
