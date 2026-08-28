@@ -59,10 +59,18 @@ import {
   readdirSync,
   unlinkSync,
   statSync,
+  linkSync,
+  rmSync,
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
 import { fileURLToPath } from "node:url";
+import {
+  assertCompleteCapture,
+  captureReplayFrames,
+} from "./capture-replay-frames.mjs";
+import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
+import { allocateFrameRanges } from "./timeline-frames.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -119,7 +127,7 @@ const FPS = 30;
 /** The shake on the winning move, and the soundtrack: both always on. */
 const SHAKE = true;
 const AUDIO = true;
-/** Absolute, because ffmpeg's concat demuxer resolves entries against the list file. */
+/** Absolute, so browser file URLs and ffmpeg inputs resolve the same files. */
 const WORK = resolve(arg("work", `tmp/game-video/${GAME_ID}-frames`));
 
 /**
@@ -902,22 +910,83 @@ log(
     `${Math.round(clip.width * CAPTURE_DPR)}px captured for a ${boardSlotPx}px slot`,
 );
 
-/** Rewind to the initial position, then step forward one ply at a time. */
-for (let i = 0; i < history.length + 4; i += 1) {
-  await game.keyboard.press("ArrowLeft");
+const moveButtons = game.locator("button[aria-pressed]:visible");
+if ((await moveButtons.count()) !== history.length) {
+  throw new Error(
+    `replay exposes ${await moveButtons.count()} move buttons for ${history.length} recorded plies`,
+  );
 }
-await game.waitForTimeout(500);
-
-const boardFrames = [];
-for (let ply = 0; ply <= history.length; ply += 1) {
-  const file = join(WORK, `board-${String(ply).padStart(4, "0")}.png`);
-  await game.screenshot({ path: file, clip });
-  boardFrames.push(file);
-  if (ply < history.length) {
-    await game.keyboard.press("ArrowRight");
-    await game.waitForTimeout(150);
-  }
-}
+const jumpStart = game.getByRole("button", { name: "Jump to beginning" });
+const captureResult = await captureReplayFrames({
+  moveCount: history.length,
+  selectInitial: async () => {
+    await jumpStart.click();
+    await game.waitForFunction(() => {
+      const button = document.querySelector(
+        'button[aria-label="Jump to beginning"]',
+      );
+      return button?.disabled === true;
+    });
+  },
+  selectPly: async (ply) => {
+    const button = moveButtons.nth(ply);
+    await button.click();
+    await game.waitForFunction(
+      ([index, count]) => {
+        const buttons = [
+          ...document.querySelectorAll("button[aria-pressed]"),
+        ].filter((button) => button.getClientRects().length > 0);
+        if (buttons[index]?.getAttribute("aria-pressed") !== "true")
+          return false;
+        return (
+          buttons.every(
+            (candidate, i) =>
+              i === index || candidate.getAttribute("aria-pressed") !== "true",
+          ) && buttons.length === count
+        );
+      },
+      [ply, history.length],
+    );
+    await game.evaluate(
+      () =>
+        new Promise((done) =>
+          requestAnimationFrame(() => requestAnimationFrame(done)),
+        ),
+    );
+  },
+  readCommittedPly: async () => {
+    if (await jumpStart.isDisabled()) return -1;
+    const pressed = [];
+    for (let i = 0; i < history.length; i += 1) {
+      if ((await moveButtons.nth(i).getAttribute("aria-pressed")) === "true")
+        pressed.push(i);
+    }
+    return pressed.length === 1 ? pressed[0] : Number.NaN;
+  },
+  capture: async (expectedPly) => {
+    const file = join(
+      WORK,
+      `board-${String(expectedPly + 1).padStart(4, "0")}.png`,
+    );
+    await game.screenshot({ path: file, clip });
+    return file;
+  },
+});
+assertCompleteCapture(captureResult);
+const boardFrames = captureResult.records.map((record) => record.file);
+writeFileSync(
+  join(WORK, "capture-manifest.json"),
+  JSON.stringify(
+    captureResult.records.map((record) => ({
+      expectedPly: record.expectedPly,
+      notation:
+        record.expectedPly < 0 ? null : history[record.expectedPly]?.notation,
+      sha256: record.sha256,
+    })),
+    null,
+    2,
+  ),
+);
 log(`${boardFrames.length} board positions captured`);
 await game.close();
 
@@ -969,8 +1038,8 @@ const side = (playerId) => {
 };
 
 /**
- * The frame list, each with the seconds it is held. A held frame is written
- * once and given a duration, so a 1s pause costs one PNG rather than thirty.
+ * The timeline, with the exact seconds and semantic range for each image.
+ * Encoding later converts every duration to an integer 30 fps frame count.
  */
 const timeline = [];
 let shakeGeometryVerdict = "not run (--no-shake)";
@@ -1059,11 +1128,11 @@ const pixelResidue = (tagA, tagB) => {
   return { differing, maxDelta, pixels: a.length / 3 };
 };
 let frameNo = 0;
-const emit = async (state, seconds) => {
+const emit = async (state, seconds, meta = {}) => {
   const file = join(WORK, `f-${String(frameNo++).padStart(5, "0")}.png`);
   await stage.evaluate((s) => window.__stage(s), state);
   await stage.screenshot({ path: file });
-  timeline.push({ file, seconds });
+  timeline.push({ file, seconds, ...meta });
 };
 
 // --- the VS screen, animated
@@ -1077,6 +1146,7 @@ for (let i = 0; i < vsFrames; i += 1) {
       b: side(seats.bottom),
     },
     1 / FPS,
+    { kind: "vs-transition" },
   );
 }
 log("vs screen rendered");
@@ -1089,10 +1159,20 @@ const playState = (boardIndex, extra = {}) => ({
   bottom: side(seats.bottom),
   ...extra,
 });
+await stage.evaluate((state) => window.__stage(state), playState(0));
+const encodedBoardRect = await stage.evaluate(() => {
+  const rect = document.getElementById("boardWrap").getBoundingClientRect();
+  return {
+    x: Math.round(rect.x),
+    y: Math.round(rect.y),
+    width: Math.round(rect.width),
+    height: Math.round(rect.height),
+  };
+});
 
 // The starting position gets one beat of its own, so the first move is a
 // change the eye can catch rather than the first thing it ever sees.
-await emit(playState(0), SECONDS_PER_MOVE);
+await emit(playState(0), SECONDS_PER_MOVE, { kind: "initial", ply: -1 });
 
 for (let ply = 1; ply <= history.length; ply += 1) {
   const isLast = ply === history.length;
@@ -1115,6 +1195,7 @@ for (let ply = 1; ply <= history.length; ply += 1) {
       await emit(
         playState(ply, { shake: decay * decay, shakePhase: i }),
         1 / FPS,
+        { kind: "winning-shake", ply: ply - 1 },
       );
       /*
         Sampled on every shake frame, because the defect only exists while the
@@ -1128,7 +1209,10 @@ for (let ply = 1; ply <= history.length; ply += 1) {
       if (Math.abs(sc.x - 1) > Math.abs(worstScale.x - 1)) worstScale.x = sc.x;
       if (Math.abs(sc.y - 1) > Math.abs(worstScale.y - 1)) worstScale.y = sc.y;
     }
-    await emit(playState(ply), FINAL_HOLD_SECONDS);
+    await emit(playState(ply), FINAL_HOLD_SECONDS, {
+      kind: "move",
+      ply: ply - 1,
+    });
     const after = await probeGeometry(playState(ply), "shake-after");
     const same =
       before.rect.x === after.rect.x &&
@@ -1165,6 +1249,7 @@ for (let ply = 1; ply <= history.length; ply += 1) {
     await emit(
       playState(ply),
       isLast ? SECONDS_PER_MOVE + FINAL_HOLD_SECONDS : SECONDS_PER_MOVE,
+      { kind: "move", ply: ply - 1 },
     );
   }
   if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
@@ -1180,6 +1265,7 @@ await emit(
     how: outcome ? (REASON_WORDS[outcome.reason] ?? outcome.reason) : "",
   },
   END_SECONDS,
+  { kind: "end-card" },
 );
 await stage.close();
 await browser.close();
@@ -1188,17 +1274,26 @@ log(`${timeline.length} frames written`);
 /* --------------------------------------------------------------- encode -- */
 
 const totalSeconds = timeline.reduce((a, f) => a + f.seconds, 0);
-
-/**
- * ffmpeg's concat demuxer wants the last entry repeated, otherwise it drops the
- * final frame's duration.
- */
-const listPath = join(WORK, "frames.txt");
+const frameSequence = join(WORK, "cfr");
+rmSync(frameSequence, { recursive: true, force: true });
+mkdirSync(frameSequence, { recursive: true });
+const encodedRanges = allocateFrameRanges(timeline, FPS);
+const encodedFrame = encodedRanges.at(-1)?.endFrame ?? 0;
+for (const range of encodedRanges) {
+  for (let frame = range.startFrame; frame < range.endFrame; frame += 1) {
+    linkSync(
+      range.source,
+      join(frameSequence, `v-${String(frame).padStart(6, "0")}.png`),
+    );
+  }
+}
 writeFileSync(
-  listPath,
-  timeline
-    .map((f) => `file '${f.file}'\nduration ${f.seconds.toFixed(4)}`)
-    .join("\n") + `\nfile '${timeline.at(-1).file}'\n`,
+  join(WORK, "timeline-manifest.json"),
+  JSON.stringify(
+    { fps: FPS, totalFrames: encodedFrame, ranges: encodedRanges },
+    null,
+    2,
+  ),
 );
 
 /**
@@ -1468,15 +1563,13 @@ if (AUDIO) {
  * phone will upload without complaint.
  */
 const videoArgs = [
-  "-f",
-  "concat",
-  "-safe",
-  "0",
+  "-framerate",
+  String(FPS),
   "-i",
-  listPath,
+  join(frameSequence, "v-%06d.png"),
   ...(audioPath ? ["-i", audioPath] : []),
   "-vf",
-  `fps=${FPS},format=yuv420p`,
+  "format=yuv420p",
   "-c:v",
   "libx264",
   "-profile:v",
@@ -1487,16 +1580,31 @@ const videoArgs = [
   "20",
   "-movflags",
   "+faststart",
-  ...(audioPath ? ["-c:a", "copy", "-shortest"] : []),
+  "-frames:v",
+  String(encodedFrame),
+  ...(audioPath ? ["-c:a", "copy"] : []),
   OUT,
 ];
 ff(videoArgs);
 
+const encodedReport = verifyEncodedVideo({
+  ffmpeg: FFMPEG,
+  video: OUT,
+  framePattern: join(frameSequence, "v-%06d.png"),
+  fps: FPS,
+  ranges: encodedRanges,
+  crop: encodedBoardRect,
+});
+writeFileSync(
+  join(WORK, "encoded-verification.json"),
+  JSON.stringify(encodedReport, null, 2),
+);
+
 {
   for (const f of readdirSync(WORK)) {
-    if (/^(f-|board-)\d+\.png$/.test(f) || f === "frames.txt")
-      unlinkSync(join(WORK, f));
+    if (/^(f-|board-)\d+\.png$/.test(f)) unlinkSync(join(WORK, f));
   }
+  rmSync(frameSequence, { recursive: true, force: true });
 }
 
 const mb = (statSync(OUT).size / 1e6).toFixed(1);
