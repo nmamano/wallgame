@@ -7,6 +7,7 @@ import {
   getSession,
   getSessionSnapshot,
   recordSocketConnect,
+  reconcileAuthenticatedSeat,
   resolveSessionForSocketToken,
   resignGame,
   updateConnectionState,
@@ -38,7 +39,7 @@ import {
 import { moderateMessage } from "../chat/moderation";
 import { canSendMessage, clearRateLimitEntry } from "../chat/rate-limiter";
 import { persistCompletedGame } from "../games/persistence";
-import { getOptionalUserMiddleware, type Env as KindeEnv } from "../kinde";
+import { resolveOptionalUser, type Env as KindeEnv } from "../kinde";
 import { getDisplayNameForAuthUser } from "../db/user-helpers";
 import { persistThenBroadcastFinish } from "../games/finish-sequence";
 import { addLobbyConnection, removeLobbyConnection } from "./games";
@@ -2471,6 +2472,12 @@ interface GameSocketMeta {
   authDisplayName?: string;
 }
 
+interface GameSocketEnv {
+  Variables: KindeEnv["Variables"] & {
+    gameSocketMeta?: GameSocketMeta;
+  };
+}
+
 const checkOrigin = (c: Context): boolean => {
   const origin = c.req.header("origin");
   const isDev = process.env.NODE_ENV !== "production";
@@ -2497,24 +2504,16 @@ const originCheckMiddleware: MiddlewareHandler = async (c, next) => {
 };
 
 /**
- * Optional account lookup, for SPECTATOR upgrades only.
+ * Optional account lookup for every game upgrade.
  *
- * A player socket is skipped deliberately, and not merely to save a cookie
- * check. Their seat token already carries both identity and authority, so the
- * lookup could only produce an unused value - and `getOptionalUserMiddleware`
- * calls `await next()` a SECOND time inside its own catch (kinde.ts:157-161),
- * so anything that throws downstream of it runs the rest of the chain twice.
- * Putting the player handshake behind that, for a value players do not use,
- * would widen a chat-naming change into the move path.
- *
- * The token test is the same one `gameSocketAuth` uses to decide the role, so
- * the two cannot disagree about who is a spectator.
+ * Authentication completes before the seat compare-and-set. This wrapper
+ * calls downstream exactly once and does not put it inside an auth catch, so a
+ * later database or socket failure cannot retry the handshake.
  */
-const spectatorOptionalAuth: MiddlewareHandler<KindeEnv> = async (c, next) => {
-  if (c.req.query("token")) {
-    return next();
-  }
-  return getOptionalUserMiddleware(c, next);
+const gameOptionalAuth: MiddlewareHandler<GameSocketEnv> = async (c, next) => {
+  const user = await resolveOptionalUser(c);
+  if (user) c.set("user", user);
+  await next();
 };
 
 /**
@@ -2564,7 +2563,7 @@ const resolveSpectatorDisplayName = async (
   }
 };
 
-const gameSocketAuth: MiddlewareHandler = async (c, next) => {
+const gameSocketAuth: MiddlewareHandler<GameSocketEnv> = async (c, next) => {
   // The id and the token are read before the origin check so that a rejection
   // can still name the game it was for. Until this moved, an unauthorized
   // origin logged the origin and nothing else, and a 403 could not be tied to
@@ -2639,6 +2638,38 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
     return c.text("Invalid socket token", 401);
   }
 
+  const user = c.get("user");
+  if (user?.id) {
+    let displayName: string | undefined;
+    try {
+      displayName = await getDisplayNameForAuthUser(user.id);
+    } catch (error) {
+      console.error("[ws] account display-name lookup failed", {
+        sessionId,
+        error,
+      });
+      return c.text("Your account is not ready yet. Please try again.", 503);
+    }
+    const reconciliation = reconcileAuthenticatedSeat({
+      id: sessionId,
+      credential: socketToken,
+      credentialKind: "socket",
+      authUserId: user.id,
+      displayName,
+    });
+    if (reconciliation.kind === "account-conflict") {
+      return c.text("This seat belongs to another account.", 403);
+    }
+    if (reconciliation.kind === "invalid-name") {
+      return c.text("Your account is not ready yet. Please try again.", 503);
+    }
+    if (reconciliation.kind === "credential-not-found") {
+      return c.text("This seat is no longer available.", 409);
+    }
+    resolved.player = reconciliation.player;
+    sendMatchStatus(sessionId);
+  }
+
   c.set("gameSocketMeta", {
     sessionId,
     socketToken,
@@ -2656,13 +2687,11 @@ const gameSocketAuth: MiddlewareHandler = async (c, next) => {
 export const registerGameSocketRoute = (app: Hono) => {
   app.get(
     "/ws/games/:id",
-    // Ahead of gameSocketAuth so a SPECTATOR can be named by their account
-    // rather than from the guest pool. Optional by design: it sets the user
-    // when the request carries a valid session, leaves it undefined otherwise,
-    // and never fails the request - so an expired cookie degrades to anonymous
-    // spectating rather than breaking it. Players skip it entirely; see the
-    // wrapper.
-    spectatorOptionalAuth,
+    // Ahead of gameSocketAuth so a spectator can be named and a player seat
+    // can promote before any state or chat leaves the server. An absent or
+    // invalid session remains anonymous; a valid account's later name lookup
+    // has explicit failure semantics in gameSocketAuth.
+    gameOptionalAuth,
     gameSocketAuth,
     upgradeWebSocket((c) => {
       const meta = c.get("gameSocketMeta") as GameSocketMeta | undefined;

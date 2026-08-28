@@ -159,29 +159,36 @@ export const getOptionalUserMiddleware = createMiddleware<Env>(
     // What the catch is genuinely for is below it: reading the cookie and the
     // profile can fail on an expired or malformed session, and a request that
     // works perfectly well for a guest must not break because of it.
-    try {
-      // Mock auth for testing
-      const testUser = getTestUserFromHeader(c);
-      if (testUser) {
-        c.set("user", testUser);
-      } else {
-        // Try to get authenticated user, but don't fail if not logged in
-        const manager = sessionManager(c);
-        if (await kindeClient.isAuthenticated(manager)) {
-          const user = await kindeClient.getUserProfile(manager);
-          if (user?.id) {
-            c.set("user", user);
-          }
-        }
-        // If not authenticated, user remains undefined (guest)
-      }
-    } catch (error) {
-      // Don't fail on auth errors for optional auth - just proceed as guest
-      console.warn("Optional auth check failed, proceeding as guest:", error);
-    }
+    const user = await resolveOptionalUser(c);
+    if (user) c.set("user", user);
 
     // Exactly once, whatever happened above, and outside the catch so a
     // downstream failure surfaces to the caller instead of being retried.
     await next();
   },
 );
+
+/**
+ * Resolves an account for a request that is also valid anonymously.
+ *
+ * This function does not call downstream middleware. A WebSocket handshake
+ * needs to finish authentication before it mutates a seat, and must be able to
+ * distinguish an absent or invalid session from a later account-name database
+ * failure.
+ */
+export async function resolveOptionalUser(
+  c: Context,
+): Promise<UserType | undefined> {
+  try {
+    const testUser = getTestUserFromHeader(c);
+    if (testUser) return testUser;
+
+    const manager = sessionManager(c);
+    if (!(await kindeClient.isAuthenticated(manager))) return undefined;
+    const user = await kindeClient.getUserProfile(manager);
+    return user?.id ? user : undefined;
+  } catch (error) {
+    console.warn("Optional auth check failed, proceeding as guest:", error);
+    return undefined;
+  }
+}

@@ -1487,6 +1487,65 @@ export const resolveSessionForSocketToken = (args: {
   return { session, player };
 };
 
+export type SeatAccountReconciliation =
+  | { kind: "established" | "refreshed"; player: SessionPlayer }
+  | { kind: "credential-not-found" }
+  | { kind: "account-conflict" }
+  | { kind: "invalid-name" };
+
+/**
+ * Establishes the account identity for an existing seat.
+ *
+ * All awaited account work must finish before this function is called. The
+ * compare and mutation are synchronous, so two first-login handshakes cannot
+ * both win: the first account is established and a different account then
+ * receives `account-conflict`. The same account may refresh its display name.
+ */
+export const reconcileAuthenticatedSeat = (args: {
+  id: string;
+  credential: string;
+  credentialKind: "seat" | "socket";
+  authUserId: string;
+  displayName?: string;
+}): SeatAccountReconciliation => {
+  const session = sessions.get(args.id);
+  if (!session) return { kind: "credential-not-found" };
+
+  const matches = (player: SessionPlayer): boolean =>
+    args.credentialKind === "seat"
+      ? player.token === args.credential
+      : player.socketToken === args.credential;
+  const player = matches(session.players.host)
+    ? session.players.host
+    : matches(session.players.joiner)
+      ? session.players.joiner
+      : null;
+  if (!player) return { kind: "credential-not-found" };
+
+  const requestedDisplayName = args.displayName?.trim();
+  const existingAccountFallback =
+    player.authUserId === args.authUserId &&
+    !/^guest(?:\s|$)/i.test(player.displayName.trim())
+      ? player.displayName.trim()
+      : undefined;
+  let displayName = existingAccountFallback;
+  if (requestedDisplayName) displayName = requestedDisplayName;
+  if (!displayName || /^guest(?:\s|$)/i.test(displayName)) {
+    return { kind: "invalid-name" };
+  }
+  if (player.authUserId && player.authUserId !== args.authUserId) {
+    return { kind: "account-conflict" };
+  }
+
+  const kind = player.authUserId ? "refreshed" : "established";
+  player.authUserId = args.authUserId;
+  player.displayName = displayName;
+  player.anonymousId = undefined;
+  player.lastSeenAt = Date.now();
+  session.updatedAt = player.lastSeenAt;
+  return { kind, player };
+};
+
 export const listSessions = (): GameSnapshot[] => {
   return [...sessions.values()].map((session) => ({
     id: session.id,

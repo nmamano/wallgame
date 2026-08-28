@@ -32,6 +32,7 @@ import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type {
   GameCreateResponse,
   JoinGameResponse,
+  ResolveGameAccessResponse,
 } from "../../shared/contracts/games";
 import type { GameSnapshot } from "../../shared/domain/game-types";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
@@ -202,6 +203,113 @@ async function chatSenderName(args: {
   }
 }
 
+type PlayerSocketResult =
+  | { kind: "opened"; seatName: string; chatName: string }
+  | { kind: "rejected" };
+
+/** Opens the real player upgrade and observes both match state and chat. */
+async function playerSocketIdentity(args: {
+  gameId: string;
+  socketToken: string;
+  role: "host" | "joiner";
+  authUserId?: string;
+}): Promise<PlayerSocketResult> {
+  const wsUrl =
+    baseUrl.replace("http", "ws") +
+    `/ws/games/${args.gameId}?token=${args.socketToken}`;
+  const ws = new WebSocket(wsUrl, {
+    headers: {
+      Origin: "http://localhost:5173",
+      ...(args.authUserId ? { "x-test-user-id": args.authUserId } : {}),
+    },
+  });
+
+  try {
+    return await new Promise<PlayerSocketResult>((resolve, reject) => {
+      let observedSeatName: string | undefined;
+      let observedChatName: string | undefined;
+      const timeout = setTimeout(
+        () => reject(new Error("Timed out waiting for player identity")),
+        10_000,
+      );
+      const finish = (result: PlayerSocketResult) => {
+        clearTimeout(timeout);
+        resolve(result);
+      };
+      const maybeFinish = () => {
+        if (observedSeatName && observedChatName) {
+          finish({
+            kind: "opened",
+            seatName: observedSeatName,
+            chatName: observedChatName,
+          });
+        }
+      };
+
+      // Bun supplies its native WebSocket for the `ws` module. On a rejected
+      // upgrade it emits only `error`, not ws's `unexpected-response`, so this
+      // proves that no player socket opened. `playerHandshakeStatus` below
+      // drives the same middleware without an upgrade to assert the HTTP code.
+      ws.on("error", () => finish({ kind: "rejected" }));
+      ws.on("message", (data: Buffer) => {
+        const message = JSON.parse(data.toString()) as ServerMessage;
+        if (message.type === "match-status") {
+          observedSeatName = seatName(message.snapshot, args.role);
+          maybeFinish();
+        }
+        if (message.type === "chat-message") {
+          observedChatName = message.senderName;
+          maybeFinish();
+        }
+      });
+      ws.on("open", () => {
+        ws.send(
+          JSON.stringify({ type: "chat-message", channel: "game", text: "hi" }),
+        );
+      });
+    });
+  } finally {
+    ws.close();
+  }
+}
+
+async function playerHandshakeStatus(args: {
+  gameId: string;
+  socketToken: string;
+  authUserId: string;
+}): Promise<number> {
+  const url = new URL(`${baseUrl}/ws/games/${args.gameId}`);
+  url.searchParams.set("token", args.socketToken);
+  const response = await fetch(url, {
+    headers: {
+      Origin: "http://localhost:5173",
+      "x-test-user-id": args.authUserId,
+    },
+  });
+  return response.status;
+}
+
+async function resolveAccess(args: {
+  gameId: string;
+  token: string;
+  authUserId?: string;
+}): Promise<{
+  status: number;
+  body: ResolveGameAccessResponse | { error: string };
+}> {
+  const url = new URL(`${baseUrl}/api/games/${args.gameId}`);
+  url.searchParams.set("token", args.token);
+  const response = await fetch(url, {
+    headers: args.authUserId ? { "x-test-user-id": args.authUserId } : {},
+  });
+  return {
+    status: response.status,
+    body: (await response.json()) as
+      | ResolveGameAccessResponse
+      | { error: string },
+  };
+}
+
 describe("seat display names", () => {
   beforeAll(async () => {
     const handle = await setupEphemeralDb();
@@ -330,5 +438,220 @@ describe("seat display names", () => {
 
     expectGuestName(senderName);
     expect(senderName).toBe(seatName(game.snapshot, "host"));
+  });
+
+  it("replaces a guest host in socket state and chat after login", async () => {
+    const game = await createGame({ hostDisplayName: "Guest" });
+    expectGuestName(seatName(game.snapshot, "host"));
+
+    const alfa = await seedAccount("alfa");
+    const identity = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+      authUserId: alfa.authUserId,
+    });
+
+    expect(identity).toEqual({
+      kind: "opened",
+      seatName: alfa.accountName,
+      chatName: alfa.accountName,
+    });
+  });
+
+  it("replaces a guest joiner through the same socket boundary", async () => {
+    const game = await createGame({});
+    const joined = await joinGame({
+      gameId: game.gameId,
+      displayName: "Guest",
+    });
+    expectGuestName(seatName(joined.snapshot, "joiner"));
+    if (joined.role === "spectator") {
+      throw new Error("The open joiner seat resolved as a spectator");
+    }
+
+    const bravo = await seedAccount("bravo");
+    const identity = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: joined.socketToken,
+      role: "joiner",
+      authUserId: bravo.authUserId,
+    });
+
+    expect(identity).toEqual({
+      kind: "opened",
+      seatName: bravo.accountName,
+      chatName: bravo.accountName,
+    });
+  });
+
+  it("promotes on authenticated refresh before an anonymous reconnect", async () => {
+    const game = await createGame({ hostDisplayName: "Guest" });
+    const alfa = await seedAccount("alfa");
+
+    const refreshed = await resolveAccess({
+      gameId: game.gameId,
+      token: game.hostToken,
+      authUserId: alfa.authUserId,
+    });
+    expect(refreshed.status).toBe(200);
+    expect("matchStatus" in refreshed.body).toBe(true);
+    if (!("matchStatus" in refreshed.body)) return;
+    expect(seatName(refreshed.body.matchStatus, "host")).toBe(alfa.accountName);
+
+    const reconnected = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+    });
+    expect(reconnected).toEqual({
+      kind: "opened",
+      seatName: alfa.accountName,
+      chatName: alfa.accountName,
+    });
+  });
+
+  it("lets exactly one of two concurrent first accounts establish the seat", async () => {
+    const game = await createGame({ hostDisplayName: "Guest" });
+    const alfa = await seedAccount("alfa");
+    const bravo = await seedAccount("bravo");
+
+    const results = await Promise.all([
+      playerSocketIdentity({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        role: "host",
+        authUserId: alfa.authUserId,
+      }),
+      playerSocketIdentity({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        role: "host",
+        authUserId: bravo.authUserId,
+      }),
+    ]);
+
+    const opened = results.filter((result) => result.kind === "opened");
+    const rejected = results.filter((result) => result.kind === "rejected");
+    expect(opened).toHaveLength(1);
+    expect(rejected).toEqual([{ kind: "rejected" }]);
+    if (opened[0]?.kind !== "opened") return;
+    expect([alfa.accountName, bravo.accountName]).toContain(opened[0].seatName);
+    expect(opened[0].chatName).toBe(opened[0].seatName);
+
+    const staleReconnect = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+    });
+    expect(staleReconnect).toEqual({
+      kind: "opened",
+      seatName: opened[0].seatName,
+      chatName: opened[0].seatName,
+    });
+  });
+
+  it("rejects a foreign account on both recovery boundaries", async () => {
+    const alfa = await seedAccount("alfa");
+    const bravo = await seedAccount("bravo");
+    const game = await createGame({
+      authUserId: alfa.authUserId,
+      hostDisplayName: alfa.accountName,
+    });
+
+    const refresh = await resolveAccess({
+      gameId: game.gameId,
+      token: game.hostToken,
+      authUserId: bravo.authUserId,
+    });
+    expect(refresh.status).toBe(403);
+
+    const socket = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+      authUserId: bravo.authUserId,
+    });
+    expect(socket).toEqual({ kind: "rejected" });
+    expect(
+      await playerHandshakeStatus({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        authUserId: bravo.authUserId,
+      }),
+    ).toBe(403);
+  });
+
+  it("does not open a valid authenticated boundary without an account name", async () => {
+    const game = await createGame({ hostDisplayName: "Guest" });
+
+    const socket = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+      authUserId: "account-without-users-row",
+    });
+    expect(socket).toEqual({ kind: "rejected" });
+    expect(
+      await playerHandshakeStatus({
+        gameId: game.gameId,
+        socketToken: game.socketToken,
+        authUserId: "account-without-users-row",
+      }),
+    ).toBe(503);
+
+    const refresh = await resolveAccess({
+      gameId: game.gameId,
+      token: game.hostToken,
+      authUserId: "account-without-users-row",
+    });
+    expect(refresh.status).toBe(503);
+  });
+
+  it("keeps an established account's non-guest fallback while its row is pending", async () => {
+    const authUserId = "established-account-without-users-row";
+    const game = await createGame({
+      authUserId,
+      hostDisplayName: "PendingPlayer",
+    });
+    expect(seatName(game.snapshot, "host")).toBe("PendingPlayer");
+
+    const identity = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+      authUserId,
+    });
+    expect(identity).toEqual({
+      kind: "opened",
+      seatName: "PendingPlayer",
+      chatName: "PendingPlayer",
+    });
+  });
+
+  it("keeps anonymous refresh, reconnect, state, and chat on one guest seat", async () => {
+    const game = await createGame({ hostDisplayName: "Guest" });
+    const originalName = seatName(game.snapshot, "host");
+    expectGuestName(originalName);
+
+    const refreshed = await resolveAccess({
+      gameId: game.gameId,
+      token: game.hostToken,
+    });
+    expect(refreshed.status).toBe(200);
+    expect("matchStatus" in refreshed.body).toBe(true);
+    if (!("matchStatus" in refreshed.body)) return;
+    expect(seatName(refreshed.body.matchStatus, "host")).toBe(originalName);
+
+    const identity = await playerSocketIdentity({
+      gameId: game.gameId,
+      socketToken: game.socketToken,
+      role: "host",
+    });
+    expect(identity).toEqual({
+      kind: "opened",
+      seatName: originalName,
+      chatName: originalName,
+    });
   });
 });

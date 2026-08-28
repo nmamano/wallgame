@@ -10,6 +10,7 @@ import {
   markHostReady,
   resolveGameAccess,
   resolveSessionForToken,
+  reconcileAuthenticatedSeat,
   listMatchmakingGames,
   listLiveGames,
   countGamesInFlight,
@@ -314,6 +315,34 @@ export const gamesRoute = new Hono()
         const user = c.get("user");
         const origin = process.env.FRONTEND_URL ?? new URL(c.req.url).origin;
         const shareUrl = `${origin}/game/${id}`;
+
+        if (user?.id && token && resolveSessionForToken({ id, token })) {
+          const displayName = await getDisplayNameForAuthUser(user.id);
+          const reconciliation = reconcileAuthenticatedSeat({
+            id,
+            credential: token,
+            credentialKind: "seat",
+            authUserId: user.id,
+            displayName,
+          });
+          if (reconciliation.kind === "account-conflict") {
+            return c.json(
+              { error: "This seat belongs to another account." },
+              403,
+            );
+          }
+          if (reconciliation.kind === "invalid-name") {
+            return c.json(
+              { error: "Your account is not ready yet. Please try again." },
+              503,
+            );
+          }
+          if (reconciliation.kind === "credential-not-found") {
+            return c.json({ error: "This seat is no longer available." }, 409);
+          }
+          sendMatchStatus(id);
+        }
+
         const access = resolveGameAccess({
           id,
           token,

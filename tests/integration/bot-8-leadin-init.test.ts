@@ -81,7 +81,6 @@ interface HumanSocket {
 }
 
 async function openHumanSocket(
-  userId: string,
   gameId: string,
   socketToken: string,
 ): Promise<HumanSocket> {
@@ -92,7 +91,6 @@ async function openHumanSocket(
     const ws = new WebSocket(wsUrl, {
       headers: {
         Origin: "http://localhost:5173",
-        "x-test-user-id": userId,
       },
     });
 
@@ -369,11 +367,7 @@ describe("lead-in game BGS initialization (S-P1)", () => {
     expect(session.gameState.history).toHaveLength(1);
 
     // Human connects: BGS must be built via the history rebuild.
-    const human = await openHumanSocket(
-      "user-leadin",
-      session.id,
-      hostSocketToken,
-    );
+    const human = await openHumanSocket(session.id, hostSocketToken);
     const s0 = await human.waitForState((s) => s.state.history.length === 1);
     expect(s0.state.turn).toBe(2);
 

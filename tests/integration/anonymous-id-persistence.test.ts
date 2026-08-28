@@ -52,6 +52,7 @@ let applyPlayerMove: typeof import("../../server/games/store").applyPlayerMove;
 let resignGame: typeof import("../../server/games/store").resignGame;
 let createRematchSession: typeof import("../../server/games/store").createRematchSession;
 let getSession: typeof import("../../server/games/store").getSession;
+let reconcileAuthenticatedSeat: typeof import("../../server/games/store").reconcileAuthenticatedSeat;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 
 function migrationsFolderWithoutThisSlice(): string {
@@ -138,6 +139,7 @@ beforeAll(async () => {
   resignGame = store.resignGame;
   createRematchSession = store.createRematchSession;
   getSession = store.getSession;
+  reconcileAuthenticatedSeat = store.reconcileAuthenticatedSeat;
   persistCompletedGame = persistence.persistCompletedGame;
 }, 180_000);
 
@@ -277,6 +279,59 @@ describe("a finished game", () => {
 
     expect(host?.user_id).toBe(seededUserId);
     expect(host?.anonymous_id).toBe(HOST_ID);
+  });
+
+  it("persists a promoted casual seat as its account without making it rated", async () => {
+    const { session } = createGameSession({
+      config: CONFIG,
+      matchType: "friend",
+      hostIsPlayer1: true,
+      hostAnonymousId: HOST_ID,
+    });
+    joinGameSession({
+      id: session.id,
+      anonymousId: JOINER_ID,
+    });
+
+    const beforeRating = session.players.host.ratingAtStart;
+    const beforeElo = session.players.host.elo;
+    expect(
+      reconcileAuthenticatedSeat({
+        id: session.id,
+        credential: session.players.host.socketToken,
+        credentialKind: "socket",
+        authUserId: SIGNED_IN_AUTH_ID,
+        displayName: "SignedIn",
+      }).kind,
+    ).toBe("established");
+    expect(session.config.rated).toBe(false);
+    expect(session.players.host.ratingAtStart).toBe(beforeRating);
+    expect(session.players.host.elo).toBe(beforeElo);
+
+    playToFinish(session.id, Date.now());
+    await persistCompletedGame(session);
+
+    const [row] = await sql<
+      {
+        user_id: number | null;
+        anonymous_id: string | null;
+        display_name: string;
+        rated: boolean;
+        rating_at_start: number | null;
+      }[]
+    >`
+      SELECT gp.user_id, gp.anonymous_id, gp.display_name,
+             g.rated, gp.rating_at_start
+      FROM game_players gp
+      JOIN games g USING (game_id)
+      WHERE gp.game_id = ${session.id} AND gp.player_role = 'host'`;
+    expect(row).toEqual({
+      user_id: seededUserId,
+      anonymous_id: null,
+      display_name: "SignedIn",
+      rated: false,
+      rating_at_start: null,
+    });
   });
 
   it("never records one for a bot, even if something put one there", async () => {

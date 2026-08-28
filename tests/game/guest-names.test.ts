@@ -28,6 +28,7 @@ let resignGame: typeof import("../../server/games/store").resignGame;
 let createRematchSession: typeof import("../../server/games/store").createRematchSession;
 let assignSpectatorGuestName: typeof import("../../server/games/store").assignSpectatorGuestName;
 let releaseSpectatorGuestName: typeof import("../../server/games/store").releaseSpectatorGuestName;
+let reconcileAuthenticatedSeat: typeof import("../../server/games/store").reconcileAuthenticatedSeat;
 
 beforeAll(async () => {
   const store = await import("../../server/games/store");
@@ -37,6 +38,7 @@ beforeAll(async () => {
   createRematchSession = store.createRematchSession;
   assignSpectatorGuestName = store.assignSpectatorGuestName;
   releaseSpectatorGuestName = store.releaseSpectatorGuestName;
+  reconcileAuthenticatedSeat = store.reconcileAuthenticatedSeat;
 });
 
 const CASUAL: PartialGameConfiguration = {
@@ -199,6 +201,98 @@ describe("naming a seat", () => {
         newSession.players.joiner.displayName,
       ].sort(),
     ).toEqual([...before].sort());
+  });
+
+  it("promotes a guest once and lets only that account refresh its name", () => {
+    const session = guestHostSession();
+    const beforeConfig = structuredClone(session.config);
+    const beforeRating = session.players.host.ratingAtStart;
+    const beforeElo = session.players.host.elo;
+
+    expect(
+      reconcileAuthenticatedSeat({
+        id: session.id,
+        credential: session.players.host.socketToken,
+        credentialKind: "socket",
+        authUserId: "auth|alfa",
+        displayName: "Alfa",
+      }).kind,
+    ).toBe("established");
+    expect(session.players.host.displayName).toBe("Alfa");
+    expect(session.players.host.authUserId).toBe("auth|alfa");
+    expect(session.players.host.anonymousId).toBeUndefined();
+
+    expect(
+      reconcileAuthenticatedSeat({
+        id: session.id,
+        credential: session.players.host.token,
+        credentialKind: "seat",
+        authUserId: "auth|alfa",
+        displayName: "ALFA",
+      }).kind,
+    ).toBe("refreshed");
+    expect(session.players.host.displayName).toBe("ALFA");
+    expect(session.config).toEqual(beforeConfig);
+    expect(session.players.host.ratingAtStart).toBe(beforeRating);
+    expect(session.players.host.elo).toBe(beforeElo);
+  });
+
+  it("makes concurrent first promotion first-account-wins", () => {
+    const session = guestHostSession();
+
+    const first = reconcileAuthenticatedSeat({
+      id: session.id,
+      credential: session.players.host.socketToken,
+      credentialKind: "socket",
+      authUserId: "auth|alfa",
+      displayName: "Alfa",
+    });
+    const second = reconcileAuthenticatedSeat({
+      id: session.id,
+      credential: session.players.host.socketToken,
+      credentialKind: "socket",
+      authUserId: "auth|bravo",
+      displayName: "Bravo",
+    });
+
+    expect(first.kind).toBe("established");
+    expect(second.kind).toBe("account-conflict");
+    expect(session.players.host.authUserId).toBe("auth|alfa");
+    expect(session.players.host.displayName).toBe("Alfa");
+  });
+
+  it("uses the same promotion authority for a guest joiner", () => {
+    const session = guestHostSession();
+    joinGameSession({ id: session.id });
+
+    const result = reconcileAuthenticatedSeat({
+      id: session.id,
+      credential: session.players.joiner.socketToken,
+      credentialKind: "socket",
+      authUserId: "auth|bravo",
+      displayName: "Bravo",
+    });
+
+    expect(result.kind).toBe("established");
+    expect(session.players.joiner.displayName).toBe("Bravo");
+    expectGuestName(session.players.host.displayName);
+  });
+
+  it("refuses to establish an account with a guest-shaped name", () => {
+    const session = guestHostSession();
+    const guestName = session.players.host.displayName;
+
+    const result = reconcileAuthenticatedSeat({
+      id: session.id,
+      credential: session.players.host.socketToken,
+      credentialKind: "socket",
+      authUserId: "auth|alfa",
+      displayName: "Guest Otter",
+    });
+
+    expect(result.kind).toBe("invalid-name");
+    expect(session.players.host.authUserId).toBeUndefined();
+    expect(session.players.host.displayName).toBe(guestName);
   });
 });
 
