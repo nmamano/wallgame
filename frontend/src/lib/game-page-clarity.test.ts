@@ -28,4 +28,16 @@ describe("game-page clarity", () => {
     expect(reducedMotion).toContain(".game-capture-shake");
     expect(reducedMotion).toContain("animation: none !important");
   });
+
+  test("capture shake targets one inner stage inside each fixed page surface", () => {
+    const route = readFileSync(
+      new URL("../routes/game.$id.tsx", import.meta.url),
+      "utf8",
+    );
+
+    expect(route.match(/data-capture-feedback-surface/g)).toHaveLength(2);
+    expect(route.match(/data-capture-shake-stage/g)).toHaveLength(2);
+    expect(route.match(/onAnimationEnd=/g)).toHaveLength(2);
+    expect(route.match(/game-capture-shake/g)).toHaveLength(2);
+  });
 });

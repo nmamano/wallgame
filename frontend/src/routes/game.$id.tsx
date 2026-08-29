@@ -377,9 +377,9 @@ function GamePageContent() {
         />
 
         <div
+          data-capture-feedback-surface
           data-capture-feedback={captureFeedbackKey || undefined}
-          onAnimationEnd={() => setCaptureFeedbackActive(false)}
-          className={`${captureFeedbackActive ? "game-capture-shake" : ""} flex flex-col bg-background overflow-hidden`}
+          className="flex flex-col bg-background overflow-hidden"
           style={{ height: `${viewportHeight}px` }}
         >
           {/* Slim top nav */}
@@ -409,7 +409,9 @@ function GamePageContent() {
           {/* Main content: timers + eval bar + board — centered as a group */}
           <div
             ref={boardAreaRef}
-            className="flex flex-col flex-1 items-center justify-center min-h-0 gap-1 py-1"
+            data-capture-shake-stage
+            onAnimationEnd={() => setCaptureFeedbackActive(false)}
+            className={`${captureFeedbackActive ? "game-capture-shake" : ""} flex flex-col flex-1 items-center justify-center min-h-0 gap-1 py-1`}
           >
             {board.shouldRender ? (
               <>
@@ -628,9 +630,9 @@ function GamePageContent() {
   return (
     <>
       <div
+        data-capture-feedback-surface
         data-capture-feedback={captureFeedbackKey || undefined}
-        onAnimationEnd={() => setCaptureFeedbackActive(false)}
-        className={`${captureFeedbackActive ? "game-capture-shake" : ""} min-h-screen bg-background flex flex-col`}
+        className="min-h-screen bg-background flex flex-col overflow-hidden"
       >
         {renderGameBanners(false)}
 
@@ -651,7 +653,9 @@ function GamePageContent() {
         />
 
         <div
-          className="flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit"
+          data-capture-shake-stage
+          onAnimationEnd={() => setCaptureFeedbackActive(false)}
+          className={`${captureFeedbackActive ? "game-capture-shake" : ""} flex-1 py-2 lg:py-4 px-2 lg:px-4 flex flex-col lg:grid items-center lg:items-start justify-start lg:justify-center mx-auto w-full lg:w-fit`}
           style={{
             gridTemplateColumns: `${leftColumnWidth}rem ${rightColumnMaxWidth}rem`,
             gap: `${gap}rem`,
