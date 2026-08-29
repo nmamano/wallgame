@@ -20,6 +20,13 @@
 
 @custom-variant dark (&:is(.dark *));
 
+@media (prefers-reduced-motion: reduce) {
+  .game-help-motion {
+    animation: none !important;
+    transition: none !important;
+  }
+}
+
 :root {
   /* Baroque theme with warm golds, oranges, and deep blues */
   --background: oklch(0.98 0.01 80);

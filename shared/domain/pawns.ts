@@ -16,6 +16,7 @@ import type {
   Pawn,
   Variant,
 } from "./game-types";
+import { executableRulesFor } from "./variant-rules";
 
 /**
  * Whether a player can ever move a pawn of this type.
@@ -35,20 +36,7 @@ export const isMovablePawnType = (
  * member to that union without deciding its pawn family is a compile error.
  */
 export function pawnFamilyForVariant(variant: Variant): PawnFamily {
-  switch (variant) {
-    case "standard":
-      return "standard";
-    case "animal-cycle":
-      return "animal-cycle";
-    case "classic":
-      return "classic";
-    case "survival":
-      return "survival";
-    default: {
-      const exhaustive: never = variant;
-      throw new Error(`Unhandled variant: ${String(exhaustive)}`);
-    }
-  }
+  return executableRulesFor(variant).pawnFamily;
 }
 
 const cloneCell = (cell: Cell): Cell => [cell[0], cell[1]];
@@ -226,34 +214,11 @@ export function clonePawns(pawns: GamePawns): GamePawns {
  * `GamePawnType`, which excludes "home".
  */
 export function boardPawns(pawns: GamePawns): Pawn[] {
-  switch (pawns.kind) {
-    case "animal-cycle":
-      return [
-        { playerId: 1, type: "cat", cell: pawns.pawns[1].cat },
-        { playerId: 1, type: "elephant", cell: pawns.pawns[1].elephant },
-        { playerId: 2, type: "mouse", cell: pawns.pawns[2].mouse },
-        { playerId: 2, type: "dog", cell: pawns.pawns[2].dog },
-      ];
-    case "standard":
-      return [
-        { playerId: 1, type: "cat", cell: pawns.pawns[1].cat },
-        { playerId: 1, type: "mouse", cell: pawns.pawns[1].mouse },
-        { playerId: 2, type: "cat", cell: pawns.pawns[2].cat },
-        { playerId: 2, type: "mouse", cell: pawns.pawns[2].mouse },
-      ];
-    case "classic":
-      return [
-        { playerId: 1, type: "cat", cell: pawns.pawns[1].cat },
-        { playerId: 1, type: "home", cell: pawns.pawns[1].home },
-        { playerId: 2, type: "cat", cell: pawns.pawns[2].cat },
-        { playerId: 2, type: "home", cell: pawns.pawns[2].home },
-      ];
-    case "survival":
-      return [
-        { playerId: 1, type: "cat", cell: pawns.cat },
-        { playerId: 2, type: "mouse", cell: pawns.mouse },
-      ];
-  }
+  return executableRulesFor(pawns.kind).pawnSet.map(({ playerId, type }) => ({
+    playerId,
+    type,
+    cell: requirePawnCell(pawns, playerId, type),
+  }));
 }
 
 /**

@@ -22,6 +22,7 @@ import { parseBestMoveOverlay } from "@/lib/best-move-overlay";
 import { avatarPawn } from "../../../shared/domain/pawns";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import { getGameHandshake, getPuzzleBannerName } from "@/lib/game-session";
+import { GameHelp } from "@/components/game-help";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -352,7 +353,7 @@ function GamePageContent() {
           style={{ height: `${viewportHeight}px` }}
         >
           {/* Slim top nav */}
-          <div className="flex items-center px-2 py-1 border-b border-border shrink-0">
+          <div className="flex items-center justify-between px-2 py-1 border-b border-border shrink-0">
             {/* From a puzzle, "back" means back to the candidate list you came from,
                 not out to the site root - otherwise trying the next one costs two
                 navigations and a scroll. */}
@@ -365,6 +366,12 @@ function GamePageContent() {
                 {info.isPuzzle ? "Back to puzzles" : "Wall Game"}
               </span>
             </Link>
+            <GameHelp
+              variant={info.config?.variant ?? info.defaultVariant}
+              playerColors={board.playerColorsForBoard}
+              primaryLocalPlayerId={board.primaryLocalPlayerId}
+              placement="phone"
+            />
           </div>
 
           {renderGameBanners(true)}
@@ -770,6 +777,8 @@ function GamePageContent() {
                 onEvalToggle={evalBar.toggleEval}
                 onBestMoveToggle={evalBar.toggleBestMove}
                 evalErrorMessage={evalBar.errorMessage}
+                playerColorsForBoard={board.playerColorsForBoard}
+                primaryLocalPlayerId={board.primaryLocalPlayerId}
               />
             </div>
 

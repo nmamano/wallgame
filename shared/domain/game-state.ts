@@ -1,4 +1,3 @@
-import { isClassicVariant } from "./game-types";
 import {
   animalCycleCaptureWinner,
   animalCycleTeammateCell,
@@ -34,6 +33,11 @@ import {
   requirePawnCell,
   withPawnCell,
 } from "./pawns";
+import {
+  executableRulesFor,
+  mouseCanMoveForRules,
+  resolveRulePlayer,
+} from "./variant-rules";
 
 // Type guards for variant-specific initial states
 export function isStandardInitialState(
@@ -255,19 +259,14 @@ export class GameState {
    */
   goalCell(playerId: PlayerId, pawns?: GamePawns): Cell {
     const p = pawns ?? this.pawns;
-    if (isClassicVariant(this.config.variant)) {
-      return requirePawnCell(p, playerId, "home");
-    }
-    if (this.config.variant === "survival") {
-      return requirePawnCell(p, 2, "mouse");
-    }
-    if (this.config.variant === "animal-cycle") {
-      return playerId === 1
-        ? requirePawnCell(p, 2, "cat")
-        : requirePawnCell(p, 1, "mouse");
-    }
-    const opponent: PlayerId = playerId === 1 ? 2 : 1;
-    return requirePawnCell(p, opponent, "mouse");
+    const target = executableRulesFor(this.config.variant).goalTargets[
+      playerId
+    ];
+    return requirePawnCell(
+      p,
+      resolveRulePlayer(target.player, playerId),
+      target.type,
+    );
   }
 
   clone(): GameState {
@@ -389,7 +388,7 @@ export class GameState {
     const appliedActions: Move["actions"] = [];
     let animalCycleWinner: PlayerId | undefined;
 
-    const isClassic = isClassicVariant(this.config.variant);
+    const variantRules = executableRulesFor(this.config.variant);
     let actionsUsed = 0;
     // The no-return rule has to hold WITHIN one submitted move, not only across
     // moves. A pawn that steps to a neighbour and back has returned to its
@@ -415,13 +414,13 @@ export class GameState {
           throw new Error("Pawn not available for this player");
         }
         if (action.type === "mouse") {
-          if (isClassic) {
-            throw new Error("Mouse cannot move in classic variant");
-          }
-          if (
+          const survivalSetting =
             this.config.variant === "survival" &&
-            !(this.config.variantConfig as SurvivalInitialState).mouseCanMove
-          ) {
+            (this.config.variantConfig as SurvivalInitialState).mouseCanMove;
+          if (!mouseCanMoveForRules(variantRules, survivalSetting)) {
+            if (variantRules.mouseMovement === "forbidden") {
+              throw new Error("Mouse cannot move in classic variant");
+            }
             throw new Error("Mouse cannot move in survival variant");
           }
         }
@@ -429,6 +428,7 @@ export class GameState {
         const targetPos = action.target;
 
         const animalCycleTeammate =
+          !variantRules.teammatesMayShareCell &&
           nextPawns.kind === "animal-cycle"
             ? animalCycleTeammateCell(nextPawns, player, action.type)
             : undefined;
@@ -640,33 +640,34 @@ export class GameState {
       }
     }
 
-    // Win condition depends on variant:
-    // - Standard/Freestyle: cat captures opponent's mouse
-    // - Classic: cat reaches its own home
-    const usesClassicRules = isClassicVariant(this.config.variant);
-    let myCatCaught: boolean;
-    let opCatCaught: boolean;
-
-    if (usesClassicRules) {
-      // Classic: cat reaches its own home
-      myCatCaught = cellEq(
-        requirePawnCell(nextPawns, player, "cat"),
-        requirePawnCell(nextPawns, player, "home"),
+    // Standard, Classic, and Survival each have one player-relative terminal
+    // relation. Animal Cycle is checked after every action above because its
+    // first capture ends the move immediately.
+    const terminalRelation = variantRules.captureRelations[0];
+    const relationCapturedFor = (candidate: PlayerId): boolean => {
+      const hunterPlayer = resolveRulePlayer(
+        terminalRelation.hunter.player,
+        candidate,
       );
-      opCatCaught = cellEq(
-        requirePawnCell(nextPawns, opponent, "cat"),
-        requirePawnCell(nextPawns, opponent, "home"),
+      if (hunterPlayer !== candidate) return false;
+      const targetPlayer = resolveRulePlayer(
+        terminalRelation.target.player,
+        candidate,
       );
-    } else {
-      // Standard/Freestyle/Survival: cat captures opponent's mouse. A missing
-      // cell means the variant has no such pawn, so no capture is possible.
-      const myCat = pawnCell(nextPawns, player, "cat");
-      const myMouse = pawnCell(nextPawns, player, "mouse");
-      const opCat = pawnCell(nextPawns, opponent, "cat");
-      const opMouse = pawnCell(nextPawns, opponent, "mouse");
-      myCatCaught = !!myCat && !!opMouse && cellEq(myCat, opMouse);
-      opCatCaught = !!opCat && !!myMouse && cellEq(opCat, myMouse);
-    }
+      const hunter = pawnCell(
+        nextPawns,
+        hunterPlayer,
+        terminalRelation.hunter.type,
+      );
+      const target = pawnCell(
+        nextPawns,
+        targetPlayer,
+        terminalRelation.target.type,
+      );
+      return !!hunter && !!target && cellEq(hunter, target);
+    };
+    const myCatCaught = relationCapturedFor(player);
+    const opCatCaught = relationCapturedFor(opponent);
 
     // Update timeLeft with increment
     const nextTimeLeft = { ...this.timeLeft };
@@ -707,7 +708,7 @@ export class GameState {
       // when they're within 2 steps of their own goal (not applicable to survival)
       if (
         player === 1 &&
-        this.config.variant !== "survival" &&
+        variantRules.oneMoveDraw &&
         this.isPawnActive(opponent, "cat") &&
         this.isPawnActive(player, "mouse")
       ) {

@@ -22,6 +22,9 @@ import type { PlayerType } from "@/lib/gameViewModel";
 import { EvalToggle } from "@/components/eval-toggle";
 import type { EvalToggleState, EvalDisplayMode } from "@/hooks/use-eval-bar";
 import { useTheme } from "@/components/theme-provider";
+import { GameHelp } from "@/components/game-help";
+import type { PlayerColor } from "@/lib/player-colors";
+import type { PlayerId } from "../../../shared/domain/game-types";
 
 interface GameInfoPanelProps {
   config: GameConfiguration | null;
@@ -43,6 +46,8 @@ interface GameInfoPanelProps {
   onEvalToggle: () => void;
   onBestMoveToggle: () => void;
   evalErrorMessage?: string | null;
+  playerColorsForBoard?: Record<PlayerId, PlayerColor>;
+  primaryLocalPlayerId?: PlayerId | null;
 }
 
 export function GameInfoPanel({
@@ -64,6 +69,8 @@ export function GameInfoPanel({
   onEvalToggle,
   onBestMoveToggle,
   evalErrorMessage,
+  playerColorsForBoard,
+  primaryLocalPlayerId,
 }: GameInfoPanelProps) {
   const { theme, setTheme } = useTheme();
   return (
@@ -98,7 +105,7 @@ export function GameInfoPanel({
           </Badge>
         </div>
 
-        {/* Row 2: Eval toggle (with error) + Audio toggles */}
+        {/* Row 2: Eval toggle (with error) + HELP + Audio toggles */}
         <div className="flex items-center justify-between text-xs lg:text-sm text-muted-foreground">
           <div className="flex items-center gap-2">
             <EvalToggle
@@ -118,6 +125,14 @@ export function GameInfoPanel({
               </span>
             )}
           </div>
+          {playerColorsForBoard && (
+            <GameHelp
+              variant={config?.variant ?? defaultVariant}
+              playerColors={playerColorsForBoard}
+              primaryLocalPlayerId={primaryLocalPlayerId ?? null}
+              placement="desktop"
+            />
+          )}
           <div className="flex items-center gap-1">
             <Button
               variant="ghost"

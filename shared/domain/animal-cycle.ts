@@ -1,15 +1,20 @@
 import type { Cell, GamePawnType, GamePawns, PlayerId } from "./game-types";
 import { cellEq } from "./game-utils";
+import { pawnCell } from "./pawns";
+import { executableRulesFor, resolveRulePlayer } from "./variant-rules";
 
 /** The owner of the first directed predator/prey overlap, if one exists. */
 export function animalCycleCaptureWinner(
   pawns: Extract<GamePawns, { kind: "animal-cycle" }>,
 ): PlayerId | undefined {
-  const { 1: p1, 2: p2 } = pawns.pawns;
-  if (cellEq(p1.cat, p2.mouse)) return 1;
-  if (cellEq(p2.mouse, p1.elephant)) return 2;
-  if (cellEq(p1.elephant, p2.dog)) return 1;
-  if (cellEq(p2.dog, p1.cat)) return 2;
+  const rules = executableRulesFor("animal-cycle");
+  for (const relation of rules.captureRelations) {
+    const hunterPlayer = resolveRulePlayer(relation.hunter.player, 1);
+    const targetPlayer = resolveRulePlayer(relation.target.player, 1);
+    const hunter = pawnCell(pawns, hunterPlayer, relation.hunter.type);
+    const target = pawnCell(pawns, targetPlayer, relation.target.type);
+    if (hunter && target && cellEq(hunter, target)) return hunterPlayer;
+  }
   return undefined;
 }
 
