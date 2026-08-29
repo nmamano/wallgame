@@ -28,7 +28,6 @@ import type {
   PastGamesActivityResponse,
   PastGamesResponse,
 } from "../../../shared/contracts/games";
-import { variantDisplayName } from "../../../shared/domain/game-types";
 import {
   buildPastGamesFilterQuery,
   defaultPastGamesFilters,
@@ -37,6 +36,7 @@ import {
   type PastGamesFilters as Filters,
 } from "@/lib/past-games";
 import { PastGamesActivityChart } from "@/components/past-games-activity-chart";
+import { PastGamePlayerToken } from "@/components/past-game-player-token";
 import { parsePastGamesNavState } from "@/lib/navigation-state";
 import { useLocalStorageState } from "@/hooks/use-local-storage";
 import { messageFromApiErrorBody } from "@/lib/api-error";
@@ -363,7 +363,6 @@ function PastGames() {
                   <TableHead>Variant</TableHead>
                   <TableHead>Rated</TableHead>
                   <TableHead>Time Control</TableHead>
-                  <TableHead>Board Size</TableHead>
                   <TableHead>Players</TableHead>
                   <TableHead>Moves</TableHead>
                   <TableHead>Views</TableHead>
@@ -373,7 +372,7 @@ function PastGames() {
               <TableBody>
                 {isPending ? (
                   <TableRow>
-                    <TableCell colSpan={9} className="py-12 text-center">
+                    <TableCell colSpan={8} className="py-12 text-center">
                       <div className="flex items-center justify-center text-muted-foreground">
                         <Loader2 className="w-5 h-5 animate-spin mr-2" />
                         Loading past games...
@@ -383,7 +382,7 @@ function PastGames() {
                 ) : error ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={8}
                       className="py-12 text-center text-destructive"
                     >
                       {error.message}
@@ -392,7 +391,7 @@ function PastGames() {
                 ) : games.length === 0 ? (
                   <TableRow>
                     <TableCell
-                      colSpan={9}
+                      colSpan={8}
                       className="py-12 text-center text-muted-foreground"
                     >
                       No past games match your filters.
@@ -412,8 +411,8 @@ function PastGames() {
                           </Link>
                         </Button>
                       </TableCell>
-                      <TableCell className="font-medium capitalize">
-                        {variantDisplayName(row.variant)}
+                      <TableCell className="font-medium whitespace-nowrap">
+                        {row.variantLabel}
                       </TableCell>
                       <TableCell>
                         <Badge variant={row.rated ? "default" : "secondary"}>
@@ -421,7 +420,6 @@ function PastGames() {
                         </Badge>
                       </TableCell>
                       <TableCell>{row.timeControlLabel}</TableCell>
-                      <TableCell>{row.boardSizeLabel}</TableCell>
                       <TableCell>
                         {row.players.map((player, index) => (
                           <span key={`${row.gameId}-player-${index}`}>
@@ -430,21 +428,23 @@ function PastGames() {
                                 vs
                               </span>
                             )}
-                            <span
-                              className={
-                                player.isWinner
-                                  ? "font-semibold whitespace-nowrap"
-                                  : "whitespace-nowrap"
-                              }
-                            >
-                              {player.isWinner && (
-                                <Crown
-                                  className="inline-block w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500"
-                                  aria-label="Winner"
-                                />
-                              )}
-                              {player.label}
-                            </span>
+                            <PastGamePlayerToken kind={player.kind}>
+                              <span
+                                className={
+                                  player.isWinner
+                                    ? "font-semibold whitespace-nowrap"
+                                    : "whitespace-nowrap"
+                                }
+                              >
+                                {player.isWinner && (
+                                  <Crown
+                                    className="inline-block w-3.5 h-3.5 mr-1 -mt-0.5 text-amber-500"
+                                    aria-label="Winner"
+                                  />
+                                )}
+                                {player.label}
+                              </span>
+                            </PastGamePlayerToken>
                           </span>
                         ))}
                       </TableCell>

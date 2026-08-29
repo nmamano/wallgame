@@ -599,9 +599,12 @@ export const pastGamesActivityQuerySchema = pastGamesFilterSchema.extend({
     .refine(isValidTimeZone, "Unknown time zone"),
 });
 
+export type PastGamePlayerKind = "guest" | "bot" | "member";
+
 export interface PastGamePlayerSummary {
   playerOrder: PlayerId;
   displayName: string;
+  playerKind: PastGamePlayerKind;
   ratingAtStart: number | null;
   outcomeRank: number;
   outcomeReason: string;

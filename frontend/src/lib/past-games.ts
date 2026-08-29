@@ -1,8 +1,6 @@
 import type { PastGameSummary } from "../../../shared/contracts/games";
-import {
-  getBoardSizeBucket,
-  resolvePastGameWinner,
-} from "../../../shared/domain/past-games";
+import { variantDisplayName } from "../../../shared/domain/game-types";
+import { resolvePastGameWinner } from "../../../shared/domain/past-games";
 
 export interface PastGamesFilters {
   variant: "all" | "standard" | "animal-cycle" | "classic";
@@ -136,16 +134,16 @@ export const buildActivityAxis = (peak: number): ActivityAxis => {
 
 export interface PastGamePlayerView {
   label: string;
+  kind: PastGameSummary["players"][number]["playerKind"];
   isWinner: boolean;
 }
 
 export interface PastGameRowView {
   gameId: string;
-  variant: PastGameSummary["variant"];
+  variantLabel: string;
   randomStart: boolean;
   rated: boolean;
   timeControlLabel: string;
-  boardSizeLabel: string;
   players: PastGamePlayerView[];
   movesCount: number;
   views: number;
@@ -159,11 +157,6 @@ const formatLabel = (value: string): string => {
   return `${value[0]?.toUpperCase() ?? ""}${value.slice(1)}`;
 };
 
-const formatBoardSize = (game: PastGameSummary): string => {
-  const bucket = getBoardSizeBucket(game.boardWidth, game.boardHeight);
-  return `${bucket} (${game.boardWidth}x${game.boardHeight})`;
-};
-
 const formatPlayers = (game: PastGameSummary): PastGamePlayerView[] => {
   // Null unless exactly one side ranked first, so draws mark nobody.
   const winner = resolvePastGameWinner(game.players);
@@ -174,6 +167,7 @@ const formatPlayers = (game: PastGameSummary): PastGamePlayerView[] => {
         player.ratingAtStart != null ? ` (${player.ratingAtStart})` : "";
       return {
         label: `${player.displayName}${rating}`,
+        kind: player.playerKind,
         isWinner: winner !== null && player.outcomeRank === 1,
       };
     });
@@ -203,11 +197,10 @@ export const presentPastGameRow = (game: PastGameSummary): PastGameRowView => {
 
   return {
     gameId: game.gameId,
-    variant: game.variant,
+    variantLabel: `${variantDisplayName(game.variant)} (${game.boardWidth}x${game.boardHeight})`,
     randomStart: game.randomStart,
     rated: game.rated,
     timeControlLabel,
-    boardSizeLabel: formatBoardSize(game),
     players: formatPlayers(game),
     movesCount: game.movesCount,
     views: game.views,

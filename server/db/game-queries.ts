@@ -38,8 +38,10 @@ import {
 import type {
   PastGamesActivityResponse,
   PastGamesFilter,
+  PastGamePlayerKind,
   PastGamesResponse,
 } from "../../shared/contracts/games";
+import { classifyPastGamePlayer } from "./past-game-player-kind";
 import {
   resolveReplayMatchScore,
   resolveResultFromPlayers,
@@ -597,6 +599,8 @@ export const queryPastGames = async (
             gameId: gamePlayersTable.gameId,
             playerOrder: gamePlayersTable.playerOrder,
             displayName: gamePlayersTable.displayName,
+            playerConfigType: gamePlayersTable.playerConfigType,
+            userId: gamePlayersTable.userId,
             ratingAtStart: gamePlayersTable.ratingAtStart,
             outcomeRank: gamePlayersTable.outcomeRank,
             outcomeReason: gamePlayersTable.outcomeReason,
@@ -610,6 +614,7 @@ export const queryPastGames = async (
     {
       playerOrder: number;
       displayName: string;
+      playerKind: PastGamePlayerKind;
       ratingAtStart: number | null;
       outcomeRank: number;
       outcomeReason: string;
@@ -620,6 +625,10 @@ export const queryPastGames = async (
     const entry = {
       playerOrder: player.playerOrder,
       displayName: player.displayName,
+      playerKind: classifyPastGamePlayer(
+        player.playerConfigType,
+        player.userId,
+      ),
       ratingAtStart: player.ratingAtStart,
       outcomeRank: player.outcomeRank,
       outcomeReason: player.outcomeReason,

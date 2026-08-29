@@ -46,9 +46,11 @@ let acceptDraw: typeof import("../../server/games/store").acceptDraw;
 let persistCompletedGame: typeof import("../../server/games/persistence").persistCompletedGame;
 let gamesTable: typeof import("../../server/db/schema/games").gamesTable;
 let savedPuzzlesTable: typeof import("../../server/db/schema/saved-puzzles").savedPuzzlesTable;
+let gamePlayersTable: typeof import("../../server/db/schema/game-players").gamePlayersTable;
 let usersTable: typeof import("../../server/db/schema/users").usersTable;
 let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
 let eq: typeof import("drizzle-orm").eq;
+let and: typeof import("drizzle-orm").and;
 
 async function importServerModules() {
   const dbModule = await import("../../server/db");
@@ -56,6 +58,8 @@ async function importServerModules() {
   const storeModule = await import("../../server/games/store");
   const persistenceModule = await import("../../server/games/persistence");
   const gamesSchemaModule = await import("../../server/db/schema/games");
+  const gamePlayersSchemaModule =
+    await import("../../server/db/schema/game-players");
   const usersSchemaModule = await import("../../server/db/schema/users");
   const savedPuzzlesSchemaModule =
     await import("../../server/db/schema/saved-puzzles");
@@ -70,10 +74,12 @@ async function importServerModules() {
   acceptDraw = storeModule.acceptDraw;
   persistCompletedGame = persistenceModule.persistCompletedGame;
   gamesTable = gamesSchemaModule.gamesTable;
+  gamePlayersTable = gamePlayersSchemaModule.gamePlayersTable;
   savedPuzzlesTable = savedPuzzlesSchemaModule.savedPuzzlesTable;
   usersTable = usersSchemaModule.usersTable;
   userAuthTable = usersSchemaModule.userAuthTable;
   eq = drizzleOrm.eq;
+  and = drizzleOrm.and;
 }
 
 function startTestServer() {
@@ -455,6 +461,18 @@ describe("past games persistence", () => {
       startedAt: baseTime + 1000,
     });
 
+    // Historical custom bots used this stored value before all bots converged
+    // on the current "bot" value. Past Games must still identify those rows.
+    await db
+      .update(gamePlayersTable)
+      .set({ playerConfigType: "custom bot" })
+      .where(
+        and(
+          eq(gamePlayersTable.gameId, gameB),
+          eq(gamePlayersTable.playerOrder, 2),
+        ),
+      );
+
     const gameC = await createCompletedGame({
       config: {
         timeControl: {
@@ -479,6 +497,9 @@ describe("past games persistence", () => {
     const standardPage1 = (await res.json()) as PastGamesResponse;
     expect(standardPage1.games.length).toBe(1);
     expect(standardPage1.games[0]?.gameId).toBe(gameC);
+    expect(
+      standardPage1.games[0]?.players.map((player) => player.playerKind),
+    ).toEqual(["member", "guest"]);
     expect(standardPage1.hasMore).toBe(true);
 
     const resPage2 = await fetch(
@@ -497,6 +518,11 @@ describe("past games persistence", () => {
     const alphaGames = (await resPlayer.json()) as PastGamesResponse;
     const alphaIds = alphaGames.games.map((game) => game.gameId).sort();
     expect(alphaIds).toEqual([gameA, gameB].sort());
+    const identityGame = alphaGames.games.find((game) => game.gameId === gameB);
+    expect(identityGame?.players.map((player) => player.playerKind)).toEqual([
+      "member",
+      "bot",
+    ]);
 
     const resBoard = await fetch(
       `${baseUrl}/api/games/past?boardSize=small&page=1&pageSize=10`,
