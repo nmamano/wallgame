@@ -69,6 +69,7 @@ import {
   assertCompleteCapture,
   captureReplayFrames,
 } from "./capture-replay-frames.mjs";
+import { captureFeedbackPlan } from "./capture-feedback.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { allocateFrameRanges } from "./timeline-frames.mjs";
 
@@ -124,8 +125,7 @@ const SECONDS_PER_MOVE = Number(arg("seconds-per-move", "0.8"));
 const ASPECT = arg("aspect", "fit");
 /** Output frame rate. */
 const FPS = 30;
-/** The shake on the winning move, and the soundtrack: both always on. */
-const SHAKE = true;
+/** The soundtrack is always on. Capture shake follows the recorded result. */
 const AUDIO = true;
 /** Absolute, so browser file URLs and ffmpeg inputs resolve the same files. */
 const WORK = resolve(arg("work", `tmp/game-video/${GAME_ID}-frames`));
@@ -413,6 +413,7 @@ const openGamePage = async (dpr) => {
     viewport: { width: 1500, height: 1250 },
     deviceScaleFactor: dpr,
   });
+  await page.emulateMedia({ reducedMotion: "reduce" });
 
   /*
     Read the page's OWN replay request rather than making a second one. That
@@ -493,6 +494,11 @@ const outcome = (() => {
   if (!r || r.winner == null) return null;
   return { winnerId: r.winner, reason: r.reason };
 })();
+const capturePlan = captureFeedbackPlan({
+  isFinalPly: true,
+  resultReason: outcome?.reason,
+});
+const CAPTURE_SHAKE = capturePlan.stageShakeCount === 1;
 
 const REASON_WORDS = {
   capture: "by capture",
@@ -1176,7 +1182,7 @@ await emit(playState(0), SECONDS_PER_MOVE, { kind: "initial", ply: -1 });
 
 for (let ply = 1; ply <= history.length; ply += 1) {
   const isLast = ply === history.length;
-  if (isLast && SHAKE) {
+  if (isLast && CAPTURE_SHAKE) {
     /*
       The winning move lands, then the frame shakes and settles.
 
@@ -1430,7 +1436,7 @@ const buildAudio = () => {
     silent. This is a separate layer ON TOP of that click: the click says a
     piece moved, this says it hit something.
   */
-  if (SHAKE && existsSync(SOUNDS.shake.file)) {
+  if (CAPTURE_SHAKE && existsSync(SOUNDS.shake.file)) {
     events.push({
       file: SOUNDS.shake.file,
       at: shakeAt,

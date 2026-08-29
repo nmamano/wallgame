@@ -1,7 +1,5 @@
-import {
-  variantDisplayName,
-  type Variant,
-} from "../../../shared/domain/game-types";
+import { type Variant } from "../../../shared/domain/game-types";
+import { controlPanelVariantName } from "@/lib/game-page-clarity";
 import { Card } from "@/components/ui/card";
 import { Button } from "@/components/ui/button";
 import { Badge } from "@/components/ui/badge";
@@ -81,11 +79,11 @@ export function GameInfoPanel({
           <div className="flex items-center gap-3 lg:gap-4">
             <div className="flex items-center gap-1.5 lg:gap-2">
               <Swords className="w-3.5 h-3.5 lg:w-4 lg:h-4 text-muted-foreground" />
-              <span className="font-medium capitalize text-sm lg:text-base">
-                {variantDisplayName(
-                  config?.variant ?? defaultVariant,
-                  config?.randomStart,
-                )}
+              <span
+                data-control-panel-variant
+                className="font-medium capitalize text-sm lg:text-base"
+              >
+                {controlPanelVariantName(config?.variant ?? defaultVariant)}
               </span>
             </div>
             <div className="flex items-center gap-1.5 lg:gap-2 text-xs lg:text-sm text-muted-foreground">

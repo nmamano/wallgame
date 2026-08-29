@@ -314,8 +314,6 @@ export function Board({
   const maxCellSize = maxCellSizeRemProp ?? 3; // rem
   const paddingX = flush ? 0 : 2; // rem (p-4 = 1rem on each side, 0 in flush mode)
 
-  const cellSize = `calc((100% - ${cols - 1} * ${gapSize}rem) / ${cols})`;
-  const cellHeight = `calc((100% - ${rows - 1} * ${gapSize}rem) / ${rows})`;
   const gapValue = `${gapSize}rem`;
   const boardTheme = useBoardTheme();
   const gridRef = useRef<HTMLDivElement | null>(null);
@@ -1502,78 +1500,6 @@ export function Board({
         }}
       >
         <div className="relative overflow-hidden">
-          {/* Top row labels (column letters) */}
-          <div
-            className="absolute -top-4 left-0 right-0 flex hidden lg:flex"
-            style={{ gap: `${gapSize}rem` }}
-          >
-            {Array.from({ length: cols }, (_, colIndex) => (
-              <div
-                key={`top-${colIndex}`}
-                className="flex items-center justify-center"
-                style={{ width: cellSize }}
-              >
-                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
-                  {String.fromCharCode(97 + colIndex)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Bottom row labels (column letters) */}
-          <div
-            className="absolute -bottom-4 left-0 right-0 flex hidden lg:flex"
-            style={{ gap: `${gapSize}rem` }}
-          >
-            {Array.from({ length: cols }, (_, colIndex) => (
-              <div
-                key={`bottom-${colIndex}`}
-                className="flex items-center justify-center"
-                style={{ width: cellSize }}
-              >
-                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
-                  {String.fromCharCode(97 + colIndex)}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Left column labels (row numbers) */}
-          <div
-            className="absolute -left-4 top-0 bottom-0 flex flex-col items-center hidden lg:flex"
-            style={{ gap: `${gapSize}rem`, width: "1rem" }}
-          >
-            {Array.from({ length: rows }, (_, rowIndex) => (
-              <div
-                key={`left-${rowIndex}`}
-                className="flex items-center justify-center w-full"
-                style={{ height: cellHeight }}
-              >
-                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
-                  {rows - rowIndex}
-                </span>
-              </div>
-            ))}
-          </div>
-
-          {/* Right column labels (row numbers) */}
-          <div
-            className="absolute -right-4 top-0 bottom-0 flex flex-col items-center hidden lg:flex"
-            style={{ gap: `${gapSize}rem`, width: "1rem" }}
-          >
-            {Array.from({ length: rows }, (_, rowIndex) => (
-              <div
-                key={`right-${rowIndex}`}
-                className="flex items-center justify-center w-full"
-                style={{ height: cellHeight }}
-              >
-                <span className="text-[10px] text-gray-600 dark:text-muted-foreground font-medium">
-                  {rows - rowIndex}
-                </span>
-              </div>
-            ))}
-          </div>
-
           <div
             ref={gridRef}
             className="grid w-full relative"
@@ -1821,6 +1747,22 @@ export function Board({
                       handleCellDrop(event, rowIndex, colIndex)
                     }
                   >
+                    {colIndex === 0 && (
+                      <span
+                        data-board-coordinate="rank"
+                        className="pointer-events-none absolute left-0.5 top-0.5 z-20 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
+                      >
+                        {rows - rowIndex}
+                      </span>
+                    )}
+                    {rowIndex === rows - 1 && (
+                      <span
+                        data-board-coordinate="file"
+                        className="pointer-events-none absolute bottom-0.5 right-0.5 z-20 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
+                      >
+                        {String.fromCharCode(97 + colIndex)}
+                      </span>
+                    )}
                     {/* Pawns */}
                     {cellPawns.length > 0 && (
                       <div className="w-full h-full flex items-center justify-center p-1">

@@ -1,6 +1,6 @@
 import { createFileRoute, Link } from "@tanstack/react-router";
 import { ArrowLeft } from "lucide-react";
-import { useMemo, useRef, useState, useLayoutEffect } from "react";
+import { useEffect, useMemo, useRef, useState, useLayoutEffect } from "react";
 import { MatchingStagePanel } from "@/components/matching-stage-panel";
 import { PlayerTimerCard } from "@/components/player-timer-card";
 import { ActionsPanel } from "@/components/actions-panel";
@@ -23,6 +23,10 @@ import { avatarPawn } from "../../../shared/domain/pawns";
 import type { PlayerId } from "../../../shared/domain/game-types";
 import { getGameHandshake, getPuzzleBannerName } from "@/lib/game-session";
 import { GameHelp } from "@/components/game-help";
+import {
+  advanceCaptureFeedback,
+  initialCaptureFeedbackState,
+} from "@/lib/capture-feedback";
 
 export const Route = createFileRoute("/game/$id")({
   component: GamePage,
@@ -45,6 +49,30 @@ function GamePageContent() {
   const isSpectator = accessKind === "spectator";
   const isReplay = accessKind === "replay";
   const showsGoalDistance = info.config?.variant !== "animal-cycle";
+  const captureFeedbackStateRef = useRef(initialCaptureFeedbackState());
+  const [captureFeedbackKey, setCaptureFeedbackKey] = useState(0);
+  const [captureFeedbackActive, setCaptureFeedbackActive] = useState(false);
+
+  useEffect(() => {
+    const advanced = advanceCaptureFeedback(captureFeedbackStateRef.current, {
+      status: board.currentGameState?.status ?? "loading",
+      result: board.currentGameState?.result ?? null,
+      historyCursor: chat.historyNav.cursor,
+    });
+    captureFeedbackStateRef.current = advanced.state;
+    if (advanced.emit) setCaptureFeedbackKey((key) => key + 1);
+  }, [
+    board.currentGameState?.status,
+    board.currentGameState?.result,
+    chat.historyNav.cursor,
+  ]);
+
+  useEffect(() => {
+    if (captureFeedbackKey === 0) return;
+    setCaptureFeedbackActive(false);
+    const frame = requestAnimationFrame(() => setCaptureFeedbackActive(true));
+    return () => cancelAnimationFrame(frame);
+  }, [captureFeedbackKey]);
 
   // Each player's card shows a piece taken from the list the board draws below
   // it, so the two always agree - including on the art, which comes from the
@@ -349,7 +377,9 @@ function GamePageContent() {
         />
 
         <div
-          className="flex flex-col bg-background overflow-hidden"
+          data-capture-feedback={captureFeedbackKey || undefined}
+          onAnimationEnd={() => setCaptureFeedbackActive(false)}
+          className={`${captureFeedbackActive ? "game-capture-shake" : ""} flex flex-col bg-background overflow-hidden`}
           style={{ height: `${viewportHeight}px` }}
         >
           {/* Slim top nav */}
@@ -597,7 +627,11 @@ function GamePageContent() {
   // ============================================================================
   return (
     <>
-      <div className="min-h-screen bg-background flex flex-col">
+      <div
+        data-capture-feedback={captureFeedbackKey || undefined}
+        onAnimationEnd={() => setCaptureFeedbackActive(false)}
+        className={`${captureFeedbackActive ? "game-capture-shake" : ""} min-h-screen bg-background flex flex-col`}
+      >
         {renderGameBanners(false)}
 
         {/* Matching panel renders null when isOpen is false */}

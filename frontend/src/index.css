@@ -25,6 +25,33 @@
     animation: none !important;
     transition: none !important;
   }
+
+  .game-capture-shake {
+    animation: none !important;
+  }
+}
+
+@keyframes game-capture-shake {
+  0%,
+  100% {
+    transform: translate(0, 0) rotate(0deg);
+  }
+  18% {
+    transform: translate(-7px, 3px) rotate(-0.35deg);
+  }
+  38% {
+    transform: translate(6px, -3px) rotate(0.3deg);
+  }
+  60% {
+    transform: translate(-3px, 2px) rotate(-0.18deg);
+  }
+  80% {
+    transform: translate(2px, -1px) rotate(0.1deg);
+  }
+}
+
+.game-capture-shake {
+  animation: game-capture-shake 360ms ease-out both;
 }
 
 :root {
