@@ -677,8 +677,12 @@ export const botsRoute = new Hono()
           );
         }
 
-        // V3: Bot games are unrated and don't affect ELO, so we don't look up ratings
-        const hostElo: number | undefined = undefined;
+        // Bot games do not WRITE ratings, but a signed-in player's seat still
+        // shows the authoritative global rating. Guests have no account
+        // rating, by definition.
+        const hostElo = user?.id
+          ? await getGlobalRatingForAuthUser(user.id)
+          : undefined;
 
         const joinerAppearance = mapBotAppearance(bot.appearance);
 

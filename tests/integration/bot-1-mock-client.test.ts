@@ -37,6 +37,7 @@ import type { StartedTestContainer } from "testcontainers";
 import { setupEphemeralDb, teardownEphemeralDb } from "../setup-db";
 import type { ServerMessage } from "../../shared/contracts/websocket-messages";
 import type { GameConfiguration } from "../../shared/domain/game-types";
+import { buildOrdinaryInitialState } from "../../shared/domain/game-configuration";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import type {
   CustomBotServerMessage,
@@ -58,10 +59,20 @@ let baseUrl: string;
 
 // These will be dynamically imported after DB is set up
 let createApp: typeof import("../../server/app").createApp;
+let db: typeof import("../../server/db").db;
+let usersTable: typeof import("../../server/db/schema/users").usersTable;
+let userAuthTable: typeof import("../../server/db/schema/users").userAuthTable;
+let globalRatingsTable: typeof import("../../server/db/schema/global-ratings").globalRatingsTable;
 
 async function importServerModules() {
   const serverModule = await import("../../server/app");
   createApp = serverModule.createApp;
+  db = (await import("../../server/db")).db;
+  const users = await import("../../server/db/schema/users");
+  usersTable = users.usersTable;
+  userAuthTable = users.userAuthTable;
+  globalRatingsTable = (await import("../../server/db/schema/global-ratings"))
+    .globalRatingsTable;
 }
 
 function startTestServer() {
@@ -117,7 +128,7 @@ interface PlayVsBotResponse {
  * @param hostIsPlayer1 - If true, host is Player 1 (moves first). If false, bot is Player 1. If undefined, random.
  */
 async function createGameVsBot(
-  userId: string,
+  userId: string | undefined,
   botId: string,
   config: GameConfiguration,
   hostIsPlayer1?: boolean,
@@ -126,12 +137,12 @@ async function createGameVsBot(
     method: "POST",
     headers: {
       "Content-Type": "application/json",
-      "x-test-user-id": userId,
+      ...(userId ? { "x-test-user-id": userId } : {}),
     },
     body: JSON.stringify({
       botId,
       config,
-      hostDisplayName: `Player ${userId}`,
+      hostDisplayName: userId ? `Player ${userId}` : "Guest",
       hostIsPlayer1,
     }),
   });
@@ -190,7 +201,7 @@ interface HumanSocket {
 }
 
 async function openHumanSocket(
-  userId: string,
+  userId: string | undefined,
   gameId: string,
   socketToken: string,
 ): Promise<HumanSocket> {
@@ -202,7 +213,7 @@ async function openHumanSocket(
     const ws = new WebSocket(wsUrl, {
       headers: {
         Origin: "http://localhost:5173",
-        "x-test-user-id": userId,
+        ...(userId ? { "x-test-user-id": userId } : {}),
       },
     });
 
@@ -604,6 +615,11 @@ function createTestBotConfig(botId: string, name: string): BotConfig {
         boardHeight: { min: 3, max: 15 },
         recommended: [{ boardWidth: 5, boardHeight: 5 }],
       },
+      "animal-cycle": {
+        boardWidth: { min: 4, max: 15 },
+        boardHeight: { min: 4, max: 15 },
+        recommended: [{ boardWidth: 9, boardHeight: 9 }],
+      },
     },
   };
 }
@@ -633,6 +649,185 @@ describe("custom bot WebSocket integration V3", () => {
     console.log(
       `[bot-1] afterAll: db container stopped in ${Date.now() - dbStopStart}ms`,
     );
+  }, 60_000);
+
+  it("hydrates authoritative global Elo through bot creation, reconnect, and rematch", async () => {
+    const clientId = "rating-authority-client";
+    const botId = "rating-authority-bot";
+    const compositeId = `${clientId}:${botId}`;
+    const existingAuthId = "rating-authority-existing";
+    const newAuthId = "rating-authority-new";
+    let botSocket: BotSocket | null = null;
+    const humanSockets: HumanSocket[] = [];
+
+    const [existingUser] = await db
+      .insert(usersTable)
+      .values({
+        displayName: "rating_authority_existing",
+        capitalizedDisplayName: "RATING_AUTHORITY_EXISTING",
+        authProvider: "test",
+      })
+      .returning({ userId: usersTable.userId });
+    await db.insert(userAuthTable).values({
+      userId: existingUser.userId,
+      authProvider: "test",
+      authUserId: existingAuthId,
+    });
+    await db.insert(globalRatingsTable).values({
+      userId: existingUser.userId,
+      rating: 1742,
+      ratingDeviation: 80,
+    });
+
+    const config = (
+      variant: "standard" | "classic" | "animal-cycle",
+      boardWidth: number,
+      boardHeight: number,
+    ): GameConfiguration => {
+      const base = {
+        timeControl: {
+          initialSeconds: 600,
+          incrementSeconds: 0,
+          preset: "rapid" as const,
+        },
+        variant,
+        randomStart: false,
+        rated: false,
+        boardWidth,
+        boardHeight,
+      };
+      return { ...base, variantConfig: buildOrdinaryInitialState(base) };
+    };
+
+    const openAndReadSnapshot = async (
+      authUserId: string | undefined,
+      game: PlayVsBotResponse,
+    ) => {
+      const socket = await openHumanSocket(
+        authUserId,
+        game.gameId,
+        game.socketToken,
+      );
+      humanSockets.push(socket);
+      await socket.waitForMessage("state");
+      const status = await socket.waitForMessage("match-status");
+      return { socket, snapshot: status.snapshot };
+    };
+
+    try {
+      botSocket = await openBotSocket();
+      botSocket.sendAttach(clientId, [
+        createTestBotConfig(botId, "Rating Authority Bot"),
+      ]);
+      await botSocket.waitForMessage("attached");
+      await waitForBotRegistration(compositeId, { variant: "animal-cycle" });
+
+      const existingGame = await createGameVsBot(
+        existingAuthId,
+        compositeId,
+        config("animal-cycle", 9, 9),
+        true,
+      );
+      const existing = await openAndReadSnapshot(existingAuthId, existingGame);
+      const existingHuman = existing.snapshot.players.find(
+        (player) => player.configType === "human",
+      );
+      const existingBot = existing.snapshot.players.find(
+        (player) => player.configType === "bot",
+      );
+      expect(existing.snapshot.config.rated).toBe(false);
+      expect(existingHuman?.elo).toBe(1742);
+      expect(existingHuman?.ratingAtStart).toBe(1742);
+      expect(existingBot).toMatchObject({
+        displayName: "Rating Authority Bot",
+        configType: "bot",
+      });
+      expect(existingBot?.elo).toBeUndefined();
+      expect(existingBot?.ratingAtStart).toBeUndefined();
+
+      existing.socket.close();
+      const reconnected = await openAndReadSnapshot(
+        existingAuthId,
+        existingGame,
+      );
+      const reconnectedHuman = reconnected.snapshot.players.find(
+        (player) => player.configType === "human",
+      );
+      expect(reconnectedHuman?.elo).toBe(1742);
+      expect(reconnectedHuman?.ratingAtStart).toBe(1742);
+
+      for (const [variant, width, height] of [
+        ["standard", 5, 5],
+        ["classic", 7, 6],
+      ] as const) {
+        const game = await createGameVsBot(
+          existingAuthId,
+          compositeId,
+          config(variant, width, height),
+          true,
+        );
+        const { snapshot } = await openAndReadSnapshot(existingAuthId, game);
+        const human = snapshot.players.find(
+          (player) => player.configType === "human",
+        );
+        expect(human?.elo).toBe(1742);
+        expect(human?.ratingAtStart).toBe(1742);
+      }
+
+      const newMemberGame = await createGameVsBot(
+        newAuthId,
+        compositeId,
+        config("standard", 4, 4),
+        true,
+      );
+      const newMember = await openAndReadSnapshot(newAuthId, newMemberGame);
+      const newMemberHuman = newMember.snapshot.players.find(
+        (player) => player.configType === "human",
+      );
+      expect(newMemberHuman?.elo).toBe(1500);
+      expect(newMemberHuman?.ratingAtStart).toBe(1500);
+
+      const guestGame = await createGameVsBot(
+        undefined,
+        compositeId,
+        config("classic", 4, 5),
+        true,
+      );
+      const guest = await openAndReadSnapshot(undefined, guestGame);
+      const guestHuman = guest.snapshot.players.find(
+        (player) => player.configType === "human",
+      );
+      expect(guestHuman?.elo).toBeUndefined();
+      expect(guestHuman?.ratingAtStart).toBeUndefined();
+
+      reconnected.socket.ws.send(JSON.stringify({ type: "resign" }));
+      const finished = await reconnected.socket.waitForMessage("state", {
+        ignore: ["match-status"],
+      });
+      expect(finished.state.status).toBe("finished");
+      reconnected.socket.ws.send(JSON.stringify({ type: "rematch-offer" }));
+      const rematch = await reconnected.socket.waitForMessage(
+        "rematch-started",
+        { ignore: ["match-status"] },
+      );
+      expect(rematch.seat).toBeDefined();
+      const rematchSocket = await openHumanSocket(
+        existingAuthId,
+        rematch.newGameId,
+        rematch.seat!.socketToken,
+      );
+      humanSockets.push(rematchSocket);
+      await rematchSocket.waitForMessage("state");
+      const rematchStatus = await rematchSocket.waitForMessage("match-status");
+      const rematchHuman = rematchStatus.snapshot.players.find(
+        (player) => player.configType === "human",
+      );
+      expect(rematchHuman?.elo).toBe(1742);
+      expect(rematchHuman?.ratingAtStart).toBe(1742);
+    } finally {
+      for (const socket of humanSockets) socket.close();
+      botSocket?.close();
+    }
   }, 60_000);
 
   it("allows a custom bot to connect and play using V3 BGS protocol", async () => {
