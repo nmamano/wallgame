@@ -215,6 +215,32 @@ struct CatRightPolicy {
     }
 };
 
+// Lists every legal action so archived moves can be replayed, then makes the incident's winning
+// cat step the unique policy choice at ply 73.
+struct OccupiedHomePolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        auto add_pawn = [&](Pawn pawn) {
+            for (auto dir : board.legal_directions(turn.player, pawn)) {
+                float const prior = turn.player == Player::Red && pawn == Pawn::Cat &&
+                                            board.pawn_position(Player::Red, Pawn::Cat) ==
+                                                Cell{5, 0} &&
+                                            dir == Direction::Right
+                                        ? 1.0f
+                                        : 0.001f;
+                edges.emplace_back(PawnMove{pawn, dir}, prior);
+            }
+        };
+        add_pawn(Pawn::Cat);
+        add_pawn(Pawn::Mouse);
+        for (Wall wall : board.legal_walls()) {
+            edges.emplace_back(wall, 0.001f);
+        }
+        co_return Evaluation{0.0f, std::move(edges)};
+    }
+};
+
 }  // namespace
 
 /*
@@ -277,6 +303,81 @@ TEST_CASE("evaluate_position answers with one action when nothing can follow it"
     CHECK(best.starts_with("M"));
     // ONE term. A second term would have to be illegal, because nothing is legal after the step.
     CHECK(best.find('.') == std::string::npos);
+}
+
+TEST_CASE("evaluate_position wins on an opponent-occupied own home", "[BGS]") {
+    BgsEngineConfig engine_config;
+    engine_config.model_rows = 8;
+    engine_config.model_columns = 8;
+    engine_config.samples_per_move = 4;
+    engine_config.root_noise_factor = 0;
+    SessionManager manager(OccupiedHomePolicy{}, engine_config);
+
+    json config;
+    config["variant"] = "classic";
+    config["boardWidth"] = 8;
+    config["boardHeight"] = 8;
+    config["initialState"]["pawns"]["p1"]["cat"] = {0, 0};
+    config["initialState"]["pawns"]["p1"]["home"] = {0, 6};
+    config["initialState"]["pawns"]["p2"]["cat"] = {0, 7};
+    config["initialState"]["pawns"]["p2"]["home"] = {0, 1};
+    config["initialState"]["walls"] = json::array({
+        {{"cell", {3, 3}}, {"orientation", "vertical"}},
+        {{"cell", {6, 2}}, {"orientation", "horizontal"}},
+        {{"cell", {6, 5}}, {"orientation", "horizontal"}},
+    });
+    REQUIRE(config.at("variant") == "classic");
+    REQUIRE(config.at("boardWidth") == 8);
+    REQUIRE(config.at("boardHeight") == 8);
+    REQUIRE(manager.create_session("occupied-home", "bot", config).first);
+
+    std::vector<std::string> const moves = {
+        "Cc8",      ">d8.^c7", "Cd7",      ">d7.^d6", "Cc6",      ">c6.^c5",
+        "Cb5",      ">b5.^b4", "Ca4",      ">a4.^b7", "Cb3",      "Ch6",
+        "Cd3",      ">d3.^d3", "Ce2",      ">e2.^e2", "Ce1.>a3",  ">e1.^d2",
+        ">a2.^b1",  "Cg6.>c2", "Cc1",      "Cf5",     "Cb2",      "Ce5.>d6",
+        ">e5.^e4",  "Cf6",     ">f6.^f5", "Ce6.^g7", "Cb3.^g6", "Cf6.^h7",
+        "Cc3.^f6",  ">e4.^c3", "Cb3.^a5", ">c4.^f7", "Cc4",      "Ce6.^f3",
+        "Cd5",      ">g3.^g3", "Ce4",      ">g2.^h4", "Cf3",      "^d5.^g1",
+        "Cg2",      "Cf6.^g4", "Cf1",      ">g5.^d7", "Ch1",      "^b6.^e5",
+        "Ch3",      ">b8.^h5", ">c8.>g8", "Ce6.>e6", ">c3.^a6", "Ce7.^e6",
+        ">d2.>d1",  "Ce8.^e1", ">a6.^d1", ">c7.>c1", "Ch4.>b3", "Cg8",
+        "Cf4",      "Ce8",     "Cg5",      "Cg8",     "Ch6",      "Ce8",
+        "Cg7",      "Cg8",     "Ce7",      "Ce8",     "Cf8",      "Cg8",
+    };
+    REQUIRE(moves.size() == 72);
+    for (std::size_t ply = 0; ply < moves.size(); ++ply) {
+        auto const applied = folly::coro::blockingWait(handle_apply_move(
+            manager, "occupied-home", static_cast<int>(ply), moves[ply]));
+        INFO("archive ply " << ply << " move " << moves[ply] << " error "
+                            << applied["error"].get<std::string>());
+        REQUIRE(applied["success"].get<bool>());
+    }
+
+    auto session = manager.get_session("occupied-home");
+    REQUIRE(session);
+    Board const& before = session->mcts->current_board();
+    REQUIRE(before.variant() == Variant::Classic);
+    REQUIRE(before.columns() == 8);
+    REQUIRE(before.rows() == 8);
+    REQUIRE(session->mcts->current_turn() == Turn{Player::Red, Turn::First});
+    REQUIRE(before.pawn_position(Player::Red, Pawn::Cat) == Cell{5, 0});
+    REQUIRE(before.pawn_position(Player::Blue, Pawn::Cat) == Cell{6, 0});
+    REQUIRE(before.goal(Player::Red) == Cell{6, 0});
+    REQUIRE(before.winner() == Winner::Undecided);
+
+    auto const response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, engine_config, "occupied-home", 72));
+    REQUIRE(response["success"].get<bool>());
+    REQUIRE(response["bestMove"].get<std::string>() == "Cg8");
+
+    auto const applied = folly::coro::blockingWait(
+        handle_apply_move(manager, "occupied-home", 72, response["bestMove"]));
+    REQUIRE(applied["success"].get<bool>());
+    session = manager.get_session("occupied-home");
+    REQUIRE(session);
+    CHECK(session->mcts->current_board().pawn_position(Player::Red, Pawn::Cat) == Cell{6, 0});
+    CHECK(session->mcts->current_board().winner() == Winner::Red);
 }
 
 TEST_CASE("Animal Cycle apply accepts pass but search never proposes it", "[Animal Cycle]") {

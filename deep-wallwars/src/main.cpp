@@ -24,6 +24,7 @@
 
 #include "batched_model.hpp"
 #include "batched_model_policy.hpp"
+#include "analysis_tool.hpp"
 #include "cached_policy.hpp"
 #include "engine_adapter.hpp"
 #include "mcts.hpp"
@@ -633,7 +634,25 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
         // shallow search with play_fn to advance the game: its mistakes manufacture the
         // tactical positions the deep analysis above is built to detect. Otherwise commit
         // from the strong deep search itself (symmetric strong-vs-strong self-play).
-        std::optional<Move> best;
+        auto advance_turn = [&](MCTS const& mover) {
+            auto const first = mover.peek_best_action();
+            if (!first) {
+                XLOGF(INFO, "No legal move at move {}; stopping analysis.", move_index);
+                return false;
+            }
+
+            board.do_action(turn.player, *first);
+            if (turn_must_end_after_action(board, turn.player)) {
+                return false;
+            }
+
+            if (auto const second = mover.peek_best_second_action(*first)) {
+                board.do_action(turn.player, *second);
+            }
+            turn = {other_player(turn.player), Turn::First};
+            return true;
+        };
+
         if (separate_player) {
             // Asymmetric mode: Red plays the strong oracle, Blue the weak model, so the
             // strong side punishes the weak side's blunders (winning-shot tactics).
@@ -644,20 +663,14 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
             play_opts.seed = FLAGS_seed + move_index + 100000;
             MCTS play_mcts(mover_fn, board, play_opts);
             co_await play_mcts.sample(FLAGS_analyze_play_samples);
-            best = play_mcts.peek_best_move();
+            if (!advance_turn(play_mcts)) {
+                break;
+            }
         } else {
-            best = mcts.peek_best_move();
+            if (!advance_turn(mcts)) {
+                break;
+            }
         }
-        if (!best) {
-            XLOGF(INFO, "No legal move at move {}; stopping analysis.", move_index);
-            break;
-        }
-        board.do_action(turn.player, best->first);
-        if (board.reached_goal(turn.player)) {
-            break;  // first action captured; skip the (arbitrary) second action
-        }
-        board.do_action(turn.player, best->second);
-        turn = {other_player(turn.player), Turn::First};
     }
 
     co_return;
@@ -669,15 +682,6 @@ folly::coro::Task<void> analyze_game(EvaluationFunction const& analyze_fn,
 // positions is pure CPU and takes milliseconds, while the deep search on one position
 // takes ~10 seconds of GPU. Interleaving them (the original shape) meant the GPU sat idle
 // during every replay and, worse, forced the positions to be searched strictly in order.
-struct AnalysisTask {
-    Board board;
-    Turn turn;
-    std::string game_id;
-    int move_index;
-    int game_rows;
-    int game_columns;
-};
-
 // External-game ingest (Phase 1, see info/puzzle-generation.md). Instead of the
 // engine self-playing, replay a real recorded game (e.g. a converted wallwars.net
 // human game) and collect each start-of-turn position for analysis with the strong
@@ -805,14 +809,18 @@ folly::coro::Task<int> analyze_position(EvaluationFunction const& analyze_fn,
     // (the game is embedded in the frame, cat positions are in model coords).
     record["game_rows"] = task.game_rows;
     record["game_columns"] = task.game_columns;
-    // A turn is TWO actions. root_info().edges are only the FIRST actions, so
-    // record the complete intended turn as well - without it a puzzle solution
-    // is half-specified and cannot be completed by a solver.
-    if (auto best_turn = mcts.peek_best_move()) {
-        std::ostringstream first_str, second_str;
-        first_str << best_turn->first;
-        second_str << best_turn->second;
-        record["best_turn"] = {first_str.str(), second_str.str()};
+    // root_info().edges are only the first actions, so record the intended turn as well. A legal
+    // turn can end after its first action; retaining that short answer lets a puzzle solver finish
+    // the position instead of receiving a half-specified solution.
+    if (auto const first = mcts.peek_best_action()) {
+        std::ostringstream first_str;
+        first_str << *first;
+        record["best_turn"] = {first_str.str()};
+        if (auto const second = mcts.peek_best_second_action(*first)) {
+            std::ostringstream second_str;
+            second_str << *second;
+            record["best_turn"].push_back(second_str.str());
+        }
     }
     add_principal_variation(record, task.board,
                             mcts.principal_variation(FLAGS_analyze_pv_actions,
@@ -944,6 +952,7 @@ void analyze(EvaluationFunction const& analyze_fn, EvaluationFunction const& pla
     XLOG(INFO, "Analysis complete.");
 }
 
+#ifndef DEEP_WW_NO_MAIN
 int main(int argc, char** argv) {
     // If no arguments are provided (only program name), print usage and exit.
     if (argc == 1) {
@@ -1070,3 +1079,4 @@ int main(int argc, char** argv) {
           std::chrono::duration_cast<std::chrono::seconds>(stop - start).count());
     return 0;
 }
+#endif

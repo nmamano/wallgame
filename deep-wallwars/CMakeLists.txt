@@ -83,6 +83,8 @@ add_dependencies(deep_ww_bgs_engine model_trt)
 find_package(Catch2 3)
 if (Catch2_FOUND)
     add_executable(unit_tests
+        src/main.cpp
+        test/analysis_tool.cpp
         test/batched_model.cpp
         test/bgs_session.cpp
         test/gamestate.cpp
@@ -98,6 +100,7 @@ if (Catch2_FOUND)
 
     target_link_libraries(unit_tests PRIVATE core Catch2::Catch2)
     target_include_directories(unit_tests PRIVATE src)
+    target_compile_definitions(unit_tests PRIVATE DEEP_WW_NO_MAIN)
     add_dependencies(unit_tests model_trt)
 endif()
 
