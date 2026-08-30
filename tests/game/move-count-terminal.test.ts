@@ -5,6 +5,7 @@ import type {
   PlayerId,
   Move,
 } from "../../shared/domain/game-types";
+import { buildClassicInitialState } from "../../shared/domain/classic-setup";
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import { buildSurvivalInitialState } from "../../shared/domain/survival-setup";
 
@@ -38,6 +39,16 @@ const standardConfig = (size: number): GameConfiguration => ({
   randomStart: false,
   timeControl: { initialSeconds: 180, incrementSeconds: 0, preset: "blitz" },
   variantConfig: buildStandardInitialState(size, size),
+});
+
+const classicConfig = (size: number): GameConfiguration => ({
+  boardHeight: size,
+  boardWidth: size,
+  rated: false,
+  variant: "classic",
+  randomStart: false,
+  timeControl: { initialSeconds: 180, incrementSeconds: 0, preset: "blitz" },
+  variantConfig: buildClassicInitialState(size, size),
 });
 
 const turn = (
@@ -128,10 +139,7 @@ describe("moveCount on a game decided by a move", () => {
     expectCountMatchesHistory(state, 3);
   });
 
-  it("counts the move that ends it by the one-move rule", () => {
-    // On a 3x3 board p1's capture arrives while the p2 cat is within two steps
-    // of its own goal, so the game is a draw by the one-move rule instead of a
-    // win. That is the third early return, and it has no winner at all.
+  it("awards Player 1 a Standard capture when Player 2 is near their goal", () => {
     let state = new GameState(standardConfig(3), 0);
 
     state = turn(state, 1, [
@@ -150,7 +158,30 @@ describe("moveCount on a game decided by a move", () => {
     ]);
 
     expect(state.status).toBe("finished");
-    expect(state.result).toEqual({ reason: "one-move-rule" });
+    expect(state.result).toEqual({ winner: 1, reason: "capture" });
+    expectCountMatchesHistory(state, 3);
+  });
+
+  it("awards Player 1 a Classic goal when Player 2 is near their goal", () => {
+    let state = new GameState(classicConfig(3), 0);
+
+    state = turn(state, 1, [
+      { type: "cat", target: [1, 0] },
+      { type: "cat", target: [1, 1] },
+    ]);
+    state = turn(state, 2, [
+      { type: "cat", target: [0, 1] },
+      { type: "cat", target: [0, 0] },
+    ]);
+    expectCountMatchesHistory(state, 2);
+
+    state = turn(state, 1, [
+      { type: "cat", target: [1, 2] },
+      { type: "cat", target: [2, 2] },
+    ]);
+
+    expect(state.status).toBe("finished");
+    expect(state.result).toEqual({ winner: 1, reason: "capture" });
     expectCountMatchesHistory(state, 3);
   });
 

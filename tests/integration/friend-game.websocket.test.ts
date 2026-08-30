@@ -1237,7 +1237,7 @@ describe("friend game WebSocket integration", () => {
     */
     await sendMoveAndWaitForState(0, [socketA, socketB], "Cb2", 3);
 
-    // Player 1 (Joiner) moves cat to c1 - triggers 1-move rule draw
+    // Player 1 (Joiner) moves cat to c1 and wins by capture.
     /* .. .. C2
        .. .. ..
        M1 C1 M2
@@ -1249,20 +1249,28 @@ describe("friend game WebSocket integration", () => {
       }),
     );
 
-    // Game ends in draw due to 1-move rule
+    // Before this capture, the match is tied by role: Host 1.5, Joiner 1.5.
+    // Joiner is Player 1 in this game, so the win makes the role score
+    // Host 1.5, Joiner 2.5 and the current seat score P1 2.5, P2 1.5.
     const [drawRuleStateA, drawRuleStateB] = await Promise.all([
       socketA.waitForMessage("state", { ignore: ["match-status"] }),
       socketB.waitForMessage("state", { ignore: ["match-status"] }),
     ]);
     expect(drawRuleStateA.state.status).toBe("finished");
-    expect(drawRuleStateA.state.result?.reason).toBe("one-move-rule");
+    expect(drawRuleStateA.state.result).toEqual({
+      winner: 1,
+      reason: "capture",
+    });
     expect(drawRuleStateA.state).toEqual(drawRuleStateB.state);
 
     const [drawRuleMatchStatusA, drawRuleMatchStatusB] = await Promise.all([
       socketA.waitForMessage("match-status"),
       socketB.waitForMessage("match-status"),
     ]);
-    expect(drawRuleMatchStatusA.snapshot.matchScore).toEqual({ 1: 2, 2: 2 });
+    expect(drawRuleMatchStatusA.snapshot.matchScore).toEqual({
+      1: 2.5,
+      2: 1.5,
+    });
     expect(drawRuleMatchStatusB.snapshot.matchScore).toEqual(
       drawRuleMatchStatusA.snapshot.matchScore,
     );
@@ -1316,7 +1324,9 @@ describe("friend game WebSocket integration", () => {
     expect(rematch4StatusB.snapshot.matchScore).toEqual(
       rematch4StatusA.snapshot.matchScore,
     );
-    expect(rematch4StatusA.snapshot.matchScore).toEqual({ 1: 2, 2: 2 });
+    // The rematch swaps seats: Host becomes P1 and Joiner becomes P2. The
+    // unchanged role score Host 1.5, Joiner 2.5 maps to P1 1.5, P2 2.5.
+    expect(rematch4StatusA.snapshot.matchScore).toEqual({ 1: 1.5, 2: 2.5 });
 
     // Host (Player 1) makes the first move in game 5
     /* .. .. C2
@@ -1378,7 +1388,9 @@ describe("friend game WebSocket integration", () => {
       socketA.waitForMessage("match-status"),
       socketB.waitForMessage("match-status"),
     ]);
-    expect(suicideMatchStatusA.snapshot.matchScore).toEqual({ 1: 3, 2: 2 });
+    // Host is P1 and wins, so the role score becomes Host 2.5, Joiner 2.5.
+    // In these seats that is also P1 2.5, P2 2.5.
+    expect(suicideMatchStatusA.snapshot.matchScore).toEqual({ 1: 2.5, 2: 2.5 });
     expect(suicideMatchStatusB.snapshot.matchScore).toEqual(
       suicideMatchStatusA.snapshot.matchScore,
     );

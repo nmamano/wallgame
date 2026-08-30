@@ -29,9 +29,7 @@ Notes:
 - There is no limit to how many walls you can place.
 - Walls block both players regardless of who placed them, and there is no way to remove them.
 - Pieces (cats and mice) can be stacked in the same square without limitations. This does not prevent movement. For example, Player 1's cat and mice can be in the same square, and so can Player 1's cat and Player 2's cat.
-- One-move rule (starter handicap rule): If Player 1 catches the mouse first, but Player 2's cat is within 1 or 2 steps of Player 1's mouse, the game ends in a draw.
-
-The one-move rule is to counteract the advantage that Player 1 has by moving first.
+- Older recorded games can end in a draw by the one-move rule, which no longer applies: if Player 1 caught the mouse while Player 2's cat was one or two steps from Player 1's mouse, the game was a draw. New games give Player 1 the win.
 `;
 
 const notationContent = `

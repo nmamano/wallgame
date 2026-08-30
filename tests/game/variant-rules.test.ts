@@ -38,6 +38,5 @@ describe("authoritative variant rules", () => {
     });
     expect(survival.captureKind).toBe("cat-captures-mouse");
     expect(survival.mouseMovement).toBe("survival-config");
-    expect(survival.oneMoveDraw).toBe(false);
   });
 });

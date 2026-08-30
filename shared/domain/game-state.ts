@@ -704,26 +704,6 @@ export class GameState {
     }
 
     if (myCatCaught) {
-      // One-move-rule: if P1 reaches their goal first, P2 gets a draw
-      // when they're within 2 steps of their own goal (not applicable to survival)
-      if (
-        player === 1 &&
-        variantRules.oneMoveDraw &&
-        this.isPawnActive(opponent, "cat") &&
-        this.isPawnActive(player, "mouse")
-      ) {
-        const opCatCell = requirePawnCell(this.pawns, opponent, "cat");
-        const dist = this.grid.distance(
-          [opCatCell[0], opCatCell[1]],
-          this.goalCell(opponent),
-        );
-        if (dist <= 2 && dist !== -1) {
-          this.status = "finished";
-          this.result = { reason: "one-move-rule" };
-          return;
-        }
-      }
-
       this.status = "finished";
       this.result = {
         winner: player,

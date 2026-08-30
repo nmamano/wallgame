@@ -28,7 +28,6 @@ export interface ExecutableVariantRules {
   captureRelations: readonly CaptureRelation[];
   mouseMovement: "allowed" | "forbidden" | "survival-config";
   teammatesMayShareCell: boolean;
-  oneMoveDraw: boolean;
 }
 
 const standardRules = {
@@ -53,7 +52,6 @@ const standardRules = {
   ],
   mouseMovement: "allowed",
   teammatesMayShareCell: true,
-  oneMoveDraw: true,
 } as const satisfies ExecutableVariantRules;
 
 const classicRules = {
@@ -78,7 +76,6 @@ const classicRules = {
   ],
   mouseMovement: "forbidden",
   teammatesMayShareCell: true,
-  oneMoveDraw: true,
 } as const satisfies ExecutableVariantRules;
 
 const animalCycleRules = {
@@ -115,7 +112,6 @@ const animalCycleRules = {
   ],
   mouseMovement: "allowed",
   teammatesMayShareCell: false,
-  oneMoveDraw: false,
 } as const satisfies ExecutableVariantRules;
 
 const survivalRules = {
@@ -138,7 +134,6 @@ const survivalRules = {
   ],
   mouseMovement: "survival-config",
   teammatesMayShareCell: true,
-  oneMoveDraw: false,
 } as const satisfies ExecutableVariantRules;
 
 export const EXECUTABLE_VARIANT_RULES = {
