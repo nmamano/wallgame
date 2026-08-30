@@ -127,6 +127,29 @@ TEST_CASE("Universal policy indices and legal masks replay-audit every rules var
     }
 }
 
+TEST_CASE("Training labels use the Standard capture winner", "[Training Contract]") {
+    Board final_board{3,
+                      3,
+                      Variant::Standard,
+                      {{Player::Red, Pawn::Cat, {2, 2}},
+                       {Player::Red, Pawn::Mouse, {0, 2}},
+                       {Player::Blue, Pawn::Cat, {1, 1}},
+                       {Player::Blue, Pawn::Mouse, {2, 2}}}};
+    REQUIRE(final_board.winner() == Winner::Red);
+    REQUIRE(final_board.score_for(Player::Red) == 1.0);
+
+    Board decision_board = final_board;
+    decision_board.take_step(Player::Red, Pawn::Cat, Direction::Left);
+    NodeInfo decision{decision_board, {Player::Red, Turn::First}, 0.0f, 1, {}};
+    decision.edges.push_back({PawnMove{Pawn::Cat, Direction::Right}, 1, 0.0f, 0.0f});
+
+    auto const red_label = convert_to_model_output(decision, final_board.score_for(Player::Red), 1.0f);
+    CHECK(red_label.value == 1.0f);
+    decision.turn.player = Player::Blue;
+    auto const blue_label = convert_to_model_output(decision, final_board.score_for(Player::Red), 1.0f);
+    CHECK(blue_label.value == -1.0f);
+}
+
 TEST_CASE("Animal movable pawns retain their locked policy slots", "[Training Contract]") {
     Board board = animal_board();
     std::size_t const moves = 2 * 6 * 5;

@@ -81,6 +81,26 @@ int main() {
     check(sit.Winner() == 1, "P2 reached goal -> Winner()==1");
     check(TerminalEvalP1(sit.Winner()) == -1.0, "P2 terminal -> -1");
   }
+  for (int distance : {1, 2}) {
+    Situation<R, C> sit;
+    sit.SetStartingSituation();
+    sit.tokens[0] = static_cast<int8_t>(Goals(R, C)[0]);
+    sit.tokens[1] = static_cast<int8_t>(Goals(R, C)[1] + distance);
+    check(sit.Winner() == 0,
+          "P0 goal wins when opponent distance is " + std::to_string(distance));
+    check(TerminalEvalP1(sit.Winner()) == 1.0,
+          "P0 removed-draw terminal evaluates to +1 at distance " +
+              std::to_string(distance));
+  }
+  {
+    Situation<3, 3> shared_server_position;
+    shared_server_position.SetStartingSituation();
+    shared_server_position.tokens = {NodeAt(3, 2, 2), NodeAt(3, 1, 1)};
+    check(shared_server_position.Winner() == 0,
+          "SP-3x3 Cb2 Cb2 Cc1 ends in a P1 capture");
+    check(TerminalEvalP1(shared_server_position.Winner()) == 1.0,
+          "SP-3x3 terminal evaluates to +1 for P1");
+  }
 
   // ===== Engine-based sign bands (few, near-forced, tolerant) =====
   Negamax<R, C> eng;
@@ -92,6 +112,21 @@ int main() {
     eng.GetMove(sit, 100);
     double e = EvalToP1(eng.LastRootEval(), sit.turn);
     check(e > 0.5, "P1 near-win -> eval > 0.5 (got " + s(e) + ")");
+  }
+  {
+    Situation<4, 4> sit;
+    sit.SetStartingSituation();
+    sit.tokens = {13, 8};
+    sit.turn = 0;
+    Negamax<4, 4> removed_draw_engine;
+    Move const selected = removed_draw_engine.GetMove(sit, 1000);
+    Situation<4, 4> after = sit;
+    after.ApplyMove(selected);
+    check(after.tokens[0] == Goals(4, 4)[0] && after.Winner() == 0,
+          "GetMove selects the removed-draw P1 goal move");
+    check(removed_draw_engine.LastRootEval() >= Negamax<4, 4>::GameOverEval(),
+          "removed-draw root eval reaches GameOverEval (got " +
+              std::to_string(removed_draw_engine.LastRootEval()) + ")");
   }
   {  // P2 one step from goal, P2 to move -> P1 losing -> eval strongly negative
     Situation<R, C> sit;

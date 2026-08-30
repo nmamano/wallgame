@@ -82,6 +82,23 @@ struct RankedPolicy {
     }
 };
 
+struct Sp3SequencePolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        Cell const cat = board.pawn_position(turn.player, Pawn::Cat);
+        bool const red_opening_leg = turn.player == Player::Red &&
+            (cat == Cell{0, 3} || cat == Cell{1, 3});
+        Cell const target = turn.player == Player::Blue || red_opening_leg
+            ? Cell{1, 2}  // b2: retain this target after the first primitive step.
+            : Cell{2, 3}; // c1: retain this target from b2 through c2.
+        Direction const direction = target.column > cat.column ? Direction::Right
+            : target.column < cat.column                         ? Direction::Left
+            : target.row > cat.row                               ? Direction::Down
+                                                                 : Direction::Up;
+        co_return Evaluation{0.0f, {{PawnMove{Pawn::Cat, direction}, 1.0f}}};
+    }
+};
+
 // Options with the root Dirichlet noise turned OFF. Needed wherever a test states
 // what the highest-prior action is: add_root_noise() rewrites the root priors, and
 // the test cannot see the perturbed values, so with noise on there is nothing to
@@ -108,6 +125,18 @@ static Action policy_best_action(Policy policy, Board const& board, Turn turn) {
 // test/naive_move.cpp needs the same two and a second copy of either would drift.
 using bgs_test::is_legal_action;
 using bgs_test::make_standard_config;
+
+static int bgs_interior_wall_count(Board const& board) {
+    int count = 0;
+    for (int column = 0; column < board.columns(); ++column) {
+        for (int row = 0; row < board.rows(); ++row) {
+            Cell const cell{column, row};
+            if (column + 1 < board.columns() && board.is_blocked(Wall{cell, Wall::Right})) ++count;
+            if (row + 1 < board.rows() && board.is_blocked(Wall{cell, Wall::Down})) ++count;
+        }
+    }
+    return count;
+}
 
 static json make_classic_config(int width = 8, int height = 8) {
     json config;
@@ -592,6 +621,77 @@ TEST_CASE("BGS preserves fixed-seed evaluation and move", "[BGS Session]") {
 
     json const ordinary_response = evaluate(ordinary);
     REQUIRE(ordinary_response["success"] == true);
+}
+
+TEST_CASE("BGS session ends the SP-3x3 sequence as a Red win", "[BGS Session]") {
+    // Deep currently accepts game boards from 4x4 upward. These pawn coordinates embed the
+    // complete SP-3x3 a1/c3/c1 geometry in a supported 4x4 session, while the moves pass through
+    // the real session parser, tree updates, ply tracking, and terminal judgment.
+    auto config = make_standard_config(4, 4);
+    config["initialState"]["pawns"]["p1"]["cat"] = {3, 0};
+    config["initialState"]["pawns"]["p1"]["mouse"] = {0, 1};
+    config["initialState"]["pawns"]["p2"]["cat"] = {1, 2};
+    config["initialState"]["pawns"]["p2"]["mouse"] = {3, 2};
+
+    BgsEngineConfig engine_config;
+    engine_config.model_rows = 4;
+    engine_config.model_columns = 4;
+    engine_config.samples_per_move = 1;
+    engine_config.root_noise_factor = 0;
+    SessionManager manager(Sp3SequencePolicy{}, engine_config);
+    auto const [created, error] = manager.create_session("sp-3x3", "bot", config);
+    INFO(error);
+    REQUIRE(created);
+    auto const initial_session = manager.get_session("sp-3x3");
+    REQUIRE(initial_session);
+    CHECK(initial_session->mcts->current_board().position(Player::Red) == Cell{0, 3});
+    CHECK(initial_session->mcts->current_board().position(Player::Blue) == Cell{2, 1});
+    CHECK(initial_session->mcts->current_board().goal(Player::Red) == Cell{2, 3});
+    CHECK(initial_session->mcts->current_board().goal(Player::Blue) == Cell{1, 0});
+
+    for (auto const& [ply, move] :
+         std::array<std::pair<int, std::string>, 3>{{{0, "Cb2"}, {1, "Cb2"}, {2, "Cc1"}}}) {
+        auto const evaluated = folly::coro::blockingWait(
+            handle_evaluate_position(manager, engine_config, "sp-3x3", ply));
+        INFO("ply " << ply << " expected " << move << " emitted "
+                    << evaluated.at("bestMove").get<std::string>());
+        REQUIRE(evaluated.at("success") == true);
+        REQUIRE(evaluated.at("bestMove") == move);
+        if (ply == 2) {
+            auto const session = manager.get_session("sp-3x3");
+            REQUIRE(session);
+            Board const& before = session->mcts->current_board();
+            REQUIRE(before.winner() == Winner::Undecided);
+            REQUIRE(session->mcts->current_turn() == Turn{Player::Red, Turn::First});
+            auto const actions = parse_move_notation(
+                move, before, session->mcts->current_turn(), session->padding_config);
+            REQUIRE(actions);
+            REQUIRE(actions->size() == 2);
+
+            Board decisive = before;
+            decisive.do_action(Player::Red, actions->front());
+            Turn const decisive_turn{Player::Red, Turn::Second};
+            CHECK(decisive.distance(decisive.position(Player::Red),
+                                    decisive.goal(Player::Red)) == 1);
+            CHECK(decisive.distance(decisive.position(Player::Blue),
+                                    decisive.goal(Player::Blue)) == 2);
+            CHECK(decisive.winner(decisive_turn) == Winner::Undecided);
+        }
+        auto const response = folly::coro::blockingWait(
+            handle_apply_move(manager, "sp-3x3", ply,
+                              evaluated.at("bestMove").get<std::string>()));
+        INFO("ply " << ply << " move " << move << " error "
+                    << response.at("error").get<std::string>());
+        REQUIRE(response.at("success") == true);
+    }
+
+    auto const session = manager.get_session("sp-3x3");
+    REQUIRE(session);
+    CHECK(session->ply == 3);
+    CHECK(session->mcts->current_board().winner() == Winner::Red);
+    CHECK(session->mcts->current_turn() == Turn{Player::Blue, Turn::First});
+    // The terminal response was exactly Cc1, with no second action after the goal action.
+    CHECK(bgs_interior_wall_count(session->mcts->current_board()) == 0);
 }
 
 TEST_CASE("convert_bgs_config_to_board - No padding needed", "[BGS Config]") {

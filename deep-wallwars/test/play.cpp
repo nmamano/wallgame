@@ -4,8 +4,12 @@
 #include <folly/experimental/coro/BlockingWait.h>
 
 #include <catch2/catch_test_macros.hpp>
+#include <filesystem>
+#include <fstream>
+#include <nlohmann/json.hpp>
 #include <optional>
 #include <map>
+#include <sstream>
 #include <vector>
 
 #include "simple_policy.hpp"
@@ -58,7 +62,72 @@ struct MouseLeftPolicy {
     };
 };
 
+struct CatRightPolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        std::vector<TreeEdge> edges;
+        Cell const cat = board.pawn_position(turn.player, Pawn::Cat);
+        if (!board.is_blocked(Wall{cat, Direction::Right})) {
+            edges.emplace_back(PawnMove{Pawn::Cat, Direction::Right}, 1.0);
+        }
+        co_return Evaluation{0, std::move(edges)};
+    };
+};
+
 }  // namespace
+
+TEST_CASE("removed-draw terminal flows through self-play and the CSV printer",
+          "[TrainingRecords][TrainingContract]") {
+    Board board{3,
+                3,
+                Variant::Standard,
+                {{Player::Red, Pawn::Cat, {1, 2}},
+                 {Player::Red, Pawn::Mouse, {0, 2}},
+                 {Player::Blue, Pawn::Cat, {1, 1}},
+                 {Player::Blue, Pawn::Mouse, {2, 2}}}};
+
+    auto const output_dir =
+        std::filesystem::temp_directory_path() / "deep-ww-removed-draw-contract";
+    std::filesystem::remove_all(output_dir);
+    TrainingDataPrinter printer(output_dir, 1.0f);
+    std::optional<TrainingGame> completed;
+    TrainingPlayOptions opts{
+        .model1 = CatRightPolicy{},
+        .model2 = CatRightPolicy{},
+        .samples = 1,
+        .max_parallel_games = 1,
+        .max_parallel_samples = 1,
+        .move_limit = 1,
+        .temperature = 1,
+        .start_game = 73,
+        .starting_turn = {Player::Red, Turn::Second},
+        .on_complete = [&](TrainingGame const& game, int index) {
+            completed = game;
+            printer(game, index);
+        },
+        .seed = 20260830,
+    };
+    folly::CPUThreadPoolExecutor pool(2);
+    folly::coro::blockingWait(training_play(board, 1, opts).scheduleOn(&pool));
+
+    REQUIRE(completed);
+    REQUIRE(completed->end_reason == TrainingEndReason::Terminal);
+    REQUIRE(completed->actual_winner == Winner::Red);
+    REQUIRE(completed->decisions.size() == 1);
+
+    std::ifstream audit_file(output_dir / "game_73.audit.json");
+    nlohmann::json const audit = nlohmann::json::parse(audit_file);
+    CHECK(audit.at("actualWinner") == "red");
+    REQUIRE(audit.at("decisions").size() == 1);
+    CHECK(audit.at("decisions").at(0).at("player") == "red");
+    CHECK(audit.at("decisions").at(0).at("valueLabel") == 1.0f);
+
+    std::ifstream csv_file(output_dir / "game_73.csv");
+    std::ostringstream csv;
+    csv << csv_file.rdbuf();
+    CHECK(csv.str().ends_with("\n1\n\n"));
+    std::filesystem::remove_all(output_dir);
+}
 
 TEST_CASE("training_play uses each materialized start position and preserves its provenance",
           "[TrainingRecords][MaterializedStart]") {

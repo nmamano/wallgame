@@ -161,6 +161,20 @@ TEST_CASE("Advance to win", "[Game State]") {
     REQUIRE(board.winner() == Winner::Red);
 }
 
+TEST_CASE("Standard red goal is a win when Blue is one or two actions away", "[Game State]") {
+    for (int blue_distance : {1, 2}) {
+        CAPTURE(blue_distance);
+        Cell const blue_cat = blue_distance == 1 ? Cell{0, 1} : Cell{1, 1};
+        Board board = standard_board(3, 3, {2, 2}, {0, 2}, blue_cat, {2, 2});
+
+        CHECK(board.winner() == Winner::Red);
+        CHECK(board.winner(Turn{Player::Blue, Turn::First}) == Winner::Red);
+        CHECK(board.winner(Turn{Player::Red, Turn::Second}) == Winner::Undecided);
+        CHECK(board.score_for(Player::Red) == 1.0);
+        CHECK(board.score_for(Player::Blue) == -1.0);
+    }
+}
+
 TEST_CASE("Block walls", "[Game State]") {
     Board board{3, 3};
     board.place_wall(Player::Blue, {{0, 0}, Direction::Right});
@@ -293,8 +307,7 @@ TEST_CASE("A mouse may walk past a cat mid-turn", "[Game State]") {
 // The same rule in the other direction, which is the half that is easy to forget: a cat routing
 // toward its goal may pass straight THROUGH the enemy mouse's cell.
 TEST_CASE("A cat may walk over a mouse mid-turn", "[Game State]") {
-    // Red's cat one step left of Blue's mouse. Blue's cat is far from Red's mouse, so the
-    // one-move-rule draw does not apply and the capture would be a clean Red win.
+    // Red's cat is one step left of Blue's mouse, so the capture is a Red win.
     Board board = standard_board(5, 5, {2, 2}, {0, 0}, {4, 4}, {3, 2});
 
     REQUIRE(board.winner() == Winner::Undecided);

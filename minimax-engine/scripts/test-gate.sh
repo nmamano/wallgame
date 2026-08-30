@@ -1,23 +1,29 @@
 #!/usr/bin/env bash
 # Slice-1a always-run gate for the vendored classic minimax engine.
 #
-# Builds the engine and runs its self-test suite, then asserts that the ONLY
-# failing test is the documented baseline failure (NegamaxOrderedMovesTest, 11/12).
-# Exits non-zero if the build breaks OR if the set/count of failing tests changes
-# — so a NEW regression cannot hide behind the known-failing move-ordering test.
-#
-# See BUILD.md for the rationale on the quarantined test.
+# Builds the engine and runs its complete self-test suite. The removed-draw
+# correction also fixed the old NegamaxOrderedMovesTest expectation, so every
+# one of the 14 tests must now pass.
 set -uo pipefail
 cd "$(dirname "$0")/.."   # -> minimax-engine/
 
-EXPECTED_FAIL="NegamaxOrderedMovesTest"
-EXPECTED_SUMMARY="PASSED TESTS: 11/12"
+EXPECTED_SUMMARY="PASSED TESTS: 14/14"
 
 echo "== configure (cmake --preset release) =="
 cmake --preset release            || { echo "GATE FAIL: cmake configure failed"; exit 1; }
 
 echo "== build =="
 ( cd build_release && make )      || { echo "GATE FAIL: build failed"; exit 1; }
+
+echo "== interactive draw wording =="
+if grep -qF "Players drew by the one-move rule." include/interactive_game.h; then
+  echo "GATE FAIL: obsolete one-move draw wording remains"
+  exit 1
+fi
+if ! grep -qF 'std::cout << "Players drew."' include/interactive_game.h; then
+  echo "GATE FAIL: generic draw wording is missing"
+  exit 1
+fi
 
 echo "== self-tests (full suite, shown verbatim) =="
 TEST_OUT="$(./build_release/wallwars_ai test </dev/null 2>&1)"
@@ -34,11 +40,11 @@ if ! printf '%s\n' "$TEST_OUT" | grep -qF "$EXPECTED_SUMMARY"; then
   exit 1
 fi
 
-if [ "${#FAILED[@]}" -eq 1 ] && [ "${FAILED[0]}" = "$EXPECTED_FAIL" ]; then
-  echo "GATE OK: build green; only the known baseline failure ($EXPECTED_FAIL) present."
+if [ "${#FAILED[@]}" -eq 0 ]; then
+  echo "GATE OK: build and all 14 self-tests are green."
   exit 0
 fi
 
-echo "GATE FAIL: failing-test set changed. Expected exactly {$EXPECTED_FAIL}, got {${FAILED[*]:-<none>}}."
-echo "Investigate before proceeding — do NOT update EXPECTED_* to silence a new regression."
+echo "GATE FAIL: expected no failing tests, got {${FAILED[*]}}."
+echo "Investigate before proceeding - do not update EXPECTED_SUMMARY to silence a regression."
 exit 1

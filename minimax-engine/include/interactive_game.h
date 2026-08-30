@@ -129,7 +129,7 @@ class InteractiveGame {
 
   void PrintWinner(const Situation<R, C>& sit) {
     if (sit.Winner() == 2) {
-      std::cout << "Players drew by the one-move rule." << std::endl;
+      std::cout << "Players drew." << std::endl;
     } else {
       std::cout << "P" << sit.Winner() << " won!" << std::endl;
     }

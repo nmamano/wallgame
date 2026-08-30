@@ -133,7 +133,7 @@ std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num
         std::fill(state.begin() + 6 * board_size, state.begin() + 7 * board_size, 1.0);
     }
 
-    // Model needs to know if it is red because of draws
+    // Preserve the player-to-move identity plane used by every existing model contract.
     if (turn.player == Player::Red) {
         std::fill(state.begin() + 7 * board_size, state.begin() + 8 * board_size, 1.0);
     }

@@ -755,10 +755,6 @@ bool Board::reached_goal(Player player) const {
 Winner Board::winner() const {
     if (m_variant == Variant::AnimalCycle) return animal_cycle_winner();
     if (reached_goal(Player::Red)) {
-        int dist = distance(position(Player::Blue), goal(Player::Blue));
-        if (dist <= 2 && dist != -1) {
-            return Winner::Draw;
-        }
         return Winner::Red;
     }
 

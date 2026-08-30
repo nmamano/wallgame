@@ -1,12 +1,14 @@
 #ifndef TESTS_H_
 #define TESTS_H_
 
+#include <algorithm>
 #include <array>
 #include <functional>
 #include <iostream>
 #include <map>
 #include <sstream>
 #include <string>
+#include <tuple>
 #include <vector>
 
 #include "constants.h"
@@ -76,6 +78,8 @@ class Tests {
     RUN_TEST(SituationIsLegalMoveTest);
 
     // Negamax tests
+    RUN_TEST(ImmediateP0DoubleWalkIsTheSoleWinningOrderedMove);
+    RUN_TEST(ImmediateP0WalkPlusWallIsTheSoleWinningOrderedMove);
     RUN_TEST(NegamaxOrderedMovesTest);
     RUN_TEST(NegamaxGetMoveTest);
 
@@ -104,6 +108,47 @@ class Tests {
       res.push_back(scored_move);
     }
     return res;
+  }
+
+  bool ScoredMovesEqualIgnoringTieOrder(
+      const std::vector<ScoredMove>& actual,
+      const std::vector<ScoredMove>& expected) {
+    if (actual.size() != expected.size()) {
+      std::cerr << "Scored-move membership mismatch: actual size "
+                << actual.size() << ", expected size " << expected.size()
+                << '\n';
+      return false;
+    }
+    for (size_t i = 1; i < actual.size(); ++i) {
+      if (actual[i - 1].score < actual[i].score) {
+        std::cerr << "Scored-move ordering mismatch at index " << i << ": "
+                  << actual[i - 1].score << " before " << actual[i].score
+                  << '\n';
+        return false;
+      }
+    }
+
+    auto total_key = [](const ScoredMove& scored_move) {
+      return std::make_tuple(scored_move.score,
+                             scored_move.move.token_change,
+                             scored_move.move.edges[0],
+                             scored_move.move.edges[1]);
+    };
+    auto actual_canonical = actual;
+    auto expected_canonical = expected;
+    auto by_total_key = [&](const ScoredMove& lhs, const ScoredMove& rhs) {
+      return total_key(lhs) < total_key(rhs);
+    };
+    std::sort(actual_canonical.begin(), actual_canonical.end(), by_total_key);
+    std::sort(expected_canonical.begin(), expected_canonical.end(),
+              by_total_key);
+    if (actual_canonical != expected_canonical) {
+      std::cerr << "Scored-move membership mismatch"
+                << "\nActual:   " << actual_canonical
+                << "\nExpected: " << expected_canonical << '\n';
+      return false;
+    }
+    return true;
   }
 
   // Given a vector of length <= `NumNodes(4,4)`, it converts it into an array
@@ -771,6 +816,42 @@ class Tests {
     return true;
   }
 
+  bool ImmediateP0DoubleWalkIsTheSoleWinningOrderedMove() {
+    Negamax<4, 4> negamaxer;
+    negamaxer.sit_.G.BuildFromString(
+        ". . . ."
+        " + + + "
+        ". . . ."
+        " + + + "
+        ". . . ."
+        "-+-+-+-"
+        ". . . .");
+    negamaxer.sit_.tokens = {13, 14};
+    auto const actual_span = negamaxer.OrderedMoves(0);
+    std::vector<ScoredMove> const actual(actual_span.begin(), actual_span.end());
+    auto const expected = ScoredMoveVectorAsString("[2 (-1 -1): 10000]");
+    ASSERT_EQ(actual, expected);
+    return true;
+  }
+
+  bool ImmediateP0WalkPlusWallIsTheSoleWinningOrderedMove() {
+    Negamax<4, 4> negamaxer;
+    negamaxer.sit_.G.BuildFromString(
+        ". . . ."
+        " + + + "
+        ". . . ."
+        " + + + "
+        ". . . ."
+        "-+-+-+-"
+        ". . . .");
+    negamaxer.sit_.tokens = {14, 14};
+    auto const actual_span = negamaxer.OrderedMoves(0);
+    std::vector<ScoredMove> const actual(actual_span.begin(), actual_span.end());
+    auto const expected = ScoredMoveVectorAsString("[1 (0 -1): 10000]");
+    ASSERT_EQ(actual, expected);
+    return true;
+  }
+
   bool NegamaxOrderedMovesTest() {
     // Case where the player can do a double-token move or a single move and
     // build a wall in the edge just crossed.
@@ -852,13 +933,11 @@ class Tests {
         ASSERT_EQ(actual, expected);
       }
       {
-        // Similar case, but now the player cannot win, it can only draw due to
-        // the 1-move rule.
+        // The opponent is also close, but reaching the goal still wins.
         negamaxer.sit_.tokens = {14, 14};
         auto actual_span = negamaxer.OrderedMoves(0);
         std::vector<ScoredMove> actual(actual_span.begin(), actual_span.end());
-        auto expected = ScoredMoveVectorAsString(
-            "[1 (0 -1): 10000, -1 (0 -1): -10, -2 (-1 -1): -20]");
+        auto expected = ScoredMoveVectorAsString("[1 (0 -1): 10000]");
         ASSERT_EQ(actual, expected);
       }
     }
@@ -900,14 +979,12 @@ class Tests {
         ASSERT_EQ(actual, expected);
       }
       {
-        // Similar case but now the opponent is not at node 15, so the edge
-        // 14->15 (28) becomes a useless edge when crossed by the player. The
-        // player cannot win due to the one-move-rule.
+        // The opponent is not at node 15, so edge 14->15 (28) becomes useless
+        // when crossed by the player. Reaching the goal still wins.
         negamaxer.sit_.tokens = {14, 14};
         auto actual_span = negamaxer.OrderedMoves(0);
         std::vector<ScoredMove> actual(actual_span.begin(), actual_span.end());
-        auto expected =
-            ScoredMoveVectorAsString("[1 (28 -1): 9996, -2 (-1 -1): -20]");
+        auto expected = ScoredMoveVectorAsString("[1 (28 -1): 10000]");
         ASSERT_EQ(actual, expected);
       }
     }
@@ -945,7 +1022,7 @@ class Tests {
             "1): -5000, 0 (0 9): -5000, 0 (15 26): -5000, 0 (15 28): -5000, 0 "
             "(17 23): -5000, 0 (23 24): -5000, 0 (23 26): -5000, 0 (23 28): "
             "-5000, 0 (1 4): -5000, 0 (1 2): -5000, 0 (15 24): -5000]");
-        ASSERT_EQ(actual, expected);
+        ASSERT_EQ(ScoredMovesEqualIgnoringTieOrder(actual, expected), true);
       }
     }
     return true;
@@ -978,7 +1055,7 @@ class Tests {
             "(17 21): 1, 0 (23 26): 1, 0 (23 24): 1, 0 (18 21): 1, 0 (20 23): "
             "1, 0 (19 23): 1, 0 (19 20): 0, 0 (21 23): -2, 0 (20 21): -3, 0 "
             "(19 21): -3]");
-        ASSERT_EQ(actual, expected);
+        ASSERT_EQ(ScoredMovesEqualIgnoringTieOrder(actual, expected), true);
       }
       {
         negamaxer.sit_.tokens = {3, 3};
@@ -999,7 +1076,7 @@ class Tests {
             "(19 26): -6, 0 (19 24): -6, 0 (20 24): -6, 0 (20 26): -6, 0 (24 "
             "26): -6, 0 (17 24): -9, 0 (17 26): -9, 0 (16 26): -9, 0 (16 24): "
             "-9, 0 (18 26): -9, 0 (18 24): -9]");
-        ASSERT_EQ(actual, expected);
+        ASSERT_EQ(ScoredMovesEqualIgnoringTieOrder(actual, expected), true);
       }
     }
     // Case where there are many paths to the goal
@@ -1050,7 +1127,7 @@ class Tests {
             "-3, 0 (5 18): -3, 0 (5 20): -3, 0 (7 18): -3, 0 (10 20): -3, 0 (1 "
             "20): -3, 0 (1 18): -3, 0 (8 20): -3, 0 (9 18): -3, 0 (9 20): -3, "
             "0 (0 20): -3, 0 (0 18): -3, 0 (10 18): -3]");
-        ASSERT_EQ(actual, expected);
+        ASSERT_EQ(ScoredMovesEqualIgnoringTieOrder(actual, expected), true);
       }
     }
     return true;
