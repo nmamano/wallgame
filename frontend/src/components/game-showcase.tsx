@@ -13,12 +13,12 @@ import { Pause, Play } from "lucide-react";
 import { Board, type BoardPawn } from "@/components/board";
 import { fetchShowcaseGames } from "@/lib/api";
 import { buildHistoryState } from "@/lib/history-utils";
+import { computeLastMoves, computeLastWalls } from "@/lib/gameViewModel";
 import {
-  computeLastMoves,
-  computeLastWalls,
+  type PlayerColor,
   resolvePlayerColor,
-} from "@/lib/gameViewModel";
-import { type PlayerColor } from "@/lib/player-colors";
+  resolvePlayerColorPair,
+} from "@/lib/player-colors";
 import {
   buildGameConfigurationFromSerialized,
   hydrateGameStateFromSerialized,
@@ -174,11 +174,7 @@ export function GameShowcase({ flush = false }: { flush?: boolean }) {
       if (!player.appearance?.pawnColor) return;
       colors[player.playerId] = resolvePlayerColor(player.appearance.pawnColor);
     });
-    if (colors[1] === colors[2]) {
-      colors[1] = "red";
-      colors[2] = "blue";
-    }
-    return colors;
+    return resolvePlayerColorPair(colors[1], colors[2]);
   }, [showcase]);
 
   const boardPawns = useMemo((): BoardPawn[] => {

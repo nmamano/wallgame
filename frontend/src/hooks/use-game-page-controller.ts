@@ -34,7 +34,11 @@ import {
   isMovablePawnType,
   requirePawnCell,
 } from "../../../shared/domain/pawns";
-import { type PlayerColor } from "@/lib/player-colors";
+import {
+  type PlayerColor,
+  resolvePlayerColor,
+  resolvePlayerColorPair,
+} from "@/lib/player-colors";
 import type { GameConfiguration } from "../../../shared/domain/game-types";
 import {
   userQueryOptions,
@@ -90,7 +94,6 @@ import {
   buildPlayerName,
   formatWinReason,
   sanitizePlayerList,
-  resolvePlayerColor,
 } from "@/lib/gameViewModel";
 import { SpectatorSession } from "@/lib/spectator-controller";
 import { describeControllerError } from "@/lib/controller-errors";
@@ -712,13 +715,7 @@ export function useGamePageController(gameId: string) {
       colors[playerId] = value;
     });
 
-    // Handle color collision: fall back to defaults if both players match.
-    if (colors[1] === colors[2]) {
-      colors[1] = DEFAULT_PLAYER_COLORS[1];
-      colors[2] = DEFAULT_PLAYER_COLORS[2];
-    }
-
-    return colors;
+    return resolvePlayerColorPair(colors[1], colors[2]);
   }, [friendColorOverrides, localPreferences.pawnColor, primaryLocalPlayerId]);
 
   const stagedActionsSnapshotRef = useRef<Action[] | null>(null);

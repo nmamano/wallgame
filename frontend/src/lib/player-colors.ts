@@ -1,3 +1,5 @@
+import type { PlayerId } from "../../../shared/domain/game-types";
+
 export const PLAYER_COLORS = [
   "red",
   "blue",
@@ -21,6 +23,32 @@ export const SELECTABLE_PLAYER_COLORS = [
 ] as const;
 
 export type PlayerColor = (typeof PLAYER_COLORS)[number];
+
+export function resolvePlayerColor(value?: string | null): PlayerColor {
+  if (!value || value === "default") {
+    return "red";
+  }
+  return PLAYER_COLORS.includes(value as PlayerColor)
+    ? (value as PlayerColor)
+    : "red";
+}
+
+/** Resolves both seats' selected colors into one contrasting display pair. */
+export function resolvePlayerColorPair(
+  player1Value?: string | null,
+  player2Value?: string | null,
+): Record<PlayerId, PlayerColor> {
+  const colors: Record<PlayerId, PlayerColor> = {
+    1: resolvePlayerColor(player1Value),
+    2: resolvePlayerColor(player2Value),
+  };
+
+  if (colors[1] === colors[2]) {
+    colors[2] = colors[1] === "blue" ? "red" : "blue";
+  }
+
+  return colors;
+}
 
 // Color class mappings for Tailwind CSS
 export const colorClassMap: Record<string, string> = {

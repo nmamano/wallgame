@@ -11,7 +11,7 @@ import type {
 import { boardPawns } from "../../../shared/domain/pawns";
 import { GameState } from "../../../shared/domain/game-state";
 import type { GameSnapshot } from "../../../shared/domain/game-types";
-import { PLAYER_COLORS, type PlayerColor } from "@/lib/player-colors";
+import { type PlayerColor } from "@/lib/player-colors";
 
 export type PlayerType = "you" | "friend" | "matched-user";
 
@@ -396,13 +396,4 @@ export function sanitizePlayerList(
     [list[0], list[1]] = [list[1], list[0]];
   }
   return list;
-}
-
-export function resolvePlayerColor(value?: string | null): PlayerColor {
-  if (!value || value === "default") {
-    return "red";
-  }
-  return PLAYER_COLORS.includes(value as PlayerColor)
-    ? (value as PlayerColor)
-    : "red";
 }
