@@ -7,6 +7,10 @@ import ReactMarkdown from "react-markdown";
 import remarkGfm from "remark-gfm";
 import rehypeRaw from "rehype-raw";
 import { assetUrl } from "@/lib/asset-url";
+import { RuleGuide } from "@/components/rule-guide";
+import { resolvePlayerColorPair } from "@/lib/player-colors";
+import { helpRuleVariants } from "../../../shared/domain/variant-rules";
+import { variantDisplayName } from "../../../shared/domain/game-types";
 
 const rulesContent = `
 The Wall Game is a two-player, turn-based, strategy board game played on a rectangular grid. Each player controls a cat and a mouse, and the goal is to catch the opponent's mouse before they catch yours.
@@ -109,33 +113,19 @@ The moves are listed in a numbered list. Each line begins with the move number, 
 **2. Md1 >d1.^d1**\\
 **3. ...**`;
 
-const variantsContent = `
-### Standard
-
-Cat and mouse pawns start in the corners.
-
-### Classic
-
-A traditional variant where the mice are called "goals" and are fixed in the bottom corners. You win by reaching the goal (the opposite corner) before the opponent reaches theirs.
-
-### Animal Cycle
-
-Player 1 controls the Cat and Elephant. Player 2 controls the Mouse and Dog. Cat beats Mouse, Mouse beats Elephant, Elephant beats Dog, and Dog beats Cat. The first capture wins.
-
-Your two animals can never share a cell or cross each other.
-`;
-
 export const Route = createFileRoute("/learn")({
   component: Learn,
 });
 
 function Learn() {
   const [openSections, setOpenSections] = useState<Record<string, boolean>>({
-    rules: true,
+    rules: false,
     notation: false,
     lessons: false,
-    variants: false,
+    variants: true,
   });
+
+  const playerColors = resolvePlayerColorPair();
 
   const toggleSection = (section: string) => {
     setOpenSections((prev) => ({ ...prev, [section]: !prev[section] }));
@@ -163,9 +153,67 @@ function Learn() {
           </div>
 
           <div className="space-y-4">
+            {/* Variants Section */}
+            <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
+              <button
+                type="button"
+                id="variants-trigger"
+                aria-expanded={openSections.variants}
+                aria-controls="variants-panel"
+                onClick={() => toggleSection("variants")}
+                className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
+              >
+                <h2 className="text-2xl font-serif font-bold text-foreground">
+                  Variants
+                </h2>
+                {openSections.variants ? (
+                  <ChevronDown className="w-6 h-6 text-muted-foreground" />
+                ) : (
+                  <ChevronRight className="w-6 h-6 text-muted-foreground" />
+                )}
+              </button>
+
+              <div
+                id="variants-panel"
+                role="region"
+                aria-labelledby="variants-trigger"
+                className={cn(
+                  "grid transition-all duration-300 ease-in-out",
+                  openSections.variants
+                    ? "grid-rows-[1fr] opacity-100"
+                    : "grid-rows-[0fr] opacity-0",
+                )}
+              >
+                <div className="overflow-hidden">
+                  <div className="space-y-6 px-4 pb-4 sm:px-6 sm:pb-6">
+                    {helpRuleVariants().map((rules) => (
+                      <section
+                        key={rules.variant}
+                        data-learn-rule-guide={rules.variant}
+                        className="space-y-3 rounded-xl border border-border bg-background/40 p-3 sm:p-4"
+                      >
+                        <h3 className="font-serif text-xl font-bold text-foreground">
+                          {variantDisplayName(rules.variant)}
+                        </h3>
+                        <RuleGuide
+                          variant={rules.variant}
+                          playerColors={playerColors}
+                          diagramPlayerId={1}
+                        />
+                      </section>
+                    ))}
+                  </div>
+                </div>
+              </div>
+            </Card>
+
             {/* Rules Section */}
             <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
               <button
+                type="button"
+                id="rules-trigger"
+                aria-expanded={openSections.rules}
+                aria-controls="rules-panel"
                 onClick={() => toggleSection("rules")}
                 className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
@@ -180,6 +228,9 @@ function Learn() {
               </button>
 
               <div
+                id="rules-panel"
+                role="region"
+                aria-labelledby="rules-trigger"
                 className={cn(
                   "grid transition-all duration-300 ease-in-out",
                   openSections.rules
@@ -216,6 +267,10 @@ function Learn() {
             {/* Notation Section */}
             <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
               <button
+                type="button"
+                id="notation-trigger"
+                aria-expanded={openSections.notation}
+                aria-controls="notation-panel"
                 onClick={() => toggleSection("notation")}
                 className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
@@ -230,6 +285,9 @@ function Learn() {
               </button>
 
               <div
+                id="notation-panel"
+                role="region"
+                aria-labelledby="notation-trigger"
                 className={cn(
                   "grid transition-all duration-300 ease-in-out",
                   openSections.notation
@@ -253,6 +311,10 @@ function Learn() {
             {/* Lessons Section */}
             <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
               <button
+                type="button"
+                id="lessons-trigger"
+                aria-expanded={openSections.lessons}
+                aria-controls="lessons-panel"
                 onClick={() => toggleSection("lessons")}
                 className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
               >
@@ -267,6 +329,9 @@ function Learn() {
               </button>
 
               <div
+                id="lessons-panel"
+                role="region"
+                aria-labelledby="lessons-trigger"
                 className={cn(
                   "grid transition-all duration-300 ease-in-out",
                   openSections.lessons
@@ -294,43 +359,6 @@ function Learn() {
                         </a>
                       ))}
                     </div>
-                  </div>
-                </div>
-              </div>
-            </Card>
-
-            {/* Variants Section */}
-            <Card className="overflow-hidden border-border/50 bg-card/50 backdrop-blur">
-              <button
-                onClick={() => toggleSection("variants")}
-                className="w-full p-6 flex items-center justify-between hover:bg-muted/50 transition-colors"
-              >
-                <h2 className="text-2xl font-serif font-bold text-foreground">
-                  Variants
-                </h2>
-                {openSections.variants ? (
-                  <ChevronDown className="w-6 h-6 text-muted-foreground" />
-                ) : (
-                  <ChevronRight className="w-6 h-6 text-muted-foreground" />
-                )}
-              </button>
-
-              <div
-                className={cn(
-                  "grid transition-all duration-300 ease-in-out",
-                  openSections.variants
-                    ? "grid-rows-[1fr] opacity-100"
-                    : "grid-rows-[0fr] opacity-0",
-                )}
-              >
-                <div className="overflow-hidden">
-                  <div className="px-6 pb-6 space-y-6 prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold">
-                    <ReactMarkdown
-                      remarkPlugins={[remarkGfm]}
-                      rehypePlugins={[rehypeRaw]}
-                    >
-                      {variantsContent}
-                    </ReactMarkdown>
                   </div>
                 </div>
               </div>

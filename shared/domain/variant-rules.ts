@@ -157,6 +157,19 @@ export const helpRulesFor = (variant: RulesVariant): HelpVariantRules =>
 export const helpVariantFor = (variant: Variant): RulesVariant | null =>
   variant === "survival" ? null : variant;
 
+const EXECUTABLE_VARIANT_ORDER: readonly Variant[] = [
+  "standard",
+  "classic",
+  "animal-cycle",
+  "survival",
+];
+
+const hasHelpVariant = (variant: Variant): variant is RulesVariant =>
+  helpVariantFor(variant) !== null;
+
+export const helpRuleVariants = (): readonly HelpVariantRules[] =>
+  EXECUTABLE_VARIANT_ORDER.filter(hasHelpVariant).map(helpRulesFor);
+
 export const resolveRulePlayer = (
   owner: PawnOwner,
   player: PlayerId,

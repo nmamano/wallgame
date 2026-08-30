@@ -14,4 +14,25 @@ describe("game HELP discoverability", () => {
     expect(panel).toContain('placement="desktop"');
     expect(help.match(/aria-label="Game help"/g)).toHaveLength(2);
   });
+
+  it("shares one rule guide between HELP and Learn", async () => {
+    const [help, learn, guide] = await Promise.all([
+      read("frontend/src/components/game-help.tsx"),
+      read("frontend/src/routes/learn.tsx"),
+      read("frontend/src/components/rule-guide.tsx"),
+    ]);
+
+    expect(help).toContain(
+      'import { RuleGuide } from "@/components/rule-guide"',
+    );
+    expect(learn).toContain(
+      'import { RuleGuide } from "@/components/rule-guide"',
+    );
+    expect(learn).toContain("helpRuleVariants().map");
+    expect(learn).toContain("resolvePlayerColorPair()");
+    expect(learn).not.toMatch(/\[\s*["']standard["']/);
+    expect(guide).toContain("data-help-board");
+    expect(guide).toContain('role="img"');
+    expect(guide).toContain('aria-hidden="true"');
+  });
 });

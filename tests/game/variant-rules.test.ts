@@ -2,6 +2,7 @@ import { describe, expect, it } from "bun:test";
 import type { Variant } from "../../shared/domain/game-types";
 import {
   executableRulesFor,
+  helpRuleVariants,
   helpRulesFor,
 } from "../../shared/domain/variant-rules";
 
@@ -24,6 +25,14 @@ describe("authoritative variant rules", () => {
 
   it("selects Classic HELP content from Classic rules", () => {
     expect(helpRulesFor("classic").captureKind).toBe("reach-home");
+  });
+
+  it("derives the three HELP rules in their explicit display order", () => {
+    expect(helpRuleVariants().map((rules) => rules.variant)).toEqual([
+      "standard",
+      "classic",
+      "animal-cycle",
+    ]);
   });
 
   it("keeps Survival executable behavior explicit", () => {
