@@ -85,6 +85,8 @@ std::pair<bool, std::string> SessionManager::create_session(
     mcts_opts.seed = generate_seed(bgs_id);
     mcts_opts.max_parallelism = m_config.max_parallel_samples;
     mcts_opts.noise_factor = m_config.root_noise_factor;
+    mcts_opts.terminal_after_first_action_shortcut =
+        m_config.terminal_after_first_action_shortcut;
 
     auto session = std::make_shared<BgsSession>();
     session->bgs_id = bgs_id;
@@ -191,6 +193,96 @@ static json create_policy_probe_position(NodeInfo const& node) {
     return {
         {"input", convert_to_model_input(node.board, node.turn, 16)},
         {"legalActions", std::move(legal)},
+    };
+}
+
+static char const* winner_name(Winner winner) {
+    switch (winner) {
+        case Winner::Red: return "red";
+        case Winner::Blue: return "blue";
+        case Winner::Draw: return "draw";
+        case Winner::Undecided: return "undecided";
+    }
+    return "undecided";
+}
+
+static json create_search_diagnostics(MCTS const& mcts, std::vector<Action> const& selected) {
+    NodeInfo const root = mcts.root_info();
+    json edges = json::array();
+    int sampled_children = 0;
+    std::string selected_action;
+    if (!selected.empty()) {
+        std::ostringstream out;
+        out << selected.front();
+        selected_action = out.str();
+    }
+    for (EdgeInfo const& edge : root.edges) sampled_children += edge.num_samples;
+    for (EdgeInfo const& edge : root.edges) {
+        std::ostringstream out;
+        out << edge.action;
+        std::size_t const policy_index =
+            universal_policy_index(root.board, root.turn, edge.action);
+        edges.push_back({
+            {"action", out.str()},
+            {"policyIndex", policy_index},
+            {"modelPrior", edge.model_prior},
+            {"searchPrior", edge.prior},
+            {"visits", edge.num_samples},
+            {"searchQ", edge.q_value},
+            {"selected", out.str() == selected_action},
+            {"selfPlayPolicyTarget", sampled_children == 0
+                 ? 0.0f : static_cast<float>(edge.num_samples) / sampled_children},
+        });
+    }
+
+    json pv = json::array();
+    Board pv_board = root.board;
+    for (PvStep const& step : mcts.principal_variation(50, 0.05f, 1)) {
+        std::ostringstream out;
+        out << step.action;
+        pv_board.do_action(step.player, step.action);
+        Winner winner = step.second_action ? pv_board.winner()
+                                           : (turn_must_end_after_action(pv_board, step.player)
+                                                  ? pv_board.winner()
+                                                  : Winner::Undecided);
+        pv.push_back({
+            {"depth", pv.size() + 1},
+            {"action", out.str()},
+            {"player", step.player == Player::Red ? "red" : "blue"},
+            {"turnHalf", step.second_action ? 2 : 1},
+            {"nodeVisits", step.node_visits},
+            {"visits", step.child_visits},
+            {"searchQ", step.q_value},
+            {"winnerAfterAction", winner_name(winner)},
+        });
+        if (winner != Winner::Undecided) break;
+    }
+
+    json terminals = json::array();
+    for (TerminalDiscovery const& terminal : mcts.terminal_discoveries()) {
+        terminals.push_back({
+            {"winner", winner_name(terminal.winner)},
+            {"depth", terminal.depth},
+            {"afterAction", terminal.after_action},
+            {"visits", terminal.visits},
+            {"shortcut", terminal.shortcut},
+        });
+    }
+
+    return {
+        {"currentWinner", winner_name(root.board.winner(root.turn))},
+        {"modelValue", root.model_value},
+        {"searchValue", root.q_value},
+        {"rootVisits", root.num_samples},
+        {"selectedAction", selected_action},
+        {"edges", std::move(edges)},
+        {"principalVariation", std::move(pv)},
+        {"terminalDiscoveries", std::move(terminals)},
+        {"selfPlayTargetConstruction", {
+            {"policy", "child visits divided by total sampled child visits"},
+            {"value", "(1-winnerContribution)*searchQ + winnerContribution*outcomeFromSideToMove"},
+            {"outcomeUnavailableAtDecision", true},
+        }},
     };
 }
 
@@ -383,6 +475,11 @@ folly::coro::Task<json> handle_evaluate_position(
             {"positions", std::move(positions)},
             {"chosenPolicyIndices", std::move(chosen_indices)},
         };
+    }
+    if (config.search_diagnostics) {
+        response["searchDiagnostics"] = create_search_diagnostics(*session->mcts, actions);
+        response["searchDiagnostics"]["terminalAfterFirstActionShortcut"] =
+            config.terminal_after_first_action_shortcut;
     }
     co_return response;
 }

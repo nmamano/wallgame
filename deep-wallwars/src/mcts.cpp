@@ -13,16 +13,19 @@ namespace views = std::ranges::views;
 
 constexpr float kWastedInferencePenalty = 1000.0;
 
-TreeEdge::TreeEdge(Action action, float prior) : action{action}, prior{prior} {}
+TreeEdge::TreeEdge(Action action, float prior)
+    : action{action}, model_prior{prior}, prior{prior} {}
 
 TreeEdge::TreeEdge(TreeEdge const& other)
     : action{other.action},
+      model_prior{other.model_prior},
       prior{other.prior},
       active_samples{other.active_samples.load()},
       child{other.child.load()} {}
 
 TreeEdge& TreeEdge::operator=(TreeEdge const& other) {
     action = other.action;
+    model_prior = other.model_prior;
     prior = other.prior;
     active_samples = other.active_samples.load();
     child = other.child.load();
@@ -68,6 +71,10 @@ folly::coro::Task<void> MCTS::single_sample() {
 
 folly::coro::Task<float> MCTS::sample(int samples) {
     m_samples_done = 0;
+    {
+        std::lock_guard lock(m_terminal_discoveries_mutex);
+        m_terminal_discoveries.clear();
+    }
     auto* executor = co_await folly::coro::co_current_executor;
     auto sample_tasks = views::iota(0, samples) |
                         views::transform([&](int) { return single_sample().scheduleOn(executor); });
@@ -140,7 +147,16 @@ folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edg
 }
 
 folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
-    if (auto winner = current.board.winner(current.turn); winner != Winner::Undecided) {
+    Winner winner = current.board.winner(current.turn);
+    bool const shortcut = winner == Winner::Undecided &&
+                          m_opts.terminal_after_first_action_shortcut &&
+                          current.turn.action == Turn::Second &&
+                          turn_must_end_after_action(current.board, current.turn.player);
+    if (shortcut) {
+        winner = current.board.winner();
+    }
+    if (winner != Winner::Undecided) {
+        record_terminal(winner, current, shortcut);
         float value = [&] {
             if (winner == Winner::Draw) {
                 return 0.0;
@@ -184,6 +200,22 @@ folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
 
     --te.active_samples;
     co_return value;
+}
+
+void MCTS::record_terminal(Winner winner, TreeNode const& node, bool shortcut) {
+    int const depth = node.depth - m_root->depth;
+    int const after_action = node.turn.action == Turn::Second ? 1 : 2;
+    std::lock_guard lock(m_terminal_discoveries_mutex);
+    auto const same = [&](TerminalDiscovery const& item) {
+        return item.winner == winner && item.depth == depth && item.after_action == after_action &&
+               item.shortcut == shortcut;
+    };
+    auto it = std::ranges::find_if(m_terminal_discoveries, same);
+    if (it == m_terminal_discoveries.end()) {
+        m_terminal_discoveries.push_back({winner, depth, after_action, 1, shortcut});
+    } else {
+        ++it->visits;
+    }
 }
 
 void MCTS::move_root(TreeEdge const& edge) {
@@ -434,6 +466,7 @@ std::optional<NodeInfo> MCTS::child_info(Action const& first) const {
         value.total_samples,
         {},
     };
+    result.model_value = child->model_value;
     result.edges.reserve(child->edges.size());
     for (TreeEdge const& edge : child->edges) {
         TreeNode* grandchild = edge.child;
@@ -446,7 +479,7 @@ std::optional<NodeInfo> MCTS::child_info(Action const& first) const {
                 q_value = grandchild_value.total_weight / samples;
             }
         }
-        result.edges.emplace_back(edge.action, samples, q_value, edge.prior);
+        result.edges.emplace_back(edge.action, samples, q_value, edge.prior, edge.model_prior);
     }
     return result;
 }
@@ -609,6 +642,7 @@ folly::coro::Task<TreeNode*> MCTS::create_tree_node(
                                     std::move(board),
                                     turn,
                                     parent ? parent->depth + 1 : 0,
+                                    eval.value,
                                     TreeNode::Value{eval.value, 1},
                                     std::move(eval.edges)};
 
@@ -657,6 +691,7 @@ NodeInfo MCTS::root_info() const {
     NodeInfo result{
         m_root->board, m_root->turn, val.total_weight / val.total_samples, val.total_samples, {}};
     result.edges.reserve(m_root->edges.size());
+    result.model_value = m_root->model_value;
 
     for (TreeEdge const& edge : m_root->edges) {
         TreeNode* child = edge.child;
@@ -669,7 +704,8 @@ NodeInfo MCTS::root_info() const {
                 q_value = child_val.total_weight / child_val.total_samples;
             }
         }
-        result.edges.emplace_back(edge.action, num_samples, q_value, edge.prior);
+        result.edges.emplace_back(edge.action, num_samples, q_value, edge.prior,
+                                  edge.model_prior);
     }
 
     return result;
@@ -681,4 +717,9 @@ std::vector<NodeInfo> const& MCTS::history() const {
 
 int MCTS::wasted_inferences() const {
     return m_wasted_inferences;
+}
+
+std::vector<TerminalDiscovery> MCTS::terminal_discoveries() const {
+    std::lock_guard lock(m_terminal_discoveries_mutex);
+    return m_terminal_discoveries;
 }

@@ -4,6 +4,7 @@
 #include <folly/futures/Future.h>
 
 #include <atomic>
+#include <mutex>
 #include <random>
 
 #include "gamestate.hpp"
@@ -12,6 +13,7 @@ struct TreeNode;
 
 struct TreeEdge {
     Action action;
+    float model_prior;
     float prior;
     std::atomic<int> active_samples = 0;
     std::atomic<TreeNode*> child = nullptr;
@@ -33,6 +35,7 @@ struct TreeNode {
     Board board;
     Turn turn;
     int depth;
+    float model_value;
     std::atomic<Value> value;
     std::vector<TreeEdge> edges;
 
@@ -43,7 +46,8 @@ struct EdgeInfo {
     Action action;
     int num_samples;
     float q_value;  // child node value (total_weight / total_samples), 0 if unvisited
-    float prior;    // NN prior probability for this edge
+    float prior;    // Search prior after any root noise
+    float model_prior = 0.0f;  // Original NN prior before root noise changes search `prior`
 };
 
 struct NodeInfo {
@@ -53,6 +57,16 @@ struct NodeInfo {
     int num_samples;
 
     std::vector<EdgeInfo> edges;
+    // The evaluation returned when this node was first expanded, before search backup changed Q.
+    float model_value = 0.0f;
+};
+
+struct TerminalDiscovery {
+    Winner winner;
+    int depth;
+    int after_action;  // 1 or 2
+    int visits;
+    bool shortcut;
 };
 
 // One action along the principal variation, together with the statistics that say how
@@ -97,6 +111,8 @@ public:
         Turn starting_turn = {Player::Red, Turn::First};
         std::optional<PreviousPosition> starting_previous_position;
         std::uint32_t seed = 42;
+        // Diagnostic A/B only. OFF preserves the current search contract byte-for-byte.
+        bool terminal_after_first_action_shortcut = false;
     };
 
     MCTS(EvaluationFunction evaluate, Board board);
@@ -109,6 +125,7 @@ public:
     NodeInfo root_info() const;
     std::vector<NodeInfo> const& history() const;
     int wasted_inferences() const;
+    std::vector<TerminalDiscovery> terminal_discoveries() const;
 
     folly::coro::Task<float> sample(int iterations);
 
@@ -186,12 +203,15 @@ private:
     std::atomic<int> m_wasted_inferences = 0;
     std::atomic<int> m_samples_done = 0;
     std::vector<NodeInfo> m_history;
+    mutable std::mutex m_terminal_discoveries_mutex;
+    std::vector<TerminalDiscovery> m_terminal_discoveries;
 
     void add_root_noise();
     folly::coro::Task<void> single_sample();
     TreeEdge& get_best_edge(TreeNode& current) const;
     folly::coro::Task<float> initialize_child(TreeNode& current, TreeEdge& edge);
     folly::coro::Task<float> sample_rec(TreeNode& current);
+    void record_terminal(Winner winner, TreeNode const& node, bool shortcut);
     void delete_subtree(TreeNode& node);
     void move_root(TreeEdge const& edge);
 

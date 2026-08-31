@@ -69,6 +69,10 @@ struct BgsEngineConfig {
     // and selected indices to evaluate responses. Production leaves this off.
     bool policy_probe_details = false;
 
+    // Offline causal experiment only. Both default OFF, so production behavior is unchanged.
+    bool search_diagnostics = false;
+    bool terminal_after_first_action_shortcut = false;
+
     static constexpr int kMaxSessions = 256;
 };
 

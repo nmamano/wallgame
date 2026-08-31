@@ -39,6 +39,15 @@ struct DownPolicy {
     };
 };
 
+struct TwoPriorPolicy {
+    folly::coro::Task<Evaluation> operator()(Board const&, Turn,
+                                             std::optional<PreviousPosition>) {
+        co_return Evaluation{0.25f,
+                             {{PawnMove{Pawn::Cat, Direction::Down}, 0.9f},
+                              {PawnMove{Pawn::Cat, Direction::Right}, 0.1f}}};
+    }
+};
+
 TEST_CASE("Basic Initialization", "[MCTS]") {
     Board board{4, 4};
     MCTS mcts{SimplePolicy{1.0, 1.0, 1.0}, std::move(board)};
@@ -46,6 +55,21 @@ TEST_CASE("Basic Initialization", "[MCTS]") {
     CHECK(mcts.root_value() == 0.0);
     CHECK(mcts.root_samples() == 1);
     CHECK(mcts.wasted_inferences() == 0);
+}
+
+TEST_CASE("root evidence keeps model values and priors before search noise", "[MCTS]") {
+    MCTS::Options opts;
+    opts.noise_factor = 0.5f;
+    opts.seed = 20260831;
+    MCTS mcts{TwoPriorPolicy{}, Board{4, 4}, opts};
+    NodeInfo const root = mcts.root_info();
+
+    CHECK(root.model_value == 0.25f);
+    REQUIRE(root.edges.size() == 2);
+    CHECK(root.edges[0].model_prior == 0.9f);
+    CHECK(root.edges[1].model_prior == 0.1f);
+    CHECK((root.edges[0].prior != root.edges[0].model_prior ||
+           root.edges[1].prior != root.edges[1].model_prior));
 }
 
 TEST_CASE("Single sample", "[MCTS]") {
@@ -174,6 +198,29 @@ TEST_CASE("peek_best_move finishes a capture with a wall", "[MCTS]") {
     REQUIRE(move);
     CHECK(std::get<PawnMove>(move->first).pawn == Pawn::Cat);
     CHECK(std::holds_alternative<Wall>(move->second));
+}
+
+TEST_CASE("first-action terminal shortcut is an isolated default-off diagnostic", "[MCTS]") {
+    auto make_board = [] {
+        return standard_board(5, 5, {2, 2}, {0, 0}, {4, 4}, {3, 2});
+    };
+
+    MCTS::Options off_opts;
+    off_opts.noise_factor = 0;
+    MCTS off{OnlyPolicy{Pawn::Cat, Direction::Right}, make_board(), off_opts};
+    folly::coro::blockingWait(off.sample(2));
+    CHECK(off.terminal_discoveries().empty());
+
+    MCTS::Options on_opts = off_opts;
+    on_opts.terminal_after_first_action_shortcut = true;
+    MCTS on{OnlyPolicy{Pawn::Cat, Direction::Right}, make_board(), on_opts};
+    folly::coro::blockingWait(on.sample(2));
+    auto const terminals = on.terminal_discoveries();
+    REQUIRE(terminals.size() == 1);
+    CHECK(terminals.front().winner == Winner::Red);
+    CHECK(terminals.front().depth == 1);
+    CHECK(terminals.front().after_action == 1);
+    CHECK(terminals.front().shortcut);
 }
 
 /*

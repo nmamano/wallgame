@@ -1259,6 +1259,34 @@ TEST_CASE("policy probe details bind selected actions to exact model inputs", "[
     }
 }
 
+TEST_CASE("search diagnostics separate model, search, terminal, and target evidence",
+          "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    cfg.samples_per_move = 4;
+    cfg.root_noise_factor = 0;
+    cfg.search_diagnostics = true;
+    SessionManager manager(RankedPolicy{}, cfg);
+
+    manager.create_session("search_diagnostics", "bot_1", make_standard_config(6, 6));
+    auto response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, cfg, "search_diagnostics", 0));
+
+    REQUIRE(response["success"] == true);
+    auto const& evidence = response["searchDiagnostics"];
+    CHECK(evidence["terminalAfterFirstActionShortcut"] == false);
+    CHECK(evidence.contains("modelValue"));
+    CHECK(evidence.contains("searchValue"));
+    REQUIRE_FALSE(evidence["edges"].empty());
+    CHECK(std::ranges::count_if(evidence["edges"], [](json const& edge) {
+        return edge["selected"].get<bool>();
+    }) == 1);
+    CHECK(evidence.contains("principalVariation"));
+    CHECK(evidence.contains("terminalDiscoveries"));
+    CHECK(evidence["selfPlayTargetConstruction"]["outcomeUnavailableAtDecision"] == true);
+}
+
 TEST_CASE("handle_evaluate_position - Ply mismatch", "[BGS Handlers]") {
     BgsEngineConfig cfg;
     cfg.model_rows = 8;

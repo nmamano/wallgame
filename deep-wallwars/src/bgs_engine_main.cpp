@@ -36,6 +36,10 @@ DEFINE_string(batch_stats_output, "",
               "Optional fail-if-existing JSON file written after all requests drain");
 DEFINE_bool(policy_probe_details, false,
             "Include offline policy-parity details in evaluate responses");
+DEFINE_bool(search_diagnostics, false,
+            "Include offline root/PV/terminal and self-play-target evidence");
+DEFINE_bool(terminal_after_first_action_shortcut, false,
+            "Diagnostic A/B: treat a terminal first action as terminal inside MCTS (default off)");
 DEFINE_int32(samples, 1000, "Number of MCTS samples per move");
 DEFINE_int32(parallel_samples, 32, "Max parallel MCTS samples (controls GPU batch utilization)");
 DEFINE_uint32(seed, 42, "Random seed for MCTS");
@@ -201,6 +205,11 @@ int main(int argc, char** argv) {
         "  --model_columns N Model columns (default: 8)\n");
 
     gflags::ParseCommandLineFlags(&argc, &argv, true);
+    if (FLAGS_terminal_after_first_action_shortcut && !FLAGS_search_diagnostics) {
+        std::cerr << "Error: --terminal_after_first_action_shortcut requires "
+                     "--search_diagnostics\n";
+        return 2;
+    }
 
     // Checked before anything is built, because the value is mixed into every session's root priors
     // and a silently-wrong one would look like a search that plays badly rather than a bad flag.
@@ -318,6 +327,9 @@ int main(int argc, char** argv) {
         config.model_columns = model_columns;
         config.root_noise_factor = static_cast<float>(FLAGS_root_noise_factor);
         config.policy_probe_details = FLAGS_policy_probe_details;
+        config.search_diagnostics = FLAGS_search_diagnostics;
+        config.terminal_after_first_action_shortcut =
+            FLAGS_terminal_after_first_action_shortcut;
         // Left EMPTY unless asked for. The optional is the enablement, so there is no number that
         // could accidentally mean "on".
         if (FLAGS_losing_fallback) {
