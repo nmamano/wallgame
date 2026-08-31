@@ -152,7 +152,14 @@ TEST_CASE("Animal Cycle bot moves are written in the played order", "[Animal Cyc
     };
 
     for (auto const& fixture : oracle["botMoves"]) {
-        DYNAMIC_SECTION(fixture["name"].get<std::string>()) {
+        // 2026-08-31: Keep this as an ordinary loop. GCC 13 LTO failed 5/5
+        // isolated DYNAMIC_SECTION runs in the 89344e7d diagnosis evidence.
+        REQUIRE(fixture.is_object());
+        REQUIRE(fixture.contains("name"));
+        REQUIRE(fixture["name"].is_string());
+        std::string const fixture_name = fixture["name"].get<std::string>();
+        CAPTURE(fixture_name);
+        {
             auto cell = [](nlohmann::json const& value) {
                 return Cell{value[1].get<int>(), value[0].get<int>()};
             };
