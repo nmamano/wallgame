@@ -6,6 +6,7 @@ import hashlib
 import json
 import os
 import pathlib
+import re
 import subprocess
 import tempfile
 
@@ -123,6 +124,16 @@ def rog_closure(post, model_turns, opponent_turns, after_player):
     }
 
 
+def is_recorded_evasion_rejection(response, bgs_id, expected_ply, reply):
+    return (
+        response.get("success") is False and
+        response.get("type") == "move_applied" and
+        response.get("bgsId") == bgs_id and
+        response.get("ply") == expected_ply and
+        response.get("error") == f"Failed to parse move notation: {reply}"
+    )
+
+
 def run_rog_session(engine, case):
     search = case["search"]
     bgs_id = search["bgsId"]
@@ -179,7 +190,8 @@ def run_rog_session(engine, case):
             {"type": "apply_move", "bgsId": bgs_id,
              "expectedPly": ply + 1, "move": reply},
             allow_failure=True)
-        if opponent_apply.get("success") is False:
+        if is_recorded_evasion_rejection(
+                opponent_apply, bgs_id, ply + 1, reply):
             recorded_evasion_broken = {
                 "modelTurns": model_turns,
                 "opponentTurns": opponent_turns,
@@ -195,6 +207,10 @@ def run_rog_session(engine, case):
                     "the game closes or that the opponent has no legal defense."),
             }
             break
+        if opponent_apply.get("success") is False:
+            raise RuntimeError(
+                "unexpected scripted opponent rejection: " +
+                json.dumps(opponent_apply, sort_keys=True))
         applied.append({"player": "blue", "move": reply, "response": opponent_apply})
         opponent_turns += 1
         post = require_post_apply(opponent_apply, "red", cycle_cells[next_mouse])
@@ -326,10 +342,43 @@ def run_matrix_cases(evidence, cases, output_path, engine_path, model_path,
     persist_evidence(output_path, evidence)
 
 
+def validate_engine_source_commit(commit):
+    if not re.fullmatch(r"[0-9a-f]{40}", commit):
+        raise RuntimeError("engine source commit must be an exact lowercase 40-hex SHA")
+    resolved = subprocess.check_output(
+        ["git", "rev-parse", "--verify", f"{commit}^{{commit}}"],
+        text=True).strip()
+    if resolved != commit:
+        raise RuntimeError("engine source commit did not resolve exactly")
+    return commit
+
+
+def create_evidence(engine_path, engine_sha256, engine_source_commit,
+                    model_path, model_sha256, fixture_path):
+    runner_source_commit = subprocess.check_output(
+        ["git", "rev-parse", "HEAD"], text=True).strip()
+    return {
+        "runner": {
+            "path": str(pathlib.Path(__file__).resolve()),
+            "sha256": sha256(__file__),
+            "sourceCommit": runner_source_commit,
+        },
+        "engine": {
+            "path": engine_path,
+            "sha256": engine_sha256,
+            "sourceCommit": validate_engine_source_commit(engine_source_commit),
+        },
+        "model": {"path": model_path, "sha256": model_sha256},
+        "fixtures": {"path": str(fixture_path), "sha256": sha256(fixture_path)},
+        "cases": [],
+    }
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", required=True)
     parser.add_argument("--engine-sha256", required=True)
+    parser.add_argument("--engine-source-commit", required=True)
     parser.add_argument("--model", required=True)
     parser.add_argument("--model-sha256", required=True)
     parser.add_argument("--fixtures", default="test/fixtures/closing-speed.json")
@@ -347,16 +396,9 @@ def main():
         raise RuntimeError("model hash mismatch")
     fixture_path = pathlib.Path(args.fixtures)
     fixtures = json.loads(fixture_path.read_text())
-    evidence = {
-        "sourceCommit": subprocess.check_output(
-            ["git", "rev-parse", "HEAD"], text=True).strip(),
-        "runner": {"path": str(pathlib.Path(__file__).resolve()),
-                   "sha256": sha256(__file__)},
-        "engine": {"path": args.engine, "sha256": args.engine_sha256},
-        "model": {"path": args.model, "sha256": args.model_sha256},
-        "fixtures": {"path": str(fixture_path), "sha256": sha256(fixture_path)},
-        "cases": [],
-    }
+    evidence = create_evidence(
+        args.engine, args.engine_sha256, args.engine_source_commit,
+        args.model, args.model_sha256, fixture_path)
     run_matrix_cases(
         evidence, fixtures["cases"], output_path, args.engine, args.model,
         args.require_known_bad)

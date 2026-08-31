@@ -5,8 +5,9 @@ import json
 import pathlib
 import tempfile
 import unittest
+from unittest import mock
 
-from closing_speed_ab import run_matrix_cases, run_rog_session, run_session
+from closing_speed_ab import create_evidence, run_matrix_cases, run_rog_session, run_session
 
 
 class FakeEngine:
@@ -61,10 +62,12 @@ class RolloutBudgetTest(unittest.TestCase):
 
 
 class RogFakeEngine:
-    def __init__(self, terminal_after_apply=None, refuse_move=None, wrong_mouse=False):
+    def __init__(self, terminal_after_apply=None, refuse_move=None, wrong_mouse=False,
+                 refusal_overrides=None):
         self.terminal_after_apply = terminal_after_apply
         self.refuse_move = refuse_move
         self.wrong_mouse = wrong_mouse
+        self.refusal_overrides = refusal_overrides or {}
         self.requests = []
         self.request_modes = []
         self.evaluations = 0
@@ -90,10 +93,13 @@ class RogFakeEngine:
         if payload["type"] == "apply_move":
             if payload["move"] == self.refuse_move:
                 response = {
+                    "type": "move_applied",
+                    "bgsId": payload["bgsId"],
                     "success": False,
-                    "error": "scripted move is illegal",
+                    "error": f"Failed to parse move notation: {payload['move']}",
                     "ply": payload["expectedPly"],
                 }
+                response.update(self.refusal_overrides)
                 if not allow_failure:
                     raise RuntimeError(f"engine refused request: {response}")
                 return response
@@ -119,6 +125,7 @@ class RogFakeEngine:
 
 class RogScriptedOpponentTest(unittest.TestCase):
     case = {
+        "id": "rog-budget-test",
         "search": {"bgsId": "rog-budget-test"},
         "config": {"fixture": "fake"},
         "modelTurnBudget": 40,
@@ -209,6 +216,40 @@ class RogScriptedOpponentTest(unittest.TestCase):
         with self.assertRaisesRegex(RuntimeError, "engine refused request"):
             run_rog_session(RogFakeEngine(refuse_move="Cg1"), self.case)
 
+        with self.assertRaisesRegex(RuntimeError, "unexpected scripted opponent rejection"):
+            run_rog_session(RogFakeEngine(
+                refuse_move="Mh3",
+                refusal_overrides={
+                    "ply": 99,
+                    "error": "Ply mismatch: expected 3, got 99",
+                }), self.case)
+        with self.assertRaisesRegex(RuntimeError, "unexpected scripted opponent rejection"):
+            run_rog_session(RogFakeEngine(
+                refuse_move="Mh3",
+                refusal_overrides={"error": "Session not found"}), self.case)
+
+    def test_completed_recorded_evasion_boundary_is_persisted(self):
+        def case_runner(_engine, _model, case, shortcut, _rollout):
+            fake = RogFakeEngine(refuse_move="Mh3") if shortcut else RogFakeEngine()
+            return run_rog_session(fake, case)
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "evidence.json"
+            evidence = {"cases": []}
+            run_matrix_cases(
+                evidence, [self.case], output, "engine", "model", False,
+                case_runner=case_runner)
+            saved = json.loads(output.read_text())
+
+        saved_case = saved["cases"][0]
+        self.assertEqual(saved["verdict"], "complete")
+        self.assertEqual(saved_case["shortcutOff"]["armOutcome"], "exhausted")
+        self.assertEqual(
+            saved_case["shortcutOn"]["armOutcome"], "recordedEvasionBroken")
+        self.assertEqual(
+            saved_case["shortcutOn"]["recordedEvasionBroken"]["rejectedMove"],
+            "Mh3")
+
 
 class PartialEvidenceTest(unittest.TestCase):
     def test_unexpected_error_preserves_completed_prior_arm(self):
@@ -236,6 +277,32 @@ class PartialEvidenceTest(unittest.TestCase):
         self.assertNotIn("shortcutOn", saved["cases"][0])
         self.assertEqual(saved["error"]["caseId"], "partial")
         self.assertEqual(saved["error"]["arm"], "shortcutOn")
+
+
+class SplitProvenanceTest(unittest.TestCase):
+    def test_runner_and_engine_source_commits_are_recorded_separately(self):
+        runner_commit = "5" * 40
+        engine_commit = "1" * 40
+
+        def git_output(command, text):
+            self.assertTrue(text)
+            if command[-1] == "HEAD":
+                return runner_commit + "\n"
+            self.assertEqual(command[-1], engine_commit + "^{commit}")
+            return engine_commit + "\n"
+
+        with tempfile.TemporaryDirectory() as directory:
+            fixture = pathlib.Path(directory) / "fixture.json"
+            fixture.write_text("{}\n")
+            with mock.patch("closing_speed_ab.subprocess.check_output",
+                            side_effect=git_output):
+                evidence = create_evidence(
+                    "engine", "engine-hash", engine_commit,
+                    "model", "model-hash", fixture)
+
+        self.assertEqual(evidence["runner"]["sourceCommit"], runner_commit)
+        self.assertEqual(evidence["engine"]["sourceCommit"], engine_commit)
+        self.assertNotIn("sourceCommit", evidence)
 
 
 if __name__ == "__main__":
