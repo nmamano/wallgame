@@ -1367,6 +1367,8 @@ TEST_CASE("apply response diagnostics are default-off and report post-apply term
         CHECK(post["currentWinner"] == "red");
         CHECK(post["nextPlayer"] == "blue");
         CHECK(post["nextTurn"] == "first");
+        CHECK(post["pawns"]["redCat"] == json::array({3, 3}));
+        CHECK(post["pawns"]["blueMouse"] == json::array({3, 3}));
     }
 
     SECTION("P2 terminal is reported immediately") {
@@ -1394,6 +1396,26 @@ TEST_CASE("apply response diagnostics are default-off and report post-apply term
         CHECK(post["currentWinner"] == "blue");
         CHECK(post["nextPlayer"] == "red");
         CHECK(post["nextTurn"] == "first");
+        CHECK(post["pawns"]["redCat"] == json::array({0, 0}));
+        CHECK(post["pawns"]["blueMouse"] == json::array({5, 5}));
+    }
+
+    SECTION("padded model coordinates are returned in the game frame") {
+        auto config = make_classic_config(5, 5);
+        SessionManager manager(CatRightPolicy{}, cfg);
+        REQUIRE(manager.create_session("apply_padded", "bot", config).first);
+        BgsEngineConfig diagnostic_cfg = cfg;
+        diagnostic_cfg.search_diagnostics = true;
+        auto applied = folly::coro::blockingWait(handle_bgs_request(manager, diagnostic_cfg, {
+            {"type", "apply_move"}, {"bgsId", "apply_padded"},
+            {"expectedPly", 0}, {"move", "---"},
+        }));
+        REQUIRE(applied["success"] == true);
+        auto const& pawns = applied["postApplyDiagnostics"]["pawns"];
+        CHECK(pawns["redCat"] == json::array({4, 0}));
+        CHECK(pawns["blueCat"] == json::array({0, 4}));
+        CHECK_FALSE(pawns.contains("redMouse"));
+        CHECK_FALSE(pawns.contains("blueMouse"));
     }
 }
 

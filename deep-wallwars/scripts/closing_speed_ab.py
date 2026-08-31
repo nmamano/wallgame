@@ -93,7 +93,7 @@ def run_session(engine, case, rollout_plies=0):
             "closedWithinRollout": closing is not None}
 
 
-def require_post_apply(response, expected_player):
+def require_post_apply(response, expected_player, expected_blue_mouse=None):
     if response.get("success") is not True:
         raise RuntimeError(f"scripted apply_move failed closed: {response}")
     post = response.get("postApplyDiagnostics")
@@ -102,6 +102,11 @@ def require_post_apply(response, expected_player):
     if post["currentWinner"] == "undecided" and (
             post["nextPlayer"] != expected_player or post["nextTurn"] != "first"):
         raise RuntimeError(f"unexpected post-apply turn: {post}")
+    if expected_blue_mouse is not None:
+        actual = post.get("pawns", {}).get("blueMouse")
+        if actual != expected_blue_mouse:
+            raise RuntimeError(
+                f"authoritative blueMouse mismatch: expected {expected_blue_mouse}, got {actual}")
     return post
 
 
@@ -121,6 +126,7 @@ def run_rog_session(engine, case):
     search = case["search"]
     bgs_id = search["bgsId"]
     policy = case["scriptedOpponentPolicy"]
+    cycle_cells = policy["gameFrameCells"]
     mouse = policy["initialMouse"]
     if mouse not in ("h3", "h1"):
         raise RuntimeError(f"scripted opponent mouse is off cycle: {mouse}")
@@ -154,7 +160,7 @@ def run_rog_session(engine, case):
                                       "expectedPly": ply, "move": move})
         applied.append({"player": "red", "move": move, "response": model_apply})
         model_turns += 1
-        post = require_post_apply(model_apply, "blue")
+        post = require_post_apply(model_apply, "blue", cycle_cells[mouse])
         closure = rog_closure(post, model_turns, opponent_turns, "red")
         if closure:
             break
@@ -171,7 +177,7 @@ def run_rog_session(engine, case):
                                          "expectedPly": ply + 1, "move": reply})
         applied.append({"player": "blue", "move": reply, "response": opponent_apply})
         opponent_turns += 1
-        post = require_post_apply(opponent_apply, "red")
+        post = require_post_apply(opponent_apply, "red", cycle_cells[next_mouse])
         mouse = next_mouse
         closure = rog_closure(post, model_turns, opponent_turns, "blue")
         if closure:

@@ -58,12 +58,14 @@ class RolloutBudgetTest(unittest.TestCase):
 
 
 class RogFakeEngine:
-    def __init__(self, terminal_after_apply=None, refuse_move=None):
+    def __init__(self, terminal_after_apply=None, refuse_move=None, wrong_mouse=False):
         self.terminal_after_apply = terminal_after_apply
         self.refuse_move = refuse_move
+        self.wrong_mouse = wrong_mouse
         self.requests = []
         self.evaluations = 0
         self.applies = 0
+        self.mouse = "h3"
 
     def request(self, payload):
         self.requests.append(payload)
@@ -80,13 +82,19 @@ class RogFakeEngine:
                 return {"success": False, "error": "scripted move is illegal"}
             self.applies += 1
             mover = "red" if self.applies % 2 == 1 else "blue"
+            if mover == "blue":
+                self.mouse = "h1" if payload["move"] == "Mh1" else "h3"
             winner = mover if self.applies == self.terminal_after_apply else "undecided"
+            cell = [5, 7] if self.mouse == "h3" else [7, 7]
+            if self.wrong_mouse:
+                cell = [0, 0]
             return {
                 "success": True,
                 "postApplyDiagnostics": {
                     "currentWinner": winner,
                     "nextPlayer": "blue" if mover == "red" else "red",
                     "nextTurn": "first",
+                    "pawns": {"redCat": [5, 6], "blueMouse": cell},
                 },
             }
         return {"success": True}
@@ -103,6 +111,7 @@ class RogScriptedOpponentTest(unittest.TestCase):
             "initialMouse": "h3",
             "h3": "Mh1",
             "h1": "Mh3",
+            "gameFrameCells": {"h3": [5, 7], "h1": [7, 7]},
         },
     }
 
@@ -142,6 +151,8 @@ class RogScriptedOpponentTest(unittest.TestCase):
             run_rog_session(RogFakeEngine(), off_cycle)
         with self.assertRaisesRegex(RuntimeError, "failed closed"):
             run_rog_session(RogFakeEngine(refuse_move="Mh1"), self.case)
+        with self.assertRaisesRegex(RuntimeError, "authoritative blueMouse mismatch"):
+            run_rog_session(RogFakeEngine(wrong_mouse=True), self.case)
 
 
 if __name__ == "__main__":

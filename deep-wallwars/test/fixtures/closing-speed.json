@@ -1186,7 +1186,9 @@
         "gameId": "rogYDkzs",
         "ply": 61,
         "distance": 3,
-        "recordedPolicyMoveRange": "55-89",
+        "broaderObservedAlternationOneBasedMoves": "55-89",
+        "exactRequiredCombinedZeroBasedMoves": "60-89",
+        "exactRequiredCombinedOneBasedMoves": "61-90",
         "sourceCaptureSha256": "7dfe99f733182eaea3b7bf082a5f3d66b11bad0fc44d2367268c016b325aa2fc"
       },
       "config": {
@@ -1414,7 +1416,23 @@
         "initialMouse": "h3",
         "h3": "Mh1",
         "h1": "Mh3",
-        "recordedMoveRange": "55-89"
+        "gameFrameCells": {
+          "h3": [5, 7],
+          "h1": [7, 7]
+        },
+        "broaderObservedAlternation": {
+          "zeroBasedMoves": "54-88",
+          "oneBasedMoves": "55-89"
+        },
+        "exactRequiredPrefix": {
+          "startState": "before zero-based move 60 / one-based move 61",
+          "modelZeroBasedMoves": "60,62,...,88",
+          "modelOneBasedMoves": "61,63,...,89",
+          "replyZeroBasedMoves": "61,63,...,89",
+          "replyOneBasedMoves": "62,64,...,90",
+          "combinedZeroBasedMoves": "60-89",
+          "combinedOneBasedMoves": "61-90"
+        }
       },
       "search": {
         "samples": 1000,

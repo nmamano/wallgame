@@ -207,6 +207,37 @@ static char const* winner_name(Winner winner) {
     return "undecided";
 }
 
+static json game_cell_json(Cell model_cell, engine_adapter::PaddingConfig const& padding) {
+    auto const game_cell = engine_adapter::transform_to_game(model_cell, padding);
+    if (!game_cell) throw std::logic_error("Pawn is outside the game frame");
+    return json::array({game_cell->row, game_cell->column});
+}
+
+static json game_frame_pawns(Board const& board, engine_adapter::PaddingConfig const& padding) {
+    json pawns = {
+        {"redCat", game_cell_json(board.pawn_position(Player::Red, Pawn::Cat), padding)},
+    };
+    if (board.variant() == Variant::Classic) {
+        pawns["blueCat"] =
+            game_cell_json(board.pawn_position(Player::Blue, Pawn::Cat), padding);
+    } else if (board.variant() == Variant::AnimalCycle) {
+        pawns["redElephant"] =
+            game_cell_json(board.pawn_position(Player::Red, Pawn::Elephant), padding);
+        pawns["blueMouse"] =
+            game_cell_json(board.pawn_position(Player::Blue, Pawn::Mouse), padding);
+        pawns["blueDog"] =
+            game_cell_json(board.pawn_position(Player::Blue, Pawn::Dog), padding);
+    } else {
+        pawns["redMouse"] =
+            game_cell_json(board.pawn_position(Player::Red, Pawn::Mouse), padding);
+        pawns["blueCat"] =
+            game_cell_json(board.pawn_position(Player::Blue, Pawn::Cat), padding);
+        pawns["blueMouse"] =
+            game_cell_json(board.pawn_position(Player::Blue, Pawn::Mouse), padding);
+    }
+    return pawns;
+}
+
 static json create_search_diagnostics(MCTS const& mcts, std::vector<Action> const& selected) {
     NodeInfo const root = mcts.root_info();
     json edges = json::array();
@@ -608,6 +639,8 @@ folly::coro::Task<json> handle_apply_move(
                 session->mcts->current_board().winner(next_turn))},
             {"nextPlayer", next_turn.player == Player::Red ? "red" : "blue"},
             {"nextTurn", next_turn.action == Turn::First ? "first" : "second"},
+            {"pawns", game_frame_pawns(
+                session->mcts->current_board(), session->padding_config)},
         };
     }
     co_return response;
