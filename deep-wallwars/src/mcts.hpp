@@ -111,6 +111,7 @@ public:
         Turn starting_turn = {Player::Red, Turn::First};
         std::optional<PreviousPosition> starting_previous_position;
         std::uint32_t seed = 42;
+        bool collect_search_diagnostics = false;
         // Diagnostic A/B only. OFF preserves the current search contract byte-for-byte.
         bool terminal_after_first_action_shortcut = false;
     };

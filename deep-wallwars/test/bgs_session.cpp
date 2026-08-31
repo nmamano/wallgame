@@ -82,6 +82,15 @@ struct RankedPolicy {
     }
 };
 
+struct ConstantValueRankedPolicy {
+    folly::coro::Task<Evaluation> operator()(
+        Board const& board, Turn turn, std::optional<PreviousPosition>) {
+        Evaluation result = co_await RankedPolicy{}(board, turn, std::nullopt);
+        result.value = 0.4f;
+        co_return result;
+    }
+};
+
 struct Sp3SequencePolicy {
     folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
                                              std::optional<PreviousPosition>) {
@@ -1284,7 +1293,39 @@ TEST_CASE("search diagnostics separate model, search, terminal, and target evide
     }) == 1);
     CHECK(evidence.contains("principalVariation"));
     CHECK(evidence.contains("terminalDiscoveries"));
-    CHECK(evidence["selfPlayTargetConstruction"]["outcomeUnavailableAtDecision"] == true);
+    auto const& target = evidence["selfPlayTargetContract"];
+    CHECK(target["winnerContribution"] == 0.5f);
+    CHECK(target["moveLimitRecordsAdmitted"] == true);
+    CHECK(target["zSourceByEndReason"]["moveLimit"] ==
+          "finalBoard.score_for(Red) distance heuristic");
+}
+
+TEST_CASE("second-half diagnostics report raw and selection-perspective Q",
+          "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    cfg.samples_per_move = 4;
+    cfg.root_noise_factor = 0;
+    cfg.search_diagnostics = true;
+    SessionManager manager(ConstantValueRankedPolicy{}, cfg);
+    auto config = make_standard_config(6, 6);
+    config["initialState"]["turn"] = {
+        {"playerId", 1},
+        {"actionsTaken", {{{"type", "wall"}, {"target", {1, 1}},
+                            {"wallOrientation", "horizontal"}}}},
+    };
+    REQUIRE(manager.create_session("second_half_q", "bot_1", config).first);
+    auto response = folly::coro::blockingWait(
+        handle_evaluate_position(manager, cfg, "second_half_q", 0));
+    REQUIRE(response["success"] == true);
+    auto const& edges = response["searchDiagnostics"]["edges"];
+    auto sampled = std::ranges::find_if(edges, [](json const& edge) {
+        return edge["visits"].get<int>() > 0;
+    });
+    REQUIRE(sampled != edges.end());
+    CHECK((*sampled)["rawChildQ"].get<float>() == 0.4f);
+    CHECK((*sampled)["selectionQ"].get<float>() == -0.4f);
 }
 
 TEST_CASE("handle_evaluate_position - Ply mismatch", "[BGS Handlers]") {

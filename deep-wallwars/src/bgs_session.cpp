@@ -85,6 +85,7 @@ std::pair<bool, std::string> SessionManager::create_session(
     mcts_opts.seed = generate_seed(bgs_id);
     mcts_opts.max_parallelism = m_config.max_parallel_samples;
     mcts_opts.noise_factor = m_config.root_noise_factor;
+    mcts_opts.collect_search_diagnostics = m_config.search_diagnostics;
     mcts_opts.terminal_after_first_action_shortcut =
         m_config.terminal_after_first_action_shortcut;
 
@@ -222,13 +223,16 @@ static json create_search_diagnostics(MCTS const& mcts, std::vector<Action> cons
         out << edge.action;
         std::size_t const policy_index =
             universal_policy_index(root.board, root.turn, edge.action);
+        float const selection_q = root.turn.action == Turn::Second
+            ? -edge.q_value : edge.q_value;
         edges.push_back({
             {"action", out.str()},
             {"policyIndex", policy_index},
             {"modelPrior", edge.model_prior},
             {"searchPrior", edge.prior},
             {"visits", edge.num_samples},
-            {"searchQ", edge.q_value},
+            {"rawChildQ", edge.q_value},
+            {"selectionQ", selection_q},
             {"selected", out.str() == selected_action},
             {"selfPlayPolicyTarget", sampled_children == 0
                  ? 0.0f : static_cast<float>(edge.num_samples) / sampled_children},
@@ -278,10 +282,24 @@ static json create_search_diagnostics(MCTS const& mcts, std::vector<Action> cons
         {"edges", std::move(edges)},
         {"principalVariation", std::move(pv)},
         {"terminalDiscoveries", std::move(terminals)},
-        {"selfPlayTargetConstruction", {
-            {"policy", "child visits divided by total sampled child visits"},
-            {"value", "(1-winnerContribution)*searchQ + winnerContribution*outcomeFromSideToMove"},
-            {"outcomeUnavailableAtDecision", true},
+        {"selfPlayTargetContract", {
+            {"winnerContribution", 0.5f},
+            {"policy", {
+                {"numerator", "edge child visits"},
+                {"denominator", "sum of all edge child visits"},
+                {"unvisitedLegalActions", 0.0f},
+                {"parentOnlySamplesExcluded", true},
+            }},
+            {"value", "0.5*searchQ + 0.5*zFromSideToMove"},
+            {"searchQ", "root search value at the recorded decision"},
+            {"zSign", "scoreForRed when Red moves; negative scoreForRed when Blue moves"},
+            {"zSourceByEndReason", {
+                {"terminal", "finalBoard.score_for(Red): exact win/draw/loss"},
+                {"noLegalAction", "finalBoard.score_for(Red): exact if terminal, otherwise distance heuristic"},
+                {"moveLimit", "finalBoard.score_for(Red) distance heuristic"},
+            }},
+            {"moveLimitRecordsAdmitted", true},
+            {"actualOutcomeUnavailableAtDecision", true},
         }},
     };
 }

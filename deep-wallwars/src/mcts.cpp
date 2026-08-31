@@ -71,7 +71,7 @@ folly::coro::Task<void> MCTS::single_sample() {
 
 folly::coro::Task<float> MCTS::sample(int samples) {
     m_samples_done = 0;
-    {
+    if (m_opts.collect_search_diagnostics) {
         std::lock_guard lock(m_terminal_discoveries_mutex);
         m_terminal_discoveries.clear();
     }
@@ -203,6 +203,7 @@ folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
 }
 
 void MCTS::record_terminal(Winner winner, TreeNode const& node, bool shortcut) {
+    if (!m_opts.collect_search_diagnostics) return;
     int const depth = node.depth - m_root->depth;
     int const after_action = node.turn.action == Turn::Second ? 1 : 2;
     std::lock_guard lock(m_terminal_discoveries_mutex);

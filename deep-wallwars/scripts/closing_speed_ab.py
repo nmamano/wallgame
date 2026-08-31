@@ -6,6 +6,7 @@ import hashlib
 import json
 import pathlib
 import subprocess
+import tempfile
 
 
 def sha256(path):
@@ -18,27 +19,41 @@ def sha256(path):
 
 class Engine:
     def __init__(self, command):
+        self.stderr = tempfile.TemporaryFile(mode="w+")
         self.process = subprocess.Popen(
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE, text=True, bufsize=1)
+            stderr=self.stderr, text=True, bufsize=1)
 
     def request(self, payload):
         self.process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
         line = self.process.stdout.readline()
         if not line:
-            raise RuntimeError("engine ended before response: " + self.process.stderr.read())
+            raise RuntimeError("engine ended before response: " + self.stderr_text())
         response = json.loads(line)
         if response.get("success") is False:
             raise RuntimeError(f"engine refused request: {response}")
         return response
 
     def close(self):
+        error = None
         if self.process.poll() is None:
             self.process.stdin.close()
             code = self.process.wait(timeout=60)
             if code:
-                raise RuntimeError(f"engine exited {code}: {self.process.stderr.read()}")
+                error = f"engine exited {code}"
+        text = self.stderr_text()
+        self.stderr.close()
+        if error:
+            raise RuntimeError(f"{error}: {text}")
+        return text
+
+    def stderr_text(self):
+        self.stderr.flush()
+        self.stderr.seek(0)
+        text = self.stderr.read()
+        self.stderr.seek(0, 2)
+        return text
 
 
 def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
@@ -55,6 +70,9 @@ def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
     engine = Engine(command)
     bgs_id = search["bgsId"]
     responses = []
+    closing = None
+    pass_or_no_legal = None
+    stderr = ""
     try:
         engine.request({"type": "start_game_session", "bgsId": bgs_id,
                         "botId": "closing-speed-ab", "config": case["config"]})
@@ -64,20 +82,24 @@ def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
                                        "expectedPly": ply})
             responses.append(response)
             diagnostics = response["searchDiagnostics"]
-            terminal_here = any(item["depth"] == 0
-                                for item in diagnostics["terminalDiscoveries"])
-            if terminal_here or response["bestMove"] == "---":
+            if diagnostics["currentWinner"] != "undecided":
+                closing = {"winner": diagnostics["currentWinner"], "ply": ply,
+                           "playerTurnsPlayed": ply,
+                           "fullTurnsCompleted": ply // 2,
+                           "fullTurnNumber": (ply + 1) // 2}
+                break
+            if response["bestMove"] == "---":
+                pass_or_no_legal = {"ply": ply, "bestMove": "---"}
                 break
             if ply + 1 < limit:
                 engine.request({"type": "apply_move", "bgsId": bgs_id,
                                 "expectedPly": ply, "move": response["bestMove"]})
         engine.request({"type": "end_game_session", "bgsId": bgs_id})
     finally:
-        engine.close()
-    return {"command": command, "responses": responses,
-            "closedWithinRollout": len(responses) < limit or (
-                responses and any(item["depth"] == 0 for item in
-                                  responses[-1]["searchDiagnostics"]["terminalDiscoveries"]))}
+        stderr = engine.close()
+    return {"command": command, "stderr": stderr, "responses": responses,
+            "closure": closing, "passOrNoLegal": pass_or_no_legal,
+            "closedWithinRollout": closing is not None}
 
 
 def baseline_reproduced(case, result):
@@ -102,6 +124,10 @@ def main():
     parser.add_argument("--require-known-bad", action="store_true")
     args = parser.parse_args()
 
+    output_path = pathlib.Path(args.output)
+    if output_path.exists():
+        raise RuntimeError("refusing to overwrite existing output")
+
     if sha256(args.engine) != args.engine_sha256:
         raise RuntimeError("engine hash mismatch")
     if sha256(args.model) != args.model_sha256:
@@ -109,6 +135,10 @@ def main():
     fixture_path = pathlib.Path(args.fixtures)
     fixtures = json.loads(fixture_path.read_text())
     evidence = {
+        "sourceCommit": subprocess.check_output(
+            ["git", "rev-parse", "HEAD"], text=True).strip(),
+        "runner": {"path": str(pathlib.Path(__file__).resolve()),
+                   "sha256": sha256(__file__)},
         "engine": {"path": args.engine, "sha256": args.engine_sha256},
         "model": {"path": args.model, "sha256": args.model_sha256},
         "fixtures": {"path": str(fixture_path), "sha256": sha256(fixture_path)},
@@ -126,7 +156,9 @@ def main():
             failures.append(case["id"])
         evidence["cases"].append({"id": case["id"], "baselineKnownBad": reproduced,
                                   "shortcutOff": off, "shortcutOn": on})
-    pathlib.Path(args.output).write_text(json.dumps(evidence, indent=2) + "\n")
+    with output_path.open("x") as stream:
+        json.dump(evidence, stream, indent=2)
+        stream.write("\n")
     if failures and args.require_known_bad:
         raise RuntimeError("known-bad baseline did not reproduce: " + ", ".join(failures))
 

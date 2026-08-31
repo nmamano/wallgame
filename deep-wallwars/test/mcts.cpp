@@ -212,6 +212,7 @@ TEST_CASE("first-action terminal shortcut is an isolated default-off diagnostic"
     CHECK(off.terminal_discoveries().empty());
 
     MCTS::Options on_opts = off_opts;
+    on_opts.collect_search_diagnostics = true;
     on_opts.terminal_after_first_action_shortcut = true;
     MCTS on{OnlyPolicy{Pawn::Cat, Direction::Right}, make_board(), on_opts};
     folly::coro::blockingWait(on.sample(2));
@@ -221,6 +222,14 @@ TEST_CASE("first-action terminal shortcut is an isolated default-off diagnostic"
     CHECK(terminals.front().depth == 1);
     CHECK(terminals.front().after_action == 1);
     CHECK(terminals.front().shortcut);
+}
+
+TEST_CASE("ordinary terminals collect nothing when diagnostics are disabled", "[MCTS]") {
+    Board terminal = standard_board(5, 5, {3, 2}, {0, 0}, {4, 4}, {3, 2});
+    REQUIRE(terminal.winner() == Winner::Red);
+    MCTS mcts{SimplePolicy{1.0, 1.0, 1.0}, std::move(terminal)};
+    folly::coro::blockingWait(mcts.sample(2));
+    CHECK(mcts.terminal_discoveries().empty());
 }
 
 /*
