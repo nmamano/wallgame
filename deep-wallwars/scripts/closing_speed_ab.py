@@ -56,6 +56,43 @@ class Engine:
         return text
 
 
+def run_session(engine, case, rollout_plies=0):
+    search = case["search"]
+    bgs_id = search["bgsId"]
+    responses = []
+    closing = None
+    pass_or_no_legal = None
+    exhausted = None
+    engine.request({"type": "start_game_session", "bgsId": bgs_id,
+                    "botId": "closing-speed-ab", "config": case["config"]})
+    move_budget = rollout_plies
+    for ply in range(move_budget + 1):
+        response = engine.request({"type": "evaluate_position", "bgsId": bgs_id,
+                                   "expectedPly": ply})
+        responses.append(response)
+        diagnostics = response["searchDiagnostics"]
+        if diagnostics["currentWinner"] != "undecided":
+            closing = {"winner": diagnostics["currentWinner"], "ply": ply,
+                       "playerTurnsPlayed": ply,
+                       "fullTurnsCompleted": ply // 2,
+                       "fullTurnNumber": (ply + 1) // 2}
+            break
+        if response["bestMove"] == "---":
+            pass_or_no_legal = {"ply": ply, "bestMove": "---"}
+            break
+        if ply == move_budget:
+            if move_budget:
+                exhausted = {"statePly": ply, "movesApplied": move_budget}
+            break
+        engine.request({"type": "apply_move", "bgsId": bgs_id,
+                        "expectedPly": ply, "move": response["bestMove"]})
+    engine.request({"type": "end_game_session", "bgsId": bgs_id})
+    return {"responses": responses,
+            "closure": closing, "passOrNoLegal": pass_or_no_legal,
+            "exhaustedWithoutClosure": exhausted,
+            "closedWithinRollout": closing is not None}
+
+
 def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
     search = case["search"]
     command = [
@@ -68,38 +105,12 @@ def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
     if shortcut:
         command.append("--terminal_after_first_action_shortcut")
     engine = Engine(command)
-    bgs_id = search["bgsId"]
-    responses = []
-    closing = None
-    pass_or_no_legal = None
     stderr = ""
     try:
-        engine.request({"type": "start_game_session", "bgsId": bgs_id,
-                        "botId": "closing-speed-ab", "config": case["config"]})
-        limit = rollout_plies or 1
-        for ply in range(limit):
-            response = engine.request({"type": "evaluate_position", "bgsId": bgs_id,
-                                       "expectedPly": ply})
-            responses.append(response)
-            diagnostics = response["searchDiagnostics"]
-            if diagnostics["currentWinner"] != "undecided":
-                closing = {"winner": diagnostics["currentWinner"], "ply": ply,
-                           "playerTurnsPlayed": ply,
-                           "fullTurnsCompleted": ply // 2,
-                           "fullTurnNumber": (ply + 1) // 2}
-                break
-            if response["bestMove"] == "---":
-                pass_or_no_legal = {"ply": ply, "bestMove": "---"}
-                break
-            if ply + 1 < limit:
-                engine.request({"type": "apply_move", "bgsId": bgs_id,
-                                "expectedPly": ply, "move": response["bestMove"]})
-        engine.request({"type": "end_game_session", "bgsId": bgs_id})
+        result = run_session(engine, case, rollout_plies)
     finally:
         stderr = engine.close()
-    return {"command": command, "stderr": stderr, "responses": responses,
-            "closure": closing, "passOrNoLegal": pass_or_no_legal,
-            "closedWithinRollout": closing is not None}
+    return {"command": command, "stderr": stderr, **result}
 
 
 def baseline_reproduced(case, result):
