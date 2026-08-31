@@ -4,6 +4,7 @@
 import argparse
 import hashlib
 import json
+import os
 import pathlib
 import subprocess
 import tempfile
@@ -24,14 +25,14 @@ class Engine:
             command, stdin=subprocess.PIPE, stdout=subprocess.PIPE,
             stderr=self.stderr, text=True, bufsize=1)
 
-    def request(self, payload):
+    def request(self, payload, allow_failure=False):
         self.process.stdin.write(json.dumps(payload, separators=(",", ":")) + "\n")
         self.process.stdin.flush()
         line = self.process.stdout.readline()
         if not line:
             raise RuntimeError("engine ended before response: " + self.stderr_text())
         response = json.loads(line)
-        if response.get("success") is False:
+        if response.get("success") is False and not allow_failure:
             raise RuntimeError(f"engine refused request: {response}")
         return response
 
@@ -137,6 +138,7 @@ def run_rog_session(engine, case):
     model_moves = []
     recorded_mismatches = []
     closure = None
+    recorded_evasion_broken = None
     model_turns = 0
     opponent_turns = 0
     engine.request({"type": "start_game_session", "bgsId": bgs_id,
@@ -173,8 +175,26 @@ def run_rog_session(engine, case):
             next_mouse = "h3"
         else:
             raise RuntimeError(f"scripted opponent mouse is off cycle: {mouse}")
-        opponent_apply = engine.request({"type": "apply_move", "bgsId": bgs_id,
-                                         "expectedPly": ply + 1, "move": reply})
+        opponent_apply = engine.request(
+            {"type": "apply_move", "bgsId": bgs_id,
+             "expectedPly": ply + 1, "move": reply},
+            allow_failure=True)
+        if opponent_apply.get("success") is False:
+            recorded_evasion_broken = {
+                "modelTurns": model_turns,
+                "opponentTurns": opponent_turns,
+                "totalSuccessfulPlies": model_turns + opponent_turns,
+                "expectedPly": ply + 1,
+                "rejectedMove": reply,
+                "failureResponse": opponent_apply,
+                "lastSuccessfulModelMove": move,
+                "lastModelEvaluateDiagnostics": response["searchDiagnostics"],
+                "postModelApplyDiagnostics": post,
+                "interpretation": (
+                    "The recorded evasion loop was disrupted. This does not prove "
+                    "the game closes or that the opponent has no legal defense."),
+            }
+            break
         applied.append({"player": "blue", "move": reply, "response": opponent_apply})
         opponent_turns += 1
         post = require_post_apply(opponent_apply, "red", cycle_cells[next_mouse])
@@ -183,11 +203,17 @@ def run_rog_session(engine, case):
         if closure:
             break
     engine.request({"type": "end_game_session", "bgsId": bgs_id})
-    exhausted = None if closure else {
+    exhausted = None if closure or recorded_evasion_broken else {
         "modelTurns": model_turns,
         "opponentTurns": opponent_turns,
         "totalPlies": model_turns + opponent_turns,
     }
+    if closure:
+        outcome = "closure"
+    elif recorded_evasion_broken:
+        outcome = "recordedEvasionBroken"
+    else:
+        outcome = "exhausted"
     return {
         "responses": evaluations,
         "appliedMoves": applied,
@@ -195,9 +221,11 @@ def run_rog_session(engine, case):
         "recordedPrefixReproduced": not recorded_mismatches,
         "recordedPrefixMismatches": recorded_mismatches,
         "closure": closure,
+        "recordedEvasionBroken": recorded_evasion_broken,
         "passOrNoLegal": None,
         "exhaustedWithoutClosure": exhausted,
         "closedWithinRollout": closure is not None,
+        "armOutcome": outcome,
     }
 
 
@@ -241,6 +269,63 @@ def baseline_reproduced(case, result):
     return True
 
 
+def persist_evidence(output_path, evidence, exclusive=False):
+    if exclusive:
+        with output_path.open("x") as stream:
+            json.dump(evidence, stream, indent=2)
+            stream.write("\n")
+        return
+    with tempfile.NamedTemporaryFile(
+            mode="w", dir=output_path.parent, prefix=output_path.name + ".",
+            suffix=".tmp", delete=False) as stream:
+        temporary_path = pathlib.Path(stream.name)
+        json.dump(evidence, stream, indent=2)
+        stream.write("\n")
+    os.replace(temporary_path, output_path)
+
+
+def run_matrix_cases(evidence, cases, output_path, engine_path, model_path,
+                     require_known_bad, case_runner=run_case):
+    failures = []
+    persist_evidence(output_path, evidence, exclusive=True)
+    for case in cases:
+        case_evidence = {"id": case["id"]}
+        evidence["cases"].append(case_evidence)
+        persist_evidence(output_path, evidence)
+        active_arm = "shortcutOff"
+        try:
+            off = case_runner(engine_path, model_path, case, False, 0)
+            case_evidence["shortcutOff"] = off
+            persist_evidence(output_path, evidence)
+            active_arm = "shortcutOn"
+            on = case_runner(engine_path, model_path, case, True, 0)
+            case_evidence["shortcutOn"] = on
+            reproduced = baseline_reproduced(case, off)
+            case_evidence["baselineKnownBad"] = reproduced
+            if not reproduced:
+                failures.append(case["id"])
+            persist_evidence(output_path, evidence)
+        except Exception as error:
+            evidence["error"] = {
+                "caseId": case["id"],
+                "arm": active_arm,
+                "type": type(error).__name__,
+                "message": str(error),
+            }
+            persist_evidence(output_path, evidence)
+            raise
+    if failures and require_known_bad:
+        evidence["error"] = {
+            "type": "KnownBadBaselineMismatch",
+            "caseIds": failures,
+            "message": "known-bad baseline did not reproduce: " + ", ".join(failures),
+        }
+        persist_evidence(output_path, evidence)
+        raise RuntimeError(evidence["error"]["message"])
+    evidence["verdict"] = "complete"
+    persist_evidence(output_path, evidence)
+
+
 def main():
     parser = argparse.ArgumentParser()
     parser.add_argument("--engine", required=True)
@@ -272,21 +357,9 @@ def main():
         "fixtures": {"path": str(fixture_path), "sha256": sha256(fixture_path)},
         "cases": [],
     }
-    failures = []
-    for case in fixtures["cases"]:
-        rollout = 0
-        off = run_case(args.engine, args.model, case, False, rollout)
-        on = run_case(args.engine, args.model, case, True, rollout)
-        reproduced = baseline_reproduced(case, off)
-        if not reproduced:
-            failures.append(case["id"])
-        evidence["cases"].append({"id": case["id"], "baselineKnownBad": reproduced,
-                                  "shortcutOff": off, "shortcutOn": on})
-    with output_path.open("x") as stream:
-        json.dump(evidence, stream, indent=2)
-        stream.write("\n")
-    if failures and args.require_known_bad:
-        raise RuntimeError("known-bad baseline did not reproduce: " + ", ".join(failures))
+    run_matrix_cases(
+        evidence, fixtures["cases"], output_path, args.engine, args.model,
+        args.require_known_bad)
 
 
 if __name__ == "__main__":

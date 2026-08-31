@@ -1,9 +1,12 @@
 #!/usr/bin/env python3
 
 import copy
+import json
+import pathlib
+import tempfile
 import unittest
 
-from closing_speed_ab import run_rog_session, run_session
+from closing_speed_ab import run_matrix_cases, run_rog_session, run_session
 
 
 class FakeEngine:
@@ -63,23 +66,37 @@ class RogFakeEngine:
         self.refuse_move = refuse_move
         self.wrong_mouse = wrong_mouse
         self.requests = []
+        self.request_modes = []
         self.evaluations = 0
         self.applies = 0
         self.mouse = "h3"
 
-    def request(self, payload):
+    def request(self, payload, allow_failure=False):
         self.requests.append(payload)
+        self.request_modes.append((payload, allow_failure))
         if payload["type"] == "evaluate_position":
             move = "Cg3" if self.evaluations % 2 == 0 else "Cg1"
             self.evaluations += 1
             return {
                 "success": True,
                 "bestMove": move,
-                "searchDiagnostics": {"currentWinner": "undecided"},
+                "searchDiagnostics": {
+                    "currentWinner": "undecided",
+                    "modelValue": 0.75,
+                    "edges": [{"action": move, "visits": 10}],
+                    "principalVariation": [{"depth": 1, "action": move}],
+                },
             }
         if payload["type"] == "apply_move":
             if payload["move"] == self.refuse_move:
-                return {"success": False, "error": "scripted move is illegal"}
+                response = {
+                    "success": False,
+                    "error": "scripted move is illegal",
+                    "ply": payload["expectedPly"],
+                }
+                if not allow_failure:
+                    raise RuntimeError(f"engine refused request: {response}")
+                return response
             self.applies += 1
             mover = "red" if self.applies % 2 == 1 else "blue"
             if mover == "blue":
@@ -138,21 +155,87 @@ class RogScriptedOpponentTest(unittest.TestCase):
             "winner": "red", "afterPlayer": "red",
             "modelTurns": 1, "opponentTurns": 0, "totalPlies": 1,
         })
+        self.assertEqual(after_model["armOutcome"], "closure")
+        self.assertIsNone(after_model["recordedEvasionBroken"])
         after_opponent = run_rog_session(RogFakeEngine(terminal_after_apply=2), self.case)
         self.assertEqual(after_opponent["closure"], {
             "winner": "blue", "afterPlayer": "blue",
             "modelTurns": 1, "opponentTurns": 1, "totalPlies": 2,
         })
+        self.assertEqual(after_opponent["armOutcome"], "closure")
+        self.assertIsNone(after_opponent["recordedEvasionBroken"])
 
-    def test_off_cycle_or_illegal_scripted_state_fails_closed(self):
+    def test_off_cycle_or_wrong_authoritative_state_fails_closed(self):
         off_cycle = copy.deepcopy(self.case)
         off_cycle["scriptedOpponentPolicy"]["initialMouse"] = "g2"
         with self.assertRaisesRegex(RuntimeError, "off cycle"):
             run_rog_session(RogFakeEngine(), off_cycle)
-        with self.assertRaisesRegex(RuntimeError, "failed closed"):
-            run_rog_session(RogFakeEngine(refuse_move="Mh1"), self.case)
         with self.assertRaisesRegex(RuntimeError, "authoritative blueMouse mismatch"):
             run_rog_session(RogFakeEngine(wrong_mouse=True), self.case)
+
+    def test_off_exhaustion_and_on_recorded_evasion_break_are_distinct(self):
+        shortcut_off = run_rog_session(RogFakeEngine(), self.case)
+        shortcut_on = run_rog_session(RogFakeEngine(refuse_move="Mh3"), self.case)
+
+        self.assertEqual(shortcut_off["armOutcome"], "exhausted")
+        self.assertIsNotNone(shortcut_off["exhaustedWithoutClosure"])
+        self.assertIsNone(shortcut_off["recordedEvasionBroken"])
+        self.assertEqual(shortcut_on["armOutcome"], "recordedEvasionBroken")
+        self.assertIsNone(shortcut_on["closure"])
+        self.assertIsNone(shortcut_on["exhaustedWithoutClosure"])
+
+    def test_recorded_evasion_break_is_only_after_a_successful_model_apply(self):
+        engine = RogFakeEngine(refuse_move="Mh3")
+        result = run_rog_session(engine, self.case)
+        boundary = result["recordedEvasionBroken"]
+
+        self.assertEqual(boundary["modelTurns"], 2)
+        self.assertEqual(boundary["opponentTurns"], 1)
+        self.assertEqual(boundary["totalSuccessfulPlies"], 3)
+        self.assertEqual(boundary["expectedPly"], 3)
+        self.assertEqual(boundary["rejectedMove"], "Mh3")
+        self.assertEqual(boundary["failureResponse"]["success"], False)
+        self.assertEqual(boundary["lastSuccessfulModelMove"], "Cg1")
+        self.assertEqual(
+            boundary["lastModelEvaluateDiagnostics"]["principalVariation"][0]["action"],
+            "Cg1")
+        self.assertEqual(boundary["postModelApplyDiagnostics"]["currentWinner"],
+                         "undecided")
+        rejected = [mode for mode in engine.request_modes
+                    if mode[0].get("move") == "Mh3"]
+        self.assertEqual(len(rejected), 1)
+        self.assertTrue(rejected[0][1])
+
+        with self.assertRaisesRegex(RuntimeError, "engine refused request"):
+            run_rog_session(RogFakeEngine(refuse_move="Cg1"), self.case)
+
+
+class PartialEvidenceTest(unittest.TestCase):
+    def test_unexpected_error_preserves_completed_prior_arm(self):
+        case = {"id": "partial", "expectedBaselineMove": ">a1"}
+        off = {"responses": [{"bestMove": ">a1"}]}
+        calls = []
+
+        def case_runner(_engine, _model, _case, shortcut, _rollout):
+            calls.append(shortcut)
+            if shortcut:
+                raise RuntimeError("unexpected ON failure")
+            return off
+
+        with tempfile.TemporaryDirectory() as directory:
+            output = pathlib.Path(directory) / "evidence.json"
+            evidence = {"cases": []}
+            with self.assertRaisesRegex(RuntimeError, "unexpected ON failure"):
+                run_matrix_cases(
+                    evidence, [case], output, "engine", "model", False,
+                    case_runner=case_runner)
+            saved = json.loads(output.read_text())
+
+        self.assertEqual(calls, [False, True])
+        self.assertEqual(saved["cases"][0]["shortcutOff"], off)
+        self.assertNotIn("shortcutOn", saved["cases"][0])
+        self.assertEqual(saved["error"]["caseId"], "partial")
+        self.assertEqual(saved["error"]["arm"], "shortcutOn")
 
 
 if __name__ == "__main__":
