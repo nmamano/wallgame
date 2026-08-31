@@ -219,7 +219,8 @@ folly::coro::Task<json> handle_apply_move(
     SessionManager& manager,
     std::string const& bgs_id,
     int expected_ply,
-    std::string const& move_notation);
+    std::string const& move_notation,
+    bool search_diagnostics = false);
 
 /**
  * Route a V3 request to the appropriate handler.

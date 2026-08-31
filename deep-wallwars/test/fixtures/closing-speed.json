@@ -1185,7 +1185,9 @@
       "source": {
         "gameId": "rogYDkzs",
         "ply": 61,
-        "distance": 3
+        "distance": 3,
+        "recordedPolicyMoveRange": "55-89",
+        "sourceCaptureSha256": "7dfe99f733182eaea3b7bf082a5f3d66b11bad0fc44d2367268c016b325aa2fc"
       },
       "config": {
         "variant": "standard",
@@ -1401,6 +1403,19 @@
         }
       },
       "expectedBaseline": "does-not-close-within-40-full-turn-model-rollout",
+      "modelTurnBudget": 40,
+      "recordedModelMoves": [
+        "Cg3", "Cg1", "Cg3", "Cg1", "Cg3",
+        "Cg1", "Cg3", "Cg1", "Cg3", "Cg1",
+        "Cg3", "Cg1", "Cg3", "Cg1", "Cg3"
+      ],
+      "scriptedOpponentPolicy": {
+        "player": "blue",
+        "initialMouse": "h3",
+        "h3": "Mh1",
+        "h1": "Mh3",
+        "recordedMoveRange": "55-89"
+      },
       "search": {
         "samples": 1000,
         "rootNoise": 0.25,

@@ -506,7 +506,8 @@ folly::coro::Task<json> handle_apply_move(
     SessionManager& manager,
     std::string const& bgs_id,
     int expected_ply,
-    std::string const& move_notation) {
+    std::string const& move_notation,
+    bool search_diagnostics) {
 
     // Pinned before awaiting the lock, same reason as in evaluate_position.
     std::shared_ptr<BgsSession> session = manager.get_session(bgs_id);
@@ -599,7 +600,17 @@ folly::coro::Task<json> handle_apply_move(
     XLOGF(DBG, "BGS {} applied move {}, now at ply {}",
           bgs_id, move_notation, session->ply);
 
-    co_return create_move_applied_response(bgs_id, session->ply, true);
+    json response = create_move_applied_response(bgs_id, session->ply, true);
+    if (search_diagnostics) {
+        Turn const next_turn = session->mcts->current_turn();
+        response["postApplyDiagnostics"] = {
+            {"currentWinner", winner_name(
+                session->mcts->current_board().winner(next_turn))},
+            {"nextPlayer", next_turn.player == Player::Red ? "red" : "blue"},
+            {"nextTurn", next_turn.action == Turn::First ? "first" : "second"},
+        };
+    }
+    co_return response;
 }
 
 folly::coro::Task<json> handle_bgs_request(
@@ -625,7 +636,8 @@ folly::coro::Task<json> handle_bgs_request(
     } else if (type == "apply_move") {
         int expected_ply = request["expectedPly"].get<int>();
         std::string move = request["move"].get<std::string>();
-        co_return co_await handle_apply_move(manager, bgs_id, expected_ply, move);
+        co_return co_await handle_apply_move(
+            manager, bgs_id, expected_ply, move, config.search_diagnostics);
 
     } else {
         XLOGF(ERR, "Unknown BGS request type: {}", type);

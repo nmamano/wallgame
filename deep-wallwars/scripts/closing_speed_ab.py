@@ -93,6 +93,108 @@ def run_session(engine, case, rollout_plies=0):
             "closedWithinRollout": closing is not None}
 
 
+def require_post_apply(response, expected_player):
+    if response.get("success") is not True:
+        raise RuntimeError(f"scripted apply_move failed closed: {response}")
+    post = response.get("postApplyDiagnostics")
+    if not post:
+        raise RuntimeError("apply_move response lacks postApplyDiagnostics")
+    if post["currentWinner"] == "undecided" and (
+            post["nextPlayer"] != expected_player or post["nextTurn"] != "first"):
+        raise RuntimeError(f"unexpected post-apply turn: {post}")
+    return post
+
+
+def rog_closure(post, model_turns, opponent_turns, after_player):
+    if post["currentWinner"] == "undecided":
+        return None
+    return {
+        "winner": post["currentWinner"],
+        "afterPlayer": after_player,
+        "modelTurns": model_turns,
+        "opponentTurns": opponent_turns,
+        "totalPlies": model_turns + opponent_turns,
+    }
+
+
+def run_rog_session(engine, case):
+    search = case["search"]
+    bgs_id = search["bgsId"]
+    policy = case["scriptedOpponentPolicy"]
+    mouse = policy["initialMouse"]
+    if mouse not in ("h3", "h1"):
+        raise RuntimeError(f"scripted opponent mouse is off cycle: {mouse}")
+    budget = case["modelTurnBudget"]
+    recorded = case["recordedModelMoves"]
+    evaluations = []
+    applied = []
+    model_moves = []
+    recorded_mismatches = []
+    closure = None
+    model_turns = 0
+    opponent_turns = 0
+    engine.request({"type": "start_game_session", "bgsId": bgs_id,
+                    "botId": "closing-speed-ab", "config": case["config"]})
+    for model_index in range(budget):
+        ply = model_turns + opponent_turns
+        response = engine.request({"type": "evaluate_position", "bgsId": bgs_id,
+                                   "expectedPly": ply})
+        evaluations.append(response)
+        if response["searchDiagnostics"]["currentWinner"] != "undecided":
+            raise RuntimeError("rog fixture was terminal before the model turn")
+        move = response["bestMove"]
+        model_moves.append(move)
+        if model_index < len(recorded) and move != recorded[model_index]:
+            recorded_mismatches.append({
+                "modelTurn": model_index + 1,
+                "expected": recorded[model_index],
+                "actual": move,
+            })
+        model_apply = engine.request({"type": "apply_move", "bgsId": bgs_id,
+                                      "expectedPly": ply, "move": move})
+        applied.append({"player": "red", "move": move, "response": model_apply})
+        model_turns += 1
+        post = require_post_apply(model_apply, "blue")
+        closure = rog_closure(post, model_turns, opponent_turns, "red")
+        if closure:
+            break
+
+        if mouse == "h3":
+            reply = policy["h3"]
+            next_mouse = "h1"
+        elif mouse == "h1":
+            reply = policy["h1"]
+            next_mouse = "h3"
+        else:
+            raise RuntimeError(f"scripted opponent mouse is off cycle: {mouse}")
+        opponent_apply = engine.request({"type": "apply_move", "bgsId": bgs_id,
+                                         "expectedPly": ply + 1, "move": reply})
+        applied.append({"player": "blue", "move": reply, "response": opponent_apply})
+        opponent_turns += 1
+        post = require_post_apply(opponent_apply, "red")
+        mouse = next_mouse
+        closure = rog_closure(post, model_turns, opponent_turns, "blue")
+        if closure:
+            break
+    engine.request({"type": "end_game_session", "bgsId": bgs_id})
+    exhausted = None if closure else {
+        "modelTurns": model_turns,
+        "opponentTurns": opponent_turns,
+        "totalPlies": model_turns + opponent_turns,
+    }
+    return {
+        "responses": evaluations,
+        "appliedMoves": applied,
+        "modelMoves": model_moves,
+        "recordedPrefixReproduced": not recorded_mismatches,
+        "recordedPrefixMismatches": recorded_mismatches,
+        "closure": closure,
+        "passOrNoLegal": None,
+        "exhaustedWithoutClosure": exhausted,
+        "closedWithinRollout": closure is not None,
+    }
+
+
 def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
     search = case["search"]
     command = [
@@ -107,13 +209,22 @@ def run_case(engine_path, model_path, case, shortcut, rollout_plies=0):
     engine = Engine(command)
     stderr = ""
     try:
-        result = run_session(engine, case, rollout_plies)
+        if "scriptedOpponentPolicy" in case:
+            result = run_rog_session(engine, case)
+        else:
+            result = run_session(engine, case, rollout_plies)
     finally:
         stderr = engine.close()
     return {"command": command, "stderr": stderr, **result}
 
 
 def baseline_reproduced(case, result):
+    if "scriptedOpponentPolicy" in case:
+        exhausted = result["exhaustedWithoutClosure"]
+        return (result["recordedPrefixReproduced"] and result["closure"] is None and
+                exhausted is not None and
+                exhausted["modelTurns"] == case["modelTurnBudget"] and
+                exhausted["opponentTurns"] == case["modelTurnBudget"])
     move = result["responses"][0]["bestMove"]
     if "expectedBaselineMove" in case:
         return move == case["expectedBaselineMove"]
@@ -157,12 +268,10 @@ def main():
     }
     failures = []
     for case in fixtures["cases"]:
-        rollout = 80 if case["id"] == "rogYDkzs-p61" else 0
+        rollout = 0
         off = run_case(args.engine, args.model, case, False, rollout)
         on = run_case(args.engine, args.model, case, True, rollout)
         reproduced = baseline_reproduced(case, off)
-        if case["id"] == "rogYDkzs-p61":
-            reproduced = reproduced and not off["closedWithinRollout"]
         if not reproduced:
             failures.append(case["id"])
         evidence["cases"].append({"id": case["id"], "baselineKnownBad": reproduced,

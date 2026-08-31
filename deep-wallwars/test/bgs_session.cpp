@@ -1328,6 +1328,75 @@ TEST_CASE("second-half diagnostics report raw and selection-perspective Q",
     CHECK((*sampled)["selectionQ"].get<float>() == -0.4f);
 }
 
+TEST_CASE("apply response diagnostics are default-off and report post-apply terminals",
+          "[BGS Handlers]") {
+    BgsEngineConfig cfg;
+    cfg.model_rows = 8;
+    cfg.model_columns = 8;
+    cfg.samples_per_move = 4;
+    cfg.root_noise_factor = 0;
+
+    SECTION("ordinary response shape is unchanged") {
+        SessionManager manager(CatRightPolicy{}, cfg);
+        REQUIRE(manager.create_session("apply_default_off", "bot", make_forced_win_config()).first);
+        auto evaluated = folly::coro::blockingWait(
+            handle_evaluate_position(manager, cfg, "apply_default_off", 0));
+        auto applied = folly::coro::blockingWait(handle_bgs_request(manager, cfg, {
+            {"type", "apply_move"}, {"bgsId", "apply_default_off"},
+            {"expectedPly", 0}, {"move", evaluated["bestMove"]},
+        }));
+        CHECK((applied == json{
+            {"type", "move_applied"}, {"bgsId", "apply_default_off"},
+            {"ply", 1}, {"success", true}, {"error", ""},
+        }));
+    }
+
+    SECTION("P1 terminal is reported immediately") {
+        SessionManager manager(CatRightPolicy{}, cfg);
+        REQUIRE(manager.create_session("apply_p1_terminal", "bot", make_forced_win_config()).first);
+        auto evaluated = folly::coro::blockingWait(
+            handle_evaluate_position(manager, cfg, "apply_p1_terminal", 0));
+        BgsEngineConfig diagnostic_cfg = cfg;
+        diagnostic_cfg.search_diagnostics = true;
+        auto applied = folly::coro::blockingWait(handle_bgs_request(manager, diagnostic_cfg, {
+            {"type", "apply_move"}, {"bgsId", "apply_p1_terminal"},
+            {"expectedPly", 0}, {"move", evaluated["bestMove"]},
+        }));
+        REQUIRE(applied["success"] == true);
+        auto const& post = applied["postApplyDiagnostics"];
+        CHECK(post["currentWinner"] == "red");
+        CHECK(post["nextPlayer"] == "blue");
+        CHECK(post["nextTurn"] == "first");
+    }
+
+    SECTION("P2 terminal is reported immediately") {
+        auto config = make_forced_win_config();
+        config["initialState"]["pawns"]["p1"]["cat"] = {0, 0};
+        config["initialState"]["pawns"]["p1"]["mouse"] = {3, 3};
+        config["initialState"]["pawns"]["p2"]["cat"] = {3, 2};
+        config["initialState"]["pawns"]["p2"]["mouse"] = {5, 5};
+        config["initialState"]["turn"] = {
+            {"playerId", 2},
+            {"actionsTaken", json::array()},
+        };
+        SessionManager manager(CatRightPolicy{}, cfg);
+        REQUIRE(manager.create_session("apply_p2_terminal", "bot", config).first);
+        auto evaluated = folly::coro::blockingWait(
+            handle_evaluate_position(manager, cfg, "apply_p2_terminal", 0));
+        BgsEngineConfig diagnostic_cfg = cfg;
+        diagnostic_cfg.search_diagnostics = true;
+        auto applied = folly::coro::blockingWait(handle_bgs_request(manager, diagnostic_cfg, {
+            {"type", "apply_move"}, {"bgsId", "apply_p2_terminal"},
+            {"expectedPly", 0}, {"move", evaluated["bestMove"]},
+        }));
+        REQUIRE(applied["success"] == true);
+        auto const& post = applied["postApplyDiagnostics"];
+        CHECK(post["currentWinner"] == "blue");
+        CHECK(post["nextPlayer"] == "red");
+        CHECK(post["nextTurn"] == "first");
+    }
+}
+
 TEST_CASE("handle_evaluate_position - Ply mismatch", "[BGS Handlers]") {
     BgsEngineConfig cfg;
     cfg.model_rows = 8;
