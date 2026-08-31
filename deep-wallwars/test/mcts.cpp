@@ -48,6 +48,36 @@ struct TwoPriorPolicy {
     }
 };
 
+struct EmptyPolicy {
+    float value;
+
+    folly::coro::Task<Evaluation> operator()(Board const&, Turn,
+                                             std::optional<PreviousPosition>) {
+        co_return Evaluation{value, {}};
+    }
+};
+
+// At a Red Turn::Second root, offers one action that ends the game at the turn boundary and one
+// action that leaves the same eventual outcome one completed player turn farther away. Child
+// evaluation waits briefly so two parallel samples deterministically expand both root actions;
+// later samples then exercise the real get_best_edge ordering.
+struct TerminalOrderingPolicy {
+    Pawn pawn;
+    float child_value;
+
+    folly::coro::Task<Evaluation> operator()(Board const&, Turn turn,
+                                             std::optional<PreviousPosition>) {
+        if (turn == Turn{Player::Red, Turn::Second}) {
+            co_return Evaluation{0.0f,
+                                 {{PawnMove{pawn, Direction::Right}, 0.5f},
+                                  {PawnMove{pawn, Direction::Up}, 0.5f}}};
+        }
+        co_await folly::coro::sleep(std::chrono::milliseconds{10});
+        co_return Evaluation{child_value,
+                             {{PawnMove{Pawn::Cat, Direction::Up}, 1.0f}}};
+    }
+};
+
 TEST_CASE("Basic Initialization", "[MCTS]") {
     Board board{4, 4};
     MCTS mcts{SimplePolicy{1.0, 1.0, 1.0}, std::move(board)};
@@ -55,6 +85,93 @@ TEST_CASE("Basic Initialization", "[MCTS]") {
     CHECK(mcts.root_value() == 0.0);
     CHECK(mcts.root_samples() == 1);
     CHECK(mcts.wasted_inferences() == 0);
+}
+
+TEST_CASE("terminal-aware turn discount counts completed nonterminal turns only", "[MCTS]") {
+    float const immediate_win = MCTS::backup_value(-1.0f, true, true);
+    float const delayed_win = MCTS::backup_value(-1.0f, false, true);
+    float const immediate_loss = MCTS::backup_value(1.0f, true, true);
+    float const delayed_loss = MCTS::backup_value(1.0f, false, true);
+
+    CHECK(MCTS::backup_value(1.0f, true, false) == 1.0f);
+    CHECK(immediate_win == 1.0f);
+    CHECK(delayed_win == MCTS::kTerminalTurnDiscount);
+    CHECK(immediate_win > delayed_win);
+    CHECK(immediate_loss == -1.0f);
+    CHECK(delayed_loss == -MCTS::kTerminalTurnDiscount);
+    CHECK(delayed_loss > immediate_loss);
+    CHECK(MCTS::backup_value(0.0f, true, true) == 0.0f);
+    CHECK(MCTS::backup_value(0.0f, false, true) == 0.0f);
+}
+
+TEST_CASE("a terminal revealed by an action-less second phase has zero turn distance", "[MCTS]") {
+    Board board = standard_board(5, 5, {4, 2}, {0, 0}, {0, 4}, {4, 2});
+
+    SECTION("the originating player wins") {
+        MCTS mcts{EmptyPolicy{1.0f}, board,
+                  {.noise_factor = 0.0f, .starting_turn = {Player::Red, Turn::Second}}};
+        REQUIRE(mcts.root_disposition() == MCTS::RootDisposition::ShortTurnSecond);
+        CHECK(folly::coro::blockingWait(mcts.sample(1)) == 1.0f);
+    }
+
+    SECTION("the originating player loses") {
+        MCTS mcts{EmptyPolicy{-1.0f}, board,
+                  {.noise_factor = 0.0f, .starting_turn = {Player::Blue, Turn::Second}}};
+        REQUIRE(mcts.root_disposition() == MCTS::RootDisposition::ShortTurnSecond);
+        CHECK(folly::coro::blockingWait(mcts.sample(1)) == -1.0f);
+    }
+}
+
+TEST_CASE("search and PV prefer an immediate win to the same delayed win", "[MCTS]") {
+    Board board = standard_board(5, 5, {3, 2}, {0, 0}, {0, 4}, {4, 2});
+    MCTS mcts{TerminalOrderingPolicy{Pawn::Cat, -1.0f}, std::move(board),
+              {.puct = 0.0f,
+               .max_parallelism = 2,
+               .noise_factor = 0.0f,
+               .starting_turn = {Player::Red, Turn::Second}}};
+
+    folly::coro::blockingWait(mcts.sample(2));
+    NodeInfo before = mcts.root_info();
+    REQUIRE(before.edges.size() == 2);
+    REQUIRE(before.edges[0].num_samples == 1);
+    REQUIRE(before.edges[1].num_samples == 1);
+
+    folly::coro::blockingWait(mcts.sample(1));
+    NodeInfo after = mcts.root_info();
+    CHECK(after.edges[0].num_samples == 2);
+    CHECK(after.edges[1].num_samples == 1);
+
+    auto const pv = mcts.principal_variation(1, 0.0f, 1);
+    REQUIRE(pv.size() == 1);
+    CHECK(pv.front().action == Action{PawnMove{Pawn::Cat, Direction::Right}});
+    CHECK(pv.front().q_value == 1.0f);
+    CHECK(pv.front().gap == 1.0f - MCTS::kTerminalTurnDiscount);
+}
+
+TEST_CASE("search and PV prefer a delayed forced loss to an immediate loss", "[MCTS]") {
+    Board board = standard_board(5, 5, {0, 0}, {3, 2}, {4, 2}, {0, 4});
+    MCTS mcts{TerminalOrderingPolicy{Pawn::Mouse, 1.0f}, std::move(board),
+              {.puct = 0.0f,
+               .max_parallelism = 2,
+               .noise_factor = 0.0f,
+               .starting_turn = {Player::Red, Turn::Second}}};
+
+    folly::coro::blockingWait(mcts.sample(2));
+    NodeInfo before = mcts.root_info();
+    REQUIRE(before.edges.size() == 2);
+    REQUIRE(before.edges[0].num_samples == 1);
+    REQUIRE(before.edges[1].num_samples == 1);
+
+    folly::coro::blockingWait(mcts.sample(1));
+    NodeInfo after = mcts.root_info();
+    CHECK(after.edges[0].num_samples == 1);
+    CHECK(after.edges[1].num_samples == 2);
+
+    auto const pv = mcts.principal_variation(1, 0.0f, 1);
+    REQUIRE(pv.size() == 1);
+    CHECK(pv.front().action == Action{PawnMove{Pawn::Mouse, Direction::Up}});
+    CHECK(pv.front().q_value == -MCTS::kTerminalTurnDiscount);
+    CHECK(pv.front().gap == 1.0f - MCTS::kTerminalTurnDiscount);
 }
 
 TEST_CASE("root evidence keeps model values and priors before search noise", "[MCTS]") {
@@ -260,6 +377,26 @@ TEST_CASE("peek_best_second_action reports no second action without losing the f
     // ...and asking for a complete two-action move is what cannot be answered. Before the fix this
     // was the ONLY question the BGS handler asked, so the first action was thrown away with it.
     CHECK_FALSE(mcts.peek_best_move().has_value());
+}
+
+
+TEST_CASE("an action-less second phase is a legal short turn, not a loss", "[MCTS]") {
+    Board board = standard_board(5, 5, {0, 0}, {4, 2}, {0, 4}, {4, 4});
+    MCTS mcts{OnlyPolicy{Pawn::Mouse, Direction::Right}, std::move(board),
+              {.starting_turn = {Player::Red, Turn::Second}}};
+
+    CHECK(mcts.root_disposition() == MCTS::RootDisposition::ShortTurnSecond);
+    CHECK(mcts.advance_short_turn());
+    CHECK(mcts.current_turn() == Turn{Player::Blue, Turn::First});
+    CHECK_FALSE(mcts.advance_short_turn());
+}
+
+TEST_CASE("an action-less first phase remains a decisive no-legal loss", "[MCTS]") {
+    Board board = standard_board(5, 5, {0, 0}, {4, 2}, {0, 4}, {4, 4});
+    MCTS mcts{OnlyPolicy{Pawn::Mouse, Direction::Right}, std::move(board)};
+    CHECK(mcts.root_disposition() == MCTS::RootDisposition::NoLegalFirst);
+    folly::coro::blockingWait(mcts.sample(1));
+    CHECK(mcts.root_value() < 0.0f);
 }
 
 // The mirror case must NOT take that shortcut. Our own mouse stepping onto the enemy cat decides

@@ -5,6 +5,7 @@
 #include <folly/Overload.h>
 
 #include <algorithm>
+#include <cmath>
 #include <filesystem>
 #include <fstream>
 #include <stdexcept>
@@ -43,8 +44,7 @@ std::vector<bool> legal_policy_mask(NodeInfo const& node_info) {
     return mask;
 }
 
-ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_red,
-                                    float winner_contribution) {
+ModelOutput convert_to_model_output(NodeInfo const& node_info, float value_target) {
     std::size_t board_size = node_info.board.columns() * node_info.board.rows();
     std::vector<float> priors(2 * board_size + kUniversalMovePriorChannels);
     auto const legal_mask = legal_policy_mask(node_info);
@@ -75,10 +75,19 @@ ModelOutput convert_to_model_output(NodeInfo const& node_info, float score_for_r
         priors[index] = prior;
     }
 
-    float const z_value = node_info.turn.player == Player::Red ? score_for_red : -score_for_red;
-    float const expected_value =
-        (1 - winner_contribution) * node_info.q_value + winner_contribution * z_value;
-    return {std::move(priors), expected_value};
+    return {std::move(priors), value_target};
+}
+
+float training_value_target(Winner winner, Player player, int completed_turn_distance) {
+    if (completed_turn_distance < 0) {
+        throw std::invalid_argument("completed turn distance cannot be negative");
+    }
+    if (winner == Winner::Undecided) {
+        throw std::invalid_argument("undecided games have no training value target");
+    }
+    float const outcome = winner == Winner::Draw ? 0.0f
+        : winner == winner_from_player(player) ? 1.0f : -1.0f;
+    return outcome * std::pow(MCTS::kTerminalTurnDiscount, completed_turn_distance);
 }
 
 std::vector<float> convert_to_model_input(Board const& board, Turn turn, int num_channels) {
@@ -169,15 +178,16 @@ void print_training_data_point(std::ostream& out_stream, ModelInput const& model
     out_stream << model_output.value << "\n\n";
 }
 
-TrainingDataPrinter::TrainingDataPrinter(std::filesystem::path directory, float winner_contribution)
-    : m_directory{std::move(directory)}, m_winner_contribution{winner_contribution} {
+TrainingDataPrinter::TrainingDataPrinter(std::filesystem::path directory)
+    : m_directory{std::move(directory)} {
     std::filesystem::create_directory(m_directory);
 }
 
 void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const {
-    float score_for_red = game.final_board.score_for(Player::Red);
-
-    std::ofstream output_file{m_directory / ("game_" + std::to_string(index) + ".csv")};
+    std::optional<std::ofstream> output_file;
+    if (game.end_reason != TrainingEndReason::MoveLimit) {
+        output_file.emplace(m_directory / ("game_" + std::to_string(index) + ".csv"));
+    }
     nlohmann::json audit = {
         {"actualWinner", game.actual_winner == Winner::Red ? "red"
              : game.actual_winner == Winner::Blue ? "blue"
@@ -185,19 +195,33 @@ void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const 
         {"endReason", game.end_reason == TrainingEndReason::Terminal ? "terminal"
              : game.end_reason == TrainingEndReason::NoLegalAction ? "no-legal-action"
                                                                     : "move-limit"},
-        {"heuristicScoreForRed", score_for_red},
+        {"objectiveVersion", "terminal-turn-discount-v1"},
         {"decisions", nlohmann::json::array()},
     };
     if (!game.initial_state_record.empty()) {
         audit["initialStateRecord"] = nlohmann::json::parse(game.initial_state_record);
     }
 
-    for (TrainingDecision const& decision : game.decisions) {
+    for (std::size_t decision_index = 0; decision_index < game.decisions.size(); ++decision_index) {
+        TrainingDecision const& decision = game.decisions[decision_index];
         NodeInfo const& node_info = decision.node;
         ModelInput model_input = convert_to_model_input(node_info.board, node_info.turn);
-        ModelOutput model_output =
-            convert_to_model_output(node_info, score_for_red, m_winner_contribution);
-        print_training_data_point(output_file, model_input, model_output);
+        int completed_turns = 0;
+        Player player = node_info.turn.player;
+        for (std::size_t later = decision_index + 1; later < game.decisions.size(); ++later) {
+            Player const next = game.decisions[later].node.turn.player;
+            if (next != player) ++completed_turns;
+            player = next;
+        }
+        if (game.end_reason == TrainingEndReason::NoLegalAction &&
+            player != game.final_turn.player) {
+            ++completed_turns;
+        }
+        float const value_target = game.end_reason == TrainingEndReason::MoveLimit
+            ? 0.0f
+            : training_value_target(game.actual_winner, node_info.turn.player, completed_turns);
+        ModelOutput model_output = convert_to_model_output(node_info, value_target);
+        if (output_file) print_training_data_point(*output_file, model_input, model_output);
         auto const legal_mask = legal_policy_mask(node_info);
         nlohmann::json legal = nlohmann::json::array();
         for (std::size_t policy_index = 0; policy_index < legal_mask.size(); ++policy_index) {
@@ -209,7 +233,14 @@ void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const 
             {"chosenPolicyIndex",
              universal_policy_index(node_info.board, node_info.turn, decision.chosen_action)},
             {"legalPolicyIndices", std::move(legal)},
-            {"valueLabel", model_output.value},
+            {"outcome", game.end_reason == TrainingEndReason::MoveLimit
+                 ? nlohmann::json(nullptr)
+                 : nlohmann::json(game.actual_winner == Winner::Draw ? 0.0f
+                       : game.actual_winner == winner_from_player(node_info.turn.player) ? 1.0f
+                                                                                        : -1.0f)},
+            {"completedTurnDistance", completed_turns},
+            {"valueLabel", game.end_reason == TrainingEndReason::MoveLimit
+                 ? nlohmann::json(nullptr) : nlohmann::json(model_output.value)},
         });
     }
 
@@ -217,6 +248,6 @@ void TrainingDataPrinter::operator()(TrainingGame const& game, int index) const 
         << audit.dump(2) << '\n';
 
     // Note: the terminal position is intentionally NOT emitted. It was never
-    // searched, so it has no meaningful policy label; the game outcome already
-    // reaches every record through the z-value blend in convert_to_model_output.
+    // searched, so it has no meaningful policy label; the game outcome reaches every admitted
+    // record through its outcome-first distance target.
 }

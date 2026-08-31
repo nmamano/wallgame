@@ -1,5 +1,8 @@
-from torch import tensor
+import hashlib
 from random import sample
+
+from torch import tensor
+
 
 def tensor_from_csv_line(line):
     return tensor([float(x) for x in line.split(", ")])
@@ -58,13 +61,27 @@ def parse_files(files, input_channels, columns, rows, move_channels):
     ]
 
 
-def get_datasets(paths, games, input_channels, columns, rows, move_channels, splitter=None):
+def get_datasets(paths, games, input_channels, columns, rows, move_channels, splitter=None,
+                 selected_files=None):
     from fastai.data.all import RandomSplitter, get_files
 
     if splitter is None:
-        splitter = RandomSplitter()
-    files = [file for path in paths for file in get_files(path) if file.suffix == ".csv"]
-    if games < len(files):
+        if selected_files is None:
+            splitter = RandomSplitter()
+        else:
+            def splitter(items):
+                training, validation = [], []
+                for index, path in enumerate(items):
+                    stable_name = f"{path.parent.name}/{path.name}"
+                    digest = hashlib.sha256(stable_name.encode()).digest()
+                    (validation if int.from_bytes(digest[:8], "big") % 10 == 0 else training).append(index)
+                if not training or not validation:
+                    raise ValueError("objective-v1 hash split produced an empty partition")
+                return training, validation
+    files = list(selected_files) if selected_files is not None else [
+        file for path in paths for file in get_files(path) if file.suffix == ".csv"
+    ]
+    if selected_files is None and games < len(files):
         files = sample(files, games)
     training_files, valid_files = splitter(files)
     return parse_files((files[i] for i in training_files), input_channels, columns, rows, move_channels), parse_files(

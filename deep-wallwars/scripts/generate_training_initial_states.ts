@@ -12,6 +12,15 @@ export type TrainingInitialStateRecord = {
   dimensionMode: "low" | "high" | "random";
   startMode: "traditional" | "random";
   initialState: ReturnType<typeof buildOrdinaryInitialState>;
+  replacementOfGameIndex?: number;
+  replacementAttempt?: number;
+  replacementIdentity?: string;
+};
+
+export type TrainingReplacementRequest = {
+  sourceRecord: TrainingInitialStateRecord;
+  replacementAttempt: number;
+  gameIndex: number;
 };
 
 export const makeTrainingRng = (seed: number): (() => number) => {
@@ -27,6 +36,15 @@ export const trainingGameSeed = (seed: number, gameIndex: number): number => {
   mixed = Math.imul(mixed ^ (mixed >>> 16), 0x85ebca6b) >>> 0;
   mixed = Math.imul(mixed ^ (mixed >>> 13), 0xc2b2ae35) >>> 0;
   return (mixed ^ (mixed >>> 16)) >>> 0;
+};
+
+export const replacementGameSeed = (
+  seed: number,
+  sourceGameIndex: number,
+  replacementAttempt: number,
+): number => {
+  const identity = Math.imul(sourceGameIndex, 0x9e3779b1) ^ Math.imul(replacementAttempt, 0x85ebca6b);
+  return trainingGameSeed(seed ^ 0xc2b2ae35, identity >>> 0);
 };
 
 const inclusiveInteger = (rng: () => number, low: number, high: number) =>
@@ -81,6 +99,45 @@ export const sampleTrainingInitialStates = (
   });
 };
 
+export const sampleReplacementInitialState = (
+  seed: number,
+  request: TrainingReplacementRequest,
+): TrainingInitialStateRecord => {
+  const { sourceRecord, replacementAttempt, gameIndex } = request;
+  if (!Number.isSafeInteger(gameIndex) || gameIndex < 1) throw new Error("replacement gameIndex must be positive");
+  if (!Number.isSafeInteger(replacementAttempt) || replacementAttempt < 1) {
+    throw new Error("replacementAttempt must be positive");
+  }
+  if (sourceRecord.replacementOfGameIndex !== undefined) {
+    throw new Error("replacement source must be an original game");
+  }
+  const gameSeed = replacementGameSeed(seed, sourceRecord.gameIndex, replacementAttempt);
+  const rng = makeTrainingRng(gameSeed);
+  const randomStart = sourceRecord.startMode === "random";
+  return {
+    gameIndex,
+    seed,
+    gameSeed,
+    variant: sourceRecord.variant,
+    boardWidth: sourceRecord.boardWidth,
+    boardHeight: sourceRecord.boardHeight,
+    dimensionMode: sourceRecord.dimensionMode,
+    startMode: sourceRecord.startMode,
+    initialState: buildOrdinaryInitialState(
+      {
+        variant: sourceRecord.variant,
+        randomStart,
+        boardWidth: sourceRecord.boardWidth,
+        boardHeight: sourceRecord.boardHeight,
+      },
+      rng,
+    ),
+    replacementOfGameIndex: sourceRecord.gameIndex,
+    replacementAttempt,
+    replacementIdentity: `${sourceRecord.gameIndex}:${replacementAttempt}`,
+  };
+};
+
 const arg = (name: string): string => {
   const index = process.argv.indexOf(`--${name}`);
   if (index < 0 || index + 1 >= process.argv.length) throw new Error(`missing --${name}`);
@@ -89,10 +146,15 @@ const arg = (name: string): string => {
 
 if (import.meta.main) {
   const seed = Number(arg("seed"));
-  const games = Number(arg("games"));
-  const startGame = Number(arg("start-game"));
   const output = arg("output");
-  const records = sampleTrainingInitialStates(seed, games, startGame);
+  const replacementIndex = process.argv.indexOf("--replacement-requests");
+  const records = replacementIndex >= 0
+    ? readFileSync(process.argv[replacementIndex + 1], "utf8")
+        .trimEnd()
+        .split("\n")
+        .filter(Boolean)
+        .map((line) => sampleReplacementInitialState(seed, JSON.parse(line)))
+    : sampleTrainingInitialStates(seed, Number(arg("games")), Number(arg("start-game")));
   const contents = records.map((record) => JSON.stringify(record)).join("\n") + "\n";
   if (existsSync(output)) {
     if (readFileSync(output, "utf8") !== contents) {

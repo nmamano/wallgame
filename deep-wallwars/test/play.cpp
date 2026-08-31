@@ -8,6 +8,7 @@
 #include <fstream>
 #include <nlohmann/json.hpp>
 #include <optional>
+#include <ranges>
 #include <map>
 #include <sstream>
 #include <vector>
@@ -74,6 +75,26 @@ struct CatRightPolicy {
     };
 };
 
+struct ShortTurnTreePolicy {
+    folly::coro::Task<Evaluation> operator()(Board const& board, Turn turn,
+                                             std::optional<PreviousPosition> previous) {
+        if (turn == Turn{Player::Red, Turn::Second}) {
+            co_return co_await CatRightPolicy{}(board, turn, previous);
+        }
+        if (turn == Turn{Player::Blue, Turn::First}) {
+            co_return co_await MouseLeftPolicy{}(board, turn, previous);
+        }
+
+        std::vector<TreeEdge> edges;
+        Cell const mouse = board.pawn_position(turn.player, Pawn::Mouse);
+        Direction const direction = turn.player == Player::Red ? Direction::Right : Direction::Left;
+        if (!board.is_blocked(Wall{mouse, direction})) {
+            edges.emplace_back(PawnMove{Pawn::Mouse, direction}, 1.0);
+        }
+        co_return Evaluation{0, std::move(edges)};
+    };
+};
+
 }  // namespace
 
 TEST_CASE("removed-draw terminal flows through self-play and the CSV printer",
@@ -89,7 +110,7 @@ TEST_CASE("removed-draw terminal flows through self-play and the CSV printer",
     auto const output_dir =
         std::filesystem::temp_directory_path() / "deep-ww-removed-draw-contract";
     std::filesystem::remove_all(output_dir);
-    TrainingDataPrinter printer(output_dir, 1.0f);
+    TrainingDataPrinter printer(output_dir);
     std::optional<TrainingGame> completed;
     TrainingPlayOptions opts{
         .model1 = CatRightPolicy{},
@@ -243,9 +264,9 @@ TEST_CASE("Animal Cycle self-play emits deterministic replayable universal recor
             CHECK(std::all_of(input.begin() + 11 * board_size, input.end(),
                               [](float value) { return value == 0.0f; }));
 
-            float const score = first.final_board.score_for(Player::Red);
-            auto const label = convert_to_model_output(decision.node, score, 1.0f);
-            CHECK(label.value == (decision.node.turn.player == Player::Red ? score : -score));
+            float const target = decision.node.turn.player == Player::Red ? 1.0f : -1.0f;
+            auto const label = convert_to_model_output(decision.node, target);
+            CHECK(label.value == target);
 
             replay.do_action(decision.node.turn.player, decision.chosen_action);
         }
@@ -306,6 +327,155 @@ TEST_CASE("training_play records searched decisions exactly once per game",
     }
     CHECK(has_red);
     CHECK(has_blue);
+}
+
+TEST_CASE("move-limit games keep audit evidence but emit no training CSV",
+          "[TrainingRecords][TrainingContract]") {
+    auto const output_dir =
+        std::filesystem::temp_directory_path() / "deep-ww-terminal-discount-capped";
+    std::filesystem::remove_all(output_dir);
+    TrainingDataPrinter printer(output_dir);
+    TrainingGame game{{}, Board{4, 4}, {Player::Red, Turn::First}, Winner::Undecided,
+                      TrainingEndReason::MoveLimit, {}};
+    printer(game, 91);
+    CHECK(std::filesystem::exists(output_dir / "game_91.audit.json"));
+    CHECK_FALSE(std::filesystem::exists(output_dir / "game_91.csv"));
+    std::filesystem::remove_all(output_dir);
+}
+
+TEST_CASE("a next-player no-legal result counts the completed turn in its value label",
+          "[TrainingRecords][TrainingContract]") {
+    Board board{4,
+                4,
+                Variant::Standard,
+                {{Player::Red, Pawn::Cat, {0, 0}},
+                 {Player::Red, Pawn::Mouse, {0, 1}},
+                 {Player::Blue, Pawn::Cat, {3, 3}},
+                 {Player::Blue, Pawn::Mouse, {3, 2}}}};
+    Action const chosen = PawnMove{Pawn::Cat, Direction::Right};
+    NodeInfo node{board,
+                  {Player::Red, Turn::Second},
+                  0.0f,
+                  1,
+                  {{chosen, 1, 0.0f, 1.0f, 1.0f}}};
+    TrainingGame game{{{std::move(node), chosen}},
+                      board,
+                      {Player::Blue, Turn::First},
+                      Winner::Red,
+                      TrainingEndReason::NoLegalAction,
+                      {}};
+    auto const output_dir =
+        std::filesystem::temp_directory_path() / "deep-ww-terminal-discount-no-legal";
+    std::filesystem::remove_all(output_dir);
+    TrainingDataPrinter printer(output_dir);
+    printer(game, 92);
+
+    std::ifstream audit_file(output_dir / "game_92.audit.json");
+    nlohmann::json const audit = nlohmann::json::parse(audit_file);
+    REQUIRE(audit.at("decisions").size() == 1);
+    CHECK(audit.at("decisions").at(0).at("completedTurnDistance") == 1);
+    CHECK(audit.at("decisions").at(0).at("valueLabel") ==
+          MCTS::kTerminalTurnDiscount);
+    std::filesystem::remove_all(output_dir);
+}
+
+TEST_CASE("self-play advances a valid short-turn root without a loss or policy row",
+          "[TrainingRecords][ShortTurn]") {
+    Board board{5,
+                5,
+                Variant::Standard,
+                {{Player::Red, Pawn::Cat, {4, 0}},
+                 {Player::Red, Pawn::Mouse, {0, 2}},
+                 {Player::Blue, Pawn::Cat, {4, 4}},
+                 {Player::Blue, Pawn::Mouse, {4, 2}}}};
+    auto check_policy = [&](Turn turn, std::optional<Action> expected) {
+        Evaluation evaluation =
+            folly::coro::blockingWait(ShortTurnTreePolicy{}(board, turn, std::nullopt));
+        if (!expected) {
+            CHECK(evaluation.edges.empty());
+            return;
+        }
+        REQUIRE(evaluation.edges.size() == 1);
+        CHECK(evaluation.edges.front().action == *expected);
+    };
+    check_policy({Player::Red, Turn::Second}, std::nullopt);
+    check_policy({Player::Blue, Turn::First}, PawnMove{Pawn::Mouse, Direction::Left});
+    check_policy({Player::Red, Turn::First}, PawnMove{Pawn::Mouse, Direction::Right});
+    check_policy({Player::Blue, Turn::Second}, PawnMove{Pawn::Mouse, Direction::Left});
+
+    std::optional<TrainingGame> completed;
+    TrainingPlayOptions opts{
+        .model1 = ShortTurnTreePolicy{},
+        .model2 = ShortTurnTreePolicy{},
+        .samples = 2,
+        .max_parallel_games = 1,
+        .max_parallel_samples = 1,
+        .move_limit = 1,
+        .temperature = 1,
+        .starting_turn = {Player::Red, Turn::Second},
+        .on_complete = [&](TrainingGame const& game, int) { completed = game; },
+        .seed = 19,
+    };
+    folly::CPUThreadPoolExecutor pool(2);
+    folly::coro::blockingWait(training_play(board, 1, opts).scheduleOn(&pool));
+
+    REQUIRE(completed);
+    CHECK(completed->end_reason == TrainingEndReason::MoveLimit);
+    CHECK(completed->actual_winner == Winner::Undecided);
+    REQUIRE_FALSE(completed->decisions.empty());
+    CHECK(completed->decisions.front().node.turn == Turn{Player::Blue, Turn::First});
+    CHECK(std::ranges::none_of(completed->decisions, [](TrainingDecision const& decision) {
+        return decision.node.edges.empty();
+    }));
+}
+
+TEST_CASE("a terminal revealed by a short turn keeps search and training at distance zero",
+          "[TrainingRecords][ShortTurn]") {
+    Board board{5,
+                5,
+                Variant::Standard,
+                {{Player::Red, Pawn::Cat, {3, 2}},
+                 {Player::Red, Pawn::Mouse, {0, 0}},
+                 {Player::Blue, Pawn::Cat, {0, 4}},
+                 {Player::Blue, Pawn::Mouse, {4, 2}}}};
+    auto const output_dir =
+        std::filesystem::temp_directory_path() / "deep-ww-terminal-short-turn-contract";
+    std::filesystem::remove_all(output_dir);
+    TrainingDataPrinter printer(output_dir);
+    std::optional<TrainingGame> completed;
+    TrainingPlayOptions opts{
+        .model1 = CatRightPolicy{},
+        .model2 = CatRightPolicy{},
+        .samples = 1,
+        .max_parallel_games = 1,
+        .max_parallel_samples = 1,
+        .move_limit = 1,
+        .temperature = 1,
+        .start_game = 93,
+        .on_complete = [&](TrainingGame const& game, int index) {
+            completed = game;
+            printer(game, index);
+        },
+        .seed = 20260831,
+    };
+    folly::CPUThreadPoolExecutor pool(2);
+    folly::coro::blockingWait(training_play(board, 1, opts).scheduleOn(&pool));
+
+    REQUIRE(completed);
+    CHECK(completed->end_reason == TrainingEndReason::Terminal);
+    CHECK(completed->actual_winner == Winner::Red);
+    CHECK(completed->final_turn == Turn{Player::Blue, Turn::First});
+    REQUIRE(completed->decisions.size() == 1);
+    CHECK(completed->decisions.front().node.turn == Turn{Player::Red, Turn::First});
+    CHECK_FALSE(completed->decisions.front().node.edges.empty());
+
+    std::ifstream audit_file(output_dir / "game_93.audit.json");
+    nlohmann::json const audit = nlohmann::json::parse(audit_file);
+    CHECK(audit.at("endReason") == "terminal");
+    REQUIRE(audit.at("decisions").size() == 1);
+    CHECK(audit.at("decisions").at(0).at("completedTurnDistance") == 0);
+    CHECK(audit.at("decisions").at(0).at("valueLabel") == 1.0f);
+    std::filesystem::remove_all(output_dir);
 }
 
 // A mouse walking PAST a cat is legal, and self-play has to read that as a turn in progress rather

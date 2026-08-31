@@ -38,6 +38,9 @@ struct TreeNode {
     float model_value;
     std::atomic<Value> value;
     std::vector<TreeEdge> edges;
+    // A legal Turn::Second position with no second action advances to the opponent without an
+    // invented policy edge. This child owns that internal turn-boundary transition.
+    std::atomic<TreeNode*> short_turn_child = nullptr;
 
     void add_sample(float weight);
 };
@@ -101,6 +104,12 @@ using EvaluationFunction =
 
 class MCTS {
 public:
+    static constexpr float kTerminalTurnDiscount = 0.99f;
+
+    enum class RootDisposition { Expandable, Terminal, NoLegalFirst, ShortTurnSecond };
+    // Converts a child value to its parent perspective for both edge selection and recursive
+    // backup. A completed nonterminal player turn changes sign and adds one discount.
+    static float backup_value(float child_value, bool just_terminal, bool parent_is_second);
     struct Options {
         float puct = 2.0;
         int max_depth = 50;
@@ -127,6 +136,10 @@ public:
     std::vector<NodeInfo> const& history() const;
     int wasted_inferences() const;
     std::vector<TerminalDiscovery> terminal_discoveries() const;
+    RootDisposition root_disposition() const;
+    // Advances a legal action-less Turn::Second root to the opponent's Turn::First. Returns false
+    // for every other root disposition. No policy action is created or recorded.
+    bool advance_short_turn();
 
     folly::coro::Task<float> sample(int iterations);
 
@@ -196,6 +209,12 @@ public:
     ~MCTS();
 
 private:
+    struct SampleResult {
+        float value;
+        // True only while returning across the edge whose action produced the terminal position.
+        // That edge changes perspective after action two but does not add terminal distance.
+        bool just_terminal;
+    };
     EvaluationFunction m_evaluate;
     TreeNode* m_root;
     Options m_opts;
@@ -210,8 +229,9 @@ private:
     void add_root_noise();
     folly::coro::Task<void> single_sample();
     TreeEdge& get_best_edge(TreeNode& current) const;
-    folly::coro::Task<float> initialize_child(TreeNode& current, TreeEdge& edge);
-    folly::coro::Task<float> sample_rec(TreeNode& current);
+    folly::coro::Task<SampleResult> initialize_child(TreeNode& current, TreeEdge& edge);
+    folly::coro::Task<SampleResult> sample_rec(TreeNode& current);
+    folly::coro::Task<TreeNode*> initialize_short_turn_child(TreeNode& current);
     void record_terminal(Winner winner, TreeNode const& node, bool shortcut);
     void delete_subtree(TreeNode& node);
     void move_root(TreeEdge const& edge);

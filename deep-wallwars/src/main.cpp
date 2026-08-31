@@ -365,7 +365,7 @@ void train(EvaluationFunction const& eval_fn, Variant variant,
         starting_turn = start.turn;
         starting_previous_position = start.previous_position;
     }
-    TrainingDataPrinter training_data_printer(FLAGS_output, 0.5);
+    TrainingDataPrinter training_data_printer(FLAGS_output);
 
     folly::CPUThreadPoolExecutor thread_pool(FLAGS_j);
 

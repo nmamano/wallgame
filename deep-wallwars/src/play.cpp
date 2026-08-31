@@ -122,12 +122,37 @@ folly::coro::Task<GameResult> training_play_single(Board board, EvaluationFuncti
         MCTS& other = mcts1.current_turn().player == Player::Red ? mcts2 : mcts1;
         Player const player = active.current_turn().player;
 
+        MCTS::RootDisposition const disposition = active.root_disposition();
+        if (disposition == MCTS::RootDisposition::Terminal) {
+            Winner const winner = active.current_board().winner(active.current_turn());
+            opts.on_complete({std::move(decisions), active.current_board(), active.current_turn(),
+                              winner, TrainingEndReason::Terminal,
+                              opts.initial_state_record},
+                             index);
+            co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
+        }
+        if (disposition == MCTS::RootDisposition::NoLegalFirst) {
+            Winner const winner = winner_from_player(other_player(player));
+            opts.on_complete({std::move(decisions), active.current_board(), active.current_turn(),
+                              winner, TrainingEndReason::NoLegalAction,
+                              opts.initial_state_record},
+                             index);
+            co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
+        }
+        if (disposition == MCTS::RootDisposition::ShortTurnSecond) {
+            if (!active.advance_short_turn() || !other.advance_short_turn()) {
+                throw std::logic_error("Self-play trees disagree on a legal short turn");
+            }
+            --action_number;  // The internal turn boundary is not a policy action.
+            continue;
+        }
+
         co_await active.sample(opts.samples);
         NodeInfo node = active.root_info();
         auto action = active.commit_to_action(opts.temperature);
         if (!action) {
             Winner const winner = winner_from_player(other_player(player));
-            opts.on_complete({std::move(decisions), active.current_board(), winner,
+            opts.on_complete({std::move(decisions), active.current_board(), active.current_turn(), winner,
                               TrainingEndReason::NoLegalAction, opts.initial_state_record}, index);
             co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
@@ -138,14 +163,14 @@ folly::coro::Task<GameResult> training_play_single(Board board, EvaluationFuncti
         // at mid-turn; Animal Cycle terminals are immediate under its own winner(turn) contract.
         if (Winner winner = active.current_board().winner(active.current_turn());
             winner != Winner::Undecided) {
-            opts.on_complete({std::move(decisions), active.current_board(), winner,
+            opts.on_complete({std::move(decisions), active.current_board(), active.current_turn(), winner,
                               TrainingEndReason::Terminal, opts.initial_state_record}, index);
             co_return {winner, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
         }
     }
 
     XLOGF(INFO, "Game {} was ended because it hit the move limit of {}", index, opts.move_limit);
-    opts.on_complete({std::move(decisions), mcts1.current_board(), Winner::Undecided,
+    opts.on_complete({std::move(decisions), mcts1.current_board(), mcts1.current_turn(), Winner::Undecided,
                       TrainingEndReason::MoveLimit, opts.initial_state_record}, index);
     co_return {Winner::Undecided, mcts1.wasted_inferences() + mcts2.wasted_inferences()};
 }

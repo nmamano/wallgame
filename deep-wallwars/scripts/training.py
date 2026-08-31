@@ -24,10 +24,12 @@ from model import MODEL_INPUT_CHANNELS, ConvHeadResNet, ResNet, WallgameTransfor
 from data import get_datasets
 from materialized_resume import (
     load_expected_batch,
-    verify_materialized_prefix,
+    verify_materialized_progress,
     write_exact_suffix,
+    write_replacement_requests,
 )
 from training_windows import discover_universal_training_paths
+from objective_data import select_window
 
 default_cuda_device = "cuda:0"
 input_channels = MODEL_INPUT_CHANNELS
@@ -39,6 +41,11 @@ parser.add_argument(
 )
 parser.add_argument("--models", help="Path to store the models", default="../models")
 parser.add_argument("--data", help="Path to store training data", default="../data")
+parser.add_argument(
+    "--objective-data-root",
+    help="Explicit terminal-turn-discount-v1 corpus root; excludes every legacy label path",
+    default="",
+)
 parser.add_argument("-c", "--columns", help="Number of columns", default=6, type=int)
 parser.add_argument("-r", "--rows", help="Number of rows", default=6, type=int)
 parser.add_argument("--seed", help="Deterministic self-play seed", default=42, type=int)
@@ -960,33 +967,59 @@ def run_materialized_self_play(model_path, data_generation):
         check=True,
     )
     expected = load_expected_batch(full_batch, args.games)
-    completed = verify_materialized_prefix(output_dir, expected)
-    remaining = args.games - completed
-    if remaining <= 0:
-        run_label_audit(str(output_dir))
-        return
-    start_game = completed + 1
-    states_file = output_dir / f"initial-states-{start_game}-{args.games}.jsonl"
-    write_exact_suffix(states_file, expected, start_game)
-    cmd = [
-        args.deep_ww,
-        "-model1", model_path,
-        "-output", str(output_dir),
-        "-columns", str(args.columns),
-        "-rows", str(args.rows),
-        "-variant", "standard",
-        "-j", str(args.threads),
-        "-games", str(remaining),
-        "-start_game", str(start_game),
-        "-samples", str(args.samples),
-        "-seed", str(args.seed + data_generation),
-        "-initial_states_file", str(states_file),
-    ]
-    print("  mixed self-play cmd: " + " ".join(cmd))
-    with open(args.log, "a") as log:
-        result = subprocess.run(cmd, stdout=log, stderr=log, text=True)
-    if result.returncode != 0:
-        raise RuntimeError(f"mixed self-play failed with return code {result.returncode}")
+    seed = args.seed + data_generation
+
+    def run_batch(states_file, start_game, games):
+        cmd = [
+            args.deep_ww,
+            "-model1", model_path,
+            "-output", str(output_dir),
+            "-columns", str(args.columns),
+            "-rows", str(args.rows),
+            "-variant", "standard",
+            "-j", str(args.threads),
+            "-games", str(games),
+            "-start_game", str(start_game),
+            "-samples", str(args.samples),
+            "-seed", str(seed),
+            "-initial_states_file", str(states_file),
+        ]
+        print("  mixed self-play cmd: " + " ".join(cmd))
+        with open(args.log, "a") as log:
+            result = subprocess.run(cmd, stdout=log, stderr=log, text=True)
+        if result.returncode != 0:
+            raise RuntimeError(f"mixed self-play failed with return code {result.returncode}")
+
+    progress = verify_materialized_progress(output_dir, expected)
+    if progress.initial_attempted < args.games:
+        start_game = progress.initial_attempted + 1
+        states_file = output_dir / f"initial-states-{start_game}-{args.games}.jsonl"
+        write_exact_suffix(states_file, expected, start_game)
+        run_batch(states_file, start_game, args.games - progress.initial_attempted)
+        progress = verify_materialized_progress(output_dir, expected)
+
+    while progress.admitted < args.games:
+        if not progress.replacements:
+            raise RuntimeError("materialized corpus is short without a capped replacement")
+        start_game = progress.attempted + 1
+        end_game = progress.attempted + len(progress.replacements)
+        request_file = output_dir / f"replacement-requests-{start_game}-{end_game}.jsonl"
+        states_file = output_dir / f"initial-states-{start_game}-{end_game}.jsonl"
+        write_replacement_requests(request_file, expected, progress.replacements)
+        subprocess.run(
+            [
+                bun, str(generator),
+                "--seed", str(seed),
+                "--replacement-requests", str(request_file),
+                "--output", str(states_file),
+            ],
+            check=True,
+        )
+        run_batch(states_file, start_game, len(progress.replacements))
+        progress = verify_materialized_progress(output_dir, expected)
+
+    if progress.admitted != args.games or progress.replacements:
+        raise RuntimeError("materialized corpus did not finish at its exact admitted target")
     run_label_audit(str(output_dir))
 
 
@@ -1046,7 +1079,28 @@ def unfreeze_all(model):
 
 def train_model(model, generation, epochs, device, freeze_until_gen=0):
     print(f"Loading training data (generation {generation})...")
-    training_paths = get_training_paths(generation)
+    selected_files = None
+    if args.objective_data_root:
+        if args.training_games != 20_000 or args.max_training_window != 12:
+            raise RuntimeError(
+                "terminal-turn-discount-v1 requires --training-games 20000 "
+                "and --max-training-window 12"
+            )
+        root = Path(args.objective_data_root)
+        lower = max(140, generation - 12)
+        directories = {}
+        for data_generation in range(lower, generation):
+            if data_generation == 140:
+                path = root / "bootstrap-checkpoint-g140" / "data-generation-140"
+            else:
+                path = root / f"data-generation-{data_generation}"
+            if not path.is_dir():
+                raise RuntimeError(f"missing objective-v1 generation: {path}")
+            directories[data_generation] = path
+        selected_files = select_window(directories, args.training_games)
+        training_paths = [str(path) for path in directories.values()]
+    else:
+        training_paths = get_training_paths(generation)
     print(f"Training paths: {training_paths}")
     training_data, valid_data = get_datasets(
         training_paths,
@@ -1055,6 +1109,7 @@ def train_model(model, generation, epochs, device, freeze_until_gen=0):
         args.columns,
         args.rows,
         move_channels,
+        selected_files=selected_files,
     )
 
     if not training_data:

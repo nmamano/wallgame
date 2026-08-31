@@ -56,6 +56,12 @@ MCTS::MCTS(EvaluationFunction evaluate, Board board, Options options)
     add_root_noise();
 }
 
+float MCTS::backup_value(float child_value, bool just_terminal, bool parent_is_second) {
+    if (!parent_is_second) return child_value;
+    float result = -child_value;
+    return just_terminal ? result : result * kTerminalTurnDiscount;
+}
+
 int MCTS::samples_done() const {
     return m_samples_done;
 }
@@ -106,7 +112,10 @@ TreeEdge& MCTS::get_best_edge(TreeNode& current) const {
         TreeNode::Value child_val = child->value;
 
         if (current.turn.action == Turn::Second) {
-            child_val.total_weight *= -1;
+            bool const child_is_terminal =
+                child->board.winner(child->turn) != Winner::Undecided;
+            child_val.total_weight =
+                backup_value(child_val.total_weight, child_is_terminal, true);
         }
 
         int const active_samples = te.active_samples;
@@ -118,7 +127,7 @@ TreeEdge& MCTS::get_best_edge(TreeNode& current) const {
     });
 }
 
-folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edge) {
+folly::coro::Task<MCTS::SampleResult> MCTS::initialize_child(TreeNode& current, TreeEdge& edge) {
     Board next_board{current.board};
     next_board.do_action(current.turn.player, edge.action);
     std::optional<PreviousPosition> previous_position;
@@ -135,18 +144,48 @@ folly::coro::Task<float> MCTS::initialize_child(TreeNode& current, TreeEdge& edg
                                                    previous_position, &current);
 
     float value = new_node->value.load().total_weight;
+    bool just_terminal = false;
+    Winner const winner = new_node->board.winner(new_node->turn);
+    if (winner != Winner::Undecided) {
+        value = winner == Winner::Draw ? 0.0f
+            : winner == winner_from_player(new_node->turn.player) ? 1.0f : -1.0f;
+        new_node->value = TreeNode::Value{value, 1};
+        just_terminal = true;
+    }
 
     TreeNode* child = nullptr;
 
     if (!edge.child.compare_exchange_strong(child, new_node)) {
         ++m_wasted_inferences;
         delete new_node;
+    } else {
+        child = new_node;
+        if (just_terminal) record_terminal(winner, *child, false);
     }
 
-    co_return value;
+    if (!just_terminal && child->edges.empty()) {
+        if (child->turn.action == Turn::First) {
+            child->value = TreeNode::Value{-1.0f, 1};
+            co_return SampleResult{-1.0f, false};
+        }
+        co_return co_await sample_rec(*child);
+    }
+    co_return SampleResult{value, just_terminal};
 }
 
-folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
+folly::coro::Task<TreeNode*> MCTS::initialize_short_turn_child(TreeNode& current) {
+    TreeNode* new_node = co_await create_tree_node(
+        current.board, Turn{other_player(current.turn.player), Turn::First}, {}, &current);
+    TreeNode* child = nullptr;
+    if (!current.short_turn_child.compare_exchange_strong(child, new_node)) {
+        ++m_wasted_inferences;
+        delete new_node;
+        co_return child;
+    }
+    co_return new_node;
+}
+
+folly::coro::Task<MCTS::SampleResult> MCTS::sample_rec(TreeNode& current) {
     Winner winner = current.board.winner(current.turn);
     bool const shortcut = winner == Winner::Undecided &&
                           m_opts.terminal_after_first_action_shortcut &&
@@ -170,36 +209,48 @@ folly::coro::Task<float> MCTS::sample_rec(TreeNode& current) {
         }();
 
         current.add_sample(value);
-        co_return value;
+        co_return SampleResult{value, true};
     }
 
     if (current.depth - m_root->depth >= m_opts.max_depth) {
         float value = current.board.score_for(current.turn.player, current.turn);
         current.add_sample(value);
-        co_return value;
+        co_return SampleResult{value, false};
     }
 
-    // This can happen if our first action in the turn is a move and our only possible second action
-    // is to undo that move.
+    // This can happen if action one leaves only an illegal undo. It is a valid short turn, not a
+    // loss and not a policy action. Search the opponent's Turn::First successor directly.
     if (current.edges.empty()) {
-        float value = -2;
-        current.add_sample(value);
-        co_return value;
+        if (current.turn.action == Turn::First) {
+            current.add_sample(-1.0f);
+            // A no-legal loss is decided at this root, not by the action that reached it. A
+            // preceding completed turn therefore keeps its normal distance discount.
+            co_return SampleResult{-1.0f, false};
+        }
+        TreeNode* child = current.short_turn_child.load();
+        if (child == nullptr) child = co_await initialize_short_turn_child(current);
+        SampleResult result = co_await sample_rec(*child);
+        result.value = backup_value(result.value, result.just_terminal, true);
+        result.just_terminal = false;
+        current.add_sample(result.value);
+        co_return result;
     }
 
     TreeEdge& te = get_best_edge(current);
     ++te.active_samples;
     TreeNode* child = te.child;
-    float value = co_await (child == nullptr ? initialize_child(current, te) : sample_rec(*child));
+    SampleResult result =
+        co_await (child == nullptr ? initialize_child(current, te) : sample_rec(*child));
 
     if (current.turn.action == Turn::Second) {
-        value *= -1;
+        result.value = backup_value(result.value, result.just_terminal, true);
     }
 
-    current.add_sample(value);
+    current.add_sample(result.value);
+    result.just_terminal = false;
 
     --te.active_samples;
-    co_return value;
+    co_return result;
 }
 
 void MCTS::record_terminal(Winner winner, TreeNode const& node, bool shortcut) {
@@ -543,7 +594,10 @@ std::vector<PvStep> MCTS::principal_variation(int max_actions, float delta,
                 return 0.0f;
             }
             float const q = val.total_weight / val.total_samples;
-            return flip ? -q : q;
+            if (!flip) return q;
+            bool const child_is_terminal =
+                child->board.winner(child->turn) != Winner::Undecided;
+            return backup_value(q, child_is_terminal, true);
         };
 
         // Ignore barely-touched edges. MCTS deliberately starves bad actions, so an edge
@@ -666,9 +720,36 @@ void MCTS::delete_subtree(TreeNode& tn) {
                 delete_stack.push_back(te.child);
             }
         }
+        if (tn_top->short_turn_child != nullptr) {
+            delete_stack.push_back(tn_top->short_turn_child);
+        }
 
         delete tn_top;
     }
+}
+
+MCTS::RootDisposition MCTS::root_disposition() const {
+    if (m_root->board.winner(m_root->turn) != Winner::Undecided) {
+        return RootDisposition::Terminal;
+    }
+    if (!m_root->edges.empty()) return RootDisposition::Expandable;
+    return m_root->turn.action == Turn::First ? RootDisposition::NoLegalFirst
+                                              : RootDisposition::ShortTurnSecond;
+}
+
+bool MCTS::advance_short_turn() {
+    if (root_disposition() != RootDisposition::ShortTurnSecond) return false;
+    TreeNode* child = m_root->short_turn_child.load();
+    if (child == nullptr) {
+        child = folly::coro::blockingWait(initialize_short_turn_child(*m_root));
+    }
+    TreeNode* old_root = m_root;
+    m_root = child;
+    old_root->short_turn_child = nullptr;
+    delete_subtree(*old_root);
+    m_root->parent = nullptr;
+    add_root_noise();
+    return true;
 }
 
 Board const& MCTS::current_board() const {

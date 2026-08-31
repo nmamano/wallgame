@@ -115,7 +115,7 @@ TEST_CASE("Universal policy indices and legal masks replay-audit every rules var
             CHECK(mask[universal_policy_index(board, turn, edge.action)]);
         }
 
-        auto const output = convert_to_model_output(info, 0.5f, 1.0f);
+        auto const output = convert_to_model_output(info, 0.5f);
         CHECK(output.prior.size() == mask.size());
         for (std::size_t index = 0; index < mask.size(); ++index) {
             if (!mask[index]) CHECK(output.prior[index] == 0.0f);
@@ -143,11 +143,27 @@ TEST_CASE("Training labels use the Standard capture winner", "[Training Contract
     NodeInfo decision{decision_board, {Player::Red, Turn::First}, 0.0f, 1, {}};
     decision.edges.push_back({PawnMove{Pawn::Cat, Direction::Right}, 1, 0.0f, 0.0f});
 
-    auto const red_label = convert_to_model_output(decision, final_board.score_for(Player::Red), 1.0f);
+    auto const red_label = convert_to_model_output(decision, 1.0f);
     CHECK(red_label.value == 1.0f);
     decision.turn.player = Player::Blue;
-    auto const blue_label = convert_to_model_output(decision, final_board.score_for(Player::Red), 1.0f);
+    auto const blue_label = convert_to_model_output(decision, -1.0f);
     CHECK(blue_label.value == -1.0f);
+}
+
+TEST_CASE("training values prefer faster wins and delay forced losses", "[Training Contract]") {
+    float const immediate_win = training_value_target(Winner::Red, Player::Red, 0);
+    float const delayed_win = training_value_target(Winner::Red, Player::Red, 1);
+    float const immediate_loss = training_value_target(Winner::Blue, Player::Red, 0);
+    float const delayed_loss = training_value_target(Winner::Blue, Player::Red, 1);
+
+    CHECK(immediate_win == 1.0f);
+    CHECK(delayed_win == MCTS::kTerminalTurnDiscount);
+    CHECK(immediate_win > delayed_win);
+    CHECK(immediate_loss == -1.0f);
+    CHECK(delayed_loss == -MCTS::kTerminalTurnDiscount);
+    CHECK(delayed_loss > immediate_loss);
+    CHECK(training_value_target(Winner::Draw, Player::Red, 0) == 0.0f);
+    CHECK(training_value_target(Winner::Draw, Player::Blue, 9) == 0.0f);
 }
 
 TEST_CASE("Animal movable pawns retain their locked policy slots", "[Training Contract]") {

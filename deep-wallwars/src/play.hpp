@@ -24,6 +24,7 @@ enum class TrainingEndReason { Terminal, NoLegalAction, MoveLimit };
 struct TrainingGame {
     std::vector<TrainingDecision> decisions;
     Board final_board;
+    Turn final_turn;
     Winner actual_winner;
     TrainingEndReason end_reason;
     std::string initial_state_record;

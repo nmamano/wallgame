@@ -1,12 +1,53 @@
 import { describe, expect, it } from "bun:test";
 import {
   makeTrainingRng,
+  sampleReplacementInitialState,
   sampleTrainingInitialStates,
   trainingGameSeed,
 } from "../../deep-wallwars/scripts/generate_training_initial_states";
 import { buildOrdinaryInitialState } from "../../shared/domain/game-configuration";
 
 describe("training initial-state sampler", () => {
+  it("makes deterministic collision-free replacements in the same source cell", () => {
+    const seed = 730_117;
+    const source = sampleTrainingInitialStates(seed, 1)[0];
+    const first = sampleReplacementInitialState(seed, {
+      sourceRecord: source,
+      replacementAttempt: 1,
+      gameIndex: 5_001,
+    });
+    const again = sampleReplacementInitialState(seed, {
+      sourceRecord: source,
+      replacementAttempt: 1,
+      gameIndex: 5_001,
+    });
+    const second = sampleReplacementInitialState(seed, {
+      sourceRecord: source,
+      replacementAttempt: 2,
+      gameIndex: 5_002,
+    });
+
+    expect(first).toEqual(again);
+    expect(first.replacementIdentity).toBe("1:1");
+    expect(second.replacementIdentity).toBe("1:2");
+    expect(first.gameSeed).not.toBe(second.gameSeed);
+    for (const replacement of [first, second]) {
+      expect([
+        replacement.variant,
+        replacement.startMode,
+        replacement.dimensionMode,
+        replacement.boardWidth,
+        replacement.boardHeight,
+      ]).toEqual([
+        source.variant,
+        source.startMode,
+        source.dimensionMode,
+        source.boardWidth,
+        source.boardHeight,
+      ]);
+    }
+  });
+
   it("is deterministic and emits the website dispatcher output byte-for-byte", () => {
     const seed = 730_117;
     const actual = sampleTrainingInitialStates(seed, 200);
