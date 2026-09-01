@@ -26,9 +26,9 @@ If that prints nothing, run `bun install`.
 | Hook | Checks | Not checked |
 | --- | --- | --- |
 | `pre-commit` | Prettier and ESLint, **staged files only** | build, tests |
-| `pre-push` | Prettier, ESLint and the build, **whole repo** | tests |
+| `pre-push` | Prettier, ESLint, typecheck, the build and the Docker-free unit tests (tests/game), **whole repo** | integration tests |
 
-**Neither hook runs the test suite**, despite what this file claimed until 2026-08-08.
+**Neither hook runs the integration suite.** Since 2026-08-21 (986321bf) pre-push runs the Docker-free tests/game files (about 4 s); a green hook is a subset of CI, not a substitute for it.
 Tests need Docker - each integration file starts its own Postgres through Testcontainers -
 and take minutes, which is too much in front of every push. `.github/workflows/ci.yml` runs
 them on every push instead. That split is deliberate; it is also why the suite once had
