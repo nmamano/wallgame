@@ -1,0 +1,367 @@
+{
+  "experiment": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+  "records": [
+    {
+      "gameId": "0351de480616c7ccdd73b04d",
+      "line": 4,
+      "rawRecordSha256": "8112f105dad653364e5093b328a263bba35bd6a24344bfc75ba0124422829cef",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#0351de480616c7ccdd73b04d"
+    },
+    {
+      "gameId": "0b7433b9250e445be909bc8f",
+      "line": 9,
+      "rawRecordSha256": "2e23eff495cb33f055ec0905969b9892d3f6d9e1b7f155279db2a90e5c652217",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#0b7433b9250e445be909bc8f"
+    },
+    {
+      "gameId": "11d00ab649f126487dc9f67d",
+      "line": 11,
+      "rawRecordSha256": "a07abc7a11846ec1eafa5dfa2c7bc3557d06f24097c31964d1f6b481583a7f0d",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#11d00ab649f126487dc9f67d"
+    },
+    {
+      "gameId": "173369fec475889b87ab345e",
+      "line": 11,
+      "rawRecordSha256": "38ec06b1bb75891599782d73f59103fcac076fbebb688c3990ad621c5e8e03eb",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#173369fec475889b87ab345e"
+    },
+    {
+      "gameId": "18666a7e758c612f59fbdfef",
+      "line": 1,
+      "rawRecordSha256": "b4f72b09880ad22e528c778bb56bcfbbf87148d86cb05e118add1a7cac6f83ce",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#18666a7e758c612f59fbdfef"
+    },
+    {
+      "gameId": "1c628885396fd656af0e7ed3",
+      "line": 7,
+      "rawRecordSha256": "cddcc758e92da93b1b7c974fbb876898ae78f2bd26a548047618c98f26c9fe18",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#1c628885396fd656af0e7ed3"
+    },
+    {
+      "gameId": "1cc7d4e4368bdca2008b732b",
+      "line": 8,
+      "rawRecordSha256": "3c8ed355759ad298f8d28ae00a61da943760ae510ac171bf8ca2b1c818b4c927",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#1cc7d4e4368bdca2008b732b"
+    },
+    {
+      "gameId": "1d497726bddf7245ee26054f",
+      "line": 4,
+      "rawRecordSha256": "bd5b0a3e8f4afbff67edec0085da630286e345e92314d5188ce1bcbece6d2b1c",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#1d497726bddf7245ee26054f"
+    },
+    {
+      "gameId": "2dfe7e48613413fc603f3aba",
+      "line": 11,
+      "rawRecordSha256": "568d1ee59efcb54dffa858bb7091d59747ce7d0d201c714c48774397e7125746",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#2dfe7e48613413fc603f3aba"
+    },
+    {
+      "gameId": "311b2638f832cacfc681ac7d",
+      "line": 6,
+      "rawRecordSha256": "a974919e87614296daa210e4bf7c7a604c67815353c36c96fe16de1379c07a24",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#311b2638f832cacfc681ac7d"
+    },
+    {
+      "gameId": "321a8d3e2a46102d85afa73d",
+      "line": 7,
+      "rawRecordSha256": "c6e74ad07702ac1430660af209b06af41fa853af78b5fd128bed9be495f7b79e",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#321a8d3e2a46102d85afa73d"
+    },
+    {
+      "gameId": "357d07bbb7e3d84b55b90a3a",
+      "line": 8,
+      "rawRecordSha256": "7a2310b00330775d3656b955a84877f57f21a5c807d582df8ab2047d777a733a",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#357d07bbb7e3d84b55b90a3a"
+    },
+    {
+      "gameId": "35f039298d38fd044bb754fc",
+      "line": 4,
+      "rawRecordSha256": "db3f001ef29405aa8c1e66442750b8f68ce9797d352992547be909816c3eb13d",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#35f039298d38fd044bb754fc"
+    },
+    {
+      "gameId": "45f51621ea9a0363369b0dc0",
+      "line": 8,
+      "rawRecordSha256": "247115e1db52c5ec117fbd41f6c51616295e90bdfbbcf1c1cdfac7523c818ea6",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#45f51621ea9a0363369b0dc0"
+    },
+    {
+      "gameId": "46a16ad88a2864a008461687",
+      "line": 1,
+      "rawRecordSha256": "7056afdcf65705e21cff896a33a46f0aef9451eddddc73f6ebb08e026a3982de",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#46a16ad88a2864a008461687"
+    },
+    {
+      "gameId": "4ace785866b33ae30bcbea72",
+      "line": 11,
+      "rawRecordSha256": "b1c5268bf2dce63d3147ced5e2f13871c240e979d3812bdca42e2c5bd4875975",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#4ace785866b33ae30bcbea72"
+    },
+    {
+      "gameId": "4f93dac6efcfefd2adf2e7a9",
+      "line": 1,
+      "rawRecordSha256": "4bf8dbd33505d4bf930a19d9752ac1d0dbb7291c4f8a5e5ad98614c022d582b4",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#4f93dac6efcfefd2adf2e7a9"
+    },
+    {
+      "gameId": "549eeee26d50067863dc6393",
+      "line": 8,
+      "rawRecordSha256": "f9e908162d6b69dedb827ddd7005e5f5e928c3c6dfd0cb66f3bf6e409ceed241",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#549eeee26d50067863dc6393"
+    },
+    {
+      "gameId": "58026a3ad61dac843c00e9c0",
+      "line": 4,
+      "rawRecordSha256": "fd3446ce96739594924b97aaf15f3c321884062d6c2ff95c23ba5802a48a5f33",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#58026a3ad61dac843c00e9c0"
+    },
+    {
+      "gameId": "5860b074b499412e6bd087d5",
+      "line": 2,
+      "rawRecordSha256": "ef7ba2f68a75f49d728352079815d42f3d1805bf389971a39f83c2d095bbcd25",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#5860b074b499412e6bd087d5"
+    },
+    {
+      "gameId": "5883d4486a119a781dadba5f",
+      "line": 12,
+      "rawRecordSha256": "c5113005e1cfce8e5399a2f30ef02f941b07baf57c11ebc2930d8d40c2b52afa",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#5883d4486a119a781dadba5f"
+    },
+    {
+      "gameId": "5c5de9275d2a8fece569a362",
+      "line": 10,
+      "rawRecordSha256": "5e84c48eb8d10c6121e0bf62605f704aafdb114104afb64e93cf07c77c1da742",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#5c5de9275d2a8fece569a362"
+    },
+    {
+      "gameId": "6263d4ce8dcbfd0f1269c0c4",
+      "line": 3,
+      "rawRecordSha256": "15b25b82b98c43e25694254d40b69723885236018f7dc71a9f7ece1e185a2eae",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#6263d4ce8dcbfd0f1269c0c4"
+    },
+    {
+      "gameId": "636cf16e8bbcd6a277b65292",
+      "line": 9,
+      "rawRecordSha256": "227978c10476e38fea7685cfcf474ef5678d14e0c5f855f6bbca5c00f7959c7e",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#636cf16e8bbcd6a277b65292"
+    },
+    {
+      "gameId": "656f2939de75a80f893e6051",
+      "line": 7,
+      "rawRecordSha256": "c7c6bf9063a85cefd04a40cca4267bae6480351bfd38c4691957282ce2c4946a",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#656f2939de75a80f893e6051"
+    },
+    {
+      "gameId": "6d3c973b208961e082eac39b",
+      "line": 6,
+      "rawRecordSha256": "7edd6e086dcff88285442b0339c6ee52a0bde3bd03d0c625335c3f08f884acc5",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#6d3c973b208961e082eac39b"
+    },
+    {
+      "gameId": "6ed722a48ce0ef8111fe6ce1",
+      "line": 2,
+      "rawRecordSha256": "84ede078aee7dc9d03a164c7e2cbbc6e9c488150dbe913ed386f770c1bfc1cab",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#6ed722a48ce0ef8111fe6ce1"
+    },
+    {
+      "gameId": "7200305a32cdcf19e7e09341",
+      "line": 9,
+      "rawRecordSha256": "41a1d328f7cf3cffe55c4e741298034e6d986b26d214796d5708771979dc1e2b",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#7200305a32cdcf19e7e09341"
+    },
+    {
+      "gameId": "7376ee3f7560d42ed50ea1d8",
+      "line": 12,
+      "rawRecordSha256": "78f9572e99dd83bc20501eb63cbb927b936b87d1aee114dc279bce097cec7332",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#7376ee3f7560d42ed50ea1d8"
+    },
+    {
+      "gameId": "774fd700a73593ea85806d29",
+      "line": 8,
+      "rawRecordSha256": "c0de603ba6002295bdfd819434c560eaa13210eca8a9860916f9ece42cb96be5",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#774fd700a73593ea85806d29"
+    },
+    {
+      "gameId": "8725471a6862aa626ade84ec",
+      "line": 3,
+      "rawRecordSha256": "3fb1922172b2d6830c4bbd22b986c3b12c4a905e0ccfeafb9b4fb9710355a768",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#8725471a6862aa626ade84ec"
+    },
+    {
+      "gameId": "88b8d191d8999653a6350059",
+      "line": 1,
+      "rawRecordSha256": "31f17a3b26f94a0ad14d525a0f1a2588f0d08a0a72b21e999828884a78fb6a93",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#88b8d191d8999653a6350059"
+    },
+    {
+      "gameId": "8d96b3ad8e0ee4234e65a987",
+      "line": 5,
+      "rawRecordSha256": "c4d58cfe3a39e5026350ea4aa1a2d13694724339e2bac5eb7bb81d4b0bccb336",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#8d96b3ad8e0ee4234e65a987"
+    },
+    {
+      "gameId": "90bac3bd015cbdadd90fa8ff",
+      "line": 9,
+      "rawRecordSha256": "57ce1ae09ea2e4854f76e530d9c0870245c37e6e7e8fa5d545ff7e331f2ea70f",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#90bac3bd015cbdadd90fa8ff"
+    },
+    {
+      "gameId": "9caa2dbad96e41cc2b2ac8ce",
+      "line": 3,
+      "rawRecordSha256": "a8eeb10f47f4f28e1cc45fb8406bb8ef09902cf364af26fe41eeee145fcdf334",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#9caa2dbad96e41cc2b2ac8ce"
+    },
+    {
+      "gameId": "9f6db15028ef8395a153f511",
+      "line": 2,
+      "rawRecordSha256": "3c943b60af813af17c211f761a269cefe810e2fa2c37912406cd0f386153c09a",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#9f6db15028ef8395a153f511"
+    },
+    {
+      "gameId": "a7b7e70587b4692801e877d0",
+      "line": 5,
+      "rawRecordSha256": "1a3b042b3f059763da5a845179cbf4206b337fca48666c0b6433d867e1be1ff1",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#a7b7e70587b4692801e877d0"
+    },
+    {
+      "gameId": "acd3dc977d9709a4cc446a6d",
+      "line": 2,
+      "rawRecordSha256": "492dc4ff97b1c98a3cd623bc30663369b84f7f77c82ebf25088b55dc8ffa558e",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#acd3dc977d9709a4cc446a6d"
+    },
+    {
+      "gameId": "af3c840e34a9bf8be30c68ba",
+      "line": 11,
+      "rawRecordSha256": "e1dd628a7cacfc8e95fdeeb337421ef139ec6d11a1ac519c94a7f0ac2d8179e9",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#af3c840e34a9bf8be30c68ba"
+    },
+    {
+      "gameId": "b4a44a8993aa2b7491f451c8",
+      "line": 10,
+      "rawRecordSha256": "d9b87f8a23da96b1917763241d75d9c9a145b791e4beaccf978b6998c6a3fa60",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#b4a44a8993aa2b7491f451c8"
+    },
+    {
+      "gameId": "bbaf67a93d6e717c59fe2735",
+      "line": 12,
+      "rawRecordSha256": "badf3b20d846020a75b95429e88efa7efde127e33ae8917b80963d4927b7840b",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#bbaf67a93d6e717c59fe2735"
+    },
+    {
+      "gameId": "c053d9eecac483abab6d35ad",
+      "line": 6,
+      "rawRecordSha256": "5bab95a2335ce6f79613896610c47c691813695250206fccce87f09c4670872b",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#c053d9eecac483abab6d35ad"
+    },
+    {
+      "gameId": "c2edc6016b75d9fa2de383b1",
+      "line": 10,
+      "rawRecordSha256": "83b13c889281b8d49f6cda4a2b5ddaf8005cff85666aa23194431818594b531a",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#c2edc6016b75d9fa2de383b1"
+    },
+    {
+      "gameId": "c64320f7ea6272cb14c8e922",
+      "line": 9,
+      "rawRecordSha256": "4d91d10ebd81e55913a1cb036392c0839a34d0ea7ea656492776fa46cc2211b7",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#c64320f7ea6272cb14c8e922"
+    },
+    {
+      "gameId": "c6fd3b1bb5a6633b16c3aedf",
+      "line": 2,
+      "rawRecordSha256": "b82510b0b13e5b6e3894c1fa4317b7c4e345b62249a1fa9fcd27b5e2867d9b7b",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#c6fd3b1bb5a6633b16c3aedf"
+    },
+    {
+      "gameId": "c93c1b73f1ada81a0160700a",
+      "line": 7,
+      "rawRecordSha256": "ee1ec566ca7296282b931bc1dd3a3fcf4e04b636913c177a44a2718b57e370dd",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#c93c1b73f1ada81a0160700a"
+    },
+    {
+      "gameId": "d0af44c589dc2b296998eb5b",
+      "line": 12,
+      "rawRecordSha256": "88eb3a61bc6a24e29c7082f0f3da98e0a07e7c6311bcef322f704de560e1b4e5",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#d0af44c589dc2b296998eb5b"
+    },
+    {
+      "gameId": "d98656d21881fd3a839e2e6c",
+      "line": 10,
+      "rawRecordSha256": "d6eb9d5115abc64ea45f878eddfcab4fa1480807e589b2f6a2ec93a32d65633a",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#d98656d21881fd3a839e2e6c"
+    },
+    {
+      "gameId": "daec5f3ae5a29c6e999ace5e",
+      "line": 3,
+      "rawRecordSha256": "f18e44b838ceef7b3534f3739063596ec5ef2a15660a173a446a36d49c16ce72",
+      "sourceFile": "accepted/standard-random-8x8.jsonl#daec5f3ae5a29c6e999ace5e"
+    },
+    {
+      "gameId": "dc4e79d317bf4e56f4ab2491",
+      "line": 12,
+      "rawRecordSha256": "98bb0d66618b4162b083cfa11029d7bbf502eeddb258eff374ea897b074028a8",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#dc4e79d317bf4e56f4ab2491"
+    },
+    {
+      "gameId": "e0caa38aad0aeb3d1152edab",
+      "line": 3,
+      "rawRecordSha256": "8065273a80ea6d244f9eb9269a0030bc07ab34cf0377d92b17e488e245f32d81",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#e0caa38aad0aeb3d1152edab"
+    },
+    {
+      "gameId": "e37b287cc8ebc32bc5e3d090",
+      "line": 10,
+      "rawRecordSha256": "c36fc3cf1f399e3fbaba8c21347c22bcb27f87d4ed4d4710e1695bed4c6efe7f",
+      "sourceFile": "accepted/animal-cycle-random-7x7.jsonl#e37b287cc8ebc32bc5e3d090"
+    },
+    {
+      "gameId": "e515449e1c81b993fb6b54b3",
+      "line": 5,
+      "rawRecordSha256": "034a5905cae420cbc0c467d2b1721b02355b5905e50c771dd6fdee2b0dfa42ab",
+      "sourceFile": "accepted/classic-random-8x8.jsonl#e515449e1c81b993fb6b54b3"
+    },
+    {
+      "gameId": "e5c09492aa23a24c10a278e7",
+      "line": 1,
+      "rawRecordSha256": "92ed91f790bb3c06276147b597e72bd0e68f319137f2dcc4d5334d85951903fe",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#e5c09492aa23a24c10a278e7"
+    },
+    {
+      "gameId": "e7e4b32b558e102fc47030d2",
+      "line": 5,
+      "rawRecordSha256": "495cfaba6d17f6b86d0b9c2cffa3162e3057903cfe83a25fac83c0351d061a5c",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#e7e4b32b558e102fc47030d2"
+    },
+    {
+      "gameId": "ef3b59c64e7fda968839569e",
+      "line": 7,
+      "rawRecordSha256": "0c2e276d87075df26d38ac92eb71227664cc2fe3e3b2fe7cbec39aa98d23682c",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#ef3b59c64e7fda968839569e"
+    },
+    {
+      "gameId": "f3c5de0f88141c86e15782e8",
+      "line": 5,
+      "rawRecordSha256": "b1f3e4a2acb36e3e3f4e0532fca14a33f29be8a3b85e5478dad5e8d09b6db328",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#f3c5de0f88141c86e15782e8"
+    },
+    {
+      "gameId": "f6ca9ca87ad8d04041e4397f",
+      "line": 6,
+      "rawRecordSha256": "bdafc068ca4d2b7f451413d54290a8aad8b7a0a4eea0c459f40604fb46ddbf5f",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#f6ca9ca87ad8d04041e4397f"
+    },
+    {
+      "gameId": "f77d273228df19a6926be8dc",
+      "line": 4,
+      "rawRecordSha256": "45ce6eab95626b21ed1335369ac0cabf4276dbf7378108a0798b8e53957b319a",
+      "sourceFile": "accepted/standard-random-12x10.jsonl#f77d273228df19a6926be8dc"
+    },
+    {
+      "gameId": "fd6012f701f22d050dd080f2",
+      "line": 6,
+      "rawRecordSha256": "a963dd87eb2befd53a3149488f95cc58419175d1553cfdd342bbe5d4478f9501",
+      "sourceFile": "accepted/classic-random-12x10.jsonl#fd6012f701f22d050dd080f2"
+    }
+  ],
+  "rows": 60,
+  "schema": "wallgame-policy-elo-raw-fingerprints-v1"
+}

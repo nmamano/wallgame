@@ -98,6 +98,12 @@ function render() {
     const label = svgEl("text", { class: "gap-label", x: (x(gap.start)+x(gap.next))/2, y: margin.top+18, "text-anchor": "middle" });
     label.textContent = `${gap.start}–${gap.end} · NO CONNECTED EVIDENCE`; svg.append(label);
   });
+  (data.resultRuleBoundaries ?? []).forEach(boundary => {
+    const boundaryX = x(boundary.generation);
+    svg.append(svgEl("line", { class: "rule-boundary", x1: boundaryX, x2: boundaryX, y1: margin.top, y2: margin.top+innerH }));
+    const label = svgEl("text", { class: "rule-boundary-label", x: boundaryX-5, y: margin.top+12, "text-anchor": "end" });
+    label.textContent = boundary.label; svg.append(label);
+  });
   const componentRanges = new Map();
   conditions.forEach(condition => condition.components.forEach(component => {
     const start = Math.min(...component.generations), end = Math.max(...component.generations);
@@ -171,6 +177,7 @@ async function init() {
   document.querySelector("#settings").innerHTML = [
     ["Search", `${data.settings.samples} sample`], ["Root noise", data.settings.rootNoiseFactor],
     ["Move choice", data.settings.moveSelection], ["Fit", "Bradley–Terry + draw prior"],
+    ["Result rule", "Generation 150 uses current rules; earlier points are preserved legacy-rule evidence"],
     ["Rating scope", data.ratingScope.reason],
     ["Scale", "Weakest = 0 per component"], ["Failures", "Quarantined before fit"],
     ["Next batch", `${data.incrementalPlan.summary.pairings} short pairings · ${data.incrementalPlan.summary.acceptedGamesNeeded} clean games needed`],

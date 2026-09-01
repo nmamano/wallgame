@@ -1,0 +1,178 @@
+{
+  "schema": "wallgame-policy-elo-current-rule-prerun-v1",
+  "date": "2026-09-01",
+  "experiment": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+  "resultRuleContract": {
+    "id": "current-no-legacy-one-move-draw-v1",
+    "effectiveDate": "2026-09-01",
+    "legacyOneMoveDraw": false,
+    "boundaryDocument": {
+      "commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+      "path": "info/policy-elo-protocol.md"
+    }
+  },
+  "codeProvenance": {
+    "currentRuleCandidate": "641ec0f0cf4591f340471ecc8d6fa116b326c13a",
+    "candidateTree": "8887c7922605be3347675366666f47016df5e388",
+    "documentationCommit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+    "engineBuildSource": "ba2e93d40fd15df88b1841f53971b7610b782d69",
+    "cppDiffBa2ToCandidate": "empty"
+  },
+  "archive": {
+    "path": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+    "configuredBeforeFirstGame": true,
+    "empty": true,
+    "accepted": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01/accepted",
+    "quarantine": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01/quarantine",
+    "torn": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01/torn"
+  },
+  "plan": {
+    "pairings": 5,
+    "games": 60,
+    "conditions": [
+      "classic-random-8x8",
+      "classic-random-12x10",
+      "standard-random-8x8",
+      "standard-random-12x10",
+      "animal-cycle-random-7x7"
+    ],
+    "fixedStartGames": 0,
+    "distinctRandomStartSeeds": 60,
+    "predictedAttempts": [
+      {
+        "conditionId": "classic-random-8x8",
+        "engineSeed": 1131715527,
+        "randomStartSeeds": [
+          1131718922146581,
+          1131718922146582,
+          1131718922146583,
+          1131718922146584,
+          1131718922146585,
+          1131718922146586,
+          1131718922146587,
+          1131718922146588,
+          1131718922146589,
+          1131718922146590,
+          1131718922146591,
+          1131718922146592
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "engineSeed": 1360114129,
+        "randomStartSeeds": [
+          1360118209342387,
+          1360118209342388,
+          1360118209342389,
+          1360118209342390,
+          1360118209342391,
+          1360118209342392,
+          1360118209342393,
+          1360118209342394,
+          1360118209342395,
+          1360118209342396,
+          1360118209342397,
+          1360118209342398
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "engineSeed": 208260670,
+        "randomStartSeeds": [
+          208261294782010,
+          208261294782011,
+          208261294782012,
+          208261294782013,
+          208261294782014,
+          208261294782015,
+          208261294782016,
+          208261294782017,
+          208261294782018,
+          208261294782019,
+          208261294782020,
+          208261294782021
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "engineSeed": 1501279545,
+        "randomStartSeeds": [
+          1501284048838635,
+          1501284048838636,
+          1501284048838637,
+          1501284048838638,
+          1501284048838639,
+          1501284048838640,
+          1501284048838641,
+          1501284048838642,
+          1501284048838643,
+          1501284048838644,
+          1501284048838645,
+          1501284048838646
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "engineSeed": 2033832666,
+        "randomStartSeeds": [
+          2033838767497998,
+          2033838767497999,
+          2033838767498000,
+          2033838767498001,
+          2033838767498002,
+          2033838767498003,
+          2033838767498004,
+          2033838767498005,
+          2033838767498006,
+          2033838767498007,
+          2033838767498008,
+          2033838767498009
+        ]
+      }
+    ]
+  },
+  "inputs": [
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-g150-vs-g140-20260901/plan.json",
+      "sha256": "f865b28c8b34039eed4e74d42031562e67185854c0d82ce8165860c8e698e8bd",
+      "bytes": 34053
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-g150-vs-g140-20260901/policy_elo_conditions.run.json",
+      "sha256": "3615d86ec6277b302cd3d61a6ac6117f6562a0a51bc631d41413a10ff9cffc81",
+      "bytes": 3870
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-g150-vs-g140-20260901/loadability.jsonl",
+      "sha256": "5747124a9fc612a61885b1e83bdb7bc4c50d1d2b547ca41bcc708087e748be28",
+      "bytes": 1811
+    },
+    {
+      "path": "/home/nilo/nil/wallgame-gpu-builds/nil-reset-20260831-ba2e93d40fd1/deep-wallwars/build-nil-reset/deep_ww_bgs_engine",
+      "sha256": "d1dbd140cb98d97b1e287b52a4523b3f817ccbca1cf57c83b910effc5eba2264",
+      "bytes": 31728480
+    },
+    {
+      "path": "/home/nilo/nil/wallgame-gpu-builds/nil-reset-20260831-641ec0f0cf45/deep-wallwars/scripts/benchmark_head_to_head.ts",
+      "sha256": "c7466ebe4e6d8f4122b74f7bac21bdd94e937c51cdac3579c655aac707bf1d23",
+      "bytes": 23468
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_140.trt",
+      "sha256": "0a5198126009cc1711536cb70ee1605d7edd385a288bccb01ac976ff6570645b",
+      "bytes": 18278420
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_150.trt",
+      "sha256": "a1f7f160a880bf56192b93296d30f29d689f4a171cfb76ca578dc22e7f070eac",
+      "bytes": 18281604
+    }
+  ],
+  "legacyRegistry": {
+    "path": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/experiments.json",
+    "sha256": "a118516fb9055f4fae4173862c3b4d35806eaf2be468966ac04001ee9367f792",
+    "bytes": 58047,
+    "preserveUnchanged": true
+  },
+  "productionGames": false
+}

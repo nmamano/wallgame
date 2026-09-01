@@ -1284,5 +1284,109 @@
       },
       "measuredOn": "2026-08-26"
     }
+  },
+  "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01": {
+    "arch": "tf",
+    "sources": [],
+    "date": "2026-09-01",
+    "candidate_code_sha": "641ec0f0cf4591f340471ecc8d6fa116b326c13a",
+    "documentation_commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+    "result_rule_contract": {
+      "id": "current-no-legacy-one-move-draw-v1",
+      "effectiveDate": "2026-09-01",
+      "legacyOneMoveDraw": false,
+      "boundaryDocument": {
+        "commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+        "path": "info/policy-elo-protocol.md"
+      }
+    },
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "seat_alternation": true,
+    "start_contract": {
+      "setup": "random-start",
+      "distinctLegalStarts": true,
+      "uniqueRandomStartSeeds": 60,
+      "uniqueInitialStates": 60,
+      "fixedStartGames": 0
+    },
+    "engine_sha256": "d1dbd140cb98d97b1e287b52a4523b3f817ccbca1cf57c83b910effc5eba2264",
+    "plan": {
+      "pairings": 5,
+      "requestedAcceptedGames": 60,
+      "sha256": "f865b28c8b34039eed4e74d42031562e67185854c0d82ce8165860c8e698e8bd"
+    },
+    "generation_range": {
+      "evidenceStart": 140,
+      "evidenceEnd": 150,
+      "newTarget": 150
+    },
+    "canonical_archive": {
+      "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+      "contentSha256": "e006a5d3d888b9bfaefd5cb472bf5cf9311d0ed74235a4d8e27daa65fab4c472",
+      "hashStatus": "finalized after completion",
+      "completionRecord": {
+        "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01/completion-summary.json",
+        "sha256": "4fba29d6e387ff5d3033ae8c401346d01ed1f852aa42970b0e0afe15449a498a"
+      }
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+      "immutableInputs": {
+        "plan.json": {"sha256": "f865b28c8b34039eed4e74d42031562e67185854c0d82ce8165860c8e698e8bd"},
+        "policy_elo_conditions.run.json": {"sha256": "3615d86ec6277b302cd3d61a6ac6117f6562a0a51bc631d41413a10ff9cffc81"},
+        "loadability.jsonl": {"sha256": "5747124a9fc612a61885b1e83bdb7bc4c50d1d2b547ca41bcc708087e748be28"},
+        "pre-run-gate.json": {"sha256": "fb0ef70425b25e874fb21e5be529a664714e11629c4ab93278e9e1d0786a0a4b"},
+        "policy_elo_batch.py": {"sha256": "5804ca6aa692a6e8985fb142afacbc8a9f18520239ebeb5c4e1157130b936798"}
+      }
+    },
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 60,
+      "bytes": 13439,
+      "sha256": "5c2571d5eddf846ba1243ec4a452e899ef2778f0c6521663e9d2ea9574c46687",
+      "generator": "deep-wallwars/scripts/complete_policy_elo_evidence.py"
+    },
+    "rawFingerprints": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01/raw-fingerprints.json",
+      "schema": "wallgame-policy-elo-raw-fingerprints-v1",
+      "rows": 60,
+      "bytes": 15188,
+      "sha256": "f9da6d186defcbace952e1121e39ccdce7b13c151464047827d78eb3f2b2bce0",
+      "generator": "deep-wallwars/scripts/complete_policy_elo_evidence.py"
+    },
+    "localRawArchive": {
+      "box": "desktop-053vvpl-1",
+      "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+      "tracked": false,
+      "files": 6,
+      "rawBytes": 207746,
+      "contentSha256": "e006a5d3d888b9bfaefd5cb472bf5cf9311d0ed74235a4d8e27daa65fab4c472",
+      "measuredOn": "2026-09-01"
+    },
+    "evidenceStatus": "accepted",
+    "measured": {
+      "parsedRows": 60,
+      "gamesByCondition": {
+        "animal-cycle-random-7x7": 12,
+        "classic-random-12x10": 12,
+        "classic-random-8x8": 12,
+        "standard-random-12x10": 12,
+        "standard-random-8x8": 12
+      },
+      "pairings": 5,
+      "generationRange": {"min": 140, "max": 150, "distinct": 2},
+      "measuredOn": "2026-09-01"
+    },
+    "wld_model150_vs_model140": {
+      "animal-cycle-random-7x7": "5-7-0",
+      "classic-random-12x10": "6-6-0",
+      "classic-random-8x8": "5-6-1",
+      "standard-random-12x10": "6-6-0",
+      "standard-random-8x8": "4-8-0"
+    },
+    "legacy_points": "Preserved unchanged; this current-rule edge intentionally mixes result-rule populations in the plot."
   }
 }

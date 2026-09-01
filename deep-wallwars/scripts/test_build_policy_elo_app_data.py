@@ -34,6 +34,29 @@ def edge(a, b, wins_a=1, wins_b=1, draws=0):
 
 
 class PolicyEloDataTest(unittest.TestCase):
+    def test_rule_boundary_preserves_old_points_and_shifts_only_new_scale(self):
+        previous = {
+            "schema": "wallgame-policy-elo-app-v2",
+            "conditions": [{"id": "test", "components": [{"ratings": [
+                {"generation": 139, "elo": 80.0, "games": 12},
+                {"generation": 140, "elo": 100.0, "games": 12},
+            ]}]}],
+        }
+        current = {
+            "schema": "wallgame-policy-elo-app-v2",
+            "conditions": [{"id": "test", "components": [{"ratings": [
+                {"generation": 139, "elo": 70.0, "games": 24},
+                {"generation": 140, "elo": 90.0, "games": 24},
+                {"generation": 150, "elo": 130.0, "games": 12},
+            ]}]}],
+        }
+        MODULE.preserve_existing_ratings(current, previous, 140)
+        self.assertEqual(current["conditions"][0]["components"][0]["ratings"], [
+            {"generation": 139, "elo": 80.0, "games": 12},
+            {"generation": 140, "elo": 100.0, "games": 12},
+            {"generation": 150, "elo": 140.0, "games": 12},
+        ])
+
     def test_incremental_plan_uses_clean_archive_and_normalizes_edge_direction(self):
         config = {
             "artifactCoverage": [{"start": 93, "end": 94, "status": "available"}],
@@ -119,6 +142,7 @@ class PolicyEloDataTest(unittest.TestCase):
                     {"start": 93, "end": 94, "status": "available", "label": "rated"},
                 ],
                 "pairingDeltas": [1],
+                "resultRuleBoundaries": [{"generation": 94, "label": "CURRENT RULES"}],
                 "variantLabels": {"classic": "Classic"},
                 "conditions": [{
                 "id": "classic-fixed-8x8", "label": "Classic 8x8",
@@ -146,6 +170,10 @@ class PolicyEloDataTest(unittest.TestCase):
             self.assertEqual(sum(c["cleanGames"] for c in condition["components"]), 2)
             self.assertEqual(built["ratingScope"]["unratedEvidenceGenerations"], [1, 2])
             self.assertEqual(built["ratingScope"]["unratedEvidenceCleanGames"], 2)
+            self.assertEqual(
+                built["resultRuleBoundaries"],
+                [{"generation": 94, "label": "CURRENT RULES"}],
+            )
 
     def test_build_keeps_all_edges_whose_endpoints_are_supported(self):
         with tempfile.TemporaryDirectory() as directory:

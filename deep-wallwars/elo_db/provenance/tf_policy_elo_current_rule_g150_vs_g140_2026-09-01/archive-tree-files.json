@@ -1,0 +1,37 @@
+{
+  "schema": "wallgame-policy-elo-archive-tree-v1",
+  "experiment": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+  "files": [
+    {
+      "path": "accepted/animal-cycle-random-7x7.jsonl",
+      "sha256": "dca1110e0de8935ff884a6e9d5e7fbfa68aced9d20b7ad58e8eb043499b02d87",
+      "bytes": 29448
+    },
+    {
+      "path": "accepted/classic-random-12x10.jsonl",
+      "sha256": "2d71b74c2e00e70b2522e8a5446198c1e1cee4e2bb49ffe6372a06bf70bcfc45",
+      "bytes": 50110
+    },
+    {
+      "path": "accepted/classic-random-8x8.jsonl",
+      "sha256": "ff571fde80cd24bf11fafcbfd123bf3fc2313827f3326c96be3bd12b386ec470",
+      "bytes": 40347
+    },
+    {
+      "path": "accepted/standard-random-12x10.jsonl",
+      "sha256": "204e69e244fe5454669dbf4cd5ffd2fdbd8e7fffc806389d86e46a8c1467568f",
+      "bytes": 49073
+    },
+    {
+      "path": "accepted/standard-random-8x8.jsonl",
+      "sha256": "c9e94c00ee87f8316f3aeb02b71868c5deb1493d370f3dc6a7ca5d386fe995a4",
+      "bytes": 37967
+    },
+    {
+      "path": "run-attempts/20260901T204129Z-pid55192.jsonl",
+      "sha256": "660fd614aa760910bf3adc56dc7b4c117d0e9a267565161897dcd728dc4a2463",
+      "bytes": 801
+    }
+  ],
+  "treeSha256": "e006a5d3d888b9bfaefd5cb472bf5cf9311d0ed74235a4d8e27daa65fab4c472"
+}

@@ -394,7 +394,11 @@ def fit_component(edges, players, iterations=3000, prior=0.5):
 def build(opt):
     config = json.loads(opt.conditions.read_text())
     conditions = config["conditions"]
-    remote = remote_edges(opt) if (opt.ssh or opt.remote_aggregate) else table_edges(
+    use_remote = (
+        getattr(opt, "ssh", None) or getattr(opt, "remote_aggregate", None)
+        or not hasattr(opt, "results_tables")
+    )
+    remote = remote_edges(opt) if use_remote else table_edges(
         opt.results_tables, config, json.loads(opt.experiments.read_text()))
     canonical = canonical_edges(opt.policy_archive)
     remote_sources = {name for row in remote for name in row.get("sources", {})}
@@ -469,14 +473,69 @@ def build(opt):
             ),
         },
         "variantLabels": config["variantLabels"],
+        "resultRuleBoundaries": config.get("resultRuleBoundaries", []),
         "conditions": output,
         "incrementalPlan": plan,
     }
 
 
+def preserve_existing_ratings(data, previous, through_generation):
+    if previous.get("schema") != data.get("schema"):
+        raise ValueError("existing policy Elo snapshot has the wrong schema")
+    previous_by_condition = {item["id"]: item for item in previous["conditions"]}
+    for condition in data["conditions"]:
+        old_condition = previous_by_condition.get(condition["id"])
+        if old_condition is None:
+            raise ValueError(f"existing snapshot lacks condition {condition['id']}")
+        old_points = {
+            point["generation"]: point
+            for component in old_condition["components"]
+            for point in component["ratings"]
+        }
+        for component in condition["components"]:
+            raw_points = {point["generation"]: point for point in component["ratings"]}
+            anchors = [generation for generation in raw_points if generation <= through_generation]
+            new_generations = [generation for generation in raw_points if generation > through_generation]
+            offset = 0.0
+            if new_generations:
+                if not anchors:
+                    raise ValueError(f"new ratings for {condition['id']} lack a preserved anchor")
+                anchor = max(anchors)
+                if anchor not in old_points:
+                    raise ValueError(f"existing snapshot lacks anchor {condition['id']} generation {anchor}")
+                offset = old_points[anchor]["elo"] - raw_points[anchor]["elo"]
+            preserved = []
+            for point in component["ratings"]:
+                generation = point["generation"]
+                if generation <= through_generation:
+                    if generation not in old_points:
+                        raise ValueError(
+                            f"existing snapshot lacks {condition['id']} generation {generation}"
+                        )
+                    preserved.append(dict(old_points[generation]))
+                else:
+                    shifted = dict(point)
+                    shifted["elo"] = round(point["elo"] + offset, 3)
+                    preserved.append(shifted)
+            component["ratings"] = preserved
+    return data
+
+
 def main():
     opt = options()
+    boundaries = json.loads(opt.conditions.read_text()).get("resultRuleBoundaries", [])
+    preserved_through = [
+        item.get("preserveExistingRatingsThrough") for item in boundaries
+        if item.get("preserveExistingRatingsThrough") is not None
+    ]
+    previous = None
+    if preserved_through:
+        if not opt.output.is_file():
+            raise ValueError("incremental rule-boundary update requires the existing snapshot")
+        previous = json.loads(opt.output.read_text())
     data = build(opt)
+    if preserved_through:
+        data = preserve_existing_ratings(data, previous, max(preserved_through))
     opt.output.parent.mkdir(parents=True, exist_ok=True)
     opt.output.write_text(json.dumps(data, indent=2) + "\n")
     print(json.dumps({

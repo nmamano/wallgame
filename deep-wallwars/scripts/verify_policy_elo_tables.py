@@ -36,8 +36,8 @@ SNAPSHOT = ROOT / "policy-elo-app/data/policy-elo.json"
 TABLES = ROOT / "elo_db/results"
 EXPERIMENTS = ROOT / "elo_db/experiments.json"
 
-EXPECTED_ROWS = 290138
-EXPECTED_CLEAN = 290135
+EXPECTED_ROWS = 290198
+EXPECTED_CLEAN = 290195
 EXPECTED_EXCLUDED = 3
 
 

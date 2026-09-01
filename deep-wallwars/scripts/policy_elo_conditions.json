@@ -7,7 +7,9 @@
   "variantLabels": {"classic":"Classic","standard":"Standard","animal-cycle":"Animal Cycle"},
   "artifactCoverage": [
     {"start":0,"end":0,"status":"missing","label":"Artifact missing"},
-    {"start":1,"end":140,"status":"available","label":"16-plane · migrated or native · rated"}
+    {"start":1,"end":140,"status":"available","label":"16-plane · legacy-result population through generation 140"},
+    {"start":141,"end":149,"status":"available","label":"16-plane · checkpoints available · no Elo backfill"},
+    {"start":150,"end":150,"status":"available","label":"16-plane · current result rules"}
   ],
   "archiveExperiments": [
     "tf_phase7_policy_classic_2026-08-20",
@@ -20,7 +22,20 @@
     "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20",
     "tf_policy_elo_backfill_g1_g126_delta1to15_2026-08-22",
     "tf_policy_elo_adaptive_gt15_gaplt400_2026-08-23",
-    "tf_policy_elo_random_start_continuation_g127_g140_2026-08-26"
+    "tf_policy_elo_random_start_continuation_g127_g140_2026-08-26",
+    "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01"
+  ],
+  "resultRuleBoundaries": [
+    {
+      "generation": 150,
+      "effectiveDate": "2026-09-01",
+      "label": "CURRENT RESULT RULES START",
+      "contract": "current-no-legacy-one-move-draw-v1",
+      "legacyOneMoveDraw": false,
+      "experiment": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+      "documentCommit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+      "preserveExistingRatingsThrough": 140
+    }
   ],
   "archiveConditionAdapters": {
     "new:classic-fixed-8x8": "classic-fixed-8x8",

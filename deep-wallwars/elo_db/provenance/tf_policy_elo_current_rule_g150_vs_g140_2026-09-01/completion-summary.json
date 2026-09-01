@@ -1,0 +1,38 @@
+{
+  "schema": "wallgame-policy-elo-completion-v1",
+  "experiment": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
+  "completedAtUtc": "2026-09-01T20:44:14Z",
+  "acceptedGames": 60,
+  "quarantinedGames": 0,
+  "pairings": 5,
+  "supportedGenerations": [
+    140,
+    150
+  ],
+  "conditions": 5,
+  "gamesByCondition": {
+    "animal-cycle-random-7x7": 12,
+    "classic-random-12x10": 12,
+    "classic-random-8x8": 12,
+    "standard-random-12x10": 12,
+    "standard-random-8x8": 12
+  },
+  "archiveTreeSha256": "e006a5d3d888b9bfaefd5cb472bf5cf9311d0ed74235a4d8e27daa65fab4c472",
+  "archiveFileCount": 6,
+  "archiveBytes": 207746,
+  "resultRuleContract": {
+    "id": "current-no-legacy-one-move-draw-v1",
+    "effectiveDate": "2026-09-01",
+    "legacyOneMoveDraw": false,
+    "boundaryDocument": {
+      "commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+      "path": "info/policy-elo-protocol.md"
+    }
+  },
+  "startValidation": {
+    "uniqueRandomStartSeeds": 60,
+    "uniqueInitialStates": 60,
+    "fixedStarts": 0,
+    "legalityErrors": 0
+  }
+}
