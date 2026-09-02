@@ -1,0 +1,29 @@
+{
+  "schema": "wallgame-policy-elo-five-game-repair-validation-v1",
+  "measuredAtUtc": "2026-09-02T02:38:24.357666Z",
+  "accepted": 2100,
+  "quarantined": 5,
+  "torn": 0,
+  "pairingConditionGroups": 300,
+  "fixedGroups": 150,
+  "randomStartGroups": 150,
+  "perTargetGenerationAcceptedGames": {
+    "141": 210,
+    "142": 210,
+    "143": 210,
+    "144": 210,
+    "145": 210,
+    "146": 210,
+    "147": 210,
+    "148": 210,
+    "149": 210,
+    "150": 210
+  },
+  "uniqueAcceptedGameIds": 2100,
+  "allFixedGroupsTwoSeatDirectionsAndTrajectories": true,
+  "allRandomGroupsUniqueSeeds": true,
+  "allRandomGroupsUniqueInitialStates": true,
+  "allAcceptedLegal": true,
+  "quarantinedRawGamesUnchanged": true,
+  "earlierExperimentTouched": false
+}

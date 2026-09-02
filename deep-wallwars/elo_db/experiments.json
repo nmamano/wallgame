@@ -1307,9 +1307,9 @@
     "start_contract": {
       "setup": "random-start",
       "distinctLegalStarts": true,
+      "fixedStartGames": 0,
       "uniqueRandomStartSeeds": 60,
-      "uniqueInitialStates": 60,
-      "fixedStartGames": 0
+      "uniqueInitialStates": 60
     },
     "engine_sha256": "d1dbd140cb98d97b1e287b52a4523b3f817ccbca1cf57c83b910effc5eba2264",
     "plan": {
@@ -1334,13 +1334,25 @@
     "provenance": {
       "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01",
       "immutableInputs": {
-        "plan.json": {"sha256": "f865b28c8b34039eed4e74d42031562e67185854c0d82ce8165860c8e698e8bd"},
-        "policy_elo_conditions.run.json": {"sha256": "3615d86ec6277b302cd3d61a6ac6117f6562a0a51bc631d41413a10ff9cffc81"},
-        "loadability.jsonl": {"sha256": "5747124a9fc612a61885b1e83bdb7bc4c50d1d2b547ca41bcc708087e748be28"},
-        "pre-run-gate.json": {"sha256": "fb0ef70425b25e874fb21e5be529a664714e11629c4ab93278e9e1d0786a0a4b"},
-        "policy_elo_batch.py": {"sha256": "5804ca6aa692a6e8985fb142afacbc8a9f18520239ebeb5c4e1157130b936798"}
+        "plan.json": {
+          "sha256": "f865b28c8b34039eed4e74d42031562e67185854c0d82ce8165860c8e698e8bd"
+        },
+        "policy_elo_conditions.run.json": {
+          "sha256": "3615d86ec6277b302cd3d61a6ac6117f6562a0a51bc631d41413a10ff9cffc81"
+        },
+        "loadability.jsonl": {
+          "sha256": "5747124a9fc612a61885b1e83bdb7bc4c50d1d2b547ca41bcc708087e748be28"
+        },
+        "pre-run-gate.json": {
+          "sha256": "fb0ef70425b25e874fb21e5be529a664714e11629c4ab93278e9e1d0786a0a4b"
+        },
+        "policy_elo_batch.py": {
+          "sha256": "5804ca6aa692a6e8985fb142afacbc8a9f18520239ebeb5c4e1157130b936798"
+        }
       }
     },
+    "evidenceStatus": "accepted",
+    "legacy_points": "Preserved unchanged; this current-rule edge intentionally mixes result-rule populations in the plot.",
     "results": {
       "path": "deep-wallwars/elo_db/results/tf_policy_elo_current_rule_g150_vs_g140_2026-09-01.csv",
       "schema": "wallgame-elo-results-table-v1",
@@ -1366,7 +1378,6 @@
       "contentSha256": "e006a5d3d888b9bfaefd5cb472bf5cf9311d0ed74235a4d8e27daa65fab4c472",
       "measuredOn": "2026-09-01"
     },
-    "evidenceStatus": "accepted",
     "measured": {
       "parsedRows": 60,
       "gamesByCondition": {
@@ -1377,7 +1388,11 @@
         "standard-random-8x8": 12
       },
       "pairings": 5,
-      "generationRange": {"min": 140, "max": 150, "distinct": 2},
+      "generationRange": {
+        "min": 140,
+        "max": 150,
+        "distinct": 2
+      },
       "measuredOn": "2026-09-01"
     },
     "wld_model150_vs_model140": {
@@ -1386,7 +1401,122 @@
       "classic-random-8x8": "5-6-1",
       "standard-random-12x10": "6-6-0",
       "standard-random-8x8": "4-8-0"
+    }
+  },
+  "tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02": {
+    "arch": "tf",
+    "sources": [],
+    "samples": 1,
+    "noise_factor": 0,
+    "move_selection": "policy-argmax",
+    "seat_alternation": true,
+    "engine_sha256": "d1dbd140cb98d97b1e287b52a4523b3f817ccbca1cf57c83b910effc5eba2264",
+    "plan": {
+      "pairings": 300,
+      "requestedAcceptedGames": 2100,
+      "sha256": "5b2ba7aa1f8e9dfa9c496c72b2dae64df08c93609d349940889f722a840a8933"
     },
-    "legacy_points": "Preserved unchanged; this current-rule edge intentionally mixes result-rule populations in the plot."
+    "generation_range": {
+      "evidenceStart": 135,
+      "evidenceEnd": 150,
+      "newTargetsStart": 141,
+      "newTargetsEnd": 150
+    },
+    "canonical_archive": {
+      "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+      "contentSha256": "223bcae7fdfc0a45074dd67c334ec5da62fe90f9d684952c697b27fa3ddee3bf",
+      "hashStatus": "finalized after completion",
+      "completionRecord": {
+        "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/completion-summary.json",
+      "sha256": "a5481f001b0622548643b67642ab488497c2ac22f4ee08e4e6094d4d916a1566"
+      }
+    },
+    "provenance": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02"
+    },
+    "evidenceStatus": "accepted",
+    "date": "2026-09-02",
+    "candidate_code_sha": "641ec0f0cf4591f340471ecc8d6fa116b326c13a",
+    "documentation_commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+    "result_rule_contract": {
+      "id": "current-no-legacy-one-move-draw-v1",
+      "effectiveDate": "2026-09-01",
+      "legacyOneMoveDraw": false,
+      "boundaryDocument": {
+        "commit": "15c8cda81c3a3e4643663c976931876068ce4dd4",
+        "path": "info/policy-elo-protocol.md"
+      }
+    },
+    "pairing_deltas": [
+      1,
+      3,
+      6
+    ],
+    "start_contract": {
+      "fixedConditions": "exactly two seat directions",
+      "randomStartConditions": "12 distinct legal seeds/starts per pairing"
+    },
+    "notes": "Normal incremental continuation backfill. Existing g150-vs-g140 current-rule games and all legacy games remain immutable and are outside the requested delta-1,3,6 coverage.",
+    "results": {
+      "path": "deep-wallwars/elo_db/results/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02.csv",
+      "schema": "wallgame-elo-results-table-v1",
+      "rows": 2100,
+      "bytes": 485224,
+      "sha256": "a1d06449c79011ff9689028f85f8af778a1749c502b1905d1877645d0025c3b3",
+      "generator": "deep-wallwars/scripts/complete_policy_elo_evidence.py"
+    },
+    "rawFingerprints": {
+      "path": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/raw-fingerprints.json",
+      "schema": "wallgame-policy-elo-raw-fingerprints-v1",
+      "rows": 2100,
+      "bytes": 528608,
+      "sha256": "bf23042b76449332db9a6dee7530afdd04d69765f5a21ab3c6b8dd602b095399",
+      "generator": "deep-wallwars/scripts/complete_policy_elo_evidence.py"
+    },
+    "localRawArchive": {
+      "path": "deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+      "tracked": false,
+      "files": 12,
+      "rawBytes": 7043877,
+      "contentSha256": "223bcae7fdfc0a45074dd67c334ec5da62fe90f9d684952c697b27fa3ddee3bf",
+      "measuredOn": "2026-09-02"
+    },
+    "measured": {
+      "parsedRows": 2100,
+      "gamesByCondition": {
+        "animal-cycle-fixed-7x7": 60,
+        "animal-cycle-random-7x7": 360,
+        "classic-fixed-12x10": 60,
+        "classic-fixed-8x8": 60,
+        "classic-random-12x10": 360,
+        "classic-random-8x8": 360,
+        "standard-fixed-12x10": 60,
+        "standard-fixed-8x8": 60,
+        "standard-random-12x10": 360,
+        "standard-random-8x8": 360
+      },
+      "pairings": 300,
+      "generationRange": {
+        "min": 135,
+        "max": 150,
+        "distinct": 16
+      },
+      "measuredOn": "2026-09-02"
+    },
+    "repair": {
+    "plan": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/repair-plan.json",
+    "planSha256": "9e0a97e667dbbc02a6774cdf2f329fce5e52a554e35b66ea47e136d8bda6f96a",
+    "preRepairEvidence": "preserved in the tracked repair manifest and the private raw archive",
+      "acceptedBefore": 2100,
+      "duplicateInitialStateRecordsToReplace": 5,
+      "status": "complete",
+      "excludedDuplicateInitialStateGames": 5,
+      "replacementGames": 5,
+      "acceptedAfter": 2100,
+      "quarantinedAfter": 5,
+      "allRandomGroupsUniqueInitialStates": true,
+    "preRepairManifest": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/pre-repair-manifest.json",
+    "postRepairValidation": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/post-repair-archive-validation.json"
+    }
   }
 }

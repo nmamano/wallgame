@@ -1,0 +1,26 @@
+{
+  "schema": "wallgame-policy-elo-launch-v1",
+  "session": "nil-policy-elo-g141-g150-current-rule",
+  "launchedAtUtc": "2026-09-02T00:20:31.651595Z",
+  "command": [
+    "python3",
+    "provenance/policy_elo_batch.py",
+    "--plan",
+    "plan.json",
+    "--run-root",
+    "run",
+    "--archive-root",
+    "elo_db/policy_archive/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+    "--bun",
+    "/home/nilo/.bun/bin/bun",
+    "--concurrency",
+    "8"
+  ],
+  "settings": {
+    "samples": 1,
+    "rootNoiseFactor": 0,
+    "moveSelection": "policy-argmax",
+    "concurrency": 8
+  },
+  "productionGames": false
+}

@@ -174,10 +174,14 @@ async function init() {
     return low === high ? `${low}` : `${low}–${high}`;
   };
   document.querySelector("#weight-note").innerHTML = `<b>Evidence weight at current generations:</b> fixed lines use ${range(currentComponents("fixed"))} deterministic seat-swapped games per edge; Random Start lines use ${range(currentComponents("random-start"))} independently seeded games per edge.`;
+  const resultRuleBoundary = data.resultRuleBoundaries?.[0];
+  const resultRuleText = resultRuleBoundary
+    ? `Generation ${resultRuleBoundary.generation} starts ${resultRuleBoundary.label.replace(/\s+START$/i, "").toLowerCase()}; earlier points are preserved legacy-rule evidence`
+    : "No result-rule boundary is registered";
   document.querySelector("#settings").innerHTML = [
     ["Search", `${data.settings.samples} sample`], ["Root noise", data.settings.rootNoiseFactor],
     ["Move choice", data.settings.moveSelection], ["Fit", "Bradley–Terry + draw prior"],
-    ["Result rule", "Generation 150 uses current rules; earlier points are preserved legacy-rule evidence"],
+    ["Result rule", resultRuleText],
     ["Rating scope", data.ratingScope.reason],
     ["Scale", "Weakest = 0 per component"], ["Failures", "Quarantined before fit"],
     ["Next batch", `${data.incrementalPlan.summary.pairings} short pairings · ${data.incrementalPlan.summary.acceptedGamesNeeded} clean games needed`],

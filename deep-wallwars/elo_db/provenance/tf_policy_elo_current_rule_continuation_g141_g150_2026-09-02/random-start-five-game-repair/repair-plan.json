@@ -1,0 +1,173 @@
+{
+  "schema": "wallgame-policy-elo-five-game-random-start-repair-v1",
+  "createdAtUtc": "2026-09-02T02:35:35.046139Z",
+  "experiment": "tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+  "selectionRule": "For the one duplicated initial-state fingerprint in each named group, exclude the record with the larger canonical game index; gameId breaks a tie.",
+  "groups": [
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 140,
+      "generationB": 146,
+      "excludedGameId": "38660f9ecd5adf2de9a8fbd9",
+      "excludedAcceptedRecordSha256": "f7f45732c9b10a64dedb92e61fae6d52aaa17ea353388aa36b014000f63bd419",
+      "duplicateInitialStateSha256": "6caeb9894819ea89a944faac50978e299a2d7aee9d213e7a47a5970f3cec6174",
+      "modelSeatDirection": {
+        "candidateIsP1": true,
+        "whiteModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_140.trt",
+        "blackModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_146.trt"
+      },
+      "originalEngineSeed": 712947727,
+      "originalRandomStartSeed": 712949865843185
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 141,
+      "generationB": 147,
+      "excludedGameId": "7b318116ceb16e8b461a4c2a",
+      "excludedAcceptedRecordSha256": "e56ce68d24d3249c2388263ecb559508d1cb171a6c3d2bef04ca4e60644f5b41",
+      "duplicateInitialStateSha256": "a0384cfb06c922720eb25ad301460dd3a7342c735d6e23dd06a5b55509e55431",
+      "modelSeatDirection": {
+        "candidateIsP1": true,
+        "whiteModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_141.trt",
+        "blackModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_147.trt"
+      },
+      "originalEngineSeed": 208882283,
+      "originalRandomStartSeed": 208882909646857
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 142,
+      "generationB": 145,
+      "excludedGameId": "959ea1397c427cd54bbd73b4",
+      "excludedAcceptedRecordSha256": "686e0ca93558fc859fa38e05d9bfb7c274fdcb5f1e8e3ccdfcbd2f714aaeed88",
+      "duplicateInitialStateSha256": "a0d09c94cbc82986181a8e38e9a676634a9d54e391fddcf8ededf9ff454263b8",
+      "modelSeatDirection": {
+        "candidateIsP1": false,
+        "whiteModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_145.trt",
+        "blackModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_142.trt"
+      },
+      "originalEngineSeed": 1458993665,
+      "originalRandomStartSeed": 1458998041981006
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 144,
+      "generationB": 145,
+      "excludedGameId": "4447560281227b03ae72d01a",
+      "excludedAcceptedRecordSha256": "ea50fa1ff877aa0bcc31e4ebfbffc0bad43bd3a03df2165e43870b9ba6ee2b28",
+      "duplicateInitialStateSha256": "a03c361b362fa503af19de9963f9fae6524eb3ccd8f313a7d662f57bd8c11991",
+      "modelSeatDirection": {
+        "candidateIsP1": true,
+        "whiteModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_144.trt",
+        "blackModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_145.trt"
+      },
+      "originalEngineSeed": 1434506870,
+      "originalRandomStartSeed": 1434511173520616
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 144,
+      "generationB": 150,
+      "excludedGameId": "9e4fe99aa67cfc65ca0f09dc",
+      "excludedAcceptedRecordSha256": "f1cc72908bc5d80daa9833c8171afec4b69384dda946d52ccb54fd292b886e8f",
+      "duplicateInitialStateSha256": "0d09603a4c9ee31b849e56221ecc9821591ac8df2b2ecad083ad76a21a1141de",
+      "modelSeatDirection": {
+        "candidateIsP1": false,
+        "whiteModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_150.trt",
+        "blackModel": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_144.trt"
+      },
+      "originalEngineSeed": 183337052,
+      "originalRandomStartSeed": 183337602011165
+    }
+  ],
+  "stateTransition": {
+    "registryBefore": "accepted",
+    "registryDuringRepair": "planned-repair",
+    "registryAfter": "accepted"
+  },
+  "rawGameContentsImmutable": true,
+  "replacementAttempts": [
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 140,
+      "generationB": 146,
+      "attemptId": "animal-cycle-random-7x7-g140-g146-repair-attempt0003-seed478660361",
+      "engineSeed": 478660361,
+      "submittedGames": 2,
+      "admittedGameIndex": 0,
+      "unadmittedBalancedSeatGameIndex": 1,
+      "candidateIsP1": true,
+      "randomStartSeed": 478661796981083,
+      "initialStateSha256": "9adb197699afdea8b46dfe32f5eeb27cc2b1333b5157848811daad062aefec90",
+      "preverifiedAgainstAcceptedStarts": 11,
+      "rawJournal": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g140-g146-repair-attempt0003-seed478660361.jsonl",
+      "meta": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g140-g146-repair-attempt0003-seed478660361.meta.json"
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 141,
+      "generationB": 147,
+      "attemptId": "animal-cycle-random-7x7-g141-g147-repair-attempt0002-seed522501207",
+      "engineSeed": 522501207,
+      "submittedGames": 2,
+      "admittedGameIndex": 0,
+      "unadmittedBalancedSeatGameIndex": 1,
+      "candidateIsP1": true,
+      "randomStartSeed": 522502774503621,
+      "initialStateSha256": "f88951286fbfdde4023dd25db68a2cb9237544236965163265b310c6a14322a6",
+      "preverifiedAgainstAcceptedStarts": 11,
+      "rawJournal": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g141-g147-repair-attempt0002-seed522501207.jsonl",
+      "meta": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g141-g147-repair-attempt0002-seed522501207.meta.json"
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 142,
+      "generationB": 145,
+      "attemptId": "animal-cycle-random-7x7-g142-g145-repair-attempt0002-seed646877782",
+      "engineSeed": 646877782,
+      "submittedGames": 2,
+      "admittedGameIndex": 1,
+      "unadmittedBalancedSeatGameIndex": 0,
+      "candidateIsP1": false,
+      "randomStartSeed": 646879722633347,
+      "initialStateSha256": "0cb65f1f0dc4ef887cecfaeace8e085818ac0df3a5e79457298649f8c456f489",
+      "preverifiedAgainstAcceptedStarts": 11,
+      "rawJournal": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g142-g145-repair-attempt0002-seed646877782.jsonl",
+      "meta": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g142-g145-repair-attempt0002-seed646877782.meta.json"
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 144,
+      "generationB": 145,
+      "attemptId": "animal-cycle-random-7x7-g144-g145-repair-attempt0002-seed882998409",
+      "engineSeed": 882998409,
+      "submittedGames": 2,
+      "admittedGameIndex": 0,
+      "unadmittedBalancedSeatGameIndex": 1,
+      "candidateIsP1": true,
+      "randomStartSeed": 883001057995227,
+      "initialStateSha256": "a34d1b7a34cd6934b1cbff966ba76ec2cbb775f2b5893424c32f3ba935070f47",
+      "preverifiedAgainstAcceptedStarts": 11,
+      "rawJournal": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g144-g145-repair-attempt0002-seed882998409.jsonl",
+      "meta": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g144-g145-repair-attempt0002-seed882998409.meta.json"
+    },
+    {
+      "conditionId": "animal-cycle-random-7x7",
+      "generationA": 144,
+      "generationB": 150,
+      "attemptId": "animal-cycle-random-7x7-g144-g150-repair-attempt0002-seed1093484586",
+      "engineSeed": 1093484586,
+      "submittedGames": 2,
+      "admittedGameIndex": 1,
+      "unadmittedBalancedSeatGameIndex": 0,
+      "candidateIsP1": false,
+      "randomStartSeed": 1093487866453759,
+      "initialStateSha256": "7f6c8f306e62079d6e32abc9a123e84335881d82334648b15e26ba3198af56cd",
+      "preverifiedAgainstAcceptedStarts": 11,
+      "rawJournal": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g144-g150-repair-attempt0002-seed1093484586.jsonl",
+      "meta": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/random-start-five-game-repair/replacement-attempts/animal-cycle-random-7x7-g144-g150-repair-attempt0002-seed1093484586.meta.json"
+    }
+  ],
+  "acceptedAfterReplacement": 2100,
+  "replacementStatus": "five-preverified-replacements-admitted"
+}

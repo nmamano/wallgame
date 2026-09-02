@@ -1,0 +1,12 @@
+{
+  "schema": "wallgame-policy-elo-archive-placement-recovery-verification-v1",
+  "measuredAtUtc": "2026-09-02T02:32:25.319258Z",
+  "manifestFiles": 11,
+  "matchedFiles": 11,
+  "acceptedRows": 2100,
+  "quarantineRows": 0,
+  "tornFiles": 0,
+  "runAttemptFiles": 1,
+  "sourceAcceptedEmpty": true,
+  "sourceRunAttemptsEmpty": true
+}

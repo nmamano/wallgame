@@ -1,0 +1,168 @@
+{
+  "schema": "wallgame-policy-elo-conditions-v1",
+  "samples": 1,
+  "rootNoiseFactor": 0,
+  "moveSelection": "policy-argmax",
+  "pairingDeltas": [
+    1,
+    3,
+    6
+  ],
+  "variantLabels": {
+    "classic": "Classic",
+    "standard": "Standard",
+    "animal-cycle": "Animal Cycle"
+  },
+  "artifactCoverage": [
+    {
+      "start": 0,
+      "end": 0,
+      "status": "missing",
+      "label": "Artifact missing"
+    },
+    {
+      "start": 1,
+      "end": 92,
+      "status": "legacy",
+      "label": "9-plane \u00b7 legacy engine only"
+    },
+    {
+      "start": 93,
+      "end": 150,
+      "status": "available",
+      "label": "16-plane \u00b7 rated through generation 150"
+    }
+  ],
+  "archiveExperiments": [
+    "tf_phase7_policy_classic_2026-08-20",
+    "tf_phase7_policy_standard_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_delta1_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_d3d6_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_d3d6_shortage1_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_boundary_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_random_to40_2026-08-20",
+    "tf_policy_elo_616bc2f2_phase7_random_40to64_2026-08-20"
+  ],
+  "archiveConditionAdapters": {
+    "new:classic-fixed-8x8": "classic-fixed-8x8",
+    "new:classic-random-8x8": "classic-random-8x8",
+    "new:classic-fixed-12x10": "classic-fixed-12x10",
+    "old:classic_12x10": "classic-random-12x10",
+    "new:classic-random-12x10": "classic-random-12x10",
+    "new:standard-fixed-8x8": "standard-fixed-8x8",
+    "old:standard_8x8": "standard-random-8x8",
+    "new:standard-random-8x8": "standard-random-8x8",
+    "new:standard-fixed-12x10": "standard-fixed-12x10",
+    "old:standard_12x10": "standard-random-12x10",
+    "new:standard-random-12x10": "standard-random-12x10",
+    "new:animal-cycle-fixed-7x7": "animal-cycle-fixed-7x7",
+    "new:animal-cycle-random-7x7": "animal-cycle-random-7x7"
+  },
+  "conditions": [
+    {
+      "id": "classic-fixed-8x8",
+      "label": "Classic 8x8",
+      "color": "#87c7ff",
+      "variant": "classic",
+      "setup": "fixed",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 2,
+      "legacyExperiment": "rr72_policy_2026-08-01"
+    },
+    {
+      "id": "classic-random-8x8",
+      "label": "Classic 8x8 \u00b7 Random Start",
+      "color": "#3c99ed",
+      "variant": "classic",
+      "setup": "random-start",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 12
+    },
+    {
+      "id": "classic-fixed-12x10",
+      "label": "Classic 10x12",
+      "color": "#b6a4ff",
+      "variant": "classic",
+      "setup": "fixed",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 2
+    },
+    {
+      "id": "classic-random-12x10",
+      "label": "Classic 10x12 \u00b7 Random Start",
+      "color": "#8168eb",
+      "variant": "classic",
+      "setup": "random-start",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_classic_2026-08-20"
+    },
+    {
+      "id": "standard-fixed-8x8",
+      "label": "Standard 8x8",
+      "color": "#ffd36d",
+      "variant": "standard",
+      "setup": "fixed",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 2,
+      "legacyExperiment": "rr72_policy_2026-08-01"
+    },
+    {
+      "id": "standard-random-8x8",
+      "label": "Standard 8x8 \u00b7 Random Start",
+      "color": "#e6a72e",
+      "variant": "standard",
+      "setup": "random-start",
+      "width": 8,
+      "height": 8,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_standard_2026-08-20"
+    },
+    {
+      "id": "standard-fixed-12x10",
+      "label": "Standard 10x12",
+      "color": "#ff9f83",
+      "variant": "standard",
+      "setup": "fixed",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 2
+    },
+    {
+      "id": "standard-random-12x10",
+      "label": "Standard 10x12 \u00b7 Random Start",
+      "color": "#eb644d",
+      "variant": "standard",
+      "setup": "random-start",
+      "width": 12,
+      "height": 10,
+      "gamesPerPair": 12,
+      "existingSource": "tf_phase7_policy_standard_2026-08-20"
+    },
+    {
+      "id": "animal-cycle-fixed-7x7",
+      "label": "Animal Cycle 7x7",
+      "color": "#a8ef8a",
+      "variant": "animal-cycle",
+      "setup": "fixed",
+      "width": 7,
+      "height": 7,
+      "gamesPerPair": 2
+    },
+    {
+      "id": "animal-cycle-random-7x7",
+      "label": "Animal Cycle 7x7 \u00b7 Random Start",
+      "color": "#59c96d",
+      "variant": "animal-cycle",
+      "setup": "random-start",
+      "width": 7,
+      "height": 7,
+      "gamesPerPair": 12
+    }
+  ]
+}

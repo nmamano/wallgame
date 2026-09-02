@@ -21,12 +21,12 @@ for (const viewport of [
 
       assert.deepEqual(errors, []);
       assert.equal(await page.locator(".line-toggle").count(), 10);
-      assert.equal(await page.locator("#plot path.series").count(), 12);
-      assert.equal(await page.locator("#clean-games").textContent(), "23,950");
+      assert.equal(await page.locator("#plot path.series").count(), 10);
+      assert.equal(await page.locator("#clean-games").textContent(), "294,792");
       assert.equal(await page.locator("#excluded-games").textContent(), "26");
-      assert.match(await page.locator("#settings").textContent(), /0 short pairings.*0 clean games needed/s);
-      assert.match(await page.locator("#weight-note").textContent(), /fixed lines use 2 deterministic.*Random Start lines use 64–65 independently seeded/s);
-      assert.match(await page.locator("#plot").textContent(), /37–92 · NO CONNECTED EVIDENCE/);
+      assert.match(await page.locator("#settings").textContent(), /Generation 141 starts current result rules.*3175 short pairings.*22200 clean games needed/s);
+      assert.match(await page.locator("#weight-note").textContent(), /fixed lines use 1–4 deterministic.*Random Start lines use 12–77 independently seeded/s);
+      assert.match(await page.locator("#plot").textContent(), /CURRENT RESULT RULES START.*1–150 COMPONENTS/s);
       assert.equal(await page.locator("body").evaluate(node => node.scrollWidth <= innerWidth), true);
     } finally {
       await browser.close();

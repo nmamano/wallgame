@@ -1,0 +1,28 @@
+{
+  "schema": "wallgame-policy-elo-current-rule-plot-verification-v1",
+  "measuredOn": "2026-09-02",
+  "conditions": 10,
+  "newGenerations": {
+    "start": 141,
+    "end": 150,
+    "countPerCondition": 10
+  },
+  "pre141PlottedObjects": 1400,
+  "pre141ObjectsByteIdentical": true,
+  "pre141CanonicalObjectsSha256": "709aca926d18f66972dc98d243a3defc076d6b1443f210bf38e2fa18f0d8343d",
+  "resultRuleBoundary": {
+    "generation": 141,
+    "label": "CURRENT RESULT RULES START",
+    "contract": "current-no-legacy-one-move-draw-v1",
+    "preserveExistingRatingsThrough": 140
+  },
+  "snapshot": {
+    "path": "deep-wallwars/policy-elo-app/data/policy-elo.json",
+    "sha256": "837556a0439563e941a430da03771040a98191aa0f99fdc7748116c5b7d01b12"
+  },
+  "results": {
+    "path": "deep-wallwars/elo_db/results/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02.csv",
+    "rows": 2100,
+    "sha256": "a1d06449c79011ff9689028f85f8af778a1749c502b1905d1877645d0025c3b3"
+  }
+}

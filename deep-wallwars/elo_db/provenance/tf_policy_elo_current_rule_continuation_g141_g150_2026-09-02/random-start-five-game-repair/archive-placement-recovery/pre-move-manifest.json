@@ -1,0 +1,63 @@
+{
+  "schema": "wallgame-policy-elo-archive-placement-recovery-v1",
+  "measuredAtUtc": "2026-09-02T02:32:25.272742Z",
+  "source": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+  "filesystemDevice": 2080,
+  "files": [
+    {
+      "path": "accepted/animal-cycle-fixed-7x7.jsonl",
+      "bytes": 136886,
+      "sha256": "25c476c7e324c9cd05a38fd9e0b18c7abf51bbb0e9e0a32e8537c74f82ad9efe"
+    },
+    {
+      "path": "accepted/animal-cycle-random-7x7.jsonl",
+      "bytes": 923421,
+      "sha256": "37795d97b5ae6f4d8017e916dc940ea1a1d294c144f4e202bb1bca7383bb690c"
+    },
+    {
+      "path": "accepted/classic-fixed-12x10.jsonl",
+      "bytes": 223642,
+      "sha256": "7b794a36e8ea8909310bb946f0470df2cfd432cb0943b2c71fb0fb68ca052e18"
+    },
+    {
+      "path": "accepted/classic-fixed-8x8.jsonl",
+      "bytes": 167379,
+      "sha256": "d8aebca4301779b62056ac4b8731f7802f0d1fcba0ac1f8df06293b3f2196d9d"
+    },
+    {
+      "path": "accepted/classic-random-12x10.jsonl",
+      "bytes": 1496110,
+      "sha256": "d2780f86c6578ac3ea2c2b11b16ba153a3a1c800595d8336ab67b11a2f7f6359"
+    },
+    {
+      "path": "accepted/classic-random-8x8.jsonl",
+      "bytes": 1059359,
+      "sha256": "1d2da72e5ffcb33898094f4b1ac12cc9e6daa7088375f163961dc5390041d0ff"
+    },
+    {
+      "path": "accepted/standard-fixed-12x10.jsonl",
+      "bytes": 226081,
+      "sha256": "22e1d15fd6cf5605bfc72b8715eeb331d241865c93d800f6d8ef680a8f2b2641"
+    },
+    {
+      "path": "accepted/standard-fixed-8x8.jsonl",
+      "bytes": 171016,
+      "sha256": "758aa0fa462c8a0fcc864708e85b06300b7df0541f7b9dc014bc495c0a95ca9f"
+    },
+    {
+      "path": "accepted/standard-random-12x10.jsonl",
+      "bytes": 1529709,
+      "sha256": "ca28c41fbce5b4bf7f43fa35f4000d7cbf5d234230634f11606815917750b523"
+    },
+    {
+      "path": "accepted/standard-random-8x8.jsonl",
+      "bytes": 1095183,
+      "sha256": "10c6f3c6a6e6d567b8657a0cd7959ac2fc46b3b1248c44ddf6d33b2f90aad887"
+    },
+    {
+      "path": "run-attempts/20260902T002031Z-pid58775.jsonl",
+      "bytes": 853,
+      "sha256": "d0671f496770f346d77fed733b89c5e8ccd1f019a8d2c29b69f78b745e98d098"
+    }
+  ]
+}

@@ -19,11 +19,12 @@ Run the app:
 PORT=8080 python3 server.py
 ```
 
-The generations 1-140 evidence connects every supported generation in one rated
+The generations 1-150 evidence connects every supported generation in one rated
 component for each condition and bridges the earlier generation 1-36 evidence into
 those curves. Generation 0 stays on the plot axis, but it has no artifact.
 Generations 1-92 use validated migrated 16-plane artifacts for evaluation, and
-generations 93-140 use the native 16-plane contract.
+generations 93-150 use the native 16-plane contract. The plot marks generation 141
+as the start of the current result rules. It preserves all earlier plotted points.
 
 The builder excludes `no-legal-move` outcomes and all rows with legality errors
 before fitting. Unknown or unfinished legacy outcomes are excluded too. Each

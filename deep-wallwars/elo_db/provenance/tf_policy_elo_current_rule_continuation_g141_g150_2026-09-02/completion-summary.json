@@ -1,0 +1,51 @@
+{
+  "schema": "wallgame-policy-elo-completion-v1",
+  "experiment": "tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+  "completedAtUtc": "2026-09-02T02:38:45Z",
+  "acceptedGames": 2100,
+  "quarantinedGames": 5,
+  "pairings": 300,
+  "supportedGenerations": [
+    135,
+    136,
+    137,
+    138,
+    139,
+    140,
+    141,
+    142,
+    143,
+    144,
+    145,
+    146,
+    147,
+    148,
+    149,
+    150
+  ],
+  "conditions": 10,
+  "archiveTreeSha256": "223bcae7fdfc0a45074dd67c334ec5da62fe90f9d684952c697b27fa3ddee3bf",
+  "archiveFileCount": 12,
+  "archiveBytes": 7043877,
+  "gamesByCondition": {
+    "animal-cycle-fixed-7x7": 60,
+    "animal-cycle-random-7x7": 360,
+    "classic-fixed-12x10": 60,
+    "classic-fixed-8x8": 60,
+    "classic-random-12x10": 360,
+    "classic-random-8x8": 360,
+    "standard-fixed-12x10": 60,
+    "standard-fixed-8x8": 60,
+    "standard-random-12x10": 360,
+    "standard-random-8x8": 360
+  },
+  "tornRecords": 0,
+  "repair": {
+    "schema": "wallgame-policy-elo-five-game-random-start-repair-v1",
+    "plan": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/repair-plan.json",
+    "planSha256": "9e0a97e667dbbc02a6774cdf2f329fce5e52a554e35b66ea47e136d8bda6f96a",
+    "preRepairSnapshot": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/pre-repair-manifest.json",
+    "postRepairValidation": "deep-wallwars/elo_db/provenance/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02/random-start-five-game-repair/post-repair-archive-validation.json",
+    "postRepairValidationSha256": "66859c001c796afe899e14811b4f31cb07be29cc79dfabec5ba3d068d8c911b7"
+  }
+}

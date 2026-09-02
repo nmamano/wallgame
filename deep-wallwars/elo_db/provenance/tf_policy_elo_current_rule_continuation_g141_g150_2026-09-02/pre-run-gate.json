@@ -1,0 +1,4660 @@
+{
+  "schema": "wallgame-policy-elo-current-rule-continuation-prerun-v1",
+  "measuredAtUtc": "2026-09-02T00:20:12.322796Z",
+  "experiment": "tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+  "candidateCodeSha": "641ec0f0cf4591f340471ecc8d6fa116b326c13a",
+  "resultRuleContract": {
+    "id": "current-no-legacy-one-move-draw-v1",
+    "legacyOneMoveDraw": false
+  },
+  "productionGames": false,
+  "settings": {
+    "samples": 1,
+    "rootNoiseFactor": 0,
+    "moveSelection": "policy-argmax",
+    "seatAlternation": true
+  },
+  "plan": {
+    "pairings": 300,
+    "acceptedGames": 2100,
+    "targetGenerations": [
+      141,
+      142,
+      143,
+      144,
+      145,
+      146,
+      147,
+      148,
+      149,
+      150
+    ],
+    "deltas": [
+      1,
+      3,
+      6
+    ],
+    "attempts": [
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1379525297,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 377384363,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 51353461,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 134779282,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 1741807874,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 273976845,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 912410118,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 1205605587,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 703790813,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 917666153,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 1881505991,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 2075366915,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1473455559,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 1111764479,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1991343782,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 1915878050,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 2088123936,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 998647355,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1560836476,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 315202082,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1555803536,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 1980621985,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 1745308511,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 217175604,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 502497121,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 263609624,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 507439338,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 1351139427,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 2015418877,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-8x8",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1660490932,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 993404970,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          993407950214910,
+          993407950214911,
+          993407950214912,
+          993407950214913,
+          993407950214914,
+          993407950214915,
+          993407950214916,
+          993407950214917,
+          993407950214918,
+          993407950214919,
+          993407950214920,
+          993407950214921
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1745505771,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1745511007517313,
+          1745511007517314,
+          1745511007517315,
+          1745511007517316,
+          1745511007517317,
+          1745511007517318,
+          1745511007517319,
+          1745511007517320,
+          1745511007517321,
+          1745511007517322,
+          1745511007517323,
+          1745511007517324
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 2069159779,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2069165986479337,
+          2069165986479338,
+          2069165986479339,
+          2069165986479340,
+          2069165986479341,
+          2069165986479342,
+          2069165986479343,
+          2069165986479344,
+          2069165986479345,
+          2069165986479346,
+          2069165986479347,
+          2069165986479348
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 434167199,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          434168501501597,
+          434168501501598,
+          434168501501599,
+          434168501501600,
+          434168501501601,
+          434168501501602,
+          434168501501603,
+          434168501501604,
+          434168501501605,
+          434168501501606,
+          434168501501607,
+          434168501501608
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 661273642,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          661275625820926,
+          661275625820927,
+          661275625820928,
+          661275625820929,
+          661275625820930,
+          661275625820931,
+          661275625820932,
+          661275625820933,
+          661275625820934,
+          661275625820935,
+          661275625820936,
+          661275625820937
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 793606976,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          793609356820928,
+          793609356820929,
+          793609356820930,
+          793609356820931,
+          793609356820932,
+          793609356820933,
+          793609356820934,
+          793609356820935,
+          793609356820936,
+          793609356820937,
+          793609356820938,
+          793609356820939
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 1002438985,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1002441992316955,
+          1002441992316956,
+          1002441992316957,
+          1002441992316958,
+          1002441992316959,
+          1002441992316960,
+          1002441992316961,
+          1002441992316962,
+          1002441992316963,
+          1002441992316964,
+          1002441992316965,
+          1002441992316966
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 46782404,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          46782544347212,
+          46782544347213,
+          46782544347214,
+          46782544347215,
+          46782544347216,
+          46782544347217,
+          46782544347218,
+          46782544347219,
+          46782544347220,
+          46782544347221,
+          46782544347222,
+          46782544347223
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 1265143779,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1265147574431337,
+          1265147574431338,
+          1265147574431339,
+          1265147574431340,
+          1265147574431341,
+          1265147574431342,
+          1265147574431343,
+          1265147574431344,
+          1265147574431345,
+          1265147574431346,
+          1265147574431347,
+          1265147574431348
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 1461290626,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1461295009871878,
+          1461295009871879,
+          1461295009871880,
+          1461295009871881,
+          1461295009871882,
+          1461295009871883,
+          1461295009871884,
+          1461295009871885,
+          1461295009871886,
+          1461295009871887,
+          1461295009871888,
+          1461295009871889
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 182877152,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          182877700631456,
+          182877700631457,
+          182877700631458,
+          182877700631459,
+          182877700631460,
+          182877700631461,
+          182877700631462,
+          182877700631463,
+          182877700631464,
+          182877700631465,
+          182877700631466,
+          182877700631467
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 1442216012,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1442220338648036,
+          1442220338648037,
+          1442220338648038,
+          1442220338648039,
+          1442220338648040,
+          1442220338648041,
+          1442220338648042,
+          1442220338648043,
+          1442220338648044,
+          1442220338648045,
+          1442220338648046,
+          1442220338648047
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1090427442,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1090430713282326,
+          1090430713282327,
+          1090430713282328,
+          1090430713282329,
+          1090430713282330,
+          1090430713282331,
+          1090430713282332,
+          1090430713282333,
+          1090430713282334,
+          1090430713282335,
+          1090430713282336,
+          1090430713282337
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 380635850,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          380636991907550,
+          380636991907551,
+          380636991907552,
+          380636991907553,
+          380636991907554,
+          380636991907555,
+          380636991907556,
+          380636991907557,
+          380636991907558,
+          380636991907559,
+          380636991907560,
+          380636991907561
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 843087083,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          843089612261249,
+          843089612261250,
+          843089612261251,
+          843089612261252,
+          843089612261253,
+          843089612261254,
+          843089612261255,
+          843089612261256,
+          843089612261257,
+          843089612261258,
+          843089612261259,
+          843089612261260
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 1560338116,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1560342797014348,
+          1560342797014349,
+          1560342797014350,
+          1560342797014351,
+          1560342797014352,
+          1560342797014353,
+          1560342797014354,
+          1560342797014355,
+          1560342797014356,
+          1560342797014357,
+          1560342797014358,
+          1560342797014359
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 442188630,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          442189956565890,
+          442189956565891,
+          442189956565892,
+          442189956565893,
+          442189956565894,
+          442189956565895,
+          442189956565896,
+          442189956565897,
+          442189956565898,
+          442189956565899,
+          442189956565900,
+          442189956565901
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 1092740604,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1092743882221812,
+          1092743882221813,
+          1092743882221814,
+          1092743882221815,
+          1092743882221816,
+          1092743882221817,
+          1092743882221818,
+          1092743882221819,
+          1092743882221820,
+          1092743882221821,
+          1092743882221822,
+          1092743882221823
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1066981654,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1066984854944962,
+          1066984854944963,
+          1066984854944964,
+          1066984854944965,
+          1066984854944966,
+          1066984854944967,
+          1066984854944968,
+          1066984854944969,
+          1066984854944970,
+          1066984854944971,
+          1066984854944972,
+          1066984854944973
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 1446930436,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1446934776791308,
+          1446934776791309,
+          1446934776791310,
+          1446934776791311,
+          1446934776791312,
+          1446934776791313,
+          1446934776791314,
+          1446934776791315,
+          1446934776791316,
+          1446934776791317,
+          1446934776791318,
+          1446934776791319
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1836135822,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1836141330407466,
+          1836141330407467,
+          1836141330407468,
+          1836141330407469,
+          1836141330407470,
+          1836141330407471,
+          1836141330407472,
+          1836141330407473,
+          1836141330407474,
+          1836141330407475,
+          1836141330407476,
+          1836141330407477
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 555190237,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          555191902570711,
+          555191902570712,
+          555191902570713,
+          555191902570714,
+          555191902570715,
+          555191902570716,
+          555191902570717,
+          555191902570718,
+          555191902570719,
+          555191902570720,
+          555191902570721,
+          555191902570722
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 51501497,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          51501651504491,
+          51501651504492,
+          51501651504493,
+          51501651504494,
+          51501651504495,
+          51501651504496,
+          51501651504497,
+          51501651504498,
+          51501651504499,
+          51501651504500,
+          51501651504501,
+          51501651504502
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 221955934,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          221956599867802,
+          221956599867803,
+          221956599867804,
+          221956599867805,
+          221956599867806,
+          221956599867807,
+          221956599867808,
+          221956599867809,
+          221956599867810,
+          221956599867811,
+          221956599867812,
+          221956599867813
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 185208383,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          185208938625149,
+          185208938625150,
+          185208938625151,
+          185208938625152,
+          185208938625153,
+          185208938625154,
+          185208938625155,
+          185208938625156,
+          185208938625157,
+          185208938625158,
+          185208938625159,
+          185208938625160
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 300618509,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          300619410855527,
+          300619410855528,
+          300619410855529,
+          300619410855530,
+          300619410855531,
+          300619410855532,
+          300619410855533,
+          300619410855534,
+          300619410855535,
+          300619410855536,
+          300619410855537,
+          300619410855538
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1704596126,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1704601239788378,
+          1704601239788379,
+          1704601239788380,
+          1704601239788381,
+          1704601239788382,
+          1704601239788383,
+          1704601239788384,
+          1704601239788385,
+          1704601239788386,
+          1704601239788387,
+          1704601239788388,
+          1704601239788389
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 474712080,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          474713504136240,
+          474713504136241,
+          474713504136242,
+          474713504136243,
+          474713504136244,
+          474713504136245,
+          474713504136246,
+          474713504136247,
+          474713504136248,
+          474713504136249,
+          474713504136250,
+          474713504136251
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 411598323,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          411599557794969,
+          411599557794970,
+          411599557794971,
+          411599557794972,
+          411599557794973,
+          411599557794974,
+          411599557794975,
+          411599557794976,
+          411599557794977,
+          411599557794978,
+          411599557794979,
+          411599557794980
+        ]
+      },
+      {
+        "conditionId": "classic-random-8x8",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 175428678,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          175429204286034,
+          175429204286035,
+          175429204286036,
+          175429204286037,
+          175429204286038,
+          175429204286039,
+          175429204286040,
+          175429204286041,
+          175429204286042,
+          175429204286043,
+          175429204286044,
+          175429204286045
+        ]
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 425386072,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 933714299,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 863061607,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 306237732,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 685718163,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 1064479296,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 2140601097,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 2100650200,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 650393214,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 935901893,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 1077240064,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 219196941,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1615824879,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 2052212702,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 416860222,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 1179409798,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 1308276831,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 1052657751,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 420667450,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 995781622,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1167360107,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 148912455,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 851005359,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 673955761,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 360620149,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 1535384661,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1179769805,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 1102845456,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 421545804,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-fixed-12x10",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1626539526,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1527424900,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1527429482274700,
+          1527429482274701,
+          1527429482274702,
+          1527429482274703,
+          1527429482274704,
+          1527429482274705,
+          1527429482274706,
+          1527429482274707,
+          1527429482274708,
+          1527429482274709,
+          1527429482274710,
+          1527429482274711
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1736598951,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1736604160796853,
+          1736604160796854,
+          1736604160796855,
+          1736604160796856,
+          1736604160796857,
+          1736604160796858,
+          1736604160796859,
+          1736604160796860,
+          1736604160796861,
+          1736604160796862,
+          1736604160796863,
+          1736604160796864
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 521135249,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          521136812405747,
+          521136812405748,
+          521136812405749,
+          521136812405750,
+          521136812405751,
+          521136812405752,
+          521136812405753,
+          521136812405754,
+          521136812405755,
+          521136812405756,
+          521136812405757,
+          521136812405758
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 1596975239,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1596980029925717,
+          1596980029925718,
+          1596980029925719,
+          1596980029925720,
+          1596980029925721,
+          1596980029925722,
+          1596980029925723,
+          1596980029925724,
+          1596980029925725,
+          1596980029925726,
+          1596980029925727,
+          1596980029925728
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 1513736638,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1513741179209914,
+          1513741179209915,
+          1513741179209916,
+          1513741179209917,
+          1513741179209918,
+          1513741179209919,
+          1513741179209920,
+          1513741179209921,
+          1513741179209922,
+          1513741179209923,
+          1513741179209924,
+          1513741179209925
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 1685933244,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1685938301799732,
+          1685938301799733,
+          1685938301799734,
+          1685938301799735,
+          1685938301799736,
+          1685938301799737,
+          1685938301799738,
+          1685938301799739,
+          1685938301799740,
+          1685938301799741,
+          1685938301799742,
+          1685938301799743
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 314641441,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          314642384924323,
+          314642384924324,
+          314642384924325,
+          314642384924326,
+          314642384924327,
+          314642384924328,
+          314642384924329,
+          314642384924330,
+          314642384924331,
+          314642384924332,
+          314642384924333,
+          314642384924334
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 60552134,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          60552315656402,
+          60552315656403,
+          60552315656404,
+          60552315656405,
+          60552315656406,
+          60552315656407,
+          60552315656408,
+          60552315656409,
+          60552315656410,
+          60552315656411,
+          60552315656412,
+          60552315656413
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 1985730481,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1985736438191443,
+          1985736438191444,
+          1985736438191445,
+          1985736438191446,
+          1985736438191447,
+          1985736438191448,
+          1985736438191449,
+          1985736438191450,
+          1985736438191451,
+          1985736438191452,
+          1985736438191453,
+          1985736438191454
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 1969991479,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1969997388974437,
+          1969997388974438,
+          1969997388974439,
+          1969997388974440,
+          1969997388974441,
+          1969997388974442,
+          1969997388974443,
+          1969997388974444,
+          1969997388974445,
+          1969997388974446,
+          1969997388974447,
+          1969997388974448
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 235094188,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          235094893282564,
+          235094893282565,
+          235094893282566,
+          235094893282567,
+          235094893282568,
+          235094893282569,
+          235094893282570,
+          235094893282571,
+          235094893282572,
+          235094893282573,
+          235094893282574,
+          235094893282575
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 117709041,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          117709394127123,
+          117709394127124,
+          117709394127125,
+          117709394127126,
+          117709394127127,
+          117709394127128,
+          117709394127129,
+          117709394127130,
+          117709394127131,
+          117709394127132,
+          117709394127133,
+          117709394127134
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1782681007,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1782686355043021,
+          1782686355043022,
+          1782686355043023,
+          1782686355043024,
+          1782686355043025,
+          1782686355043026,
+          1782686355043027,
+          1782686355043028,
+          1782686355043029,
+          1782686355043030,
+          1782686355043031,
+          1782686355043032
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 593010837,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          593012616032511,
+          593012616032512,
+          593012616032513,
+          593012616032514,
+          593012616032515,
+          593012616032516,
+          593012616032517,
+          593012616032518,
+          593012616032519,
+          593012616032520,
+          593012616032521,
+          593012616032522
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 2013436239,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2013442279308717,
+          2013442279308718,
+          2013442279308719,
+          2013442279308720,
+          2013442279308721,
+          2013442279308722,
+          2013442279308723,
+          2013442279308724,
+          2013442279308725,
+          2013442279308726,
+          2013442279308727,
+          2013442279308728
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 341542051,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          341543075626153,
+          341543075626154,
+          341543075626155,
+          341543075626156,
+          341543075626157,
+          341543075626158,
+          341543075626159,
+          341543075626160,
+          341543075626161,
+          341543075626162,
+          341543075626163,
+          341543075626164
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 732861177,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          732863375583531,
+          732863375583532,
+          732863375583533,
+          732863375583534,
+          732863375583535,
+          732863375583536,
+          732863375583537,
+          732863375583538,
+          732863375583539,
+          732863375583540,
+          732863375583541,
+          732863375583542
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 992423920,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          992426897271760,
+          992426897271761,
+          992426897271762,
+          992426897271763,
+          992426897271764,
+          992426897271765,
+          992426897271766,
+          992426897271767,
+          992426897271768,
+          992426897271769,
+          992426897271770,
+          992426897271771
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1326956567,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1326960547869701,
+          1326960547869702,
+          1326960547869703,
+          1326960547869704,
+          1326960547869705,
+          1326960547869706,
+          1326960547869707,
+          1326960547869708,
+          1326960547869709,
+          1326960547869710,
+          1326960547869711,
+          1326960547869712
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 561227974,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          561229657683922,
+          561229657683923,
+          561229657683924,
+          561229657683925,
+          561229657683926,
+          561229657683927,
+          561229657683928,
+          561229657683929,
+          561229657683930,
+          561229657683931,
+          561229657683932,
+          561229657683933
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1556121070,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1556125738363210,
+          1556125738363211,
+          1556125738363212,
+          1556125738363213,
+          1556125738363214,
+          1556125738363215,
+          1556125738363216,
+          1556125738363217,
+          1556125738363218,
+          1556125738363219,
+          1556125738363220,
+          1556125738363221
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 1683389328,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1683394378167984,
+          1683394378167985,
+          1683394378167986,
+          1683394378167987,
+          1683394378167988,
+          1683394378167989,
+          1683394378167990,
+          1683394378167991,
+          1683394378167992,
+          1683394378167993,
+          1683394378167994,
+          1683394378167995
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 600236688,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          600238488710064,
+          600238488710065,
+          600238488710066,
+          600238488710067,
+          600238488710068,
+          600238488710069,
+          600238488710070,
+          600238488710071,
+          600238488710072,
+          600238488710073,
+          600238488710074,
+          600238488710075
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 472477158,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          472478575431474,
+          472478575431475,
+          472478575431476,
+          472478575431477,
+          472478575431478,
+          472478575431479,
+          472478575431480,
+          472478575431481,
+          472478575431482,
+          472478575431483,
+          472478575431484,
+          472478575431485
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 463636030,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          463637420908090,
+          463637420908091,
+          463637420908092,
+          463637420908093,
+          463637420908094,
+          463637420908095,
+          463637420908096,
+          463637420908097,
+          463637420908098,
+          463637420908099,
+          463637420908100,
+          463637420908101
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 154771102,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          154771566313306,
+          154771566313307,
+          154771566313308,
+          154771566313309,
+          154771566313310,
+          154771566313311,
+          154771566313312,
+          154771566313313,
+          154771566313314,
+          154771566313315,
+          154771566313316,
+          154771566313317
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1255047174,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1255050939141522,
+          1255050939141523,
+          1255050939141524,
+          1255050939141525,
+          1255050939141526,
+          1255050939141527,
+          1255050939141528,
+          1255050939141529,
+          1255050939141530,
+          1255050939141531,
+          1255050939141532,
+          1255050939141533
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 695512834,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          695514920538502,
+          695514920538503,
+          695514920538504,
+          695514920538505,
+          695514920538506,
+          695514920538507,
+          695514920538508,
+          695514920538509,
+          695514920538510,
+          695514920538511,
+          695514920538512,
+          695514920538513
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 1451854875,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1451859230564625,
+          1451859230564626,
+          1451859230564627,
+          1451859230564628,
+          1451859230564629,
+          1451859230564630,
+          1451859230564631,
+          1451859230564632,
+          1451859230564633,
+          1451859230564634,
+          1451859230564635,
+          1451859230564636
+        ]
+      },
+      {
+        "conditionId": "classic-random-12x10",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 165416014,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          165416510248042,
+          165416510248043,
+          165416510248044,
+          165416510248045,
+          165416510248046,
+          165416510248047,
+          165416510248048,
+          165416510248049,
+          165416510248050,
+          165416510248051,
+          165416510248052,
+          165416510248053
+        ]
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1691695660,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 737703768,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 213706099,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 611340466,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 126029172,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 552194655,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 144859820,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 1593499921,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 1879005358,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 1026604304,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 631071836,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 1522982366,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 483092033,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 1891515867,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1060316564,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 284774611,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 402946217,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 131387016,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 866692909,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 369594069,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1433580069,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 288065320,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 923320665,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 804885953,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 1953536017,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 533787728,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 784759320,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 872301181,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 373103796,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-8x8",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1678379024,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 886431426,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          886434085294278,
+          886434085294279,
+          886434085294280,
+          886434085294281,
+          886434085294282,
+          886434085294283,
+          886434085294284,
+          886434085294285,
+          886434085294286,
+          886434085294287,
+          886434085294288,
+          886434085294289
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1851550122,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1851555676650366,
+          1851555676650367,
+          1851555676650368,
+          1851555676650369,
+          1851555676650370,
+          1851555676650371,
+          1851555676650372,
+          1851555676650373,
+          1851555676650374,
+          1851555676650375,
+          1851555676650376,
+          1851555676650377
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 1292746678,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1292750556240034,
+          1292750556240035,
+          1292750556240036,
+          1292750556240037,
+          1292750556240038,
+          1292750556240039,
+          1292750556240040,
+          1292750556240041,
+          1292750556240042,
+          1292750556240043,
+          1292750556240044,
+          1292750556240045
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 1001912127,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1001915132736381,
+          1001915132736382,
+          1001915132736383,
+          1001915132736384,
+          1001915132736385,
+          1001915132736386,
+          1001915132736387,
+          1001915132736388,
+          1001915132736389,
+          1001915132736390,
+          1001915132736391,
+          1001915132736392
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 273944126,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          273944947832378,
+          273944947832379,
+          273944947832380,
+          273944947832381,
+          273944947832382,
+          273944947832383,
+          273944947832384,
+          273944947832385,
+          273944947832386,
+          273944947832387,
+          273944947832388,
+          273944947832389
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 1425947241,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1425951518841723,
+          1425951518841724,
+          1425951518841725,
+          1425951518841726,
+          1425951518841727,
+          1425951518841728,
+          1425951518841729,
+          1425951518841730,
+          1425951518841731,
+          1425951518841732,
+          1425951518841733,
+          1425951518841734
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 1883493086,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1883498736479258,
+          1883498736479259,
+          1883498736479260,
+          1883498736479261,
+          1883498736479262,
+          1883498736479263,
+          1883498736479264,
+          1883498736479265,
+          1883498736479266,
+          1883498736479267,
+          1883498736479268,
+          1883498736479269
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 1736623727,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1736628936871181,
+          1736628936871182,
+          1736628936871183,
+          1736628936871184,
+          1736628936871185,
+          1736628936871186,
+          1736628936871187,
+          1736628936871188,
+          1736628936871189,
+          1736628936871190,
+          1736628936871191,
+          1736628936871192
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 360262203,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          360263283786609,
+          360263283786610,
+          360263283786611,
+          360263283786612,
+          360263283786613,
+          360263283786614,
+          360263283786615,
+          360263283786616,
+          360263283786617,
+          360263283786618,
+          360263283786619,
+          360263283786620
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 1063513021,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1063516211539063,
+          1063516211539064,
+          1063516211539065,
+          1063516211539066,
+          1063516211539067,
+          1063516211539068,
+          1063516211539069,
+          1063516211539070,
+          1063516211539071,
+          1063516211539072,
+          1063516211539073,
+          1063516211539074
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 1425641329,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1425645605923987,
+          1425645605923988,
+          1425645605923989,
+          1425645605923990,
+          1425645605923991,
+          1425645605923992,
+          1425645605923993,
+          1425645605923994,
+          1425645605923995,
+          1425645605923996,
+          1425645605923997,
+          1425645605923998
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 1739349355,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1739354573048065,
+          1739354573048066,
+          1739354573048067,
+          1739354573048068,
+          1739354573048069,
+          1739354573048070,
+          1739354573048071,
+          1739354573048072,
+          1739354573048073,
+          1739354573048074,
+          1739354573048075,
+          1739354573048076
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 365408432,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          365409528225296,
+          365409528225297,
+          365409528225298,
+          365409528225299,
+          365409528225300,
+          365409528225301,
+          365409528225302,
+          365409528225303,
+          365409528225304,
+          365409528225305,
+          365409528225306,
+          365409528225307
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 2117135767,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2117142118407301,
+          2117142118407302,
+          2117142118407303,
+          2117142118407304,
+          2117142118407305,
+          2117142118407306,
+          2117142118407307,
+          2117142118407308,
+          2117142118407309,
+          2117142118407310,
+          2117142118407311,
+          2117142118407312
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1154822837,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1154826301468511,
+          1154826301468512,
+          1154826301468513,
+          1154826301468514,
+          1154826301468515,
+          1154826301468516,
+          1154826301468517,
+          1154826301468518,
+          1154826301468519,
+          1154826301468520,
+          1154826301468521,
+          1154826301468522
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 67112012,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          67112213336036,
+          67112213336037,
+          67112213336038,
+          67112213336039,
+          67112213336040,
+          67112213336041,
+          67112213336042,
+          67112213336043,
+          67112213336044,
+          67112213336045,
+          67112213336046,
+          67112213336047
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 1477013326,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1477017757039978,
+          1477017757039979,
+          1477017757039980,
+          1477017757039981,
+          1477017757039982,
+          1477017757039983,
+          1477017757039984,
+          1477017757039985,
+          1477017757039986,
+          1477017757039987,
+          1477017757039988,
+          1477017757039989
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 2116125369,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2116131717376107,
+          2116131717376108,
+          2116131717376109,
+          2116131717376110,
+          2116131717376111,
+          2116131717376112,
+          2116131717376113,
+          2116131717376114,
+          2116131717376115,
+          2116131717376116,
+          2116131717376117,
+          2116131717376118
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1034599527,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1034602630798581,
+          1034602630798582,
+          1034602630798583,
+          1034602630798584,
+          1034602630798585,
+          1034602630798586,
+          1034602630798587,
+          1034602630798588,
+          1034602630798589,
+          1034602630798590,
+          1034602630798591,
+          1034602630798592
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 1863549265,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1863554855647795,
+          1863554855647796,
+          1863554855647797,
+          1863554855647798,
+          1863554855647799,
+          1863554855647800,
+          1863554855647801,
+          1863554855647802,
+          1863554855647803,
+          1863554855647804,
+          1863554855647805,
+          1863554855647806
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1648951568,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1648956514854704,
+          1648956514854705,
+          1648956514854706,
+          1648956514854707,
+          1648956514854708,
+          1648956514854709,
+          1648956514854710,
+          1648956514854711,
+          1648956514854712,
+          1648956514854713,
+          1648956514854714,
+          1648956514854715
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 1582604975,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1582609722814925,
+          1582609722814926,
+          1582609722814927,
+          1582609722814928,
+          1582609722814929,
+          1582609722814930,
+          1582609722814931,
+          1582609722814932,
+          1582609722814933,
+          1582609722814934,
+          1582609722814935,
+          1582609722814936
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 635676871,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          635678778030613,
+          635678778030614,
+          635678778030615,
+          635678778030616,
+          635678778030617,
+          635678778030618,
+          635678778030619,
+          635678778030620,
+          635678778030621,
+          635678778030622,
+          635678778030623,
+          635678778030624
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 345844011,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          345845048532033,
+          345845048532034,
+          345845048532035,
+          345845048532036,
+          345845048532037,
+          345845048532038,
+          345845048532039,
+          345845048532040,
+          345845048532041,
+          345845048532042,
+          345845048532043,
+          345845048532044
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 1598333632,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1598338427000896,
+          1598338427000897,
+          1598338427000898,
+          1598338427000899,
+          1598338427000900,
+          1598338427000901,
+          1598338427000902,
+          1598338427000903,
+          1598338427000904,
+          1598338427000905,
+          1598338427000906,
+          1598338427000907
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 2116605935,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2116612284817805,
+          2116612284817806,
+          2116612284817807,
+          2116612284817808,
+          2116612284817809,
+          2116612284817810,
+          2116612284817811,
+          2116612284817812,
+          2116612284817813,
+          2116612284817814,
+          2116612284817815,
+          2116612284817816
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1908803061,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1908808787409183,
+          1908808787409184,
+          1908808787409185,
+          1908808787409186,
+          1908808787409187,
+          1908808787409188,
+          1908808787409189,
+          1908808787409190,
+          1908808787409191,
+          1908808787409192,
+          1908808787409193,
+          1908808787409194
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 62379673,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          62379860139019,
+          62379860139020,
+          62379860139021,
+          62379860139022,
+          62379860139023,
+          62379860139024,
+          62379860139025,
+          62379860139026,
+          62379860139027,
+          62379860139028,
+          62379860139029,
+          62379860139030
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 1266699364,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1266703164098092,
+          1266703164098093,
+          1266703164098094,
+          1266703164098095,
+          1266703164098096,
+          1266703164098097,
+          1266703164098098,
+          1266703164098099,
+          1266703164098100,
+          1266703164098101,
+          1266703164098102,
+          1266703164098103
+        ]
+      },
+      {
+        "conditionId": "standard-random-8x8",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1689874881,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1689879950624643,
+          1689879950624644,
+          1689879950624645,
+          1689879950624646,
+          1689879950624647,
+          1689879950624648,
+          1689879950624649,
+          1689879950624650,
+          1689879950624651,
+          1689879950624652,
+          1689879950624653,
+          1689879950624654
+        ]
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1137581369,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1824472330,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 735020658,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 416832463,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 850655945,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 668940379,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 305311978,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 2055495613,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 1227475232,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 537216463,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 1814538213,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 976643516,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1251223803,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 2073814160,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 77361258,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 1204732448,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 1306032798,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 525799267,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1952081103,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 760145248,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 852000878,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 1189847462,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 1575511132,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 1802539,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 1209075120,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 624512653,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1979009561,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 1214916343,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 1411014584,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-fixed-12x10",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1417078498,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1098714416,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1098717712143248,
+          1098717712143249,
+          1098717712143250,
+          1098717712143251,
+          1098717712143252,
+          1098717712143253,
+          1098717712143254,
+          1098717712143255,
+          1098717712143256,
+          1098717712143257,
+          1098717712143258,
+          1098717712143259
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1628741235,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1628746121223705,
+          1628746121223706,
+          1628746121223707,
+          1628746121223708,
+          1628746121223709,
+          1628746121223710,
+          1628746121223711,
+          1628746121223712,
+          1628746121223713,
+          1628746121223714,
+          1628746121223715,
+          1628746121223716
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 2077986876,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2077993109960628,
+          2077993109960629,
+          2077993109960630,
+          2077993109960631,
+          2077993109960632,
+          2077993109960633,
+          2077993109960634,
+          2077993109960635,
+          2077993109960636,
+          2077993109960637,
+          2077993109960638,
+          2077993109960639
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 653193912,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          653195871581736,
+          653195871581737,
+          653195871581738,
+          653195871581739,
+          653195871581740,
+          653195871581741,
+          653195871581742,
+          653195871581743,
+          653195871581744,
+          653195871581745,
+          653195871581746,
+          653195871581747
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 1439343075,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1439347393029225,
+          1439347393029226,
+          1439347393029227,
+          1439347393029228,
+          1439347393029229,
+          1439347393029230,
+          1439347393029231,
+          1439347393029232,
+          1439347393029233,
+          1439347393029234,
+          1439347393029235,
+          1439347393029236
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 62219864,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          62220050659592,
+          62220050659593,
+          62220050659594,
+          62220050659595,
+          62220050659596,
+          62220050659597,
+          62220050659598,
+          62220050659599,
+          62220050659600,
+          62220050659601,
+          62220050659602,
+          62220050659603
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 902984672,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          902987380954016,
+          902987380954017,
+          902987380954018,
+          902987380954019,
+          902987380954020,
+          902987380954021,
+          902987380954022,
+          902987380954023,
+          902987380954024,
+          902987380954025,
+          902987380954026,
+          902987380954027
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 245895242,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          245895979685726,
+          245895979685727,
+          245895979685728,
+          245895979685729,
+          245895979685730,
+          245895979685731,
+          245895979685732,
+          245895979685733,
+          245895979685734,
+          245895979685735,
+          245895979685736,
+          245895979685737
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 1749968071,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1749973320904213,
+          1749973320904214,
+          1749973320904215,
+          1749973320904216,
+          1749973320904217,
+          1749973320904218,
+          1749973320904219,
+          1749973320904220,
+          1749973320904221,
+          1749973320904222,
+          1749973320904223,
+          1749973320904224
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 1729501012,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1729506200503036,
+          1729506200503037,
+          1729506200503038,
+          1729506200503039,
+          1729506200503040,
+          1729506200503041,
+          1729506200503042,
+          1729506200503043,
+          1729506200503044,
+          1729506200503045,
+          1729506200503046,
+          1729506200503047
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 2101727185,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2101733490181555,
+          2101733490181556,
+          2101733490181557,
+          2101733490181558,
+          2101733490181559,
+          2101733490181560,
+          2101733490181561,
+          2101733490181562,
+          2101733490181563,
+          2101733490181564,
+          2101733490181565,
+          2101733490181566
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 851813335,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          851815890440005,
+          851815890440006,
+          851815890440007,
+          851815890440008,
+          851815890440009,
+          851815890440010,
+          851815890440011,
+          851815890440012,
+          851815890440013,
+          851815890440014,
+          851815890440015,
+          851815890440016
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 1159016290,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1159019767048870,
+          1159019767048871,
+          1159019767048872,
+          1159019767048873,
+          1159019767048874,
+          1159019767048875,
+          1159019767048876,
+          1159019767048877,
+          1159019767048878,
+          1159019767048879,
+          1159019767048880,
+          1159019767048881
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 950299942,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          950302792899826,
+          950302792899827,
+          950302792899828,
+          950302792899829,
+          950302792899830,
+          950302792899831,
+          950302792899832,
+          950302792899833,
+          950302792899834,
+          950302792899835,
+          950302792899836,
+          950302792899837
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1612120462,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1612125298361386,
+          1612125298361387,
+          1612125298361388,
+          1612125298361389,
+          1612125298361390,
+          1612125298361391,
+          1612125298361392,
+          1612125298361393,
+          1612125298361394,
+          1612125298361395,
+          1612125298361396,
+          1612125298361397
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 1339445951,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1339449969337853,
+          1339449969337854,
+          1339449969337855,
+          1339449969337856,
+          1339449969337857,
+          1339449969337858,
+          1339449969337859,
+          1339449969337860,
+          1339449969337861,
+          1339449969337862,
+          1339449969337863,
+          1339449969337864
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 493523469,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          493524949570407,
+          493524949570408,
+          493524949570409,
+          493524949570410,
+          493524949570411,
+          493524949570412,
+          493524949570413,
+          493524949570414,
+          493524949570415,
+          493524949570416,
+          493524949570417,
+          493524949570418
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 181182537,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          181183080547611,
+          181183080547612,
+          181183080547613,
+          181183080547614,
+          181183080547615,
+          181183080547616,
+          181183080547617,
+          181183080547618,
+          181183080547619,
+          181183080547620,
+          181183080547621,
+          181183080547622
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1420603000,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1420607261809000,
+          1420607261809001,
+          1420607261809002,
+          1420607261809003,
+          1420607261809004,
+          1420607261809005,
+          1420607261809006,
+          1420607261809007,
+          1420607261809008,
+          1420607261809009,
+          1420607261809010,
+          1420607261809011
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 1294426493,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1294430376279479,
+          1294430376279480,
+          1294430376279481,
+          1294430376279482,
+          1294430376279483,
+          1294430376279484,
+          1294430376279485,
+          1294430376279486,
+          1294430376279487,
+          1294430376279488,
+          1294430376279489,
+          1294430376279490
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1919936660,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1919942419809980,
+          1919942419809981,
+          1919942419809982,
+          1919942419809983,
+          1919942419809984,
+          1919942419809985,
+          1919942419809986,
+          1919942419809987,
+          1919942419809988,
+          1919942419809989,
+          1919942419809990,
+          1919942419809991
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 2000882449,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2000888451647347,
+          2000888451647348,
+          2000888451647349,
+          2000888451647350,
+          2000888451647351,
+          2000888451647352,
+          2000888451647353,
+          2000888451647354,
+          2000888451647355,
+          2000888451647356,
+          2000888451647357,
+          2000888451647358
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 1269020060,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1269023867060180,
+          1269023867060181,
+          1269023867060182,
+          1269023867060183,
+          1269023867060184,
+          1269023867060185,
+          1269023867060186,
+          1269023867060187,
+          1269023867060188,
+          1269023867060189,
+          1269023867060190,
+          1269023867060191
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 1568741406,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1568746112224218,
+          1568746112224219,
+          1568746112224220,
+          1568746112224221,
+          1568746112224222,
+          1568746112224223,
+          1568746112224224,
+          1568746112224225,
+          1568746112224226,
+          1568746112224227,
+          1568746112224228,
+          1568746112224229
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 514082929,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          514084471248787,
+          514084471248788,
+          514084471248789,
+          514084471248790,
+          514084471248791,
+          514084471248792,
+          514084471248793,
+          514084471248794,
+          514084471248795,
+          514084471248796,
+          514084471248797,
+          514084471248798
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 1608769204,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1608774030307612,
+          1608774030307613,
+          1608774030307614,
+          1608774030307615,
+          1608774030307616,
+          1608774030307617,
+          1608774030307618,
+          1608774030307619,
+          1608774030307620,
+          1608774030307621,
+          1608774030307622,
+          1608774030307623
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1056928201,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1056931371784603,
+          1056931371784604,
+          1056931371784605,
+          1056931371784606,
+          1056931371784607,
+          1056931371784608,
+          1056931371784609,
+          1056931371784610,
+          1056931371784611,
+          1056931371784612,
+          1056931371784613,
+          1056931371784614
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 583232457,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          583234206697371,
+          583234206697372,
+          583234206697373,
+          583234206697374,
+          583234206697375,
+          583234206697376,
+          583234206697377,
+          583234206697378,
+          583234206697379,
+          583234206697380,
+          583234206697381,
+          583234206697382
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 45865963,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          45866100597889,
+          45866100597890,
+          45866100597891,
+          45866100597892,
+          45866100597893,
+          45866100597894,
+          45866100597895,
+          45866100597896,
+          45866100597897,
+          45866100597898,
+          45866100597899,
+          45866100597900
+        ]
+      },
+      {
+        "conditionId": "standard-random-12x10",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1926799295,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1926805075397885,
+          1926805075397886,
+          1926805075397887,
+          1926805075397888,
+          1926805075397889,
+          1926805075397890,
+          1926805075397891,
+          1926805075397892,
+          1926805075397893,
+          1926805075397894,
+          1926805075397895,
+          1926805075397896
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 686174421,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1034926280,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 501601940,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 1940472426,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 1785105326,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 1019433558,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 2022890021,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 593590451,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 669018719,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 489357691,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 847569594,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 1625435944,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 760734842,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 1304501361,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1409505733,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 411111878,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 633484294,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 725763667,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 1523612218,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 879822599,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 1229331707,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 962884173,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 1423455907,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 1804928193,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 1791489459,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 1396190467,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 898550912,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 381459603,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 602373595,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-fixed-7x7",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 1515483506,
+        "games": 2,
+        "seatDirections": 2
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 135,
+        "generationB": 141,
+        "engineSeed": 1536035525,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1536040133106575,
+          1536040133106576,
+          1536040133106577,
+          1536040133106578,
+          1536040133106579,
+          1536040133106580,
+          1536040133106581,
+          1536040133106582,
+          1536040133106583,
+          1536040133106584,
+          1536040133106585,
+          1536040133106586
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 136,
+        "generationB": 142,
+        "engineSeed": 1091395217,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1091398491185651,
+          1091398491185652,
+          1091398491185653,
+          1091398491185654,
+          1091398491185655,
+          1091398491185656,
+          1091398491185657,
+          1091398491185658,
+          1091398491185659,
+          1091398491185660,
+          1091398491185661,
+          1091398491185662
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 137,
+        "generationB": 143,
+        "engineSeed": 424533318,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          424534591599954,
+          424534591599955,
+          424534591599956,
+          424534591599957,
+          424534591599958,
+          424534591599959,
+          424534591599960,
+          424534591599961,
+          424534591599962,
+          424534591599963,
+          424534591599964,
+          424534591599965
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 138,
+        "generationB": 141,
+        "engineSeed": 592032854,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          592034630098562,
+          592034630098563,
+          592034630098564,
+          592034630098565,
+          592034630098566,
+          592034630098567,
+          592034630098568,
+          592034630098569,
+          592034630098570,
+          592034630098571,
+          592034630098572,
+          592034630098573
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 138,
+        "generationB": 144,
+        "engineSeed": 726867208,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          726869388601624,
+          726869388601625,
+          726869388601626,
+          726869388601627,
+          726869388601628,
+          726869388601629,
+          726869388601630,
+          726869388601631,
+          726869388601632,
+          726869388601633,
+          726869388601634,
+          726869388601635
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 139,
+        "generationB": 142,
+        "engineSeed": 324087462,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          324088434262386,
+          324088434262387,
+          324088434262388,
+          324088434262389,
+          324088434262390,
+          324088434262391,
+          324088434262392,
+          324088434262393,
+          324088434262394,
+          324088434262395,
+          324088434262396,
+          324088434262397
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 139,
+        "generationB": 145,
+        "engineSeed": 229240772,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          229241459722316,
+          229241459722317,
+          229241459722318,
+          229241459722319,
+          229241459722320,
+          229241459722321,
+          229241459722322,
+          229241459722323,
+          229241459722324,
+          229241459722325,
+          229241459722326,
+          229241459722327
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 140,
+        "generationB": 141,
+        "engineSeed": 1670262310,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1670267320786930,
+          1670267320786931,
+          1670267320786932,
+          1670267320786933,
+          1670267320786934,
+          1670267320786935,
+          1670267320786936,
+          1670267320786937,
+          1670267320786938,
+          1670267320786939,
+          1670267320786940,
+          1670267320786941
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 140,
+        "generationB": 143,
+        "engineSeed": 415917855,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          415919102753565,
+          415919102753566,
+          415919102753567,
+          415919102753568,
+          415919102753569,
+          415919102753570,
+          415919102753571,
+          415919102753572,
+          415919102753573,
+          415919102753574,
+          415919102753575,
+          415919102753576
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 140,
+        "generationB": 146,
+        "engineSeed": 553048868,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          553050527146604,
+          553050527146605,
+          553050527146606,
+          553050527146607,
+          553050527146608,
+          553050527146609,
+          553050527146610,
+          553050527146611,
+          553050527146612,
+          553050527146613,
+          553050527146614,
+          553050527146615
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 141,
+        "generationB": 142,
+        "engineSeed": 2141712625,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2141719050137875,
+          2141719050137876,
+          2141719050137877,
+          2141719050137878,
+          2141719050137879,
+          2141719050137880,
+          2141719050137881,
+          2141719050137882,
+          2141719050137883,
+          2141719050137884,
+          2141719050137885,
+          2141719050137886
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 141,
+        "generationB": 144,
+        "engineSeed": 1629928098,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1629932987784294,
+          1629932987784295,
+          1629932987784296,
+          1629932987784297,
+          1629932987784298,
+          1629932987784299,
+          1629932987784300,
+          1629932987784301,
+          1629932987784302,
+          1629932987784303,
+          1629932987784304,
+          1629932987784305
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 141,
+        "generationB": 147,
+        "engineSeed": 660055259,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          660057239165777,
+          660057239165778,
+          660057239165779,
+          660057239165780,
+          660057239165781,
+          660057239165782,
+          660057239165783,
+          660057239165784,
+          660057239165785,
+          660057239165786,
+          660057239165787,
+          660057239165788
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 142,
+        "generationB": 143,
+        "engineSeed": 1377612979,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1377617111838937,
+          1377617111838938,
+          1377617111838939,
+          1377617111838940,
+          1377617111838941,
+          1377617111838942,
+          1377617111838943,
+          1377617111838944,
+          1377617111838945,
+          1377617111838946,
+          1377617111838947,
+          1377617111838948
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 142,
+        "generationB": 145,
+        "engineSeed": 1128212278,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1128215662636834,
+          1128215662636835,
+          1128215662636836,
+          1128215662636837,
+          1128215662636838,
+          1128215662636839,
+          1128215662636840,
+          1128215662636841,
+          1128215662636842,
+          1128215662636843,
+          1128215662636844,
+          1128215662636845
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 142,
+        "generationB": 148,
+        "engineSeed": 965927692,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          965930589783076,
+          965930589783077,
+          965930589783078,
+          965930589783079,
+          965930589783080,
+          965930589783081,
+          965930589783082,
+          965930589783083,
+          965930589783084,
+          965930589783085,
+          965930589783086,
+          965930589783087
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 143,
+        "generationB": 144,
+        "engineSeed": 419160619,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          419161876481857,
+          419161876481858,
+          419161876481859,
+          419161876481860,
+          419161876481861,
+          419161876481862,
+          419161876481863,
+          419161876481864,
+          419161876481865,
+          419161876481866,
+          419161876481867,
+          419161876481868
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 143,
+        "generationB": 146,
+        "engineSeed": 205541610,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          205542226624830,
+          205542226624831,
+          205542226624832,
+          205542226624833,
+          205542226624834,
+          205542226624835,
+          205542226624836,
+          205542226624837,
+          205542226624838,
+          205542226624839,
+          205542226624840,
+          205542226624841
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 143,
+        "generationB": 149,
+        "engineSeed": 836207407,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          836209915622221,
+          836209915622222,
+          836209915622223,
+          836209915622224,
+          836209915622225,
+          836209915622226,
+          836209915622227,
+          836209915622228,
+          836209915622229,
+          836209915622230,
+          836209915622231,
+          836209915622232
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 144,
+        "generationB": 145,
+        "engineSeed": 2135512479,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2135518885537437,
+          2135518885537438,
+          2135518885537439,
+          2135518885537440,
+          2135518885537441,
+          2135518885537442,
+          2135518885537443,
+          2135518885537444,
+          2135518885537445,
+          2135518885537446,
+          2135518885537447,
+          2135518885537448
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 144,
+        "generationB": 147,
+        "engineSeed": 265280996,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          265281791842988,
+          265281791842989,
+          265281791842990,
+          265281791842991,
+          265281791842992,
+          265281791842993,
+          265281791842994,
+          265281791842995,
+          265281791842996,
+          265281791842997,
+          265281791842998,
+          265281791842999
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 144,
+        "generationB": 150,
+        "engineSeed": 315066101,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          315067046198303,
+          315067046198304,
+          315067046198305,
+          315067046198306,
+          315067046198307,
+          315067046198308,
+          315067046198309,
+          315067046198310,
+          315067046198311,
+          315067046198312,
+          315067046198313,
+          315067046198314
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 145,
+        "generationB": 146,
+        "engineSeed": 1385551910,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1385556066655730,
+          1385556066655731,
+          1385556066655732,
+          1385556066655733,
+          1385556066655734,
+          1385556066655735,
+          1385556066655736,
+          1385556066655737,
+          1385556066655738,
+          1385556066655739,
+          1385556066655740,
+          1385556066655741
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 145,
+        "generationB": 148,
+        "engineSeed": 2042136399,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          2042142525409197,
+          2042142525409198,
+          2042142525409199,
+          2042142525409200,
+          2042142525409201,
+          2042142525409202,
+          2042142525409203,
+          2042142525409204,
+          2042142525409205,
+          2042142525409206,
+          2042142525409207,
+          2042142525409208
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 146,
+        "generationB": 147,
+        "engineSeed": 666463303,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          666465302389909,
+          666465302389910,
+          666465302389911,
+          666465302389912,
+          666465302389913,
+          666465302389914,
+          666465302389915,
+          666465302389916,
+          666465302389917,
+          666465302389918,
+          666465302389919,
+          666465302389920
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 146,
+        "generationB": 149,
+        "engineSeed": 1594559774,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1594564557679322,
+          1594564557679323,
+          1594564557679324,
+          1594564557679325,
+          1594564557679326,
+          1594564557679327,
+          1594564557679328,
+          1594564557679329,
+          1594564557679330,
+          1594564557679331,
+          1594564557679332,
+          1594564557679333
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 147,
+        "generationB": 148,
+        "engineSeed": 1999301885,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          1999307882905655,
+          1999307882905656,
+          1999307882905657,
+          1999307882905658,
+          1999307882905659,
+          1999307882905660,
+          1999307882905661,
+          1999307882905662,
+          1999307882905663,
+          1999307882905664,
+          1999307882905665,
+          1999307882905666
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 147,
+        "generationB": 150,
+        "engineSeed": 316139074,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          316140022417222,
+          316140022417223,
+          316140022417224,
+          316140022417225,
+          316140022417226,
+          316140022417227,
+          316140022417228,
+          316140022417229,
+          316140022417230,
+          316140022417231,
+          316140022417232,
+          316140022417233
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 148,
+        "generationB": 149,
+        "engineSeed": 426959481,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          426960761878443,
+          426960761878444,
+          426960761878445,
+          426960761878446,
+          426960761878447,
+          426960761878448,
+          426960761878449,
+          426960761878450,
+          426960761878451,
+          426960761878452,
+          426960761878453,
+          426960761878454
+        ]
+      },
+      {
+        "conditionId": "animal-cycle-random-7x7",
+        "generationA": 149,
+        "generationB": 150,
+        "engineSeed": 86269116,
+        "games": 12,
+        "seatDirections": 2,
+        "randomStartSeeds": [
+          86269374807348,
+          86269374807349,
+          86269374807350,
+          86269374807351,
+          86269374807352,
+          86269374807353,
+          86269374807354,
+          86269374807355,
+          86269374807356,
+          86269374807357,
+          86269374807358,
+          86269374807359
+        ]
+      }
+    ]
+  },
+  "archive": {
+    "path": "/home/nilo/nil/wallgame/deep-wallwars/elo_db/policy_archive/tf_policy_elo_current_rule_continuation_g141_g150_2026-09-02",
+    "configuredBeforeFirstGame": true,
+    "acceptedEmpty": true,
+    "quarantineEmpty": true,
+    "tornEmpty": true
+  },
+  "inputs": [
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/plan.json",
+      "bytes": 232244,
+      "sha256": "5b2ba7aa1f8e9dfa9c496c72b2dae64df08c93609d349940889f722a840a8933"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/policy_elo_conditions.run.json",
+      "bytes": 4573,
+      "sha256": "a8612bced0911269fb79cf4c7b171e8766eb1b82da9ae997901cf16cb623da1d"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/loadability.jsonl",
+      "bytes": 39894,
+      "sha256": "a3c43623e0507f3a5b7a911d6281bd17cefabf3eb6d5dcbd29493b066298c3f1"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/policy-elo-current-rule-continuation-g141-g150-20260902/provenance/policy_elo_batch.py",
+      "bytes": 21465,
+      "sha256": "5804ca6aa692a6e8985fb142afacbc8a9f18520239ebeb5c4e1157130b936798"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame-gpu-builds/nil-reset-20260831-ba2e93d40fd1/deep-wallwars/build-nil-reset/deep_ww_bgs_engine",
+      "bytes": 31728480,
+      "sha256": "d1dbd140cb98d97b1e287b52a4523b3f817ccbca1cf57c83b910effc5eba2264"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame-gpu-builds/nil-reset-20260831-641ec0f0cf45/deep-wallwars/scripts/benchmark_head_to_head.ts",
+      "bytes": 23468,
+      "sha256": "c7466ebe4e6d8f4122b74f7bac21bdd94e937c51cdac3579c655aac707bf1d23"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_135.trt",
+      "bytes": 18148292,
+      "sha256": "744b54a32412de4db1050c8cdf85a5fd42b0b9c5f903f3d9a7d03be65eb0d6c5"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_136.trt",
+      "bytes": 18631884,
+      "sha256": "881f5c071df4914363f55dbf29b70986a78c0640eb04939fd88c1f3b6f6a02c8"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_137.trt",
+      "bytes": 18222476,
+      "sha256": "73f03bd52bbc9d856996780750d80a941834e009d35eb31962156f5a14956d8e"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_138.trt",
+      "bytes": 18348572,
+      "sha256": "ca6ace8cc088a33dfd40e88d7736de3bb6f1dc30327143a6185d03e4704b7d56"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/phase7-feasibility-34e5f567-random-start-g117-g126/models/model_139.trt",
+      "bytes": 18089476,
+      "sha256": "76eef5c3c629d0aa741fad17b65e8343866476f1b8178f4a34055e82d89bce36"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_140.trt",
+      "bytes": 18278420,
+      "sha256": "0a5198126009cc1711536cb70ee1605d7edd385a288bccb01ac976ff6570645b"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_141.trt",
+      "bytes": 19106860,
+      "sha256": "8a3e8811690fcd6b93a4c3140fa6e3edc2068697e60039c52ee366ff983707e5"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_142.trt",
+      "bytes": 18487316,
+      "sha256": "b0fc157a7248c03b7055f12714b32ca381b8ded5f23ecfa46149480a9059359f"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_143.trt",
+      "bytes": 18065556,
+      "sha256": "05a9a5940c545af219cb5a1eb059014a91edd435d8dfcb38eec32362f802b1b5"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_144.trt",
+      "bytes": 18060100,
+      "sha256": "8a2c1afd8610fea5987d1c1d51ffcb5c91128d215d0e92debf6ddad66b396f51"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models/model_145.trt",
+      "bytes": 18256988,
+      "sha256": "5d74a42a87c925e79682070b4a43b247a56cb13f9f6b69c6b01606e62c773592"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_146.trt",
+      "bytes": 18178356,
+      "sha256": "3ffb59e1f9b8096b291f08da39f1b116876c408e76ff08aa4416a852a4904681"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_147.trt",
+      "bytes": 18226300,
+      "sha256": "f802115605267fff47ae1fea460b1bfab870da35d13aaf505a1c78d296756119"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_148.trt",
+      "bytes": 18242884,
+      "sha256": "daed4031f747101241e4dbff72259e5527ce6b1cf3b9dc7b4e3f703f4e2effe9"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_149.trt",
+      "bytes": 18407876,
+      "sha256": "f4216190d7b28b5067cad14bf25dcdddabf8e94e1591b7fb59afef63dc83f3d9"
+    },
+    {
+      "path": "/home/nilo/nil/wallgame/deep-wallwars/training-runs/terminal-turn-discount-v1-g141-g150-641ec0f0/models-resume-g146-g150/model_150.trt",
+      "bytes": 18281604,
+      "sha256": "a1f7f160a880bf56192b93296d30f29d689f4a171cfb76ca578dc22e7f070eac"
+    }
+  ],
+  "priorExperimentImmutable": "tf_policy_elo_current_rule_g150_vs_g140_2026-09-01"
+}
