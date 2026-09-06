@@ -280,12 +280,28 @@ export function isNavigablePath(path: string): boolean {
   return !lastSegment.includes(".");
 }
 
+/**
+ * A game URL is useful to the people who share it, but not as a search result.
+ * There are unboundedly many of these pages and each one has the same generic
+ * metadata. Crawlers must be allowed to fetch the page so they can read this
+ * directive; blocking it in robots.txt can leave the URL indexed without any
+ * page content, which Search Console reports as "indexed, though blocked".
+ */
+export function shouldNoIndex(path: string): boolean {
+  return normalizePath(path).startsWith("/game/");
+}
+
 export const registerHtmlShell = (app: Hono, shell: HtmlShell) => {
   app.get("*", async (c, next) => {
     if (!isNavigablePath(c.req.path)) return next();
 
-    return c.body(renderPageShell(shell, c.req.path), 200, {
+    const headers: Record<string, string> = {
       "Content-Type": "text/html; charset=UTF-8",
-    });
+    };
+    if (shouldNoIndex(c.req.path)) {
+      headers["X-Robots-Tag"] = "noindex, follow";
+    }
+
+    return c.body(renderPageShell(shell, c.req.path), 200, headers);
   });
 };
