@@ -280,12 +280,26 @@ export function isNavigablePath(path: string): boolean {
   return !lastSegment.includes(".");
 }
 
+/**
+ * Ordinary play/replay pages stay shareable but are excluded from search.
+ * Crawlers must be allowed to fetch them to read this directive; robots.txt
+ * alone can leave a URL indexed without its page content.
+ */
+export function shouldNoIndex(path: string): boolean {
+  return normalizePath(path).startsWith("/game/");
+}
+
 export const registerHtmlShell = (app: Hono, shell: HtmlShell) => {
   app.get("*", async (c, next) => {
     if (!isNavigablePath(c.req.path)) return next();
 
-    return c.body(renderPageShell(shell, c.req.path), 200, {
+    const headers: Record<string, string> = {
       "Content-Type": "text/html; charset=UTF-8",
-    });
+    };
+    if (shouldNoIndex(c.req.path)) {
+      headers["X-Robots-Tag"] = "noindex, follow";
+    }
+
+    return c.body(renderPageShell(shell, c.req.path), 200, headers);
   });
 };

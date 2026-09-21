@@ -381,6 +381,20 @@ describe("the served document", () => {
     expect(metadata.canonical).toBe("https://wallgame.io/game/abc123");
   });
 
+  it("keeps game URLs out of search results without blocking crawlers", async () => {
+    const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
+
+    for (const path of ["/game/abc123", "/game/abc123/"]) {
+      const response = await app.request(path);
+      expect(response.status).toBe(200);
+      expect(response.headers.get("x-robots-tag")).toBe("noindex, follow");
+    }
+    for (const path of ["/", "/past-games", "/game-like", "/puzzles"]) {
+      const response = await app.request(path);
+      expect(response.headers.get("x-robots-tag")).toBeNull();
+    }
+  });
+
   it("does not intercept the crawler endpoints", async () => {
     const { app } = createApp({ htmlShell: parseHtmlShell(FIXTURE) });
 
