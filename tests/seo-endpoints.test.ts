@@ -49,7 +49,7 @@ describe("GET /robots.txt", () => {
     expect(body).toContain("Sitemap: https://wallgame.io/sitemap.xml");
   });
 
-  it("lets crawlers fetch every page so they can read noindex directives", async () => {
+  it("blocks the unbounded per-game URLs and nothing else", async () => {
     const { app } = createApp();
 
     const body = await (await app.request("/robots.txt")).text();
@@ -57,7 +57,7 @@ describe("GET /robots.txt", () => {
       (match) => match[1],
     );
 
-    expect(disallowed).toEqual([]);
+    expect(disallowed).toEqual(["/game/"]);
   });
 });
 

@@ -36,6 +36,18 @@ export const SITE_ORIGIN = "https://wallgame.io";
 const SITEMAP_RETRY_AFTER_SECONDS = 3600;
 
 /**
+ * Every URL under `/game/` is one specific game, live or finished. There are
+ * unboundedly many, nobody searches for one, and a crawler spending its budget
+ * there is a crawler not reading the pages above.
+ *
+ * It is the only entry, and the per-visitor and legacy-redirect pages are
+ * pointedly not here. `Disallow` is not `noindex` - it stops a crawler reading
+ * a page without stopping it indexing the URL, so disallowing a redirect would
+ * freeze it in the index with no way for anyone to discover where it points.
+ */
+const DISALLOWED_PREFIXES = ["/game/"] as const;
+
+/**
  * Escapes the five XML metacharacters. Every value passed through today is a
  * constant from the list above, so this changes nothing now - it is here for
  * the moment the list starts coming from the database, where a puzzle slug
@@ -54,6 +66,7 @@ export function buildRobotsTxt(): string {
   return [
     "User-agent: *",
     "Allow: /",
+    ...DISALLOWED_PREFIXES.map((prefix) => `Disallow: ${prefix}`),
     "",
     `Sitemap: ${SITE_ORIGIN}/sitemap.xml`,
     "",
