@@ -252,6 +252,50 @@ afterAll(async () => {
 // ================================
 
 describe("past games persistence", () => {
+  it("keeps saved games replayable after releasing their live session", async () => {
+    const id = await createCompletedGame({
+      config: {
+        boardWidth: 8,
+        boardHeight: 8,
+        variant: "standard",
+        rated: false,
+        timeControl: {
+          initialSeconds: 120,
+          incrementSeconds: 0,
+          preset: "rapid",
+        },
+      },
+    });
+    const store = await import("../../server/games/store");
+    const session = store.getSession(id);
+    const expectedMoves = session.gameState.moveCount;
+    expect(
+      await store.releaseEndedSessions({
+        now: session.updatedAt + store.ENDED_SESSION_RETENTION_MS,
+        hasConnections: (gameId) => gameId !== id,
+        finalize: async (ended) => {
+          await store.processRatingUpdate(ended.id);
+          await persistCompletedGame(ended);
+        },
+        onError: (_gameId, error) => {
+          throw error;
+        },
+      }),
+    ).toBe(1);
+    expect(() => store.getSession(id)).toThrow();
+    const response = await fetch(`${baseUrl}/api/games/${id}`);
+    expect(response.status).toBe(200);
+    const replay = (await response.json()) as ResolveGameAccessResponse;
+    expect(replay.kind).toBe("replay");
+    if (replay.kind !== "replay") throw new Error("Expected persisted replay");
+    expect(replay.state.moveCount).toBe(expectedMoves);
+    const rows = await db
+      .select()
+      .from(gamesTable)
+      .where(eq(gamesTable.gameId, id));
+    expect(rows).toHaveLength(1);
+  });
+
   it("serves replay data from the DB and increments views", async () => {
     const config: PartialGameConfiguration = {
       timeControl: {

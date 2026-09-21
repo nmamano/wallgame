@@ -8,11 +8,14 @@
 
 import { createApp } from "./app";
 import { loadHtmlShell } from "./routes/html-shell";
+import { startSessionMaintenance } from "./games/session-maintenance";
+import { hasGameConnections } from "./routes/game-socket";
 
 // Unconditional, where this was gated on `import.meta.main` to keep it away
 // from tests. Nothing imports this file for its exports now, and dev is
 // unaffected: loadHtmlShell() returns undefined when FRONTEND_URL is set.
 const { app, websocket } = createApp({ htmlShell: loadHtmlShell() });
+startSessionMaintenance(hasGameConnections);
 
 console.log("Server is running");
 

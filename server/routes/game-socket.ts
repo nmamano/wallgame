@@ -928,6 +928,8 @@ const ensureAuthorizedPlayer = (
 };
 
 const sessionSockets = new Map<string, Set<SessionSocket>>();
+export const hasGameConnections = (id: string): boolean =>
+  (sessionSockets.get(id)?.size ?? 0) > 0;
 const contextEntryMap = new WeakMap<WSContext, SessionSocket>();
 const rawSocketMap = new WeakMap<object, SessionSocket>();
 

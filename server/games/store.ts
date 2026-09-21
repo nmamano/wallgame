@@ -1744,6 +1744,57 @@ const isSessionOver = (session: GameSession): boolean =>
 export const countGamesInFlight = (): number =>
   [...sessions.values()].filter((session) => !isSessionOver(session)).length;
 
+// Leave time for reconnects and rematches. Completed games remain available
+// from the database after their in-memory session is released.
+export const ENDED_SESSION_RETENTION_MS = 30 * 60 * 1000;
+
+export const sessionMemoryStats = () => ({
+  sessions: sessions.size,
+  endedSessions: [...sessions.values()].filter(isSessionOver).length,
+  historyEntries: [...sessions.values()].reduce(
+    (total, session) => total + session.gameState.history.length,
+    0,
+  ),
+});
+
+/**
+ * Finalize before releasing anything. A failed save leaves the session intact
+ * for the next sweep. Recheck after awaiting: a player can reconnect or start
+ * a rematch while the database is busy. Never evict an active session.
+ */
+export const releaseEndedSessions = async (options: {
+  now: number;
+  hasConnections: (id: string) => boolean;
+  finalize: (session: GameSession) => Promise<void>;
+  onError: (id: string, error: unknown) => void;
+}): Promise<number> => {
+  const eligible = (session: GameSession) =>
+    isSessionOver(session) &&
+    options.now - session.updatedAt >= ENDED_SESSION_RETENTION_MS &&
+    !session.players.host.connected &&
+    !session.players.joiner.connected &&
+    !options.hasConnections(session.id);
+  let released = 0;
+  for (const session of sessions.values()) {
+    if (!eligible(session)) continue;
+    const updatedAt = session.updatedAt;
+    try {
+      await options.finalize(session);
+    } catch (error) {
+      options.onError(session.id, error);
+      continue;
+    }
+    if (session.updatedAt !== updatedAt || !eligible(session)) continue;
+    clearTimeoutTimer(session.id);
+    clearAbandonTimer(session.id);
+    clearIdleTimer(session.id);
+    spectatorCounts.delete(session.id);
+    sessions.delete(session.id);
+    released++;
+  }
+  return released;
+};
+
 export const listLiveGames = (limit = 100): LiveGameSummary[] => {
   return [...sessions.values()]
     .filter(isSpectatableSession)
