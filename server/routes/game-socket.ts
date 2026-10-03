@@ -1,5 +1,6 @@
 import type { Hono, MiddlewareHandler, Context } from "hono";
 import { createBunWebSocket } from "hono/bun";
+import { createWsOriginCheck } from "../ws-origin";
 import type { WSContext } from "hono/ws";
 import {
   applyPlayerMove,
@@ -2480,18 +2481,16 @@ interface GameSocketEnv {
   };
 }
 
+const isAllowedWsOrigin = createWsOriginCheck(
+  process.env.NODE_ENV,
+  process.env.ADDITIONAL_WS_ORIGINS,
+);
+
 const checkOrigin = (c: Context): boolean => {
   const origin = c.req.header("origin");
-  const isDev = process.env.NODE_ENV !== "production";
-
-  const allowedOrigins = isDev
-    ? ["http://localhost:5173"]
-    : ["https://wallgame.fly.dev", "https://wallgame.io"];
-
-  if (origin && !allowedOrigins.includes(origin)) {
+  if (!isAllowedWsOrigin(origin)) {
     console.warn("[ws] rejected connection from unauthorized origin", {
       origin,
-      allowedOrigins,
     });
     return false;
   }
