@@ -9,7 +9,7 @@ export function createWsOriginCheck(
   const allowedOrigins =
     nodeEnv !== "production"
       ? ["http://localhost:5173"]
-      : ["https://wallgame.fly.dev", "https://wallgame.io"];
+      : ["https://wallgame.io"];
   if (additionalOrigins) {
     for (const entry of additionalOrigins.split(",")) {
       const origin = entry.trim();

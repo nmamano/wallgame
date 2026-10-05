@@ -15,4 +15,3 @@
 .dockerignore
 .env
 Dockerfile
-fly.toml

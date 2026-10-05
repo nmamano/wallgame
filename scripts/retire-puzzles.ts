@@ -7,11 +7,13 @@
  * lookup candidates (identity is sourceFingerprint, and this script only
  * matches names among ENABLED rows).
  *
- * Runs INSIDE the deployed Fly machine (which has DATABASE_URL); it is NOT
- * part of release_command — retirement is a deliberate manual step:
+ * Runs INSIDE the production app container (which has DATABASE_URL); it is NOT
+ * part of schema migrations — retirement is a deliberate manual step:
  *
- *   fly ssh console -a wallgame -C \
- *     "bun scripts/retire-puzzles.ts 'Puzzle 7' 'Puzzle 12'"
+ * Follow ops-private/wallgame-vps-production-20261005.md for access.
+ * Production writes require explicit approval. Inside the app container:
+ *
+ *   bun scripts/retire-puzzles.ts 'Puzzle 7' 'Puzzle 12'
  *
  * The names it matches are those of ENABLED `saved_puzzles` rows. The ten
  * hand-authored puzzles share this numbering ("Puzzle 1".."Puzzle 10") but

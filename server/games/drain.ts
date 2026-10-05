@@ -21,8 +21,8 @@
  * token, no admin route and no new secret here. This server has no admin
  * surface to extend - the one credential it holds, OFFICIAL_BOT_TOKEN, belongs
  * to the bot client and must not become an ops key. Whoever can write this file
- * can already run code in the machine, so `fly ssh console` IS the
- * authentication, and it is the path the deploy runbook already uses.
+ * can already run code in the container. The private VPS runbook specifies
+ * the authenticated access route for this operation.
  *
  * A restart clears the drain, which is the state a finished deploy wants.
  */

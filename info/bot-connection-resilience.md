@@ -5,10 +5,10 @@ server and recovers from failures.
 
 ## The Problem
 
-The bot client connects from a home server to the Fly.io-hosted game server over
+The bot client connects from a home server to the VPS-hosted game server over
 a long-lived WebSocket. Several things can silently kill this connection:
 
-- **Fly.io machine restarts** — the server process moves to a new VM
+- **Server restarts** — the existing connection closes
 - **NAT timeout** — intermediate routers drop idle TCP mappings (~2–5 minutes)
 - **Network blips** — ISP hiccups, Wi-Fi drops, route changes
 
@@ -123,7 +123,7 @@ match exactly. `JSON.stringify({ type: "pong" })` always produces
 `{"type":"pong"}` for a single-key object, so this is safe.
 
 **Deploy ordering:** When deploying server changes, the server restarts on
-Fly.io and the bot's existing connection drops. The bot reconnects automatically
+the VPS and the bot's existing connection drops. The bot reconnects automatically
 via Layer 2. If the ping handler isn't deployed yet, the first ping will go
 unanswered and the bot will reconnect — this is fine, it just adds one extra
 30s cycle. Deploy server first, then restart bot.

@@ -100,7 +100,7 @@ describe("hosts the redirect must not touch", () => {
    */
   const untouched = [
     { what: "the apex", url: "https://wallgame.io/play" },
-    { what: "the fly.dev host", url: "https://wallgame.fly.dev/play" },
+    { what: "another host", url: "https://example.com/play" },
     { what: "the vite dev origin", url: "http://localhost:5173/play" },
     { what: "the dev server itself", url: "http://localhost:3000/play" },
     { what: "a raw loopback address", url: "http://127.0.0.1:3000/play" },

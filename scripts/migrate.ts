@@ -8,7 +8,7 @@ The first command updates the drizzle/ folder, which contains the necessary
 migration commands.
 The second command runs this file.
 
-On fly deploy, the migration runs automatically via release_command.
+For production migrations, follow the private VPS runbook and verify the target database.
 
 The db can be inspected manually by running:
 bunx drizzle-kit studio

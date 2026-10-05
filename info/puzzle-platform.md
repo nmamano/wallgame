@@ -71,8 +71,8 @@ ownership is structurally unrepresentable - the wire schema is `.strict()` with 
 
 | Piece | Where | Notes |
 |---|---|---|
-| Production site | Fly app `wallgame` -> https://wallgame.io | Deploys are **manual** |
-| Database | Neon Postgres | `release_command = "bun run migrate"` in fly.toml |
+| Production site | VPS -> https://wallgame.io | Deploys are **manual** |
+| Database | PostgreSQL | Follow the private VPS migration procedure |
 | Official bots | **4090 desktop**, `ssh nilo@desktop-053vvpl-1` | tmux session `bot-client` |
 | Bot supervisor | `~/run_transformer_bot.sh` on the desktop | restarts the client on crash |
 | Bot logs | `~/logs/bot-client-transformer.log` on the desktop | NOT the tmux pane |
@@ -443,14 +443,8 @@ checking out the old sha in a separate build worktree and rebuilding.
 
 ### Deploying
 
-```
-rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy
-git archive <sha> | tar -x -C /tmp/wg-deploy
-cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only
-```
-
-Clean export so another agent's uncommitted work never ships. fly CLI is authenticated on
-auntie. `bun run test` now runs the suite directly (it used to shell to `wsl.exe`, which does
+Read `ops-private/wallgame-vps-production-20261005.md`. Deploy only with Nil's
+explicit approval and from committed source. `bun run test` now runs the suite directly (it used to shell to `wsl.exe`, which does
 not exist here; the Windows wrapper moved to `bun run test:wsl`), so `bun run ci` works on
 auntie too. Docker was installed on auntie on 2026-08-01, and a running process needs
 `sg docker -c '...'` because nil joined the docker group after these sessions started. Use
@@ -485,7 +479,9 @@ Commits, newest last: `c25a132`, `1250597` (custom-setup variants, authored turn
   overall; **1, 2, 8, 9 good**; **6, 7 excellent**. (6 and 7 are also the two
   survivors closest to the decisively-winning threshold — see the audit note in
   `plans/puzzle-batch2.md` before ever raising it.) Retire future rejects with
-  `fly ssh console -a wallgame -C "bun scripts/retire-puzzles.ts '<current display name>' ..."`
+  `bun scripts/retire-puzzles.ts '<current display name>' ...`
+  inside the production app container, using the private VPS runbook and explicit
+  approval for the data change
   — it matches names among ENABLED rows only and renumbers survivors in the same
   transaction, so numbers stay continuous.
 - **Naming (S-BATCH1 `caf7117`, 2026-07-29):** generated puzzles are called

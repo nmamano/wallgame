@@ -39,8 +39,7 @@ Reviewer gates: plan-gate and diff-gate via isomux message to **Project Reviewer
 
 Production evidence (post-deploy): fresh `curl` reads of the prod API, the desktop bot log
 (`~/logs/bot-client-transformer.log` — NOT the tmux pane), DB reads via
-`~/.fly/bin/fly ssh console -a wallgame` running a bun script inside the machine
-(base64-encode the script to dodge `-C` quoting). Screenshots via the isomux preview-url
+the private VPS runbook (`ops-private/wallgame-vps-production-20261005.md`). Screenshots via the isomux preview-url
 endpoint are artifacts for Nil, never assertions. Login-required checks: ask Nil and walk
 him through it — there is no test account.
 
@@ -123,7 +122,7 @@ Parked-for-Nil queue:
 
 ## Resources
 
-- Deploy: `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
+- Deploy: read `ops-private/wallgame-vps-deploy.md`. Each deployment needs Nil's explicit approval.
 - Bot restart: `ssh nilo@desktop-053vvpl-1`, then `tmux kill-session -t bot-client`, then
   **wait at least 15 seconds** (reattach race — see parked item 1), then
   `tmux new-session -d -s bot-client -n bot-client "bash ~/run_transformer_bot.sh"`, then

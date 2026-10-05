@@ -1,10 +1,13 @@
 /**
  * Seeds the saved_puzzles table from the generated candidates and their
- * committed engine verdicts (S-G1). Runs INSIDE the deployed Fly machine
- * (which has DATABASE_URL); it is NOT part of release_command — seeding is
+ * committed engine verdicts (S-G1). Runs INSIDE the production app container
+ * (which has DATABASE_URL); it is NOT part of schema migrations — seeding is
  * a deliberate manual step:
  *
- *   fly ssh console -a wallgame -C "bun scripts/seed-puzzles.ts"
+ * Follow ops-private/wallgame-vps-production-20261005.md for access.
+ * Production writes require explicit approval. Inside the app container:
+ *
+ *   bun scripts/seed-puzzles.ts
  *
  * Idempotency is a DB invariant: source_fingerprint is UNIQUE and the
  * insert uses onConflictDoNothing on it, so re-runs skip existing puzzles.

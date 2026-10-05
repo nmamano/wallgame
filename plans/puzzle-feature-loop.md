@@ -48,8 +48,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 - NOT gates: `bun run ci` (cannot pass on auntie), anything a UI merely appears to show.
 - Production evidence: fresh curl reads of prod APIs, desktop bot log
   (`~/logs/bot-client-transformer.log`), DB reads via
-  `~/.fly/bin/fly ssh console -a wallgame` (base64-encode a bun script, run inside the
-  machine), preview-url screenshots as artifacts only. The probe harness from loop 1
+  the private VPS runbook (`ops-private/wallgame-vps-production-20261005.md`), preview-url screenshots as artifacts only. The probe harness from loop 1
   (create a real game via POST /api/bots/play + drive the game websocket with a bun
   script) is proven - reuse it; keep probe games at 0 moves where possible (they never
   persist) and resign them.
@@ -63,7 +62,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
 - NEVER restore `...GENERATED_PUZZLES` into `PUZZLES` (that third stale set stays dead).
 - NEVER touch the two auntie stashes or the desktop phase0a stash.
 - NEVER deploy anything but a clean `git archive` of a committed sha:
-  `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
+  follow `ops-private/wallgame-vps-production-20261005.md` with explicit deployment approval.
 - NEVER restart `wallgame-dev-5174` while Nil is mid-game; own dev on port 5175.
 - NEVER add wrong-move detection, correctness checks, or automated puzzle-quality
   gating.
@@ -71,7 +70,7 @@ fix forward before the next slice. While waiting on the reviewer, end the turn w
   `bash ~/run_transformer_bot.sh` in tmux, then verify BOTH the attach log line AND that
   `/api/bots?variant=custom-setup-standard` lists dw-puzzle.
 - Migrations ARE allowed this loop (G1 needs one). Extra care: migrations run
-  automatically on deploy via fly release_command; review the generated SQL before
+  under the approved VPS migration procedure; review the generated SQL before
   deploying, additive-only (no drops/renames of existing columns).
 - NEVER weaken a gate to pass; fix in-slice or park the decision for Nil.
 - Stop conditions: 3 consecutive gate failures on one slice → stop and summarize; any
@@ -264,6 +263,11 @@ drop+reattach exercise now, and the desktop restart needs no gap.
   variant; 6x6/18 walls/3-6 races unchanged.
 
 ## SLICE-G1 PICKUP (authored after S-H shipped at 3ea372e)
+
+> Historical procedure, obsolete since 2026-10-05. Keep this completed work
+> record for context; do not run its commands. For current operations, read
+> `ops-private/wallgame-vps-deploy.md` and the production runbook it links.
+> Each deployment or production data change needs Nil's explicit approval.
 
 What S-H taught: (1) verify domain-level assumptions empirically before building on
 them — the "races" the generator constrained were the wrong pairs entirely, and the

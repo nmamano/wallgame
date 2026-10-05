@@ -35,14 +35,10 @@
       "Bash(xargs:*)",
       "Bash(magick:*)",
       "Bash(fc-list:*)",
-      "Bash(fly version:*)",
       "Bash(./bayeselo)",
       "Bash(du -sh:*)",
       "Bash(ls:*)",
-      "Bash(sort:*)",
-      "WebFetch(domain:api.fly.io)",
-      "WebFetch(domain:api.machines.dev)",
-      "WebFetch(domain:flyctl-metrics.fly.dev)"
+      "Bash(sort:*)"
     ]
   },
   "outputStyle": "Explanatory"

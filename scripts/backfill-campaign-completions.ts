@@ -1,10 +1,13 @@
 /**
  * Copies the legacy `campaign_progress` rows into
- * `campaign_level_completions` (S-CAMP). Runs INSIDE the deployed Fly machine
- * (which has DATABASE_URL); it is NOT part of release_command — data moves
+ * `campaign_level_completions` (S-CAMP). Runs INSIDE the production app container
+ * (which has DATABASE_URL); it is NOT part of schema migrations — data moves
  * are a deliberate manual step run right after the migration deploy:
  *
- *   fly ssh console -a wallgame -C "bun scripts/backfill-campaign-completions.ts"
+ * Follow ops-private/wallgame-vps-production-20261005.md for access.
+ * Production writes require explicit approval. Inside the app container:
+ *
+ *   bun scripts/backfill-campaign-completions.ts
  *
  * This preserves progress that is ALREADY authoritative server-side; it does
  * not infer historical completions from anything. Until it has run and been

@@ -2,7 +2,7 @@
 
 A **non-official** custom bot serving the classic-Wallwars minimax engine in two
 fixed board sizes — **8×8 @ 3s/move** and **6×6 @ 1.5s/move**. It runs from this
-box (auntie) and connects out to `wallgame.fly.dev`; no server deploy is needed.
+box (auntie) and connects out to `wallgame.io`; no server deploy is needed.
 
 ## 1. Build the engine (once, and after any engine change)
 

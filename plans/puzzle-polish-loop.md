@@ -58,8 +58,7 @@ real wake signal.
 - NOT gates: `bun run ci` (cannot pass on auntie).
 - Production evidence: fresh curl reads of prod APIs, desktop bot log
   (`~/logs/bot-client-transformer.log`), DB reads/writes via
-  `~/.fly/bin/fly ssh console -a wallgame` (base64-encode a bun script, run inside
-  the machine), preview-url screenshots as artifacts only. Probe harness from loops
+  the private VPS runbook (`ops-private/wallgame-vps-production-20261005.md`), preview-url screenshots as artifacts only. Probe harness from loops
   1-2 (POST /api/bots/play + drive the game websocket with a bun script) is proven —
   reuse it; probe games 0 moves where possible and resign them.
 
@@ -68,13 +67,13 @@ real wake signal.
 - NEVER `pkill -f` / `killall` on any box; exact PIDs only.
 - NEVER scp SOURCE to the desktop; source moves by git (test DATA files are fine).
 - NEVER deploy anything but a clean `git archive` of a committed sha:
-  `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
+  follow `ops-private/wallgame-vps-production-20261005.md` with explicit deployment approval.
 - NEVER restart `wallgame-dev-5174` while Nil is mid-game; own dev on port 5175.
 - NEVER add wrong-move detection, correctness checks, or automated puzzle-quality
   gating. Nil is the filter.
 - ELO paths untouched.
 - No migrations expected this loop; if one becomes necessary: additive-only, review
-  the generated SQL pre-deploy, seeding never in release_command.
+  the generated SQL pre-deploy, seeding is separate from schema migrations.
 - Prod data changes only when Nil explicitly ordered them (retiring 1 and 6 is
   ordered); anything ambiguous about production data → ask Nil.
 - Batch engine evaluation ONLY via the sequential offline ssh driver
@@ -347,6 +346,11 @@ immediately after deploy/migrate (fail-closed makes the gap safe). Prod
 verification adds RETRY of a P2 puzzle to launch/takeback checks.
 
 ## SLICE S-COPY PICKUP (authored at loop-3 setup)
+
+> Historical procedure, obsolete since 2026-10-05. Keep this completed work
+> record for context; do not run its commands. For current operations, read
+> `ops-private/wallgame-vps-deploy.md` and the production runbook it links.
+> Each deployment or production data change needs Nil's explicit approval.
 
 - Baseline: c59667d (docs-only ahead of prod bacc0ce; this slice's deploy carries
   both).

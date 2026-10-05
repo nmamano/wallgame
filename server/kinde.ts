@@ -4,11 +4,11 @@
 
 Allowed callback URLs:
 http://localhost:5173/api/callback (the vite proxy)
-https://wallgame.fly.dev/api/callback
+https://wallgame.io/api/callback
 
 Allowed logout redirect URLs:
 http://localhost:5173 (the vite proxy)
-https://wallgame.fly.dev
+https://wallgame.io
 
 Setting on .env:
 

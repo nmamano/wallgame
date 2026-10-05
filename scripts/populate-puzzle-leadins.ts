@@ -1,10 +1,13 @@
 /**
  * Populates saved_puzzles.lead_in for every human-as-P2 row (S-P1). Runs
- * INSIDE the deployed Fly machine (which has DATABASE_URL); it is NOT part
- * of release_command — population is a deliberate manual step run right
+ * INSIDE the production app container (which has DATABASE_URL); it is NOT part
+ * of schema migrations — population is a deliberate manual step run right
  * after the migration deploy:
  *
- *   fly ssh console -a wallgame -C "bun scripts/populate-puzzle-leadins.ts"
+ * Follow ops-private/wallgame-vps-production-20261005.md for access.
+ * Production writes require explicit approval. Inside the app container:
+ *
+ *   bun scripts/populate-puzzle-leadins.ts
  *
  * Covers ALL rows including disabled ones (re-enabling a puzzle later must
  * never resurrect un-populated behavior). Fail-closed: every row is parsed

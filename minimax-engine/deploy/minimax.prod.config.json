@@ -1,5 +1,5 @@
 {
-  "server": "https://wallgame.fly.dev",
+  "server": "https://wallgame.io",
   "bots": [
     {
       "botId": "minimax-classic-8x8",

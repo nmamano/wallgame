@@ -9,7 +9,7 @@ This documents the setup for running the Deep Wallwars bot client as a permanent
 
 ## What's Running
 
-A systemd service (`wallgame-bot`) runs the official bot client, which connects to the production server at `https://wallgame.fly.dev` and spawns Deep Wallwars BGS engine processes for each bot.
+A systemd service (`wallgame-bot`) runs the official bot client, which connects to the production server at `https://wallgame.io` and spawns Deep Wallwars BGS engine processes for each bot.
 
 ### Bots
 

@@ -157,7 +157,7 @@ export class GameClient {
       // schedule restarts at its shortest delay.
       this.reconnectAttempt = 0;
       this.handlers.onTransportState?.("open");
-      // Start ping interval to keep connection alive (Fly.io has ~60s idle timeout)
+      // Start ping interval to keep the connection alive through idle timeouts
       this.pingInterval = window.setInterval(() => {
         if (this.socket?.readyState === WebSocket.OPEN) {
           this.socket.send(JSON.stringify({ type: "ping" }));

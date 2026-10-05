@@ -299,7 +299,8 @@ See `/info/` for detailed design docs including:
 
 ## Deployment
 
-- **Platform:** Fly.io. Live site: https://wallgame.io (use that in links, not wallgame.fly.dev)
-- **Database:** Neon PostgreSQL
-- **Config:** `fly.toml`, `Dockerfile`
-- **Migrations:** Auto-run via `release_command` in fly.toml
+- **Platform:** VPS with Docker and Caddy. Live site: https://wallgame.io
+- **Database:** PostgreSQL
+- **Config:** `Dockerfile`; runtime configuration is in the private VPS runbook
+- **Operations:** Read `ops-private/wallgame-vps-production-20261005.md` before deployment or database work. Run `bun run migrate` only against the approved target.
+- **Rollback only:** `ops-private/OBSOLETE-fly-neon-rollback/README.md`

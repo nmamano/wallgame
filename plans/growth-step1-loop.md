@@ -91,7 +91,7 @@ that specifically on 2026-08-05.
 
 Prohibitions, verbatim from the Phase-1 agreement with Nil (2026-08-05):
 
-1. **Never push to origin. Never deploy to Fly. Never run a migration against the
+1. **Never push to origin. Never deploy to production. Never run a migration against the
    production database.** Commits land on local `main`; deploying is Nil's call.
 2. **Never `git add` anything under `ops-private/`, and never `git add -f`.** The repo
    is public; that directory names private hosts and secret paths.
@@ -490,7 +490,7 @@ plan.
   the SERVER resolved, "which is what makes completion tracking unforgeable". Say so in
   a comment, and never let this id gate anything.
 - **Never run a migration against production.** Rail 1. `bun run migrate` targets
-  whatever `DATABASE_URL` points at; fly runs migrations itself via `release_command`.
+  whatever `DATABASE_URL` points at; production migrations follow the private VPS runbook.
 - **`localStorage` key convention is `wall-game-*`** - the existing keys are
   `wall-game-theme` and `wall-game-sound-enabled`. Match it.
 - **Rate limiting already exists** for anonymous writes

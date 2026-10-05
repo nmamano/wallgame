@@ -55,7 +55,7 @@ const ALLOWED_ORIGIN = "http://localhost:5173";
 
 /**
  * An origin that is NOT on the allowlist. Chosen to look like the real thing:
- * production allows exactly `https://wallgame.io` and `https://wallgame.fly.dev`,
+ * production defaults to `https://wallgame.io`,
  * so any other host serving the same SPA is refused the socket while the
  * game-creating POST, which has no origin check at all, succeeds.
  */

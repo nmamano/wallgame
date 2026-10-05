@@ -48,42 +48,20 @@ This can be used to:
 
 - Verify the Docker build works
 - Test the containerized app matches production
-- Debug Docker-specific issues (if `fly deploy` fails, build locally to see errors faster)
+- Debug Docker-specific issues (if an image build fails, build locally to see errors faster)
 - If you want to run it in a container instead of `bun run dev`
 
-## Fly.io deployment
+## Deployment and database
 
-Deployment dashboard: https://fly.io/apps/wallgame
+Production runs on a VPS with Docker, Caddy and PostgreSQL. The live site is
+https://wallgame.io. Operators must read the private
+`ops-private/wallgame-vps-production-20261005.md` runbook before deployment or
+database work. Deploys and production writes require explicit approval.
 
-The app is deployed on fly.io at https://wallgame.fly.dev
-
-To deploy a new version:
-
-```sh
-fly deploy
-```
-
-This builds the Docker image automatically.
-Migrations run automatically on deploy via `release_command = "bun run migrate"` in `fly.toml`.
-
-Upload secrets to fly (you need to redeploy after updating the secrets):
-
-```sh
-fly secrets import < .env.prod
-fly deploy
-```
-
-The app was initialized with:
-
-```sh
-fly launch
-```
-
-## Neon database
-
-For now, dev and prod use the same database.
-
-Database dashboard: https://console.neon.tech/app/projects/delicate-rice-01864210
+Use a separate local database for development and tests. `bun run migrate` applies
+migrations to the database selected by `DATABASE_URL`; check the target first.
+Previous platform procedures are kept only in
+`ops-private/OBSOLETE-fly-neon-rollback/`.
 
 ### Verify the database schema
 
@@ -123,8 +101,8 @@ It is configured in .env and .env.prod. The difference is in the URLs.
 
 Allowed callback URLs:
 http://localhost:5173/api/callback
-https://wallgame.fly.dev/api/callback
+https://wallgame.io/api/callback
 
 Allowed logout redirect URLs:
 http://localhost:5173
-https://wallgame.fly.dev
+https://wallgame.io

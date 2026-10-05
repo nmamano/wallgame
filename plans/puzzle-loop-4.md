@@ -80,8 +80,7 @@ via isomux scheduled self-message; the reply is the real wake signal.
   needs Docker).
 - Production evidence: fresh curl reads of prod APIs, desktop bot log
   (`~/logs/bot-client-transformer.log`), DB reads/writes via
-  `~/.fly/bin/fly ssh console -a wallgame` (base64-encode a bun script, run it inside
-  the machine), preview-url screenshots as artifacts only. Probe harness from loops 1-3
+  the private VPS runbook (`ops-private/wallgame-vps-production-20261005.md`), preview-url screenshots as artifacts only. Probe harness from loops 1-3
   (POST /api/bots/play + drive the game websocket with a bun script) is proven — reuse
   it.
 
@@ -90,7 +89,7 @@ via isomux scheduled self-message; the reply is the real wake signal.
 - NEVER `pkill -f` / `killall` on any box; exact PIDs only.
 - NEVER scp SOURCE to the desktop; source moves by git (test DATA files are fine).
 - NEVER deploy anything but a clean `git archive` of a committed sha:
-  `rm -rf /tmp/wg-deploy && mkdir -p /tmp/wg-deploy && git archive <sha> | tar -x -C /tmp/wg-deploy && cd /tmp/wg-deploy && ~/.fly/bin/fly deploy --remote-only`
+  follow `ops-private/wallgame-vps-production-20261005.md` with explicit deployment approval.
 - After ANY bot restart or deploy-adjacent change: a full ROUND-TRIP probe (launch a
   puzzle by puzzleId, survive >5s, play a move, bot REPLIES, resign). Attach log lines,
   `/api/bots` listings and 0-move probes are all blind to a dead engine.
@@ -102,7 +101,7 @@ via isomux scheduled self-message; the reply is the real wake signal.
 - ELO paths untouched; puzzle games stay unrated.
 - NEVER add wrong-move detection, correctness checks, or automated quality gating.
 - Migrations: ADDITIVE ONLY. Review the generated SQL (`bun x drizzle-kit generate`)
-  before deploy; migrations auto-run via fly `release_command`. Seeding and data
+  before deploy; follow the VPS runbook for migrations. Seeding and data
   backfills are MANUAL in-machine scripts, fail-closed with exact-set preflights and
   read-back assertions (`scripts/populate-puzzle-leadins.ts`, `renumber-puzzles.ts`,
   `retire-puzzles.ts` are the proven pattern).
@@ -394,6 +393,11 @@ WHAT S-ID TAUGHT:
       virtual-time-budget=6000, screenshot=PATH, then the url.
 
 ## SLICE S-G4 PICKUP (authored after S-G3 shipped at 1820993)
+
+> Historical procedure, obsolete since 2026-10-05. Keep this completed work
+> record for context; do not run its commands. For current operations, read
+> `ops-private/wallgame-vps-deploy.md` and the production runbook it links.
+> Each deployment or production data change needs Nil's explicit approval.
 
 WHAT S-G3 TAUGHT:
 

@@ -2,7 +2,7 @@
  * www.wallgame.io is redirected to the apex before any route runs.
  *
  * www served the whole app, but the game socket's origin allowlist holds only
- * the apex and wallgame.fly.dev, so a visitor arriving there got a bot game
+ * the apex, so a visitor arriving there got a bot game
  * over HTTP and was then refused the socket - a board that never moves. One
  * canonical host beats a wider allowlist: there is no second origin to keep in
  * sync, and no second copy of every page for crawlers.
@@ -15,8 +15,7 @@ const REDIRECTED_HOST = "www.wallgame.io";
 
 /**
  * The host comes from c.req.url, which Bun builds from the Host header, read
- * the way routes/auth.ts reads a request URL. Not X-Forwarded-Host: Fly does
- * not set it and a client can.
+ * the way routes/auth.ts reads a request URL. A client can supply X-Forwarded-Host, so it is not used here.
  *
  * `===` on the parsed hostname, never a substring test - includes/startsWith/
  * endsWith would each redirect www.wallgame.io.evil.example, an open redirect

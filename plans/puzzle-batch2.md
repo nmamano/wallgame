@@ -243,6 +243,11 @@ Cross-run reproducibility (census vs filter run, different scripts and sessions)
 
 ### Retirement (production data, after diff sign-off and deploy)
 
+> Historical procedure, obsolete since 2026-10-05. Keep this completed work
+> record for context; do not run its commands. For current operations, read
+> `ops-private/wallgame-vps-deploy.md` and the production runbook it links.
+> Each deployment or production data change needs Nil's explicit approval.
+
 ONE invocation with all six CURRENT names — names shift as survivors renumber, so six
 sequential runs would resolve later names against an already-changed numbering:
 

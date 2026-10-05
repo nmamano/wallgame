@@ -8,10 +8,13 @@
  * a display name is presentation: identity is the row id, and seed matching
  * is by sourceFingerprint. See `generatedPuzzleDisplayName`.
  *
- * Runs INSIDE the deployed Fly machine (which has DATABASE_URL); it is NOT
- * part of release_command — a data rename is a deliberate manual step:
+ * Runs INSIDE the production app container (which has DATABASE_URL); it is NOT
+ * part of schema migrations — a data rename is a deliberate manual step:
  *
- *   fly ssh console -a wallgame -C "bun scripts/rename-generated-puzzles.ts"
+ * Follow ops-private/wallgame-vps-production-20261005.md for access.
+ * Production writes require explicit approval. Inside the app container:
+ *
+ *   bun scripts/rename-generated-puzzles.ts
  *
  * Fail-closed. The whole-table invariants (exact total, exact disabled set
  * by id AND name) are checked FIRST, before either the already-renamed exit
