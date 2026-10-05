@@ -72,22 +72,56 @@ describe("anonymous write limiter", () => {
 });
 
 describe("client ip key", () => {
-  it("prefers the header Fly sets itself", () => {
+  it("uses only the address set by Caddy", () => {
     const headers = new Headers({
       "fly-client-ip": "203.0.113.7",
-      "x-forwarded-for": "198.51.100.9, 203.0.113.7",
-    });
-    expect(clientIpKey(headers)).toBe("203.0.113.7");
-  });
-
-  it("falls back to the first forwarded address off Fly", () => {
-    const headers = new Headers({
-      "x-forwarded-for": "198.51.100.9, 203.0.113.7",
+      "x-forwarded-for": "198.51.100.9",
     });
     expect(clientIpKey(headers)).toBe("198.51.100.9");
   });
 
-  it("buckets an unidentifiable caller rather than exempting it", () => {
-    expect(clientIpKey(new Headers())).toBe("unknown");
+  it("keeps rotated spoof headers in one bucket after Caddy", () => {
+    const limiter = createAnonymousWriteLimiter({
+      limit: 1,
+      windowMs: 60_000,
+      maxKeys: 10,
+    });
+    // Local Caddy 2.11.7 observation, 2026-10-05: requests with rotating
+    // Fly-Client-IP and X-Forwarded-For values arrived with Fly-Client-IP
+    // unchanged, but X-Forwarded-For replaced by the connection address.
+    const allowed = [1, 2, 3].map((n) => {
+      const upstreamHeaders = new Headers({
+        "fly-client-ip": `203.0.113.${n}`,
+        "x-forwarded-for": "127.0.0.1",
+      });
+      return limiter.tryConsume(clientIpKey(upstreamHeaders), 0);
+    });
+    expect(allowed).toEqual([true, false, false]);
+  });
+
+  it("shares one bucket for missing or blank addresses, even with Fly headers", () => {
+    const limiter = createAnonymousWriteLimiter({
+      limit: 1,
+      windowMs: 60_000,
+      maxKeys: 10,
+    });
+    const headers = [
+      new Headers(),
+      new Headers({ "fly-client-ip": "203.0.113.1" }),
+      new Headers({ "x-forwarded-for": "" }),
+      new Headers({ "x-forwarded-for": "   ", "fly-client-ip": "203.0.113.2" }),
+    ];
+    expect(headers.map(clientIpKey)).toEqual([
+      "unknown",
+      "unknown",
+      "unknown",
+      "unknown",
+    ]);
+    expect(headers.map((h) => limiter.tryConsume(clientIpKey(h), 0))).toEqual([
+      true,
+      false,
+      false,
+      false,
+    ]);
   });
 });

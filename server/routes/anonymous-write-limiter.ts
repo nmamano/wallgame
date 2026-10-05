@@ -68,12 +68,12 @@ export const createAnonymousWriteLimiter = ({
 };
 
 /**
- * Fly terminates TLS and sets `Fly-Client-IP` itself, so it is the trusted
- * source here; `x-forwarded-for` is client-settable and only used as a
- * development fallback. An unknown source shares one bucket rather than
- * bypassing the limit.
+ * Caddy replaces X-Forwarded-For with the connection address. The app must
+ * remain reachable only through Caddy, with no trusted upstream proxies.
+ * Fly-Client-IP passes through unchanged and must never select a bucket.
+ * Missing or blank addresses share one bucket rather than bypassing the limit.
  */
-export const clientIpKey = (headers: Headers): string =>
-  headers.get("fly-client-ip") ??
-  headers.get("x-forwarded-for")?.split(",")[0]?.trim() ??
-  "unknown";
+export const clientIpKey = (headers: Headers): string => {
+  const address = headers.get("x-forwarded-for")?.trim() ?? "";
+  return address.length > 0 ? address : "unknown";
+};
