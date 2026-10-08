@@ -25,7 +25,7 @@ function Index() {
   return (
     <div className="bg-background">
       <div className="container mx-auto px-4 py-4 md:py-8 lg:py-12">
-        <div className="grid xl:grid-cols-2 gap-6 lg:gap-12 xl:gap-16 items-start">
+        <div className="grid grid-cols-1 xl:grid-cols-2 gap-6 lg:gap-12 xl:gap-16 items-start">
           {/* Left Column */}
           <div className="space-y-6 lg:space-y-20">
             {/* Single-player Fun */}
@@ -37,23 +37,6 @@ function Index() {
               </div>
 
               <div className="grid grid-cols-2 gap-3 sm:gap-6 max-w-2xl mx-auto">
-                <Link to="/puzzles" className="group min-w-0">
-                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
-                    <CardHeader className="flex items-center sm:flex-col sm:items-start sm:gap-1.5 px-3 py-1 sm:p-6">
-                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
-                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
-                          <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
-                        </div>
-                        Puzzles
-                      </CardTitle>
-                      <CardDescription className="hidden sm:block">
-                        Test your tactical prowess with mind-bending positional
-                        challenges.
-                      </CardDescription>
-                    </CardHeader>
-                  </Card>
-                </Link>
-
                 <Link
                   to="/play"
                   onClick={() => {
@@ -73,6 +56,23 @@ function Index() {
                       </CardTitle>
                       <CardDescription className="hidden sm:block">
                         Challenge our AI opponent from easy to hard difficulty.
+                      </CardDescription>
+                    </CardHeader>
+                  </Card>
+                </Link>
+
+                <Link to="/puzzles" className="group min-w-0">
+                  <Card className="h-full border-2 border-border bg-card transition-all duration-300 hover:border-primary hover:shadow-lg hover:-translate-y-1 hover:shadow-[0_0_30px_rgba(217,153,74,0.3)] dark:hover:shadow-[0_0_30px_rgba(217,153,74,0.2)] py-2 sm:py-6">
+                    <CardHeader className="flex items-center sm:flex-col sm:items-start sm:gap-1.5 px-3 py-1 sm:p-6">
+                      <CardTitle className="flex items-center gap-2 sm:gap-3 font-serif text-base sm:text-xl text-card-foreground">
+                        <div className="w-8 h-8 sm:w-10 sm:h-10 rounded-lg bg-primary/20 flex items-center justify-center group-hover:bg-primary/30 transition-colors flex-shrink-0">
+                          <Brain className="h-4 w-4 sm:h-5 sm:w-5 text-primary" />
+                        </div>
+                        Puzzles
+                      </CardTitle>
+                      <CardDescription className="hidden sm:block">
+                        Test your tactical prowess with mind-bending positional
+                        challenges.
                       </CardDescription>
                     </CardHeader>
                   </Card>
