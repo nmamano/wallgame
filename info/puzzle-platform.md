@@ -76,17 +76,12 @@ ownership is structurally unrepresentable - the wire schema is `.strict()` with 
 | Official bots | **4090 desktop**, `ssh nilo@desktop-053vvpl-1` | tmux session `bot-client` |
 | Bot supervisor | `~/run_transformer_bot.sh` on the desktop | restarts the client on crash |
 | Bot logs | `~/logs/bot-client-transformer.log` on the desktop | NOT the tmux pane |
-| Nil's playtest server | auntie, systemd --user `wallgame-dev-5174` | http://100.99.200.16:5174 |
 
-**There is no backend on auntie.** Nothing listens on `:3000`, there is no `.env` and no
-local Postgres, and the vite dev server proxies `/api` and `/ws` to a dead port. So the
-5174 server renders pages but every API call fails - you cannot play a game locally
-without standing up Postgres + server + a bot client pointed at it. **Testing puzzles
-means deploying to production.**
-
-`wallgame-dev-5174` runs vite with `WorkingDirectory=frontend/`, so it serves **stale**
-transforms of `shared/**` until restarted. If you change anything under `shared/`, restart
-that unit or you will debug ghosts. If Nil is mid-game on it, wait and ask.
+**There is no playtest server and no backend on the office box (auntie-2).** The old
+`wallgame-dev-5174` unit on auntie was already gone by 2026-08-09, and auntie itself was
+deleted on 2026-10-18. On auntie-2 (checked 2026-10-18) nothing listens on `:3000`,
+`:5173` or `:5174`, and there is no `.env`. You cannot play a game locally without
+standing up Postgres + server + a bot client pointed at it.
 
 ### Driving the real app in a browser (S-BATCH1, 2026-07-29)
 
@@ -94,7 +89,7 @@ that unit or you will debug ghosts. If Nil is mid-game on it, wait and ask.
 frontend (`frontend/dist`) with a stubbed API and drives real headless Chrome over the
 DevTools protocol, so questions like "do cards arrive in waves", "does the nav bar fit at
 1024px", or "does navigating back re-read progress" get measured instead of reasoned
-about. Chrome is installed on auntie. See its README - it is a diagnostic tool, not a
+about. Chrome is installed on auntie-2. See its README - it is a diagnostic tool, not a
 test suite, and no gate runs it.
 
 The lesson it exists to enforce: **an experiment proves nothing unless you can name what
