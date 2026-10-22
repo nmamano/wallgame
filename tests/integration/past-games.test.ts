@@ -728,9 +728,8 @@ describe("past games activity", () => {
     // belongs to different calendar days depending on who is looking.
     // The day is relative to now so it stays inside the activity window; only
     // the date moves, the UTC times of day (and so the shifts) stay fixed.
-    const utcDate = (ms: number) => new Date(ms).toISOString().slice(0, 10);
-    const utcDayMs = Math.floor(Date.now() / DAY_MS) * DAY_MS - 10 * DAY_MS;
-    const utcDay = utcDate(utcDayMs);
+    const utcDayMs = expectedWindow().todayMidnight - 10 * DAY_MS;
+    const utcDay = dayKey(utcDayMs);
     const instant = Date.parse(`${utcDay}T02:00:00Z`);
     await seedGameStartedAt(rapid6x6("standard"), instant);
 
@@ -746,14 +745,14 @@ describe("past games activity", () => {
     expect(await read("UTC")).toEqual([{ date: utcDay, count: 1 }]);
     // Same game, same row, one day earlier for a reader in Los Angeles.
     expect(await read("America/Los_Angeles")).toEqual([
-      { date: utcDate(utcDayMs - DAY_MS), count: 1 },
+      { date: dayKey(utcDayMs - DAY_MS), count: 1 },
     ]);
     // And a day later for one in Tokyo, from a late-morning UTC instant.
     const tokyoInstant = Date.parse(`${utcDay}T23:00:00Z`);
     await seedGameStartedAt(rapid6x6("standard"), tokyoInstant);
     const tokyo = await read("Asia/Tokyo");
     expect(tokyo).toContainEqual({
-      date: utcDate(utcDayMs + DAY_MS),
+      date: dayKey(utcDayMs + DAY_MS),
       count: 1,
     });
   });

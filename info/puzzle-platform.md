@@ -77,9 +77,9 @@ ownership is structurally unrepresentable - the wire schema is `.strict()` with 
 | Bot supervisor | `~/run_transformer_bot.sh` on the desktop | restarts the client on crash |
 | Bot logs | `~/logs/bot-client-transformer.log` on the desktop | NOT the tmux pane |
 
-**There is no playtest server and no backend on the office box (auntie-2).** The old
+**There is no playtest server and no backend on the office box.** The old
 `wallgame-dev-5174` unit on auntie was already gone by 2026-08-09, and auntie itself was
-deleted on 2026-10-18. On auntie-2 (checked 2026-10-18) nothing listens on `:3000`,
+deleted on 2026-10-18. On the office box (checked 2026-10-18) nothing listens on `:3000`,
 `:5173` or `:5174`, and there is no `.env`. You cannot play a game locally without
 standing up Postgres + server + a bot client pointed at it.
 
@@ -89,7 +89,7 @@ standing up Postgres + server + a bot client pointed at it.
 frontend (`frontend/dist`) with a stubbed API and drives real headless Chrome over the
 DevTools protocol, so questions like "do cards arrive in waves", "does the nav bar fit at
 1024px", or "does navigating back re-read progress" get measured instead of reasoned
-about. Chrome is installed on auntie-2. See its README - it is a diagnostic tool, not a
+about. Chrome is installed on the office box. See its README - it is a diagnostic tool, not a
 test suite, and no gate runs it.
 
 The lesson it exists to enforce: **an experiment proves nothing unless you can name what
