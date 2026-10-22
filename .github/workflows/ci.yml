@@ -31,7 +31,7 @@ jobs:
 
       - uses: oven-sh/setup-bun@v2
         with:
-          bun-version: 1.3.11
+          bun-version: 1.4.4
 
       # tests/integration/bot-5-minimax-engine.test.ts compiles
       # minimax_bgs_engine, and minimax-engine/CMakeLists.txt requires the
