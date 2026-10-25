@@ -50,9 +50,9 @@ export const CANONICAL_PATHS = [
 
 const PAGE_META: Record<(typeof CANONICAL_PATHS)[number], PageMeta> = {
   "/": {
-    title: "Wall Game - free online strategy board game",
+    title: "Wall Game - free online walls game",
     description:
-      "Build walls to trap your opponent and hunt down their mouse. Play free in your browser against a friend, a stranger, or bots with different styles and strengths.",
+      "A free online walls game: build walls to trap your opponent and hunt down their mouse. Play in your browser against a friend, a stranger, or bots.",
   },
   "/play": {
     title: "Play Wall Game online - free, no account needed",
