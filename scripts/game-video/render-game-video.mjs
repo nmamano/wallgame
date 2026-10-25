@@ -48,12 +48,16 @@
  * saw --win-gain would reasonably assume otherwise. Change the constant if the
  * sound is wrong, and expect to justify it to the person who tuned it.
  *
- * Needs: playwright-core with Chrome (no browser download), and ffmpeg.
+ * Needs: playwright-core with Playwright's Chromium (or Chrome, with
+ * --browser chrome), and ffmpeg. The wallz caption also needs the TikTok Sans
+ * and Noto Color Emoji fonts. Renders run on the 4090 (Nil, 2026-10-25): see
+ * sync-render-kit.sh, which sets that box up.
  */
 import { chromium } from "playwright-core";
 import {
   mkdirSync,
   writeFileSync,
+  appendFileSync,
   readFileSync,
   existsSync,
   readdirSync,
@@ -64,6 +68,7 @@ import {
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { execFileSync } from "node:child_process";
+import { createHash } from "node:crypto";
 import { fileURLToPath } from "node:url";
 import {
   assertCompleteCapture,
@@ -79,21 +84,76 @@ const REPO = resolve(HERE, "../..");
 /* ------------------------------------------------------------------ args -- */
 
 const argv = process.argv.slice(2);
-const arg = (name, fallback) => {
+const cliArg = (name) => {
   const i = argv.indexOf(`--${name}`);
-  return i === -1 ? fallback : argv[i + 1];
+  return i === -1 ? undefined : argv[i + 1];
 };
+
+/**
+ * A render job written by the daily-video dashboard (task e8d26610 step 3).
+ *
+ * The dashboard hands the caption and the names over in a FILE, not on a
+ * command line, because both are untrusted text and a shell must never parse
+ * them. The file fills the same options the flags do; a flag on the command
+ * line wins over the file.
+ *
+ *   {"jobId": "...", "gameId": "...", "caption": "...", "style": "wallz",
+ *    "aspect": "9x16", "swings": [{"ply": 23, ...}]}
+ */
+const JOB = cliArg("job")
+  ? JSON.parse(readFileSync(resolve(cliArg("job")), "utf8"))
+  : null;
+const fromJob = {
+  game: JOB?.gameId,
+  caption: JOB?.caption,
+  style: JOB?.style,
+  aspect: JOB?.aspect,
+  "swing-plies": JOB?.swings?.map((s) => s.ply).join(","),
+};
+const arg = (name, fallback) => cliArg(name) ?? fromJob[name] ?? fallback;
 const flag = (name) => argv.includes(`--${name}`);
+
+/**
+ * With --log, every progress line goes to that file and stdout carries only
+ * the RESULT lines. The dashboard reads this box over ssh, and ssh to the 4090
+ * stalls above about 1 KB of output.
+ */
+const LOG_FILE = cliArg("log") ? resolve(cliArg("log")) : null;
+if (LOG_FILE) {
+  mkdirSync(dirname(LOG_FILE), { recursive: true });
+  const toFile =
+    (prefix = "") =>
+    (...m) =>
+      appendFileSync(LOG_FILE, prefix + m.map(String).join(" ") + "\n");
+  console.log = toFile();
+  const errorToFile = toFile("ERROR ");
+  console.error = (...m) => {
+    errorToFile(...m);
+    process.stderr.write(String(m[0]).slice(0, 300) + "\n");
+  };
+  const die = (err) => {
+    errorToFile(err?.stack ?? err);
+    process.stderr.write(
+      `render failed: ${String(err?.message ?? err).slice(0, 300)}\n`,
+    );
+    process.exit(1);
+  };
+  process.on("uncaughtException", die);
+  process.on("unhandledRejection", die);
+}
 
 const rawGame = arg("game");
 if (!rawGame) {
   console.error(
     "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
-      "       [--seconds-per-move 0.8] [--aspect fit|square|9x16]\n" +
+      "       [--style current|wallz|mix[,...]] [--caption TEXT]\n" +
+      "       [--swing-plies 23,41] [--seconds-per-move S]\n" +
+      "       [--aspect fit|square|9x16] (style current only)\n" +
       "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
-      "       [--board-theme crisp|default] [--out FILE]\n" +
+      "       [--sounds swing=fuahhh-2,win=shotgun-1] [--board-theme crisp|default] [--out FILE]\n" +
       "  plumbing, for the app rather than for a person:\n" +
-      "       [--work DIR] [--ffmpeg PATH]",
+      "       [--job FILE] [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
+      "       [--browser chromium|chrome] [--encoder x264|nvenc]",
   );
   process.exit(2);
 }
@@ -105,7 +165,93 @@ const GAME_ID = rawGame
   .at(-1);
 
 const ORIGIN = "https://wallgame.io";
-const SECONDS_PER_MOVE = Number(arg("seconds-per-move", "0.8"));
+
+/**
+ * The looks a render can take. Board task e8d26610 step 2: Nil picks one after
+ * he watches the same game in each.
+ *
+ *   current  the look shipped since 2026-08: VS screen, name plates, a shake
+ *            on the winning capture, a winner card.
+ *   wallz    Nil's reference Short (WallzGame, 2026-10-25): black 9:16 frame,
+ *            one meme caption, the board as wide as the frame, a fast pace, a
+ *            camera punch-in on each swing move, and the winner's colour
+ *            flooding the board at the end. No VS screen, no plates, no card.
+ *   mix      wallz with a short VS screen before the first move.
+ *
+ * ALL OF THEM ARE COMPOSED FROM ONE CAPTURE. `--style current,wallz,mix`
+ * loads the replay page once and writes one mp4 per style, so a comparison
+ * costs the game one view, not three.
+ */
+const STYLES = {
+  current: {
+    look: "current",
+    vsSeconds: 3.8,
+    vsSound: "vsStamp",
+    secondsPerMove: 0.8,
+  },
+  wallz: { look: "wallz", vsSeconds: 0, secondsPerMove: 0.5 },
+  /*
+    The riser needs 1.6 s before its hit, and a 1.8 s VS screen punches at
+    1.0 s, so the short VS gets a sound that hits at its start instead.
+  */
+  mix: {
+    look: "wallz",
+    vsSeconds: 1.8,
+    vsSound: "vsMeme",
+    secondsPerMove: 0.5,
+  },
+};
+const STYLE_NAMES = String(arg("style", "current"))
+  .split(",")
+  .map((s) => s.trim())
+  .filter(Boolean);
+for (const name of STYLE_NAMES) {
+  if (!STYLES[name]) {
+    console.error(
+      `--style ${name} is not known. Known: ${Object.keys(STYLES).join(", ")}`,
+    );
+    process.exit(2);
+  }
+}
+
+/** The meme caption over the board, wallz and mix only. Untrusted text. */
+const CAPTION = arg("caption", "");
+
+/**
+ * The moves that swung the game, as 0-based ply indexes into the move list -
+ * the `ply` field of a Swing in daily-candidates.ts. Each one gets a camera
+ * punch-in and the swing sound, in the wallz and mix looks.
+ */
+const SWING_PLIES = String(arg("swing-plies", ""))
+  .split(",")
+  .filter((s) => s.trim() !== "")
+  .map(Number);
+if (SWING_PLIES.some((p) => !Number.isInteger(p) || p < 0)) {
+  console.error(
+    `--swing-plies takes 0-based ply indexes, got ${arg("swing-plies")}`,
+  );
+  process.exit(2);
+}
+
+/**
+ * Which browser draws the frames. `chromium` is the one Playwright downloads
+ * (`playwright install chromium`), which is all the 4090 render box has;
+ * `chrome` is an installed Google Chrome.
+ */
+const BROWSER = arg("browser", "chromium");
+/** `nvenc` encodes on the GPU (the 4090); `x264` on the CPU, anywhere. */
+const ENCODER = arg("encoder", "x264");
+if (!["chromium", "chrome"].includes(BROWSER)) {
+  console.error(`--browser must be chromium or chrome, got ${BROWSER}`);
+  process.exit(2);
+}
+if (!["x264", "nvenc"].includes(ENCODER)) {
+  console.error(`--encoder must be x264 or nvenc, got ${ENCODER}`);
+  process.exit(2);
+}
+
+/** A flag wins; otherwise each style keeps its own pace. */
+const PACE_OVERRIDE = arg("seconds-per-move");
 /**
  * How the frame is shaped.
  *
@@ -255,6 +401,14 @@ const MUSIC = TRACK
  * ever does - and it is enough to reproduce the same render with --music.
  */
 const OUT = resolve(arg("out", `tmp/game-video/${GAME_ID}.mp4`));
+/**
+ * One style writes OUT itself. Several styles write one file each next to it,
+ * named for the style, so a comparison never overwrites its own outputs.
+ */
+const outFor = (styleName) =>
+  STYLE_NAMES.length === 1
+    ? OUT
+    : OUT.replace(/(\.mp4)?$/, `-${styleName}.mp4`);
 
 const MUSIC_VOLUME = 0.3;
 const SHAKE_GAIN = 0.6;
@@ -266,7 +420,10 @@ const MOVE_GAIN = 1.6;
 const MUSIC_FADE_IN = 1.6;
 const MUSIC_FADE_OUT = 2.0;
 
-if (!Number.isFinite(SECONDS_PER_MOVE) || SECONDS_PER_MOVE <= 0) {
+if (
+  PACE_OVERRIDE !== undefined &&
+  !(Number.isFinite(Number(PACE_OVERRIDE)) && Number(PACE_OVERRIDE) > 0)
+) {
   console.error(
     `--seconds-per-move must be a positive number, got ${arg("seconds-per-move")}`,
   );
@@ -285,11 +442,29 @@ if (!["fit", "square", "9x16"].includes(ASPECT)) {
  * to take in a name, register a result and read a URL, which does not change
  * when the game is played back faster.
  */
-const VS_SECONDS = 3.8;
 const FINAL_HOLD_SECONDS = 1.8;
 const END_SECONDS = 3.0;
 /** How long the shake runs after the winning move, in seconds. */
 const SHAKE_SECONDS = 0.6;
+
+/**
+ * The wallz beats, in seconds.
+ *
+ * A swing move holds longer than a routine one, so the punch-in has time to
+ * land, hold and let go: in for ZOOM_IN, held until ZOOM_HOLD_END, out by
+ * ZOOM_OUT_END, then the board rests at its normal size for the rest of
+ * SWING_SECONDS. ZOOM_SCALE is how far the camera punches in.
+ *
+ * The flood runs FLOOD_SECONDS after the last move lands and then holds the
+ * flooded board for FLOOD_HOLD_SECONDS, which is where the video ends.
+ */
+const SWING_SECONDS = 1.4;
+const ZOOM_IN = 0.12;
+const ZOOM_HOLD_END = 0.85;
+const ZOOM_OUT_END = 1.1;
+const ZOOM_SCALE = 1.5;
+const FLOOD_SECONDS = 1.2;
+const FLOOD_HOLD_SECONDS = 1.3;
 
 /* ------------------------------------------------------------- geometry -- */
 
@@ -387,11 +562,12 @@ log(
 /* ------------------------------------------------------- capture, part 1 -- */
 
 mkdirSync(WORK, { recursive: true });
-for (const f of readdirSync(WORK)) unlinkSync(join(WORK, f));
+for (const f of readdirSync(WORK))
+  rmSync(join(WORK, f), { recursive: true, force: true });
 mkdirSync(dirname(OUT), { recursive: true });
 
 const browser = await chromium.launch({
-  channel: "chrome",
+  ...(BROWSER === "chrome" ? { channel: "chrome" } : {}),
   args: ["--no-sandbox"],
 });
 
@@ -996,21 +1172,241 @@ writeFileSync(
 log(`${boardFrames.length} board positions captured`);
 await game.close();
 
-/* ----------------------------------------------------------- compose it -- */
+/* ----------------------------------------------------------- the sounds -- */
 
-const stage = await browser.newPage({
-  viewport: { width: LAYOUT.width, height: LAYOUT.height },
-  deviceScaleFactor: 1,
-});
-await stage.goto(`file://${join(HERE, "stage.html")}`, { waitUntil: "load" });
-await stage.evaluate((vars) => {
-  for (const [k, v] of Object.entries(vars)) {
-    document.documentElement.style.setProperty(k, v);
+/**
+ * The soundtrack, built from the site's own effects.
+ *
+ * Which sound a ply gets comes from the recorded notation: a term starting
+ * with > or ^ is a wall, anything else is a pawn. A turn can be both, and then
+ * it gets both, once each - a turn that placed two walls does not deserve two
+ * wall clicks on top of each other.
+ *
+ * Nothing here carries the story. The video is built to read with the sound
+ * off, because a feed autoplays muted; the audio is for whoever taps it.
+ */
+const AUDIO_DIR = join(REPO, "frontend/public/audio");
+
+/**
+ * The mix the site itself plays at, from frontend/src/lib/sounds.ts.
+ *
+ * A wall is deliberately quieter than a pawn there, and copying that keeps a
+ * wall-heavy game from turning into a hammering.
+ */
+const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
+
+/**
+ * The meme sounds, for the wallz and mix looks (Nil, 2026-10-25: the trending
+ * ones, the "FUAHHH" and the famous shotgun, as the WallzGame Short does).
+ *
+ * THEY ARE NOT IN THE REPOSITORY. They are other people's clips from public
+ * meme sound sites, and this repository is public; the files live in the
+ * gitignored assets/meme-sounds/, named by the keys below, and the page each
+ * came from is in scripts/game-video/meme-sounds.md. Agents cannot hear, so
+ * there are several candidates per sound and Nil picks by ear.
+ *
+ * `gain` levels every clip to the same loudness, -16 LUFS at its loudest
+ * 400 ms (ffmpeg ebur128 momentary max, measured 2026-10-26), because the
+ * uploads differ by 22 dB: one is boosted until it clips. In the mix that puts
+ * a meme sound about 11 dB over a move click and 6 dB over the old capture
+ * sting, which is the point of it.
+ */
+const MEME_DIR = join(REPO, "assets/meme-sounds");
+const MEME_SOUNDS = {
+  "fuahhh-1": { file: join(MEME_DIR, "fuahhh-1.mp3"), gain: 2.16 },
+  "fuahhh-2": { file: join(MEME_DIR, "fuahhh-2.mp3"), gain: 0.98 },
+  "fuahhh-3": { file: join(MEME_DIR, "fuahhh-3.mp3"), gain: 0.45 },
+  "shotgun-1": { file: join(MEME_DIR, "shotgun-1.mp3"), gain: 0.16 },
+  "shotgun-2": { file: join(MEME_DIR, "shotgun-2.mp3"), gain: 0.7 },
+  "shotgun-3": { file: join(MEME_DIR, "shotgun-3.mp3"), gain: 1.38 },
+  "shotgun-4": { file: join(MEME_DIR, "shotgun-4.mp3"), gain: 0.79 },
+  "win-1": { file: join(MEME_DIR, "win-1.mp3"), gain: 0.35 },
+  "win-2": { file: join(MEME_DIR, "win-2.mp3"), gain: 0.83 },
+};
+const meme = (name) => {
+  const hit = MEME_SOUNDS[name];
+  if (!hit) {
+    console.error(
+      `meme sound ${name} is not known. Known: ${Object.keys(MEME_SOUNDS).join(", ")}`,
+    );
+    process.exit(2);
   }
-}, LAYOUT.vars);
+  return { name, ...hit };
+};
 
-/** Published by stage.html, so the sting can be aligned to the visual punch. */
-const vsPunchFraction = await stage.evaluate(() => window.__VS_PUNCH_FRACTION);
+/**
+ * EVERY SOUND THAT IS NOT THE SITE'S OWN, IN ONE TABLE. Chosen by Nil
+ * 2026-08-19 for the current look; the meme two are candidates until he picks.
+ *
+ * THIS IS THE ONE PLACE TO CHANGE THEM. Swapping any of them is editing one
+ * line below - the placement, the mixing and the encoding do not care which
+ * file is named. A clip that draws a YouTube copyright claim is swapped here.
+ *
+ * Any format ffmpeg can read works. The two sounds Nil bought are .m4a while
+ * everything else here is .wav or .mp3, and NOTHING in this file treats that
+ * differently: ffmpeg decodes by content, and every clip is normalised to the
+ * same sample format inside the mix. There is no extension check to keep in
+ * step with the file list.
+ *
+ *   vsStamp   lands on the VS mark's punch (current)
+ *   vsMeme    lands on the VS mark's punch (mix, whose VS is too short for
+ *             the riser's lead-in)
+ *   shake     lands on the winning capture, under the screen shake (current)
+ *   win       lands with the end card (current)
+ *   swing     lands on each swing move, with the punch-in (wallz and mix)
+ *   flood     lands as the winner's colour floods the board (wallz and mix)
+ */
+const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
+const STING_DIR = join(REPO, "assets/stings");
+const SOUNDS = {
+  vsStamp: {
+    name: "vs-b-riser",
+    file: join(STING_DIR, "vs-b-riser.wav"),
+    gain: 1.0,
+    /*
+      This one is built rather than recorded, so its impact is not at its
+      start. make-stings.mjs publishes where the hit sits and stage.html
+      publishes where the visual punch is; the placement below is derived from
+      both, so retiming either cannot silently pull the sound off the picture.
+    */
+    hitOffsetSeconds: () => stingManifest.vsHitSeconds,
+  },
+  shake: {
+    name: "die-1",
+    file: join(PIXEL_PACK, "die-1.m4a"),
+    gain: SHAKE_GAIN,
+  },
+  win: {
+    name: "level-complete-1",
+    file: join(PIXEL_PACK, "level-complete-1.m4a"),
+    gain: WIN_GAIN,
+  },
+  vsMeme: meme("shotgun-2"),
+  swing: meme("fuahhh-1"),
+  flood: meme("shotgun-1"),
+};
+
+/**
+ * Audition plumbing, so one capture can carry a different candidate per
+ * style: `--sounds swing=fuahhh-2` for every style, or `mix:flood=shotgun-4`
+ * for one. Only the meme slots take a candidate.
+ */
+const soundsFor = (styleName) => {
+  const picked = { ...SOUNDS };
+  for (const entry of String(arg("sounds", "")).split(",").filter(Boolean)) {
+    const m = entry.match(/^(?:([a-z]+):)?(swing|flood|vsMeme)=([\w-]+)$/);
+    if (!m) {
+      console.error(
+        `--sounds entry "${entry}" is not [style:]swing|flood|vsMeme=<candidate>`,
+      );
+      process.exit(2);
+    }
+    if (!m[1] || m[1] === styleName) picked[m[2]] = meme(m[3]);
+  }
+  return picked;
+};
+
+/*
+  The riser is generated, not recorded, and it is deliberately NOT committed:
+  make-stings.mjs is deterministic, so the wav is rebuilt here when it is
+  missing. That keeps the repository free of generated audio without making a
+  fresh checkout render a silent VS screen.
+*/
+if (AUDIO && !existsSync(SOUNDS.vsStamp.file)) {
+  log("riser not built yet; running make-stings.mjs");
+  execFileSync(process.execPath, [join(HERE, "make-stings.mjs")], {
+    stdio: "inherit",
+  });
+}
+
+const stingManifest = existsSync(join(STING_DIR, "stings.json"))
+  ? JSON.parse(readFileSync(join(STING_DIR, "stings.json"), "utf8"))
+  : { vsHitSeconds: 0 };
+
+/**
+ * Mix the cues the composer recorded, and the music under them.
+ *
+ * Every cue carries the second its frame went into the timeline, so a sound
+ * cannot drift off its picture when a beat is retimed or a swing move holds
+ * longer than a routine one.
+ *
+ * The music starts at `musicStart` and its fade COMPLETES at `musicEndAt`, the
+ * moment the last sting arrives. Measured 2026-08-19: with the fade spread
+ * over the end card, the last second of it carried music at -17.5 dB peak
+ * where a no-music build is digital silence - and the bed is three times
+ * louder than when Nil first called the win screen too loud. The riser owns
+ * the VS moment; the last sting should own the end.
+ *
+ * NO DYNAMICS ARE APPLIED TO THE MUSIC. There used to be a sidechain
+ * compressor keyed on the effects, added when the music sat at 0.3 and might
+ * have buried a click. At 0.8s per move with a 320ms release the music never
+ * recovered between moves, so it pumped on every single move for the whole
+ * video - Nil heard it and asked whether he was imagining it. He was not.
+ * MUSIC_VOLUME WAS 0.9 AND IS NOW 0.3, AND THAT IS A RESTORATION RATHER THAN A
+ * RETUNE. Measured 2026-08-20: the compressor had been holding the music down
+ * by 9.45 dB CONTINUOUSLY - not a dip on each hit - so the mix Nil approved
+ * was one where the music was ~9.5 dB below what the constant said.
+ */
+const buildAudio = ({ cues, totalSeconds, musicStart, musicEndAt, work }) => {
+  const present = cues.filter((e) => existsSync(e.file));
+  for (const missing of cues.filter((e) => !existsSync(e.file))) {
+    log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
+  }
+  if (present.length === 0) return null;
+
+  const inputs = present.flatMap((e) => ["-i", e.file]);
+  const chains = present.map(
+    (e, i) =>
+      `[${i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
+      `adelay=${Math.round(Math.max(0, e.at) * 1000)}:all=1,volume=${e.gain}[a${i}]`,
+  );
+  // The effects bus. Everything above lands here.
+  chains.push(
+    present.map((_, i) => `[a${i}]`).join("") +
+      `amix=inputs=${present.length}:normalize=0:dropout_transition=0,` +
+      `apad,atrim=0:${totalSeconds.toFixed(3)}[fx]`,
+  );
+
+  let last = "[fx]";
+  if (MUSIC) {
+    const musicSeconds = totalSeconds - musicStart;
+    const fadeOutAt = Math.max(0, musicEndAt - musicStart - MUSIC_FADE_OUT);
+    inputs.push("-i", MUSIC);
+    const mi = present.length;
+    chains.push(
+      `[${mi}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
+        `atrim=0:${musicSeconds.toFixed(3)},` +
+        `afade=t=in:st=0:d=${MUSIC_FADE_IN},` +
+        `afade=t=out:st=${fadeOutAt.toFixed(3)}:d=${MUSIC_FADE_OUT},` +
+        `volume=${MUSIC_VOLUME},adelay=${Math.round(musicStart * 1000)}:all=1[mus]`,
+    );
+    chains.push(
+      `[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mixed]`,
+    );
+    last = "[mixed]";
+  }
+
+  chains.push(
+    `${last}alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
+  );
+
+  const audioPath = join(work, "track.m4a");
+  ff([
+    ...inputs,
+    "-filter_complex",
+    chains.join(";"),
+    "-map",
+    "[out]",
+    "-c:a",
+    "aac",
+    "-b:a",
+    "160k",
+    audioPath,
+  ]);
+  return audioPath;
+};
+
+/* ----------------------------------------------------------- compose it -- */
 
 const fileUrl = (p) => `file://${resolve(p)}`;
 
@@ -1044,578 +1440,663 @@ const side = (playerId) => {
 };
 
 /**
- * The timeline, with the exact seconds and semantic range for each image.
- * Encoding later converts every duration to an integer 30 fps frame count.
- */
-const timeline = [];
-let shakeGeometryVerdict = "not run (--no-shake)";
-
-/**
- * Measure the composition WITHOUT putting a frame in the video.
+ * Where a cell sits on the captured board image, as fractions of its width
+ * and height.
  *
- * Returns the board's bounding box - which is the geometry under test - and
- * writes the frame so a human can look at it too.
- *
- * The box is read with getBoundingClientRect, which includes every transform
- * on every ancestor. That is what makes it the right instrument: the defect it
- * guards against was a scale on a PARENT of the board, and a rect read catches
- * that exactly, to the sub-pixel, with no threshold to argue about.
+ * The capture clip is the replay page's grid plus PAD on every side, so the
+ * grid spans [pad, 1 - pad]. Rows are counted the way standard notation counts
+ * them (shared/domain/standard-notation.ts): row 1 is the bottom row, and the
+ * replay page draws it at the bottom.
  */
-const probeGeometry = async (state, tag) => {
-  const file = join(WORK, `probe-${tag}.png`);
-  await stage.evaluate((s) => window.__stage(s), state);
-  const rect = await stage.evaluate(() => {
-    const r = document.getElementById("boardWrap").getBoundingClientRect();
-    return { x: r.x, y: r.y, w: r.width, h: r.height };
-  });
-  await stage.screenshot({ path: file });
-  return { rect };
+const GRID = {
+  cols: replay.state.config.boardWidth,
+  rows: replay.state.config.boardHeight,
+  pad: PAD / clip.width,
 };
-
-/**
- * The scale factors currently applied to the composition.
- *
- * This is the property that actually broke: the shake used to scale to 1.045
- * and reset to none, so the board settled 4.5% smaller. Comparing the board
- * box BEFORE and AFTER cannot see that - both are the reset state, so both
- * match and the check passes while the defect ships. The only moment the bug
- * exists is DURING the shake, so that is when this is read.
- *
- * Translation leaves the scale at 1, and so does rotation: for a rotation
- * matrix, sqrt(a^2 + b^2) is 1. Any scale shows up here immediately.
- */
-const shakeScaleFactors = () =>
-  stage.evaluate(() => {
-    const t = getComputedStyle(document.getElementById("play")).transform;
-    if (!t || t === "none") return { x: 1, y: 1 };
-    const n = t.match(/-?[0-9.e+-]+/g)?.map(Number) ?? [];
-    if (n.length < 4) return { x: 1, y: 1 };
-    const [a, b, c, d] = n;
-    return { x: Math.hypot(a, b), y: Math.hypot(c, d) };
-  });
-
-/**
- * How many pixels differ between two written frames, and by how much at worst.
- *
- * The frames are DECODED to raw rgb first. Comparing the png bytes directly is
- * worthless - two identical images compress to different lengths - and the
- * first version of this did exactly that and reported a sentinel instead of a
- * measurement.
- */
-const pixelResidue = (tagA, tagB) => {
-  const raw = (tag) => {
-    const path = join(WORK, `probe-${tag}.raw`);
-    ff([
-      "-i",
-      join(WORK, `probe-${tag}.png`),
-      "-f",
-      "rawvideo",
-      "-pix_fmt",
-      "rgb24",
-      path,
-    ]);
-    return readFileSync(path);
-  };
-  const a = raw(tagA);
-  const b = raw(tagB);
-  if (a.length !== b.length) return { differing: null, maxDelta: null };
-  let differing = 0;
-  let maxDelta = 0;
-  for (let i = 0; i < a.length; i += 3) {
-    const d =
-      Math.abs(a[i] - b[i]) +
-      Math.abs(a[i + 1] - b[i + 1]) +
-      Math.abs(a[i + 2] - b[i + 2]);
-    if (d > 0) {
-      differing += 1;
-      if (d > maxDelta) maxDelta = d;
-    }
-  }
-  return { differing, maxDelta, pixels: a.length / 3 };
-};
-let frameNo = 0;
-const emit = async (state, seconds, meta = {}) => {
-  const file = join(WORK, `f-${String(frameNo++).padStart(5, "0")}.png`);
-  await stage.evaluate((s) => window.__stage(s), state);
-  await stage.screenshot({ path: file });
-  timeline.push({ file, seconds, ...meta });
-};
-
-// --- the VS screen, animated
-const vsFrames = Math.round(VS_SECONDS * FPS);
-for (let i = 0; i < vsFrames; i += 1) {
-  await emit(
-    {
-      segment: "vs",
-      t: i / (vsFrames - 1),
-      a: side(seats.top),
-      b: side(seats.bottom),
-    },
-    1 / FPS,
-    { kind: "vs-transition" },
-  );
-}
-log("vs screen rendered");
-
-// --- the moves
-const playState = (boardIndex, extra = {}) => ({
-  segment: "play",
-  board: fileUrl(boardFrames[boardIndex]),
-  top: side(seats.top),
-  bottom: side(seats.bottom),
-  ...extra,
-});
-await stage.evaluate((state) => window.__stage(state), playState(0));
-const encodedBoardRect = await stage.evaluate(() => {
-  const rect = document.getElementById("boardWrap").getBoundingClientRect();
+const cellAt = ([row, col]) => {
+  const span = 1 - 2 * GRID.pad;
   return {
-    x: Math.round(rect.x),
-    y: Math.round(rect.y),
-    width: Math.round(rect.width),
-    height: Math.round(rect.height),
+    x: GRID.pad + ((col + 0.5) / GRID.cols) * span,
+    y: GRID.pad + ((row + 0.5) / GRID.rows) * span,
   };
-});
+};
 
-// The starting position gets one beat of its own, so the first move is a
-// change the eye can catch rather than the first thing it ever sees.
-await emit(playState(0), SECONDS_PER_MOVE, { kind: "initial", ply: -1 });
+/**
+ * The cell a turn is about: where its pawn landed, or else where its first
+ * wall went, as a 0-based [row from the top, column]. Null when the notation
+ * names no cell (a resignation has no move).
+ */
+const cellOfPly = (plyIndex) => {
+  const terms = String(history[plyIndex]?.notation ?? "")
+    .split(".")
+    .filter(Boolean);
+  const parse = (term) => {
+    const m = term.match(/^[>^A-Z]?([a-z])(\d+)$/);
+    if (!m) return null;
+    return [GRID.rows - Number(m[2]), m[1].charCodeAt(0) - "a".charCodeAt(0)];
+  };
+  const pawn = terms.find((t) => !t.startsWith(">") && !t.startsWith("^"));
+  return (pawn && parse(pawn)) ?? (terms[0] ? parse(terms[0]) : null);
+};
 
-for (let ply = 1; ply <= history.length; ply += 1) {
-  const isLast = ply === history.length;
-  if (isLast && CAPTURE_SHAKE) {
-    /*
-      The winning move lands, then the frame shakes and settles.
-
-      GEOMETRY IS CHECKED, NOT EYEBALLED. An earlier shake scaled the
-      composition up during the effect and reset it afterwards, so the board
-      came to rest 4.5% smaller than it started - a jump that "looks the same
-      to me" did not catch. The two probes below render the SAME ply with no
-      shake, once before the effect and once after it, and the bytes must be
-      identical. Nothing but exact equality proves the transform came back.
-    */
-    const before = await probeGeometry(playState(ply), "shake-before");
-    const shakeFrames = Math.round(SHAKE_SECONDS * FPS);
-    let worstScale = { x: 1, y: 1 };
-    for (let i = 0; i < shakeFrames; i += 1) {
-      const decay = 1 - i / shakeFrames;
-      await emit(
-        playState(ply, { shake: decay * decay, shakePhase: i }),
-        1 / FPS,
-        { kind: "winning-shake", ply: ply - 1 },
-      );
-      /*
-        Sampled on every shake frame, because the defect only exists while the
-        effect is applied - and the two axes are tracked INDEPENDENTLY. An
-        earlier version replaced the whole record only when X worsened, so a
-        sample of {x: 1, y: 1.045} was thrown away before the Y test could ever
-        see it: the check promised "any scale" and delivered "any scale that
-        also moves X".
-      */
-      const sc = await shakeScaleFactors();
-      if (Math.abs(sc.x - 1) > Math.abs(worstScale.x - 1)) worstScale.x = sc.x;
-      if (Math.abs(sc.y - 1) > Math.abs(worstScale.y - 1)) worstScale.y = sc.y;
-    }
-    await emit(playState(ply), FINAL_HOLD_SECONDS, {
-      kind: "move",
-      ply: ply - 1,
-    });
-    const after = await probeGeometry(playState(ply), "shake-after");
-    const same =
-      before.rect.x === after.rect.x &&
-      before.rect.y === after.rect.y &&
-      before.rect.w === after.rect.w &&
-      before.rect.h === after.rect.h;
-    const residue = pixelResidue("shake-before", "shake-after");
-    /*
-      Both halves must hold, and a failure STOPS THE RENDER. An earlier version
-      recorded a sentence and carried on, so a broken shake would have been
-      reported in a log line nobody reads and shipped anyway.
-    */
-    const SCALE_TOLERANCE = 0.001;
-    const scaled =
-      Math.abs(worstScale.x - 1) > SCALE_TOLERANCE ||
-      Math.abs(worstScale.y - 1) > SCALE_TOLERANCE;
-    if (scaled) {
-      throw new Error(
-        `the shake SCALED the composition (worst x ${worstScale.x.toFixed(4)}, worst y ${worstScale.y.toFixed(4)}). ` +
-          `A scale cannot return to where it began and leaves the board a different size after the effect. ` +
-          `Translation and rotation only.`,
-      );
-    }
-    if (!same) {
-      throw new Error(
-        `the shake moved the board and did not put it back - before ${JSON.stringify(before.rect)} after ${JSON.stringify(after.rect)}`,
-      );
-    }
-    shakeGeometryVerdict =
-      `no scale during shake (worst x ${worstScale.x.toFixed(4)}, y ${worstScale.y.toFixed(4)}), ` +
-      `board box identical after (${after.rect.w}x${after.rect.h} at ${after.rect.x},${after.rect.y}), ` +
-      `pixel residue ${residue.differing}/${residue.pixels} px, worst ${residue.maxDelta}/765`;
-  } else {
-    await emit(
-      playState(ply),
-      isLast ? SECONDS_PER_MOVE + FINAL_HOLD_SECONDS : SECONDS_PER_MOVE,
-      { kind: "move", ply: ply - 1 },
+for (const ply of SWING_PLIES) {
+  if (ply >= history.length) {
+    console.error(
+      `--swing-plies ${ply} is past the last move (the game has ${history.length} plies, 0-based)`,
     );
-  }
-  if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
-}
-
-// --- the end card
-const winnerId = outcome?.winnerId ?? null;
-await emit(
-  {
-    segment: "end",
-    kicker: winnerId ? "WINNER" : "GAME OVER",
-    winner: winnerId ? side(winnerId) : side(seats.bottom),
-    how: outcome ? (REASON_WORDS[outcome.reason] ?? outcome.reason) : "",
-  },
-  END_SECONDS,
-  { kind: "end-card" },
-);
-await stage.close();
-await browser.close();
-log(`${timeline.length} frames written`);
-
-/* --------------------------------------------------------------- encode -- */
-
-const totalSeconds = timeline.reduce((a, f) => a + f.seconds, 0);
-const frameSequence = join(WORK, "cfr");
-rmSync(frameSequence, { recursive: true, force: true });
-mkdirSync(frameSequence, { recursive: true });
-const encodedRanges = allocateFrameRanges(timeline, FPS);
-const encodedFrame = encodedRanges.at(-1)?.endFrame ?? 0;
-for (const range of encodedRanges) {
-  for (let frame = range.startFrame; frame < range.endFrame; frame += 1) {
-    linkSync(
-      range.source,
-      join(frameSequence, `v-${String(frame).padStart(6, "0")}.png`),
-    );
+    await browser.close();
+    process.exit(2);
   }
 }
-writeFileSync(
-  join(WORK, "timeline-manifest.json"),
-  JSON.stringify(
-    { fps: FPS, totalFrames: encodedFrame, ranges: encodedRanges },
-    null,
-    2,
-  ),
-);
 
-/**
- * The soundtrack, built from the site's own effects.
- *
- * Which sound a ply gets comes from the recorded notation: a term starting
- * with > or ^ is a wall, anything else is a pawn. A turn can be both, and then
- * it gets both, once each - a turn that placed two walls does not deserve two
- * wall clicks on top of each other.
- *
- * Nothing here carries the story. The video is built to read with the sound
- * off, because a feed autoplays muted; the audio is for whoever taps it.
- */
-const AUDIO_DIR = join(REPO, "frontend/public/audio");
-
-/**
- * The mix the site itself plays at, from frontend/src/lib/sounds.ts.
- *
- * A wall is deliberately quieter than a pawn there, and copying that keeps a
- * wall-heavy game from turning into a hammering.
- */
-const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
-
-/**
- * THE THREE SOUNDS THE SITE HAS NO COUNTERPART FOR. Chosen by Nil 2026-08-19.
- *
- * THIS IS THE ONE PLACE TO CHANGE THEM. Swapping any of the three is editing a
- * path on the line below - the placement, the mixing and the encoding do not
- * care which file is named. Nil kept the riser "for now", so the VS entry in
- * particular is expected to be replaced.
- *
- * Any format ffmpeg can read works. The two sounds Nil bought are .m4a while
- * everything else here is .wav, and NOTHING in this file treats that
- * differently: ffmpeg decodes by content, and every clip is normalised to the
- * same sample format inside the mix. There is no extension check to keep in
- * step with the file list.
- *
- *   vsStamp   lands on the VS mark's punch
- *   shake     lands on the winning move, under the screen shake
- *   win       lands with the end card
- */
-const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
-const STING_DIR = join(REPO, "assets/stings");
-const SOUNDS = {
-  vsStamp: {
-    file: join(STING_DIR, "vs-b-riser.wav"),
-    gain: 1.0,
+/** The 9:16 frame of the wallz look: the board as wide as the frame. */
+const WALLZ_WIDTH = 1080;
+const WALLZ_HEIGHT = 1920;
+const WALLZ_BOARD = WALLZ_WIDTH - 2 * 16;
+const WALLZ_LAYOUT = {
+  width: WALLZ_WIDTH,
+  height: WALLZ_HEIGHT,
+  vars: {
+    ...frameVars(WALLZ_HEIGHT, WALLZ_BOARD, 0),
+    "--caption-size": "60px",
     /*
-      This one is built rather than recorded, so its impact is not at its
-      start. make-stings.mjs publishes where the hit sits and stage.html
-      publishes where the visual punch is; the placement below is derived from
-      both, so retiming either cannot silently pull the sound off the picture.
+      The VS names, smaller than frameVars gives a 1920 frame: there they cut
+      "Guest Lemur" to "Guest Lem..." (seen 2026-10-26).
     */
-    hitOffsetSeconds: () => stingManifest.vsHitSeconds,
-  },
-  shake: {
-    file: join(PIXEL_PACK, "die-1.m4a"),
-    gain: SHAKE_GAIN,
-  },
-  win: {
-    file: join(PIXEL_PACK, "level-complete-1.m4a"),
-    gain: WIN_GAIN,
+    "--name-size": `${Math.round(WALLZ_HEIGHT * 0.034)}px`,
+    "--caption-gap": "36px",
   },
 };
 
-/*
-  The riser is generated, not recorded, and it is deliberately NOT committed:
-  make-stings.mjs is deterministic, so the wav is rebuilt here when it is
-  missing. That keeps the repository free of generated audio without making a
-  fresh checkout render a silent VS screen.
-*/
-if (AUDIO && !existsSync(SOUNDS.vsStamp.file)) {
-  log("riser not built yet; running make-stings.mjs");
-  execFileSync(process.execPath, [join(HERE, "make-stings.mjs")], {
-    stdio: "inherit",
+const easeOut = (x) => 1 - Math.pow(1 - x, 3);
+const easeInOut = (x) =>
+  x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+
+/** The camera scale at `t` seconds into a swing beat. See the constants. */
+const zoomAt = (t) => {
+  const drift = 0.04;
+  if (t < ZOOM_IN) return 1 + (ZOOM_SCALE - 1) * easeOut(t / ZOOM_IN);
+  if (t < ZOOM_HOLD_END)
+    return ZOOM_SCALE + (drift * (t - ZOOM_IN)) / (ZOOM_HOLD_END - ZOOM_IN);
+  const back = Math.min(
+    1,
+    (t - ZOOM_HOLD_END) / (ZOOM_OUT_END - ZOOM_HOLD_END),
+  );
+  return ZOOM_SCALE + drift - (ZOOM_SCALE + drift - 1) * easeInOut(back);
+};
+
+const sha256Of = (file) =>
+  createHash("sha256").update(readFileSync(file)).digest("hex");
+
+/**
+ * Compose, mix, encode and verify one style from the board captures above.
+ * Returns what the RESULT line reports.
+ */
+const renderStyle = async (styleName) => {
+  const style = STYLES[styleName];
+  const wallz = style.look === "wallz";
+  const pace = PACE_OVERRIDE ? Number(PACE_OVERRIDE) : style.secondsPerMove;
+  const layout = wallz ? WALLZ_LAYOUT : LAYOUT;
+  const sounds = soundsFor(styleName);
+  const out = outFor(styleName);
+  const work = join(WORK, styleName);
+  rmSync(work, { recursive: true, force: true });
+  mkdirSync(work, { recursive: true });
+  log(
+    `style ${styleName}: ${layout.width}x${layout.height}, ${pace}s per move` +
+      (wallz
+        ? `, swings at plies ${SWING_PLIES.join(",") || "(none)"}, sounds swing=${sounds.swing.name} flood=${sounds.flood.name}`
+        : ""),
+  );
+
+  const stage = await browser.newPage({
+    viewport: { width: layout.width, height: layout.height },
+    deviceScaleFactor: 1,
   });
-}
+  await stage.goto(`file://${join(HERE, "stage.html")}`, {
+    waitUntil: "load",
+  });
+  await stage.evaluate((vars) => {
+    for (const [k, v] of Object.entries(vars)) {
+      document.documentElement.style.setProperty(k, v);
+    }
+  }, layout.vars);
 
-const stingManifest = existsSync(join(STING_DIR, "stings.json"))
-  ? JSON.parse(readFileSync(join(STING_DIR, "stings.json"), "utf8"))
-  : { vsHitSeconds: 0 };
+  /** Published by stage.html, so the sting can be aligned to the visual punch. */
+  const vsPunchFraction = await stage.evaluate(
+    () => window.__VS_PUNCH_FRACTION,
+  );
 
-const buildAudio = () => {
-  const events = [];
+  /**
+   * The timeline, with the exact seconds and semantic range for each image.
+   * Encoding later converts every duration to an integer 30 fps frame count.
+   * `elapsed` is where the next image starts, and every sound cue is taken
+   * from it, so the soundtrack follows the picture by construction.
+   */
+  const timeline = [];
+  const cues = [];
+  let elapsed = 0;
+  const cue = (sound, at = elapsed) =>
+    cues.push({ file: sound.file, gain: sound.gain, at });
+  let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
-  /** When the last move lands - the beat the shake rides on. */
-  const shakeAt = VS_SECONDS + SECONDS_PER_MOVE * history.length;
+  /**
+   * Measure the composition WITHOUT putting a frame in the video.
+   *
+   * Returns the board's bounding box - which is the geometry under test - and
+   * writes the frame so a human can look at it too.
+   *
+   * The box is read with getBoundingClientRect, which includes every transform
+   * on every ancestor. That is what makes it the right instrument: the defect it
+   * guards against was a scale on a PARENT of the board, and a rect read catches
+   * that exactly, to the sub-pixel, with no threshold to argue about.
+   */
+  const probeGeometry = async (state, tag) => {
+    const file = join(work, `probe-${tag}.png`);
+    await stage.evaluate((s) => window.__stage(s), state);
+    const rect = await stage.evaluate(() => {
+      const r = document.getElementById("boardWrap").getBoundingClientRect();
+      return { x: r.x, y: r.y, w: r.width, h: r.height };
+    });
+    await stage.screenshot({ path: file });
+    return { rect };
+  };
 
-  // --- the VS stamp, aligned so its impact meets the visual punch.
-  if (existsSync(SOUNDS.vsStamp.file)) {
-    const lead = SOUNDS.vsStamp.hitOffsetSeconds?.() ?? 0;
-    const startAt = VS_SECONDS * vsPunchFraction - lead;
-    if (startAt < 0) {
+  /**
+   * The scale factors currently applied to the composition.
+   *
+   * This is the property that actually broke: the shake used to scale to 1.045
+   * and reset to none, so the board settled 4.5% smaller. Comparing the board
+   * box BEFORE and AFTER cannot see that - both are the reset state, so both
+   * match and the check passes while the defect ships. The only moment the bug
+   * exists is DURING the shake, so that is when this is read.
+   *
+   * Translation leaves the scale at 1, and so does rotation: for a rotation
+   * matrix, sqrt(a^2 + b^2) is 1. Any scale shows up here immediately.
+   */
+  const shakeScaleFactors = () =>
+    stage.evaluate(() => {
+      const t = getComputedStyle(document.getElementById("play")).transform;
+      if (!t || t === "none") return { x: 1, y: 1 };
+      const n = t.match(/-?[0-9.e+-]+/g)?.map(Number) ?? [];
+      if (n.length < 4) return { x: 1, y: 1 };
+      const [a, b, c, d] = n;
+      return { x: Math.hypot(a, b), y: Math.hypot(c, d) };
+    });
+
+  /**
+   * How many pixels differ between two written frames, and by how much at worst.
+   *
+   * The frames are DECODED to raw rgb first. Comparing the png bytes directly is
+   * worthless - two identical images compress to different lengths - and the
+   * first version of this did exactly that and reported a sentinel instead of a
+   * measurement.
+   */
+  const pixelResidue = (tagA, tagB) => {
+    const raw = (tag) => {
+      const path = join(work, `probe-${tag}.raw`);
+      ff([
+        "-i",
+        join(work, `probe-${tag}.png`),
+        "-f",
+        "rawvideo",
+        "-pix_fmt",
+        "rgb24",
+        path,
+      ]);
+      return readFileSync(path);
+    };
+    const a = raw(tagA);
+    const b = raw(tagB);
+    if (a.length !== b.length) return { differing: null, maxDelta: null };
+    let differing = 0;
+    let maxDelta = 0;
+    for (let i = 0; i < a.length; i += 3) {
+      const d =
+        Math.abs(a[i] - b[i]) +
+        Math.abs(a[i + 1] - b[i + 1]) +
+        Math.abs(a[i + 2] - b[i + 2]);
+      if (d > 0) {
+        differing += 1;
+        if (d > maxDelta) maxDelta = d;
+      }
+    }
+    return { differing, maxDelta, pixels: a.length / 3 };
+  };
+
+  let frameNo = 0;
+  const emit = async (state, seconds, meta = {}) => {
+    const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
+    await stage.evaluate((s) => window.__stage(s), state);
+    await stage.screenshot({ path: file });
+    timeline.push({ file, seconds, ...meta });
+    elapsed += seconds;
+  };
+
+  // --- the VS screen, animated
+  if (style.vsSeconds > 0) {
+    const vsFrames = Math.round(style.vsSeconds * FPS);
+    // The VS stamp, aligned so its impact meets the visual punch.
+    const vsSound = sounds[style.vsSound];
+    if (existsSync(vsSound.file)) {
+      const lead = vsSound.hitOffsetSeconds?.() ?? 0;
+      const startAt = style.vsSeconds * vsPunchFraction - lead;
+      if (startAt < 0) {
+        log(
+          `WARNING: the VS segment is too short for a ${lead}s lead-in; the impact will be clipped.`,
+        );
+      }
+      cue(vsSound, Math.max(0, startAt));
+    } else {
       log(
-        `WARNING: the VS segment is too short for a ${lead}s lead-in; the impact will be clipped.`,
+        `VS sound missing at ${vsSound.file}; falling back to the site's start sound`,
+      );
+      cue({
+        file: join(AUDIO_DIR, "game_start.mp3"),
+        gain: SITE_VOLUMES.gameStart,
+      });
+    }
+    for (let i = 0; i < vsFrames; i += 1) {
+      await emit(
+        {
+          segment: "vs",
+          look: style.look,
+          t: i / (vsFrames - 1),
+          a: side(seats.top),
+          b: side(seats.bottom),
+        },
+        1 / FPS,
+        { kind: "vs-transition" },
       );
     }
-    events.push({
-      file: SOUNDS.vsStamp.file,
-      at: Math.max(0, startAt),
-      gain: SOUNDS.vsStamp.gain,
-    });
-  } else {
-    log(
-      `VS sound missing at ${SOUNDS.vsStamp.file}; falling back to the site's start sound`,
-    );
-    events.push({
-      file: join(AUDIO_DIR, "game_start.mp3"),
-      at: 0,
-      gain: SITE_VOLUMES.gameStart,
-    });
+    log("vs screen rendered");
   }
+  const musicStart = elapsed;
 
-  // --- one sound per turn, wall wins. The site's own rule; see above.
-  let t = VS_SECONDS + SECONDS_PER_MOVE; // vs screen, then the initial position
-  for (const ply of history) {
-    const terms = String(ply.notation ?? "")
+  // --- the moves
+  const playState = (boardIndex, extra = {}) => ({
+    segment: "play",
+    look: style.look,
+    caption: wallz ? CAPTION : "",
+    board: fileUrl(boardFrames[boardIndex]),
+    top: side(seats.top),
+    bottom: side(seats.bottom),
+    ...extra,
+  });
+  await stage.evaluate((state) => window.__stage(state), playState(0));
+  const boardRectNow = () =>
+    stage.evaluate(() => {
+      const rect = document.getElementById("boardCam").getBoundingClientRect();
+      return {
+        x: Math.round(rect.x),
+        y: Math.round(rect.y),
+        width: Math.round(rect.width),
+        height: Math.round(rect.height),
+      };
+    });
+  const encodedBoardRect = await boardRectNow();
+
+  // The starting position gets one beat of its own, so the first move is a
+  // change the eye can catch rather than the first thing it ever sees.
+  await emit(playState(0), pace, { kind: "initial", ply: -1 });
+
+  /** The site's own click for a turn: one sound per turn, wall wins. */
+  const moveClick = (plyIndex) => {
+    const terms = String(history[plyIndex].notation ?? "")
       .split(".")
       .filter(Boolean);
     const hasWall = terms.some((s) => s.startsWith(">") || s.startsWith("^"));
-    events.push({
+    return {
       file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
-      at: t,
       // The site's own balance - a wall is quieter than a pawn there - times
       // one gain, so raising the moves does not flatten that relationship.
       gain: (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) * MOVE_GAIN,
-    });
-    t += SECONDS_PER_MOVE;
-  }
+    };
+  };
 
-  /*
-    The shake had no sound at all until now - the move that won still played
-    its ordinary move click and nothing else, which is why the shake read as
-    silent. This is a separate layer ON TOP of that click: the click says a
-    piece moved, this says it hit something.
-  */
-  if (CAPTURE_SHAKE && existsSync(SOUNDS.shake.file)) {
-    events.push({
-      file: SOUNDS.shake.file,
-      at: shakeAt,
-      gain: SOUNDS.shake.gain,
-    });
-  }
+  const winnerId = outcome?.winnerId ?? null;
+  let musicEndAt = null;
 
-  // --- the winner, with the end card.
-  events.push(
-    existsSync(SOUNDS.win.file)
-      ? {
-          file: SOUNDS.win.file,
-          at: totalSeconds - END_SECONDS,
-          gain: SOUNDS.win.gain,
+  for (let ply = 1; ply <= history.length; ply += 1) {
+    const plyIndex = ply - 1;
+    const isLast = ply === history.length;
+    cue(moveClick(plyIndex));
+
+    if (wallz && isLast) {
+      /*
+        The last move lands, holds one beat, and then the winner's colour
+        floods the board in a wave out from the cell where the game ended.
+        The flood frames are their own kind: the encode check classifies
+        "move" frames by the board under them, and a flooded board is not a
+        position of the game.
+      */
+      await emit(playState(ply), pace, { kind: "move", ply: plyIndex });
+      musicEndAt = elapsed;
+      if (winnerId) {
+        const origin = cellOfPly(plyIndex) ?? [
+          Math.floor(GRID.rows / 2),
+          Math.floor(GRID.cols / 2),
+        ];
+        const flood = (t) => ({
+          cols: GRID.cols,
+          rows: GRID.rows,
+          pad: GRID.pad,
+          color: side(winnerId).hex,
+          origin,
+          t,
+        });
+        cue(sounds.flood);
+        const floodFrames = Math.round(FLOOD_SECONDS * FPS);
+        for (let i = 0; i < floodFrames; i += 1) {
+          await emit(
+            playState(ply, { flood: flood(i / (floodFrames - 1)) }),
+            1 / FPS,
+            { kind: "win-flood", ply: plyIndex },
+          );
         }
-      : {
-          file: join(AUDIO_DIR, "game_end.mp3"),
-          at: totalSeconds - END_SECONDS,
-          gain: SITE_VOLUMES.gameEnd,
-        },
-  );
+        await emit(playState(ply, { flood: flood(1) }), FLOOD_HOLD_SECONDS, {
+          kind: "win-flood-hold",
+          ply: plyIndex,
+        });
+      } else {
+        await emit(playState(ply), FLOOD_HOLD_SECONDS, {
+          kind: "move",
+          ply: plyIndex,
+        });
+      }
+    } else if (wallz && SWING_PLIES.includes(plyIndex)) {
+      /*
+        A swing move: the camera punches in on the cell the move is about,
+        holds, and lets go, with the swing sound on the punch. Like the shake,
+        the zoom must give the board back exactly as it found it, so the box
+        is read again once it is over and must match the one before.
+      */
+      cue(sounds.swing);
+      const at = cellAt(
+        cellOfPly(plyIndex) ?? [GRID.rows / 2 - 0.5, GRID.cols / 2 - 0.5],
+      );
+      const zoomFrames = Math.round(ZOOM_OUT_END * FPS);
+      for (let i = 0; i < zoomFrames; i += 1) {
+        await emit(
+          playState(ply, { zoom: { scale: zoomAt(i / FPS), ...at } }),
+          1 / FPS,
+          { kind: "swing-zoom", ply: plyIndex },
+        );
+      }
+      await emit(playState(ply), SWING_SECONDS - ZOOM_OUT_END, {
+        kind: "move",
+        ply: plyIndex,
+      });
+      const after = await boardRectNow();
+      if (JSON.stringify(after) !== JSON.stringify(encodedBoardRect)) {
+        throw new Error(
+          `the punch-in on ply ${plyIndex} did not give the board back - before ${JSON.stringify(encodedBoardRect)} after ${JSON.stringify(after)}`,
+        );
+      }
+    } else if (isLast && CAPTURE_SHAKE) {
+      /*
+        The winning move lands, then the frame shakes and settles.
 
-  const present = events.filter((e) => existsSync(e.file));
-  if (present.length === 0) return null;
-
-  const inputs = present.flatMap((e) => ["-i", e.file]);
-  const chains = present.map(
-    (e, i) =>
-      `[${i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
-      `adelay=${Math.round(e.at * 1000)}:all=1,volume=${e.gain}[a${i}]`,
-  );
-  // The effects bus. Everything above lands here, and it is also what the
-  // music is ducked against.
-  chains.push(
-    present.map((_, i) => `[a${i}]`).join("") +
-      `amix=inputs=${present.length}:normalize=0:dropout_transition=0,` +
-      `apad,atrim=0:${totalSeconds.toFixed(3)}[fx]`,
-  );
-
-  let last = "[fx]";
-  if (MUSIC) {
-    /*
-      Music under the game, and only under the game.
-
-      It starts with the board rather than over the VS screen, because the
-      riser owns that moment, and it fades OUT across the end card rather than stopping, so the track
-      resolves under the win instead of being cut off mid-phrase.
-
-      NO DYNAMICS ARE APPLIED TO IT. There used to be a sidechain compressor
-      keyed on the effects, added when the music sat at 0.3 and might have
-      buried a click. At 0.8s per move with a 320ms release the music never
-      recovered between moves, so it pumped on every single move for the whole
-      video - Nil heard it and asked whether he was imagining it. He was not.
-      MUSIC_VOLUME WAS 0.9 AND IS NOW 0.3, AND THAT IS A RESTORATION RATHER
-      THAN A RETUNE. Measured 2026-08-20: the compressor had been holding the
-      music down by 9.45 dB CONTINUOUSLY - not a dip on each hit - so the mix
-      Nil approved was one where the music was ~9.5 dB below what the constant
-      said. Deleting the compressor without compensating would have made the
-      music louder than anything he ever agreed to, and what he asked for was
-      the pumping gone, not the music up. 0.3 puts it back where he had it.
-    */
-    const musicStart = VS_SECONDS;
-    const musicSeconds = totalSeconds - musicStart;
-    /*
-      The music fade now COMPLETES as the end card arrives, instead of running
-      across it. Measured 2026-08-19: with the fade spread over the end card,
-      the last second of it carried music at -17.5 dB peak where a no-music
-      build is digital silence - and the bed is three times louder than when
-      Nil first called the win screen too loud. The riser owns the VS moment;
-      the win sting should own this one.
-    */
-    const endCardAt = totalSeconds - END_SECONDS - musicStart;
-    const fadeOutAt = Math.max(0, endCardAt - MUSIC_FADE_OUT);
-    inputs.push("-i", MUSIC);
-    const mi = present.length;
-    chains.push(
-      `[${mi}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
-        `atrim=0:${musicSeconds.toFixed(3)},` +
-        // An explicit, reported correction if one was asked for; otherwise the
-        // track is used exactly as the site uses it.
-        `afade=t=in:st=0:d=${MUSIC_FADE_IN},` +
-        `afade=t=out:st=${fadeOutAt.toFixed(3)}:d=${MUSIC_FADE_OUT},` +
-        `volume=${MUSIC_VOLUME},adelay=${Math.round(musicStart * 1000)}:all=1[mus]`,
-    );
-    chains.push(
-      `[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mixed]`,
-    );
-    last = "[mixed]";
+        GEOMETRY IS CHECKED, NOT EYEBALLED. An earlier shake scaled the
+        composition up during the effect and reset it afterwards, so the board
+        came to rest 4.5% smaller than it started - a jump that "looks the same
+        to me" did not catch. The two probes below render the SAME ply with no
+        shake, once before the effect and once after it, and the bytes must be
+        identical. Nothing but exact equality proves the transform came back.
+      */
+      const before = await probeGeometry(playState(ply), "shake-before");
+      // This is a separate layer ON TOP of the move click: the click says a
+      // piece moved, this says it hit something.
+      cue(sounds.shake);
+      const shakeFrames = Math.round(SHAKE_SECONDS * FPS);
+      let worstScale = { x: 1, y: 1 };
+      for (let i = 0; i < shakeFrames; i += 1) {
+        const decay = 1 - i / shakeFrames;
+        await emit(
+          playState(ply, { shake: decay * decay, shakePhase: i }),
+          1 / FPS,
+          { kind: "winning-shake", ply: plyIndex },
+        );
+        /*
+          Sampled on every shake frame, because the defect only exists while the
+          effect is applied - and the two axes are tracked INDEPENDENTLY. An
+          earlier version replaced the whole record only when X worsened, so a
+          sample of {x: 1, y: 1.045} was thrown away before the Y test could ever
+          see it: the check promised "any scale" and delivered "any scale that
+          also moves X".
+        */
+        const sc = await shakeScaleFactors();
+        if (Math.abs(sc.x - 1) > Math.abs(worstScale.x - 1))
+          worstScale.x = sc.x;
+        if (Math.abs(sc.y - 1) > Math.abs(worstScale.y - 1))
+          worstScale.y = sc.y;
+      }
+      await emit(playState(ply), FINAL_HOLD_SECONDS, {
+        kind: "move",
+        ply: plyIndex,
+      });
+      const after = await probeGeometry(playState(ply), "shake-after");
+      const same =
+        before.rect.x === after.rect.x &&
+        before.rect.y === after.rect.y &&
+        before.rect.w === after.rect.w &&
+        before.rect.h === after.rect.h;
+      const residue = pixelResidue("shake-before", "shake-after");
+      /*
+        Both halves must hold, and a failure STOPS THE RENDER. An earlier version
+        recorded a sentence and carried on, so a broken shake would have been
+        reported in a log line nobody reads and shipped anyway.
+      */
+      const SCALE_TOLERANCE = 0.001;
+      const scaled =
+        Math.abs(worstScale.x - 1) > SCALE_TOLERANCE ||
+        Math.abs(worstScale.y - 1) > SCALE_TOLERANCE;
+      if (scaled) {
+        throw new Error(
+          `the shake SCALED the composition (worst x ${worstScale.x.toFixed(4)}, worst y ${worstScale.y.toFixed(4)}). ` +
+            `A scale cannot return to where it began and leaves the board a different size after the effect. ` +
+            `Translation and rotation only.`,
+        );
+      }
+      if (!same) {
+        throw new Error(
+          `the shake moved the board and did not put it back - before ${JSON.stringify(before.rect)} after ${JSON.stringify(after.rect)}`,
+        );
+      }
+      shakeGeometryVerdict =
+        `no scale during shake (worst x ${worstScale.x.toFixed(4)}, y ${worstScale.y.toFixed(4)}), ` +
+        `board box identical after (${after.rect.w}x${after.rect.h} at ${after.rect.x},${after.rect.y}), ` +
+        `pixel residue ${residue.differing}/${residue.pixels} px, worst ${residue.maxDelta}/765`;
+    } else {
+      await emit(playState(ply), isLast ? pace + FINAL_HOLD_SECONDS : pace, {
+        kind: "move",
+        ply: plyIndex,
+      });
+    }
+    if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
   }
 
-  chains.push(
-    `${last}alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
+  // --- the end card, in the current look only: wallz ends on the flood.
+  if (!wallz) {
+    musicEndAt = elapsed;
+    cue(
+      existsSync(sounds.win.file)
+        ? sounds.win
+        : { file: join(AUDIO_DIR, "game_end.mp3"), gain: SITE_VOLUMES.gameEnd },
+    );
+    await emit(
+      {
+        segment: "end",
+        look: style.look,
+        kicker: winnerId ? "WINNER" : "GAME OVER",
+        winner: winnerId ? side(winnerId) : side(seats.bottom),
+        how: outcome ? (REASON_WORDS[outcome.reason] ?? outcome.reason) : "",
+      },
+      END_SECONDS,
+      { kind: "end-card" },
+    );
+  }
+  await stage.close();
+  log(`${timeline.length} frames written`);
+
+  /* ------------------------------------------------------------- encode -- */
+
+  const totalSeconds = timeline.reduce((a, f) => a + f.seconds, 0);
+  const frameSequence = join(work, "cfr");
+  rmSync(frameSequence, { recursive: true, force: true });
+  mkdirSync(frameSequence, { recursive: true });
+  const encodedRanges = allocateFrameRanges(timeline, FPS);
+  const encodedFrame = encodedRanges.at(-1)?.endFrame ?? 0;
+  for (const range of encodedRanges) {
+    for (let frame = range.startFrame; frame < range.endFrame; frame += 1) {
+      linkSync(
+        range.source,
+        join(frameSequence, `v-${String(frame).padStart(6, "0")}.png`),
+      );
+    }
+  }
+  writeFileSync(
+    join(work, "timeline-manifest.json"),
+    JSON.stringify(
+      { fps: FPS, totalFrames: encodedFrame, ranges: encodedRanges },
+      null,
+      2,
+    ),
   );
 
-  const audioPath = join(WORK, "track.m4a");
+  let audioPath = null;
+  if (AUDIO) {
+    try {
+      audioPath = buildAudio({
+        cues,
+        totalSeconds,
+        musicStart,
+        musicEndAt: musicEndAt ?? totalSeconds,
+        work,
+      });
+      log(
+        MUSIC
+          ? `soundtrack built, with music under the effects (${MUSIC})`
+          : "soundtrack built from the site's own effects",
+      );
+    } catch (err) {
+      log(
+        `soundtrack failed, writing a silent video instead: ${String(err.message ?? err).slice(0, 200)}`,
+      );
+    }
+  }
+
+  /**
+   * H.264 in mp4, yuv420p, faststart. Chosen because it is the one combination
+   * every platform accepts without transcoding it a second time, and the one a
+   * phone will upload without complaint. `nvenc` makes the same stream on the
+   * 4090's encoder instead of the CPU.
+   */
+  const codecArgs =
+    ENCODER === "nvenc"
+      ? [
+          "-c:v",
+          "h264_nvenc",
+          "-profile:v",
+          "high",
+          "-preset",
+          "p7",
+          "-tune",
+          "hq",
+          "-rc",
+          "vbr",
+          "-cq",
+          "19",
+          "-b:v",
+          "0",
+        ]
+      : [
+          "-c:v",
+          "libx264",
+          "-profile:v",
+          "high",
+          "-preset",
+          "slow",
+          "-crf",
+          "20",
+        ];
+  mkdirSync(dirname(out), { recursive: true });
   ff([
-    ...inputs,
-    "-filter_complex",
-    chains.join(";"),
-    "-map",
-    "[out]",
-    "-c:a",
-    "aac",
-    "-b:a",
-    "160k",
-    audioPath,
+    "-framerate",
+    String(FPS),
+    "-i",
+    join(frameSequence, "v-%06d.png"),
+    ...(audioPath ? ["-i", audioPath] : []),
+    "-vf",
+    "format=yuv420p",
+    ...codecArgs,
+    "-movflags",
+    "+faststart",
+    "-frames:v",
+    String(encodedFrame),
+    ...(audioPath ? ["-c:a", "copy"] : []),
+    out,
   ]);
-  return audioPath;
-};
 
-let audioPath = null;
-if (AUDIO) {
-  try {
-    audioPath = buildAudio();
-    log(
-      MUSIC
-        ? `soundtrack built, with music ducked under the effects (${MUSIC})`
-        : "soundtrack built from the site's own effects",
-    );
-  } catch (err) {
-    log(
-      `soundtrack failed, writing a silent video instead: ${String(err.message ?? err).slice(0, 200)}`,
-    );
-  }
-}
+  const encodedReport = verifyEncodedVideo({
+    ffmpeg: FFMPEG,
+    video: out,
+    framePattern: join(frameSequence, "v-%06d.png"),
+    fps: FPS,
+    ranges: encodedRanges,
+    crop: encodedBoardRect,
+  });
+  writeFileSync(
+    join(work, "encoded-verification.json"),
+    JSON.stringify(encodedReport, null, 2),
+  );
 
-/**
- * H.264 in mp4, yuv420p, faststart. Chosen because it is the one combination
- * every platform accepts without transcoding it a second time, and the one a
- * phone will upload without complaint.
- */
-const videoArgs = [
-  "-framerate",
-  String(FPS),
-  "-i",
-  join(frameSequence, "v-%06d.png"),
-  ...(audioPath ? ["-i", audioPath] : []),
-  "-vf",
-  "format=yuv420p",
-  "-c:v",
-  "libx264",
-  "-profile:v",
-  "high",
-  "-preset",
-  "slow",
-  "-crf",
-  "20",
-  "-movflags",
-  "+faststart",
-  "-frames:v",
-  String(encodedFrame),
-  ...(audioPath ? ["-c:a", "copy"] : []),
-  OUT,
-];
-ff(videoArgs);
-
-const encodedReport = verifyEncodedVideo({
-  ffmpeg: FFMPEG,
-  video: OUT,
-  framePattern: join(frameSequence, "v-%06d.png"),
-  fps: FPS,
-  ranges: encodedRanges,
-  crop: encodedBoardRect,
-});
-writeFileSync(
-  join(WORK, "encoded-verification.json"),
-  JSON.stringify(encodedReport, null, 2),
-);
-
-{
-  for (const f of readdirSync(WORK)) {
-    if (/^(f-|board-)\d+\.png$/.test(f)) unlinkSync(join(WORK, f));
+  for (const f of readdirSync(work)) {
+    if (/^f-\d+\.png$/.test(f)) unlinkSync(join(work, f));
   }
   rmSync(frameSequence, { recursive: true, force: true });
+
+  const bytes = statSync(out).size;
+  log(`shake geometry before vs after: ${shakeGeometryVerdict}`);
+  log(`wrote ${out}`);
+  log(
+    `${layout.width}x${layout.height}, ${totalSeconds.toFixed(1)}s, ${(bytes / 1e6).toFixed(1)} MB, ${pace}s per move`,
+  );
+  return {
+    mp4: out,
+    bytes,
+    sha256: sha256Of(out),
+    durationSeconds: Number((encodedFrame / FPS).toFixed(3)),
+    effect: styleName,
+    sound: wallz
+      ? [
+          style.vsSound && `vs=${sounds[style.vsSound].name}`,
+          `swing=${sounds.swing.name}`,
+          `flood=${sounds.flood.name}`,
+        ]
+          .filter(Boolean)
+          .join(",")
+      : `shake=${sounds.shake.name},win=${sounds.win.name}`,
+  };
+};
+
+const results = [];
+for (const styleName of STYLE_NAMES) {
+  const started = Date.now();
+  results.push(await renderStyle(styleName));
+  log(
+    `style ${styleName} composed and encoded in ${((Date.now() - started) / 1000).toFixed(1)}s`,
+  );
+}
+await browser.close();
+
+for (const f of readdirSync(WORK)) {
+  if (/^board-\d+\.png$/.test(f)) unlinkSync(join(WORK, f));
 }
 
-const mb = (statSync(OUT).size / 1e6).toFixed(1);
-log(`shake geometry before vs after: ${shakeGeometryVerdict}`);
-log(`wrote ${OUT}`);
-log(
-  `${LAYOUT.width}x${LAYOUT.height}, ${totalSeconds.toFixed(1)}s, ${mb} MB, ${SECONDS_PER_MOVE}s per move`,
-);
+/*
+  One RESULT line per style, and nothing else on stdout when --log is set:
+  the dashboard parses these. Written past console.log on purpose, because
+  --log sends console.log to the file.
+*/
+for (const r of results) process.stdout.write(`RESULT ${JSON.stringify(r)}\n`);

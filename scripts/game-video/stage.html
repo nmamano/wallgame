@@ -227,6 +227,65 @@
         display: block;
         object-fit: fill;
       }
+      /*
+        The camera. The board screenshot and the flood overlay ride on it, so a
+        punch-in magnifies both together. #boardWrap clips it, so a zoom stays
+        inside the board's square and never covers the caption.
+      */
+      #boardCam {
+        position: relative;
+        width: 100%;
+        height: 100%;
+      }
+      #flood {
+        position: absolute;
+        inset: 0;
+      }
+      #flood .cell {
+        position: absolute;
+        border-radius: 18%;
+      }
+
+      /* ---------- the WallzGame look (style "wallz") ---------- */
+      /*
+        Nil's reference Short (2026-10-25): black frame, one meme caption over
+        the board for the whole video, the board as wide as the frame, nothing
+        else. Same tree as the default look: the plates are hidden and the
+        caption shown, so nothing is drawn twice.
+      */
+      #play .caption {
+        display: none;
+      }
+      #root.wallz {
+        background: #000;
+      }
+      #root.wallz #play .plate {
+        display: none;
+      }
+      #root.wallz #play .caption {
+        display: block;
+        position: absolute;
+        left: 0;
+        right: 0;
+        bottom: calc(50% + var(--board) / 2 + var(--caption-gap));
+        padding: 0 5%;
+        text-align: center;
+        font-family:
+          "TikTok Sans", "Noto Color Emoji", "DejaVu Sans", sans-serif;
+        font-size: var(--caption-size);
+        font-weight: 700;
+        line-height: 1.15;
+        color: #fff;
+      }
+      #root.wallz #boardWrap {
+        border: none;
+        border-radius: 12px;
+        box-shadow: none;
+      }
+      #root.wallz #brand {
+        bottom: auto;
+        top: calc(50% + var(--board) / 2 + var(--caption-gap));
+      }
 
       /* ---------- persistent branding ---------- */
       /*
@@ -341,12 +400,18 @@
       </div>
 
       <div id="play" class="hidden">
+        <div class="caption" id="caption"></div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
           <div class="nm" id="pNameT"></div>
           <div class="tag" id="pTagT"></div>
         </div>
-        <div id="boardWrap"><img id="boardImg" /></div>
+        <div id="boardWrap">
+          <div id="boardCam">
+            <img id="boardImg" />
+            <div id="flood"></div>
+          </div>
+        </div>
         <div class="plate bottom">
           <img class="avatar" id="pAvB" />
           <div class="nm" id="pNameB"></div>
@@ -389,6 +454,74 @@
       window.__VS_PUNCH_DURATION = 0.26;
 
       /**
+       * The winner's colour floods the board, one cell at a time, in a wave
+       * out from the cell where the game ended.
+       *
+       * A LAYER OVER THE SCREENSHOT: the cells are placed on the board's own
+       * grid, which the renderer measured on the replay page (`pad` is the air
+       * it left around that grid, as a fraction of the image). Nothing of the
+       * game is redrawn, and the flood is translucent so the walls under it
+       * still read.
+       */
+      const paintFlood = (f) => {
+        const layer = $("flood");
+        if (!f) {
+          layer.replaceChildren();
+          return;
+        }
+        const key = [f.cols, f.rows, f.pad, f.color].join("/");
+        if (layer.dataset.key !== key) {
+          layer.dataset.key = key;
+          layer.replaceChildren();
+          const span = 1 - 2 * f.pad;
+          const inset = 0.07;
+          for (let r = 0; r < f.rows; r += 1) {
+            for (let c = 0; c < f.cols; c += 1) {
+              const cell = document.createElement("div");
+              cell.className = "cell";
+              cell.dataset.r = r;
+              cell.dataset.c = c;
+              const w = span / f.cols;
+              const h = span / f.rows;
+              cell.style.left = (f.pad + (c + inset) * w) * 100 + "%";
+              cell.style.top = (f.pad + (r + inset) * h) * 100 + "%";
+              cell.style.width = w * (1 - 2 * inset) * 100 + "%";
+              cell.style.height = h * (1 - 2 * inset) * 100 + "%";
+              cell.style.background = f.color;
+              layer.appendChild(cell);
+            }
+          }
+        }
+        const [or, oc] = f.origin;
+        const far = Math.max(
+          ...[
+            [0, 0],
+            [0, f.cols - 1],
+            [f.rows - 1, 0],
+            [f.rows - 1, f.cols - 1],
+          ].map(([r, c]) => Math.hypot(r - or, c - oc)),
+        );
+        /** Each cell pops over this share of the segment; the wave takes the rest. */
+        const pop = 0.3;
+        const backOut = (x) => {
+          const k = 1.7;
+          return 1 + (k + 1) * Math.pow(x - 1, 3) + k * Math.pow(x - 1, 2);
+        };
+        for (const cell of layer.children) {
+          const d = Math.hypot(cell.dataset.r - or, cell.dataset.c - oc);
+          // The winner's own cell stays clear, so the pawn that won stays seen.
+          if (d === 0) {
+            cell.style.opacity = 0;
+            continue;
+          }
+          const start = far === 0 ? 0 : (d / far) * (1 - pop);
+          const p = Math.max(0, Math.min(1, (f.t - start) / pop));
+          cell.style.opacity = p === 0 ? 0 : 0.86;
+          cell.style.transform = "scale(" + (p === 0 ? 0 : backOut(p)) + ")";
+        }
+      };
+
+      /**
        * Paint one frame. Called once per screenshot by the renderer.
        *
        * `s.segment` picks which of the three layers is visible; `s.t` is a
@@ -400,6 +533,7 @@
         show($("play"), s.segment === "play");
         show($("end"), s.segment === "end");
         show($("brand"), s.segment === "play");
+        $("root").classList.toggle("wallz", s.look === "wallz");
 
         if (s.segment === "vs") {
           const ease = (x) => 1 - Math.pow(1 - x, 3);
@@ -445,6 +579,18 @@
 
         if (s.segment === "play") {
           $("boardImg").src = s.board;
+          $("caption").textContent = s.caption ?? "";
+          /*
+            Camera punch-in: a scale about the point of the move. The origin is
+            inside the board and the scale is never below 1, so the magnified
+            board always covers its whole square and no edge shows.
+          */
+          const z = s.zoom;
+          $("boardCam").style.transformOrigin = z
+            ? z.x * 100 + "% " + z.y * 100 + "%"
+            : "50% 50%";
+          $("boardCam").style.transform = z ? "scale(" + z.scale + ")" : "none";
+          paintFlood(s.flood);
           $("pAvT").src = s.top.portrait;
           $("pAvB").src = s.bottom.portrait;
           $("pNameT").textContent = s.top.name;
