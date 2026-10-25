@@ -1747,10 +1747,12 @@ export function Board({
                       handleCellDrop(event, rowIndex, colIndex)
                     }
                   >
+                    {/* No z-index on the labels: the pawns come later in
+                        the cell, so they paint over the labels. */}
                     {colIndex === 0 && (
                       <span
                         data-board-coordinate="rank"
-                        className="pointer-events-none absolute left-0.5 top-0.5 z-20 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
+                        className="pointer-events-none absolute left-0.5 top-0.5 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
                       >
                         {rows - rowIndex}
                       </span>
@@ -1758,7 +1760,7 @@ export function Board({
                     {rowIndex === rows - 1 && (
                       <span
                         data-board-coordinate="file"
-                        className="pointer-events-none absolute bottom-0.5 right-0.5 z-20 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
+                        className="pointer-events-none absolute bottom-0.5 right-0.5 text-[9px] font-semibold leading-none text-gray-700 dark:text-gray-200"
                       >
                         {String.fromCharCode(97 + colIndex)}
                       </span>
