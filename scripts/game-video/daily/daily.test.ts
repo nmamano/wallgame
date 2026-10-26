@@ -515,7 +515,7 @@ describe("the director checks the contact sheet before the ask", () => {
   });
 });
 
-test("the edit list summary names the start, the cold open, the payoff and a race flash", () => {
+test("the edit list summary names the start, the cold open, the payoff, a race flash and a lead zoom", () => {
   expect(
     edlSummary({
       ending: "gg",
@@ -530,7 +530,17 @@ test("the edit list summary names the start, the cold open, the payoff and a rac
         { fromPly: 6, toPly: 15, secondsPerMove: 0.2, fastForward: true },
         { fromPly: 16, toPly: 21, secondsPerMove: 1, fastForward: false },
       ],
-      events: [{ ply: 22, kind: "race", sound: null }],
+      events: [
+        { ply: 22, kind: "race", sound: null },
+        {
+          ply: 39,
+          kind: "zoom",
+          lead: true,
+          frame: ["g2", "g1", "f1"],
+          sound: "seeya-3",
+        },
+        { ply: 43, kind: "zoom", lead: false, frame: ["^d1"], sound: null },
+      ],
     }),
   ).toEqual([
     'ending gg, music skippy, video caption "Red is 2 steps from winning"',
@@ -541,6 +551,8 @@ test("the edit list summary names the start, the cold open, the payoff and a rac
     "plies 6-15: 0.2 s per move, fast-forward x4",
     "plies 16-21: 1 s per move",
     "ply 22: race counter flash",
+    "ply 39: lead zoom (before the move) on g2 g1 f1 + seeya-3",
+    "ply 43: zoom on ^d1",
   ]);
 });
 

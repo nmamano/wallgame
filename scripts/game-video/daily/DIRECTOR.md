@@ -84,11 +84,16 @@ already has a cycle, finish it or stop: do not start another. `pick
   or more; `facts` give one escape per chase) and its fact does not say that
   the hunter still wins within 10 moves of the escape, show the mouse as it
   runs (Nil, 2026-10-26: "zoom on the mouse so it's clear who is talking.
-  the bye right as it moves would be the best narrative"): a `zoom` on the
-  escape ply with the zoom field that starts before the move, framed on the
-  mouse's start and end cells and the cat's cell, and a `seeya-N` ("the prey
-  gets away") that starts as the mouse moves. If `crew.mjs sounds` lists no
-  `seeya-N`, use an `ooh-N`. No FAHHH on an escape.
+  the bye right as it moves would be the best narrative"): a lead zoom on
+  the escape ply, with the seeya as the zoom's own sound, framed on the
+  mouse's start and end cells and the cat's cell, for example
+  `{"ply": 39, "kind": "zoom", "lead": true, "frame": ["g2", "g1", "f1"], "sound": "seeya-3"}`.
+  The camera pushes in 0.33 s before the move, and the move and the sound
+  land together inside the zoom. Put the seeya in the zoom's `sound`, not in
+  a separate `sound` event, so that it plays with the move. If
+  `crew.mjs sounds` lists no `seeya-N`, use an `ooh-N`. No FAHHH on an
+  escape. A ply takes at most one freeze or lead zoom, and `direct` refuses
+  a lead zoom whose frame misses the mouse's start or end cell.
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.
@@ -207,17 +212,17 @@ storyboard. An effect with no fact behind it is noise. A viewer does not know
 the game, so each effect must make one thing clear: who is close to winning,
 or which wall changed that.
 
-| The fact                                                                                 | The effect                                       | Where                                                                                       |
-| ---------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
-| Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                         | danger ply, the mouse's cell                                                                |
-| The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                    | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
-| The mouse is safe again                                                                  | `laugh`                                          | save ply, after the zoom in the list; the mouse's cell                                      |
-| An escape (`director, escape ply N`)                                                     | `zoom` that starts before the move + a `seeya-N` | escape ply: frame = the mouse's start and end cells and the cat's cell                      |
-| The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call    | jump ply, `walls` = its `*` walls                                                           |
-| A walk jumps on one move (the save, or a jump)                                           | `race`                                           | that ply; no fields. The counter itself shows all video long, this flashes it               |
-| The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                        | that ply, the mover's pawn                                                                  |
-| The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                      | that ply, the mover's pawn                                                                  |
-| A move that needs a laugh more than an explanation                                       | `react`                                          | that ply, next to the pawn it is about                                                      |
+| The fact                                                                                 | The effect                                          | Where                                                                                       |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                            | danger ply, the mouse's cell                                                                |
+| The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                       | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
+| The mouse is safe again                                                                  | `laugh`                                             | save ply, after the zoom in the list; the mouse's cell                                      |
+| An escape (`director, escape ply N`)                                                     | `zoom` with `"lead": true` and `"sound": "seeya-N"` | escape ply: frame = the mouse's start and end cells and the cat's cell                      |
+| The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call       | jump ply, `walls` = its `*` walls                                                           |
+| A walk jumps on one move (the save, or a jump)                                           | `race`                                              | that ply; no fields. The counter itself shows all video long, this flashes it               |
+| The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                           | that ply, the mover's pawn                                                                  |
+| The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                         | that ply, the mover's pawn                                                                  |
+| A move that needs a laugh more than an explanation                                       | `react`                                             | that ply, next to the pawn it is about                                                      |
 
 Rules:
 

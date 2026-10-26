@@ -96,7 +96,7 @@ export const edlSummary = (edl) => [
   ...(edl.events ?? []).map((e) => {
     const what =
       e.kind === "zoom"
-        ? `zoom on ${e.frame.join(" ")}`
+        ? `${e.lead ? "lead zoom (before the move)" : "zoom"} on ${e.frame.join(" ")}`
         : e.kind === "stamp"
           ? `stamp "${e.text}"`
           : e.kind === "trap"
