@@ -2290,7 +2290,7 @@ const renderStyle = async (styleName) => {
         playState(coldPly + 1, {
           zoom: { ...z, scale: 1 + (z.scale - 1) * push },
           ...(walls.length > 0 && {
-            trap: { t, walls: walls.map(wallLine) },
+            trap: { t, walls: walls.map(wallLine), lit: true },
           }),
         }),
         1 / FPS,
