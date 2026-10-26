@@ -959,7 +959,7 @@ describe("captions", () => {
     });
     // Ruby (player 2) hunts; the guest's mouse is the prey.
     expect(candidateFromReport(report({ 1: 3, 2: 0 }), 1).facts[0]).toMatch(
-      /the mouse is safe\. Ruby still wins at move 41, 30 moves after the relief\.$/,
+      /the mouse is safe\. Ruby still wins at move 41, 31 moves after the save\.$/,
     );
     expect(candidateFromReport(report({ 1: 0, 2: 4 }), 1).facts[0]).toMatch(
       /the mouse is safe\. Guest Tuatara wins at move 41\.$/,
@@ -1105,9 +1105,15 @@ describe("what a stranger reads matches what the video shows", () => {
     ]);
   });
 
-  test("no laugh on a relief that the hunter wins soon after", () => {
-    // Red (player 2) hunts the guest's mouse; the relief is ply 10.
-    const laugh = list({ events: [{ ply: 10, kind: "laugh", cell: "g4" }] });
+  test("no laugh on a save that the hunter wins soon after", () => {
+    // Red (player 2) hunts the guest's mouse; the save is ply 9, and the
+    // laugh plays after its zoom.
+    const laugh = list({
+      events: [
+        { ply: 9, kind: "zoom", frame: ["g3", "g4"] },
+        { ply: 9, kind: "laugh", cell: "g4" },
+      ],
+    });
     const ending = (winner: 1 | 2, plies: number) => ({
       distances: Array.from({ length: plies + 1 }, (_, k) =>
         k === plies
@@ -1118,9 +1124,9 @@ describe("what a stranger reads matches what the video shows", () => {
       movesCount: plies,
     });
     expect(storyProblems(laugh, ending(2, 15))).toEqual([
-      "events[0]: a laugh on relief ply 10, but the hunter wins 4 plies later; the save only delays the loss, so say that in the payoff instead",
+      "events[1]: a laugh on save ply 9, but the hunter wins 5 plies later; the save only delays the loss, so say that in the payoff instead",
     ]);
-    // The prey's side wins, or the hunter wins much later: the relief was real.
+    // The prey's side wins, or the hunter wins much later: the save was real.
     expect(storyProblems(laugh, ending(1, 15))).toEqual([]);
     expect(storyProblems(laugh, ending(2, 30))).toEqual([]);
   });
@@ -1589,6 +1595,14 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(JSON.stringify(mention.body)).toContain(
     "video payoff must not mention",
   );
+  // The laugh plays on the save ply, after its zoom (Nil, 2026-10-26).
+  const zoomThenLaugh = await told({
+    events: [
+      { ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" },
+      { ply: 22, kind: "laugh", cell: "e4", sound: "laugh-2" },
+    ],
+  });
+  expect(zoomThenLaugh.status).toBe(200);
   expect((await direct(day, "a-legend")).status).toBe(200);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;

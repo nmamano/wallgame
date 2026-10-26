@@ -67,16 +67,24 @@ already has a cycle, finish it or stop: do not start another. `pick
 ## A good EDL
 
 - Build it from the close call if the game has one: `scared` on the danger
-  ply, then `zoom` with a FAHHH (`fuahhh-N`) on the save ply, framed on the
-  save walls and both pawns, then `laugh` on the relief ply. The frame must
-  hold every `*` wall of the save and both pawn cells; `direct` refuses a
-  zoom that leaves one out.
+  ply, then on the save ply a `zoom` with a FAHHH (`fuahhh-N`), framed on
+  the save walls and both pawns, and after it in the list a `laugh` on the
+  mouse's cell after the save. The laugh belongs to the move that saved
+  the mouse, not to the hunter's reply (Nil, 2026-10-26: "seems off by
+  one"). The frame must hold every `*` wall of the save and both pawn
+  cells; `direct` refuses a zoom that leaves one out.
 - Read how the game ends before you write the story. The close call's fact
-  says who wins. When the hunter still wins a few moves after the relief,
-  the save only delayed the loss: no `laugh`, and the payoff says so (for
-  example "2 to 8. not enough 💀"). `direct` refuses a laugh on a relief that
+  says who wins. When the hunter still wins a few moves after the save, the
+  save only delayed the loss: no `laugh`, and the payoff says so (for
+  example "2 to 8. not enough 💀"). `direct` refuses a laugh on a save that
   the hunter wins within 10 plies (rehearsal, 2026-10-26: this was true of
   all three close calls in the day's top five).
+- When `facts` list a second close call and the mouse gets away (its fact
+  does not say that the hunter still wins within 10 moves of the save, the
+  limit `direct` uses for a laugh), mark that escape
+  with one sound only: a `sound` event on its save ply. Use a "gets away"
+  sound once that family exists in `crew.mjs sounds`; until then, an
+  `ooh-N`. No second zoom and no second FAHHH.
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.
@@ -199,7 +207,8 @@ or which wall changed that.
 | ---------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
 | Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                      | danger ply, the mouse's cell                                                                |
 | The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                 | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
-| The mouse is safe again                                                                  | `laugh`                                       | relief ply, the mouse's cell                                                                |
+| The mouse is safe again                                                                  | `laugh`                                       | save ply, after the zoom in the list; the mouse's cell                                      |
+| A second close call, and the mouse gets away                                             | `sound` (a "gets away" sound, or `ooh-N`)     | its save ply; no zoom                                                                       |
 | The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call | jump ply, `walls` = its `*` walls                                                           |
 | A walk jumps on one move (the save, or a jump)                                           | `race`                                        | that ply; no fields. The counter itself shows all video long, this flashes it               |
 | The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                     | that ply, the mover's pawn                                                                  |
@@ -262,7 +271,7 @@ Rules:
       "frame": ["^g3", "^h3", "g3", "g4"],
       "sound": "fuahhh-1"
     },
-    { "ply": 10, "kind": "laugh", "cell": "g4", "sound": "laugh-2" }
+    { "ply": 9, "kind": "laugh", "cell": "g4", "sound": "laugh-2" }
   ]
 }
 ```

@@ -332,8 +332,7 @@ const commands = {
       for (const b of c.beats) {
         console.log(
           `  director, close call: danger ply ${b.danger.ply} (${b.hunter.type} ${b.danger.hunterCell}, ${b.prey.type} ${b.danger.preyCell}); ` +
-            `save ply ${b.save.ply} walls ${walls(b.save.walls)} (walk ${b.save.walkBefore} to ${b.save.walk}); ` +
-            `relief ply ${b.relief.ply} (${b.prey.type} ${b.relief.preyCell})`,
+            `save ply ${b.save.ply} walls ${walls(b.save.walls)} (walk ${b.save.walkBefore} to ${b.save.walk}; ${b.prey.type} ${b.save.preyCell} safe from this ply)`,
         );
       }
       for (const p of c.picks) {

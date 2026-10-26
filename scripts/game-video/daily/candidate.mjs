@@ -151,11 +151,11 @@ export const raceWinner = (distances) => {
 };
 
 /**
- * A relief is a false one when the hunter still wins this soon after it
+ * A save is a false one when the hunter still wins this soon after it
  * (rehearsal, 2026-10-26: in all three close calls of the day's top five,
- * the hunter won 4 to 8 plies after the relief).
+ * the hunter won 5 to 9 plies after the save).
  */
-export const DOOMED_RELIEF_PLIES = 10;
+export const DOOMED_SAVE_PLIES = 10;
 
 /**
  * What a stranger reads against what the video shows (Director rehearsal,
@@ -166,8 +166,10 @@ export const DOOMED_RELIEF_PLIES = 10;
  *   a contradiction for most of the video.
  * - A number in the payoff must be on the counter just before or just after
  *   the payoff's move, so "2 to 8" and "now it's 8" both pass.
- * - No laugh on a relief when the hunter still wins within
- *   DOOMED_RELIEF_PLIES: the viewer sees "safe", then the loss.
+ * - No laugh on a save when the hunter still wins within DOOMED_SAVE_PLIES:
+ *   the viewer sees "safe", then the loss. The laugh goes on the save ply,
+ *   after the zoom (Nil, 2026-10-26: a laugh on the hunter's reply was "off
+ *   by one").
  * The counter in `distances` is the picker's replay, the one the renderer
  * draws (race-replay.ts).
  */
@@ -215,12 +217,12 @@ export const storyProblems = (edl, { distances, beats, movesCount }) => {
   const winner = raceWinner(distances);
   const lastPly = movesCount - 1;
   for (const b of beats) {
-    const gap = lastPly - b.relief.ply;
-    if (winner !== b.hunter.player || gap > DOOMED_RELIEF_PLIES) continue;
+    const gap = lastPly - b.save.ply;
+    if (winner !== b.hunter.player || gap > DOOMED_SAVE_PLIES) continue;
     edl.events.forEach((e, i) => {
-      if (e.kind === "laugh" && e.ply === b.relief.ply) {
+      if (e.kind === "laugh" && e.ply === b.save.ply) {
         problems.push(
-          `events[${i}]: a laugh on relief ply ${b.relief.ply}, but the hunter wins ${gap} plies later; the save only delays the loss, so say that in the payoff instead`,
+          `events[${i}]: a laugh on save ply ${b.save.ply}, but the hunter wins ${gap} plies later; the save only delays the loss, so say that in the payoff instead`,
         );
       }
     });
@@ -373,7 +375,7 @@ export const candidateFromReport = (report, rank = 1) => {
   // lost a few moves later, and the story must follow the end.
   const outcome = (b) =>
     winner === b.hunter.player
-      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - b.relief.moveNumber} moves after the relief.`
+      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - b.save.moveNumber} moves after the save.`
       : winner === b.prey.player
         ? ` ${name(winner)} wins at move ${base.movesCount}.`
         : "";
