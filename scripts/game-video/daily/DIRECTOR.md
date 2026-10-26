@@ -76,6 +76,13 @@ already has a cycle, finish it or stop: do not start another. `pick
    Check every still, the opening and the banner's exit, each sound at its
    moment, and the ending. If one is wrong, fix it before the ask.
 
+   Check each sound with the event strips in `sheet` (from
+   RESULT.timeline): a sound that names an action (a bye, a FAHHH on a
+   save) must start within 0.1 s of its move landing; a reaction (laugh,
+   scared) starts on its event. Check its level in the loudness lines for
+   each meme (each meme -18.5 LUFS or quieter). A preview cannot check
+   sound.
+
    `ask --agent <your agent id>`
    This opens Nil's ask with the video, the sheet and the stored block,
    word for word, under "Post text (by Growth)". `ask` refuses without a
