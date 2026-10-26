@@ -24,11 +24,11 @@
  * 30 API-published Reels in a moving 24 hours per Page. The finish step
  * returns no post id: the Reel is the video, so the video id names it.
  *
- * The app's environment holds FACEBOOK_PAGE_ID and FACEBOOK_PAGE_ACCESS_TOKEN
- * as Isomux secrets (the same Meta app and Page as Instagram, design A). The
- * page's examples put access_token in the query string; here the token goes
- * only in the Authorization header, as in post-instagram.mjs, so no URL and
- * no plan holds it.
+ * The Page and its Page token come from META_SYSTEM_USER_TOKEN, the one Meta
+ * secret, on each post (meta.mjs discoverMeta); the Page token is never
+ * stored. The page's examples put access_token in the query string; here
+ * the token goes only in the Authorization header, as in post-instagram.mjs,
+ * so no URL and no plan holds it.
  *
  * FIRST LIVE POST CHECKLIST (for Wall Game Growth, on the first real post):
  * - The URL in the post log is https://www.facebook.com/reel/<video id>,
@@ -51,11 +51,6 @@ import {
   sha256,
 } from "./transport.mjs";
 
-export const FACEBOOK_SECRETS = [
-  "FACEBOOK_PAGE_ID",
-  "FACEBOOK_PAGE_ACCESS_TOKEN",
-];
-
 const VERSION = "v26.0";
 export const FB_GRAPH = `https://graph.facebook.com/${VERSION}`;
 export const FB_RUPLOAD = `https://rupload.facebook.com/video-upload/${VERSION}`;
@@ -69,11 +64,6 @@ const STATUS_POLL_MS = 15_000;
 const STATUS_POLLS = 20;
 /** After a failed finish: 8 reads, 15 s apart, so 105 s (Reviewer 1, 700a661e). */
 const SETTLE_READS = 8;
-
-export const DRY_RUN_FACEBOOK = {
-  FACEBOOK_PAGE_ID: "<FACEBOOK_PAGE_ID>",
-  FACEBOOK_PAGE_ACCESS_TOKEN: "<FACEBOOK_PAGE_ACCESS_TOKEN>",
-};
 
 const phase = (status) => ({
   video: status?.video_status,
@@ -121,7 +111,8 @@ export const facebookDryRunReply = (req) => {
 
 /**
  * Post `video` (a Buffer, `durationSeconds` long) as a Reel with
- * `description`. `creds` holds the two secrets (live) or DRY_RUN_FACEBOOK.
+ * `description`. `creds` is {pageId, pageToken} from discoverMeta (in a
+ * dry run, from its canned replies).
  * `beforeCommit` runs just before the finish step. Returns {postId, url}.
  */
 export const postToFacebook = async ({
@@ -143,11 +134,8 @@ export const postToFacebook = async ({
       `facebook: a Reel is ${FACEBOOK_MIN_SECONDS} to ${FACEBOOK_MAX_SECONDS} s, and this video is ${durationSeconds ?? "of unknown length"} s`,
     );
   }
-  const dry = transport.mode === "dry-run";
-  const token = dry
-    ? "<FACEBOOK_PAGE_ACCESS_TOKEN>"
-    : creds.FACEBOOK_PAGE_ACCESS_TOKEN;
-  const page = creds.FACEBOOK_PAGE_ID;
+  const token = creds.pageToken;
+  const page = creds.pageId;
   const graph = (method, url, body) =>
     transport.request({
       method,

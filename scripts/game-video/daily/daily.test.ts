@@ -55,11 +55,7 @@ import {
   DRY_RUN_TIKTOK,
   TIKTOK_TOKEN_URL,
 } from "./post-tiktok.mjs";
-import {
-  instagramDryRunReply,
-  postToInstagram,
-  DRY_RUN_INSTAGRAM,
-} from "./post-instagram.mjs";
+import { instagramDryRunReply, postToInstagram } from "./post-instagram.mjs";
 import {
   dryRunTransport,
   NotPosted,
@@ -913,7 +909,6 @@ describe("a post that may exist is not posted again", () => {
         },
         youtube: youtubeDryRunReply,
         tiktok: tiktokDryRunReply,
-        instagram: instagramDryRunReply,
       },
     });
     const first = (await daily.post(day)) as Cycle & {
@@ -1687,7 +1682,10 @@ describe("Instagram", () => {
       video: Buffer.from("v"),
       caption: "c",
       transport,
-      creds: DRY_RUN_INSTAGRAM,
+      creds: {
+        igUserId: "DRY-RUN-IG-USER-ID",
+        pageToken: "<Page token from /me/accounts>",
+      },
       sleep: () => Promise.resolve(),
       beforeCommit: () => {
         steps.push("COMMIT");
@@ -2349,20 +2347,30 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     body: unknown;
     headers: Record<string, string>;
   }[];
+  // The Page and its Instagram account come from the one Meta secret first.
   expect(instagramPlan.map((r) => `${r.method} ${r.url}`)).toEqual([
-    "POST https://graph.facebook.com/v26.0/<INSTAGRAM_USER_ID>/media",
+    "GET https://graph.facebook.com/v26.0/me/accounts?fields=id,name,access_token",
+    "GET https://graph.facebook.com/v26.0/DRY-RUN-PAGE-ID?fields=instagram_business_account",
+    "POST https://graph.facebook.com/v26.0/DRY-RUN-IG-USER-ID/media",
     "POST https://rupload.facebook.com/ig-api-upload/v26.0/DRY-RUN-CONTAINER",
     "GET https://graph.facebook.com/v26.0/DRY-RUN-CONTAINER?fields=status_code",
-    "POST https://graph.facebook.com/v26.0/<INSTAGRAM_USER_ID>/media_publish",
+    "POST https://graph.facebook.com/v26.0/DRY-RUN-IG-USER-ID/media_publish",
     "GET https://graph.facebook.com/v26.0/DRY-RUN-MEDIA-ID?fields=permalink",
   ]);
-  expect(instagramPlan[0].body).toEqual({
+  expect(instagramPlan[2].body).toEqual({
     media_type: "REELS",
     upload_type: "resumable",
     caption: COPY.instagram,
   });
-  expect(instagramPlan[1].headers.file_size).toBe(
-    String((instagramPlan[1].body as { bytes: number }).bytes),
+  expect(instagramPlan[3].headers.file_size).toBe(
+    String((instagramPlan[3].body as { bytes: number }).bytes),
+  );
+  // Discovery uses the system user token; the post uses the Page token.
+  expect(instagramPlan[0].headers.authorization).toBe(
+    "Bearer <META_SYSTEM_USER_TOKEN>",
+  );
+  expect(instagramPlan[2].headers.authorization).toBe(
+    "Bearer <Page token from /me/accounts>",
   );
   expect(log[3]).toMatchObject({
     platform: "instagram",

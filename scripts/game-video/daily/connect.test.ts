@@ -694,3 +694,69 @@ describe("/daily/connect through the app", () => {
     }
   });
 });
+
+describe("/daily/connect shows what the Meta token finds", () => {
+  const metaReplies =
+    (pages: unknown[]) =>
+    (req: Req): Reply => {
+      if (req.url.includes("/me/accounts")) {
+        return { status: 200, json: { data: pages } };
+      }
+      if (req.url.endsWith("?fields=instagram_business_account")) {
+        return {
+          status: 200,
+          json: { instagram_business_account: { id: "IG1" } },
+        };
+      }
+      return { status: 200, json: { username: "wallgameio" } };
+    };
+  const page = (name: string) => ({
+    id: `P-${name}`,
+    name,
+    access_token: "SECRET-PAGE-TOKEN",
+  });
+  const show = async (env: Record<string, string>, pages: unknown[]) => {
+    const transport = fakeLive(metaReplies(pages));
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env,
+      live: () => transport,
+    });
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const text = await (
+        await fetch(`http://127.0.0.1:${port}/daily/connect`)
+      ).text();
+      return { text, sent: transport.sent };
+    } finally {
+      server.close();
+    }
+  };
+  const TOKEN = { META_SYSTEM_USER_TOKEN: "SECRET-SU" };
+
+  test("one Page with Instagram: its name and handle, and no token", async () => {
+    const { text, sent } = await show(TOKEN, [page("Wall Game")]);
+    expect(text).toContain("Meta: Page Wall Game, Instagram @wallgameio");
+    expect(text).not.toContain("SECRET-");
+    expect(sent.map((r) => r.headers?.authorization)).toEqual([
+      "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
+      "Bearer SECRET-SU",
+    ]);
+  });
+
+  test("two Pages, or no secret: the reason, and no call without the secret", async () => {
+    const two = await show(TOKEN, [page("Wall Game"), page("Other")]);
+    expect(two.text).toContain("sees 2 Facebook Pages");
+    expect(two.text).not.toContain("SECRET-");
+    const none = await show({}, [page("Wall Game")]);
+    expect(none.text).toContain(
+      "Not set up: the app needs the secret META_SYSTEM_USER_TOKEN",
+    );
+    expect(none.sent).toHaveLength(0);
+  });
+});

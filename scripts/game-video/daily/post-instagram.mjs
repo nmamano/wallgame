@@ -20,9 +20,10 @@
  * Auth (Wall Game PM, 2026-10-26, design A): a professional Instagram account
  * linked to a Facebook Page, and a system-user token of a Business app with
  * instagram_basic, instagram_content_publish and pages_read_engagement. A
- * system-user token does not expire, so nothing rotates here. The app's
- * environment holds INSTAGRAM_USER_ID (the IG_ID) and INSTAGRAM_ACCESS_TOKEN
- * as Isomux secrets.
+ * system-user token does not expire, so nothing rotates here. Its one
+ * secret, META_SYSTEM_USER_TOKEN, finds the Page, the Page token and the
+ * linked IG_ID on each post (meta.mjs discoverMeta). The post goes out with
+ * the Page token, as the Content Publishing guide says for Facebook Login.
  *
  * The token goes only in the Authorization header, never in a URL, so the
  * live transport keeps no copy of it.
@@ -35,22 +36,12 @@
  */
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
 
-export const INSTAGRAM_SECRETS = [
-  "INSTAGRAM_USER_ID",
-  "INSTAGRAM_ACCESS_TOKEN",
-];
-
 const VERSION = "v26.0";
 export const GRAPH = `https://graph.facebook.com/${VERSION}`;
 export const RUPLOAD = `https://rupload.facebook.com/ig-api-upload/${VERSION}`;
 
 const STATUS_POLL_MS = 60_000;
 const STATUS_POLLS = 5;
-
-export const DRY_RUN_INSTAGRAM = {
-  INSTAGRAM_USER_ID: "<INSTAGRAM_USER_ID>",
-  INSTAGRAM_ACCESS_TOKEN: "<INSTAGRAM_ACCESS_TOKEN>",
-};
 
 export const instagramDryRunReply = (req) => {
   const path = req.url.split("?")[0];
@@ -79,8 +70,8 @@ export const instagramDryRunReply = (req) => {
 };
 
 /**
- * Post `video` (a Buffer) as a Reel with `caption`. `creds` holds
- * INSTAGRAM_USER_ID and INSTAGRAM_ACCESS_TOKEN (live), or DRY_RUN_INSTAGRAM.
+ * Post `video` (a Buffer) as a Reel with `caption`. `creds` is {igUserId,
+ * pageToken} from discoverMeta (in a dry run, from its canned replies).
  * `beforeCommit` runs just before media_publish. Returns {postId, url}.
  */
 export const postToInstagram = async ({
@@ -91,9 +82,8 @@ export const postToInstagram = async ({
   sleep,
   beforeCommit,
 }) => {
-  const dry = transport.mode === "dry-run";
-  const token = dry ? "<INSTAGRAM_ACCESS_TOKEN>" : creds.INSTAGRAM_ACCESS_TOKEN;
-  const user = creds.INSTAGRAM_USER_ID;
+  const token = creds.pageToken;
+  const user = creds.igUserId;
   const graph = (method, url, body) =>
     transport.request({
       method,

@@ -21,7 +21,6 @@ import {
 import {
   postToFacebook,
   facebookDryRunReply,
-  DRY_RUN_FACEBOOK,
   FB_RUPLOAD,
 } from "./post-facebook.mjs";
 import {
@@ -144,9 +143,11 @@ describe("text limits", () => {
 });
 
 describe("Facebook", () => {
-  const live = {
-    FACEBOOK_PAGE_ID: "PAGE1",
-    FACEBOOK_PAGE_ACCESS_TOKEN: "SECRET-FB",
+  const live = { pageId: "PAGE1", pageToken: "SECRET-FB" };
+  /** What a dry run's discovery gives (meta.mjs metaDryRunReply). */
+  const DRY_RUN_FACEBOOK = {
+    pageId: "DRY-RUN-PAGE-ID",
+    pageToken: "<Page token from /me/accounts>",
   };
 
   test("start, upload, finish, then wait for published; the text is as given", async () => {
@@ -163,9 +164,9 @@ describe("Facebook", () => {
     });
     const sent = transport.sent as Req[];
     expect(sent.map((r) => r.url.split("?")[0])).toEqual([
-      "https://graph.facebook.com/v26.0/<FACEBOOK_PAGE_ID>/video_reels",
+      "https://graph.facebook.com/v26.0/DRY-RUN-PAGE-ID/video_reels",
       `${FB_RUPLOAD}/DRY-RUN-VIDEO-ID`,
-      "https://graph.facebook.com/v26.0/<FACEBOOK_PAGE_ID>/video_reels",
+      "https://graph.facebook.com/v26.0/DRY-RUN-PAGE-ID/video_reels",
       "https://graph.facebook.com/v26.0/DRY-RUN-VIDEO-ID",
     ]);
     expect(probe.at).toBe(2);

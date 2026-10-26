@@ -105,12 +105,7 @@ import {
   NotPosted,
   PostFailed,
 } from "./transport.mjs";
-import {
-  postToInstagram,
-  instagramDryRunReply,
-  DRY_RUN_INSTAGRAM,
-  INSTAGRAM_SECRETS,
-} from "./post-instagram.mjs";
+import { postToInstagram, instagramDryRunReply } from "./post-instagram.mjs";
 import {
   postToTiktok,
   tiktokDryRunReply,
@@ -130,12 +125,14 @@ import {
   DRY_RUN_CREDS,
   YOUTUBE_SECRETS,
 } from "./post-youtube.mjs";
+import { postToFacebook, facebookDryRunReply } from "./post-facebook.mjs";
 import {
-  postToFacebook,
-  facebookDryRunReply,
-  DRY_RUN_FACEBOOK,
-  FACEBOOK_SECRETS,
-} from "./post-facebook.mjs";
+  discoverMeta,
+  metaDryRunReply,
+  DRY_RUN_META,
+  META_SECRETS,
+  MetaRefused,
+} from "./meta.mjs";
 import {
   postToBluesky,
   blueskyDryRunReply,
@@ -189,8 +186,9 @@ const SECRETS = {
   x: X_SECRETS,
   youtube: YOUTUBE_SECRETS,
   tiktok: TIKTOK_SECRETS,
-  instagram: INSTAGRAM_SECRETS,
-  facebook: FACEBOOK_SECRETS,
+  // One system-user token finds the Page and Instagram (meta.mjs).
+  instagram: META_SECRETS,
+  facebook: META_SECRETS,
   bluesky: BLUESKY_SECRETS,
   // Threads fetches the video from R2 (public-url-r2.mjs), so it is live
   // only when the R2 secrets exist too (Wall Game PM, 2026-10-26).
@@ -222,8 +220,8 @@ const DRY_RUN_REPLIES = {
   x: xDryRunReply,
   youtube: youtubeDryRunReply,
   tiktok: tiktokDryRunReply,
-  instagram: instagramDryRunReply,
-  facebook: facebookDryRunReply,
+  instagram: (req) => metaDryRunReply(req) ?? instagramDryRunReply(req),
+  facebook: (req) => metaDryRunReply(req) ?? facebookDryRunReply(req),
   bluesky: blueskyDryRunReply,
   threads: threadsDryRunReply,
   mastodon: mastodonDryRunReply,
@@ -273,6 +271,43 @@ export const createDaily = ({
     new Set(CONNECT_PLATFORMS.filter((p) => tokens.connected(p)));
   const modesNow = () => postingModes(env, connectedNow());
   const states = connectStates();
+
+  /**
+   * What /daily/connect shows for Facebook and Instagram: the Page and the
+   * Instagram account that META_SYSTEM_USER_TOKEN finds (a live read of
+   * Meta), or why they are not found. Never the Page token.
+   */
+  const metaStatus = async () => {
+    const missing = META_SECRETS.filter((name) => !env[name]);
+    if (missing.length) {
+      return {
+        ok: false,
+        lines: [`Not set up: the app needs the secret ${missing.join(", ")}`],
+      };
+    }
+    try {
+      const found = await discoverMeta({
+        transport: makeLiveTransport(),
+        token: env.META_SYSTEM_USER_TOKEN,
+        instagram: "handle",
+      });
+      return {
+        ok: true,
+        lines: [
+          `Meta: Page ${found.pageName}, Instagram @${found.igUsername ?? found.igUserId}`,
+        ],
+      };
+    } catch (err) {
+      return {
+        ok: false,
+        lines: [
+          err instanceof MetaRefused
+            ? err.message
+            : `Meta could not be reached (${err?.name ?? "error"})`,
+        ],
+      };
+    }
+  };
 
   /** A stored field of a connected platform, for a live post. */
   const stored = (platform, pick) => {
@@ -774,25 +809,36 @@ export const createDaily = ({
             sleep,
             beforeCommit,
           }),
-        instagram: () =>
-          postToInstagram({
+        instagram: async () => {
+          const meta = await discoverMeta({
+            transport,
+            token: (live ? env : DRY_RUN_META).META_SYSTEM_USER_TOKEN,
+            instagram: "id",
+          });
+          return postToInstagram({
             video,
             caption: texts.instagram,
             transport,
-            creds: live ? env : DRY_RUN_INSTAGRAM,
+            creds: { igUserId: meta.igUserId, pageToken: meta.pageToken },
             sleep,
             beforeCommit,
-          }),
-        facebook: () =>
-          postToFacebook({
+          });
+        },
+        facebook: async () => {
+          const meta = await discoverMeta({
+            transport,
+            token: (live ? env : DRY_RUN_META).META_SYSTEM_USER_TOKEN,
+          });
+          return postToFacebook({
             video,
             durationSeconds: cycle.render.video.durationSeconds,
             description: texts.facebook,
             transport,
-            creds: live ? env : DRY_RUN_FACEBOOK,
+            creds: { pageId: meta.pageId, pageToken: meta.pageToken },
             sleep,
             beforeCommit,
-          }),
+          });
+        },
         bluesky: () =>
           postToBluesky({
             video,
@@ -1351,8 +1397,9 @@ export const createDaily = ({
     // One-click Connect (connect.mjs). The office sends the member's id and
     // name with each request through the app's URL; a request without them
     // did not come through the office and may not connect anything.
-    "GET /daily/connect": (req, res, url) => {
+    "GET /daily/connect": async (req, res, url) => {
       const connected = url.searchParams.get("connected");
+      const meta = await metaStatus();
       html(
         res,
         200,
@@ -1364,6 +1411,7 @@ export const createDaily = ({
           })),
           {
             connected: CONNECT_PLATFORMS.includes(connected) ? connected : null,
+            meta,
           },
         ),
       );
