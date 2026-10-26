@@ -1012,7 +1012,7 @@ describe("Growth's copy block", () => {
     const problems = (field: string, text: string) =>
       copyProblems(withText(field, text), "TESTGAME1");
     expect(problems("x", "a".repeat(281))).toEqual([
-      "X is over 280 characters",
+      "X is over 280 in X's count (an emoji or a non-Latin letter counts 2)",
     ]);
     expect(problems("youtubeTitle", "bro... #wallgame #Shorts")).toEqual([
       "YouTube title must not hold #Shorts: the app adds it",
@@ -1032,6 +1032,30 @@ describe("Growth's copy block", () => {
       "Instagram has 6 hashtags; at most 5 are allowed",
     ]);
     expect(problems("instagram", "bro #a #b #c #d #e")).toEqual([]);
+    // X weighs an emoji 2: 140 of them is 280, one more letter is over.
+    expect(problems("x", "😭".repeat(140))).toEqual([]);
+    expect(problems("x", "😭".repeat(140) + "a")).toEqual([
+      "X is over 280 in X's count (an emoji or a non-Latin letter counts 2)",
+    ]);
+    expect(problems("x", "日".repeat(141))).toEqual([
+      "X is over 280 in X's count (an emoji or a non-Latin letter counts 2)",
+    ]);
+    // YouTube counts the description in UTF-8 bytes: an emoji is 4.
+    const description = (n: number) =>
+      `${"😭".repeat(n)} Play Wall Game: ${YOUTUBE_LINK}`;
+    const room = (5000 - Buffer.byteLength(description(0))) / 4;
+    expect(
+      problems("youtubeDescription", description(Math.floor(room))),
+    ).toEqual([]);
+    expect(
+      problems("youtubeDescription", description(Math.floor(room) + 1)),
+    ).toEqual([
+      `YouTube description is ${Buffer.byteLength(description(Math.floor(room) + 1))} bytes; YouTube takes at most 5000`,
+    ]);
+    // Growth's playbook: no link on Instagram (it is not clickable there).
+    expect(problems("instagram", "bro 😭 wallgame.io")).toEqual([
+      "Instagram must not hold a link",
+    ]);
   });
 
   test("the copy hash covers the five texts and the version", () => {
@@ -1947,7 +1971,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     text: BLOCK.replace("X: ", `X: ${"a".repeat(280)}`),
     copyVersion: COPY_VERSION,
   });
-  expect(JSON.stringify(long.body)).toContain("X is over 280 characters");
+  expect(JSON.stringify(long.body)).toContain("X is over 280 in X's count");
   const stored = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
   expect(stored.status).toBe(200);
   expect(stored.body.copy).toEqual(COPY);

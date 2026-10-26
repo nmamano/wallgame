@@ -30,9 +30,11 @@ import { textProblems } from "./candidate.mjs";
 export const YOUTUBE_LINK =
   "https://wallgame.io/?utm_source=youtube&utm_medium=social&utm_campaign=daily-video";
 
-/** X counts every character as one here; the limit for a free account. */
+/** X's limit for a free account, in its weighted count (xWeight). */
 export const X_MAX_CHARS = 280;
 export const YOUTUBE_TITLE_MAX_CHARS = 100;
+/** The YouTube Data API's limit for snippet.description, in UTF-8 bytes. */
+export const YOUTUBE_DESCRIPTION_MAX_BYTES = 5000;
 /** What the app adds to the YouTube title. */
 export const SHORTS_TAG = " #Shorts";
 /** Growth's cap for both (posting/tiktok.md, posting/instagram.md). */
@@ -59,6 +61,38 @@ export const COPY_VERSION = /^[a-z0-9-]{1,40}$/;
  */
 
 const chars = (text) => [...text].length;
+
+/**
+ * X's weighted length (twitter-text v3): a code point counts 1 in the
+ * ranges below and 2 elsewhere, and an emoji counts 2 however many code
+ * points it has. A grapheme with an emoji counts 2 here; the other code
+ * points count one by one. A keycap or flag can count a little more than X
+ * counts it, which is the safe side: X refuses a long post only after the
+ * other platforms have posted (Wall Game Worker 1, 2026-10-26).
+ */
+const X_LIGHT = [
+  [0x0000, 0x10ff],
+  [0x2000, 0x200d],
+  [0x2010, 0x201f],
+  [0x2032, 0x2037],
+];
+const EMOJI = /\p{Extended_Pictographic}/u;
+const segmenter = new Intl.Segmenter("en", { granularity: "grapheme" });
+export const xWeight = (text) =>
+  [...segmenter.segment(text)].reduce(
+    (sum, { segment }) =>
+      sum +
+      (EMOJI.test(segment)
+        ? 2
+        : [...segment].reduce((w, ch) => {
+            const cp = /** @type {number} */ (ch.codePointAt(0));
+            return w + (X_LIGHT.some(([a, b]) => cp >= a && cp <= b) ? 1 : 2);
+          }, 0)),
+    0,
+  );
+
+/** A URL, or a bare domain that X and others make into one. */
+const LINK = /https?:\/\/|www\.|\.(io|com|gg|net|org)\b/i;
 
 /**
  * The five texts of a block, or the reasons it is not one. Blank lines and
@@ -114,13 +148,17 @@ export const copyProblems = (copy, gameId, players = []) => {
     gameId,
     players,
   );
-  if (chars(copy.x) > X_MAX_CHARS) {
-    problems.push(`X is over ${X_MAX_CHARS} characters`);
+  if (xWeight(copy.x) > X_MAX_CHARS) {
+    problems.push(
+      `X is over ${X_MAX_CHARS} in X's count (an emoji or a non-Latin letter counts 2)`,
+    );
   }
   // A URL in the text makes an X post cost $0.20 instead of $0.015 (task
   // e8d26610, Nil's decision of 2026-10-25), and X also reads bare domains.
-  if (/https?:\/\/|www\.|\.(io|com|gg|net|org)\b/i.test(copy.x)) {
-    problems.push("X must not hold a link");
+  if (LINK.test(copy.x)) problems.push("X must not hold a link");
+  // Growth's playbook: Instagram has no link (it is not clickable there).
+  if (LINK.test(copy.instagram)) {
+    problems.push("Instagram must not hold a link");
   }
   if (/#shorts\b/i.test(copy.youtubeTitle)) {
     problems.push(`YouTube title must not hold #Shorts: the app adds it`);
@@ -128,6 +166,12 @@ export const copyProblems = (copy, gameId, players = []) => {
   if (chars(copy.youtubeTitle + SHORTS_TAG) > YOUTUBE_TITLE_MAX_CHARS) {
     problems.push(
       `YouTube title is over ${YOUTUBE_TITLE_MAX_CHARS} characters with the "${SHORTS_TAG.trim()}" the app adds`,
+    );
+  }
+  const bytes = Buffer.byteLength(copy.youtubeDescription, "utf8");
+  if (bytes > YOUTUBE_DESCRIPTION_MAX_BYTES) {
+    problems.push(
+      `YouTube description is ${bytes} bytes; YouTube takes at most ${YOUTUBE_DESCRIPTION_MAX_BYTES}`,
     );
   }
   if (!copy.youtubeDescription.includes(YOUTUBE_LINK)) {
