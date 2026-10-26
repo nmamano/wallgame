@@ -56,6 +56,7 @@ import {
 import {
   candidateFromReport,
   captionFrom,
+  CAPTION_STYLE_VERSION,
   captionProblems,
   playerNames,
   textProblems,
@@ -78,6 +79,7 @@ import {
   measureLoudness,
   loudnessVerdict,
   safeAreaVerdict,
+  captionLinesVerdict,
 } from "./quality.mjs";
 import {
   openSoundPicks,
@@ -366,6 +368,7 @@ export const createDaily = ({
               quality: {
                 loudness,
                 safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
+                captionLines: captionLinesVerdict(result.layout),
               },
             }),
           );
@@ -622,6 +625,7 @@ export const createDaily = ({
           candidate,
           caption,
           style,
+          styleVersion: CAPTION_STYLE_VERSION,
           replace: body.replace === true,
         }),
       );
@@ -918,6 +922,9 @@ export const logRow = (cycle, platform, result) => ({
       ? `${cycle.approval.caption.youtubeTitle}\n\n${cycle.approval.caption.youtubeDescription}`
       : cycle.approval.caption.x,
   style: cycle.style,
+  // The caption style (candidate.mjs CAPTION_STYLE_VERSION) at pick time;
+  // null for a cycle picked before the field existed.
+  styleVersion: cycle.styleVersion ?? null,
   effect: cycle.render.effect,
   ending: cycle.render.ending,
   sound: cycle.render.sound,

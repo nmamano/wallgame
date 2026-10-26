@@ -5,6 +5,10 @@ the edit decision list (EDL) for its video, checks the render, and asks Nil.
 Nil asked for this on 2026-10-26: an agent decides where each sound and zoom
 goes, instead of fixed rules.
 
+When you change the rules of "Captions and titles", bump
+`CAPTION_STYLE_VERSION` in `candidate.mjs` and name the new value in that
+section. Every post-log row carries it, for before and after reads.
+
 All commands are `node scripts/game-video/daily/crew.mjs <command>`. The app
 refuses a step out of order. If you start in a new session, run `status`
 first. When the schedule starts you, run `status` first too. If the day
@@ -113,6 +117,8 @@ already has a cycle, finish it or stop: do not start another. `pick
   when no kept sound fits. `direct` refuses a sound that Nil dropped.
 
 ## Captions and titles
+
+Style version: `wallz-lingo-1` (`CAPTION_STYLE_VERSION`).
 
 Nil, 2026-10-26: copy the lingo of the Wallz channel's Shorts (another
 walls game). Its 127 Shorts had 149M views on 2026-10-26; the most viewed

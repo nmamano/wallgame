@@ -148,7 +148,7 @@ export const openStore = (dataDir) => {
      * (Wall Game PM, 2026-10-26). Replacing is allowed until the ask is open:
      * after that the ask names this video, and the way out is an answer.
      */
-    pick(day, { candidate, caption, style, replace = false }) {
+    pick(day, { candidate, caption, style, styleVersion, replace = false }) {
       const old = read(day);
       if (old && !replace) {
         refuse(
@@ -178,6 +178,8 @@ export const openStore = (dataDir) => {
         candidate,
         caption,
         style,
+        // The caption style the caption was written under (candidate.mjs).
+        styleVersion,
         edl: null,
         render: null,
         check: null,

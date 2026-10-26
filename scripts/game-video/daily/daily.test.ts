@@ -23,6 +23,7 @@ import {
   saveFrameProblems,
   storyProblems,
   playerNames,
+  CAPTION_STYLE_VERSION,
   textProblems,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
@@ -54,6 +55,7 @@ import {
   parseEbur128,
   loudnessVerdict,
   safeAreaVerdict,
+  captionLinesVerdict,
   MAX_STING_OVER_MIX_LU,
 } from "./quality.mjs";
 import { FRAME, SAFE_AREA, validateEdl } from "../edl.mjs";
@@ -172,6 +174,7 @@ interface DailyState {
 
 interface LogRow {
   platform: string;
+  styleVersion: string | null;
 }
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
@@ -186,6 +189,7 @@ const pickToday = (
     candidate,
     caption: captionFrom(CAPTION),
     style: "daily",
+    styleVersion: CAPTION_STYLE_VERSION,
     replace,
   });
 };
@@ -596,6 +600,48 @@ describe("the app's measures of a render", () => {
       ).note,
     ).toBe("the frame is 1080x1080, not 1080x1920");
   });
+
+  test("each caption beat must be one line inside its box", () => {
+    const slot = { x: 81, y: 285, w: 918, h: 60 };
+    const layout = (captionText?: object) => ({
+      frame: { w: 1080, h: 1920 },
+      boxes: { caption: slot, payoff: slot },
+      captionText,
+    });
+    // Worker 2's measures on the 4090 stage, 2026-10-26.
+    expect(
+      captionLinesVerdict(
+        layout({
+          caption: { lines: 1, width: 702 },
+          payoff: { lines: 1, width: 421 },
+        }),
+      ),
+    ).toEqual({
+      ok: true,
+      note: "caption 1 line, 702 of 918 px; payoff 1 line, 421 of 918 px",
+    });
+    expect(
+      captionLinesVerdict(
+        layout({
+          caption: { lines: 1, width: 702 },
+          payoff: { lines: 2, width: 882 },
+        }),
+      ),
+    ).toEqual({
+      ok: false,
+      note: "payoff 2 lines, 882 of 918 px: each beat must be one line inside its box; shorten it, direct again and render --force",
+    });
+    // One long word cannot wrap: one line, but past the box.
+    expect(
+      captionLinesVerdict(layout({ caption: { lines: 1, width: 1743 } })).ok,
+    ).toBe(false);
+    expect(captionLinesVerdict(layout({}))).toEqual({
+      ok: true,
+      note: "no caption",
+    });
+    // A renderer that did not measure fails, so a wrap cannot pass unseen.
+    expect(captionLinesVerdict(layout()).ok).toBe(false);
+  });
 });
 
 describe("a post that may exist is not posted again", () => {
@@ -783,6 +829,39 @@ describe("captions", () => {
     expect(caption.youtubeTitle).toBe(`${CAPTION} #Shorts`);
     expect(caption.youtubeDescription).toBe(
       `${CAPTION}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
+    );
+  });
+
+  test("DIRECTOR.md names the caption style version that the posts carry", () => {
+    const director = readFileSync(
+      resolve(import.meta.dir, "DIRECTOR.md"),
+      "utf8",
+    );
+    expect(director).toContain(
+      `Style version: \`${CAPTION_STYLE_VERSION}\` (\`CAPTION_STYLE_VERSION\`)`,
+    );
+  });
+
+  test("a long title loses the end of its teaser, never its hashtags", () => {
+    const tags = "#wallgame #gaming #boardgames";
+    const teaser =
+      "bro really thought the bot would never find the one gap in his wall and then it walked right through it";
+    const { youtubeTitle } = captionFrom(CAPTION, `${teaser} ${tags}`);
+    expect(youtubeTitle).toBe(
+      `bro really thought the bot would never find the one gap in\u2026 ${tags} #Shorts`,
+    );
+    expect([...youtubeTitle].length).toBeLessThanOrEqual(100);
+    // A #Shorts that the crew lead wrote is not doubled.
+    expect(captionFrom(CAPTION, "bro... #wallgame #Shorts").youtubeTitle).toBe(
+      "bro... #wallgame #Shorts",
+    );
+    // Hashtags that cannot fit are refused, not cut.
+    const tooMany = captionFrom(
+      CAPTION,
+      `bro ${Array.from({ length: 12 }, (_, i) => `#boardgames${i}`).join(" ")}`,
+    );
+    expect(captionProblems(tooMany, "TESTGAME1")).toContain(
+      "YouTube title is over 100 characters",
     );
   });
 
@@ -1398,7 +1477,8 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   ending: edl.ending, edlSha256: hash(raw),
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
     board: { x: 81, y: 380, w: 918, h: 852 },
-    caption: { x: 81, y: 285, w: 918, h: 60 } } },
+    caption: { x: 81, y: 285, w: 918, h: 60 } },
+    captionText: edl.caption ? { caption: { lines: 1, width: 640 } } : {} },
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
 `;
 
@@ -1578,6 +1658,10 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "tiktok",
     "instagram",
   ]);
+  // Each row names the caption style its caption was written under.
+  expect(log.map((r) => r.styleVersion)).toEqual(
+    log.map(() => CAPTION_STYLE_VERSION),
+  );
   // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
   expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");
   const tiktokPlan = JSON.parse(

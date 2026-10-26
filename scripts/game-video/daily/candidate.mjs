@@ -28,6 +28,15 @@ import { ENDINGS, fastForwardTag } from "../edl.mjs";
 export const YOUTUBE_LINK =
   "https://wallgame.io/?utm_source=youtube&utm_medium=social&utm_campaign=daily-video";
 
+/**
+ * The caption and title style that DIRECTOR.md's "Captions and titles"
+ * section teaches. Each cycle keeps the version its caption was written
+ * under, and every post-log row carries it, so Wall Game Growth can compare
+ * the posts before and after a change (Wall Game PM, 2026-10-26). Bump it
+ * whenever those rules change, and name the new value in DIRECTOR.md.
+ */
+export const CAPTION_STYLE_VERSION = "wallz-lingo-1";
+
 /** X counts every character as one here; the limit for a free account. */
 export const X_MAX_CHARS = 280;
 export const YOUTUBE_TITLE_MAX_CHARS = 100;
@@ -384,14 +393,32 @@ export const candidateFromReport = (report, rank = 1) => {
  * caption alone (no link: a link raises the price); YouTube gets it as the
  * title, unless the crew lead wrote a separate one, and in the description
  * above the tracked link.
+ *
+ * A title too long for YouTube loses the end of its teaser, never its
+ * hashtags (the ones at the end) or #Shorts. When the hashtags alone do not
+ * fit, the title stays too long and captionProblems refuses it.
  */
 export const captionFrom = (text, title) => {
   const caption = String(text ?? "").trim();
   const head = String(title ?? caption).trim();
-  const room = YOUTUBE_TITLE_MAX_CHARS - " #Shorts".length;
+  const [, teaser, tagText] = head.match(/^(.*?)((?:\s+#[\p{L}\p{N}_]+)*)$/su);
+  const tags = tagText
+    .split(/\s+/)
+    .filter((t) => t && t.toLowerCase() !== "#shorts");
+  const tail = [...tags, "#Shorts"].join(" ");
+  const room = YOUTUBE_TITLE_MAX_CHARS - [...tail].length - 1;
+  const chars = [...teaser];
+  // Cut at the last word that fits, or mid-word when one word is too long.
+  const keep = Math.max(room - 1, 0);
+  const kept = chars.slice(0, keep).join("");
+  const atWord = /\s/.test(chars[keep] ?? "")
+    ? kept
+    : kept.slice(0, Math.max(0, kept.search(/\s\S*$/)));
+  const cut =
+    chars.length > room ? (atWord || kept).trimEnd() + "\u2026" : teaser;
   return {
     x: caption,
-    youtubeTitle: `${[...head].length > room ? [...head].slice(0, room - 1).join("") + "\u2026" : head} #Shorts`,
+    youtubeTitle: `${cut} ${tail}`.trim(),
     youtubeDescription: `${caption}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
   };
 };

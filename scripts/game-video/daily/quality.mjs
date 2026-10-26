@@ -11,6 +11,11 @@
  *   safeArea   each box the renderer measured in the page (board, caption,
  *              race counter, goal line) lies inside SAFE_AREA (edl.mjs),
  *              where the apps paint no buttons or captions (audit item 3).
+ *   captionLines
+ *              each caption beat (the caption and the payoff) is one line as
+ *              the page wraps it (stage.html __captionText): a two-line beat
+ *              makes the board smaller for the whole video (DIRECTOR.md,
+ *              measured 2026-10-26: 720 px against 785 px).
  */
 import { execFile } from "node:child_process";
 
@@ -158,4 +163,36 @@ export const safeAreaVerdict = (layout, frame, area) => {
           .map(([name, box]) => `${name} (${span(box)}) is outside`)
           .join("; ") + ` the safe area (${span(area)})`,
       );
+};
+
+/**
+ * One line per caption beat, inside its box. `layout.captionText` is the
+ * renderer's measure of each beat, { caption?, payoff? } of { lines, width }
+ * with the widest line in px; `layout.boxes` has a box of the same name. One
+ * long word cannot wrap: it stays one line and runs past the box (Worker 2,
+ * 2026-10-26: 31 W's measured 1 line, 1743 px in a 918 px slot), so the
+ * width counts too. A render that did not measure fails, as safeArea does.
+ */
+export const captionLinesVerdict = (layout) => {
+  const beats = layout?.captionText;
+  if (!beats) {
+    return {
+      ok: false,
+      note: "the render reported no caption line count; the render kit may be older than the measure, so tell the Wall Game PM",
+    };
+  }
+  const entries = Object.entries(beats);
+  if (entries.length === 0) return { ok: true, note: "no caption" };
+  const said = ([name, b]) =>
+    `${name} ${b.lines} line${b.lines === 1 ? "" : "s"}, ${b.width} of ${layout.boxes?.[name]?.w ?? "?"} px`;
+  const bad = entries.filter(([name, b]) => {
+    const box = layout.boxes?.[name]?.w;
+    return b.lines !== 1 || !box || b.width > box;
+  });
+  return bad.length === 0
+    ? { ok: true, note: entries.map(said).join("; ") }
+    : {
+        ok: false,
+        note: `${bad.map(said).join("; ")}: each beat must be one line inside its box; shorten it, direct again and render --force`,
+      };
 };
