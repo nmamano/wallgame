@@ -88,8 +88,9 @@ already has a cycle, finish it or stop: do not start another. `pick
   the escape ply, with the seeya as the zoom's own sound, framed on the
   mouse's start and end cells and the cat's cell, for example
   `{"ply": 39, "kind": "zoom", "lead": true, "frame": ["g2", "g1", "f1"], "sound": "seeya-3"}`.
-  The camera pushes in 0.33 s before the move, and the move and the sound
-  land together inside the zoom. Put the seeya in the zoom's `sound`, not in
+  The camera pushes in about a third of a second before the move (LEAD_PUSH
+  in render-game-video.mjs), and the move and the sound land together
+  inside the zoom. Put the seeya in the zoom's `sound`, not in
   a separate `sound` event, so that it plays with the move. If
   `crew.mjs sounds` lists no `seeya-N`, use an `ooh-N`. No FAHHH on an
   escape. A ply takes at most one freeze or lead zoom, and `direct` refuses
