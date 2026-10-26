@@ -428,7 +428,10 @@ test("the edit list summary names the start, the cold open, the payoff and a rac
       finishSound: "shotgun-2",
       startPly: 6,
       coldOpenPly: 22,
-      pace: [],
+      pace: [
+        { fromPly: 6, toPly: 15, secondsPerMove: 0.2, fastForward: true },
+        { fromPly: 16, toPly: 21, secondsPerMove: 1, fastForward: false },
+      ],
       events: [{ ply: 22, kind: "race", sound: null }],
     }),
   ).toEqual([
@@ -437,6 +440,8 @@ test("the edit list summary names the start, the cold open, the payoff and a rac
     "starts at ply 6",
     "cold open: the position after ply 22",
     'from ply 22: video caption "one wall later: 12"',
+    "plies 6-15: 0.2 s per move, fast-forward x4",
+    "plies 16-21: 1 s per move",
     "ply 22: race counter flash",
   ]);
 });

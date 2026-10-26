@@ -123,6 +123,17 @@ Rules:
   (for example 2 to 12). If it changes by 1 or 2, leave it out.
 - `startPly` and `coldOpenPly` are in the schema for Nil's hook test
   (2026-10-26). Do not use them until Wall Game PM says that Nil chose.
+- `fastForward` is in the schema for Nil's choice of video length
+  (2026-10-26). Do not use it until Wall Game PM says that Nil chose. Then:
+  put `"fastForward": true` on a pace range of quiet plies (no close call
+  and no wall jump in `facts`), at 0.2 s per move (the video shows "x4") or
+  0.25-0.3 s ("x3"). The opening before the first key wall and the moves
+  between two beats are the usual ranges. Keep the 2 plies before a key
+  wall at normal pace or slower, so the viewer sees the threat before the
+  wall (Nil, 2026-10-26: "it plays too fast to follow"). Keep the payoff
+  ply out of a range: a caption that changes at x4 is hard to read.
+  `direct` refuses a range with an event or the cold open in it, or one
+  that reaches the last move.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
   AI won, and a win sound in a human vs human game. `crew.mjs sounds` gives

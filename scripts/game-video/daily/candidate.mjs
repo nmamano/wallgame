@@ -22,7 +22,7 @@
  * letters, digits, spaces and . ' - _ , so a change upstream cannot put a link
  * or a mention in a post.
  */
-import { ENDINGS } from "../edl.mjs";
+import { ENDINGS, fastForwardTag } from "../edl.mjs";
 
 /** Where the YouTube description sends people (measurement plan, 2026-10-25). */
 export const YOUTUBE_LINK =
@@ -81,7 +81,8 @@ export const edlSummary = (edl) => [
     ? [`from ply ${edl.payoff.ply}: video caption "${edl.payoff.text}"`]
     : []),
   ...(edl.pace ?? []).map(
-    (p) => `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move`,
+    (p) =>
+      `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move${p.fastForward ? `, fast-forward ${fastForwardTag(p.secondsPerMove)}` : ""}`,
   ),
   ...(edl.events ?? []).map((e) => {
     const what =
