@@ -88,7 +88,7 @@ or which wall changed that.
 | The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                 | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
 | The mouse is safe again                                                                  | `laugh`                                       | relief ply, the mouse's cell                                                                |
 | The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call | jump ply, `walls` = its `*` walls                                                           |
-| The walk changes over a few plies (danger to relief, or around a jump)                   | `race`                                        | from the danger ply, or 1-2 plies before the jump, for `plies` 3-6                          |
+| A walk jumps on one move (the save, or a jump)                                           | `race`                                        | that ply; no fields. The counter itself shows all video long, this flashes it               |
 | The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                     | that ply, the mover's pawn                                                                  |
 | The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                   | that ply, the mover's pawn                                                                  |
 | A move that needs a laugh more than an explanation                                       | `react`                                       | that ply, next to the pawn it is about                                                      |
@@ -105,8 +105,11 @@ Rules:
 - A `stamp` or a `trap` text lands on the middle of the board. If the pawns
   of the moment stand in the middle rows, the text hides them: use `react`
   or the caption instead.
-- `race` shows the stakes: use it when the numbers change a lot in its
-  plies (for example 2 to 12). If they change by 1 or 2, leave it out.
+- The race counter (each side's steps, over the board) is on for the whole
+  video. `race` flashes it: use it on the ply where a number changes a lot
+  (for example 2 to 12). If it changes by 1 or 2, leave it out.
+- `startPly` and `coldOpenPly` are in the schema for Nil's hook test
+  (2026-10-26). Do not use them until Wall Game PM says that Nil chose.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
   AI won. `crew.mjs sounds` gives each family's moment.
@@ -143,8 +146,9 @@ A still is ok only when all of these are true:
   pawn, and the mark does not hide the pawns of the moment.
 - A trap still lights every `*` wall of the jump. A freeze still shows the
   position before the move, with the camera on the move's cell.
-- A race still shows both numbers in the sides' colours, and they match the
-  walks in `facts` (for example 2 before the save, 12 after it).
+- A race still shows the counter flashing, both numbers in the sides'
+  colours, and they match the walks in `facts` (for example 12 after the
+  save).
 - A stamp or trap text does not hide the pawns or the wall it is about.
 - The sheet has one still for each event. A sound still needs only the
   correct ply.

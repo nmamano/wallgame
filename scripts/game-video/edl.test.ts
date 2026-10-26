@@ -3,12 +3,14 @@ import {
   checkEdlAgainstGame,
   dailySeatColors,
   DEFAULT_FREEZE_HOLD_SECONDS,
-  DEFAULT_RACE_PLIES,
   DEFAULT_SLOT_SOUNDS,
   DEFAULT_TRAP_TEXT,
   DEFAULT_ZOOM_SCALE,
+  FRAME,
+  SAFE_AREA,
   validateEdl,
 } from "./edl.mjs";
+import { goalSentenceFor } from "../../shared/domain/variant-rules";
 
 const base = {
   version: 1,
@@ -89,7 +91,6 @@ describe("the moment kinds", () => {
       ],
     });
     expect(edl.events[2]).toMatchObject({ text: DEFAULT_TRAP_TEXT });
-    expect(edl.events[3]).toMatchObject({ plies: DEFAULT_RACE_PLIES });
     expect(edl.events[4]).toMatchObject({
       holdSeconds: DEFAULT_FREEZE_HOLD_SECONDS,
     });
@@ -105,11 +106,12 @@ describe("the moment kinds", () => {
       false,
     );
     expect(one({ ply: 1, kind: "react", cell: "g4" })).toBe(false);
-    expect(one({ ply: 1, kind: "race", plies: 2, a: 3 })).toBe(false);
+    // The counter's numbers come from the game, never from the EDL.
+    expect(one({ ply: 1, kind: "race", plies: 2 })).toBe(false);
     expect(one({ ply: 1, kind: "freeze", cell: "g4" })).toBe(false);
   });
 
-  test("hold the trap to walls and a stamp word, the race and freeze to their ranges", () => {
+  test("hold the trap to walls and a stamp word, the freeze to its range", () => {
     const one = (ev: object) => validateEdl({ ...base, events: [ev] }).ok;
     expect(one({ ply: 1, kind: "trap", walls: ["g4"] })).toBe(false);
     expect(one({ ply: 1, kind: "trap", walls: [] })).toBe(false);
@@ -119,29 +121,10 @@ describe("the moment kinds", () => {
     expect(
       one({ ply: 1, kind: "trap", walls: ["^g4"], text: "BOXED IN" }),
     ).toBe(true);
-    expect(one({ ply: 1, kind: "race", plies: 1 })).toBe(false);
-    expect(one({ ply: 1, kind: "race", plies: 2.5 })).toBe(false);
     expect(one({ ply: 1, kind: "freeze", holdSeconds: 5 })).toBe(false);
   });
 
-  test("show one race at a time and freeze a move once", () => {
-    const races = validateEdl({
-      ...base,
-      events: [
-        { ply: 4, kind: "race", plies: 3 },
-        { ply: 6, kind: "race" },
-      ],
-    });
-    expect(races.errors?.join()).toContain("overlap");
-    expect(
-      validateEdl({
-        ...base,
-        events: [
-          { ply: 4, kind: "race", plies: 3 },
-          { ply: 7, kind: "race" },
-        ],
-      }).ok,
-    ).toBe(true);
+  test("freeze a move once", () => {
     expect(
       validateEdl({
         ...base,
@@ -212,6 +195,55 @@ describe("the VS and finish sounds", () => {
     ).toMatchObject({ vsSound: "shotgun-3", finishSound: "fuahhh-1" });
     expect(validateEdl({ ...base, finishSound: "airhorn-9" }).ok).toBe(false);
     expect(validateEdl({ ...base, vsSound: "toString" }).ok).toBe(false);
+  });
+});
+
+describe("startPly and coldOpenPly", () => {
+  test("default to 0 and none, and hold events and pace to the start", () => {
+    expect(accept(base)).toMatchObject({ startPly: 0, coldOpenPly: null });
+    expect(validateEdl({ ...base, startPly: -1 }).ok).toBe(false);
+    expect(validateEdl({ ...base, coldOpenPly: 1.5 }).ok).toBe(false);
+    expect(validateEdl({ ...base, startPly: 2, coldOpenPly: 1 }).ok).toBe(
+      false,
+    );
+    const game = { notations: ["Ce7", "Cf7", "^a4.^h4"], cols: 8, rows: 8 };
+    const late = accept({
+      ...base,
+      startPly: 1,
+      coldOpenPly: 2,
+      pace: [{ fromPly: 0, toPly: 2, secondsPerMove: 1 }],
+      events: [
+        { ply: 0, kind: "sound", sound: "shotgun-2" },
+        { ply: 2, kind: "zoom", frame: ["^h4"] },
+      ],
+    });
+    expect(checkEdlAgainstGame(late, game)).toEqual([
+      "pace[0] starts at ply 0, before startPly 1",
+      "events[0] is on ply 0, before startPly 1",
+    ]);
+    expect(
+      checkEdlAgainstGame(accept({ ...base, coldOpenPly: 3 }), game),
+    ).toHaveLength(1);
+  });
+});
+
+describe("the VS card's goal line", () => {
+  test("is the rules guide's sentence, and absent for a variant with no guide", () => {
+    expect(goalSentenceFor("classic")).toBe(
+      "The first cat to reach home wins.",
+    );
+    expect(goalSentenceFor("standard")).toBe(
+      "Cat captures the opponent's mouse.",
+    );
+    expect(goalSentenceFor("survival")).toBeNull();
+  });
+});
+
+describe("SAFE_AREA", () => {
+  test("is the Reels spec's 6% sides, 14% top and 35% bottom of the frame", () => {
+    expect(FRAME).toEqual({ w: 1080, h: 1920 });
+    // info/daily-video-quality.md item 3: x 65-1015, y 269-1248.
+    expect(SAFE_AREA).toEqual({ x: 65, y: 269, w: 950, h: 979 });
   });
 });
 

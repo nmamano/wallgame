@@ -6,6 +6,7 @@ import type {
   RulesVariant,
 } from "../../../shared/domain/game-types";
 import {
+  GOAL_SENTENCES,
   helpRulesFor,
   resolveRulePlayer,
 } from "../../../shared/domain/variant-rules";
@@ -125,7 +126,7 @@ function GoalContent({
       <div className="flex items-center justify-center gap-3 sm:gap-6">
         <RulePawn type="cat" color={diagramColor} label="Cat" />
         <p className="max-w-[260px] text-center text-base font-bold sm:text-lg">
-          The first cat to reach home wins.
+          {GOAL_SENTENCES["reach-home"]}
         </p>
         <RulePawn type="home" color={diagramColor} label="Home" />
       </div>
@@ -166,7 +167,7 @@ function GoalContent({
           );
         })}
         <p className="col-span-2 m-0 text-center font-semibold">
-          First capture wins.
+          {GOAL_SENTENCES["animal-cycle"]}
         </p>
       </div>
     );

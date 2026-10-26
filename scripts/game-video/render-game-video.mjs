@@ -84,9 +84,12 @@ import {
   DEFAULT_SECONDS_PER_MOVE,
   dailySeatColors,
   DEFAULT_SLOT_SOUNDS,
+  FRAME as DAILY_FRAME,
   REACTIONS,
+  SAFE_AREA,
 } from "./edl.mjs";
 import { replayDistances } from "./race-replay.ts";
+import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
@@ -202,8 +205,9 @@ const ORIGIN = "https://wallgame.io";
  *
  *   current  the look shipped since 2026-08: VS screen, name plates, a shake
  *            on the winning capture, a winner card.
- *   daily    the daily Short (Nil, 2026-10-25 and 2026-10-26): black 9:16
- *            frame, one meme caption, the board as wide as the frame, the
+ *   daily    the daily Short (Nil, 2026-10-25 and 2026-10-26): a 9:16
+ *            frame with every key element inside the Reels safe area
+ *            (SAFE_AREA in edl.mjs), one meme caption, the race counter, the
  *            punch-ins, mouse beats, stamps and meme sounds the director's
  *            EDL places, "AI" in red vs "Human" in blue as an OVERLAY over
  *            the first seconds of play (an intro screen loses viewers), and
@@ -260,13 +264,14 @@ for (const [flagName, field] of [
 const CAPTION = EDL?.caption ?? "";
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
+/** The first ply a daily video plays (edl.mjs startPly); 0 otherwise. */
+const START_PLY = EDL?.startPly ?? 0;
 /**
  * The events that play after their move lands, in list order. A freeze
- * plays before the move, and a race counter shows as the move lands; both
- * are placed by the move loop itself.
+ * plays before the move; the move loop places it.
  */
 const landingEventsAt = (plyIndex) =>
-  eventsAt(plyIndex).filter((e) => e.kind !== "freeze" && e.kind !== "race");
+  eventsAt(plyIndex).filter((e) => e.kind !== "freeze");
 
 /**
  * Which browser draws the frames. `chromium` is the one Playwright downloads
@@ -498,6 +503,23 @@ const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
 const FREEZE_SCALE = 1.6;
 const RACE_TICK_SECONDS = 0.3;
+const RACE_FLASH_SECONDS = 0.8;
+/**
+ * The cold open (edl.mjs coldOpenPly): the key position for COLD_OPEN_SECONDS,
+ * the camera pushing in to COLD_OPEN_SCALE at most. The loop tail: the last
+ * LOOP_SECONDS fade from a white flash into the video's own first frame, so
+ * a feed that loops the video cuts to the frame it just showed.
+ */
+const COLD_OPEN_SECONDS = 1.0;
+const COLD_OPEN_SCALE = 1.35;
+const LOOP_SECONDS = 0.5;
+/**
+ * The music under the daily ending: it fades to this share of its level as
+ * the ending starts and holds there to the end, instead of to silence
+ * (audit item 6: every daily mix was below -40 dB for 1.5-1.8 s before its
+ * end, which on a phone sounds like the video stopped).
+ */
+const MUSIC_BED = 0.35;
 /**
  * How far a shake may scale the composition: it must not, so this only
  * absorbs float noise in the matrix read. See the winning shake below.
@@ -1542,7 +1564,14 @@ const stingManifest = existsSync(join(STING_DIR, "stings.json"))
  * by 9.45 dB CONTINUOUSLY - not a dip on each hit - so the mix Nil approved
  * was one where the music was ~9.5 dB below what the constant said.
  */
-const buildAudio = ({ cues, totalSeconds, musicStart, musicEndAt, work }) => {
+const buildAudio = ({
+  cues,
+  totalSeconds,
+  musicStart,
+  musicEndAt,
+  bed,
+  work,
+}) => {
   const present = cues.filter((e) => existsSync(e.file));
   for (const missing of cues.filter((e) => !existsSync(e.file))) {
     log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
@@ -1568,11 +1597,22 @@ const buildAudio = ({ cues, totalSeconds, musicStart, musicEndAt, work }) => {
     const fadeOutAt = Math.max(0, musicEndAt - musicStart - MUSIC_FADE_OUT);
     inputs.push("-i", MUSIC);
     const mi = present.length;
+    /*
+      The fade out goes to `bed` (a share of the level) rather than to
+      silence when bed > 0: a linear ramp from 1 to bed over the fade, then
+      bed to the end. With bed 0 it is the plain fade the current look has.
+    */
+    const a = fadeOutAt.toFixed(3);
+    const b = (fadeOutAt + MUSIC_FADE_OUT).toFixed(3);
+    const fadeOut =
+      bed > 0
+        ? `volume='if(lt(t,${a}),1,if(lt(t,${b}),1-(1-${bed})*(t-${a})/${MUSIC_FADE_OUT},${bed}))':eval=frame,`
+        : `afade=t=out:st=${a}:d=${MUSIC_FADE_OUT},`;
     chains.push(
       `[${mi}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
         `atrim=0:${musicSeconds.toFixed(3)},` +
         `afade=t=in:st=0:d=${MUSIC_FADE_IN},` +
-        `afade=t=out:st=${fadeOutAt.toFixed(3)}:d=${MUSIC_FADE_OUT},` +
+        fadeOut +
         `volume=${MUSIC_VOLUME},adelay=${Math.round(musicStart * 1000)}:all=1[mus]`,
     );
     chains.push(
@@ -1810,53 +1850,61 @@ if (EDL) {
   }
 }
 
-/** The race event whose counter shows at a position (board index), if any. */
-const raceEventAt = (boardIndex) =>
-  EVENTS.find(
-    (e) =>
-      e.kind === "race" &&
-      e.ply + 1 <= boardIndex &&
-      boardIndex <= e.ply + e.plies,
-  );
-
 /**
  * Each player's steps to their target at every position, from the game
  * record through shared/domain (race-replay.ts), the same numbers the
- * daily picker ranks by. Read only when the EDL shows a race, and a race
- * over a position where a side hunts nothing (Survival) stops the render.
+ * daily picker ranks by. The daily look shows them all video long (audit
+ * item 1); a variant where a side hunts nothing (Survival) shows no counter,
+ * and an EDL that flashes the counter there is refused.
  */
-const RACE_DISTANCES = EVENTS.some((e) => e.kind === "race")
-  ? replayDistances({
-      variant: replay.state.config.variant,
-      boardWidth: GRID.cols,
-      boardHeight: GRID.rows,
-      initialState: replay.state.initialState,
-      moves: history.map((h) => h.notation),
-    }).distances
-  : null;
-const raceGap =
-  RACE_DISTANCES?.findIndex(
-    (d, i) => raceEventAt(i) && (d[1] === null || d[2] === null),
-  ) ?? -1;
-if (raceGap !== -1) {
+const RACE_DISTANCES = (() => {
+  if (!EDL) return null;
+  const { distances } = replayDistances({
+    variant: replay.state.config.variant,
+    boardWidth: GRID.cols,
+    boardHeight: GRID.rows,
+    initialState: replay.state.initialState,
+    moves: history.map((h) => h.notation),
+  });
+  return distances.every((d) => d[1] !== null && d[2] !== null)
+    ? distances
+    : null;
+})();
+if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
   console.error(
-    `the race on position ${raceGap} has no count for one side: ${replay.state.config.variant} gives a side nothing to hunt`,
+    `the EDL flashes the race counter, but ${replay.state.config.variant} gives a side nothing to hunt, so the video shows no counter`,
   );
   await browser.close();
   process.exit(2);
 }
 
-/** The 9:16 frame of the wallz look: the board as wide as the frame. */
-const WALLZ_WIDTH = 1080;
-const WALLZ_HEIGHT = 1920;
-const WALLZ_BOARD = WALLZ_WIDTH - 2 * 16;
+/**
+ * The variant's goal in one line, from the rules guide's own sentence
+ * (shared/domain/variant-rules.ts), for the daily VS card. Null when the
+ * variant has no rules guide.
+ */
+const GOAL_LINE = EDL ? goalSentenceFor(replay.state.config.variant) : null;
+
+/**
+ * The 9:16 frame of the wallz look. The caption, the head row and the board
+ * stack inside SAFE_AREA (edl.mjs), SHAKE_ROOM in from its edges so the
+ * shakes stay inside too; the stage then sizes the board to what is left
+ * (window.__fitWallz), so --board here is only a first guess.
+ */
+const SHAKE_ROOM = 16;
 const WALLZ_LAYOUT = {
-  width: WALLZ_WIDTH,
-  height: WALLZ_HEIGHT,
+  width: DAILY_FRAME.w,
+  height: DAILY_FRAME.h,
   vars: {
-    ...frameVars(WALLZ_HEIGHT, WALLZ_BOARD, 0),
-    "--caption-size": "60px",
+    ...frameVars(DAILY_FRAME.h, SAFE_AREA.w - 2 * SHAKE_ROOM, 0),
+    "--caption-size": "56px",
     "--caption-gap": "36px",
+    "--head-gap": "14px",
+    "--shake-room": `${SHAKE_ROOM}px`,
+    "--safe-top": `${SAFE_AREA.y}px`,
+    "--safe-left": `${SAFE_AREA.x}px`,
+    "--safe-right": `${DAILY_FRAME.w - SAFE_AREA.x - SAFE_AREA.w}px`,
+    "--safe-bottom": `${DAILY_FRAME.h - SAFE_AREA.y - SAFE_AREA.h}px`,
   },
 };
 
@@ -1985,6 +2033,16 @@ const renderStyle = async (styleName) => {
   */
   await stage.evaluate(() => document.fonts.ready);
 
+  /** The daily look's board, sized by the stage to what the safe area leaves. */
+  if (wallz) {
+    const board = await stage.evaluate((a) => window.__fitWallz(a), {
+      caption: CAPTION,
+      hud: Boolean(RACE_DISTANCES || GOAL_LINE),
+      goal: GOAL_LINE,
+    });
+    log(`daily board ${board}px, inside the safe area`);
+  }
+
   /** Published by stage.html: each ending's length, hold and impact second. */
   const endingTimings = await stage.evaluate(() => window.__ENDINGS);
 
@@ -2099,7 +2157,10 @@ const renderStyle = async (styleName) => {
   const stills = [];
   let stillNext = null;
   let frameNo = 0;
+  /** The video's first frame, which the loop tail ends on. */
+  let firstState = null;
   const shoot = async (state, seconds, meta) => {
+    firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
     await stage.evaluate((s) => window.__stage(s), state);
     await stage.screenshot({ path: file });
@@ -2123,23 +2184,24 @@ const renderStyle = async (styleName) => {
   const overlay = style.vsOverlay
     ? await stage.evaluate(() => window.__VS_OVERLAY)
     : null;
+  /** Where the overlay starts: after the cold open, if there is one. */
+  let overlayStart = 0;
+  const inOverlay = () =>
+    elapsed >= overlayStart - 1e-6 &&
+    elapsed < overlayStart + overlay.seconds - 1e-6;
   const emit = async (state, seconds, meta = {}) => {
-    if (
-      !overlay ||
-      state.segment !== "play" ||
-      elapsed >= overlay.seconds - 1e-6
-    ) {
+    if (!overlay || state.segment !== "play" || !inOverlay()) {
       await shoot(state, seconds, meta);
       return;
     }
     const frames = Math.round(seconds * FPS);
     let used = 0;
-    for (; used < frames && elapsed < overlay.seconds - 1e-6; used += 1) {
+    for (; used < frames && inOverlay(); used += 1) {
       await shoot(
         {
           ...state,
           vsOverlay: {
-            t: elapsed,
+            t: elapsed - overlayStart,
             a: overlaySide(seats.top),
             b: overlaySide(seats.bottom),
           },
@@ -2151,12 +2213,100 @@ const renderStyle = async (styleName) => {
     if (used < frames) await shoot(state, (frames - used) / FPS, meta);
   };
 
+  /**
+   * The playing state of a position: the board, the caption, the race
+   * counter and the goal line. Effects add to it through `extra`.
+   */
+  const seatColors = wallz ? SEAT_COLORS(replay) : null;
+  /**
+   * The race counter at a position (board index), or null when the video
+   * shows none: red on the left, blue on the right, each with its steps,
+   * and which number changed with the move that led here. `t` is the
+   * seconds since that move landed; the counter is settled from
+   * RACE_TICK_SECONDS on.
+   */
+  const raceHud = (boardIndex, t = RACE_TICK_SECONDS) => {
+    if (!wallz || !RACE_DISTANCES) return null;
+    const now = RACE_DISTANCES[boardIndex];
+    const before = RACE_DISTANCES[boardIndex - 1] ?? now;
+    const seat = (id) => ({
+      word: seatColors[id].toUpperCase(),
+      hex: side(id).hex,
+      n: now[id],
+      changed: now[id] !== before[id],
+    });
+    const [red, blue] = seatColors[1] === "red" ? [1, 2] : [2, 1];
+    return { a: seat(red), b: seat(blue), t };
+  };
+  const playState = (boardIndex, extra = {}) => ({
+    segment: "play",
+    look: style.look,
+    caption: wallz ? CAPTION : "",
+    board: fileUrl(boardFrames[boardIndex]),
+    top: side(seats.top),
+    bottom: side(seats.bottom),
+    race: raceHud(boardIndex),
+    goal: wallz ? GOAL_LINE : null,
+    ...extra,
+  });
+
+  /** The site's own click for a turn: one sound per turn, wall wins. */
+  const moveClick = (plyIndex) => {
+    const terms = String(history[plyIndex].notation ?? "")
+      .split(".")
+      .filter(Boolean);
+    const hasWall = terms.some((s) => s.startsWith(">") || s.startsWith("^"));
+    return {
+      file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
+      // The site's own balance - a wall is quieter than a pawn there - times
+      // one gain, so raising the moves does not flatten that relationship.
+      gain: (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) * MOVE_GAIN,
+    };
+  };
+
+  /*
+    The cold open (edl.mjs coldOpenPly, audit item 2): the video starts on
+    the key position, caption up, that ply's walls glowing and the camera
+    pushing in on them, with that move's own click; then it cuts to the VS
+    overlay and the game. No overlay on these frames: they come before it.
+  */
+  const coldPly = wallz ? EDL.coldOpenPly : null;
+  if (coldPly !== null) {
+    const terms = String(history[coldPly].notation ?? "")
+      .split(".")
+      .filter(Boolean);
+    const walls = terms.filter((t) => t.startsWith(">") || t.startsWith("^"));
+    const at = cellOfPly(coldPly);
+    const z = frameZoom(
+      walls.length > 0 ? walls : at ? [termOfCell(at)] : ["a1"],
+      COLD_OPEN_SCALE,
+    );
+    cue(moveClick(coldPly));
+    const frames = Math.round(COLD_OPEN_SECONDS * FPS);
+    for (let i = 0; i < frames; i += 1) {
+      const t = i / FPS;
+      const push = easeInOut(t / COLD_OPEN_SECONDS);
+      await shoot(
+        playState(coldPly + 1, {
+          zoom: { ...z, scale: 1 + (z.scale - 1) * push },
+          ...(walls.length > 0 && {
+            trap: { t, walls: walls.map(wallLine) },
+          }),
+        }),
+        1 / FPS,
+        { kind: "cold-open", ply: coldPly },
+      );
+    }
+    overlayStart = elapsed;
+    log(`cold open: ply ${coldPly}, ${COLD_OPEN_SECONDS}s`);
+  }
+
   // The overlay's punch gets the VS sound, at the second the mark lands.
   if (overlay) {
     const vsSound = sounds[style.vsSound];
     cue(
       { ...vsSound, gain: vsSound.gain * STING_STEP },
-      overlay.entry * vsPunchFraction,
+      overlayStart + overlay.entry * vsPunchFraction,
     );
   }
 
@@ -2198,42 +2348,11 @@ const renderStyle = async (styleName) => {
     }
     log("vs screen rendered");
   }
-  const musicStart = elapsed;
+  // A cold open is the hook, so the music is already under it.
+  const musicStart = coldPly !== null ? 0 : elapsed;
 
   // --- the moves
-  const seatColors = wallz ? SEAT_COLORS(replay) : null;
-  /**
-   * The race counter at a position (edl.mjs `race`), or null outside every
-   * race: red on the left, blue on the right, each with its steps. `t` is
-   * the seconds since the move landed; the counter is settled from
-   * RACE_TICK_SECONDS on.
-   */
-  const raceHud = (boardIndex, t = RACE_TICK_SECONDS) => {
-    const ev = wallz ? raceEventAt(boardIndex) : null;
-    if (!ev) return null;
-    const now = RACE_DISTANCES[boardIndex];
-    const before = RACE_DISTANCES[boardIndex - 1];
-    const intro = boardIndex === ev.ply + 1;
-    const seat = (id) => ({
-      word: seatColors[id].toUpperCase(),
-      hex: side(id).hex,
-      n: now[id],
-      changed: !intro && now[id] !== before[id],
-    });
-    const [red, blue] = seatColors[1] === "red" ? [1, 2] : [2, 1];
-    return { a: seat(red), b: seat(blue), t, intro };
-  };
-  const playState = (boardIndex, extra = {}) => ({
-    segment: "play",
-    look: style.look,
-    caption: wallz ? CAPTION : "",
-    board: fileUrl(boardFrames[boardIndex]),
-    top: side(seats.top),
-    bottom: side(seats.bottom),
-    race: raceHud(boardIndex),
-    ...extra,
-  });
-  await stage.evaluate((state) => window.__stage(state), playState(0));
+  await stage.evaluate((state) => window.__stage(state), playState(START_PLY));
   const boardRectNow = () =>
     stage.evaluate(() => {
       const rect = document.getElementById("boardCam").getBoundingClientRect();
@@ -2247,11 +2366,38 @@ const renderStyle = async (styleName) => {
   const encodedBoardRect = await boardRectNow();
 
   /**
+   * The boxes a viewer must see, measured at rest (stage.html
+   * __layoutBoxes), for the RESULT line and crew.mjs check. The renderer
+   * holds them to SAFE_AREA itself too: a layout that breaks it stops here,
+   * before any frame is spent.
+   */
+  const layoutBoxes = wallz
+    ? await stage.evaluate((a) => window.__layoutBoxes(a), {
+        caption: Boolean(CAPTION),
+        race: Boolean(RACE_DISTANCES),
+        goal: Boolean(GOAL_LINE),
+      })
+    : null;
+  for (const [name, b] of Object.entries(layoutBoxes ?? {})) {
+    if (
+      b.x < SAFE_AREA.x ||
+      b.y < SAFE_AREA.y ||
+      b.x + b.w > SAFE_AREA.x + SAFE_AREA.w ||
+      b.y + b.h > SAFE_AREA.y + SAFE_AREA.h
+    ) {
+      throw new Error(
+        `the ${name} box ${JSON.stringify(b)} is outside the safe area ${JSON.stringify(SAFE_AREA)}`,
+      );
+    }
+  }
+
+  /**
    * One frame of an after-landing EDL effect, `t` seconds (frame `i`) into
    * its `seconds`, as the stage state it adds to the position.
    */
   const momentState = (ev, ply, t, seconds, i) => {
     if (ev.kind === "stamp") return { midStamp: { text: ev.text, t, seconds } };
+    if (ev.kind === "race") return { race: { ...raceHud(ply), flash: t } };
     if (ev.kind === "trap") {
       return {
         trap: { t, walls: ev.walls.map(wallLine) },
@@ -2328,27 +2474,26 @@ const renderStyle = async (styleName) => {
   };
 
   /**
-   * As a move lands inside a race (edl.mjs), the counter comes in, or the
-   * numbers that changed pop. Under the board, so these frames show the
-   * position itself; they are their own kind all the same, because a frame
-   * of a moving counter is not a plain position.
+   * As a move lands, the race numbers that it changed pop, over the first
+   * RACE_TICK_SECONDS of the move's own time, at most `budget` seconds.
+   * Above the board, so these frames show the position itself; they are
+   * their own kind all the same, because a frame of a moving counter is not
+   * a plain position. Returns the seconds it used.
    */
-  const playRaceTick = async (ply, plyIndex) => {
+  const playRaceTick = async (ply, plyIndex, budget) => {
     const hud = raceHud(ply);
-    if (!hud || !(hud.intro || hud.a.changed || hud.b.changed)) return;
-    const ev = raceEventAt(ply);
-    if (hud.intro && ev.sound) cue(meme(ev.sound));
-    const frames = Math.round(RACE_TICK_SECONDS * FPS);
+    if (!hud || !(hud.a.changed || hud.b.changed)) return 0;
+    const frames = Math.max(
+      0,
+      Math.min(Math.round(RACE_TICK_SECONDS * FPS), Math.round(budget * FPS)),
+    );
     for (let i = 0; i < frames; i += 1) {
-      // The race's still is its settled counter, as it first shows.
-      if (hud.intro && i === frames - 1) {
-        stillNext = { ply: ev.ply, kind: "race", sound: ev.sound ?? null };
-      }
       await emit(playState(ply, { race: raceHud(ply, i / FPS) }), 1 / FPS, {
         kind: "race-tick",
         ply: plyIndex,
       });
     }
+    return frames / FPS;
   };
 
   /**
@@ -2396,6 +2541,7 @@ const renderStyle = async (styleName) => {
         brilliant: BRILLIANT_SECONDS,
         react: REACT_SECONDS,
         trap: TRAP_SECONDS,
+        race: RACE_FLASH_SECONDS,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
       // A trap's still shows its word; the others are judged mid-effect.
@@ -2445,36 +2591,41 @@ const renderStyle = async (styleName) => {
     the VS overlay it holds longer: nothing moves under the full banners, and
     the first move plays only once they start to leave (Nil, 2026-10-26).
   */
-  const firstMoveAt = overlay ? overlay.seconds - overlay.exit : 0;
+  const firstMoveAt = overlay
+    ? overlayStart + overlay.seconds - overlay.exit
+    : 0;
+  // With a startPly, the opening position is the one before that ply; it is
+  // labelled as that earlier ply, which the video never plays on its own.
   await emit(
-    playState(0),
-    Math.max(paceAt(0), Math.round((firstMoveAt - elapsed) * FPS) / FPS),
-    { kind: "initial", ply: -1 },
+    playState(START_PLY),
+    Math.max(
+      paceAt(START_PLY),
+      Math.round((firstMoveAt - elapsed) * FPS) / FPS,
+    ),
+    { kind: "initial", ply: START_PLY - 1 },
   );
-
-  /** The site's own click for a turn: one sound per turn, wall wins. */
-  const moveClick = (plyIndex) => {
-    const terms = String(history[plyIndex].notation ?? "")
-      .split(".")
-      .filter(Boolean);
-    const hasWall = terms.some((s) => s.startsWith(">") || s.startsWith("^"));
-    return {
-      file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
-      // The site's own balance - a wall is quieter than a pawn there - times
-      // one gain, so raising the moves does not flatten that relationship.
-      gain: (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) * MOVE_GAIN,
-    };
-  };
 
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;
 
-  for (let ply = 1; ply <= history.length; ply += 1) {
+  for (let ply = START_PLY + 1; ply <= history.length; ply += 1) {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
     if (wallz) await playFreeze(ply, plyIndex);
     cue(moveClick(plyIndex));
-    if (wallz) await playRaceTick(ply, plyIndex);
+    /*
+      The tick takes its time from a plain move's hold, leaving that hold
+      one frame at least; a move with effects keeps all of its own.
+    */
+    const plainMove =
+      wallz && !isLast && landingEventsAt(plyIndex).length === 0;
+    const ticked = wallz
+      ? await playRaceTick(
+          ply,
+          plyIndex,
+          plainMove ? paceAt(plyIndex) - 1 / FPS : RACE_TICK_SECONDS,
+        )
+      : 0;
 
     if (wallz && isLast) {
       /*
@@ -2523,6 +2674,18 @@ const renderStyle = async (styleName) => {
       } else {
         await emit(playState(ply), DRAW_HOLD_SECONDS, {
           kind: "move",
+          ply: plyIndex,
+        });
+      }
+      /*
+        The loop tail (audit item 6): a white flash that fades into the
+        video's own first frame, so the feed's loop cuts from a frame to
+        the same frame.
+      */
+      const tail = Math.round(LOOP_SECONDS * FPS);
+      for (let i = 0; i < tail; i += 1) {
+        await emit({ ...firstState, rewind: 1 - i / (tail - 1) }, 1 / FPS, {
+          kind: "loop",
           ply: plyIndex,
         });
       }
@@ -2604,7 +2767,9 @@ const renderStyle = async (styleName) => {
     } else {
       await emit(
         playState(ply),
-        isLast ? paceAt(plyIndex) + FINAL_HOLD_SECONDS : paceAt(plyIndex),
+        isLast
+          ? paceAt(plyIndex) + FINAL_HOLD_SECONDS
+          : paceAt(plyIndex) - ticked,
         {
           kind: "move",
           ply: plyIndex,
@@ -2670,6 +2835,7 @@ const renderStyle = async (styleName) => {
         totalSeconds,
         musicStart,
         musicEndAt: musicEndAt ?? totalSeconds,
+        bed: wallz ? MUSIC_BED : 0,
         work,
       });
       log(
@@ -2776,7 +2942,12 @@ const renderStyle = async (styleName) => {
       The daily app checks the played ending against its pick, and the EDL
       hash against the EDL it approved; the sheet is for the director.
     */
-    ...(wallz && { ending: style.ending, edlSha256: EDL_SHA256, sheet }),
+    ...(wallz && {
+      ending: style.ending,
+      edlSha256: EDL_SHA256,
+      sheet,
+      layout: { frame: DAILY_FRAME, boxes: layoutBoxes },
+    }),
   };
 };
 

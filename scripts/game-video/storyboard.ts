@@ -21,7 +21,7 @@
  * With --edl, the storyboard is also the EDL's check before any render: it
  * validates the EDL against the game (edl.mjs, as `direct` and the renderer
  * do) and marks each event on its ply's tile, with its kind, its cell or
- * walls, and the race counter's numbers over the race's positions. One tile
+ * walls. One tile
  * per event's ply, so the Director sees every event's still before a render
  * costs the game a view.
  *
@@ -135,7 +135,6 @@ interface EdlEvent {
   frame?: string[];
   emoji?: string;
   text?: string;
-  plies?: number;
   sound?: string;
 }
 /** What the EDL draws on a ply's board: cells ringed, walls lit. */
@@ -163,6 +162,14 @@ if (edlPath) {
     console.error(`--edl ${edlPath} is not valid:\n  ${errors.join("\n  ")}`);
     process.exit(2);
   }
+  const { startPly, coldOpenPly } = checked.edl as {
+    startPly: number;
+    coldOpenPly: number | null;
+  };
+  if (coldOpenPly !== null) mark(coldOpenPly, "COLD OPEN");
+  // The plies a startPly cuts: the video never plays them.
+  for (let ply = 0; ply < startPly - 1; ply += 1) mark(ply, "CUT");
+  if (startPly > 0) mark(startPly - 1, "OPENS HERE");
   for (const ev of checked.edl.events as EdlEvent[]) {
     const sound = ev.sound ? ` + ${ev.sound}` : "";
     const what =
@@ -175,18 +182,6 @@ if (edlPath) {
             : ev.kind === "stamp"
               ? ev.text!
               : (ev.cell ?? "");
-    if (ev.kind === "race") {
-      // Over each position the counter shows, the numbers it will show.
-      const last = Math.min(ev.ply + ev.plies!, game.moves.length);
-      for (let index = ev.ply + 1; index <= last; index += 1) {
-        const d = replay.distances[index];
-        mark(
-          index - 1,
-          `RACE red ${d[redSeat]} blue ${d[redSeat === 1 ? 2 : 1]}${index === ev.ply + 1 ? sound : ""}`,
-        );
-      }
-      continue;
-    }
     mark(ev.ply, `${ev.kind.toUpperCase()} ${what}${sound}`.trim());
     if (ev.cell && KIND_HEX[ev.kind]) {
       edlCells.set(ev.ply, [
@@ -330,7 +325,13 @@ const tiles = replay.states.map((_, index) => {
         `<span class="badge ${t.split(" ")[0].toLowerCase()}">${esc(t)}</span>`,
     )
     .join("");
-  return `<div class="tile${tags.length ? " marked" : ""}"><div class="head">${head}</div>${boardSvg(index)}<div class="badges">${badges}</div></div>`;
+  // The race counter as the video shows it under this position.
+  const d = replay.distances[index];
+  const steps =
+    d[1] === null || d[2] === null
+      ? ""
+      : `<span class="steps">steps red ${d[redSeat]} · blue ${d[redSeat === 1 ? 2 : 1]}</span>`;
+  return `<div class="tile${tags.length ? " marked" : ""}"><div class="head">${head}</div>${boardSvg(index)}<div class="badges">${steps}${badges}</div></div>`;
 });
 
 const seatTitle = (id: PlayerId) =>
@@ -353,9 +354,12 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .badge.blunder { background: #dc2626; } .badge.brilliant { background: #0d9488; }
   .badge.trap { background: #a16207; } .badge.race { background: #475569; }
   .badge.react { background: #a21caf; }
+  .steps { padding: 2px 4px; font-size: 12px; color: #94a3b8; }
+  .badge.cold { background: #be185d; } .badge.cut { background: #1f2937; color: #64748b; }
+  .badge.opens { background: #0369a1; }
 </style></head><body>
 <h1>${esc(game.gameId)} · ${esc(game.variant)} · ${game.moves.length} plies · ${seatTitle(1)} vs ${seatTitle(2)}</h1>
-<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Marked: close-call DANGER / SAVE / RELIEF and JUMP plies${edlPath ? ", and each EDL event (a freeze plays before its ply lands)" : ""}.</div>
+<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Steps: the race counter the video shows. Marked: close-call DANGER / SAVE / RELIEF and JUMP plies${edlPath ? ", and each EDL event (a freeze plays before its ply lands)" : ""}.</div>
 <div class="grid">${tiles.join("")}</div></body></html>`;
 
 const browser = await chromium.launch({ executablePath: CHROME });

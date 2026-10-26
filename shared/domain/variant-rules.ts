@@ -157,6 +157,25 @@ export const helpRulesFor = (variant: RulesVariant): HelpVariantRules =>
 export const helpVariantFor = (variant: Variant): RulesVariant | null =>
   variant === "survival" ? null : variant;
 
+/**
+ * Each rules variant's goal in one plain sentence, as the rules guide says
+ * it (frontend/src/components/rule-guide.tsx draws the Standard one as a
+ * cat-captures-mouse diagram). The daily video's VS card shows it too.
+ */
+export const GOAL_SENTENCES: Record<HelpVariantRules["captureKind"], string> = {
+  "cat-captures-mouse": "Cat captures the opponent's mouse.",
+  "reach-home": "The first cat to reach home wins.",
+  "animal-cycle": "First capture wins.",
+};
+
+/** The goal sentence of a variant, or null for one with no rules guide. */
+export const goalSentenceFor = (variant: Variant): string | null => {
+  const rules = helpVariantFor(variant);
+  return rules === null
+    ? null
+    : GOAL_SENTENCES[helpRulesFor(rules).captureKind];
+};
+
 const EXECUTABLE_VARIANT_ORDER: readonly Variant[] = [
   "standard",
   "classic",

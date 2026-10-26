@@ -385,22 +385,33 @@
         background: #fff;
       }
       /*
-        The race counter sits under the board, where the brand line is, and
-        the brand steps aside while it shows. Under the board and not over it,
-        so the encode check, which reads the board's square, sees only the
-        game.
+        The head of the daily look, between the caption and the board: the
+        race counter (each side's steps to its target, all video long), and
+        in the same place, while the VS overlay is in, the variant's goal in
+        one line (Wall Game PM, 2026-10-26, audit item 1). Both sit in one
+        grid cell, so the row is as tall as the taller of the two and the
+        board never moves when one gives way to the other. Above the board,
+        not over it: the encode check reads only the board's square.
       */
+      #hud {
+        display: none;
+      }
+      #root.wallz #hud.on {
+        display: grid;
+        place-items: center;
+        width: 100%;
+      }
+      #hud > * {
+        grid-area: 1 / 1;
+      }
       #race {
-        position: absolute;
-        left: 0;
-        right: 0;
-        top: calc(50% + var(--board) / 2 + var(--caption-gap) * 0.5);
         display: flex;
         justify-content: center;
         align-items: center;
-        gap: calc(var(--board) * 0.035);
+        gap: 0.6em;
         font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
         font-weight: 900;
+        font-size: var(--caption-size);
       }
       #race .side {
         display: flex;
@@ -411,17 +422,17 @@
         display: inline-block;
         min-width: 1.2em;
         text-align: center;
-        font-size: calc(var(--board) * 0.085);
+        font-size: 1.05em;
         line-height: 1;
         -webkit-text-stroke: 0.04em #000;
         paint-order: stroke fill;
       }
       #race .w {
-        font-size: calc(var(--board) * 0.04);
+        font-size: 0.5em;
         letter-spacing: 0.08em;
       }
       #race .vs {
-        font-size: calc(var(--board) * 0.04);
+        font-size: 0.5em;
         color: #e2e8f0;
         letter-spacing: 0.08em;
         text-align: center;
@@ -432,6 +443,18 @@
         font-size: 0.55em;
         color: #94a3b8;
         letter-spacing: 0.12em;
+      }
+      #goal {
+        max-width: 100%;
+        padding: 0.3em 0.8em;
+        border-radius: 999px;
+        background: rgba(18, 26, 46, 0.92);
+        border: 2px solid rgba(148, 163, 184, 0.25);
+        color: #f8fafc;
+        font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
+        font-weight: 800;
+        font-size: calc(var(--caption-size) * 0.62);
+        text-align: center;
       }
 
       /* ---------- the endings (wallz look) ---------- */
@@ -577,19 +600,46 @@
       #play .caption {
         display: none;
       }
+      /*
+        The daily frame has no flat black band (Instagram shows reels with
+        borders less, Wall Game PM audit item 8): the board theme's navy,
+        lit behind the board.
+      */
       #root.wallz {
-        background: #000;
+        background:
+          radial-gradient(
+            ellipse at 50% 38%,
+            rgba(56, 78, 140, 0.45),
+            transparent 70%
+          ),
+          linear-gradient(#141c33, #0b0f1c);
+      }
+      /*
+        Everything that matters sits inside the Reels safe area (SAFE_AREA in
+        edl.mjs, which the renderer passes in as these insets), plus room for
+        the shakes: caption, then the head row, then the board, top down. The
+        renderer sizes the board to what is left (window.__fitWallz).
+      */
+      #root.wallz #play {
+        justify-content: flex-start;
+        gap: var(--head-gap);
+        padding: calc(var(--safe-top) + var(--shake-room))
+          calc(var(--safe-right) + var(--shake-room))
+          calc(var(--safe-bottom) + var(--shake-room))
+          calc(var(--safe-left) + var(--shake-room));
+      }
+      #root.wallz #ggCard {
+        top: var(--board-mid);
+      }
+      #root.wallz #koBanner {
+        top: calc(var(--board-mid) + var(--board) * 0.12);
       }
       #root.wallz #play .plate {
         display: none;
       }
       #root.wallz #play .caption {
         display: block;
-        position: absolute;
-        left: 0;
-        right: 0;
-        bottom: calc(50% + var(--board) / 2 + var(--caption-gap));
-        padding: 0 5%;
+        width: 100%;
         text-align: center;
         font-family:
           "TikTok Sans", "Noto Color Emoji", "DejaVu Sans", sans-serif;
@@ -602,10 +652,6 @@
         border: none;
         border-radius: 12px;
         box-shadow: none;
-      }
-      #root.wallz #brand {
-        bottom: auto;
-        top: calc(50% + var(--board) / 2 + var(--caption-gap));
       }
 
       /* ---------- persistent branding ---------- */
@@ -722,6 +768,20 @@
 
       <div id="play" class="hidden">
         <div class="caption" id="caption"></div>
+        <div id="hud">
+          <div id="race">
+            <div class="side">
+              <span class="w" id="raceWa"></span
+              ><span class="n" id="raceNa"></span>
+            </div>
+            <div class="vs">VS<small>STEPS</small></div>
+            <div class="side">
+              <span class="n" id="raceNb"></span
+              ><span class="w" id="raceWb"></span>
+            </div>
+          </div>
+          <div id="goal"></div>
+        </div>
         <div class="plate top">
           <img class="avatar" id="pAvT" />
           <div class="nm" id="pNameT"></div>
@@ -806,15 +866,6 @@
         for it - the filename carries it now.
       -->
       <div id="brand" class="hidden">wallgame.io</div>
-      <div id="race" class="hidden">
-        <div class="side">
-          <span class="w" id="raceWa"></span><span class="n" id="raceNa"></span>
-        </div>
-        <div class="vs">VS<small>STEPS</small></div>
-        <div class="side">
-          <span class="n" id="raceNb"></span><span class="w" id="raceWb"></span>
-        </div>
-      </div>
     </div>
 
     <script>
@@ -1229,17 +1280,28 @@
       };
 
       /**
-       * The race counter: each side's steps to its target, in its colour.
-       * A number that changed on this move pops.
+       * The head row: the race counter, or the goal line while the VS
+       * overlay is in. Each is hidden with visibility, not display, so the
+       * row keeps its height and the board does not move.
        *   r = { a: {word, hex, n, changed}, b: {...}, t: seconds since the
-       *         move landed, intro: true on the move it first shows }
+       *         move landed, flash: seconds into an EDL `race` flash, or
+       *         absent }
+       *   goal = the goal line to show instead, or null
        */
-      const paintRace = (r) => {
-        show($("race"), !!r);
+      const paintHud = (r, goal) => {
+        $("race").style.visibility = r && !goal ? "visible" : "hidden";
+        $("goal").style.visibility = goal ? "visible" : "hidden";
+        if (goal) $("goal").textContent = goal;
         if (!r) return;
-        const intro = r.intro ? easeOut3(span(r.t, 0, 0.3)) : 1;
-        $("race").style.opacity = intro;
-        $("race").style.transform = "translateY(" + (1 - intro) * 30 + "px)";
+        // The flash: the counter swells and glows, twice, over 0.8 s.
+        const f =
+          r.flash === undefined
+            ? 0
+            : Math.sin(span(r.flash, 0, 0.8) * Math.PI * 2) ** 2;
+        $("race").style.transform = "scale(" + (1 + 0.18 * f) + ")";
+        $("race").style.filter = f
+          ? "drop-shadow(0 0 " + 18 * f + "px rgba(253, 224, 71, 0.9))"
+          : "";
         for (const [k, p] of [
           ["a", r.a],
           ["b", r.b],
@@ -1253,6 +1315,75 @@
           const bump = p.changed ? punch(span(r.t, 0, 0.3)) : 1;
           n.style.transform = "scale(" + bump + ")";
         }
+      };
+
+      /**
+       * Size the daily look's board to the safe area: what the caption and
+       * the head row leave of it. MEASURED here, after the fonts are in and
+       * the caption is set, so a two-line caption gives a smaller board and
+       * no pixel budget is guessed. Called once per video by the renderer;
+       * the result holds for every frame, because the caption and the head
+       * row do not change size. Returns the board's side in px.
+       */
+      window.__fitWallz = async ({ caption, hud, goal }) => {
+        $("root").classList.add("wallz");
+        show($("play"), true);
+        $("caption").textContent = caption;
+        $("goal").textContent = goal ?? "";
+        // A font loads when text first uses it; measure only once it has.
+        await document.fonts.ready;
+        $("hud").classList.toggle("on", hud);
+        $("raceNa").textContent = "88";
+        $("raceNb").textContent = "88";
+        $("raceWa").textContent = "BLUE";
+        $("raceWb").textContent = "BLUE";
+        const play = $("play");
+        const cs = getComputedStyle(play);
+        const width =
+          play.clientWidth -
+          parseFloat(cs.paddingLeft) -
+          parseFloat(cs.paddingRight);
+        const height =
+          play.clientHeight -
+          parseFloat(cs.paddingTop) -
+          parseFloat(cs.paddingBottom);
+        const gap = parseFloat(cs.rowGap);
+        const used = [$("caption"), $("hud")]
+          .filter((el) => el.offsetHeight > 0)
+          .reduce((sum, el) => sum + el.offsetHeight + gap, 0);
+        const board = Math.floor(Math.min(width, height - used));
+        document.documentElement.style.setProperty("--board", board + "px");
+        const r = $("boardWrap").getBoundingClientRect();
+        document.documentElement.style.setProperty(
+          "--board-mid",
+          r.top + r.height / 2 + "px",
+        );
+        return board;
+      };
+
+      /**
+       * The boxes a viewer must see, as the page lays them out at rest, for
+       * the safe-area check: {x, y, w, h} rounded outward, and only the ones
+       * this video shows.
+       */
+      window.__layoutBoxes = ({ caption, race, goal }) => {
+        const box = (el) => {
+          const r = el.getBoundingClientRect();
+          const x = Math.floor(r.left);
+          const y = Math.floor(r.top);
+          return {
+            x,
+            y,
+            w: Math.ceil(r.right) - x,
+            h: Math.ceil(r.bottom) - y,
+          };
+        };
+        return {
+          board: box($("boardWrap")),
+          ...(caption && { caption: box($("caption")) }),
+          ...(race && { race: box($("race")) }),
+          ...(goal && { goalLine: box($("goal")) }),
+        };
       };
 
       /**
@@ -1455,8 +1586,18 @@
         show($("vs"), s.segment === "vs");
         show($("play"), s.segment === "play");
         show($("end"), s.segment === "end");
-        show($("brand"), s.segment === "play" && !s.race);
-        if (s.segment !== "play") show($("race"), false);
+        // No watermark in the daily look (audit item 8).
+        show($("brand"), s.segment === "play" && s.look !== "wallz");
+        /*
+          The goal line holds the head row while the VS overlay is in and
+          the game has not started; from the first move on, the race counter
+          has it.
+        */
+        const ov = window.__VS_OVERLAY;
+        const goalNow =
+          s.vsOverlay && s.vsOverlay.t < ov.seconds - ov.exit
+            ? (s.goal ?? null)
+            : null;
         $("root").classList.toggle("wallz", s.look === "wallz");
         $("vs").style.transform = "";
 
@@ -1480,15 +1621,19 @@
             Math.max(0, Math.min(1, (o.t - (v.seconds - v.exit)) / v.exit)),
           );
           /*
-            The banners never cover the caption (Wall Game PM, 2026-10-26:
-            the top banner cut into "winning"). Their skew lifts one end, so
-            the clearance is MEASURED: the overlay moves down until the top
-            banner's box starts below the caption's box.
+            The banners never cover the caption or the head row (Wall Game
+            PM, 2026-10-26: the top banner cut into "winning"). Their skew
+            lifts one end, so the clearance is MEASURED: the overlay moves
+            down until the top banner's box starts below both.
           */
-          if (s.caption) {
-            $("caption").textContent = s.caption;
+          $("caption").textContent = s.caption ?? "";
+          paintHud(s.race, goalNow);
+          const above = [$("caption"), $("hud")]
+            .filter((el) => el.offsetHeight > 0)
+            .map((el) => el.getBoundingClientRect().bottom);
+          if (above.length > 0) {
             const clear =
-              $("caption").getBoundingClientRect().bottom +
+              Math.max(...above) +
               12 -
               $("beamTop").getBoundingClientRect().top;
             if (clear > 0) {
@@ -1515,8 +1660,13 @@
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
-          paintRace(s.race);
+          paintHud(s.race, goalNow);
           paintFreeze(s.freeze);
+          // The loop tail: a white flash fading into the first frame.
+          if (s.rewind) {
+            show($("flash"), true);
+            $("flash").style.opacity = 0.85 * s.rewind;
+          }
           show($("fxFlash"), !!s.flash);
           $("fxFlash").style.opacity = s.flash ?? 0;
           $("pAvT").src = s.top.portrait;

@@ -38,6 +38,15 @@
  *   music    optional: one of the site's tracks by slug (deja-vus,
  *            tea-for-two, a-legend, skippy). Absent (null after validation)
  *            means a random one, as the site and hand renders do.
+ *   startPly optional: the first ply the video plays (default 0). It opens
+ *            on the position before it, so a quiet opening is cut. Every
+ *            event and pace range must be at startPly or later.
+ *   coldOpenPly
+ *            optional: the video first shows the position after this ply
+ *            for about a second, caption up and that ply's walls glowing,
+ *            and then cuts to the VS overlay and the game (audit item 2).
+ *            It must be at startPly or later. Absent (null after
+ *            validation): no cold open.
  *   vsSound, finishSound
  *            optional: the meme sound on the VS overlay's punch and on the
  *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
@@ -59,11 +68,11 @@
  *             race: a SAVE, or the winner's largest JUMP.
  *     trap    the `walls` (1..6, as in a zoom frame) light up, then `text`
  *             (default TRAPPED) stamps on. For the `*` walls of a JUMP.
- *     race    a counter under the board: each side's steps to its target,
- *             in the side's colour, for `plies` positions (default 4, or to
- *             the last move), ticking as they change. The renderer reads
- *             the numbers from the game (race-replay.ts); the EDL never
- *             sets them. At most one race at a time.
+ *     race    the race counter flashes: swells and glows for 0.8 s. The
+ *             counter itself (each side's steps to its target, over the
+ *             board) shows all video long in the daily look, and its
+ *             numbers come from the game (race-replay.ts), never from the
+ *             EDL. For the ply where a number jumps: a SAVE or a JUMP.
  *     freeze  BEFORE the move lands: the position before it freezes in
  *             grey, the camera pushes in on the move's cell and holds for
  *             `holdSeconds` (default 0.9), then the move lands. Its sound
@@ -105,6 +114,23 @@ export const dailySeatColors = (isBot) => {
 export const ENDINGS = ["replay", "gg", "ko"];
 
 /**
+ * The daily video's frame, and the part of it that the apps do not paint
+ * over. Meta, Instagram Reels video ad spec, read 2026-10-26: "Consider
+ * leaving at least 14% of the top, 35% of the bottom, and 6% on each side
+ * of your asset free from text, logos, or [other key creative elements]"
+ * (info/daily-video-quality.md, item 3). The renderer lays the daily look
+ * out inside SAFE_AREA, and crew.mjs check holds the measured boxes of a
+ * render to it, so the two read the same numbers.
+ */
+export const FRAME = { w: 1080, h: 1920 };
+export const SAFE_AREA = {
+  x: Math.round(FRAME.w * 0.06),
+  y: Math.round(FRAME.h * 0.14),
+  w: FRAME.w - 2 * Math.round(FRAME.w * 0.06),
+  h: Math.round(FRAME.h * (1 - 0.35)) - Math.round(FRAME.h * 0.14),
+};
+
+/**
  * The sounds of the VS punch and the finish where the EDL names none. Wall
  * Game PM, 2026-10-26 (Content ID): the finish was shotgun-1, which is
  * Fortnite-named and a high claim risk (meme-sounds.md), and it was in every
@@ -139,7 +165,7 @@ const KIND_FIELDS = {
   blunder: ["cell"],
   brilliant: ["cell"],
   trap: ["walls", "text"],
-  race: ["plies"],
+  race: [],
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
 };
@@ -164,8 +190,7 @@ export const DEFAULT_SECONDS_PER_MOVE = 0.8;
 /** The zoom's most scale and its hold, where the EDL sets none. */
 export const DEFAULT_ZOOM_SCALE = 1.5;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
-/** A race counter's length in positions, and a freeze's hold. */
-export const DEFAULT_RACE_PLIES = 4;
+/** A freeze's hold. */
 export const DEFAULT_FREEZE_HOLD_SECONDS = 0.9;
 export const DEFAULT_TRAP_TEXT = "TRAPPED";
 
@@ -177,7 +202,6 @@ export const EDL_LIMITS = {
   zoomScale: [1.1, 3],
   zoomHoldSeconds: [0.2, 3],
   frameTerms: 6,
-  racePlies: [2, 12],
   freezeHoldSeconds: [0.4, 2],
   events: 40,
 };
@@ -220,6 +244,8 @@ export const validateEdl = (raw) => {
       "caption",
       "ending",
       "music",
+      "startPly",
+      "coldOpenPly",
       "vsSound",
       "finishSound",
       "pace",
@@ -265,6 +291,18 @@ export const validateEdl = (raw) => {
     fail(
       `music must be one of ${slugs.join(", ")}, or absent for a random track; got ${JSON.stringify(music)}`,
     );
+  }
+
+  const startPly = raw.startPly ?? 0;
+  if (!isPly(startPly)) fail("startPly must be a 0-based ply");
+  const coldOpenPly = raw.coldOpenPly ?? null;
+  if (coldOpenPly !== null && !isPly(coldOpenPly)) {
+    fail("coldOpenPly must be a 0-based ply, or absent for no cold open");
+  }
+  // A cold open teases a moment the video then plays, so it is not before
+  // the cut.
+  if (coldOpenPly !== null && isPly(startPly) && coldOpenPly < startPly) {
+    fail(`coldOpenPly ${coldOpenPly} is before startPly ${startPly}`);
   }
 
   const slots = {};
@@ -388,13 +426,6 @@ export const validateEdl = (raw) => {
           `${where}: walls must list 1..${EDL_LIMITS.frameTerms} walls (^h4, >h4)`,
         );
       }
-      if (ev.kind === "race") {
-        out.plies = ev.plies ?? DEFAULT_RACE_PLIES;
-        const [lo, hi] = EDL_LIMITS.racePlies;
-        if (!Number.isInteger(out.plies) || out.plies < lo || out.plies > hi) {
-          fail(`${where}: plies must be a whole number ${lo}..${hi}`);
-        }
-      }
       if (ev.kind === "freeze") {
         out.holdSeconds = ev.holdSeconds ?? DEFAULT_FREEZE_HOLD_SECONDS;
         if (!isNumberIn(out.holdSeconds, EDL_LIMITS.freezeHoldSeconds)) {
@@ -412,17 +443,7 @@ export const validateEdl = (raw) => {
     });
   }
 
-  // One race counter at a time, and one freeze per move.
-  const races = filled
-    .filter((e) => e.kind === "race" && isPly(e.ply))
-    .sort((a, b) => a.ply - b.ply);
-  for (let i = 1; i < races.length; i += 1) {
-    if (races[i].ply < races[i - 1].ply + races[i - 1].plies) {
-      fail(
-        `the races on plies ${races[i - 1].ply} and ${races[i].ply} overlap; one race shows at a time`,
-      );
-    }
-  }
+  // One freeze per move.
   const freezes = filled.filter((e) => e.kind === "freeze").map((e) => e.ply);
   if (new Set(freezes).size !== freezes.length) {
     fail("a ply has two freeze events; one move freezes once");
@@ -437,6 +458,8 @@ export const validateEdl = (raw) => {
       caption,
       ending: raw.ending,
       music,
+      startPly,
+      coldOpenPly,
       ...slots,
       pace,
       events: filled,
@@ -461,9 +484,26 @@ export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
     return col < cols && row >= 1 && row <= rows;
   };
   const plies = [
+    edl.startPly,
+    ...(edl.coldOpenPly === null ? [] : [edl.coldOpenPly]),
     ...edl.pace.flatMap((s) => [s.fromPly, s.toPly]),
     ...edl.events.map((e) => e.ply),
   ];
+  // A video that starts at startPly never shows what comes before it.
+  edl.pace.forEach((s, i) => {
+    if (s.fromPly < edl.startPly) {
+      errors.push(
+        `pace[${i}] starts at ply ${s.fromPly}, before startPly ${edl.startPly}`,
+      );
+    }
+  });
+  edl.events.forEach((e, i) => {
+    if (e.ply < edl.startPly) {
+      errors.push(
+        `events[${i}] is on ply ${e.ply}, before startPly ${edl.startPly}`,
+      );
+    }
+  });
   for (const ply of plies) {
     if (ply >= notations.length) {
       errors.push(
