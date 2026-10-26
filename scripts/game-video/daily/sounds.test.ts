@@ -6,7 +6,7 @@
 import { describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
@@ -26,7 +26,7 @@ import {
   defaultSlots,
   MEME_DIR,
 } from "./sounds.mjs";
-import { createDaily, droppedSoundProblems } from "./routes.mjs";
+import { createDaily, dislikedSoundNotes } from "./routes.mjs";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "meme-sounds-test-"));
 const keys = Object.keys(MEME_SOUNDS) as (keyof typeof MEME_SOUNDS)[];
@@ -64,26 +64,51 @@ describe("the sound table", () => {
   });
 });
 
-describe("keep or drop", () => {
-  test("a choice is saved, cleared, and only for a known sound", () => {
+describe("best, ok or disliked", () => {
+  test("a choice is saved, cleared by ok, and only for a known sound", () => {
     const root = tempDir();
     const picks = openSoundPicks(root);
-    picks.set("boom-1", "keep");
-    picks.set("oof-2", "drop");
-    expect(picks.dropped()).toEqual(["oof-2"]);
+    picks.set("boom-1", "best");
+    picks.set("oof-2", "disliked");
+    expect(picks.disliked()).toEqual(["oof-2"]);
     const saved = JSON.parse(readFileSync(picks.path, "utf8")) as Record<
       string,
       { choice: string }
     >;
-    expect(saved["boom-1"].choice).toBe("keep");
-    picks.set("oof-2", null);
-    expect(picks.dropped()).toEqual([]);
-    expect(() => picks.set("boom-99", "keep")).toThrow("not known");
-    expect(() => picks.set("boom-1", "maybe")).toThrow("keep, drop");
-    expect(() => picks.set("toString", "keep")).toThrow("not known");
+    expect(saved["boom-1"].choice).toBe("best");
+    picks.set("oof-2", "ok");
+    expect(picks.disliked()).toEqual([]);
+    expect(picks.read()).not.toHaveProperty("oof-2");
+    expect(() => picks.set("boom-99", "best")).toThrow("not known");
+    expect(() => picks.set("boom-1", "keep")).toThrow("best, ok, disliked");
+    expect(() => picks.set("boom-1", null)).toThrow("best, ok, disliked");
+    expect(() => picks.set("toString", "best")).toThrow("not known");
   });
 
-  test("the VS and finish defaults are labelled, and a drop of one is allowed", () => {
+  test("a file of keep and drop is written once as best and disliked", () => {
+    const root = tempDir();
+    const path = join(root, "sound-picks.json");
+    writeFileSync(
+      path,
+      JSON.stringify({
+        "boom-1": { choice: "keep", at: "2026-10-25T10:00:00.000Z" },
+        "oof-2": { choice: "drop", at: "2026-10-25T10:01:00.000Z" },
+      }),
+    );
+    const picks = openSoundPicks(root);
+    expect(JSON.parse(readFileSync(path, "utf8"))).toEqual({
+      "boom-1": { choice: "best", at: "2026-10-25T10:00:00.000Z" },
+      "oof-2": { choice: "disliked", at: "2026-10-25T10:01:00.000Z" },
+    });
+    expect(picks.disliked()).toEqual(["oof-2"]);
+    // A file with the new names is not written again (a write renames a new
+    // file over it).
+    const before = statSync(path).ino;
+    openSoundPicks(root);
+    expect(statSync(path).ino).toBe(before);
+  });
+
+  test("the VS and finish defaults are labelled, and a dislike of one is allowed", () => {
     const defaults = defaultSlots();
     // Both slots of DEFAULT_SLOT_SOUNDS (edl.mjs), each a table key.
     for (const key of Object.keys(defaults))
@@ -95,21 +120,21 @@ describe("keep or drop", () => {
     const [finish] = Object.entries(defaults).find(([, s]) =>
       s.includes("the finish"),
     )!;
-    picks.set(finish, "drop");
-    expect(picks.dropped()).toEqual([finish]);
+    picks.set(finish, "disliked");
+    expect(picks.disliked()).toEqual([finish]);
     const row = soundList(picks.read()).find((s) => s.key === finish);
     expect(row?.defaultFor).toContain("the finish");
   });
 
   test("the list carries each sound's choice, family and level", () => {
-    const list = soundList({ "ding-2": { choice: "keep", at: "x" } });
+    const list = soundList({ "ding-2": { choice: "best", at: "x" } });
     expect(list.map((s) => s.key)).toEqual(keys);
     const ding = list.find((s) => s.key === "ding-2");
-    expect(ding?.choice).toBe("keep");
+    expect(ding?.choice).toBe("best");
     expect(ding?.family).toBe("ding");
     expect(ding?.moment).toBe(MEME_FAMILIES.ding);
     expect(ding?.level).toBe(memeLevel("ding-2"));
-    expect(list.find((s) => s.key === "ding-1")?.choice).toBeNull();
+    expect(list.find((s) => s.key === "ding-1")?.choice).toBe("ok");
     expect(list.find((s) => s.key === "bruh-1")?.note).toBe(
       MEME_SOURCE_NOTES["bruh-1"],
     );
@@ -124,7 +149,7 @@ describe("keep or drop", () => {
     expect(soundFile(null)).toBeNull();
   });
 
-  test("the direct step names each event with a dropped sound", () => {
+  test("the direct step names each event with a disliked sound", () => {
     const edl = {
       events: [
         { ply: 3, kind: "sound", sound: "boom-1" },
@@ -132,15 +157,15 @@ describe("keep or drop", () => {
         { ply: 5, kind: "laugh" },
       ],
     };
-    expect(droppedSoundProblems(edl, ["oof-1"])).toEqual([
-      "ply 4: Nil dropped the sound oof-1; name a kept one (crew.mjs sounds)",
+    expect(dislikedSoundNotes(edl, ["oof-1"])).toEqual([
+      "ply 4 uses disliked oof-1: Nil's preference, allowed",
     ]);
   });
 
-  test("the direct step names a VS or finish sound Nil dropped, the default too", () => {
+  test("the direct step names a VS or finish sound Nil disliked, the default too", () => {
     const edl = { vsSound: "boom-1", finishSound: "shotgun-2", events: [] };
-    expect(droppedSoundProblems(edl, ["shotgun-2"])).toEqual([
-      "finishSound: Nil dropped the sound shotgun-2; name a kept one (crew.mjs sounds)",
+    expect(dislikedSoundNotes(edl, ["shotgun-2"])).toEqual([
+      "finishSound uses disliked shotgun-2: Nil's preference, allowed",
     ]);
   });
 });
@@ -168,15 +193,15 @@ describe("the page's routes", () => {
           headers: { "content-type": "application/json" },
           body: JSON.stringify(body),
         });
-      expect((await post({ key: "sting-2", choice: "keep" })).status).toBe(200);
-      expect((await post({ key: "nope-1", choice: "keep" })).status).toBe(409);
+      expect((await post({ key: "sting-2", choice: "best" })).status).toBe(200);
+      expect((await post({ key: "nope-1", choice: "best" })).status).toBe(409);
       // A missing choice is refused, not read as a clear.
       expect((await post({ key: "sting-2" })).status).toBe(409);
       const list = (await (await fetch(`${base}/api/daily/sounds`)).json()) as {
         key: string;
-        choice: string | null;
+        choice: string;
       }[];
-      expect(list.find((s) => s.key === "sting-2")?.choice).toBe("keep");
+      expect(list.find((s) => s.key === "sting-2")?.choice).toBe("best");
       expect(
         JSON.parse(readFileSync(join(dir, "daily/sound-picks.json"), "utf8")),
       ).toHaveProperty("sting-2");

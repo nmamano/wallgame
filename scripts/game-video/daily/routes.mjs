@@ -180,7 +180,7 @@ export const createDaily = ({
 }) => {
   const store = openStore(dataDir);
   const { dirs } = store;
-  // Nil's keep or drop choice for each meme sound (/daily/sounds).
+  // Nil's preference for each meme sound (/daily/sounds).
   const soundPicks = openSoundPicks(dirs.root);
 
   // The render queue lives in memory. A cycle that was rendering when the app
@@ -685,7 +685,6 @@ export const createDaily = ({
         }),
         ...saveFrameProblems(edl, cycle.candidate.beats),
         ...storyProblems(edl, cycle.candidate),
-        ...droppedSoundProblems(edl, soundPicks.dropped()),
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
         ...(edl.coldOpenPly === null
@@ -715,7 +714,14 @@ export const createDaily = ({
       json(
         res,
         200,
-        store.direct(day, { edl, text, summary: edlSummary(edl) }),
+        store.direct(day, {
+          edl,
+          text,
+          summary: [
+            ...edlSummary(edl),
+            ...dislikedSoundNotes(edl, soundPicks.disliked()),
+          ],
+        }),
       );
     },
 
@@ -844,10 +850,10 @@ export const createDaily = ({
     "GET /api/daily/sounds": (req, res) =>
       json(res, 200, soundList(soundPicks.read())),
 
-    /** {key, choice: "keep" | "drop" | null} - null is "not heard yet". */
+    /** {key, choice: "best" | "ok" | "disliked"} - "ok" clears a choice. */
     "POST /api/daily/sounds": async (req, res) => {
       const body = await readJson(req);
-      // An explicit null clears; a missing field is a mistake, not a clear.
+      // A missing choice is a mistake, not an "ok".
       if (!("choice" in body)) throw new StepRefused("a choice is needed");
       soundPicks.set(body.key, body.choice);
       json(res, 200, soundList(soundPicks.read()));
@@ -902,19 +908,21 @@ export const createDaily = ({
   return { handle, store, post, stop };
 };
 
-/** The events of a list that name a sound Nil dropped on /daily/sounds. */
-export const droppedSoundProblems = (edl, dropped) => [
+/**
+ * One line for each use of a sound Nil disliked on /daily/sounds. It is
+ * allowed; the line goes in the list's summary, so the director and the ask
+ * show it.
+ */
+export const dislikedSoundNotes = (edl, disliked) => [
   ...Object.keys(DEFAULT_SLOT_SOUNDS)
-    .filter((slot) => dropped.includes(edl[slot]))
+    .filter((slot) => disliked.includes(edl[slot]))
     .map(
-      (slot) =>
-        `${slot}: Nil dropped the sound ${edl[slot]}; name a kept one (crew.mjs sounds)`,
+      (slot) => `${slot} uses disliked ${edl[slot]}: Nil's preference, allowed`,
     ),
   ...edl.events
-    .filter((e) => e.sound !== undefined && dropped.includes(e.sound))
+    .filter((e) => e.sound !== undefined && disliked.includes(e.sound))
     .map(
-      (e) =>
-        `ply ${e.ply}: Nil dropped the sound ${e.sound}; name a kept one (crew.mjs sounds)`,
+      (e) => `ply ${e.ply} uses disliked ${e.sound}: Nil's preference, allowed`,
     ),
 ];
 

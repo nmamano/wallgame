@@ -1642,15 +1642,17 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
       })
     ).status,
   ).toBe(409);
-  // A sound Nil dropped on /daily/sounds is refused, and no longer once the
-  // choice is cleared.
-  const pickSound = (choice: string | null) =>
+  // A sound Nil disliked on /daily/sounds is allowed, and the edit list's
+  // summary (which the ask shows) names it.
+  const pickSound = (choice: string) =>
     call("/api/daily/sounds", { key: "fuahhh-1", choice });
-  expect((await pickSound("drop")).status).toBe(200);
-  const refused = await direct(day, "a-legend");
-  expect(refused.status).toBe(409);
-  expect(JSON.stringify(refused.body)).toContain("dropped the sound fuahhh-1");
-  expect((await pickSound(null)).status).toBe(200);
+  expect((await pickSound("disliked")).status).toBe(200);
+  const allowed = await direct(day, "a-legend");
+  expect(allowed.status).toBe(200);
+  expect(JSON.stringify(allowed.body)).toMatch(
+    /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
+  );
+  expect((await pickSound("ok")).status).toBe(200);
   // What the video says must match the counter, and the payoff goes out too.
   const told = (edl: Record<string, unknown>) =>
     call("/api/daily/direct", { day, edl: { ...EDL, ...edl } });

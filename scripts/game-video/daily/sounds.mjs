@@ -1,6 +1,6 @@
 /**
- * Nil's listening page for the meme sounds, at /daily/sounds, and his keep or
- * drop choice for each one.
+ * Nil's listening page for the meme sounds, at /daily/sounds, and his
+ * preference for each one: best, ok or disliked.
  *
  * Board task e8d26610. Agents cannot hear, so meme-sounds.mjs holds several
  * candidates per family and Nil picks by ear. The page plays each clip at the
@@ -9,14 +9,15 @@
  * sound.
  *
  * The choices are one file in the app's data dir, daily/sound-picks.json. A
- * sound with no choice is "not heard yet". The director uses kept sounds, and
- * POST /api/daily/direct refuses a list that names a dropped one (routes.mjs).
+ * sound with no choice is "ok". A choice is a preference, not a gate (Nil,
+ * 2026-10-26: "they are keeps, just lower priority. even the 'drops' can be
+ * used if they fit your creative direction"). The director prefers best,
+ * then ok. POST /api/daily/direct allows a disliked sound and adds one line
+ * for each one to the list's summary, which the ask shows (routes.mjs).
  *
  * TWO SOUNDS ARE DEFAULTS. The VS card and the finish play
  * DEFAULT_SLOT_SOUNDS (edl.mjs) unless the director's list names its own
- * (vsSound, finishSound). The page labels those rows. A Drop is allowed:
- * the direct step then refuses a list that keeps a dropped default, so the
- * director names a kept sound for that slot (Wall Game PM, 2026-10-26).
+ * (vsSound, finishSound). The page labels those rows.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -54,13 +55,31 @@ export const defaultSlots = () => {
   );
 };
 
-export const CHOICES = ["keep", "drop"];
+/** The levels, best first. "ok" is a sound with no choice, so it is not saved. */
+export const CHOICES = ["best", "ok", "disliked"];
+
+/**
+ * The names of the first page (keep or drop), until 2026-10-26. A file that
+ * has them is written once with the new names when the app opens it.
+ */
+const RENAMED = { keep: "best", drop: "disliked" };
 
 const known = (key) => Object.hasOwn(MEME_SOUNDS, key);
 
 /** The choices, kept in `<root>/sound-picks.json`. */
 export const openSoundPicks = (root) => {
   const path = join(root, "sound-picks.json");
+
+  if (existsSync(path)) {
+    const all = JSON.parse(readFileSync(path, "utf8"));
+    const old = Object.values(all).filter((p) =>
+      Object.hasOwn(RENAMED, p.choice),
+    );
+    if (old.length) {
+      for (const p of old) p.choice = RENAMED[p.choice];
+      writeAtomic(path, JSON.stringify(all, null, 2) + "\n");
+    }
+  }
 
   /**
    * key -> {choice, at}. A key no longer in the table is left out.
@@ -72,27 +91,27 @@ export const openSoundPicks = (root) => {
     return Object.fromEntries(Object.entries(all).filter(([k]) => known(k)));
   };
 
-  /** Set a choice, or clear it with null (back to "not heard yet"). */
+  /** Set a choice; "ok" clears it. */
   const set = (key, choice) => {
     if (typeof key !== "string" || !known(key)) {
       throw new StepRefused(`sound ${JSON.stringify(key)} is not known`);
     }
-    if (choice !== null && !CHOICES.includes(choice)) {
-      throw new StepRefused(`a choice is ${CHOICES.join(", ")} or null`);
+    if (!CHOICES.includes(choice)) {
+      throw new StepRefused(`a choice is ${CHOICES.join(", ")}`);
     }
     const picks = read();
-    if (choice === null) delete picks[key];
+    if (choice === "ok") delete picks[key];
     else picks[key] = { choice, at: new Date().toISOString() };
     writeAtomic(path, JSON.stringify(picks, null, 2) + "\n");
     return picks;
   };
 
-  const dropped = () =>
+  const disliked = () =>
     Object.entries(read())
-      .filter(([, p]) => p.choice === "drop")
+      .filter(([, p]) => p.choice === "disliked")
       .map(([k]) => k);
 
-  return { path, read, set, dropped };
+  return { path, read, set, disliked };
 };
 
 /**
@@ -110,7 +129,7 @@ export const soundList = (picks, dir = MEME_DIR, defaults = defaultSlots()) =>
       truePeak,
       gain: memeGain(key),
       level: memeLevel(key),
-      choice: picks[key]?.choice ?? null,
+      choice: picks[key]?.choice ?? "ok",
       note: MEME_SOURCE_NOTES[key] ?? null,
       defaultFor: defaults[key] ?? null,
       file: existsSync(join(dir, `${key}.mp3`)),
@@ -140,8 +159,9 @@ export const SOUNDS_PAGE = `<!doctype html>
   button { padding: 5px 12px; font-size: 13px; font-weight: 700; border-radius: 6px; cursor: pointer;
            border: 1px solid #334155; background: #0b1222; color: #e2e8f0; }
   button.play { background: #ff8c42; color: #1a1005; border-color: #ff8c42; min-width: 64px; }
-  button.keep.on { background: #166534; border-color: #22c55e; }
-  button.drop.on { background: #7f1d1d; border-color: #ef4444; }
+  button.best.on { background: #166534; border-color: #22c55e; }
+  button.ok.on { background: #334155; border-color: #94a3b8; }
+  button.disliked.on { background: #7f1d1d; border-color: #ef4444; }
   .err { color: #fca5a5; font-size: 12px; }
   .note { display: block; font-size: 12px; color: #fbbf24; }
   .slot { display: block; font-size: 12px; color: #93c5fd; }
@@ -150,7 +170,8 @@ export const SOUNDS_PAGE = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Meme sounds</h1>
-  <p class="sub">Each sound plays at its level in a video. Keep the ones the director may use.
+  <p class="sub">Each sound plays at its level in a video. The director prefers your best sounds, then ok.
+    It uses a disliked one only when it fits the moment clearly better, and tells you why.
     <a href="/daily">Daily video</a></p>
   <div id="sum" class="muted"></div>
   <div id="list"></div>
@@ -193,8 +214,8 @@ export const SOUNDS_PAGE = `<!doctype html>
 
   const render = (sounds) => {
     const count = (c) => sounds.filter((s) => s.choice === c).length;
-    $("sum").textContent = count("keep") + " kept, " + count("drop") + " dropped, " +
-      count(null) + " not heard yet, of " + sounds.length;
+    $("sum").textContent = count("best") + " best, " + count("ok") + " ok, " +
+      count("disliked") + " disliked, of " + sounds.length;
     const list = $("list"); list.replaceChildren();
     const families = [...new Set(sounds.map((s) => s.family))];
     for (const f of families) {
@@ -210,11 +231,12 @@ export const SOUNDS_PAGE = `<!doctype html>
         const lvl = el("span", "lvl", s.level.toFixed(1) + " LUFS (gain " + (db >= 0 ? "+" : "") + db.toFixed(1) + " dB)");
         if (s.defaultFor) lvl.append(el("span", "slot", "Default on " + s.defaultFor + ", when the list names no other sound."));
         if (s.note) lvl.append(el("span", "note", s.note));
-        const keep = el("button", "keep" + (s.choice === "keep" ? " on" : ""), "Keep");
-        keep.onclick = () => choose(s.key, s.choice === "keep" ? null : "keep");
-        const drop = el("button", "drop" + (s.choice === "drop" ? " on" : ""), "Drop");
-        drop.onclick = () => choose(s.key, s.choice === "drop" ? null : "drop");
-        row.append(p, el("span", "key", s.key), lvl, keep, drop);
+        const levels = [["best", "Best"], ["ok", "OK"], ["disliked", "Disliked"]].map(([c, label]) => {
+          const b = el("button", c + (s.choice === c ? " on" : ""), label);
+          b.onclick = () => choose(s.key, c);
+          return b;
+        });
+        row.append(p, el("span", "key", s.key), lvl, ...levels);
         box.append(row);
       }
       list.append(box);

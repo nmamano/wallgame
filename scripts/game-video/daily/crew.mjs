@@ -22,9 +22,10 @@
  *                                  With --edl, it checks the list against the
  *                                  game and marks each event on its ply.
  *   sounds                         the meme sounds by family, with Nil's
- *                                  choice. He keeps or drops each one by ear
- *                                  on the app's /daily/sounds page. Name a
- *                                  kept sound; `direct` refuses a dropped one
+ *                                  preference: best, ok or disliked, which he
+ *                                  sets by ear on the app's /daily/sounds
+ *                                  page. Prefer best, then ok; `direct`
+ *                                  allows a disliked one and names it
  *   direct --edl F                 the director's edit decision list for the
  *                                  picked game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending
@@ -289,8 +290,8 @@ const commands = {
   },
 
   /**
-   * Each family's moment and sounds: kept, then not heard yet. A source note
-   * (a claim risk, a weaker source) follows its key in brackets.
+   * Each family's moment and sounds: best, then ok, then disliked. A source
+   * note (a claim risk, a weaker source) follows its key in brackets.
    */
   async sounds() {
     const sounds = await app("GET", "/api/daily/sounds");
@@ -302,7 +303,7 @@ const commands = {
           .map((x) => (x.note ? `${x.key} [${x.note}]` : x.key))
           .join(", ") || "-";
       console.log(
-        `${family} (${members[0].moment ?? "no moment"}): kept ${names("keep")}; not heard yet ${names(null)}`,
+        `${family} (${members[0].moment ?? "no moment"}): best ${names("best")}; ok ${names("ok")}; disliked ${names("disliked")}`,
       );
     }
     for (const x of sounds.filter((s) => s.defaultFor)) {

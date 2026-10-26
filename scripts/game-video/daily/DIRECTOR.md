@@ -91,8 +91,9 @@ already has a cycle, finish it or stop: do not start another. `pick
   The camera pushes in about a third of a second before the move (LEAD_PUSH
   in render-game-video.mjs), and the move and the sound land together
   inside the zoom. Put the seeya in the zoom's `sound`, not in
-  a separate `sound` event, so that it plays with the move. If
-  `crew.mjs sounds` lists no `seeya-N`, use an `ooh-N`. No FAHHH on an
+  a separate `sound` event, so that it plays with the move. If no
+  `seeya-N` is best or ok, use an `ooh-N` (or a disliked seeya when it fits
+  better). No FAHHH on an
   escape. A ply takes at most one freeze or lead zoom, and `direct` refuses
   a lead zoom whose frame misses the mouse's start or end cell.
 - If the game has no close call, put the FAHHH and the zoom on the largest
@@ -138,12 +139,15 @@ already has a cycle, finish it or stop: do not start another. `pick
   ply before the render.
 - `vsSound` and `finishSound` name the sounds of the VS punch and the finish.
   Without them the video plays the defaults (`crew.mjs sounds` names them).
-  If Nil dropped a default, name a kept sound.
+  If Nil disliked a default, prefer a best or ok sound for that slot.
 - Sounds: run `crew.mjs sounds`. It gives each family's moment (a reveal, a
   blunder, the trap closes, a good move, a close call, the win, the loss)
-  and the sounds that Nil kept on the app's `/daily/sounds` page. Name a kept
-  sound that fits the moment. Use a sound that Nil has not heard yet only
-  when no kept sound fits. `direct` refuses a sound that Nil dropped.
+  and its sounds by Nil's preference on the app's `/daily/sounds` page:
+  best, then ok, then disliked. His preference is one data point, not a
+  gate. Prefer his best sounds, then ok. Use a disliked sound only when it
+  fits the moment clearly better, and say why in the ask's note. `direct`
+  allows it and adds a line ("uses disliked laugh-3: Nil's preference,
+  allowed") to the edit list that the ask shows.
 
 ## Captions and titles
 
