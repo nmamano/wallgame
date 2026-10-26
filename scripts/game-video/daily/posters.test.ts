@@ -44,6 +44,7 @@ import {
   DRY_RUN_THREADS,
 } from "./post-threads.mjs";
 import { dryRunPublicUrl, r2PublicUrl, DRY_RUN_R2 } from "./public-url-r2.mjs";
+import { openTokenStore } from "./token-store.mjs";
 
 interface Req {
   method: string;
@@ -604,6 +605,20 @@ describe("Mastodon", () => {
 
 describe("Threads", () => {
   const day = (iso: string) => () => new Date(iso);
+  /** A token store in which /daily/connect connected Threads with `token`. */
+  const connectedStore = (token: string) => {
+    const store = openTokenStore(tempDir());
+    store.write("threads", {
+      connectedAt: "2026-10-26T09:00:00.000Z",
+      connectedBy: "Nil",
+      scopes: ["threads_basic", "threads_content_publish"],
+      account: { id: "U1", name: "wallgameio" },
+      accessToken: token,
+      refreshedAt: null,
+      triedAt: null,
+    });
+    return store;
+  };
 
   test("refresh, copy to R2, container, wait, publish, permalink; the copy is removed", async () => {
     const transport = dryRunTransport(threadsDryRunReply);
@@ -612,7 +627,7 @@ describe("Threads", () => {
       video: VIDEO,
       text: TEXT,
       publicUrl: dryRunPublicUrl,
-      tokens: threadsTokens(tempDir(), "<seed>"),
+      tokens: threadsTokens(openTokenStore(tempDir())),
       transport,
       creds: DRY_RUN_THREADS,
       sleep: noSleep,
@@ -625,9 +640,9 @@ describe("Threads", () => {
     expect(sent.map((r) => `${r.method} ${r.url.split("?")[0]}`)).toEqual([
       "GET https://graph.threads.com/refresh_access_token",
       `PUT ${object}`,
-      "POST https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads",
+      "POST https://graph.threads.com/v1.0/<Threads user id from /daily/connect>/threads",
       "GET https://graph.threads.com/v1.0/DRY-RUN-CONTAINER",
-      "POST https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads_publish",
+      "POST https://graph.threads.com/v1.0/<Threads user id from /daily/connect>/threads_publish",
       "GET https://graph.threads.com/v1.0/DRY-RUN-MEDIA-ID",
       `DELETE ${object}`,
     ]);
@@ -648,8 +663,8 @@ describe("Threads", () => {
   });
 
   test("the token renews itself once a day and is kept; a failure keeps the old one", async () => {
-    const dir = tempDir();
-    const tokens = threadsTokens(dir, "SEED-TOKEN");
+    const store = connectedStore("SEED-TOKEN");
+    const tokens = threadsTokens(store);
     let n = 0;
     const transport = fakeLive(() => ({
       status: 200,
@@ -678,16 +693,21 @@ describe("Threads", () => {
       now: day("2026-10-28T09:00:00Z"),
     });
     expect(transport.sent).toHaveLength(1);
-    // A day later it renews with the kept token, which survives a new store.
+    // A day later it renews with the kept token; the rest of the
+    // connection stays as Connect wrote it.
     await refreshThreadsToken({
       transport,
       tokens,
       now: day("2026-10-28T10:00:01Z"),
     });
     expect(transport.sent[1].headers?.authorization).toBe("Bearer NEW-1");
-    expect(threadsTokens(dir, "SEED-TOKEN").current()).toBe("NEW-2");
-    // A new secret starts a new chain.
-    expect(threadsTokens(dir, "OTHER-SEED").current()).toBe("OTHER-SEED");
+    expect(store.read("threads")).toMatchObject({
+      accessToken: "NEW-2",
+      refreshedAt: "2026-10-28T10:00:01.000Z",
+      accessExpiresAt: "2026-12-27T10:00:01.000Z",
+      account: { id: "U1", name: "wallgameio" },
+      connectedBy: "Nil",
+    });
 
     const refusing = fakeLive(() => ({
       status: 400,
@@ -722,9 +742,9 @@ describe("Threads", () => {
         video: VIDEO,
         text: TEXT,
         publicUrl: dryRunPublicUrl,
-        tokens: threadsTokens(tempDir(), "SEED"),
+        tokens: threadsTokens(connectedStore("SEED")),
         transport,
-        creds: { THREADS_USER_ID: "U1" },
+        creds: { userId: "U1" },
         sleep: noSleep,
         beforeCommit: noSleep,
       });
@@ -766,9 +786,9 @@ describe("Threads", () => {
           video: VIDEO,
           text: TEXT,
           publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
-          tokens: threadsTokens(tempDir(), "SEED"),
+          tokens: threadsTokens(connectedStore("SEED")),
           transport,
-          creds: { THREADS_USER_ID: "U1" },
+          creds: { userId: "U1" },
           sleep: noSleep,
           beforeCommit: noSleep,
         }),

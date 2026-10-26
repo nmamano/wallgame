@@ -114,7 +114,6 @@ import {
 import {
   postToTiktok,
   tiktokDryRunReply,
-  tokenStore,
   DRY_RUN_TIKTOK,
   TIKTOK_SECRETS,
 } from "./post-tiktok.mjs";
@@ -159,6 +158,15 @@ import {
   DRY_RUN_MASTODON,
   MASTODON_SECRETS,
 } from "./post-mastodon.mjs";
+import { openTokenStore } from "./token-store.mjs";
+import { connectStates, ConnectRefused } from "./connect-state.mjs";
+import {
+  CONNECT_PLATFORMS,
+  authorizeUrl,
+  exchangeCode,
+  missingClientSecrets,
+} from "./connect.mjs";
+import { connectPage, connectRefusedPage } from "./connect-page.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RENDER_4090 = resolve(HERE, "render-4090.mjs");
@@ -193,12 +201,19 @@ const SECRETS = {
 /** Every secret a poster reads; a test strips them so it cannot post. */
 export const POSTING_SECRETS = Object.values(SECRETS).flat();
 
-/** live when every secret of the platform is set, else dry-run. */
-export const postingModes = (env) =>
+/**
+ * live when every secret of the platform is set and, for a platform with
+ * Connect (connect.mjs), `connected` has it; else dry-run.
+ * @param {Set<string>} connected
+ */
+export const postingModes = (env, connected = new Set()) =>
   Object.fromEntries(
     PLATFORMS.map((p) => [
       p,
-      SECRETS[p].every((name) => Boolean(env[name])) ? "live" : "dry-run",
+      SECRETS[p].every((name) => Boolean(env[name])) &&
+      (!CONNECT_PLATFORMS.includes(p) || connected.has(p))
+        ? "live"
+        : "dry-run",
     ]),
   );
 
@@ -213,6 +228,10 @@ const DRY_RUN_REPLIES = {
   threads: threadsDryRunReply,
   mastodon: mastodonDryRunReply,
 };
+
+/** Why a Connect request without an office member is refused. */
+const NO_MEMBER =
+  "open /daily/connect through the office (the app's address), signed in as a member";
 
 /** How often the app renews the Threads token; it renews once a day at most. */
 const THREADS_REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
@@ -238,40 +257,56 @@ export const createDaily = ({
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   dryRunReplies: replyOverrides = {},
+  // Every live request goes through this; a test gives canned replies.
+  live: makeLiveTransport = /** @type {() => { mode: string, sent: any[], request: (req: any) => Promise<any> }} */ (
+    liveTransport
+  ),
 }) => {
   // A test may replace the canned replies of one platform; the rest keep
   // their own.
   const dryRunReplies = { ...DRY_RUN_REPLIES, ...replyOverrides };
   const store = openStore(dataDir);
   const { dirs } = store;
-  const modesNow = () => postingModes(env);
-  const threadsTokenStore = () =>
-    threadsTokens(join(dirs.root, "tokens"), env.THREADS_ACCESS_TOKEN);
+  // The tokens that /daily/connect stores (token-store.mjs).
+  const tokens = openTokenStore(join(dirs.root, "tokens"));
+  const connectedNow = () =>
+    new Set(CONNECT_PLATFORMS.filter((p) => tokens.connected(p)));
+  const modesNow = () => postingModes(env, connectedNow());
+  const states = connectStates();
+
+  /** A stored field of a connected platform, for a live post. */
+  const stored = (platform, pick) => {
+    const record = tokens.read(platform);
+    if (!record) {
+      throw new NotPosted(`${platform} is not connected (/daily/connect)`);
+    }
+    return pick(record);
+  };
 
   // A Threads token lapses after 60 days without a refresh, so the app
   // renews it on its own, also in a week with no post (post-threads.mjs).
-  // Only once its secrets exist: this is a live call to Threads.
-  let threadsTimer = null;
-  if (THREADS_SECRETS.every((name) => Boolean(env[name]))) {
-    // It must never throw: a rejection in the timer would end the app (a
-    // corrupt threads.json fails before refreshThreadsToken's own guard).
-    const renew = async () => {
-      try {
-        const outcome = await refreshThreadsToken({
-          transport: liveTransport(),
-          tokens: threadsTokenStore(),
-        });
-        if (outcome.error) {
-          console.warn(`threads token refresh failed: ${outcome.error}`);
-        }
-      } catch (err) {
-        console.warn(`threads token refresh failed: ${err?.message ?? err}`);
+  // Only while Threads is connected: this is a live call to Threads.
+  // It must never throw: a rejection in the timer would end the app.
+  const renew = async () => {
+    try {
+      if (!tokens.connected("threads")) return;
+      const outcome = await refreshThreadsToken({
+        transport: makeLiveTransport(),
+        tokens: threadsTokens(tokens),
+      });
+      if (outcome.error) {
+        console.warn(`threads token refresh failed: ${outcome.error}`);
       }
-    };
-    threadsTimer = setInterval(() => void renew(), THREADS_REFRESH_EVERY_MS);
-    threadsTimer.unref();
-    void renew();
-  }
+    } catch (err) {
+      console.warn(`threads token refresh failed: ${err?.message ?? err}`);
+    }
+  };
+  const threadsTimer = setInterval(
+    () => void renew(),
+    THREADS_REFRESH_EVERY_MS,
+  );
+  threadsTimer.unref();
+  void renew();
   // Nil's preference for each meme sound (/daily/sounds).
   const soundPicks = openSoundPicks(dirs.root);
 
@@ -680,7 +715,7 @@ export const createDaily = ({
     for (const platform of todo) {
       const transport =
         modes[platform] === "live"
-          ? liveTransport()
+          ? makeLiveTransport()
           : dryRunTransport(dryRunReplies[platform]);
       const at = new Date().toISOString();
       // Set once the final, public request is about to go out. A failure
@@ -706,29 +741,39 @@ export const createDaily = ({
             video,
             caption: texts,
             transport,
-            creds: live ? env : DRY_RUN_CREDS,
+            creds: live
+              ? {
+                  YOUTUBE_CLIENT_ID: env.YOUTUBE_CLIENT_ID,
+                  YOUTUBE_CLIENT_SECRET: env.YOUTUBE_CLIENT_SECRET,
+                  refreshToken: stored("youtube", (r) => r.refreshToken),
+                }
+              : DRY_RUN_CREDS,
+            onRefreshToken: (refreshToken) =>
+              tokens.update("youtube", { refreshToken }),
             beforeCommit,
           }),
-        tiktok: () => {
-          const tokens = tokenStore(
-            join(dirs.root, "tokens"),
-            env.TIKTOK_REFRESH_TOKEN,
-          );
-          return postToTiktok({
+        tiktok: () =>
+          postToTiktok({
             video,
             transport,
             creds: live
               ? {
                   TIKTOK_CLIENT_KEY: env.TIKTOK_CLIENT_KEY,
                   TIKTOK_CLIENT_SECRET: env.TIKTOK_CLIENT_SECRET,
-                  refreshToken: tokens.current(),
+                  refreshToken: stored("tiktok", (r) => r.refreshToken),
                 }
               : DRY_RUN_TIKTOK,
-            onRefreshToken: tokens.save,
+            // TikTok rotates refresh tokens: the newest one is kept.
+            onRefreshToken: (refreshToken, expiresInSeconds) =>
+              tokens.update("tiktok", {
+                refreshToken,
+                refreshExpiresAt: Number.isFinite(expiresInSeconds)
+                  ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+                  : null,
+              }),
             sleep,
             beforeCommit,
-          });
-        },
+          }),
         instagram: () =>
           postToInstagram({
             video,
@@ -763,9 +808,11 @@ export const createDaily = ({
             video,
             text: texts.threads,
             publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
-            tokens: threadsTokenStore(),
+            tokens: threadsTokens(tokens),
             transport,
-            creds: live ? env : DRY_RUN_THREADS,
+            creds: live
+              ? { userId: stored("threads", (r) => r.account.id) }
+              : DRY_RUN_THREADS,
             sleep,
             beforeCommit,
           }),
@@ -822,6 +869,29 @@ export const createDaily = ({
   const json = (res, code, body) => {
     res.writeHead(code, { "content-type": "application/json" });
     res.end(JSON.stringify(body));
+  };
+
+  const html = (res, code, body) => {
+    res.writeHead(code, {
+      "content-type": "text/html; charset=utf-8",
+      "cache-control": "no-store",
+    });
+    res.end(body);
+  };
+
+  /** The member the office says sent `req`, or null. */
+  const memberOf = (req) => {
+    const id = req.headers["x-isomux-member-id"];
+    if (typeof id !== "string" || !id) return null;
+    let name = id;
+    try {
+      name = decodeURIComponent(
+        String(req.headers["x-isomux-member-name"] ?? id),
+      );
+    } catch {
+      /* keep the id */
+    }
+    return { id, name };
   };
 
   const readJson = async (req, limit = 256 * 1024) => {
@@ -1278,6 +1348,108 @@ export const createDaily = ({
       createReadStream(path).pipe(res);
     },
 
+    // One-click Connect (connect.mjs). The office sends the member's id and
+    // name with each request through the app's URL; a request without them
+    // did not come through the office and may not connect anything.
+    "GET /daily/connect": (req, res, url) => {
+      const connected = url.searchParams.get("connected");
+      html(
+        res,
+        200,
+        connectPage(
+          CONNECT_PLATFORMS.map((platform) => ({
+            platform,
+            status: tokens.status(platform),
+            missing: missingClientSecrets(platform, env),
+          })),
+          {
+            connected: CONNECT_PLATFORMS.includes(connected) ? connected : null,
+          },
+        ),
+      );
+    },
+
+    ...Object.fromEntries(
+      CONNECT_PLATFORMS.flatMap((platform) => [
+        [
+          `POST /daily/connect/${platform}/start`,
+          (req, res) => {
+            const member = memberOf(req);
+            if (!member) {
+              return html(res, 403, connectRefusedPage(platform, NO_MEMBER));
+            }
+            const missing = missingClientSecrets(platform, env);
+            if (missing.length) {
+              return html(
+                res,
+                409,
+                connectRefusedPage(
+                  platform,
+                  `the app needs the secrets ${missing.join(", ")} first`,
+                ),
+              );
+            }
+            const { state, verifier } = states.create(platform, member.id);
+            res.writeHead(303, {
+              location: authorizeUrl(platform, env, { state, verifier }),
+              "cache-control": "no-store",
+            });
+            res.end();
+          },
+        ],
+        [
+          `GET /daily/connect/${platform}/callback`,
+          async (req, res, url) => {
+            const member = memberOf(req);
+            const q = url.searchParams;
+            try {
+              if (!member) throw new ConnectRefused(NO_MEMBER);
+              // The state is checked first, also when the platform reports
+              // an error, so a stray callback cannot show a message here.
+              const { verifier } = states.take(
+                q.get("state"),
+                platform,
+                member.id,
+              );
+              const error = q.get("error");
+              if (error) {
+                throw new ConnectRefused(
+                  `${platform} answered ${/^[\w.-]{1,64}$/.test(error) ? error : "with an error"}: nothing was connected`,
+                );
+              }
+              const code = q.get("code");
+              if (!code) throw new ConnectRefused(`${platform} sent no code`);
+              const record = await exchangeCode(platform, {
+                transport: makeLiveTransport(),
+                env,
+                code,
+                verifier,
+              });
+              tokens.write(platform, {
+                ...record,
+                connectedAt: new Date().toISOString(),
+                connectedBy: member.name,
+              });
+              res.writeHead(303, {
+                location: `/daily/connect?connected=${platform}`,
+                "cache-control": "no-store",
+              });
+              res.end();
+            } catch (err) {
+              // Only a ConnectRefused message is shown: it names no code
+              // and no token. Anything else (a lost connection) gets a
+              // plain sentence; its message could quote a request.
+              const message =
+                err instanceof ConnectRefused
+                  ? err.message
+                  : `the token exchange with ${platform} did not finish (${err?.name ?? "error"}); click Connect again`;
+              html(res, 400, connectRefusedPage(platform, message));
+            }
+          },
+        ],
+      ]),
+    ),
+
     "GET /api/daily/post-log": (req, res, url) =>
       json(
         res,
@@ -1436,7 +1608,7 @@ const DASHBOARD = `<!doctype html>
 <body><main>
   <h1>Wall Game daily video</h1>
   <p class="sub">One game a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky, Threads and Mastodon. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
-    <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a></p>
+    <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
   <h2>Candidate</h2><div id="cand" class="box"></div>
   <h2>Video</h2><div id="vid" class="box"></div>

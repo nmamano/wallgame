@@ -21,17 +21,14 @@
  *
  * Auth: OAuth 2.0 with a refresh token for the channel, scope
  * https://www.googleapis.com/auth/youtube.upload. The app's environment holds
- * YOUTUBE_CLIENT_ID, YOUTUBE_CLIENT_SECRET, YOUTUBE_REFRESH_TOKEN as Isomux
- * secrets. A Google OAuth app left in "Testing" status expires its refresh
- * tokens after 7 days, so the consent screen must be "In production".
+ * YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET as Isomux secrets; the refresh
+ * token comes from /daily/connect (connect.mjs) and lives in the token store.
+ * A Google OAuth app left in "Testing" status expires its refresh tokens
+ * after 7 days, so the consent screen must be "In production".
  */
 import { PostFailed, ok, sha256 } from "./transport.mjs";
 
-export const YOUTUBE_SECRETS = [
-  "YOUTUBE_CLIENT_ID",
-  "YOUTUBE_CLIENT_SECRET",
-  "YOUTUBE_REFRESH_TOKEN",
-];
+export const YOUTUBE_SECRETS = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"];
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const YOUTUBE_UPLOAD_URL =
   "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet%2Cstatus";
@@ -44,14 +41,14 @@ export const tokenBody = (creds) =>
   new URLSearchParams({
     client_id: creds.YOUTUBE_CLIENT_ID,
     client_secret: creds.YOUTUBE_CLIENT_SECRET,
-    refresh_token: creds.YOUTUBE_REFRESH_TOKEN,
+    refresh_token: creds.refreshToken,
     grant_type: "refresh_token",
   }).toString();
 
 export const DRY_RUN_CREDS = {
   YOUTUBE_CLIENT_ID: "<YOUTUBE_CLIENT_ID>",
   YOUTUBE_CLIENT_SECRET: "<YOUTUBE_CLIENT_SECRET>",
-  YOUTUBE_REFRESH_TOKEN: "<YOUTUBE_REFRESH_TOKEN>",
+  refreshToken: "<refresh token from /daily/connect>",
 };
 
 export const youtubeDryRunReply = (req) => {
@@ -82,7 +79,9 @@ export const youtubeDryRunReply = (req) => {
 
 /**
  * Upload `video` (a Buffer). `caption` has youtubeTitle and youtubeDescription.
- * `creds` is the live credentials, or DRY_RUN_CREDS for a dry run.
+ * `creds` is the client id and secret and the stored `refreshToken`, or
+ * DRY_RUN_CREDS for a dry run. `onRefreshToken` gets a new refresh token if
+ * Google ever sends one (its pages describe none; the store keeps it).
  * Returns {postId, url, privacyStatus, uploadStatus}.
  *
  * `beforeCommit` runs just before the PUT of the bytes, the request that makes
@@ -94,6 +93,7 @@ export const postToYoutube = async ({
   caption,
   transport,
   creds,
+  onRefreshToken = () => {},
   beforeCommit,
 }) => {
   const dry = transport.mode === "dry-run";
@@ -106,6 +106,10 @@ export const postToYoutube = async ({
   });
   if (!ok(token) || !token.json?.access_token) {
     throw new PostFailed("youtube token", token);
+  }
+  const rotated = token.json.refresh_token;
+  if (!dry && typeof rotated === "string" && rotated !== creds.refreshToken) {
+    onRefreshToken(rotated);
   }
   const bearer = dry
     ? "Bearer <access token from the step above>"

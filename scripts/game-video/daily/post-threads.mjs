@@ -27,12 +27,12 @@
  * THE TOKEN EXPIRES. A long-lived token is "valid for 60 days" and "can be
  * refreshed as long as they are at least 24 hours old but have not expired";
  * a token that expires cannot be refreshed. So nobody refreshes it by hand:
- * threadsTokens keeps the newest token in the app's data dir, and
+ * the token store keeps the newest token (threadsTokens), and
  * refreshThreadsToken renews it when it is a day old. The poster calls it
  * before each post, and the app also calls it once a day, so a week with no
- * post does not let the token lapse. THREADS_USER_ID and
- * THREADS_ACCESS_TOKEN (the first long-lived token) are Isomux secrets; a new
- * secret replaces the kept chain.
+ * post does not let the token lapse. The first long-lived token and the user
+ * id come from /daily/connect (connect.mjs); the app's environment holds
+ * only THREADS_APP_ID and THREADS_APP_SECRET.
  *
  * The token goes only in the Authorization header. The pages' examples put
  * access_token in the query string and do not say that a Bearer header is
@@ -41,13 +41,13 @@
  *
  * FIRST LIVE POST CHECKLIST (for Wall Game Growth, on the first real post):
  * - The token is sent as "Authorization: Bearer". The Threads pages show it
- *   only as an access_token query parameter. If the first request answers
- *   401 or "invalid token", this is the cause: report it to the code owner,
- *   and do not move the token into the URL.
- * - The token refresh: after the first post, the app's data dir has
- *   daily/tokens/threads.json with a refreshedAt. If it has only triedAt,
- *   the refresh failed: the post-log row does not show that, so look at the
- *   app log.
+ *   only as an access_token query parameter. Connect already reads /me this
+ *   way, so a refusal shows there first. If a request answers 401 or
+ *   "invalid token", this is the cause: report it to the code owner, and do
+ *   not move the token into the URL.
+ * - The token refresh: one day after Connect, /daily/connect shows a newer
+ *   "refreshed" time for Threads. If it does not, the refresh failed: the
+ *   post-log row does not show that, so look at the app log.
  * - The permalink in the post log opens the post.
  * - The R2 bucket wallgame-threads-video is empty after the post: the poster
  *   deletes its copy. An object that stays means the DELETE failed (see the
@@ -59,14 +59,6 @@
  * status decides, as in post-instagram.mjs.
  */
 import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
-import {
   NotPosted,
   PostFailed,
   ok,
@@ -76,7 +68,7 @@ import {
 import { textLimitProblems } from "./post-limits.mjs";
 import { R2_HOST_SUFFIX, r2DryRunReply } from "./public-url-r2.mjs";
 
-export const THREADS_SECRETS = ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN"];
+export const THREADS_SECRETS = ["THREADS_APP_ID", "THREADS_APP_SECRET"];
 
 export const THREADS_GRAPH = "https://graph.threads.com/v1.0";
 export const THREADS_REFRESH_URL =
@@ -90,51 +82,39 @@ const SETTLE_READS = 3;
 /** The docs' floor for a refresh. */
 const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
 
+const DRY_RUN_TOKEN = "<Threads token from /daily/connect>";
+
 export const DRY_RUN_THREADS = {
-  THREADS_USER_ID: "<THREADS_USER_ID>",
+  userId: "<Threads user id from /daily/connect>",
 };
 
 /**
- * The newest long-lived token, kept in `dir`/threads.json (mode 0600).
- * `seed` is the secret; the file records the hash of the seed it grew from,
- * so a new secret starts a new chain. `refreshedAt` is null for the seed.
+ * The Threads connection in the token store (token-store.mjs), as the
+ * refresh needs it. /daily/connect writes it; `save` and `tried` change it.
  */
-export const threadsTokens = (dir, seed) => {
-  const path = join(dir, "threads.json");
-  const seedSha256 = sha256(String(seed));
-  const kept = () => {
-    if (!existsSync(path)) return null;
-    const k = JSON.parse(readFileSync(path, "utf8"));
-    return k.seedSha256 === seedSha256 ? k : null;
-  };
-  const write = (record) => {
-    mkdirSync(dir, { recursive: true, mode: 0o700 });
-    const part = `${path}.part`;
-    writeFileSync(part, JSON.stringify({ seedSha256, ...record }), {
-      mode: 0o600,
-    });
-    renameSync(part, path);
-  };
+export const threadsTokens = (store) => {
+  const record = () => store.read("threads");
   return {
-    current: () => kept()?.token ?? seed,
-    refreshedAt: () => kept()?.refreshedAt ?? null,
-    triedAt: () => kept()?.triedAt ?? null,
-    save: (token, at) => write({ token, refreshedAt: at, triedAt: at }),
-    /** A failed refresh: keep the token, and do not try again for a day. */
-    tried: (at) => {
-      const k = kept();
-      write({
-        token: k?.token ?? seed,
-        refreshedAt: k?.refreshedAt ?? null,
+    current: () => record()?.accessToken ?? null,
+    refreshedAt: () => record()?.refreshedAt ?? null,
+    triedAt: () => record()?.triedAt ?? null,
+    save: (token, at, expiresInSeconds) =>
+      store.update("threads", {
+        accessToken: token,
+        refreshedAt: at,
         triedAt: at,
-      });
-    },
+        accessExpiresAt: Number.isFinite(expiresInSeconds)
+          ? new Date(Date.parse(at) + expiresInSeconds * 1000).toISOString()
+          : null,
+      }),
+    /** A failed refresh: keep the token, and do not try again for a day. */
+    tried: (at) => store.update("threads", { triedAt: at }),
   };
 };
 
 /**
- * Renew the token when it is a day old. A seed has no known age: it is tried
- * at once, and a refusal (too young) waits a day like any failure. Returns
+ * Renew the token when it is a day old (Connect counts as the first renewal).
+ * A refusal waits a day like any failure. Returns
  * {refreshed, error?}. It never throws: an old token that still works is
  * better than no post, and a token that no longer works fails the post with
  * the platform's own reason.
@@ -155,14 +135,14 @@ export const refreshThreadsToken = async ({
       method: "GET",
       url: THREADS_REFRESH_URL,
       headers: {
-        authorization: `Bearer ${dry ? "<THREADS_ACCESS_TOKEN>" : tokens.current()}`,
+        authorization: `Bearer ${dry ? DRY_RUN_TOKEN : tokens.current()}`,
       },
     });
     const token = reply.json?.access_token;
     if (!ok(reply) || typeof token !== "string" || !token) {
       throw new PostFailed("threads token refresh", reply);
     }
-    if (!dry) tokens.save(token, at.toISOString());
+    if (!dry) tokens.save(token, at.toISOString(), reply.json?.expires_in);
     return { refreshed: true };
   } catch (err) {
     if (!dry) tokens.tried(at.toISOString());
@@ -228,7 +208,7 @@ export const withoutSignedUrl = (text, url, replacement) =>
  * transport})` makes the video reachable at a public HTTPS URL and returns
  * {url, key, remove}; the poster calls remove once Threads no longer needs
  * the file. `tokens` is a
- * threadsTokens store. `creds` holds THREADS_USER_ID (live) or
+ * threadsTokens store. `creds` holds the stored `userId` (live) or
  * DRY_RUN_THREADS. `beforeCommit` runs just before threads_publish. Returns
  * {postId, url}.
  */
@@ -248,8 +228,8 @@ export const postToThreads = async ({
 
   await refreshThreadsToken({ transport, tokens, now });
   const dry = transport.mode === "dry-run";
-  const token = dry ? "<THREADS_ACCESS_TOKEN>" : tokens.current();
-  const user = creds.THREADS_USER_ID;
+  const token = dry ? DRY_RUN_TOKEN : tokens.current();
+  const user = creds.userId;
   const graph = (method, url, body, describe) =>
     transport.request({
       method,

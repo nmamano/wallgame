@@ -24,25 +24,13 @@
  * total_chunk_count = 1; a file over 64 MB is refused here.
  *
  * THE REFRESH TOKEN ROTATES. It lasts 365 days, and a refresh "may" return a
- * new one, which must be used from then on. The secret TIKTOK_REFRESH_TOKEN
- * is only the seed: the app keeps the newest token in its data dir
- * (tokenStore below). When Nil sets a new secret, the new secret wins.
+ * new one, which must be used from then on. The first refresh token comes
+ * from /daily/connect (connect.mjs); the token store keeps the newest one.
+ * The app's environment holds only TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET.
  */
-import {
-  existsSync,
-  mkdirSync,
-  readFileSync,
-  renameSync,
-  writeFileSync,
-} from "node:fs";
-import { join } from "node:path";
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
 
-export const TIKTOK_SECRETS = [
-  "TIKTOK_CLIENT_KEY",
-  "TIKTOK_CLIENT_SECRET",
-  "TIKTOK_REFRESH_TOKEN",
-];
+export const TIKTOK_SECRETS = ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"];
 export const TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 export const TIKTOK_INIT_URL =
   "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/";
@@ -57,40 +45,7 @@ const STATUS_POLLS = 24;
 export const DRY_RUN_TIKTOK = {
   TIKTOK_CLIENT_KEY: "<TIKTOK_CLIENT_KEY>",
   TIKTOK_CLIENT_SECRET: "<TIKTOK_CLIENT_SECRET>",
-  refreshToken: "<TIKTOK_REFRESH_TOKEN>",
-};
-
-/**
- * The newest refresh token, kept in `dir` (mode 0600). `seed` is the secret
- * from the app's environment; the file records the hash of the seed it grew
- * from, so a new secret replaces the old chain.
- */
-export const tokenStore = (dir, seed) => {
-  const path = join(dir, "tiktok.json");
-  const seedSha256 = sha256(String(seed));
-  return {
-    current() {
-      if (existsSync(path)) {
-        const kept = JSON.parse(readFileSync(path, "utf8"));
-        if (kept.seedSha256 === seedSha256) return kept.refreshToken;
-      }
-      return seed;
-    },
-    save(refreshToken) {
-      mkdirSync(dir, { recursive: true, mode: 0o700 });
-      const part = `${path}.part`;
-      writeFileSync(
-        part,
-        JSON.stringify({
-          seedSha256,
-          refreshToken,
-          savedAt: new Date().toISOString(),
-        }),
-        { mode: 0o600 },
-      );
-      renameSync(part, path);
-    },
-  };
+  refreshToken: "<refresh token from /daily/connect>",
 };
 
 export const tiktokDryRunReply = (req) => {
@@ -100,7 +55,7 @@ export const tiktokDryRunReply = (req) => {
       json: {
         access_token: "DRY-RUN-ACCESS",
         expires_in: 86400,
-        refresh_token: "<TIKTOK_REFRESH_TOKEN>",
+        refresh_token: "<refresh token from /daily/connect>",
       },
     };
   }
@@ -128,8 +83,9 @@ export const tiktokDryRunReply = (req) => {
 /**
  * Upload `video` (a Buffer) as a draft in the creator's inbox. `creds` holds
  * TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET and refreshToken (live), or
- * DRY_RUN_TIKTOK. `onRefreshToken(token)` keeps a rotated refresh token; it
- * runs before any other request, so a failed post still keeps it.
+ * DRY_RUN_TIKTOK. `onRefreshToken(token, expiresInSeconds)` keeps a rotated
+ * refresh token; it runs before any other request, so a failed post still
+ * keeps it.
  * Returns {postId, url: null, tiktokStatus}.
  *
  * `beforeCommit` runs just before the PUT of the bytes: an init without
@@ -172,7 +128,7 @@ export const postToTiktok = async ({
     rotated &&
     rotated !== creds.refreshToken
   ) {
-    onRefreshToken(rotated);
+    onRefreshToken(rotated, token.json.refresh_expires_in);
   }
   const bearer = dry
     ? "Bearer <access token from the step above>"

@@ -52,7 +52,6 @@ import { youtubeDryRunReply } from "./post-youtube.mjs";
 import {
   postToTiktok,
   tiktokDryRunReply,
-  tokenStore,
   DRY_RUN_TIKTOK,
   TIKTOK_TOKEN_URL,
 } from "./post-tiktok.mjs";
@@ -1558,15 +1557,6 @@ describe("what a stranger reads matches what the video shows", () => {
 });
 
 describe("TikTok", () => {
-  test("a rotated refresh token is kept, and a new secret starts a new chain", () => {
-    const dir = tempDir();
-    expect(tokenStore(dir, "seed-1").current()).toBe("seed-1");
-    tokenStore(dir, "seed-1").save("rotated-1");
-    expect(tokenStore(dir, "seed-1").current()).toBe("rotated-1");
-    // Nil set a new secret: it wins over the kept token of the old one.
-    expect(tokenStore(dir, "seed-2").current()).toBe("seed-2");
-  });
-
   test("a FAILED upload is a clear no, not an uncertain post", async () => {
     const transport = dryRunTransport((req: { url: string }) =>
       req.url.endsWith("/status/fetch/")
@@ -1800,28 +1790,44 @@ describe("X signing", () => {
       postingModes({ X_API_KEY: "k", X_API_SECRET: "s", X_ACCESS_TOKEN: "t" })
         .x,
     ).toBe("dry-run");
-    expect(
-      postingModes({
-        YOUTUBE_CLIENT_ID: "a",
-        YOUTUBE_CLIENT_SECRET: "b",
-        YOUTUBE_REFRESH_TOKEN: "c",
-      }),
-    ).toEqual({ ...DRY, youtube: "live" });
   });
 
-  test("Threads goes live only with its keys AND the R2 keys", () => {
-    const keys = { THREADS_USER_ID: "u", THREADS_ACCESS_TOKEN: "t" };
+  test("YouTube, TikTok and Threads go live only with their client keys AND a Connect", () => {
+    const youtube = { YOUTUBE_CLIENT_ID: "a", YOUTUBE_CLIENT_SECRET: "b" };
+    const tiktok = { TIKTOK_CLIENT_KEY: "a", TIKTOK_CLIENT_SECRET: "b" };
+    expect(postingModes(youtube)).toEqual(DRY);
+    expect(postingModes(youtube, new Set(["youtube"]))).toEqual({
+      ...DRY,
+      youtube: "live",
+    });
+    expect(postingModes({}, new Set(["youtube", "tiktok"]))).toEqual(DRY);
+    expect(postingModes(tiktok, new Set(["tiktok"])).tiktok).toBe("live");
+    // The old token secrets do nothing now: one flow, through Connect.
+    expect(
+      postingModes({
+        ...youtube,
+        YOUTUBE_REFRESH_TOKEN: "c",
+        ...tiktok,
+        TIKTOK_REFRESH_TOKEN: "c",
+      }),
+    ).toEqual(DRY);
+  });
+
+  test("Threads goes live only with its keys, the R2 keys AND a Connect", () => {
+    const keys = { THREADS_APP_ID: "u", THREADS_APP_SECRET: "t" };
+    const connected = new Set(["threads"]);
     const r2 = {
       R2_ACCOUNT_ID: "a",
       R2_ACCESS_KEY_ID: "k",
       R2_SECRET_ACCESS_KEY: "s",
     };
-    expect(postingModes(keys).threads).toBe("dry-run");
-    expect(postingModes(r2).threads).toBe("dry-run");
-    expect(postingModes({ ...keys, ...r2, R2_ACCOUNT_ID: "" }).threads).toBe(
-      "dry-run",
-    );
-    expect(postingModes({ ...keys, ...r2 })).toEqual({
+    expect(postingModes(keys, connected).threads).toBe("dry-run");
+    expect(postingModes(r2, connected).threads).toBe("dry-run");
+    expect(
+      postingModes({ ...keys, ...r2, R2_ACCOUNT_ID: "" }, connected).threads,
+    ).toBe("dry-run");
+    expect(postingModes({ ...keys, ...r2 }).threads).toBe("dry-run");
+    expect(postingModes({ ...keys, ...r2 }, connected)).toEqual({
       ...DRY,
       threads: "live",
     });
@@ -2212,8 +2218,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(ytPlan).toContain(
     "utm_source=youtube&utm_medium=social&utm_campaign=daily-video",
   );
-  // The form is shown as it goes on the wire, URL-encoded, naming the secret.
-  expect(ytPlan).toContain("refresh_token=%3CYOUTUBE_REFRESH_TOKEN%3E");
+  // The form is shown as it goes on the wire, URL-encoded, naming where the
+  // refresh token comes from.
+  expect(ytPlan).toContain(
+    "refresh_token=%3Crefresh+token+from+%2Fdaily%2Fconnect%3E",
+  );
 
   // The four newer platforms: each public request carries its line as is.
   const planOf = (p: string) =>

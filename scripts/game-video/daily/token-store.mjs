@@ -23,7 +23,7 @@ import { join } from "node:path";
  *   connectedAt: string,
  *   connectedBy: string,
  *   scopes: string[],
- *   account: { id: string, name: string | null },
+ *   account: { id: string | null, name: string | null },
  *   accessToken?: string,
  *   accessExpiresAt?: string | null,
  *   refreshToken?: string,
@@ -80,9 +80,10 @@ export const openTokenStore = (dir) => {
       if (!record) throw new Error(`${platform} is not connected`);
       write(platform, { ...record, ...patch });
     },
+    /** True only for a record that Connect wrote. */
     connected: (platform) => {
       try {
-        return read(platform) !== null;
+        return typeof read(platform)?.connectedAt === "string";
       } catch {
         return false;
       }
