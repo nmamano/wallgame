@@ -103,6 +103,11 @@ import {
   videoTimeline,
 } from "./timeline-frames.mjs";
 import { fileUrlsIn, isRestShot, partsOf } from "./shoot-workers.mjs";
+import {
+  pruneCaptureCaches,
+  readCaptureCache,
+  writeCaptureCache,
+} from "./capture-cache.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -195,7 +200,8 @@ if (!rawGame) {
       "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
       "  plumbing, for the app rather than for a person:\n" +
       "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
-      "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]",
+      "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
+      "       [--from-cache] [--cache DIR]",
   );
   process.exit(2);
 }
@@ -315,6 +321,21 @@ if (!["x264", "nvenc"].includes(ENCODER)) {
  * default fits the 4-thread cap of a daily render job (render-4090.mjs).
  */
 const WORKERS = Number(arg("workers", "4"));
+/**
+ * --from-cache reads the game's capture from the capture cache
+ * (capture-cache.mjs) and never opens its replay page, so the render adds no
+ * view. A daily render without it writes the cache.
+ */
+const FROM_CACHE = flag("from-cache");
+const CACHE_DIR = resolve(
+  arg("cache", join(REPO, "tmp/game-video/capture-cache")),
+);
+/** How many games the cache keeps, newest first. */
+const CACHE_KEEP = 30;
+if (!/^[A-Za-z0-9_-]+$/.test(GAME_ID)) {
+  console.error(`the game id ${GAME_ID} is not letters, digits, _ and -`);
+  process.exit(2);
+}
 if (!Number.isInteger(WORKERS) || WORKERS < 1 || WORKERS > 16) {
   console.error(
     `--workers must be a whole number from 1 to 16, got ${arg("workers")}`,
@@ -881,11 +902,40 @@ const openGamePage = async (dpr) => {
  * The page has to load anyway, and it asks for exactly this JSON, so the
  * renderer reads that response instead of asking again. See openGamePage.
  */
+/**
+ * What changes the captured pixels. A cache serves a render only with the
+ * same inputs (capture-cache.mjs).
+ */
+const CAPTURE_INPUTS = {
+  gameId: GAME_ID,
+  seatColors: Boolean(EDL),
+  greyStartWalls: STYLE_NAMES.includes("daily"),
+  boardTheme: BOARD_THEME,
+  browser: BROWSER,
+  captureDpr: CAPTURE_DPR,
+};
+const GAME_CACHE = join(CACHE_DIR, GAME_ID);
+/** The cached capture with --from-cache; null when the page is captured live. */
+let cached = null;
+if (FROM_CACHE) {
+  try {
+    cached = readCaptureCache(GAME_CACHE, CAPTURE_INPUTS);
+  } catch (err) {
+    console.error(String(err.message));
+    await browser.close();
+    process.exit(4);
+  }
+  log(
+    `capture from the cache (taken ${cached.capturedAt}): the replay page is not opened, so no view`,
+  );
+}
 const {
   page: gamePage,
   replay,
   replayRequests,
-} = await openGamePage(CAPTURE_DPR);
+} = cached
+  ? { page: null, replay: cached.replay, replayRequests: () => 0 }
+  : await openGamePage(CAPTURE_DPR);
 let game = gamePage;
 
 const history = replay.state?.history ?? [];
@@ -970,24 +1020,26 @@ log(
  * the ordered layer srcs and the css filter that colours the pawn. Read, never
  * recomputed - see the header.
  */
-const cards = await game.evaluate((origin) => {
-  const out = [];
-  for (const img of document.querySelectorAll('img[src*="/pawns/"]')) {
-    const stack = img.parentElement;
-    if (!stack || !stack.className.includes("rounded-full")) continue;
-    const card = stack.closest("div")?.parentElement?.parentElement;
-    const rect = stack.getBoundingClientRect();
-    out.push({
-      y: Math.round(rect.y),
-      cardText: (card?.textContent ?? "").trim(),
-      layers: [...stack.querySelectorAll("img")].map((i) => ({
-        src: new URL(i.getAttribute("src"), origin).href,
-        filter: getComputedStyle(i).filter,
-      })),
-    });
-  }
-  return out.sort((a, b) => a.y - b.y);
-}, ORIGIN);
+const cards = cached
+  ? cached.cards
+  : await game.evaluate((origin) => {
+      const out = [];
+      for (const img of document.querySelectorAll('img[src*="/pawns/"]')) {
+        const stack = img.parentElement;
+        if (!stack || !stack.className.includes("rounded-full")) continue;
+        const card = stack.closest("div")?.parentElement?.parentElement;
+        const rect = stack.getBoundingClientRect();
+        out.push({
+          y: Math.round(rect.y),
+          cardText: (card?.textContent ?? "").trim(),
+          layers: [...stack.querySelectorAll("img")].map((i) => ({
+            src: new URL(i.getAttribute("src"), origin).href,
+            filter: getComputedStyle(i).filter,
+          })),
+        });
+      }
+      return out.sort((a, b) => a.y - b.y);
+    }, ORIGIN);
 
 if (cards.length !== 2) {
   console.error(
@@ -1075,10 +1127,6 @@ const cardFor = (playerId) => cards[seats.top === playerId ? 0 : 1];
  * SVG, so 300px is native resolution rather than an upscale.
  */
 const PORTRAIT_PX = 300;
-const portraitPage = await browser.newPage({
-  viewport: { width: PORTRAIT_PX, height: PORTRAIT_PX },
-  deviceScaleFactor: 2,
-});
 const portraits = {};
 const accents = {};
 
@@ -1097,13 +1145,21 @@ const inlineLayer = async (src) => {
   return `data:${type};base64,${body}`;
 };
 
-for (const playerId of [1, 2]) {
-  const card = cardFor(playerId);
-  const layers = await Promise.all(
-    card.layers.map(async (l) => ({ ...l, data: await inlineLayer(l.src) })),
-  );
-  await portraitPage.setContent(
-    `<html><body style="margin:0;width:${PORTRAIT_PX}px;height:${PORTRAIT_PX}px;background:transparent">
+if (cached) {
+  Object.assign(portraits, cached.portraits);
+  Object.assign(accents, cached.accents);
+} else {
+  const portraitPage = await browser.newPage({
+    viewport: { width: PORTRAIT_PX, height: PORTRAIT_PX },
+    deviceScaleFactor: 2,
+  });
+  for (const playerId of [1, 2]) {
+    const card = cardFor(playerId);
+    const layers = await Promise.all(
+      card.layers.map(async (l) => ({ ...l, data: await inlineLayer(l.src) })),
+    );
+    await portraitPage.setContent(
+      `<html><body style="margin:0;width:${PORTRAIT_PX}px;height:${PORTRAIT_PX}px;background:transparent">
        <div style="position:relative;width:100%;height:100%">
          ${layers
            .map(
@@ -1112,76 +1168,79 @@ for (const playerId of [1, 2]) {
            )
            .join("")}
        </div></body></html>`,
-    { waitUntil: "networkidle" },
-  );
-  const file = join(WORK, `portrait-p${playerId}.png`);
-  await portraitPage.screenshot({ path: file, omitBackground: true });
-  portraits[playerId] = file;
-
-  /**
-   * The player's colour, sampled from the pawn the product just painted.
-   *
-   * There is no hex to read on this page: the desktop card carries the colour
-   * only as a css filter on the pawn image, and the hex map is used by the
-   * compact card alone. Rather than keep a second copy of the colour table
-   * here, or mount a mobile breakpoint to go fishing for it, the colour is
-   * taken from the pixels - which is the colour a viewer actually sees, and
-   * stays correct if the palette or the filters ever change.
-   */
-  accents[playerId] = await portraitPage.evaluate(async (size) => {
-    const canvas = document.createElement("canvas");
-    canvas.width = size;
-    canvas.height = size;
-    const ctx = canvas.getContext("2d");
-    const imgs = [...document.querySelectorAll("img")];
-    await Promise.all(
-      imgs.map((i) => (i.complete ? null : new Promise((r) => (i.onload = r)))),
+      { waitUntil: "networkidle" },
     );
-    for (const img of imgs) {
-      ctx.filter =
-        img.style.filter && img.style.filter !== "none"
-          ? img.style.filter
-          : "none";
-      ctx.drawImage(img, 0, 0, size, size);
-    }
-    const { data } = ctx.getImageData(0, 0, size, size);
-    // Bucket the strongly coloured pixels by hue; the biggest bucket wins.
-    const buckets = new Map();
-    for (let i = 0; i < data.length; i += 4) {
-      const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]];
-      if (a < 200) continue;
-      const max = Math.max(r, g, b);
-      const min = Math.min(r, g, b);
-      if (max < 60 || (max - min) / max < 0.35) continue; // grey, white or black
-      let hue = 0;
-      if (max === r) hue = ((g - b) / (max - min)) * 60;
-      else if (max === g) hue = ((b - r) / (max - min)) * 60 + 120;
-      else hue = ((r - g) / (max - min)) * 60 + 240;
-      const key = Math.round(((hue + 360) % 360) / 15);
-      const acc = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
-      acc.n += 1;
-      acc.r += r;
-      acc.g += g;
-      acc.b += b;
-      buckets.set(key, acc);
-    }
-    if (buckets.size === 0) return null;
-    const best = [...buckets.values()].sort((x, y) => y.n - x.n)[0];
-    return [
-      Math.round(best.r / best.n),
-      Math.round(best.g / best.n),
-      Math.round(best.b / best.n),
-    ];
-  }, PORTRAIT_PX);
+    const file = join(WORK, `portrait-p${playerId}.png`);
+    await portraitPage.screenshot({ path: file, omitBackground: true });
+    portraits[playerId] = file;
 
-  if (!accents[playerId]) {
-    log(
-      `could not sample a colour for ${nameOf(playerId)}; falling back to neutral`,
-    );
-    accents[playerId] = [148, 163, 184];
+    /**
+     * The player's colour, sampled from the pawn the product just painted.
+     *
+     * There is no hex to read on this page: the desktop card carries the colour
+     * only as a css filter on the pawn image, and the hex map is used by the
+     * compact card alone. Rather than keep a second copy of the colour table
+     * here, or mount a mobile breakpoint to go fishing for it, the colour is
+     * taken from the pixels - which is the colour a viewer actually sees, and
+     * stays correct if the palette or the filters ever change.
+     */
+    accents[playerId] = await portraitPage.evaluate(async (size) => {
+      const canvas = document.createElement("canvas");
+      canvas.width = size;
+      canvas.height = size;
+      const ctx = canvas.getContext("2d");
+      const imgs = [...document.querySelectorAll("img")];
+      await Promise.all(
+        imgs.map((i) =>
+          i.complete ? null : new Promise((r) => (i.onload = r)),
+        ),
+      );
+      for (const img of imgs) {
+        ctx.filter =
+          img.style.filter && img.style.filter !== "none"
+            ? img.style.filter
+            : "none";
+        ctx.drawImage(img, 0, 0, size, size);
+      }
+      const { data } = ctx.getImageData(0, 0, size, size);
+      // Bucket the strongly coloured pixels by hue; the biggest bucket wins.
+      const buckets = new Map();
+      for (let i = 0; i < data.length; i += 4) {
+        const [r, g, b, a] = [data[i], data[i + 1], data[i + 2], data[i + 3]];
+        if (a < 200) continue;
+        const max = Math.max(r, g, b);
+        const min = Math.min(r, g, b);
+        if (max < 60 || (max - min) / max < 0.35) continue; // grey, white or black
+        let hue = 0;
+        if (max === r) hue = ((g - b) / (max - min)) * 60;
+        else if (max === g) hue = ((b - r) / (max - min)) * 60 + 120;
+        else hue = ((r - g) / (max - min)) * 60 + 240;
+        const key = Math.round(((hue + 360) % 360) / 15);
+        const acc = buckets.get(key) ?? { n: 0, r: 0, g: 0, b: 0 };
+        acc.n += 1;
+        acc.r += r;
+        acc.g += g;
+        acc.b += b;
+        buckets.set(key, acc);
+      }
+      if (buckets.size === 0) return null;
+      const best = [...buckets.values()].sort((x, y) => y.n - x.n)[0];
+      return [
+        Math.round(best.r / best.n),
+        Math.round(best.g / best.n),
+        Math.round(best.b / best.n),
+      ];
+    }, PORTRAIT_PX);
+
+    if (!accents[playerId]) {
+      log(
+        `could not sample a colour for ${nameOf(playerId)}; falling back to neutral`,
+      );
+      accents[playerId] = [148, 163, 184];
+    }
   }
+  await portraitPage.close();
 }
-await portraitPage.close();
 log(
   `portraits captured; colours ${[1, 2]
     .map((id) => `${nameOf(id)}=rgb(${accents[id].join(",")})`)
@@ -1337,7 +1396,7 @@ const measureBoard = (page) =>
     return { x: r.x, y: r.y, width: r.width, height: r.height };
   });
 
-let boardBox = await measureBoard(game);
+let boardBox = cached ? cached.boardBox : await measureBoard(game);
 if (!boardBox) {
   console.error("could not find the board on the replay page");
   await browser.close();
@@ -1430,7 +1489,8 @@ const countWallPaint = () =>
     },
     [clip, SITE_START_WALL, DAILY_START_WALL],
   );
-if (STYLE_NAMES.includes("daily")) {
+// A cached capture was taken with them (CAPTURE_INPUTS.greyStartWalls).
+if (!cached && STYLE_NAMES.includes("daily")) {
   // Every position shows the start walls: no move removes one.
   const startWalls = replay.state.initialState.walls.length;
   const before = await countWallPaint();
@@ -1458,21 +1518,25 @@ if (STYLE_NAMES.includes("daily")) {
  * The page's top-left and bottom-right cells, in css px: the board map
  * (GRID, board-grid.mjs) is built from where the page drew them.
  */
-const cellRects = await game.evaluate(() => {
-  const grid = document.querySelector("svg.absolute.inset-0")?.parentElement;
-  const cells = grid
-    ? [...grid.querySelectorAll(":scope > .aspect-square")]
-    : [];
-  const rect = (el) => {
-    const r = el.getBoundingClientRect();
-    return { x: r.x, y: r.y, width: r.width, height: r.height };
-  };
-  return {
-    count: cells.length,
-    first: cells[0] ? rect(cells[0]) : null,
-    last: cells.length ? rect(cells[cells.length - 1]) : null,
-  };
-});
+const cellRects = cached
+  ? cached.cellRects
+  : await game.evaluate(() => {
+      const grid = document.querySelector(
+        "svg.absolute.inset-0",
+      )?.parentElement;
+      const cells = grid
+        ? [...grid.querySelectorAll(":scope > .aspect-square")]
+        : [];
+      const rect = (el) => {
+        const r = el.getBoundingClientRect();
+        return { x: r.x, y: r.y, width: r.width, height: r.height };
+      };
+      return {
+        count: cells.length,
+        first: cells[0] ? rect(cells[0]) : null,
+        last: cells.length ? rect(cells[cells.length - 1]) : null,
+      };
+    });
 {
   const { boardWidth, boardHeight } = replay.state.config;
   if (cellRects.count !== boardWidth * boardHeight) {
@@ -1482,125 +1546,136 @@ const cellRects = await game.evaluate(() => {
   }
 }
 
-const moveButtons = game.locator("button[aria-pressed]:visible");
-if ((await moveButtons.count()) !== history.length) {
+const moveButtons = cached
+  ? null
+  : game.locator("button[aria-pressed]:visible");
+if (moveButtons && (await moveButtons.count()) !== history.length) {
   throw new Error(
     `replay exposes ${await moveButtons.count()} move buttons for ${history.length} recorded plies`,
   );
 }
-const jumpStart = game.getByRole("button", { name: "Jump to beginning" });
+const jumpStart = cached
+  ? null
+  : game.getByRole("button", { name: "Jump to beginning" });
 /**
  * Where the page drew each pawn at each captured position, as centres in the
  * board image (0..1), keyed by board index (0 = the start). Read off the
  * page's own pawn images at capture time, so the mouse beats can put their
  * bubble where it covers no other pawn without a second copy of the rules.
  */
-const pawnSpots = new Map();
+const pawnSpots = new Map(cached?.pawnSpots);
 /**
  * Where the page drew each wall at each captured position: the centre and
  * direction of every placed wall (board.tsx gives only those z-index 10),
  * in the board image (0..1), keyed by board index. A highlight must lie on
  * one of them (litWallLine).
  */
-const wallSpots = new Map();
-const captureResult = await captureReplayFrames({
-  moveCount: history.length,
-  selectInitial: async () => {
-    await jumpStart.click();
-    await game.waitForFunction(() => {
-      const button = document.querySelector(
-        'button[aria-label="Jump to beginning"]',
-      );
-      return button?.disabled === true;
-    });
-  },
-  selectPly: async (ply) => {
-    const button = moveButtons.nth(ply);
-    await button.click();
-    await game.waitForFunction(
-      ([index, count]) => {
-        const buttons = [
-          ...document.querySelectorAll("button[aria-pressed]"),
-        ].filter((button) => button.getClientRects().length > 0);
-        if (buttons[index]?.getAttribute("aria-pressed") !== "true")
-          return false;
-        return (
-          buttons.every(
-            (candidate, i) =>
-              i === index || candidate.getAttribute("aria-pressed") !== "true",
-          ) && buttons.length === count
+const wallSpots = new Map(cached?.wallSpots);
+const captureResult = cached
+  ? cached.capture
+  : await captureReplayFrames({
+      moveCount: history.length,
+      selectInitial: async () => {
+        await jumpStart.click();
+        await game.waitForFunction(() => {
+          const button = document.querySelector(
+            'button[aria-label="Jump to beginning"]',
+          );
+          return button?.disabled === true;
+        });
+      },
+      selectPly: async (ply) => {
+        const button = moveButtons.nth(ply);
+        await button.click();
+        await game.waitForFunction(
+          ([index, count]) => {
+            const buttons = [
+              ...document.querySelectorAll("button[aria-pressed]"),
+            ].filter((button) => button.getClientRects().length > 0);
+            if (buttons[index]?.getAttribute("aria-pressed") !== "true")
+              return false;
+            return (
+              buttons.every(
+                (candidate, i) =>
+                  i === index ||
+                  candidate.getAttribute("aria-pressed") !== "true",
+              ) && buttons.length === count
+            );
+          },
+          [ply, history.length],
+        );
+        await game.evaluate(
+          () =>
+            new Promise((done) =>
+              requestAnimationFrame(() => requestAnimationFrame(done)),
+            ),
         );
       },
-      [ply, history.length],
-    );
-    await game.evaluate(
-      () =>
-        new Promise((done) =>
-          requestAnimationFrame(() => requestAnimationFrame(done)),
-        ),
-    );
-  },
-  readCommittedPly: async () => {
-    if (await jumpStart.isDisabled()) return -1;
-    const pressed = [];
-    for (let i = 0; i < history.length; i += 1) {
-      if ((await moveButtons.nth(i).getAttribute("aria-pressed")) === "true")
-        pressed.push(i);
-    }
-    return pressed.length === 1 ? pressed[0] : Number.NaN;
-  },
-  capture: async (expectedPly) => {
-    const file = join(
-      WORK,
-      `board-${String(expectedPly + 1).padStart(4, "0")}.png`,
-    );
-    await game.screenshot({ path: file, clip });
-    pawnSpots.set(
-      expectedPly + 1,
-      await game.evaluate((c) => {
-        const spots = [];
-        for (const img of document.querySelectorAll('img[src*="/pawns/"]')) {
-          const r = img.getBoundingClientRect();
-          const x = r.x + r.width / 2;
-          const y = r.y + r.height / 2;
-          const inside =
-            x > c.x && x < c.x + c.width && y > c.y && y < c.y + c.height;
-          // A pawn on the board is about a cell; the seat cards are bigger.
-          if (inside && r.width < c.width / 4) {
-            spots.push({
-              x: (x - c.x) / c.width,
-              y: (y - c.y) / c.height,
-              w: r.width / c.width,
-              h: r.height / c.height,
-            });
-          }
+      readCommittedPly: async () => {
+        if (await jumpStart.isDisabled()) return -1;
+        const pressed = [];
+        for (let i = 0; i < history.length; i += 1) {
+          if (
+            (await moveButtons.nth(i).getAttribute("aria-pressed")) === "true"
+          )
+            pressed.push(i);
         }
-        return spots;
-      }, clip),
-    );
-    wallSpots.set(
-      expectedPly + 1,
-      await game.evaluate((c) => {
-        const grid = document.querySelector(
-          "svg.absolute.inset-0",
-        )?.parentElement;
-        const walls = [];
-        for (const el of grid?.children ?? []) {
-          const cs = getComputedStyle(el);
-          if (cs.position !== "absolute" || cs.zIndex !== "10") continue;
-          const r = el.getBoundingClientRect();
-          walls.push({
-            vertical: r.height > r.width,
-            x: (r.x + r.width / 2 - c.x) / c.width,
-            y: (r.y + r.height / 2 - c.y) / c.height,
-          });
-        }
-        return walls;
-      }, clip),
-    );
-    return file;
-  },
-});
+        return pressed.length === 1 ? pressed[0] : Number.NaN;
+      },
+      capture: async (expectedPly) => {
+        const file = join(
+          WORK,
+          `board-${String(expectedPly + 1).padStart(4, "0")}.png`,
+        );
+        await game.screenshot({ path: file, clip });
+        pawnSpots.set(
+          expectedPly + 1,
+          await game.evaluate((c) => {
+            const spots = [];
+            for (const img of document.querySelectorAll(
+              'img[src*="/pawns/"]',
+            )) {
+              const r = img.getBoundingClientRect();
+              const x = r.x + r.width / 2;
+              const y = r.y + r.height / 2;
+              const inside =
+                x > c.x && x < c.x + c.width && y > c.y && y < c.y + c.height;
+              // A pawn on the board is about a cell; the seat cards are bigger.
+              if (inside && r.width < c.width / 4) {
+                spots.push({
+                  x: (x - c.x) / c.width,
+                  y: (y - c.y) / c.height,
+                  w: r.width / c.width,
+                  h: r.height / c.height,
+                });
+              }
+            }
+            return spots;
+          }, clip),
+        );
+        wallSpots.set(
+          expectedPly + 1,
+          await game.evaluate((c) => {
+            const grid = document.querySelector(
+              "svg.absolute.inset-0",
+            )?.parentElement;
+            const walls = [];
+            for (const el of grid?.children ?? []) {
+              const cs = getComputedStyle(el);
+              if (cs.position !== "absolute" || cs.zIndex !== "10") continue;
+              const r = el.getBoundingClientRect();
+              walls.push({
+                vertical: r.height > r.width,
+                x: (r.x + r.width / 2 - c.x) / c.width,
+                y: (r.y + r.height / 2 - c.y) / c.height,
+              });
+            }
+            return walls;
+          }, clip),
+        );
+        return file;
+      },
+    });
 assertCompleteCapture(captureResult);
 const boardFrames = captureResult.records.map((record) => record.file);
 writeFileSync(
@@ -1616,8 +1691,41 @@ writeFileSync(
     2,
   ),
 );
-log(`${boardFrames.length} board positions captured`);
-await game.close();
+if (cached) {
+  log(`${boardFrames.length} board positions from the cache`);
+} else {
+  log(`${boardFrames.length} board positions captured`);
+  await game.close();
+  /*
+    A daily render saves its capture, so later renders of this game (a
+    preview, a proof) need no view. A failed save must not fail the video:
+    it is only reported.
+  */
+  if (EDL) {
+    try {
+      writeCaptureCache(GAME_CACHE, {
+        inputs: CAPTURE_INPUTS,
+        capturedAt: new Date().toISOString(),
+        replay,
+        cards,
+        accents,
+        portraits,
+        boardBox,
+        cellRects,
+        capture: captureResult,
+        pawnSpots,
+        wallSpots,
+      });
+      log(`capture saved to the cache: ${GAME_CACHE}`);
+      const pruned = pruneCaptureCaches(CACHE_DIR, CACHE_KEEP);
+      if (pruned.length > 0) log(`cache: removed ${pruned.join(", ")}`);
+    } catch (err) {
+      log(
+        `WARNING: could not save the capture cache: ${String(err.message ?? err).slice(0, 200)}`,
+      );
+    }
+  }
+}
 
 /* ----------------------------------------------------------- the sounds -- */
 
@@ -3486,6 +3594,8 @@ const renderStyle = async (styleName) => {
     effect: styleName,
     /** The track that played, by slug; null with --no-music. */
     music: TRACK?.slug ?? null,
+    /** True when the capture came from the cache: the render added no view. */
+    fromCache: Boolean(cached),
     timeline: videoTimeline({
       fps: FPS,
       moves: moveTimes,
@@ -3531,8 +3641,10 @@ for (const styleName of STYLE_NAMES) {
 }
 await browser.close();
 log(`replay requests over the whole run: ${replayRequests()}`);
-if (replayRequests() !== 1) {
-  log(`WARNING: expected one replay request, saw ${replayRequests()}`);
+if (replayRequests() !== (cached ? 0 : 1)) {
+  log(
+    `WARNING: expected ${cached ? "no" : "one"} replay request, saw ${replayRequests()}`,
+  );
 }
 
 for (const f of readdirSync(WORK)) {
