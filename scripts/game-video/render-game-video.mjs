@@ -97,7 +97,11 @@ import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
 import { memeLoudness, mixGraph } from "./mix-loudness.mjs";
 import { boardGrid, onSiteWall } from "./board-grid.mjs";
-import { allocateFrameRanges, movesUnderOverlay } from "./timeline-frames.mjs";
+import {
+  allocateFrameRanges,
+  movesUnderOverlay,
+  videoTimeline,
+} from "./timeline-frames.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -1766,7 +1770,8 @@ const buildAudio = ({
   for (const missing of cues.filter((e) => !existsSync(e.file))) {
     log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
   }
-  if (present.length === 0) return { audioPath: null, loudness: null };
+  if (present.length === 0)
+    return { audioPath: null, loudness: null, mixed: [] };
   const music = MUSIC
     ? {
         file: MUSIC,
@@ -1827,7 +1832,7 @@ const buildAudio = ({
   } catch (err) {
     loudness = { error: String(err.message ?? err).slice(0, 300) };
   }
-  return { audioPath, loudness };
+  return { audioPath, loudness, mixed: present };
 };
 
 /* ----------------------------------------------------------- compose it -- */
@@ -2318,7 +2323,7 @@ const renderStyle = async (styleName) => {
   const timeline = [];
   const cues = [];
   let elapsed = 0;
-  const cue = (sound, at = elapsed) =>
+  const cue = (sound, role, { at = elapsed, event = null } = {}) =>
     cues.push({
       file: sound.file,
       gain: sound.gain,
@@ -2326,7 +2331,26 @@ const renderStyle = async (styleName) => {
       rate: sound.rate ?? 1,
       // A meme sound is measured against the rest of the mix (mix-loudness.mjs).
       meme: sound.name in MEME_SOUNDS ? sound.name : null,
+      // For RESULT.timeline (timeline-frames.mjs videoTimeline).
+      name: sound.name,
+      role,
+      event,
     });
+  /** For RESULT.timeline: the second each move lands, and each event's span. */
+  const moveTimes = [];
+  const eventSpans = [];
+  /** An EDL event has played from `start` to now. */
+  const spanOf = (ev, start) =>
+    eventSpans.push({
+      index: EVENTS.indexOf(ev),
+      ply: ev.ply,
+      kind: ev.kind,
+      start,
+      end: elapsed,
+    });
+  /** The cue of an EDL event's own sound, at `at`. */
+  const cueEvent = (sound, ev, at = elapsed) =>
+    cue(sound, "event", { at, event: EVENTS.indexOf(ev) });
   let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
   /**
@@ -2525,6 +2549,7 @@ const renderStyle = async (styleName) => {
     const hasWall = terms.some((s) => s.startsWith(">") || s.startsWith("^"));
     const take = MOVE_CLICK_VARIANTS[plyIndex % MOVE_CLICK_VARIANTS.length];
     return {
+      name: hasWall ? "wall" : "pawn",
       file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
       rate: take.rate,
       // The site's own balance - a wall is quieter than a pawn there - times
@@ -2535,6 +2560,11 @@ const renderStyle = async (styleName) => {
         take.gain *
         (fastRangeOf(plyIndex) ? FAST_FORWARD_CLICK_STEP : 1),
     };
+  };
+  /** The move of `plyIndex` lands on the next frame: its click and its time. */
+  const land = (plyIndex) => {
+    cue(moveClick(plyIndex), "move");
+    moveTimes.push({ ply: plyIndex, at: elapsed });
   };
 
   /*
@@ -2554,7 +2584,7 @@ const renderStyle = async (styleName) => {
       walls.length > 0 ? walls : at ? [termOfCell(at)] : ["a1"],
       COLD_OPEN_SCALE,
     );
-    cue(moveClick(coldPly));
+    cue(moveClick(coldPly), "cold-open");
     const coldLines = walls.map((w) => litWallLine(w, coldPly + 1));
     const frames = Math.round(COLD_OPEN_SECONDS * FPS);
     for (let i = 0; i < frames; i += 1) {
@@ -2578,10 +2608,9 @@ const renderStyle = async (styleName) => {
   // The overlay's punch gets the VS sound, at the second the mark lands.
   if (overlay) {
     const vsSound = sounds[style.vsSound];
-    cue(
-      { ...vsSound, gain: vsSound.gain * STING_STEP },
-      overlayStart + overlay.entry * vsPunchFraction,
-    );
+    cue({ ...vsSound, gain: vsSound.gain * STING_STEP }, "vs", {
+      at: overlayStart + overlay.entry * vsPunchFraction,
+    });
   }
 
   // --- the VS screen, animated
@@ -2597,15 +2626,19 @@ const renderStyle = async (styleName) => {
           `WARNING: the VS segment is too short for a ${lead}s lead-in; the impact will be clipped.`,
         );
       }
-      cue(vsSound, Math.max(0, startAt));
+      cue(vsSound, "vs", { at: Math.max(0, startAt) });
     } else {
       log(
         `VS sound missing at ${vsSound.file}; falling back to the site's start sound`,
       );
-      cue({
-        file: join(AUDIO_DIR, "game_start.mp3"),
-        gain: SITE_VOLUMES.gameStart,
-      });
+      cue(
+        {
+          name: "game_start",
+          file: join(AUDIO_DIR, "game_start.mp3"),
+          gain: SITE_VOLUMES.gameStart,
+        },
+        "vs",
+      );
     }
     for (let i = 0; i < vsFrames; i += 1) {
       await emit(
@@ -2782,7 +2815,8 @@ const renderStyle = async (styleName) => {
     if (!at) {
       throw new Error(`ply ${plyIndex} names no cell for its freeze to frame`);
     }
-    if (ev.sound) cue(meme(ev.sound));
+    const start = elapsed;
+    if (ev.sound) cueEvent(meme(ev.sound), ev);
     const z = frameZoom([termOfCell(at)], FREEZE_SCALE);
     const frames = Math.round((FREEZE_PUSH + ev.holdSeconds) * FPS);
     const mid = Math.round((FREEZE_PUSH + ev.holdSeconds / 2) * FPS);
@@ -2804,6 +2838,7 @@ const renderStyle = async (styleName) => {
         { kind: "freeze", ply: plyIndex },
       );
     }
+    spanOf(ev, start);
   };
 
   /**
@@ -2815,6 +2850,7 @@ const renderStyle = async (styleName) => {
    * The ply's other events and its rest follow, as for any move.
    */
   const playLeadZoom = async (ply, plyIndex, ev) => {
+    const start = elapsed;
     const z = frameZoom(ev.frame, ev.scale);
     const push = Math.round(LEAD_PUSH * FPS);
     // The position before the move can close a fastForward range; the zoom
@@ -2827,8 +2863,8 @@ const renderStyle = async (styleName) => {
         { kind: "lead-zoom", ply: plyIndex },
       );
     }
-    cue(moveClick(plyIndex));
-    if (ev.sound) cue(meme(ev.sound));
+    land(plyIndex);
+    if (ev.sound) cueEvent(meme(ev.sound), ev);
     const frames = Math.round((ev.holdSeconds + ZOOM_OUT) * FPS);
     const stillAt = Math.round(LEAD_STILL_AT * FPS);
     for (let i = 0; i < frames; i += 1) {
@@ -2845,6 +2881,7 @@ const renderStyle = async (styleName) => {
         { kind: "swing-zoom", ply: plyIndex },
       );
     }
+    spanOf(ev, start);
   };
 
   /**
@@ -2880,19 +2917,22 @@ const renderStyle = async (styleName) => {
   const playEvents = async (ply, plyIndex) => {
     for (const ev of landingEventsAt(plyIndex)) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
+      const start = elapsed;
       if (ev.sound) {
         const sound = meme(ev.sound);
         // A stamp's sound lands with its word.
-        cue(
+        cueEvent(
           {
             ...sound,
             gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
           },
+          ev,
           elapsed + (ev.kind === "stamp" ? STAMP_LAND_AT : 0),
         );
       }
       if (ev.kind === "sound") {
         stillNext = label;
+        spanOf(ev, start);
         continue;
       }
       if (ev.kind === "zoom") {
@@ -2909,6 +2949,7 @@ const renderStyle = async (styleName) => {
             { kind: "swing-zoom", ply: plyIndex },
           );
         }
+        spanOf(ev, start);
         continue;
       }
       const seconds = {
@@ -2958,6 +2999,7 @@ const renderStyle = async (styleName) => {
           }
         }
       }
+      spanOf(ev, start);
     }
     await emit(playState(ply), EFFECT_REST_SECONDS, {
       kind: "move",
@@ -3001,7 +3043,7 @@ const renderStyle = async (styleName) => {
     if (wallz) await playFreeze(ply, plyIndex);
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
     if (lead) await playLeadZoom(ply, plyIndex, lead);
-    else cue(moveClick(plyIndex));
+    else land(plyIndex);
     /*
       The tick takes its time from a plain move's hold, leaving that hold
       one frame at least; a move with effects keeps all of its own.
@@ -3048,7 +3090,7 @@ const renderStyle = async (styleName) => {
           winner: side(winnerId),
           loser: side(winnerId === 1 ? 2 : 1),
         });
-        cue(sounds.finish, elapsed + timing.impact);
+        cue(sounds.finish, "finish", { at: elapsed + timing.impact });
         const endingFrames = Math.round(timing.seconds * FPS);
         for (let i = 0; i < endingFrames; i += 1) {
           await emit(playState(ply, { ending: ending(i / FPS) }), 1 / FPS, {
@@ -3095,7 +3137,7 @@ const renderStyle = async (styleName) => {
       const before = await probeGeometry(playState(ply), "shake-before");
       // This is a separate layer ON TOP of the move click: the click says a
       // piece moved, this says it hit something.
-      cue(sounds.shake);
+      cue(sounds.shake, "shake");
       const shakeFrames = Math.round(SHAKE_SECONDS * FPS);
       let worstScale = { x: 1, y: 1 };
       for (let i = 0; i < shakeFrames; i += 1) {
@@ -3175,7 +3217,12 @@ const renderStyle = async (styleName) => {
     cue(
       existsSync(sounds.win.file)
         ? sounds.win
-        : { file: join(AUDIO_DIR, "game_end.mp3"), gain: SITE_VOLUMES.gameEnd },
+        : {
+            name: "game_end",
+            file: join(AUDIO_DIR, "game_end.mp3"),
+            gain: SITE_VOLUMES.gameEnd,
+          },
+      "win",
     );
     await emit(
       {
@@ -3228,9 +3275,11 @@ const renderStyle = async (styleName) => {
   let audioPath = null;
   /** Each meme sound against the bed; null when the video has no soundtrack. */
   let loudness = null;
+  /** The cues the soundtrack holds; none in a silent video. */
+  let mixed = [];
   if (AUDIO) {
     try {
-      ({ audioPath, loudness } = buildAudio({
+      ({ audioPath, loudness, mixed } = buildAudio({
         cues,
         totalSeconds,
         musicStart,
@@ -3341,6 +3390,24 @@ const renderStyle = async (styleName) => {
     effect: styleName,
     /** The track that played, by slug; null with --no-music. */
     music: TRACK?.slug ?? null,
+    timeline: videoTimeline({
+      fps: FPS,
+      moves: moveTimes,
+      events: eventSpans,
+      sounds: [
+        ...mixed.map((c) => ({ ...c, start: c.at })),
+        ...(audioPath && MUSIC
+          ? [
+              {
+                name: TRACK.slug,
+                role: "music",
+                start: musicStart,
+                event: null,
+              },
+            ]
+          : []),
+      ],
+    }),
     sound: wallz
       ? `vs=${sounds[style.vsSound].name},finish=${sounds.finish.name}`
       : `shake=${sounds.shake.name},win=${sounds.win.name}`,
