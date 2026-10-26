@@ -28,7 +28,15 @@ import {
 } from "node:fs";
 import { basename, join } from "node:path";
 
-const VERSION = 1;
+/**
+ * The format version. A cache of an older version is refused, with the
+ * reason when one is known (OLD_VERSIONS).
+ */
+const VERSION = 2;
+const OLD_VERSIONS = {
+  // 2026-10-26: version 1 holds no walls on the boards after a walls-only move.
+  1: "written before the walls-only fix",
+};
 const sha256Of = (file) =>
   createHash("sha256").update(readFileSync(file)).digest("hex");
 
@@ -118,7 +126,9 @@ export function readCaptureCache(dir, inputs) {
   const meta = JSON.parse(readFileSync(metaFile, "utf8"));
   if (meta.version !== VERSION) {
     throw new Error(
-      `the capture cache at ${dir} is version ${meta.version}, not ${VERSION}: render the game once without --from-cache`,
+      `the capture cache at ${dir} is version ${meta.version}, not ${VERSION}` +
+        (OLD_VERSIONS[meta.version] ? ` (${OLD_VERSIONS[meta.version]})` : "") +
+        ": re-capture it from a live render (once without --from-cache)",
     );
   }
   for (const key of new Set([

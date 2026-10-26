@@ -115,6 +115,17 @@ describe("the capture cache", () => {
     );
   });
 
+  test("refuses a cache written before the walls-only fix", () => {
+    const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
+    writeCaptureCache(dir, fixture());
+    const metaFile = join(dir, "capture.json");
+    const meta = JSON.parse(readFileSync(metaFile, "utf8")) as object;
+    writeFileSync(metaFile, JSON.stringify({ ...meta, version: 1 }));
+    expect(() => readCaptureCache(dir, INPUTS)).toThrow(
+      "is version 1, not 2 (written before the walls-only fix): re-capture it from a live render",
+    );
+  });
+
   test("a second write replaces the first", () => {
     const dir = join(mkdtempSync(join(tmpdir(), "cache-")), "g");
     writeCaptureCache(dir, fixture());

@@ -813,6 +813,29 @@ const COLOR_CHECK = {
 };
 
 /**
+ * Installs window.__boardGrid(cells) in the replay page: the board grid, the
+ * one element with exactly `cells` .aspect-square children (board.tsx draws
+ * each cell as one; a cell can hold smaller ones, never a whole board), or
+ * null. Not found through an arrow overlay inside it: the page draws no
+ * arrow after a walls-only move, so the walls, the board box and the cell
+ * map went missing there (2026-10-26).
+ */
+const installBoardGrid = () => {
+  window.__boardGrid = (cells) => {
+    const parents = new Set(
+      [...document.querySelectorAll(".aspect-square")].map(
+        (el) => el.parentElement,
+      ),
+    );
+    const grids = [...parents].filter(
+      (p) =>
+        p && p.querySelectorAll(":scope > .aspect-square").length === cells,
+    );
+    return grids.length === 1 ? grids[0] : null;
+  };
+};
+
+/**
  * A viewport big enough that the board renders large in CSS pixels, times a
  * device scale factor, so the clipped board comfortably exceeds the 1010px it
  * is drawn at. Capturing smaller and scaling up is what makes a board video
@@ -830,6 +853,7 @@ const openGamePage = async (dpr) => {
     viewport: { width: 1500, height: 1250 },
     deviceScaleFactor: dpr,
   });
+  await page.addInitScript(installBoardGrid);
   await page.emulateMedia({ reducedMotion: "reduce" });
 
   /*
@@ -986,6 +1010,9 @@ if (PLY_WINDOW && PLY_WINDOW.to >= history.length) {
   await browser.close();
   process.exit(2);
 }
+/** The board's cells: the replay page draws one .aspect-square for each. */
+const CELL_COUNT =
+  replay.state.config.boardWidth * replay.state.config.boardHeight;
 /** The board after the last ply this render plays: the game's end, or TO's. */
 const LAST_BOARD = PLY_WINDOW ? PLY_WINDOW.to + 1 : history.length;
 
@@ -1431,14 +1458,14 @@ log(
     `= ${Math.round((FRAME.boardPx / LAYOUT.height) * 100)}% of the frame height`,
 );
 
-/** The board grid: the arrows overlay is `absolute inset-0` inside it. */
+/** The board grid's box (installBoardGrid), or null. */
 const measureBoard = (page) =>
-  page.evaluate(() => {
-    const grid = document.querySelector("svg.absolute.inset-0")?.parentElement;
+  page.evaluate((cells) => {
+    const grid = window.__boardGrid(cells);
     if (!grid) return null;
     const r = grid.getBoundingClientRect();
     return { x: r.x, y: r.y, width: r.width, height: r.height };
-  });
+  }, CELL_COUNT);
 
 let boardBox = cached ? cached.boardBox : await measureBoard(game);
 if (!boardBox) {
@@ -1564,10 +1591,8 @@ if (!cached && STYLE_NAMES.includes("daily")) {
  */
 const cellRects = cached
   ? cached.cellRects
-  : await game.evaluate(() => {
-      const grid = document.querySelector(
-        "svg.absolute.inset-0",
-      )?.parentElement;
+  : await game.evaluate((count) => {
+      const grid = window.__boardGrid(count);
       const cells = grid
         ? [...grid.querySelectorAll(":scope > .aspect-square")]
         : [];
@@ -1580,10 +1605,10 @@ const cellRects = cached
         first: cells[0] ? rect(cells[0]) : null,
         last: cells.length ? rect(cells[cells.length - 1]) : null,
       };
-    });
+    }, CELL_COUNT);
 {
   const { boardWidth, boardHeight } = replay.state.config;
-  if (cellRects.count !== boardWidth * boardHeight) {
+  if (cellRects.count !== CELL_COUNT) {
     throw new Error(
       `the replay page drew ${cellRects.count} cells for a ${boardWidth}x${boardHeight} board: the site changed how it draws them`,
     );
@@ -1699,24 +1724,32 @@ const captureResult = cached
         );
         wallSpots.set(
           expectedPly + 1,
-          await game.evaluate((c) => {
-            const grid = document.querySelector(
-              "svg.absolute.inset-0",
-            )?.parentElement;
-            const walls = [];
-            for (const el of grid?.children ?? []) {
-              const cs = getComputedStyle(el);
-              if (cs.position !== "absolute" || cs.zIndex !== "10") continue;
-              const r = el.getBoundingClientRect();
-              walls.push({
-                vertical: r.height > r.width,
-                x: (r.x + r.width / 2 - c.x) / c.width,
-                y: (r.y + r.height / 2 - c.y) / c.height,
-              });
-            }
-            return walls;
-          }, clip),
+          await game.evaluate(
+            ({ c, cells }) => {
+              const grid = window.__boardGrid(cells);
+              // No grid is a page we cannot read, never a board with no walls.
+              if (!grid) return null;
+              const walls = [];
+              for (const el of grid.children) {
+                const cs = getComputedStyle(el);
+                if (cs.position !== "absolute" || cs.zIndex !== "10") continue;
+                const r = el.getBoundingClientRect();
+                walls.push({
+                  vertical: r.height > r.width,
+                  x: (r.x + r.width / 2 - c.x) / c.width,
+                  y: (r.y + r.height / 2 - c.y) / c.height,
+                });
+              }
+              return walls;
+            },
+            { c: clip, cells: CELL_COUNT },
+          ),
         );
+        if (!wallSpots.get(expectedPly + 1)) {
+          throw new Error(
+            `could not find the board grid after ply ${expectedPly}: the site changed how it draws the board`,
+          );
+        }
         return file;
       },
     });
