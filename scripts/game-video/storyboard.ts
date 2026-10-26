@@ -9,7 +9,7 @@
  * The candidate is one ranked entry of pick-daily-candidates.ts (gameId,
  * variant, boardWidth, boardHeight, initialState, moves, seats, picks,
  * beats). Each tile is one position, labelled with its ply, move number and
- * notation; the close-call plies (danger, save, relief) and the jump plies
+ * notation; the close-call plies (danger, save) and the jump plies
  * are marked, and the seats are red and blue as in the daily look
  * (dailySeatColors in edl.mjs).
  *
@@ -69,7 +69,6 @@ interface Candidate {
   beats: {
     danger: { ply: number };
     save: { ply: number };
-    relief: { ply: number };
     size: number;
   }[];
 }
@@ -121,8 +120,9 @@ const mark = (ply: number, label: string) =>
 game.beats.forEach((b, i) => {
   const tag = game.beats.length > 1 ? ` ${i + 1}` : "";
   mark(b.danger.ply, `DANGER${tag}`);
+  // The mouse laughs on the save ply, after the zoom (Nil, ask ac64cf6d),
+  // so the ply after it is no beat of its own.
   mark(b.save.ply, `SAVE${tag} +${b.size}`);
-  mark(b.relief.ply, `RELIEF${tag}`);
 });
 for (const p of game.picks) mark(p.ply, `JUMP +${p.size}`);
 
@@ -348,7 +348,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .badges { min-height: 22px; margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; width: ${TILE_BOARD}px; }
   .badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; background: #334155; }
   .badge.danger { background: #b91c1c; } .badge.save { background: #15803d; }
-  .badge.relief { background: #a16207; } .badge.jump { background: #6d28d9; }
+  .badge.jump { background: #6d28d9; }
   .badge.zoom, .badge.stamp, .badge.sound, .badge.freeze { background: #0369a1; }
   .badge.scared { background: #b45309; } .badge.laugh { background: #15803d; }
   .badge.blunder { background: #dc2626; } .badge.brilliant { background: #0d9488; }
@@ -359,7 +359,7 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .badge.opens { background: #0369a1; }
 </style></head><body>
 <h1>${esc(game.gameId)} · ${esc(game.variant)} · ${game.moves.length} plies · ${seatTitle(1)} vs ${seatTitle(2)}</h1>
-<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Steps: the race counter the video shows. Marked: close-call DANGER / SAVE / RELIEF and JUMP plies${edlPath ? ", and each EDL event (a freeze plays before its ply lands)" : ""}.</div>
+<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Steps: the race counter the video shows. Marked: close-call DANGER / SAVE and JUMP plies${edlPath ? ", and each EDL event (a freeze plays before its ply lands)" : ""}.</div>
 <div class="grid">${tiles.join("")}</div></body></html>`;
 
 const browser = await chromium.launch({ executablePath: CHROME });

@@ -19,8 +19,8 @@
  *     "events": [
  *       { "ply": 14, "kind": "scared", "cell": "g4", "sound": "scared-2" },
  *       { "ply": 15, "kind": "zoom", "frame": ["^h4", "g5", "g4"], "sound": "fuahhh-1" },
- *       { "ply": 16, "kind": "laugh", "cell": "g4", "sound": "laugh-2" },
- *       { "ply": 16, "kind": "stamp", "text": "SAVED" },
+ *       { "ply": 15, "kind": "laugh", "cell": "g4", "sound": "laugh-2" },
+ *       { "ply": 15, "kind": "stamp", "text": "SAVED" },
  *       { "ply": 3, "kind": "sound", "sound": "shotgun-3" }
  *     ]
  *   }
