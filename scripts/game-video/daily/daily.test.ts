@@ -30,6 +30,7 @@ import {
   copySha256,
   parseCopy,
   postTexts,
+  trackedLink,
   YOUTUBE_LINK,
 } from "./copy.mjs";
 import type {
@@ -57,7 +58,7 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import { approvedPackage, askText } from "./crew.mjs";
+import { approvedPackage, askText, postedTexts } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import {
@@ -153,6 +154,10 @@ const BLOCK = [
   `YouTube description: bro thought he could just walk home 😭🙏 Play Wall Game: ${YOUTUBE_LINK}`,
   "TikTok: bro thought he could just walk home 😭🙏 #wallgame #gaming #boardgames",
   "Instagram: bro thought he could just walk home 😭🙏 #wallgame #gaming #boardgames",
+  "Facebook: bro thought he could just walk home 😭🙏 #wallgame",
+  `Bluesky: bro thought he could just walk home 😭🙏 ${trackedLink("bluesky")} #wallgame`,
+  "Threads: bro thought he could just walk home 😭🙏 #wallgame",
+  `Mastodon: bro thought he could just walk home 😭🙏 ${trackedLink("mastodon")} #wallgame`,
 ].join("\n");
 const COPY_VERSION = "growth-copy-1";
 const COPY = { ...parseCopy(BLOCK).copy!, version: COPY_VERSION };
@@ -237,6 +242,10 @@ const DRY = {
   youtube: "dry-run",
   tiktok: "dry-run",
   instagram: "dry-run",
+  facebook: "dry-run",
+  bluesky: "dry-run",
+  threads: "dry-run",
+  mastodon: "dry-run",
 };
 
 /** A director's list for TESTGAME1: one zoom with a FAHHH on move 23. */
@@ -285,7 +294,12 @@ const MEASURED = {
 const checkedToday = (
   store: ReturnType<typeof openStore>,
   day: string,
-  video: { path: string; bytes: number; sha256: string },
+  video: {
+    path: string;
+    bytes: number;
+    sha256: string;
+    durationSeconds?: number;
+  },
 ) => {
   directToday(store, day);
   store.startRender(day, "job-00000001");
@@ -746,6 +760,8 @@ describe("a post that may exist is not posted again", () => {
       path: video,
       bytes: 5,
       sha256: sha256(readFileSync(video)),
+      // A render reports it; Facebook refuses a video of unknown length.
+      durationSeconds: 30,
     });
     store.recordAsk(day, {
       askId: "a",
@@ -878,11 +894,11 @@ describe("an approval covers one video in one mode", () => {
       "Video sha256: aa",
       `Copy block as approved (${COPY_VERSION}, copy sha256 ${COPY_SHA}):`,
     ]);
-    expect(lines.slice(4, 9).join("\n")).toBe(BLOCK);
-    expect(lines[9]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
-    expect(lines[10]).toBe("Nil's reply, verbatim: Approve");
+    expect(lines.slice(4, 13).join("\n")).toBe(BLOCK);
+    expect(lines[13]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
+    expect(lines[14]).toBe("Nil's reply, verbatim: Approve");
     // The release checkout's crew.mjs, whichever checkout ran `answer`.
-    expect(lines[11]).toBe(`Post it with: node ${release} post --day ${day}`);
+    expect(lines[15]).toBe(`Post it with: node ${release} post --day ${day}`);
   });
 
   test("keys that arrived after the ask do not turn a dry-run approval live", () => {
@@ -933,6 +949,10 @@ describe("an approval covers one video in one mode", () => {
       "youtube",
       "tiktok",
       "instagram",
+      "facebook",
+      "bluesky",
+      "threads",
+      "mastodon",
     ]);
     expect(readPostLog(store.postLog.dryRun)).toHaveLength(1);
     expect(existsSync(store.postLog.live)).toBe(false);
@@ -974,7 +994,7 @@ describe("each render is one production view", () => {
 const withText = (field: string, text: string) => ({ ...COPY, [field]: text });
 
 describe("Growth's copy block", () => {
-  test("the five lines are the texts that post; the app adds only #Shorts", () => {
+  test("the nine lines are the texts that post; the app adds only #Shorts", () => {
     const players = playerNames(candidateFromReport(REPORT, 1));
     expect(parseCopy(BLOCK).problems).toEqual([]);
     expect(copyProblems(COPY, "TESTGAME1", players)).toEqual([]);
@@ -991,21 +1011,52 @@ describe("Growth's copy block", () => {
     expect(parseCopy(indented).copy).toEqual(parseCopy(BLOCK).copy);
   });
 
-  test("a block that is not exactly the five labelled lines is refused", () => {
+  test("a block that is not exactly the nine labelled lines is refused", () => {
     const lines = BLOCK.split("\n");
     expect(parseCopy(lines.slice(1).join("\n")).problems).toEqual([
       'no "X:" line',
     ]);
     expect(parseCopy([...lines, lines[0]].join("\n")).problems).toEqual([
-      'line 6: "X" comes twice',
+      'line 10: "X" comes twice',
     ]);
-    expect(parseCopy([...lines, "Facebook: hi"].join("\n")).problems).toEqual([
-      'line 6 does not start with one of "X:", "YouTube title:", "YouTube description:", "TikTok:", "Instagram:"',
+    expect(parseCopy([...lines, "Pinterest: hi"].join("\n")).problems).toEqual([
+      'line 10 does not start with one of "X:", "YouTube title:", "YouTube description:", "TikTok:", "Instagram:", "Facebook:", "Bluesky:", "Threads:", "Mastodon:"',
     ]);
     expect(
-      parseCopy([...lines.slice(0, 4), "Instagram:  "].join("\n")).problems,
+      parseCopy(
+        [...lines.slice(0, 4), "Instagram:  ", ...lines.slice(5)].join("\n"),
+      ).problems,
     ).toEqual(['the "Instagram:" line is empty']);
     expect(parseCopy(undefined).copy).toBeNull();
+  });
+
+  test("Facebook, Bluesky, Threads and Mastodon: each its own count, and only the tracked link", () => {
+    const problems = (field: string, text: string) =>
+      copyProblems(withText(field, text), "TESTGAME1");
+    const bsky = trackedLink("bluesky");
+    // Bluesky: 300 graphemes; the link counts in full.
+    expect(
+      problems("bluesky", `${"a".repeat(300 - bsky.length - 1)} ${bsky}`),
+    ).toEqual([]);
+    expect(
+      problems("bluesky", `${"a".repeat(300 - bsky.length)} ${bsky}`),
+    ).toEqual(["bluesky text is 301 characters (graphemes); the limit is 300"]);
+    // Mastodon: 500, a link counting 23 however long it is.
+    const masto = trackedLink("mastodon");
+    expect(problems("mastodon", `${"a".repeat(476)} ${masto}`)).toEqual([]);
+    expect(problems("mastodon", `${"a".repeat(477)} ${masto}`)).toHaveLength(1);
+    // Threads: 500, an emoji counting its UTF-8 bytes.
+    expect(problems("threads", "😭".repeat(125))).toEqual([]);
+    expect(problems("threads", "😭".repeat(126))).toHaveLength(1);
+    // A link is allowed on all four (Facebook and Threads start without
+    // one), but only the platform's tracked link.
+    expect(problems("facebook", `hi ${trackedLink("facebook")}`)).toEqual([]);
+    expect(problems("bluesky", `hi ${trackedLink("mastodon")}`)).toEqual([
+      `Bluesky may hold only the link ${bsky}`,
+    ]);
+    expect(problems("threads", `hi https://example.com/x`)).toEqual([
+      `Threads may hold only the link ${trackedLink("threads")}`,
+    ]);
   });
 
   test("every platform limit is checked when the block comes in", () => {
@@ -1473,33 +1524,33 @@ describe("TikTok", () => {
     };
     const live = askText(
       c,
-      { x: "live", youtube: "live", tiktok: "live", instagram: "live" },
+      { ...DRY, x: "live", youtube: "live", tiktok: "live", bluesky: "live" },
       "0".repeat(64),
     ).split("\n");
     const at = live.indexOf(`Post text (by Growth, ${COPY_VERSION}):`);
     expect(at).toBeGreaterThan(-1);
-    expect(live.slice(at + 1, at + 6).join("\n")).toBe(BLOCK);
+    expect(live.slice(at + 1, at + 10).join("\n")).toBe(BLOCK);
     // Whether it posts for real comes right after the block, live first.
-    expect(live.slice(at + 6, at + 10)).toEqual([
+    expect(live.slice(at + 10, at + 14)).toEqual([
       'The app adds "#Shorts" to the YouTube title.',
-      "LIVE on X, YouTube, TikTok, Instagram: this posts for real on approval.",
-      "Posting mode: X live, YouTube live, TikTok live, Instagram live.",
+      "LIVE on X, YouTube, TikTok, Bluesky: this posts for real on approval.",
+      "Posting mode: X live, YouTube live, TikTok live, Instagram dry-run, Facebook dry-run, Bluesky live, Threads dry-run, Mastodon dry-run.",
       "TikTok: open the inbox draft, paste the TikTok line, tap Post.",
     ]);
     const dry = askText(
       c,
-      { x: "live", youtube: "dry-run", tiktok: "dry-run", instagram: "live" },
+      { ...DRY, x: "live", instagram: "live" },
       "0".repeat(64),
     ).split("\n");
-    expect(dry.slice(at + 7, at + 10)).toEqual([
+    expect(dry.slice(at + 11, at + 14)).toEqual([
       "LIVE on X, Instagram: this posts for real on approval.",
-      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live.",
+      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live, Facebook dry-run, Bluesky dry-run, Threads dry-run, Mastodon dry-run.",
       "TikTok: dry run, no draft.",
     ]);
     const none = askText(c, DRY, "0".repeat(64));
     expect(none).not.toContain("LIVE on");
     expect(none).toContain(
-      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run.",
+      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run, Facebook dry-run, Bluesky dry-run, Threads dry-run, Mastodon dry-run.",
     );
     // The mode is stated once, under the block, not again for Nil only.
     expect(none.split("Posting mode:").length).toBe(2);
@@ -1626,12 +1677,19 @@ describe("X signing", () => {
         YOUTUBE_CLIENT_SECRET: "b",
         YOUTUBE_REFRESH_TOKEN: "c",
       }),
-    ).toEqual({
-      x: "dry-run",
-      youtube: "live",
-      tiktok: "dry-run",
-      instagram: "dry-run",
-    });
+    ).toEqual({ ...DRY, youtube: "live" });
+  });
+
+  test("Threads goes live only with its keys AND a way to make the video public", () => {
+    const keys = { THREADS_USER_ID: "u", THREADS_ACCESS_TOKEN: "t" };
+    expect(postingModes(keys).threads).toBe("dry-run");
+    const threadsPublicUrl = () =>
+      Promise.resolve({
+        url: "https://x/v.mp4",
+        remove: () => Promise.resolve(),
+      });
+    expect(postingModes(keys, { threadsPublicUrl }).threads).toBe("live");
+    expect(postingModes({}, { threadsPublicUrl }).threads).toBe("dry-run");
   });
 });
 
@@ -2022,12 +2080,50 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   // The form is shown as it goes on the wire, URL-encoded, naming the secret.
   expect(ytPlan).toContain("refresh_token=%3CYOUTUBE_REFRESH_TOKEN%3E");
 
+  // The four newer platforms: each public request carries its line as is.
+  const planOf = (p: string) =>
+    JSON.parse(
+      readFileSync(
+        (posted.body.posts as Record<string, { requestsFile: string }>)[p]
+          .requestsFile,
+        "utf8",
+      ),
+    ) as { url: string; body: Record<string, unknown> | null }[];
+  const finish = planOf("facebook").find(
+    (r) => r.body?.upload_phase === "finish",
+  );
+  expect(finish?.body?.description).toBe(COPY.facebook);
+  const record = planOf("bluesky").at(-1)?.body?.record as {
+    text: string;
+    facets: unknown[];
+  };
+  expect(record.text).toBe(COPY.bluesky);
+  expect(record.facets).toHaveLength(1);
+  const container = planOf("threads").find((r) => r.url.endsWith("/threads"));
+  expect(container?.body?.text).toBe(COPY.threads);
+  expect(planOf("mastodon").at(-1)?.body?.status).toBe(COPY.mastodon);
+  // What `crew.mjs post` prints: each platform's mode and exact text.
+  expect(postedTexts(posted.body)).toEqual([
+    `dry-run X: ${JSON.stringify(COPY.x)}`,
+    `dry-run YouTube: title ${JSON.stringify(`${COPY.youtubeTitle} #Shorts`)}, description ${JSON.stringify(COPY.youtubeDescription)}`,
+    `dry-run TikTok: ${JSON.stringify(COPY.tiktok)} (not sent: Nil pastes it in the inbox draft)`,
+    `dry-run Instagram: ${JSON.stringify(COPY.instagram)}`,
+    `dry-run Facebook: ${JSON.stringify(COPY.facebook)}`,
+    `dry-run Bluesky: ${JSON.stringify(COPY.bluesky)}`,
+    `dry-run Threads: ${JSON.stringify(COPY.threads)}`,
+    `dry-run Mastodon: ${JSON.stringify(COPY.mastodon)}`,
+  ]);
+
   const log = (await call<LogRow[]>("/api/daily/post-log?dryRun=1")).body;
   expect(log.map((r) => r.platform)).toEqual([
     "x",
     "youtube",
     "tiktok",
     "instagram",
+    "facebook",
+    "bluesky",
+    "threads",
+    "mastodon",
   ]);
   // Each row names the on-video caption style and Growth's copy style.
   expect(log.map((r) => r.styleVersion)).toEqual(
@@ -2039,6 +2135,10 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     `${COPY.youtubeTitle} #Shorts\n\n${COPY.youtubeDescription}`,
     COPY.tiktok,
     COPY.instagram,
+    COPY.facebook,
+    COPY.bluesky,
+    COPY.threads,
+    COPY.mastodon,
   ]);
   // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
   expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");

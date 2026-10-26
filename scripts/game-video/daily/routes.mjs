@@ -82,7 +82,13 @@ import {
   safeAreaVerdict,
   captionLinesVerdict,
 } from "./quality.mjs";
-import { COPY_VERSION, copyProblems, parseCopy, postTexts } from "./copy.mjs";
+import {
+  COPY_LINES,
+  COPY_VERSION,
+  copyProblems,
+  parseCopy,
+  postTexts,
+} from "./copy.mjs";
 import {
   claimRisk,
   openSoundPicks,
@@ -123,6 +129,34 @@ import {
   DRY_RUN_CREDS,
   YOUTUBE_SECRETS,
 } from "./post-youtube.mjs";
+import {
+  postToFacebook,
+  facebookDryRunReply,
+  DRY_RUN_FACEBOOK,
+  FACEBOOK_SECRETS,
+} from "./post-facebook.mjs";
+import {
+  postToBluesky,
+  blueskyDryRunReply,
+  mp4VideoSize,
+  DRY_RUN_BLUESKY,
+  BLUESKY_SECRETS,
+} from "./post-bluesky.mjs";
+import {
+  postToThreads,
+  threadsDryRunReply,
+  threadsTokens,
+  refreshThreadsToken,
+  dryRunPublicUrl,
+  DRY_RUN_THREADS,
+  THREADS_SECRETS,
+} from "./post-threads.mjs";
+import {
+  postToMastodon,
+  mastodonDryRunReply,
+  DRY_RUN_MASTODON,
+  MASTODON_SECRETS,
+} from "./post-mastodon.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const RENDER_4090 = resolve(HERE, "render-4090.mjs");
@@ -143,16 +177,50 @@ const SECRETS = {
   youtube: YOUTUBE_SECRETS,
   tiktok: TIKTOK_SECRETS,
   instagram: INSTAGRAM_SECRETS,
+  facebook: FACEBOOK_SECRETS,
+  bluesky: BLUESKY_SECRETS,
+  threads: THREADS_SECRETS,
+  mastodon: MASTODON_SECRETS,
 };
 
-/** live when every secret of the platform is set, else dry-run. */
-export const postingModes = (env) =>
+/**
+ * live when every secret of the platform is set, else dry-run. Threads also
+ * needs `threadsPublicUrl`, the function that makes the video public for it
+ * to fetch (post-threads.mjs): its hosting is not chosen yet (Nil, ask
+ * eb46a7d2), and without it a live Threads post cannot work.
+ */
+export const postingModes = (
+  env,
+  {
+    threadsPublicUrl = /** @type {import("./post-threads.mjs").PublicUrl | null} */ (
+      null
+    ),
+  } = {},
+) =>
   Object.fromEntries(
     PLATFORMS.map((p) => [
       p,
-      SECRETS[p].every((name) => Boolean(env[name])) ? "live" : "dry-run",
+      SECRETS[p].every((name) => Boolean(env[name])) &&
+      (p !== "threads" || Boolean(threadsPublicUrl))
+        ? "live"
+        : "dry-run",
     ]),
   );
+
+/** The canned replies of each platform's dry run. */
+const DRY_RUN_REPLIES = {
+  x: xDryRunReply,
+  youtube: youtubeDryRunReply,
+  tiktok: tiktokDryRunReply,
+  instagram: instagramDryRunReply,
+  facebook: facebookDryRunReply,
+  bluesky: blueskyDryRunReply,
+  threads: threadsDryRunReply,
+  mastodon: mastodonDryRunReply,
+};
+
+/** How often the app renews the Threads token; it renews once a day at most. */
+const THREADS_REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
@@ -174,15 +242,38 @@ export const createDaily = ({
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
-  dryRunReplies = {
-    x: xDryRunReply,
-    youtube: youtubeDryRunReply,
-    tiktok: tiktokDryRunReply,
-    instagram: instagramDryRunReply,
-  },
+  dryRunReplies: replyOverrides = {},
+  threadsPublicUrl = /** @type {import("./post-threads.mjs").PublicUrl | null} */ (
+    null
+  ),
 }) => {
+  // A test may replace the canned replies of one platform; the rest keep
+  // their own.
+  const dryRunReplies = { ...DRY_RUN_REPLIES, ...replyOverrides };
   const store = openStore(dataDir);
   const { dirs } = store;
+  const modesNow = () => postingModes(env, { threadsPublicUrl });
+  const threadsTokenStore = () =>
+    threadsTokens(join(dirs.root, "tokens"), env.THREADS_ACCESS_TOKEN);
+
+  // A Threads token lapses after 60 days without a refresh, so the app
+  // renews it on its own, also in a week with no post (post-threads.mjs).
+  // Only once its secrets exist: this is a live call to Threads.
+  let threadsTimer = null;
+  if (THREADS_SECRETS.every((name) => Boolean(env[name]))) {
+    const renew = async () => {
+      const outcome = await refreshThreadsToken({
+        transport: liveTransport(),
+        tokens: threadsTokenStore(),
+      });
+      if (outcome.error) {
+        console.warn(`threads token refresh failed: ${outcome.error}`);
+      }
+    };
+    threadsTimer = setInterval(() => void renew(), THREADS_REFRESH_EVERY_MS);
+    threadsTimer.unref();
+    void renew();
+  }
   // Nil's preference for each meme sound (/daily/sounds).
   const soundPicks = openSoundPicks(dirs.root);
 
@@ -429,8 +520,19 @@ export const createDaily = ({
     const cycle = store.read(day);
     if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
     if (!cycle.render?.video) throw new StepRefused(`${day} has no video`);
-    const modes = postingModes(env);
+    const modes = modesNow();
     const video = readFileSync(cycle.render.video.path);
+    // An approval from before a platform had a line in the block has no
+    // text for it: nothing may post without Nil's yes to its text.
+    const missing = COPY_LINES.filter(
+      ([, field]) =>
+        cycle.approval?.copy && typeof cycle.approval.copy[field] !== "string",
+    ).map(([label]) => label);
+    if (missing.length) {
+      throw new StepRefused(
+        `the approved copy block has no ${missing.join(", ")} line; ask again with Growth's full block`,
+      );
+    }
     // checkPost refuses a block that is not the approved one.
     const todo = store.checkPost(day, {
       modes,
@@ -497,6 +599,46 @@ export const createDaily = ({
             caption: texts.instagram,
             transport,
             creds: live ? env : DRY_RUN_INSTAGRAM,
+            sleep,
+            beforeCommit,
+          }),
+        facebook: () =>
+          postToFacebook({
+            video,
+            durationSeconds: cycle.render.video.durationSeconds,
+            description: texts.facebook,
+            transport,
+            creds: live ? env : DRY_RUN_FACEBOOK,
+            sleep,
+            beforeCommit,
+          }),
+        bluesky: () =>
+          postToBluesky({
+            video,
+            text: texts.bluesky,
+            size: mp4VideoSize(video),
+            transport,
+            creds: live ? env : DRY_RUN_BLUESKY,
+            sleep,
+            beforeCommit,
+          }),
+        threads: () =>
+          postToThreads({
+            video,
+            text: texts.threads,
+            publicUrl: live ? threadsPublicUrl : dryRunPublicUrl,
+            tokens: threadsTokenStore(),
+            transport,
+            creds: live ? env : DRY_RUN_THREADS,
+            sleep,
+            beforeCommit,
+          }),
+        mastodon: () =>
+          postToMastodon({
+            video,
+            text: texts.mastodon,
+            transport,
+            creds: live ? env : DRY_RUN_MASTODON,
             sleep,
             beforeCommit,
           }),
@@ -571,7 +713,7 @@ export const createDaily = ({
     return {
       day,
       today: utcDay(),
-      modes: postingModes(env),
+      modes: modesNow(),
       cycle,
       renderProgress: cycle?.render
         ? (progress.get(cycle.render.jobId) ?? null)
@@ -813,7 +955,7 @@ export const createDaily = ({
           modes: body.modes,
           videoSha256: body.videoSha256,
           copySha256: body.copySha256,
-          currentModes: postingModes(env),
+          currentModes: modesNow(),
           replacesAskId: body.replacesAskId,
         }),
       );
@@ -940,6 +1082,7 @@ export const createDaily = ({
 
   /** Stop a running render (and so its 4090 unit) when the app stops. */
   const stop = () => {
+    if (threadsTimer) clearInterval(threadsTimer);
     if (!currentChild) return;
     try {
       process.kill(-currentChild.pid, "SIGTERM");
@@ -1069,7 +1212,7 @@ const DASHBOARD = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game daily video</h1>
-  <p class="sub">One game a day to X, YouTube, TikTok and Instagram. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
+  <p class="sub">One game a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky, Threads and Mastodon. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
     <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a></p>
   <div id="top"></div>
   <h2>Candidate</h2><div id="cand" class="box"></div>
@@ -1111,7 +1254,8 @@ const DASHBOARD = `<!doctype html>
         ...(c.copy
           ? [el("div", "muted", "Post text by Wall Game Growth (" + c.copy.version + ")"),
              ...[["X", "x"], ["YouTube title (the app adds #Shorts)", "youtubeTitle"], ["YouTube description", "youtubeDescription"],
-                 ["TikTok", "tiktok"], ["Instagram", "instagram"]]
+                 ["TikTok", "tiktok"], ["Instagram", "instagram"], ["Facebook", "facebook"],
+                 ["Bluesky", "bluesky"], ["Threads", "threads"], ["Mastodon", "mastodon"]]
                .flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", c.copy[f])])]
           : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
         el("div", "muted", "style: " + c.style),

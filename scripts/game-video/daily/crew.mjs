@@ -69,7 +69,8 @@
  *                                  cycle is found by the ask, so no --day. An
  *                                  approval prints the APPROVED PACKAGE that
  *                                  the director sends to Wall Game Growth
- *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram]
+ *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram|facebook|
+ *                 bluesky|threads|mastodon]
  *                                  (Wall Game Growth) post the approved block:
  *                                  X, YouTube, the TikTok draft and the
  *                                  Instagram Reel (dry-run without keys)
@@ -119,7 +120,7 @@ import { candidateFromReport } from "./candidate.mjs";
 import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
-import { SHORTS_TAG, copyLines, copySha256 } from "./copy.mjs";
+import { SHORTS_TAG, copyLines, copySha256, postTexts } from "./copy.mjs";
 
 const OFFICE = "http://localhost:4000";
 /** This file's place in a checkout, for the commands another agent runs. */
@@ -283,7 +284,29 @@ const PLATFORM_NAMES = [
   ["youtube", "YouTube"],
   ["tiktok", "TikTok"],
   ["instagram", "Instagram"],
+  ["facebook", "Facebook"],
+  ["bluesky", "Bluesky"],
+  ["threads", "Threads"],
+  ["mastodon", "Mastodon"],
 ];
+
+/**
+ * What each platform was given to post, from the approved block, as one
+ * line per platform: "<mode> <Platform>: <text>". The posters send it
+ * unchanged (posters.test.ts and daily.test.ts check the requests).
+ */
+export const postedTexts = (c) => {
+  const t = postTexts(c.approval.copy);
+  return PLATFORM_NAMES.filter(([p]) => c.posts[p]).map(([p, name]) => {
+    const text =
+      p === "youtube"
+        ? `title ${JSON.stringify(t.youtubeTitle)}, description ${JSON.stringify(t.youtubeDescription)}`
+        : p === "tiktok"
+          ? `${JSON.stringify(t.tiktok)} (not sent: Nil pastes it in the inbox draft)`
+          : JSON.stringify(t[p]);
+    return `${c.posts[p].mode} ${name}: ${text}`;
+  });
+};
 
 /** The ask's text: everything Nil needs to decide without opening anything. */
 export const askText = (c, modes, videoSha256) => {
@@ -719,7 +742,10 @@ const commands = {
       day,
       confirmNotPosted: confirm ? [confirm] : [],
     });
-    console.log(summary(await state()));
+    const s = await state();
+    console.log(summary(s));
+    console.log("");
+    console.log(postedTexts(s.cycle).join("\n"));
   },
 
   async log() {
