@@ -14,6 +14,7 @@
  *     "gameId": "eeFSMEmL",
  *     "caption": "the bot was 97% winning 💀",
  *     "ending": "replay",
+ *     "music": "a-legend",
  *     "pace": [{ "fromPly": 13, "toPly": 17, "secondsPerMove": 1.1 }],
  *     "events": [
  *       { "ply": 14, "kind": "scared", "cell": "g4", "sound": "scared-2" },
@@ -34,6 +35,9 @@
  *            2026-10-26: a long caption was "way too long").
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
+ *   music    optional: one of the site's tracks by slug (deja-vus,
+ *            tea-for-two, a-legend, skippy). Absent (null after validation)
+ *            means a random one, as the site and hand renders do.
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
  *   events   optional; the events of one ply play in list order, after the
@@ -50,6 +54,7 @@
  * turn into a video without the effect the director asked for.
  */
 import { MEME_SOUND_GAINS } from "./meme-sounds.mjs";
+import { MUSIC_TRACKS } from "./music-tracks.mjs";
 
 export const EDL_VERSION = 1;
 export const ENDINGS = ["replay", "gg", "ko"];
@@ -104,7 +109,7 @@ export const validateEdl = (raw) => {
   };
   unknown(
     raw,
-    ["version", "gameId", "caption", "ending", "pace", "events"],
+    ["version", "gameId", "caption", "ending", "music", "pace", "events"],
     "EDL",
   );
 
@@ -136,6 +141,14 @@ export const validateEdl = (raw) => {
   if (!ENDINGS.includes(raw.ending)) {
     fail(
       `ending must be one of ${ENDINGS.join(", ")}, got ${JSON.stringify(raw.ending)}`,
+    );
+  }
+
+  const music = raw.music ?? null;
+  const slugs = MUSIC_TRACKS.map((t) => t.slug);
+  if (music !== null && !slugs.includes(music)) {
+    fail(
+      `music must be one of ${slugs.join(", ")}, or absent for a random track; got ${JSON.stringify(music)}`,
     );
   }
 
@@ -255,6 +268,7 @@ export const validateEdl = (raw) => {
       gameId: raw.gameId,
       caption,
       ending: raw.ending,
+      music,
       pace,
       events: filled,
     },

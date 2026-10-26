@@ -96,3 +96,12 @@ describe("checkEdlAgainstGame", () => {
     ).toHaveLength(2);
   });
 });
+
+describe("music", () => {
+  test("is optional, null when absent, and only a site track", () => {
+    const absent = validateEdl(base);
+    expect(absent.ok && absent.edl.music).toBe(null);
+    expect(validateEdl({ ...base, music: "a-legend" }).ok).toBe(true);
+    expect(validateEdl({ ...base, music: "darude" }).ok).toBe(false);
+  });
+});

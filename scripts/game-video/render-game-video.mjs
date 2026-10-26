@@ -81,6 +81,7 @@ import {
   DEFAULT_SECONDS_PER_MOVE,
 } from "./edl.mjs";
 import { MEME_SOUND_GAINS } from "./meme-sounds.mjs";
+import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { allocateFrameRanges } from "./timeline-frames.mjs";
 
@@ -128,7 +129,11 @@ const EDL = (() => {
 const EDL_SHA256 = EDL_BYTES
   ? createHash("sha256").update(EDL_BYTES).digest("hex")
   : null;
-const fromEdl = { game: EDL?.gameId, style: EDL ? "daily" : undefined };
+const fromEdl = {
+  game: EDL?.gameId,
+  style: EDL ? "daily" : undefined,
+  music: EDL?.music,
+};
 const arg = (name, fallback) => cliArg(name) ?? fromEdl[name] ?? fallback;
 const flag = (name) => argv.includes(`--${name}`);
 
@@ -233,9 +238,15 @@ if (STYLE_NAMES.includes("daily") && !EDL) {
   console.error("the daily look plays an EDL: give --edl FILE (see edl.mjs)");
   process.exit(2);
 }
-if (EDL && cliArg("seconds-per-move")) {
-  console.error("--seconds-per-move does not apply to an EDL; set its pace");
-  process.exit(2);
+for (const [flagName, field] of [
+  ["seconds-per-move", "pace"],
+  ["music", "music"],
+  ["no-music", "music"],
+]) {
+  if (EDL && argv.includes(`--${flagName}`)) {
+    console.error(`--${flagName} does not apply to an EDL; set its ${field}`);
+    process.exit(2);
+  }
 }
 /** What the daily look plays: the EDL's, or nothing in a current-only render. */
 const CAPTION = EDL?.caption ?? "";
@@ -319,27 +330,6 @@ const CAPTURE_DPR = 3;
  * platform are different uses. Nothing here establishes the second one.
  */
 const SONG_DIR = join(REPO, "frontend/public/audio/songs");
-
-/**
- * What each song file actually is, decoded from its ID3 tags 2026-08-19 and
- * recorded in credits.txt. The filenames say nothing, so this is the only way
- * a render can label its own track - and the only way to name one, since the
- * site's random start means there is no "first" song.
- */
-const MUSIC_TRACKS = [
-  { file: "song1.mp3", title: "Deja Vus (2nd loop) - YannZ", slug: "deja-vus" },
-  {
-    file: "song2.mp3",
-    title: "Tea For Two - Aaron Paul Low",
-    slug: "tea-for-two",
-  },
-  { file: "song3.mp3", title: "A Legend - Ian Aisling", slug: "a-legend" },
-  {
-    file: "song4.mp3",
-    title: "Skippy Mr. Sunshine - Fernweh Goldfish",
-    slug: "skippy",
-  },
-];
 
 const pickTrack = () => {
   if (flag("no-music")) return null;
@@ -577,22 +567,20 @@ const browser = await chromium.launch({
 });
 
 /**
- * Red for the AI and blue for the human, by each seat's bot flag
- * (configType, the flag the daily picker's AI-vs-human rule reads). The daily
- * picker takes only AI vs human games, so a daily render of two alike seats is
- * an error, not a guess; a current-look render of one keeps seat order.
+ * The daily look's seat colours: red for the AI and blue for the human, by
+ * each seat's bot flag (configType, the flag the daily picker's AI-vs-human
+ * rule reads). The daily picker takes only AI vs human games, so two alike
+ * seats are an error, not a guess. Only a daily (EDL) render forces colours;
+ * a hand render keeps the players' own (Wall Game PM, 2026-10-26).
  */
 const SEAT_COLORS = (body) => {
   const bot = (id) =>
     body.matchStatus?.players?.find((p) => p.playerId === id)?.configType ===
     "bot";
   if (bot(1) === bot(2)) {
-    if (EDL) {
-      throw new Error(
-        `game ${GAME_ID} is not AI vs human (both seats are ${bot(1) ? "bots" : "humans"}); the daily look colours the AI red and the human blue`,
-      );
-    }
-    return { 1: "red", 2: "blue" };
+    throw new Error(
+      `game ${GAME_ID} is not AI vs human (both seats are ${bot(1) ? "bots" : "humans"}); the daily look colours the AI red and the human blue`,
+    );
   }
   return bot(1) ? { 1: "red", 2: "blue" } : { 1: "blue", 2: "red" };
 };
@@ -630,14 +618,14 @@ const openGamePage = async (dpr) => {
   const replayUrl = new RegExp(`/api/games/${GAME_ID}(\\?|$)`);
   let replay = null;
   /*
-    RED VS BLUE, ALWAYS (Nil, 2026-10-26: the players' own colours were too
-    alike). The replay page has no viewer colour setting - it colours each
-    seat from the pawnColor in the game record - so the capture browser sets
-    that field in the page's own response, before the page reads it: the AI
-    red, the human blue, and seat 1 red when both seats are alike. The page
-    then colours pawns, walls and cards through its own resolver; no pixel is
-    recoloured. The request is the page's own, made once, so it is still one
-    view.
+    RED VS BLUE IN THE DAILY LOOK (Nil, 2026-10-26: the players' own
+    colours were too alike; a hand render keeps them). The replay page has
+    no viewer colour setting - it colours each seat from the pawnColor in the
+    game record - so in a daily render the capture browser sets that field in
+    the page's own response, before the page reads it: the AI red, the human
+    blue (SEAT_COLORS). The page then colours pawns, walls and cards through
+    its own resolver; no pixel is recoloured. Every render passes the
+    response through here to count it: each request is one view.
   */
   let colorError = null;
   let replayRequests = 0;
@@ -653,6 +641,10 @@ const openGamePage = async (dpr) => {
       return;
     }
     replay ??= structuredClone(body);
+    if (!EDL) {
+      await route.fulfill({ response: res, json: body });
+      return;
+    }
     try {
       const colors = SEAT_COLORS(body);
       for (const p of body.matchStatus?.players ?? []) {
@@ -1053,7 +1045,9 @@ log(
   did. A site that ignored or renamed the colour would otherwise give a video
   whose "AI" word is red over pawns of another colour.
 */
-for (const [playerId, color] of Object.entries(SEAT_COLORS(replay))) {
+for (const [playerId, color] of Object.entries(
+  EDL ? SEAT_COLORS(replay) : {},
+)) {
   if (!COLOR_CHECK[color](accents[playerId])) {
     throw new Error(
       `${nameOf(Number(playerId))} should show ${color} but sampled rgb(${accents[playerId].join(",")}); the page did not use the forced seat colour`,
@@ -1231,6 +1225,13 @@ if ((await moveButtons.count()) !== history.length) {
   );
 }
 const jumpStart = game.getByRole("button", { name: "Jump to beginning" });
+/**
+ * Where the page drew each pawn at each captured position, as centres in the
+ * board image (0..1), keyed by board index (0 = the start). Read off the
+ * page's own pawn images at capture time, so the mouse beats can put their
+ * bubble where it covers no other pawn without a second copy of the rules.
+ */
+const pawnSpots = new Map();
 const captureResult = await captureReplayFrames({
   moveCount: history.length,
   selectInitial: async () => {
@@ -1283,6 +1284,24 @@ const captureResult = await captureReplayFrames({
       `board-${String(expectedPly + 1).padStart(4, "0")}.png`,
     );
     await game.screenshot({ path: file, clip });
+    pawnSpots.set(
+      expectedPly + 1,
+      await game.evaluate((c) => {
+        const spots = [];
+        for (const img of document.querySelectorAll('img[src*="/pawns/"]')) {
+          const r = img.getBoundingClientRect();
+          const x = r.x + r.width / 2;
+          const y = r.y + r.height / 2;
+          const inside =
+            x > c.x && x < c.x + c.width && y > c.y && y < c.y + c.height;
+          // A pawn on the board is about a cell; the seat cards are bigger.
+          if (inside && r.width < c.width / 4) {
+            spots.push({ x: (x - c.x) / c.width, y: (y - c.y) / c.height });
+          }
+        }
+        return spots;
+      }, clip),
+    );
     return file;
   },
 });
@@ -1615,6 +1634,43 @@ const termBox = (term) => {
   if (m[1] === "^") return [row - 0.1, col, row + 0.1, col + 1];
   if (m[1] === ">") return [row, col + 0.9, row + 1, col + 1.1];
   return [row, col, row + 1, col + 1];
+};
+
+/**
+ * Which side of a beat's mouse its bubble goes on: up, right, left or down,
+ * whichever leaves the bubble farthest from every other pawn the page drew at
+ * that position (Wall Game PM, 2026-10-26: the relief beat is "the cat
+ * missed", so the bubble must never hide the cat). A side that would leave
+ * the board is not a choice; on a tie the earlier side wins.
+ */
+const BUBBLE_SIDES = {
+  up: [0, -1],
+  right: [1, 0],
+  left: [-1, 0],
+  down: [0, 1],
+};
+const bubbleSide = (boardIndex, at) => {
+  // One cell in each axis, so a board with rows != cols measures true cells.
+  const cellX = (1 - 2 * GRID.pad) / GRID.cols;
+  const cellY = (1 - 2 * GRID.pad) / GRID.rows;
+  const away = (p, x, y) => Math.hypot((p.x - x) / cellX, (p.y - y) / cellY);
+  const others = (pawnSpots.get(boardIndex) ?? []).filter(
+    (p) => away(p, at.x, at.y) > 0.3,
+  );
+  let best = "up";
+  let bestRoom = -1;
+  for (const [side, [dx, dy]] of Object.entries(BUBBLE_SIDES)) {
+    const x = at.x + dx * cellX;
+    const y = at.y + dy * cellY;
+    if (x < GRID.pad || x > 1 - GRID.pad || y < GRID.pad || y > 1 - GRID.pad)
+      continue;
+    const room = Math.min(Infinity, ...others.map((p) => away(p, x, y)));
+    if (room > bestRoom + 1e-9) {
+      best = side;
+      bestRoom = room;
+    }
+  }
+  return best;
 };
 
 /** The centre of an EDL cell on the board image (0..1), for the mouse overlays. */
@@ -2094,6 +2150,7 @@ const renderStyle = async (styleName) => {
                   board: fileUrl(boardFrames[ply]),
                   cell: cellAtTerm(ev.cell),
                   size: (1 - 2 * GRID.pad) / GRID.cols,
+                  side: bubbleSide(ply, cellAtTerm(ev.cell)),
                 },
               };
         await emit(playState(ply, extra), 1 / FPS, {
@@ -2432,6 +2489,8 @@ const renderStyle = async (styleName) => {
     sha256: sha256Of(out),
     durationSeconds: Number((encodedFrame / FPS).toFixed(3)),
     effect: styleName,
+    /** The track that played, by slug; null with --no-music. */
+    music: TRACK?.slug ?? null,
     sound: wallz
       ? `vs=${sounds[style.vsSound].name},finish=${sounds.finish.name}`
       : `shake=${sounds.shake.name},win=${sounds.win.name}`,

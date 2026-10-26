@@ -790,7 +790,9 @@
        *
        * b = { kind, t: seconds into the beat, board: the screenshot under it,
        *       cell: {x, y} the mouse's cell centre in the board image (0..1),
-       *       size: one cell's width (0..1) }
+       *       size: one cell's width (0..1),
+       *       side: where the bubble goes, up | right | left | down, chosen
+       *       by the renderer away from the other pawns }
        */
       const paintBeat = (b) => {
         const fx = $("pawnFx");
@@ -811,14 +813,21 @@
 
         const phase = b.t * 30;
         const bubble = $("pawnBubble");
-        // Over the mouse, or under it when the mouse stands on the top row.
-        const below = b.cell.y - b.size < 0.06;
-        bubble.style.top = below ? "105%" : "auto";
-        bubble.style.bottom = below ? "auto" : "105%";
+        // Next to the mouse, on the side the renderer measured to be clear.
+        const across = b.side === "left" || b.side === "right";
+        bubble.style.top = b.side === "down" ? "105%" : across ? "50%" : "auto";
+        bubble.style.bottom = b.side === "up" ? "105%" : "auto";
+        bubble.style.left =
+          b.side === "right" ? "105%" : across ? "auto" : "50%";
+        bubble.style.right = b.side === "left" ? "105%" : "auto";
         bubble.style.fontSize = px * 0.42 + "px";
         bubble.style.padding = "0.18em 0.42em";
         const pop = punch(span(b.t, 0, 0.18));
-        bubble.style.transform = "translateX(-50%) scale(" + pop + ")";
+        bubble.style.transform =
+          (across ? "translateY(-50%)" : "translateX(-50%)") +
+          " scale(" +
+          pop +
+          ")";
         const sweat = $("pawnSweat");
 
         if (b.kind === "scared") {
@@ -833,7 +842,8 @@
           // A drop that slides down the face and starts again, twice a second.
           const cycle = (b.t * 2) % 1;
           sweat.style.fontSize = px * 0.3 + "px";
-          sweat.style.left = "-8%";
+          // The drop goes on the side away from a bubble on the left.
+          sweat.style.left = b.side === "left" ? "78%" : "-8%";
           sweat.style.top = -5 + cycle * 30 + "%";
           sweat.style.opacity = 1 - cycle * 0.8;
         } else {
