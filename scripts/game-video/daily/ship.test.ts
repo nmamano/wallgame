@@ -126,6 +126,63 @@ describe("ship", () => {
     expect(copied).toEqual(KIT_DATA);
   });
 
+  // ship runs under node, so the calls run in node; CI without node skips.
+  const hasNode = spawnSync("node", ["--version"]).status === 0;
+  test.skipIf(!hasNode)(
+    "an app call after a long spawnSync gets an answer (the first ship, 2026-10-26)",
+    async () => {
+      // The app in its own process, as in production: a spawnSync in ship
+      // must not also stop the app's keep-alive timer. Its keep-alive is 3 s
+      // (the real app's is 5 s) and ship blocks for 4 s, as a kit sync does.
+      const server = `
+      import { createServer } from "node:http";
+      const s = createServer((req, res) => {
+        res.writeHead(req.url === "/api/daily/busy" ? 404 : 200,
+          { "content-type": "application/json" });
+        res.end('{"cycle":null}');
+      });
+      s.keepAliveTimeout = 3000;
+      s.listen(0, "127.0.0.1", () => console.log(s.address().port));`;
+      // ship runs under node (crew.mjs), whose fetch keeps sockets; bun's
+      // fetch is another client, so the calls run in node too. "bare" is
+      // the old call (a plain fetch, body read), logged for comparison.
+      const client = (mode: string, port: string) => `
+      import { spawnSync } from "node:child_process";
+      import { appGet } from ${JSON.stringify(new URL("./ship.mjs", import.meta.url).href)};
+      const base = "http://127.0.0.1:${port}";
+      const get = ${JSON.stringify(mode)} === "bare"
+        ? async (p) => { const r = await fetch(base + p); await r.text(); return r; }
+        : (p) => appGet(base, p);
+      await get("/api/daily/state");
+      await get("/api/daily/busy");
+      spawnSync("sleep", ["4"]);
+      try { console.log((await get("/api/daily/state")).status); }
+      catch (e) { console.log(e.cause?.code ?? e.message); }`;
+      const node = (code: string) =>
+        Bun.spawn(["node", "--input-type=module", "-e", code], {
+          stdout: "pipe",
+        });
+      const app = node(server);
+      const reader = app.stdout.getReader();
+      const port = new TextDecoder().decode((await reader.read()).value).trim();
+      try {
+        const [fixed, bare] = await Promise.all(
+          ["fixed", "bare"].map(async (mode) => {
+            const p = node(client(mode, port));
+            return (await new Response(p.stdout).text()).trim();
+          }),
+        );
+        expect(fixed).toBe("200");
+        // Information only: whether this node's fetch still fails the old
+        // way depends on its undici and on timing, so it is not asserted.
+        console.log(`ship keep-alive test: a plain fetch gave ${bare}`);
+      } finally {
+        app.kill();
+      }
+    },
+    20_000,
+  );
+
   test("the checksums pass sha256sum -c on this tree", () => {
     const files = kitFiles();
     expect(files).toContain("scripts/game-video/render-game-video.mjs");
@@ -275,6 +332,7 @@ describe("ship", () => {
       const again = await go(release, second, fake);
       expect(again.passed).toBe(true);
       expect(again.lines).toContain(`ship 1/7 move: ok - already at ${now}`);
+      expect(again.lines.join("\n")).not.toContain("commits:");
       expect(git(release, "rev-parse", "HEAD")).toBe(second);
       void fake.server.stop();
       rmSync(root, { recursive: true });
@@ -298,6 +356,23 @@ describe("ship", () => {
         /^ship FAILED at 5\/7 restart: the app has renders: 2026-10-26 running; wait until they end - the release checkout is now at /,
       );
       expect(fake.app.restarts).toBe(0);
+      void fake.server.stop();
+      rmSync(root, { recursive: true });
+    });
+
+    test("a restart request that gets no answer says where the checkout is", async () => {
+      const { root, release, second } = repos();
+      const fake = fakeApp(release);
+      const office = fake.office;
+      fake.office = (method: string, path: string) =>
+        method === "POST"
+          ? Promise.reject(new Error("fetch failed"))
+          : office(method, path);
+      const { passed, lines } = await go(release, second, fake);
+      expect(passed).toBe(false);
+      expect(lines.at(-1)).toMatch(
+        /^ship FAILED at 5\/7 restart: POST \/api\/apps\/game-video\/restart: HTTP no answer \(fetch failed\) - the release checkout is now at /,
+      );
       void fake.server.stop();
       rmSync(root, { recursive: true });
     });

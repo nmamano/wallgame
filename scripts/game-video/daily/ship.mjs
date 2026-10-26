@@ -168,6 +168,26 @@ export const moveRelease = (repo, to) => {
 };
 
 /**
+ * One GET to the app at `base`, on a new connection that closes after the
+ * answer. ship blocks its event loop in spawnSync (the kit sync, the hashes)
+ * for longer than the app's keep-alive (5 s), and a kept socket that the app
+ * closed in that time fails the next request ("UND_ERR_SOCKET other side
+ * closed": the first ship, 2026-10-26). The body is always read.
+ */
+export const appGet = async (base, path) => {
+  const res = await fetch(`${base}${path}`, {
+    headers: { connection: "close" },
+  });
+  const text = await res.text();
+  const type = res.headers.get("content-type") ?? "";
+  return {
+    ok: res.ok,
+    status: res.status,
+    json: type.includes("json") ? JSON.parse(text) : null,
+  };
+};
+
+/**
  * Runs the steps on the checkout at `repo`. `office(method, path)` is
  * crew.mjs's office client and `appBase` the app's address; `say` prints one
  * line. `run` runs bash and ssh (sync, hashes, help). Returns true when every step passed; on a failure it prints
@@ -204,15 +224,7 @@ export const ship = async ({
     say(`ship FAILED at ${n + 1}/${steps} ${name}: ${reason}${leftIn()}`);
     return false;
   };
-  const appGet = async (path) => {
-    const res = await fetch(`${appBase}${path}`);
-    const type = res.headers.get("content-type") ?? "";
-    return {
-      ok: res.ok,
-      status: res.status,
-      json: type.includes("json") ? await res.json() : null,
-    };
-  };
+  const get = (path) => appGet(appBase, path);
   const noAnswer = () => ({ ok: false, status: "no answer", json: null });
 
   /**
@@ -224,7 +236,7 @@ export const ship = async ({
    */
   let warnedOld = false;
   const idle = async () => {
-    const state = await appGet("/api/daily/state").catch(noAnswer);
+    const state = await get("/api/daily/state").catch(noAnswer);
     if (!state.ok || !state.json) {
       return { reason: `GET /api/daily/state: HTTP ${state.status}` };
     }
@@ -234,7 +246,7 @@ export const ship = async ({
         reason: `the ${cycle.day} cycle is rendering; wait until it ends`,
       };
     }
-    const busy = await appGet("/api/daily/busy").catch(noAnswer);
+    const busy = await get("/api/daily/busy").catch(noAnswer);
     if (busy.ok && busy.json) {
       const { renders, posting } = busy.json;
       if (renders.length > 0) {
@@ -287,11 +299,14 @@ export const ship = async ({
   // Before anything moves; step 5 asks again just before the restart.
   const first = await idle();
   if (first.reason) return fail("move", first.reason);
-  const { back, lines } = commitsOf(repo, plan);
-  say(
-    `ship ${back ? "rolls back" : "ships"} ${lines.length} commit${lines.length === 1 ? "" : "s"}:`,
-  );
-  for (const line of lines) say(`  ${line}`);
+  // The same hash again (to finish a failed ship) has no commits to list.
+  if (plan.from !== plan.to) {
+    const { back, lines } = commitsOf(repo, plan);
+    say(
+      `ship ${back ? "rolls back" : "ships"} ${lines.length} commit${lines.length === 1 ? "" : "s"}:`,
+    );
+    for (const line of lines) say(`  ${line}`);
+  }
   const move = moveRelease(repo, to);
   if (!move.ok) return fail("move", move.reason);
   moved = move;
@@ -358,7 +373,9 @@ export const ship = async ({
   const now = await idle();
   if (now.reason) return fail("restart", now.reason);
   const { cycle } = now;
-  const restart = await office("POST", `/api/apps/${appName}/restart`);
+  const restart = await office("POST", `/api/apps/${appName}/restart`).catch(
+    (err) => ({ status: `no answer (${err?.cause?.code ?? err?.message})` }),
+  );
   if (restart.status !== 200 && restart.status !== 204) {
     return fail(
       "restart",
@@ -372,7 +389,7 @@ export const ship = async ({
   const until = Date.now() + PAGE_WAIT_MS;
   let page = 0;
   while (Date.now() < until) {
-    page = await appGet("/daily")
+    page = await get("/daily")
       .then((r) => r.status)
       .catch(() => 0);
     if (page === 200) break;
@@ -387,7 +404,7 @@ export const ship = async ({
   ok("page", "/daily 200");
 
   // 7. state
-  const after = await appGet("/api/daily/state").catch(noAnswer);
+  const after = await get("/api/daily/state").catch(noAnswer);
   const same = (c) => (c ? `${c.day} ${c.state} ${c.updatedAt}` : "none");
   if (!after.ok || !after.json) {
     return fail("state", `GET /api/daily/state: HTTP ${after.status}`);
