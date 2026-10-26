@@ -8,6 +8,9 @@
  * ELIGIBILITY (Nil, 2026-10-25). Every seat must be a guest, an official bot
  * or Nil's own account. One seat held by any other signed-in member, or by a
  * bot that is not official, takes the whole game out. Every variant is in.
+ * AI VS HUMAN ONLY (Nil, 2026-10-26, through Wall Game PM): exactly one seat
+ * is an official bot, so the other is a guest or Nil; bot vs bot and human vs
+ * human are out.
  * Puzzle attempts are out: they start from an authored position and are a
  * solve, not a game. Fewer than MIN_PLIES moves is out: see the constant.
  *
@@ -35,17 +38,26 @@ import { classifyPastGamePlayer } from "../../server/db/past-game-player-kind";
 import { botCapabilityVariant } from "../../shared/domain/bot-capability";
 import { GameState } from "../../shared/domain/game-state";
 import type {
+  Cell,
   GameConfiguration,
   GameInitialState,
+  GamePawns,
   PawnType,
   PlayerId,
   Variant,
+  WallPosition,
 } from "../../shared/domain/game-types";
+import type { Grid } from "../../shared/domain/grid";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
-import { pawnCell, requirePawnCell } from "../../shared/domain/pawns";
+import {
+  boardPawns,
+  pawnCell,
+  requirePawnCell,
+} from "../../shared/domain/pawns";
 import {
   cellToStandardNotation,
   moveFromStandardNotation,
+  wallToStandardNotation,
 } from "../../shared/domain/standard-notation";
 import {
   executableRulesFor,
@@ -153,6 +165,9 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
     if (!verdict.ok) return { eligible: false, reason: verdict.reason };
     seatKinds.push(verdict.kind);
   }
+  const bots = seatKinds.filter((kind) => kind === "official bot").length;
+  if (bots === 0) return { eligible: false, reason: "human vs human" };
+  if (bots === 2) return { eligible: false, reason: "bot vs bot" };
   return { eligible: true, seatKinds };
 };
 
@@ -279,11 +294,15 @@ export const raceDistances = (state: GameState): RaceDistances =>
 
 /** Each hunt's walk in one position, in huntsFor order. */
 const huntWalks = (state: GameState): number[] =>
-  huntsFor(state.config.variant).map((hunt) => {
-    const hunter = pawnCell(state.pawns, hunt.hunter.player, hunt.hunter.type);
-    const target = pawnCell(state.pawns, hunt.target.player, hunt.target.type);
+  walksOn(huntsFor(state.config.variant), state.grid, state.pawns);
+
+/** Each hunt's walk through `grid`, with the pawns at `pawns`. */
+const walksOn = (hunts: Hunt[], grid: Grid, pawns: GamePawns): number[] =>
+  hunts.map((hunt) => {
+    const hunter = pawnCell(pawns, hunt.hunter.player, hunt.hunter.type);
+    const target = pawnCell(pawns, hunt.target.player, hunt.target.type);
     if (!hunter || !target) throw new Error("a hunt names a missing pawn");
-    const walk = state.grid.distance(hunter, target);
+    const walk = grid.distance(hunter, target);
     if (walk < 0) throw new Error("a hunter cannot reach its target");
     return walk;
   });
@@ -375,6 +394,8 @@ export interface ReplayedGame {
   distances: RaceDistances[];
   /** One per hunt, with its walk and both cells in every position. */
   tracks: HuntTrack[];
+  /** One per position, like `distances`. */
+  states: GameState[];
 }
 
 export interface HuntTrack extends Hunt {
@@ -405,7 +426,9 @@ export const replayDistances = (game: ReplayableGame): ReplayedGame => {
   }));
   const movers: PlayerId[] = [];
   const distances: RaceDistances[] = [];
+  const states: GameState[] = [];
   const read = () => {
+    states.push(state);
     const walks = huntWalks(state);
     distances.push(raceFromWalks(hunts, walks));
     tracks.forEach((track, i) => {
@@ -431,7 +454,7 @@ export const replayDistances = (game: ReplayableGame): ReplayedGame => {
     movers.push(playerId);
     read();
   });
-  return { movers, distances, tracks };
+  return { movers, distances, tracks, states };
 };
 export interface DistanceJump {
   /** 0-based index into the stored move list. */
@@ -502,8 +525,8 @@ export const pickJumps = (
   return picks;
 };
 
-/** A pick with its plain line; what the CLI writes in `picks`. */
-export type PickedJump = DistanceJump & { description: string };
+/** A pick with its board facts and plain line; what the CLI writes in `picks`. */
+export type PickedJump = DistanceJump & PlyBoard & { description: string };
 
 /** Wall actions in one move's notation (">e4" or "^e4", see standard-notation.ts). */
 const wallCount = (notation: string): number =>
@@ -538,6 +561,144 @@ export const describeJump = (
     ? `${mover}'s own ${by} ${verb} ${mover} walk ${squares(ownChange)} (${pick.ownBefore} to ${pick.ownAfter}).`
     : `${mover}'s ${by} cuts ${mover}'s own walk by ${-ownChange} (${pick.ownBefore} to ${pick.ownAfter}).`;
 };
+
+/* ------------------------------------------------- what to zoom at -- */
+
+/*
+ * WHERE THE MOMENT IS ON THE BOARD (Wall Game PM, 2026-10-26: the zoom aimed
+ * at the wrong one of two walls). A move can put down two walls, and often
+ * only one of them is in the hunter's way. So each wall of the ply is measured
+ * ALONE: the position after the ply (pawns where they end), with the walls of
+ * before the ply plus only that wall, against the same position with none of
+ * the ply's walls. The wall whose own change is the largest and makes the
+ * whole change of all the ply's walls is the cause. When no single wall does
+ * that, the walls work only together, and all of them are the cause (a move
+ * has at most two actions, so that is both walls). When no wall adds
+ * anything, no wall is the cause: the pawns make the moment.
+ */
+
+/** One wall put down on a ply. */
+export interface PlacedWall {
+  /** Standard notation: ">e4" is right of e4, "^e4" is above e4. */
+  notation: string;
+  /** The two cells the wall separates, in standard notation. */
+  between: [string, string];
+  /** The change this wall makes alone, in the measure of the moment. */
+  alone: number;
+  /** A wall the zoom aims at. */
+  cause: boolean;
+}
+
+/** Where one pawn stands before and after a ply, in standard notation. */
+export interface PawnPlace {
+  player: PlayerId;
+  type: PawnType;
+  before: string;
+  after: string;
+}
+
+/** The board facts of one ply, for the zoom and the director. */
+export interface PlyBoard {
+  /** Every pawn on the board, in the board's own order. */
+  pawns: PawnPlace[];
+  /** The walls put down on the ply, in notation order; [] for none. */
+  walls: PlacedWall[];
+  /** The change all the ply's walls make together. */
+  wallsChange: number;
+  /** True when no single wall makes the whole wallsChange. */
+  together: boolean;
+}
+
+const wallSides = (wall: WallPosition): [Cell, Cell] => {
+  const [r, c] = wall.cell;
+  return wall.orientation === "vertical"
+    ? [
+        [r, c],
+        [r, c + 1],
+      ]
+    : [
+        [r - 1, c],
+        [r, c],
+      ];
+};
+
+/** Every pawn before and after `ply`. */
+const pawnsOn = (replay: ReplayedGame, ply: number): PawnPlace[] => {
+  const before = replay.states[ply];
+  const after = boardPawns(replay.states[ply + 1].pawns);
+  const cell = (c: Cell) =>
+    cellToStandardNotation(c, before.config.boardHeight);
+  return boardPawns(before.pawns).map((pawn, i) => ({
+    player: pawn.playerId,
+    type: pawn.type,
+    before: cell(pawn.cell),
+    after: cell(after[i].cell),
+  }));
+};
+
+/**
+ * The board facts of `ply`. `measure` turns each hunt's walk (huntsFor order)
+ * into the number the moment is about, larger = more of the moment.
+ */
+const plyBoardOf = (
+  replay: ReplayedGame,
+  ply: number,
+  notation: string,
+  measure: (walks: number[]) => number,
+): PlyBoard => {
+  const before = replay.states[ply];
+  const after = replay.states[ply + 1];
+  const height = before.config.boardHeight;
+  const cell = (c: Cell) => cellToStandardNotation(c, height);
+  const placed: WallPosition[] = moveFromStandardNotation(
+    notation,
+    height,
+  ).actions.flatMap((a) =>
+    a.type === "wall" && a.wallOrientation
+      ? [{ cell: a.target, orientation: a.wallOrientation }]
+      : [],
+  );
+  const measureWith = (walls: WallPosition[]) => {
+    const grid = before.grid.clone();
+    for (const wall of walls) grid.addWall(wall);
+    return measure(walksOn(replay.tracks, grid, after.pawns));
+  };
+  const none = measureWith([]);
+  const alone = placed.map((wall) => measureWith([wall]) - none);
+  const wallsChange = placed.length === 0 ? 0 : measureWith(placed) - none;
+  const best = Math.max(0, ...alone);
+  const together = placed.length > 1 && best < wallsChange;
+  // When no wall adds anything, best is 0 and the pawns make the moment.
+  const cause = alone.map(
+    (change) => together || (best > 0 && change === best),
+  );
+  return {
+    pawns: pawnsOn(replay, ply),
+    walls: placed.map((wall, i) => ({
+      notation: wallToStandardNotation(wall, height),
+      between: wallSides(wall).map(cell) as [string, string],
+      alone: alone[i],
+      cause: cause[i],
+    })),
+    wallsChange,
+    together,
+  };
+};
+
+/**
+ * The board facts of a pick. The measure is the mover's race, turned so that
+ * the jump's own direction counts up: for a wall the mover puts in their own
+ * hunter's way (a negative jump), the cause is that wall.
+ */
+export const pickBoard = (replay: ReplayedGame, pick: DistanceJump): PlyBoard =>
+  plyBoardOf(
+    replay,
+    pick.ply,
+    pick.notation,
+    (walks) =>
+      Math.sign(pick.jump) *
+      raceFor(raceFromWalks(replay.tracks, walks), pick.mover),
+  );
 
 /* ----------------------------------------------------------- close calls -- */
 
@@ -574,14 +735,19 @@ export interface BeatMoment {
   /** Both pawns after this ply, in standard notation. */
   hunterCell: string;
   preyCell: string;
+  /** Every pawn before and after this ply. */
+  pawns: PawnPlace[];
 }
 
 export interface CloseCall {
   hunter: PawnRef;
   prey: PawnRef;
   danger: BeatMoment;
-  /** `walk` is after the save; the walk before it is the danger-side value. */
-  save: BeatMoment & { walkBefore: number };
+  /**
+   * `walk` is after the save; the walk before it is the danger-side value.
+   * The walls are measured on this hunt's walk.
+   */
+  save: BeatMoment & PlyBoard & { walkBefore: number };
   relief: BeatMoment;
   /** save.walk - save.walkBefore. */
   size: number;
@@ -596,8 +762,8 @@ export const closeCallsOf = (
   moves: string[],
 ): CloseCall[] => {
   const found: CloseCall[] = [];
-  for (const track of replay.tracks) {
-    if (track.target.type === "home") continue;
+  replay.tracks.forEach((track, hunt) => {
+    if (track.target.type === "home") return;
     const moment = (ply: number): BeatMoment => ({
       ply,
       moveNumber: ply + 1,
@@ -605,6 +771,7 @@ export const closeCallsOf = (
       walk: track.walks[ply + 1],
       hunterCell: track.hunterCells[ply + 1],
       preyCell: track.targetCells[ply + 1],
+      pawns: pawnsOn(replay, ply),
     });
     for (let danger = 0; danger < moves.length; danger++) {
       const close = track.walks[danger + 1];
@@ -622,14 +789,18 @@ export const closeCallsOf = (
           hunter: track.hunter,
           prey: track.target,
           danger: moment(danger),
-          save: { ...moment(save), walkBefore: track.walks[save] },
+          save: {
+            ...moment(save),
+            ...plyBoardOf(replay, save, moves[save], (walks) => walks[hunt]),
+            walkBefore: track.walks[save],
+          },
           relief: moment(save + 1),
           size: rise,
         });
         break;
       }
     }
-  }
+  });
   const kept: CloseCall[] = [];
   for (const call of found.sort(
     (a, b) => b.size - a.size || a.danger.ply - b.danger.ply,
@@ -668,7 +839,10 @@ export interface RankedCandidate {
 
 /**
  * A game with a close call first, by its largest save; then the largest pick,
- * the second and the third; then the game id.
+ * the second and the third; then the game id. Every game with a close call
+ * ranks above every game without one, however large its jumps (Wall Game PM,
+ * 2026-10-26): the close call (scared, the FAAAH wall, the laugh) is the story
+ * of the video, and a game without one has no payoff beat.
  */
 export const rankCandidates = <T extends RankedCandidate>(
   candidates: T[],

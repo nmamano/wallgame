@@ -17,6 +17,7 @@ import {
   minJumpFor,
   MIN_PLIES,
   NIL_USER_ID,
+  pickBoard,
   pickJumps,
   rankCandidates,
   replayDistances,
@@ -101,10 +102,20 @@ describe("seat eligibility", () => {
       eligible: true,
       seatKinds: ["guest", "official bot"],
     });
-    expect(gameEligibility(game(nil, guest)).eligible).toBe(true);
-    expect(gameEligibility(game(member, guest)).eligible).toBe(false);
-    expect(gameEligibility(game(guest, member)).eligible).toBe(false);
-    expect(gameEligibility(game(nil, member)).eligible).toBe(false);
+    expect(gameEligibility(game(officialBot, nil)).eligible).toBe(true);
+    expect(gameEligibility(game(member, officialBot)).eligible).toBe(false);
+    expect(gameEligibility(game(officialBot, member)).eligible).toBe(false);
+  });
+
+  test("only AI vs human: one official bot and one guest or Nil", () => {
+    expect(gameEligibility(game(nil, guest))).toEqual({
+      eligible: false,
+      reason: "human vs human",
+    });
+    expect(gameEligibility(game(officialBot, officialBot))).toEqual({
+      eligible: false,
+      reason: "bot vs bot",
+    });
   });
 
   test("a game won on the clock is out; a capture or a resignation is in", () => {
@@ -120,10 +131,11 @@ describe("seat eligibility", () => {
 
   test("short games and puzzle attempts are out", () => {
     expect(
-      gameEligibility(game(guest, guest, { movesCount: MIN_PLIES })).eligible,
+      gameEligibility(game(guest, officialBot, { movesCount: MIN_PLIES }))
+        .eligible,
     ).toBe(true);
     expect(
-      gameEligibility(game(guest, guest, { movesCount: MIN_PLIES - 1 }))
+      gameEligibility(game(guest, officialBot, { movesCount: MIN_PLIES - 1 }))
         .eligible,
     ).toBe(false);
     expect(
@@ -240,6 +252,30 @@ describe("distance jumps", () => {
     initialState: corridor,
     moves: [">a4.>a3", "Ca2"],
   };
+
+  test("a pick names the one wall that makes its jump, and the pawns", () => {
+    // >a4 alone makes P1's cat walk 5 (+2). ^b2 is out of every way (0).
+    const moves = [">a4.^b2", "Ca2"];
+    const replay = replayDistances({ ...game, moves });
+    const [wall, step] = jumpsOf(replay.distances, moves, replay.movers);
+    expect(pickBoard(replay, wall)).toMatchObject({
+      walls: [
+        { notation: ">a4", between: ["a4", "b4"], alone: 2, cause: true },
+        { notation: "^b2", between: ["b3", "b2"], alone: 0, cause: false },
+      ],
+      wallsChange: 2,
+      together: false,
+    });
+    // A plain step: no walls, and the cat's two cells.
+    const board = pickBoard(replay, step);
+    expect(board.walls).toEqual([]);
+    expect(board.pawns).toContainEqual({
+      player: 1,
+      type: "cat",
+      before: "a4",
+      after: "a2",
+    });
+  });
 
   test("a wall that forces a walk-around is a big jump; a plain advance is +2", () => {
     const { movers, distances } = replayDistances(game);
@@ -460,6 +496,43 @@ describe("close calls", () => {
     expect(describeCloseCall(call, { 1: "Easy Bot", 2: "Guest Quokka" })).toBe(
       "Easy Bot's cat gets 1 square from Guest Quokka's mouse. Walls make it walk 5 (move 2), and the mouse is safe.",
     );
+  });
+
+  test("the save names its walls; both are the cause when only both make it", () => {
+    const [call] = play(["Cc4", ">c4.>c3", "Cc3"]);
+    // >c4 alone: down, right, up = 3 (+2). >c3 alone leaves c4-d4 open (0).
+    // Both: 5 (+4), more than either alone, so the zoom takes both.
+    expect(call.save.walls).toEqual([
+      { notation: ">c4", between: ["c4", "d4"], alone: 2, cause: true },
+      { notation: ">c3", between: ["c3", "d3"], alone: 0, cause: true },
+    ]);
+    expect(call.save).toMatchObject({ wallsChange: 4, together: true });
+    // A wall move leaves every pawn where it was.
+    for (const pawn of call.save.pawns) expect(pawn.after).toBe(pawn.before);
+    expect(call.danger.pawns).toContainEqual({
+      player: 1,
+      type: "cat",
+      before: "a4",
+      after: "c4",
+    });
+  });
+
+  test("a save two moves after the danger, when the prey's owner made the danger", () => {
+    // P2 to move. Mc4: P2's mouse steps to [0,2], 2 from P1's cat [0,0]
+    // (danger, was 3). Md2: P1 moves its own mouse, the cat stays close.
+    // >b4.>b3: the cat must go round below row 2: 6. Ca3: still 5 (relief).
+    const replay = replayDistances({
+      variant: "standard",
+      boardWidth: 4,
+      boardHeight: 4,
+      initialState: { ...start, turn: { playerId: 2, actionsTaken: [] } },
+      moves: ["Mc4", "Md2", ">b4.>b3", "Ca3"],
+    });
+    const calls = closeCallsOf(replay, ["Mc4", "Md2", ">b4.>b3", "Ca3"]);
+    expect(calls).toHaveLength(1);
+    expect(calls[0].danger).toMatchObject({ ply: 0, walk: 2 });
+    expect(calls[0].save).toMatchObject({ ply: 2, walkBefore: 2, walk: 6 });
+    expect(calls[0].relief).toMatchObject({ ply: 3, walk: 5 });
   });
 
   test("no close call when the prey only steps away, or the save is the last move", () => {

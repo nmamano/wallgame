@@ -52,6 +52,7 @@ import {
   closeCallsOf,
   describeCloseCall,
   describeJump,
+  pickBoard,
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
@@ -63,6 +64,7 @@ import {
   swingsOf,
   type DescribedCloseCall,
   type PickedJump,
+  type PlyBoard,
   type RaceDistances,
   type SeatKind,
   type StoredGameSummary,
@@ -451,6 +453,13 @@ interface Candidate {
 
 const walk = (n: number | null) => (n === null ? "-" : String(n));
 
+/** The walls the zoom aims at, e.g. "zoom >e4" or "zoom >e4 + ^f5 together". */
+const zoom = (board: PlyBoard): string => {
+  const causes = board.walls.filter((w) => w.cause).map((w) => w.notation);
+  if (causes.length === 0) return "zoom: no wall, the pawns";
+  return `zoom ${causes.join(" + ")}${board.together ? " together" : ""}`;
+};
+
 const describe = (c: Candidate, rank: number): string => {
   const seats = c.seats
     .map((s) => `P${s.playerOrder} ${s.name} (${s.kind})`)
@@ -462,14 +471,14 @@ const describe = (c: Candidate, rank: number): string => {
   ];
   for (const b of c.beats) {
     lines.push(
-      `   close call: danger move ${b.danger.moveNumber} (walk ${b.danger.walk}), save move ${b.save.moveNumber} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${b.relief.moveNumber} (walk ${b.relief.walk})`,
+      `   close call: danger move ${b.danger.moveNumber} (walk ${b.danger.walk}), save move ${b.save.moveNumber} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${b.relief.moveNumber} (walk ${b.relief.walk}), ${zoom(b.save)}`,
       `     ${b.description}`,
     );
   }
   for (const p of c.picks) {
     const sign = p.jump >= 0 ? "+" : "";
     lines.push(
-      `   move ${p.moveNumber} by P${p.mover} ${p.notation}: jump ${sign}${p.jump} (mover's walk ${walk(p.ownBefore)} -> ${walk(p.ownAfter)}, opponent's ${walk(p.opponentBefore)} -> ${walk(p.opponentAfter)})`,
+      `   move ${p.moveNumber} by P${p.mover} ${p.notation}: jump ${sign}${p.jump} (mover's walk ${walk(p.ownBefore)} -> ${walk(p.ownAfter)}, opponent's ${walk(p.opponentBefore)} -> ${walk(p.opponentAfter)}), ${zoom(p)}`,
       `     ${p.description}`,
     );
   }
@@ -539,6 +548,7 @@ const main = async () => {
           picks: pickJumps(jumpsOf(distances, moves, movers), minJump).map(
             (p) => ({
               ...p,
+              ...pickBoard(replay, p),
               description: describeJump(p, names),
             }),
           ),
