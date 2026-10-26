@@ -70,13 +70,20 @@ already has a cycle, finish it or stop: do not start another. `pick
    `crew.mjs copy`. The app checks every limit when the block comes in.
    `status` shows the stored block. You do not write or change post text.
 
-8. `ask --agent <your agent id>`
+8. Before you ask, check the FINAL file that Nil gets, from start to end:
+   the MP4 that `status` names, not only the parts it was built from (the
+   sheet, the strips, a preview). Nil, 2026-10-26: "don't waste my time".
+   Check every still, the opening and the banner's exit, each sound at its
+   moment, and the ending. If one is wrong, fix it before the ask.
+
+   `ask --agent <your agent id>`
    This opens Nil's ask with the video, the sheet and the stored block,
    word for word, under "Post text (by Growth)". `ask` refuses without a
    block. The ask opens for Nil, not for your manager, and `ask` prints who
    it opened for. If an open ask went to anyone else, run
    `ask --agent <your agent id> --reopen`: it opens the same ask for Nil and
    withdraws the old one. After the ask opens, the block cannot change.
+
 9. When Nil answers, run `answer` (the rule is in the crew.mjs header). On
    an approval, `answer` prints the APPROVED PACKAGE: the day, the video's
    path and sha256, the block as approved, the ask id and Nil's reply word
@@ -306,6 +313,12 @@ Rules:
   above). Whether and where to use it is your choice.
 - Do not use `coldOpenPly` (Nil, 2026-10-26: "the initial 1s hook doesn't
   work for me, it's too confusing. cut it").
+- Pace the video by its moments (Nil liked this in the first video,
+  2026-10-26). Set it with `pace` ranges (the default is 0.8 s per move):
+  - slow, about 1.2 s per move, on the plies around a close call;
+  - fast, about 0.45 s per move (or a `fastForward` range at x3), in the
+    dull stretches;
+  - slower again, about 0.9 s per move, on the moves before the end.
 - `fastForward` shortens a video: put `"fastForward": true` on a pace range
   of quiet plies (no close call, no escape and no wall jump in `facts`). Use
   0.3 s per move (the video shows "x3") by default, and 0.2 s ("x4") only
