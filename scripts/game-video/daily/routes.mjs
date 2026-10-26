@@ -82,6 +82,7 @@ import {
   captionLinesVerdict,
 } from "./quality.mjs";
 import {
+  claimRisk,
   openSoundPicks,
   soundList,
   soundFile,
@@ -654,6 +655,13 @@ export const createDaily = ({
       const checked = validateEdl(body.edl);
       if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
       const { edl } = checked;
+      const claimRiskOk = body.claimRiskOk ?? [];
+      if (!Array.isArray(claimRiskOk) || !claimRiskOk.every(claimRisk)) {
+        throw new StepRefused(
+          "claimRiskOk is a list of sounds with a high claim risk",
+        );
+      }
+      const risk = claimRiskLines(edl, claimRiskOk);
       if (edl.gameId !== cycle.candidate.gameId) {
         throw new StepRefused(
           `the list is for ${edl.gameId}, but the day's game is ${cycle.candidate.gameId}`,
@@ -685,6 +693,7 @@ export const createDaily = ({
         }),
         ...saveFrameProblems(edl, cycle.candidate.beats),
         ...storyProblems(edl, cycle.candidate),
+        ...risk.problems,
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
         ...(edl.coldOpenPly === null
@@ -720,6 +729,7 @@ export const createDaily = ({
           summary: [
             ...edlSummary(edl),
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
+            ...risk.notes,
           ],
         }),
       );
@@ -906,6 +916,38 @@ export const createDaily = ({
   };
 
   return { handle, store, post, stop };
+};
+
+/**
+ * The uses of a sound with a high claim risk. A use is a problem unless its
+ * key is in `ok` (the director accepted it on purpose); then it is a note
+ * for the summary. A key in `ok` that the list does not use is a problem.
+ */
+export const claimRiskLines = (edl, ok) => {
+  const uses = [
+    ...Object.keys(DEFAULT_SLOT_SOUNDS).map((slot) => [slot, edl[slot]]),
+    ...edl.events
+      .filter((e) => e.sound !== undefined)
+      .map((e) => [`ply ${e.ply}`, e.sound]),
+  ].filter(([, key]) => claimRisk(key));
+  return {
+    problems: [
+      ...uses
+        .filter(([, key]) => !ok.includes(key))
+        .map(
+          ([where, key]) =>
+            `${where}: ${key}: ${claimRisk(key)}; name another sound (crew.mjs sounds)`,
+        ),
+      ...ok
+        .filter((key) => !uses.some(([, k]) => k === key))
+        .map((key) => `claimRiskOk names ${key}, but the list does not use it`),
+    ],
+    notes: uses
+      .filter(([, key]) => ok.includes(key))
+      .map(
+        ([where, key]) => `${where} uses ${key} on purpose: ${claimRisk(key)}`,
+      ),
+  };
 };
 
 /**

@@ -25,10 +25,16 @@
  *                                  preference: best, ok or disliked, which he
  *                                  sets by ear on the app's /daily/sounds
  *                                  page. Prefer best, then ok; `direct`
- *                                  allows a disliked one and names it
- *   direct --edl F                 the director's edit decision list for the
+ *                                  allows a disliked one and names it. A
+ *                                  sound with a high claim risk is listed
+ *                                  last, and `direct` refuses it
+ *   direct --edl F [--claim-risk-ok K,K]
+ *                                  the director's edit decision list for the
  *                                  picked game (scripts/game-video/edl.mjs);
- *                                  `status` names the default ending
+ *                                  `status` names the default ending.
+ *                                  --claim-risk-ok accepts those sounds with
+ *                                  a high claim risk on purpose (only when
+ *                                  Nil asks for one)
  *   render [--wait] [--force]      a 4090 render of the list; --wait polls until
  *                                  it ends. A second render of a game needs
  *                                  --force: each render adds one view to the
@@ -290,8 +296,9 @@ const commands = {
   },
 
   /**
-   * Each family's moment and sounds: best, then ok, then disliked. A source
-   * note (a claim risk, a weaker source) follows its key in brackets.
+   * Each family's moment and sounds: best, then ok, then disliked, then the
+   * ones with a high claim risk (with their level). A source note (a claim
+   * risk, a weaker source) follows its key in brackets.
    */
   async sounds() {
     const sounds = await app("GET", "/api/daily/sounds");
@@ -299,11 +306,14 @@ const commands = {
       const members = sounds.filter((x) => x.family === family);
       const names = (choice) =>
         members
-          .filter((x) => x.choice === choice)
+          .filter((x) => x.choice === choice && !x.claimRisk)
           .map((x) => (x.note ? `${x.key} [${x.note}]` : x.key))
           .join(", ") || "-";
+      const risky = members
+        .filter((x) => x.claimRisk)
+        .map((x) => `${x.key} (${x.choice}) [${x.note}]`);
       console.log(
-        `${family} (${members[0].moment ?? "no moment"}): best ${names("best")}; ok ${names("ok")}; disliked ${names("disliked")}`,
+        `${family} (${members[0].moment ?? "no moment"}): best ${names("best")}; ok ${names("ok")}; disliked ${names("disliked")}${risky.length ? `; claim risk, refused: ${risky.join(", ")}` : ""}`,
       );
     }
     for (const x of sounds.filter((s) => s.defaultFor)) {
@@ -410,6 +420,7 @@ const commands = {
     await app("POST", "/api/daily/direct", {
       day,
       edl: JSON.parse(readFileSync(path, "utf8")),
+      claimRiskOk: flag("claim-risk-ok")?.split(",") ?? [],
     });
     console.log(summary(await state()));
   },

@@ -148,6 +148,11 @@ already has a cycle, finish it or stop: do not start another. `pick
   fits the moment clearly better, and say why in the ask's note. `direct`
   allows it and adds a line ("uses disliked laugh-3: Nil's preference,
   allowed") to the edit list that the ask shows.
+- Claim risk is a separate rule from Nil's taste. Never use a sound with a
+  high claim risk (`crew.mjs sounds` lists it last, under "claim risk,
+  refused") in a video for a post: a claim can block or mute the post.
+  `direct` refuses it. `--claim-risk-ok <key>` accepts one on purpose, only
+  when Nil asks for that sound.
 
 ## Captions and titles
 

@@ -1653,6 +1653,26 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
   );
   expect((await pickSound("ok")).status).toBe(200);
+  // A sound with a high claim risk is refused whatever Nil's level, and
+  // allowed only on purpose; the summary then names it.
+  const risky = (claimRiskOk?: unknown) =>
+    call("/api/daily/direct", {
+      day,
+      edl: { ...EDL, vsSound: "win-2" },
+      ...(claimRiskOk === undefined ? {} : { claimRiskOk }),
+    });
+  const riskRefused = await risky();
+  expect(riskRefused.status).toBe(409);
+  expect(JSON.stringify(riskRefused.body)).toContain(
+    "vsSound: win-2: high claim risk: a Rockstar Games music sting",
+  );
+  expect((await risky(["boom-2"])).status).toBe(409);
+  expect((await risky("win-2")).status).toBe(409);
+  const onPurpose = await risky(["win-2"]);
+  expect(onPurpose.status).toBe(200);
+  expect(JSON.stringify(onPurpose.body)).toContain(
+    "vsSound uses win-2 on purpose: high claim risk: a Rockstar Games music sting",
+  );
   // What the video says must match the counter, and the payoff goes out too.
   const told = (edl: Record<string, unknown>) =>
     call("/api/daily/direct", { day, edl: { ...EDL, ...edl } });

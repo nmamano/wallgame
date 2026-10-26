@@ -15,6 +15,11 @@
  * then ok. POST /api/daily/direct allows a disliked sound and adds one line
  * for each one to the list's summary, which the ask shows (routes.mjs).
  *
+ * CLAIM RISK IS NOT TASTE. A sound that meme-sounds.md rates as a high claim
+ * risk (its MEME_SOURCE_NOTES note) keeps its level, but `direct` refuses it
+ * unless the director accepts it on purpose (Wall Game Director,
+ * 2026-10-26).
+ *
  * TWO SOUNDS ARE DEFAULTS. The VS card and the finish play
  * DEFAULT_SLOT_SOUNDS (edl.mjs) unless the director's list names its own
  * (vsSound, finishSound). The page labels those rows.
@@ -65,6 +70,14 @@ export const CHOICES = ["best", "ok", "disliked"];
 const RENAMED = { keep: "best", drop: "disliked" };
 
 const known = (key) => Object.hasOwn(MEME_SOUNDS, key);
+
+/** The note of a sound rated a high claim risk, or null. */
+export const claimRisk = (key) => {
+  const note = Object.hasOwn(MEME_SOURCE_NOTES, key)
+    ? MEME_SOURCE_NOTES[key]
+    : null;
+  return note?.startsWith("high claim risk") ? note : null;
+};
 
 /** The choices, kept in `<root>/sound-picks.json`. */
 export const openSoundPicks = (root) => {
@@ -131,6 +144,7 @@ export const soundList = (picks, dir = MEME_DIR, defaults = defaultSlots()) =>
       level: memeLevel(key),
       choice: picks[key]?.choice ?? "ok",
       note: MEME_SOURCE_NOTES[key] ?? null,
+      claimRisk: claimRisk(key) !== null,
       defaultFor: defaults[key] ?? null,
       file: existsSync(join(dir, `${key}.mp3`)),
     };

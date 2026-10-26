@@ -20,13 +20,14 @@ import {
   memeLevel,
 } from "../meme-sounds.mjs";
 import {
+  claimRisk,
   openSoundPicks,
   soundFile,
   soundList,
   defaultSlots,
   MEME_DIR,
 } from "./sounds.mjs";
-import { createDaily, dislikedSoundNotes } from "./routes.mjs";
+import { claimRiskLines, createDaily, dislikedSoundNotes } from "./routes.mjs";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "meme-sounds-test-"));
 const keys = Object.keys(MEME_SOUNDS) as (keyof typeof MEME_SOUNDS)[];
@@ -167,6 +168,54 @@ describe("best, ok or disliked", () => {
     expect(dislikedSoundNotes(edl, ["shotgun-2"])).toEqual([
       "finishSound uses disliked shotgun-2: Nil's preference, allowed",
     ]);
+  });
+});
+
+describe("claim risk", () => {
+  test("only the notes that say high claim risk count, and the list shows it", () => {
+    const risky = Object.keys(MEME_SOUNDS).filter((k) => claimRisk(k));
+    expect(risky.sort()).toEqual([
+      "laugh-1",
+      "shotgun-1",
+      "shotgun-4",
+      "win-2",
+    ]);
+    expect(claimRisk("shotgun-1")).toBe(MEME_SOURCE_NOTES["shotgun-1"]);
+    expect(claimRisk("boom-2")).toBeNull();
+    expect(claimRisk("toString")).toBeNull();
+    expect(claimRisk(undefined)).toBeNull();
+    // The level is Nil's taste and stays as it is.
+    const list = soundList({ "laugh-1": { choice: "best", at: "x" } });
+    const laugh = list.find((s) => s.key === "laugh-1");
+    expect([laugh?.choice, laugh?.claimRisk]).toEqual(["best", true]);
+    expect(list.find((s) => s.key === "laugh-2")?.claimRisk).toBe(false);
+  });
+
+  test("a use is refused unless accepted on purpose, then it is a note", () => {
+    const edl = {
+      vsSound: "shotgun-1",
+      finishSound: "shotgun-2",
+      events: [
+        { ply: 3, kind: "sound", sound: "laugh-1" },
+        { ply: 5, kind: "laugh" },
+      ],
+    };
+    expect(claimRiskLines(edl, [])).toEqual({
+      problems: [
+        "vsSound: shotgun-1: high claim risk: names Fortnite (Epic Games); name another sound (crew.mjs sounds)",
+        "ply 3: laugh-1: high claim risk: a clip of The Simpsons; name another sound (crew.mjs sounds)",
+      ],
+      notes: [],
+    });
+    expect(claimRiskLines(edl, ["laugh-1", "win-2"])).toEqual({
+      problems: [
+        "vsSound: shotgun-1: high claim risk: names Fortnite (Epic Games); name another sound (crew.mjs sounds)",
+        "claimRiskOk names win-2, but the list does not use it",
+      ],
+      notes: [
+        "ply 3 uses laugh-1 on purpose: high claim risk: a clip of The Simpsons",
+      ],
+    });
   });
 });
 
