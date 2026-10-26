@@ -1,4 +1,7 @@
 /**
+ * Not wired: Nil skipped Mastodon, ask 3ed3cdb1, 2026-10-26. The module and
+ * its tests stay, so it can be wired again; no route, mode or ask uses it.
+ *
  * Post one video to Mastodon: upload it as a media attachment, wait until the
  * server has processed it, then post a status that carries it.
  *

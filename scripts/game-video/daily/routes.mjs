@@ -149,12 +149,6 @@ import {
   THREADS_SECRETS,
 } from "./post-threads.mjs";
 import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
-import {
-  postToMastodon,
-  mastodonDryRunReply,
-  DRY_RUN_MASTODON,
-  MASTODON_SECRETS,
-} from "./post-mastodon.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { connectStates, ConnectRefused } from "./connect-state.mjs";
 import {
@@ -193,7 +187,6 @@ const SECRETS = {
   // Threads fetches the video from R2 (public-url-r2.mjs), so it is live
   // only when the R2 secrets exist too (Wall Game PM, 2026-10-26).
   threads: [...THREADS_SECRETS, ...R2_SECRETS],
-  mastodon: MASTODON_SECRETS,
 };
 
 /** Every secret a poster reads; a test strips them so it cannot post. */
@@ -224,7 +217,6 @@ const DRY_RUN_REPLIES = {
   facebook: (req) => metaDryRunReply(req) ?? facebookDryRunReply(req),
   bluesky: blueskyDryRunReply,
   threads: threadsDryRunReply,
-  mastodon: mastodonDryRunReply,
 };
 
 /** Why a Connect request without an office member is refused. */
@@ -859,15 +851,6 @@ export const createDaily = ({
             creds: live
               ? { userId: stored("threads", (r) => r.account.id) }
               : DRY_RUN_THREADS,
-            sleep,
-            beforeCommit,
-          }),
-        mastodon: () =>
-          postToMastodon({
-            video,
-            text: texts.mastodon,
-            transport,
-            creds: live ? env : DRY_RUN_MASTODON,
             sleep,
             beforeCommit,
           }),
@@ -1655,7 +1638,7 @@ const DASHBOARD = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game daily video</h1>
-  <p class="sub">One game a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky, Threads and Mastodon. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
+  <p class="sub">One game a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
     <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
   <h2>Candidate</h2><div id="cand" class="box"></div>
@@ -1698,7 +1681,7 @@ const DASHBOARD = `<!doctype html>
           ? [el("div", "muted", "Post text by Wall Game Growth (" + c.copy.version + ")"),
              ...[["X", "x"], ["YouTube title (the app adds #Shorts)", "youtubeTitle"], ["YouTube description", "youtubeDescription"],
                  ["TikTok", "tiktok"], ["Instagram", "instagram"], ["Facebook", "facebook"],
-                 ["Bluesky", "bluesky"], ["Threads", "threads"], ["Mastodon", "mastodon"]]
+                 ["Bluesky", "bluesky"], ["Threads", "threads"]]
                .flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", c.copy[f])])]
           : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
         el("div", "muted", "style: " + c.style),

@@ -70,7 +70,6 @@ export const PLATFORMS = [
   "facebook",
   "bluesky",
   "threads",
-  "mastodon",
 ];
 
 /** The UTC day of an instant, as YYYY-MM-DD. */

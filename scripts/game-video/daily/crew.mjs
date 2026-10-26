@@ -84,7 +84,7 @@
  *                                  approval prints the APPROVED PACKAGE that
  *                                  the director sends to Wall Game Growth
  *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram|facebook|
- *                 bluesky|threads|mastodon]
+ *                 bluesky|threads]
  *                                  (Wall Game Growth) post the approved block:
  *                                  X, YouTube, the TikTok draft and the
  *                                  Instagram Reel (dry-run without keys)
@@ -301,7 +301,6 @@ const PLATFORM_NAMES = [
   ["facebook", "Facebook"],
   ["bluesky", "Bluesky"],
   ["threads", "Threads"],
-  ["mastodon", "Mastodon"],
 ];
 
 /**

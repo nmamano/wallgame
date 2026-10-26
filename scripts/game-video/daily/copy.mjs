@@ -9,7 +9,7 @@
  * copy); the Director's ask shows the stored block; on Nil's yes, Growth
  * posts that approved block (crew.mjs post).
  *
- * THE BLOCK is nine lines, each the exact text that posts (format by Growth
+ * THE BLOCK is eight lines, each the exact text that posts (format by Growth
  * Lead, ~/nil/growth/posting/README.md and wallgame.md):
  *
  *   X: <post text>
@@ -20,7 +20,6 @@
  *   Facebook: <caption>
  *   Bluesky: <post text>
  *   Threads: <post text>
- *   Mastodon: <post text>
  *
  * The app adds " #Shorts" to the YouTube title, and nothing else to any line.
  * TikTok takes no caption through the API: Nil pastes it in the inbox draft,
@@ -67,7 +66,6 @@ export const COPY_LINES = [
   ["Facebook", "facebook"],
   ["Bluesky", "bluesky"],
   ["Threads", "threads"],
-  ["Mastodon", "mastodon"],
 ];
 
 /** Growth's name for the style it wrote the block in, e.g. growth-copy-1. */
@@ -76,7 +74,7 @@ export const COPY_VERSION = /^[a-z0-9-]{1,40}$/;
 /**
  * @typedef {{ x: string, youtubeTitle: string, youtubeDescription: string,
  *   tiktok: string, instagram: string, facebook: string, bluesky: string,
- *   threads: string, mastodon: string }} CopyTexts
+ *   threads: string }} CopyTexts
  * @typedef {CopyTexts & { version: string }} Copy  a stored block
  */
 
@@ -115,7 +113,7 @@ export const xWeight = (text) =>
 const LINK = /https?:\/\/|www\.|\.(io|com|gg|net|org)\b/i;
 
 /**
- * The nine texts of a block, or the reasons it is not one. Blank lines and
+ * The eight texts of a block, or the reasons it is not one. Blank lines and
  * the space around a line are ignored; every other line must be one label
  * and its text, and each label must come once.
  * @returns {{ copy: CopyTexts | null, problems: string[] }}
@@ -207,12 +205,12 @@ export const copyProblems = (copy, gameId, players = []) => {
       problems.push(`${label} is over ${CAPTION_MAX_CHARS} characters`);
     }
   }
-  // Growth Lead, 2026-10-26: Bluesky and Mastodon carry the tracked link;
-  // Facebook and Threads start without one, and a link there is not refused.
-  // On all four, a link must be the platform's tracked link, or the post
-  // log could not tell where a visit came from.
+  // Growth Lead, 2026-10-26: Bluesky carries the tracked link; Facebook
+  // and Threads start without one, and a link there is not refused. On all
+  // three, a link must be the platform's tracked link, or the post log could
+  // not tell where a visit came from.
   for (const [label, field] of COPY_LINES.filter(([, f]) =>
-    ["facebook", "bluesky", "threads", "mastodon"].includes(f),
+    ["facebook", "bluesky", "threads"].includes(f),
   )) {
     problems.push(...textLimitProblems(field, copy[field]));
     const urls = findUrls(copy[field]);
@@ -239,14 +237,14 @@ export const copyProblems = (copy, gameId, players = []) => {
 };
 
 /**
- * The block as Growth wrote it: the nine labelled lines, in order.
+ * The block as Growth wrote it: the eight labelled lines, in order.
  * @param {CopyTexts} copy
  */
 export const copyLines = (copy) =>
   COPY_LINES.map(([label, field]) => `${label}: ${copy[field]}`);
 
 /**
- * The hash that binds an ask and an approval to a block: its nine texts
+ * The hash that binds an ask and an approval to a block: its eight texts
  * and its version, nothing else.
  * @param {Copy} copy
  */
@@ -273,5 +271,4 @@ export const postTexts = (copy) => ({
   facebook: copy.facebook,
   bluesky: copy.bluesky,
   threads: copy.threads,
-  mastodon: copy.mastodon,
 });

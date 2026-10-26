@@ -161,8 +161,8 @@ const BLOCK = [
   "Facebook: bro thought he could just walk home 😭🙏 #wallgame",
   `Bluesky: bro thought he could just walk home 😭🙏 ${trackedLink("bluesky")} #wallgame`,
   "Threads: bro thought he could just walk home 😭🙏 #wallgame",
-  `Mastodon: bro thought he could just walk home 😭🙏 ${trackedLink("mastodon")} #wallgame`,
 ].join("\n");
+const BLOCK_LINES = BLOCK.split("\n").length;
 const COPY_VERSION = "growth-copy-1";
 const COPY = { ...parseCopy(BLOCK).copy!, version: COPY_VERSION };
 const COPY_SHA = copySha256(COPY);
@@ -249,7 +249,6 @@ const DRY = {
   facebook: "dry-run",
   bluesky: "dry-run",
   threads: "dry-run",
-  mastodon: "dry-run",
 };
 
 /** A director's list for TESTGAME1: one zoom with a FAHHH on move 23. */
@@ -420,7 +419,6 @@ describe("a text-only rejection: a new block, the same video", () => {
       "facebook",
       "bluesky",
       "threads",
-      "mastodon",
     ]);
     expect((store.read(day) as Cycle).approval?.copy).toEqual(NEW);
   });
@@ -1012,11 +1010,14 @@ describe("an approval covers one video in one mode", () => {
       "Video sha256: aa",
       `Copy block as approved (${COPY_VERSION}, copy sha256 ${COPY_SHA}):`,
     ]);
-    expect(lines.slice(4, 13).join("\n")).toBe(BLOCK);
-    expect(lines[13]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
-    expect(lines[14]).toBe("Nil's reply, verbatim: Approve");
+    const end = 4 + BLOCK_LINES;
+    expect(lines.slice(4, end).join("\n")).toBe(BLOCK);
+    expect(lines[end]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
+    expect(lines[end + 1]).toBe("Nil's reply, verbatim: Approve");
     // The release checkout's crew.mjs, whichever checkout ran `answer`.
-    expect(lines[15]).toBe(`Post it with: node ${release} post --day ${day}`);
+    expect(lines[end + 2]).toBe(
+      `Post it with: node ${release} post --day ${day}`,
+    );
   });
 
   test("keys that arrived after the ask do not turn a dry-run approval live", () => {
@@ -1070,7 +1071,6 @@ describe("an approval covers one video in one mode", () => {
       "facebook",
       "bluesky",
       "threads",
-      "mastodon",
     ]);
     expect(readPostLog(store.postLog.dryRun)).toHaveLength(1);
     expect(existsSync(store.postLog.live)).toBe(false);
@@ -1112,7 +1112,7 @@ describe("each render is one production view", () => {
 const withText = (field: string, text: string) => ({ ...COPY, [field]: text });
 
 describe("Growth's copy block", () => {
-  test("the nine lines are the texts that post; the app adds only #Shorts", () => {
+  test("the eight lines are the texts that post; the app adds only #Shorts", () => {
     const players = playerNames(candidateFromReport(REPORT, 1));
     expect(parseCopy(BLOCK).problems).toEqual([]);
     expect(copyProblems(COPY, "TESTGAME1", players)).toEqual([]);
@@ -1129,16 +1129,16 @@ describe("Growth's copy block", () => {
     expect(parseCopy(indented).copy).toEqual(parseCopy(BLOCK).copy);
   });
 
-  test("a block that is not exactly the nine labelled lines is refused", () => {
+  test("a block that is not exactly the eight labelled lines is refused", () => {
     const lines = BLOCK.split("\n");
     expect(parseCopy(lines.slice(1).join("\n")).problems).toEqual([
       'no "X:" line',
     ]);
     expect(parseCopy([...lines, lines[0]].join("\n")).problems).toEqual([
-      'line 10: "X" comes twice',
+      'line 9: "X" comes twice',
     ]);
     expect(parseCopy([...lines, "Pinterest: hi"].join("\n")).problems).toEqual([
-      'line 10 does not start with one of "X:", "YouTube title:", "YouTube description:", "TikTok:", "Instagram:", "Facebook:", "Bluesky:", "Threads:", "Mastodon:"',
+      'line 9 does not start with one of "X:", "YouTube title:", "YouTube description:", "TikTok:", "Instagram:", "Facebook:", "Bluesky:", "Threads:"',
     ]);
     expect(
       parseCopy(
@@ -1148,7 +1148,7 @@ describe("Growth's copy block", () => {
     expect(parseCopy(undefined).copy).toBeNull();
   });
 
-  test("Facebook, Bluesky, Threads and Mastodon: each its own count, and only the tracked link", () => {
+  test("Facebook, Bluesky and Threads: each its own count, and only the tracked link", () => {
     const problems = (field: string, text: string) =>
       copyProblems(withText(field, text), "TESTGAME1");
     const bsky = trackedLink("bluesky");
@@ -1159,17 +1159,13 @@ describe("Growth's copy block", () => {
     expect(
       problems("bluesky", `${"a".repeat(300 - bsky.length)} ${bsky}`),
     ).toEqual(["bluesky text is 301 characters (graphemes); the limit is 300"]);
-    // Mastodon: 500, a link counting 23 however long it is.
-    const masto = trackedLink("mastodon");
-    expect(problems("mastodon", `${"a".repeat(476)} ${masto}`)).toEqual([]);
-    expect(problems("mastodon", `${"a".repeat(477)} ${masto}`)).toHaveLength(1);
     // Threads: 500, an emoji counting its UTF-8 bytes.
     expect(problems("threads", "😭".repeat(125))).toEqual([]);
     expect(problems("threads", "😭".repeat(126))).toHaveLength(1);
-    // A link is allowed on all four (Facebook and Threads start without
+    // A link is allowed on all three (Facebook and Threads start without
     // one), but only the platform's tracked link.
     expect(problems("facebook", `hi ${trackedLink("facebook")}`)).toEqual([]);
-    expect(problems("bluesky", `hi ${trackedLink("mastodon")}`)).toEqual([
+    expect(problems("bluesky", `hi ${trackedLink("threads")}`)).toEqual([
       `Bluesky may hold only the link ${bsky}`,
     ]);
     expect(problems("threads", `hi https://example.com/x`)).toEqual([
@@ -1179,7 +1175,7 @@ describe("Growth's copy block", () => {
     expect(problems("facebook", "play at wallgame.io")).toEqual([
       `Facebook may hold only the link ${trackedLink("facebook")}`,
     ]);
-    expect(problems("mastodon", `${masto} or www.wallgame.io`)).toHaveLength(1);
+    expect(problems("bluesky", `${bsky} or www.wallgame.io`)).toHaveLength(1);
   });
 
   test("every platform limit is checked when the block comes in", () => {
@@ -1643,12 +1639,13 @@ describe("TikTok", () => {
     ).split("\n");
     const at = live.indexOf(`Post text (by Growth, ${COPY_VERSION}):`);
     expect(at).toBeGreaterThan(-1);
-    expect(live.slice(at + 1, at + 10).join("\n")).toBe(BLOCK);
+    const after = at + 1 + BLOCK_LINES;
+    expect(live.slice(at + 1, after).join("\n")).toBe(BLOCK);
     // Whether it posts for real comes right after the block, live first.
-    expect(live.slice(at + 10, at + 14)).toEqual([
+    expect(live.slice(after, after + 4)).toEqual([
       'The app adds "#Shorts" to the YouTube title.',
       "LIVE on X, YouTube, TikTok, Bluesky: this posts for real on approval.",
-      "Posting mode: X live, YouTube live, TikTok live, Instagram dry-run, Facebook dry-run, Bluesky live, Threads dry-run, Mastodon dry-run.",
+      "Posting mode: X live, YouTube live, TikTok live, Instagram dry-run, Facebook dry-run, Bluesky live, Threads dry-run.",
       "TikTok: open the inbox draft, paste the TikTok line, tap Post.",
     ]);
     const dry = askText(
@@ -1656,15 +1653,15 @@ describe("TikTok", () => {
       { ...DRY, x: "live", instagram: "live" },
       "0".repeat(64),
     ).split("\n");
-    expect(dry.slice(at + 11, at + 14)).toEqual([
+    expect(dry.slice(after + 1, after + 4)).toEqual([
       "LIVE on X, Instagram: this posts for real on approval.",
-      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live, Facebook dry-run, Bluesky dry-run, Threads dry-run, Mastodon dry-run.",
+      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live, Facebook dry-run, Bluesky dry-run, Threads dry-run.",
       "TikTok: dry run, no draft.",
     ]);
     const none = askText(c, DRY, "0".repeat(64));
     expect(none).not.toContain("LIVE on");
     expect(none).toContain(
-      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run, Facebook dry-run, Bluesky dry-run, Threads dry-run, Mastodon dry-run.",
+      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run, Facebook dry-run, Bluesky dry-run, Threads dry-run.",
     );
     // The mode is stated once, under the block, not again for Nil only.
     expect(none.split("Posting mode:").length).toBe(2);
@@ -2276,7 +2273,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   for (const path of written) {
     expect(readFileSync(path, "utf8")).not.toContain("X-Amz-Signature");
   }
-  expect(planOf("mastodon").at(-1)?.body?.status).toBe(COPY.mastodon);
   // What `crew.mjs post` prints: each platform's mode and exact text.
   expect(postedTexts(posted.body)).toEqual([
     `dry-run X: ${JSON.stringify(COPY.x)}`,
@@ -2286,7 +2282,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     `dry-run Facebook: ${JSON.stringify(COPY.facebook)}`,
     `dry-run Bluesky: ${JSON.stringify(COPY.bluesky)}`,
     `dry-run Threads: ${JSON.stringify(COPY.threads)}`,
-    `dry-run Mastodon: ${JSON.stringify(COPY.mastodon)}`,
   ]);
 
   const log = (await call<LogRow[]>("/api/daily/post-log?dryRun=1")).body;
@@ -2298,7 +2293,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "facebook",
     "bluesky",
     "threads",
-    "mastodon",
   ]);
   // Each row names the on-video caption style and Growth's copy style.
   expect(log.map((r) => r.styleVersion)).toEqual(
@@ -2313,7 +2307,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     COPY.facebook,
     COPY.bluesky,
     COPY.threads,
-    COPY.mastodon,
   ]);
   // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
   expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");
