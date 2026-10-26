@@ -4,6 +4,7 @@ import {
   dailySeatColors,
   DEFAULT_FREEZE_HOLD_SECONDS,
   DEFAULT_RACE_PLIES,
+  DEFAULT_SLOT_SOUNDS,
   DEFAULT_TRAP_TEXT,
   DEFAULT_ZOOM_SCALE,
   validateEdl,
@@ -199,6 +200,18 @@ describe("music", () => {
     expect(accept(base).music).toBe(null);
     expect(validateEdl({ ...base, music: "a-legend" }).ok).toBe(true);
     expect(validateEdl({ ...base, music: "darude" }).ok).toBe(false);
+  });
+});
+
+describe("the VS and finish sounds", () => {
+  test("default to DEFAULT_SLOT_SOUNDS, and take only a known sound", () => {
+    expect(accept(base)).toMatchObject(DEFAULT_SLOT_SOUNDS);
+    expect(DEFAULT_SLOT_SOUNDS.finishSound).not.toBe("shotgun-1");
+    expect(
+      accept({ ...base, vsSound: "shotgun-3", finishSound: "fuahhh-1" }),
+    ).toMatchObject({ vsSound: "shotgun-3", finishSound: "fuahhh-1" });
+    expect(validateEdl({ ...base, finishSound: "airhorn-9" }).ok).toBe(false);
+    expect(validateEdl({ ...base, vsSound: "toString" }).ok).toBe(false);
   });
 });
 

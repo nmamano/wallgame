@@ -23,7 +23,7 @@ import {
   openSoundPicks,
   soundFile,
   soundList,
-  fixedSlots,
+  defaultSlots,
   MEME_DIR,
 } from "./sounds.mjs";
 import { createDaily, droppedSoundProblems } from "./routes.mjs";
@@ -83,20 +83,22 @@ describe("keep or drop", () => {
     expect(() => picks.set("toString", "keep")).toThrow("not known");
   });
 
-  test("the renderer's fixed sounds are found, and a drop of one is refused", () => {
-    const fixed = fixedSlots();
-    // Both slots of SOUNDS in render-game-video.mjs, each a table key.
-    expect(Object.values(fixed).sort()).toEqual(["the VS card", "the finish"]);
-    for (const key of Object.keys(fixed))
+  test("the VS and finish defaults are labelled, and a drop of one is allowed", () => {
+    const defaults = defaultSlots();
+    // Both slots of DEFAULT_SLOT_SOUNDS (edl.mjs), each a table key.
+    for (const key of Object.keys(defaults))
       expect(MEME_SOUNDS).toHaveProperty(key);
+    const slots = Object.values(defaults).join(" and ").split(" and ").sort();
+    expect(slots).toEqual(["the VS card", "the finish"]);
 
     const picks = openSoundPicks(tempDir());
-    const [finish] = Object.entries(fixed).find(([, s]) => s === "the finish")!;
-    expect(() => picks.set(finish, "drop")).toThrow("a code change");
-    picks.set(finish, "keep");
-    expect(picks.read()[finish].choice).toBe("keep");
+    const [finish] = Object.entries(defaults).find(([, s]) =>
+      s.includes("the finish"),
+    )!;
+    picks.set(finish, "drop");
+    expect(picks.dropped()).toEqual([finish]);
     const row = soundList(picks.read()).find((s) => s.key === finish);
-    expect(row?.fixed).toBe("the finish");
+    expect(row?.defaultFor).toContain("the finish");
   });
 
   test("the list carries each sound's choice, family and level", () => {
@@ -112,7 +114,7 @@ describe("keep or drop", () => {
       MEME_SOURCE_NOTES["bruh-1"],
     );
     expect(ding?.note).toBeNull();
-    expect(ding?.fixed).toBeNull();
+    expect(ding?.defaultFor).toBeNull();
   });
 
   test("a file path is only ever a table key's own file", () => {
@@ -132,6 +134,13 @@ describe("keep or drop", () => {
     };
     expect(droppedSoundProblems(edl, ["oof-1"])).toEqual([
       "ply 4: Nil dropped the sound oof-1; name a kept one (crew.mjs sounds)",
+    ]);
+  });
+
+  test("the direct step names a VS or finish sound Nil dropped, the default too", () => {
+    const edl = { vsSound: "boom-1", finishSound: "shotgun-2", events: [] };
+    expect(droppedSoundProblems(edl, ["shotgun-2"])).toEqual([
+      "finishSound: Nil dropped the sound shotgun-2; name a kept one (crew.mjs sounds)",
     ]);
   });
 });

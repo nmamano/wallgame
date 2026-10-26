@@ -15,10 +15,12 @@
  *                                  A day has one cycle: --replace starts over a
  *                                  day that has one (only on purpose, e.g.
  *                                  after the member rejected its video)
- *   storyboard                     one image of every position of the picked
+ *   storyboard [--edl F]           one image of every position of the picked
  *                                  game (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
  *                                  Open it before you write the edit list.
+ *                                  With --edl, it checks the list against the
+ *                                  game and marks each event on its ply.
  *   sounds                         the meme sounds by family, with Nil's
  *                                  choice. He keeps or drops each one by ear
  *                                  on the app's /daily/sounds page. Name a
@@ -268,9 +270,9 @@ const commands = {
         `${family} (${members[0].moment ?? "no moment"}): kept ${names("keep")}; not heard yet ${names(null)}`,
       );
     }
-    for (const x of sounds.filter((s) => s.fixed)) {
+    for (const x of sounds.filter((s) => s.defaultFor)) {
       console.log(
-        `${x.key} plays on ${x.fixed} in every video, whatever the list says`,
+        `${x.key} is the default on ${x.defaultFor}; name another with vsSound or finishSound in the list`,
       );
     }
   },
@@ -386,6 +388,7 @@ const commands = {
         candidate,
         "--out",
         join(dir, `${c.candidate.gameId}.png`),
+        ...(flag("edl") ? ["--edl", resolve(flag("edl"))] : []),
       ],
       {
         encoding: "utf8",

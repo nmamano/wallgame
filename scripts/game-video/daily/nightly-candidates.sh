@@ -72,6 +72,7 @@ flock -n 9 || { say "another run is going; this one stops"; exit 0; }
 # checkout, which other workers edit. Every file the pick runs must equal HEAD,
 # or the day is skipped: a missed day is better than a pick by half-made code.
 PICK_PATH=(scripts/game-video/pick-daily-candidates.ts scripts/game-video/daily-candidates.ts
+  scripts/game-video/race-replay.ts
   scripts/game-video/daily shared server/db/past-game-player-kind.ts
   official-custom-bot-client/src official-custom-bot-client/transformer.prod.config.json
   package.json bun.lock)

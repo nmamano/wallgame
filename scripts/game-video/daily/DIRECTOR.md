@@ -59,6 +59,17 @@ already has a cycle, finish it or stop: do not start another. `pick
   music gets a random track; that is only for a hand render.
 - The schema and the sound names are in `scripts/game-video/edl.mjs` and
   `scripts/game-video/meme-sounds.mjs`.
+- Moment effects, each tied to a fact. Use one or two per video, not all:
+  `blunder` (cell) on the move that threw the game away, often the ply
+  before a DANGER; `brilliant` (cell) on a SAVE or the winner's largest
+  JUMP; `trap` (the `*` walls of a JUMP); `race` (a counter of both sides'
+  steps for a few plies, from a DANGER on; the renderer reads the numbers
+  from the game); `freeze` (before a SAVE or the winning move lands);
+  `react` (an emoji next to a cell: skull, mind-blown, fire, moai, clown,
+  eyes). `storyboard --edl` shows each one on its ply before the render.
+- `vsSound` and `finishSound` name the sounds of the VS punch and the finish.
+  Without them the video plays the defaults (`crew.mjs sounds` names them).
+  If Nil dropped a default, name a kept sound.
 - Sounds: run `crew.mjs sounds`. It gives each family's moment (a reveal, a
   blunder, the trap closes, a good move, a close call, the win, the loss)
   and the sounds that Nil kept on the app's `/daily/sounds` page. Name a kept

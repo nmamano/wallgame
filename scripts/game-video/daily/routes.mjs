@@ -63,7 +63,11 @@ import {
   edlSummary,
   saveFrameProblems,
 } from "./candidate.mjs";
-import { validateEdl, checkEdlAgainstGame } from "../edl.mjs";
+import {
+  validateEdl,
+  checkEdlAgainstGame,
+  DEFAULT_SLOT_SOUNDS,
+} from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
   openSoundPicks,
@@ -835,13 +839,20 @@ export const createDaily = ({
 };
 
 /** The events of a list that name a sound Nil dropped on /daily/sounds. */
-export const droppedSoundProblems = (edl, dropped) =>
-  edl.events
+export const droppedSoundProblems = (edl, dropped) => [
+  ...Object.keys(DEFAULT_SLOT_SOUNDS)
+    .filter((slot) => dropped.includes(edl[slot]))
+    .map(
+      (slot) =>
+        `${slot}: Nil dropped the sound ${edl[slot]}; name a kept one (crew.mjs sounds)`,
+    ),
+  ...edl.events
     .filter((e) => e.sound !== undefined && dropped.includes(e.sound))
     .map(
       (e) =>
         `ply ${e.ply}: Nil dropped the sound ${e.sound}; name a kept one (crew.mjs sounds)`,
-    );
+    ),
+];
 
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted

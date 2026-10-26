@@ -83,6 +83,7 @@ import {
   checkEdlAgainstGame,
   DEFAULT_SECONDS_PER_MOVE,
   dailySeatColors,
+  DEFAULT_SLOT_SOUNDS,
   REACTIONS,
 } from "./edl.mjs";
 import { replayDistances } from "./race-replay.ts";
@@ -179,7 +180,7 @@ if (!rawGame) {
       "       [--seconds-per-move S] [--aspect fit|square|9x16]\n" +
       "   or: render-game-video.mjs --edl FILE   (the daily look; see edl.mjs)\n" +
       "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
-      "       [--sounds vsMeme=shotgun-2,finish=shotgun-1] [--board-theme crisp|default] [--out FILE]\n" +
+      "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
       "  plumbing, for the app rather than for a person:\n" +
       "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
       "       [--browser chromium|chrome] [--encoder x264|nvenc]",
@@ -248,6 +249,7 @@ for (const [flagName, field] of [
   ["seconds-per-move", "pace"],
   ["music", "music"],
   ["no-music", "music"],
+  ["sounds", "vsSound and finishSound"],
 ]) {
   if (EDL && argv.includes(`--${flagName}`)) {
     console.error(`--${flagName} does not apply to an EDL; set its ${field}`);
@@ -1441,6 +1443,11 @@ const meme = (name) => {
  *   vsMeme    lands on the punch of the VS overlay (daily)
  *   finish    lands on the impact of the ending (daily)
  *
+ * The two daily meme slots are defaults (DEFAULT_SLOT_SOUNDS in edl.mjs):
+ * an EDL can name its own with vsSound and finishSound. The names map
+ * vsSound -> vsMeme and finishSound -> finish; --sounds (hand renders only)
+ * keeps the slot names of this table.
+ *
  * Every other daily sound is a cue in the EDL.
  */
 const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
@@ -1468,8 +1475,8 @@ const SOUNDS = {
     file: join(PIXEL_PACK, "level-complete-1.m4a"),
     gain: WIN_GAIN,
   },
-  vsMeme: meme("shotgun-2"),
-  finish: meme("shotgun-1"),
+  vsMeme: meme(DEFAULT_SLOT_SOUNDS.vsSound),
+  finish: meme(DEFAULT_SLOT_SOUNDS.finishSound),
 };
 
 /**
@@ -1478,7 +1485,9 @@ const SOUNDS = {
  * for one. Only the meme slots take a candidate.
  */
 const soundsFor = (styleName) => {
-  const picked = { ...SOUNDS };
+  const picked = EDL
+    ? { ...SOUNDS, vsMeme: meme(EDL.vsSound), finish: meme(EDL.finishSound) }
+    : { ...SOUNDS };
   for (const entry of String(arg("sounds", "")).split(",").filter(Boolean)) {
     const m = entry.match(/^(?:([a-z]+):)?(finish|vsMeme)=([\w-]+)$/);
     if (!m) {

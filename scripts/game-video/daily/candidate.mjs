@@ -72,6 +72,7 @@ export const nextEnding = (rows) => {
  */
 export const edlSummary = (edl) => [
   `ending ${edl.ending}, music ${edl.music ?? "random"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
+  `VS sound ${edl.vsSound}, finish sound ${edl.finishSound}`,
   ...(edl.pace ?? []).map(
     (p) => `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move`,
   ),
@@ -81,9 +82,15 @@ export const edlSummary = (edl) => [
         ? `zoom on ${e.frame.join(" ")}`
         : e.kind === "stamp"
           ? `stamp "${e.text}"`
-          : e.cell
-            ? `${e.kind} at ${e.cell}`
-            : e.kind;
+          : e.kind === "trap"
+            ? `trap on ${e.walls.join(" ")}, "${e.text}"`
+            : e.kind === "race"
+              ? `race over ${e.plies} positions`
+              : e.kind === "react"
+                ? `react ${e.emoji} at ${e.cell}`
+                : e.cell
+                  ? `${e.kind} at ${e.cell}`
+                  : e.kind;
     return `ply ${e.ply}: ${what}${e.sound ? ` + ${e.sound}` : ""}`;
   }),
 ];

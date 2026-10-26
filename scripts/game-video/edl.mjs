@@ -38,6 +38,9 @@
  *   music    optional: one of the site's tracks by slug (deja-vus,
  *            tea-for-two, a-legend, skippy). Absent (null after validation)
  *            means a random one, as the site and hand renders do.
+ *   vsSound, finishSound
+ *            optional: the meme sound on the VS overlay's punch and on the
+ *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
  *   events   optional; the events of one ply play in list order, after the
@@ -100,6 +103,18 @@ export const dailySeatColors = (isBot) => {
     : { 1: "red", 2: "blue" };
 };
 export const ENDINGS = ["replay", "gg", "ko"];
+
+/**
+ * The sounds of the VS punch and the finish where the EDL names none. Wall
+ * Game PM, 2026-10-26 (Content ID): the finish was shotgun-1, which is
+ * Fortnite-named and a high claim risk (meme-sounds.md), and it was in every
+ * video; shotgun-2 has no named owner. The renderer and the app's sounds
+ * page both read this.
+ */
+export const DEFAULT_SLOT_SOUNDS = {
+  vsSound: "shotgun-2",
+  finishSound: "shotgun-2",
+};
 export const EVENT_KINDS = [
   "zoom",
   "scared",
@@ -199,7 +214,17 @@ export const validateEdl = (raw) => {
   };
   unknown(
     raw,
-    ["version", "gameId", "caption", "ending", "music", "pace", "events"],
+    [
+      "version",
+      "gameId",
+      "caption",
+      "ending",
+      "music",
+      "vsSound",
+      "finishSound",
+      "pace",
+      "events",
+    ],
     "EDL",
   );
 
@@ -240,6 +265,16 @@ export const validateEdl = (raw) => {
     fail(
       `music must be one of ${slugs.join(", ")}, or absent for a random track; got ${JSON.stringify(music)}`,
     );
+  }
+
+  const slots = {};
+  for (const [field, fallback] of Object.entries(DEFAULT_SLOT_SOUNDS)) {
+    slots[field] = raw[field] ?? fallback;
+    if (!Object.hasOwn(MEME_SOUNDS, slots[field])) {
+      fail(
+        `${field} ${JSON.stringify(raw[field])} is not a known sound, or absent for ${fallback}`,
+      );
+    }
   }
 
   const pace = raw.pace ?? [];
@@ -402,6 +437,7 @@ export const validateEdl = (raw) => {
       caption,
       ending: raw.ending,
       music,
+      ...slots,
       pace,
       events: filled,
     },

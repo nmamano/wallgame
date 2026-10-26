@@ -12,11 +12,11 @@
  * sound with no choice is "not heard yet". The director uses kept sounds, and
  * POST /api/daily/direct refuses a list that names a dropped one (routes.mjs).
  *
- * TWO SOUNDS ARE NOT THE DIRECTOR'S. The renderer plays a fixed sound on the
- * VS card and on the finish (SOUNDS in render-game-video.mjs), whatever the
- * list says. A Drop there would change nothing, so the page labels those
- * rows and refuses the Drop: a swap is a code change. The slots are read
- * from the renderer's source, so this file keeps no copy of them.
+ * TWO SOUNDS ARE DEFAULTS. The VS card and the finish play
+ * DEFAULT_SLOT_SOUNDS (edl.mjs) unless the director's list names its own
+ * (vsSound, finishSound). The page labels those rows. A Drop is allowed:
+ * the direct step then refuses a list that keeps a dropped default, so the
+ * director names a kept sound for that slot (Wall Game PM, 2026-10-26).
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -29,28 +29,30 @@ import {
   memeGain,
   memeLevel,
 } from "../meme-sounds.mjs";
+import { DEFAULT_SLOT_SOUNDS } from "../edl.mjs";
 import { writeAtomic, StepRefused } from "./store.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MEME_DIR = resolve(HERE, "../../../assets/meme-sounds");
-export const RENDERER = resolve(HERE, "../render-game-video.mjs");
 
-/** What the page calls each fixed slot of the renderer's SOUNDS. */
-const SLOT_NAMES = { vsMeme: "the VS card", finish: "the finish" };
+/** What the page calls each slot of DEFAULT_SLOT_SOUNDS. */
+const SLOT_NAMES = { vsSound: "the VS card", finishSound: "the finish" };
 
 /**
- * key -> the slot that plays it in every video, from the renderer's
- * `  <slot>: meme("<key>"),` lines (daily/sounds.test.ts checks that both
- * slots are found).
+ * key -> the slots it is the default of, in words ("the VS card and the
+ * finish"), for the keys that are a default.
+ * @returns {Record<string, string>}
  */
-export const fixedSlots = (renderer = RENDERER) =>
-  Object.fromEntries(
-    [
-      ...readFileSync(renderer, "utf8").matchAll(
-        /^ {2}(\w+): meme\("([\w-]+)"\),$/gm,
-      ),
-    ].map(([, slot, key]) => [key, SLOT_NAMES[slot] ?? slot]),
+export const defaultSlots = () => {
+  /** @type {Record<string, string[]>} */
+  const slots = {};
+  for (const [slot, key] of Object.entries(DEFAULT_SLOT_SOUNDS)) {
+    slots[key] = [...(slots[key] ?? []), SLOT_NAMES[slot]];
+  }
+  return Object.fromEntries(
+    Object.entries(slots).map(([key, names]) => [key, names.join(" and ")]),
   );
+};
 
 export const CHOICES = ["keep", "drop"];
 
@@ -71,17 +73,12 @@ export const openSoundPicks = (root) => {
   };
 
   /** Set a choice, or clear it with null (back to "not heard yet"). */
-  const set = (key, choice, fixed = fixedSlots()) => {
+  const set = (key, choice) => {
     if (typeof key !== "string" || !known(key)) {
       throw new StepRefused(`sound ${JSON.stringify(key)} is not known`);
     }
     if (choice !== null && !CHOICES.includes(choice)) {
       throw new StepRefused(`a choice is ${CHOICES.join(", ")} or null`);
-    }
-    if (choice === "drop" && fixed[key]) {
-      throw new StepRefused(
-        `${key} plays on ${fixed[key]} in every video, so a drop would change nothing; swapping it is a code change (SOUNDS in render-game-video.mjs)`,
-      );
     }
     const picks = read();
     if (choice === null) delete picks[key];
@@ -100,9 +97,9 @@ export const openSoundPicks = (root) => {
 
 /**
  * Every sound, in table order, with its level in a video, its choice, its
- * source note and the fixed slot that plays it, if any.
+ * source note and the slots it is the default of, if any.
  */
-export const soundList = (picks, dir = MEME_DIR, fixed = fixedSlots()) =>
+export const soundList = (picks, dir = MEME_DIR, defaults = defaultSlots()) =>
   Object.entries(MEME_SOUNDS).map(([key, { lufs, truePeak }]) => {
     const family = memeFamily(key);
     return {
@@ -115,7 +112,7 @@ export const soundList = (picks, dir = MEME_DIR, fixed = fixedSlots()) =>
       level: memeLevel(key),
       choice: picks[key]?.choice ?? null,
       note: MEME_SOURCE_NOTES[key] ?? null,
-      fixed: fixed[key] ?? null,
+      defaultFor: defaults[key] ?? null,
       file: existsSync(join(dir, `${key}.mp3`)),
     };
   });
@@ -147,7 +144,7 @@ export const SOUNDS_PAGE = `<!doctype html>
   button.drop.on { background: #7f1d1d; border-color: #ef4444; }
   .err { color: #fca5a5; font-size: 12px; }
   .note { display: block; font-size: 12px; color: #fbbf24; }
-  .fixed { display: block; font-size: 12px; color: #93c5fd; }
+  .slot { display: block; font-size: 12px; color: #93c5fd; }
   button[disabled] { opacity: .4; cursor: default; }
   a { color: #ff8c42; } .muted { color: #64748b; font-size: 12px; }
 </style></head>
@@ -211,13 +208,12 @@ export const SOUNDS_PAGE = `<!doctype html>
         p.onclick = () => play(s, p);
         const db = 20 * Math.log10(s.gain);
         const lvl = el("span", "lvl", s.level.toFixed(1) + " LUFS (gain " + (db >= 0 ? "+" : "") + db.toFixed(1) + " dB)");
-        if (s.fixed) lvl.append(el("span", "fixed", "Fixed: plays on " + s.fixed + " in every video. A swap is a code change."));
+        if (s.defaultFor) lvl.append(el("span", "slot", "Default on " + s.defaultFor + ", when the list names no other sound."));
         if (s.note) lvl.append(el("span", "note", s.note));
         const keep = el("button", "keep" + (s.choice === "keep" ? " on" : ""), "Keep");
         keep.onclick = () => choose(s.key, s.choice === "keep" ? null : "keep");
         const drop = el("button", "drop" + (s.choice === "drop" ? " on" : ""), "Drop");
         drop.onclick = () => choose(s.key, s.choice === "drop" ? null : "drop");
-        drop.disabled = Boolean(s.fixed) && s.choice !== "drop";
         row.append(p, el("span", "key", s.key), lvl, keep, drop);
         box.append(row);
       }

@@ -56,20 +56,18 @@ import {
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
-  minJumpFor,
   pickJumps,
   PICKS_PER_GAME,
   rankCandidates,
-  replayDistances,
   swingsOf,
   type DescribedCloseCall,
   type PickedJump,
   type PlyBoard,
-  type RaceDistances,
   type SeatKind,
   type StoredGameSummary,
   type Swing,
 } from "./daily-candidates";
+import { minJumpFor, replayDistances, type RaceDistances } from "./race-replay";
 
 const REPO = resolve(dirname(fileURLToPath(import.meta.url)), "../..");
 const BOT_CONFIG = resolve(

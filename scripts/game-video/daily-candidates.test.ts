@@ -14,19 +14,18 @@ import {
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
-  minJumpFor,
   MIN_PLIES,
   NIL_USER_ID,
   pickBoard,
   pickJumps,
   rankCandidates,
-  replayDistances,
   swingsOf,
   winChance,
   type DistanceJump,
   type StoredGameSummary,
   type StoredSeat,
 } from "./daily-candidates";
+import { minJumpFor, replayDistances } from "./race-replay";
 
 const seat = (over: Partial<StoredSeat>): StoredSeat => ({
   playerOrder: 1,

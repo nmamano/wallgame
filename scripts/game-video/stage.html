@@ -349,7 +349,7 @@
         line-height: 1;
         white-space: nowrap;
       }
-      .cellEmoji {
+      #cellEmoji {
         position: absolute;
         left: 50%;
         top: 50%;
@@ -745,10 +745,7 @@
             <div id="cellFx" class="hidden">
               <div id="cellRing"></div>
               <svg id="cellBurst" viewBox="-200 -200 400 400"></svg>
-              <div class="cellEmoji" id="cellEmoji0"></div>
-              <div class="cellEmoji" id="cellEmoji1"></div>
-              <div class="cellEmoji" id="cellEmoji2"></div>
-              <div class="cellEmoji" id="cellEmoji3"></div>
+              <div id="cellEmoji"></div>
               <div id="cellBadge"></div>
             </div>
           </div>
@@ -1093,8 +1090,11 @@
        *              flash (fxFlash) and the shake (s.shake).
        *   brilliant  a burst of rays and a ring out of the cell, and a "!!"
        *              bubble.
-       *   react      an emoji pops on the cell and floats up, and three small
-       *              copies rise and fade.
+       *   react      an emoji pops once NEXT TO the cell, on the side the
+       *              renderer measured to be clear, so it never covers the
+       *              pawn it reacts to, and kept inside the board (Wall Game
+       *              PM, 2026-10-26: it covered the pawn, hung off the h-file,
+       *              and its trailing copies read as artifacts).
        *
        * c = { kind, t: seconds into it, cell: {x, y} the cell centre in the
        *       board image (0..1), size: one cell's width (0..1), side: where
@@ -1113,11 +1113,11 @@
         const ring = $("cellRing");
         const badge = $("cellBadge");
         const burst = $("cellBurst");
-        const emojis = [0, 1, 2, 3].map((i) => $("cellEmoji" + i));
+        const emoji = $("cellEmoji");
         show(ring, c.kind !== "react");
         show(badge, c.kind !== "react");
         show(burst, c.kind === "brilliant");
-        for (const e of emojis) show(e, c.kind === "react");
+        show(emoji, c.kind === "react");
         badge.style.fontSize = px * 0.6 + "px";
         badge.style.padding = "0.12em 0.36em 0.12em 0.3em";
         const pop = punch(span(c.t, 0, 0.2));
@@ -1154,33 +1154,37 @@
         }
 
         if (c.kind === "react") {
-          const big = emojis[0];
-          big.textContent = c.emoji;
-          big.style.fontSize = px * 1.05 + "px";
-          const rise = easeOut3(span(c.t, 0.15, 1.2)) * 0.35;
-          big.style.transform =
-            "translate(-50%, " +
-            (-50 - rise * 100) +
-            "%) rotate(" +
-            Math.sin(c.t * 9) * 8 +
+          // One cell over, on the clear side; the centre is then clamped so
+          // the emoji at its largest stays inside the board's square.
+          const [dx, dy] = {
+            up: [0, -1],
+            down: [0, 1],
+            left: [-1, 0],
+            right: [1, 0],
+          }[c.side];
+          const most = 1.15;
+          const half = (px * 0.95 * most) / 2;
+          const clamp = (v) => Math.max(half, Math.min(W - half, v));
+          const x = clamp(c.cell.x * W + dx * px) - c.cell.x * W;
+          const y = clamp(c.cell.y * W + dy * px) - c.cell.y * W;
+          // A clean pop: grows past full size, settles, holds, fades.
+          const grow =
+            c.t < 0.18
+              ? 0.4 + (most - 0.4) * easeOut3(c.t / 0.18)
+              : most - (most - 1) * easeOut3(span(c.t, 0.18, 0.32));
+          emoji.textContent = c.emoji;
+          emoji.style.fontSize = px * 0.95 + "px";
+          emoji.style.transform =
+            "translate(calc(-50% + " +
+            x +
+            "px), calc(-50% + " +
+            y +
+            "px)) rotate(" +
+            Math.sin(c.t * 7) * 6 +
             "deg) scale(" +
-            pop +
+            grow +
             ")";
-          big.style.opacity = 1 - span(c.t, 1.0, 1.2);
-          // Three small copies rise at their own pace and fade.
-          [1, 2, 3].forEach((i) => {
-            const e = emojis[i];
-            const p = span(c.t, 0.1 * i, 0.1 * i + 0.9);
-            e.textContent = c.emoji;
-            e.style.fontSize = px * 0.42 + "px";
-            e.style.opacity = p > 0 ? 1 - p : 0;
-            e.style.transform =
-              "translate(" +
-              (-50 + (i - 2) * 120 + Math.sin(p * 6 + i) * 25) +
-              "%, " +
-              (-50 - p * 260) +
-              "%)";
-          });
+          emoji.style.opacity = 1 - span(c.t, 1.0, 1.2);
         }
       };
 
