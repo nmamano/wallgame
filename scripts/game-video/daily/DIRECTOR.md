@@ -79,12 +79,16 @@ already has a cycle, finish it or stop: do not start another. `pick
   example "2 to 8. not enough 💀"). `direct` refuses a laugh on a save that
   the hunter wins within 10 plies (rehearsal, 2026-10-26: this was true of
   all three close calls in the day's top five).
-- When `facts` list a second close call and the mouse gets away (its fact
-  does not say that the hunter still wins within 10 moves of the save, the
-  limit `direct` uses for a laugh), mark that escape
-  with one sound only: a `sound` event on its save ply. Use a `seeya-N`
-  ("the prey gets away") that `crew.mjs sounds` lists; if it lists none,
-  an `ooh-N`. No second zoom and no second FAHHH.
+- When `facts` list an escape (`director, escape ply N`: the mouse's own
+  move, with or without a wall, takes the cat from 1-2 squares to 4 or
+  more) and its fact does not say that the hunter still wins within 10
+  moves of the escape, show the mouse as it runs (Nil, 2026-10-26: "zoom on
+  the mouse so it's clear who is talking. the bye right as it moves would
+  be the best narrative"): a `zoom` on the escape ply with the zoom field
+  that starts before the move, framed on the mouse's start and end cells
+  and the cat's cell, and a `seeya-N` ("the prey gets away") that starts
+  as the mouse moves. If `crew.mjs sounds` lists no `seeya-N`, use an
+  `ooh-N`. No FAHHH on an escape.
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.
@@ -203,17 +207,17 @@ storyboard. An effect with no fact behind it is noise. A viewer does not know
 the game, so each effect must make one thing clear: who is close to winning,
 or which wall changed that.
 
-| The fact                                                                                 | The effect                                    | Where                                                                                       |
-| ---------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
-| Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                      | danger ply, the mouse's cell                                                                |
-| The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                 | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
-| The mouse is safe again                                                                  | `laugh`                                       | save ply, after the zoom in the list; the mouse's cell                                      |
-| A second close call, and the mouse gets away                                             | `sound` (a `seeya-N`, or `ooh-N`)             | its save ply; no zoom                                                                       |
-| The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call | jump ply, `walls` = its `*` walls                                                           |
-| A walk jumps on one move (the save, or a jump)                                           | `race`                                        | that ply; no fields. The counter itself shows all video long, this flashes it               |
-| The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                     | that ply, the mover's pawn                                                                  |
-| The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                   | that ply, the mover's pawn                                                                  |
-| A move that needs a laugh more than an explanation                                       | `react`                                       | that ply, next to the pawn it is about                                                      |
+| The fact                                                                                 | The effect                                       | Where                                                                                       |
+| ---------------------------------------------------------------------------------------- | ------------------------------------------------ | ------------------------------------------------------------------------------------------- |
+| Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                         | danger ply, the mouse's cell                                                                |
+| The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                    | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
+| The mouse is safe again                                                                  | `laugh`                                          | save ply, after the zoom in the list; the mouse's cell                                      |
+| An escape (`director, escape ply N`)                                                     | `zoom` that starts before the move + a `seeya-N` | escape ply: frame = the mouse's start and end cells and the cat's cell                      |
+| The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call    | jump ply, `walls` = its `*` walls                                                           |
+| A walk jumps on one move (the save, or a jump)                                           | `race`                                           | that ply; no fields. The counter itself shows all video long, this flashes it               |
+| The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                        | that ply, the mover's pawn                                                                  |
+| The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                      | that ply, the mover's pawn                                                                  |
+| A move that needs a laugh more than an explanation                                       | `react`                                          | that ply, next to the pawn it is about                                                      |
 
 Rules:
 
@@ -241,16 +245,15 @@ Rules:
   above). Whether and where to use it is your choice.
 - Do not use `coldOpenPly` (Nil, 2026-10-26: "the initial 1s hook doesn't
   work for me, it's too confusing. cut it").
-- `fastForward` shortens a video: put `"fastForward": true` on a pace
-  range of quiet plies (no close call and no wall jump in `facts`). Use
+- `fastForward` shortens a video: put `"fastForward": true` on a pace range
+  of quiet plies (no close call, no escape and no wall jump in `facts`). Use
   0.3 s per move (the video shows "x3") by default, and 0.2 s ("x4") only
   for a long, dull stretch. The opening before the first key wall and the
   moves between two beats are the usual ranges. Keep the 2 plies before a
   key wall at normal pace or slower, so the viewer sees the threat before
-  the wall (Nil, 2026-10-26: "it plays too fast to follow"). Keep the
-  payoff ply out of a range: a caption that changes at x4 is hard to read.
-  `direct` refuses a range with an event in it, or one that reaches the
-  last move.
+  the wall (Nil, 2026-10-26: "it plays too fast to follow"). Keep the payoff
+  ply out of a range: a caption that changes at x4 is hard to read. `direct`
+  refuses a range with an event in it, or one that reaches the last move.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
   AI won, and a win sound in a human vs human game. `crew.mjs sounds` gives
@@ -283,6 +286,7 @@ A still is ok only when all of these are true:
 - It is the ply that the EDL names.
 - A zoom or a FAHHH shows the wall that it is about, and both pawns of the
   close call are in the frame.
+- An escape's zoom has the mouse and the cat in the frame.
 - A scared or laugh still shows the effect on the correct pawn.
 - A blunder, brilliant or react still shows its mark next to the correct
   pawn, and the mark does not hide the pawns of the moment.

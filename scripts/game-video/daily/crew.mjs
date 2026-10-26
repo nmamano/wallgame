@@ -335,6 +335,11 @@ const commands = {
             `save ply ${b.save.ply} walls ${walls(b.save.walls)} (walk ${b.save.walkBefore} to ${b.save.walk}; ${b.prey.type} ${b.save.preyCell} safe from this ply)`,
         );
       }
+      for (const e of c.escapes) {
+        console.log(
+          `  director, escape ply ${e.ply} (${e.prey.type} ${e.preyFrom} -> ${e.preyCell}, walk ${e.walkBefore} to ${e.walk}; ${e.hunter.type} at ${e.hunterCell})`,
+        );
+      }
       for (const p of c.picks) {
         console.log(
           `  director, wall jump: ply ${p.ply} ${p.notation}, walls ${walls(p.walls)}`,

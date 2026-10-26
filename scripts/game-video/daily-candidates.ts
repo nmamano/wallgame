@@ -577,6 +577,22 @@ export interface CloseCall {
   size: number;
 }
 
+/** One hunt's moment at `ply`: its walk and both pawns after the ply. */
+const beatMoment = (
+  replay: ReplayedGame,
+  moves: string[],
+  track: ReplayedGame["tracks"][number],
+  ply: number,
+): BeatMoment => ({
+  ply,
+  moveNumber: ply + 1,
+  notation: moves[ply],
+  walk: track.walks[ply + 1],
+  hunterCell: track.hunterCells[ply + 1],
+  preyCell: track.targetCells[ply + 1],
+  pawns: pawnsOn(replay, ply),
+});
+
 /**
  * Every close call in a game, largest save first; later ones that share a
  * ply with an earlier pick are dropped, and at most BEATS_PER_GAME remain.
@@ -588,15 +604,7 @@ export const closeCallsOf = (
   const found: CloseCall[] = [];
   replay.tracks.forEach((track, hunt) => {
     if (track.target.type === "home") return;
-    const moment = (ply: number): BeatMoment => ({
-      ply,
-      moveNumber: ply + 1,
-      notation: moves[ply],
-      walk: track.walks[ply + 1],
-      hunterCell: track.hunterCells[ply + 1],
-      preyCell: track.targetCells[ply + 1],
-      pawns: pawnsOn(replay, ply),
-    });
+    const moment = (ply: number) => beatMoment(replay, moves, track, ply);
     for (let danger = 0; danger < moves.length; danger++) {
       const close = track.walks[danger + 1];
       if (close === 0 || close > DANGER_WALK) continue;
@@ -654,6 +662,86 @@ export const describeCloseCall = (
 
 /** A close call with its plain line; what the CLI writes in `beats`. */
 export type DescribedCloseCall = CloseCall & { description: string };
+
+/* -------------------------------------------------------------- escapes -- */
+
+/*
+ * An ESCAPE (Nil, review of d525aea6, 2026-10-26: he saw at once the mouse
+ * that stepped away from the cat, and the facts did not list it) is a move by
+ * the prey's owner that moves the prey itself, with or without a wall, when
+ * the hunter is DANGER_WALK or fewer squares away, and after which the walk is
+ * ESCAPE_WALK or more. Unlike a close call's save, the hunter's reply can come
+ * close again: the prey still ran on that move.
+ */
+
+/** The hunter's walk after an escape: two of its turns away at least. */
+export const ESCAPE_WALK = 4;
+
+/** How many escapes each candidate reports. */
+export const ESCAPES_PER_GAME = 3;
+
+export type Escape = BeatMoment & {
+  hunter: PawnRef;
+  prey: PawnRef;
+  /** The hunt's walk before the escape; `walk` is after it. */
+  walkBefore: number;
+  /** The prey's cell before the escape; `preyCell` is after it. */
+  preyFrom: string;
+  /** walk - walkBefore. */
+  size: number;
+};
+
+/**
+ * Every escape in a game, largest first, then earlier. A save ply of one of
+ * `calls` is not also an escape: the close call already tells that move.
+ */
+export const escapesOf = (
+  replay: ReplayedGame,
+  moves: string[],
+  calls: CloseCall[],
+): Escape[] => {
+  const saves = new Set(calls.map((c) => c.save.ply));
+  const found: Escape[] = [];
+  for (const track of replay.tracks) {
+    if (track.target.type === "home") continue;
+    for (let ply = 0; ply < moves.length; ply++) {
+      const before = track.walks[ply];
+      if (before === 0 || before > DANGER_WALK) continue;
+      if (track.walks[ply + 1] < ESCAPE_WALK) continue;
+      // Only the prey's owner moves the prey.
+      if (track.targetCells[ply] === track.targetCells[ply + 1]) continue;
+      if (saves.has(ply)) continue;
+      found.push({
+        ...beatMoment(replay, moves, track, ply),
+        hunter: track.hunter,
+        prey: track.target,
+        walkBefore: before,
+        preyFrom: track.targetCells[ply],
+        size: track.walks[ply + 1] - before,
+      });
+    }
+  }
+  return found
+    .sort((a, b) => b.size - a.size || a.ply - b.ply)
+    .slice(0, ESCAPES_PER_GAME);
+};
+
+/** One plain line for the crew: who ran from whom, and where to. */
+export const describeEscape = (
+  escape: Escape,
+  names: Record<PlayerId, string>,
+): string => {
+  const walls = wallCount(escape.notation);
+  const wall =
+    walls === 0 ? "" : walls === 1 ? " and places a wall" : " and places walls";
+  return (
+    `${names[escape.hunter.player]}'s ${escape.hunter.type} is ${escape.walkBefore} square${escape.walkBefore === 1 ? "" : "s"} from ${names[escape.prey.player]}'s ${escape.prey.type}. ` +
+    `The ${escape.prey.type} runs to ${escape.preyCell}${wall}, and the ${escape.hunter.type} must walk ${escape.walk} (move ${escape.moveNumber}).`
+  );
+};
+
+/** An escape with its plain line; what the CLI writes in `escapes`. */
+export type DescribedEscape = Escape & { description: string };
 
 export interface RankedCandidate {
   gameId: string;

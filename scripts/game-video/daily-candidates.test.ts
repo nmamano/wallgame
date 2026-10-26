@@ -10,7 +10,9 @@ import {
   closeCallsOf,
   DANGER_WALK,
   describeCloseCall,
+  describeEscape,
   describeJump,
+  escapesOf,
   evalBarEngineFor,
   gameEligibility,
   jumpsOf,
@@ -548,5 +550,95 @@ describe("close calls", () => {
       { gameId: "beat", beats: [{ size: 4 }], picks: [{ size: 4 }] },
     ]);
     expect(ranked.map((c) => c.gameId)).toEqual(["beat", "jump"]);
+  });
+});
+
+describe("escapes", () => {
+  // 5x5. P1's cat and P2's mouse on the top row; the other two pawns far
+  // away on the bottom row.
+  const at = (
+    cat: [number, number],
+    mouse: [number, number],
+    playerId: 1 | 2,
+  ): CustomSetupStandardInitialState => ({
+    pawns: {
+      p1: { cat, mouse: [4, 0] },
+      p2: { cat: [4, 4], mouse },
+    },
+    walls: [],
+    turn: { playerId, actionsTaken: [] },
+  });
+  const play = (
+    initialState: CustomSetupStandardInitialState,
+    moves: string[],
+  ) => {
+    const replay = replayDistances({
+      variant: "standard",
+      boardWidth: 5,
+      boardHeight: 5,
+      initialState,
+      moves,
+    });
+    const calls = closeCallsOf(replay, moves);
+    return { calls, escapes: escapesOf(replay, moves, calls), replay };
+  };
+
+  test("a step and a wall take the walk from 1 to 4, and the cat comes back", () => {
+    // Nil's VoSWbMDd game (ask d525aea6), ply 39: the cat a5 is 1 from the
+    // mouse b5. >a5 closes a5-b5 and the mouse steps to c5: the cat goes
+    // round, a4 b4 b5 c5 = 4. Cb4: the cat is 2 away again, so this is no close call; the
+    // mouse still ran on its move.
+    const { calls, escapes } = play(at([0, 0], [0, 1], 2), [">a5.Mc5", "Cb4"]);
+    expect(calls).toEqual([]);
+    expect(escapes).toHaveLength(1);
+    expect(escapes[0]).toMatchObject({
+      ply: 0,
+      moveNumber: 1,
+      notation: ">a5.Mc5",
+      hunter: { player: 1, type: "cat" },
+      prey: { player: 2, type: "mouse" },
+      walkBefore: 1,
+      walk: 4,
+      preyFrom: "b5",
+      preyCell: "c5",
+      hunterCell: "a5",
+      size: 3,
+    });
+    expect(
+      describeEscape(escapes[0], { 1: "Guest Ferret", 2: "Normal Bot" }),
+    ).toBe(
+      "Guest Ferret's cat is 1 square from Normal Bot's mouse. The mouse runs to c5 and places a wall, and the cat must walk 4 (move 1).",
+    );
+  });
+
+  test("two plain steps from 2 to 4 are an escape; to 3 is not", () => {
+    // The cat a5 is 2 from the mouse c5; Me5 runs two squares right: 4.
+    const run = play(at([0, 0], [0, 2], 2), ["Me5", "Cc5"]);
+    expect(run.escapes.map((e) => [e.ply, e.walkBefore, e.walk])).toEqual([
+      [0, 2, 4],
+    ]);
+    // Md5: one step right, 3 from the cat: not far enough.
+    expect(play(at([0, 0], [0, 2], 2), ["Md5", "Cb5"]).escapes).toEqual([]);
+  });
+
+  test("a wall alone is no escape: the prey must move", () => {
+    // >a5.>a4 walls the cat in from the mouse b5: 1 to 5, but the mouse
+    // stays. That is a wall's moment, not the mouse's.
+    const { escapes, replay } = play(at([0, 0], [0, 1], 2), [">a5.>a4", "Ca3"]);
+    expect(replay.tracks[0].walks).toEqual([1, 5, 3]);
+    expect(escapes).toEqual([]);
+  });
+
+  test("a close call's save with a step is told once, as the close call", () => {
+    // Cb5: the cat comes from 3 to 2 (danger). >b5.Me5 closes b5-c5 and the
+    // mouse steps right: 5. Ma2 (P1's own mouse): the cat stays 5 away.
+    const moves = ["Cb5", ">b5.Me5", "Ma2"];
+    const { calls, escapes, replay } = play(at([0, 0], [0, 3], 1), moves);
+    expect(
+      calls.map((c) => [c.save.ply, c.save.walkBefore, c.save.walk]),
+    ).toEqual([[1, 2, 5]]);
+    expect(escapes).toEqual([]);
+    // Without the close call, the same move is an escape.
+    expect(escapesOf(replay, moves, []).map((e) => e.ply)).toEqual([1]);
   });
 });

@@ -51,7 +51,9 @@ import type {
 import {
   closeCallsOf,
   describeCloseCall,
+  describeEscape,
   describeJump,
+  escapesOf,
   pickBoard,
   evalBarEngineFor,
   gameEligibility,
@@ -61,6 +63,7 @@ import {
   rankCandidates,
   swingsOf,
   type DescribedCloseCall,
+  type DescribedEscape,
   type PickedJump,
   type PlyBoard,
   type SeatKind,
@@ -452,6 +455,8 @@ interface Candidate {
   picks: PickedJump[];
   /** Close calls (danger, save, relief), largest save first; may be []. */
   beats: DescribedCloseCall[];
+  /** Escapes by a prey's own move, largest first; may be []. */
+  escapes: DescribedEscape[];
   /**
    * Only with --engine. An engine failure is written here and does not take
    * the game out: the debug column cannot remove a candidate.
@@ -481,6 +486,12 @@ const describe = (c: Candidate, rank: number): string => {
     lines.push(
       `   close call: danger move ${b.danger.moveNumber} (walk ${b.danger.walk}), save move ${b.save.moveNumber} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${b.relief.moveNumber} (walk ${b.relief.walk}), ${zoom(b.save)}`,
       `     ${b.description}`,
+    );
+  }
+  for (const e of c.escapes) {
+    lines.push(
+      `   escape: move ${e.moveNumber} ${e.notation} (${e.walkBefore} -> ${e.walk}), ${e.prey.type} ${e.preyFrom} -> ${e.preyCell}`,
+      `     ${e.description}`,
     );
   }
   for (const p of c.picks) {
@@ -537,6 +548,7 @@ const main = async () => {
           2: game.seats.find((s) => s.playerOrder === 2)?.displayName ?? "P2",
         };
         const minJump = minJumpFor(game.variant as Variant);
+        const calls = closeCallsOf(replay, moves);
         const candidate: Candidate = {
           gameId: game.gameId,
           startedAt: game.startedAt,
@@ -562,9 +574,13 @@ const main = async () => {
               description: describeJump(p, names),
             }),
           ),
-          beats: closeCallsOf(replay, moves).map((b) => ({
+          beats: calls.map((b) => ({
             ...b,
             description: describeCloseCall(b, names),
+          })),
+          escapes: escapesOf(replay, moves, calls).map((e) => ({
+            ...e,
+            description: describeEscape(e, names),
           })),
         };
         if (botConfig && args.gpuHost) {

@@ -27,7 +27,11 @@ import {
   textProblems,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
-import type { DescribedCloseCall, PickedJump } from "../daily-candidates";
+import type {
+  DescribedCloseCall,
+  DescribedEscape,
+  PickedJump,
+} from "../daily-candidates";
 import { oauth1Header, xDryRunReply } from "./post-x.mjs";
 import { youtubeDryRunReply } from "./post-youtube.mjs";
 import {
@@ -118,6 +122,23 @@ const CLOSE_CALL: DescribedCloseCall = {
   size: 18,
   description:
     "Ruby's cat gets 1 square from Guest Tuatara's mouse. Walls make it walk 19 (move 10), and the mouse is safe.",
+};
+
+const ESCAPE: DescribedEscape = {
+  hunter: { player: 2, type: "cat" },
+  prey: { player: 1, type: "mouse" },
+  ply: 14,
+  moveNumber: 15,
+  notation: "^f4.Mf4",
+  walk: 4,
+  walkBefore: 1,
+  hunterCell: "g4",
+  preyFrom: "g5",
+  preyCell: "f4",
+  pawns: [],
+  size: 3,
+  description:
+    "Ruby's cat is 1 square from Guest Tuatara's mouse. The mouse runs to f4 and places a wall, and the cat must walk 4 (move 15).",
 };
 
 const CAPTION = "lmao Ruby thought it could just walk home";
@@ -913,6 +934,51 @@ describe("captions", () => {
     ).toEqual(start);
     // No beat: the walls alone, as before.
     expect(candidateFromReport(REPORT, 1).beats).toEqual([]);
+  });
+
+  test("an escape comes after the close calls, before the walls", () => {
+    const report = (last?: Record<number, number>) => ({
+      ...REPORT,
+      ranked: [
+        {
+          ...REPORT.ranked[0],
+          beats: [CLOSE_CALL],
+          escapes: [ESCAPE],
+          ...(last && {
+            distances: [...REPORT.ranked[0].distances.slice(0, 41), last],
+          }),
+        },
+      ],
+    });
+    const c = candidateFromReport(report(), 1) as {
+      facts: string[];
+      escapes: DescribedEscape[];
+    };
+    expect(c.facts[0]).toMatch(/^Move 10: /);
+    expect(c.facts[1]).toBe(
+      `Move 15: ${ESCAPE.description} Guest Tuatara wins at move 41.`,
+    );
+    expect(c.facts[2]).toMatch(/^Move 23: /);
+    expect(c.escapes[0]).toMatchObject({
+      ply: 14,
+      preyFrom: "g5",
+      preyCell: "f4",
+      hunterCell: "g4",
+    });
+    // The hunter still wins: the fact counts the moves after the escape.
+    expect(candidateFromReport(report({ 1: 3, 2: 0 }), 1).facts[1]).toMatch(
+      /the cat must walk 4 \(move 15\)\. Ruby still wins at move 41, 26 moves after the escape\.$/,
+    );
+    // A report from before escapes has none.
+    expect(candidateFromReport(REPORT, 1).escapes).toEqual([]);
+    // A cell the renderer cannot place is refused.
+    const bad = {
+      ...REPORT,
+      ranked: [
+        { ...REPORT.ranked[0], escapes: [{ ...ESCAPE, preyFrom: "<b>" }] },
+      ],
+    };
+    expect(() => candidateFromReport(bad, 1)).toThrow(/an escape/);
   });
 
   test("a zoom on a save frames every cause wall and both pawns", () => {

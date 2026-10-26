@@ -270,6 +270,25 @@ const checkBeat = (gameId, beat) => {
   if (!ok) throw new Error(`${gameId} has a close call the video cannot use`);
 };
 
+/** Throws unless `escape` is an Escape the renderer can act on. */
+const checkEscape = (gameId, escape) => {
+  const ok =
+    typeof escape?.description === "string" &&
+    [escape.hunter, escape.prey].every(
+      (p) =>
+        (p?.player === 1 || p?.player === 2) && PAWN_TYPES.includes(p.type),
+    ) &&
+    Number.isInteger(escape.ply) &&
+    escape.ply >= 0 &&
+    Number.isInteger(escape.moveNumber) &&
+    Number.isInteger(escape.walkBefore) &&
+    Number.isInteger(escape.walk) &&
+    [escape.hunterCell, escape.preyFrom, escape.preyCell].every((c) =>
+      CELL.test(c ?? ""),
+    );
+  if (!ok) throw new Error(`${gameId} has an escape the video cannot use`);
+};
+
 /**
  * The report entry at `rank` (1-based), as the cycle's candidate.
  * Throws with a reason when the report or the entry cannot be used.
@@ -298,6 +317,7 @@ export const candidateFromReport = (report, rank = 1) => {
     throw new Error(`${entry.gameId} has a pick without a description`);
   }
   for (const beat of entry.beats ?? []) checkBeat(entry.gameId, beat);
+  for (const escape of entry.escapes ?? []) checkEscape(entry.gameId, escape);
   if (
     entry.moves !== undefined &&
     (!Array.isArray(entry.moves) ||
@@ -358,6 +378,23 @@ export const candidateFromReport = (report, rank = 1) => {
       size: b.size,
       description: b.description,
     })),
+    // DescribedEscape (daily-candidates.ts), largest first: a prey that
+    // steps away from a close hunter, with or without a wall. A report from
+    // before 2026-10-26 has none.
+    escapes: (entry.escapes ?? []).map((e) => ({
+      ply: e.ply,
+      moveNumber: e.moveNumber,
+      notation: e.notation,
+      hunter: e.hunter,
+      prey: e.prey,
+      walkBefore: e.walkBefore,
+      walk: e.walk,
+      hunterCell: e.hunterCell,
+      preyFrom: e.preyFrom,
+      preyCell: e.preyCell,
+      size: e.size,
+      description: e.description,
+    })),
     // Every ply's notation: edl.mjs checks the director's list against it.
     moves: entry.moves ?? null,
     // Where the game started: the storyboard replays the moves from it.
@@ -373,9 +410,9 @@ export const candidateFromReport = (report, rank = 1) => {
     base.seats.find((s) => s.playerOrder === player)?.name;
   // A close call's sentence says "the mouse is safe"; the game can still be
   // lost a few moves later, and the story must follow the end.
-  const outcome = (b) =>
+  const outcome = (b, moveNumber, what) =>
     winner === b.hunter.player
-      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - b.save.moveNumber} moves after the save.`
+      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - moveNumber} moves after the ${what}.`
       : winner === b.prey.player
         ? ` ${name(winner)} wins at move ${base.movesCount}.`
         : "";
@@ -383,7 +420,12 @@ export const candidateFromReport = (report, rank = 1) => {
     ...base,
     facts: [
       ...base.beats.map(
-        (b) => `Move ${b.save.moveNumber}: ${b.description}${outcome(b)}`,
+        (b) =>
+          `Move ${b.save.moveNumber}: ${b.description}${outcome(b, b.save.moveNumber, "save")}`,
+      ),
+      ...base.escapes.map(
+        (e) =>
+          `Move ${e.moveNumber}: ${e.description}${outcome(e, e.moveNumber, "escape")}`,
       ),
       ...base.picks.map((p) => `Move ${p.moveNumber}: ${p.description}`),
     ],
