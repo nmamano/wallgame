@@ -227,6 +227,32 @@ describe("startPly and coldOpenPly", () => {
   });
 });
 
+describe("the payoff caption beat", () => {
+  test("defaults to none, and holds the caption's limits", () => {
+    expect(accept(base)).toMatchObject({ payoff: null });
+    const payoff = { ply: 4, text: "now it's 19 💀" };
+    expect(accept({ ...base, payoff })).toMatchObject({ payoff });
+    const refused = (raw: object) => validateEdl({ ...base, ...raw }).ok;
+    expect(refused({ payoff: { ply: 4, text: "" } })).toBe(false);
+    expect(refused({ payoff: { ply: 4, text: "a b c d e f g" } })).toBe(false);
+    expect(refused({ payoff: { ply: 4 } })).toBe(false);
+    expect(refused({ payoff: { ply: 4, text: "ok", at: 1 } })).toBe(false);
+    expect(refused({ caption: "", payoff })).toBe(false);
+    expect(refused({ startPly: 5, payoff })).toBe(false);
+  });
+
+  test("is on a ply the game has", () => {
+    const game = { notations: ["Ce7", "Cf7", "^a4.^h4"], cols: 8, rows: 8 };
+    const at = (ply: number) =>
+      checkEdlAgainstGame(
+        accept({ ...base, payoff: { ply, text: "now" } }),
+        game,
+      );
+    expect(at(2)).toEqual([]);
+    expect(at(3)).toHaveLength(1);
+  });
+});
+
 describe("the VS card's goal line", () => {
   test("is the rules guide's sentence, and absent for a variant with no guide", () => {
     expect(goalSentenceFor("classic")).toBe(

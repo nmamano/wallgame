@@ -33,6 +33,11 @@
  *
  *   caption  optional, one line: at most 6 words and 32 characters (Nil,
  *            2026-10-26: a long caption was "way too long").
+ *   payoff   optional: { ply, text }, a second caption beat (audit item 9).
+ *            From the move of `ply` on, `text` replaces the caption: a setup
+ *            line, then its payoff. Same limits as the caption; it needs a
+ *            caption to replace, and its ply is at startPly or later. Absent
+ *            (null after validation): one caption for the whole video.
  *   ending   required: the daily app rotates replay, gg and ko, so a render
  *            never falls back to one silently.
  *   music    optional: one of the site's tracks by slug (deja-vus,
@@ -242,6 +247,7 @@ export const validateEdl = (raw) => {
       "version",
       "gameId",
       "caption",
+      "payoff",
       "ending",
       "music",
       "startPly",
@@ -261,23 +267,24 @@ export const validateEdl = (raw) => {
     fail(`gameId must be a game id, got ${JSON.stringify(raw.gameId)}`);
   }
 
-  const caption = raw.caption ?? "";
-  if (typeof caption !== "string") {
-    fail("caption must be a string");
-  } else {
-    const words = caption.split(/\s+/).filter(Boolean).length;
-    if (/[\r\n]/.test(caption)) fail("caption must be one line");
+  /** The caption's limits, for the caption and for its payoff beat. */
+  const checkCaptionText = (text, where) => {
+    if (typeof text !== "string") return fail(`${where} must be a string`);
+    const words = text.split(/\s+/).filter(Boolean).length;
+    if (/[\r\n]/.test(text)) fail(`${where} must be one line`);
     if (words > EDL_LIMITS.captionWords) {
       fail(
-        `caption has ${words} words; at most ${EDL_LIMITS.captionWords} are allowed`,
+        `${where} has ${words} words; at most ${EDL_LIMITS.captionWords} are allowed`,
       );
     }
-    if (graphemes(caption) > EDL_LIMITS.captionChars) {
+    if (graphemes(text) > EDL_LIMITS.captionChars) {
       fail(
-        `caption has ${graphemes(caption)} characters; at most ${EDL_LIMITS.captionChars} are allowed`,
+        `${where} has ${graphemes(text)} characters; at most ${EDL_LIMITS.captionChars} are allowed`,
       );
     }
-  }
+  };
+  const caption = raw.caption ?? "";
+  checkCaptionText(caption, "caption");
 
   if (!ENDINGS.includes(raw.ending)) {
     fail(
@@ -303,6 +310,24 @@ export const validateEdl = (raw) => {
   // the cut.
   if (coldOpenPly !== null && isPly(startPly) && coldOpenPly < startPly) {
     fail(`coldOpenPly ${coldOpenPly} is before startPly ${startPly}`);
+  }
+
+  const payoff = raw.payoff ?? null;
+  if (payoff !== null) {
+    if (typeof payoff !== "object" || Array.isArray(payoff)) {
+      fail("payoff must be { ply, text }, or absent for one caption");
+    } else {
+      unknown(payoff, ["ply", "text"], "payoff");
+      if (!isPly(payoff.ply)) fail("payoff.ply must be a 0-based ply");
+      checkCaptionText(payoff.text, "payoff.text");
+      if (typeof payoff.text === "string" && payoff.text.trim() === "") {
+        fail("payoff.text must not be empty");
+      }
+      if (caption === "") fail("payoff needs a caption to replace");
+      if (isPly(payoff.ply) && isPly(startPly) && payoff.ply < startPly) {
+        fail(`payoff.ply ${payoff.ply} is before startPly ${startPly}`);
+      }
+    }
   }
 
   const slots = {};
@@ -456,6 +481,7 @@ export const validateEdl = (raw) => {
       version: raw.version,
       gameId: raw.gameId,
       caption,
+      payoff,
       ending: raw.ending,
       music,
       startPly,
@@ -486,6 +512,7 @@ export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
   const plies = [
     edl.startPly,
     ...(edl.coldOpenPly === null ? [] : [edl.coldOpenPly]),
+    ...(edl.payoff === null ? [] : [edl.payoff.ply]),
     ...edl.pace.flatMap((s) => [s.fromPly, s.toPly]),
     ...edl.events.map((e) => e.ply),
   ];

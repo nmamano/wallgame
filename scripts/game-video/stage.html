@@ -638,8 +638,18 @@
       #root.wallz #play .plate {
         display: none;
       }
+      /*
+        The caption keeps the height of the taller beat (--caption-h, from
+        __fitWallz), its text at the bottom, next to the head row. It never
+        shrinks: that min-height replaces the flex item's own floor (auto),
+        and #play overflows while __fitWallz measures.
+      */
       #root.wallz #play .caption {
-        display: block;
+        display: flex;
+        flex-direction: column;
+        justify-content: flex-end;
+        min-height: var(--caption-h, 0px);
+        flex-shrink: 0;
         width: 100%;
         text-align: center;
         font-family:
@@ -1076,18 +1086,43 @@
       /**
        * An EDL stamp in the middle of the game: the word punches in like the
        * VS mark and fades over its last quarter second.
-       *   m = { text, t: seconds into the stamp, seconds: its length }
+       *   m = { text, t: seconds into the stamp, seconds: its length,
+       *         at: {x, y} its centre on the board image (0..1), where the
+       *         renderer measured it to cover the least of the move,
+       *         fit: its size, 1 or less so a long word fits the board }
        */
       const paintMidStamp = (m) => {
         const el = $("midStamp");
         show(el, !!m);
         if (!m) return;
         el.textContent = m.text;
+        el.style.left = m.at.x * 100 + "%";
+        el.style.top = m.at.y * 100 + "%";
         el.style.opacity = 1 - span(m.t, m.seconds - 0.25, m.seconds);
         el.style.transform =
           "translate(-50%,-50%) rotate(-8deg) scale(" +
-          punch(span(m.t, 0, 0.25)) +
+          punch(span(m.t, 0, 0.25)) * m.fit +
           ")";
+      };
+
+      /**
+       * The box a stamp word covers at rest (after its punch) at full size,
+       * as a share of the board's width and height, so the renderer can
+       * size it and place it where it hides the least of the move (audit
+       * item 4).
+       */
+      window.__stampBox = (text) => {
+        paintMidStamp({
+          text,
+          t: 0.25,
+          seconds: 1,
+          at: { x: 0.5, y: 0.5 },
+          fit: 1,
+        });
+        const r = $("midStamp").getBoundingClientRect();
+        const b = $("boardWrap").getBoundingClientRect();
+        paintMidStamp(null);
+        return { w: r.width / b.width, h: r.height / b.height };
       };
 
       /**
@@ -1325,14 +1360,26 @@
        * the caption is set, so a two-line caption gives a smaller board and
        * no pixel budget is guessed. Called once per video by the renderer;
        * the result holds for every frame, because the caption and the head
-       * row do not change size. Returns the board's side in px.
+       * row do not change size. With a payoff beat (edl.mjs) there are two
+       * captions: the caption keeps the height of the taller one all video
+       * long, so the board does not move when the beat changes. Returns the
+       * board's side in px.
        */
-      window.__fitWallz = async ({ caption, hud, goal }) => {
+      window.__fitWallz = async ({ captions, hud, goal }) => {
         $("root").classList.add("wallz");
         show($("play"), true);
-        $("caption").textContent = caption;
         $("goal").textContent = goal ?? "";
-        // A font loads when text first uses it; measure only once it has.
+        const root = document.documentElement.style;
+        root.setProperty("--caption-h", "0px");
+        let captionH = 0;
+        for (const text of captions) {
+          $("caption").textContent = text;
+          // A font loads when text first uses it; measure only once it has.
+          await document.fonts.ready;
+          captionH = Math.max(captionH, $("caption").offsetHeight);
+        }
+        root.setProperty("--caption-h", captionH + "px");
+        $("caption").textContent = captions[0] ?? "";
         await document.fonts.ready;
         $("hud").classList.toggle("on", hud);
         $("raceNa").textContent = "88";
@@ -1368,7 +1415,7 @@
        * the safe-area check: {x, y, w, h} rounded outward, and only the ones
        * this video shows.
        */
-      window.__layoutBoxes = ({ caption, race, goal }) => {
+      window.__layoutBoxes = ({ captions, race, goal }) => {
         const box = (el) => {
           const r = el.getBoundingClientRect();
           const x = Math.floor(r.left);
@@ -1380,9 +1427,16 @@
             h: Math.ceil(r.bottom) - y,
           };
         };
+        const captionBox = (text) => {
+          $("caption").textContent = text;
+          const b = box($("caption"));
+          $("caption").textContent = captions[0] ?? "";
+          return b;
+        };
         return {
           board: box($("boardWrap")),
-          ...(caption && { caption: box($("caption")) }),
+          ...(captions[0] && { caption: captionBox(captions[0]) }),
+          ...(captions[1] && { payoff: captionBox(captions[1]) }),
           ...(race && { race: box($("race")) }),
           ...(goal && { goalLine: box($("goal")) }),
         };

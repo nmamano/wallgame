@@ -93,6 +93,7 @@ import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
+import { stampSpot } from "./stamp-spot.mjs";
 import { allocateFrameRanges } from "./timeline-frames.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -262,6 +263,13 @@ for (const [flagName, field] of [
 }
 /** What the daily look plays: the EDL's, or nothing in a current-only render. */
 const CAPTION = EDL?.caption ?? "";
+/** The caption's second beat (edl.mjs payoff), or null for one caption. */
+const PAYOFF = EDL?.payoff ?? null;
+/** Every caption the video shows, setup first; empty without a caption. */
+const CAPTIONS = CAPTION ? [CAPTION, ...(PAYOFF ? [PAYOFF.text] : [])] : [];
+/** The caption over the position after `boardIndex` plies. */
+const captionAt = (boardIndex) =>
+  PAYOFF && boardIndex > PAYOFF.ply ? PAYOFF.text : CAPTION;
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
 /** The first ply a daily video plays (edl.mjs startPly); 0 otherwise. */
@@ -482,6 +490,17 @@ const SHAKE_SECONDS = 0.6;
 const SCARED_SECONDS = 1.2;
 const LAUGH_SECONDS = 1.3;
 const STAMP_SECONDS = 1.0;
+/**
+ * A stamp lands this long after its move, so the move is seen first (audit
+ * item 4); its event lasts STAMP_LAND_AT + STAMP_SECONDS.
+ */
+const STAMP_LAND_AT = 0.3;
+/**
+ * A stamp or trap word is at most this share of the board's width; a longer
+ * word shrinks to it (an EDL allows 12 letters, which measure wider than
+ * the board at the stamp's size).
+ */
+const STAMP_MAX_WIDTH = 0.9;
 const EFFECT_REST_SECONDS = 0.3;
 const ZOOM_IN = 0.12;
 const ZOOM_OUT = 0.25;
@@ -1295,6 +1314,76 @@ log(
     `${Math.round(clip.width * CAPTURE_DPR)}px captured for a ${boardSlotPx}px slot`,
 );
 
+/*
+  The daily look draws the walls that were on the board at the start in a
+  muted grey (audit item 7): with Red vs Blue the only story, a third colour
+  is noise. The site paints them SITE_START_WALL (frontend board.tsx,
+  NEUTRAL_WALL_COLOR) inline - a wall's background, a pillar's fill - so a
+  stylesheet rule with !important repaints them on the capture page only;
+  the site does not change. The rule is page-wide (brown off the board turns
+  grey too), but only the board clip goes into the video. One capture serves
+  every style of a run, so with --style current,daily the current look gets
+  the grey walls too.
+*/
+const SITE_START_WALL = "#92400e";
+const DAILY_START_WALL = "#64748b";
+/**
+ * On the board, count the parts painted the site's start-wall colour and
+ * the parts painted the daily grey.
+ */
+const countWallPaint = () =>
+  game.evaluate(
+    ([c, site, grey]) => {
+      const norm = (color) => {
+        const d = document.createElement("div");
+        d.style.color = color;
+        document.body.append(d);
+        const v = getComputedStyle(d).color;
+        d.remove();
+        return v;
+      };
+      const [siteRgb, greyRgb] = [norm(site), norm(grey)];
+      let siteParts = 0;
+      let greyParts = 0;
+      for (const el of document.querySelectorAll("body *")) {
+        const r = el.getBoundingClientRect();
+        const x = r.x + r.width / 2;
+        const y = r.y + r.height / 2;
+        if (x < c.x || x > c.x + c.width || y < c.y || y > c.y + c.height)
+          continue;
+        const cs = getComputedStyle(el);
+        const paints = [cs.backgroundColor, cs.fill];
+        if (paints.includes(siteRgb)) siteParts += 1;
+        if (paints.includes(greyRgb)) greyParts += 1;
+      }
+      return { site: siteParts, grey: greyParts };
+    },
+    [clip, SITE_START_WALL, DAILY_START_WALL],
+  );
+if (STYLE_NAMES.includes("daily")) {
+  // Every position shows the start walls: no move removes one.
+  const startWalls = replay.state.initialState.walls.length;
+  const before = await countWallPaint();
+  if (startWalls > 0 && before.site === 0) {
+    throw new Error(
+      `the game has ${startWalls} start walls, but nothing on the board is ${SITE_START_WALL}: the site changed how it paints them`,
+    );
+  }
+  await game.addStyleTag({
+    content:
+      // The browser writes an inline colour as rgb(r, g, b).
+      `[style*="background-color: rgb(${[1, 3, 5].map((i) => parseInt(SITE_START_WALL.slice(i, i + 2), 16)).join(", ")})"] { background-color: ${DAILY_START_WALL} !important; }\n` +
+      `[fill="${SITE_START_WALL}" i] { fill: ${DAILY_START_WALL} !important; }`,
+  });
+  const after = await countWallPaint();
+  if (after.site > 0 || after.grey < before.grey + before.site) {
+    throw new Error(
+      `the start walls did not all turn grey: ${before.site} parts were ${SITE_START_WALL}, and after the repaint ${after.site} still are, ${after.grey} are grey (${before.grey} were before)`,
+    );
+  }
+  log(`start walls: ${startWalls}, ${before.site} parts repainted grey`);
+}
+
 const moveButtons = game.locator("button[aria-pressed]:visible");
 if ((await moveButtons.count()) !== history.length) {
   throw new Error(
@@ -1373,7 +1462,12 @@ const captureResult = await captureReplayFrames({
             x > c.x && x < c.x + c.width && y > c.y && y < c.y + c.height;
           // A pawn on the board is about a cell; the seat cards are bigger.
           if (inside && r.width < c.width / 4) {
-            spots.push({ x: (x - c.x) / c.width, y: (y - c.y) / c.height });
+            spots.push({
+              x: (x - c.x) / c.width,
+              y: (y - c.y) / c.height,
+              w: r.width / c.width,
+              h: r.height / c.height,
+            });
           }
         }
         return spots;
@@ -1776,6 +1870,44 @@ const bubbleSide = (boardIndex, at) => {
   return best;
 };
 
+/**
+ * Where a stamp or trap word goes (stamp-spot.mjs), over the position after
+ * `boardIndex` plies: it avoids the pawns the page drew there (their
+ * measured boxes), the cell and walls of the move `plyIndex`, and
+ * `extraWalls` (a trap's). `size` is the word's measured box.
+ */
+const placeStamp = (boardIndex, plyIndex, size, extraWalls) => {
+  const span = 1 - 2 * GRID.pad;
+  const cellW = span / GRID.cols;
+  const cellH = span / GRID.rows;
+  const ofCells = ([top, left, bottom, right]) => [
+    GRID.pad + left * cellW,
+    GRID.pad + top * cellH,
+    GRID.pad + right * cellW,
+    GRID.pad + bottom * cellH,
+  ];
+  const cell = cellOfPly(plyIndex);
+  const moveWalls = String(history[plyIndex]?.notation ?? "")
+    .split(".")
+    .filter((t) => t.startsWith(">") || t.startsWith("^"));
+  return stampSpot({
+    size,
+    pad: GRID.pad,
+    avoid: [
+      ...(pawnSpots.get(boardIndex) ?? []).map((p) => [
+        p.x - p.w / 2,
+        p.y - p.h / 2,
+        p.x + p.w / 2,
+        p.y + p.h / 2,
+      ]),
+      ...(cell ? [ofCells([cell[0], cell[1], cell[0] + 1, cell[1] + 1])] : []),
+      ...[...moveWalls, ...extraWalls].map((t) => ofCells(termBox(t))),
+    ],
+    cellArea: cellW * cellH,
+    focus: cell ? cellAt(cell) : null,
+  });
+};
+
 /** The centre of an EDL cell on the board image (0..1), for the mouse overlays. */
 const cellAtTerm = (term) => {
   const [top, left] = termBox(term);
@@ -2036,7 +2168,7 @@ const renderStyle = async (styleName) => {
   /** The daily look's board, sized by the stage to what the safe area leaves. */
   if (wallz) {
     const board = await stage.evaluate((a) => window.__fitWallz(a), {
-      caption: CAPTION,
+      captions: CAPTIONS,
       hud: Boolean(RACE_DISTANCES || GOAL_LINE),
       goal: GOAL_LINE,
     });
@@ -2241,7 +2373,7 @@ const renderStyle = async (styleName) => {
   const playState = (boardIndex, extra = {}) => ({
     segment: "play",
     look: style.look,
-    caption: wallz ? CAPTION : "",
+    caption: wallz ? captionAt(boardIndex) : "",
     board: fileUrl(boardFrames[boardIndex]),
     top: side(seats.top),
     bottom: side(seats.bottom),
@@ -2373,7 +2505,7 @@ const renderStyle = async (styleName) => {
    */
   const layoutBoxes = wallz
     ? await stage.evaluate((a) => window.__layoutBoxes(a), {
-        caption: Boolean(CAPTION),
+        captions: CAPTIONS,
         race: Boolean(RACE_DISTANCES),
         goal: Boolean(GOAL_LINE),
       })
@@ -2392,11 +2524,48 @@ const renderStyle = async (styleName) => {
   }
 
   /**
+   * Where each stamp and trap word lands (stampSpot) and how much it shrinks
+   * to fit (STAMP_MAX_WIDTH), keyed by its event.
+   */
+  const stampSpots = new Map();
+  if (wallz) {
+    for (const ev of EVENTS) {
+      if (ev.kind !== "stamp" && ev.kind !== "trap") continue;
+      const measured = await stage.evaluate(
+        (t) => window.__stampBox(t),
+        ev.text,
+      );
+      const fit = Math.min(1, STAMP_MAX_WIDTH / measured.w);
+      const spot = placeStamp(
+        ev.ply + 1,
+        ev.ply,
+        { w: measured.w * fit, h: measured.h * fit },
+        ev.kind === "trap" ? ev.walls : [],
+      );
+      stampSpots.set(ev, { at: spot.at, fit });
+      log(
+        `${ev.kind} "${ev.text}" on ply ${ev.ply}: ${spot.band} of the board at ${fit.toFixed(2)} size, over ${spot.covered.toFixed(2)} cells of the move`,
+      );
+    }
+  }
+
+  /**
    * One frame of an after-landing EDL effect, `t` seconds (frame `i`) into
    * its `seconds`, as the stage state it adds to the position.
    */
   const momentState = (ev, ply, t, seconds, i) => {
-    if (ev.kind === "stamp") return { midStamp: { text: ev.text, t, seconds } };
+    if (ev.kind === "stamp") {
+      return t < STAMP_LAND_AT
+        ? {}
+        : {
+            midStamp: {
+              text: ev.text,
+              t: t - STAMP_LAND_AT,
+              seconds: seconds - STAMP_LAND_AT,
+              ...stampSpots.get(ev),
+            },
+          };
+    }
     if (ev.kind === "race") return { race: { ...raceHud(ply), flash: t } };
     if (ev.kind === "trap") {
       return {
@@ -2407,6 +2576,7 @@ const renderStyle = async (styleName) => {
                 text: ev.text,
                 t: t - TRAP_STAMP_AT,
                 seconds: seconds - TRAP_STAMP_AT,
+                ...stampSpots.get(ev),
               }
             : undefined,
       };
@@ -2508,10 +2678,14 @@ const renderStyle = async (styleName) => {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       if (ev.sound) {
         const sound = meme(ev.sound);
-        cue({
-          ...sound,
-          gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
-        });
+        // A stamp's sound lands with its word.
+        cue(
+          {
+            ...sound,
+            gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
+          },
+          elapsed + (ev.kind === "stamp" ? STAMP_LAND_AT : 0),
+        );
       }
       if (ev.kind === "sound") {
         stillNext = label;
@@ -2536,7 +2710,7 @@ const renderStyle = async (styleName) => {
       const seconds = {
         scared: SCARED_SECONDS,
         laugh: LAUGH_SECONDS,
-        stamp: STAMP_SECONDS,
+        stamp: STAMP_LAND_AT + STAMP_SECONDS,
         blunder: BLUNDER_SECONDS,
         brilliant: BRILLIANT_SECONDS,
         react: REACT_SECONDS,
@@ -2544,11 +2718,14 @@ const renderStyle = async (styleName) => {
         race: RACE_FLASH_SECONDS,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
-      // A trap's still shows its word; the others are judged mid-effect.
+      // A stamp's or trap's still shows its word; the others are judged
+      // mid-effect.
       const stillAt =
         ev.kind === "trap"
           ? Math.round((TRAP_STAMP_AT + 0.4) * FPS)
-          : Math.round(frames / 2);
+          : ev.kind === "stamp"
+            ? Math.round((STAMP_LAND_AT + 0.4) * FPS)
+            : Math.round(frames / 2);
       for (let i = 0; i < frames; i += 1) {
         if (i === stillAt) stillNext = label;
         const extra = momentState(ev, ply, i / FPS, seconds, i);
