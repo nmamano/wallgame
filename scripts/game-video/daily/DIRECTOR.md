@@ -41,11 +41,21 @@ already has a cycle, finish it or stop: do not start another. `pick
    verdict per still in sheet order:
    `[{"ply": 9, "kind": "zoom", "ok": true, "note": "^g3 and ^h3 in frame, cat g3, mouse g4"}]`.
    `sheet` also prints the app's measures of the video. A measure that
-   FAILED fails the check, whatever the stills show. `loudness` names the
-   second of the loudest sound: drop that sound or name a softer one, then
-   `direct` again and `render --force`. `safeArea` names a part of the frame
-   that the apps would cover: that is a renderer fault, not your list, so
-   skip the day and tell the Wall Game PM.
+   FAILED fails the check, whatever the stills show:
+   - `loudness` gives each meme sound's own level, from the second it
+     starts. It fails for each meme over -18.5 LUFS (`MAX_MEME_LUFS` in
+     `quality.mjs`); its level over the music and its true peak are
+     information only, because they move with the song. With the meme
+     gains of 2026-10-26 it should not fail. When it does, a level in
+     `meme-sounds.mjs` is wrong: drop that sound or name another one of
+     its family, `direct` again and `render --force`, and tell Wall Game
+     Worker 2. "No meme loudness" means a render kit older than the
+     measure: sync the kit before the next render.
+   - `captionLines` names a caption beat that wraps to two lines or runs
+     past its box: shorten it, `direct` again and `render --force`.
+   - `safeArea` names a part of the frame that the apps would cover: that
+     is a renderer fault, not your list, so skip the day and tell Wall Game
+     Worker 2.
 7. `ask --agent <your agent id>`
    This opens Nil's ask with the video and the sheet. When he answers, run
    `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
@@ -302,10 +312,21 @@ Do this one time only. Each render is one more view of the game.
 
 ## Skip the day
 
-Skip the day, and tell the Wall Game PM why, when:
+Skip the day when:
 
 - `facts` prints "no candidates" (it gives the reason).
 - No game in the top 5 has a moment worth a FAHHH.
 - The render fails two times, or the second check fails too.
 
 Do not post a weak video to keep a streak.
+
+When you skip:
+
+- Say the reason in one line in your own chat (Nil reads it there), and
+  send one line to Wall Game Growth (agent-1792966148239-zvmt): a missing
+  day changes the post-log numbers it measures.
+- Open an ask to Nil only when he must decide something: a second skip in
+  a row, or a fault that the editor team cannot fix before the next cycle.
+- Fix a tool problem with the editor team; do not retry by hand. A
+  renderer fault goes to Wall Game Worker 2; a crew-app fault (`crew.mjs`,
+  the app's steps and checks) goes to Wall Game Worker 3.

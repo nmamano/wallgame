@@ -237,7 +237,7 @@ const ZOOM_OK = {
 const MEASURED = {
   loudness: {
     ok: true,
-    note: "the loudest moment (5.6 s) is 4.7 LU over the mix",
+    note: "fuahhh-1 at 5.6 s: -21 LUFS, 13.8 LU over the bed (-34.8 LUFS), true peak -13.4 dBTP",
   },
   safeArea: { ok: true, note: "board, caption inside the safe area" },
 };
@@ -474,7 +474,7 @@ describe("the director checks the contact sheet before the ask", () => {
     const store = rendered({
       loudness: {
         ok: false,
-        note: "the loudest moment (1.1 s) is 6.5 LU over the mix",
+        note: "shotgun-2 at 1.1 s: -15.8 LUFS: a meme sound may be at most -18.5 LUFS",
       },
     });
     store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
@@ -482,7 +482,7 @@ describe("the director checks the contact sheet before the ask", () => {
     expect(cycle.state).toBe("rendered");
     expect(cycle.check?.ok).toBe(false);
     expect(cycle.events.at(-1)?.what).toBe(
-      "check failed: loudness: the loudest moment (1.1 s) is 6.5 LU over the mix",
+      "check failed: loudness: shotgun-2 at 1.1 s: -15.8 LUFS: a meme sound may be at most -18.5 LUFS",
     );
   });
 

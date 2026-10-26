@@ -131,7 +131,7 @@ export const captionLinesVerdict = (layout) => {
   if (!beats) {
     return {
       ok: false,
-      note: "the render reported no caption line count; the render kit may be older than the measure, so tell the Wall Game PM",
+      note: "the render reported no caption line count; the render kit may be older than the measure, so sync it (Wall Game Director)",
     };
   }
   const entries = Object.entries(beats);
