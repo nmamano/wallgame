@@ -2746,14 +2746,19 @@ const renderStyle = async (styleName) => {
         race: RACE_FLASH_SECONDS,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
-      // A stamp's or trap's still shows its word; the others are judged
-      // mid-effect.
+      // A stamp's or trap's still shows its word; a race flash's shows the
+      // counter at its second swell (stage.html swells it as sin^2 over
+      // RACE_FLASH_SECONDS, so the middle frame falls between the two swells,
+      // with no glow; the second comes after the RACE_TICK_SECONDS tick); the
+      // others are judged mid-effect.
       const stillAt =
         ev.kind === "trap"
           ? Math.round((TRAP_STAMP_AT + 0.4) * FPS)
           : ev.kind === "stamp"
             ? Math.round((STAMP_LAND_AT + 0.4) * FPS)
-            : Math.round(frames / 2);
+            : ev.kind === "race"
+              ? Math.round(RACE_FLASH_SECONDS * 0.75 * FPS)
+              : Math.round(frames / 2);
       for (let i = 0; i < frames; i += 1) {
         if (i === stillAt) stillNext = label;
         const extra = momentState(ev, ply, i / FPS, seconds, i);

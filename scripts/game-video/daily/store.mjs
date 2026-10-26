@@ -358,11 +358,25 @@ export const openStore = (dataDir) => {
      * The crew lead opened an Isomux ask about this video. `modes` and
      * `videoSha256` are what the ask SHOWED; `currentModes` is what the app
      * would post with now. They must agree, or the approval would name bytes
-     * or a mode that the member did not see.
+     * or a mode that the member did not see. `replacesAskId`: the same ask
+     * opened again (crew.mjs ask --reopen) while the old one is unanswered;
+     * from then on only the new id's answer counts.
+     * @param {string} day
+     * @param {{ askId: any, modes: any, videoSha256: any, currentModes: any,
+     *   replacesAskId?: string }} ask
      */
-    recordAsk(day, { askId, modes, videoSha256, currentModes }) {
+    recordAsk(day, { askId, modes, videoSha256, currentModes, replacesAskId }) {
       const cycle = need(day);
-      expect(cycle, ["checked"], "ask");
+      if (replacesAskId) {
+        expect(cycle, ["asked"], "reopen the ask");
+        if (cycle.approval.askId !== replacesAskId) {
+          refuse(
+            `ask ${replacesAskId} is not this cycle's ask (${cycle.approval.askId})`,
+          );
+        }
+      } else {
+        expect(cycle, ["checked"], "ask");
+      }
       if (videoSha256 !== cycle.render.video.sha256) {
         refuse("the ask shows another video than the current render");
       }
@@ -384,8 +398,14 @@ export const openStore = (dataDir) => {
         approver: null,
         answeredAt: null,
         reply: null,
+        ...(replacesAskId && { replacesAskId }),
       };
-      return save(cycle, `ask ${askId} opened`);
+      return save(
+        cycle,
+        replacesAskId
+          ? `ask ${askId} opened again (was ${replacesAskId})`
+          : `ask ${askId} opened`,
+      );
     },
 
     /** The member answered the ask; the crew lead passes the answer on. */

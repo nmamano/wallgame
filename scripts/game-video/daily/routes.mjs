@@ -708,11 +708,15 @@ export const createDaily = ({
     },
 
     /** {day?, askId} - the crew lead opened the ask. */
-    /** {day?, askId, modes, videoSha256} - what the ask showed. */
+    /** {day?, askId, modes, videoSha256, replacesAskId?} - what the ask showed. */
     "POST /api/daily/ask": async (req, res) => {
       const body = await readJson(req);
-      if (!/^[A-Za-z0-9_-]{1,80}$/.test(body.askId ?? "")) {
+      const id = /^[A-Za-z0-9_-]{1,80}$/;
+      if (!id.test(body.askId ?? "")) {
         throw new StepRefused("an ask id is needed");
+      }
+      if (body.replacesAskId !== undefined && !id.test(body.replacesAskId)) {
+        throw new StepRefused("replacesAskId is not an ask id");
       }
       const day = dayOf(body.day);
       json(
@@ -723,6 +727,7 @@ export const createDaily = ({
           modes: body.modes,
           videoSha256: body.videoSha256,
           currentModes: postingModes(env),
+          replacesAskId: body.replacesAskId,
         }),
       );
     },

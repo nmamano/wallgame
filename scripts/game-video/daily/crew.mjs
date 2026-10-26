@@ -39,7 +39,11 @@
  *                                  the still shows what the cue is for (a FAHHH
  *                                  or zoom shows the save wall). The ask needs
  *                                  every still ok.
- *   ask --agent <your agent id>    open the Isomux ask with the MP4 and caption
+ *   ask --agent <your agent id> [--reopen]
+ *                                  open the Isomux ask with the MP4 and caption
+ *                                  for APPROVER_MEMBER; --reopen opens the
+ *                                  day's open ask again for that member, gives
+ *                                  the app the new id and withdraws the old one
  *   answer --agent <id> --ask <askId> --decision approve|reject
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
@@ -49,7 +53,7 @@
  *                                  Instagram Reel (dry-run without keys)
  *   log [--dry-run]                the post log
  *
- * The ask goes to the agent's manager. Only an agent can open one (an app
+ * The ask goes to APPROVER_MEMBER. Only an agent can open one (an app
  * token is refused there), which is why this runs as the crew lead and uses
  * ISOMUX_AGENT_TOKEN. `ask` sends the app the video hash and posting modes
  * that the ask shows, and withdraws the ask if the app no longer agrees.
@@ -90,6 +94,12 @@ const BUN = join(homedir(), ".bun/bin/bun");
 /** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
 const STORYBOARD_TIMEOUT_MS = 120_000;
 const APP_NAME = "game-video";
+/**
+ * Who answers the daily ask. An ask goes to the agent's manager unless it
+ * names a member, and the Director's manager (Isomuxer 3 since 2026-10-26)
+ * is an inbox that nobody reads.
+ */
+const APPROVER_MEMBER = "Nil";
 
 const argv = process.argv.slice(2);
 const command = argv[0];
@@ -453,9 +463,27 @@ const commands = {
 
   async ask() {
     const agent = flag("agent") ?? die("ask needs --agent <your agent id>");
+    const reopen = has("reopen");
     const s = await state();
     const c = s.cycle;
-    if (c?.state !== "checked")
+    // --reopen: the day's ask is open but went to the wrong inbox; the same
+    // ask opens again for APPROVER_MEMBER, and the app takes its id.
+    const replaces = reopen ? c?.approval?.askId : undefined;
+    if (reopen) {
+      if (c?.state !== "asked" || !replaces)
+        die(
+          `ask --reopen needs an open ask; the cycle is ${c?.state ?? "missing"}`,
+        );
+      const old = await office("GET", `/api/agents/${agent}/asks/${replaces}`);
+      if (old.status === 404)
+        die(
+          `ask ${replaces} is not open: it was answered or closed, so run answer instead`,
+        );
+      if (old.status !== 200)
+        die(
+          `cannot read ask ${replaces} (HTTP ${old.status}): only the agent that opened it can reopen it, with its own token and --agent`,
+        );
+    } else if (c?.state !== "checked")
       die(
         `ask needs a rendered video whose contact sheet the director checked; the cycle is ${c?.state ?? "missing"}`,
       );
@@ -470,6 +498,7 @@ const commands = {
       type: "application/json",
       body: JSON.stringify({
         text: askText(c, s.modes, videoSha256),
+        member: APPROVER_MEMBER,
         options: ["Approve", "Reject"],
         readFiles: [c.render.video.path, c.render.sheet.path],
       }),
@@ -483,6 +512,7 @@ const commands = {
       askId: opened.body.id,
       modes: s.modes,
       videoSha256,
+      ...(replaces && { replacesAskId: replaces }),
     });
     if (!recorded.ok) {
       // The ask shows something the app no longer agrees with: withdraw it.
@@ -492,6 +522,18 @@ const commands = {
     console.log(
       `ask ${opened.body.id} opened for ${opened.body.member ?? "the manager"}`,
     );
+    if (replaces) {
+      // The app now answers only to the new id, so the old ask is noise.
+      const gone = await office(
+        "DELETE",
+        `/api/agents/${agent}/asks/${replaces}`,
+      );
+      console.log(
+        gone.status === 204
+          ? `ask ${replaces} withdrawn`
+          : `ask ${replaces} could not be withdrawn (HTTP ${gone.status}); the app no longer takes its answer`,
+      );
+    }
   },
 
   async answer() {

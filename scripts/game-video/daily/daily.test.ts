@@ -277,6 +277,72 @@ const approved = (
   });
 };
 
+describe("an ask opened again for the right member", () => {
+  const day = "2026-10-26";
+  const asked = () => {
+    const store = openStore(tempDir());
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
+    store.recordAsk(day, {
+      askId: "old",
+      modes: DRY,
+      videoSha256: "aa",
+      currentModes: DRY,
+    });
+    return store;
+  };
+  const reopen = (
+    store: ReturnType<typeof openStore>,
+    replacesAskId: string,
+  ) => {
+    store.recordAsk(day, {
+      askId: "new",
+      modes: DRY,
+      videoSha256: "aa",
+      currentModes: DRY,
+      replacesAskId,
+    });
+  };
+
+  test("the new ask takes over, and only its answer counts", () => {
+    const store = asked();
+    reopen(store, "old");
+    const cycle = store.read(day) as Cycle;
+    expect(cycle.state).toBe("asked");
+    expect(cycle.events.at(-1)?.what).toBe("ask new opened again (was old)");
+    expect(() => {
+      store.recordAnswer(day, {
+        askId: "old",
+        decision: "approve",
+        approver: "Nil",
+        reply: "Approve",
+      });
+    }).toThrow(/ask old is not this cycle's ask \(new\)/);
+    store.recordAnswer(day, {
+      askId: "new",
+      decision: "approve",
+      approver: "Nil",
+      reply: "Approve",
+    });
+    expect((store.read(day) as Cycle).state).toBe("approved");
+  });
+
+  test("only the cycle's open ask can be replaced", () => {
+    expect(() => {
+      reopen(asked(), "other");
+    }).toThrow(/ask other is not this cycle's ask \(old\)/);
+    const answered = asked();
+    answered.recordAnswer(day, {
+      askId: "old",
+      decision: "reject",
+      approver: "Nil",
+      reply: "Reject",
+    });
+    expect(() => {
+      reopen(answered, "old");
+    }).toThrow(/reopen the ask needs the cycle in asked/);
+  });
+});
+
 describe("the ask must show what the approval will cover", () => {
   const day = "2026-10-26";
   const rendered = () => {

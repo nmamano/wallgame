@@ -43,6 +43,10 @@ already has a cycle, finish it or stop: do not start another. `pick
 7. `ask --agent <your agent id>`
    This opens Nil's ask with the video and the sheet. When he answers, run
    `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
+   The ask opens for Nil, not for your manager, and `ask` prints who it
+   opened for. If an open ask went to anyone else, run
+   `ask --agent <your agent id> --reopen`: it opens the same ask for Nil and
+   withdraws the old one.
 
 ## A good EDL
 
