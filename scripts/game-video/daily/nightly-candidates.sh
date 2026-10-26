@@ -67,6 +67,25 @@ mkdir -p "$OUT_DIR"
 exec 9>"$OUT_DIR/.lock"
 flock -n 9 || { say "another run is going; this one stops"; exit 0; }
 [ ! -e "$REPORT" ] || { say "$REPORT exists; nothing to do"; exit 0; }
+
+# COMMITTED CODE ONLY (Wall Game PM, 2026-10-26). This runs from the shared
+# checkout, which other workers edit. Every file the pick runs must equal HEAD,
+# or the day is skipped: a missed day is better than a pick by half-made code.
+PICK_PATH=(scripts/game-video/pick-daily-candidates.ts scripts/game-video/daily-candidates.ts
+  scripts/game-video/daily shared server/db/past-game-player-kind.ts
+  official-custom-bot-client/src official-custom-bot-client/transformer.prod.config.json
+  package.json bun.lock)
+# --no-optional-locks: never rewrite the shared checkout's index. The reader
+# below drains its input, so a long list cannot end the script by SIGPIPE.
+status=$(git --no-optional-locks -C "$REPO" status --porcelain --untracked-files=all -- "${PICK_PATH[@]}") ||
+  status="?? (git status failed)"
+dirty=$(printf '%s\n' "$status" | cut -c4- | sed -n 1,5p | tr '\n' ' ' | sed 's/ *$//')
+if [ -n "$dirty" ]; then
+  printf '%s the pick code has uncommitted changes: %s\n' "$(date -u +%FT%TZ)" "$dirty" >"$OUT_DIR/$DAY.skip"
+  say "SKIP the pick code has uncommitted changes: $dirty"
+  exit 0
+fi
+say "code: HEAD $(git -C "$REPO" rev-parse --short=12 HEAD), pick path clean"
 rm -f "$OUT_DIR/$DAY.skip"
 
 cleanup() {
