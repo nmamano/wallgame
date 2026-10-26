@@ -88,7 +88,7 @@ already has a cycle, finish it or stop: do not start another. `pick
 - A number in a caption is a promise about the race counter. The setup
   caption is read at the start, so a number in it must be on the counter
   then: on the storyboard's `steps` line of the start tile or ply 0, or
-  with `startPly` N, of plies N-1 or N; with a cold open, of its ply too.
+  with `startPly` N, of plies N-1 or N.
   "Red was 2 steps from winning" over a counter that says 10 is wrong for
   most of the video: say the stakes in words ("bro thinks he's safe 😭")
   and keep the number for the payoff. A number in the payoff must be on the
@@ -217,21 +217,21 @@ Rules:
   (for example 2 to 12). If it changes by 1 or 2, leave it out.
 - `startPly` cuts a quiet opening: the video opens on the position before
   that ply and plays from it. Every event and pace range must be at
-  `startPly` or later. `coldOpenPly` is a hook: the video first shows the
-  position after that ply for about a second, with the caption up and that
-  ply's walls glowing, then cuts to the VS overlay and the game. It must be
-  at `startPly` or later. Both move the moment when the setup caption is
-  first read, so its number must be on the counter there (see the number
-  rule above). Whether and where to use them is your choice.
+  `startPly` or later. It moves the moment when the setup caption is first
+  read, so its number must be on the counter there (see the number rule
+  above). Whether and where to use it is your choice.
+- Do not use `coldOpenPly` (Nil, 2026-10-26: "the initial 1s hook doesn't
+  work for me, it's too confusing. cut it").
 - `fastForward` shortens a video: put `"fastForward": true` on a pace
-  range of quiet plies (no close call and no wall jump in `facts`), at
-  0.2 s per move (the video shows "x4") or 0.25-0.3 s ("x3"). The opening
-  before the first key wall and the moves between two beats are the usual
-  ranges. Keep the 2 plies before a key wall at normal pace or slower, so
-  the viewer sees the threat before the wall (Nil, 2026-10-26: "it plays
-  too fast to follow"). Keep the payoff ply out of a range: a caption that
-  changes at x4 is hard to read. `direct` refuses a range with an event or
-  the cold open in it, or one that reaches the last move.
+  range of quiet plies (no close call and no wall jump in `facts`). Use
+  0.3 s per move (the video shows "x3") by default, and 0.2 s ("x4") only
+  for a long, dull stretch. The opening before the first key wall and the
+  moves between two beats are the usual ranges. Keep the 2 plies before a
+  key wall at normal pace or slower, so the viewer sees the threat before
+  the wall (Nil, 2026-10-26: "it plays too fast to follow"). Keep the
+  payoff ply out of a range: a caption that changes at x4 is hard to read.
+  `direct` refuses a range with an event in it, or one that reaches the
+  last move.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
   AI won, and a win sound in a human vs human game. `crew.mjs sounds` gives
@@ -273,8 +273,27 @@ A still is ok only when all of these are true:
   colours, and they match the walks in `facts` (for example 12 after the
   save).
 - A stamp or trap text does not hide the pawns or the wall it is about.
+- Each highlight or glow sits exactly on its wall, not next to it or
+  shifted by part of a cell.
 - The sheet has one still for each event. A sound still needs only the
   correct ply.
+
+The sheet shows only the events. Also look at frames of the video for the
+moments that it does not show, before you write the verdicts (Nil,
+2026-10-26: "editing errors shouldn't make it to me"):
+
+- The opening: the first frame, and the VS overlay while it holds.
+- The banner exit: the VS banners leave over the last 0.6 s of the 4.0 s
+  overlay (`__VS_OVERLAY` in `stage.html`). No move plays under them, and
+  the board is whole after they leave.
+- The ending: the last 3 seconds, and the last frame.
+
+`status` names the video's path. Take one frame at a time, for example
+`ffmpeg -v error -y -ss 3.7 -i <video> -frames:v 1 /tmp/frame-3.7.png`, and
+open it; `ffprobe -v error -show_entries format=duration -of csv=p=0
+<video>` gives the length. An error that you see in a frame fails the
+check like a bad still: give the nearest still `"ok": false` and a note
+that names the frame's second and what is wrong.
 
 Write what you see in the note. If a still is not ok, record the check
 (the ask stays closed, and the render cannot be checked again), fix the
