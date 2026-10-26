@@ -36,11 +36,13 @@ An account gives you a rating and keeps your progress. Kinde, our sign-in servic
 - your settings (board theme, pawn styles, default game options),
 - your ratings, your puzzle and campaign progress, and your puzzle votes.
 
+The random browser id is also saved with the games that you play when you are signed in. This lets us see when a guest later makes an account.
+
 ## Games and chat
 
 When an online game ends, we save it: the moves, the game settings, the result, the date and the names of the players. Anyone can watch online games live and replay them later. The ranking page shows display names and ratings.
 
-Chat messages go only to the people in the game at that time. We do not save chat messages. Our server log records that a message was sent, with the sender's name and the length of the message, but not the text.
+Players' chat goes only to the players, and spectators' chat goes only to the spectators who watch at that time. We do not save chat messages. Our server log records that a message was sent, with the sender's name and the length of the message, but not the text.
 
 ## Bots
 
@@ -53,12 +55,13 @@ If you connect your own bot, we save its name, its look and its games.
 - When you sign in, the site sets cookies that keep you signed in. Login does not work without them.
 - Your browser keeps your settings, the random id, and small notes, for example whether we showed you the offer to make an account.
 - Google Analytics sets its own cookies (see below).
+- Cloudflare can set a security cookie.
 
 We use no advertising cookies.
 
 ## Google Analytics
 
-On wallgame.io we use Google Analytics to count visits: which pages people open, where they come from, and whether they see and click the offer to make an account. We set Google Analytics to anonymize IP addresses, and we turned off Google signals and ad personalization. Google Analytics does not run when Wall Game is shown inside another game website.
+On wallgame.io we use Google Analytics to count visits: which pages people open, where they come from, and whether they see and click the offer to make an account. Google says that Google Analytics 4 does not store IP addresses. We turned off Google signals and ad personalization. Google Analytics does not run when Wall Game is shown inside another game website.
 
 ## Hosting and logs
 
@@ -72,7 +75,7 @@ Wall Game makes short videos of games played on the site and posts them to Wall 
 
 - You can play without an account.
 - You can block or delete cookies and browser storage in your browser settings. If you block cookies, you cannot sign in.
-- To delete your account, or to ask what data we have about you, contact us. When we delete an account, your past games stay in the game archive, and your name on them changes to "Deleted User".
+- To delete your account, or to ask what data we have about you, contact us. When we delete an account, we remove its account data. Your past games stay in the game archive.
 
 ## Changes
 
