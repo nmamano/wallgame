@@ -6,8 +6,12 @@
  *   node scripts/game-video/daily/crew.mjs <command> [--day YYYY-MM-DD]
  *
  *   status                         where today's cycle is
- *   pick --report F [--rank N] [--style S] [--x T] [--title T] [--description T]
- *                                  today's candidate from a step-1 report
+ *   facts --report F [--top N]     the candidates' facts, to write a caption from
+ *   pick --report F [--rank N] --caption T [--title T] [--style S]
+ *                                  today's candidate and the crew lead's caption:
+ *                                  silly, short, no game id, no link (X gets it
+ *                                  as is; YouTube gets it as title and above
+ *                                  the tracked link; --title overrides the title)
  *   render [--wait] [--force]      a 4090 render job; --wait polls until it ends.
  *                                  A second render of a game needs --force: each
  *                                  render adds one view to the real game.
@@ -43,6 +47,7 @@
  */
 import { readFileSync } from "node:fs";
 import { createHash } from "node:crypto";
+import { candidateFromReport } from "./candidate.mjs";
 
 const OFFICE = "http://localhost:4000";
 const APP_NAME = "game-video";
@@ -98,7 +103,6 @@ const app = async (method, path, body) => {
 };
 
 const day = flag("day");
-const pct = (x) => `${Math.round(x * 100)}%`;
 
 const summary = (s) => {
   const c = s.cycle;
@@ -107,10 +111,10 @@ const summary = (s) => {
   ];
   if (!c) return lines.join("\n");
   const k = c.candidate;
-  const t = k.swings[0];
+
   lines.push(
     `game ${k.gameId}: ${k.seats.map((x) => x.name).join(" vs ")}, ${k.movesCount} plies`,
-    `swing: move ${t.moveNumber} ${t.notation}, mover ${pct(t.moverBefore)} -> ${pct(t.moverAfter)} (size ${t.size.toFixed(2)})`,
+    ...k.facts,
     `X text: ${c.caption.x}`,
   );
   if (c.render) {
@@ -124,7 +128,7 @@ const summary = (s) => {
   }
   if (c.approval) {
     lines.push(
-      `ask ${c.approval.askId}: ${c.approval.decision ? `${c.approval.decision}d by ${c.approval.approver}` : "waiting"}`,
+      `ask ${c.approval.askId}: ${c.approval.decision ? `${c.approval.decision === "approve" ? "approved" : "rejected"} by ${c.approval.approver}` : "waiting"}`,
     );
   }
   for (const [p, r] of Object.entries(c.posts)) {
@@ -140,17 +144,18 @@ const state = () => app("GET", `/api/daily/state${day ? `?day=${day}` : ""}`);
 /** The ask's text: everything Nil needs to decide without opening anything. */
 export const askText = (c, modes, videoSha256) => {
   const dry = Object.values(modes).every((m) => m === "dry-run");
-  const t = c.candidate.swings[0];
   return [
     `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
-    `Posting mode: X ${modes.x}, YouTube ${modes.youtube}.`,
-    `Game ${c.candidate.gameId}: ${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies.`,
-    `Biggest swing: move ${t.moveNumber}, the mover went from ${pct(t.moverBefore)} to ${pct(t.moverAfter)} to win.`,
-    `Video: attached (${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, effect ${c.render.effect ?? "-"}, sound ${c.render.sound ?? "-"}).`,
     "",
-    `X text: ${c.caption.x}`,
+    "WHAT GOES OUT (the video is attached):",
+    `X: ${c.caption.x}`,
     `YouTube title: ${c.caption.youtubeTitle}`,
     `YouTube description: ${c.caption.youtubeDescription}`,
+    "",
+    "FOR YOU ONLY, NOT POSTED:",
+    `Posting mode: X ${modes.x}, YouTube ${modes.youtube}.`,
+    `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
+    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, sounds ${c.render.sound ?? "-"}.`,
     "",
     "Approve to post it as shown. Reject, and say what to change, to stop it.",
   ].join("\n");
@@ -159,6 +164,29 @@ export const askText = (c, modes, videoSha256) => {
 const commands = {
   async status() {
     console.log(summary(await state()));
+  },
+
+  /** The top candidates in plain words. Nothing here is posted. */
+  facts() {
+    const path = flag("report") ?? die("facts needs --report <file>");
+    const report = JSON.parse(readFileSync(path, "utf8"));
+    const top = Number(flag("top") ?? 5);
+    const count = Math.min(top, report.ranked?.length ?? 0);
+    if (!count) die("the report ranks no game");
+    for (let rank = 1; rank <= count; rank++) {
+      let c;
+      try {
+        c = candidateFromReport(report, rank);
+      } catch (err) {
+        console.log(`rank ${rank}: not usable - ${err.message}\n`);
+        continue;
+      }
+      console.log(
+        `rank ${rank}: ${c.seats.map((s) => `${s.name} (${s.kind})`).join(" vs ")}, ${c.variant}, ${c.movesCount} plies`,
+      );
+      for (const f of c.facts) console.log(`  ${f}`);
+      console.log("");
+    }
   },
 
   async pick() {
@@ -171,19 +199,14 @@ const commands = {
       createdAt: report.createdAt,
       ranked: report.ranked?.slice(0, rank),
     };
-    const caption = Object.fromEntries(
-      [
-        ["x", flag("x")],
-        ["youtubeTitle", flag("title")],
-        ["youtubeDescription", flag("description")],
-      ].filter(([, v]) => v !== undefined),
-    );
     await app("POST", "/api/daily/pick", {
       day,
       report: slim,
       rank,
       style: flag("style"),
-      caption,
+      caption:
+        flag("caption") ?? die("pick needs --caption: write it from `facts`"),
+      title: flag("title"),
     });
     console.log(summary(await state()));
   },

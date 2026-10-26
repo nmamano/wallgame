@@ -5,6 +5,7 @@
  * Board task e8d26610, step 3. The app keeps the record and talks to the
  * outside; the crew lead decides. One cycle a day:
  *
+ *   crew.mjs facts   -> what the crew lead writes the caption from
  *   crew.mjs pick    -> POST /api/daily/pick     today's candidate + caption
  *   crew.mjs render  -> POST /api/daily/render   a job for the 4090 (render-4090.mjs)
  *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4,
@@ -47,7 +48,7 @@ import {
 } from "./store.mjs";
 import {
   candidateFromReport,
-  draftCaption,
+  captionFrom,
   captionProblems,
   DEFAULT_STYLE,
   STYLES,
@@ -145,7 +146,8 @@ export const createDaily = ({
           {
             jobId,
             gameId: cycle.candidate.gameId,
-            swings: cycle.candidate.swings,
+            // The contract with the renderer calls them swings; it reads .ply.
+            swings: cycle.candidate.picks,
             caption: cycle.caption.x,
             style: cycle.style,
             aspect: "9x16",
@@ -412,8 +414,11 @@ export const createDaily = ({
       } catch (err) {
         throw new StepRefused(err.message);
       }
-      const caption = { ...draftCaption(candidate), ...(body.caption ?? {}) };
-      const problems = captionProblems(caption);
+      if (typeof body.caption !== "string" || !body.caption.trim()) {
+        throw new StepRefused("pick needs the crew lead's caption");
+      }
+      const caption = captionFrom(body.caption, body.title);
+      const problems = captionProblems(caption, candidate.gameId);
       if (problems.length) throw new StepRefused(problems.join("; "));
       const style = body.style ?? DEFAULT_STYLE;
       if (!STYLES.includes(style)) {
@@ -567,8 +572,9 @@ export const logRow = (cycle, platform, result) => ({
   style: cycle.style,
   effect: cycle.render.effect,
   sound: cycle.render.sound,
-  swingSize: cycle.candidate.swings[0].size,
-  swingMove: cycle.candidate.swings[0].moveNumber,
+  // Since 2026-10-26 the swing is the largest walking-distance jump, in steps.
+  swingSize: cycle.candidate.picks[0].size,
+  swingMove: cycle.candidate.picks[0].moveNumber,
   approver: cycle.approval.approver,
   videoSha256: cycle.approval.videoSha256,
   youtubePrivacyStatus:
@@ -615,7 +621,6 @@ const DASHBOARD = `<!doctype html>
   const el = (tag, cls, text) => { const n = document.createElement(tag);
     if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = String(text); return n; };
   const line = (...parts) => { const p = el("div"); p.append(...parts); return p; };
-  const pct = (x) => Math.round(x * 100) + "%";
   let day = new URLSearchParams(location.search).get("day");
 
   const render = (s) => {
@@ -634,14 +639,13 @@ const DASHBOARD = `<!doctype html>
     $("cand").replaceChildren(); $("vid").replaceChildren(); $("appr").replaceChildren(); $("posts").replaceChildren();
     if (!c) { $("cand").append(el("span", "muted", "Nothing picked for this day.")); }
     else {
-      const k = c.candidate, top1 = k.swings[0];
+      const k = c.candidate;
       const game = el("a", null, k.gameId); game.href = "https://wallgame.io/game/" + encodeURIComponent(k.gameId);
       game.target = "_blank"; game.rel = "noopener";
       $("cand").append(
         line(el("b", null, k.seats.map((x) => x.name).join(" vs ")), el("span", null, "  "), game,
              el("span", "muted", "  " + k.variant + ", " + k.movesCount + " plies")),
-        line(el("span", null, "Biggest swing: move " + top1.moveNumber + " (" + top1.notation + "), mover " +
-             pct(top1.moverBefore) + " -> " + pct(top1.moverAfter) + ", size " + top1.size.toFixed(2))),
+        ...k.facts.map((f) => el("div", null, f)),
         el("div", "muted", "X text"), el("div", "cap", c.caption.x),
         el("div", "muted", "YouTube title"), el("div", "cap", c.caption.youtubeTitle),
         el("div", "muted", "YouTube description"), el("div", "cap", c.caption.youtubeDescription),
@@ -661,7 +665,7 @@ const DASHBOARD = `<!doctype html>
       else {
         $("appr").append(line(el("span", null, "Ask " + a.askId + " opened " + a.askedAt)),
           line(el("span", null, "Modes at ask time: x " + a.modes.x + ", youtube " + a.modes.youtube)),
-          line(el("b", null, a.decision ? a.decision + "d by " + a.approver + " at " + a.answeredAt : "Waiting for the answer")));
+          line(el("b", null, a.decision ? (a.decision === "approve" ? "approved" : "rejected") + " by " + a.approver + " at " + a.answeredAt : "Waiting for the answer")));
         if (a.reply) $("appr").append(el("div", "cap", a.reply));
       }
       const ps = Object.entries(c.posts);
@@ -685,7 +689,7 @@ const DASHBOARD = `<!doctype html>
     t.append(h);
     for (const r of rows.slice(-30).reverse()) {
       const tr = el("tr");
-      for (const v of [r.utc, r.platform, r.gameId, r.postId, r.swingSize.toFixed(2) + " @" + r.swingMove,
+      for (const v of [r.utc, r.platform, r.gameId, r.postId, r.swingSize + " steps @ move " + r.swingMove,
                        (r.effect || "-") + "/" + (r.sound || "-"), r.approver]) tr.append(el("td", null, v));
       t.append(tr);
     }

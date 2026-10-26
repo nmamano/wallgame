@@ -6,10 +6,15 @@
  * writes (kind "daily-video-candidates"). This file reads that JSON only, so
  * the pipeline does not depend on how the report is made.
  *
- * CAPTIONS ARE A FIRST DRAFT. Nil approves each post for the first two weeks
- * and can reject with a better caption; the crew lead then picks again with
- * --caption. After that the crew posts the template by itself, which is why
- * the template stays plain.
+ * THE CREW LEAD WRITES THE CAPTION (Nil, 2026-10-26: "something silly and
+ * probably llm generated. like 'lmao he thought he'd sneak through'"). The crew
+ * lead is an agent: it reads the candidate's facts (crew.mjs facts), writes two
+ * or three captions, and passes the one it picks to crew.mjs pick. There is no
+ * template and no separate model call here. Nil approves each post for the
+ * first two weeks.
+ *
+ * NO GAME ID IN ANYTHING POSTED (Nil, 2026-10-26: "that's noise").
+ * captionProblems refuses a caption that holds it.
  *
  * PLAYER NAMES ARE UNTRUSTED TEXT that would go out under the Wall Game
  * account. Step 1 admits only guests (random animal names), Nil and official
@@ -25,15 +30,17 @@ export const YOUTUBE_LINK =
 export const X_MAX_CHARS = 280;
 export const YOUTUBE_TITLE_MAX_CHARS = 100;
 
-/** The renderer's styles (Wall Game Worker 2, 2026-10-26). */
-export const STYLES = ["current", "wallz", "mix"];
-/** Until Nil picks one in the step-2 preview. */
-export const DEFAULT_STYLE = "current";
+/**
+ * The renderer's daily look (Wall Game Worker 2, 2026-10-26): the WallzGame
+ * body, punch-ins on the picked moves, meme sounds, the VS card over the first
+ * seconds of play, and the ending Nil picks. Nil rejected the plain look, so
+ * the daily pipeline sends this one value and nothing else.
+ */
+export const STYLES = ["daily"];
+export const DEFAULT_STYLE = "daily";
 
 const SAFE_NAME = /^[\p{L}\p{N} .'_-]{1,40}$/u;
 const GAME_ID = /^[A-Za-z0-9_-]{4,40}$/;
-
-const percent = (p) => `${Math.round(p * 100)}%`;
 
 /**
  * The report entry at `rank` (1-based), as the cycle's candidate.
@@ -59,10 +66,15 @@ export const candidateFromReport = (report, rank = 1) => {
       );
     }
   }
-  if (!entry.topSwings?.length) {
-    throw new Error(`${entry.gameId} has no swings`);
+  if (entry.picks?.some((p) => typeof p.description !== "string")) {
+    throw new Error(`${entry.gameId} has a pick without a description`);
   }
-  return {
+  if (!entry.picks?.length) {
+    throw new Error(
+      `${entry.gameId} has no move that beat an ordinary advance`,
+    );
+  }
+  const base = {
     gameId: entry.gameId,
     variant: entry.variant,
     boardWidth: entry.boardWidth,
@@ -70,40 +82,68 @@ export const candidateFromReport = (report, rank = 1) => {
     movesCount: entry.movesCount,
     startedAt: entry.startedAt,
     seats: entry.seats.map((s) => ({ name: s.name, kind: s.kind })),
-    swings: entry.topSwings.map((s) => ({
-      ply: s.ply,
-      moveNumber: s.moveNumber,
-      mover: s.mover,
-      notation: s.notation,
-      moverBefore: s.moverBefore,
-      moverAfter: s.moverAfter,
-      delta: s.delta,
-      size: s.size,
+    // DistanceJump (scripts/game-video/daily-candidates.ts), largest first.
+    picks: entry.picks.map((p) => ({
+      ply: p.ply,
+      moveNumber: p.moveNumber,
+      mover: p.mover,
+      notation: p.notation,
+      ownBefore: p.ownBefore,
+      ownAfter: p.ownAfter,
+      opponentBefore: p.opponentBefore,
+      opponentAfter: p.opponentAfter,
+      jump: p.jump,
+      size: p.size,
+      // Worker 1's sentence for the move: the crew lead's caption material.
+      description: p.description,
     })),
     source: { reportCreatedAt: report.createdAt, rank },
   };
+  return {
+    ...base,
+    facts: base.picks.map((p) => `Move ${p.moveNumber}: ${p.description}`),
+  };
 };
 
-/** The default X text, YouTube title and YouTube description. */
-export const draftCaption = (candidate) => {
-  const [a, b] = candidate.seats.map((s) => s.name);
-  const top = candidate.swings[0];
-  const mover = candidate.seats[top.mover - 1]?.name ?? `Player ${top.mover}`;
-  const turn =
-    top.delta < 0
-      ? `${mover} was ${percent(top.moverBefore)} to win. Then came move ${top.moveNumber}.`
-      : `${mover} was ${percent(top.moverBefore)} to win. Move ${top.moveNumber} made it ${percent(top.moverAfter)}.`;
-  const x = `${a} vs ${b}. ${turn} #WallGame`;
+/**
+ * The three posted texts, from the one caption the crew lead wrote. X gets the
+ * caption alone (no link: a link raises the price); YouTube gets it as the
+ * title, unless the crew lead wrote a separate one, and in the description
+ * above the tracked link.
+ */
+export const captionFrom = (text, title) => {
+  const caption = String(text ?? "").trim();
+  const head = String(title ?? caption).trim();
+  const room = YOUTUBE_TITLE_MAX_CHARS - " #Shorts".length;
   return {
-    x,
-    youtubeTitle: `${a} vs ${b}: move ${top.moveNumber} #Shorts`,
-    youtubeDescription: `${turn}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
+    x: caption,
+    youtubeTitle: `${[...head].length > room ? [...head].slice(0, room - 1).join("") + "\u2026" : head} #Shorts`,
+    youtubeDescription: `${caption}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
   };
 };
 
 /** Reasons a caption cannot go out, or an empty list. */
-export const captionProblems = (caption) => {
+export const captionProblems = (caption, gameId) => {
   const problems = [];
+  const id = String(gameId ?? "").toLowerCase();
+  for (const [field, text] of Object.entries(caption ?? {})) {
+    if (id && String(text).toLowerCase().includes(id)) {
+      problems.push(`${field} must not hold the game id`);
+    }
+    // X forbids unsolicited automated mentions, and the account is labelled
+    // Automated: one @name can cost the account.
+    if (/(^|[^\w])@\w/.test(String(text))) {
+      problems.push(`${field} must not mention anyone (@)`);
+    }
+    // YouTube does not take < or > in a title or a description. Refusing them
+    // here keeps a day from ending with X posted and YouTube refused.
+    if (/[<>]/.test(String(text))) {
+      problems.push(`${field} must not hold < or >`);
+    }
+  }
+  if (/\n/.test(caption?.youtubeTitle ?? "")) {
+    problems.push("youtubeTitle must be one line");
+  }
   if (!caption?.x) problems.push("no X text");
   if (caption?.x && [...caption.x].length > X_MAX_CHARS) {
     problems.push(`X text is over ${X_MAX_CHARS} characters`);

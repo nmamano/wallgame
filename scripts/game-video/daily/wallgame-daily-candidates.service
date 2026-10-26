@@ -1,0 +1,17 @@
+[Unit]
+# The daily video's data step (board task e8d26610): restore the newest nightly
+# backup into a throwaway, network-less database, pick the day's candidates,
+# remove the database. See nightly-candidates.sh for the backup owner's terms.
+#
+# Install as a USER unit on the office box:
+#   cp scripts/game-video/daily/wallgame-daily-candidates.{service,timer} ~/.config/systemd/user/
+#   systemctl --user daemon-reload
+#   systemctl --user enable --now wallgame-daily-candidates.timer
+Description=Wall Game daily video candidates
+
+[Service]
+Type=oneshot
+# The report goes where the game-video app keeps its daily state.
+ExecStart=%h/nil/wallgame/scripts/game-video/daily/nightly-candidates.sh %h/.isomux/apps/data/game-video/daily/candidates
+# The restore and the pick take seconds to minutes; this stops a hang.
+TimeoutStartSec=45min

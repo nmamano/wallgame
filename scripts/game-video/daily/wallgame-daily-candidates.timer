@@ -1,0 +1,11 @@
+[Unit]
+Description=Wall Game daily video candidates, after the 10:20 UTC backup
+
+[Timer]
+# UTC, not the box's zone (CET/CEST), so the gap after the backup never moves.
+OnCalendar=*-*-* 11:30:00 UTC
+# A missed day is skipped, not run late.
+Persistent=false
+
+[Install]
+WantedBy=timers.target

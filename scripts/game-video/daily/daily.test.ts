@@ -17,9 +17,10 @@ import { openStore, readPostLog } from "./store.mjs";
 import {
   candidateFromReport,
   captionProblems,
-  draftCaption,
+  captionFrom,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
+import type { PickedJump } from "../daily-candidates";
 import { oauth1Header, xDryRunReply } from "./post-x.mjs";
 import { youtubeDryRunReply } from "./post-youtube.mjs";
 import { sha256 } from "./transport.mjs";
@@ -28,18 +29,22 @@ import { parseResult } from "./render-4090.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
-const swing = (ply: number, before: number, after: number) => ({
+/** A move by player 1 that makes player 2's walk longer. */
+const pick = (ply: number, before: number, after: number): PickedJump => ({
   ply,
   moveNumber: ply + 1,
   mover: 1,
   notation: "Ce4",
-  evaluationBeforeP1: 0,
-  evaluationAfterP1: 0,
-  moverBefore: before,
-  moverAfter: after,
-  delta: after - before,
+  ownBefore: 5,
+  ownAfter: 5,
+  opponentBefore: before,
+  opponentAfter: after,
+  jump: after - before,
   size: Math.abs(after - before),
+  description: `Guest Tuatara's wall makes Ruby walk ${after - before} extra squares (${before} to ${after}).`,
 });
+
+const CAPTION = "lmao Ruby thought it could just walk home";
 
 const REPORT = {
   kind: "daily-video-candidates",
@@ -56,7 +61,7 @@ const REPORT = {
         { playerOrder: 1, kind: "guest", name: "Guest Tuatara" },
         { playerOrder: 2, kind: "official bot", name: "Ruby" },
       ],
-      topSwings: [swing(22, 0.71, 0.18), swing(30, 0.4, 0.6)],
+      picks: [pick(22, 2, 8), pick(30, 4, 8)],
     },
   ],
 };
@@ -89,8 +94,8 @@ const pickToday = (store: ReturnType<typeof openStore>, day: string): void => {
   const candidate = candidateFromReport(REPORT, 1);
   store.pick(day, {
     candidate,
-    caption: draftCaption(candidate),
-    style: "current",
+    caption: captionFrom(CAPTION),
+    style: "daily",
   });
 };
 
@@ -318,18 +323,47 @@ describe("each render is one production view", () => {
 });
 
 describe("captions", () => {
-  test("the draft passes its own checks and carries the tracked link only on YouTube", () => {
-    const caption = draftCaption(candidateFromReport(REPORT, 1));
-    expect(captionProblems(caption)).toEqual([]);
-    expect(caption.x).not.toContain("http");
-    expect(caption.youtubeDescription).toContain(YOUTUBE_LINK);
-    expect(caption.x).toContain(
-      "Guest Tuatara was 71% to win. Then came move 23.",
+  test("the crew lead's caption goes out as is on X, and above the tracked link on YouTube", () => {
+    const caption = captionFrom(CAPTION);
+    expect(captionProblems(caption, "TESTGAME1")).toEqual([]);
+    expect(caption.x).toBe(CAPTION);
+    expect(caption.youtubeTitle).toBe(`${CAPTION} #Shorts`);
+    expect(caption.youtubeDescription).toBe(
+      `${CAPTION}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
     );
   });
 
+  test("no game id in anything posted", () => {
+    expect(
+      captionProblems(captionFrom("see testgame1 lol"), "TESTGAME1"),
+    ).toEqual([
+      "x must not hold the game id",
+      "youtubeTitle must not hold the game id",
+      "youtubeDescription must not hold the game id",
+    ]);
+  });
+
+  test("the facts are the picker's own sentences, with the move number", () => {
+    expect(
+      (candidateFromReport(REPORT, 1) as { facts: string[] }).facts[0],
+    ).toBe(
+      "Move 23: Guest Tuatara's wall makes Ruby walk 6 extra squares (2 to 8).",
+    );
+  });
+
+  test("no @mention, no < or >, in anything posted", () => {
+    const problems = captionProblems(
+      captionFrom("@ruby you ok? <3"),
+      "TESTGAME1",
+    );
+    expect(problems).toContain("x must not mention anyone (@)");
+    expect(problems).toContain("youtubeTitle must not hold < or >");
+    // An address-like @ inside a word is not a mention.
+    expect(captionProblems(captionFrom("ruby@home"), "TESTGAME1")).toEqual([]);
+  });
+
   test("a link in the X text is refused, bare domain included", () => {
-    const caption = draftCaption(candidateFromReport(REPORT, 1));
+    const caption = captionFrom(CAPTION);
     expect(captionProblems({ ...caption, x: "play at wallgame.io" })).toContain(
       "X text must not hold a link",
     );
@@ -471,8 +505,12 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   const day = "2026-10-26";
 
   expect((await call("/api/daily/pick", { day, report: REPORT })).status).toBe(
-    200,
+    409,
   );
+  expect(
+    (await call("/api/daily/pick", { day, report: REPORT, caption: CAPTION }))
+      .status,
+  ).toBe(200);
   expect((await call("/api/daily/post", { day })).status).toBe(409);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;
@@ -482,7 +520,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     await Bun.sleep(100);
   }
   expect(state?.cycle.state).toBe("rendered");
-  expect(state?.cycle.render?.effect).toBe("zoom-current");
+  expect(state?.cycle.render?.effect).toBe("zoom-daily");
 
   const videoSha256 = state?.cycle.render?.video?.sha256;
   expect(
@@ -540,7 +578,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     gameId: "TESTGAME1",
     mode: "dry-run",
     approver: "Nil",
-    effect: "zoom-current",
+    effect: "zoom-daily",
     sound: "shotgun",
     swingMove: 23,
   });

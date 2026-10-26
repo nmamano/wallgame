@@ -281,7 +281,10 @@ export const openStore = (dataDir) => {
         reply: reply ?? null,
         answeredAt: new Date().toISOString(),
       });
-      return save(cycle, `${decision}d by ${approver}`);
+      return save(
+        cycle,
+        `${decision === "approve" ? "approved" : "rejected"} by ${approver}`,
+      );
     },
 
     /** The day whose cycle carries this ask, or null. */
