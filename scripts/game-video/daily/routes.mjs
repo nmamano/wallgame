@@ -57,6 +57,7 @@ import {
   candidateFromReport,
   captionFrom,
   captionProblems,
+  playerNames,
   textProblems,
   DEFAULT_STYLE,
   STYLES,
@@ -604,7 +605,11 @@ export const createDaily = ({
         throw new StepRefused("pick needs the crew lead's caption");
       }
       const caption = captionFrom(body.caption, body.title);
-      const problems = captionProblems(caption, candidate.gameId);
+      const problems = captionProblems(
+        caption,
+        candidate.gameId,
+        playerNames(candidate),
+      );
       if (problems.length) throw new StepRefused(problems.join("; "));
       const style = body.style ?? DEFAULT_STYLE;
       if (!STYLES.includes(style)) {
@@ -679,7 +684,11 @@ export const createDaily = ({
             .map((e, i) => [`stamp ${i + 1}`, e.text]),
         ].filter(([, t]) => t),
       );
-      const problems = textProblems(shown, cycle.candidate.gameId);
+      const problems = textProblems(
+        shown,
+        cycle.candidate.gameId,
+        playerNames(cycle.candidate),
+      );
       if (problems.length) throw new StepRefused(problems.join("; "));
       const text = JSON.stringify(edl, null, 2) + "\n";
       json(

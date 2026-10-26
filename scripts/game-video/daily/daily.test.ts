@@ -22,6 +22,8 @@ import {
   edlSummary,
   saveFrameProblems,
   storyProblems,
+  playerNames,
+  textProblems,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
 import type { DescribedCloseCall, PickedJump } from "../daily-candidates";
@@ -919,6 +921,37 @@ describe("captions", () => {
     expect(captionProblems(captionFrom("ruby@home"), "TESTGAME1")).toEqual([]);
   });
 
+  test("a player is bro, never a name; the bot can be named; no #wallz", () => {
+    const players = playerNames(candidateFromReport(REPORT, 1));
+    expect(players).toEqual(["Guest Tuatara"]);
+    const problems = captionProblems(
+      captionFrom(
+        "guest tuatara walled himself in 😭🙏",
+        "ruby got humbled... #wallz",
+      ),
+      "TESTGAME1",
+      players,
+    );
+    expect(problems).toContain(
+      "x must not name the player Guest Tuatara: say bro",
+    );
+    expect(problems).toContain("youtubeTitle must not hold #wallz");
+    expect(
+      captionProblems(
+        captionFrom(
+          "bro walled himself in 😭🙏 #wallgame",
+          "ruby did not miss... #wallgame #gaming #boardgames",
+        ),
+        "TESTGAME1",
+        players,
+      ),
+    ).toEqual([]);
+    // The whole name only: "Nil" is not in "vanilla".
+    expect(textProblems({ x: "vanilla bro 😭" }, "TESTGAME1", ["Nil"])).toEqual(
+      [],
+    );
+  });
+
   test("a link in the X text is refused, bare domain included", () => {
     const caption = captionFrom(CAPTION);
     expect(captionProblems({ ...caption, x: "play at wallgame.io" })).toContain(
@@ -1447,6 +1480,14 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   const offCounter = await told({ caption: "Ruby was 2 steps away" });
   expect(offCounter.status).toBe(409);
   expect(JSON.stringify(offCounter.body)).toContain("the caption says 2");
+  const named = await told({
+    caption: "can bro get home? 😭",
+    payoff: { ply: 22, text: "guest tuatara got humbled" },
+  });
+  expect(named.status).toBe(409);
+  expect(JSON.stringify(named.body)).toContain(
+    "video payoff must not name the player Guest Tuatara",
+  );
   const mention = await told({
     caption: "Can Ruby get home?",
     payoff: { ply: 22, text: "ask @someone" },

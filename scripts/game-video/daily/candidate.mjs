@@ -397,15 +397,43 @@ export const captionFrom = (text, title) => {
 };
 
 /**
- * Reasons any published text cannot go out: the posted caption, and the
- * caption and stamps burned into the video. `texts` maps a name to its text.
+ * The names of the people who played: every seat but an official bot. A
+ * post calls a player "bro", never by name (Nil, 2026-10-26, through Wall
+ * Game PM); the bot is ours, and its name can be roasted.
+ * @param {{ seats: { name: string, kind: string }[] }} candidate
+ * @returns {string[]}
  */
-export const textProblems = (texts, gameId) => {
+export const playerNames = (candidate) =>
+  candidate.seats.filter((s) => s.kind !== "official bot").map((s) => s.name);
+
+/**
+ * Reasons any published text cannot go out: the posted caption, and the
+ * caption, payoff and stamps burned into the video. `texts` maps a name to
+ * its text; `players` are playerNames of the game.
+ */
+export const textProblems = (texts, gameId, players = []) => {
   const problems = [];
   const id = String(gameId ?? "").toLowerCase();
   for (const [field, text] of Object.entries(texts ?? {})) {
-    if (id && String(text).toLowerCase().includes(id)) {
+    const lower = String(text).toLowerCase();
+    if (id && lower.includes(id)) {
       problems.push(`${field} must not hold the game id`);
+    }
+    for (const name of players) {
+      // The whole name as words: "Nil" is not in "vanilla".
+      const escaped = name.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+      if (
+        new RegExp(
+          `(^|[^\\p{L}\\p{N}])${escaped}($|[^\\p{L}\\p{N}])`,
+          "iu",
+        ).test(text)
+      ) {
+        problems.push(`${field} must not name the player ${name}: say bro`);
+      }
+    }
+    // Wallz is another game; its tag would send our viewers there.
+    if (/#wallz/i.test(String(text))) {
+      problems.push(`${field} must not hold #wallz`);
     }
     // X forbids unsolicited automated mentions, and the account is labelled
     // Automated: one @name can cost the account.
@@ -422,8 +450,8 @@ export const textProblems = (texts, gameId) => {
 };
 
 /** Reasons a caption cannot go out, or an empty list. */
-export const captionProblems = (caption, gameId) => {
-  const problems = textProblems(caption, gameId);
+export const captionProblems = (caption, gameId, players = []) => {
+  const problems = textProblems(caption, gameId, players);
   if (/\n/.test(caption?.youtubeTitle ?? "")) {
     problems.push("youtubeTitle must be one line");
   }

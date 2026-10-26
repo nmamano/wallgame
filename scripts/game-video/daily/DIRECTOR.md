@@ -17,9 +17,11 @@ already has a cycle, finish it or stop: do not start another. `pick
    The timer writes the day's report at 11:30 UTC. Read the top games. The
    `director` lines give the 0-based plies, the cells and the walls (`*` =
    the wall that made the jump).
-2. `pick --report <same file> --rank N --caption "<post text>"`
-   This caption is the X text, the YouTube title and the start of the
-   YouTube description. `--title` sets another title.
+2. `pick --report <same file> --rank N --caption "<post text>" --title "<title>"`
+   The caption is the X text and the start of the YouTube description.
+   `--title` is the YouTube title (the app adds #Shorts); without it, the
+   caption is the title too. Write both in the style of "Captions and
+   titles" below.
 3. `storyboard`, then open the PNG it names. It has one tile per position
    (ply N = the position after ply N, 0-based as in the EDL), in the video's
    colours. Yellow marks that ply's walls and pawn move. DANGER, SAVE,
@@ -58,36 +60,39 @@ already has a cycle, finish it or stop: do not start another. `pick
 - Read how the game ends before you write the story. The close call's fact
   says who wins. When the hunter still wins a few moves after the relief,
   the save only delayed the loss: no `laugh`, and the payoff says so (for
-  example "2 to 8. Not enough."). `direct` refuses a laugh on a relief that
+  example "2 to 8. not enough 💀"). `direct` refuses a laugh on a relief that
   the hunter wins within 10 plies (rehearsal, 2026-10-26: this was true of
   all three close calls in the day's top five).
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.
 - Use few effects. One FAHHH per video unless two moves are equally strong.
-- The video caption has 6 words and 32 characters at most. It says Red and
-  Blue, not names. The renderer shows an AI in red and a human in blue; in a
-  human vs human game, seat 1 is red and seat 2 is blue. `facts` gives each
-  seat's colour.
+- The video caption has 6 words and 32 characters at most. Write it in
+  the style of "Captions and titles" below: "bro" for the human, "the bot"
+  for the AI, never a player's name. The renderer shows an AI in red and a
+  human in blue; in a human vs human game, seat 1 is red and seat 2 is
+  blue, and `facts` gives each seat's colour. Use Red and Blue only when
+  "bro" could be either player.
 - `payoff` (`{"ply": N, "text": "..."}`) is a second caption beat: from the
   move of ply N on, its text replaces the caption. Use it in most videos:
   whenever the game has one key wall (the save, or the largest jump in
   `facts`). Put N on that wall's ply. The caption sets up the stakes, and
   the payoff says what the wall did. With no single key wall, keep one
-  caption. Same limits as the caption, Red and Blue, not names. Keep each
+  caption. Same limits and style as the caption. Keep each
   beat to one line: a two-line beat makes the board smaller for the whole
   video (measured 2026-10-26: 720 px against 785 px).
 - A number in a caption is a promise about the race counter. The setup
   caption is read at the start, so a number in it must be on the counter
   then (the storyboard's `steps` line of the start tile and ply 0). "Red
   was 2 steps from winning" over a counter that says 10 is wrong for most
-  of the video: say the stakes in words ("Can Blue keep Red out?") and
+  of the video: say the stakes in words ("bro thinks he's safe 😭") and
   keep the number for the payoff. A number in the payoff must be on the
   counter just before or just after the payoff's move ("2 to 8", "now it's
   8"). `direct` refuses a number that the counter does not show then.
   Take numbers from the `steps` lines, not from a JUMP badge: it adds the
   mover's own change (+13 for a wall that took Blue from 7 to 19). Write
-  step counts in digits, and other counts in words ("two Blue walls").
+  step counts in digits, and other counts in words ("two walls", "for
+  four moves"): every digit is held to the counter.
 - `ending`: use the default from `status` unless the game needs another one.
 - `music`: always name a track, and vary it. Do not use the last track,
   which `status` shows (posted, or waiting for an answer on another day).
@@ -106,6 +111,65 @@ already has a cycle, finish it or stop: do not start another. `pick
   and the sounds that Nil kept on the app's `/daily/sounds` page. Name a kept
   sound that fits the moment. Use a sound that Nil has not heard yet only
   when no kept sound fits. `direct` refuses a sound that Nil dropped.
+
+## Captions and titles
+
+Nil, 2026-10-26: copy the lingo of the Wallz channel's Shorts (another
+walls game). Its 127 Shorts had 149M views on 2026-10-26; the most viewed
+one had 32M (counted from the channel listing). Copy the style, never
+their lines word for word.
+
+How Wallz writes:
+
+- The on-video text and the title are two different lines. The on-video
+  line says what happens ("bro fell for the trap 😭🙏"); the title teases
+  it ("bro tried his best at least...").
+- All lowercase (108 of 127 titles), 5 words in the middle (24
+  characters), no player names. The target is "bro"; "he" and "i" are rare.
+- The on-video line ends with two emoji: 😭💔, 😭🙏, 😳🤯, 😈🤯, 😭🥀,
+  💀. The title has no emoji (16 of 127 have one) and ends with "..."
+  (74 of 127) or a question.
+- The title ends with 3 hashtags: their own game's tag, #gaming,
+  #boardgames.
+- The words: bro, pov:, ts (this), atp (at this point), rn, cook
+  ("who let bro cook?"), fumble, outplayed, outsmarted, humbled, aura
+  ("bro lost all his aura"), karma, uno reversed, trapped himself,
+  ragequit, "thought he was winning".
+- What got the most views (median views of the titles with it, against
+  146K for all; small groups, so a hint, not a law): "thought" (7 titles,
+  731K), left/quit/gave up (10, 517K), noob/pro/hacker/spam (14, 298K),
+  "bro" or "bros" (41, 218K). Their top three on-video lines: "spammer gets instant
+  karma" (32M), "Sweat instantly regrets being toxic" (13M), "bro
+  ragequit at the end" (11M).
+
+Our surfaces:
+
+| Surface               | What                                                                       | Limits                                                        |
+| --------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
+| Video caption (setup) | the stakes, in lingo, with an emoji pair                                   | 6 words, 32 characters; an emoji pair after a space is a word |
+| Video payoff          | what the key wall did: the punchline                                       | the same                                                      |
+| `--caption` (X text)  | the punchline line, lowercase, emoji pair, then #wallgame                  | no link, no @, 280 characters                                 |
+| `--title` (YouTube)   | a teaser that ends with "..." or "?", then `#wallgame #gaming #boardgames` | 100 characters with " #Shorts"                                |
+
+- "bro" is the human. "the bot" is the AI, and it can be roasted; its
+  name ("superhuman bot") is fine too. A human player's name is never
+  posted: `pick` and `direct` refuse it, and they refuse #wallz.
+- A number is optional. When a line has one, the counter rule above holds.
+- The renderer draws emoji with Noto Color Emoji. An emoji is wider than
+  a letter, so check that the caption still fits on one line in the sheet.
+
+Our lines by moment (examples; write new ones each day):
+
+| Moment (from `facts` and the storyboard)          | Video caption / payoff                                        | YouTube title                         |
+| ------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------- |
+| A wall jump closes a box on bro                   | "bro walked into the box 😭🙏", "bro got boxed in 💀💔"       | "he did not see that wall coming..."  |
+| Bro's own walls made the box (the bot added one)  | "bro walled himself in 😭🙏", "bro built the trap himself 💀" | "bro helped the bot win..."           |
+| A blunder: bro's move opened the way              | "how did bro fumble this 😭💔", "bro opened the door 💀🙏"    | "one move ruined everything..."       |
+| A close call that bro saved, and bro won          | setup "the bot is almost there 😳", payoff "bro said no 😭🙏" | "bro locked in at the last second..." |
+| A save that only delayed the loss                 | setup "bro thinks he's safe 😭", payoff "he was not 💀💔"     | "bro was safe... for a moment"        |
+| The bot's wall jump wins it (bot wins)            | "never let the bot cook 😭💔", "the bot did not miss 😈🤯"    | "the bot was cooking..."              |
+| Bro beats the bot                                 | "the bot got humbled 😭🙏", "bro outplayed the bot 😳🤯"      | "bro vs the bot... who wins?"         |
+| A comeback: the losing side's wall turns the race | "bro got the uno reverse 😭💔", "karma came fast 😈🤯"        | "plot twist at the end..."            |
 
 ## Which effect for which fact
 
@@ -166,7 +230,7 @@ Rules:
 {
   "version": 1,
   "gameId": "W2SLwv69",
-  "caption": "Can Blue keep Red out?",
+  "caption": "can bro keep the bot out? 😭",
   "ending": "gg",
   "pace": [{ "fromPly": 7, "toPly": 11, "secondsPerMove": 1.2 }],
   "events": [

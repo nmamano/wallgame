@@ -302,7 +302,7 @@ const commands = {
     const count = Math.min(top, report.ranked?.length ?? 0);
     if (!count) die("the report ranks no game");
     console.log(
-      "A caption says Red and Blue, not the names (Nil, 2026-10-26). Each seat's colour in the video follows its name.\n",
+      "A caption calls the human bro and the AI the bot, never a player's name (Nil, 2026-10-26; the style is in DIRECTOR.md). Each seat's colour in the video follows its name.\n",
     );
     for (let rank = 1; rank <= count; rank++) {
       let c;
