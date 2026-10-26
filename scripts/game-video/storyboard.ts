@@ -133,6 +133,7 @@ interface EdlEvent {
   cell?: string;
   walls?: string[];
   frame?: string[];
+  lead?: boolean;
   emoji?: string;
   text?: string;
   sound?: string;
@@ -155,6 +156,7 @@ if (edlPath) {
           notations: game.moves,
           cols: game.boardWidth,
           rows: game.boardHeight,
+          initialState: game.initialState,
         })
       : [`the EDL is for game ${checked.edl.gameId}, not ${game.gameId}`]
     : (checked.errors ?? []);
@@ -178,7 +180,7 @@ if (edlPath) {
         : ev.kind === "trap"
           ? `${ev.walls!.join(" ")} ${ev.text}`
           : ev.kind === "zoom"
-            ? ev.frame!.join(" ")
+            ? `${ev.frame!.join(" ")}${ev.lead ? " (in before the move)" : ""}`
             : ev.kind === "stamp"
               ? ev.text!
               : (ev.cell ?? "");

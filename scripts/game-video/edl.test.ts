@@ -8,10 +8,15 @@ import {
   DEFAULT_ZOOM_SCALE,
   fastForwardTag,
   FRAME,
+  pawnMovesOf,
   SAFE_AREA,
   validateEdl,
 } from "./edl.mjs";
 import { goalSentenceFor } from "../../shared/domain/variant-rules";
+import { pawnCell } from "../../shared/domain/pawns";
+import { cellToStandardNotation } from "../../shared/domain/standard-notation";
+import type { CustomSetupStandardInitialState } from "../../shared/domain/game-types";
+import { replayDistances } from "./race-replay.ts";
 
 const base = {
   version: 1,
@@ -138,6 +143,15 @@ describe("the moment kinds", () => {
   });
 });
 
+/** An 8x8 start for the games below: each cat and mouse in a corner. */
+const START_8 = {
+  pawns: {
+    p1: { cat: [0, 0], mouse: [7, 0] },
+    p2: { cat: [0, 7], mouse: [7, 7] },
+  },
+  walls: [],
+};
+
 describe("checkEdlAgainstGame", () => {
   const notations = ["Ce7", "Cf7", "^a4.^h4"];
   test("accepts a wall placed by that ply and rejects one placed later or never", () => {
@@ -145,15 +159,25 @@ describe("checkEdlAgainstGame", () => {
       ...base,
       events: [{ ply: 2, kind: "zoom", frame: ["^h4", "g4"] }],
     });
-    expect(checkEdlAgainstGame(ok, { notations, cols: 8, rows: 8 })).toEqual(
-      [],
-    );
+    expect(
+      checkEdlAgainstGame(ok, {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      }),
+    ).toEqual([]);
     const early = accept({
       ...base,
       events: [{ ply: 1, kind: "zoom", frame: [">h4"] }],
     });
     expect(
-      checkEdlAgainstGame(early, { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(early, {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      }),
     ).toHaveLength(1);
   });
 
@@ -161,10 +185,20 @@ describe("checkEdlAgainstGame", () => {
     const trap = (ply: number) =>
       accept({ ...base, events: [{ ply, kind: "trap", walls: ["^h4"] }] });
     expect(
-      checkEdlAgainstGame(trap(2), { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(trap(2), {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      }),
     ).toEqual([]);
     expect(
-      checkEdlAgainstGame(trap(1), { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(trap(1), {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      }),
     ).toHaveLength(1);
   });
 
@@ -174,7 +208,12 @@ describe("checkEdlAgainstGame", () => {
       events: [{ ply: 3, kind: "laugh", cell: "z9" }],
     });
     expect(
-      checkEdlAgainstGame(edl, { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(edl, {
+        notations,
+        cols: 8,
+        rows: 8,
+        initialState: START_8,
+      }),
     ).toHaveLength(2);
   });
 });
@@ -207,7 +246,12 @@ describe("startPly and coldOpenPly", () => {
     expect(validateEdl({ ...base, startPly: 2, coldOpenPly: 1 }).ok).toBe(
       false,
     );
-    const game = { notations: ["Ce7", "Cf7", "^a4.^h4"], cols: 8, rows: 8 };
+    const game = {
+      notations: ["Ce7", "Cf7", "^a4.^h4"],
+      cols: 8,
+      rows: 8,
+      initialState: START_8,
+    };
     const late = accept({
       ...base,
       startPly: 1,
@@ -243,7 +287,12 @@ describe("the payoff caption beat", () => {
   });
 
   test("is on a ply the game has", () => {
-    const game = { notations: ["Ce7", "Cf7", "^a4.^h4"], cols: 8, rows: 8 };
+    const game = {
+      notations: ["Ce7", "Cf7", "^a4.^h4"],
+      cols: 8,
+      rows: 8,
+      initialState: START_8,
+    };
     const at = (ply: number) =>
       checkEdlAgainstGame(
         accept({ ...base, payoff: { ply, text: "now" } }),
@@ -285,6 +334,7 @@ describe("fastForward pace ranges", () => {
       notations: ["Ce7", "Cf7", "Ce6", "Cf6", "^a4.^h4"],
       cols: 8,
       rows: 8,
+      initialState: START_8,
     };
     expect(checkEdlAgainstGame(accept({ ...base, pace: [ff] }), game)).toEqual(
       [],
@@ -337,5 +387,121 @@ describe("dailySeatColors", () => {
     expect(() => dailySeatColors({ 1: true, 2: true })).toThrow(
       "both seats are bots",
     );
+  });
+});
+
+describe("lead zoom", () => {
+  // 4x4, as in daily-candidates.test.ts: P1 cat a4, mouse d1; P2 cat a1,
+  // mouse d4. "Cc4", ">c4.>c3", "Cc3": P1's cat, P2's walls, P1's cat.
+  const start: CustomSetupStandardInitialState = {
+    pawns: {
+      p1: { cat: [0, 0], mouse: [3, 3] },
+      p2: { cat: [3, 0], mouse: [0, 3] },
+    },
+    walls: [],
+    turn: { playerId: 1, actionsTaken: [] },
+  };
+  const moves = ["Cc4", ">c4.>c3", "Cc3"];
+  const game = { notations: moves, cols: 4, rows: 4, initialState: start };
+  const lead = (ply: number, frame: string[]) =>
+    accept({ ...base, events: [{ ply, kind: "zoom", frame, lead: true }] });
+
+  test("is off unless asked for, and is true or false", () => {
+    expect(
+      (
+        accept({ ...base, events: [{ ply: 2, kind: "zoom", frame: ["c3"] }] })
+          .events[0] as { lead: boolean }
+      ).lead,
+    ).toBe(false);
+    expect((lead(2, ["c4", "c3"]).events[0] as { lead: boolean }).lead).toBe(
+      true,
+    );
+    expect(
+      validateEdl({
+        ...base,
+        events: [{ ply: 2, kind: "zoom", frame: ["c3"], lead: "yes" }],
+      }).errors,
+    ).toContain("events[0]: lead must be true or false");
+  });
+
+  test("a move plays one freeze or one lead zoom before it lands", () => {
+    const zoom = { ply: 4, kind: "zoom", frame: ["c3"], lead: true };
+    for (const events of [
+      [zoom, { ply: 4, kind: "freeze" }],
+      [zoom, { ...zoom, frame: ["c4"] }],
+    ]) {
+      expect(validateEdl({ ...base, events }).errors).toContain(
+        "ply 4 has more than one freeze or lead zoom; a move plays one of them before it lands",
+      );
+    }
+    // A lead zoom and a landing zoom on one ply are fine.
+    expect(
+      validateEdl({
+        ...base,
+        events: [zoom, { ply: 4, kind: "zoom", frame: ["c4"] }],
+      }).ok,
+    ).toBe(true);
+  });
+
+  test("pawnMovesOf follows GameState's replay, whichever side starts", () => {
+    const check = (
+      initialState: CustomSetupStandardInitialState,
+      notations: string[],
+    ) => {
+      const { states } = replayDistances({
+        variant: "standard",
+        boardWidth: 4,
+        boardHeight: 4,
+        initialState,
+        moves: notations,
+      });
+      const cells = (state: (typeof states)[number]) => {
+        const out: Record<string, string> = {};
+        for (const player of [1, 2] as const) {
+          for (const type of ["cat", "mouse"] as const) {
+            const c = pawnCell(state.pawns, player, type);
+            if (c) out[`${player}-${type}`] = cellToStandardNotation(c, 4);
+          }
+        }
+        return out;
+      };
+      const moved = pawnMovesOf({ initialState, notations, rows: 4 });
+      expect(moved).toHaveLength(notations.length);
+      moved.forEach((ms, ply) => {
+        const before = cells(states[ply]);
+        const after = cells(states[ply + 1]);
+        const changed = Object.keys(after)
+          .filter((k) => before[k] !== after[k])
+          .map((k) => ({ from: before[k], to: after[k] }));
+        expect(ms).toEqual(changed);
+      });
+    };
+    check(start, moves);
+    check({ ...start, turn: { playerId: 2, actionsTaken: [] } }, [
+      "Mc4",
+      "Md2",
+      ">b4.>b3",
+      "Ca3",
+    ]);
+  });
+
+  test("the frame must hold the move's start and end cells", () => {
+    expect(checkEdlAgainstGame(lead(2, ["c4", "c3"]), game)).toEqual([]);
+    // A frame box holds the cells between its terms too.
+    expect(checkEdlAgainstGame(lead(2, ["b4", "d2"]), game)).toEqual([]);
+    expect(checkEdlAgainstGame(lead(2, ["c3", "d3"]), game)).toEqual([
+      "events[0]: the lead zoom's frame must hold the move c4 -> c3 of ply 2; add c4 to frame",
+    ]);
+    expect(checkEdlAgainstGame(lead(1, [">c4"]), game)).toEqual([
+      "events[0]: a lead zoom plays a pawn's move, and ply 1 (>c4.>c3) moves no pawn",
+    ]);
+  });
+
+  test("an older report with no start position refuses a lead zoom", () => {
+    const noStart = { ...game, initialState: null };
+    expect(checkEdlAgainstGame(lead(2, ["c4", "c3"]), noStart)).toEqual([
+      "a lead zoom needs the start position, and this game has none (an older report); make a new report",
+    ]);
+    expect(checkEdlAgainstGame(accept(base), noStart)).toEqual([]);
   });
 });

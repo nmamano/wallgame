@@ -665,6 +665,7 @@ export const createDaily = ({
           notations: cycle.candidate.moves,
           cols: cycle.candidate.boardWidth,
           rows: cycle.candidate.boardHeight,
+          initialState: cycle.candidate.initialState,
         }),
         ...saveFrameProblems(edl, cycle.candidate.beats),
         ...storyProblems(edl, cycle.candidate),

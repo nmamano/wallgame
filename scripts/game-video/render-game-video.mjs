@@ -278,11 +278,16 @@ const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
 /** The first ply a daily video plays (edl.mjs startPly); 0 otherwise. */
 const START_PLY = EDL?.startPly ?? 0;
 /**
- * The events that play after their move lands, in list order. A freeze
- * plays before the move; the move loop places it.
+ * The events that play after their move lands, in list order. A freeze and
+ * a lead zoom start before the move; the move loop places them.
  */
 const landingEventsAt = (plyIndex) =>
-  eventsAt(plyIndex).filter((e) => e.kind !== "freeze");
+  eventsAt(plyIndex).filter(
+    (e) => e.kind !== "freeze" && !(e.kind === "zoom" && e.lead),
+  );
+/** The ply's lead zoom (edl.mjs "lead": true), if it has one. */
+const leadZoomAt = (plyIndex) =>
+  eventsAt(plyIndex).find((e) => e.kind === "zoom" && e.lead);
 
 /**
  * Which browser draws the frames. `chromium` is the one Playwright downloads
@@ -547,6 +552,12 @@ const TRAP_SECONDS = 1.6;
 const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
 const FREEZE_SCALE = 1.6;
+/**
+ * A lead zoom pushes in over LEAD_PUSH on the position before its move;
+ * its still is LEAD_STILL_AT after the move lands, the pawn just landed.
+ */
+const LEAD_PUSH = 0.35;
+const LEAD_STILL_AT = 0.2;
 const RACE_TICK_SECONDS = 0.3;
 const RACE_FLASH_SECONDS = 0.8;
 /**
@@ -2072,6 +2083,7 @@ if (EDL) {
     notations: history.map((h) => h.notation),
     cols: GRID.cols,
     rows: GRID.rows,
+    initialState: replay.state.initialState,
   });
   if (problems.length > 0) {
     console.error(`the EDL does not fit the game:\n  ${problems.join("\n  ")}`);
@@ -2795,6 +2807,47 @@ const renderStyle = async (styleName) => {
   };
 
   /**
+   * A lead zoom (edl.mjs "lead": true), around the move of `plyIndex`: the
+   * camera pushes in on `frame` over the position before the move, in
+   * colour; the move lands inside the zoom with its click and the zoom's
+   * sound (Nil, 2026-10-26: "the bye right as it moves would be the best
+   * narrative"), the race counter ticks, and the camera holds and lets go.
+   * The ply's other events and its rest follow, as for any move.
+   */
+  const playLeadZoom = async (ply, plyIndex, ev) => {
+    const z = frameZoom(ev.frame, ev.scale);
+    const push = Math.round(LEAD_PUSH * FPS);
+    // The position before the move can close a fastForward range; the zoom
+    // is a slow moment all the same, so it shows no speed tag.
+    for (let i = 0; i < push; i += 1) {
+      const scale = 1 + (z.scale - 1) * easeOut((i + 1) / push);
+      await emit(
+        playState(ply - 1, { zoom: { ...z, scale }, fastForward: null }),
+        1 / FPS,
+        { kind: "lead-zoom", ply: plyIndex },
+      );
+    }
+    cue(moveClick(plyIndex));
+    if (ev.sound) cue(meme(ev.sound));
+    const frames = Math.round((ev.holdSeconds + ZOOM_OUT) * FPS);
+    const stillAt = Math.round(LEAD_STILL_AT * FPS);
+    for (let i = 0; i < frames; i += 1) {
+      if (i === stillAt) {
+        stillNext = { ply: plyIndex, kind: "zoom", sound: ev.sound ?? null };
+      }
+      const t = i / FPS;
+      await emit(
+        playState(ply, {
+          zoom: { ...z, scale: zoomAt(ZOOM_IN + t, z.scale, ev.holdSeconds) },
+          race: raceHud(ply, t),
+        }),
+        1 / FPS,
+        { kind: "swing-zoom", ply: plyIndex },
+      );
+    }
+  };
+
+  /**
    * As a move lands, the race numbers that it changed pop, over the first
    * RACE_TICK_SECONDS of the move's own time, at most `budget` seconds.
    * Above the board, so these frames show the position itself; they are
@@ -2946,20 +2999,23 @@ const renderStyle = async (styleName) => {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
     if (wallz) await playFreeze(ply, plyIndex);
-    cue(moveClick(plyIndex));
+    const lead = wallz ? leadZoomAt(plyIndex) : undefined;
+    if (lead) await playLeadZoom(ply, plyIndex, lead);
+    else cue(moveClick(plyIndex));
     /*
       The tick takes its time from a plain move's hold, leaving that hold
       one frame at least; a move with effects keeps all of its own.
     */
     const plainMove =
       wallz && !isLast && landingEventsAt(plyIndex).length === 0;
-    const ticked = wallz
-      ? await playRaceTick(
-          ply,
-          plyIndex,
-          plainMove ? paceAt(plyIndex) - 1 / FPS : RACE_TICK_SECONDS,
-        )
-      : 0;
+    const ticked =
+      wallz && !lead
+        ? await playRaceTick(
+            ply,
+            plyIndex,
+            plainMove ? paceAt(plyIndex) - 1 / FPS : RACE_TICK_SECONDS,
+          )
+        : 0;
 
     if (wallz && isLast) {
       /*

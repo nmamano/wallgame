@@ -67,6 +67,13 @@
  *            lands as its event starts.
  *     zoom    the camera punches in to fit every cell and wall in `frame`
  *             (at most `scale`), holds for `holdSeconds`, and lets go.
+ *             With "lead": true it starts BEFORE the move: the camera
+ *             pushes in on the position before it, the move lands inside
+ *             the zoom with the zoom's sound, then the hold and the let-go
+ *             (Nil, 2026-10-26: "the bye right as it moves would be the
+ *             best narrative"). `frame` must hold the start and end cell
+ *             of every pawn the move moves. At most one lead zoom or
+ *             freeze per ply.
  *     scared  the mouse on `cell` trembles and sweats, a "!" over it.
  *     laugh   the mouse on `cell` laughs, a 😂 over it.
  *     stamp   `text` stamps onto the middle of the board, and fades.
@@ -167,7 +174,7 @@ export const EVENT_KINDS = [
 
 /** The fields each kind takes, besides ply, kind and sound. */
 const KIND_FIELDS = {
-  zoom: ["frame", "scale", "holdSeconds"],
+  zoom: ["frame", "scale", "holdSeconds", "lead"],
   scared: ["cell"],
   laugh: ["cell"],
   stamp: ["text"],
@@ -437,6 +444,10 @@ export const validateEdl = (raw) => {
         }
         out.scale = ev.scale ?? DEFAULT_ZOOM_SCALE;
         out.holdSeconds = ev.holdSeconds ?? DEFAULT_ZOOM_HOLD_SECONDS;
+        out.lead = ev.lead ?? false;
+        if (typeof out.lead !== "boolean") {
+          fail(`${where}: lead must be true or false`);
+        }
         if (!isNumberIn(out.scale, EDL_LIMITS.zoomScale)) {
           fail(`${where}: scale must be ${EDL_LIMITS.zoomScale.join("..")}`);
         }
@@ -513,10 +524,16 @@ export const validateEdl = (raw) => {
     fail(`coldOpenPly ${coldOpenPly} is inside a fastForward range`);
   }
 
-  // One freeze per move.
-  const freezes = filled.filter((e) => e.kind === "freeze").map((e) => e.ply);
-  if (new Set(freezes).size !== freezes.length) {
-    fail("a ply has two freeze events; one move freezes once");
+  // Before its move lands, a ply shows one thing: one freeze or one lead zoom.
+  const before = filled
+    .filter((e) => e.kind === "freeze" || (e.kind === "zoom" && e.lead))
+    .map((e) => e.ply);
+  for (const ply of new Set(before)) {
+    if (before.filter((p) => p === ply).length > 1) {
+      fail(
+        `ply ${ply} has more than one freeze or lead zoom; a move plays one of them before it lands`,
+      );
+    }
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -538,15 +555,77 @@ export const validateEdl = (raw) => {
   };
 };
 
+/** The pawn letters of move notation (shared/domain/standard-notation.ts). */
+const PAWN_LETTERS = { C: "cat", D: "dog", M: "mouse", E: "elephant" };
+
+/**
+ * The pawns each ply moves, as { from, to } cells in standard notation, from
+ * the start position and the notations alone: the mover alternates from the
+ * setup's turn (player 1 when the setup names none, as GameState does), and
+ * a pawn term names where that pawn of the mover ends the turn. The app has
+ * no shared/domain (it runs plain JavaScript), so this is the one reading of
+ * the pawns that the app, the storyboard and the renderer share; edl.test.ts
+ * holds it to GameState's replay.
+ * @param {{ initialState: { pawns: { p1: object, p2: object },
+ *           turn?: { playerId: 1 | 2 } }, notations: string[], rows: number }} game
+ * @returns {{ from: string | null, to: string }[][]}
+ */
+export const pawnMovesOf = ({ initialState, notations, rows }) => {
+  const cell = ([row, col]) => `${String.fromCharCode(97 + col)}${rows - row}`;
+  const at = { 1: {}, 2: {} };
+  for (const id of [1, 2]) {
+    for (const [type, c] of Object.entries(initialState.pawns[`p${id}`])) {
+      at[id][type] = c ? cell(c) : null;
+    }
+  }
+  let mover = initialState.turn?.playerId ?? 1;
+  return notations.map((notation) => {
+    const moves = [];
+    for (const term of String(notation).split(".")) {
+      const type = PAWN_LETTERS[term[0]];
+      if (!type) continue;
+      const to = term.slice(1);
+      moves.push({ from: at[mover][type] ?? null, to });
+      at[mover][type] = to;
+    }
+    mover = mover === 1 ? 2 : 1;
+    return moves;
+  });
+};
+
+/**
+ * Whether `cell` lies inside the box of a zoom frame's terms, in cells: a
+ * wall counts as the cell it names.
+ */
+const insideFrame = (cell, frame) => {
+  const xy = (t) => {
+    const m = t.match(/([a-z])(\d+)$/);
+    return [m[1].charCodeAt(0), Number(m[2])];
+  };
+  const pts = frame.map(xy);
+  const [x, y] = xy(cell);
+  return (
+    x >= Math.min(...pts.map((p) => p[0])) &&
+    x <= Math.max(...pts.map((p) => p[0])) &&
+    y >= Math.min(...pts.map((p) => p[1])) &&
+    y <= Math.max(...pts.map((p) => p[1]))
+  );
+};
+
 /**
  * Check a valid EDL against its game: every ply exists, every cell is on the
- * board, and every wall a zoom frames or a trap lights is on the board by
- * that ply.
+ * board, every wall a zoom frames or a trap lights is on the board by that
+ * ply, and a lead zoom's frame holds both cells of every pawn its move moves.
  *
  * `notations` is the game's move list (one notation per ply, e.g.
- * "^a4.^h4"); `cols` and `rows` are the board size. Returns error lines.
+ * "^a4.^h4"); `cols` and `rows` are the board size; `initialState` is the
+ * stored start position (its pawns, and the setup's turn if any), or null
+ * for an older report that has none. Returns error lines.
  */
-export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
+export const checkEdlAgainstGame = (
+  edl,
+  { notations, cols, rows, initialState },
+) => {
   const errors = [];
   const onBoard = (term) => {
     const m = term.match(/([a-z])(\d+)$/);
@@ -616,5 +695,30 @@ export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
       }
     }
   });
+  const hasLead = edl.events.some((ev) => ev.kind === "zoom" && ev.lead);
+  if (hasLead && !initialState) {
+    errors.push(
+      "a lead zoom needs the start position, and this game has none (an older report); make a new report",
+    );
+  } else if (hasLead) {
+    const moved = pawnMovesOf({ initialState, notations, rows });
+    edl.events.forEach((ev, i) => {
+      if (ev.kind !== "zoom" || !ev.lead || ev.ply >= notations.length) return;
+      const moves = moved[ev.ply];
+      if (moves.length === 0) {
+        errors.push(
+          `events[${i}]: a lead zoom plays a pawn's move, and ply ${ev.ply} (${notations[ev.ply]}) moves no pawn`,
+        );
+      }
+      for (const { from, to } of moves) {
+        const out = [from, to].filter((c) => c && !insideFrame(c, ev.frame));
+        if (out.length > 0) {
+          errors.push(
+            `events[${i}]: the lead zoom's frame must hold the move ${from} -> ${to} of ply ${ev.ply}; add ${out.join(" and ")} to frame`,
+          );
+        }
+      }
+    });
+  }
   return errors;
 };
