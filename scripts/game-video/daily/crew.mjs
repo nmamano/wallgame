@@ -330,7 +330,7 @@ export const askText = (c, modes, videoSha256) => {
     `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
     ...(earlier
       ? [
-          `SAME VIDEO as ask ${earlier.askId} (sha256 ${earlier.videoSha256.slice(0, 12)}), which you rejected with: "${earlier.reply ?? "no reply"}". Only the post text is new.`,
+          `SAME VIDEO as ask ${earlier.askId} (sha256 ${earlier.videoSha256.slice(0, 12)}), ${earlier.reply === null ? "which you dismissed without a reply" : `which you rejected with: "${earlier.reply}"`}. Only the post text is new.`,
         ]
       : []),
     "",

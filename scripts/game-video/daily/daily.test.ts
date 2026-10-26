@@ -360,7 +360,7 @@ describe("a text-only rejection: a new block, the same video", () => {
       ...(replacesAskId && { replacesAskId }),
     });
   };
-  const rejected = () => {
+  const rejected = (reply: string | null = "the X line is cringe") => {
     const store = openStore(tempDir());
     checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
     ask(store, "ask1", COPY);
@@ -368,7 +368,7 @@ describe("a text-only rejection: a new block, the same video", () => {
       askId: "ask1",
       decision: "reject",
       approver: "Nil",
-      reply: "the X line is cringe",
+      reply,
     });
     return store;
   };
@@ -421,20 +421,23 @@ describe("a text-only rejection: a new block, the same video", () => {
     expect((store.read(day) as Cycle).approval?.copy).toEqual(NEW);
   });
 
+  // The cycle as askText reads it once the video is rendered and checked.
+  const askable = (store: ReturnType<typeof openStore>) => ({
+    ...(store.read(day) as object),
+    candidate: {
+      seats: [{ name: "A" }, { name: "B" }],
+      movesCount: 9,
+      gameId: "g",
+    },
+    render: { video: { bytes: 1e6 }, ending: "e" },
+    edl: { summary: [] },
+    check: { verdicts: [] },
+  });
+
   test("the ask says it is the same video, with Nil's reply", () => {
     const store = rejected();
     store.recordCopy(day, NEW);
-    const c = {
-      ...(store.read(day) as object),
-      candidate: {
-        seats: [{ name: "A" }, { name: "B" }],
-        movesCount: 9,
-        gameId: "g",
-      },
-      render: { video: { bytes: 1e6 }, ending: "e" },
-      edl: { summary: [] },
-      check: { verdicts: [] },
-    };
+    const c = askable(store);
     const same =
       'SAME VIDEO as ask ask1 (sha256 aa), which you rejected with: "the X line is cringe". Only the post text is new.';
     expect(askText(c, DRY, "aa").split("\n")[1]).toBe(same);
@@ -442,6 +445,15 @@ describe("a text-only rejection: a new block, the same video", () => {
     ask(store, "ask2", NEW);
     const asked = { ...c, ...(store.read(day) as object) };
     expect(askText(asked, DRY, "aa").split("\n")[1]).toBe(same);
+  });
+
+  test("a dismissed ask is not quoted as a reply", () => {
+    const store = rejected(null);
+    store.recordCopy(day, NEW);
+    const c = askable(store);
+    expect(askText(c, DRY, "aa").split("\n")[1]).toBe(
+      "SAME VIDEO as ask ask1 (sha256 aa), which you dismissed without a reply. Only the post text is new.",
+    );
   });
 });
 
