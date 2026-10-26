@@ -129,6 +129,110 @@ export const saveFrameProblems = (edl, beats) =>
       });
   });
 
+/**
+ * The player whose walk ends at 0 in `distances` (the race counter, one
+ * entry per position: distances[k] is after k plies), or null when the game
+ * ended another way (a resign, a timeout).
+ */
+export const raceWinner = (distances) => {
+  const last = distances?.at(-1);
+  if (last?.[1] === 0) return 1;
+  if (last?.[2] === 0) return 2;
+  return null;
+};
+
+/**
+ * A relief is a false one when the hunter still wins this soon after it
+ * (rehearsal, 2026-10-26: in all three close calls of the day's top five,
+ * the hunter won 4 to 8 plies after the relief).
+ */
+export const DOOMED_RELIEF_PLIES = 10;
+
+/**
+ * What a stranger reads against what the video shows (Director rehearsal,
+ * 2026-10-26). Returns error lines:
+ * - A number in the caption must be on the race counter when the caption is
+ *   first read: at the start (startPly, before or after its move) or on the
+ *   cold open. "Red was 2 steps from winning" over a counter that says 10 is
+ *   a contradiction for most of the video.
+ * - A number in the payoff must be on the counter just before or just after
+ *   the payoff's move, so "2 to 8" and "now it's 8" both pass.
+ * - No laugh on a relief when the hunter still wins within
+ *   DOOMED_RELIEF_PLIES: the viewer sees "safe", then the loss.
+ * The counter in `distances` is the picker's replay, the one the renderer
+ * draws (race-replay.ts).
+ */
+export const storyProblems = (edl, { distances, beats, movesCount }) => {
+  const problems = [];
+  const counter = (positions) =>
+    [
+      ...new Set(
+        positions.flatMap((k) =>
+          [distances[k]?.[1], distances[k]?.[2]].filter(Number.isInteger),
+        ),
+      ),
+    ].sort((a, b) => a - b);
+  const numbers = (text) => (text.match(/\d+/g) ?? []).map(Number);
+  const mismatch = (what, text, positions, when) => {
+    const shown = counter(positions);
+    for (const n of numbers(text)) {
+      if (!shown.includes(n)) {
+        problems.push(
+          `the ${what} says ${n}, but the race counter shows ${shown.join(" or ")} ${when}; use a number that the counter shows then, or say it in words`,
+        );
+      }
+    }
+  };
+  if (edl.caption) {
+    mismatch(
+      "caption",
+      edl.caption,
+      [
+        edl.startPly,
+        edl.startPly + 1,
+        ...(edl.coldOpenPly === null ? [] : [edl.coldOpenPly + 1]),
+      ],
+      "when the caption is first read",
+    );
+  }
+  if (edl.payoff) {
+    mismatch(
+      "payoff",
+      edl.payoff.text,
+      [edl.payoff.ply, edl.payoff.ply + 1],
+      `around ply ${edl.payoff.ply}`,
+    );
+  }
+  const winner = raceWinner(distances);
+  const lastPly = movesCount - 1;
+  for (const b of beats) {
+    const gap = lastPly - b.relief.ply;
+    if (winner !== b.hunter.player || gap > DOOMED_RELIEF_PLIES) continue;
+    edl.events.forEach((e, i) => {
+      if (e.kind === "laugh" && e.ply === b.relief.ply) {
+        problems.push(
+          `events[${i}]: a laugh on relief ply ${b.relief.ply}, but the hunter wins ${gap} plies later; the save only delays the loss, so say that in the payoff instead`,
+        );
+      }
+    });
+  }
+  return problems;
+};
+
+/** Throws unless `distances` is one race count per position of the game. */
+const checkDistances = (gameId, distances, movesCount) => {
+  const count = (n) => n === null || (Number.isInteger(n) && n >= 0);
+  if (
+    !Array.isArray(distances) ||
+    distances.length !== movesCount + 1 ||
+    distances.some((d) => !count(d?.[1]) || !count(d?.[2]))
+  ) {
+    throw new Error(
+      `${gameId} has race counts that are not one per position of the game`,
+    );
+  }
+};
+
 const SAFE_NAME = /^[\p{L}\p{N} .'_-]{1,40}$/u;
 const GAME_ID = /^[A-Za-z0-9_-]{4,40}$/;
 /** A board cell in standard notation; the renderer puts an overlay on it. */
@@ -191,6 +295,9 @@ export const candidateFromReport = (report, rank = 1) => {
   ) {
     throw new Error(`${entry.gameId} has a move list that is not one per ply`);
   }
+  if (entry.distances !== undefined) {
+    checkDistances(entry.gameId, entry.distances, entry.movesCount);
+  }
   if (!entry.picks?.length) {
     throw new Error(
       `${entry.gameId} has no move that beat an ordinary advance`,
@@ -244,12 +351,29 @@ export const candidateFromReport = (report, rank = 1) => {
     moves: entry.moves ?? null,
     // Where the game started: the storyboard replays the moves from it.
     initialState: entry.initialState ?? null,
+    // The race counter at each position (distances[k] is after k plies):
+    // what the video shows over the board, so storyProblems can hold the
+    // captions to it.
+    distances: entry.distances ?? null,
     source: { reportCreatedAt: report.createdAt, rank },
   };
+  const winner = raceWinner(base.distances);
+  const name = (player) =>
+    base.seats.find((s) => s.playerOrder === player)?.name;
+  // A close call's sentence says "the mouse is safe"; the game can still be
+  // lost a few moves later, and the story must follow the end.
+  const outcome = (b) =>
+    winner === b.hunter.player
+      ? ` ${name(winner)} still wins at move ${base.movesCount}, ${base.movesCount - b.relief.moveNumber} moves after the relief.`
+      : winner === b.prey.player
+        ? ` ${name(winner)} wins at move ${base.movesCount}.`
+        : "";
   return {
     ...base,
     facts: [
-      ...base.beats.map((b) => `Move ${b.save.moveNumber}: ${b.description}`),
+      ...base.beats.map(
+        (b) => `Move ${b.save.moveNumber}: ${b.description}${outcome(b)}`,
+      ),
       ...base.picks.map((p) => `Move ${p.moveNumber}: ${p.description}`),
     ],
   };

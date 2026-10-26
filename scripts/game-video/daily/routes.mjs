@@ -63,6 +63,7 @@ import {
   nextEnding,
   edlSummary,
   saveFrameProblems,
+  storyProblems,
 } from "./candidate.mjs";
 import {
   validateEdl,
@@ -645,6 +646,11 @@ export const createDaily = ({
           "the candidate report has no move list, so the list cannot be checked; pick from a newer report",
         );
       }
+      if (!cycle.candidate.distances) {
+        throw new StepRefused(
+          "the candidate has no race counts, so the captions cannot be checked against the counter; pick from a newer report, or pick again with --replace",
+        );
+      }
       // The contact sheet has one still per event; with no event there is no
       // sheet, and the render would fail after it spent its view.
       if (edl.events.length === 0) {
@@ -659,6 +665,7 @@ export const createDaily = ({
           rows: cycle.candidate.boardHeight,
         }),
         ...saveFrameProblems(edl, cycle.candidate.beats),
+        ...storyProblems(edl, cycle.candidate),
         ...droppedSoundProblems(edl, soundPicks.dropped()),
       ];
       if (errors.length) throw new StepRefused(errors.join("; "));
@@ -666,6 +673,7 @@ export const createDaily = ({
       const shown = Object.fromEntries(
         [
           ["video caption", edl.caption ?? ""],
+          ["video payoff", edl.payoff?.text ?? ""],
           ...edl.events
             .filter((e) => e.text)
             .map((e, i) => [`stamp ${i + 1}`, e.text]),

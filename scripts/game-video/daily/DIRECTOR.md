@@ -55,8 +55,15 @@ already has a cycle, finish it or stop: do not start another. `pick
   save walls and both pawns, then `laugh` on the relief ply. The frame must
   hold every `*` wall of the save and both pawn cells; `direct` refuses a
   zoom that leaves one out.
+- Read how the game ends before you write the story. The close call's fact
+  says who wins. When the hunter still wins a few moves after the relief,
+  the save only delayed the loss: no `laugh`, and the payoff says so (for
+  example "2 to 8. Not enough."). `direct` refuses a laugh on a relief that
+  the hunter wins within 10 plies (rehearsal, 2026-10-26: this was true of
+  all three close calls in the day's top five).
 - If the game has no close call, put the FAHHH and the zoom on the largest
-  wall jump. Frame them on its `*` walls.
+  wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
+  so the viewer sees whom the wall stops.
 - Use few effects. One FAHHH per video unless two moves are equally strong.
 - The video caption has 6 words and 32 characters at most. It says Red and
   Blue, not names. The renderer shows an AI in red and a human in blue; in a
@@ -66,12 +73,21 @@ already has a cycle, finish it or stop: do not start another. `pick
   move of ply N on, its text replaces the caption. Use it in most videos:
   whenever the game has one key wall (the save, or the largest jump in
   `facts`). Put N on that wall's ply. The caption sets up the stakes, and
-  the payoff says what the wall did. Use a number from the race counter
-  when it helps, for example "Red is 3 steps from winning", then "now it's
-  11". With no single key wall, keep one caption. Same limits as the
-  caption, Red and Blue, not names. Keep each beat to one line: a two-line
-  beat makes the board smaller for the whole video (measured 2026-10-26:
-  720 px against 785 px).
+  the payoff says what the wall did. With no single key wall, keep one
+  caption. Same limits as the caption, Red and Blue, not names. Keep each
+  beat to one line: a two-line beat makes the board smaller for the whole
+  video (measured 2026-10-26: 720 px against 785 px).
+- A number in a caption is a promise about the race counter. The setup
+  caption is read at the start, so a number in it must be on the counter
+  then (the storyboard's `steps` line of the start tile and ply 0). "Red
+  was 2 steps from winning" over a counter that says 10 is wrong for most
+  of the video: say the stakes in words ("Can Blue keep Red out?") and
+  keep the number for the payoff. A number in the payoff must be on the
+  counter just before or just after the payoff's move ("2 to 8", "now it's
+  8"). `direct` refuses a number that the counter does not show then.
+  Take numbers from the `steps` lines, not from a JUMP badge: it adds the
+  mover's own change (+13 for a wall that took Blue from 7 to 19). Write
+  step counts in digits, and other counts in words ("two Blue walls").
 - `ending`: use the default from `status` unless the game needs another one.
 - `music`: always name a track, and vary it. Do not use the last track,
   which `status` shows (posted, or waiting for an answer on another day).
@@ -115,6 +131,9 @@ Rules:
   (`blunder`, `brilliant`, `trap`, `race`, `freeze`, `react`). Do not put two
   of them on one ply.
 - `freeze` and `zoom` both mark one move. Use one of them on a ply, not both.
+- On a ply with a zoom, put a `blunder`, `brilliant` or `react` on a cell
+  inside the zoom frame, or leave it out: the zoom hides the rest of the
+  board.
 - `brilliant` and `blunder` judge a move. Use them only when the storyboard
   shows it: a save that walks the cat from 2 to 12 is brilliant; a wall that
   costs 4 squares is not.
@@ -147,7 +166,7 @@ Rules:
 {
   "version": 1,
   "gameId": "W2SLwv69",
-  "caption": "Red was 1 square away",
+  "caption": "Can Blue keep Red out?",
   "ending": "gg",
   "pace": [{ "fromPly": 7, "toPly": 11, "secondsPerMove": 1.2 }],
   "events": [

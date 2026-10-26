@@ -21,6 +21,7 @@ import {
   nextEnding,
   edlSummary,
   saveFrameProblems,
+  storyProblems,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
 import type { DescribedCloseCall, PickedJump } from "../daily-candidates";
@@ -53,7 +54,7 @@ import {
   safeAreaVerdict,
   MAX_STING_OVER_MIX_LU,
 } from "./quality.mjs";
-import { FRAME, SAFE_AREA } from "../edl.mjs";
+import { FRAME, SAFE_AREA, validateEdl } from "../edl.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -130,6 +131,11 @@ const REPORT = {
       boardHeight: 8,
       movesCount: 41,
       moves: Array.from({ length: 41 }, (_, i) => (i % 2 ? "Ce5" : "Ce4")),
+      // The race counter at each position; the guest's walk ends at 0.
+      distances: Array.from({ length: 42 }, (_, k) => ({
+        1: k === 41 ? 0 : 7,
+        2: 12,
+      })),
       seats: [
         { playerOrder: 1, kind: "guest", name: "Guest Tuatara" },
         { playerOrder: 2, kind: "official bot", name: "Ruby" },
@@ -805,7 +811,9 @@ describe("captions", () => {
       facts: string[];
       beats: DescribedCloseCall[];
     };
-    expect(c.facts[0]).toBe(`Move 10: ${CLOSE_CALL.description}`);
+    expect(c.facts[0]).toBe(
+      `Move 10: ${CLOSE_CALL.description} Guest Tuatara wins at move 41.`,
+    );
     expect(c.facts[1]).toMatch(/^Move 23: /);
     expect(c.beats[0].danger.preyCell).toBe("g4");
     // The storyboard replays the moves from the start position.
@@ -851,6 +859,43 @@ describe("captions", () => {
     ).toEqual([]);
   });
 
+  test("a close call's fact says who wins the game after it", () => {
+    const report = (last: Record<number, number>) => ({
+      ...REPORT,
+      ranked: [
+        {
+          ...REPORT.ranked[0],
+          beats: [CLOSE_CALL],
+          distances: [...REPORT.ranked[0].distances.slice(0, 41), last],
+        },
+      ],
+    });
+    // Ruby (player 2) hunts; the guest's mouse is the prey.
+    expect(candidateFromReport(report({ 1: 3, 2: 0 }), 1).facts[0]).toMatch(
+      /the mouse is safe\. Ruby still wins at move 41, 30 moves after the relief\.$/,
+    );
+    expect(candidateFromReport(report({ 1: 0, 2: 4 }), 1).facts[0]).toMatch(
+      /the mouse is safe\. Guest Tuatara wins at move 41\.$/,
+    );
+    // A resign: no walk ends at 0, so nothing is said.
+    expect(candidateFromReport(report({ 1: 3, 2: 4 }), 1).facts[0]).toMatch(
+      /the mouse is safe\.$/,
+    );
+  });
+
+  test("race counts that are not one per position are refused", () => {
+    const report = {
+      ...REPORT,
+      ranked: [
+        {
+          ...REPORT.ranked[0],
+          distances: REPORT.ranked[0].distances.slice(1),
+        },
+      ],
+    };
+    expect(() => candidateFromReport(report, 1)).toThrow(/race counts/);
+  });
+
   test("a close call with a cell the renderer cannot place is refused", () => {
     const bad = {
       ...CLOSE_CALL,
@@ -887,6 +932,79 @@ describe("captions", () => {
     expect(() => candidateFromReport(bad, 1)).toThrow(
       /characters a post must not carry/,
     );
+  });
+});
+
+describe("what a stranger reads matches what the video shows", () => {
+  // Rehearsal, 2026-10-26: "Red was 2 steps from winning" over a counter that
+  // said 10, and a laugh 4 plies before the laughing side lost.
+  const counts = (red: number[]) =>
+    red.map((n, k) => ({ 1: k === red.length - 1 ? 0 : 9, 2: n }));
+  // Player 2 (Red) walks 10, 10, 8, 2, then a wall makes it 12 (ply 3).
+  const game = {
+    distances: counts([10, 10, 8, 2, 12, 12, 12]),
+    beats: [] as DescribedCloseCall[],
+    movesCount: 6,
+  };
+  const list = (edl: Record<string, unknown>) => {
+    const r = validateEdl({
+      version: 1,
+      gameId: "TESTGAME1",
+      ending: "gg",
+      ...edl,
+    });
+    if (!r.edl) throw new Error((r.errors ?? []).join("; "));
+    return r.edl;
+  };
+
+  test("a caption's number must be on the counter when it is first read", () => {
+    expect(
+      storyProblems(list({ caption: "Red was 2 steps away" }), game),
+    ).toEqual([
+      "the caption says 2, but the race counter shows 9 or 10 when the caption is first read; use a number that the counter shows then, or say it in words",
+    ]);
+    expect(
+      storyProblems(list({ caption: "Red is 10 steps away" }), game),
+    ).toEqual([]);
+    // A video that starts later is read later.
+    expect(
+      storyProblems(
+        list({ caption: "Red is 2 steps away", startPly: 2 }),
+        game,
+      ),
+    ).toEqual([]);
+    expect(
+      storyProblems(list({ caption: "Can Blue keep Red out?" }), game),
+    ).toEqual([]);
+  });
+
+  test("a payoff's number is on the counter just before or after its move", () => {
+    const payoff = (text: string) =>
+      list({ caption: "Can Blue keep Red out?", payoff: { ply: 3, text } });
+    expect(storyProblems(payoff("2 to 12"), game)).toEqual([]);
+    expect(storyProblems(payoff("now it's 11"), game)).toEqual([
+      "the payoff says 11, but the race counter shows 2 or 9 or 12 around ply 3; use a number that the counter shows then, or say it in words",
+    ]);
+  });
+
+  test("no laugh on a relief that the hunter wins soon after", () => {
+    // Red (player 2) hunts the guest's mouse; the relief is ply 10.
+    const laugh = list({ events: [{ ply: 10, kind: "laugh", cell: "g4" }] });
+    const ending = (winner: 1 | 2, plies: number) => ({
+      distances: Array.from({ length: plies + 1 }, (_, k) =>
+        k === plies
+          ? { 1: winner === 1 ? 0 : 4, 2: winner === 2 ? 0 : 4 }
+          : { 1: 6, 2: 6 },
+      ),
+      beats: [CLOSE_CALL],
+      movesCount: plies,
+    });
+    expect(storyProblems(laugh, ending(2, 15))).toEqual([
+      "events[0]: a laugh on relief ply 10, but the hunter wins 4 plies later; the save only delays the loss, so say that in the payoff instead",
+    ]);
+    // The prey's side wins, or the hunter wins much later: the relief was real.
+    expect(storyProblems(laugh, ending(1, 15))).toEqual([]);
+    expect(storyProblems(laugh, ending(2, 30))).toEqual([]);
   });
 });
 
@@ -1323,6 +1441,20 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(refused.status).toBe(409);
   expect(JSON.stringify(refused.body)).toContain("dropped the sound fuahhh-1");
   expect((await pickSound(null)).status).toBe(200);
+  // What the video says must match the counter, and the payoff goes out too.
+  const told = (edl: Record<string, unknown>) =>
+    call("/api/daily/direct", { day, edl: { ...EDL, ...edl } });
+  const offCounter = await told({ caption: "Ruby was 2 steps away" });
+  expect(offCounter.status).toBe(409);
+  expect(JSON.stringify(offCounter.body)).toContain("the caption says 2");
+  const mention = await told({
+    caption: "Can Ruby get home?",
+    payoff: { ply: 22, text: "ask @someone" },
+  });
+  expect(mention.status).toBe(409);
+  expect(JSON.stringify(mention.body)).toContain(
+    "video payoff must not mention",
+  );
   expect((await direct(day, "a-legend")).status).toBe(200);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;
