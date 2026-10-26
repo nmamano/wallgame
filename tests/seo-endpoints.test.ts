@@ -106,6 +106,8 @@ describe("buildSitemapXml", () => {
       "https://wallgame.io/past-games",
       "https://wallgame.io/about",
       "https://wallgame.io/study-board",
+      "https://wallgame.io/privacy",
+      "https://wallgame.io/terms",
     ]);
   });
 

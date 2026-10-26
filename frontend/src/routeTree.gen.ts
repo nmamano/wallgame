@@ -9,10 +9,12 @@
 // Additionally, you should also exclude this file from your linter and/or formatter to prevent it from being checked or modified.
 
 import { Route as rootRouteImport } from './routes/__root'
+import { Route as TermsRouteImport } from './routes/terms'
 import { Route as StudyBoardRouteImport } from './routes/study-board'
 import { Route as SettingsRouteImport } from './routes/settings'
 import { Route as RankingRouteImport } from './routes/ranking'
 import { Route as ProfileRouteImport } from './routes/profile'
+import { Route as PrivacyRouteImport } from './routes/privacy'
 import { Route as PlayRouteImport } from './routes/play'
 import { Route as PastGamesRouteImport } from './routes/past-games'
 import { Route as LiveGamesRouteImport } from './routes/live-games'
@@ -26,6 +28,11 @@ import { Route as SoloCampaignIdRouteImport } from './routes/solo-campaign.$id'
 import { Route as PuzzlesIdRouteImport } from './routes/puzzles.$id'
 import { Route as GameIdRouteImport } from './routes/game.$id'
 
+const TermsRoute = TermsRouteImport.update({
+  id: '/terms',
+  path: '/terms',
+  getParentRoute: () => rootRouteImport,
+} as any)
 const StudyBoardRoute = StudyBoardRouteImport.update({
   id: '/study-board',
   path: '/study-board',
@@ -44,6 +51,11 @@ const RankingRoute = RankingRouteImport.update({
 const ProfileRoute = ProfileRouteImport.update({
   id: '/profile',
   path: '/profile',
+  getParentRoute: () => rootRouteImport,
+} as any)
+const PrivacyRoute = PrivacyRouteImport.update({
+  id: '/privacy',
+  path: '/privacy',
   getParentRoute: () => rootRouteImport,
 } as any)
 const PlayRoute = PlayRouteImport.update({
@@ -115,10 +127,12 @@ export interface FileRoutesByFullPath {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
+  '/terms': typeof TermsRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
@@ -133,10 +147,12 @@ export interface FileRoutesByTo {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
+  '/terms': typeof TermsRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
@@ -152,10 +168,12 @@ export interface FileRoutesById {
   '/live-games': typeof LiveGamesRoute
   '/past-games': typeof PastGamesRoute
   '/play': typeof PlayRoute
+  '/privacy': typeof PrivacyRoute
   '/profile': typeof ProfileRoute
   '/ranking': typeof RankingRoute
   '/settings': typeof SettingsRoute
   '/study-board': typeof StudyBoardRoute
+  '/terms': typeof TermsRoute
   '/game/$id': typeof GameIdRoute
   '/puzzles/$id': typeof PuzzlesIdRoute
   '/solo-campaign/$id': typeof SoloCampaignIdRoute
@@ -172,10 +190,12 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/play'
+    | '/privacy'
     | '/profile'
     | '/ranking'
     | '/settings'
     | '/study-board'
+    | '/terms'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
@@ -190,10 +210,12 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/play'
+    | '/privacy'
     | '/profile'
     | '/ranking'
     | '/settings'
     | '/study-board'
+    | '/terms'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
@@ -208,10 +230,12 @@ export interface FileRouteTypes {
     | '/live-games'
     | '/past-games'
     | '/play'
+    | '/privacy'
     | '/profile'
     | '/ranking'
     | '/settings'
     | '/study-board'
+    | '/terms'
     | '/game/$id'
     | '/puzzles/$id'
     | '/solo-campaign/$id'
@@ -227,10 +251,12 @@ export interface RootRouteChildren {
   LiveGamesRoute: typeof LiveGamesRoute
   PastGamesRoute: typeof PastGamesRoute
   PlayRoute: typeof PlayRoute
+  PrivacyRoute: typeof PrivacyRoute
   ProfileRoute: typeof ProfileRoute
   RankingRoute: typeof RankingRoute
   SettingsRoute: typeof SettingsRoute
   StudyBoardRoute: typeof StudyBoardRoute
+  TermsRoute: typeof TermsRoute
   GameIdRoute: typeof GameIdRoute
   PuzzlesIdRoute: typeof PuzzlesIdRoute
   SoloCampaignIdRoute: typeof SoloCampaignIdRoute
@@ -240,6 +266,13 @@ export interface RootRouteChildren {
 
 declare module '@tanstack/react-router' {
   interface FileRoutesByPath {
+    '/terms': {
+      id: '/terms'
+      path: '/terms'
+      fullPath: '/terms'
+      preLoaderRoute: typeof TermsRouteImport
+      parentRoute: typeof rootRouteImport
+    }
     '/study-board': {
       id: '/study-board'
       path: '/study-board'
@@ -266,6 +299,13 @@ declare module '@tanstack/react-router' {
       path: '/profile'
       fullPath: '/profile'
       preLoaderRoute: typeof ProfileRouteImport
+      parentRoute: typeof rootRouteImport
+    }
+    '/privacy': {
+      id: '/privacy'
+      path: '/privacy'
+      fullPath: '/privacy'
+      preLoaderRoute: typeof PrivacyRouteImport
       parentRoute: typeof rootRouteImport
     }
     '/play': {
@@ -363,10 +403,12 @@ const rootRouteChildren: RootRouteChildren = {
   LiveGamesRoute: LiveGamesRoute,
   PastGamesRoute: PastGamesRoute,
   PlayRoute: PlayRoute,
+  PrivacyRoute: PrivacyRoute,
   ProfileRoute: ProfileRoute,
   RankingRoute: RankingRoute,
   SettingsRoute: SettingsRoute,
   StudyBoardRoute: StudyBoardRoute,
+  TermsRoute: TermsRoute,
   GameIdRoute: GameIdRoute,
   PuzzlesIdRoute: PuzzlesIdRoute,
   SoloCampaignIdRoute: SoloCampaignIdRoute,

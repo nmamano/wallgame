@@ -46,6 +46,8 @@ export const CANONICAL_PATHS = [
   "/past-games",
   "/about",
   "/study-board",
+  "/privacy",
+  "/terms",
 ] as const;
 
 const PAGE_META: Record<(typeof CANONICAL_PATHS)[number], PageMeta> = {
@@ -93,6 +95,15 @@ const PAGE_META: Record<(typeof CANONICAL_PATHS)[number], PageMeta> = {
     title: "Wall Game study board - set up any position",
     description:
       "Place pawns and walls by hand to build any position you like, and study what happens next.",
+  },
+  "/privacy": {
+    title: "Wall Game Privacy Policy",
+    description:
+      "What data Wall Game keeps, why it keeps it, and who else gets it.",
+  },
+  "/terms": {
+    title: "Wall Game Terms of Use",
+    description: "The rules for using Wall Game.",
   },
 };
 

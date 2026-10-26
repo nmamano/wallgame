@@ -1,8 +1,5 @@
 import { createFileRoute } from "@tanstack/react-router";
-import { Card } from "@/components/ui/card";
-import ReactMarkdown from "react-markdown";
-import remarkGfm from "remark-gfm";
-import rehypeRaw from "rehype-raw";
+import { MarkdownPage } from "@/components/markdown-page";
 import { DISCORD_INVITE_URL } from "@/lib/external-links";
 import { isEmbedded } from "@/lib/embedded-mode";
 
@@ -52,52 +49,19 @@ The game is inspired by classic strategy games like ${
     ? "Blockade"
     : "[Blockade](https://en.wikipedia.org/wiki/Blockade_(board_game))"
 }.
+
+## Privacy and Terms
+
+- [Privacy Policy](/privacy)
+- [Terms of Use](/terms)
 `;
 
 function About() {
   return (
-    <div className="min-h-screen bg-background">
-      <main className="container mx-auto py-12 px-4">
-        <div className="max-w-3xl mx-auto">
-          <div className="space-y-2 mb-8">
-            <h1 className="text-4xl font-serif font-bold tracking-tight text-foreground text-balance">
-              About
-            </h1>
-            <p className="text-lg text-muted-foreground">What is Wall Game?</p>
-          </div>
-
-          <Card className="p-8 border-border/50 bg-card/50 backdrop-blur">
-            <div className="space-y-4 text-foreground leading-relaxed prose dark:prose-invert max-w-none prose-headings:font-serif prose-headings:font-bold prose-a:text-primary prose-a:transition-colors prose-a:hover:text-primary/80">
-              <ReactMarkdown
-                remarkPlugins={[remarkGfm]}
-                rehypePlugins={[rehypeRaw]}
-                components={{
-                  a: ({
-                    href,
-                    ...props
-                  }: React.AnchorHTMLAttributes<HTMLAnchorElement> & {
-                    href?: string;
-                  }) => {
-                    if (href?.startsWith("http")) {
-                      return (
-                        <a
-                          {...props}
-                          href={href}
-                          target="_blank"
-                          rel="noopener noreferrer"
-                        />
-                      );
-                    }
-                    return <a {...props} href={href} />;
-                  },
-                }}
-              >
-                {aboutContent(isEmbedded())}
-              </ReactMarkdown>
-            </div>
-          </Card>
-        </div>
-      </main>
-    </div>
+    <MarkdownPage
+      title="About"
+      subtitle="What is Wall Game?"
+      markdown={aboutContent(isEmbedded())}
+    />
   );
 }
