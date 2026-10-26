@@ -450,6 +450,11 @@ const SHAKE_GAIN = 0.6;
 const WIN_GAIN = 0.2;
 /** Multiplies the site's own pawn and wall levels, keeping their balance. */
 const MOVE_GAIN = 1.6;
+/**
+ * The clicks of a fastForward range (edl.mjs) come 3 to 5 a second, so they
+ * are one step quieter, -6 dB (Wall Game PM, 2026-10-26).
+ */
+const FAST_FORWARD_CLICK_STEP = 10 ** (-6 / 20);
 
 /** Seconds the music takes to arrive, and to leave before the end card. */
 const MUSIC_FADE_IN = 1.6;
@@ -2135,19 +2140,16 @@ const renderStyle = async (styleName) => {
           ?.secondsPerMove) ||
         pace) * FPS,
     ) / FPS;
-  /**
-   * The speed tag over the position a move of a fastForward range (edl.mjs)
-   * led to, or null.
-   */
+  /** The fastForward range (edl.mjs) that holds a ply, or undefined. */
+  const fastRangeOf = (plyIndex) =>
+    wallz
+      ? EDL.pace.find(
+          (r) => r.fastForward && r.fromPly <= plyIndex && plyIndex <= r.toPly,
+        )
+      : undefined;
+  /** The speed tag over the position a fast move led to, or null. */
   const fastForwardAt = (boardIndex) => {
-    const r =
-      wallz &&
-      EDL.pace.find(
-        (p) =>
-          p.fastForward &&
-          p.fromPly <= boardIndex - 1 &&
-          boardIndex - 1 <= p.toPly,
-      );
+    const r = fastRangeOf(boardIndex - 1);
     return r ? fastForwardTag(r.secondsPerMove) : null;
   };
   const layout = wallz ? WALLZ_LAYOUT : LAYOUT;
@@ -2409,7 +2411,10 @@ const renderStyle = async (styleName) => {
       file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
       // The site's own balance - a wall is quieter than a pawn there - times
       // one gain, so raising the moves does not flatten that relationship.
-      gain: (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) * MOVE_GAIN,
+      gain:
+        (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) *
+        MOVE_GAIN *
+        (fastRangeOf(plyIndex) ? FAST_FORWARD_CLICK_STEP : 1),
     };
   };
 
