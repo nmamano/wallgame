@@ -1071,8 +1071,13 @@
           // A drop that slides down the face and starts again, twice a second.
           const cycle = (b.t * 2) % 1;
           sweat.style.fontSize = px * 0.3 + "px";
-          // The drop goes on the side away from a bubble on the left.
-          sweat.style.left = b.side === "left" ? "78%" : "-8%";
+          /*
+            The drop is always on the right: the emoji's drops fly off to
+            the right, so on the right side they read as sweat off the face
+            (Nil, 2026-10-26: "the sweat looks like its pouring to the
+            right, but it appears on the left side of the mouse").
+          */
+          sweat.style.left = "78%";
           sweat.style.top = -5 + cycle * 30 + "%";
           sweat.style.opacity = 1 - cycle * 0.8;
         } else {

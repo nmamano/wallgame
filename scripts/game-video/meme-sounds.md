@@ -95,6 +95,26 @@ level of each clip is in `meme-sounds.mjs`, measured the same day.
 | ooh-2      | crowd `oh - - disappointed  | 5.0 s  | 1,928     | mrrap4food            | WEAKER: the page says only "crowd disappointed"                                                                            | https://freesound.org/people/mrrap4food/sounds/619007/            |
 | ooh-3      | Gasp.wav                    | 1.5 s  | 12,933    | Dvideoguy             | WEAKER: the page says only "crowd gasping"                                                                                 | https://freesound.org/people/Dvideoguy/sounds/207779/             |
 
+## Get-away voices (family seeya)
+
+Wall Game Director, 2026-10-26, after Nil's review of ask ac64cf6d: "how
+about some meme audio at that point, like, 'see ya' or smth?", for the
+moment the prey gets away. The rules are the same as for the families above:
+CC0 on freesound.org, a voice or an effect and not a cut from a film, TV
+show, song or record, and the page says how the sound was made. The files
+are Freesound's "HQ preview" mp3. Nil keeps or drops each one on
+`/daily/sounds`.
+
+| Key     | Freesound title                       | Length | Downloads | Uploader  | Why it is safe                                                                                    | Source page                                           |
+| ------- | ------------------------------------- | ------ | --------- | --------- | ------------------------------------------------------------------------------------------------- | ----------------------------------------------------- |
+| seeya-1 | see ya bye.sesxfinal_mixdown.mp3final | 2.6 s  | 143       | 12062482p | WEAKER: the page says only "ending a phone call"; a voice says "see ya, bye"                      | https://freesound.org/people/12062482p/sounds/502456/ |
+| seeya-2 | bye#1                                 | 1.0 s  | 0         | Ayetherah | The uploader's own voice for a voice pack (Shure SM58, M-Audio M-Track Duo)                       | https://freesound.org/people/Ayetherah/sounds/865466/ |
+| seeya-3 | mmbye.wav                             | 0.9 s  | 1,061     | Reitanna  | The uploader's own voice: a sarcastic "mmbye"; her profile names the microphones she records with | https://freesound.org/people/Reitanna/sounds/343893/  |
+
+Refused: a "whoosh away" (three CC0 candidates): each page says only "made
+in audacity" or "a remix of a remix", so none says where its sound came
+from.
+
 ## Copyright risk
 
 A YouTube claim is the known risk (task e8d26610). Name another key in the EDL, or swap the clip in `SOUNDS`.

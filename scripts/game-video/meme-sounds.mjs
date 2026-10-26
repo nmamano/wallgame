@@ -71,6 +71,10 @@ export const MEME_SOUNDS = {
   "ooh-1": { lufs: -10.0, truePeak: -0.3 },
   "ooh-2": { lufs: -9.5, truePeak: -0.6 },
   "ooh-3": { lufs: -19.5, truePeak: -11.7 },
+  // Get-away voices, CC0 on freesound.org (meme-sounds.md), measured 2026-10-26.
+  "seeya-1": { lufs: -15.4, truePeak: -3.8 },
+  "seeya-2": { lufs: -19.7, truePeak: -3.3 },
+  "seeya-3": { lufs: -13.4, truePeak: -3.3 },
 };
 
 /**
@@ -94,6 +98,7 @@ export const MEME_FAMILIES = {
   sting: "the trap closes",
   ding: "a good move",
   ooh: "a close call",
+  seeya: "the prey gets away",
 };
 
 /**
@@ -116,6 +121,7 @@ export const MEME_SOURCE_NOTES = {
   "airhorn-2": "weaker source: the page does not say how it was made",
   "ooh-2": "weaker source: the page does not say how it was made",
   "ooh-3": "weaker source: the page does not say how it was made",
+  "seeya-1": 'weaker source: the page says only "ending a phone call"',
 };
 
 /** "boom-2" -> "boom". @type {(key: string) => string} */
