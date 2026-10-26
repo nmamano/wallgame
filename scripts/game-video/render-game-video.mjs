@@ -97,7 +97,7 @@ const cliArg = (name) => {
  * them. The file fills the same options the flags do; a flag on the command
  * line wins over the file.
  *
- *   {"jobId": "...", "gameId": "...", "caption": "...", "style": "wallz",
+ *   {"jobId": "...", "gameId": "...", "caption": "...", "style": "daily",
  *    "aspect": "9x16", "swings": [{"ply": 23, ...}]}
  */
 const JOB = cliArg("job")
@@ -146,7 +146,7 @@ const rawGame = arg("game");
 if (!rawGame) {
   console.error(
     "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
-      "       [--style current|wallz|mix[,...]] [--caption TEXT]\n" +
+      "       [--style current|daily[:replay|gg|ko][,...]] [--caption TEXT]\n" +
       "       [--swing-plies 23,41] [--seconds-per-move S]\n" +
       "       [--aspect fit|square|9x16] (style current only)\n" +
       "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
@@ -172,15 +172,22 @@ const ORIGIN = "https://wallgame.io";
  *
  *   current  the look shipped since 2026-08: VS screen, name plates, a shake
  *            on the winning capture, a winner card.
- *   wallz    Nil's reference Short (WallzGame, 2026-10-25): black 9:16 frame,
- *            one meme caption, the board as wide as the frame, a fast pace, a
- *            camera punch-in on each swing move, and the winner's colour
- *            flooding the board at the end. No VS screen, no plates, no card.
- *   mix      wallz with a short VS screen before the first move.
+ *   daily    the daily Short (Nil, 2026-10-25 and 2026-10-26): black 9:16
+ *            frame, one meme caption, the board as wide as the frame, a fast
+ *            pace, a camera punch-in and a meme sound on each swing move, the
+ *            VS names as an OVERLAY over the first seconds of play (an intro
+ *            screen loses viewers), and one of our own endings. No plates, no
+ *            winner card.
  *
- * ALL OF THEM ARE COMPOSED FROM ONE CAPTURE. `--style current,wallz,mix`
+ * THE ENDING of daily is named after a colon: `daily:replay`, `daily:gg`,
+ * `daily:ko` (stage.html describes each). Nil, 2026-10-26: the
+ * winner's-colour flood of the first cut looked like a copy of WallzGame, so
+ * it is gone; until he picks, `replay` is the default. The daily pipeline
+ * sends plain `daily`.
+ *
+ * ALL OF THEM ARE COMPOSED FROM ONE CAPTURE. `--style daily:replay,daily:gg`
  * loads the replay page once and writes one mp4 per style, so a comparison
- * costs the game one view, not three.
+ * costs the game one view, not one per style.
  */
 const STYLES = {
   current: {
@@ -189,38 +196,46 @@ const STYLES = {
     vsSound: "vsStamp",
     secondsPerMove: 0.8,
   },
-  wallz: { look: "wallz", vsSeconds: 0, secondsPerMove: 0.5 },
-  /*
-    The riser needs 1.6 s before its hit, and a 1.8 s VS screen punches at
-    1.0 s, so the short VS gets a sound that hits at its start instead.
-  */
-  mix: {
+  daily: {
     look: "wallz",
-    vsSeconds: 1.8,
+    vsSeconds: 0,
+    vsOverlay: true,
     vsSound: "vsMeme",
     secondsPerMove: 0.5,
+    ending: "replay",
   },
 };
+/** The endings stage.html can play; their timings are published there. */
+const ENDINGS = ["replay", "gg", "ko"];
 const STYLE_NAMES = String(arg("style", "current"))
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
+/** "daily:gg" -> the daily style with the gg ending. */
+const styleOf = (name) => {
+  const [base, ending] = name.split(":");
+  const style = STYLES[base];
+  if (!style) return null;
+  if (ending === undefined) return style;
+  if (!style.ending || !ENDINGS.includes(ending)) return null;
+  return { ...style, ending };
+};
 for (const name of STYLE_NAMES) {
-  if (!STYLES[name]) {
+  if (!styleOf(name)) {
     console.error(
-      `--style ${name} is not known. Known: ${Object.keys(STYLES).join(", ")}`,
+      `--style ${name} is not known. Known: current, daily[:${ENDINGS.join("|")}]`,
     );
     process.exit(2);
   }
 }
 
-/** The meme caption over the board, wallz and mix only. Untrusted text. */
+/** The meme caption over the board, daily only. Untrusted text. */
 const CAPTION = arg("caption", "");
 
 /**
  * The moves that swung the game, as 0-based ply indexes into the move list -
  * the `ply` field of a Swing in daily-candidates.ts. Each one gets a camera
- * punch-in and the swing sound, in the wallz and mix looks.
+ * punch-in and the swing sound, in the daily look.
  */
 const SWING_PLIES = String(arg("swing-plies", ""))
   .split(",")
@@ -408,7 +423,7 @@ const OUT = resolve(arg("out", `tmp/game-video/${GAME_ID}.mp4`));
 const outFor = (styleName) =>
   STYLE_NAMES.length === 1
     ? OUT
-    : OUT.replace(/(\.mp4)?$/, `-${styleName}.mp4`);
+    : OUT.replace(/(\.mp4)?$/, `-${styleName.replace(":", "-")}.mp4`);
 
 const MUSIC_VOLUME = 0.3;
 const SHAKE_GAIN = 0.6;
@@ -454,17 +469,14 @@ const SHAKE_SECONDS = 0.6;
  * land, hold and let go: in for ZOOM_IN, held until ZOOM_HOLD_END, out by
  * ZOOM_OUT_END, then the board rests at its normal size for the rest of
  * SWING_SECONDS. ZOOM_SCALE is how far the camera punches in.
- *
- * The flood runs FLOOD_SECONDS after the last move lands and then holds the
- * flooded board for FLOOD_HOLD_SECONDS, which is where the video ends.
  */
 const SWING_SECONDS = 1.4;
 const ZOOM_IN = 0.12;
 const ZOOM_HOLD_END = 0.85;
 const ZOOM_OUT_END = 1.1;
 const ZOOM_SCALE = 1.5;
-const FLOOD_SECONDS = 1.2;
-const FLOOD_HOLD_SECONDS = 1.3;
+/** How long a wallz video holds its last position when nobody won. */
+const DRAW_HOLD_SECONDS = 1.3;
 
 /* ------------------------------------------------------------- geometry -- */
 
@@ -1196,7 +1208,7 @@ const AUDIO_DIR = join(REPO, "frontend/public/audio");
 const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
 
 /**
- * The meme sounds, for the wallz and mix looks (Nil, 2026-10-25: the trending
+ * The meme sounds, for the daily look (Nil, 2026-10-25: the trending
  * ones, the "FUAHHH" and the famous shotgun, as the WallzGame Short does).
  *
  * THEY ARE NOT IN THE REPOSITORY. They are other people's clips from public
@@ -1249,12 +1261,12 @@ const meme = (name) => {
  * step with the file list.
  *
  *   vsStamp   lands on the VS mark's punch (current)
- *   vsMeme    lands on the VS mark's punch (mix, whose VS is too short for
- *             the riser's lead-in)
+ *   vsMeme    lands on the VS mark's punch in the overlay (daily: no riser,
+ *             the overlay has no time for its 1.6 s lead-in)
  *   shake     lands on the winning capture, under the screen shake (current)
  *   win       lands with the end card (current)
- *   swing     lands on each swing move, with the punch-in (wallz and mix)
- *   flood     lands as the winner's colour floods the board (wallz and mix)
+ *   swing     lands on each swing move, with the punch-in (daily)
+ *   finish    lands on the impact of the ending (daily)
  */
 const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
 const STING_DIR = join(REPO, "assets/stings");
@@ -1283,21 +1295,21 @@ const SOUNDS = {
   },
   vsMeme: meme("shotgun-2"),
   swing: meme("fuahhh-1"),
-  flood: meme("shotgun-1"),
+  finish: meme("shotgun-1"),
 };
 
 /**
  * Audition plumbing, so one capture can carry a different candidate per
- * style: `--sounds swing=fuahhh-2` for every style, or `mix:flood=shotgun-4`
+ * style: `--sounds swing=fuahhh-2` for every style, or `daily:gg:finish=shotgun-4`
  * for one. Only the meme slots take a candidate.
  */
 const soundsFor = (styleName) => {
   const picked = { ...SOUNDS };
   for (const entry of String(arg("sounds", "")).split(",").filter(Boolean)) {
-    const m = entry.match(/^(?:([a-z]+):)?(swing|flood|vsMeme)=([\w-]+)$/);
+    const m = entry.match(/^(?:([a-z:]+):)?(swing|finish|vsMeme)=([\w-]+)$/);
     if (!m) {
       console.error(
-        `--sounds entry "${entry}" is not [style:]swing|flood|vsMeme=<candidate>`,
+        `--sounds entry "${entry}" is not [style:]swing|finish|vsMeme=<candidate>`,
       );
       process.exit(2);
     }
@@ -1528,7 +1540,7 @@ const sha256Of = (file) =>
  * Returns what the RESULT line reports.
  */
 const renderStyle = async (styleName) => {
-  const style = STYLES[styleName];
+  const style = styleOf(styleName);
   const wallz = style.look === "wallz";
   const pace = PACE_OVERRIDE ? Number(PACE_OVERRIDE) : style.secondsPerMove;
   const layout = wallz ? WALLZ_LAYOUT : LAYOUT;
@@ -1540,7 +1552,7 @@ const renderStyle = async (styleName) => {
   log(
     `style ${styleName}: ${layout.width}x${layout.height}, ${pace}s per move` +
       (wallz
-        ? `, swings at plies ${SWING_PLIES.join(",") || "(none)"}, sounds swing=${sounds.swing.name} flood=${sounds.flood.name}`
+        ? `, swings at plies ${SWING_PLIES.join(",") || "(none)"}, ending ${style.ending}, sounds swing=${sounds.swing.name} finish=${sounds.finish.name}`
         : ""),
   );
 
@@ -1561,6 +1573,9 @@ const renderStyle = async (styleName) => {
     a font still loads is wrong, so no frame is taken before the fonts are in.
   */
   await stage.evaluate(() => document.fonts.ready);
+
+  /** Published by stage.html: each ending's length, hold and impact second. */
+  const endingTimings = await stage.evaluate(() => window.__ENDINGS);
 
   /** Published by stage.html, so the sting can be aligned to the visual punch. */
   const vsPunchFraction = await stage.evaluate(
@@ -1665,13 +1680,54 @@ const renderStyle = async (styleName) => {
   };
 
   let frameNo = 0;
-  const emit = async (state, seconds, meta = {}) => {
+  const shoot = async (state, seconds, meta) => {
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
     await stage.evaluate((s) => window.__stage(s), state);
     await stage.screenshot({ path: file });
     timeline.push({ file, seconds, ...meta });
     elapsed += seconds;
   };
+
+  /**
+   * The VS overlay covers the first seconds of play, whatever is being shown
+   * under it - the opening position, routine moves or a punch-in. So the
+   * overlay is applied HERE, to every play image that starts inside its
+   * window: such an image is split into single frames that each carry the
+   * overlay, and only what is left after the window stays one image. Those
+   * frames are their own kind: the encode check classifies "move" frames by
+   * the board, and a board under two banners is not one it can read.
+   */
+  const overlay = style.vsOverlay
+    ? await stage.evaluate(() => window.__VS_OVERLAY)
+    : null;
+  const emit = async (state, seconds, meta = {}) => {
+    if (
+      !overlay ||
+      state.segment !== "play" ||
+      elapsed >= overlay.seconds - 1e-6
+    ) {
+      await shoot(state, seconds, meta);
+      return;
+    }
+    const frames = Math.round(seconds * FPS);
+    let used = 0;
+    for (; used < frames && elapsed < overlay.seconds - 1e-6; used += 1) {
+      await shoot(
+        {
+          ...state,
+          vsOverlay: { t: elapsed, a: side(seats.top), b: side(seats.bottom) },
+        },
+        1 / FPS,
+        { ...meta, kind: "vs-overlay" },
+      );
+    }
+    if (used < frames) await shoot(state, (frames - used) / FPS, meta);
+  };
+
+  // The overlay's punch gets the VS sound, at the second the mark lands.
+  if (overlay) {
+    cue(sounds[style.vsSound], overlay.entry * vsPunchFraction);
+  }
 
   // --- the VS screen, animated
   if (style.vsSeconds > 0) {
@@ -1764,42 +1820,43 @@ const renderStyle = async (styleName) => {
 
     if (wallz && isLast) {
       /*
-        The last move lands, holds one beat, and then the winner's colour
-        floods the board in a wave out from the cell where the game ended.
-        The flood frames are their own kind: the encode check classifies
-        "move" frames by the board under them, and a flooded board is not a
-        position of the game.
+        The last move lands and holds one beat, and then the ending plays over
+        the final screenshot. Ending frames are their own kind: the encode
+        check classifies "move" frames by the board under them, and an ending
+        frame is not a plain position of the game.
       */
       await emit(playState(ply), pace, { kind: "move", ply: plyIndex });
       musicEndAt = elapsed;
       if (winnerId) {
-        const origin = cellOfPly(plyIndex) ?? [
-          Math.floor(GRID.rows / 2),
-          Math.floor(GRID.cols / 2),
-        ];
-        const flood = (t) => ({
-          cols: GRID.cols,
-          rows: GRID.rows,
-          pad: GRID.pad,
-          color: side(winnerId).hex,
-          origin,
+        const timing = endingTimings[style.ending];
+        const ending = (t) => ({
+          kind: style.ending,
           t,
+          at: cellAt(
+            cellOfPly(plyIndex) ?? [GRID.rows / 2 - 0.5, GRID.cols / 2 - 0.5],
+          ),
+          cell: (1 - 2 * GRID.pad) / GRID.cols,
+          before: fileUrl(boardFrames[ply - 1]),
+          stamp: outcome.reason === "capture" ? "CAUGHT" : "GG",
+          how: `wins ${REASON_WORDS[outcome.reason] ?? outcome.reason}`,
+          winner: side(winnerId),
+          loser: side(winnerId === 1 ? 2 : 1),
         });
-        cue(sounds.flood);
-        const floodFrames = Math.round(FLOOD_SECONDS * FPS);
-        for (let i = 0; i < floodFrames; i += 1) {
-          await emit(
-            playState(ply, { flood: flood(i / (floodFrames - 1)) }),
-            1 / FPS,
-            { kind: "win-flood", ply: plyIndex },
-          );
+        cue(sounds.finish, elapsed + timing.impact);
+        const endingFrames = Math.round(timing.seconds * FPS);
+        for (let i = 0; i < endingFrames; i += 1) {
+          await emit(playState(ply, { ending: ending(i / FPS) }), 1 / FPS, {
+            kind: "ending",
+            ply: plyIndex,
+          });
         }
-        await emit(playState(ply, { flood: flood(1) }), FLOOD_HOLD_SECONDS, {
-          kind: "win-flood-hold",
-          ply: plyIndex,
-        });
+        await emit(
+          playState(ply, { ending: ending(timing.seconds) }),
+          timing.hold,
+          { kind: "ending-hold", ply: plyIndex },
+        );
       } else {
-        await emit(playState(ply), FLOOD_HOLD_SECONDS, {
+        await emit(playState(ply), DRAW_HOLD_SECONDS, {
           kind: "move",
           ply: plyIndex,
         });
@@ -1916,7 +1973,7 @@ const renderStyle = async (styleName) => {
     if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
   }
 
-  // --- the end card, in the current look only: wallz ends on the flood.
+  // --- the end card, in the current look only: wallz has its own endings.
   if (!wallz) {
     musicEndAt = elapsed;
     cue(
@@ -2072,7 +2129,7 @@ const renderStyle = async (styleName) => {
       ? [
           style.vsSound && `vs=${sounds[style.vsSound].name}`,
           `swing=${sounds.swing.name}`,
-          `flood=${sounds.flood.name}`,
+          `finish=${sounds.finish.name}`,
         ]
           .filter(Boolean)
           .join(",")

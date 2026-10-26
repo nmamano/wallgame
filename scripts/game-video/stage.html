@@ -70,8 +70,10 @@
       #vs {
         position: absolute;
         inset: 0;
+        /* Over the board when it plays as an overlay. */
+        z-index: 2;
       }
-      #vs .beam {
+      .beam {
         position: absolute;
         left: -12%;
         width: 124%;
@@ -92,7 +94,7 @@
         (it starts at -12% and runs 124% wide), so a portrait sits inside the
         visible frame rather than off the edge of it.
       */
-      #vs .beam .inner {
+      .beam .inner {
         position: absolute;
         inset: 0;
         transform: skewY(7deg);
@@ -104,17 +106,17 @@
       #vs .beam.bottom .inner {
         flex-direction: row-reverse;
       }
-      #vs .portrait {
+      .beam .portrait {
         width: var(--portrait);
         height: var(--portrait);
         flex: none;
         object-fit: contain;
         filter: drop-shadow(0 6px 18px rgba(0, 0, 0, 0.55));
       }
-      #vs .who {
+      .beam .who {
         min-width: 0;
       }
-      #vs .name {
+      .beam .name {
         font-size: var(--name-size);
         font-weight: 800;
         letter-spacing: -0.02em;
@@ -127,7 +129,7 @@
       #vs .beam.bottom .who {
         text-align: right;
       }
-      #vs .sub {
+      .beam .sub {
         font-size: var(--sub-size);
         font-weight: 700;
         letter-spacing: 0.16em;
@@ -228,8 +230,8 @@
         object-fit: fill;
       }
       /*
-        The camera. The board screenshot and the flood overlay ride on it, so a
-        punch-in magnifies both together. #boardWrap clips it, so a zoom stays
+        The camera. The board screenshot rides on it, and so does the position
+        before the last move during the instant replay. #boardWrap clips it, so a zoom stays
         inside the board's square and never covers the caption.
       */
       #boardCam {
@@ -237,13 +239,148 @@
         width: 100%;
         height: 100%;
       }
-      #flood {
+      #boardWrap {
+        position: relative;
+      }
+      /* The position before the last move, for the instant replay's dissolve. */
+      #boardPrev {
         position: absolute;
         inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: fill;
       }
-      #flood .cell {
+
+      /* ---------- the endings (wallz look) ---------- */
+      /*
+        Three endings of our own, each a layer over the frozen final
+        screenshot: nothing of the game is redrawn. Their lettering is the VS
+        mark's, their panels are the replay page's plates, their pawns and
+        colours are the players' own.
+      */
+      .stampmark {
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: -0.03em;
+        color: #fff;
+        text-shadow:
+          6px 6px 0 #0b0f1c,
+          0 0 42px rgba(255, 214, 102, 0.85);
+        -webkit-text-stroke: 0.055em #10182c;
+        paint-order: stroke fill;
+        white-space: nowrap;
+      }
+      #stamp {
         position: absolute;
-        border-radius: 18%;
+        left: 50%;
+        top: 50%;
+        font-size: calc(var(--board) * 0.14);
+      }
+      #replayBadge {
+        position: absolute;
+        left: 4%;
+        top: 4%;
+        display: flex;
+        align-items: center;
+        gap: 0.5em;
+        padding: 0.4em 0.9em;
+        border-radius: 999px;
+        background: rgba(18, 26, 46, 0.9);
+        border: 2px solid rgba(148, 163, 184, 0.16);
+        font-size: calc(var(--board) * 0.04);
+        font-weight: 800;
+        letter-spacing: 0.18em;
+      }
+      #replayBadge .dot {
+        width: 0.7em;
+        height: 0.7em;
+        border-radius: 50%;
+        background: #ef4444;
+      }
+      #crack {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #flash {
+        position: absolute;
+        inset: 0;
+        background: #fff;
+      }
+      #ggCard {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        width: calc(var(--board) * 0.8);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        gap: calc(var(--board) * 0.02);
+        padding: calc(var(--board) * 0.05) calc(var(--board) * 0.04);
+        border-radius: 26px;
+        background: rgba(18, 26, 46, 0.94);
+        border: 2px solid rgba(148, 163, 184, 0.16);
+        box-shadow: 0 24px 60px rgba(0, 0, 0, 0.55);
+      }
+      #ggCard .gg {
+        font-size: calc(var(--board) * 0.2);
+        line-height: 1;
+      }
+      #ggCard .gg span {
+        color: #ffd166;
+      }
+      /*
+        The full card width, not its content's: a row that sizes itself to its
+        content measured the name before it shrank and left it 540 px of an
+        834 px card, so the name was cut (2026-10-26).
+      */
+      #ggCard .who {
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        gap: 4%;
+        width: 100%;
+      }
+      #ggCard img {
+        width: calc(var(--board) * 0.14);
+        height: calc(var(--board) * 0.14);
+        flex: none;
+        object-fit: contain;
+      }
+      #ggCard .n {
+        font-size: calc(var(--board) * 0.065);
+        font-weight: 900;
+        white-space: nowrap;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        min-width: 0;
+      }
+      #ggCard .how {
+        font-size: calc(var(--board) * 0.032);
+        font-weight: 700;
+        color: var(--dim);
+        letter-spacing: 0.04em;
+      }
+      #ggCard .cta {
+        margin-top: 2%;
+        font-size: calc(var(--board) * 0.055);
+        font-weight: 900;
+        letter-spacing: 0.12em;
+      }
+      #ggCard .cta .dot {
+        color: #ff8c42;
+      }
+      #koPawn {
+        position: absolute;
+        left: 0;
+        top: 0;
+        object-fit: contain;
+        filter: drop-shadow(0 8px 20px rgba(0, 0, 0, 0.6));
+      }
+      #koBanner {
+        top: calc(50% + var(--board) * 0.12);
+        height: calc(var(--board) * 0.3);
       }
 
       /* ---------- the WallzGame look (style "wallz") ---------- */
@@ -409,8 +546,34 @@
         <div id="boardWrap">
           <div id="boardCam">
             <img id="boardImg" />
-            <div id="flood"></div>
+            <img id="boardPrev" class="hidden" />
           </div>
+          <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
+          <div id="replayBadge" class="hidden">
+            <div class="dot"></div>
+            REPLAY
+          </div>
+          <div id="stamp" class="stampmark hidden"></div>
+        </div>
+        <div id="flash" class="hidden"></div>
+        <img id="koPawn" class="hidden" />
+        <div class="beam hidden" id="koBanner">
+          <div class="inner">
+            <img class="portrait" id="koImg" />
+            <div class="who">
+              <div class="name" id="koName"></div>
+              <div class="sub">WINS</div>
+            </div>
+          </div>
+        </div>
+        <div id="ggCard" class="hidden">
+          <div class="gg stampmark">G<span>G</span></div>
+          <div class="who">
+            <img id="ggAv" />
+            <div class="n" id="ggName"></div>
+          </div>
+          <div class="how" id="ggHow"></div>
+          <div class="cta">wallgame<span class="dot">.</span>io</div>
         </div>
         <div class="plate bottom">
           <img class="avatar" id="pAvB" />
@@ -452,73 +615,271 @@
       window.__VS_PUNCH_FRACTION = 0.55;
       /** How long the punch takes, as a fraction of the same segment. */
       window.__VS_PUNCH_DURATION = 0.26;
+      /**
+       * The VS overlay's timing, in seconds: the whole of it, the entry the
+       * VS screen's 0..1 animation is stretched over, and the exit. The
+       * renderer reads it to place the overlay frames and the punch sound.
+       */
+      window.__VS_OVERLAY = { seconds: 2.4, entry: 1.3, exit: 0.45 };
 
       /**
-       * The winner's colour floods the board, one cell at a time, in a wave
-       * out from the cell where the game ended.
+       * The three endings of the wallz look, one frame at a time.
        *
-       * A LAYER OVER THE SCREENSHOT: the cells are placed on the board's own
-       * grid, which the renderer measured on the replay page (`pad` is the air
-       * it left around that grid, as a fraction of the image). Nothing of the
-       * game is redrawn, and the flood is translucent so the walls under it
-       * still read.
+       * Nil, 2026-10-26: the colour flood looked like a copy of WallzGame, so
+       * the video ends in one of these instead, in Wall Game's own language:
+       *
+       *   replay  an instant replay: the camera cuts back to the position
+       *           before the last move, pushes in on the capture cell while
+       *           the two real screenshots dissolve in slow motion, and a
+       *           stamp lands.
+       *   gg      a freeze frame: a flash, a shake, cracks out of the capture
+       *           cell, the board goes grey, and our winner card slides up.
+       *   ko      a knockout: the loser's pawn spins off the board and the
+       *           winner's banner, the VS screen's own, slides in.
+       *
+       * Each ending publishes its length, its hold and the second of its
+       * impact here. The renderer reads them, and the finish sound lands on
+       * the impact, so the sound cannot drift off the picture when an ending
+       * is retimed.
+       *
+       * e = { kind, t: seconds into the ending, at: {x, y} the capture cell
+       *       in the board image (0..1), cell: one cell's width (0..1),
+       *       before: the board image before the last move, stamp, how,
+       *       winner, loser }
        */
-      const paintFlood = (f) => {
-        const layer = $("flood");
-        if (!f) {
-          layer.replaceChildren();
-          return;
+      window.__ENDINGS = {
+        replay: { seconds: 2.0, impact: 1.4, hold: 1.3 },
+        gg: { seconds: 1.0, impact: 0, hold: 1.6 },
+        ko: { seconds: 1.0, impact: 0, hold: 1.5 },
+      };
+
+      const clamp01 = (x) => Math.max(0, Math.min(1, x));
+      const easeOut3 = (x) => 1 - Math.pow(1 - x, 3);
+      const easeInOut3 = (x) =>
+        x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
+      /** Progress of `t` through the window [from, to], 0..1. */
+      const span = (t, from, to) => clamp01((t - from) / (to - from));
+      /** The VS mark's punch: lands big, overshoots once, settles at 1. */
+      const punch = (p) =>
+        p >= 1 ? 1 : 1.9 - 0.9 * easeOut3(p) - 0.14 * Math.sin(p * Math.PI);
+
+      /**
+       * A long name shrinks until it fits, instead of ending in "...". The
+       * room a name gets depends on the frame and the portrait size, so it is
+       * measured here, not predicted. Seen 2026-10-26: the 9:16 frame cut
+       * "Guest Cormorant" to "Guest Cormor...".
+       */
+      const fitName = (el) => {
+        el.style.fontSize = "";
+        let size = parseFloat(getComputedStyle(el).fontSize);
+        const floor = size * 0.6;
+        while (el.scrollWidth > el.clientWidth && size > floor) {
+          size = Math.max(floor, size - 2);
+          el.style.fontSize = size + "px";
         }
-        const key = [f.cols, f.rows, f.pad, f.color].join("/");
-        if (layer.dataset.key !== key) {
-          layer.dataset.key = key;
-          layer.replaceChildren();
-          const span = 1 - 2 * f.pad;
-          const inset = 0.07;
-          for (let r = 0; r < f.rows; r += 1) {
-            for (let c = 0; c < f.cols; c += 1) {
-              const cell = document.createElement("div");
-              cell.className = "cell";
-              cell.dataset.r = r;
-              cell.dataset.c = c;
-              const w = span / f.cols;
-              const h = span / f.rows;
-              cell.style.left = (f.pad + (c + inset) * w) * 100 + "%";
-              cell.style.top = (f.pad + (r + inset) * h) * 100 + "%";
-              cell.style.width = w * (1 - 2 * inset) * 100 + "%";
-              cell.style.height = h * (1 - 2 * inset) * 100 + "%";
-              cell.style.background = f.color;
-              layer.appendChild(cell);
+      };
+
+      /**
+       * Cracks out of a point, in a 1000x1000 box over the board. The rays
+       * come from fixed formulas, not a random source, so every render of a
+       * game cracks the same way.
+       */
+      const paintCracks = (x, y, drawn) => {
+        const svg = $("crack");
+        const key = x + "/" + y;
+        if (svg.dataset.key !== key) {
+          svg.dataset.key = key;
+          const rays = [];
+          for (let i = 0; i < 9; i += 1) {
+            let a = (i / 9) * Math.PI * 2 + Math.sin(i * 12.9898) * 0.35;
+            let px = x * 1000;
+            let py = y * 1000;
+            const len = 260 + 220 * Math.abs(Math.sin(i * 78.233));
+            const pts = [[px, py]];
+            for (let k = 1; k <= 6; k += 1) {
+              a += Math.sin(i * 3.1 + k * 1.7) * 0.35;
+              px += (Math.cos(a) * len) / 6;
+              py += (Math.sin(a) * len) / 6;
+              pts.push([px, py]);
             }
+            rays.push(pts.map((p) => p.join(",")).join(" "));
+          }
+          svg.innerHTML = rays
+            .map(
+              (pts) =>
+                `<polyline points="${pts}" pathLength="1" fill="none" stroke="rgba(11,15,28,0.85)" stroke-width="9" stroke-linejoin="round" stroke-dasharray="1"/>` +
+                `<polyline points="${pts}" pathLength="1" fill="none" stroke="rgba(255,255,255,0.92)" stroke-width="3.5" stroke-linejoin="round" stroke-dasharray="1"/>`,
+            )
+            .join("");
+        }
+        for (const line of svg.children) {
+          line.setAttribute("stroke-dashoffset", String(1 - drawn));
+        }
+      };
+
+      const paintEnding = (e) => {
+        for (const id of [
+          "boardPrev",
+          "replayBadge",
+          "stamp",
+          "crack",
+          "flash",
+          "ggCard",
+          "koPawn",
+          "koBanner",
+        ]) {
+          show($(id), false);
+        }
+        $("boardImg").style.filter = "";
+        $("boardWrap").style.transform = "";
+        if (!e) return;
+        const t = e.t;
+
+        if (e.kind === "replay") {
+          const push = easeInOut3(span(t, 0, 1.4));
+          $("boardCam").style.transformOrigin =
+            e.at.x * 100 + "% " + e.at.y * 100 + "%";
+          $("boardCam").style.transform = "scale(" + (1 + 1.1 * push) + ")";
+          show($("boardPrev"), true);
+          $("boardPrev").src = e.before;
+          $("boardPrev").style.opacity = 1 - span(t, 0.5, 1.4);
+          show($("replayBadge"), true);
+          $("replayBadge").querySelector(".dot").style.opacity =
+            Math.floor(t * 3) % 2 === 0 ? 1 : 0.25;
+          if (t >= 1.4) {
+            show($("stamp"), true);
+            $("stamp").textContent = e.stamp;
+            $("stamp").style.transform =
+              "translate(-50%,-50%) rotate(-8deg) scale(" +
+              punch(span(t, 1.4, 1.65)) +
+              ")";
           }
         }
-        const [or, oc] = f.origin;
-        const far = Math.max(
-          ...[
-            [0, 0],
-            [0, f.cols - 1],
-            [f.rows - 1, 0],
-            [f.rows - 1, f.cols - 1],
-          ].map(([r, c]) => Math.hypot(r - or, c - oc)),
+
+        if (e.kind === "gg") {
+          show($("flash"), t < 0.18);
+          $("flash").style.opacity = 0.85 * (1 - span(t, 0, 0.18));
+          // Translation only, like the capture shake: a scale would not
+          // come back to where it began.
+          const k = 1 - span(t, 0, 0.5);
+          const phase = t * 30;
+          $("boardWrap").style.transform =
+            "translate(" +
+            Math.sin(phase * 7.3) * 18 * k +
+            "px," +
+            Math.cos(phase * 5.1) * 12 * k +
+            "px)";
+          show($("crack"), true);
+          paintCracks(e.at.x, e.at.y, easeOut3(span(t, 0, 0.35)));
+          const g = span(t, 0.15, 0.6);
+          $("boardImg").style.filter =
+            "grayscale(" + g + ") brightness(" + (1 - 0.55 * g) + ")";
+          if (t >= 0.55) {
+            const p = easeOut3(span(t, 0.55, 0.95));
+            show($("ggCard"), true);
+            $("ggCard").style.opacity = p;
+            $("ggCard").style.transform =
+              "translate(-50%, calc(-50% + " + (1 - p) * 40 + "%))";
+            $("ggAv").src = e.winner.portrait;
+            $("ggName").textContent = e.winner.name;
+            $("ggName").style.color = e.winner.hex;
+            $("ggHow").textContent = e.how;
+            fitName($("ggName"));
+          }
+        }
+
+        if (e.kind === "ko") {
+          $("boardImg").style.filter =
+            "brightness(" + (1 - 0.4 * span(t, 0, 0.4)) + ")";
+          show($("flash"), t < 0.12);
+          $("flash").style.opacity = 0.6 * (1 - span(t, 0, 0.12));
+          if (t < 0.95) {
+            // The loser's pawn, from the capture cell up and across the
+            // frame, spinning and growing as it goes, off the far side.
+            const r = $("boardWrap").getBoundingClientRect();
+            const size = e.cell * r.width;
+            const p = span(t, 0, 0.95);
+            const dir = e.at.x < 0.5 ? 1 : -1;
+            const x =
+              r.x + e.at.x * r.width + dir * p * p * window.innerWidth * 0.9;
+            const y =
+              r.y +
+              e.at.y * r.height -
+              Math.sin(p * Math.PI * 0.6) * window.innerHeight * 0.45;
+            show($("koPawn"), true);
+            $("koPawn").src = e.loser.portrait;
+            $("koPawn").style.width = size + "px";
+            $("koPawn").style.height = size + "px";
+            $("koPawn").style.transform =
+              "translate(" +
+              (x - size / 2) +
+              "px," +
+              (y - size / 2) +
+              "px) rotate(" +
+              dir * p * 900 +
+              "deg) scale(" +
+              (1 + 1.6 * p) +
+              ")";
+          }
+          if (t >= 0.35) {
+            const b = easeOut3(span(t, 0.35, 0.75));
+            show($("koBanner"), true);
+            $("koBanner").style.marginLeft = (1 - b) * -120 + "%";
+            $("koBanner").style.background = e.winner.gradient;
+            $("koImg").src = e.winner.portrait;
+            $("koName").textContent = e.winner.name;
+            fitName($("koName"));
+          }
+        }
+      };
+
+      const paintVs = (a, b, t, out) => {
+        const ease = (x) => 1 - Math.pow(1 - x, 3);
+        /*
+          Banners fly in from opposite sides and settle.
+
+          They are STAGGERED and they take their time. The first cut of this
+          ran both in together over about a second and read as janky - two
+          slabs arriving at once looks like a glitch rather than an
+          introduction. Landing them one after the other, over roughly half
+          again as long, reads as two players being announced.
+        */
+        const slideAt = (delay) =>
+          ease(Math.max(0, Math.min(1, (t - delay) / 0.42)));
+        // On the way out (the overlay only) each banner keeps going the
+        // way it came, so it leaves rather than reverses.
+        const leave = ease(out);
+        $("beamTop").style.marginLeft =
+          (1 - slideAt(0)) * -120 + leave * 120 + "%";
+        $("beamBottom").style.marginLeft =
+          (1 - slideAt(0.1)) * 120 - leave * 120 + "%";
+
+        // The VS stamps down late and overshoots once - the loudest beat,
+        // and the moment the sting is built to hit.
+        const vp = Math.max(
+          0,
+          Math.min(
+            1,
+            (t - window.__VS_PUNCH_FRACTION) / window.__VS_PUNCH_DURATION,
+          ),
         );
-        /** Each cell pops over this share of the segment; the wave takes the rest. */
-        const pop = 0.3;
-        const backOut = (x) => {
-          const k = 1.7;
-          return 1 + (k + 1) * Math.pow(x - 1, 3) + k * Math.pow(x - 1, 2);
-        };
-        for (const cell of layer.children) {
-          const d = Math.hypot(cell.dataset.r - or, cell.dataset.c - oc);
-          // The winner's own cell stays clear, so the pawn that won stays seen.
-          if (d === 0) {
-            cell.style.opacity = 0;
-            continue;
-          }
-          const start = far === 0 ? 0 : (d / far) * (1 - pop);
-          const p = Math.max(0, Math.min(1, (f.t - start) / pop));
-          cell.style.opacity = p === 0 ? 0 : 0.86;
-          cell.style.transform = "scale(" + (p === 0 ? 0 : backOut(p)) + ")";
-        }
+        const overshoot =
+          vp < 1 ? 1.9 - 0.9 * ease(vp) - 0.14 * Math.sin(vp * Math.PI) : 1;
+        $("vsMark").style.setProperty("--vs-scale", vp === 0 ? 0 : overshoot);
+        $("vsMark").style.opacity = vp === 0 ? 0 : 1 - leave;
+
+        // The bottom banner is mirrored, so its gradient is mirrored too -
+        // otherwise it fades to dark exactly where its portrait sits.
+        $("beamTop").style.background = a.gradient;
+        $("beamBottom").style.background = b.gradientMirrored;
+        $("vsImgA").src = a.portrait;
+        $("vsImgB").src = b.portrait;
+        $("vsNameA").textContent = a.name;
+        $("vsNameB").textContent = b.name;
+        fitName($("vsNameA"));
+        fitName($("vsNameB"));
+        $("vsSubA").textContent = a.sub;
+        $("vsSubB").textContent = b.sub;
       };
 
       /**
@@ -535,61 +896,25 @@
         show($("brand"), s.segment === "play");
         $("root").classList.toggle("wallz", s.look === "wallz");
 
-        if (s.segment === "vs") {
-          const ease = (x) => 1 - Math.pow(1 - x, 3);
-          /*
-            Banners fly in from opposite sides and settle.
+        if (s.segment === "vs") paintVs(s.a, s.b, s.t, 0);
 
-            They are STAGGERED and they take their time. The first cut of this
-            ran both in together over about a second and read as janky - two
-            slabs arriving at once looks like a glitch rather than an
-            introduction. Landing them one after the other, over roughly half
-            again as long, reads as two players being announced.
-          */
-          const slideAt = (delay) =>
-            ease(Math.max(0, Math.min(1, (s.t - delay) / 0.42)));
-          $("beamTop").style.marginLeft = (1 - slideAt(0)) * -120 + "%";
-          $("beamBottom").style.marginLeft = (1 - slideAt(0.1)) * 120 + "%";
-
-          // The VS stamps down late and overshoots once - the loudest beat,
-          // and the moment the sting is built to hit.
-          const vp = Math.max(
-            0,
-            Math.min(
-              1,
-              (s.t - window.__VS_PUNCH_FRACTION) / window.__VS_PUNCH_DURATION,
-            ),
+        /*
+          The VS overlay (Nil, 2026-10-26: an intro screen loses viewers, so
+          the names fly in over the board while the game already plays). The
+          same banners and mark as the VS screen, run over the first
+          __VS_OVERLAY.entry seconds, then sliding off over the last
+          __VS_OVERLAY.exit seconds.
+        */
+        if (s.segment === "play" && s.vsOverlay) {
+          const o = s.vsOverlay;
+          const v = window.__VS_OVERLAY;
+          show($("vs"), true);
+          paintVs(
+            o.a,
+            o.b,
+            Math.min(1, o.t / v.entry),
+            Math.max(0, Math.min(1, (o.t - (v.seconds - v.exit)) / v.exit)),
           );
-          const overshoot =
-            vp < 1 ? 1.9 - 0.9 * ease(vp) - 0.14 * Math.sin(vp * Math.PI) : 1;
-          $("vsMark").style.setProperty("--vs-scale", vp === 0 ? 0 : overshoot);
-          $("vsMark").style.opacity = vp === 0 ? 0 : 1;
-
-          // The bottom banner is mirrored, so its gradient is mirrored too -
-          // otherwise it fades to dark exactly where its portrait sits.
-          $("beamTop").style.background = s.a.gradient;
-          $("beamBottom").style.background = s.b.gradientMirrored;
-          $("vsImgA").src = s.a.portrait;
-          $("vsImgB").src = s.b.portrait;
-          $("vsNameA").textContent = s.a.name;
-          $("vsNameB").textContent = s.b.name;
-          /*
-            A long name shrinks until it fits, instead of ending in "...". The
-            room a name gets depends on the frame and the portrait size, so it
-            is measured here, not predicted. Seen 2026-10-26: the 9:16 frame
-            cut "Guest Cormorant" to "Guest Cormor...".
-          */
-          for (const el of [$("vsNameA"), $("vsNameB")]) {
-            el.style.fontSize = "";
-            let size = parseFloat(getComputedStyle(el).fontSize);
-            const floor = size * 0.6;
-            while (el.scrollWidth > el.clientWidth && size > floor) {
-              size = Math.max(floor, size - 2);
-              el.style.fontSize = size + "px";
-            }
-          }
-          $("vsSubA").textContent = s.a.sub;
-          $("vsSubB").textContent = s.b.sub;
         }
 
         if (s.segment === "play") {
@@ -605,7 +930,7 @@
             ? z.x * 100 + "% " + z.y * 100 + "%"
             : "50% 50%";
           $("boardCam").style.transform = z ? "scale(" + z.scale + ")" : "none";
-          paintFlood(s.flood);
+          paintEnding(s.ending);
           $("pAvT").src = s.top.portrait;
           $("pAvB").src = s.bottom.portrait;
           $("pNameT").textContent = s.top.name;
