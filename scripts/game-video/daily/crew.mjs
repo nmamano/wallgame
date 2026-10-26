@@ -60,7 +60,10 @@
  *   ask --agent <your agent id> [--reopen]
  *                                  open the Isomux ask with the MP4 and the
  *                                  stored copy block for APPROVER_MEMBER
- *                                  (it refuses without a block); --reopen opens the
+ *                                  (it refuses without a block). After a
+ *                                  rejection of the text only, a new block
+ *                                  and `ask` again: the same video, no new
+ *                                  render; --reopen opens the
  *                                  day's open ask again for that member, gives
  *                                  the app the new id and withdraws the old one
  *   answer --agent <id> --ask <askId> --decision approve|reject
@@ -314,8 +317,22 @@ export const askText = (c, modes, videoSha256) => {
   const live = PLATFORM_NAMES.filter(([p]) => modes[p] === "live").map(
     ([, name]) => name,
   );
+  // A new block after a text-only rejection: the ask Nil rejected, which
+  // is the current approval until the new ask is recorded, or the last
+  // earlier ask when this one is opened again.
+  const earlier =
+    c.state === "rejected"
+      ? c.approval
+      : c.approval?.sameVideoAs
+        ? c.earlierAsks?.at(-1)
+        : null;
   return [
     `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
+    ...(earlier
+      ? [
+          `SAME VIDEO as ask ${earlier.askId} (sha256 ${earlier.videoSha256.slice(0, 12)}), which you rejected with: "${earlier.reply ?? "no reply"}". Only the post text is new.`,
+        ]
+      : []),
     "",
     "WHAT GOES OUT (the video is attached).",
     `Post text (by Growth, ${c.copy.version}):`,
@@ -638,9 +655,9 @@ const commands = {
         die(
           `cannot read ask ${replaces} (HTTP ${old.status}): only the agent that opened it can reopen it, with its own token and --agent`,
         );
-    } else if (c?.state !== "checked")
+    } else if (c?.state !== "checked" && c?.state !== "rejected")
       die(
-        `ask needs a rendered video whose contact sheet the director checked; the cycle is ${c?.state ?? "missing"}`,
+        `ask needs a rendered video whose contact sheet the director checked, or a rejected ask and a new copy block; the cycle is ${c?.state ?? "missing"}`,
       );
     if (!c.copy)
       die(

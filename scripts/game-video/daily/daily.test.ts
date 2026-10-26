@@ -342,6 +342,109 @@ const approved = (
   });
 };
 
+describe("a text-only rejection: a new block, the same video", () => {
+  const day = "2026-10-26";
+  const NEW = { ...COPY, x: "bro walked right into it 😭🙏 #wallgame" };
+  const ask = (
+    store: ReturnType<typeof openStore>,
+    askId: string,
+    copy: typeof COPY,
+    replacesAskId?: string,
+  ) => {
+    store.recordAsk(day, {
+      askId,
+      modes: DRY,
+      videoSha256: "aa",
+      copySha256: copySha256(copy),
+      currentModes: DRY,
+      ...(replacesAskId && { replacesAskId }),
+    });
+  };
+  const rejected = () => {
+    const store = openStore(tempDir());
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
+    ask(store, "ask1", COPY);
+    store.recordAnswer(day, {
+      askId: "ask1",
+      decision: "reject",
+      approver: "Nil",
+      reply: "the X line is cringe",
+    });
+    return store;
+  };
+
+  test("the rejected block cannot be asked again", () => {
+    expect(() => {
+      ask(rejected(), "ask2", COPY);
+    }).toThrow(/the copy block is the one rejected in ask ask1/);
+  });
+
+  test("a new block opens a new ask about the same video, and it can post", () => {
+    const store = rejected();
+    store.recordCopy(day, NEW);
+    expect((store.read(day) as Cycle).state).toBe("rejected");
+    ask(store, "ask2", NEW);
+    const cycle = store.read(day) as Cycle & {
+      approval: { sameVideoAs: string; askId: string };
+      earlierAsks: { askId: string; decision: string; reply: string }[];
+    };
+    expect(cycle.state).toBe("asked");
+    expect(cycle.approval.sameVideoAs).toBe("ask1");
+    expect(cycle.earlierAsks).toMatchObject([
+      { askId: "ask1", decision: "reject", reply: "the X line is cringe" },
+    ]);
+    expect(cycle.events.at(-1)?.what).toBe(
+      "ask ask2 opened: the video of ask ask1, a new copy block",
+    );
+    // Opened again for the right member, it is still about the same video.
+    ask(store, "ask3", NEW, "ask2");
+    expect(
+      (store.read(day) as Cycle & { approval: { sameVideoAs: string } })
+        .approval.sameVideoAs,
+    ).toBe("ask1");
+    store.recordAnswer(day, {
+      askId: "ask3",
+      decision: "approve",
+      approver: "Nil",
+      reply: "Approve",
+    });
+    expect(store.checkPost(day, { modes: DRY, videoSha256: "aa" })).toEqual([
+      "x",
+      "youtube",
+      "tiktok",
+      "instagram",
+      "facebook",
+      "bluesky",
+      "threads",
+      "mastodon",
+    ]);
+    expect((store.read(day) as Cycle).approval?.copy).toEqual(NEW);
+  });
+
+  test("the ask says it is the same video, with Nil's reply", () => {
+    const store = rejected();
+    store.recordCopy(day, NEW);
+    const c = {
+      ...(store.read(day) as object),
+      candidate: {
+        seats: [{ name: "A" }, { name: "B" }],
+        movesCount: 9,
+        gameId: "g",
+      },
+      render: { video: { bytes: 1e6 }, ending: "e" },
+      edl: { summary: [] },
+      check: { verdicts: [] },
+    };
+    const same =
+      'SAME VIDEO as ask ask1 (sha256 aa), which you rejected with: "the X line is cringe". Only the post text is new.';
+    expect(askText(c, DRY, "aa").split("\n")[1]).toBe(same);
+    // After the new ask is recorded (a reopen builds the text then).
+    ask(store, "ask2", NEW);
+    const asked = { ...c, ...(store.read(day) as object) };
+    expect(askText(asked, DRY, "aa").split("\n")[1]).toBe(same);
+  });
+});
+
 describe("an ask opened again for the right member", () => {
   const day = "2026-10-26";
   const asked = () => {

@@ -7,6 +7,10 @@
  *   picked -> rendering -> rendered -> asked -> approved -> posted
  *                       \-> render-failed      \-> rejected  \-> post-failed
  *
+ * and from rejected, either a new list (direct, a new render) or, when Nil
+ * rejected only the post text, a new copy block and a new ask about the
+ * same video: rejected -> asked.
+ *
  * and every step checks the state it starts from. The checks are the point of
  * this file: the steps are run by an agent woken by a schedule, possibly in a
  * different session from the one that started the cycle, and "post" must not
@@ -387,6 +391,8 @@ export const openStore = (dataDir) => {
           "rendered",
           "render-failed",
           "checked",
+          // A text-only rejection: a new block for the same video.
+          "rejected",
         ],
         "copy",
       );
@@ -429,7 +435,20 @@ export const openStore = (dataDir) => {
           );
         }
       } else {
-        expect(cycle, ["checked"], "ask");
+        expect(cycle, ["checked", "rejected"], "ask");
+      }
+      // After a rejection the video stays (a new video goes through direct
+      // and render), so a new ask is only for a new block.
+      const rejected = cycle.state === "rejected" ? cycle.approval : null;
+      if (
+        rejected &&
+        cycle.copy &&
+        rejected.copy &&
+        copySha256(cycle.copy) === copySha256(rejected.copy)
+      ) {
+        refuse(
+          `the copy block is the one rejected in ask ${rejected.askId}; get a new block from Wall Game Growth, or direct and render again to change the video`,
+        );
       }
       if (videoSha256 !== cycle.render.video.sha256) {
         refuse("the ask shows another video than the current render");
@@ -449,7 +468,13 @@ export const openStore = (dataDir) => {
           );
         }
       }
+      const sameVideoAs =
+        rejected?.askId ??
+        (replacesAskId ? cycle.approval.sameVideoAs : undefined);
       cycle.state = "asked";
+      // The rejected ask stays on the record.
+      if (rejected)
+        cycle.earlierAsks = [...(cycle.earlierAsks ?? []), rejected];
       cycle.approval = {
         askId,
         askedAt: new Date().toISOString(),
@@ -461,12 +486,16 @@ export const openStore = (dataDir) => {
         answeredAt: null,
         reply: null,
         ...(replacesAskId && { replacesAskId }),
+        // Kept when the same ask is opened again (--reopen).
+        ...(sameVideoAs && { sameVideoAs }),
       };
       return save(
         cycle,
         replacesAskId
           ? `ask ${askId} opened again (was ${replacesAskId})`
-          : `ask ${askId} opened`,
+          : rejected
+            ? `ask ${askId} opened: the video of ask ${rejected.askId}, a new copy block`
+            : `ask ${askId} opened`,
       );
     },
 

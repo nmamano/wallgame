@@ -81,6 +81,13 @@ already has a cycle, finish it or stop: do not start another. `pick
    an approval, `answer` prints the APPROVED PACKAGE: the day, the video's
    path and sha256, the block as approved, the ask id and Nil's reply word
    for word. Send it to Growth as it is.
+   On a rejection, read Nil's reply and choose the way on:
+   - Only the post text: send Growth a new copy request with Nil's reply.
+     When Growth's new block is stored, run `ask` again. The video stays,
+     so there is no new render and no new view of the game. The new ask
+     says it is the same video and quotes Nil's reply. `ask` refuses the
+     block that Nil rejected.
+   - The video: `direct` and `render --force`, as after a bad check.
 10. Growth posts that package with `crew.mjs post --day <day>`. The app
     posts only the approved video and block; it refuses when either one
     differs from what the ask showed. You do not post.
