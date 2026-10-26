@@ -870,7 +870,8 @@ describe("an approval covers one video in one mode", () => {
   test("the approved package names the video and the block as approved", () => {
     const store = openStore(tempDir());
     approved(store, day, "aa");
-    const lines = approvedPackage(store.read(day)).split("\n");
+    const release = "/srv/release/scripts/game-video/daily/crew.mjs";
+    const lines = approvedPackage(store.read(day), release).split("\n");
     expect(lines.slice(0, 4)).toEqual([
       `APPROVED PACKAGE, day ${day}`,
       "Video: /nowhere.mp4",
@@ -880,9 +881,8 @@ describe("an approval covers one video in one mode", () => {
     expect(lines.slice(4, 9).join("\n")).toBe(BLOCK);
     expect(lines[9]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
     expect(lines[10]).toBe("Nil's reply, verbatim: Approve");
-    expect(lines[11]).toMatch(
-      new RegExp(`^Post it with: node /.*/crew\\.mjs post --day ${day}$`),
-    );
+    // The release checkout's crew.mjs, whichever checkout ran `answer`.
+    expect(lines[11]).toBe(`Post it with: node ${release} post --day ${day}`);
   });
 
   test("keys that arrived after the ask do not turn a dry-run approval live", () => {
@@ -1455,17 +1455,30 @@ describe("TikTok", () => {
     const at = live.indexOf(`Post text (by Growth, ${COPY_VERSION}):`);
     expect(at).toBeGreaterThan(-1);
     expect(live.slice(at + 1, at + 6).join("\n")).toBe(BLOCK);
-    expect(live.slice(at + 6, at + 8)).toEqual([
+    // Whether it posts for real comes right after the block, live first.
+    expect(live.slice(at + 6, at + 10)).toEqual([
       'The app adds "#Shorts" to the YouTube title.',
+      "LIVE on X, YouTube, TikTok, Instagram: this posts for real on approval.",
+      "Posting mode: X live, YouTube live, TikTok live, Instagram live.",
       "TikTok: open the inbox draft, paste the TikTok line, tap Post.",
     ]);
     const dry = askText(
       c,
-      { x: "live", youtube: "live", tiktok: "dry-run", instagram: "live" },
+      { x: "live", youtube: "dry-run", tiktok: "dry-run", instagram: "live" },
       "0".repeat(64),
+    ).split("\n");
+    expect(dry.slice(at + 7, at + 10)).toEqual([
+      "LIVE on X, Instagram: this posts for real on approval.",
+      "Posting mode: X live, YouTube dry-run, TikTok dry-run, Instagram live.",
+      "TikTok: dry run, no draft.",
+    ]);
+    const none = askText(c, DRY, "0".repeat(64));
+    expect(none).not.toContain("LIVE on");
+    expect(none).toContain(
+      "Posting mode: X dry-run, YouTube dry-run, TikTok dry-run, Instagram dry-run.",
     );
-    expect(dry).toContain("TikTok: dry run, no draft.");
-    expect(dry).not.toContain("paste the TikTok line");
+    // The mode is stated once, under the block, not again for Nil only.
+    expect(none.split("Posting mode:").length).toBe(2);
   });
 });
 

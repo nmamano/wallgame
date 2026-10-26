@@ -122,8 +122,8 @@ import { stripPlan, writeStrips } from "./strips.mjs";
 import { SHORTS_TAG, copyLines, copySha256 } from "./copy.mjs";
 
 const OFFICE = "http://localhost:4000";
-/** This file, for the commands that another agent runs from its own cwd. */
-const CREW = fileURLToPath(import.meta.url);
+/** This file's place in a checkout, for the commands another agent runs. */
+const CREW_IN_CHECKOUT = "scripts/game-video/daily/crew.mjs";
 const STORYBOARD = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../storyboard.ts",
@@ -277,9 +277,20 @@ const summary = (s) => {
 
 const state = () => app("GET", `/api/daily/state${day ? `?day=${day}` : ""}`);
 
+/** Each platform's key in the posting modes, and its name in the ask. */
+const PLATFORM_NAMES = [
+  ["x", "X"],
+  ["youtube", "YouTube"],
+  ["tiktok", "TikTok"],
+  ["instagram", "Instagram"],
+];
+
 /** The ask's text: everything Nil needs to decide without opening anything. */
 export const askText = (c, modes, videoSha256) => {
   const dry = Object.values(modes).every((m) => m === "dry-run");
+  const live = PLATFORM_NAMES.filter(([p]) => modes[p] === "live").map(
+    ([, name]) => name,
+  );
   return [
     `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
     "",
@@ -287,12 +298,16 @@ export const askText = (c, modes, videoSha256) => {
     `Post text (by Growth, ${c.copy.version}):`,
     ...copyLines(c.copy),
     `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
+    // Whether it goes out for real is the main fact of the approval.
+    ...(live.length
+      ? [`LIVE on ${live.join(", ")}: this posts for real on approval.`]
+      : []),
+    `Posting mode: ${PLATFORM_NAMES.map(([p, name]) => `${name} ${modes[p]}`).join(", ")}.`,
     modes.tiktok === "live"
       ? "TikTok: open the inbox draft, paste the TikTok line, tap Post."
       : "TikTok: dry run, no draft.",
     "",
     "FOR YOU ONLY, NOT POSTED:",
-    `Posting mode: X ${modes.x}, YouTube ${modes.youtube}, TikTok ${modes.tiktok}, Instagram ${modes.instagram}.`,
     `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
     `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}, music ${c.render.music ?? "-"}.`,
     "Director's edit list:",
@@ -307,9 +322,11 @@ export const askText = (c, modes, videoSha256) => {
 /**
  * What the director forwards to Wall Game Growth after Nil's yes: Growth
  * posts exactly this. Everything comes from the app's record of the
- * approval, not from the director's memory.
+ * approval, not from the director's memory. `releaseCrew` is crew.mjs in
+ * the checkout that the app runs from (its registered cwd, which `ship`
+ * keeps on the release checkout): Growth never runs a worktree's code.
  */
-export const approvedPackage = (c) => {
+export const approvedPackage = (c, releaseCrew) => {
   const a = c.approval;
   return [
     `APPROVED PACKAGE, day ${c.day}`,
@@ -319,7 +336,7 @@ export const approvedPackage = (c) => {
     ...copyLines(a.copy),
     `Ask: ${a.askId}, approved by ${a.approver} at ${a.answeredAt}`,
     `${a.approver}'s reply, verbatim: ${a.reply}`,
-    `Post it with: node ${CREW} post --day ${c.day}`,
+    `Post it with: node ${releaseCrew} post --day ${c.day}`,
   ].join("\n");
 };
 
@@ -669,6 +686,12 @@ const commands = {
     if (decision === "approve" && !reply) {
       die("an approval needs --reply with the member's reply, verbatim");
     }
+    // The package names the app's own checkout; find it before the answer
+    // changes anything.
+    const registered = await office("GET", `/api/apps/${APP_NAME}`);
+    if (registered.status !== 200)
+      die(`cannot find the ${APP_NAME} app (HTTP ${registered.status})`);
+    const releaseCrew = join(registered.body.cwd, CREW_IN_CHECKOUT);
     // An open ask has no answer yet; 404 is how the office says it closed.
     const open = await office("GET", `/api/agents/${agent}/asks/${askId}`);
     if (open.status === 200)
@@ -684,7 +707,7 @@ const commands = {
     console.log(summary(await app("GET", `/api/daily/state?day=${cycle.day}`)));
     if (cycle.state === "approved") {
       console.log(
-        `\nSend this to Wall Game Growth as it is:\n\n${approvedPackage(cycle)}`,
+        `\nSend this to Wall Game Growth as it is:\n\n${approvedPackage(cycle, releaseCrew)}`,
       );
     }
   },
