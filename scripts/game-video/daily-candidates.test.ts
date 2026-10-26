@@ -7,6 +7,9 @@ import type { CustomSetupStandardInitialState } from "../../shared/domain/game-t
 import { buildStandardInitialState } from "../../shared/domain/standard-setup";
 import {
   classifySeat,
+  closeCallsOf,
+  DANGER_WALK,
+  describeCloseCall,
   describeJump,
   evalBarEngineFor,
   gameEligibility,
@@ -391,6 +394,7 @@ describe("distance jumps", () => {
   test("candidates rank by their largest pick, then the next one", () => {
     const withSizes = (gameId: string, sizes: number[]) => ({
       gameId,
+      beats: [],
       picks: sizes.map((size, i) => jump(i * 2, size)),
     });
     const ranked = rankCandidates([
@@ -405,5 +409,71 @@ describe("distance jumps", () => {
       "small",
       "none",
     ]);
+  });
+});
+
+describe("close calls", () => {
+  // 4x4, P1 to move. P1's cat [0,0] is 3 from P2's mouse [0,3] on the top row.
+  const start: CustomSetupStandardInitialState = {
+    pawns: {
+      p1: { cat: [0, 0], mouse: [3, 3] },
+      p2: { cat: [3, 0], mouse: [0, 3] },
+    },
+    walls: [],
+    turn: { playerId: 1, actionsTaken: [] },
+  };
+  const play = (moves: string[]) => {
+    const replay = replayDistances({
+      variant: "standard",
+      boardWidth: 4,
+      boardHeight: 4,
+      initialState: start,
+      moves,
+    });
+    return closeCallsOf(replay, moves);
+  };
+
+  test("danger, a wall save by the prey's owner, then relief", () => {
+    // Cc4: the cat to [0,2], 1 from the mouse (danger, was 3). >c4.>c3 closes
+    // the cat's right-hand edges at [0,2] and [1,2]: down 2, right 1, up 2 = 5.
+    // Cc3: the cat steps down to [1,2], still 4 away (relief).
+    const calls = play(["Cc4", ">c4.>c3", "Cc3"]);
+    expect(calls).toHaveLength(1);
+    const [call] = calls;
+    expect(call.hunter).toEqual({ player: 1, type: "cat" });
+    expect(call.prey).toEqual({ player: 2, type: "mouse" });
+    expect(call.danger).toMatchObject({
+      ply: 0,
+      walk: 1,
+      hunterCell: "c4",
+      preyCell: "d4",
+    });
+    expect(call.save).toMatchObject({ ply: 1, walkBefore: 1, walk: 5 });
+    expect(call.relief).toMatchObject({
+      ply: 2,
+      walk: 4,
+      hunterCell: "c3",
+      preyCell: "d4",
+    });
+    expect(call.size).toBe(4);
+    expect(DANGER_WALK).toBe(2);
+    expect(describeCloseCall(call, { 1: "Easy Bot", 2: "Guest Quokka" })).toBe(
+      "Easy Bot's cat gets 1 square from Guest Quokka's mouse. Walls make it walk 5 (move 2), and the mouse is safe.",
+    );
+  });
+
+  test("no close call when the prey only steps away, or the save is the last move", () => {
+    // Md3: the mouse steps down to [1,3], still 2 from the cat: no wall, no save.
+    expect(play(["Cc4", "Md3", "Cc3"])).toEqual([]);
+    // The save is the final move: there is no relief to show.
+    expect(play(["Cc4", ">c4.>c3"])).toEqual([]);
+  });
+
+  test("a game with a close call ranks above a bigger plain jump", () => {
+    const ranked = rankCandidates([
+      { gameId: "jump", beats: [], picks: [{ size: 18 }] },
+      { gameId: "beat", beats: [{ size: 4 }], picks: [{ size: 4 }] },
+    ]);
+    expect(ranked.map((c) => c.gameId)).toEqual(["beat", "jump"]);
   });
 });

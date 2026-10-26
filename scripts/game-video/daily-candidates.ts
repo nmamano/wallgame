@@ -37,12 +37,16 @@ import { GameState } from "../../shared/domain/game-state";
 import type {
   GameConfiguration,
   GameInitialState,
+  PawnType,
   PlayerId,
   Variant,
 } from "../../shared/domain/game-types";
 import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
-import { pawnCell } from "../../shared/domain/pawns";
-import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
+import { pawnCell, requirePawnCell } from "../../shared/domain/pawns";
+import {
+  cellToStandardNotation,
+  moveFromStandardNotation,
+} from "../../shared/domain/standard-notation";
 import {
   executableRulesFor,
   resolveRulePlayer,
@@ -269,54 +273,83 @@ export type RaceDistances = Record<PlayerId, number | null>;
 
 const other = (player: PlayerId): PlayerId => (player === 1 ? 2 : 1);
 
-/** Distances in one position, from the variant's capture relations. */
-export const raceDistances = (state: GameState): RaceDistances => {
-  const rules = executableRulesFor(state.config.variant);
-  const forPlayer = (player: PlayerId): number | null => {
-    let best: number | null = null;
-    for (const relation of rules.captureRelations) {
-      if (resolveRulePlayer(relation.hunter.player, player) !== player)
-        continue;
-      const hunter = pawnCell(state.pawns, player, relation.hunter.type);
-      const target = pawnCell(
-        state.pawns,
-        resolveRulePlayer(relation.target.player, player),
-        relation.target.type,
-      );
-      if (!hunter || !target) continue;
-      const walk = state.grid.distance(hunter, target);
-      if (walk < 0) throw new Error("a hunter cannot reach its target");
-      best = best === null ? walk : Math.min(best, walk);
-    }
-    return best;
+/** Distances in one position, from the variant's hunts. */
+export const raceDistances = (state: GameState): RaceDistances =>
+  raceFromWalks(huntsFor(state.config.variant), huntWalks(state));
+
+/** Each hunt's walk in one position, in huntsFor order. */
+const huntWalks = (state: GameState): number[] =>
+  huntsFor(state.config.variant).map((hunt) => {
+    const hunter = pawnCell(state.pawns, hunt.hunter.player, hunt.hunter.type);
+    const target = pawnCell(state.pawns, hunt.target.player, hunt.target.type);
+    if (!hunter || !target) throw new Error("a hunt names a missing pawn");
+    const walk = state.grid.distance(hunter, target);
+    if (walk < 0) throw new Error("a hunter cannot reach its target");
+    return walk;
+  });
+
+/** Each player's shortest walk over their own hunts. */
+const raceFromWalks = (hunts: Hunt[], walks: number[]): RaceDistances => {
+  const best = (player: PlayerId): number | null => {
+    const own = walks.filter((_, i) => hunts[i].hunter.player === player);
+    return own.length === 0 ? null : Math.min(...own);
   };
-  return { 1: forPlayer(1), 2: forPlayer(2) };
+  return { 1: best(1), 2: best(2) };
+};
+/** One pawn of one player. */
+export interface PawnRef {
+  player: PlayerId;
+  type: PawnType;
+}
+
+/** One hunter and the pawn it must reach, with both players resolved. */
+export interface Hunt {
+  hunter: PawnRef;
+  target: PawnRef;
+}
+
+/**
+ * The variant's capture relations, resolved for both players and each listed
+ * once: Standard has two (each cat to the other mouse), Classic two (each cat
+ * to its own home), Animal Cycle four, Survival one.
+ */
+export const huntsFor = (variant: Variant): Hunt[] => {
+  const hunts = new Map<string, Hunt>();
+  for (const relation of executableRulesFor(variant).captureRelations) {
+    for (const player of [1, 2] as const) {
+      const hunt: Hunt = {
+        hunter: {
+          player: resolveRulePlayer(relation.hunter.player, player),
+          type: relation.hunter.type,
+        },
+        target: {
+          player: resolveRulePlayer(relation.target.player, player),
+          type: relation.target.type,
+        },
+      };
+      hunts.set(
+        `${hunt.hunter.player}:${hunt.hunter.type}>${hunt.target.player}:${hunt.target.type}`,
+        hunt,
+      );
+    }
+  }
+  return [...hunts.values()];
 };
 
 /**
  * The smallest jump that is a pick: one more than any move without a wall can
- * make. Read from the capture relations (see the header): each relation is
- * resolved for both players and counted once, then the pawn named by the most
- * relations sets the bound.
+ * make (see the header): the pawn named by the most hunts sets the bound.
  */
 export const minJumpFor = (variant: Variant): number => {
-  const instances = new Set<string>();
-  for (const relation of executableRulesFor(variant).captureRelations) {
-    for (const player of [1, 2] as const) {
-      const hunter = `${resolveRulePlayer(relation.hunter.player, player)}:${relation.hunter.type}`;
-      const target = `${resolveRulePlayer(relation.target.player, player)}:${relation.target.type}`;
-      instances.add(`${hunter}>${target}`);
-    }
-  }
   const perPawn = new Map<string, number>();
-  for (const instance of instances) {
-    for (const pawn of instance.split(">")) {
-      perPawn.set(pawn, (perPawn.get(pawn) ?? 0) + 1);
+  for (const hunt of huntsFor(variant)) {
+    for (const pawn of [hunt.hunter, hunt.target]) {
+      const key = `${pawn.player}:${pawn.type}`;
+      perPawn.set(key, (perPawn.get(key) ?? 0) + 1);
     }
   }
   return 2 * Math.max(...perPawn.values()) + 1;
 };
-
 /** The race from `side`: opponent's walk minus own. A missing walk counts 0. */
 export const raceFor = (d: RaceDistances, side: PlayerId): number =>
   (d[other(side)] ?? 0) - (d[side] ?? 0);
@@ -336,9 +369,22 @@ export interface ReplayableGame {
  * The mover comes from the state, not parity: a custom setup can start with
  * player 2.
  */
-export const replayDistances = (
-  game: ReplayableGame,
-): { movers: PlayerId[]; distances: RaceDistances[] } => {
+export interface ReplayedGame {
+  movers: PlayerId[];
+  /** One per position: before each move, and after the last. */
+  distances: RaceDistances[];
+  /** One per hunt, with its walk and both cells in every position. */
+  tracks: HuntTrack[];
+}
+
+export interface HuntTrack extends Hunt {
+  walks: number[];
+  /** Standard notation, e.g. "g4". */
+  hunterCells: string[];
+  targetCells: string[];
+}
+
+export const replayDistances = (game: ReplayableGame): ReplayedGame => {
   const config: GameConfiguration = {
     variant: game.variant as Variant,
     randomStart: false,
@@ -349,9 +395,31 @@ export const replayDistances = (
     boardHeight: game.boardHeight,
     variantConfig: game.initialState,
   };
+  const hunts = huntsFor(config.variant);
   let state = new GameState(config, 0, { allowStoredHistoryBacktracks: true });
+  const tracks: HuntTrack[] = hunts.map((hunt) => ({
+    ...hunt,
+    walks: [],
+    hunterCells: [],
+    targetCells: [],
+  }));
   const movers: PlayerId[] = [];
-  const distances = [raceDistances(state)];
+  const distances: RaceDistances[] = [];
+  const read = () => {
+    const walks = huntWalks(state);
+    distances.push(raceFromWalks(hunts, walks));
+    tracks.forEach((track, i) => {
+      track.walks.push(walks[i]);
+      const cell = (pawn: PawnRef) =>
+        cellToStandardNotation(
+          requirePawnCell(state.pawns, pawn.player, pawn.type),
+          game.boardHeight,
+        );
+      track.hunterCells.push(cell(track.hunter));
+      track.targetCells.push(cell(track.target));
+    });
+  };
+  read();
   game.moves.forEach((notation, index) => {
     const playerId = state.turn;
     state = state.applyGameAction({
@@ -361,11 +429,10 @@ export const replayDistances = (
       timestamp: index,
     });
     movers.push(playerId);
-    distances.push(raceDistances(state));
+    read();
   });
-  return { movers, distances };
+  return { movers, distances, tracks };
 };
-
 export interface DistanceJump {
   /** 0-based index into the stored move list. */
   ply: number;
@@ -438,6 +505,11 @@ export const pickJumps = (
 /** A pick with its plain line; what the CLI writes in `picks`. */
 export type PickedJump = DistanceJump & { description: string };
 
+/** Wall actions in one move's notation (">e4" or "^e4", see standard-notation.ts). */
+const wallCount = (notation: string): number =>
+  notation.split(".").filter((a) => a.startsWith(">") || a.startsWith("^"))
+    .length;
+
 const squares = (n: number) => `${n} extra square${n === 1 ? "" : "s"}`;
 
 /**
@@ -452,9 +524,7 @@ export const describeJump = (
 ): string => {
   const mover = names[pick.mover];
   const opponent = names[other(pick.mover)];
-  const walls = pick.notation
-    .split(".")
-    .filter((a) => a.startsWith(">") || a.startsWith("^")).length;
+  const walls = wallCount(pick.notation);
   const by = walls === 0 ? "move" : walls === 1 ? "wall" : "walls";
   const verb = walls > 1 ? "make" : "makes";
   const opponentChange = (pick.opponentAfter ?? 0) - (pick.opponentBefore ?? 0);
@@ -469,16 +539,143 @@ export const describeJump = (
     : `${mover}'s ${by} cuts ${mover}'s own walk by ${-ownChange} (${pick.ownBefore} to ${pick.ownAfter}).`;
 };
 
+/* ----------------------------------------------------------- close calls -- */
+
+/*
+ * A CLOSE CALL (Nil, 2026-10-26: the mouse looks scared, a wall lands with
+ * the FAAAH, then the mouse laughs) is three moves on one hunt whose target is
+ * an animal: DANGER, a move after which the hunter is DANGER_WALK or fewer
+ * squares away, so it can reach the prey on its next turn (two steps); SAVE,
+ * within the next two moves, a move by the prey's owner that pushes the walk
+ * up by SAVE_JUMP or more; RELIEF, the hunter's reply, after which the walk is
+ * still above DANGER_WALK. Classic has no close call: its cats run to a home,
+ * and a home has no face to be scared with.
+ */
+
+/** A hunter this close reaches its prey on its next turn (two steps). */
+export const DANGER_WALK = 2;
+
+/**
+ * One move changes one hunt's walk by at most 2 without a wall: the mover
+ * owns one of the two pawns and moves it at most two steps. So a rise of 3 or
+ * more is a wall, the FAAAH moment.
+ */
+export const SAVE_JUMP = 3;
+
+/** How many close calls each candidate reports. */
+export const BEATS_PER_GAME = 3;
+
+export interface BeatMoment {
+  ply: number;
+  moveNumber: number;
+  notation: string;
+  /** The hunt's walk after this ply. */
+  walk: number;
+  /** Both pawns after this ply, in standard notation. */
+  hunterCell: string;
+  preyCell: string;
+}
+
+export interface CloseCall {
+  hunter: PawnRef;
+  prey: PawnRef;
+  danger: BeatMoment;
+  /** `walk` is after the save; the walk before it is the danger-side value. */
+  save: BeatMoment & { walkBefore: number };
+  relief: BeatMoment;
+  /** save.walk - save.walkBefore. */
+  size: number;
+}
+
+/**
+ * Every close call in a game, largest save first; later ones that share a
+ * ply with an earlier pick are dropped, and at most BEATS_PER_GAME remain.
+ */
+export const closeCallsOf = (
+  replay: ReplayedGame,
+  moves: string[],
+): CloseCall[] => {
+  const found: CloseCall[] = [];
+  for (const track of replay.tracks) {
+    if (track.target.type === "home") continue;
+    const moment = (ply: number): BeatMoment => ({
+      ply,
+      moveNumber: ply + 1,
+      notation: moves[ply],
+      walk: track.walks[ply + 1],
+      hunterCell: track.hunterCells[ply + 1],
+      preyCell: track.targetCells[ply + 1],
+    });
+    for (let danger = 0; danger < moves.length; danger++) {
+      const close = track.walks[danger + 1];
+      if (close === 0 || close > DANGER_WALK) continue;
+      if (track.walks[danger] <= DANGER_WALK) continue;
+      for (const save of [danger + 1, danger + 2]) {
+        if (save >= moves.length - 1) break;
+        // Still close when the save comes; a capture ends the game instead.
+        if (track.walks[save] > DANGER_WALK) break;
+        if (replay.movers[save] !== track.target.player) continue;
+        const rise = track.walks[save + 1] - track.walks[save];
+        if (rise < SAVE_JUMP) break;
+        if (track.walks[save + 2] <= DANGER_WALK) break;
+        found.push({
+          hunter: track.hunter,
+          prey: track.target,
+          danger: moment(danger),
+          save: { ...moment(save), walkBefore: track.walks[save] },
+          relief: moment(save + 1),
+          size: rise,
+        });
+        break;
+      }
+    }
+  }
+  const kept: CloseCall[] = [];
+  for (const call of found.sort(
+    (a, b) => b.size - a.size || a.danger.ply - b.danger.ply,
+  )) {
+    if (kept.length === BEATS_PER_GAME) break;
+    const plies = (c: CloseCall) => [c.danger.ply, c.save.ply, c.relief.ply];
+    if (kept.some((k) => plies(k).some((p) => plies(call).includes(p))))
+      continue;
+    kept.push(call);
+  }
+  return kept;
+};
+
+/** One plain line for the crew: who nearly caught whom, and the wall. */
+export const describeCloseCall = (
+  call: CloseCall,
+  names: Record<PlayerId, string>,
+): string => {
+  const squaresAway = (n: number) => `${n} square${n === 1 ? "" : "s"}`;
+  const walls = wallCount(call.save.notation);
+  const wall = walls === 1 ? "A wall makes" : "Walls make";
+  return (
+    `${names[call.hunter.player]}'s ${call.hunter.type} gets ${squaresAway(call.danger.walk)} from ${names[call.prey.player]}'s ${call.prey.type}. ` +
+    `${wall} it walk ${call.save.walk} (move ${call.save.moveNumber}), and the ${call.prey.type} is safe.`
+  );
+};
+
+/** A close call with its plain line; what the CLI writes in `beats`. */
+export type DescribedCloseCall = CloseCall & { description: string };
+
 export interface RankedCandidate {
   gameId: string;
+  beats: { size: number }[];
   picks: { size: number }[];
 }
 
-/** Largest pick first; then the second and third, then the game id. */
+/**
+ * A game with a close call first, by its largest save; then the largest pick,
+ * the second and the third; then the game id.
+ */
 export const rankCandidates = <T extends RankedCandidate>(
   candidates: T[],
 ): T[] =>
   [...candidates].sort((a, b) => {
+    const beat = (b.beats[0]?.size ?? 0) - (a.beats[0]?.size ?? 0);
+    if (beat !== 0) return beat;
     for (let i = 0; i < PICKS_PER_GAME; i++) {
       const diff = (b.picks[i]?.size ?? 0) - (a.picks[i]?.size ?? 0);
       if (diff !== 0) return diff;

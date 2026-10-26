@@ -49,6 +49,8 @@ import type {
   Variant,
 } from "../../shared/domain/game-types";
 import {
+  closeCallsOf,
+  describeCloseCall,
   describeJump,
   evalBarEngineFor,
   gameEligibility,
@@ -59,6 +61,7 @@ import {
   rankCandidates,
   replayDistances,
   swingsOf,
+  type DescribedCloseCall,
   type PickedJump,
   type RaceDistances,
   type SeatKind,
@@ -437,6 +440,8 @@ interface Candidate {
   /** The smallest jump that is a pick in this variant (minJumpFor). */
   minJump: number;
   picks: PickedJump[];
+  /** Close calls (danger, save, relief), largest save first; may be []. */
+  beats: DescribedCloseCall[];
   /**
    * Only with --engine. An engine failure is written here and does not take
    * the game out: the debug column cannot remove a candidate.
@@ -455,6 +460,12 @@ const describe = (c: Candidate, rank: number): string => {
     `   ${c.variant} ${c.boardWidth}x${c.boardHeight}, ${c.movesCount} plies, started ${c.startedAt}`,
     `   ${seats}`,
   ];
+  for (const b of c.beats) {
+    lines.push(
+      `   close call: danger move ${b.danger.moveNumber} (walk ${b.danger.walk}), save move ${b.save.moveNumber} ${b.save.notation} (${b.save.walkBefore} -> ${b.save.walk}), relief move ${b.relief.moveNumber} (walk ${b.relief.walk})`,
+      `     ${b.description}`,
+    );
+  }
   for (const p of c.picks) {
     const sign = p.jump >= 0 ? "+" : "";
     lines.push(
@@ -496,13 +507,14 @@ const main = async () => {
           throw new Error("no initialState in config_parameters");
         }
         const moves = game.moves.map(String);
-        const { movers, distances } = replayDistances({
+        const replay = replayDistances({
           variant: game.variant,
           boardWidth: game.boardWidth,
           boardHeight: game.boardHeight,
           initialState,
           moves,
         });
+        const { movers, distances } = replay;
         const names = {
           1: game.seats.find((s) => s.playerOrder === 1)?.displayName ?? "P1",
           2: game.seats.find((s) => s.playerOrder === 2)?.displayName ?? "P2",
@@ -530,6 +542,10 @@ const main = async () => {
               description: describeJump(p, names),
             }),
           ),
+          beats: closeCallsOf(replay, moves).map((b) => ({
+            ...b,
+            description: describeCloseCall(b, names),
+          })),
         };
         if (botConfig && args.gpuHost) {
           candidate.engine = await engineColumn(
@@ -573,6 +589,7 @@ const main = async () => {
       unscored: unscored.length,
       scored: candidates.length,
       withPicks: candidates.filter((c) => c.picks.length > 0).length,
+      withBeats: candidates.filter((c) => c.beats.length > 0).length,
     },
     ranked,
     excluded,
@@ -581,7 +598,7 @@ const main = async () => {
   writeFileSync(args.out, JSON.stringify(report, null, 1));
 
   console.log(
-    `${all.length} games started ${report.window.since} .. ${report.window.until}: ${excluded.length} not eligible, ${unscored.length} eligible but not scored, ${candidates.length} scored, ${report.counts.withPicks} with a pick.`,
+    `${all.length} games started ${report.window.since} .. ${report.window.until}: ${excluded.length} not eligible, ${unscored.length} eligible but not scored, ${candidates.length} scored, ${report.counts.withPicks} with a pick, ${report.counts.withBeats} with a close call.`,
   );
   for (const u of unscored)
     console.log(`  not scored ${u.gameId}: ${u.reason}`);
