@@ -45,7 +45,7 @@
  * uploaded video that no post names is not shown.
  */
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
-import { findUrls, textLimitProblems } from "./post-limits.mjs";
+import { blueskyLength, findUrls, textLimitProblems } from "./post-limits.mjs";
 
 export const BLUESKY_SECRETS = ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"];
 
@@ -132,20 +132,50 @@ export const blueskyDryRunReply = (req) => {
   return { status: 404, json: null };
 };
 
+const BSKY_TAG =
+  // eslint-disable-next-line no-misleading-character-class
+  /(^|\s)[#＃]((?!\ufe0f)[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*[^\d\s\p{P}\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]+[^\s\u00AD\u2060\u200A\u200B\u200C\u200D\u20e2]*)?/gu;
+
 /**
- * One #link facet for each URL in `text`, with byte positions in its UTF-8
+ * One #link facet for each URL in `text` and one #tag facet for each
+ * hashtag, in text order, with byte positions in its UTF-8
  * form. An emoji before a URL is 4 bytes but 2 UTF-16 units, so the UTF-16
  * positions of JavaScript strings would put the link in the wrong place.
+ * @param {string} text
+ * @returns {{ index: { byteStart: number, byteEnd: number },
+ *   features: { $type: string, uri?: string, tag?: string }[] }[]}
  */
-export const linkFacets = (text) => {
+export const richTextFacets = (text) => {
   const bytes = (s) => new TextEncoder().encode(s).length;
-  return findUrls(text).map(({ url, start, end }) => ({
+  const facet = (start, end, feature) => ({
     index: {
       byteStart: bytes(text.slice(0, start)),
       byteEnd: bytes(text.slice(0, end)),
     },
-    features: [{ $type: "app.bsky.richtext.facet#link", uri: url }],
-  }));
+    features: [feature],
+  });
+  // A #tag is plain text on Bluesky unless a facet makes it a tag. This is
+  // the rule of Bluesky's own client (bluesky-social/atproto,
+  // packages/api/src/rich-text: TAG_REGEX in util.ts and detectFacets in
+  // detection.ts, read 2026-10-26): trailing punctuation is not part of the
+  // tag, and a tag over 64 graphemes is no tag.
+  const tags = [...text.matchAll(BSKY_TAG)].flatMap((m) => {
+    const tag = (m[2] ?? "").trim().replace(/\p{P}+$/gu, "");
+    if (!tag || blueskyLength(tag) > 64) return [];
+    const start = m.index + m[1].length;
+    return [
+      facet(start, start + 1 + tag.length, {
+        $type: "app.bsky.richtext.facet#tag",
+        tag,
+      }),
+    ];
+  });
+  const links = findUrls(text).map(({ url, start, end }) =>
+    facet(start, end, { $type: "app.bsky.richtext.facet#link", uri: url }),
+  );
+  return [...links, ...tags].sort(
+    (a, b) => a.index.byteStart - b.index.byteStart,
+  );
 };
 
 /**
@@ -244,7 +274,14 @@ export const postToBluesky = async ({
     String(s.id).endsWith("#atproto_pds"),
   )?.serviceEndpoint;
   if (!accessJwt || !did || !pds) {
-    throw new PostFailed("bluesky session: no token, did or PDS", session);
+    // Not the reply body: it can hold accessJwt and refreshJwt, and the
+    // error goes into the cycle record (Reviewer 1, 700a661e).
+    const missing = Object.entries({ accessJwt, did, pds })
+      .filter(([, v]) => !v)
+      .map(([k]) => k);
+    throw new PostFailed(`bluesky session: no ${missing.join(", ")}`, {
+      status: session.status,
+    });
   }
   const userAuth = { authorization: `Bearer ${accessJwt}` };
 
@@ -310,7 +347,7 @@ export const postToBluesky = async ({
 
   await beforeCommit();
 
-  const facets = linkFacets(text);
+  const facets = richTextFacets(text);
   const created = await transport.request({
     method: "POST",
     url: `${pds}/xrpc/com.atproto.repo.createRecord`,

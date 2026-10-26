@@ -128,3 +128,34 @@ export class NotPosted extends Error {
 }
 
 export const ok = (reply) => reply.status >= 200 && reply.status < 300;
+
+/**
+ * After a commit request failed, read the post's status for a while before
+ * deciding. A platform that accepted the request may show the old state for
+ * a moment, so one read cannot prove "not posted". `classify(state)` gives
+ * "posted", "not-posted" or "unknown"; `read` may throw (unknown).
+ * Returns "posted" at the first posted read, "not-posted" only when every
+ * read in the window was not-posted, else "uncertain"; and the last state.
+ */
+export const settleAfterFailedCommit = async ({
+  read,
+  classify,
+  reads,
+  waitMs,
+  sleep,
+}) => {
+  let allNotPosted = true;
+  let state = null;
+  for (let i = 0; i < reads; i++) {
+    if (i > 0) await sleep(waitMs);
+    try {
+      state = await read();
+    } catch {
+      state = null;
+    }
+    const verdict = state === null ? "unknown" : classify(state);
+    if (verdict === "posted") return { outcome: "posted", state };
+    if (verdict !== "not-posted") allNotPosted = false;
+  }
+  return { outcome: allNotPosted ? "not-posted" : "uncertain", state };
+};

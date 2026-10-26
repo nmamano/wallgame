@@ -1172,6 +1172,11 @@ describe("Growth's copy block", () => {
     expect(problems("threads", `hi https://example.com/x`)).toEqual([
       `Threads may hold only the link ${trackedLink("threads")}`,
     ]);
+    // A bare domain becomes an untracked link on these platforms.
+    expect(problems("facebook", "play at wallgame.io")).toEqual([
+      `Facebook may hold only the link ${trackedLink("facebook")}`,
+    ]);
+    expect(problems("mastodon", `${masto} or www.wallgame.io`)).toHaveLength(1);
   });
 
   test("every platform limit is checked when the block comes in", () => {
@@ -1866,7 +1871,7 @@ describe("the render step", () => {
     const store = openStore(dir);
     directToday(store, "2026-10-26");
     store.startRender("2026-10-26", "job-00000001");
-    createDaily({ dataDir: dir });
+    createDaily({ dataDir: dir, env: {} });
     const cycle = openStore(dir).read("2026-10-26") as Cycle;
     expect(cycle.state).toBe("render-failed");
     expect(cycle.render?.error).toMatch(/app restarted/);
@@ -2210,10 +2215,14 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(finish?.body?.description).toBe(COPY.facebook);
   const record = planOf("bluesky").at(-1)?.body?.record as {
     text: string;
-    facets: unknown[];
+    facets: { features: { $type: string }[] }[];
   };
   expect(record.text).toBe(COPY.bluesky);
-  expect(record.facets).toHaveLength(1);
+  // The tracked link and the line's one hashtag.
+  expect(record.facets.map((f) => f.features[0].$type).sort()).toEqual([
+    "app.bsky.richtext.facet#link",
+    "app.bsky.richtext.facet#tag",
+  ]);
   const container = planOf("threads").find((r) => r.url.endsWith("/threads"));
   expect(container?.body?.text).toBe(COPY.threads);
   expect(planOf("mastodon").at(-1)?.body?.status).toBe(COPY.mastodon);

@@ -27,6 +27,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { POSTING_SECRETS } from "../daily/routes.mjs";
 
 const SERVER = resolve(import.meta.dir, "server.mjs");
 
@@ -102,7 +103,17 @@ async function startApp(
       String(deadlineMs),
     ],
     {
-      env: { ...process.env, PORT: String(port), ISOMUX_APP_DATA_DIR: dir },
+      // No posting secrets: with them, the app would make live calls (the
+      // Threads token renewal starts at once).
+      env: {
+        ...Object.fromEntries(
+          Object.entries(process.env).filter(
+            ([name]) => !POSTING_SECRETS.includes(name),
+          ),
+        ),
+        PORT: String(port),
+        ISOMUX_APP_DATA_DIR: dir,
+      },
       stdout: "pipe",
       stderr: "pipe",
     },

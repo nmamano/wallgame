@@ -222,7 +222,7 @@ describe("claim risk", () => {
 describe("the page's routes", () => {
   test("list, choose and refuse through the app", async () => {
     const dir = tempDir();
-    const daily = createDaily({ dataDir: dir });
+    const daily = createDaily({ dataDir: dir, env: {} });
     const server: Server = createServer((req, res) => {
       const url = new URL(req.url ?? "/", "http://localhost");
       void daily.handle(req, res, url).then((done) => {

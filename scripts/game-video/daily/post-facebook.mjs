@@ -43,7 +43,13 @@
  * published. After a failed finish, the video's status decides: see
  * postToFacebook.
  */
-import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
+import {
+  NotPosted,
+  PostFailed,
+  ok,
+  settleAfterFailedCommit,
+  sha256,
+} from "./transport.mjs";
 
 export const FACEBOOK_SECRETS = [
   "FACEBOOK_PAGE_ID",
@@ -61,6 +67,8 @@ export const FACEBOOK_MAX_SECONDS = 90;
 /** A short Reel is processed in well under a minute; this bounds a stuck one. */
 const STATUS_POLL_MS = 15_000;
 const STATUS_POLLS = 20;
+/** After a failed finish: 8 reads, 15 s apart, so 105 s (Reviewer 1, 700a661e). */
+const SETTLE_READS = 8;
 
 export const DRY_RUN_FACEBOOK = {
   FACEBOOK_PAGE_ID: "<FACEBOOK_PAGE_ID>",
@@ -192,22 +200,29 @@ export const postToFacebook = async ({
   });
   if (!ok(finish) || finish.json?.success !== true) {
     // A Graph error is often HTTP 400 even when it is transient, so the
-    // reply alone does not prove that no Reel went out. The video says:
-    // published is a Reel; publishing not started is clearly not posted;
-    // anything else leaves the post uncertain.
+    // reply alone does not prove that no Reel went out. An accepted finish
+    // only starts work, and the status can show nothing started for a
+    // moment, so the video is read for SETTLE_READS polls: published is a
+    // Reel; publishing not started (and processing not running) at every
+    // read is clearly not posted; anything else leaves the post uncertain.
     const failed = new PostFailed("facebook finish", finish);
-    let state;
-    try {
-      state = await readStatus();
-    } catch {
-      state = null;
-    }
-    if (state?.published) return posted;
-    if (
-      state?.publishing === "not_started" &&
-      state.processing !== "in_progress"
-    ) {
-      throw new NotPosted(`${failed.message}; the video was not published`);
+    const { outcome, state } = await settleAfterFailedCommit({
+      read: readStatus,
+      classify: (s) =>
+        s.published
+          ? "posted"
+          : s.publishing === "not_started" && s.processing !== "in_progress"
+            ? "not-posted"
+            : "unknown",
+      reads: SETTLE_READS,
+      waitMs: STATUS_POLL_MS,
+      sleep,
+    });
+    if (outcome === "posted") return posted;
+    if (outcome === "not-posted") {
+      throw new NotPosted(
+        `${failed.message}; the video was not published in ${((SETTLE_READS - 1) * STATUS_POLL_MS) / 1000} s`,
+      );
     }
     throw new Error(
       `${failed.message}; video ${videoId} is ${JSON.stringify(state)}: look at the Facebook Page before you post again`,

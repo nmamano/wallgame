@@ -183,6 +183,9 @@ const SECRETS = {
   mastodon: MASTODON_SECRETS,
 };
 
+/** Every secret a poster reads; a test strips them so it cannot post. */
+export const POSTING_SECRETS = Object.values(SECRETS).flat();
+
 /**
  * live when every secret of the platform is set, else dry-run. Threads also
  * needs `threadsPublicUrl`, the function that makes the video public for it
@@ -261,13 +264,19 @@ export const createDaily = ({
   // Only once its secrets exist: this is a live call to Threads.
   let threadsTimer = null;
   if (THREADS_SECRETS.every((name) => Boolean(env[name]))) {
+    // It must never throw: a rejection in the timer would end the app (a
+    // corrupt threads.json fails before refreshThreadsToken's own guard).
     const renew = async () => {
-      const outcome = await refreshThreadsToken({
-        transport: liveTransport(),
-        tokens: threadsTokenStore(),
-      });
-      if (outcome.error) {
-        console.warn(`threads token refresh failed: ${outcome.error}`);
+      try {
+        const outcome = await refreshThreadsToken({
+          transport: liveTransport(),
+          tokens: threadsTokenStore(),
+        });
+        if (outcome.error) {
+          console.warn(`threads token refresh failed: ${outcome.error}`);
+        }
+      } catch (err) {
+        console.warn(`threads token refresh failed: ${err?.message ?? err}`);
       }
     };
     threadsTimer = setInterval(() => void renew(), THREADS_REFRESH_EVERY_MS);

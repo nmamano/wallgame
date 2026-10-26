@@ -215,10 +215,15 @@ export const copyProblems = (copy, gameId, players = []) => {
     ["facebook", "bluesky", "threads", "mastodon"].includes(f),
   )) {
     problems.push(...textLimitProblems(field, copy[field]));
-    for (const { url } of findUrls(copy[field])) {
-      if (url !== trackedLink(field)) {
-        problems.push(`${label} may hold only the link ${trackedLink(field)}`);
-      }
+    const urls = findUrls(copy[field]);
+    // A bare "wallgame.io" becomes a link on these platforms too, but not
+    // the tracked one: look for it in the text around the full URLs.
+    const rest = urls.reduceRight(
+      (text, { start, end }) => text.slice(0, start) + " " + text.slice(end),
+      copy[field],
+    );
+    if (urls.some(({ url }) => url !== trackedLink(field)) || LINK.test(rest)) {
+      problems.push(`${label} may hold only the link ${trackedLink(field)}`);
     }
   }
   if (findUrls(copy.threads).length > THREADS_MAX_LINKS) {

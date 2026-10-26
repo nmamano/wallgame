@@ -58,7 +58,13 @@ import {
   writeFileSync,
 } from "node:fs";
 import { join } from "node:path";
-import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
+import {
+  NotPosted,
+  PostFailed,
+  ok,
+  settleAfterFailedCommit,
+  sha256,
+} from "./transport.mjs";
 import { textLimitProblems } from "./post-limits.mjs";
 
 export const THREADS_SECRETS = ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN"];
@@ -70,6 +76,8 @@ export const THREADS_REFRESH_URL =
 const FIRST_WAIT_MS = 30_000;
 const STATUS_POLL_MS = 60_000;
 const STATUS_POLLS = 5;
+/** After a failed publish: 3 reads, a minute apart (the docs' pace), so 2 min. */
+const SETTLE_READS = 3;
 /** The docs' floor for a refresh. */
 const REFRESH_AFTER_MS = 24 * 60 * 60 * 1000;
 
@@ -290,21 +298,29 @@ export const postToThreads = async ({
     );
     const mediaId = published.json?.id;
     if (!ok(published) || !mediaId) {
+      // An accepted publish can show FINISHED for a moment, so one read
+      // cannot prove "not posted": read the container for SETTLE_READS polls.
       const failed = new PostFailed("threads publish", published);
-      let status;
-      try {
-        status = (await containerStatus(containerId)).status;
-      } catch {
-        status = undefined;
-      }
-      if (status === "PUBLISHED") return { postId: null, url: null };
-      if (status === "FINISHED") {
+      const { outcome, state } = await settleAfterFailedCommit({
+        read: () => containerStatus(containerId),
+        classify: ({ status }) =>
+          status === "PUBLISHED"
+            ? "posted"
+            : status === "FINISHED"
+              ? "not-posted"
+              : "unknown",
+        reads: SETTLE_READS,
+        waitMs: STATUS_POLL_MS,
+        sleep: dry ? async () => {} : sleep,
+      });
+      if (outcome === "posted") return { postId: null, url: null };
+      if (outcome === "not-posted") {
         throw new NotPosted(
-          `${failed.message}; the container is FINISHED, not published`,
+          `${failed.message}; the container stayed FINISHED, not published`,
         );
       }
       throw new Error(
-        `${failed.message}; the container ${containerId} is ${status ?? "unknown"}: look at the Threads profile before you post again`,
+        `${failed.message}; the container ${containerId} is ${state?.status ?? "unknown"}: look at the Threads profile before you post again`,
       );
     }
 

@@ -27,7 +27,7 @@ import {
 import {
   postToBluesky,
   blueskyDryRunReply,
-  linkFacets,
+  richTextFacets,
   DRY_RUN_BLUESKY,
 } from "./post-bluesky.mjs";
 import {
@@ -216,16 +216,24 @@ describe("Facebook", () => {
   });
 
   /** A finish that fails, and then the status `status`. */
-  const failedFinish = (status: unknown, finishStatus = 500) =>
-    fakeLive((req) => {
+  /** A finish that fails; then the status reads `statuses` in turn, the last one repeating. */
+  const failedFinish = (statuses: unknown, finishStatus = 500) => {
+    const reads: unknown[] = Array.isArray(statuses)
+      ? [...(statuses as unknown[])]
+      : [statuses];
+    return fakeLive((req) => {
       if (bodyOf(req)?.upload_phase === "finish") {
         return { status: finishStatus, json: { error: { message: "x" } } };
       }
       if (req.url.includes("fields=status")) {
+        const status = reads.length > 1 ? reads.shift() : reads[0];
         return { status: 200, json: { status } };
       }
       return facebookDryRunReply(req);
     });
+  };
+  const statusReads = (transport: ReturnType<typeof fakeLive>) =>
+    transport.sent.filter((r) => r.url.includes("fields=status")).length;
   const run = (transport: ReturnType<typeof fakeLive>) =>
     postToFacebook({
       video: VIDEO,
@@ -258,6 +266,33 @@ describe("Facebook", () => {
     expect(err).not.toBeInstanceOf(NotPosted);
   });
 
+  test("after a failed finish, the status is read for a window: an accepted finish shows not_started at first", async () => {
+    const notStarted = {
+      processing_phase: { status: "not_started" },
+      publishing_phase: { status: "not_started" },
+    };
+    const published = {
+      publishing_phase: { status: "completed", publish_status: "published" },
+    };
+    const late = failedFinish([notStarted, notStarted, published], 400);
+    expect((await run(late)).postId).toBe("DRY-RUN-VIDEO-ID");
+    expect(statusReads(late)).toBe(3);
+
+    // "Not posted" needs every read of the window to say so.
+    const stays = failedFinish(notStarted, 400);
+    expect(await failure(run(stays))).toBeInstanceOf(NotPosted);
+    expect(statusReads(stays)).toBe(8);
+
+    // Processing that ran once in the window leaves the post uncertain.
+    const ran = failedFinish(
+      [{ processing_phase: { status: "in_progress" } }, notStarted],
+      400,
+    );
+    const err = await failure(run(ran));
+    expect(err).not.toBeInstanceOf(NotPosted);
+    expect(String(err)).toMatch(/look at the Facebook Page/);
+  });
+
   test("a Reel that fails processing after the finish is not posted", async () => {
     const transport = fakeLive((req) =>
       req.url.includes("fields=status")
@@ -279,7 +314,7 @@ describe("Bluesky", () => {
   const at = () => new Date("2026-10-27T12:00:00Z");
 
   test("the link facet counts bytes: an emoji before the link shifts it", () => {
-    const [facet] = linkFacets(TEXT);
+    const [facet] = richTextFacets(TEXT);
     const bytes = Buffer.from(TEXT, "utf8");
     // 🎮 is 4 bytes but 2 UTF-16 units.
     expect(facet.index.byteStart).toBe(
@@ -293,6 +328,56 @@ describe("Bluesky", () => {
     expect(facet.features).toEqual([
       { $type: "app.bsky.richtext.facet#link", uri: LINK },
     ]);
+  });
+
+  test("a #tag gets a tag facet, as Bluesky's own client makes it", () => {
+    const text = `Who wins? #WallGame #wall-game. ${LINK} #2026 end#no`;
+    const facets = richTextFacets(text);
+    const shown = facets.map((f) => [
+      Buffer.from(text, "utf8")
+        .subarray(f.index.byteStart, f.index.byteEnd)
+        .toString("utf8"),
+      f.features[0].$type.split("#")[1],
+    ]);
+    // In text order; trailing punctuation is not in the tag; a tag of
+    // digits only, or a # inside a word, is no tag.
+    expect(shown).toEqual([
+      ["#WallGame", "tag"],
+      ["#wall-game", "tag"],
+      [LINK, "link"],
+    ]);
+    expect(facets[1].features[0]).toEqual({
+      $type: "app.bsky.richtext.facet#tag",
+      tag: "wall-game",
+    });
+  });
+
+  test("a session with no PDS fails without its tokens in the error", async () => {
+    const transport = fakeLive((req) =>
+      req.url.includes("createSession")
+        ? {
+            status: 200,
+            json: {
+              accessJwt: "SECRET-ACCESS-JWT",
+              refreshJwt: "SECRET-REFRESH-JWT",
+              did: "did:plc:abc",
+            },
+          }
+        : blueskyDryRunReply(req),
+    );
+    const err = await failure(
+      postToBluesky({
+        video: VIDEO,
+        text: TEXT,
+        transport,
+        creds: live,
+        sleep: noSleep,
+        beforeCommit: noSleep,
+        now: at,
+      }),
+    );
+    expect(String(err)).toMatch(/bluesky session: no pds/);
+    expect(String(err)).not.toContain("SECRET");
   });
 
   test("session, service token, upload, job, then the post with the text as given", async () => {
@@ -320,7 +405,7 @@ describe("Bluesky", () => {
     expect(sent[1].url).toContain("aud=did%3Aweb%3Adry-run-pds.example");
     const record = (sent[4].body as { record: Record<string, unknown> }).record;
     expect(record.text).toBe(TEXT);
-    expect(record.facets).toEqual(linkFacets(TEXT));
+    expect(record.facets).toEqual(richTextFacets(TEXT));
     expect(record.embed).toMatchObject({
       $type: "app.bsky.embed.video",
       aspectRatio: { width: 1080, height: 1920 },
@@ -617,7 +702,7 @@ describe("Threads", () => {
   });
 
   test("after a failed publish, the container's status decides", async () => {
-    const run = (status: string) => {
+    const run = (...statuses: string[]) => {
       const transport = fakeLive((req) => {
         if (req.url.includes("/threads_publish")) {
           return { status: 500, json: { error: { message: "x" } } };
@@ -626,6 +711,7 @@ describe("Threads", () => {
           req.url.includes("fields=status") &&
           transport.sent.some((r) => r.url.includes("/threads_publish"))
         ) {
+          const status = statuses.length > 1 ? statuses.shift() : statuses[0];
           return { status: 200, json: { status } };
         }
         return threadsDryRunReply(req);
@@ -643,6 +729,11 @@ describe("Threads", () => {
     };
     expect(await run("PUBLISHED")).toEqual({ postId: null, url: null });
     expect(await failure(run("FINISHED"))).toBeInstanceOf(NotPosted);
+    // An accepted publish can show FINISHED for a moment.
+    expect(await run("FINISHED", "PUBLISHED")).toEqual({
+      postId: null,
+      url: null,
+    });
     const uncertain = run("IN_PROGRESS");
     const err = await failure(uncertain);
     expect(String(err)).toMatch(/look at the Threads profile/);
