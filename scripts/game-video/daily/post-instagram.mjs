@@ -33,6 +33,12 @@
  * exists: the permalink is asked for once, and a failure there leaves url
  * null, not a failed post. After a failed media_publish the container's
  * status decides (Reviewer 3, 2026-10-26): see postToInstagram.
+ *
+ * FIRST LIVE POST CHECKLIST (for Wall Game Growth, on the first real post):
+ * - The post goes out with the Page token, not the system-user token. If
+ *   media or media_publish answers an OAuth or permission error, this is the
+ *   cause: report it to the code owner (the fallback is to post with the
+ *   system-user token directly).
  */
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
 

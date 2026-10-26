@@ -10,6 +10,7 @@ import { mkdtempSync, readFileSync, statSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTokenStore } from "./token-store.mjs";
+import { connectPage } from "./connect-page.mjs";
 import { createDaily } from "./routes.mjs";
 import {
   connectStates,
@@ -151,6 +152,39 @@ describe("token store", () => {
     );
     expect(JSON.stringify(store.status("threads"))).not.toContain("SECRET");
     expect(String(thrown(() => store.read("threads")))).not.toContain("SECRET");
+  });
+
+  test("a token file from before Connect is not connected, and the page says so", () => {
+    const dir = tempDir();
+    // The two formats of the removed seed stores, at the same file names.
+    writeFileSync(
+      join(dir, "tiktok.json"),
+      JSON.stringify({
+        seedSha256: "abc",
+        refreshToken: "SECRET-1",
+        savedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    );
+    writeFileSync(
+      join(dir, "threads.json"),
+      JSON.stringify({
+        seedSha256: "abc",
+        token: "SECRET-2",
+        refreshedAt: "2026-10-01T00:00:00.000Z",
+        triedAt: "2026-10-01T00:00:00.000Z",
+      }),
+    );
+    const store = openTokenStore(dir);
+    for (const platform of ["tiktok", "threads"]) {
+      expect(store.connected(platform)).toBe(false);
+      const status = store.status(platform);
+      expect(status?.error).toMatch(`connect ${platform} again`);
+      expect(JSON.stringify(status)).not.toContain("SECRET");
+      const html = connectPage([{ platform, status, missing: [] }]);
+      expect(html).not.toContain("Connected");
+      expect(html).not.toContain("Connect again");
+      expect(html).toContain("from before Connect");
+    }
   });
 });
 

@@ -88,7 +88,10 @@ export const openTokenStore = (dir) => {
         return false;
       }
     },
-    /** The record without its tokens, or {error} if the file is unreadable. */
+    /**
+     * The record without its tokens, or {error} if the file is unreadable or
+     * Connect did not write it (the same test as `connected`).
+     */
     status(platform) {
       let record;
       try {
@@ -97,6 +100,13 @@ export const openTokenStore = (dir) => {
         return { error: String(err?.message ?? err) };
       }
       if (!record) return null;
+      // The removed seed stores used these same file names
+      // ({seedSha256, refreshToken, savedAt} and {seedSha256, token, ...}).
+      if (typeof record.connectedAt !== "string") {
+        return {
+          error: `the ${platform} token file is from before Connect: connect ${platform} again on /daily/connect`,
+        };
+      }
       return Object.fromEntries(
         PUBLIC_FIELDS.filter((k) => k in record).map((k) => [k, record[k]]),
       );
