@@ -87,10 +87,11 @@ already has a cycle, finish it or stop: do not start another. `pick
   video (measured 2026-10-26: 720 px against 785 px).
 - A number in a caption is a promise about the race counter. The setup
   caption is read at the start, so a number in it must be on the counter
-  then (the storyboard's `steps` line of the start tile and ply 0). "Red
-  was 2 steps from winning" over a counter that says 10 is wrong for most
-  of the video: say the stakes in words ("bro thinks he's safe 😭") and
-  keep the number for the payoff. A number in the payoff must be on the
+  then: on the storyboard's `steps` line of the start tile or ply 0, or
+  with `startPly` N, of plies N-1 or N; with a cold open, of its ply too.
+  "Red was 2 steps from winning" over a counter that says 10 is wrong for
+  most of the video: say the stakes in words ("bro thinks he's safe 😭")
+  and keep the number for the payoff. A number in the payoff must be on the
   counter just before or just after the payoff's move ("2 to 8", "now it's
   8"). `direct` refuses a number that the counter does not show then.
   Take numbers from the `steps` lines, not from a JUMP badge: it adds the
@@ -214,19 +215,23 @@ Rules:
 - The race counter (each side's steps, over the board) is on for the whole
   video. `race` flashes it: use it on the ply where a number changes a lot
   (for example 2 to 12). If it changes by 1 or 2, leave it out.
-- `startPly` and `coldOpenPly` are in the schema for Nil's hook test
-  (2026-10-26). Do not use them until Wall Game PM says that Nil chose.
-- `fastForward` is in the schema for Nil's choice of video length
-  (2026-10-26). Do not use it until Wall Game PM says that Nil chose. Then:
-  put `"fastForward": true` on a pace range of quiet plies (no close call
-  and no wall jump in `facts`), at 0.2 s per move (the video shows "x4") or
-  0.25-0.3 s ("x3"). The opening before the first key wall and the moves
-  between two beats are the usual ranges. Keep the 2 plies before a key
-  wall at normal pace or slower, so the viewer sees the threat before the
-  wall (Nil, 2026-10-26: "it plays too fast to follow"). Keep the payoff
-  ply out of a range: a caption that changes at x4 is hard to read.
-  `direct` refuses a range with an event or the cold open in it, or one
-  that reaches the last move.
+- `startPly` cuts a quiet opening: the video opens on the position before
+  that ply and plays from it. Every event and pace range must be at
+  `startPly` or later. `coldOpenPly` is a hook: the video first shows the
+  position after that ply for about a second, with the caption up and that
+  ply's walls glowing, then cuts to the VS overlay and the game. It must be
+  at `startPly` or later. Both move the moment when the setup caption is
+  first read, so its number must be on the counter there (see the number
+  rule above). Whether and where to use them is your choice.
+- `fastForward` shortens a video: put `"fastForward": true` on a pace
+  range of quiet plies (no close call and no wall jump in `facts`), at
+  0.2 s per move (the video shows "x4") or 0.25-0.3 s ("x3"). The opening
+  before the first key wall and the moves between two beats are the usual
+  ranges. Keep the 2 plies before a key wall at normal pace or slower, so
+  the viewer sees the threat before the wall (Nil, 2026-10-26: "it plays
+  too fast to follow"). Keep the payoff ply out of a range: a caption that
+  changes at x4 is hard to read. `direct` refuses a range with an event or
+  the cold open in it, or one that reaches the last move.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
   AI won, and a win sound in a human vs human game. `crew.mjs sounds` gives
