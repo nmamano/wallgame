@@ -10,6 +10,8 @@ import {
   closeCallsOf,
   DANGER_WALK,
   describeCloseCall,
+  CHASE_WALK,
+  chasesOf,
   describeEscape,
   describeJump,
   escapesOf,
@@ -611,14 +613,11 @@ describe("escapes", () => {
     );
   });
 
-  test("two plain steps from 2 to 4 are an escape; to 3 is not", () => {
+  test("two plain steps from 2 to 4 are no escape: the cat must be next to it", () => {
     // The cat a5 is 2 from the mouse c5; Me5 runs two squares right: 4.
     const run = play(at([0, 0], [0, 2], 2), ["Me5", "Cc5"]);
-    expect(run.escapes.map((e) => [e.ply, e.walkBefore, e.walk])).toEqual([
-      [0, 2, 4],
-    ]);
-    // Md5: one step right, 3 from the cat: not far enough.
-    expect(play(at([0, 0], [0, 2], 2), ["Md5", "Cb5"]).escapes).toEqual([]);
+    expect(run.replay.tracks[0].walks).toEqual([2, 4, 2]);
+    expect(run.escapes).toEqual([]);
   });
 
   test("a wall alone is no escape: the prey must move", () => {
@@ -630,15 +629,35 @@ describe("escapes", () => {
   });
 
   test("a close call's save with a step is told once, as the close call", () => {
-    // Cb5: the cat comes from 3 to 2 (danger). >b5.Me5 closes b5-c5 and the
-    // mouse steps right: 5. Ma2 (P1's own mouse): the cat stays 5 away.
-    const moves = ["Cb5", ">b5.Me5", "Ma2"];
+    // Cc5: the cat comes from 3 to 1 (danger). >c5.Me5 closes c5-d5 and the
+    // mouse steps right: the cat goes round, c4 d4 e4 e5 = 4. Ma2 (P1's own
+    // mouse): the cat stays 4 away.
+    const moves = ["Cc5", ">c5.Me5", "Ma2"];
     const { calls, escapes, replay } = play(at([0, 0], [0, 3], 1), moves);
     expect(
       calls.map((c) => [c.save.ply, c.save.walkBefore, c.save.walk]),
-    ).toEqual([[1, 2, 5]]);
+    ).toEqual([[1, 1, 4]]);
     expect(escapes).toEqual([]);
     // Without the close call, the same move is an escape.
     expect(escapesOf(replay, moves, []).map((e) => e.ply)).toEqual([1]);
+  });
+
+  test("two escapes in one chase give one, the earlier on a tie", () => {
+    // >a5.Mc5: 1 to 4. Cb4 (2), Cd1 (P2 waits), Cb5: the cat is next to the
+    // mouse again, and the walk never went above 4. >b5.Md5 boxes the cat in
+    // at b5: b4 c4 d4 d5 = 4, a second escape of the same size.
+    const moves = [">a5.Mc5", "Cb4", "Cd1", "Cb5", ">b5.Md5", "Ma2"];
+    const { escapes, replay } = play(at([0, 0], [0, 1], 2), moves);
+    expect(replay.tracks[0].walks).toEqual([1, 4, 2, 2, 1, 4, 4]);
+    expect(escapes.map((e) => [e.ply, e.size])).toEqual([[0, 3]]);
+  });
+
+  test("a chase lasts while the hunter stays within CHASE_WALK", () => {
+    expect(CHASE_WALK).toBe(6);
+    // 1 -> 4 -> 1 -> 5: one chase. Then 7 ends it, and 1 -> 4 is a new one.
+    expect(chasesOf([1, 4, 2, 1, 5, 7, 3, 1, 4])).toEqual([
+      0, 0, 0, 0, 0, 1, 1, 1, 1,
+    ]);
+    expect(chasesOf([7, 8, 2])).toEqual([1, 2, 2]);
   });
 });

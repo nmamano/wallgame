@@ -80,15 +80,15 @@ already has a cycle, finish it or stop: do not start another. `pick
   the hunter wins within 10 plies (rehearsal, 2026-10-26: this was true of
   all three close calls in the day's top five).
 - When `facts` list an escape (`director, escape ply N`: the mouse's own
-  move, with or without a wall, takes the cat from 1-2 squares to 4 or
-  more) and its fact does not say that the hunter still wins within 10
-  moves of the escape, show the mouse as it runs (Nil, 2026-10-26: "zoom on
-  the mouse so it's clear who is talking. the bye right as it moves would
-  be the best narrative"): a `zoom` on the escape ply with the zoom field
-  that starts before the move, framed on the mouse's start and end cells
-  and the cat's cell, and a `seeya-N` ("the prey gets away") that starts
-  as the mouse moves. If `crew.mjs sounds` lists no `seeya-N`, use an
-  `ooh-N`. No FAHHH on an escape.
+  move, with or without a wall, takes the cat from next to it to 4 squares
+  or more; `facts` give one escape per chase) and its fact does not say that
+  the hunter still wins within 10 moves of the escape, show the mouse as it
+  runs (Nil, 2026-10-26: "zoom on the mouse so it's clear who is talking.
+  the bye right as it moves would be the best narrative"): a `zoom` on the
+  escape ply with the zoom field that starts before the move, framed on the
+  mouse's start and end cells and the cat's cell, and a `seeya-N` ("the prey
+  gets away") that starts as the mouse moves. If `crew.mjs sounds` lists no
+  `seeya-N`, use an `ooh-N`. No FAHHH on an escape.
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.

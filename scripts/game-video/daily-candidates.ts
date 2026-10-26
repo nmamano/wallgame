@@ -669,13 +669,21 @@ export type DescribedCloseCall = CloseCall & { description: string };
  * An ESCAPE (Nil, review of d525aea6, 2026-10-26: he saw at once the mouse
  * that stepped away from the cat, and the facts did not list it) is a move by
  * the prey's owner that moves the prey itself, with or without a wall, when
- * the hunter is DANGER_WALK or fewer squares away, and after which the walk is
- * ESCAPE_WALK or more. Unlike a close call's save, the hunter's reply can come
- * close again: the prey still ran on that move.
+ * the hunter is next to it (walk 1), and after which the walk is ESCAPE_WALK
+ * or more. Unlike a close call's save, the hunter's reply can come close
+ * again: the prey still ran on that move. A prey that runs from 2 to 4 with
+ * two plain steps is no escape (Wall Game Director, 2026-10-26: "2 -> 4 by
+ * plain steps is noise"), and a chase gives one escape, its largest.
  */
 
 /** The hunter's walk after an escape: two of its turns away at least. */
 export const ESCAPE_WALK = 4;
+
+/**
+ * A chase ends when the hunter falls behind more than this: from 6 it needs
+ * two moves of two steps to come within DANGER_WALK again.
+ */
+export const CHASE_WALK = 6;
 
 /** How many escapes each candidate reports. */
 export const ESCAPES_PER_GAME = 3;
@@ -692,8 +700,20 @@ export type Escape = BeatMoment & {
 };
 
 /**
- * Every escape in a game, largest first, then earlier. A save ply of one of
- * `calls` is not also an escape: the close call already tells that move.
+ * The chase of each position of one hunt (walks[k] is after k plies): a new
+ * chase starts at each position where the walk is above CHASE_WALK. Two
+ * plies are in one chase when the walk stays at CHASE_WALK or less between
+ * them.
+ */
+export const chasesOf = (walks: number[]): number[] => {
+  let chase = 0;
+  return walks.map((walk) => (walk > CHASE_WALK ? ++chase : chase));
+};
+
+/**
+ * Every escape in a game, one per chase (the largest, then the earlier),
+ * largest first, then earlier. A save ply of one of `calls` is not also an
+ * escape: the close call already tells that move.
  */
 export const escapesOf = (
   replay: ReplayedGame,
@@ -701,27 +721,30 @@ export const escapesOf = (
   calls: CloseCall[],
 ): Escape[] => {
   const saves = new Set(calls.map((c) => c.save.ply));
-  const found: Escape[] = [];
-  for (const track of replay.tracks) {
-    if (track.target.type === "home") continue;
+  const byChase = new Map<string, Escape>();
+  replay.tracks.forEach((track, hunt) => {
+    if (track.target.type === "home") return;
+    const chases = chasesOf(track.walks);
     for (let ply = 0; ply < moves.length; ply++) {
-      const before = track.walks[ply];
-      if (before === 0 || before > DANGER_WALK) continue;
+      if (track.walks[ply] !== 1) continue;
       if (track.walks[ply + 1] < ESCAPE_WALK) continue;
       // Only the prey's owner moves the prey.
       if (track.targetCells[ply] === track.targetCells[ply + 1]) continue;
       if (saves.has(ply)) continue;
-      found.push({
+      const escape: Escape = {
         ...beatMoment(replay, moves, track, ply),
         hunter: track.hunter,
         prey: track.target,
-        walkBefore: before,
+        walkBefore: 1,
         preyFrom: track.targetCells[ply],
-        size: track.walks[ply + 1] - before,
-      });
+        size: track.walks[ply + 1] - 1,
+      };
+      const key = `${hunt}:${chases[ply]}`;
+      const kept = byChase.get(key);
+      if (!kept || escape.size > kept.size) byChase.set(key, escape);
     }
-  }
-  return found
+  });
+  return [...byChase.values()]
     .sort((a, b) => b.size - a.size || a.ply - b.ply)
     .slice(0, ESCAPES_PER_GAME);
 };
