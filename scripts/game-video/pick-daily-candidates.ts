@@ -436,6 +436,11 @@ interface Candidate {
   boardWidth: number;
   boardHeight: number;
   movesCount: number;
+  /**
+   * Every ply's standard notation, 0-based, movesCount long: the app checks an
+   * edit list against it before it renders, without loading the game again.
+   */
+  moves: string[];
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
   /** Before each move, and after the last: movesCount + 1 entries. */
   distances: RaceDistances[];
@@ -536,6 +541,7 @@ const main = async () => {
           boardWidth: game.boardWidth,
           boardHeight: game.boardHeight,
           movesCount: game.movesCount,
+          moves,
           seats: [...game.seats]
             .sort((a, b) => a.playerOrder - b.playerOrder)
             .map((s, i) => ({
