@@ -113,10 +113,11 @@ describe("ship", () => {
       join(REPO, "scripts/game-video/sync-render-kit.sh"),
       "utf8",
     );
-    const rsync = script.slice(
-      script.indexOf("rsync -a --relative"),
-      script.indexOf('"$host:$kit/"'),
-    );
+    // With or without -k (sync-render-kit.sh sends symlinked folders as
+    // folders since Video Editor (renderer)'s review 16).
+    const start = script.search(/rsync -a( -k)? --relative/);
+    expect(start).toBeGreaterThan(-1);
+    const rsync = script.slice(start, script.indexOf('"$host:$kit/"'));
     const copied = rsync
       .split("\n")
       .slice(1)
