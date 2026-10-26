@@ -37,7 +37,11 @@ test -f assets/stings/vs-b-riser.wav || bun scripts/game-video/make-stings.mjs
 code="$(bun scripts/game-video/render-kit.mjs)"
 mapfile -t code_files <<< "$code"
 
-rsync -a --relative \
+# -k sends a symlinked folder as the folder it points to. A worktree or the
+# release checkout links the gitignored sound folders to the main checkout;
+# -a alone sends the link itself, which the 4090 cannot follow and cannot
+# write over its real folder (rsync exit 23).
+rsync -a -k --relative \
   "${code_files[@]}" \
   scripts/game-video/stage.html \
   frontend/public/audio/pawn.wav \
