@@ -4,7 +4,7 @@
  * shorts, deciding where to put each sound effect", instead of fully
  * deterministic picks).
  *
- * The director (the Social Lead, through the daily app) writes one EDL per
+ * The director (Wall Game Director, through the daily app) writes one EDL per
  * video; the app validates it with validateEdl before it shows it to anyone,
  * and render-game-video.mjs --edl validates it again and plays exactly it.
  * Both import this file, so the two cannot disagree on what is valid.
