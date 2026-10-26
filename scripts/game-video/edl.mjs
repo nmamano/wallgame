@@ -722,3 +722,29 @@ export const checkEdlAgainstGame = (
   }
   return errors;
 };
+
+/**
+ * The plies a preview plays (render-game-video.mjs --plies FROM..TO), both
+ * inclusive. A preview starts at the EDL's startPly or later, because the
+ * video never shows a ply before it. Returns { ok: true, from, to } or
+ * { ok: false, error }. The last ply of the game is checked by the renderer,
+ * which knows it only after the capture is read.
+ */
+export const parsePlyWindow = (spec, startPly) => {
+  const m = /^(\d+)\.\.(\d+)$/.exec(String(spec));
+  if (!m) {
+    return { ok: false, error: `--plies must be FROM..TO, got ${spec}` };
+  }
+  const from = Number(m[1]);
+  const to = Number(m[2]);
+  if (to < from) {
+    return { ok: false, error: `--plies ${spec}: TO is before FROM` };
+  }
+  if (from < startPly) {
+    return {
+      ok: false,
+      error: `--plies ${spec} starts before the EDL's startPly ${startPly}; the video never shows those plies`,
+    };
+  }
+  return { ok: true, from, to };
+};

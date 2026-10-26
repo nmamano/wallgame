@@ -88,6 +88,7 @@ import {
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
+  parsePlyWindow,
 } from "./edl.mjs";
 import { replayDistances } from "./race-replay.ts";
 import { goalSentenceFor } from "../../shared/domain/variant-rules.ts";
@@ -201,7 +202,7 @@ if (!rawGame) {
       "  plumbing, for the app rather than for a person:\n" +
       "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
       "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-      "       [--from-cache] [--cache DIR]",
+      "       [--from-cache] [--cache DIR] [--plies FROM..TO]",
   );
   process.exit(2);
 }
@@ -286,8 +287,37 @@ const captionAt = (boardIndex) =>
   PAYOFF && boardIndex > PAYOFF.ply ? PAYOFF.text : CAPTION;
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
-/** The first ply a daily video plays (edl.mjs startPly); 0 otherwise. */
-const START_PLY = EDL?.startPly ?? 0;
+/**
+ * --plies FROM..TO previews only those plies of an EDL, from the capture
+ * cache, so the director can look at one moment in seconds. The board, the
+ * captions and every effect are as in the full video; the opening (cold
+ * open, VS) plays only when the window starts at the video's first ply, and
+ * the ending only when it reaches the last. Its RESULT names the window and
+ * carries no EDL hash, so the daily app cannot take it for the approved
+ * render. Null for a full render.
+ */
+const PLY_WINDOW = (() => {
+  if (!flag("plies")) return null;
+  if (!EDL || !flag("from-cache")) {
+    console.error(
+      "--plies previews an EDL from the capture cache: give --edl and --from-cache",
+    );
+    process.exit(2);
+  }
+  const w = parsePlyWindow(cliArg("plies"), EDL.startPly);
+  if (!w.ok) {
+    console.error(w.error);
+    process.exit(2);
+  }
+  return { from: w.from, to: w.to };
+})();
+/**
+ * The first ply the video plays: the preview's FROM, else the EDL's
+ * startPly (edl.mjs); 0 otherwise.
+ */
+const START_PLY = PLY_WINDOW?.from ?? EDL?.startPly ?? 0;
+/** Whether this render plays the video's opening: the cold open and VS. */
+const PLAYS_OPENING = START_PLY === (EDL?.startPly ?? 0);
 /**
  * The events that play after their move lands, in list order. A freeze and
  * a lead zoom start before the move; the move loop places them.
@@ -366,8 +396,13 @@ const ASPECT = arg("aspect", "fit");
 const FPS = 30;
 /** The soundtrack is always on. Capture shake follows the recorded result. */
 const AUDIO = true;
+/**
+ * A preview's work dir and video have their own name, so it never wipes or
+ * overwrites a full render's.
+ */
+const STEM = PLY_WINDOW ? `${GAME_ID}-preview` : GAME_ID;
 /** Absolute, so browser file URLs and ffmpeg inputs resolve the same files. */
-const WORK = resolve(arg("work", `tmp/game-video/${GAME_ID}-frames`));
+const WORK = resolve(arg("work", `tmp/game-video/${STEM}-frames`));
 
 /**
  * The board theme the capture browser uses.
@@ -472,7 +507,7 @@ const MUSIC = TRACK
  * console instead, where the person who ran the command sees it and no viewer
  * ever does - and it is enough to reproduce the same render with --music.
  */
-const OUT = resolve(arg("out", `tmp/game-video/${GAME_ID}.mp4`));
+const OUT = resolve(arg("out", `tmp/game-video/${STEM}.mp4`));
 /**
  * One style writes OUT itself. Several styles write one file each next to it,
  * named for the style, so a comparison never overwrites its own outputs.
@@ -944,6 +979,15 @@ if (history.length === 0) {
   await browser.close();
   process.exit(4);
 }
+if (PLY_WINDOW && PLY_WINDOW.to >= history.length) {
+  console.error(
+    `--plies ends at ply ${PLY_WINDOW.to}, after the last ply ${history.length - 1}`,
+  );
+  await browser.close();
+  process.exit(2);
+}
+/** The board after the last ply this render plays: the game's end, or TO's. */
+const LAST_BOARD = PLY_WINDOW ? PLY_WINDOW.to + 1 : history.length;
 
 const apiPlayers = replay.matchStatus.players;
 const nameOf = (playerId) =>
@@ -2635,9 +2679,10 @@ const renderStyle = async (styleName) => {
    * frames are their own kind: the encode check classifies "move" frames by
    * the board, and a board under two banners is not one it can read.
    */
-  const overlay = style.vsOverlay
-    ? await stage.evaluate(() => window.__VS_OVERLAY)
-    : null;
+  const overlay =
+    style.vsOverlay && PLAYS_OPENING
+      ? await stage.evaluate(() => window.__VS_OVERLAY)
+      : null;
   /** Where the overlay starts: after the cold open, if there is one. */
   let overlayStart = 0;
   const inOverlay = () =>
@@ -2737,7 +2782,7 @@ const renderStyle = async (styleName) => {
     pushing in on them, with that move's own click; then it cuts to the VS
     overlay and the game. No overlay on these frames: they come before it.
   */
-  const coldPly = wallz ? EDL.coldOpenPly : null;
+  const coldPly = wallz && PLAYS_OPENING ? EDL.coldOpenPly : null;
   if (coldPly !== null) {
     const terms = String(history[coldPly].notation ?? "")
       .split(".")
@@ -2778,7 +2823,7 @@ const renderStyle = async (styleName) => {
   }
 
   // --- the VS screen, animated
-  if (style.vsSeconds > 0) {
+  if (style.vsSeconds > 0 && PLAYS_OPENING) {
     const vsFrames = Math.round(style.vsSeconds * FPS);
     // The VS stamp, aligned so its impact meets the visual punch.
     const vsSound = sounds[style.vsSound];
@@ -3201,7 +3246,7 @@ const renderStyle = async (styleName) => {
   const winnerId = outcome?.winnerId ?? null;
   let musicEndAt = null;
 
-  for (let ply = START_PLY + 1; ply <= history.length; ply += 1) {
+  for (let ply = START_PLY + 1; ply <= LAST_BOARD; ply += 1) {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
     if (wallz) await playFreeze(ply, plyIndex);
@@ -3376,7 +3421,7 @@ const renderStyle = async (styleName) => {
   }
 
   // --- the end card, in the current look only: wallz has its own endings.
-  if (!wallz) {
+  if (!wallz && LAST_BOARD === history.length) {
     musicEndAt = elapsed;
     cue(
       existsSync(sounds.win.file)
@@ -3596,6 +3641,8 @@ const renderStyle = async (styleName) => {
     music: TRACK?.slug ?? null,
     /** True when the capture came from the cache: the render added no view. */
     fromCache: Boolean(cached),
+    /** The plies a --plies preview played, or null for a full render. */
+    preview: PLY_WINDOW,
     timeline: videoTimeline({
       fps: FPS,
       moves: moveTimes,
@@ -3622,8 +3669,9 @@ const renderStyle = async (styleName) => {
       hash against the EDL it approved; the sheet is for the director.
     */
     ...(wallz && {
-      ending: style.ending,
-      edlSha256: EDL_SHA256,
+      ending: LAST_BOARD === history.length ? style.ending : null,
+      // No hash on a preview: the daily app accepts only its EDL's hash.
+      edlSha256: PLY_WINDOW ? null : EDL_SHA256,
       sheet,
       layout: { frame: DAILY_FRAME, boxes: layoutBoxes, captionText },
       loudness,

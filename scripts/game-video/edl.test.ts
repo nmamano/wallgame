@@ -8,6 +8,7 @@ import {
   DEFAULT_ZOOM_SCALE,
   fastForwardTag,
   FRAME,
+  parsePlyWindow,
   pawnMovesOf,
   SAFE_AREA,
   validateEdl,
@@ -503,5 +504,28 @@ describe("lead zoom", () => {
       "a lead zoom needs the start position, and this game has none (an older report); make a new report",
     ]);
     expect(checkEdlAgainstGame(accept(base), noStart)).toEqual([]);
+  });
+});
+
+describe("parsePlyWindow", () => {
+  test("reads FROM..TO, both inclusive, at startPly or later", () => {
+    expect(parsePlyWindow("12..18", 10)).toEqual({
+      ok: true,
+      from: 12,
+      to: 18,
+    });
+    expect(parsePlyWindow("10..10", 10)).toEqual({
+      ok: true,
+      from: 10,
+      to: 10,
+    });
+  });
+
+  test("refuses a window the video cannot show or a malformed one", () => {
+    expect(parsePlyWindow("9..18", 10).ok).toBe(false);
+    expect(parsePlyWindow("18..12", 0).ok).toBe(false);
+    for (const bad of ["12-18", "12..", "..18", "-1..4", "1.5..4", ""]) {
+      expect(parsePlyWindow(bad, 0).ok).toBe(false);
+    }
   });
 });
