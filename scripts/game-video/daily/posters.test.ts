@@ -794,5 +794,14 @@ describe("Threads", () => {
     expect(withoutSignedUrl(escaped, url, "<k>")).toBe(
       "https://h/b/k.mp4?X-Amz-Date=1\\u0026X-Amz-Signature=<removed>",
     );
+    // A platform may quote the URL as a percent-encoded parameter.
+    expect(
+      withoutSignedUrl(`video_url=${encodeURIComponent(url)}`, url, "<k>"),
+    ).toBe(
+      "video_url=https%3A%2F%2Fh%2Fb%2Fk.mp4%3FX-Amz-Date%3D1%26X-Amz-Signature%3D<removed>",
+    );
+    expect(withoutSignedUrl(url.toUpperCase(), url, "<k>")).not.toContain(
+      "ABC123",
+    );
   });
 });

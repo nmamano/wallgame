@@ -4,8 +4,9 @@
  *
  * The bucket is PRIVATE. The video goes in under a random name, Threads gets
  * a presigned GET URL that works for 15 minutes, and remove() deletes the
- * object once the post attempt ends, also when it fails. A 1-day lifecycle
- * rule on the bucket (set by Nil) removes what a crash leaves behind; the
+ * object once the post attempt ends, also when it fails. Nil's backstop for
+ * what a crash leaves behind is a 1-day lifecycle rule on the bucket (to set
+ * before the first live post; see the checklist in post-threads.mjs); the
  * code does not depend on it.
  *
  * Read on developers.cloudflare.com 2026-10-26 (R2: Presigned URLs, S3 API

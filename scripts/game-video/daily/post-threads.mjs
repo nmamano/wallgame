@@ -51,7 +51,8 @@
  * - The permalink in the post log opens the post.
  * - The R2 bucket wallgame-threads-video is empty after the post: the poster
  *   deletes its copy. An object that stays means the DELETE failed (see the
- *   app log); the bucket's 1-day lifecycle rule removes it in any case.
+ *   app log). Before the first live post, the bucket must have the 1-day
+ *   lifecycle rule (Nil's backstop for such copies): check that it exists.
  *
  * THE COMMIT IS threads_publish. A container that is never published expires
  * after 24 hours and nobody sees it. After a failed publish the container's
@@ -212,12 +213,15 @@ export const threadsDryRunReply = (req) => {
  *   PublicUrl
  */
 
-/** `text` with `url`, and any S3-style signature, replaced. */
+/**
+ * `text` with `url`, and any S3-style signature, replaced: also in a
+ * percent-encoded copy of the URL ("X-Amz-Signature%3D...").
+ */
 export const withoutSignedUrl = (text, url, replacement) =>
   text
     .split(url)
     .join(replacement)
-    .replace(/(X-Amz-Signature=)[0-9a-fA-F]+/g, "$1<removed>");
+    .replace(/(X-Amz-Signature(?:=|%3D))[0-9a-f]+/gi, "$1<removed>");
 
 /**
  * Post `video` (a Buffer) with `text`. `publicUrl({video, sha256,
