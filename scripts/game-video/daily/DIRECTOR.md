@@ -34,6 +34,10 @@ already has a cycle, finish it or stop: do not start another. `pick
    `check --sheet <sha256 from sheet> --verdicts <verdicts.json>`, with one
    verdict per still in sheet order:
    `[{"ply": 9, "kind": "zoom", "ok": true, "note": "^g3 and ^h3 in frame, cat g3, mouse g4"}]`.
+   `sheet` also prints the app's measures of the video. A measure that
+   FAILED fails the check, whatever the stills show. `loudness` names the
+   second of the loudest sound: drop that sound or name a softer one, then
+   `direct` again and `render --force`.
 7. `ask --agent <your agent id>`
    This opens Nil's ask with the video and the sheet. When he answers, run
    `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
@@ -59,14 +63,9 @@ already has a cycle, finish it or stop: do not start another. `pick
   music gets a random track; that is only for a hand render.
 - The schema and the sound names are in `scripts/game-video/edl.mjs` and
   `scripts/game-video/meme-sounds.mjs`.
-- Moment effects, each tied to a fact. Use one or two per video, not all:
-  `blunder` (cell) on the move that threw the game away, often the ply
-  before a DANGER; `brilliant` (cell) on a SAVE or the winner's largest
-  JUMP; `trap` (the `*` walls of a JUMP); `race` (a counter of both sides'
-  steps for a few plies, from a DANGER on; the renderer reads the numbers
-  from the game); `freeze` (before a SAVE or the winning move lands);
-  `react` (an emoji next to a cell: skull, mind-blown, fire, moai, clown,
-  eyes). `storyboard --edl` shows each one on its ply before the render.
+- Moment effects: see "Which effect for which fact" below. Use one or two
+  per video, not all. `storyboard --edl <edl.json>` shows each one on its
+  ply before the render.
 - `vsSound` and `finishSound` name the sounds of the VS punch and the finish.
   Without them the video plays the defaults (`crew.mjs sounds` names them).
   If Nil dropped a default, name a kept sound.
@@ -75,6 +74,42 @@ already has a cycle, finish it or stop: do not start another. `pick
   and the sounds that Nil kept on the app's `/daily/sounds` page. Name a kept
   sound that fits the moment. Use a sound that Nil has not heard yet only
   when no kept sound fits. `direct` refuses a sound that Nil dropped.
+
+## Which effect for which fact
+
+Every effect marks a fact that `facts` printed or that you saw on the
+storyboard. An effect with no fact behind it is noise. A viewer does not know
+the game, so each effect must make one thing clear: who is close to winning,
+or which wall changed that.
+
+| The fact                                                                                 | The effect                                    | Where                                                                                       |
+| ---------------------------------------------------------------------------------------- | --------------------------------------------- | ------------------------------------------------------------------------------------------- |
+| Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                      | danger ply, the mouse's cell                                                                |
+| The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                 | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
+| The mouse is safe again                                                                  | `laugh`                                       | relief ply, the mouse's cell                                                                |
+| The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call | jump ply, `walls` = its `*` walls                                                           |
+| The walk changes over a few plies (danger to relief, or around a jump)                   | `race`                                        | from the danger ply, or 1-2 plies before the jump, for `plies` 3-6                          |
+| The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                     | that ply, the mover's pawn                                                                  |
+| The save, or the winner's largest jump, was the move of the game                         | `brilliant`                                   | that ply, the mover's pawn                                                                  |
+| A move that needs a laugh more than an explanation                                       | `react`                                       | that ply, next to the pawn it is about                                                      |
+
+Rules:
+
+- Few effects: one FAHHH per video, and at most two of the moment effects
+  (`blunder`, `brilliant`, `trap`, `race`, `freeze`, `react`). Do not put two
+  of them on one ply.
+- `freeze` and `zoom` both mark one move. Use one of them on a ply, not both.
+- `brilliant` and `blunder` judge a move. Use them only when the storyboard
+  shows it: a save that walks the cat from 2 to 12 is brilliant; a wall that
+  costs 4 squares is not.
+- A `stamp` or a `trap` text lands on the middle of the board. If the pawns
+  of the moment stand in the middle rows, the text hides them: use `react`
+  or the caption instead.
+- `race` shows the stakes: use it when the numbers change a lot in its
+  plies (for example 2 to 12). If they change by 1 or 2, leave it out.
+- `vsSound` is the first sound of the video: a reveal sound. `finishSound`
+  fits how it ended: a win sound when the human won, a loss sound when the
+  AI won. `crew.mjs sounds` gives each family's moment.
 
 ```json
 {
@@ -104,8 +139,15 @@ A still is ok only when all of these are true:
 - A zoom or a FAHHH shows the wall that it is about, and both pawns of the
   close call are in the frame.
 - A scared or laugh still shows the effect on the correct pawn.
-- The sheet has one still for each event. A stamp or sound still needs only
-  the correct ply.
+- A blunder, brilliant or react still shows its mark next to the correct
+  pawn, and the mark does not hide the pawns of the moment.
+- A trap still lights every `*` wall of the jump. A freeze still shows the
+  position before the move, with the camera on the move's cell.
+- A race still shows both numbers in the sides' colours, and they match the
+  walks in `facts` (for example 2 before the save, 12 after it).
+- A stamp or trap text does not hide the pawns or the wall it is about.
+- The sheet has one still for each event. A sound still needs only the
+  correct ply.
 
 Write what you see in the note. If a still is not ok, record the check
 (the ask stays closed, and the render cannot be checked again), fix the

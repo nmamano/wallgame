@@ -254,6 +254,7 @@ export const openStore = (dataDir) => {
         effect: null,
         sound: null,
         music: null,
+        quality: null,
       };
       cycle.approval = null;
       return save(cycle, `render ${jobId} queued`);
@@ -279,6 +280,7 @@ export const openStore = (dataDir) => {
       cycle.render.effect = outcome.effect;
       cycle.render.sound = outcome.sound;
       cycle.render.music = outcome.music;
+      cycle.render.quality = outcome.quality;
       return save(cycle, `render ${jobId} done`);
     },
 
@@ -286,7 +288,8 @@ export const openStore = (dataDir) => {
      * The director looked at the contact sheet: one verdict per still, in the
      * sheet's order, each with what the director saw. Only when every still
      * is ok can the ask open (Nil, 2026-10-26: each FAHHH and zoom must show
-     * the save wall). A failed check leaves the cycle at rendered; the way on
+     * the save wall). The measures the app took of the render (quality.mjs)
+     * must pass too. A failed check leaves the cycle at rendered; the way on
      * is a new edit list.
      */
     recordCheck(day, { sheetSha256, stills }) {
@@ -322,19 +325,32 @@ export const openStore = (dataDir) => {
           refuse(`verdict ${i + 1} needs a note: what the still shows`);
         return { ...still, ok: v.ok, note: note.slice(0, 300) };
       });
-      const ok = verdicts.every((v) => v.ok);
+      const quality = cycle.render.quality;
+      if (!quality) {
+        refuse(
+          "this render has no measures (it finished before the app took them); render again with force",
+        );
+      }
+      const failedMeasures = Object.entries(quality).filter(([, m]) => !m.ok);
+      const badStills = verdicts.filter((v) => !v.ok).length;
+      const ok = badStills === 0 && failedMeasures.length === 0;
       cycle.check = {
         sheetSha256,
         ok,
         verdicts,
+        quality,
         checkedAt: new Date().toISOString(),
       };
       if (ok) cycle.state = "checked";
+      const failures = [
+        ...(badStills ? [`${badStills} of ${verdicts.length} stills`] : []),
+        ...failedMeasures.map(([name, m]) => `${name}: ${m.note}`),
+      ];
       return save(
         cycle,
         ok
           ? `contact sheet checked: ${verdicts.length} stills ok`
-          : `contact sheet check failed: ${verdicts.filter((v) => !v.ok).length} of ${verdicts.length} stills`,
+          : `check failed: ${failures.join("; ")}`,
       );
     },
 

@@ -47,6 +47,11 @@ import {
 import { askText } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
+import {
+  parseEbur128,
+  loudnessVerdict,
+  MAX_STING_OVER_MIX_LU,
+} from "./quality.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -144,7 +149,10 @@ interface Cycle {
     ending: string;
     sheet: { sha256: string; stills: unknown[] } | null;
     video: { path: string; sha256: string } | null;
+    quality: Record<string, { ok: boolean; note: string }> | null;
   } | null;
+  check: { ok: boolean } | null;
+  events: { what: string }[];
   posts: Record<string, { postId: string; requestsFile: string }>;
 }
 
@@ -212,6 +220,13 @@ const ZOOM_OK = {
   ok: true,
   note: "the zoom shows the wall at e4",
 };
+/** The app's measures of a render that passes them all. */
+const MEASURED = {
+  loudness: {
+    ok: true,
+    note: "the loudest moment (5.6 s) is 4.7 LU over the mix",
+  },
+};
 
 /** Walk a cycle to "checked" (ready to ask) for this video. */
 const checkedToday = (
@@ -221,7 +236,11 @@ const checkedToday = (
 ) => {
   directToday(store, day);
   store.startRender(day, "job-00000001");
-  store.finishRender(day, "job-00000001", { video, sheet: SHEET });
+  store.finishRender(day, "job-00000001", {
+    video,
+    sheet: SHEET,
+    quality: MEASURED,
+  });
   store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
 };
 
@@ -238,6 +257,7 @@ const approved = (
     sheet: SHEET,
     effect: "zoom",
     sound: "shotgun",
+    quality: MEASURED,
   });
   store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
   store.recordAsk(day, {
@@ -293,11 +313,11 @@ describe("the ask must show what the approval will cover", () => {
 describe("the director checks the contact sheet before the ask", () => {
   const day = "2026-10-26";
   const video = { path: "/x", bytes: 1, sha256: "aa" };
-  const rendered = () => {
+  const rendered = (quality: object | null = MEASURED) => {
     const store = openStore(tempDir());
     directToday(store, day);
     store.startRender(day, "job-00000001");
-    store.finishRender(day, "job-00000001", { video, sheet: SHEET });
+    store.finishRender(day, "job-00000001", { video, sheet: SHEET, quality });
     return store;
   };
   const ask = (store: ReturnType<typeof openStore>) => {
@@ -368,6 +388,72 @@ describe("the director checks the contact sheet before the ask", () => {
     store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
     ask(store);
     expect((store.read(day) as Cycle).state).toBe("asked");
+  });
+
+  test("a failed measure fails the check, even when every still is ok", () => {
+    const store = rendered({
+      loudness: {
+        ok: false,
+        note: "the loudest moment (1.1 s) is 6.5 LU over the mix",
+      },
+    });
+    store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    const cycle = store.read(day) as Cycle;
+    expect(cycle.state).toBe("rendered");
+    expect(cycle.check?.ok).toBe(false);
+    expect(cycle.events.at(-1)?.what).toBe(
+      "check failed: loudness: the loudest moment (1.1 s) is 6.5 LU over the mix",
+    );
+  });
+
+  test("a render with no measures cannot be checked", () => {
+    const store = rendered(null);
+    expect(() => {
+      store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    }).toThrow(/no measures/);
+  });
+});
+
+describe("the app's measures of a render", () => {
+  /** Lines of the real ffmpeg ebur128 log of N42PHQnw (2026-10-26). */
+  const LOG = [
+    "[Parsed_ebur128_0 @ 0x1] t: 0.999977   TARGET:-23 LUFS    M: -15.7 S:-120.7     I: -17.8 LUFS       LRA:   0.0 LU  FTPK:  -4.7  -3.6 dBFS  TPK:  -3.9  -3.6 dBFS",
+    "[Parsed_ebur128_0 @ 0x1] t: 1.099977   TARGET:-23 LUFS    M: -15.3 S:-120.7     I: -17.0 LUFS       LRA:   0.0 LU  FTPK: -12.4  -9.8 dBFS  TPK:  -3.9  -3.6 dBFS",
+    "[Parsed_ebur128_0 @ 0x1] t: 1.199977   TARGET:-23 LUFS    M: -15.7 S:-120.7     I: -16.7 LUFS       LRA:   0.0 LU  FTPK: -16.9 -15.7 dBFS  TPK:  -3.9  -3.6 dBFS",
+    "[Parsed_ebur128_0 @ 0x1] Summary:",
+    "",
+    "  Integrated loudness:",
+    "    I:         -21.8 LUFS",
+    "    Threshold: -32.0 LUFS",
+    "",
+    "  Loudness range:",
+    "    LRA:         7.9 LU",
+    "    Threshold: -42.1 LUFS",
+    "    LRA low:   -26.3 LUFS",
+    "    LRA high:  -18.5 LUFS",
+    "",
+    "  True peak:",
+    "    Peak:       -3.6 dBFS",
+  ].join("\n");
+
+  test("the log gives the integrated, loudest momentary and peak loudness", () => {
+    expect(parseEbur128(LOG)).toEqual({
+      integratedLufs: -21.8,
+      maxMomentaryLufs: -15.3,
+      maxMomentaryAt: 1.099977,
+      truePeakDbfs: -3.6,
+    });
+    expect(() => parseEbur128("no audio")).toThrow(/no loudness summary/);
+  });
+
+  test("a sting more than the limit over the mix fails", () => {
+    const m = parseEbur128(LOG);
+    const v = loudnessVerdict(m);
+    expect(v.stingOverMixLu).toBe(6.5);
+    expect(MAX_STING_OVER_MIX_LU).toBe(6);
+    expect(v.ok).toBe(false);
+    expect(v.note).toMatch(/1\.1 s\) is 6\.5 LU over the mix, more than 6/);
+    expect(loudnessVerdict({ ...m, maxMomentaryLufs: -16.8 }).ok).toBe(true);
   });
 });
 
@@ -1003,13 +1089,19 @@ afterEach(() => {
 /** A stand-in for render-4090.mjs that follows the same contract. */
 const STUB_RENDER = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const raw = readFileSync(at("edl"));
 const edl = JSON.parse(raw);
-const bytes = Buffer.from("fake mp4 for " + edl.gameId + " " + at("job-id"));
-writeFileSync(at("out"), bytes);
+// A real one-second MP4 (a steady tone), so the app's measures run on it.
+execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
+  "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
+  "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
+  "-shortest", "-c:v", "mpeg4", "-c:a", "aac",
+  "-metadata", "comment=" + edl.gameId + " " + at("job-id"), at("out")]);
+const bytes = readFileSync(at("out"));
 const png = Buffer.from("fake sheet");
 writeFileSync(at("out") + "-sheet.png", png);
 const stills = edl.events.map((e) => ({ ply: e.ply, kind: e.kind, sound: e.sound ?? null }));
@@ -1106,6 +1198,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(state?.cycle.state).toBe("rendered");
   expect(state?.cycle.render?.effect).toBe("daily");
   expect(state?.cycle.render?.ending).toBe("replay");
+  expect(state?.cycle.render?.quality?.loudness?.ok).toBe(true);
   const sheet = state?.cycle.render?.sheet;
   expect(sheet?.stills).toEqual([{ ply: 22, kind: "zoom", sound: "fuahhh-1" }]);
   expect(

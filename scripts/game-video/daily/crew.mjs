@@ -159,6 +159,12 @@ const readReport = (path) => {
   );
 };
 
+/** The app's measures of a render (quality.mjs), one line each. */
+const measureLines = (quality) =>
+  Object.entries(quality ?? {}).map(
+    ([name, m]) => `  measure ${name}: ${m.ok ? "ok" : "FAILED"} - ${m.note}`,
+  );
+
 const summary = (s) => {
   const c = s.cycle;
   const lines = [
@@ -191,6 +197,7 @@ const summary = (s) => {
         : c.render.video
           ? `render ${c.render.jobId}: ${c.render.video.path} (${c.render.video.bytes} bytes, sha256 ${c.render.video.sha256.slice(0, 12)}), sheet ${c.render.sheet.path}`
           : `render ${c.render.jobId}: running - ${s.renderProgress ?? "queued"}`,
+      ...measureLines(c.render.quality),
     );
   }
   if (c.check) {
@@ -423,6 +430,9 @@ const commands = {
         `  still ${i + 1}: ply ${x.ply} ${x.kind}${x.sound ? ` + ${x.sound}` : ""}`,
       ),
     );
+    // A failed measure fails the check whatever the stills show, so the
+    // director sees it before writing verdicts.
+    for (const l of measureLines(c.render.quality)) console.log(l);
   },
 
   async check() {

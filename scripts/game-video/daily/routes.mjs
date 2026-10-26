@@ -13,7 +13,8 @@
  *   crew.mjs render  -> POST /api/daily/render   the list, rendered on the 4090
  *                       (render-4090.mjs): the MP4 and its contact sheet
  *   crew.mjs check   -> POST /api/daily/check    the director's verdict on each
- *                       still of the sheet; the ask needs every one ok
+ *                       still of the sheet; the ask needs every one ok, and
+ *                       every measure the app took of the render (quality.mjs)
  *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4,
  *                       then POST /api/daily/ask records its id
  *   crew.mjs answer  -> POST /api/daily/answer   the member's reply
@@ -69,6 +70,7 @@ import {
   DEFAULT_SLOT_SOUNDS,
 } from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
+import { measureLoudness, loudnessVerdict } from "./quality.mjs";
 import {
   openSoundPicks,
   soundList,
@@ -159,6 +161,7 @@ export const createDaily = ({
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
+  measure = measureLoudness,
   dryRunReplies = {
     x: xDryRunReply,
     youtube: youtubeDryRunReply,
@@ -339,13 +342,22 @@ export const createDaily = ({
           durationSeconds: result.durationSeconds ?? null,
         };
         renameSync(scratch, video.path);
-        finish({
-          video,
-          sheet,
-          effect: result.effect ?? null,
-          music: result.music,
-          sound: result.sound ?? null,
-        });
+        // The app measures the bytes it keeps (quality.mjs); the check step
+        // refuses the ask when a measure fails. A measure that cannot run
+        // fails too, so a render is never asked about unmeasured.
+        measure(video.path)
+          .then(loudnessVerdict)
+          .catch((err) => ({ ok: false, note: err.message }))
+          .then((loudness) =>
+            finish({
+              video,
+              sheet,
+              effect: result.effect ?? null,
+              music: result.music,
+              sound: result.sound ?? null,
+              quality: { loudness },
+            }),
+          );
       });
     });
 
