@@ -95,6 +95,8 @@ import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
+import { memeLoudness, mixGraph } from "./mix-loudness.mjs";
+import { boardGrid, onSiteWall } from "./board-grid.mjs";
 import { allocateFrameRanges, movesUnderOverlay } from "./timeline-frames.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
@@ -1408,6 +1410,34 @@ if (STYLE_NAMES.includes("daily")) {
   log(`start walls: ${startWalls}, ${before.site} parts repainted grey`);
 }
 
+/**
+ * The page's top-left and bottom-right cells, in css px: the board map
+ * (GRID, board-grid.mjs) is built from where the page drew them.
+ */
+const cellRects = await game.evaluate(() => {
+  const grid = document.querySelector("svg.absolute.inset-0")?.parentElement;
+  const cells = grid
+    ? [...grid.querySelectorAll(":scope > .aspect-square")]
+    : [];
+  const rect = (el) => {
+    const r = el.getBoundingClientRect();
+    return { x: r.x, y: r.y, width: r.width, height: r.height };
+  };
+  return {
+    count: cells.length,
+    first: cells[0] ? rect(cells[0]) : null,
+    last: cells.length ? rect(cells[cells.length - 1]) : null,
+  };
+});
+{
+  const { boardWidth, boardHeight } = replay.state.config;
+  if (cellRects.count !== boardWidth * boardHeight) {
+    throw new Error(
+      `the replay page drew ${cellRects.count} cells for a ${boardWidth}x${boardHeight} board: the site changed how it draws them`,
+    );
+  }
+}
+
 const moveButtons = game.locator("button[aria-pressed]:visible");
 if ((await moveButtons.count()) !== history.length) {
   throw new Error(
@@ -1422,6 +1452,13 @@ const jumpStart = game.getByRole("button", { name: "Jump to beginning" });
  * bubble where it covers no other pawn without a second copy of the rules.
  */
 const pawnSpots = new Map();
+/**
+ * Where the page drew each wall at each captured position: the centre and
+ * direction of every placed wall (board.tsx gives only those z-index 10),
+ * in the board image (0..1), keyed by board index. A highlight must lie on
+ * one of them (litWallLine).
+ */
+const wallSpots = new Map();
 const captureResult = await captureReplayFrames({
   moveCount: history.length,
   selectInitial: async () => {
@@ -1495,6 +1532,26 @@ const captureResult = await captureReplayFrames({
           }
         }
         return spots;
+      }, clip),
+    );
+    wallSpots.set(
+      expectedPly + 1,
+      await game.evaluate((c) => {
+        const grid = document.querySelector(
+          "svg.absolute.inset-0",
+        )?.parentElement;
+        const walls = [];
+        for (const el of grid?.children ?? []) {
+          const cs = getComputedStyle(el);
+          if (cs.position !== "absolute" || cs.zIndex !== "10") continue;
+          const r = el.getBoundingClientRect();
+          walls.push({
+            vertical: r.height > r.width,
+            x: (r.x + r.width / 2 - c.x) / c.width,
+            y: (r.y + r.height / 2 - c.y) / c.height,
+          });
+        }
+        return walls;
       }, clip),
     );
     return file;
@@ -1681,6 +1738,10 @@ const stingManifest = existsSync(join(STING_DIR, "stings.json"))
  * RETUNE. Measured 2026-08-20: the compressor had been holding the music down
  * by 9.45 dB CONTINUOUSLY - not a dip on each hit - so the mix Nil approved
  * was one where the music was ~9.5 dB below what the constant said.
+ *
+ * Returns the track, and each meme sound's loudness over the rest of the
+ * mix (mix-loudness.mjs) for the RESULT line; both null when no sound
+ * exists.
  */
 const buildAudio = ({
   cues,
@@ -1694,57 +1755,21 @@ const buildAudio = ({
   for (const missing of cues.filter((e) => !existsSync(e.file))) {
     log(`WARNING: sound missing, left out of the mix: ${missing.file}`);
   }
-  if (present.length === 0) return null;
-
-  const inputs = present.flatMap((e) => ["-i", e.file]);
-  const chains = present.map(
-    (e, i) =>
-      `[${i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
-      // A rate above 1 plays the sound higher and shorter.
-      (e.rate === 1
-        ? ""
-        : `asetrate=${Math.round(44100 * e.rate)},aresample=44100,`) +
-      `adelay=${Math.round(Math.max(0, e.at) * 1000)}:all=1,volume=${e.gain}[a${i}]`,
-  );
-  // The effects bus. Everything above lands here.
+  if (present.length === 0) return { audioPath: null, loudness: null };
+  const music = MUSIC
+    ? {
+        file: MUSIC,
+        start: musicStart,
+        endAt: musicEndAt,
+        bed,
+        volume: MUSIC_VOLUME,
+        fadeIn: MUSIC_FADE_IN,
+        fadeOut: MUSIC_FADE_OUT,
+      }
+    : null;
+  const { inputs, chains } = mixGraph({ cues: present, totalSeconds, music });
   chains.push(
-    present.map((_, i) => `[a${i}]`).join("") +
-      `amix=inputs=${present.length}:normalize=0:dropout_transition=0,` +
-      `apad,atrim=0:${totalSeconds.toFixed(3)}[fx]`,
-  );
-
-  let last = "[fx]";
-  if (MUSIC) {
-    const musicSeconds = totalSeconds - musicStart;
-    const fadeOutAt = Math.max(0, musicEndAt - musicStart - MUSIC_FADE_OUT);
-    inputs.push("-i", MUSIC);
-    const mi = present.length;
-    /*
-      The fade out goes to `bed` (a share of the level) rather than to
-      silence when bed > 0: a linear ramp from 1 to bed over the fade, then
-      bed to the end. With bed 0 it is the plain fade the current look has.
-    */
-    const a = fadeOutAt.toFixed(3);
-    const b = (fadeOutAt + MUSIC_FADE_OUT).toFixed(3);
-    const fadeOut =
-      bed > 0
-        ? `volume='if(lt(t,${a}),1,if(lt(t,${b}),1-(1-${bed})*(t-${a})/${MUSIC_FADE_OUT},${bed}))':eval=frame,`
-        : `afade=t=out:st=${a}:d=${MUSIC_FADE_OUT},`;
-    chains.push(
-      `[${mi}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
-        `atrim=0:${musicSeconds.toFixed(3)},` +
-        `afade=t=in:st=0:d=${MUSIC_FADE_IN},` +
-        fadeOut +
-        `volume=${MUSIC_VOLUME},adelay=${Math.round(musicStart * 1000)}:all=1[mus]`,
-    );
-    chains.push(
-      `[fx][mus]amix=inputs=2:normalize=0:dropout_transition=0[mixed]`,
-    );
-    last = "[mixed]";
-  }
-
-  chains.push(
-    `${last}alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
+    `[mix]alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
   );
 
   // What went into the mix, so its parts can be rebuilt and measured apart.
@@ -1779,7 +1804,19 @@ const buildAudio = ({
     "160k",
     audioPath,
   ]);
-  return audioPath;
+  // A measure that cannot run is reported, not fatal: the gate fails it.
+  let loudness;
+  try {
+    loudness = memeLoudness({
+      ffmpeg: FFMPEG,
+      cues: present,
+      totalSeconds,
+      music,
+    });
+  } catch (err) {
+    loudness = { error: String(err.message ?? err).slice(0, 300) };
+  }
+  return { audioPath, loudness };
 };
 
 /* ----------------------------------------------------------- compose it -- */
@@ -1827,7 +1864,9 @@ const overlaySide = (playerId) => ({
 
 /**
  * Where a cell sits on the captured board image, as fractions of its width
- * and height.
+ * and height: GRID.x(u) and GRID.y(v) map a coordinate in cells (an integer
+ * is the line between two cells) to the image, as the page drew the cells
+ * (board-grid.mjs).
  *
  * The capture clip is the replay page's grid plus PAD on every side, so the
  * grid spans [pad, 1 - pad]. Rows are counted the way standard notation counts
@@ -1835,17 +1874,19 @@ const overlaySide = (playerId) => ({
  * replay page draws it at the bottom.
  */
 const GRID = {
-  cols: replay.state.config.boardWidth,
-  rows: replay.state.config.boardHeight,
+  ...boardGrid({
+    clip,
+    first: cellRects.first,
+    last: cellRects.last,
+    cols: replay.state.config.boardWidth,
+    rows: replay.state.config.boardHeight,
+  }),
   pad: PAD / clip.width,
 };
-const cellAt = ([row, col]) => {
-  const span = 1 - 2 * GRID.pad;
-  return {
-    x: GRID.pad + ((col + 0.5) / GRID.cols) * span,
-    y: GRID.pad + ((row + 0.5) / GRID.rows) * span,
-  };
-};
+const cellAt = ([row, col]) => ({
+  x: GRID.x(col + 0.5),
+  y: GRID.y(row + 0.5),
+});
 
 /**
  * The cell a turn is about: where its pawn landed, or else where its first
@@ -1895,8 +1936,8 @@ const BUBBLE_SIDES = {
 };
 const bubbleSide = (boardIndex, at) => {
   // One cell in each axis, so a board with rows != cols measures true cells.
-  const cellX = (1 - 2 * GRID.pad) / GRID.cols;
-  const cellY = (1 - 2 * GRID.pad) / GRID.rows;
+  const cellX = GRID.pitchX;
+  const cellY = GRID.pitchY;
   const away = (p, x, y) => Math.hypot((p.x - x) / cellX, (p.y - y) / cellY);
   const others = (pawnSpots.get(boardIndex) ?? []).filter(
     (p) => away(p, at.x, at.y) > 0.3,
@@ -1924,14 +1965,11 @@ const bubbleSide = (boardIndex, at) => {
  * `extraWalls` (a trap's). `size` is the word's measured box.
  */
 const placeStamp = (boardIndex, plyIndex, size, extraWalls) => {
-  const span = 1 - 2 * GRID.pad;
-  const cellW = span / GRID.cols;
-  const cellH = span / GRID.rows;
   const ofCells = ([top, left, bottom, right]) => [
-    GRID.pad + left * cellW,
-    GRID.pad + top * cellH,
-    GRID.pad + right * cellW,
-    GRID.pad + bottom * cellH,
+    GRID.x(left),
+    GRID.y(top),
+    GRID.x(right),
+    GRID.y(bottom),
   ];
   const cell = cellOfPly(plyIndex);
   const moveWalls = String(history[plyIndex]?.notation ?? "")
@@ -1950,7 +1988,7 @@ const placeStamp = (boardIndex, plyIndex, size, extraWalls) => {
       ...(cell ? [ofCells([cell[0], cell[1], cell[0] + 1, cell[1] + 1])] : []),
       ...[...moveWalls, ...extraWalls].map((t) => ofCells(termBox(t))),
     ],
-    cellArea: cellW * cellH,
+    cellArea: GRID.pitchX * GRID.pitchY,
     focus: cell ? cellAt(cell) : null,
   });
 };
@@ -1973,12 +2011,26 @@ const wallLine = (term) => {
   const m = term.match(/^([>^])([a-z])(\d+)$/);
   const row = GRID.rows - Number(m[3]);
   const col = m[2].charCodeAt(0) - "a".charCodeAt(0);
-  const span = 1 - 2 * GRID.pad;
-  const x = (c) => GRID.pad + (c / GRID.cols) * span;
-  const y = (r) => GRID.pad + (r / GRID.rows) * span;
   return m[1] === "^"
-    ? [x(col), y(row), x(col + 1), y(row)]
-    : [x(col + 1), y(row), x(col + 1), y(row + 1)];
+    ? [GRID.x(col), GRID.y(row), GRID.x(col + 1), GRID.y(row)]
+    : [GRID.x(col + 1), GRID.y(row), GRID.x(col + 1), GRID.y(row + 1)];
+};
+
+/**
+ * wallLine for a highlight over the position after `boardIndex` plies, held
+ * to where the page drew that wall: a highlight more than 1 css px off every
+ * wall the page drew there stops the render (Nil, 2026-10-26, on a glow off
+ * its wall: "editing errors shouldn't make it to me").
+ */
+const WALL_TOLERANCE = { x: 1 / clip.width, y: 1 / clip.height };
+const litWallLine = (term, boardIndex) => {
+  const line = wallLine(term);
+  if (!onSiteWall(line, wallSpots.get(boardIndex) ?? [], WALL_TOLERANCE)) {
+    throw new Error(
+      `the highlight of ${term} after ply ${boardIndex - 1} is not on a wall the page drew there`,
+    );
+  }
+  return line;
 };
 
 /**
@@ -1998,13 +2050,12 @@ const frameZoom = (terms, maxScale) => {
   const left = Math.min(...boxes.map((b) => b[1])) - ZOOM_MARGIN;
   const bottom = Math.max(...boxes.map((b) => b[2])) + ZOOM_MARGIN;
   const right = Math.max(...boxes.map((b) => b[3])) + ZOOM_MARGIN;
-  const span = 1 - 2 * GRID.pad;
-  const w = ((right - left) / GRID.cols) * span;
-  const h = ((bottom - top) / GRID.rows) * span;
+  const w = (right - left) * GRID.pitchX;
+  const h = (bottom - top) * GRID.pitchY;
   const scale = Math.max(1.05, Math.min(maxScale, 1 / Math.max(w, h)));
   const centre = {
-    x: GRID.pad + ((left + right) / 2 / GRID.cols) * span,
-    y: GRID.pad + ((top + bottom) / 2 / GRID.rows) * span,
+    x: GRID.x((left + right) / 2),
+    y: GRID.y((top + bottom) / 2),
   };
   const origin = (c) =>
     Math.max(0, Math.min(1, (scale * c - 0.5) / (scale - 1)));
@@ -2026,6 +2077,10 @@ if (EDL) {
     console.error(`the EDL does not fit the game:\n  ${problems.join("\n  ")}`);
     await browser.close();
     process.exit(2);
+  }
+  // Every highlight on its wall before a frame is composed.
+  for (const ev of EDL.events.filter((e) => e.kind === "trap")) {
+    for (const w of ev.walls) litWallLine(w, ev.ply + 1);
   }
 }
 
@@ -2257,6 +2312,8 @@ const renderStyle = async (styleName) => {
       gain: sound.gain,
       at,
       rate: sound.rate ?? 1,
+      // A meme sound is measured against the rest of the mix (mix-loudness.mjs).
+      meme: sound.name in MEME_SOUNDS ? sound.name : null,
     });
   let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
@@ -2486,6 +2543,7 @@ const renderStyle = async (styleName) => {
       COLD_OPEN_SCALE,
     );
     cue(moveClick(coldPly));
+    const coldLines = walls.map((w) => litWallLine(w, coldPly + 1));
     const frames = Math.round(COLD_OPEN_SECONDS * FPS);
     for (let i = 0; i < frames; i += 1) {
       const t = i / FPS;
@@ -2494,7 +2552,7 @@ const renderStyle = async (styleName) => {
         playState(coldPly + 1, {
           zoom: { ...z, scale: 1 + (z.scale - 1) * push },
           ...(walls.length > 0 && {
-            trap: { t, walls: walls.map(wallLine), lit: true },
+            trap: { t, walls: coldLines, lit: true },
           }),
         }),
         1 / FPS,
@@ -2656,7 +2714,7 @@ const renderStyle = async (styleName) => {
     if (ev.kind === "race") return { race: { ...raceHud(ply), flash: t } };
     if (ev.kind === "trap") {
       return {
-        trap: { t, walls: ev.walls.map(wallLine) },
+        trap: { t, walls: ev.walls.map((w) => litWallLine(w, ply)) },
         midStamp:
           t >= TRAP_STAMP_AT
             ? {
@@ -2669,7 +2727,7 @@ const renderStyle = async (styleName) => {
       };
     }
     const at = cellAtTerm(ev.cell);
-    const size = (1 - 2 * GRID.pad) / GRID.cols;
+    const size = GRID.pitchX;
     if (ev.kind === "scared" || ev.kind === "laugh") {
       return {
         beat: {
@@ -2927,7 +2985,7 @@ const renderStyle = async (styleName) => {
           at: cellAt(
             cellOfPly(plyIndex) ?? [GRID.rows / 2 - 0.5, GRID.cols / 2 - 0.5],
           ),
-          cell: (1 - 2 * GRID.pad) / GRID.cols,
+          cell: GRID.pitchX,
           before: fileUrl(boardFrames[ply - 1]),
           stamp: FINISH_WORD,
           how: `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`,
@@ -3112,16 +3170,24 @@ const renderStyle = async (styleName) => {
   );
 
   let audioPath = null;
+  /** Each meme sound against the bed; null when the video has no soundtrack. */
+  let loudness = null;
   if (AUDIO) {
     try {
-      audioPath = buildAudio({
+      ({ audioPath, loudness } = buildAudio({
         cues,
         totalSeconds,
         musicStart,
         musicEndAt: musicEndAt ?? totalSeconds,
         bed: wallz ? MUSIC_BED : 0,
         work,
-      });
+      }));
+      for (const m of loudness?.memes ?? []) {
+        log(
+          `meme ${m.key} at ${m.at}s: ${m.memeLufs} LUFS, bed ${m.bedLufs ?? "silent"}, ${m.overLU ?? "-"} LU over`,
+        );
+      }
+      if (loudness?.error) log(`meme loudness not measured: ${loudness.error}`);
       log(
         MUSIC
           ? `soundtrack built, with music under the effects (${MUSIC})`
@@ -3231,6 +3297,7 @@ const renderStyle = async (styleName) => {
       edlSha256: EDL_SHA256,
       sheet,
       layout: { frame: DAILY_FRAME, boxes: layoutBoxes, captionText },
+      loudness,
     }),
   };
 };

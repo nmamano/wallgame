@@ -76,7 +76,6 @@ import {
 } from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
-  measureLoudness,
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
@@ -171,7 +170,6 @@ export const createDaily = ({
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
-  measure = measureLoudness,
   dryRunReplies = {
     x: xDryRunReply,
     youtube: youtubeDryRunReply,
@@ -352,26 +350,21 @@ export const createDaily = ({
           durationSeconds: result.durationSeconds ?? null,
         };
         renameSync(scratch, video.path);
-        // The app measures the bytes it keeps (quality.mjs); the check step
-        // refuses the ask when a measure fails. A measure that cannot run
-        // fails too, so a render is never asked about unmeasured.
-        measure(video.path)
-          .then(loudnessVerdict)
-          .catch((err) => ({ ok: false, note: err.message }))
-          .then((loudness) =>
-            finish({
-              video,
-              sheet,
-              effect: result.effect ?? null,
-              music: result.music,
-              sound: result.sound ?? null,
-              quality: {
-                loudness,
-                safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
-                captionLines: captionLinesVerdict(result.layout),
-              },
-            }),
-          );
+        // The app judges the measures the renderer reported (quality.mjs);
+        // the check step refuses the ask when one fails. A render that did
+        // not measure fails too, so a render is never asked about unmeasured.
+        finish({
+          video,
+          sheet,
+          effect: result.effect ?? null,
+          music: result.music,
+          sound: result.sound ?? null,
+          quality: {
+            loudness: loudnessVerdict(result.loudness),
+            safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
+            captionLines: captionLinesVerdict(result.layout),
+          },
+        });
       });
     });
 

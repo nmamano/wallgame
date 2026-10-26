@@ -1,13 +1,13 @@
 /**
  * Measured checks on a rendered daily video, beside the director's own look
- * at the contact sheet (quality audit, info/daily-video-quality.md). The app
- * measures each render when it lands; the check step refuses an ask for a
- * render that fails one.
+ * at the contact sheet (quality audit, info/daily-video-quality.md). The
+ * renderer measures each render and the app judges the measures when it
+ * lands; the check step refuses an ask for a render that fails one.
  *
- *   loudness   the loudest momentary loudness (400 ms) minus the integrated
- *              loudness of the whole mix: how far the loudest sting stands
- *              out over the music (Nil, 2026-10-26: "the baby cry and the
- *              initial shotgun, are a bit too loud").
+ *   loudness   each meme sound's own loudness in the final mix, and how
+ *              far it stands over the music and clicks under it, as the
+ *              renderer measured them (mix-loudness.mjs; Nil, 2026-10-26:
+ *              "the baby cry and the initial shotgun, are a bit too loud").
  *   safeArea   each box the renderer measured in the page (board, caption,
  *              race counter, goal line) lies inside SAFE_AREA (edl.mjs),
  *              where the apps paint no buttons or captions (audit item 3).
@@ -17,111 +17,64 @@
  *              makes the board smaller for the whole video (DIRECTOR.md,
  *              measured 2026-10-26: 720 px against 785 px).
  */
-import { execFile } from "node:child_process";
+/**
+ * The loudness rule (Wall Game Director, 2026-10-26, rule A1). A meme
+ * sound fails when its own loudest 400 ms in the final mix is over
+ * MAX_MEME_LUFS. That level is what Nil's ear followed: too loud near -16
+ * LUFS (N42PHQnw, -15.6 to -15.9), fine near -21 (the meme target since,
+ * meme-sounds.mjs; today's renders -20.4 to -24).
+ *
+ * How far a meme stands over the bed (overLU: the music and the clicks
+ * under it over the same 400 ms) is INFORMATION ONLY, in the note for the
+ * director's ear. It moves with where the meme lands in the song, not with
+ * the meme: measured 2026-10-26, a 0.6 s shift of the same VoSWbMDd video
+ * moved the FAHHH from 2.9 to 13.8 LU over the bed, and a laugh that lands
+ * in a rest of Tea For Two (the song near -45 LUFS at 19.5 s) stands 17 to
+ * 37 LU over it. As a gate it would fail good videos by chance.
+ *
+ * THE LIMIT IS ABSOLUTE: it holds only while the master is not
+ * loudness-normalized. A change that normalizes the mix must move it.
+ */
+export const MAX_MEME_LUFS = -18.5;
 
 /**
- * The loudest sting may stand this far over the integrated loudness of the
- * mix. Measured 2026-10-26: N42PHQnw, whose opening shotgun Nil found "a bit
- * too loud", is 6.5 LU over its mix at 1.1 s; XMaenOP1 7.9 LU; eeFSMEmL
- * (EDL v4) 5.2 LU; the six-effects demo after the quieter memes 4.7 LU.
- * Nil confirms the limit by ear.
- */
-export const MAX_STING_OVER_MIX_LU = 6;
-
-/**
- * @typedef {{
- *   integratedLufs: number,
- *   maxMomentaryLufs: number,
- *   maxMomentaryAt: number,
- *   truePeakDbfs: number | null,
- * }} Loudness
+ * @typedef {{ key: string, at: number, loudestAt: number, memeLufs: number,
+ *   bedLufs: number | null, overLU: number | null, truePeakDbtp: number }} MemeLoudness
  */
 
+const memeLine = (m) =>
+  `${m.key} at ${m.at} s: ${m.memeLufs} LUFS, ` +
+  (m.overLU === null
+    ? "over silence"
+    : `${m.overLU} LU over the bed (${m.bedLufs} LUFS)`) +
+  `, true peak ${m.truePeakDbtp} dBTP`;
+
 /**
- * The integrated, loudest momentary and true peak loudness, from ffmpeg's
- * ebur128 log (one line per 100 ms at the default info level, then a summary).
- * @param {string} log
- * @returns {Loudness}
+ * The loudness verdict on the render's report (RESULT `loudness`):
+ * `{memes: MemeLoudness[]}`, or `{error}` when the renderer could not
+ * measure, or null when the video has no soundtrack. Only a report with its
+ * memes passes, so a renderer that stops measuring, or a silent video,
+ * cannot pass.
+ * @param {{ memes?: MemeLoudness[], error?: string } | null | undefined} report
  */
-export const parseEbur128 = (log) => {
-  let maxMomentary = -Infinity;
-  let maxMomentaryAt = null;
-  let windows = 0;
-  for (const m of log.matchAll(
-    /\bt:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-inf)/g,
-  )) {
-    windows += 1;
-    const value = m[2] === "-inf" ? -Infinity : Number(m[2]);
-    if (value > maxMomentary) {
-      maxMomentary = value;
-      maxMomentaryAt = Number(m[1]);
-    }
+export const loudnessVerdict = (report) => {
+  if (!report?.memes) {
+    return {
+      ok: false,
+      note: report?.error
+        ? `the renderer could not measure the meme sounds: ${report.error}`
+        : "the render reported no meme loudness (a silent video, or a render kit older than the measure: tell the Wall Game Director)",
+    };
   }
-  const at = log.lastIndexOf("Summary:");
-  const integrated =
-    at >= 0 ? log.slice(at).match(/I:\s*(-?[\d.]+) LUFS/) : null;
-  const peak =
-    at >= 0 ? log.slice(at).match(/Peak:\s*(-?[\d.]+|-inf) dBFS/) : null;
-  if (!integrated || windows === 0) {
-    throw new Error("ffmpeg gave no loudness summary");
-  }
-  if (maxMomentaryAt === null) throw new Error("the video is silent");
-  return {
-    integratedLufs: Number(integrated[1]),
-    maxMomentaryLufs: maxMomentary,
-    // The window ends at t, so the loud sound is in the 400 ms before it.
-    maxMomentaryAt,
-    truePeakDbfs: peak ? Number(peak[1]) : null,
-  };
-};
-
-/** Measure a video's loudness with the ffmpeg on PATH. */
-export const measureLoudness = (videoPath) =>
-  new Promise((resolve, reject) => {
-    execFile(
-      "ffmpeg",
-      [
-        "-hide_banner",
-        "-nostats",
-        "-i",
-        videoPath,
-        "-af",
-        "ebur128=peak=true",
-        "-f",
-        "null",
-        "-",
-      ],
-      { maxBuffer: 64 * 1024 * 1024, timeout: 120_000 },
-      (err, _stdout, stderr) => {
-        if (err) {
-          return reject(
-            new Error(`ffmpeg could not measure the loudness: ${err.message}`),
-          );
-        }
-        try {
-          resolve(parseEbur128(stderr));
-        } catch (e) {
-          reject(e);
-        }
-      },
-    );
-  });
-
-/**
- * The loudness verdict on one measurement.
- * @param {Loudness} m
- */
-export const loudnessVerdict = (m) => {
-  const over = Math.round((m.maxMomentaryLufs - m.integratedLufs) * 10) / 10;
-  const ok = over <= MAX_STING_OVER_MIX_LU;
-  return {
-    ok,
-    ...m,
-    stingOverMixLu: over,
-    note: ok
-      ? `the loudest moment (${m.maxMomentaryAt.toFixed(1)} s) is ${over} LU over the mix`
-      : `the loudest moment (${m.maxMomentaryAt.toFixed(1)} s) is ${over} LU over the mix, more than ${MAX_STING_OVER_MIX_LU}: drop or change the sound there`,
-  };
+  if (report.memes.length === 0) return { ok: true, note: "no meme sound" };
+  const bad = report.memes.filter((m) => m.memeLufs > MAX_MEME_LUFS);
+  const all = report.memes.map(memeLine).join("; ");
+  return bad.length === 0
+    ? { ok: true, note: all }
+    : {
+        ok: false,
+        note: `${bad.map(memeLine).join("; ")}: a meme sound may be at most ${MAX_MEME_LUFS} LUFS; drop or change it (all: ${all})`,
+      };
 };
 
 const inside = (box, area) =>

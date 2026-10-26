@@ -52,11 +52,10 @@ import { askText } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import {
-  parseEbur128,
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
-  MAX_STING_OVER_MIX_LU,
+  MAX_MEME_LUFS,
 } from "./quality.mjs";
 import { FRAME, SAFE_AREA, validateEdl } from "../edl.mjs";
 
@@ -525,50 +524,57 @@ test("the edit list summary names the start, the cold open, the payoff and a rac
 });
 
 describe("the app's measures of a render", () => {
-  /** Lines of the real ffmpeg ebur128 log of N42PHQnw (2026-10-26). */
-  const LOG = [
-    "[Parsed_ebur128_0 @ 0x1] t: 0.999977   TARGET:-23 LUFS    M: -15.7 S:-120.7     I: -17.8 LUFS       LRA:   0.0 LU  FTPK:  -4.7  -3.6 dBFS  TPK:  -3.9  -3.6 dBFS",
-    "[Parsed_ebur128_0 @ 0x1] t: 1.099977   TARGET:-23 LUFS    M: -15.3 S:-120.7     I: -17.0 LUFS       LRA:   0.0 LU  FTPK: -12.4  -9.8 dBFS  TPK:  -3.9  -3.6 dBFS",
-    "[Parsed_ebur128_0 @ 0x1] t: 1.199977   TARGET:-23 LUFS    M: -15.7 S:-120.7     I: -16.7 LUFS       LRA:   0.0 LU  FTPK: -16.9 -15.7 dBFS  TPK:  -3.9  -3.6 dBFS",
-    "[Parsed_ebur128_0 @ 0x1] Summary:",
-    "",
-    "  Integrated loudness:",
-    "    I:         -21.8 LUFS",
-    "    Threshold: -32.0 LUFS",
-    "",
-    "  Loudness range:",
-    "    LRA:         7.9 LU",
-    "    Threshold: -42.1 LUFS",
-    "    LRA low:   -26.3 LUFS",
-    "    LRA high:  -18.5 LUFS",
-    "",
-    "  True peak:",
-    "    Peak:       -3.6 dBFS",
-  ].join("\n");
-
-  test("the log gives the integrated, loudest momentary and peak loudness", () => {
-    expect(parseEbur128(LOG)).toEqual({
-      integratedLufs: -21.8,
-      maxMomentaryLufs: -15.3,
-      maxMomentaryAt: 1.099977,
-      truePeakDbfs: -3.6,
-    });
-    expect(() => parseEbur128("no audio")).toThrow(/no loudness summary/);
+  /** A meme as the renderer reports it (mix-loudness.mjs). */
+  const meme = (memeLufs: number, overLU: number | null) => ({
+    key: "fuahhh-1",
+    at: 16.9,
+    loudestAt: 17.1,
+    memeLufs,
+    bedLufs: overLU === null ? null : memeLufs - overLU,
+    overLU,
+    truePeakDbtp: -13.4,
   });
 
-  test("a sting more than the limit over the mix fails", () => {
-    const m = parseEbur128(LOG);
-    const v = loudnessVerdict(m);
-    expect(v.stingOverMixLu).toBe(6.5);
-    expect(MAX_STING_OVER_MIX_LU).toBe(6);
+  test("a meme sound passes at the -21 target, even over a quiet bed", () => {
+    // Today's FAHHH: -20.6 LUFS; 15.2 LU over tea-for-two's quiet bar.
+    const v = loudnessVerdict({ memes: [meme(-20.6, 15.2)] });
+    expect(v.ok).toBe(true);
+    expect(v.note).toBe(
+      "fuahhh-1 at 16.9 s: -20.6 LUFS, 15.2 LU over the bed (-35.8 LUFS), true peak -13.4 dBTP",
+    );
+  });
+
+  test("a meme sound at the old -16 level fails, however loud the bed", () => {
+    // N42PHQnw (Nil: "a bit too loud"): -15.6 LUFS, 7.7 LU over its bed.
+    expect(MAX_MEME_LUFS).toBe(-18.5);
+    const v = loudnessVerdict({ memes: [meme(-20.6, 3), meme(-15.6, 7.7)] });
     expect(v.ok).toBe(false);
-    expect(v.note).toMatch(/1\.1 s\) is 6\.5 LU over the mix, more than 6/);
-    expect(loudnessVerdict({ ...m, maxMomentaryLufs: -16.8 }).ok).toBe(true);
+    expect(v.note).toMatch(
+      /^fuahhh-1 at 16\.9 s: -15\.6 LUFS, 7\.7 LU over the bed .*: a meme sound may be at most -18\.5 LUFS; drop or change it/,
+    );
   });
 
-  test("a silent video is said to be silent", () => {
-    const silent = LOG.replace(/M: -1\d\.\d/g, "M: -inf");
-    expect(() => parseEbur128(silent)).toThrow(/the video is silent/);
+  test("how far a meme stands over its bed is told, not judged", () => {
+    // mvpi6y28: a laugh in a rest of Tea For Two, up to 37 LU over the bed.
+    const far = loudnessVerdict({ memes: [meme(-20.8, 37.3)] });
+    expect(far.ok).toBe(true);
+    expect(far.note).toContain("37.3 LU over the bed");
+    const silence = loudnessVerdict({ memes: [meme(-21, null)] });
+    expect(silence.ok).toBe(true);
+    expect(silence.note).toContain("-21 LUFS, over silence");
+  });
+
+  test("a render that did not measure fails; one with no meme passes", () => {
+    expect(loudnessVerdict(null).note).toMatch(/reported no meme loudness/);
+    expect(loudnessVerdict(undefined).ok).toBe(false);
+    expect(loudnessVerdict({ error: "ffmpeg gone" })).toEqual({
+      ok: false,
+      note: "the renderer could not measure the meme sounds: ffmpeg gone",
+    });
+    expect(loudnessVerdict({ memes: [] })).toEqual({
+      ok: true,
+      note: "no meme sound",
+    });
   });
 
   test("every measured box must lie inside the safe area", () => {
@@ -1458,7 +1464,7 @@ const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 const raw = readFileSync(at("edl"));
 const edl = JSON.parse(raw);
-// A real one-second MP4 (a steady tone), so the app's measures run on it.
+// A real one-second MP4 (a steady tone).
 execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
   "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
   "-f", "lavfi", "-i", "sine=frequency=440:duration=1",
@@ -1479,6 +1485,8 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     board: { x: 81, y: 380, w: 918, h: 852 },
     caption: { x: 81, y: 285, w: 918, h: 60 } },
     captionText: edl.caption ? { caption: { lines: 1, width: 640 } } : {} },
+  loudness: { memes: [{ key: "shotgun-2", at: 0.9, loudestAt: 0.9,
+    memeLufs: -24, bedLufs: -33.7, overLU: 9.7, truePeakDbtp: -14.3 }] },
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
 `;
 
