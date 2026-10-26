@@ -3462,6 +3462,22 @@ const renderStyle = async (styleName) => {
       const worker = await launchBrowser();
       try {
         const { page } = await openStage(worker);
+        /*
+          The screenshot goes through the DevTools protocol with
+          optimizeForSpeed: a faster zlib setting, so a larger PNG of the
+          same pixels (2026-10-26, 4090, 1080x1920: 49 ms a frame, against
+          117 ms for page.screenshot). It waits for the fonts first, as
+          page.screenshot does.
+        */
+        const cdp = await page.context().newCDPSession(page);
+        const screenshot = async (file) => {
+          await page.evaluate(() => document.fonts.ready);
+          const { data } = await cdp.send("Page.captureScreenshot", {
+            format: "png",
+            optimizeForSpeed: true,
+          });
+          writeFileSync(file, Buffer.from(data, "base64"));
+        };
         await page.evaluate(
           preloadImages,
           fileUrlsIn(shots.slice(from, to).map((s) => s.state)),
@@ -3471,7 +3487,7 @@ const renderStyle = async (styleName) => {
         }
         for (let i = from; i < to; i += 1) {
           await page.evaluate((s) => window.__stage(s), shots[i].state);
-          await page.screenshot({ path: shots[i].file });
+          await screenshot(shots[i].file);
         }
       } finally {
         await worker.close();
