@@ -11,7 +11,7 @@ import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { openTokenStore } from "./token-store.mjs";
 import { connectPage } from "./connect-page.mjs";
-import { createDaily } from "./routes.mjs";
+import { CONNECT_MEMBER_ID, createDaily } from "./routes.mjs";
 import {
   connectStates,
   ConnectRefused,
@@ -546,6 +546,8 @@ describe("/daily/connect through the app", () => {
     return { call, seen, close: () => server.close() };
   };
 
+  const NIL = CONNECT_MEMBER_ID;
+
   const googleReply = {
     status: 200,
     json: {
@@ -583,7 +585,7 @@ describe("/daily/connect through the app", () => {
           .status,
       ).toBe(403);
 
-      const start = async (member = "m-nil") => {
+      const start = async (member = NIL) => {
         const r = await app.call("/daily/connect/youtube/start", {
           method: "POST",
           member,
@@ -594,7 +596,7 @@ describe("/daily/connect through the app", () => {
       const state = await start();
       const done = await app.call(
         `/daily/connect/youtube/callback?state=${state}&code=CODE-1&scope=x`,
-        { member: "m-nil" },
+        { member: NIL },
       );
       expect(done.status).toBe(303);
       expect(done.location).toBe("/daily/connect?connected=youtube");
@@ -603,13 +605,15 @@ describe("/daily/connect through the app", () => {
       expect(statSync(file).mode & 0o777).toBe(0o600);
       expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
         refreshToken: "SECRET-RT",
-        connectedBy: "m-nil Name",
+        connectedBy: `${NIL} Name`,
       });
 
       const after = await app.call("/daily/connect?connected=youtube");
       expect(after.text).toContain("YouTube is connected.");
       expect(after.text).toMatch(
-        /Connected at 20\d\d-\d\d-\d\d \d\d:\d\d UTC by m-nil Name/,
+        new RegExp(
+          `Connected at 20\\d\\d-\\d\\d-\\d\\d \\d\\d:\\d\\d UTC by ${NIL} Name`,
+        ),
       );
       expect(after.text).toContain("youtube.upload");
       // The app now posts to YouTube for real; its state shows no token.
@@ -622,29 +626,42 @@ describe("/daily/connect through the app", () => {
       // The same state again: refused.
       const replay = await app.call(
         `/daily/connect/youtube/callback?state=${state}&code=CODE-1`,
-        { member: "m-nil" },
+        { member: NIL },
       );
       expect(replay.status).toBe(400);
       expect(replay.text).toContain("already used");
 
-      // Another member's state, an unknown state, a platform error.
-      const other = await start("m-other");
+      // Another member may not start or finish a Connect, and a refused
+      // callback does not use up Nil's state.
+      const notNil = await app.call("/daily/connect/youtube/start", {
+        method: "POST",
+        member: "m-other",
+      });
+      expect(notNil.status).toBe(403);
+      expect(notNil.text).toContain("only Nil can connect accounts");
+      const nilState = await start();
+      const stolen = await app.call(
+        `/daily/connect/youtube/callback?state=${nilState}&code=c`,
+        { member: "m-other" },
+      );
+      expect(stolen.status).toBe(403);
+      expect(stolen.text).toContain("only Nil can connect accounts");
       expect(
         (
           await app.call(
-            `/daily/connect/youtube/callback?state=${other}&code=c`,
-            {
-              member: "m-nil",
-            },
+            `/daily/connect/youtube/callback?state=${nilState}&code=CODE-2`,
+            { member: NIL },
           )
-        ).text,
-      ).toContain("started by another member");
+        ).status,
+      ).toBe(303);
+
+      // An unknown state, a platform error.
       expect(
         (
           await app.call(
             "/daily/connect/youtube/callback?state=made-up&code=c",
             {
-              member: "m-nil",
+              member: NIL,
             },
           )
         ).text,
@@ -652,7 +669,7 @@ describe("/daily/connect through the app", () => {
       const denied = await start();
       const deniedPage = await app.call(
         `/daily/connect/youtube/callback?state=${denied}&error=access_denied`,
-        { member: "m-nil" },
+        { member: NIL },
       );
       expect(deniedPage.status).toBe(400);
       expect(deniedPage.text).toContain("youtube answered access_denied");
@@ -669,7 +686,7 @@ describe("/daily/connect through the app", () => {
           await app.call(
             `/daily/connect/youtube/callback?state=${bad}&code=c`,
             {
-              member: "m-nil",
+              member: NIL,
             },
           )
         ).text,
@@ -685,7 +702,7 @@ describe("/daily/connect through the app", () => {
           await app.call(
             `/daily/connect/youtube/callback?state=${lost}&code=c`,
             {
-              member: "m-nil",
+              member: NIL,
             },
           )
         ).text,
@@ -719,7 +736,7 @@ describe("/daily/connect through the app", () => {
       expect(page.text).not.toContain('action="/daily/connect/youtube/start"');
       const start = await app.call("/daily/connect/youtube/start", {
         method: "POST",
-        member: "m-nil",
+        member: NIL,
       });
       expect(start.status).toBe(409);
       expect(start.text).toContain("needs the secrets YOUTUBE_CLIENT_SECRET");

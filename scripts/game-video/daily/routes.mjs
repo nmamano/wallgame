@@ -223,6 +223,14 @@ const DRY_RUN_REPLIES = {
 const NO_MEMBER =
   "open /daily/connect through the office (the app's address), signed in as a member";
 
+/**
+ * The only office member who may connect an account: Nil, whose accounts
+ * the daily video posts to (Wall Game PM, 2026-10-26). The office sends this
+ * id as X-Isomux-Member-Id (his id in the office's users.json).
+ */
+export const CONNECT_MEMBER_ID = "6f26107a";
+const NOT_NIL = "only Nil can connect accounts";
+
 /** How often the app renews the Threads token; it renews once a day at most. */
 const THREADS_REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 
@@ -923,6 +931,13 @@ export const createDaily = ({
     return { id, name };
   };
 
+  /** Why `member` may not start or finish a Connect, or null if it may. */
+  const connectRefusal = (member) => {
+    if (!member) return NO_MEMBER;
+    if (member.id !== CONNECT_MEMBER_ID) return NOT_NIL;
+    return null;
+  };
+
   const readJson = async (req, limit = 256 * 1024) => {
     let raw = "";
     for await (const chunk of req) {
@@ -1379,7 +1394,8 @@ export const createDaily = ({
 
     // One-click Connect (connect.mjs). The office sends the member's id and
     // name with each request through the app's URL; a request without them
-    // did not come through the office and may not connect anything.
+    // did not come through the office and may not connect anything. Only
+    // Nil (CONNECT_MEMBER_ID) may start or finish a Connect.
     "GET /daily/connect": async (req, res, url) => {
       const connected = url.searchParams.get("connected");
       const meta = await metaStatus();
@@ -1406,8 +1422,9 @@ export const createDaily = ({
           `POST /daily/connect/${platform}/start`,
           (req, res) => {
             const member = memberOf(req);
-            if (!member) {
-              return html(res, 403, connectRefusedPage(platform, NO_MEMBER));
+            const refusal = connectRefusal(member);
+            if (refusal) {
+              return html(res, 403, connectRefusedPage(platform, refusal));
             }
             const missing = missingClientSecrets(platform, env);
             if (missing.length) {
@@ -1432,9 +1449,12 @@ export const createDaily = ({
           `GET /daily/connect/${platform}/callback`,
           async (req, res, url) => {
             const member = memberOf(req);
+            const refusal = connectRefusal(member);
+            if (refusal) {
+              return html(res, 403, connectRefusedPage(platform, refusal));
+            }
             const q = url.searchParams;
             try {
-              if (!member) throw new ConnectRefused(NO_MEMBER);
               // The state is checked first, also when the platform reports
               // an error, so a stray callback cannot show a message here.
               const { verifier } = states.take(
