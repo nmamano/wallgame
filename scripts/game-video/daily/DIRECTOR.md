@@ -7,7 +7,9 @@ goes, instead of fixed rules.
 
 All commands are `node scripts/game-video/daily/crew.mjs <command>`. The app
 refuses a step out of order. If you start in a new session, run `status`
-first.
+first. When the schedule starts you, run `status` first too. If the day
+already has a cycle, finish it or stop: do not start another. `pick
+--replace` starts the day again, and only Nil's rejection is a reason for it.
 
 ## The steps
 

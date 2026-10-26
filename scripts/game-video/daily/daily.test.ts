@@ -140,12 +140,17 @@ interface LogRow {
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
 
-const pickToday = (store: ReturnType<typeof openStore>, day: string): void => {
+const pickToday = (
+  store: ReturnType<typeof openStore>,
+  day: string,
+  replace = false,
+): void => {
   const candidate = candidateFromReport(REPORT, 1);
   store.pick(day, {
     candidate,
     caption: captionFrom(CAPTION),
     style: "daily",
+    replace,
   });
 };
 
@@ -159,8 +164,12 @@ const EDL = {
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
-const directToday = (store: ReturnType<typeof openStore>, day: string) => {
-  pickToday(store, day);
+const directToday = (
+  store: ReturnType<typeof openStore>,
+  day: string,
+  replace = false,
+) => {
+  pickToday(store, day, replace);
   store.direct(day, {
     edl: EDL,
     text: JSON.stringify(EDL),
@@ -445,7 +454,9 @@ describe("an approval covers one video in one mode", () => {
       videoSha256: (store.read(day) as Cycle).render?.video?.sha256,
       currentModes: DRY,
     });
-    expect(() => pickToday(store, day)).toThrow(/pick needs/);
+    expect(() => {
+      pickToday(store, day, true);
+    }).toThrow(/pick needs/);
   });
 
   test("a retry posts only the platform that failed, and logs dry runs apart", () => {
@@ -469,6 +480,21 @@ describe("an approval covers one video in one mode", () => {
   });
 });
 
+describe("a day has one cycle", () => {
+  test("a second pick on the same day needs replace", () => {
+    const store = openStore(tempDir());
+    const day = "2026-10-26";
+    pickToday(store, day);
+    expect(() => {
+      pickToday(store, day);
+    }).toThrow(
+      /2026-10-26 already has a cycle \(picked, TESTGAME1\); the day is taken/,
+    );
+    pickToday(store, day, true);
+    expect((store.read(day) as Cycle).state).toBe("picked");
+  });
+});
+
 describe("each render is one production view", () => {
   test("a second render of the same game needs force, also after a re-pick", () => {
     const store = openStore(tempDir());
@@ -476,7 +502,7 @@ describe("each render is one production view", () => {
     directToday(store, day);
     store.startRender(day, "job-00000001");
     store.finishRender(day, "job-00000001", { error: "boom" });
-    directToday(store, day);
+    directToday(store, day, true);
     expect(() => {
       store.startRender(day, "job-00000002");
     }).toThrow(/already rendered 1 time/);

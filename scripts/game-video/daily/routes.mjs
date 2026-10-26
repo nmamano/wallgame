@@ -469,7 +469,7 @@ export const createDaily = ({
     "GET /api/daily/state": (req, res, url) =>
       json(res, 200, state(dayOf(url.searchParams.get("day")))),
 
-    /** {day?, report: {kind, createdAt, ranked}, rank?, style?, caption?} */
+    /** {day?, report: {kind, createdAt, ranked}, rank?, style?, caption?, replace?} */
     "POST /api/daily/pick": async (req, res) => {
       const body = await readJson(req, 4 * 1024 * 1024);
       const day = dayOf(body.day);
@@ -489,7 +489,16 @@ export const createDaily = ({
       if (!STYLES.includes(style)) {
         throw new StepRefused(`style is one of ${STYLES.join(", ")}`);
       }
-      json(res, 200, store.pick(day, { candidate, caption, style }));
+      json(
+        res,
+        200,
+        store.pick(day, {
+          candidate,
+          caption,
+          style,
+          replace: body.replace === true,
+        }),
+      );
     },
 
     /**

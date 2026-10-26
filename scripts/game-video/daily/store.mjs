@@ -143,11 +143,18 @@ export const openStore = (dataDir) => {
     days,
 
     /**
-     * Start or replace the day's cycle. Replacing is allowed until the ask is
-     * open: after that the ask names this video, and the way out is an answer.
+     * Start or replace the day's cycle. A day has one cycle: replacing it
+     * needs `replace`, so a scheduled start cannot redo a day by mistake
+     * (Wall Game PM, 2026-10-26). Replacing is allowed until the ask is open:
+     * after that the ask names this video, and the way out is an answer.
      */
-    pick(day, { candidate, caption, style }) {
+    pick(day, { candidate, caption, style, replace = false }) {
       const old = read(day);
+      if (old && !replace) {
+        refuse(
+          `${day} already has a cycle (${old.state}, ${old.candidate.gameId}); the day is taken. Use replace only to redo today's video on purpose`,
+        );
+      }
       if (old) {
         expect(
           old,

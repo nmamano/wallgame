@@ -7,11 +7,14 @@
  *
  *   status                         where today's cycle is
  *   facts --report F [--top N]     the candidates' facts, to write a caption from
- *   pick --report F [--rank N] --caption T [--title T] [--style S]
+ *   pick --report F [--rank N] --caption T [--title T] [--style S] [--replace]
  *                                  today's candidate and the crew lead's caption:
  *                                  silly, short, no game id, no link (X gets it
  *                                  as is; YouTube gets it as title and above
- *                                  the tracked link; --title overrides the title)
+ *                                  the tracked link; --title overrides the title).
+ *                                  A day has one cycle: --replace starts over a
+ *                                  day that has one (only on purpose, e.g.
+ *                                  after the member rejected its video)
  *   direct --edl F                 the director's edit decision list for the
  *                                  picked game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending
@@ -274,6 +277,7 @@ const commands = {
       caption:
         flag("caption") ?? die("pick needs --caption: write it from `facts`"),
       title: flag("title"),
+      replace: has("replace"),
     });
     console.log(summary(await state()));
   },
