@@ -4,13 +4,15 @@ import path from "node:path";
 import { sortPawnNames } from "../frontend/src/lib/pawn-sort";
 import { resolvePawnForegroundFixSrc } from "../frontend/src/lib/pawn-foreground-fix";
 import {
-  DEFAULT_PAWN_STYLES,
   isRetiredPawnStyle,
   normalizeBoardPawnStyle,
   normalizePawnStyleSelection,
   resolvePawnBackingSrc,
-  type PawnStyleType,
 } from "../frontend/src/lib/pawn-style";
+import {
+  DEFAULT_PAWN_STYLES,
+  type PawnStyleType,
+} from "../shared/domain/pawn-styles";
 
 /**
  * Behavior of the pawn appearance helpers: the order the player sees art in,

@@ -11,7 +11,8 @@ import { ScrollArea } from "@/components/ui/scroll-area";
 import { cn } from "@/lib/utils";
 import { colorFilterMap } from "@/lib/player-colors";
 import { PawnImage } from "@/components/pawn-image";
-import { resolvePawnStyleSrc, type PawnStyleType } from "@/lib/pawn-style";
+import { resolvePawnStyleSrc } from "@/lib/pawn-style";
+import type { PawnStyleType } from "../../../shared/domain/pawn-styles";
 import { defaultPawnDisplayLabel } from "@/lib/pawn-labels";
 
 interface PawnSelectorProps {

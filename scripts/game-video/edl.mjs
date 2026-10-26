@@ -53,10 +53,34 @@
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
  */
-import { MEME_SOUND_GAINS } from "./meme-sounds.mjs";
+import { MEME_SOUNDS } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 
 export const EDL_VERSION = 1;
+
+/**
+ * The daily look's seat colours (Nil, 2026-10-26: "red vs blue was the
+ * goal"). AI vs human: the AI red and the human blue. Human vs human: the
+ * first seat (playerOrder 1) red and the second blue. Bot vs bot never
+ * reaches the daily path (the picker keeps it out), so it is an error here.
+ * The renderer and the storyboard both read this, so the video and the sheet
+ * the Director sees cannot disagree.
+ *
+ * isBot is { 1: boolean, 2: boolean } by playerId, which is the playerOrder.
+ *
+ * @param {{ 1: boolean, 2: boolean }} isBot
+ * @returns {{ 1: "red" | "blue", 2: "red" | "blue" }}
+ */
+export const dailySeatColors = (isBot) => {
+  if (isBot[1] && isBot[2]) {
+    throw new Error(
+      "both seats are bots; the daily look shows AI vs human or human vs human",
+    );
+  }
+  return isBot[2] && !isBot[1]
+    ? { 1: "blue", 2: "red" }
+    : { 1: "red", 2: "blue" };
+};
 export const ENDINGS = ["replay", "gg", "ko"];
 export const EVENT_KINDS = ["zoom", "scared", "laugh", "stamp", "sound"];
 
@@ -209,9 +233,9 @@ export const validateEdl = (raw) => {
       if (ev.kind === "sound" && ev.sound === undefined) {
         fail(`${where}: a sound event needs "sound"`);
       }
-      if (ev.sound !== undefined && !(ev.sound in MEME_SOUND_GAINS)) {
+      if (ev.sound !== undefined && !(ev.sound in MEME_SOUNDS)) {
         fail(
-          `${where}: sound ${JSON.stringify(ev.sound)} is not known. Known: ${Object.keys(MEME_SOUND_GAINS).join(", ")}`,
+          `${where}: sound ${JSON.stringify(ev.sound)} is not known. Known: ${Object.keys(MEME_SOUNDS).join(", ")}`,
         );
       }
       const out = { ...ev };

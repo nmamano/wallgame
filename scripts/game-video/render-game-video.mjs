@@ -79,8 +79,9 @@ import {
   validateEdl,
   checkEdlAgainstGame,
   DEFAULT_SECONDS_PER_MOVE,
+  dailySeatColors,
 } from "./edl.mjs";
-import { MEME_SOUND_GAINS } from "./meme-sounds.mjs";
+import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { allocateFrameRanges } from "./timeline-frames.mjs";
@@ -410,6 +411,13 @@ const outFor = (styleName) =>
     : OUT.replace(/(\.mp4)?$/, `-${styleName.replace(":", "-")}.mp4`);
 
 const MUSIC_VOLUME = 0.3;
+/**
+ * One step further down for the two stings Nil named as too loud on
+ * 2026-10-26 (the scared sound and the opening shotgun), on top of the meme
+ * target in meme-sounds.mjs: -3 dB, applied to the scared events and the VS
+ * overlay's sound.
+ */
+const STING_STEP = 10 ** (-3 / 20);
 const SHAKE_GAIN = 0.6;
 const WIN_GAIN = 0.2;
 /** Multiplies the site's own pawn and wall levels, keeping their balance. */
@@ -567,22 +575,32 @@ const browser = await chromium.launch({
 });
 
 /**
- * The daily look's seat colours: red for the AI and blue for the human, by
- * each seat's bot flag (configType, the flag the daily picker's AI-vs-human
- * rule reads). The daily picker takes only AI vs human games, so two alike
- * seats are an error, not a guess. Only a daily (EDL) render forces colours;
- * a hand render keeps the players' own (Wall Game PM, 2026-10-26).
+ * The daily look's seat colours (dailySeatColors in edl.mjs), by each seat's
+ * bot flag (configType). Only a daily (EDL) render forces colours; a hand
+ * render keeps the players' own (Wall Game PM, 2026-10-26).
  */
 const SEAT_COLORS = (body) => {
-  const bot = (id) =>
-    body.matchStatus?.players?.find((p) => p.playerId === id)?.configType ===
-    "bot";
-  if (bot(1) === bot(2)) {
-    throw new Error(
-      `game ${GAME_ID} is not AI vs human (both seats are ${bot(1) ? "bots" : "humans"}); the daily look colours the AI red and the human blue`,
-    );
+  /*
+    A missing configType reads as "not a bot", which would show an AI game
+    as human vs human with no error, so it stops the render like a missing
+    pawnColor does (exit 4 in the daily path).
+  */
+  const bot = (id) => {
+    const configType = body.matchStatus?.players?.find(
+      (p) => p.playerId === id,
+    )?.configType;
+    if (typeof configType !== "string") {
+      throw new Error(
+        `the replay response has no configType for player ${id}; the site changed where the bot flag comes from`,
+      );
+    }
+    return configType === "bot";
+  };
+  try {
+    return dailySeatColors({ 1: bot(1), 2: bot(2) });
+  } catch (err) {
+    throw new Error(`game ${GAME_ID}: ${err.message}`);
   }
-  return bot(1) ? { 1: "red", 2: "blue" } : { 1: "blue", 2: "red" };
 };
 /** What a forced colour must sample as on the page, to prove the page used it. */
 const COLOR_CHECK = {
@@ -622,8 +640,8 @@ const openGamePage = async (dpr) => {
     colours were too alike; a hand render keeps them). The replay page has
     no viewer colour setting - it colours each seat from the pawnColor in the
     game record - so in a daily render the capture browser sets that field in
-    the page's own response, before the page reads it: the AI red, the human
-    blue (SEAT_COLORS). The page then colours pawns, walls and cards through
+    the page's own response, before the page reads it: one seat red and the
+    other blue (SEAT_COLORS). The page then colours pawns, walls and cards through
     its own resolver; no pixel is recoloured. Every render passes the
     response through here to count it: each request is one view.
   */
@@ -651,7 +669,7 @@ const openGamePage = async (dpr) => {
         /*
           Only this one field is touched, and only when it is where the page
           reads it: if a site change moved it, the render stops here rather
-          than ship the players' own colours under an "AI in red" title.
+          than ship the players' own colours in a red vs blue video.
         */
         if (typeof p.appearance?.pawnColor !== "string") {
           throw new Error(
@@ -1353,16 +1371,16 @@ const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
  */
 const MEME_DIR = join(REPO, "assets/meme-sounds");
 const meme = (name) => {
-  if (!(name in MEME_SOUND_GAINS)) {
+  if (!(name in MEME_SOUNDS)) {
     console.error(
-      `meme sound ${name} is not known. Known: ${Object.keys(MEME_SOUND_GAINS).join(", ")}`,
+      `meme sound ${name} is not known. Known: ${Object.keys(MEME_SOUNDS).join(", ")}`,
     );
     process.exit(2);
   }
   return {
     name,
     file: join(MEME_DIR, `${name}.mp3`),
-    gain: MEME_SOUND_GAINS[name],
+    gain: memeGain(name),
   };
 };
 
@@ -1573,12 +1591,13 @@ const side = (playerId) => {
 };
 
 /**
- * A side as the daily VS overlay shows it: no name, only which side is the
- * AI and which the human (Nil, 2026-10-26), drawn in the side's colour.
+ * A side as the daily VS overlay shows it: no name, only whether the side is
+ * the AI or a human (Nil, 2026-10-26), drawn in the side's colour. No
+ * emoji: Nil found the first version "too crowded".
  */
 const overlaySide = (playerId) => ({
   ...side(playerId),
-  word: seatLabel(playerId) === "bot" ? "🤖 AI" : "🧑 Human",
+  word: seatLabel(playerId) === "bot" ? "AI" : "Human",
 });
 
 /**
@@ -2034,7 +2053,11 @@ const renderStyle = async (styleName) => {
 
   // The overlay's punch gets the VS sound, at the second the mark lands.
   if (overlay) {
-    cue(sounds[style.vsSound], overlay.entry * vsPunchFraction);
+    const vsSound = sounds[style.vsSound];
+    cue(
+      { ...vsSound, gain: vsSound.gain * STING_STEP },
+      overlay.entry * vsPunchFraction,
+    );
   }
 
   // --- the VS screen, animated
@@ -2110,7 +2133,13 @@ const renderStyle = async (styleName) => {
   const playEvents = async (ply, plyIndex) => {
     for (const ev of eventsAt(plyIndex)) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
-      if (ev.sound) cue(meme(ev.sound));
+      if (ev.sound) {
+        const sound = meme(ev.sound);
+        cue({
+          ...sound,
+          gain: sound.gain * (ev.kind === "scared" ? STING_STEP : 1),
+        });
+      }
       if (ev.kind === "sound") {
         stillNext = label;
         continue;
@@ -2171,9 +2200,18 @@ const renderStyle = async (styleName) => {
     }
   };
 
-  // The starting position gets one beat of its own, so the first move is a
-  // change the eye can catch rather than the first thing it ever sees.
-  await emit(playState(0), paceAt(0), { kind: "initial", ply: -1 });
+  /*
+    The starting position gets one beat of its own, so the first move is a
+    change the eye can catch rather than the first thing it ever sees. Under
+    the VS overlay it holds longer: nothing moves under the full banners, and
+    the first move plays only once they start to leave (Nil, 2026-10-26).
+  */
+  const firstMoveAt = overlay ? overlay.seconds - overlay.exit : 0;
+  await emit(
+    playState(0),
+    Math.max(paceAt(0), Math.round((firstMoveAt - elapsed) * FPS) / FPS),
+    { kind: "initial", ply: -1 },
+  );
 
   /** The site's own click for a turn: one sound per turn, wall wins. */
   const moveClick = (plyIndex) => {

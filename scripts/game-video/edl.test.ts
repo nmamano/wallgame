@@ -1,6 +1,7 @@
 import { describe, expect, test } from "bun:test";
 import {
   checkEdlAgainstGame,
+  dailySeatColors,
   DEFAULT_ZOOM_SCALE,
   validateEdl,
 } from "./edl.mjs";
@@ -105,5 +106,25 @@ describe("music", () => {
     expect(accept(base).music).toBe(null);
     expect(validateEdl({ ...base, music: "a-legend" }).ok).toBe(true);
     expect(validateEdl({ ...base, music: "darude" }).ok).toBe(false);
+  });
+});
+
+describe("dailySeatColors", () => {
+  test("colours the AI red, else the first seat red, and refuses bot vs bot", () => {
+    expect(dailySeatColors({ 1: false, 2: true })).toEqual({
+      1: "blue",
+      2: "red",
+    });
+    expect(dailySeatColors({ 1: true, 2: false })).toEqual({
+      1: "red",
+      2: "blue",
+    });
+    expect(dailySeatColors({ 1: false, 2: false })).toEqual({
+      1: "red",
+      2: "blue",
+    });
+    expect(() => dailySeatColors({ 1: true, 2: true })).toThrow(
+      "both seats are bots",
+    );
   });
 });

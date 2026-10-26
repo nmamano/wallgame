@@ -1,14 +1,8 @@
 import { assetUrl } from "@/lib/asset-url";
-
-export type PawnStyleType = "dog" | "cat" | "mouse" | "elephant" | "home";
-
-export const DEFAULT_PAWN_STYLES: Record<PawnStyleType, string> = {
-  dog: "dog-puppy-03.svg",
-  cat: "cat3.svg",
-  mouse: "mouse20.svg",
-  elephant: "elephant-14.svg",
-  home: "home2.svg",
-};
+import {
+  DEFAULT_PAWN_STYLES,
+  type PawnStyleType,
+} from "../../../shared/domain/pawn-styles";
 
 export const RETIRED_PAWN_STYLES: Record<PawnStyleType, ReadonlySet<string>> = {
   dog: new Set(["dog-one-line-01.svg"]),
