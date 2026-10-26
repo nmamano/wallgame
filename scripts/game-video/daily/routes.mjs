@@ -587,6 +587,20 @@ export const createDaily = ({
     "GET /api/daily/state": (req, res, url) =>
       json(res, 200, state(dayOf(url.searchParams.get("day")))),
 
+    /**
+     * What a restart would cut: every render queued or running (on the 4090)
+     * and a post in flight. `crew.mjs ship` refuses to restart while any is
+     * busy.
+     */
+    "GET /api/daily/busy": (req, res) =>
+      json(res, 200, {
+        renders: [
+          ...(running ? [{ ...running, state: "running" }] : []),
+          ...queue.map((job) => ({ ...job, state: "queued" })),
+        ],
+        posting,
+      }),
+
     /** {day?, report: {kind, createdAt, ranked}, rank?, style?, caption?, replace?} */
     "POST /api/daily/pick": async (req, res) => {
       const body = await readJson(req, 4 * 1024 * 1024);

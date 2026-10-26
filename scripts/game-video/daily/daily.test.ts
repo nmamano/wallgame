@@ -1682,7 +1682,22 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   });
   expect(zoomThenLaugh.status).toBe(200);
   expect((await direct(day, "a-legend")).status).toBe(200);
-  expect((await call("/api/daily/render", { day })).status).toBe(200);
+  // What a restart would cut (crew.mjs ship refuses while any is busy).
+  interface Busy {
+    renders: { day: string; jobId: string; state: string }[];
+    posting: boolean;
+  }
+  expect((await call<Busy>("/api/daily/busy")).body).toEqual({
+    renders: [],
+    posting: false,
+  });
+  const started = await call<{ jobId: string }>("/api/daily/render", { day });
+  expect(started.status).toBe(200);
+  // The queue takes the job before the POST answers; the stub is a process.
+  expect((await call<Busy>("/api/daily/busy")).body).toEqual({
+    renders: [{ day, jobId: started.body.jobId, state: "running" }],
+    posting: false,
+  });
   let state: DailyState | undefined;
   for (let i = 0; i < 50; i++) {
     state = (await call<DailyState>(`/api/daily/state?day=${day}`)).body;
@@ -1690,6 +1705,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     await Bun.sleep(100);
   }
   expect(state?.cycle.state).toBe("rendered");
+  expect((await call<Busy>("/api/daily/busy")).body.renders).toEqual([]);
   expect(state?.cycle.render?.effect).toBe("daily");
   expect(state?.cycle.render?.ending).toBe("replay");
   expect(state?.cycle.render?.quality?.loudness?.ok).toBe(true);

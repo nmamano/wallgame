@@ -52,6 +52,12 @@
  *                                  post X, YouTube, the TikTok draft and the
  *                                  Instagram Reel (dry-run without keys)
  *   log [--dry-run]                the post log
+ *   ship --to <hash>               release a commit that is on main: run
+ *                                  from the release checkout, it moves that
+ *                                  checkout to <hash>, syncs and checks the
+ *                                  4090 kit and restarts the app
+ *                                  (daily/ship.mjs), stopping at the first
+ *                                  failure. It never pushes or merges
  *
  * The ask goes to APPROVER_MEMBER. Only an agent can open one (an app
  * token is refused there), which is why this runs as the crew lead and uses
@@ -83,6 +89,7 @@ import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { candidateFromReport } from "./candidate.mjs";
 import { dailySeatColors } from "../edl.mjs";
+import { ship } from "./ship.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(
@@ -432,6 +439,17 @@ const commands = {
     console.log(
       `storyboard: ${result.png} (${result.plies} plies). Open it before you write the edit list.`,
     );
+  },
+
+  async ship() {
+    const passed = await ship({
+      office,
+      appBase: await appBase(),
+      appName: APP_NAME,
+      to: flag("to") ?? die("ship needs --to <a commit on main>"),
+      say: (line) => console.log(line),
+    });
+    if (!passed) process.exit(1);
   },
 
   async sheet() {
