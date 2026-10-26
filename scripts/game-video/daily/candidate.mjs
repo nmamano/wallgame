@@ -71,7 +71,7 @@ export const nextEnding = (rows) => {
  * the ask that is not posted. Plies are 0-based, as in the list.
  */
 export const edlSummary = (edl) => [
-  `ending ${edl.ending}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
+  `ending ${edl.ending}, music ${edl.music ?? "random"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
   ...(edl.pace ?? []).map(
     (p) => `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move`,
   ),

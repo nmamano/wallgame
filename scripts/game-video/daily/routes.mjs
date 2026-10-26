@@ -64,6 +64,7 @@ import {
   saveFrameProblems,
 } from "./candidate.mjs";
 import { validateEdl, checkEdlAgainstGame } from "../edl.mjs";
+import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
   dryRunTransport,
   liveTransport,
@@ -110,6 +111,8 @@ export const postingModes = (env) =>
   );
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
+
+const MUSIC_SLUGS = MUSIC_TRACKS.map((t) => t.slug);
 
 /** Cycle states whose video may still be posted. */
 const OPEN_STATES = [
@@ -250,6 +253,15 @@ export const createDaily = ({
             error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cycle.edl.sha256.slice(0, 12)})`,
           });
         }
+        const music = cycle.edl.doc.music ?? null;
+        if (
+          !MUSIC_SLUGS.includes(result.music) ||
+          (music && result.music !== music)
+        ) {
+          return finish({
+            error: `the render played the music ${result.music}, not ${music ?? "a named track"}`,
+          });
+        }
         if (result.ending !== cycle.render.ending) {
           return finish({
             error: `the render played the ${result.ending} ending, not ${cycle.render.ending}`,
@@ -295,6 +307,7 @@ export const createDaily = ({
           video,
           sheet,
           effect: result.effect ?? null,
+          music: result.music,
           sound: result.sound ?? null,
         });
       });
@@ -316,13 +329,30 @@ export const createDaily = ({
    * render. Nil can answer a day's ask after the next day renders, and the
    * two must not get the same ending. A rejected day is not here.
    */
-  const openEndings = (day) =>
+  const openRenders = (day) =>
     store
       .days()
       .filter((d) => d !== day)
       .map((d) => store.read(d))
-      .filter((c) => OPEN_STATES.includes(c.state) && c.render?.ending)
+      .filter((c) => OPEN_STATES.includes(c.state) && c.render);
+  const openEndings = (day) =>
+    openRenders(day)
+      .filter((c) => c.render.ending)
       .map((c) => ({ utc: c.render.requestedAt, ending: c.render.ending }));
+
+  /** The latest track posted or waiting to post on another day. */
+  const lastMusic = (day) =>
+    [
+      ...readPostLog(store.postLog.live),
+      ...readPostLog(store.postLog.dryRun),
+      ...openRenders(day).map((c) => ({
+        utc: c.render.requestedAt,
+        music: c.render.music,
+      })),
+    ]
+      .filter((r) => r.music)
+      .sort((a, b) => (a.utc < b.utc ? -1 : 1))
+      .at(-1)?.music ?? null;
 
   const suggestedEnding = (day) =>
     nextEnding([
@@ -457,6 +487,8 @@ export const createDaily = ({
       postLog: store.postLog,
       // The director's default: the ending posted least recently.
       suggestedEnding: suggestedEnding(day),
+      // The last posted day's track: the director picks another one.
+      lastMusic: lastMusic(day),
     };
   };
 
@@ -732,6 +764,7 @@ export const logRow = (cycle, platform, result) => ({
   effect: cycle.render.effect,
   ending: cycle.render.ending,
   sound: cycle.render.sound,
+  music: cycle.render.music,
   edlSha256: cycle.render.edlSha256,
   // Since 2026-10-26 the swing is the largest walking-distance jump, in steps.
   swingSize: cycle.candidate.picks[0].size,

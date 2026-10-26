@@ -12,10 +12,12 @@
  *   The renderer runs from the render kit on the 4090 (RENDER_KIT, which
  *   scripts/game-video/sync-render-kit.sh fills), under desktop-run, as
  *     bun <kit>/scripts/game-video/render-game-video.mjs --edl <edl.json>
- *       --music skippy --out <out.mp4> --log <render.log> --encoder nvenc
+ *       --out <out.mp4> --log <render.log> --encoder nvenc
  *   With --log its stdout is one line,
  *     RESULT {"mp4","bytes","sha256","durationSeconds","effect","sound",
- *             "ending","edlSha256","sheet":{"png","sha256","stills"}}
+ *             "music","ending","edlSha256","sheet":{"png","sha256","stills"}}
+ *   The list picks the music (edl.music); with none the renderer picks a
+ *   track at random and RESULT names it.
  *   The sheet is the contact sheet from the same capture: one still per
  *   event of the list. It comes back with the MP4.
  *   which desktop-run appends to the job's log. desktop-run appends exit=N to
@@ -67,8 +69,6 @@ export const REMOTE_JOBS = "nil/wallgame-video-jobs";
 /** The render kit on the 4090 (Worker 2's sync-render-kit.sh). */
 export const RENDER_KIT = "nil/wallgame-video";
 const RENDERER = "scripts/game-video/render-game-video.mjs";
-/** The daily music, as in Worker 2's daily command (2026-10-26). */
-const MUSIC = "skippy";
 const BUN = ".bun/bin/bun";
 /** Worker 2's figure for one render: 4 threads and 4 GB are enough. */
 const THREADS = "4";
@@ -172,8 +172,6 @@ const main = async () => {
     `${home}/${RENDER_KIT}/${RENDERER}`,
     "--edl",
     `${dir}/edl.json`,
-    "--music",
-    MUSIC,
     "--out",
     `${dir}/out.mp4`,
     "--log",

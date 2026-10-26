@@ -47,6 +47,10 @@ already has a cycle, finish it or stop: do not start another. `pick
   Blue, not names: the renderer always shows the AI in red and the human in
   blue.
 - `ending`: use the default from `status` unless the game needs another one.
+- `music`: always name a track, and vary it. Do not use the last track,
+  which `status` shows (posted, or waiting for an answer on another day).
+  The names are in `scripts/game-video/music-tracks.mjs`. A list without
+  music gets a random track; that is only for a hand render.
 - The schema and the sound names are in `scripts/game-video/edl.mjs` and
   `scripts/game-video/meme-sounds.mjs`.
 

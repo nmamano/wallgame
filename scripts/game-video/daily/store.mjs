@@ -253,6 +253,7 @@ export const openStore = (dataDir) => {
         sheet: null,
         effect: null,
         sound: null,
+        music: null,
       };
       cycle.approval = null;
       return save(cycle, `render ${jobId} queued`);
@@ -277,6 +278,7 @@ export const openStore = (dataDir) => {
       cycle.render.sheet = outcome.sheet;
       cycle.render.effect = outcome.effect;
       cycle.render.sound = outcome.sound;
+      cycle.render.music = outcome.music;
       return save(cycle, `render ${jobId} done`);
     },
 

@@ -154,7 +154,9 @@ const summary = (s) => {
       ...c.edl.summary.map((l) => `  ${l}`),
     );
   } else {
-    lines.push(`no edit list yet; default ending ${s.suggestedEnding}`);
+    lines.push(
+      `no edit list yet; default ending ${s.suggestedEnding}; last posted music ${s.lastMusic ?? "none"}`,
+    );
   }
   if (c.render) {
     lines.push(
@@ -202,7 +204,7 @@ export const askText = (c, modes, videoSha256) => {
     "FOR YOU ONLY, NOT POSTED:",
     `Posting mode: X ${modes.x}, YouTube ${modes.youtube}.`,
     `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
-    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}.`,
+    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}, music ${c.render.music ?? "-"}.`,
     "Director's edit list:",
     ...c.edl.summary.map((l) => `- ${l}`),
     `Contact sheet (attached), checked by the director:`,

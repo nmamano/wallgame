@@ -752,7 +752,7 @@ afterEach(() => {
 
 /** A stand-in for render-4090.mjs that follows the same contract. */
 const STUB_RENDER = `
-const { readFileSync, writeFileSync } = require("node:fs");
+const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
@@ -766,6 +766,9 @@ const stills = edl.events.map((e) => ({ ply: e.ply, kind: e.kind, sound: e.sound
 console.log("[render] rendering on the 4090");
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
+  music: existsSync(__dirname + "/music-override")
+    ? readFileSync(__dirname + "/music-override", "utf8")
+    : (edl.music ?? "skippy"),
   ending: edl.ending, edlSha256: hash(raw),
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
 `;
@@ -814,7 +817,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect((await call("/api/daily/post", { day })).status).toBe(409);
   // No render without the director's list.
   expect((await call("/api/daily/render", { day })).status).toBe(409);
-  const direct = async (d: string) => {
+  const direct = async (d: string, music?: string) => {
     const { suggestedEnding } = (
       await call<DailyState & { suggestedEnding: string }>(
         `/api/daily/state?day=${d}`,
@@ -822,7 +825,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     ).body;
     return call("/api/daily/direct", {
       day: d,
-      edl: { ...EDL, ending: suggestedEnding },
+      edl: { ...EDL, ending: suggestedEnding, ...(music ? { music } : {}) },
     });
   };
   expect(
@@ -833,7 +836,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
       })
     ).status,
   ).toBe(409);
-  expect((await direct(day)).status).toBe(200);
+  expect((await direct(day, "a-legend")).status).toBe(200);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;
   for (let i = 0; i < 50; i++) {
@@ -914,6 +917,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     approver: "Nil",
     effect: "daily",
     ending: "replay",
+    music: "a-legend",
     sound: "shotgun",
     swingMove: 23,
   });
@@ -929,6 +933,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     report: REPORT,
     caption: CAPTION,
   });
+  // The director sees the last posted track, to pick another.
+  expect(
+    (await call<{ lastMusic: string }>(`/api/daily/state?day=${next}`)).body
+      .lastMusic,
+  ).toBe("a-legend");
   await direct(next);
   await call("/api/daily/render", { day: next });
   for (let i = 0; i < 50; i++) {
@@ -987,4 +996,35 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   }
   expect(state?.cycle.render?.ending).toBe("ko");
   expect(state?.cycle.render?.sheet?.stills).toHaveLength(40);
+  // Day 2 waits for its ask, so its track is the last one, not day 1's.
+  // (Day 2's list named none: the stub played its stand-in.)
+  expect(
+    (await call<{ lastMusic: string }>(`/api/daily/state?day=${third}`)).body
+      .lastMusic,
+  ).toBe("skippy");
+
+  // The music the video played must be the one the list named, and a
+  // track the site has.
+  const fourth = "2026-10-29";
+  const renderWith = async (played: string, force = false) => {
+    writeFileSync(join(dir, "music-override"), played);
+    await call("/api/daily/render", { day: fourth, force });
+    for (let i = 0; i < 50; i++) {
+      state = (await call<DailyState>(`/api/daily/state?day=${fourth}`)).body;
+      if (state.cycle.state !== "rendering") break;
+      await Bun.sleep(100);
+    }
+  };
+  await call("/api/daily/pick", {
+    day: fourth,
+    report: REPORT,
+    caption: CAPTION,
+  });
+  await direct(fourth, "a-legend");
+  await renderWith("tea-for-two");
+  expect(state?.cycle.state).toBe("render-failed");
+  expect(state?.cycle.render?.error).toMatch(/music tea-for-two, not a-legend/);
+  await direct(fourth);
+  await renderWith("elevator-jazz", true);
+  expect(state?.cycle.render?.error).toMatch(/music elevator-jazz/);
 }, 20_000);
