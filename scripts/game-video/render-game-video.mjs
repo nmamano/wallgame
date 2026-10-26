@@ -448,8 +448,26 @@ const MUSIC_VOLUME = 0.3;
 const STING_STEP = 10 ** (-3 / 20);
 const SHAKE_GAIN = 0.6;
 const WIN_GAIN = 0.2;
-/** Multiplies the site's own pawn and wall levels, keeping their balance. */
-const MOVE_GAIN = 1.6;
+/**
+ * Multiplies the site's own pawn and wall levels, keeping their balance.
+ * It was 1.6; Nil, 2026-10-26: "the piece slide sound is a bit too loud,
+ * gets a bit repetitive". -8 dB from there, measured on eeFSMEmL's clicks
+ * and music rebuilt apart: per window the clicks sit 5 to 13 dB under the
+ * music bed at normal pace, and each click's loudest 50 ms about level with
+ * it (median +2 to +6 dB, -6 dB where the bed is loudest).
+ */
+const MOVE_GAIN = 1.6 * 10 ** (-8 / 20);
+/**
+ * Four takes of a move's click, by ply, so no two moves in a row sound the
+ * same: a small pitch step (rate, resampled) and gain step on the site's
+ * one sample.
+ */
+const MOVE_CLICK_VARIANTS = [
+  { rate: 1, gain: 1 },
+  { rate: 1.06, gain: 0.89 },
+  { rate: 0.95, gain: 0.94 },
+  { rate: 1.03, gain: 0.84 },
+];
 /**
  * The clicks of a fastForward range (edl.mjs) come 3 to 5 a second, so they
  * are one step quieter, -6 dB (Wall Game PM, 2026-10-26).
@@ -1682,6 +1700,10 @@ const buildAudio = ({
   const chains = present.map(
     (e, i) =>
       `[${i}:a]aformat=sample_fmts=fltp:sample_rates=44100:channel_layouts=stereo,` +
+      // A rate above 1 plays the sound higher and shorter.
+      (e.rate === 1
+        ? ""
+        : `asetrate=${Math.round(44100 * e.rate)},aresample=44100,`) +
       `adelay=${Math.round(Math.max(0, e.at) * 1000)}:all=1,volume=${e.gain}[a${i}]`,
   );
   // The effects bus. Everything above lands here.
@@ -1725,6 +1747,25 @@ const buildAudio = ({
     `${last}alimiter=limit=0.95,atrim=0:${totalSeconds.toFixed(3)}[out]`,
   );
 
+  // What went into the mix, so its parts can be rebuilt and measured apart.
+  writeFileSync(
+    join(work, "audio-plan.json"),
+    JSON.stringify(
+      {
+        totalSeconds,
+        musicStart,
+        musicEndAt,
+        bed,
+        music: MUSIC,
+        musicVolume: MUSIC_VOLUME,
+        musicFadeIn: MUSIC_FADE_IN,
+        musicFadeOut: MUSIC_FADE_OUT,
+        cues: present,
+      },
+      null,
+      1,
+    ),
+  );
   const audioPath = join(work, "track.m4a");
   ff([
     ...inputs,
@@ -2211,7 +2252,12 @@ const renderStyle = async (styleName) => {
   const cues = [];
   let elapsed = 0;
   const cue = (sound, at = elapsed) =>
-    cues.push({ file: sound.file, gain: sound.gain, at });
+    cues.push({
+      file: sound.file,
+      gain: sound.gain,
+      at,
+      rate: sound.rate ?? 1,
+    });
   let shakeGeometryVerdict = "not run (no capture shake in this style)";
 
   /**
@@ -2407,13 +2453,16 @@ const renderStyle = async (styleName) => {
       .split(".")
       .filter(Boolean);
     const hasWall = terms.some((s) => s.startsWith(">") || s.startsWith("^"));
+    const take = MOVE_CLICK_VARIANTS[plyIndex % MOVE_CLICK_VARIANTS.length];
     return {
       file: join(AUDIO_DIR, hasWall ? "wall.wav" : "pawn.wav"),
+      rate: take.rate,
       // The site's own balance - a wall is quieter than a pawn there - times
       // one gain, so raising the moves does not flatten that relationship.
       gain:
         (hasWall ? SITE_VOLUMES.wall : SITE_VOLUMES.pawn) *
         MOVE_GAIN *
+        take.gain *
         (fastRangeOf(plyIndex) ? FAST_FORWARD_CLICK_STEP : 1),
     };
   };
