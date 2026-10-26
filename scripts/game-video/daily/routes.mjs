@@ -66,6 +66,12 @@ import {
 import { validateEdl, checkEdlAgainstGame } from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
+  openSoundPicks,
+  soundList,
+  soundFile,
+  SOUNDS_PAGE,
+} from "./sounds.mjs";
+import {
   dryRunTransport,
   liveTransport,
   sha256,
@@ -158,6 +164,8 @@ export const createDaily = ({
 }) => {
   const store = openStore(dataDir);
   const { dirs } = store;
+  // Nil's keep or drop choice for each meme sound (/daily/sounds).
+  const soundPicks = openSoundPicks(dirs.root);
 
   // The render queue lives in memory. A cycle that was rendering when the app
   // stopped has no child any more, and no step leaves "rendering" except the
@@ -626,6 +634,7 @@ export const createDaily = ({
           rows: cycle.candidate.boardHeight,
         }),
         ...saveFrameProblems(edl, cycle.candidate.beats),
+        ...droppedSoundProblems(edl, soundPicks.dropped()),
       ];
       if (errors.length) throw new StepRefused(errors.join("; "));
       // The caption and stamps are burned into the video, which is posted.
@@ -759,6 +768,32 @@ export const createDaily = ({
       createReadStream(path).pipe(res);
     },
 
+    "GET /daily/sounds": (req, res) => {
+      res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
+      res.end(SOUNDS_PAGE);
+    },
+
+    "GET /api/daily/sounds": (req, res) =>
+      json(res, 200, soundList(soundPicks.read())),
+
+    /** {key, choice: "keep" | "drop" | null} - null is "not heard yet". */
+    "POST /api/daily/sounds": async (req, res) => {
+      const body = await readJson(req);
+      soundPicks.set(body.key, body.choice ?? null);
+      json(res, 200, soundList(soundPicks.read()));
+    },
+
+    "GET /api/daily/sounds/file": (req, res, url) => {
+      const path = soundFile(url.searchParams.get("key"));
+      if (!path || !existsSync(path))
+        return json(res, 404, { error: "no such sound file" });
+      res.writeHead(200, {
+        "content-type": "audio/mpeg",
+        "content-length": statSync(path).size,
+      });
+      createReadStream(path).pipe(res);
+    },
+
     "GET /api/daily/post-log": (req, res, url) =>
       json(
         res,
@@ -796,6 +831,15 @@ export const createDaily = ({
 
   return { handle, store, post, stop };
 };
+
+/** The events of a list that name a sound Nil dropped on /daily/sounds. */
+export const droppedSoundProblems = (edl, dropped) =>
+  edl.events
+    .filter((e) => e.sound !== undefined && dropped.includes(e.sound))
+    .map(
+      (e) =>
+        `ply ${e.ply}: Nil dropped the sound ${e.sound}; name a kept one (crew.mjs sounds)`,
+    );
 
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted
@@ -861,7 +905,7 @@ const DASHBOARD = `<!doctype html>
 <body><main>
   <h1>Wall Game daily video</h1>
   <p class="sub">One game a day to X and YouTube. The crew lead runs each step; this page shows where it is.
-    <a href="/">Make a video by hand</a></p>
+    <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a></p>
   <div id="top"></div>
   <h2>Candidate</h2><div id="cand" class="box"></div>
   <h2>Video</h2><div id="vid" class="box"></div>

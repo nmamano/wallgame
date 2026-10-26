@@ -59,6 +59,11 @@ already has a cycle, finish it or stop: do not start another. `pick
   music gets a random track; that is only for a hand render.
 - The schema and the sound names are in `scripts/game-video/edl.mjs` and
   `scripts/game-video/meme-sounds.mjs`.
+- Sounds: run `crew.mjs sounds`. It gives each family's moment (a reveal, a
+  blunder, the trap closes, a good move, a close call, the win, the loss)
+  and the sounds that Nil kept on the app's `/daily/sounds` page. Name a kept
+  sound that fits the moment. Use a sound that Nil has not heard yet only
+  when no kept sound fits. `direct` refuses a sound that Nil dropped.
 
 ```json
 {

@@ -1086,6 +1086,15 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
       })
     ).status,
   ).toBe(409);
+  // A sound Nil dropped on /daily/sounds is refused, and no longer once the
+  // choice is cleared.
+  const pickSound = (choice: string | null) =>
+    call("/api/daily/sounds", { key: "fuahhh-1", choice });
+  expect((await pickSound("drop")).status).toBe(200);
+  const refused = await direct(day, "a-legend");
+  expect(refused.status).toBe(409);
+  expect(JSON.stringify(refused.body)).toContain("dropped the sound fuahhh-1");
+  expect((await pickSound(null)).status).toBe(200);
   expect((await direct(day, "a-legend")).status).toBe(200);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;

@@ -19,6 +19,10 @@
  *                                  game (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
  *                                  Open it before you write the edit list.
+ *   sounds                         the meme sounds by family, with Nil's
+ *                                  choice. He keeps or drops each one by ear
+ *                                  on the app's /daily/sounds page. Name a
+ *                                  kept sound; `direct` refuses a dropped one
  *   direct --edl F                 the director's edit decision list for the
  *                                  picked game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending
@@ -245,6 +249,22 @@ export const askText = (c, modes, videoSha256) => {
 const commands = {
   async status() {
     console.log(summary(await state()));
+  },
+
+  /** Each family's moment and sounds: kept, then not heard yet. */
+  async sounds() {
+    const sounds = await app("GET", "/api/daily/sounds");
+    for (const family of new Set(sounds.map((x) => x.family))) {
+      const members = sounds.filter((x) => x.family === family);
+      const names = (choice) =>
+        members
+          .filter((x) => x.choice === choice)
+          .map((x) => x.key)
+          .join(" ") || "-";
+      console.log(
+        `${family} (${members[0].moment ?? "no moment"}): kept ${names("keep")}; not heard yet ${names(null)}`,
+      );
+    }
   },
 
   /** The top candidates in plain words. Nothing here is posted. */
