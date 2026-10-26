@@ -65,7 +65,7 @@ On wallgame.io we use Google Analytics to count visits: which pages people open,
 
 ## Hosting and logs
 
-The site runs on a server that we rent. Cloudflare carries the traffic to our server, so Cloudflare sees your IP address. Our server writes technical logs (for example, which page was asked for, and errors) so that we can find and fix problems. Our web server's access logs can include IP addresses, and we delete them after 7 days. To stop abuse, the server keeps IP addresses in memory for a short time. It does not save them in the database. We keep backups of the database.
+The site runs on a server that we rent. Cloudflare carries the traffic to our server, so Cloudflare sees your IP address. Our server writes technical logs (for example, which page was asked for, and errors) so that we can find and fix problems. Our web server's access logs can include IP addresses. We delete old log files automatically. To stop abuse, the server keeps IP addresses in memory for a short time. It does not save them in the database. We keep backups of the database.
 
 ## Wall Game videos on social media
 
