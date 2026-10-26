@@ -62,6 +62,7 @@ import {
 } from "node:fs";
 import { join, resolve, dirname } from "node:path";
 import { fileURLToPath } from "node:url";
+import { createDaily } from "../daily/routes.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../../..");
@@ -111,6 +112,21 @@ if (!process.env.ISOMUX_APP_DATA_DIR) {
     `ISOMUX_APP_DATA_DIR is not set; keeping renders in ${DATA_DIR}`,
   );
 }
+/**
+ * The daily video (board task e8d26610, step 3) lives at /daily and
+ * /api/daily/*, in ../daily/. Its renders run on the 4090, not here; the
+ * renderer and deadline flags are for its tests, like the two above.
+ */
+const daily = createDaily({
+  dataDir: DATA_DIR,
+  ...(plumbing("daily-renderer") && {
+    renderer: resolve(plumbing("daily-renderer")),
+  }),
+  ...(plumbing("daily-deadline-ms") && {
+    deadlineMs: Number(plumbing("daily-deadline-ms")),
+  }),
+});
+
 const RENDERS = join(DATA_DIR, "renders");
 const WORK = join(DATA_DIR, "work");
 mkdirSync(RENDERS, { recursive: true });
@@ -492,7 +508,8 @@ const PAGE = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game video</h1>
-  <p class="sub">Paste a game link. One render at a time.</p>
+  <p class="sub">Paste a game link. One render at a time.
+    <a href="/daily" style="color:#ff8c42">Daily video</a></p>
 
   <label for="game">Game URL or id</label>
   <input type="text" id="game" placeholder="https://wallgame.io/game/S8QCD3Z0" autofocus />
@@ -650,6 +667,7 @@ const MAX_SECONDS_PER_MOVE = 10;
 
 const server = createServer(async (req, res) => {
   const url = new URL(req.url, `http://localhost:${PORT}`);
+  if (await daily.handle(req, res, url)) return;
 
   if (req.method === "GET" && url.pathname === "/") {
     res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -786,6 +804,15 @@ const server = createServer(async (req, res) => {
 
   json(res, 404, { error: "no such path" });
 });
+
+// A daily render runs in its own process group; stop it with the app, so its
+// adapter can stop the render on the 4090 rather than leave it running.
+for (const signal of ["SIGTERM", "SIGINT"]) {
+  process.on(signal, () => {
+    daily.stop();
+    setTimeout(() => process.exit(0), 2000);
+  });
+}
 
 server.listen(PORT, "127.0.0.1", () => {
   console.log(`game-video app listening on ${PORT}`);
