@@ -2,11 +2,10 @@
 # Copy the game-video renderer to the 4090 render box (board task e8d26610).
 #
 # Nil, 2026-10-25: all video renders run on the 4090. The box keeps a small
-# render kit, not a checkout: the renderer, the stage, the sounds it mixes,
-# and playwright-core with its Chromium. The kit mirrors the repo's paths, so
-# the renderer finds its assets exactly as it does in a checkout. It also
-# carries shared/domain and race-replay.ts, which the race counter replays
-# the game with.
+# render kit, not a checkout: the renderer and every module it imports
+# (render-kit.mjs lists them, shared/domain too), the stage, the sounds it
+# mixes, and playwright-core with its Chromium. The kit mirrors the repo's
+# paths, so the renderer finds its assets exactly as it does in a checkout.
 #
 #   scripts/game-video/sync-render-kit.sh <ssh target of the 4090's WSL>
 #
@@ -33,19 +32,14 @@ test -d assets/meme-sounds || {
 }
 test -f assets/stings/vs-b-riser.wav || bun scripts/game-video/make-stings.mjs
 
+# The code files come from the renderer's imports (render-kit.mjs), so a new
+# module cannot be left out of the kit.
+code="$(bun scripts/game-video/render-kit.mjs)"
+mapfile -t code_files <<< "$code"
+
 rsync -a --relative \
-  scripts/game-video/render-game-video.mjs \
+  "${code_files[@]}" \
   scripts/game-video/stage.html \
-  scripts/game-video/capture-replay-frames.mjs \
-  scripts/game-video/capture-feedback.mjs \
-  scripts/game-video/verify-encoded-video.mjs \
-  scripts/game-video/timeline-frames.mjs \
-  scripts/game-video/make-stings.mjs \
-  scripts/game-video/edl.mjs \
-  scripts/game-video/meme-sounds.mjs \
-  scripts/game-video/music-tracks.mjs \
-  scripts/game-video/race-replay.ts \
-  shared/domain \
   frontend/public/audio/pawn.wav \
   frontend/public/audio/wall.wav \
   frontend/public/audio/game_start.mp3 \
