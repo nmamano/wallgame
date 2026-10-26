@@ -12,8 +12,9 @@
  * `git -C ~/nil/wallgame merge --ff-only video/<name>`, so "on main" means
  * reviewed and landed.
  *
- *   1. move     the checkout goes to <hash>: only a hash on main, and only
- *               from a detached checkout with no change at all
+ *   1. move     the checkout goes to <hash>: only a hash on main, only from
+ *               a detached checkout with no change at all, and only while
+ *               no render is queued or running and no post runs
  *   2. kit      sync-render-kit.sh to the 4090
  *   3. hashes   each kit file on the 4090 has this checkout's sha256
  *   4. help     the 4090's renderer prints its usage line (its imports load)
@@ -169,7 +170,7 @@ export const moveRelease = (repo, to) => {
 /**
  * Runs the steps on the checkout at `repo`. `office(method, path)` is
  * crew.mjs's office client and `appBase` the app's address; `say` prints one
- * line. Returns true when every step passed; on a failure it prints
+ * line. `run` runs bash and ssh (sync, hashes, help). Returns true when every step passed; on a failure it prints
  * `ship FAILED at <step>: <reason>` and stops.
  */
 export const ship = async ({
@@ -179,16 +180,30 @@ export const ship = async ({
   to,
   repo = REPO,
   say,
+  // For tests: the processes (git stays real) and the kit's file list.
+  run = (cmd, args, input) =>
+    spawnSync(cmd, args, { cwd: repo, input, encoding: "utf8" }),
+  listKit = kitFiles,
 }) => {
   const steps = 7;
   let n = 0;
+  /** Set once the checkout has moved, and once the app has restarted. */
+  let moved = null;
+  let restarted = false;
+  const short = (hash) => hash.slice(0, 8);
+  /** After the move, what the Director is left with and the two ways out. */
+  const leftIn = () => {
+    if (!moved || moved.from === moved.to) return "";
+    const [now, old] = [short(moved.to), short(moved.from)];
+    return restarted
+      ? ` - the release checkout and the app are now at ${now}; to go back, ship --to ${old}`
+      : ` - the release checkout is now at ${now}, and the app still runs ${old} until a restart: fix it and run ship --to ${now} again, or ship --to ${old} to go back`;
+  };
   const ok = (name, note) => say(`ship ${++n}/${steps} ${name}: ok - ${note}`);
   const fail = (name, reason) => {
-    say(`ship FAILED at ${n + 1}/${steps} ${name}: ${reason}`);
+    say(`ship FAILED at ${n + 1}/${steps} ${name}: ${reason}${leftIn()}`);
     return false;
   };
-  const run = (cmd, args, input) =>
-    spawnSync(cmd, args, { cwd: repo, input, encoding: "utf8" });
   const appGet = async (path) => {
     const res = await fetch(`${appBase}${path}`);
     const type = res.headers.get("content-type") ?? "";
@@ -197,6 +212,48 @@ export const ship = async ({
       status: res.status,
       json: type.includes("json") ? await res.json() : null,
     };
+  };
+  const noAnswer = () => ({ ok: false, status: "no answer", json: null });
+
+  /**
+   * Why the app must not change now, or the day's cycle when it may. The
+   * app spawns its renders from the checkout and the renderer reads the
+   * 4090 kit, so neither may move under a render; a restart kills a render
+   * (and each render costs a view of the real game) or a post. An app older
+   * than GET /api/daily/busy answers 404; then only the day's cycle counts.
+   */
+  let warnedOld = false;
+  const idle = async () => {
+    const state = await appGet("/api/daily/state").catch(noAnswer);
+    if (!state.ok || !state.json) {
+      return { reason: `GET /api/daily/state: HTTP ${state.status}` };
+    }
+    const cycle = state.json.cycle;
+    if (cycle?.state === "rendering") {
+      return {
+        reason: `the ${cycle.day} cycle is rendering; wait until it ends`,
+      };
+    }
+    const busy = await appGet("/api/daily/busy").catch(noAnswer);
+    if (busy.ok && busy.json) {
+      const { renders, posting } = busy.json;
+      if (renders.length > 0) {
+        return {
+          reason: `the app has renders: ${renders.map((r) => `${r.day} ${r.state}`).join(", ")}; wait until they end`,
+        };
+      }
+      if (posting) return { reason: "a post is running; wait until it ends" };
+    } else if (busy.status === 404) {
+      if (!warnedOld) {
+        say(
+          "ship: the running app has no /api/daily/busy yet, so only the day's cycle is checked for a render",
+        );
+        warnedOld = true;
+      }
+    } else {
+      return { reason: `GET /api/daily/busy: HTTP ${busy.status}` };
+    }
+    return { cycle };
   };
 
   // 1. move. The app must run from this checkout: else the kit would come
@@ -227,6 +284,9 @@ export const ship = async ({
   }
   const plan = releasePlan(repo, to);
   if (!plan.ok) return fail("move", plan.reason);
+  // Before anything moves; step 5 asks again just before the restart.
+  const first = await idle();
+  if (first.reason) return fail("move", first.reason);
   const { back, lines } = commitsOf(repo, plan);
   say(
     `ship ${back ? "rolls back" : "ships"} ${lines.length} commit${lines.length === 1 ? "" : "s"}:`,
@@ -234,6 +294,7 @@ export const ship = async ({
   for (const line of lines) say(`  ${line}`);
   const move = moveRelease(repo, to);
   if (!move.ok) return fail("move", move.reason);
+  moved = move;
   ok(
     "move",
     move.from === move.to
@@ -259,7 +320,7 @@ export const ship = async ({
 
   // 3. hashes. sha256sum --quiet prints only the files that differ, and the
   // ssh link stalls above about 1 KB of stdout, so at most 5 lines come back.
-  const files = kitFiles(repo);
+  const files = listKit(repo);
   const check = run(
     "ssh",
     [
@@ -292,41 +353,11 @@ export const ship = async ({
   }
   ok("help", "the 4090 renderer loads");
 
-  // 5. restart. A restart kills a render in flight, and each render costs a
-  // view of the real game.
-  const noAnswer = () => ({ ok: false, status: "no answer", json: null });
-  const before = await appGet("/api/daily/state").catch(noAnswer);
-  if (!before.ok || !before.json) {
-    return fail("restart", `GET /api/daily/state: HTTP ${before.status}`);
-  }
-  const cycle = before.json.cycle;
-  if (cycle?.state === "rendering") {
-    return fail(
-      "restart",
-      `the ${cycle.day} cycle is rendering; wait until it ends`,
-    );
-  }
-  // Every render queued or running and a post in flight. An app older than
-  // GET /api/daily/busy answers 404; then only the day's cycle is checked.
-  const busy = await appGet("/api/daily/busy").catch(noAnswer);
-  if (busy.ok && busy.json) {
-    const { renders, posting } = busy.json;
-    if (renders.length > 0) {
-      return fail(
-        "restart",
-        `the app has renders: ${renders.map((r) => `${r.day} ${r.state}`).join(", ")}; wait until they end`,
-      );
-    }
-    if (posting) {
-      return fail("restart", "a post is running; wait until it ends");
-    }
-  } else if (busy.status === 404) {
-    say(
-      "ship: the running app has no /api/daily/busy yet, so only the day's cycle was checked for a render",
-    );
-  } else {
-    return fail("restart", `GET /api/daily/busy: HTTP ${busy.status}`);
-  }
+  // 5. restart, if the app is still idle (a render may have started since
+  // step 1).
+  const now = await idle();
+  if (now.reason) return fail("restart", now.reason);
+  const { cycle } = now;
   const restart = await office("POST", `/api/apps/${appName}/restart`);
   if (restart.status !== 200 && restart.status !== 204) {
     return fail(
@@ -334,6 +365,7 @@ export const ship = async ({
       `POST /api/apps/${appName}/restart: HTTP ${restart.status}`,
     );
   }
+  restarted = true;
   ok("restart", `${appName} restarted`);
 
   // 6. page
