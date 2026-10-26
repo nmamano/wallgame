@@ -8,9 +8,8 @@
  * ELIGIBILITY (Nil, 2026-10-25). Every seat must be a guest, an official bot
  * or Nil's own account. One seat held by any other signed-in member, or by a
  * bot that is not official, takes the whole game out. Every variant is in.
- * AI VS HUMAN ONLY (Nil, 2026-10-26, through Wall Game PM): exactly one seat
- * is an official bot, so the other is a guest or Nil; bot vs bot and human vs
- * human are out.
+ * BOT VS BOT IS OUT (Nil, 2026-10-26): at least one seat is a guest or Nil.
+ * Human vs human is in, like human vs bot.
  * Puzzle attempts are out: they start from an authored position and are a
  * solve, not a game. Fewer than MIN_PLIES moves is out: see the constant.
  *
@@ -165,9 +164,9 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
     if (!verdict.ok) return { eligible: false, reason: verdict.reason };
     seatKinds.push(verdict.kind);
   }
-  const bots = seatKinds.filter((kind) => kind === "official bot").length;
-  if (bots === 0) return { eligible: false, reason: "human vs human" };
-  if (bots === 2) return { eligible: false, reason: "bot vs bot" };
+  if (seatKinds.every((kind) => kind === "official bot")) {
+    return { eligible: false, reason: "bot vs bot" };
+  }
   return { eligible: true, seatKinds };
 };
 

@@ -107,11 +107,12 @@ describe("seat eligibility", () => {
     expect(gameEligibility(game(officialBot, member)).eligible).toBe(false);
   });
 
-  test("only AI vs human: one official bot and one guest or Nil", () => {
+  test("human vs human is in; bot vs bot is out", () => {
     expect(gameEligibility(game(nil, guest))).toEqual({
-      eligible: false,
-      reason: "human vs human",
+      eligible: true,
+      seatKinds: ["nil", "guest"],
     });
+    expect(gameEligibility(game(guest, guest)).eligible).toBe(true);
     expect(gameEligibility(game(officialBot, officialBot))).toEqual({
       eligible: false,
       reason: "bot vs bot",
