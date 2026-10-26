@@ -102,6 +102,7 @@ import {
   movesUnderOverlay,
   videoTimeline,
 } from "./timeline-frames.mjs";
+import { fileUrlsIn, isRestShot, partsOf } from "./shoot-workers.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -194,7 +195,7 @@ if (!rawGame) {
       "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
       "  plumbing, for the app rather than for a person:\n" +
       "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
-      "       [--browser chromium|chrome] [--encoder x264|nvenc]",
+      "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]",
   );
   process.exit(2);
 }
@@ -307,6 +308,17 @@ if (!["chromium", "chrome"].includes(BROWSER)) {
 }
 if (!["x264", "nvenc"].includes(ENCODER)) {
   console.error(`--encoder must be x264 or nvenc, got ${ENCODER}`);
+  process.exit(2);
+}
+/**
+ * How many Chromium processes take the screenshots (shoot-workers.mjs). The
+ * default fits the 4-thread cap of a daily render job (render-4090.mjs).
+ */
+const WORKERS = Number(arg("workers", "4"));
+if (!Number.isInteger(WORKERS) || WORKERS < 1 || WORKERS > 16) {
+  console.error(
+    `--workers must be a whole number from 1 to 16, got ${arg("workers")}`,
+  );
   process.exit(2);
 }
 
@@ -688,10 +700,27 @@ for (const f of readdirSync(WORK))
   rmSync(join(WORK, f), { recursive: true, force: true });
 mkdirSync(dirname(OUT), { recursive: true });
 
-const browser = await chromium.launch({
-  ...(BROWSER === "chrome" ? { channel: "chrome" } : {}),
-  args: ["--no-sandbox"],
-});
+const launchBrowser = () =>
+  chromium.launch({
+    ...(BROWSER === "chrome" ? { channel: "chrome" } : {}),
+    args: ["--no-sandbox"],
+  });
+const browser = await launchBrowser();
+
+/**
+ * Load images into a page and wait until they are decoded, so a screenshot
+ * never catches one still loading: the stage sets an image's src and does
+ * not wait for it. Runs in the page; the images stay referenced there.
+ */
+const preloadImages = async (urls) => {
+  const images = urls.map((url) => {
+    const img = new Image();
+    img.src = url;
+    return img;
+  });
+  window.__preloaded = [...(window.__preloaded ?? []), ...images];
+  await Promise.all(images.map((img) => img.decode()));
+};
 
 /**
  * The daily look's seat colours (dailySeatColors in edl.mjs), by each seat's
@@ -2278,33 +2307,42 @@ const renderStyle = async (styleName) => {
         : ""),
   );
 
-  const stage = await browser.newPage({
-    viewport: { width: layout.width, height: layout.height },
-    deviceScaleFactor: 1,
-  });
-  await stage.goto(`file://${join(HERE, "stage.html")}`, {
-    waitUntil: "load",
-  });
-  await stage.evaluate((vars) => {
-    for (const [k, v] of Object.entries(vars)) {
-      document.documentElement.style.setProperty(k, v);
-    }
-  }, layout.vars);
-  /*
-    The VS names are fitted by measuring them, and a measurement taken while
-    a font still loads is wrong, so no frame is taken before the fonts are in.
-  */
-  await stage.evaluate(() => document.fonts.ready);
-
-  /** The daily look's board, sized by the stage to what the safe area leaves. */
-  if (wallz) {
-    const board = await stage.evaluate((a) => window.__fitWallz(a), {
-      captions: CAPTIONS,
-      hud: Boolean(RACE_DISTANCES || GOAL_LINE),
-      goal: GOAL_LINE,
+  /**
+   * The stage as every frame needs it: the layout's size and variables, the
+   * fonts in, and the daily board fitted. The main page and each shoot
+   * worker open it this same way, so they paint a state the same way.
+   * Returns the page and the daily board's size (null in the current look).
+   */
+  const openStage = async (owner) => {
+    const page = await owner.newPage({
+      viewport: { width: layout.width, height: layout.height },
+      deviceScaleFactor: 1,
     });
-    log(`daily board ${board}px, inside the safe area`);
-  }
+    await page.goto(`file://${join(HERE, "stage.html")}`, {
+      waitUntil: "load",
+    });
+    await page.evaluate((vars) => {
+      for (const [k, v] of Object.entries(vars)) {
+        document.documentElement.style.setProperty(k, v);
+      }
+    }, layout.vars);
+    /*
+      The VS names are fitted by measuring them, and a measurement taken while
+      a font still loads is wrong, so no frame is taken before the fonts are in.
+    */
+    await page.evaluate(() => document.fonts.ready);
+    /** The daily look's board, sized by the stage to what the safe area leaves. */
+    const board = wallz
+      ? await page.evaluate((a) => window.__fitWallz(a), {
+          captions: CAPTIONS,
+          hud: Boolean(RACE_DISTANCES || GOAL_LINE),
+          goal: GOAL_LINE,
+        })
+      : null;
+    return { page, board };
+  };
+  const { page: stage, board: dailyBoard } = await openStage(browser);
+  if (wallz) log(`daily board ${dailyBoard}px, inside the safe area`);
 
   /** Published by stage.html: each ending's length, hold and impact second. */
   const endingTimings = await stage.evaluate(() => window.__ENDINGS);
@@ -2366,6 +2404,7 @@ const renderStyle = async (styleName) => {
    */
   const probeGeometry = async (state, tag) => {
     const file = join(work, `probe-${tag}.png`);
+    await stage.evaluate(preloadImages, fileUrlsIn([state]));
     await stage.evaluate((s) => window.__stage(s), state);
     const rect = await stage.evaluate(() => {
       const r = document.getElementById("boardWrap").getBoundingClientRect();
@@ -2448,12 +2487,29 @@ const renderStyle = async (styleName) => {
   let frameNo = 0;
   /** The video's first frame, which the loop tail ends on. */
   let firstState = null;
-  // Play frames go through emit(), or the VS guard (movesUnderOverlay) misses them.
+  /** Every image to shoot, in order: its stage state and its file (shootAll). */
+  const shots = [];
+  /*
+    Play frames go through emit(), or the VS guard (movesUnderOverlay) misses
+    them. shoot() records the image; shootAll() takes the screenshots after
+    the whole video is composed. The main page still paints each state, so
+    the checks that read the page (the geometry probes, the board box after
+    effects) see the frame they follow.
+  */
   const shoot = async (state, seconds, meta) => {
     firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
     await stage.evaluate((s) => window.__stage(s), state);
-    await stage.screenshot({ path: file });
+    // A part of the shoot pass may start here only at a plain position.
+    const rest =
+      meta.ply !== undefined &&
+      isRestShot({ kind: meta.kind, state }, playState(meta.ply + 1));
+    if (meta.kind === "move" && !rest) {
+      throw new Error(
+        `image ${frameNo - 1} is labelled a plain move (ply ${meta.ply}) but its state is not the plain position: an effect must use its own kind`,
+      );
+    }
+    shots.push({ state, file, rest });
     timeline.push({ file, seconds, ...meta });
     if (stillNext) {
       stills.push({ ...stillNext, file, at: elapsed });
@@ -3237,6 +3293,46 @@ const renderStyle = async (styleName) => {
     );
   }
   await stage.close();
+
+  /*
+    The shoot pass: WORKERS Chromium processes, each with its own stage,
+    screenshot one contiguous part of the images (shoot-workers.mjs). A part
+    starts at a plain position, never inside an effect. A worker loads its
+    part's images first, and paints the image before its part, so its first
+    frame follows the same frame as in a serial run.
+  */
+  const shotStart = Date.now();
+  // A part starts at a plain position, never inside an effect.
+  const parts = partsOf(shots.length, WORKERS, (i) => shots[i].rest);
+  await Promise.all(
+    parts.map(async ([from, to]) => {
+      const worker = await launchBrowser();
+      try {
+        const { page } = await openStage(worker);
+        await page.evaluate(
+          preloadImages,
+          fileUrlsIn(shots.slice(from, to).map((s) => s.state)),
+        );
+        if (from > 0) {
+          await page.evaluate((s) => window.__stage(s), shots[from - 1].state);
+        }
+        for (let i = from; i < to; i += 1) {
+          await page.evaluate((s) => window.__stage(s), shots[i].state);
+          await page.screenshot({ path: shots[i].file });
+        }
+      } finally {
+        await worker.close();
+      }
+    }),
+  );
+  log(
+    `${shots.length} images shot by ${parts.length} workers in ${((Date.now() - shotStart) / 1000).toFixed(1)}s`,
+  );
+  // Each image's hash, so two renders can be compared frame by frame.
+  writeFileSync(
+    join(work, "frame-hashes.json"),
+    JSON.stringify(shots.map((s) => sha256Of(s.file))),
+  );
   log(`${timeline.length} frames written`);
 
   /* ------------------------------------------------------------- encode -- */
