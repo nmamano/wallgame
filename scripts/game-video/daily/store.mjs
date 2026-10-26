@@ -55,7 +55,7 @@ export const STATES = [
   "post-failed",
 ];
 
-export const PLATFORMS = ["x", "youtube"];
+export const PLATFORMS = ["x", "youtube", "tiktok", "instagram"];
 
 /** The UTC day of an instant, as YYYY-MM-DD. */
 export const utcDay = (date = new Date()) => date.toISOString().slice(0, 10);

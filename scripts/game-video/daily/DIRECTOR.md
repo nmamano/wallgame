@@ -20,16 +20,21 @@ already has a cycle, finish it or stop: do not start another. `pick
 2. `pick --report <same file> --rank N --caption "<post text>"`
    This caption is the X text, the YouTube title and the start of the
    YouTube description. `--title` sets another title.
-3. `direct --edl <edl.json>`
+3. `storyboard`, then open the PNG it names. It has one tile per position
+   (ply N = the position after ply N, 0-based as in the EDL), in the video's
+   colours. Yellow marks that ply's walls and pawn move. DANGER, SAVE,
+   RELIEF and JUMP badges mark the picked plies. Choose the plies, cells and
+   walls that you frame from what you see.
+4. `direct --edl <edl.json>`
    Your EDL (below). `status` shows the default ending.
-4. `render --wait`
+5. `render --wait`
    One render on the 4090. Each render adds one view to the real game, so a
    second render of the same game needs `--force`.
-5. `sheet`, then open the PNG it names and judge each still. Then run
+6. `sheet`, then open the PNG it names and judge each still. Then run
    `check --sheet <sha256 from sheet> --verdicts <verdicts.json>`, with one
    verdict per still in sheet order:
    `[{"ply": 9, "kind": "zoom", "ok": true, "note": "^g3 and ^h3 in frame, cat g3, mouse g4"}]`.
-6. `ask --agent <your agent id>`
+7. `ask --agent <your agent id>`
    This opens Nil's ask with the video and the sheet. When he answers, run
    `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
 
@@ -44,8 +49,9 @@ already has a cycle, finish it or stop: do not start another. `pick
   wall jump. Frame them on its `*` walls.
 - Use few effects. One FAHHH per video unless two moves are equally strong.
 - The video caption has 6 words and 32 characters at most. It says Red and
-  Blue, not names: the renderer always shows the AI in red and the human in
-  blue.
+  Blue, not names. The renderer shows an AI in red and a human in blue; in a
+  human vs human game, seat 1 is red and seat 2 is blue. `facts` gives each
+  seat's colour.
 - `ending`: use the default from `status` unless the game needs another one.
 - `music`: always name a track, and vary it. Do not use the last track,
   which `status` shows (posted, or waiting for an answer on another day).

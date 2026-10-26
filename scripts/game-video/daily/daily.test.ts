@@ -26,7 +26,25 @@ import {
 import type { DescribedCloseCall, PickedJump } from "../daily-candidates";
 import { oauth1Header, xDryRunReply } from "./post-x.mjs";
 import { youtubeDryRunReply } from "./post-youtube.mjs";
-import { sha256 } from "./transport.mjs";
+import {
+  postToTiktok,
+  tiktokDryRunReply,
+  tokenStore,
+  DRY_RUN_TIKTOK,
+  TIKTOK_TOKEN_URL,
+} from "./post-tiktok.mjs";
+import {
+  instagramDryRunReply,
+  postToInstagram,
+  DRY_RUN_INSTAGRAM,
+} from "./post-instagram.mjs";
+import {
+  dryRunTransport,
+  NotPosted,
+  PostFailed,
+  sha256,
+} from "./transport.mjs";
+import { askText } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 
@@ -154,7 +172,12 @@ const pickToday = (
   });
 };
 
-const DRY = { x: "dry-run", youtube: "dry-run" };
+const DRY = {
+  x: "dry-run",
+  youtube: "dry-run",
+  tiktok: "dry-run",
+  instagram: "dry-run",
+};
 
 /** A director's list for TESTGAME1: one zoom with a FAHHH on move 23. */
 const EDL = {
@@ -256,7 +279,12 @@ describe("the ask must show what the approval will cover", () => {
         askId: "a",
         modes: DRY,
         videoSha256: "aa",
-        currentModes: { x: "live", youtube: "dry-run" },
+        currentModes: {
+          x: "live",
+          youtube: "dry-run",
+          tiktok: "dry-run",
+          instagram: "dry-run",
+        },
       });
     }).toThrow(/the ask says x dry-run, but the app would post live/);
   });
@@ -380,6 +408,8 @@ describe("a post that may exist is not posted again", () => {
           return xDryRunReply(req);
         },
         youtube: youtubeDryRunReply,
+        tiktok: tiktokDryRunReply,
+        instagram: instagramDryRunReply,
       },
     });
     const first = (await daily.post(day)) as Cycle & {
@@ -439,7 +469,12 @@ describe("an approval covers one video in one mode", () => {
     approved(store, day);
     expect(() =>
       store.checkPost(day, {
-        modes: { x: "live", youtube: "dry-run" },
+        modes: {
+          x: "live",
+          youtube: "dry-run",
+          tiktok: "dry-run",
+          instagram: "dry-run",
+        },
         videoSha256: "aa",
       }),
     ).toThrow(/approval was for dry-run/);
@@ -474,6 +509,8 @@ describe("an approval covers one video in one mode", () => {
     expect((store.read(day) as Cycle).state).toBe("post-failed");
     expect(store.checkPost(day, { modes: DRY, videoSha256: "aa" })).toEqual([
       "youtube",
+      "tiktok",
+      "instagram",
     ]);
     expect(readPostLog(store.postLog.dryRun)).toHaveLength(1);
     expect(existsSync(store.postLog.live)).toBe(false);
@@ -552,6 +589,14 @@ describe("captions", () => {
     expect(c.facts[0]).toBe(`Move 10: ${CLOSE_CALL.description}`);
     expect(c.facts[1]).toMatch(/^Move 23: /);
     expect(c.beats[0].danger.preyCell).toBe("g4");
+    // The storyboard replays the moves from the start position.
+    const start = { pawns: {}, walls: [] };
+    expect(
+      candidateFromReport(
+        { ...REPORT, ranked: [{ ...REPORT.ranked[0], initialState: start }] },
+        1,
+      ).initialState,
+    ).toEqual(start);
     // No beat: the walls alone, as before.
     expect(candidateFromReport(REPORT, 1).beats).toEqual([]);
   });
@@ -626,6 +671,206 @@ describe("captions", () => {
   });
 });
 
+describe("TikTok", () => {
+  test("a rotated refresh token is kept, and a new secret starts a new chain", () => {
+    const dir = tempDir();
+    expect(tokenStore(dir, "seed-1").current()).toBe("seed-1");
+    tokenStore(dir, "seed-1").save("rotated-1");
+    expect(tokenStore(dir, "seed-1").current()).toBe("rotated-1");
+    // Nil set a new secret: it wins over the kept token of the old one.
+    expect(tokenStore(dir, "seed-2").current()).toBe("seed-2");
+  });
+
+  test("a FAILED upload is a clear no, not an uncertain post", async () => {
+    const transport = dryRunTransport((req: { url: string }) =>
+      req.url.endsWith("/status/fetch/")
+        ? {
+            status: 200,
+            json: {
+              data: { status: "FAILED", fail_reason: "duration_check_failed" },
+            },
+          }
+        : tiktokDryRunReply(req),
+    );
+    const err = await postToTiktok({
+      video: Buffer.from("v"),
+      transport,
+      creds: DRY_RUN_TIKTOK,
+      onRefreshToken: () => undefined,
+      sleep: () => Promise.resolve(),
+      beforeCommit: () => undefined,
+    }).catch((e: unknown) => e);
+    expect(err).toBeInstanceOf(NotPosted);
+    expect(String(err)).toMatch(/duration_check_failed/);
+  });
+
+  /** A live-mode transport that answers from `reply` and sends nothing. */
+  const fakeLive = (reply: (req: { url: string }) => unknown) => ({
+    mode: "live",
+    sent: [],
+    request: (req: { url: string }) => Promise.resolve(reply(req)),
+  });
+  const LIVE_CREDS = {
+    TIKTOK_CLIENT_KEY: "k",
+    TIKTOK_CLIENT_SECRET: "s",
+    refreshToken: "kept",
+  };
+
+  test("a token reply without a refresh token keeps the old one", async () => {
+    const saved: unknown[] = [];
+    await postToTiktok({
+      video: Buffer.from("v"),
+      transport: fakeLive((req) =>
+        req.url === TIKTOK_TOKEN_URL
+          ? { status: 200, json: { access_token: "a", expires_in: 86400 } }
+          : tiktokDryRunReply(req),
+      ),
+      creds: LIVE_CREDS,
+      onRefreshToken: (t: unknown) => saved.push(t),
+      sleep: () => Promise.resolve(),
+      beforeCommit: () => undefined,
+    });
+    expect(saved).toEqual([]);
+  });
+
+  test("a refused status request after the upload leaves the post uncertain", async () => {
+    const err = await postToTiktok({
+      video: Buffer.from("v"),
+      transport: fakeLive((req) =>
+        req.url.endsWith("/status/fetch/")
+          ? { status: 429, json: { error: { code: "rate_limit_exceeded" } } }
+          : tiktokDryRunReply(req),
+      ),
+      creds: LIVE_CREDS,
+      onRefreshToken: () => undefined,
+      sleep: () => Promise.resolve(),
+      beforeCommit: () => undefined,
+    }).catch((e: unknown) => e);
+    // routes reads a PostFailed 4xx as "not created"; this one may be a draft.
+    expect(err).toBeInstanceOf(Error);
+    expect(err).not.toBeInstanceOf(PostFailed);
+    expect(String(err)).toMatch(/HTTP 429.*may exist/);
+  });
+
+  test("the ask shows the TikTok caption on its own line only when live", () => {
+    const c = {
+      day: "2026-10-26",
+      caption: {
+        x: "Red walls in Blue",
+        youtubeTitle: "t",
+        youtubeDescription: "d",
+      },
+      candidate: {
+        seats: [{ name: "A" }, { name: "B" }],
+        movesCount: 9,
+        gameId: "g",
+      },
+      render: { video: { bytes: 1e6 }, ending: "e" },
+      edl: { summary: [] },
+      check: { verdicts: [] },
+    };
+    const live = askText(
+      c,
+      { x: "live", youtube: "live", tiktok: "live", instagram: "live" },
+      "0".repeat(64),
+    ).split("\n");
+    const at = live.indexOf("TikTok caption:");
+    expect(live.slice(at, at + 3)).toEqual([
+      "TikTok caption:",
+      "Red walls in Blue",
+      "Open the TikTok inbox draft, paste, tap Post.",
+    ]);
+    const dry = askText(
+      c,
+      { x: "live", youtube: "live", tiktok: "dry-run", instagram: "live" },
+      "0".repeat(64),
+    );
+    expect(dry).toContain("TikTok: dry run, no draft.");
+    expect(dry).not.toContain("TikTok caption:");
+  });
+});
+
+describe("Instagram", () => {
+  const run = (reply: (req: { url: string }) => unknown) => {
+    const steps: string[] = [];
+    const transport = dryRunTransport((req: { url: string }) => {
+      steps.push(req.url.split("/").pop() ?? "");
+      return reply(req);
+    });
+    return postToInstagram({
+      video: Buffer.from("v"),
+      caption: "c",
+      transport,
+      creds: DRY_RUN_INSTAGRAM,
+      sleep: () => Promise.resolve(),
+      beforeCommit: () => {
+        steps.push("COMMIT");
+      },
+    })
+      .then((r: unknown) => ({ r, e: undefined as unknown, steps }))
+      .catch((e: unknown) => ({ r: undefined as unknown, e, steps }));
+  };
+
+  test("processing that ends in ERROR is a clear no, before the commit", async () => {
+    const { e, steps } = await run((req) =>
+      req.url.includes("fields=status_code")
+        ? { status: 200, json: { status_code: "ERROR" } }
+        : instagramDryRunReply(req),
+    );
+    expect(e).toBeInstanceOf(NotPosted);
+    expect(steps).not.toContain("COMMIT");
+  });
+
+  /** media_publish answers 400; the container check after it says `after`. */
+  const publishRefused = (after: string) => {
+    let publishSeen = false;
+    return (req: { url: string }) => {
+      if (req.url.endsWith("/media_publish")) {
+        publishSeen = true;
+        return {
+          status: 400,
+          json: { error: { code: 2, is_transient: true } },
+        };
+      }
+      if (publishSeen && req.url.includes("fields=status_code")) {
+        return { status: 200, json: { status_code: after } };
+      }
+      return instagramDryRunReply(req);
+    };
+  };
+
+  test("a refused media_publish whose container is PUBLISHED is a posted Reel", async () => {
+    const { r } = await run(publishRefused("PUBLISHED"));
+    expect(r).toEqual({ postId: null, url: null });
+  });
+
+  test("a refused media_publish whose container is FINISHED is a clear no", async () => {
+    const { e } = await run(publishRefused("FINISHED"));
+    expect(e).toBeInstanceOf(PostFailed);
+  });
+
+  test("a refused media_publish with any other container state is uncertain", async () => {
+    const { e } = await run(publishRefused("IN_PROGRESS"));
+    expect(e).toBeInstanceOf(Error);
+    expect(e).not.toBeInstanceOf(PostFailed);
+    expect(String(e)).toMatch(/IN_PROGRESS: look at the Instagram profile/);
+  });
+
+  test("the commit is media_publish, and a lost permalink does not fail the post", async () => {
+    const { r, steps } = await run((req) =>
+      req.url.includes("fields=permalink")
+        ? { status: 500, json: null }
+        : instagramDryRunReply(req),
+    );
+    expect(r).toEqual({ postId: "DRY-RUN-MEDIA-ID", url: null });
+    expect(steps.slice(-3)).toEqual([
+      "COMMIT",
+      "media_publish",
+      "DRY-RUN-MEDIA-ID?fields=permalink",
+    ]);
+  });
+});
+
 describe("X signing", () => {
   test("matches the OAuth 1.0a example X publishes", () => {
     // developer.x.com "Creating a signature": the status body parameter is
@@ -665,7 +910,12 @@ describe("X signing", () => {
         YOUTUBE_CLIENT_SECRET: "b",
         YOUTUBE_REFRESH_TOKEN: "c",
       }),
-    ).toEqual({ x: "dry-run", youtube: "live" });
+    ).toEqual({
+      x: "dry-run",
+      youtube: "live",
+      tiktok: "dry-run",
+      instagram: "dry-run",
+    });
   });
 });
 
@@ -910,7 +1160,66 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(ytPlan).toContain("refresh_token=%3CYOUTUBE_REFRESH_TOKEN%3E");
 
   const log = (await call<LogRow[]>("/api/daily/post-log?dryRun=1")).body;
-  expect(log.map((r) => r.platform)).toEqual(["x", "youtube"]);
+  expect(log.map((r) => r.platform)).toEqual([
+    "x",
+    "youtube",
+    "tiktok",
+    "instagram",
+  ]);
+  // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
+  expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");
+  const tiktokPlan = JSON.parse(
+    readFileSync(posted.body.posts.tiktok.requestsFile, "utf8"),
+  ) as {
+    method: string;
+    url: string;
+    body: unknown;
+    headers: Record<string, string>;
+  }[];
+  expect(tiktokPlan.map((r) => `${r.method} ${r.url.split("?")[0]}`)).toEqual([
+    "POST https://open.tiktokapis.com/v2/oauth/token/",
+    "POST https://open.tiktokapis.com/v2/post/publish/inbox/video/init/",
+    "PUT https://open-upload.tiktokapis.com/video/",
+    "POST https://open.tiktokapis.com/v2/post/publish/status/fetch/",
+  ]);
+  expect(tiktokPlan[1].body).toMatchObject({
+    source_info: { source: "FILE_UPLOAD", total_chunk_count: 1 },
+  });
+  expect(tiktokPlan[2].headers["content-range"]).toMatch(/^bytes 0-\d+\/\d+$/);
+  expect(log[2]).toMatchObject({
+    platform: "tiktok",
+    caption: state?.cycle.caption.x,
+    tiktokStatus: "SEND_TO_USER_INBOX",
+  });
+  const instagramPlan = JSON.parse(
+    readFileSync(posted.body.posts.instagram.requestsFile, "utf8"),
+  ) as {
+    method: string;
+    url: string;
+    body: unknown;
+    headers: Record<string, string>;
+  }[];
+  expect(instagramPlan.map((r) => `${r.method} ${r.url}`)).toEqual([
+    "POST https://graph.facebook.com/v26.0/<INSTAGRAM_USER_ID>/media",
+    "POST https://rupload.facebook.com/ig-api-upload/v26.0/DRY-RUN-CONTAINER",
+    "GET https://graph.facebook.com/v26.0/DRY-RUN-CONTAINER?fields=status_code",
+    "POST https://graph.facebook.com/v26.0/<INSTAGRAM_USER_ID>/media_publish",
+    "GET https://graph.facebook.com/v26.0/DRY-RUN-MEDIA-ID?fields=permalink",
+  ]);
+  expect(instagramPlan[0].body).toEqual({
+    media_type: "REELS",
+    upload_type: "resumable",
+    caption: state?.cycle.caption.x,
+  });
+  expect(instagramPlan[1].headers.file_size).toBe(
+    String((instagramPlan[1].body as { bytes: number }).bytes),
+  );
+  expect(log[3]).toMatchObject({
+    platform: "instagram",
+    caption: state?.cycle.caption.x,
+    postId: "DRY-RUN-MEDIA-ID",
+    url: "https://www.instagram.com/reel/DRY-RUN/",
+  });
   expect(log[0]).toMatchObject({
     gameId: "TESTGAME1",
     mode: "dry-run",

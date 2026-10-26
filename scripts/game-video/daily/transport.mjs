@@ -116,4 +116,15 @@ export class PostFailed extends Error {
   }
 }
 
+/**
+ * The platform answered that the post was not made (TikTok's FAILED status),
+ * as clear as a 4xx: posting again cannot make a second copy.
+ */
+export class NotPosted extends Error {
+  constructor(message) {
+    super(message);
+    this.name = "NotPosted";
+  }
+}
+
 export const ok = (reply) => reply.status >= 200 && reply.status < 300;

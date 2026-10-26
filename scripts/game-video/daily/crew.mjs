@@ -15,6 +15,10 @@
  *                                  A day has one cycle: --replace starts over a
  *                                  day that has one (only on purpose, e.g.
  *                                  after the member rejected its video)
+ *   storyboard                     one image of every position of the picked
+ *                                  game (scripts/game-video/storyboard.ts, on
+ *                                  this box: no 4090, no view of the game).
+ *                                  Open it before you write the edit list.
  *   direct --edl F                 the director's edit decision list for the
  *                                  picked game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending
@@ -34,8 +38,9 @@
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
  *                                  cycle is found by the ask, so no --day
- *   post --day D [--confirm-not-posted x|youtube]
- *                                  post X then YouTube (dry-run without keys)
+ *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram]
+ *                                  post X, YouTube, the TikTok draft and the
+ *                                  Instagram Reel (dry-run without keys)
  *   log [--dry-run]                the post log
  *
  * The ask goes to the agent's manager. Only an agent can open one (an app
@@ -53,18 +58,31 @@
  * yes: the decision is the crew lead's reading of the member's message.
  *
  * AFTER AN UNCERTAIN POST. If a platform's final request got no clear answer,
- * `post` refuses that platform. Look at the account (X profile, YouTube Studio).
+ * `post` refuses that platform. Look at the account (X profile, YouTube Studio,
+ * the TikTok inbox, the Instagram profile).
  * Only when the post is not there, run post again with --confirm-not-posted.
  *
  * The app is found through the office's app registry (name game-video), or
  * given with --app http://127.0.0.1:<port>.
  */
-import { existsSync, readFileSync } from "node:fs";
-import { basename } from "node:path";
+import { spawnSync } from "node:child_process";
+import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import { homedir, tmpdir } from "node:os";
+import { basename, dirname, join, resolve } from "node:path";
+import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
 import { candidateFromReport } from "./candidate.mjs";
+import { dailySeatColors } from "../edl.mjs";
 
 const OFFICE = "http://localhost:4000";
+const STORYBOARD = resolve(
+  dirname(fileURLToPath(import.meta.url)),
+  "../storyboard.ts",
+);
+/** By full path, as nightly-candidates.sh: a unit's PATH has no bun. */
+const BUN = join(homedir(), ".bun/bin/bun");
+/** About 40 times the 3 s of a 27-ply storyboard (2026-10-26). */
+const STORYBOARD_TIMEOUT_MS = 120_000;
 const APP_NAME = "game-video";
 
 const argv = process.argv.slice(2);
@@ -138,7 +156,9 @@ const readReport = (path) => {
 const summary = (s) => {
   const c = s.cycle;
   const lines = [
-    `day ${s.day}: ${c ? c.state : "no cycle"}   modes x=${s.modes.x} youtube=${s.modes.youtube}`,
+    `day ${s.day}: ${c ? c.state : "no cycle"}   modes ${Object.entries(s.modes)
+      .map(([p, m]) => `${p}=${m}`)
+      .join(" ")}`,
   ];
   if (!c) return lines.join("\n");
   const k = c.candidate;
@@ -200,9 +220,17 @@ export const askText = (c, modes, videoSha256) => {
     `X: ${c.caption.x}`,
     `YouTube title: ${c.caption.youtubeTitle}`,
     `YouTube description: ${c.caption.youtubeDescription}`,
+    ...(modes.tiktok === "live"
+      ? [
+          "TikTok caption:",
+          c.caption.x,
+          "Open the TikTok inbox draft, paste, tap Post.",
+        ]
+      : ["TikTok: dry run, no draft."]),
+    `Instagram Reel: the X text as its caption.`,
     "",
     "FOR YOU ONLY, NOT POSTED:",
-    `Posting mode: X ${modes.x}, YouTube ${modes.youtube}.`,
+    `Posting mode: X ${modes.x}, YouTube ${modes.youtube}, TikTok ${modes.tiktok}, Instagram ${modes.instagram}.`,
     `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
     `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}, music ${c.render.music ?? "-"}.`,
     "Director's edit list:",
@@ -227,7 +255,7 @@ const commands = {
     const count = Math.min(top, report.ranked?.length ?? 0);
     if (!count) die("the report ranks no game");
     console.log(
-      "In the video the AI is Red and the human is Blue: a caption says Red and Blue, not the names (Nil, 2026-10-26).\n",
+      "A caption says Red and Blue, not the names (Nil, 2026-10-26). Each seat's colour in the video follows its name.\n",
     );
     for (let rank = 1; rank <= count; rank++) {
       let c;
@@ -237,8 +265,17 @@ const commands = {
         console.log(`rank ${rank}: not usable - ${err.message}\n`);
         continue;
       }
+      // The renderer's rule (dailySeatColors): an AI is red; two humans are
+      // red for seat 1 and blue for seat 2. Two bots are never a candidate.
+      const colors = dailySeatColors(
+        Object.fromEntries(
+          c.seats.map((s) => [s.playerOrder, s.kind === "official bot"]),
+        ),
+      );
+      const colorName = (s) =>
+        colors[s.playerOrder] === "red" ? "Red" : "Blue";
       console.log(
-        `rank ${rank}: ${c.seats.map((s) => `${s.name} (${s.kind})`).join(" vs ")}, ${c.variant}, ${c.movesCount} plies`,
+        `rank ${rank}: ${c.seats.map((s) => `${s.name} (${s.kind}, ${colorName(s)})`).join(" vs ")}, ${c.variant}, ${c.movesCount} plies`,
       );
       for (const f of c.facts) console.log(`  ${f}`);
       // For the edit list: 0-based plies, cells after the ply, and the walls
@@ -305,6 +342,44 @@ const commands = {
       edl: JSON.parse(readFileSync(path, "utf8")),
     });
     console.log(summary(await state()));
+  },
+
+  async storyboard() {
+    const c = (await state()).cycle ?? die("pick a game first");
+    // A new folder per run: nothing that exists is written over.
+    const dir = mkdtempSync(join(tmpdir(), `wallgame-storyboard-${c.day}-`));
+    const candidate = join(dir, "candidate.json");
+    writeFileSync(candidate, JSON.stringify(c.candidate));
+    const run = spawnSync(
+      BUN,
+      [
+        STORYBOARD,
+        "--candidate",
+        candidate,
+        "--out",
+        join(dir, `${c.candidate.gameId}.png`),
+      ],
+      {
+        encoding: "utf8",
+        timeout: STORYBOARD_TIMEOUT_MS,
+        // SIGTERM: playwright then closes the Chrome it started.
+        killSignal: "SIGTERM",
+        maxBuffer: 16 * 1024 * 1024,
+      },
+    );
+    const line = run.stdout
+      ?.split("\n")
+      .reverse()
+      .find((l) => l.startsWith("RESULT "));
+    if (run.status !== 0 || !line) {
+      die(
+        `the storyboard failed (exit ${run.status}${run.signal ? `, ${run.signal}` : ""}): ${(run.error?.message ?? run.stderr ?? "").trim().split("\n").slice(-10).join("\n") || "no RESULT line"}`,
+      );
+    }
+    const result = JSON.parse(line.slice("RESULT ".length));
+    console.log(
+      `storyboard: ${result.png} (${result.plies} plies). Open it before you write the edit list.`,
+    );
   },
 
   async sheet() {

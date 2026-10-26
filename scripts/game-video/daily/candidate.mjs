@@ -227,6 +227,8 @@ export const candidateFromReport = (report, rank = 1) => {
     })),
     // Every ply's notation: edl.mjs checks the director's list against it.
     moves: entry.moves ?? null,
+    // Where the game started: the storyboard replays the moves from it.
+    initialState: entry.initialState ?? null,
     source: { reportCreatedAt: report.createdAt, rank },
   };
   return {

@@ -17,7 +17,7 @@
  *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4,
  *                       then POST /api/daily/ask records its id
  *   crew.mjs answer  -> POST /api/daily/answer   the member's reply
- *   crew.mjs post    -> POST /api/daily/post     X then YouTube, and the log
+ *   crew.mjs post    -> POST /api/daily/post     each platform in turn, and the log
  *
  * THE APP CANNOT OPEN THE ASK ITSELF: an Isomux app token is refused on the
  * asks routes. So the agent opens it and hands the id and, later, the answer
@@ -69,8 +69,22 @@ import {
   dryRunTransport,
   liveTransport,
   sha256,
+  NotPosted,
   PostFailed,
 } from "./transport.mjs";
+import {
+  postToInstagram,
+  instagramDryRunReply,
+  DRY_RUN_INSTAGRAM,
+  INSTAGRAM_SECRETS,
+} from "./post-instagram.mjs";
+import {
+  postToTiktok,
+  tiktokDryRunReply,
+  tokenStore,
+  DRY_RUN_TIKTOK,
+  TIKTOK_SECRETS,
+} from "./post-tiktok.mjs";
 import {
   postToX,
   oauth1Header,
@@ -99,7 +113,12 @@ const DEFAULT_RENDER_DEADLINE_MS = 15 * 60 * 1000;
 /** Time the adapter gets to stop the remote render before it is killed. */
 const KILL_GRACE_MS = 30 * 1000;
 
-const SECRETS = { x: X_SECRETS, youtube: YOUTUBE_SECRETS };
+const SECRETS = {
+  x: X_SECRETS,
+  youtube: YOUTUBE_SECRETS,
+  tiktok: TIKTOK_SECRETS,
+  instagram: INSTAGRAM_SECRETS,
+};
 
 /** live when every secret of the platform is set, else dry-run. */
 export const postingModes = (env) =>
@@ -130,7 +149,12 @@ export const createDaily = ({
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
-  dryRunReplies = { x: xDryRunReply, youtube: youtubeDryRunReply },
+  dryRunReplies = {
+    x: xDryRunReply,
+    youtube: youtubeDryRunReply,
+    tiktok: tiktokDryRunReply,
+    instagram: instagramDryRunReply,
+  },
 }) => {
   const store = openStore(dataDir);
   const { dirs } = store;
@@ -390,34 +414,65 @@ export const createDaily = ({
         committing = true;
         store.markPending(day, platform, modes[platform]);
       };
+      const live = modes[platform] === "live";
+      const posters = {
+        x: () =>
+          postToX({
+            video,
+            text: cycle.approval.caption.x,
+            transport,
+            sign: live ? (req) => oauth1Header(req, env) : dryRunSigner,
+            sleep,
+            beforeCommit,
+          }),
+        youtube: () =>
+          postToYoutube({
+            video,
+            caption: cycle.approval.caption,
+            transport,
+            creds: live ? env : DRY_RUN_CREDS,
+            beforeCommit,
+          }),
+        tiktok: () => {
+          const tokens = tokenStore(
+            join(dirs.root, "tokens"),
+            env.TIKTOK_REFRESH_TOKEN,
+          );
+          return postToTiktok({
+            video,
+            transport,
+            creds: live
+              ? {
+                  TIKTOK_CLIENT_KEY: env.TIKTOK_CLIENT_KEY,
+                  TIKTOK_CLIENT_SECRET: env.TIKTOK_CLIENT_SECRET,
+                  refreshToken: tokens.current(),
+                }
+              : DRY_RUN_TIKTOK,
+            onRefreshToken: tokens.save,
+            sleep,
+            beforeCommit,
+          });
+        },
+        instagram: () =>
+          postToInstagram({
+            video,
+            caption: cycle.approval.caption.x,
+            transport,
+            creds: live ? env : DRY_RUN_INSTAGRAM,
+            sleep,
+            beforeCommit,
+          }),
+      };
       let result;
       try {
-        const posted =
-          platform === "x"
-            ? await postToX({
-                video,
-                text: cycle.approval.caption.x,
-                transport,
-                sign:
-                  modes.x === "live"
-                    ? (req) => oauth1Header(req, env)
-                    : dryRunSigner,
-                sleep,
-                beforeCommit,
-              })
-            : await postToYoutube({
-                video,
-                caption: cycle.approval.caption,
-                transport,
-                creds: modes.youtube === "live" ? env : DRY_RUN_CREDS,
-                beforeCommit,
-              });
+        const posted = await posters[platform]();
         result = { ok: true, mode: modes[platform], at, ...posted };
       } catch (err) {
         // A 4xx to the final request is a clear "not created"; anything else
         // after it (a 5xx, a lost reply) leaves the post unknown.
         const refused =
-          err instanceof PostFailed && err.status >= 400 && err.status < 500;
+          err instanceof NotPosted ||
+          (err instanceof PostFailed && err.status >= 400 && err.status < 500);
         result = {
           ok: false,
           uncertain: committing && !refused,
@@ -756,10 +811,12 @@ export const logRow = (cycle, platform, result) => ({
   mode: result.mode,
   postId: result.postId,
   url: result.url,
+  // TikTok takes no caption through the API: Nil pastes the X text there.
+  // Instagram gets the X text as its caption.
   caption:
-    platform === "x"
-      ? cycle.approval.caption.x
-      : `${cycle.approval.caption.youtubeTitle}\n\n${cycle.approval.caption.youtubeDescription}`,
+    platform === "youtube"
+      ? `${cycle.approval.caption.youtubeTitle}\n\n${cycle.approval.caption.youtubeDescription}`
+      : cycle.approval.caption.x,
   style: cycle.style,
   effect: cycle.render.effect,
   ending: cycle.render.ending,
@@ -773,6 +830,8 @@ export const logRow = (cycle, platform, result) => ({
   videoSha256: cycle.approval.videoSha256,
   youtubePrivacyStatus:
     platform === "youtube" ? (result.privacyStatus ?? null) : null,
+  // SEND_TO_USER_INBOX: a draft that Nil still has to post in the app.
+  tiktokStatus: platform === "tiktok" ? result.tiktokStatus : null,
 });
 
 const DASHBOARD = `<!doctype html>
