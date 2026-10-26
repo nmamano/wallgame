@@ -1499,11 +1499,6 @@ const WALLZ_LAYOUT = {
   vars: {
     ...frameVars(WALLZ_HEIGHT, WALLZ_BOARD, 0),
     "--caption-size": "60px",
-    /*
-      The VS names, smaller than frameVars gives a 1920 frame: there they cut
-      "Guest Lemur" to "Guest Lem..." (seen 2026-10-26).
-    */
-    "--name-size": `${Math.round(WALLZ_HEIGHT * 0.034)}px`,
     "--caption-gap": "36px",
   },
 };
@@ -1561,6 +1556,11 @@ const renderStyle = async (styleName) => {
       document.documentElement.style.setProperty(k, v);
     }
   }, layout.vars);
+  /*
+    The VS names are fitted by measuring them, and a measurement taken while
+    a font still loads is wrong, so no frame is taken before the fonts are in.
+  */
+  await stage.evaluate(() => document.fonts.ready);
 
   /** Published by stage.html, so the sting can be aligned to the visual punch. */
   const vsPunchFraction = await stage.evaluate(

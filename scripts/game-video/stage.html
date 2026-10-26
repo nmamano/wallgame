@@ -573,6 +573,21 @@
           $("vsImgB").src = s.b.portrait;
           $("vsNameA").textContent = s.a.name;
           $("vsNameB").textContent = s.b.name;
+          /*
+            A long name shrinks until it fits, instead of ending in "...". The
+            room a name gets depends on the frame and the portrait size, so it
+            is measured here, not predicted. Seen 2026-10-26: the 9:16 frame
+            cut "Guest Cormorant" to "Guest Cormor...".
+          */
+          for (const el of [$("vsNameA"), $("vsNameB")]) {
+            el.style.fontSize = "";
+            let size = parseFloat(getComputedStyle(el).fontSize);
+            const floor = size * 0.6;
+            while (el.scrollWidth > el.clientWidth && size > floor) {
+              size = Math.max(floor, size - 2);
+              el.style.fontSize = size + "px";
+            }
+          }
           $("vsSubA").textContent = s.a.sub;
           $("vsSubB").textContent = s.b.sub;
         }
