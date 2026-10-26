@@ -40,6 +40,15 @@ export const NIL_USER_ID = 1;
  */
 export const MIN_PLIES = 10;
 
+/**
+ * Endings that take a game out (Wall Game PM, 2026-10-26): a game won on the
+ * clock has no turning point on the board to show. Abandonment cannot be
+ * listed: the server ends an abandoned game with resignGame
+ * (applyAbandonToSession in server/games/store.ts), so it is stored as
+ * "resignation", the same as a real one.
+ */
+export const EXCLUDED_ENDINGS: readonly string[] = ["timeout"];
+
 /** How many swings each candidate reports. */
 export const SWINGS_PER_GAME = 3;
 
@@ -102,6 +111,12 @@ export const gameEligibility = (game: StoredGameSummary): GameVerdict => {
       eligible: false,
       reason: `${game.movesCount} plies, below ${MIN_PLIES}`,
     };
+  }
+  const ending = game.seats.find((s) =>
+    EXCLUDED_ENDINGS.includes(s.outcomeReason),
+  );
+  if (ending) {
+    return { eligible: false, reason: `ended by ${ending.outcomeReason}` };
   }
   if (game.seats.length !== 2) {
     return { eligible: false, reason: `${game.seats.length} seats, not 2` };

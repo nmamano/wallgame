@@ -94,6 +94,17 @@ describe("seat eligibility", () => {
     expect(gameEligibility(game(nil, member)).eligible).toBe(false);
   });
 
+  test("a game won on the clock is out; a capture or a resignation is in", () => {
+    const ended = (outcomeReason: string) =>
+      game({ ...guest, outcomeReason }, { ...officialBot, outcomeReason });
+    expect(gameEligibility(ended("timeout"))).toEqual({
+      eligible: false,
+      reason: "ended by timeout",
+    });
+    expect(gameEligibility(ended("capture")).eligible).toBe(true);
+    expect(gameEligibility(ended("resignation")).eligible).toBe(true);
+  });
+
   test("short games and puzzle attempts are out", () => {
     expect(
       gameEligibility(game(guest, guest, { movesCount: MIN_PLIES })).eligible,

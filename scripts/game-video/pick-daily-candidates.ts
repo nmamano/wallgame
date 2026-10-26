@@ -33,7 +33,7 @@
  * stops if they differ, because the engine command is read from this copy and
  * run with the 4090's paths. The engine
  * seeds its search from the session id, which is `daily-<gameId>`, but the
- * parallel search still varies: a rerun of 5 games on the same build moved
+ * parallel search still varies: a rerun of 5 games on the same engine build moved
  * single positions by at most 0.07 (measured 2026-10-25), enough to swap two
  * near-tied candidates.
  */
@@ -328,11 +328,15 @@ class EngineLink {
   }
 }
 
+/** The engine answered and said no; a timeout or a broken link is not this. */
+class EngineRefused extends Error {}
+
 /**
  * The evaluation bar's numbers for one game: ply 0, then one per move. Like
- * the bar (initializeBgsHistory in server/routes/eval-socket.ts), a failed
- * evaluation of the FINAL position, which can be terminal, takes the game
- * result instead: +1 when player 1 won, -1 when player 2 won, 0 otherwise.
+ * the bar (initializeBgsHistory in server/routes/eval-socket.ts), an engine
+ * that refuses to evaluate the FINAL position, which can be terminal, gives
+ * way to the game result: +1 when player 1 won, -1 when player 2 won, 0
+ * otherwise. Unlike the bar, any other failure there leaves the game unscored.
  */
 const scoreGame = async (
   link: EngineLink,
@@ -361,7 +365,9 @@ const scoreGame = async (
         expectedPly: ply,
       });
       if (reply.success === false || typeof reply.evaluation !== "number") {
-        throw new Error(`evaluate ply ${ply}: ${reply.error ?? "no value"}`);
+        throw new EngineRefused(
+          `evaluate ply ${ply}: ${reply.error ?? "no value"}`,
+        );
       }
       if (reply.ply !== ply) {
         throw new Error(
@@ -386,7 +392,10 @@ const scoreGame = async (
       try {
         evaluations.push(await evaluate(ply + 1));
       } catch (error) {
-        if (!isLast) throw error;
+        // Only the engine REFUSING the final position (it can be terminal)
+        // takes the result. A timeout or a broken link is not a verdict on
+        // the position, and a made-up +1 there would fake a last-move swing.
+        if (!isLast || !(error instanceof EngineRefused)) throw error;
         finalFromResult = true;
         const winner = game.seats.find(
           (s) =>
