@@ -1,28 +1,30 @@
 /**
- * Lists the finished games that can be the daily video, scores every position
- * of each one with the evaluation bar's engine on the 4090, and prints the
- * best candidates with their biggest swing moves.
+ * Lists the finished games that can be the daily video and the moves a viewer
+ * can see turn the race, and prints the best candidates with those moves.
  *
- * Board task e8d26610, step 1. It posts nothing and renders nothing. The rules
- * (who is eligible, what a swing is) live in daily-candidates.ts.
+ * Board task e8d26610. It posts nothing and renders nothing. The rules (who is
+ * eligible, what a jump is) live in daily-candidates.ts.
  *
- *   WALLGAME_GPU_HOST=<user@host> bun scripts/game-video/pick-daily-candidates.ts \
- *     --container wgvideo-restore --until 2026-10-25T10:20:48Z \
- *     [--days 7] [--top 5] [--game ID ...] [--out F]
- *
- * WALLGAME_GPU_HOST is the ssh target of the 4090's WSL. It is an env var only
- * because the repo is public; the value is in ops-private/wallgamer-agent-notes.md.
- *
- * BEFORE A RUN: run ~/nil/infra/bin/desktop-status on the office box and stay in
- * its thread budget, and keep the GPU headroom the live bot's engines need.
- * The 4090 belongs to Infra & Security; tell them before a long run.
+ *   bun scripts/game-video/pick-daily-candidates.ts --container wgvideo-restore \
+ *     --until 2026-10-25T10:20:48Z [--days 7] [--top 5] [--game ID ...] [--out F]
+ *     [--engine]
  *
  * THE GAMES COME FROM A RESTORED COPY, NEVER FROM PRODUCTION. --container names
  * a local PostgreSQL container that holds a restored nightly dump; the script
  * reads it with `docker exec ... psql` and one SELECT. It does not call
  * GET /api/games/:id, which writes a view count (server/db/game-queries.ts).
  *
- * THE ENGINE IS ITS OWN PROCESS. For each engine command it starts one extra
+ * THE DAILY RUN NEEDS NO ENGINE. Picks come from walking distances on the
+ * board (Nil, 2026-10-26), computed here on the office box.
+ *
+ * --engine ADDS THE EVALUATION BAR'S SCORE AS A DEBUG COLUMN. It needs
+ * WALLGAME_GPU_HOST, the ssh target of the 4090's WSL (an env var only because
+ * the repo is public; the value is in ops-private/wallgamer-agent-notes.md).
+ * Before such a run: run ~/nil/infra/bin/desktop-status on the office box and
+ * stay in its thread budget, keep the GPU headroom the live bot's engines
+ * need, and tell Infra & Security, who own the 4090.
+ *
+ * The engine is its own process. For each engine command it starts one extra
  * `deep_ww_bgs_engine` on the 4090 over `ssh -T`, with exactly the command the
  * bot-client config gives the analysis bot, and speaks the BGS JSON-lines
  * protocol to it, one request at a time. It never talks to the serving
@@ -31,32 +33,34 @@
  * (desktop-run cannot hold a stdio pipe, so it is not used). Before it starts
  * any engine, it compares the bot-client config here with the 4090's copy and
  * stops if they differ, because the engine command is read from this copy and
- * run with the 4090's paths. The engine
- * seeds its search from the session id, which is `daily-<gameId>`, but the
- * parallel search still varies: a rerun of 5 games on the same engine build moved
- * single positions by at most 0.07 (measured 2026-10-25), enough to swap two
- * near-tied candidates.
+ * run with the 4090's paths. The engine seeds its search from the session id,
+ * which is `daily-<gameId>`, but the parallel search still varies: a rerun of
+ * 5 games on the same engine build moved single positions by at most 0.07
+ * (measured 2026-10-25).
  */
 import { createHash } from "node:crypto";
 import { readFileSync, writeFileSync } from "node:fs";
 import { dirname, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { configFileSchema } from "../../official-custom-bot-client/src/config-schema";
-import { GameState } from "../../shared/domain/game-state";
 import type {
-  GameConfiguration,
   GameInitialState,
   PlayerId,
   Variant,
 } from "../../shared/domain/game-types";
-import { timeControlConfigFromPreset } from "../../shared/domain/game-utils";
-import { moveFromStandardNotation } from "../../shared/domain/standard-notation";
 import {
+  describeJump,
   evalBarEngineFor,
   gameEligibility,
+  jumpsOf,
+  minJumpFor,
+  pickJumps,
+  PICKS_PER_GAME,
   rankCandidates,
+  replayDistances,
   swingsOf,
-  SWINGS_PER_GAME,
+  type PickedJump,
+  type RaceDistances,
   type SeatKind,
   type StoredGameSummary,
   type Swing,
@@ -75,7 +79,8 @@ const REQUEST_TIMEOUT_MS = 120_000;
 /* ------------------------------------------------------------------ args -- */
 
 interface Args {
-  gpuHost: string;
+  /** Set only with --engine. */
+  gpuHost?: string;
   container: string;
   database: string;
   until: Date;
@@ -90,11 +95,14 @@ const parseArgs = (argv: string[]): Args => {
     const i = argv.indexOf(`--${name}`);
     return i === -1 ? undefined : argv[i + 1];
   };
-  const gpuHost = process.env.WALLGAME_GPU_HOST ?? "";
-  if (!/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+$/.test(gpuHost)) {
-    throw new Error(
-      "WALLGAME_GPU_HOST=<user@host> of the 4090 WSL is required",
-    );
+  let gpuHost: string | undefined;
+  if (argv.includes("--engine")) {
+    gpuHost = process.env.WALLGAME_GPU_HOST ?? "";
+    if (!/^[A-Za-z0-9_.-]+@[A-Za-z0-9_.-]+$/.test(gpuHost)) {
+      throw new Error(
+        "--engine needs WALLGAME_GPU_HOST=<user@host> of the 4090 WSL",
+      );
+    }
   }
   const container = value("container");
   if (!container || !/^[A-Za-z0-9_.-]+$/.test(container)) {
@@ -182,40 +190,6 @@ const readGames = (args: Args): StoredGame[] => {
     throw new Error(`psql failed: ${proc.stderr.toString().slice(0, 500)}`);
   }
   return JSON.parse(proc.stdout.toString()) as StoredGame[];
-};
-
-/* --------------------------------------------------------------- replay -- */
-
-/**
- * Who made each stored move, from a replay through today's GameState, the same
- * way the replay page assembles a game (assembleReplayGame in
- * server/db/game-queries.ts). Not move parity: custom setups can start with
- * player 2.
- */
-const moversOf = (game: StoredGame): PlayerId[] => {
-  const initialState = game.configParameters.initialState;
-  if (!initialState) throw new Error("no initialState in config_parameters");
-  const config: GameConfiguration = {
-    variant: game.variant as Variant,
-    randomStart: false,
-    // A replay reads no clock; any preset gives the same moves.
-    timeControl: timeControlConfigFromPreset("rapid"),
-    rated: false,
-    boardWidth: game.boardWidth,
-    boardHeight: game.boardHeight,
-    variantConfig: initialState,
-  };
-  let state = new GameState(config, 0, { allowStoredHistoryBacktracks: true });
-  return game.moves.map((notation, index) => {
-    const playerId = state.turn;
-    state = state.applyGameAction({
-      kind: "move",
-      move: moveFromStandardNotation(String(notation), game.boardHeight),
-      playerId,
-      timestamp: index,
-    });
-    return playerId;
-  });
 };
 
 /* --------------------------------------------------------------- engine -- */
@@ -437,6 +411,19 @@ const assertSameConfigOnGpu = (gpuHost: string, configText: string) => {
 
 /* ----------------------------------------------------------------- main -- */
 
+interface EngineColumn {
+  botId: string;
+  scoreSeconds: number;
+  evaluationsP1: number[];
+  /**
+   * The final position's value is the game result, because the engine
+   * refused it (as the bar does). A swing on the last move is then not the
+   * engine's opinion.
+   */
+  finalFromResult: boolean;
+  topSwings: Swing[];
+}
+
 interface Candidate {
   gameId: string;
   startedAt: string;
@@ -445,19 +432,19 @@ interface Candidate {
   boardHeight: number;
   movesCount: number;
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
-  engineBotId: string;
-  scoreSeconds: number;
-  evaluationsP1: number[];
+  /** Before each move, and after the last: movesCount + 1 entries. */
+  distances: RaceDistances[];
+  /** The smallest jump that is a pick in this variant (minJumpFor). */
+  minJump: number;
+  picks: PickedJump[];
   /**
-   * The final position's value is the game result, because the engine could
-   * not evaluate it (as the bar does). A swing on the last move is then not
-   * the engine's opinion.
+   * Only with --engine. An engine failure is written here and does not take
+   * the game out: the debug column cannot remove a candidate.
    */
-  finalFromResult: boolean;
-  topSwings: Swing[];
+  engine?: EngineColumn | { error: string };
 }
 
-const pct = (x: number) => `${Math.round(x * 100)}%`;
+const walk = (n: number | null) => (n === null ? "-" : String(n));
 
 const describe = (c: Candidate, rank: number): string => {
   const seats = c.seats
@@ -468,15 +455,11 @@ const describe = (c: Candidate, rank: number): string => {
     `   ${c.variant} ${c.boardWidth}x${c.boardHeight}, ${c.movesCount} plies, started ${c.startedAt}`,
     `   ${seats}`,
   ];
-  if (c.finalFromResult) {
+  for (const p of c.picks) {
+    const sign = p.jump >= 0 ? "+" : "";
     lines.push(
-      "   (final position scored from the game result, not the engine)",
-    );
-  }
-  for (const s of c.topSwings) {
-    const sign = s.delta >= 0 ? "+" : "-";
-    lines.push(
-      `   move ${s.moveNumber} by P${s.mover} ${s.notation}: ${pct(s.moverBefore)} -> ${pct(s.moverAfter)} for the mover (${sign}${Math.round(s.size * 100)} points; bar ${s.evaluationBeforeP1.toFixed(3)} -> ${s.evaluationAfterP1.toFixed(3)})`,
+      `   move ${p.moveNumber} by P${p.mover} ${p.notation}: jump ${sign}${p.jump} (mover's walk ${walk(p.ownBefore)} -> ${walk(p.ownAfter)}, opponent's ${walk(p.opponentBefore)} -> ${walk(p.opponentAfter)})`,
+      `     ${p.description}`,
     );
   }
   return lines.join("\n");
@@ -484,12 +467,16 @@ const describe = (c: Candidate, rank: number): string => {
 
 const main = async () => {
   const args = parseArgs(process.argv.slice(2));
-  const configText = readFileSync(BOT_CONFIG, "utf8");
-  assertSameConfigOnGpu(args.gpuHost, configText);
-  const botConfig = configFileSchema.parse(JSON.parse(configText));
   const all = readGames(args).filter(
     (g) => args.games.length === 0 || args.games.includes(g.gameId),
   );
+
+  let botConfig: ReturnType<typeof configFileSchema.parse> | undefined;
+  if (args.gpuHost) {
+    const configText = readFileSync(BOT_CONFIG, "utf8");
+    assertSameConfigOnGpu(args.gpuHost, configText);
+    botConfig = configFileSchema.parse(JSON.parse(configText));
+  }
 
   const excluded: { gameId: string; reason: string }[] = [];
   const unscored: { gameId: string; reason: string }[] = [];
@@ -503,35 +490,25 @@ const main = async () => {
         excluded.push({ gameId: game.gameId, reason: verdict.reason });
         continue;
       }
-      const engine = evalBarEngineFor(
-        botConfig,
-        game.variant as Variant,
-        game.boardWidth,
-        game.boardHeight,
-      );
-      if (!engine) {
-        unscored.push({
-          gameId: game.gameId,
-          reason: `no evaluation bar for ${game.variant} ${game.boardWidth}x${game.boardHeight}`,
-        });
-        continue;
-      }
       try {
-        const movers = moversOf(game);
-        let link = links.get(engine.command);
-        if (!link || link.broken) {
-          await link?.close();
-          link = new EngineLink(args.gpuHost, engine.command);
-          links.set(engine.command, link);
+        const initialState = game.configParameters.initialState;
+        if (!initialState) {
+          throw new Error("no initialState in config_parameters");
         }
-        const t0 = performance.now();
-        const { evaluations: evaluationsP1, finalFromResult } = await scoreGame(
-          link,
-          game,
-        );
-        const scoreSeconds = (performance.now() - t0) / 1000;
         const moves = game.moves.map(String);
-        candidates.push({
+        const { movers, distances } = replayDistances({
+          variant: game.variant,
+          boardWidth: game.boardWidth,
+          boardHeight: game.boardHeight,
+          initialState,
+          moves,
+        });
+        const names = {
+          1: game.seats.find((s) => s.playerOrder === 1)?.displayName ?? "P1",
+          2: game.seats.find((s) => s.playerOrder === 2)?.displayName ?? "P2",
+        };
+        const minJump = minJumpFor(game.variant as Variant);
+        const candidate: Candidate = {
           gameId: game.gameId,
           startedAt: game.startedAt,
           variant: game.variant,
@@ -545,18 +522,27 @@ const main = async () => {
               kind: verdict.seatKinds[i],
               name: s.displayName,
             })),
-          engineBotId: engine.botId,
-          scoreSeconds,
-          finalFromResult,
-          evaluationsP1,
-          topSwings: swingsOf(evaluationsP1, moves, movers).slice(
-            0,
-            SWINGS_PER_GAME,
+          distances,
+          minJump,
+          picks: pickJumps(jumpsOf(distances, moves, movers), minJump).map(
+            (p) => ({
+              ...p,
+              description: describeJump(p, names),
+            }),
           ),
-        });
-        console.error(
-          `scored ${game.gameId} (${moves.length} plies) in ${scoreSeconds.toFixed(1)} s`,
-        );
+        };
+        if (botConfig && args.gpuHost) {
+          candidate.engine = await engineColumn(
+            botConfig,
+            args.gpuHost,
+            links,
+            game,
+            movers,
+          ).catch((error: unknown) => ({
+            error: error instanceof Error ? error.message : String(error),
+          }));
+        }
+        candidates.push(candidate);
       } catch (error) {
         unscored.push({
           gameId: game.gameId,
@@ -586,6 +572,7 @@ const main = async () => {
       excluded: excluded.length,
       unscored: unscored.length,
       scored: candidates.length,
+      withPicks: candidates.filter((c) => c.picks.length > 0).length,
     },
     ranked,
     excluded,
@@ -594,13 +581,56 @@ const main = async () => {
   writeFileSync(args.out, JSON.stringify(report, null, 1));
 
   console.log(
-    `${all.length} games started ${report.window.since} .. ${report.window.until}: ${excluded.length} not eligible, ${unscored.length} eligible but not scored, ${candidates.length} scored.`,
+    `${all.length} games started ${report.window.since} .. ${report.window.until}: ${excluded.length} not eligible, ${unscored.length} eligible but not scored, ${candidates.length} scored, ${report.counts.withPicks} with a pick.`,
   );
   for (const u of unscored)
     console.log(`  not scored ${u.gameId}: ${u.reason}`);
   console.log("");
   ranked.slice(0, args.top).forEach((c, i) => console.log(describe(c, i + 1)));
   console.log(`\nfull report: ${args.out}`);
+};
+
+/** The --engine debug column for one game, on the evaluation bar's engine. */
+const engineColumn = async (
+  botConfig: ReturnType<typeof configFileSchema.parse>,
+  gpuHost: string,
+  links: Map<string, EngineLink>,
+  game: StoredGame,
+  movers: PlayerId[],
+): Promise<EngineColumn> => {
+  const engine = evalBarEngineFor(
+    botConfig,
+    game.variant as Variant,
+    game.boardWidth,
+    game.boardHeight,
+  );
+  if (!engine) {
+    throw new Error(
+      `no evaluation bar for ${game.variant} ${game.boardWidth}x${game.boardHeight}`,
+    );
+  }
+  let link = links.get(engine.command);
+  if (!link || link.broken) {
+    await link?.close();
+    link = new EngineLink(gpuHost, engine.command);
+    links.set(engine.command, link);
+  }
+  const t0 = performance.now();
+  const { evaluations, finalFromResult } = await scoreGame(link, game);
+  const scoreSeconds = (performance.now() - t0) / 1000;
+  console.error(
+    `engine scored ${game.gameId} (${game.moves.length} plies) in ${scoreSeconds.toFixed(1)} s`,
+  );
+  return {
+    botId: engine.botId,
+    scoreSeconds,
+    evaluationsP1: evaluations,
+    finalFromResult,
+    topSwings: swingsOf(evaluations, game.moves.map(String), movers).slice(
+      0,
+      PICKS_PER_GAME,
+    ),
+  };
 };
 
 if (import.meta.main) await main();
