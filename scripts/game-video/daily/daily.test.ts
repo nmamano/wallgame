@@ -1557,6 +1557,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   // What the video says must match the counter, and the payoff goes out too.
   const told = (edl: Record<string, unknown>) =>
     call("/api/daily/direct", { day, edl: { ...EDL, ...edl } });
+  const coldOpen = await told({ coldOpenPly: 22 });
+  expect(coldOpen.status).toBe(409);
+  expect(JSON.stringify(coldOpen.body)).toContain(
+    "coldOpenPly is cut from the daily video (Nil, 2026-10-26",
+  );
   const offCounter = await told({ caption: "Ruby was 2 steps away" });
   expect(offCounter.status).toBe(409);
   expect(JSON.stringify(offCounter.body)).toContain("the caption says 2");

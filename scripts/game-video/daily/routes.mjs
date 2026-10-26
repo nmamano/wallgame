@@ -676,6 +676,13 @@ export const createDaily = ({
         ...saveFrameProblems(edl, cycle.candidate.beats),
         ...storyProblems(edl, cycle.candidate),
         ...droppedSoundProblems(edl, soundPicks.dropped()),
+        // The daily video has no cold open; edl.mjs keeps the field for a
+        // hand render.
+        ...(edl.coldOpenPly === null
+          ? []
+          : [
+              `coldOpenPly is cut from the daily video (Nil, 2026-10-26: "the initial 1s hook doesn't work for me, it's too confusing. cut it"); remove it`,
+            ]),
       ];
       if (errors.length) throw new StepRefused(errors.join("; "));
       // The caption and stamps are burned into the video, which is posted.
