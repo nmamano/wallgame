@@ -68,9 +68,15 @@ import {
   validateEdl,
   checkEdlAgainstGame,
   DEFAULT_SLOT_SOUNDS,
+  FRAME,
+  SAFE_AREA,
 } from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
-import { measureLoudness, loudnessVerdict } from "./quality.mjs";
+import {
+  measureLoudness,
+  loudnessVerdict,
+  safeAreaVerdict,
+} from "./quality.mjs";
 import {
   openSoundPicks,
   soundList,
@@ -355,7 +361,10 @@ export const createDaily = ({
               effect: result.effect ?? null,
               music: result.music,
               sound: result.sound ?? null,
-              quality: { loudness },
+              quality: {
+                loudness,
+                safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
+              },
             }),
           );
       });

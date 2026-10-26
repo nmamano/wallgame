@@ -8,6 +8,9 @@
  *              loudness of the whole mix: how far the loudest sting stands
  *              out over the music (Nil, 2026-10-26: "the baby cry and the
  *              initial shotgun, are a bit too loud").
+ *   safeArea   each box the renderer measured in the page (board, caption,
+ *              race counter, goal line) lies inside SAFE_AREA (edl.mjs),
+ *              where the apps paint no buttons or captions (audit item 3).
  */
 import { execFile } from "node:child_process";
 
@@ -38,21 +41,26 @@ export const MAX_STING_OVER_MIX_LU = 6;
 export const parseEbur128 = (log) => {
   let maxMomentary = -Infinity;
   let maxMomentaryAt = null;
+  let windows = 0;
   for (const m of log.matchAll(
-    /\bt:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+)/g,
+    /\bt:\s*([\d.]+)\s+TARGET:\S+ LUFS\s+M:\s*(-?[\d.]+|-inf)/g,
   )) {
-    const value = Number(m[2]);
+    windows += 1;
+    const value = m[2] === "-inf" ? -Infinity : Number(m[2]);
     if (value > maxMomentary) {
       maxMomentary = value;
       maxMomentaryAt = Number(m[1]);
     }
   }
-  const summary = log.slice(log.lastIndexOf("Summary:"));
-  const integrated = summary.match(/I:\s*(-?[\d.]+) LUFS/);
-  const peak = summary.match(/Peak:\s*(-?[\d.]+|-inf) dBFS/);
-  if (!integrated || maxMomentaryAt === null) {
+  const at = log.lastIndexOf("Summary:");
+  const integrated =
+    at >= 0 ? log.slice(at).match(/I:\s*(-?[\d.]+) LUFS/) : null;
+  const peak =
+    at >= 0 ? log.slice(at).match(/Peak:\s*(-?[\d.]+|-inf) dBFS/) : null;
+  if (!integrated || windows === 0) {
     throw new Error("ffmpeg gave no loudness summary");
   }
+  if (maxMomentaryAt === null) throw new Error("the video is silent");
   return {
     integratedLufs: Number(integrated[1]),
     maxMomentaryLufs: maxMomentary,
@@ -109,4 +117,45 @@ export const loudnessVerdict = (m) => {
       ? `the loudest moment (${m.maxMomentaryAt.toFixed(1)} s) is ${over} LU over the mix`
       : `the loudest moment (${m.maxMomentaryAt.toFixed(1)} s) is ${over} LU over the mix, more than ${MAX_STING_OVER_MIX_LU}: drop or change the sound there`,
   };
+};
+
+const inside = (box, area) =>
+  box.x >= area.x &&
+  box.y >= area.y &&
+  box.x + box.w <= area.x + area.w &&
+  box.y + box.h <= area.y + area.h;
+
+const span = (b) => `x ${b.x}-${b.x + b.w}, y ${b.y}-${b.y + b.h}`;
+
+/**
+ * The safe-area verdict on the layout a render reported:
+ * `{frame: {w, h}, boxes: {name: {x, y, w, h}}}`, measured in the page at
+ * rest. Every daily render reports one, with the board in it; a render
+ * without one fails, so a renderer that stops measuring cannot pass.
+ * @param {{ frame?: { w: number, h: number },
+ *           boxes?: Record<string, { x: number, y: number, w: number, h: number }> } | undefined} layout
+ * @param {{ w: number, h: number }} frame
+ * @param {{ x: number, y: number, w: number, h: number }} area
+ */
+export const safeAreaVerdict = (layout, frame, area) => {
+  const fail = (note) => ({ ok: false, note });
+  if (!layout?.boxes?.board) return fail("the render reported no layout");
+  if (layout.frame?.w !== frame.w || layout.frame?.h !== frame.h) {
+    return fail(
+      `the frame is ${layout.frame?.w}x${layout.frame?.h}, not ${frame.w}x${frame.h}`,
+    );
+  }
+  const outside = Object.entries(layout.boxes).filter(
+    ([, box]) => !inside(box, area),
+  );
+  return outside.length === 0
+    ? {
+        ok: true,
+        note: `${Object.keys(layout.boxes).join(", ")} inside the safe area`,
+      }
+    : fail(
+        outside
+          .map(([name, box]) => `${name} (${span(box)}) is outside`)
+          .join("; ") + ` the safe area (${span(area)})`,
+      );
 };

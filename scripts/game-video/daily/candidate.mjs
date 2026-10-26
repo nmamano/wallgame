@@ -73,6 +73,10 @@ export const nextEnding = (rows) => {
 export const edlSummary = (edl) => [
   `ending ${edl.ending}, music ${edl.music ?? "random"}${edl.caption ? `, video caption "${edl.caption}"` : ", no video caption"}`,
   `VS sound ${edl.vsSound}, finish sound ${edl.finishSound}`,
+  ...(edl.startPly ? [`starts at ply ${edl.startPly}`] : []),
+  ...(edl.coldOpenPly != null
+    ? [`cold open: the position after ply ${edl.coldOpenPly}`]
+    : []),
   ...(edl.pace ?? []).map(
     (p) => `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move`,
   ),
@@ -85,7 +89,7 @@ export const edlSummary = (edl) => [
           : e.kind === "trap"
             ? `trap on ${e.walls.join(" ")}, "${e.text}"`
             : e.kind === "race"
-              ? `race over ${e.plies} positions`
+              ? "race counter flash"
               : e.kind === "react"
                 ? `react ${e.emoji} at ${e.cell}`
                 : e.cell

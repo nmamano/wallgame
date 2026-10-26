@@ -50,8 +50,10 @@ import { parseResult } from "./render-4090.mjs";
 import {
   parseEbur128,
   loudnessVerdict,
+  safeAreaVerdict,
   MAX_STING_OVER_MIX_LU,
 } from "./quality.mjs";
+import { FRAME, SAFE_AREA } from "../edl.mjs";
 
 const SERVER = resolve(import.meta.dir, "../app/server.mjs");
 
@@ -226,6 +228,7 @@ const MEASURED = {
     ok: true,
     note: "the loudest moment (5.6 s) is 4.7 LU over the mix",
   },
+  safeArea: { ok: true, note: "board, caption inside the safe area" },
 };
 
 /** Walk a cycle to "checked" (ready to ask) for this video. */
@@ -414,6 +417,28 @@ describe("the director checks the contact sheet before the ask", () => {
   });
 });
 
+test("the edit list summary names the start, the cold open and a race flash", () => {
+  expect(
+    edlSummary({
+      ending: "gg",
+      music: "skippy",
+      caption: "",
+      vsSound: "shotgun-2",
+      finishSound: "shotgun-2",
+      startPly: 6,
+      coldOpenPly: 22,
+      pace: [],
+      events: [{ ply: 22, kind: "race", sound: null }],
+    }),
+  ).toEqual([
+    "ending gg, music skippy, no video caption",
+    "VS sound shotgun-2, finish sound shotgun-2",
+    "starts at ply 6",
+    "cold open: the position after ply 22",
+    "ply 22: race counter flash",
+  ]);
+});
+
 describe("the app's measures of a render", () => {
   /** Lines of the real ffmpeg ebur128 log of N42PHQnw (2026-10-26). */
   const LOG = [
@@ -454,6 +479,41 @@ describe("the app's measures of a render", () => {
     expect(v.ok).toBe(false);
     expect(v.note).toMatch(/1\.1 s\) is 6\.5 LU over the mix, more than 6/);
     expect(loudnessVerdict({ ...m, maxMomentaryLufs: -16.8 }).ok).toBe(true);
+  });
+
+  test("a silent video is said to be silent", () => {
+    const silent = LOG.replace(/M: -1\d\.\d/g, "M: -inf");
+    expect(() => parseEbur128(silent)).toThrow(/the video is silent/);
+  });
+
+  test("every measured box must lie inside the safe area", () => {
+    const board = { x: 81, y: 380, w: 918, h: 852 };
+    const caption = { x: 81, y: 285, w: 918, h: 60 };
+    const layout = { frame: { w: 1080, h: 1920 }, boxes: { board, caption } };
+    expect(safeAreaVerdict(layout, FRAME, SAFE_AREA)).toEqual({
+      ok: true,
+      note: "board, caption inside the safe area",
+    });
+    // The board of the audited renders (y 436-1483) ends under the buttons.
+    const low = {
+      ...layout,
+      boxes: { board: { x: 16, y: 436, w: 1048, h: 1048 } },
+    };
+    const v = safeAreaVerdict(low, FRAME, SAFE_AREA);
+    expect(v.ok).toBe(false);
+    expect(v.note).toBe(
+      "board (x 16-1064, y 436-1484) is outside the safe area (x 65-1015, y 269-1248)",
+    );
+    expect(safeAreaVerdict(undefined, FRAME, SAFE_AREA).note).toBe(
+      "the render reported no layout",
+    );
+    expect(
+      safeAreaVerdict(
+        { ...layout, frame: { w: 1080, h: 1080 } },
+        FRAME,
+        SAFE_AREA,
+      ).note,
+    ).toBe("the frame is 1080x1080, not 1080x1920");
   });
 });
 
@@ -1112,6 +1172,9 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     ? readFileSync(__dirname + "/music-override", "utf8")
     : (edl.music ?? "skippy"),
   ending: edl.ending, edlSha256: hash(raw),
+  layout: { frame: { w: 1080, h: 1920 }, boxes: {
+    board: { x: 81, y: 380, w: 918, h: 852 },
+    caption: { x: 81, y: 285, w: 918, h: 60 } } },
   sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
 `;
 
@@ -1199,6 +1262,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(state?.cycle.render?.effect).toBe("daily");
   expect(state?.cycle.render?.ending).toBe("replay");
   expect(state?.cycle.render?.quality?.loudness?.ok).toBe(true);
+  expect(state?.cycle.render?.quality?.safeArea?.ok).toBe(true);
   const sheet = state?.cycle.render?.sheet;
   expect(sheet?.stills).toEqual([{ ply: 22, kind: "zoom", sound: "fuahhh-1" }]);
   expect(

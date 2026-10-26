@@ -37,7 +37,9 @@ already has a cycle, finish it or stop: do not start another. `pick
    `sheet` also prints the app's measures of the video. A measure that
    FAILED fails the check, whatever the stills show. `loudness` names the
    second of the loudest sound: drop that sound or name a softer one, then
-   `direct` again and `render --force`.
+   `direct` again and `render --force`. `safeArea` names a part of the frame
+   that the apps would cover: that is a renderer fault, not your list, so
+   skip the day and tell the Wall Game PM.
 7. `ask --agent <your agent id>`
    This opens Nil's ask with the video and the sheet. When he answers, run
    `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
@@ -112,7 +114,8 @@ Rules:
   (2026-10-26). Do not use them until Wall Game PM says that Nil chose.
 - `vsSound` is the first sound of the video: a reveal sound. `finishSound`
   fits how it ended: a win sound when the human won, a loss sound when the
-  AI won. `crew.mjs sounds` gives each family's moment.
+  AI won, and a win sound in a human vs human game. `crew.mjs sounds` gives
+  each family's moment.
 
 ```json
 {
