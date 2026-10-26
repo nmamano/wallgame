@@ -35,7 +35,9 @@ export const settingsRoute = new Hono()
       }
       const authUserId = kindeUser.id;
       if (!authUserId) {
-        console.error(`User ID not found for user: ${kindeUser.email}`);
+        // No email here: this branch has no Kinde id to log instead, and the
+        // privacy page says that no email reaches our logs.
+        console.error("Kinde user has no id");
         return c.json({ error: "User ID not found" }, 400);
       }
 
