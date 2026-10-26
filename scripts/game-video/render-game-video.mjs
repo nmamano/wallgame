@@ -95,7 +95,7 @@ import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { stampSpot } from "./stamp-spot.mjs";
-import { allocateFrameRanges } from "./timeline-frames.mjs";
+import { allocateFrameRanges, movesUnderOverlay } from "./timeline-frames.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -2355,6 +2355,7 @@ const renderStyle = async (styleName) => {
   let frameNo = 0;
   /** The video's first frame, which the loop tail ends on. */
   let firstState = null;
+  // Play frames go through emit(), or the VS guard (movesUnderOverlay) misses them.
   const shoot = async (state, seconds, meta) => {
     firstState ??= state;
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
@@ -2862,19 +2863,20 @@ const renderStyle = async (styleName) => {
   /*
     The starting position gets one beat of its own, so the first move is a
     change the eye can catch rather than the first thing it ever sees. Under
-    the VS overlay it holds longer: nothing moves under the full banners, and
-    the first move plays only once they start to leave (Nil, 2026-10-26).
+    the VS overlay it holds longer: no move plays under the banners, so the
+    first move lands only once they have fully left, at the end of their
+    exit, rounded up to a whole frame (Nil's rule; Wall Game PM, 2026-10-26:
+    a move under the sliding banner was half hidden). movesUnderOverlay
+    holds the timeline to it.
   */
-  const firstMoveAt = overlay
-    ? overlayStart + overlay.seconds - overlay.exit
-    : 0;
+  const firstMoveAt = overlay ? overlayStart + overlay.seconds : 0;
   // With a startPly, the opening position is the one before that ply; it is
   // labelled as that earlier ply, which the video never plays on its own.
   await emit(
     playState(START_PLY),
     Math.max(
       paceAt(START_PLY),
-      Math.round((firstMoveAt - elapsed) * FPS) / FPS,
+      Math.ceil((firstMoveAt - elapsed) * FPS - 1e-6) / FPS,
     ),
     { kind: "initial", ply: START_PLY - 1 },
   );
@@ -3083,6 +3085,14 @@ const renderStyle = async (styleName) => {
   rmSync(frameSequence, { recursive: true, force: true });
   mkdirSync(frameSequence, { recursive: true });
   const encodedRanges = allocateFrameRanges(timeline, FPS);
+  if (overlay) {
+    const under = movesUnderOverlay(encodedRanges, START_PLY - 1);
+    if (under.length > 0) {
+      throw new Error(
+        `a move plays under the VS banners (frames ${under[0].startFrame}-${under.at(-1).endFrame}, ply ${under[0].ply}); the first move must wait until they have left`,
+      );
+    }
+  }
   const encodedFrame = encodedRanges.at(-1)?.endFrame ?? 0;
   for (const range of encodedRanges) {
     for (let frame = range.startFrame; frame < range.endFrame; frame += 1) {

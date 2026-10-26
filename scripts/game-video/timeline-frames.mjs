@@ -21,3 +21,12 @@ export function allocateFrameRanges(timeline, fps) {
   }
   return ranges;
 }
+
+/**
+ * The frames under the VS overlay (kind "vs-overlay") that show anything but
+ * the opening position: a move under the banners, which Nil's rule forbids.
+ * `openingPly` is the opening position's label, startPly - 1.
+ */
+export function movesUnderOverlay(ranges, openingPly) {
+  return ranges.filter((r) => r.kind === "vs-overlay" && r.ply !== openingPly);
+}
