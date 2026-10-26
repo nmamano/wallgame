@@ -92,6 +92,29 @@ already has a cycle, finish it or stop: do not start another. `pick
     posts only the approved video and block; it refuses when either one
     differs from what the ask showed. You do not post.
 
+## Preview a moment
+
+After you change the list, look at the changed moment before you spend a
+`render --force` on it:
+
+`preview --plies FROM..TO [--edl <edl.json>]`
+
+It renders only plies FROM to TO (0-based, as in the EDL) on the 4090, from
+the game's capture, so it adds no view of the game. The capture is saved by
+the game's first `render`, so a preview needs one render of the game. Without
+`--edl` it previews the day's directed list; with `--edl` it previews that
+file, which must be for the day's game. It prints the MP4's path. It uses
+the same 4090 queue as `render`, so it waits while a render runs.
+
+- Use it for the PICTURE: the zoom's framing, a glow, a stamp, when the pawn
+  moves against an effect.
+- Do not use it for sound: its music starts at its first frame, not where it
+  is in the video, so a sound cue against the music is not what the video
+  plays. Check sound with `sheet` (the event strips) after the render.
+- A preview changes nothing in the cycle. It is not the day's video: it is
+  never checked, asked or posted. To change the video, `direct` and
+  `render --force`.
+
 ## A good EDL
 
 - Build it from the close call if the game has one: `scared` on the danger

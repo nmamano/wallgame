@@ -44,6 +44,14 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --edl <edl.json> --job-id <id> --out <out.mp4>
  *
+ * A PREVIEW (--plies FROM..TO) renders only those plies of the list, from the
+ * game's capture cache on the 4090, which the game's first full render
+ * wrote. It never opens the replay page, so it adds no view, and it is
+ * refused when the 4090 has no capture of the game. Only the MP4 comes back:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --edl <edl.json> --job-id <id> --out <out.mp4> --plies FROM..TO
+ *
  * WALLGAME_GPU_HOST is an env var only because the repo is public; the value
  * is in ops-private/wallgamer-agent-notes.md (the same variable the step-1
  * candidate script reads). The app gets it on its registered command line.
@@ -68,6 +76,11 @@ import { dirname, join } from "node:path";
 export const REMOTE_JOBS = "nil/wallgame-video-jobs";
 /** The render kit on the 4090 (Worker 2's sync-render-kit.sh). */
 export const RENDER_KIT = "nil/wallgame-video";
+/**
+ * The capture cache in the kit (capture-cache.mjs), one folder per game. A
+ * full render writes it and a preview reads it; both get it as --cache.
+ */
+export const CAPTURE_CACHE = `${RENDER_KIT}/tmp/game-video/capture-cache`;
 const RENDERER = "scripts/game-video/render-game-video.mjs";
 const BUN = ".bun/bin/bun";
 /** Worker 2's figure for one render: 4 threads and 4 GB are enough. */
@@ -79,6 +92,10 @@ const POLL_MS = 10_000;
 const COPY_ATTEMPTS = 3;
 
 const JOB_ID = /^[A-Za-z0-9_-]{8,80}$/;
+/** A preview's window of plies, as the renderer's --plies takes it (edl.mjs). */
+const PLIES = /^(\d{1,4})\.\.(\d{1,4})$/;
+/** The renderer's rule for a game id, which names its cache folder. */
+const GAME_ID = /^[A-Za-z0-9_-]{1,80}$/;
 /** The sheet's file name in the remote job folder, as the renderer gives it. */
 const SHEET_NAME = /^[A-Za-z0-9._-]{1,80}\.png$/;
 const DESKTOP_JOB = /^started job-([0-9TZ]+-wg-video-[0-9a-f]{12})$/m;
@@ -134,6 +151,7 @@ const main = async () => {
   const edlPath = arg("edl");
   const jobId = arg("job-id");
   const out = arg("out");
+  const plies = arg("plies");
   const host = process.env.WALLGAME_GPU_HOST;
   if (!edlPath || !jobId || !out) {
     fail(
@@ -148,11 +166,36 @@ const main = async () => {
   if (!existsSync(DESKTOP_RUN)) fail(`${DESKTOP_RUN} is missing`);
 
   if (!JOB_ID.test(jobId)) fail(`not a job id: ${jobId}`);
+  const span = plies === undefined ? null : PLIES.exec(plies);
+  if (plies !== undefined && !span)
+    fail(`--plies must be FROM..TO, got ${plies}`);
   const ssh = (command) => run("ssh", [...SSH_OPTIONS, host, command]);
 
   const home = (await ssh('printf %s "$HOME"')).stdout.trim();
   if (!home.startsWith("/")) fail("could not read the 4090's home folder");
   const dir = `${home}/${REMOTE_JOBS}/${jobId}`;
+  const cache = `${home}/${CAPTURE_CACHE}`;
+
+  // A preview needs the game's capture; without it the renderer would fail
+  // after desktop-run started it. One short line comes back.
+  if (span) {
+    const gameId = JSON.parse(readFileSync(edlPath, "utf8")).gameId;
+    if (!GAME_ID.test(String(gameId))) fail(`not a game id: ${gameId}`);
+    const probe = await ssh(
+      `if test -f ${cache}/${gameId}/capture.json; then echo cached; else echo none; fi`,
+    );
+    const answer = probe.stdout.trim();
+    if (answer === "none") {
+      fail(
+        `the 4090 has no capture of game ${gameId} yet: a preview reads the capture that the game's full render saves, so render the day's video first`,
+      );
+    }
+    if (answer !== "cached") {
+      fail(
+        `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
+      );
+    }
+  }
 
   console.log("[render] sending the job to the 4090");
   const sent = await run(
@@ -178,6 +221,9 @@ const main = async () => {
     `${dir}/render.log`,
     "--encoder",
     "nvenc",
+    "--cache",
+    cache,
+    ...(span ? ["--from-cache", "--plies", plies] : []),
   ]);
   const unit = DESKTOP_JOB.exec(started.stdout)?.[1];
   if (started.code !== 0 || !unit) {
@@ -248,13 +294,25 @@ const main = async () => {
     );
   }
 
+  // A preview reports its window and no list hash (render-game-video.mjs),
+  // so it can never pass for the day's render.
+  if (
+    span &&
+    (result.preview?.from !== Number(span[1]) ||
+      result.preview?.to !== Number(span[2]) ||
+      result.fromCache !== true ||
+      result.edlSha256 !== null)
+  ) {
+    fail(`the 4090 render is not the preview of plies ${plies} from the cache`);
+  }
+
   // The sheet must sit in this job's folder, the only place cleaned below.
   const sheetName = String(result.sheet?.png ?? "")
     .split("/")
     .pop();
   if (
-    !SHEET_NAME.test(sheetName) ||
-    result.sheet.png !== `${dir}/${sheetName}`
+    !span &&
+    (!SHEET_NAME.test(sheetName) || result.sheet.png !== `${dir}/${sheetName}`)
   ) {
     fail(`the render gave no contact sheet in ${dir}`);
   }
@@ -283,10 +341,16 @@ const main = async () => {
     return sha256;
   };
 
-  console.log("[render] copying the video and the contact sheet back");
+  console.log(
+    span
+      ? "[render] copying the preview back"
+      : "[render] copying the video and the contact sheet back",
+  );
   const sha256 = await copyBack(`${dir}/out.mp4`, out, result);
+  // A preview's sheet (its window's events) stays out: the check reads
+  // only the full render's.
   const sheetPng = `${out}-sheet.png`;
-  await copyBack(result.sheet.png, sheetPng, result.sheet);
+  if (!span) await copyBack(result.sheet.png, sheetPng, result.sheet);
   // The render log is small and is the only record of what the render did.
   await run("scp", [
     ...SSH_OPTIONS,
@@ -296,7 +360,7 @@ const main = async () => {
   ]);
   await ssh(`rm -rf ${dir} ${jobs}`);
   console.log(
-    `RESULT ${JSON.stringify({ ...result, mp4: out, bytes: statSync(out).size, sha256, sheet: { ...result.sheet, png: sheetPng } })}`,
+    `RESULT ${JSON.stringify({ ...result, mp4: out, bytes: statSync(out).size, sha256, sheet: span ? null : { ...result.sheet, png: sheetPng } })}`,
   );
 };
 

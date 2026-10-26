@@ -17,6 +17,7 @@ import {
   statSync,
   writeFileSync,
   existsSync,
+  unlinkSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -2472,3 +2473,163 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   await renderWith("elevator-jazz", true);
   expect(state?.cycle.render?.error).toMatch(/music elevator-jazz/);
 }, 20_000);
+
+/** A stand-in for render-4090.mjs --plies: a preview, or no capture. */
+const STUB_PREVIEW = `
+const { existsSync, readFileSync, writeFileSync } = require("node:fs");
+const { execFileSync } = require("node:child_process");
+const { createHash } = require("node:crypto");
+const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
+const hash = (b) => createHash("sha256").update(b).digest("hex");
+const edl = JSON.parse(readFileSync(at("edl"), "utf8"));
+writeFileSync(__dirname + "/last-plies", at("plies") + " " + edl.events.length);
+if (existsSync(__dirname + "/no-capture")) {
+  console.error("the 4090 has no capture of game " + edl.gameId + " yet");
+  process.exit(1);
+}
+execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
+  "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
+  "-c:v", "mpeg4", at("out")]);
+const bytes = readFileSync(at("out"));
+const [from, to] = at("plies").split("..").map(Number);
+console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
+  sha256: hash(bytes), durationSeconds: 1, fromCache: true,
+  preview: { from, to }, edlSha256: null, sheet: null }));
+`;
+
+test("a preview: a few plies from the capture, and the cycle does not change", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-preview.cjs");
+  writeFileSync(stub, STUB_PREVIEW);
+  const port = await freePort();
+  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
+    env: {
+      PATH: process.env.PATH!,
+      PORT: String(port),
+      ISOMUX_APP_DATA_DIR: dir,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  stops.push(() => child.kill());
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(`${base}/api/daily/state`);
+      break;
+    } catch {
+      await Bun.sleep(100);
+    }
+  }
+  const call = async <T = { error: string }>(path: string, body?: unknown) => {
+    const res = await fetch(`${base}${path}`, {
+      method: body ? "POST" : "GET",
+      headers: { "content-type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+    });
+    return { status: res.status, body: (await res.json()) as T };
+  };
+  interface Preview {
+    previewId: string;
+    plies: string;
+    state: string;
+    video: { path: string; bytes: number } | null;
+    error: string | null;
+  }
+  const finished = async (body: unknown) => {
+    const started = await call<{ previewId: string }>(
+      "/api/daily/preview",
+      body,
+    );
+    expect(started.status).toBe(200);
+    for (let i = 0; i < 100; i++) {
+      const p = await call<Preview>(
+        `/api/daily/preview?id=${started.body.previewId}`,
+      );
+      if (["done", "failed"].includes(p.body.state)) return p.body;
+      await Bun.sleep(100);
+    }
+    throw new Error("the preview did not end");
+  };
+  const day = "2026-10-26";
+  await call("/api/daily/pick", { day, report: REPORT });
+
+  // No list to preview before direct, unless the call brings one.
+  const early = await call("/api/daily/preview", { day, plies: "20..23" });
+  expect(early.status).toBe(409);
+  expect(early.body.error).toContain("has no edit list yet");
+  const otherGame = await call("/api/daily/preview", {
+    day,
+    plies: "20..23",
+    edl: { ...EDL, gameId: "OTHERGAME" },
+  });
+  expect(otherGame.status).toBe(409);
+  expect(otherGame.body.error).toContain("the day's game is TESTGAME1");
+
+  const { suggestedEnding } = (
+    await call<{ suggestedEnding: string }>(`/api/daily/state?day=${day}`)
+  ).body;
+  await call("/api/daily/direct", {
+    day,
+    edl: { ...EDL, ending: suggestedEnding },
+  });
+  // The window is checked here, not after the 4090 starts.
+  const pastEnd = await call("/api/daily/preview", { day, plies: "38..41" });
+  expect(pastEnd.status).toBe(409);
+  expect(pastEnd.body.error).toContain("after the game's last ply 40");
+  expect((await call("/api/daily/preview", { day, plies: "22" })).status).toBe(
+    409,
+  );
+
+  // The adapter refuses a game with no capture on the 4090.
+  writeFileSync(join(dir, "no-capture"), "");
+  const refused = await finished({ day, plies: "20..23" });
+  expect(refused.state).toBe("failed");
+  expect(refused.error).toContain("has no capture of game TESTGAME1");
+  unlinkSync(join(dir, "no-capture"));
+
+  const before = (await call(`/api/daily/state?day=${day}`)).body;
+  const shown = await finished({ day, plies: "20..23" });
+  expect(shown.state).toBe("done");
+  expect(shown.plies).toBe("20..23");
+  expect(shown.video!.path).toBe(
+    join(dir, "daily", "previews", `${shown.previewId}.mp4`),
+  );
+  expect(readFileSync(shown.video!.path).length).toBe(shown.video!.bytes);
+  // A list given with the call is previewed as given.
+  const given = await finished({
+    day,
+    plies: "20..23",
+    edl: {
+      ...EDL,
+      events: [
+        ...EDL.events,
+        { ply: 23, kind: "laugh", cell: "e4", sound: "laugh-2" },
+      ],
+    },
+  });
+  expect(given.state).toBe("done");
+  expect(readFileSync(join(dir, "last-plies"), "utf8")).toBe("20..23 2");
+  // crew.mjs preview waits for the MP4 and prints its path.
+  const crew = Bun.spawnSync(
+    [
+      "node",
+      resolve(import.meta.dir, "crew.mjs"),
+      "preview",
+      "--day",
+      day,
+      "--plies",
+      "21..22",
+      "--app",
+      base,
+    ],
+    { env: { PATH: process.env.PATH! } },
+  );
+  expect(crew.exitCode).toBe(0);
+  expect(crew.stdout.toString()).toMatch(
+    /preview of plies 21\.\.22: .*\/previews\/.*\.mp4 \(1 s, 0\.0 MB\)\. Not the day's video/,
+  );
+  // Nothing in the cycle moved: the previews are not the day's video.
+  expect((await call(`/api/daily/state?day=${day}`)).body).toEqual(before);
+  expect((await call("/api/daily/preview?id=nope")).status).toBe(404);
+}, 30_000);

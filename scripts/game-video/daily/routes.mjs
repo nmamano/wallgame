@@ -43,6 +43,7 @@ import {
   mkdirSync,
   readFileSync,
   renameSync,
+  rmSync,
   statSync,
   writeFileSync,
   createReadStream,
@@ -71,6 +72,7 @@ import {
 import {
   validateEdl,
   checkEdlAgainstGame,
+  parsePlyWindow,
   DEFAULT_SLOT_SOUNDS,
   FRAME,
   SAFE_AREA,
@@ -292,27 +294,17 @@ export const createDaily = ({
   /** jobId -> latest progress line, for the dashboard. */
   const progress = new Map();
 
-  const runJob = ({ day, jobId }) =>
+  /**
+   * Run the 4090 adapter (render-4090.mjs) for one job of the queue, the
+   * app's only child, so a stopping app can stop it. Resolves {result}, the
+   * adapter's RESULT line, or {error}.
+   */
+  const runAdapter = (jobId, args) =>
     new Promise((done) => {
-      const cycle = store.read(day);
-      const work = join(dirs.work, jobId);
-      mkdirSync(work, { recursive: true });
-      // The exact bytes the director's list was approved as; the renderer
-      // reports their hash back.
-      const edlPath = join(work, "edl.json");
-      const scratch = join(work, "out.mp4");
-      writeFileSync(edlPath, cycle.edl.text);
-
-      const finish = (outcome) => {
-        try {
-          store.finishRender(day, jobId, outcome);
-        } catch (err) {
-          // A newer pick or render replaced this one; its result is dropped.
-          console.warn(`render ${jobId}: ${err.message}`);
-        }
+      const end = (outcome) => {
         progress.delete(jobId);
         currentChild = null;
-        done();
+        done(outcome);
       };
 
       // Only what the render step needs. Once the posting keys exist they are
@@ -322,11 +314,10 @@ export const createDaily = ({
           .filter((k) => env[k] !== undefined)
           .map((k) => [k, env[k]]),
       );
-      const child = spawn(
-        process.execPath,
-        [renderer, "--edl", edlPath, "--job-id", jobId, "--out", scratch],
-        { env: renderEnv, detached: true },
-      );
+      const child = spawn(process.execPath, [renderer, ...args], {
+        env: renderEnv,
+        detached: true,
+      });
       currentChild = child;
       let stdout = "";
       let stderr = "";
@@ -353,13 +344,13 @@ export const createDaily = ({
       child.stderr.on("data", (c) => (stderr += c));
       child.on("error", (err) => {
         clearTimeout(timer);
-        finish({ error: `the render step could not start: ${err.message}` });
+        end({ error: `the render step could not start: ${err.message}` });
       });
       child.on("close", (code) => {
         clearTimeout(timer);
         if (insist) clearTimeout(insist);
         if (expired) {
-          return finish({
+          return end({
             error: `the render took over ${Math.round(deadlineMs / 60000)} minutes and was stopped`,
           });
         }
@@ -375,93 +366,195 @@ export const createDaily = ({
           /* handled below */
         }
         if (code !== 0 || !result) {
-          return finish({
+          return end({
             error:
               stderr.trim().split("\n").slice(-10).join("\n") ||
               `the render step exited with code ${code} and no RESULT line`,
           });
         }
-        // The video must be the one the list asked for, or the post log and
-        // the ask would describe a video nobody made.
-        if (result.edlSha256 !== cycle.edl.sha256) {
-          return finish({
-            error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cycle.edl.sha256.slice(0, 12)})`,
-          });
-        }
-        const music = cycle.edl.doc.music ?? null;
-        if (
-          !MUSIC_SLUGS.includes(result.music) ||
-          (music && result.music !== music)
-        ) {
-          return finish({
-            error: `the render played the music ${result.music}, not ${music ?? "a named track"}`,
-          });
-        }
-        if (result.ending !== cycle.render.ending) {
-          return finish({
-            error: `the render played the ${result.ending} ending, not ${cycle.render.ending}`,
-          });
-        }
-        if (!existsSync(scratch) || statSync(scratch).size === 0) {
-          return finish({
-            error: "the render step reported success but left no video",
-          });
-        }
-        // Only the path the adapter writes: the app moves this file.
-        const sheetPath = `${scratch}-sheet.png`;
-        if (
-          result.sheet?.png !== sheetPath ||
-          !existsSync(sheetPath) ||
-          !Array.isArray(result.sheet.stills)
-        ) {
-          return finish({
-            error: "the render step left no contact sheet",
-          });
-        }
-        const sheetBytes = readFileSync(sheetPath);
-        const sheet = {
-          path: join(dirs.videos, `${jobId}-sheet.png`),
-          sha256: sha256(sheetBytes),
-          stills: result.sheet.stills.map((x) => ({
-            ply: x.ply,
-            kind: x.kind,
-            sound: x.sound ?? null,
-          })),
-        };
-        renameSync(sheetPath, sheet.path);
-        // The app trusts its own hash, not the child's.
-        const bytes = readFileSync(scratch);
-        const video = {
-          path: join(dirs.videos, `${jobId}.mp4`),
-          bytes: bytes.length,
-          sha256: sha256(bytes),
-          durationSeconds: result.durationSeconds ?? null,
-        };
-        renameSync(scratch, video.path);
-        // The app judges the measures the renderer reported (quality.mjs);
-        // the check step refuses the ask when one fails. A render that did
-        // not measure fails too, so a render is never asked about unmeasured.
-        finish({
-          video,
-          sheet,
-          effect: result.effect ?? null,
-          music: result.music,
-          sound: result.sound ?? null,
-          timeline: timelineOf(result.timeline),
-          quality: {
-            loudness: loudnessVerdict(result.loudness),
-            safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
-            captionLines: captionLinesVerdict(result.layout),
-          },
-        });
+        end({ result });
       });
     });
+
+  const runJob = async ({ day, jobId }) => {
+    const cycle = store.read(day);
+    const work = join(dirs.work, jobId);
+    mkdirSync(work, { recursive: true });
+    // The exact bytes the director's list was approved as; the renderer
+    // reports their hash back.
+    const edlPath = join(work, "edl.json");
+    const scratch = join(work, "out.mp4");
+    writeFileSync(edlPath, cycle.edl.text);
+
+    const finish = (outcome) => {
+      try {
+        store.finishRender(day, jobId, outcome);
+      } catch (err) {
+        // A newer pick or render replaced this one; its result is dropped.
+        console.warn(`render ${jobId}: ${err.message}`);
+      }
+    };
+
+    const { result, error } = await runAdapter(jobId, [
+      "--edl",
+      edlPath,
+      "--job-id",
+      jobId,
+      "--out",
+      scratch,
+    ]);
+    if (error) return finish({ error });
+    // The video must be the one the list asked for, or the post log and
+    // the ask would describe a video nobody made.
+    if (result.edlSha256 !== cycle.edl.sha256) {
+      return finish({
+        error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cycle.edl.sha256.slice(0, 12)})`,
+      });
+    }
+    const music = cycle.edl.doc.music ?? null;
+    if (
+      !MUSIC_SLUGS.includes(result.music) ||
+      (music && result.music !== music)
+    ) {
+      return finish({
+        error: `the render played the music ${result.music}, not ${music ?? "a named track"}`,
+      });
+    }
+    if (result.ending !== cycle.render.ending) {
+      return finish({
+        error: `the render played the ${result.ending} ending, not ${cycle.render.ending}`,
+      });
+    }
+    if (!existsSync(scratch) || statSync(scratch).size === 0) {
+      return finish({
+        error: "the render step reported success but left no video",
+      });
+    }
+    // Only the path the adapter writes: the app moves this file.
+    const sheetPath = `${scratch}-sheet.png`;
+    if (
+      result.sheet?.png !== sheetPath ||
+      !existsSync(sheetPath) ||
+      !Array.isArray(result.sheet.stills)
+    ) {
+      return finish({
+        error: "the render step left no contact sheet",
+      });
+    }
+    const sheetBytes = readFileSync(sheetPath);
+    const sheet = {
+      path: join(dirs.videos, `${jobId}-sheet.png`),
+      sha256: sha256(sheetBytes),
+      stills: result.sheet.stills.map((x) => ({
+        ply: x.ply,
+        kind: x.kind,
+        sound: x.sound ?? null,
+      })),
+    };
+    renameSync(sheetPath, sheet.path);
+    // The app trusts its own hash, not the child's.
+    const bytes = readFileSync(scratch);
+    const video = {
+      path: join(dirs.videos, `${jobId}.mp4`),
+      bytes: bytes.length,
+      sha256: sha256(bytes),
+      durationSeconds: result.durationSeconds ?? null,
+    };
+    renameSync(scratch, video.path);
+    // The app judges the measures the renderer reported (quality.mjs);
+    // the check step refuses the ask when one fails. A render that did
+    // not measure fails too, so a render is never asked about unmeasured.
+    finish({
+      video,
+      sheet,
+      effect: result.effect ?? null,
+      music: result.music,
+      sound: result.sound ?? null,
+      timeline: timelineOf(result.timeline),
+      quality: {
+        loudness: loudnessVerdict(result.loudness),
+        safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),
+        captionLines: captionLinesVerdict(result.layout),
+      },
+    });
+  };
+
+  /* ----------------------------------------------------------- preview -- */
+
+  /**
+   * previewId -> {day, from, to, edlText, state, video, error}: queued,
+   * running, done or failed. A preview is a short look at a few plies (the
+   * director's check of a moment's picture). It lives only here and in
+   * previews/, and no step of the cycle reads either, so a preview can never
+   * be checked, asked or posted. The app forgets it when it restarts.
+   */
+  const previews = new Map();
+  const previewDir = join(dirs.root, "previews");
+  mkdirSync(previewDir, { recursive: true });
+  /** How many finished previews (and their MP4s) the app keeps. */
+  const PREVIEWS_KEPT = 20;
+
+  const runPreview = async ({ jobId }) => {
+    const p = previews.get(jobId);
+    p.state = "running";
+    const work = join(dirs.work, jobId);
+    mkdirSync(work, { recursive: true });
+    const edlPath = join(work, "edl.json");
+    const scratch = join(work, "out.mp4");
+    writeFileSync(edlPath, p.edlText);
+    const { result, error } = await runAdapter(jobId, [
+      "--edl",
+      edlPath,
+      "--job-id",
+      jobId,
+      "--out",
+      scratch,
+      "--plies",
+      `${p.from}..${p.to}`,
+    ]);
+    const failed = (why) => Object.assign(p, { state: "failed", error: why });
+    if (error) return failed(error);
+    if (
+      result.preview?.from !== p.from ||
+      result.preview?.to !== p.to ||
+      result.edlSha256 !== null
+    ) {
+      return failed(
+        `the render step did not return the preview of plies ${p.from}..${p.to}`,
+      );
+    }
+    if (!existsSync(scratch) || statSync(scratch).size === 0) {
+      return failed("the render step reported success but left no video");
+    }
+    const bytes = readFileSync(scratch);
+    const video = {
+      path: join(previewDir, `${jobId}.mp4`),
+      bytes: bytes.length,
+      sha256: sha256(bytes),
+      durationSeconds: result.durationSeconds ?? null,
+    };
+    renameSync(scratch, video.path);
+    Object.assign(p, { state: "done", video });
+  };
+
+  /** Forget the oldest finished previews over PREVIEWS_KEPT, with their MP4s. */
+  const prunePreviews = () => {
+    const finished = [...previews].filter(([, p]) =>
+      ["done", "failed"].includes(p.state),
+    );
+    for (const [id, p] of finished.slice(0, -PREVIEWS_KEPT)) {
+      if (p.video) rmSync(p.video.path, { force: true });
+      previews.delete(id);
+    }
+  };
 
   const pump = async () => {
     if (running || queue.length === 0) return;
     running = queue.shift();
     try {
-      await runJob(running);
+      await (running.kind === "preview"
+        ? runPreview(running)
+        : runJob(running));
     } finally {
       running = null;
       pump();
@@ -924,6 +1017,91 @@ export const createDaily = ({
       queue.push({ day, jobId });
       pump();
       json(res, 200, { day, jobId });
+    },
+
+    /**
+     * {day?, plies: "FROM..TO", edl?}: a preview of those plies of the
+     * day's list, or of `edl` (a list for the day's game that is not
+     * directed yet), from the game's capture on the 4090. It waits in the
+     * render queue and changes nothing in the cycle.
+     */
+    "POST /api/daily/preview": async (req, res) => {
+      const body = await readJson(req);
+      const day = dayOf(body.day);
+      const cycle = store.read(day);
+      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      let edl;
+      let edlText;
+      if (body.edl === undefined) {
+        if (!cycle.edl) {
+          throw new StepRefused(
+            `${day} has no edit list yet: run direct, or give preview an --edl`,
+          );
+        }
+        edl = cycle.edl.doc;
+        edlText = cycle.edl.text;
+      } else {
+        const checked = validateEdl(body.edl);
+        if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
+        edl = checked.edl;
+        if (edl.gameId !== cycle.candidate.gameId) {
+          throw new StepRefused(
+            `the list is for ${edl.gameId}, but the day's game is ${cycle.candidate.gameId}`,
+          );
+        }
+        // A list that does not fit the game would fail on the 4090.
+        const errors = cycle.candidate.moves
+          ? checkEdlAgainstGame(edl, {
+              notations: cycle.candidate.moves,
+              cols: cycle.candidate.boardWidth,
+              rows: cycle.candidate.boardHeight,
+              initialState: cycle.candidate.initialState,
+            })
+          : [];
+        if (errors.length) throw new StepRefused(errors.join("; "));
+        edlText = JSON.stringify(edl, null, 2) + "\n";
+      }
+      const span = parsePlyWindow(body.plies, edl.startPly ?? 0);
+      if (!span.ok) throw new StepRefused(span.error);
+      const lastPly = cycle.candidate.movesCount - 1;
+      if (span.to > lastPly) {
+        throw new StepRefused(
+          `the preview ends at ply ${span.to}, after the game's last ply ${lastPly}`,
+        );
+      }
+      const jobId = `${day}-${cycle.candidate.gameId}-p${Date.now().toString(36)}`;
+      previews.set(jobId, {
+        day,
+        from: span.from,
+        to: span.to,
+        edlText,
+        state: "queued",
+        video: null,
+        error: null,
+      });
+      prunePreviews();
+      queue.push({ day, jobId, kind: "preview" });
+      pump();
+      json(res, 200, { day, previewId: jobId });
+    },
+
+    "GET /api/daily/preview": (req, res, url) => {
+      const id = url.searchParams.get("id") ?? "";
+      const p = previews.get(id);
+      if (!p) {
+        return json(res, 404, {
+          error: `no preview ${id} (the app forgets previews when it restarts)`,
+        });
+      }
+      json(res, 200, {
+        previewId: id,
+        day: p.day,
+        plies: `${p.from}..${p.to}`,
+        state: p.state,
+        progress: progress.get(id) ?? null,
+        video: p.video,
+        error: p.error,
+      });
     },
 
     /**

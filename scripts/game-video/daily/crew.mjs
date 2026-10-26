@@ -38,6 +38,17 @@
  *                                  it ends. A second render of a game needs
  *                                  --force: each render adds one view to the
  *                                  real game.
+ *   preview --plies FROM..TO [--edl F]
+ *                                  a few seconds of the video: those plies of
+ *                                  the day's edit list (or of F, a list for
+ *                                  the day's game), rendered on the 4090 from
+ *                                  the game's capture, so no view. It needs
+ *                                  the game's first render (which saves the
+ *                                  capture). Prints the MP4's path. A preview
+ *                                  changes nothing in the cycle and can never
+ *                                  be checked, asked or posted. For the
+ *                                  PICTURE only: its music starts at its first
+ *                                  frame
  *   sheet                          the contact sheet's path and its stills, in
  *                                  order: look at the PNG before `check`.
  *                                  Also the event strips (strips.mjs): each
@@ -522,6 +533,30 @@ const commands = {
       await new Promise((r) => setTimeout(r, 5000));
       const s = await state();
       if (s.cycle.state !== "rendering") return console.log(summary(s));
+    }
+  },
+
+  async preview() {
+    const plies = flag("plies") ?? die("preview needs --plies FROM..TO");
+    const path = flag("edl");
+    const { previewId } = await app("POST", "/api/daily/preview", {
+      day,
+      plies,
+      ...(path && { edl: JSON.parse(readFileSync(path, "utf8")) }),
+    });
+    console.log(`preview ${previewId} queued`);
+    for (;;) {
+      await new Promise((r) => setTimeout(r, 3000));
+      const p = await app(
+        "GET",
+        `/api/daily/preview?id=${encodeURIComponent(previewId)}`,
+      );
+      if (p.state === "failed") die(`preview failed: ${p.error}`);
+      if (p.state === "done") {
+        return console.log(
+          `preview of plies ${p.plies}: ${p.video.path} (${p.video.durationSeconds ?? "?"} s, ${(p.video.bytes / 1e6).toFixed(1)} MB). Not the day's video: the cycle did not change.`,
+        );
+      }
     }
   },
 
