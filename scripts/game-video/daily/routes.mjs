@@ -7,7 +7,13 @@
  *
  *   crew.mjs facts   -> what the crew lead writes the caption from
  *   crew.mjs pick    -> POST /api/daily/pick     today's candidate + caption
- *   crew.mjs render  -> POST /api/daily/render   a job for the 4090 (render-4090.mjs)
+ *   crew.mjs direct  -> POST /api/daily/direct   the director's edit decision
+ *                       list (scripts/game-video/edl.mjs); the ending posted
+ *                       least recently is its default (nextEnding)
+ *   crew.mjs render  -> POST /api/daily/render   the list, rendered on the 4090
+ *                       (render-4090.mjs): the MP4 and its contact sheet
+ *   crew.mjs check   -> POST /api/daily/check    the director's verdict on each
+ *                       still of the sheet; the ask needs every one ok
  *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4,
  *                       then POST /api/daily/ask records its id
  *   crew.mjs answer  -> POST /api/daily/answer   the member's reply
@@ -50,9 +56,14 @@ import {
   candidateFromReport,
   captionFrom,
   captionProblems,
+  textProblems,
   DEFAULT_STYLE,
   STYLES,
+  nextEnding,
+  edlSummary,
+  saveFrameProblems,
 } from "./candidate.mjs";
+import { validateEdl, checkEdlAgainstGame } from "../edl.mjs";
 import {
   dryRunTransport,
   liveTransport,
@@ -100,6 +111,16 @@ export const postingModes = (env) =>
 
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
+/** Cycle states whose video may still be posted. */
+const OPEN_STATES = [
+  "rendering",
+  "rendered",
+  "checked",
+  "asked",
+  "approved",
+  "post-failed",
+];
+
 export const createDaily = ({
   dataDir,
   renderer = RENDER_4090,
@@ -138,24 +159,11 @@ export const createDaily = ({
       const cycle = store.read(day);
       const work = join(dirs.work, jobId);
       mkdirSync(work, { recursive: true });
-      const jobPath = join(work, "job.json");
+      // The exact bytes the director's list was approved as; the renderer
+      // reports their hash back.
+      const edlPath = join(work, "edl.json");
       const scratch = join(work, "out.mp4");
-      writeFileSync(
-        jobPath,
-        JSON.stringify(
-          {
-            jobId,
-            gameId: cycle.candidate.gameId,
-            // The contract with the renderer calls them swings; it reads .ply.
-            swings: cycle.candidate.picks,
-            caption: cycle.caption.x,
-            style: cycle.style,
-            aspect: "9x16",
-          },
-          null,
-          2,
-        ),
-      );
+      writeFileSync(edlPath, cycle.edl.text);
 
       const finish = (outcome) => {
         try {
@@ -178,7 +186,7 @@ export const createDaily = ({
       );
       const child = spawn(
         process.execPath,
-        [renderer, "--job", jobPath, "--out", scratch],
+        [renderer, "--edl", edlPath, "--job-id", jobId, "--out", scratch],
         { env: renderEnv, detached: true },
       );
       currentChild = child;
@@ -235,11 +243,45 @@ export const createDaily = ({
               `the render step exited with code ${code} and no RESULT line`,
           });
         }
+        // The video must be the one the list asked for, or the post log and
+        // the ask would describe a video nobody made.
+        if (result.edlSha256 !== cycle.edl.sha256) {
+          return finish({
+            error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cycle.edl.sha256.slice(0, 12)})`,
+          });
+        }
+        if (result.ending !== cycle.render.ending) {
+          return finish({
+            error: `the render played the ${result.ending} ending, not ${cycle.render.ending}`,
+          });
+        }
         if (!existsSync(scratch) || statSync(scratch).size === 0) {
           return finish({
             error: "the render step reported success but left no video",
           });
         }
+        // Only the path the adapter writes: the app moves this file.
+        const sheetPath = `${scratch}-sheet.png`;
+        if (
+          result.sheet?.png !== sheetPath ||
+          !existsSync(sheetPath) ||
+          !Array.isArray(result.sheet.stills)
+        ) {
+          return finish({
+            error: "the render step left no contact sheet",
+          });
+        }
+        const sheetBytes = readFileSync(sheetPath);
+        const sheet = {
+          path: join(dirs.videos, `${jobId}-sheet.png`),
+          sha256: sha256(sheetBytes),
+          stills: result.sheet.stills.map((x) => ({
+            ply: x.ply,
+            kind: x.kind,
+            sound: x.sound ?? null,
+          })),
+        };
+        renameSync(sheetPath, sheet.path);
         // The app trusts its own hash, not the child's.
         const bytes = readFileSync(scratch);
         const video = {
@@ -251,6 +293,7 @@ export const createDaily = ({
         renameSync(scratch, video.path);
         finish({
           video,
+          sheet,
           effect: result.effect ?? null,
           sound: result.sound ?? null,
         });
@@ -267,6 +310,26 @@ export const createDaily = ({
       pump();
     }
   };
+
+  /**
+   * Other days' videos that may still post, as post-log rows dated at their
+   * render. Nil can answer a day's ask after the next day renders, and the
+   * two must not get the same ending. A rejected day is not here.
+   */
+  const openEndings = (day) =>
+    store
+      .days()
+      .filter((d) => d !== day)
+      .map((d) => store.read(d))
+      .filter((c) => OPEN_STATES.includes(c.state) && c.render?.ending)
+      .map((c) => ({ utc: c.render.requestedAt, ending: c.render.ending }));
+
+  const suggestedEnding = (day) =>
+    nextEnding([
+      ...readPostLog(store.postLog.live),
+      ...readPostLog(store.postLog.dryRun),
+      ...openEndings(day),
+    ]);
 
   /* -------------------------------------------------------------- post -- */
 
@@ -392,6 +455,8 @@ export const createDaily = ({
         : null,
       days: store.days().slice(-14),
       postLog: store.postLog,
+      // The director's default: the ending posted least recently.
+      suggestedEnding: suggestedEnding(day),
     };
   };
 
@@ -425,6 +490,78 @@ export const createDaily = ({
         throw new StepRefused(`style is one of ${STYLES.join(", ")}`);
       }
       json(res, 200, store.pick(day, { candidate, caption, style }));
+    },
+
+    /**
+     * {day?, edl}: the director's edit decision list for the picked game.
+     * edl.mjs is Worker 2's contract with the renderer; the moves come from
+     * the candidate report, so a bad ply or wall is refused before the 4090
+     * spends a view of the game on it.
+     */
+    "POST /api/daily/direct": async (req, res) => {
+      const body = await readJson(req);
+      const day = dayOf(body.day);
+      const cycle = store.read(day);
+      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      const checked = validateEdl(body.edl);
+      if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
+      const { edl } = checked;
+      if (edl.gameId !== cycle.candidate.gameId) {
+        throw new StepRefused(
+          `the list is for ${edl.gameId}, but the day's game is ${cycle.candidate.gameId}`,
+        );
+      }
+      if (!cycle.candidate.moves) {
+        throw new StepRefused(
+          "the candidate report has no move list, so the list cannot be checked; pick from a newer report",
+        );
+      }
+      // The contact sheet has one still per event; with no event there is no
+      // sheet, and the render would fail after it spent its view.
+      if (edl.events.length === 0) {
+        throw new StepRefused(
+          "the list needs at least one event, or the render has no contact sheet to check",
+        );
+      }
+      const errors = [
+        ...checkEdlAgainstGame(edl, {
+          notations: cycle.candidate.moves,
+          cols: cycle.candidate.boardWidth,
+          rows: cycle.candidate.boardHeight,
+        }),
+        ...saveFrameProblems(edl, cycle.candidate.beats),
+      ];
+      if (errors.length) throw new StepRefused(errors.join("; "));
+      // The caption and stamps are burned into the video, which is posted.
+      const shown = Object.fromEntries(
+        [
+          ["video caption", edl.caption ?? ""],
+          ...edl.events
+            .filter((e) => e.text)
+            .map((e, i) => [`stamp ${i + 1}`, e.text]),
+        ].filter(([, t]) => t),
+      );
+      const problems = textProblems(shown, cycle.candidate.gameId);
+      if (problems.length) throw new StepRefused(problems.join("; "));
+      const text = JSON.stringify(edl, null, 2) + "\n";
+      json(
+        res,
+        200,
+        store.direct(day, { edl, text, summary: edlSummary(edl) }),
+      );
+    },
+
+    /** {day?, sheetSha256, stills: [{ply, kind, ok, note}]} */
+    "POST /api/daily/check": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.recordCheck(dayOf(body.day), {
+          sheetSha256: body.sheetSha256,
+          stills: body.stills,
+        }),
+      );
     },
 
     /** {day?, force?} */
@@ -514,6 +651,18 @@ export const createDaily = ({
       createReadStream(path).pipe(res);
     },
 
+    "GET /api/daily/sheet": (req, res, url) => {
+      const cycle = store.read(dayOf(url.searchParams.get("day")));
+      const path = cycle?.render?.sheet?.path;
+      if (!path || !existsSync(path))
+        return json(res, 404, { error: "no contact sheet for that day" });
+      res.writeHead(200, {
+        "content-type": "image/png",
+        "content-length": statSync(path).size,
+      });
+      createReadStream(path).pipe(res);
+    },
+
     "GET /api/daily/post-log": (req, res, url) =>
       json(
         res,
@@ -555,7 +704,8 @@ export const createDaily = ({
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted
  * 2026-10-25): UTC time, game id, platform, post id + URL, caption,
- * effect/sound variant, swing size, approver.
+ * effect/sound variant, swing size, approver. The variant includes the
+ * ending since 2026-10-26, and the next render reads it to rotate them.
  */
 export const logRow = (cycle, platform, result) => ({
   utc: result.at,
@@ -571,7 +721,9 @@ export const logRow = (cycle, platform, result) => ({
       : `${cycle.approval.caption.youtubeTitle}\n\n${cycle.approval.caption.youtubeDescription}`,
   style: cycle.style,
   effect: cycle.render.effect,
+  ending: cycle.render.ending,
   sound: cycle.render.sound,
+  edlSha256: cycle.render.edlSha256,
   // Since 2026-10-26 the swing is the largest walking-distance jump, in steps.
   swingSize: cycle.candidate.picks[0].size,
   swingMove: cycle.candidate.picks[0].moveNumber,
@@ -649,7 +801,9 @@ const DASHBOARD = `<!doctype html>
         el("div", "muted", "X text"), el("div", "cap", c.caption.x),
         el("div", "muted", "YouTube title"), el("div", "cap", c.caption.youtubeTitle),
         el("div", "muted", "YouTube description"), el("div", "cap", c.caption.youtubeDescription),
-        el("div", "muted", "style: " + c.style));
+        el("div", "muted", "style: " + c.style),
+        el("div", "muted", c.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
+        ...(c.edl ? c.edl.summary.map((l) => el("div", null, l)) : []));
       const r = c.render;
       if (!r) $("vid").append(el("span", "muted", "No render requested."));
       else if (r.error) $("vid").append(el("div", "err", r.error));
@@ -657,8 +811,16 @@ const DASHBOARD = `<!doctype html>
       else {
         const v = el("video"); v.controls = true; v.playsInline = true;
         v.src = "/api/daily/video?day=" + encodeURIComponent(c.day);
-        $("vid").append(v, el("div", "muted", (r.video.bytes / 1e6).toFixed(1) + " MB, effect " + (r.effect || "-") +
+        $("vid").append(v, el("div", "muted", (r.video.bytes / 1e6).toFixed(1) + " MB, effect " + (r.effect || "-") + ", ending " + (r.ending || "-") +
           ", sound " + (r.sound || "-") + ", sha256 " + r.video.sha256.slice(0, 12)));
+        if (r.sheet) {
+          const img = el("img"); img.src = "/api/daily/sheet?day=" + encodeURIComponent(c.day); img.style.maxWidth = "100%";
+          $("vid").append(el("div", "muted", "Contact sheet"), img);
+        }
+        if (c.check) {
+          $("vid").append(el("div", c.check.ok ? "muted" : "err", "Director's check: " + (c.check.ok ? "all stills ok" : "failed")),
+            ...c.check.verdicts.map((v) => el("div", null, "ply " + v.ply + " " + v.kind + ": " + (v.ok ? "ok" : "BAD") + " - " + v.note)));
+        }
       }
       const a = c.approval;
       if (!a) $("appr").append(el("span", "muted", "No ask open."));
@@ -685,12 +847,12 @@ const DASHBOARD = `<!doctype html>
     box.append(el("div", "muted", (dry ? "Dry-run log (no live posts yet): " : "Live log: ") + rows.length + " rows"));
     if (!rows.length) return;
     const t = el("table"); const h = el("tr");
-    for (const k of ["utc", "platform", "gameId", "postId", "swing", "effect/sound", "approver"]) h.append(el("th", null, k));
+    for (const k of ["utc", "platform", "gameId", "postId", "swing", "effect:ending/sound", "approver"]) h.append(el("th", null, k));
     t.append(h);
     for (const r of rows.slice(-30).reverse()) {
       const tr = el("tr");
       for (const v of [r.utc, r.platform, r.gameId, r.postId, r.swingSize + " steps @ move " + r.swingMove,
-                       (r.effect || "-") + "/" + (r.sound || "-"), r.approver]) tr.append(el("td", null, v));
+                       (r.effect || "-") + ":" + (r.ending || "-") + "/" + (r.sound || "-"), r.approver]) tr.append(el("td", null, v));
       t.append(tr);
     }
     box.append(t);

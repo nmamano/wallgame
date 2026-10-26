@@ -18,9 +18,12 @@ import {
   candidateFromReport,
   captionProblems,
   captionFrom,
+  nextEnding,
+  edlSummary,
+  saveFrameProblems,
   YOUTUBE_LINK,
 } from "./candidate.mjs";
-import type { PickedJump } from "../daily-candidates";
+import type { DescribedCloseCall, PickedJump } from "../daily-candidates";
 import { oauth1Header, xDryRunReply } from "./post-x.mjs";
 import { youtubeDryRunReply } from "./post-youtube.mjs";
 import { sha256 } from "./transport.mjs";
@@ -41,8 +44,52 @@ const pick = (ply: number, before: number, after: number): PickedJump => ({
   opponentAfter: after,
   jump: after - before,
   size: Math.abs(after - before),
+  pawns: [],
+  walls: [],
+  wallsChange: 0,
+  together: false,
   description: `Guest Tuatara's wall makes Ruby walk ${after - before} extra squares (${before} to ${after}).`,
 });
+
+/** Ruby's cat gets 1 square from the guest's mouse; a wall saves it. */
+const CLOSE_CALL: DescribedCloseCall = {
+  hunter: { player: 2, type: "cat" },
+  prey: { player: 1, type: "mouse" },
+  danger: {
+    ply: 8,
+    moveNumber: 9,
+    notation: "Cg3",
+    walk: 1,
+    hunterCell: "g3",
+    preyCell: "g4",
+    pawns: [],
+  },
+  save: {
+    ply: 9,
+    moveNumber: 10,
+    notation: "^g3.^h3",
+    walk: 19,
+    walkBefore: 1,
+    hunterCell: "g3",
+    preyCell: "g4",
+    pawns: [],
+    walls: [],
+    wallsChange: 18,
+    together: false,
+  },
+  relief: {
+    ply: 10,
+    moveNumber: 11,
+    notation: ">a5.>d4",
+    walk: 19,
+    hunterCell: "g3",
+    preyCell: "g4",
+    pawns: [],
+  },
+  size: 18,
+  description:
+    "Ruby's cat gets 1 square from Guest Tuatara's mouse. Walls make it walk 19 (move 10), and the mouse is safe.",
+};
 
 const CAPTION = "lmao Ruby thought it could just walk home";
 
@@ -57,6 +104,7 @@ const REPORT = {
       boardWidth: 8,
       boardHeight: 8,
       movesCount: 41,
+      moves: Array.from({ length: 41 }, (_, i) => (i % 2 ? "Ce5" : "Ce4")),
       seats: [
         { playerOrder: 1, kind: "guest", name: "Guest Tuatara" },
         { playerOrder: 2, kind: "official bot", name: "Ruby" },
@@ -75,6 +123,8 @@ interface Cycle {
   render: {
     error: string | null;
     effect: string | null;
+    ending: string;
+    sheet: { sha256: string; stills: unknown[] } | null;
     video: { path: string; sha256: string } | null;
   } | null;
   posts: Record<string, { postId: string; requestsFile: string }>;
@@ -101,19 +151,63 @@ const pickToday = (store: ReturnType<typeof openStore>, day: string): void => {
 
 const DRY = { x: "dry-run", youtube: "dry-run" };
 
+/** A director's list for TESTGAME1: one zoom with a FAHHH on move 23. */
+const EDL = {
+  version: 1,
+  gameId: "TESTGAME1",
+  ending: "replay",
+  events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
+};
+
+const directToday = (store: ReturnType<typeof openStore>, day: string) => {
+  pickToday(store, day);
+  store.direct(day, {
+    edl: EDL,
+    text: JSON.stringify(EDL),
+    summary: edlSummary(EDL),
+  });
+};
+
+/** The contact sheet of a render of EDL: one still, the zoom. */
+const SHEET = {
+  path: "/nowhere-sheet.png",
+  sha256: "ss",
+  stills: [{ ply: 22, kind: "zoom", sound: "fuahhh-1" }],
+};
+const ZOOM_OK = {
+  ply: 22,
+  kind: "zoom",
+  ok: true,
+  note: "the zoom shows the wall at e4",
+};
+
+/** Walk a cycle to "checked" (ready to ask) for this video. */
+const checkedToday = (
+  store: ReturnType<typeof openStore>,
+  day: string,
+  video: { path: string; bytes: number; sha256: string },
+) => {
+  directToday(store, day);
+  store.startRender(day, "job-00000001");
+  store.finishRender(day, "job-00000001", { video, sheet: SHEET });
+  store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
+};
+
 /** Walk a cycle to "approved" for a video with this hash. */
 const approved = (
   store: ReturnType<typeof openStore>,
   day: string,
   sha = "aa",
 ) => {
-  pickToday(store, day);
+  directToday(store, day);
   store.startRender(day, "job-00000001");
   store.finishRender(day, "job-00000001", {
     video: { path: "/nowhere.mp4", bytes: 1, sha256: sha },
+    sheet: SHEET,
     effect: "zoom",
     sound: "shotgun",
   });
+  store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
   store.recordAsk(day, {
     askId: "ask1",
     modes: DRY,
@@ -132,11 +226,7 @@ describe("the ask must show what the approval will cover", () => {
   const day = "2026-10-26";
   const rendered = () => {
     const store = openStore(tempDir());
-    pickToday(store, day);
-    store.startRender(day, "job-00000001");
-    store.finishRender(day, "job-00000001", {
-      video: { path: "/x", bytes: 1, sha256: "aa" },
-    });
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
     return store;
   };
 
@@ -163,6 +253,87 @@ describe("the ask must show what the approval will cover", () => {
   });
 });
 
+describe("the director checks the contact sheet before the ask", () => {
+  const day = "2026-10-26";
+  const video = { path: "/x", bytes: 1, sha256: "aa" };
+  const rendered = () => {
+    const store = openStore(tempDir());
+    directToday(store, day);
+    store.startRender(day, "job-00000001");
+    store.finishRender(day, "job-00000001", { video, sheet: SHEET });
+    return store;
+  };
+  const ask = (store: ReturnType<typeof openStore>) => {
+    store.recordAsk(day, {
+      askId: "a",
+      modes: DRY,
+      videoSha256: "aa",
+      currentModes: DRY,
+    });
+  };
+
+  test("no render without an edit list", () => {
+    const store = openStore(tempDir());
+    pickToday(store, day);
+    expect(() => {
+      store.startRender(day, "job-00000001");
+    }).toThrow(/render needs the cycle in directed/);
+  });
+
+  test("no ask before the check", () => {
+    expect(() => {
+      ask(rendered());
+    }).toThrow(/ask needs the cycle in checked/);
+  });
+
+  test("a bad still keeps the ask closed, and the way on is a new list", () => {
+    const store = rendered();
+    store.recordCheck(day, {
+      sheetSha256: "ss",
+      stills: [
+        { ...ZOOM_OK, ok: false, note: "the zoom shows the cat, not the wall" },
+      ],
+    });
+    expect((store.read(day) as Cycle).state).toBe("rendered");
+    expect(() => {
+      ask(store);
+    }).toThrow(/ask needs the cycle in checked/);
+    // A second look at the same render cannot turn the failure into a pass.
+    expect(() => {
+      store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    }).toThrow(/already failed its check/);
+    store.direct(day, { edl: EDL, text: JSON.stringify(EDL), summary: [] });
+    const cycle = store.read(day) as Cycle;
+    expect(cycle.state).toBe("directed");
+    expect(cycle.render).toBeNull();
+  });
+
+  test("every still needs its own verdict, in order, with a note", () => {
+    const store = rendered();
+    expect(() => {
+      store.recordCheck(day, { sheetSha256: "ss", stills: [] });
+    }).toThrow(/a verdict on each/);
+    expect(() => {
+      store.recordCheck(day, {
+        sheetSha256: "ss",
+        stills: [{ ...ZOOM_OK, ply: 23 }],
+      });
+    }).toThrow(/still 1 is ply 22 zoom/);
+    expect(() => {
+      store.recordCheck(day, {
+        sheetSha256: "ss",
+        stills: [{ ...ZOOM_OK, note: " " }],
+      });
+    }).toThrow(/needs a note/);
+    expect(() => {
+      store.recordCheck(day, { sheetSha256: "other", stills: [ZOOM_OK] });
+    }).toThrow(/another contact sheet/);
+    store.recordCheck(day, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    ask(store);
+    expect((store.read(day) as Cycle).state).toBe("asked");
+  });
+});
+
 describe("a post that may exist is not posted again", () => {
   test("a lost reply to the final X request blocks a retry until a person confirms", async () => {
     const dir = tempDir();
@@ -170,10 +341,10 @@ describe("a post that may exist is not posted again", () => {
     writeFileSync(video, "bytes");
     const day = "2026-10-26";
     const store = openStore(dir);
-    pickToday(store, day);
-    store.startRender(day, "job-00000001");
-    store.finishRender(day, "job-00000001", {
-      video: { path: video, bytes: 5, sha256: sha256(readFileSync(video)) },
+    checkedToday(store, day, {
+      path: video,
+      bytes: 5,
+      sha256: sha256(readFileSync(video)),
     });
     store.recordAsk(day, {
       askId: "a",
@@ -229,11 +400,7 @@ describe("an approval covers one video in one mode", () => {
 
   test("an answer to another ask does not count", () => {
     const store = openStore(tempDir());
-    pickToday(store, day);
-    store.startRender(day, "job-00000001");
-    store.finishRender(day, "job-00000001", {
-      video: { path: "/x.mp4", bytes: 1, sha256: "aa" },
-    });
+    checkedToday(store, day, { path: "/x.mp4", bytes: 1, sha256: "aa" });
     store.recordAsk(day, {
       askId: "ask1",
       modes: DRY,
@@ -271,11 +438,7 @@ describe("an approval covers one video in one mode", () => {
 
   test("once the ask is open, the candidate cannot be swapped under it", () => {
     const store = openStore(tempDir());
-    pickToday(store, day);
-    store.startRender(day, "job-00000001");
-    store.finishRender(day, "job-00000001", {
-      video: { path: "/x", bytes: 1, sha256: "aa" },
-    });
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
     store.recordAsk(day, {
       askId: "ask1",
       modes: DRY,
@@ -310,10 +473,10 @@ describe("each render is one production view", () => {
   test("a second render of the same game needs force, also after a re-pick", () => {
     const store = openStore(tempDir());
     const day = "2026-10-26";
-    pickToday(store, day);
+    directToday(store, day);
     store.startRender(day, "job-00000001");
     store.finishRender(day, "job-00000001", { error: "boom" });
-    pickToday(store, day);
+    directToday(store, day);
     expect(() => {
       store.startRender(day, "job-00000002");
     }).toThrow(/already rendered 1 time/);
@@ -349,6 +512,65 @@ describe("captions", () => {
     ).toBe(
       "Move 23: Guest Tuatara's wall makes Ruby walk 6 extra squares (2 to 8).",
     );
+  });
+
+  test("a close call comes before the walls, and carries its cells", () => {
+    const report = {
+      ...REPORT,
+      ranked: [{ ...REPORT.ranked[0], beats: [CLOSE_CALL] }],
+    };
+    const c = candidateFromReport(report, 1) as {
+      facts: string[];
+      beats: DescribedCloseCall[];
+    };
+    expect(c.facts[0]).toBe(`Move 10: ${CLOSE_CALL.description}`);
+    expect(c.facts[1]).toMatch(/^Move 23: /);
+    expect(c.beats[0].danger.preyCell).toBe("g4");
+    // No beat: the walls alone, as before.
+    expect(candidateFromReport(REPORT, 1).beats).toEqual([]);
+  });
+
+  test("a zoom on a save frames every cause wall and both pawns", () => {
+    const beat = {
+      ...CLOSE_CALL,
+      save: {
+        ...CLOSE_CALL.save,
+        walls: [
+          { notation: "^g3", between: ["g4", "g3"], alone: 2, cause: true },
+          { notation: "^h3", between: ["h4", "h3"], alone: 0, cause: true },
+          { notation: ">a1", between: ["a1", "b1"], alone: 0, cause: false },
+        ],
+      },
+    };
+    const zoom = (frame: string[]) => ({
+      ...EDL,
+      events: [{ ply: 9, kind: "zoom", frame }],
+    });
+    expect(saveFrameProblems(zoom(["^g3", "^h3", "g3", "g4"]), [beat])).toEqual(
+      [],
+    );
+    expect(saveFrameProblems(zoom(["^g3", "g3", "g4"]), [beat])).toEqual([
+      "events[0]: the zoom on save ply 9 must frame ^g3 ^h3 g3 g4; missing ^h3",
+    ]);
+    // Another ply is not the save: no rule.
+    expect(
+      saveFrameProblems(
+        { ...EDL, events: [{ ply: 3, kind: "zoom", frame: ["a1"] }] },
+        [beat],
+      ),
+    ).toEqual([]);
+  });
+
+  test("a close call with a cell the renderer cannot place is refused", () => {
+    const bad = {
+      ...CLOSE_CALL,
+      relief: { ...CLOSE_CALL.relief, preyCell: "<b>" },
+    };
+    const report = {
+      ...REPORT,
+      ranked: [{ ...REPORT.ranked[0], beats: [bad] }],
+    };
+    expect(() => candidateFromReport(report, 1)).toThrow(/close call/);
   });
 
   test("no @mention, no < or >, in anything posted", () => {
@@ -421,7 +643,53 @@ describe("X signing", () => {
   });
 });
 
+describe("the ending rotates", () => {
+  const row = (utc: string, ending: string) => ({ utc, ending });
+
+  test("an ending never posted comes first, in the renderer's order", () => {
+    expect(nextEnding([])).toBe("replay");
+    expect(nextEnding([row("2026-10-26T12:00:00Z", "replay")])).toBe("gg");
+    expect(
+      nextEnding([
+        row("2026-10-26T12:00:00Z", "replay"),
+        row("2026-10-27T12:00:00Z", "gg"),
+      ]),
+    ).toBe("ko");
+  });
+
+  test("then the one posted least recently, by its latest row", () => {
+    // Each posted day has a row per platform; a re-use moves an ending last.
+    const rows = [
+      row("2026-10-26T12:00:00Z", "replay"),
+      row("2026-10-26T12:01:00Z", "replay"),
+      row("2026-10-27T12:00:00Z", "gg"),
+      row("2026-10-28T12:00:00Z", "ko"),
+      row("2026-10-29T12:00:00Z", "replay"),
+    ];
+    expect(nextEnding(rows)).toBe("gg");
+    // Read order does not matter: live and dry-run rows arrive file by file.
+    expect(nextEnding([...rows].reverse())).toBe("gg");
+  });
+
+  test("a row with no known ending does not count", () => {
+    expect(nextEnding([{ utc: "2026-10-26T12:00:00Z" }])).toBe("replay");
+  });
+});
+
 describe("the render step", () => {
+  test("a RESULT line with 40 stills is read whole", () => {
+    // Over 1 KB: the adapter brings it back by scp, not over ssh stdout.
+    const stills = Array.from({ length: 40 }, (_, ply) => ({
+      ply,
+      kind: "zoom",
+      sound: "fuahhh-1",
+    }));
+    const line = `RESULT ${JSON.stringify({ mp4: "/a", sheet: { png: "/a-sheet.png", sha256: "s", stills } })}\n`;
+    expect(line.length).toBeGreaterThan(1024);
+    const parsed = parseResult(line) as { sheet: { stills: unknown[] } };
+    expect(parsed.sheet.stills).toHaveLength(40);
+  });
+
   test("only the last RESULT line counts", () => {
     expect(parseResult('noise\nRESULT {"mp4":"/a"}\n')).toEqual({ mp4: "/a" });
     expect(parseResult("RESULT {broken\n")).toBeNull();
@@ -431,7 +699,7 @@ describe("the render step", () => {
   test("a render cut off by an app restart is closed, not left stuck", () => {
     const dir = tempDir();
     const store = openStore(dir);
-    pickToday(store, "2026-10-26");
+    directToday(store, "2026-10-26");
     store.startRender("2026-10-26", "job-00000001");
     createDaily({ dataDir: dir });
     const cycle = openStore(dir).read("2026-10-26") as Cycle;
@@ -461,13 +729,19 @@ const STUB_RENDER = `
 const { readFileSync, writeFileSync } = require("node:fs");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
-const job = JSON.parse(readFileSync(at("job"), "utf8"));
-const bytes = Buffer.from("fake mp4 for " + job.gameId + " " + job.caption);
+const hash = (b) => createHash("sha256").update(b).digest("hex");
+const raw = readFileSync(at("edl"));
+const edl = JSON.parse(raw);
+const bytes = Buffer.from("fake mp4 for " + edl.gameId + " " + at("job-id"));
 writeFileSync(at("out"), bytes);
+const png = Buffer.from("fake sheet");
+writeFileSync(at("out") + "-sheet.png", png);
+const stills = edl.events.map((e) => ({ ply: e.ply, kind: e.kind, sound: e.sound ?? null }));
 console.log("[render] rendering on the 4090");
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
-  sha256: createHash("sha256").update(bytes).digest("hex"), durationSeconds: 30,
-  effect: "zoom-" + job.style, sound: "shotgun" }));
+  sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
+  ending: edl.ending, edlSha256: hash(raw),
+  sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
 `;
 
 test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
@@ -512,6 +786,28 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
       .status,
   ).toBe(200);
   expect((await call("/api/daily/post", { day })).status).toBe(409);
+  // No render without the director's list.
+  expect((await call("/api/daily/render", { day })).status).toBe(409);
+  const direct = async (d: string) => {
+    const { suggestedEnding } = (
+      await call<DailyState & { suggestedEnding: string }>(
+        `/api/daily/state?day=${d}`,
+      )
+    ).body;
+    return call("/api/daily/direct", {
+      day: d,
+      edl: { ...EDL, ending: suggestedEnding },
+    });
+  };
+  expect(
+    (
+      await call("/api/daily/direct", {
+        day,
+        edl: { ...EDL, gameId: "OTHERGAME" },
+      })
+    ).status,
+  ).toBe(409);
+  expect((await direct(day)).status).toBe(200);
   expect((await call("/api/daily/render", { day })).status).toBe(200);
   let state: DailyState | undefined;
   for (let i = 0; i < 50; i++) {
@@ -520,7 +816,19 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     await Bun.sleep(100);
   }
   expect(state?.cycle.state).toBe("rendered");
-  expect(state?.cycle.render?.effect).toBe("zoom-daily");
+  expect(state?.cycle.render?.effect).toBe("daily");
+  expect(state?.cycle.render?.ending).toBe("replay");
+  const sheet = state?.cycle.render?.sheet;
+  expect(sheet?.stills).toEqual([{ ply: 22, kind: "zoom", sound: "fuahhh-1" }]);
+  expect(
+    (
+      await call("/api/daily/check", {
+        day,
+        sheetSha256: sheet?.sha256,
+        stills: [ZOOM_OK],
+      })
+    ).body.state,
+  ).toBe("checked");
 
   const videoSha256 = state?.cycle.render?.video?.sha256;
   expect(
@@ -578,7 +886,8 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     gameId: "TESTGAME1",
     mode: "dry-run",
     approver: "Nil",
-    effect: "zoom-daily",
+    effect: "daily",
+    ending: "replay",
     sound: "shotgun",
     swingMove: 23,
   });
@@ -586,4 +895,70 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
 
   // Posting again posts nothing: both platforms are done.
   expect((await call("/api/daily/post", { day })).status).toBe(409);
+
+  // The next day's default reads the log and is the next ending.
+  const next = "2026-10-27";
+  await call("/api/daily/pick", {
+    day: next,
+    report: REPORT,
+    caption: CAPTION,
+  });
+  await direct(next);
+  await call("/api/daily/render", { day: next });
+  for (let i = 0; i < 50; i++) {
+    state = (await call<DailyState>(`/api/daily/state?day=${next}`)).body;
+    if (state.cycle.state !== "rendering") break;
+    await Bun.sleep(100);
+  }
+  expect(state?.cycle.state).toBe("rendered");
+  expect(state?.cycle.render?.ending).toBe("gg");
+
+  // Day 2 is not answered yet when day 3 is directed: its ending is taken too.
+  const third = "2026-10-28";
+  await call("/api/daily/pick", {
+    day: third,
+    report: REPORT,
+    caption: CAPTION,
+  });
+  // A list with no event has no still to check, so it is refused.
+  expect(
+    (
+      await call("/api/daily/direct", {
+        day: third,
+        edl: {
+          ...EDL,
+          events: [],
+        },
+      })
+    ).status,
+  ).toBe(409);
+  // The most events edl.mjs allows: 40 stills come back whole.
+  const { suggestedEnding } = (
+    await call<{ suggestedEnding: string }>(`/api/daily/state?day=${third}`)
+  ).body;
+  expect(
+    (
+      await call("/api/daily/direct", {
+        day: third,
+        edl: {
+          ...EDL,
+          ending: suggestedEnding,
+          events: Array.from({ length: 40 }, (_, ply) => ({
+            ply,
+            kind: "zoom",
+            frame: ["e4"],
+            sound: "fuahhh-1",
+          })),
+        },
+      })
+    ).status,
+  ).toBe(200);
+  await call("/api/daily/render", { day: third });
+  for (let i = 0; i < 50; i++) {
+    state = (await call<DailyState>(`/api/daily/state?day=${third}`)).body;
+    if (state.cycle.state !== "rendering") break;
+    await Bun.sleep(100);
+  }
+  expect(state?.cycle.render?.ending).toBe("ko");
+  expect(state?.cycle.render?.sheet?.stills).toHaveLength(40);
 }, 20_000);

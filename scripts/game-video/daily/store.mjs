@@ -39,11 +39,14 @@ import {
   appendFileSync,
 } from "node:fs";
 import { join } from "node:path";
+import { createHash } from "node:crypto";
 
 export const STATES = [
   "picked",
+  "directed",
   "rendering",
   "rendered",
+  "checked",
   "render-failed",
   "asked",
   "approved",
@@ -148,7 +151,14 @@ export const openStore = (dataDir) => {
       if (old) {
         expect(
           old,
-          ["picked", "rendered", "render-failed", "rejected"],
+          [
+            "picked",
+            "directed",
+            "rendered",
+            "render-failed",
+            "checked",
+            "rejected",
+          ],
           "pick",
         );
       }
@@ -161,7 +171,9 @@ export const openStore = (dataDir) => {
         candidate,
         caption,
         style,
+        edl: null,
         render: null,
+        check: null,
         approval: null,
         posts: {},
         // Renders per game today, kept across a re-pick: each one is a view.
@@ -170,6 +182,39 @@ export const openStore = (dataDir) => {
         events: [],
       };
       return save(cycle, `picked ${candidate.gameId}`);
+    },
+
+    /**
+     * The director's edit decision list for the candidate: `edl` is the
+     * validated document and `text` the exact bytes the renderer will read.
+     * A new list replaces the render made from the old one.
+     */
+    direct(day, { edl, text, summary }) {
+      const cycle = need(day);
+      expect(
+        cycle,
+        [
+          "picked",
+          "directed",
+          "rendered",
+          "render-failed",
+          "checked",
+          "rejected",
+        ],
+        "direct",
+      );
+      cycle.state = "directed";
+      cycle.edl = {
+        doc: edl,
+        text,
+        sha256: createHash("sha256").update(text).digest("hex"),
+        summary,
+        directedAt: new Date().toISOString(),
+      };
+      cycle.render = null;
+      cycle.check = null;
+      cycle.approval = null;
+      return save(cycle, `directed (edl ${cycle.edl.sha256.slice(0, 12)})`);
     },
 
     /**
@@ -186,11 +231,7 @@ export const openStore = (dataDir) => {
           `${gameId} was already rendered ${before} time(s) today, and each render adds one view to the real game; pass force to render it again`,
         );
       }
-      expect(
-        cycle,
-        ["picked", "rendered", "render-failed", "rejected"],
-        "render",
-      );
+      expect(cycle, ["directed", "render-failed"], "render");
       cycle.renders[gameId] = before + 1;
       cycle.state = "rendering";
       cycle.render = {
@@ -198,7 +239,11 @@ export const openStore = (dataDir) => {
         requestedAt: new Date().toISOString(),
         finishedAt: null,
         error: null,
+        // The director's ending (edl.mjs requires one).
+        ending: cycle.edl.doc.ending,
+        edlSha256: cycle.edl.sha256,
         video: null,
+        sheet: null,
         effect: null,
         sound: null,
       };
@@ -222,9 +267,66 @@ export const openStore = (dataDir) => {
       }
       cycle.state = "rendered";
       cycle.render.video = outcome.video;
+      cycle.render.sheet = outcome.sheet;
       cycle.render.effect = outcome.effect;
       cycle.render.sound = outcome.sound;
       return save(cycle, `render ${jobId} done`);
+    },
+
+    /**
+     * The director looked at the contact sheet: one verdict per still, in the
+     * sheet's order, each with what the director saw. Only when every still
+     * is ok can the ask open (Nil, 2026-10-26: each FAHHH and zoom must show
+     * the save wall). A failed check leaves the cycle at rendered; the way on
+     * is a new edit list.
+     */
+    recordCheck(day, { sheetSha256, stills }) {
+      const cycle = need(day);
+      expect(cycle, ["rendered"], "check");
+      const sheet = cycle.render.sheet;
+      if (cycle.check && !cycle.check.ok) {
+        refuse(
+          "this render already failed its check; the way on is a new edit list (direct), not a second check",
+        );
+      }
+      if (sheetSha256 !== sheet.sha256) {
+        refuse(
+          "the check is about another contact sheet than the current render's",
+        );
+      }
+      if (!Array.isArray(stills) || stills.length !== sheet.stills.length) {
+        refuse(
+          `the sheet has ${sheet.stills.length} stills; the check must give a verdict on each, in order`,
+        );
+      }
+      const verdicts = sheet.stills.map((still, i) => {
+        const v = stills[i];
+        if (v?.ply !== still.ply || v?.kind !== still.kind) {
+          refuse(
+            `verdict ${i + 1} is for ply ${v?.ply} ${v?.kind}, but still ${i + 1} is ply ${still.ply} ${still.kind}`,
+          );
+        }
+        if (typeof v.ok !== "boolean")
+          refuse(`verdict ${i + 1} needs ok: true or false`);
+        const note = String(v.note ?? "").trim();
+        if (!note)
+          refuse(`verdict ${i + 1} needs a note: what the still shows`);
+        return { ...still, ok: v.ok, note: note.slice(0, 300) };
+      });
+      const ok = verdicts.every((v) => v.ok);
+      cycle.check = {
+        sheetSha256,
+        ok,
+        verdicts,
+        checkedAt: new Date().toISOString(),
+      };
+      if (ok) cycle.state = "checked";
+      return save(
+        cycle,
+        ok
+          ? `contact sheet checked: ${verdicts.length} stills ok`
+          : `contact sheet check failed: ${verdicts.filter((v) => !v.ok).length} of ${verdicts.length} stills`,
+      );
     },
 
     /**
@@ -235,7 +337,7 @@ export const openStore = (dataDir) => {
      */
     recordAsk(day, { askId, modes, videoSha256, currentModes }) {
       const cycle = need(day);
-      expect(cycle, ["rendered"], "ask");
+      expect(cycle, ["checked"], "ask");
       if (videoSha256 !== cycle.render.video.sha256) {
         refuse("the ask shows another video than the current render");
       }

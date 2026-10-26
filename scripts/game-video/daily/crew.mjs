@@ -12,9 +12,20 @@
  *                                  silly, short, no game id, no link (X gets it
  *                                  as is; YouTube gets it as title and above
  *                                  the tracked link; --title overrides the title)
- *   render [--wait] [--force]      a 4090 render job; --wait polls until it ends.
- *                                  A second render of a game needs --force: each
- *                                  render adds one view to the real game.
+ *   direct --edl F                 the director's edit decision list for the
+ *                                  picked game (scripts/game-video/edl.mjs);
+ *                                  `status` names the default ending
+ *   render [--wait] [--force]      a 4090 render of the list; --wait polls until
+ *                                  it ends. A second render of a game needs
+ *                                  --force: each render adds one view to the
+ *                                  real game.
+ *   sheet                          the contact sheet's path and its stills, in
+ *                                  order: look at the PNG before `check`
+ *   check --sheet SHA --verdicts F the director's verdict on each still, as
+ *                                  [{"ply","kind","ok","note"}]: ok only when
+ *                                  the still shows what the cue is for (a FAHHH
+ *                                  or zoom shows the save wall). The ask needs
+ *                                  every still ok.
  *   ask --agent <your agent id>    open the Isomux ask with the MP4 and caption
  *   answer --agent <id> --ask <askId> --decision approve|reject
  *          --approver <member> --reply <the member's reply, verbatim>
@@ -45,7 +56,8 @@
  * The app is found through the office's app registry (name game-video), or
  * given with --app http://127.0.0.1:<port>.
  */
-import { readFileSync } from "node:fs";
+import { existsSync, readFileSync } from "node:fs";
+import { basename } from "node:path";
 import { createHash } from "node:crypto";
 import { candidateFromReport } from "./candidate.mjs";
 
@@ -104,6 +116,22 @@ const app = async (method, path, body) => {
 
 const day = flag("day");
 
+/**
+ * The day's candidate report. The timer writes <day>.json, or <day>.skip with
+ * the reason it found no candidates (nightly-candidates.sh).
+ */
+const readReport = (path) => {
+  if (existsSync(path)) return JSON.parse(readFileSync(path, "utf8"));
+  const reportDay = basename(path).replace(/\.json$/, "");
+  const skip = path.replace(/\.json$/, ".skip");
+  if (skip !== path && existsSync(skip)) {
+    die(`no candidates for ${reportDay}: ${readFileSync(skip, "utf8").trim()}`);
+  }
+  die(
+    `no candidates for ${reportDay}: neither ${path} nor a .skip file exists`,
+  );
+};
+
 const summary = (s) => {
   const c = s.cycle;
   const lines = [
@@ -117,13 +145,29 @@ const summary = (s) => {
     ...k.facts,
     `X text: ${c.caption.x}`,
   );
+  if (c.edl) {
+    lines.push(
+      `edit list ${c.edl.sha256.slice(0, 12)}:`,
+      ...c.edl.summary.map((l) => `  ${l}`),
+    );
+  } else {
+    lines.push(`no edit list yet; default ending ${s.suggestedEnding}`);
+  }
   if (c.render) {
     lines.push(
       c.render.error
         ? `render ${c.render.jobId}: FAILED ${c.render.error}`
         : c.render.video
-          ? `render ${c.render.jobId}: ${c.render.video.path} (${c.render.video.bytes} bytes, sha256 ${c.render.video.sha256.slice(0, 12)})`
+          ? `render ${c.render.jobId}: ${c.render.video.path} (${c.render.video.bytes} bytes, sha256 ${c.render.video.sha256.slice(0, 12)}), sheet ${c.render.sheet.path}`
           : `render ${c.render.jobId}: running - ${s.renderProgress ?? "queued"}`,
+    );
+  }
+  if (c.check) {
+    lines.push(
+      `contact sheet check: ${c.check.ok ? "all ok" : "FAILED"}`,
+      ...c.check.verdicts.map(
+        (v) => `  ply ${v.ply} ${v.kind}: ${v.ok ? "ok" : "BAD"} - ${v.note}`,
+      ),
     );
   }
   if (c.approval) {
@@ -155,7 +199,11 @@ export const askText = (c, modes, videoSha256) => {
     "FOR YOU ONLY, NOT POSTED:",
     `Posting mode: X ${modes.x}, YouTube ${modes.youtube}.`,
     `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
-    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, sounds ${c.render.sound ?? "-"}.`,
+    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}.`,
+    "Director's edit list:",
+    ...c.edl.summary.map((l) => `- ${l}`),
+    `Contact sheet (attached), checked by the director:`,
+    ...c.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
     "",
     "Approve to post it as shown. Reject, and say what to change, to stop it.",
   ].join("\n");
@@ -169,10 +217,13 @@ const commands = {
   /** The top candidates in plain words. Nothing here is posted. */
   facts() {
     const path = flag("report") ?? die("facts needs --report <file>");
-    const report = JSON.parse(readFileSync(path, "utf8"));
+    const report = readReport(path);
     const top = Number(flag("top") ?? 5);
     const count = Math.min(top, report.ranked?.length ?? 0);
     if (!count) die("the report ranks no game");
+    console.log(
+      "In the video the AI is Red and the human is Blue: a caption says Red and Blue, not the names (Nil, 2026-10-26).\n",
+    );
     for (let rank = 1; rank <= count; rank++) {
       let c;
       try {
@@ -185,13 +236,29 @@ const commands = {
         `rank ${rank}: ${c.seats.map((s) => `${s.name} (${s.kind})`).join(" vs ")}, ${c.variant}, ${c.movesCount} plies`,
       );
       for (const f of c.facts) console.log(`  ${f}`);
+      // For the edit list: 0-based plies, cells after the ply, and the walls
+      // that caused the jump (marked *) in the notation a zoom frame takes.
+      const walls = (ws) =>
+        (ws ?? []).map((w) => `${w.notation}${w.cause ? "*" : ""}`).join(" ");
+      for (const b of c.beats) {
+        console.log(
+          `  director, close call: danger ply ${b.danger.ply} (${b.hunter.type} ${b.danger.hunterCell}, ${b.prey.type} ${b.danger.preyCell}); ` +
+            `save ply ${b.save.ply} walls ${walls(b.save.walls)} (walk ${b.save.walkBefore} to ${b.save.walk}); ` +
+            `relief ply ${b.relief.ply} (${b.prey.type} ${b.relief.preyCell})`,
+        );
+      }
+      for (const p of c.picks) {
+        console.log(
+          `  director, wall jump: ply ${p.ply} ${p.notation}, walls ${walls(p.walls)}`,
+        );
+      }
       console.log("");
     }
   },
 
   async pick() {
     const path = flag("report") ?? die("pick needs --report <file>");
-    const report = JSON.parse(readFileSync(path, "utf8"));
+    const report = readReport(path);
     const rank = Number(flag("rank") ?? 1);
     // Send only the chosen entry: the full report holds every position's score.
     const slim = {
@@ -225,12 +292,51 @@ const commands = {
     }
   },
 
+  async direct() {
+    const path = flag("edl") ?? die("direct needs --edl <edl.json>");
+    await app("POST", "/api/daily/direct", {
+      day,
+      edl: JSON.parse(readFileSync(path, "utf8")),
+    });
+    console.log(summary(await state()));
+  },
+
+  async sheet() {
+    const c = (await state()).cycle;
+    const sheet = c?.render?.sheet ?? die("there is no contact sheet yet");
+    console.log(`contact sheet: ${sheet.path}`);
+    console.log(`  sha256 ${sheet.sha256} (give it to check --sheet)`);
+    sheet.stills.forEach((x, i) =>
+      console.log(
+        `  still ${i + 1}: ply ${x.ply} ${x.kind}${x.sound ? ` + ${x.sound}` : ""}`,
+      ),
+    );
+  },
+
+  async check() {
+    const path =
+      flag("verdicts") ?? die("check needs --verdicts <file>: one per still");
+    // The sheet the director looked at, as `sheet` printed it: the app
+    // refuses the check if the current render has another sheet.
+    const sheetSha256 =
+      flag("sheet") ?? die("check needs --sheet <sha256 that `sheet` printed>");
+    const c = (await state()).cycle;
+    await app("POST", "/api/daily/check", {
+      day: c?.day ?? die("there is no cycle"),
+      sheetSha256,
+      stills: JSON.parse(readFileSync(path, "utf8")),
+    });
+    console.log(summary(await state()));
+  },
+
   async ask() {
     const agent = flag("agent") ?? die("ask needs --agent <your agent id>");
     const s = await state();
     const c = s.cycle;
-    if (c?.state !== "rendered")
-      die(`ask needs a rendered video; the cycle is ${c?.state ?? "missing"}`);
+    if (c?.state !== "checked")
+      die(
+        `ask needs a rendered video whose contact sheet the director checked; the cycle is ${c?.state ?? "missing"}`,
+      );
     // The hash of the bytes that the ask attaches, not of the record.
     const videoSha256 = createHash("sha256")
       .update(readFileSync(c.render.video.path))
@@ -243,7 +349,7 @@ const commands = {
       body: JSON.stringify({
         text: askText(c, s.modes, videoSha256),
         options: ["Approve", "Reject"],
-        readFiles: [c.render.video.path],
+        readFiles: [c.render.video.path, c.render.sheet.path],
       }),
     });
     if (opened.status !== 201)
