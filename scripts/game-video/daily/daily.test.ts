@@ -10,7 +10,14 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
-import { mkdtempSync, readFileSync, writeFileSync, existsSync } from "node:fs";
+import {
+  mkdtempSync,
+  readFileSync,
+  readdirSync,
+  statSync,
+  writeFileSync,
+  existsSync,
+} from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openStore, readPostLog } from "./store.mjs";
@@ -1800,16 +1807,22 @@ describe("X signing", () => {
     ).toEqual({ ...DRY, youtube: "live" });
   });
 
-  test("Threads goes live only with its keys AND a way to make the video public", () => {
+  test("Threads goes live only with its keys AND the R2 keys", () => {
     const keys = { THREADS_USER_ID: "u", THREADS_ACCESS_TOKEN: "t" };
+    const r2 = {
+      R2_ACCOUNT_ID: "a",
+      R2_ACCESS_KEY_ID: "k",
+      R2_SECRET_ACCESS_KEY: "s",
+    };
     expect(postingModes(keys).threads).toBe("dry-run");
-    const threadsPublicUrl = () =>
-      Promise.resolve({
-        url: "https://x/v.mp4",
-        remove: () => Promise.resolve(),
-      });
-    expect(postingModes(keys, { threadsPublicUrl }).threads).toBe("live");
-    expect(postingModes({}, { threadsPublicUrl }).threads).toBe("dry-run");
+    expect(postingModes(r2).threads).toBe("dry-run");
+    expect(postingModes({ ...keys, ...r2, R2_ACCOUNT_ID: "" }).threads).toBe(
+      "dry-run",
+    );
+    expect(postingModes({ ...keys, ...r2 })).toEqual({
+      ...DRY,
+      threads: "live",
+    });
   });
 });
 
@@ -2225,6 +2238,35 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   ]);
   const container = planOf("threads").find((r) => r.url.endsWith("/threads"));
   expect(container?.body?.text).toBe(COPY.threads);
+  // Threads: the video goes to the private R2 bucket under a random name,
+  // Threads gets a signed URL, and the copy is deleted at the end.
+  const threadsPlan = planOf("threads") as unknown as {
+    method: string;
+    url: string;
+  }[];
+  const object = threadsPlan.find((r) => r.method === "PUT")?.url ?? "";
+  const key = object.split("/").slice(-2).join("/");
+  expect(key).toMatch(/^wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
+  expect(threadsPlan.map((r) => r.method)).toEqual([
+    "GET", // token refresh
+    "PUT", // the copy in R2
+    "POST", // container
+    "GET", // status
+    "POST", // publish
+    "GET", // permalink
+    "DELETE", // the copy, removed
+  ]);
+  expect(threadsPlan.at(-1)?.url).toBe(object);
+  // The signed URL is a bearer link: only Threads gets it. The plan names
+  // the object, and no file the app writes holds a signature.
+  expect(container?.body?.video_url).toBe(`<signed URL of ${key}>`);
+  const written = (readdirSync(dir, { recursive: true }) as string[])
+    .map((name) => join(dir, name))
+    .filter((path) => statSync(path).isFile() && !path.endsWith(".mp4"));
+  expect(written.some((path) => path.includes("post-log"))).toBe(true);
+  for (const path of written) {
+    expect(readFileSync(path, "utf8")).not.toContain("X-Amz-Signature");
+  }
   expect(planOf("mastodon").at(-1)?.body?.status).toBe(COPY.mastodon);
   // What `crew.mjs post` prints: each platform's mode and exact text.
   expect(postedTexts(posted.body)).toEqual([

@@ -147,10 +147,10 @@ import {
   threadsDryRunReply,
   threadsTokens,
   refreshThreadsToken,
-  dryRunPublicUrl,
   DRY_RUN_THREADS,
   THREADS_SECRETS,
 } from "./post-threads.mjs";
+import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
 import {
   postToMastodon,
   mastodonDryRunReply,
@@ -179,34 +179,21 @@ const SECRETS = {
   instagram: INSTAGRAM_SECRETS,
   facebook: FACEBOOK_SECRETS,
   bluesky: BLUESKY_SECRETS,
-  threads: THREADS_SECRETS,
+  // Threads fetches the video from R2 (public-url-r2.mjs), so it is live
+  // only when the R2 secrets exist too (Wall Game PM, 2026-10-26).
+  threads: [...THREADS_SECRETS, ...R2_SECRETS],
   mastodon: MASTODON_SECRETS,
 };
 
 /** Every secret a poster reads; a test strips them so it cannot post. */
 export const POSTING_SECRETS = Object.values(SECRETS).flat();
 
-/**
- * live when every secret of the platform is set, else dry-run. Threads also
- * needs `threadsPublicUrl`, the function that makes the video public for it
- * to fetch (post-threads.mjs): its hosting is not chosen yet (Nil, ask
- * eb46a7d2), and without it a live Threads post cannot work.
- */
-export const postingModes = (
-  env,
-  {
-    threadsPublicUrl = /** @type {import("./post-threads.mjs").PublicUrl | null} */ (
-      null
-    ),
-  } = {},
-) =>
+/** live when every secret of the platform is set, else dry-run. */
+export const postingModes = (env) =>
   Object.fromEntries(
     PLATFORMS.map((p) => [
       p,
-      SECRETS[p].every((name) => Boolean(env[name])) &&
-      (p !== "threads" || Boolean(threadsPublicUrl))
-        ? "live"
-        : "dry-run",
+      SECRETS[p].every((name) => Boolean(env[name])) ? "live" : "dry-run",
     ]),
   );
 
@@ -246,16 +233,13 @@ export const createDaily = ({
   env = process.env,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   dryRunReplies: replyOverrides = {},
-  threadsPublicUrl = /** @type {import("./post-threads.mjs").PublicUrl | null} */ (
-    null
-  ),
 }) => {
   // A test may replace the canned replies of one platform; the rest keep
   // their own.
   const dryRunReplies = { ...DRY_RUN_REPLIES, ...replyOverrides };
   const store = openStore(dataDir);
   const { dirs } = store;
-  const modesNow = () => postingModes(env, { threadsPublicUrl });
+  const modesNow = () => postingModes(env);
   const threadsTokenStore = () =>
     threadsTokens(join(dirs.root, "tokens"), env.THREADS_ACCESS_TOKEN);
 
@@ -635,7 +619,7 @@ export const createDaily = ({
           postToThreads({
             video,
             text: texts.threads,
-            publicUrl: live ? threadsPublicUrl : dryRunPublicUrl,
+            publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
             tokens: threadsTokenStore(),
             transport,
             creds: live ? env : DRY_RUN_THREADS,

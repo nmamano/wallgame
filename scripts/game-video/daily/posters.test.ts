@@ -40,9 +40,10 @@ import {
   threadsDryRunReply,
   threadsTokens,
   refreshThreadsToken,
-  dryRunPublicUrl,
+  withoutSignedUrl,
   DRY_RUN_THREADS,
 } from "./post-threads.mjs";
+import { dryRunPublicUrl, r2PublicUrl, DRY_RUN_R2 } from "./public-url-r2.mjs";
 
 interface Req {
   method: string;
@@ -604,20 +605,13 @@ describe("Mastodon", () => {
 describe("Threads", () => {
   const day = (iso: string) => () => new Date(iso);
 
-  test("refresh, container, wait, publish, permalink; the public copy is removed", async () => {
+  test("refresh, copy to R2, container, wait, publish, permalink; the copy is removed", async () => {
     const transport = dryRunTransport(threadsDryRunReply);
     const probe = commitProbe(transport);
-    let removed = 0;
     const result = await postToThreads({
       video: VIDEO,
       text: TEXT,
-      publicUrl: async (v: { sha256: string }) => ({
-        ...(await dryRunPublicUrl(v)),
-        remove: () => {
-          removed++;
-          return Promise.resolve();
-        },
-      }),
+      publicUrl: dryRunPublicUrl,
       tokens: threadsTokens(tempDir(), "<seed>"),
       transport,
       creds: DRY_RUN_THREADS,
@@ -625,20 +619,28 @@ describe("Threads", () => {
       beforeCommit: probe.beforeCommit,
     });
     const sent = transport.sent as Req[];
-    expect(sent.map((r) => r.url.split("?")[0])).toEqual([
-      "https://graph.threads.com/refresh_access_token",
-      "https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads",
-      "https://graph.threads.com/v1.0/DRY-RUN-CONTAINER",
-      "https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads_publish",
-      "https://graph.threads.com/v1.0/DRY-RUN-MEDIA-ID",
+    const object = sent[1].url;
+    const key = object.split("/").slice(-2).join("/");
+    expect(key).toMatch(/^wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
+    expect(sent.map((r) => `${r.method} ${r.url.split("?")[0]}`)).toEqual([
+      "GET https://graph.threads.com/refresh_access_token",
+      `PUT ${object}`,
+      "POST https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads",
+      "GET https://graph.threads.com/v1.0/DRY-RUN-CONTAINER",
+      "POST https://graph.threads.com/v1.0/<THREADS_USER_ID>/threads_publish",
+      "GET https://graph.threads.com/v1.0/DRY-RUN-MEDIA-ID",
+      `DELETE ${object}`,
     ]);
-    expect(probe.at).toBe(3);
-    expect(sent[1].body).toEqual({
+    expect(object).toStartWith(
+      "https://dry-run-account.r2.cloudflarestorage.com/wallgame-threads-video/",
+    );
+    expect(probe.at).toBe(4);
+    // The plan names the object, not the signed URL that Threads gets.
+    expect(sent[2].body).toEqual({
       media_type: "VIDEO",
-      video_url: `https://<public host, not chosen>/${sha256(VIDEO).slice(0, 16)}.mp4`,
+      video_url: `<signed URL of ${key}>`,
       text: TEXT,
     });
-    expect(removed).toBe(1);
     expect(result).toEqual({
       postId: "DRY-RUN-MEDIA-ID",
       url: "https://www.threads.com/@wallgame/post/DRY-RUN",
@@ -740,45 +742,57 @@ describe("Threads", () => {
     expect(err).not.toBeInstanceOf(NotPosted);
   });
 
-  test("a container that fails processing is not posted, and the copy is still removed", async () => {
-    let removed = false;
+  test("a container that fails processing is not posted, the copy is still removed, and the error holds no signed URL", async () => {
+    // The live path, with R2 signed by DRY_RUN_R2. Threads quotes the URL
+    // it could not fetch in its error, as a platform may.
+    const signedUrl = () => {
+      const container = transport.sent.find((r) => r.url.endsWith("/threads"));
+      return String(bodyOf(container!)?.video_url);
+    };
     const transport = fakeLive((req) =>
       req.url.includes("fields=status")
         ? {
             status: 200,
             json: {
               status: "ERROR",
-              error_message: "FAILED_DOWNLOADING_VIDEO",
+              error_message: `FAILED_DOWNLOADING_VIDEO from ${signedUrl()}`,
             },
           }
         : threadsDryRunReply(req),
     );
-    expect(
-      String(
-        await failure(
-          postToThreads({
-            video: VIDEO,
-            text: TEXT,
-            publicUrl: () =>
-              Promise.resolve({
-                url: "https://example.org/v.mp4",
-                remove: () => {
-                  removed = true;
-                  return Promise.resolve();
-                },
-              }),
-            tokens: threadsTokens(tempDir(), "SEED"),
-            transport,
-            creds: { THREADS_USER_ID: "U1" },
-            sleep: noSleep,
-            beforeCommit: noSleep,
-          }),
-        ),
+    const err = String(
+      await failure(
+        postToThreads({
+          video: VIDEO,
+          text: TEXT,
+          publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
+          tokens: threadsTokens(tempDir(), "SEED"),
+          transport,
+          creds: { THREADS_USER_ID: "U1" },
+          sleep: noSleep,
+          beforeCommit: noSleep,
+        }),
       ),
-    ).toMatch(/FAILED_DOWNLOADING_VIDEO/);
-    expect(removed).toBe(true);
+    );
+    expect(signedUrl()).toContain("X-Amz-Signature=");
+    expect(err).toMatch(
+      /FAILED_DOWNLOADING_VIDEO from <signed URL of wallgame-threads-video\/[0-9a-f]{32}\.mp4>/,
+    );
+    expect(err).not.toContain("X-Amz-Signature");
+    expect(transport.sent.at(-1)?.method).toBe("DELETE");
     expect(transport.sent.some((r) => r.url.includes("threads_publish"))).toBe(
       false,
+    );
+  });
+
+  test("withoutSignedUrl takes out the URL, and any signature in another form", () => {
+    const url = "https://h/b/k.mp4?X-Amz-Date=1&X-Amz-Signature=abc123";
+    expect(withoutSignedUrl(`get ${url} failed`, url, "<k>")).toBe(
+      "get <k> failed",
+    );
+    const escaped = url.replace("&", "\\u0026");
+    expect(withoutSignedUrl(escaped, url, "<k>")).toBe(
+      "https://h/b/k.mp4?X-Amz-Date=1\\u0026X-Amz-Signature=<removed>",
     );
   });
 });

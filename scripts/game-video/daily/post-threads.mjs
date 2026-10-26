@@ -1,8 +1,12 @@
 /**
  * Post one video to Threads. Threads does not take the bytes: it fetches the
- * video from a public HTTPS URL. Where that URL comes from is not decided
- * (Wall Game PM, 2026-10-26), so the caller gives a `publicUrl` function, and
- * this file never chooses a host.
+ * video from a public HTTPS URL. The caller gives a `publicUrl` function that
+ * makes one (public-url-r2.mjs: Cloudflare R2, Nil, ask eb46a7d2), so this
+ * file chooses no host.
+ *
+ * THAT URL IS A BEARER LINK: whoever has it can fetch the video until it
+ * expires. It goes only to Threads. The plan, the cycle record and every
+ * error message name the stored object by its `key` instead.
  *
  * Read on developers.facebook.com 2026-10-26 (Threads API: Posts,
  * Troubleshooting, Overview, Long-Lived Access Tokens):
@@ -45,6 +49,9 @@
  *   the refresh failed: the post-log row does not show that, so look at the
  *   app log.
  * - The permalink in the post log opens the post.
+ * - The R2 bucket wallgame-threads-video is empty after the post: the poster
+ *   deletes its copy. An object that stays means the DELETE failed (see the
+ *   app log); the bucket's 1-day lifecycle rule removes it in any case.
  *
  * THE COMMIT IS threads_publish. A container that is never published expires
  * after 24 hours and nobody sees it. After a failed publish the container's
@@ -66,6 +73,7 @@ import {
   sha256,
 } from "./transport.mjs";
 import { textLimitProblems } from "./post-limits.mjs";
+import { R2_HOST_SUFFIX, r2DryRunReply } from "./public-url-r2.mjs";
 
 export const THREADS_SECRETS = ["THREADS_USER_ID", "THREADS_ACCESS_TOKEN"];
 
@@ -185,6 +193,7 @@ export const threadsDryRunReply = (req) => {
       json: { status: "FINISHED", id: "DRY-RUN-CONTAINER" },
     };
   }
+  if (new URL(req.url).host.endsWith(R2_HOST_SUFFIX)) return r2DryRunReply(req);
   if (req.url.includes("fields=permalink")) {
     return {
       status: 200,
@@ -196,21 +205,25 @@ export const threadsDryRunReply = (req) => {
 
 /**
  * Makes the video public at an https URL for Threads to fetch, and gives the
- * way to take it down again. Its hosting is not chosen (Nil, ask eb46a7d2).
- * @typedef {(v: { video: Buffer, sha256: string }) =>
- *   Promise<{ url: string, remove: () => Promise<void> }>} PublicUrl
+ * way to take it down again. Its requests go through `transport`, so they
+ * are in the plan. `key` names the stored copy where the URL must not be.
+ * @typedef {(v: { video: Buffer, sha256: string, transport: any }) =>
+ *   Promise<{ url: string, key: string, remove: () => Promise<void> }>}
+ *   PublicUrl
  */
 
-/** What a dry run gets in place of a public copy of the video. */
-export const dryRunPublicUrl = async ({ sha256: hash }) => ({
-  url: `https://<public host, not chosen>/${hash.slice(0, 16)}.mp4`,
-  remove: async () => {},
-});
+/** `text` with `url`, and any S3-style signature, replaced. */
+export const withoutSignedUrl = (text, url, replacement) =>
+  text
+    .split(url)
+    .join(replacement)
+    .replace(/(X-Amz-Signature=)[0-9a-fA-F]+/g, "$1<removed>");
 
 /**
- * Post `video` (a Buffer) with `text`. `publicUrl({video, sha256})` makes
- * the video reachable at a public HTTPS URL and returns {url, remove}; the
- * poster calls remove once Threads no longer needs the file. `tokens` is a
+ * Post `video` (a Buffer) with `text`. `publicUrl({video, sha256,
+ * transport})` makes the video reachable at a public HTTPS URL and returns
+ * {url, key, remove}; the poster calls remove once Threads no longer needs
+ * the file. `tokens` is a
  * threadsTokens store. `creds` holds THREADS_USER_ID (live) or
  * DRY_RUN_THREADS. `beforeCommit` runs just before threads_publish. Returns
  * {postId, url}.
@@ -233,7 +246,7 @@ export const postToThreads = async ({
   const dry = transport.mode === "dry-run";
   const token = dry ? "<THREADS_ACCESS_TOKEN>" : tokens.current();
   const user = creds.THREADS_USER_ID;
-  const graph = (method, url, body) =>
+  const graph = (method, url, body, describe) =>
     transport.request({
       method,
       url,
@@ -242,6 +255,7 @@ export const postToThreads = async ({
         ...(body ? { "content-type": "application/json" } : {}),
       },
       body: body ? JSON.stringify(body) : undefined,
+      describe,
     });
   const containerStatus = async (containerId) => {
     const reply = await graph(
@@ -252,16 +266,18 @@ export const postToThreads = async ({
     return reply.json ?? {};
   };
 
-  const hosted = await publicUrl({ video, sha256: sha256(video) });
+  const hosted = await publicUrl({ video, sha256: sha256(video), transport });
+  const inPlaceOfUrl = `<signed URL of ${hosted.key}>`;
   try {
     if (!/^https:\/\//.test(hosted?.url ?? "")) {
       throw new NotPosted("threads: the video needs a public https URL");
     }
-    const container = await graph("POST", `${THREADS_GRAPH}/${user}/threads`, {
-      media_type: "VIDEO",
-      video_url: hosted.url,
-      text,
-    });
+    const container = await graph(
+      "POST",
+      `${THREADS_GRAPH}/${user}/threads`,
+      { media_type: "VIDEO", video_url: hosted.url, text },
+      { media_type: "VIDEO", video_url: inPlaceOfUrl, text },
+    );
     const containerId = container.json?.id;
     if (!ok(container) || !containerId) {
       throw new PostFailed("threads container", container);
@@ -337,6 +353,13 @@ export const postToThreads = async ({
       /* the post is made; only its link is unknown */
     }
     return { postId: mediaId, url };
+  } catch (err) {
+    // Threads may quote the URL in an error; the message goes into the
+    // cycle record, so the URL and any signature in it are taken out.
+    if (err instanceof Error) {
+      err.message = withoutSignedUrl(err.message, hosted.url, inPlaceOfUrl);
+    }
+    throw err;
   } finally {
     try {
       await hosted?.remove?.();
