@@ -12,16 +12,22 @@ const base = {
   ending: "replay",
 };
 
+// edl.mjs is plain JS, so tsc widens `ok` to boolean and cannot narrow on
+// it. The test narrows on `edl` itself and fails with the validator's errors.
+const accept = (raw: object) => {
+  const r = validateEdl(raw);
+  if (!r.edl) throw new Error((r.errors ?? []).join("; "));
+  return r.edl;
+};
+
 describe("validateEdl", () => {
   test("fills the defaults of a minimal EDL", () => {
-    const r = validateEdl({
+    const edl = accept({
       ...base,
       events: [{ ply: 15, kind: "zoom", frame: ["^h4", "g4"] }],
     });
-    expect(r.ok).toBe(true);
-    if (!r.ok) return;
-    expect(r.edl.pace).toEqual([]);
-    expect(r.edl.events[0]).toMatchObject({ scale: DEFAULT_ZOOM_SCALE });
+    expect(edl.pace).toEqual([]);
+    expect(edl.events[0]).toMatchObject({ scale: DEFAULT_ZOOM_SCALE });
   });
 
   test("counts an emoji as one character, and holds the caption to 6 words and 32", () => {
@@ -67,40 +73,36 @@ describe("validateEdl", () => {
 describe("checkEdlAgainstGame", () => {
   const notations = ["Ce7", "Cf7", "^a4.^h4"];
   test("accepts a wall placed by that ply and rejects one placed later or never", () => {
-    const ok = validateEdl({
+    const ok = accept({
       ...base,
       events: [{ ply: 2, kind: "zoom", frame: ["^h4", "g4"] }],
     });
-    if (!ok.ok) throw new Error(ok.errors.join("; "));
-    expect(
-      checkEdlAgainstGame(ok.edl, { notations, cols: 8, rows: 8 }),
-    ).toEqual([]);
-    const early = validateEdl({
+    expect(checkEdlAgainstGame(ok, { notations, cols: 8, rows: 8 })).toEqual(
+      [],
+    );
+    const early = accept({
       ...base,
       events: [{ ply: 1, kind: "zoom", frame: [">h4"] }],
     });
-    if (!early.ok) throw new Error(early.errors.join("; "));
     expect(
-      checkEdlAgainstGame(early.edl, { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(early, { notations, cols: 8, rows: 8 }),
     ).toHaveLength(1);
   });
 
   test("rejects a ply past the last move and a cell off the board", () => {
-    const r = validateEdl({
+    const edl = accept({
       ...base,
       events: [{ ply: 3, kind: "laugh", cell: "z9" }],
     });
-    if (!r.ok) throw new Error(r.errors.join("; "));
     expect(
-      checkEdlAgainstGame(r.edl, { notations, cols: 8, rows: 8 }),
+      checkEdlAgainstGame(edl, { notations, cols: 8, rows: 8 }),
     ).toHaveLength(2);
   });
 });
 
 describe("music", () => {
   test("is optional, null when absent, and only a site track", () => {
-    const absent = validateEdl(base);
-    expect(absent.ok && absent.edl.music).toBe(null);
+    expect(accept(base).music).toBe(null);
     expect(validateEdl({ ...base, music: "a-legend" }).ok).toBe(true);
     expect(validateEdl({ ...base, music: "darude" }).ok).toBe(false);
   });
