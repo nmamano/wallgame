@@ -129,6 +129,24 @@
       #vs .beam.bottom .who {
         text-align: right;
       }
+      /*
+        The daily overlay names no player: it says which side is the AI and
+        which the human, each word IN its side's colour (Nil, 2026-10-26: "AI
+        (in Red) vs Human (in Blue)"), so the viewer links each word to its
+        pieces. A light banner keeps both colours readable.
+      */
+      #vs .beam.word {
+        background: linear-gradient(
+          100deg,
+          #ffffff 0%,
+          #f1f5f9 62%,
+          rgba(241, 245, 249, 0.88) 100%
+        ) !important;
+      }
+      #vs .beam.word .name {
+        font-size: calc(var(--name-size) * 1.4);
+        text-shadow: 0 3px 0 rgba(15, 23, 42, 0.18);
+      }
       .beam .sub {
         font-size: var(--sub-size);
         font-weight: 700;
@@ -251,6 +269,45 @@
         object-fit: fill;
       }
 
+      /* ---------- the close-call beat (daily look) ---------- */
+      /*
+        Nil, 2026-10-26: the mouse looks scared when the cat gets close, and
+        laughs once a wall has saved it. The pawn that trembles or bounces is
+        a CROP OF THE REAL SCREENSHOT, cut to the mouse's cell and moved over
+        it; the pawn art is never redrawn. It rides on the camera.
+      */
+      #pawnFx {
+        position: absolute;
+      }
+      #pawnCrop {
+        position: absolute;
+        inset: 0;
+        border-radius: 22%;
+        background-repeat: no-repeat;
+      }
+      #pawnSweat {
+        position: absolute;
+        font-family: "Noto Color Emoji", sans-serif;
+        line-height: 1;
+      }
+      #pawnBubble {
+        position: absolute;
+        left: 50%;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        background: #fff;
+        border: 0.06em solid #10182c;
+        box-shadow: 0 0.08em 0 #10182c;
+        color: #10182c;
+        font-family:
+          "TikTok Sans", "Noto Color Emoji", "DejaVu Sans", sans-serif;
+        font-weight: 900;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
       /* ---------- the endings (wallz look) ---------- */
       /*
         Three endings of our own, each a layer over the frozen final
@@ -270,7 +327,8 @@
         paint-order: stroke fill;
         white-space: nowrap;
       }
-      #stamp {
+      #stamp,
+      #midStamp {
         position: absolute;
         left: 50%;
         top: 50%;
@@ -547,6 +605,11 @@
           <div id="boardCam">
             <img id="boardImg" />
             <img id="boardPrev" class="hidden" />
+            <div id="pawnFx" class="hidden">
+              <div id="pawnCrop"></div>
+              <div id="pawnSweat">💦</div>
+              <div id="pawnBubble"></div>
+            </div>
           </div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
           <div id="replayBadge" class="hidden">
@@ -554,6 +617,7 @@
             REPLAY
           </div>
           <div id="stamp" class="stampmark hidden"></div>
+          <div id="midStamp" class="stampmark hidden"></div>
         </div>
         <div id="flash" class="hidden"></div>
         <img id="koPawn" class="hidden" />
@@ -620,7 +684,7 @@
        * VS screen's 0..1 animation is stretched over, and the exit. The
        * renderer reads it to place the overlay frames and the punch sound.
        */
-      window.__VS_OVERLAY = { seconds: 2.4, entry: 1.3, exit: 0.45 };
+      window.__VS_OVERLAY = { seconds: 3.0, entry: 1.3, exit: 0.45 };
 
       /**
        * The three endings of the wallz look, one frame at a time.
@@ -717,6 +781,98 @@
         }
       };
 
+      /**
+       * The close-call beat on the mouse, one frame at a time.
+       *
+       *   scared  the cat is close: the mouse trembles, sweats, and a "!"
+       *           bubble pops over it.
+       *   laugh   a wall has saved it: the mouse bounces and a 😂 bubble pops.
+       *
+       * b = { kind, t: seconds into the beat, board: the screenshot under it,
+       *       cell: {x, y} the mouse's cell centre in the board image (0..1),
+       *       size: one cell's width (0..1) }
+       */
+      const paintBeat = (b) => {
+        const fx = $("pawnFx");
+        show(fx, !!b);
+        if (!b) return;
+        const W = $("boardWrap").clientWidth;
+        const px = b.size * W;
+        const left = (b.cell.x - b.size / 2) * W;
+        const top = (b.cell.y - b.size / 2) * W;
+        fx.style.left = left + "px";
+        fx.style.top = top + "px";
+        fx.style.width = px + "px";
+        fx.style.height = px + "px";
+        const crop = $("pawnCrop");
+        crop.style.backgroundImage = "url('" + b.board + "')";
+        crop.style.backgroundSize = W + "px " + W + "px";
+        crop.style.backgroundPosition = -left + "px " + -top + "px";
+
+        const phase = b.t * 30;
+        const bubble = $("pawnBubble");
+        // Over the mouse, or under it when the mouse stands on the top row.
+        const below = b.cell.y - b.size < 0.06;
+        bubble.style.top = below ? "105%" : "auto";
+        bubble.style.bottom = below ? "auto" : "105%";
+        bubble.style.fontSize = px * 0.42 + "px";
+        bubble.style.padding = "0.18em 0.42em";
+        const pop = punch(span(b.t, 0, 0.18));
+        bubble.style.transform = "translateX(-50%) scale(" + pop + ")";
+        const sweat = $("pawnSweat");
+
+        if (b.kind === "scared") {
+          crop.style.transform =
+            "translate(" +
+            Math.sin(phase * 2.7) * px * 0.05 +
+            "px," +
+            Math.cos(phase * 3.3) * px * 0.035 +
+            "px) scale(1.06)";
+          bubble.textContent = "!";
+          show(sweat, true);
+          // A drop that slides down the face and starts again, twice a second.
+          const cycle = (b.t * 2) % 1;
+          sweat.style.fontSize = px * 0.3 + "px";
+          sweat.style.left = "-8%";
+          sweat.style.top = -5 + cycle * 30 + "%";
+          sweat.style.opacity = 1 - cycle * 0.8;
+        } else {
+          /*
+            Small hops with a wobble, and always a little enlarged. The crop
+            sits on the real pawn, so a hop higher than the enlargement would
+            show the pawn twice (seen 2026-10-26 at 22% of a cell).
+          */
+          const hop = Math.abs(Math.sin(b.t * Math.PI * 3.2));
+          crop.style.transform =
+            "translateY(" +
+            -hop * px * 0.07 +
+            "px) rotate(" +
+            Math.sin(phase * 0.9) * 8 +
+            "deg) scale(" +
+            (1.14 + 0.05 * hop) +
+            ")";
+          bubble.textContent = "😂";
+          show(sweat, false);
+        }
+      };
+
+      /**
+       * An EDL stamp in the middle of the game: the word punches in like the
+       * VS mark and fades over its last quarter second.
+       *   m = { text, t: seconds into the stamp, seconds: its length }
+       */
+      const paintMidStamp = (m) => {
+        const el = $("midStamp");
+        show(el, !!m);
+        if (!m) return;
+        el.textContent = m.text;
+        el.style.opacity = 1 - span(m.t, m.seconds - 0.25, m.seconds);
+        el.style.transform =
+          "translate(-50%,-50%) rotate(-8deg) scale(" +
+          punch(span(m.t, 0, 0.25)) +
+          ")";
+      };
+
       const paintEnding = (e) => {
         for (const id of [
           "boardPrev",
@@ -746,7 +902,8 @@
           show($("replayBadge"), true);
           $("replayBadge").querySelector(".dot").style.opacity =
             Math.floor(t * 3) % 2 === 0 ? 1 : 0.25;
-          if (t >= 1.4) {
+          // A game won any other way than a catch or a home stamps no word.
+          if (t >= 1.4 && e.stamp) {
             show($("stamp"), true);
             $("stamp").textContent = e.stamp;
             $("stamp").style.transform =
@@ -874,12 +1031,21 @@
         $("beamBottom").style.background = b.gradientMirrored;
         $("vsImgA").src = a.portrait;
         $("vsImgB").src = b.portrait;
-        $("vsNameA").textContent = a.name;
-        $("vsNameB").textContent = b.name;
-        fitName($("vsNameA"));
-        fitName($("vsNameB"));
-        $("vsSubA").textContent = a.sub;
-        $("vsSubB").textContent = b.sub;
+        for (const [beam, name, sub, p] of [
+          [$("beamTop"), $("vsNameA"), $("vsSubA"), a],
+          [$("beamBottom"), $("vsNameB"), $("vsSubB"), b],
+        ]) {
+          // `word` (the daily overlay) replaces the name with AI or Human.
+          beam.classList.toggle("word", !!p.word);
+          beam.style.boxShadow = p.word
+            ? "inset 0 14px 0 " + p.hex + ", inset 0 -14px 0 " + p.hex
+            : "";
+          name.textContent = p.word ?? p.name;
+          name.style.color = p.word ? p.hex : "";
+          fitName(name);
+          sub.textContent = p.sub;
+          show(sub, !p.word);
+        }
       };
 
       /**
@@ -895,6 +1061,7 @@
         show($("end"), s.segment === "end");
         show($("brand"), s.segment === "play");
         $("root").classList.toggle("wallz", s.look === "wallz");
+        $("vs").style.transform = "";
 
         if (s.segment === "vs") paintVs(s.a, s.b, s.t, 0);
 
@@ -915,6 +1082,22 @@
             Math.min(1, o.t / v.entry),
             Math.max(0, Math.min(1, (o.t - (v.seconds - v.exit)) / v.exit)),
           );
+          /*
+            The banners never cover the caption (Wall Game PM, 2026-10-26:
+            the top banner cut into "winning"). Their skew lifts one end, so
+            the clearance is MEASURED: the overlay moves down until the top
+            banner's box starts below the caption's box.
+          */
+          if (s.caption) {
+            $("caption").textContent = s.caption;
+            const clear =
+              $("caption").getBoundingClientRect().bottom +
+              12 -
+              $("beamTop").getBoundingClientRect().top;
+            if (clear > 0) {
+              $("vs").style.transform = "translateY(" + clear + "px)";
+            }
+          }
         }
 
         if (s.segment === "play") {
@@ -930,6 +1113,8 @@
             ? z.x * 100 + "% " + z.y * 100 + "%"
             : "50% 50%";
           $("boardCam").style.transform = z ? "scale(" + z.scale + ")" : "none";
+          paintBeat(s.beat);
+          paintMidStamp(s.midStamp);
           paintEnding(s.ending);
           $("pAvT").src = s.top.portrait;
           $("pAvB").src = s.bottom.portrait;

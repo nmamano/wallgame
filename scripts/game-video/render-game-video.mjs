@@ -75,6 +75,12 @@ import {
   captureReplayFrames,
 } from "./capture-replay-frames.mjs";
 import { captureFeedbackPlan } from "./capture-feedback.mjs";
+import {
+  validateEdl,
+  checkEdlAgainstGame,
+  DEFAULT_SECONDS_PER_MOVE,
+} from "./edl.mjs";
+import { MEME_SOUND_GAINS } from "./meme-sounds.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
 import { allocateFrameRanges } from "./timeline-frames.mjs";
 
@@ -90,27 +96,40 @@ const cliArg = (name) => {
 };
 
 /**
- * A render job written by the daily-video dashboard (task e8d26610 step 3).
+ * The edit decision list of a daily video (edl.mjs), written by the director
+ * and validated by the daily app before Nil sees it.
  *
- * The dashboard hands the caption and the names over in a FILE, not on a
- * command line, because both are untrusted text and a shell must never parse
- * them. The file fills the same options the flags do; a flag on the command
- * line wins over the file.
- *
- *   {"jobId": "...", "gameId": "...", "caption": "...", "style": "daily",
- *    "aspect": "9x16", "swings": [{"ply": 23, ...}]}
+ * It travels as a FILE, not on a command line, because its caption is
+ * untrusted text and a shell must never parse it. It is the only input of a
+ * daily render: game, caption, pace, every effect and sound cue, and the
+ * ending all come from it. Its sha256, of the bytes as read, goes into the
+ * RESULT line, so the app can prove the video plays the EDL it approved.
  */
-const JOB = cliArg("job")
-  ? JSON.parse(readFileSync(resolve(cliArg("job")), "utf8"))
+const EDL_PATH = cliArg("edl");
+const EDL_BYTES = EDL_PATH ? readFileSync(resolve(EDL_PATH)) : null;
+const EDL = (() => {
+  if (!EDL_BYTES) return null;
+  let raw;
+  try {
+    raw = JSON.parse(EDL_BYTES.toString("utf8"));
+  } catch (err) {
+    console.error(`--edl ${EDL_PATH} is not JSON: ${err.message}`);
+    process.exit(2);
+  }
+  const checked = validateEdl(raw);
+  if (!checked.ok) {
+    console.error(
+      `--edl ${EDL_PATH} is not valid:\n  ${checked.errors.join("\n  ")}`,
+    );
+    process.exit(2);
+  }
+  return checked.edl;
+})();
+const EDL_SHA256 = EDL_BYTES
+  ? createHash("sha256").update(EDL_BYTES).digest("hex")
   : null;
-const fromJob = {
-  game: JOB?.gameId,
-  caption: JOB?.caption,
-  style: JOB?.style,
-  aspect: JOB?.aspect,
-  "swing-plies": JOB?.swings?.map((s) => s.ply).join(","),
-};
-const arg = (name, fallback) => cliArg(name) ?? fromJob[name] ?? fallback;
+const fromEdl = { game: EDL?.gameId, style: EDL ? "daily" : undefined };
+const arg = (name, fallback) => cliArg(name) ?? fromEdl[name] ?? fallback;
 const flag = (name) => argv.includes(`--${name}`);
 
 /**
@@ -146,13 +165,12 @@ const rawGame = arg("game");
 if (!rawGame) {
   console.error(
     "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
-      "       [--style current|daily[:replay|gg|ko][,...]] [--caption TEXT]\n" +
-      "       [--swing-plies 23,41] [--seconds-per-move S]\n" +
-      "       [--aspect fit|square|9x16] (style current only)\n" +
+      "       [--seconds-per-move S] [--aspect fit|square|9x16]\n" +
+      "   or: render-game-video.mjs --edl FILE   (the daily look; see edl.mjs)\n" +
       "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
-      "       [--sounds swing=fuahhh-2,win=shotgun-1] [--board-theme crisp|default] [--out FILE]\n" +
+      "       [--sounds vsMeme=shotgun-2,finish=shotgun-1] [--board-theme crisp|default] [--out FILE]\n" +
       "  plumbing, for the app rather than for a person:\n" +
-      "       [--job FILE] [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
+      "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
       "       [--browser chromium|chrome] [--encoder x264|nvenc]",
   );
   process.exit(2);
@@ -173,21 +191,18 @@ const ORIGIN = "https://wallgame.io";
  *   current  the look shipped since 2026-08: VS screen, name plates, a shake
  *            on the winning capture, a winner card.
  *   daily    the daily Short (Nil, 2026-10-25 and 2026-10-26): black 9:16
- *            frame, one meme caption, the board as wide as the frame, a fast
- *            pace, a camera punch-in and a meme sound on each swing move, the
- *            VS names as an OVERLAY over the first seconds of play (an intro
- *            screen loses viewers), and one of our own endings. No plates, no
- *            winner card.
+ *            frame, one meme caption, the board as wide as the frame, the
+ *            punch-ins, mouse beats, stamps and meme sounds the director's
+ *            EDL places, "AI" in red vs "Human" in blue as an OVERLAY over
+ *            the first seconds of play (an intro screen loses viewers), and
+ *            one of our own endings. No plates, no winner card.
  *
- * THE ENDING of daily is named after a colon: `daily:replay`, `daily:gg`,
- * `daily:ko` (stage.html describes each). Nil, 2026-10-26: the
- * winner's-colour flood of the first cut looked like a copy of WallzGame, so
- * it is gone; until he picks, `replay` is the default. The daily pipeline
- * sends plain `daily`.
+ * A daily render takes everything that varies from its EDL (`--edl`), the
+ * ending too: Nil, 2026-10-26, the three endings (stage.html describes each)
+ * ROTATE for variety, and the daily app picks one per video.
  *
- * ALL OF THEM ARE COMPOSED FROM ONE CAPTURE. `--style daily:replay,daily:gg`
- * loads the replay page once and writes one mp4 per style, so a comparison
- * costs the game one view, not one per style.
+ * `--style current,daily` composes both from ONE capture: the replay page
+ * loads once, so a comparison costs the game one view, not one per style.
  */
 const STYLES = {
   current: {
@@ -201,52 +216,31 @@ const STYLES = {
     vsSeconds: 0,
     vsOverlay: true,
     vsSound: "vsMeme",
-    secondsPerMove: 0.5,
-    ending: "replay",
+    secondsPerMove: DEFAULT_SECONDS_PER_MOVE,
   },
 };
-/** The endings stage.html can play; their timings are published there. */
-const ENDINGS = ["replay", "gg", "ko"];
 const STYLE_NAMES = String(arg("style", "current"))
   .split(",")
   .map((s) => s.trim())
   .filter(Boolean);
-/** "daily:gg" -> the daily style with the gg ending. */
-const styleOf = (name) => {
-  const [base, ending] = name.split(":");
-  const style = STYLES[base];
-  if (!style) return null;
-  if (ending === undefined) return style;
-  if (!style.ending || !ENDINGS.includes(ending)) return null;
-  return { ...style, ending };
-};
 for (const name of STYLE_NAMES) {
-  if (!styleOf(name)) {
-    console.error(
-      `--style ${name} is not known. Known: current, daily[:${ENDINGS.join("|")}]`,
-    );
+  if (!STYLES[name]) {
+    console.error(`--style ${name} is not known. Known: current, daily`);
     process.exit(2);
   }
 }
-
-/** The meme caption over the board, daily only. Untrusted text. */
-const CAPTION = arg("caption", "");
-
-/**
- * The moves that swung the game, as 0-based ply indexes into the move list -
- * the `ply` field of a Swing in daily-candidates.ts. Each one gets a camera
- * punch-in and the swing sound, in the daily look.
- */
-const SWING_PLIES = String(arg("swing-plies", ""))
-  .split(",")
-  .filter((s) => s.trim() !== "")
-  .map(Number);
-if (SWING_PLIES.some((p) => !Number.isInteger(p) || p < 0)) {
-  console.error(
-    `--swing-plies takes 0-based ply indexes, got ${arg("swing-plies")}`,
-  );
+if (STYLE_NAMES.includes("daily") && !EDL) {
+  console.error("the daily look plays an EDL: give --edl FILE (see edl.mjs)");
   process.exit(2);
 }
+if (EDL && cliArg("seconds-per-move")) {
+  console.error("--seconds-per-move does not apply to an EDL; set its pace");
+  process.exit(2);
+}
+/** What the daily look plays: the EDL's, or nothing in a current-only render. */
+const CAPTION = EDL?.caption ?? "";
+const EVENTS = EDL?.events ?? [];
+const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
 
 /**
  * Which browser draws the frames. `chromium` is the one Playwright downloads
@@ -463,18 +457,17 @@ const END_SECONDS = 3.0;
 const SHAKE_SECONDS = 0.6;
 
 /**
- * The wallz beats, in seconds.
- *
- * A swing move holds longer than a routine one, so the punch-in has time to
- * land, hold and let go: in for ZOOM_IN, held until ZOOM_HOLD_END, out by
- * ZOOM_OUT_END, then the board rests at its normal size for the rest of
- * SWING_SECONDS. ZOOM_SCALE is how far the camera punches in.
+ * The daily effects, in seconds. A punch-in goes in over ZOOM_IN, holds for
+ * the EDL's holdSeconds and lets go over ZOOM_OUT; its scale comes from the
+ * EDL too (edl.mjs). After the effects of a ply, the plain position rests for
+ * EFFECT_REST_SECONDS before the next move.
  */
-const SWING_SECONDS = 1.4;
+const SCARED_SECONDS = 1.2;
+const LAUGH_SECONDS = 1.3;
+const STAMP_SECONDS = 1.0;
+const EFFECT_REST_SECONDS = 0.3;
 const ZOOM_IN = 0.12;
-const ZOOM_HOLD_END = 0.85;
-const ZOOM_OUT_END = 1.1;
-const ZOOM_SCALE = 1.5;
+const ZOOM_OUT = 0.25;
 /** How long a wallz video holds its last position when nobody won. */
 const DRAW_HOLD_SECONDS = 1.3;
 
@@ -584,6 +577,32 @@ const browser = await chromium.launch({
 });
 
 /**
+ * Red for the AI and blue for the human, by each seat's bot flag
+ * (configType, the flag the daily picker's AI-vs-human rule reads). The daily
+ * picker takes only AI vs human games, so a daily render of two alike seats is
+ * an error, not a guess; a current-look render of one keeps seat order.
+ */
+const SEAT_COLORS = (body) => {
+  const bot = (id) =>
+    body.matchStatus?.players?.find((p) => p.playerId === id)?.configType ===
+    "bot";
+  if (bot(1) === bot(2)) {
+    if (EDL) {
+      throw new Error(
+        `game ${GAME_ID} is not AI vs human (both seats are ${bot(1) ? "bots" : "humans"}); the daily look colours the AI red and the human blue`,
+      );
+    }
+    return { 1: "red", 2: "blue" };
+  }
+  return bot(1) ? { 1: "red", 2: "blue" } : { 1: "blue", 2: "red" };
+};
+/** What a forced colour must sample as on the page, to prove the page used it. */
+const COLOR_CHECK = {
+  red: ([r, g, b]) => r > g + 40 && r > b + 40,
+  blue: ([r, g, b]) => b > r + 40 && b > g + 40,
+};
+
+/**
  * A viewport big enough that the board renders large in CSS pixels, times a
  * device scale factor, so the clipped board comfortably exceeds the 1010px it
  * is drawn at. Capturing smaller and scaling up is what makes a board video
@@ -610,13 +629,49 @@ const openGamePage = async (dpr) => {
   */
   const replayUrl = new RegExp(`/api/games/${GAME_ID}(\\?|$)`);
   let replay = null;
-  page.on("response", async (res) => {
-    if (replay || !replayUrl.test(res.url())) return;
+  /*
+    RED VS BLUE, ALWAYS (Nil, 2026-10-26: the players' own colours were too
+    alike). The replay page has no viewer colour setting - it colours each
+    seat from the pawnColor in the game record - so the capture browser sets
+    that field in the page's own response, before the page reads it: the AI
+    red, the human blue, and seat 1 red when both seats are alike. The page
+    then colours pawns, walls and cards through its own resolver; no pixel is
+    recoloured. The request is the page's own, made once, so it is still one
+    view.
+  */
+  let colorError = null;
+  let replayRequests = 0;
+  await page.route(replayUrl, async (route) => {
+    replayRequests += 1;
+    const res = await route.fetch();
+    let body;
     try {
-      replay = await res.json();
+      body = await res.json();
     } catch {
       // A non-JSON body here is a server error; the null check below reports it.
+      await route.fulfill({ response: res });
+      return;
     }
+    replay ??= structuredClone(body);
+    try {
+      const colors = SEAT_COLORS(body);
+      for (const p of body.matchStatus?.players ?? []) {
+        /*
+          Only this one field is touched, and only when it is where the page
+          reads it: if a site change moved it, the render stops here rather
+          than ship the players' own colours under an "AI in red" title.
+        */
+        if (typeof p.appearance?.pawnColor !== "string") {
+          throw new Error(
+            `the replay response has no appearance.pawnColor for player ${p.playerId}; the site changed where seat colours come from`,
+          );
+        }
+        p.appearance.pawnColor = colors[p.playerId];
+      }
+    } catch (err) {
+      colorError = err;
+    }
+    await route.fulfill({ response: res, json: body });
   });
 
   await page.goto(ORIGIN, { waitUntil: "domcontentloaded", timeout: 90000 });
@@ -635,6 +690,11 @@ const openGamePage = async (dpr) => {
   if (stored !== JSON.stringify(BOARD_THEME)) {
     log(`WARNING: board theme did not stick - localStorage holds ${stored}`);
   }
+  if (colorError) {
+    console.error(String(colorError.message));
+    await browser.close();
+    process.exit(4);
+  }
   if (!replay || replay.kind !== "replay") {
     console.error(
       `no replay data for ${GAME_ID}. The page answered ` +
@@ -643,8 +703,17 @@ const openGamePage = async (dpr) => {
     await browser.close();
     process.exit(4);
   }
-  log("one replay page load = one view added to this game's count");
-  return { page, replay };
+  /*
+    Each request to the replay endpoint adds a view, and the page could fetch
+    again (a refetch on focus or remount), so the count is measured.
+  */
+  log(
+    `replay requests: ${replayRequests} (each one adds a view to this game's count)`,
+  );
+  if (replayRequests !== 1) {
+    log(`WARNING: expected one replay request, saw ${replayRequests}`);
+  }
+  return { page, replay, replayRequests: () => replayRequests };
 };
 
 /**
@@ -654,7 +723,11 @@ const openGamePage = async (dpr) => {
  * The page has to load anyway, and it asks for exactly this JSON, so the
  * renderer reads that response instead of asking again. See openGamePage.
  */
-const { page: gamePage, replay } = await openGamePage(CAPTURE_DPR);
+const {
+  page: gamePage,
+  replay,
+  replayRequests,
+} = await openGamePage(CAPTURE_DPR);
 let game = gamePage;
 
 const history = replay.state?.history ?? [];
@@ -681,6 +754,39 @@ const outcome = (() => {
   const r = replay.state?.result;
   if (!r || r.winner == null) return null;
   return { winnerId: r.winner, reason: r.reason };
+})();
+/**
+ * The word an ending stamps, from the game record (Nil, 2026-10-26: a
+ * Classic game ended under "CAUGHT", and in Classic nobody is caught).
+ *
+ * The final position says what the winning move did: in Classic a cat that
+ * stands on its own home reached it, "HOME"; in every other variant two
+ * pawns of different players on one cell are a catch, "CAUGHT". A game won
+ * any other way (time, resignation, survival) stamps no word.
+ */
+const FINISH_WORD = (() => {
+  if (outcome?.reason !== "capture") return null;
+  const live = replay.state.pawns;
+  const same = (a, b) => !!a && !!b && a[0] === b[0] && a[1] === b[1];
+  if (live?.kind === "classic") {
+    const w = live.pawns[outcome.winnerId];
+    return same(w?.cat, w?.home) ? "HOME" : null;
+  }
+  const cells =
+    live?.kind === "survival"
+      ? [
+          { player: "cat", cell: live.cat },
+          { player: "mouse", cell: live.mouse },
+        ]
+      : live?.pawns
+        ? Object.entries(live.pawns).flatMap(([player, pawns]) =>
+            Object.values(pawns).map((cell) => ({ player, cell })),
+          )
+        : [];
+  const caught = cells.some((a) =>
+    cells.some((b) => a.player !== b.player && same(a.cell, b.cell)),
+  );
+  return caught ? "CAUGHT" : null;
 })();
 const capturePlan = captureFeedbackPlan({
   isFinalPly: true,
@@ -937,6 +1043,20 @@ log(
   if (distance < 40) {
     log(
       `WARNING: the two players sampled to near-identical colours (distance ${distance}). The VS screen will read as one colour; check the portrait art.`,
+    );
+  }
+}
+
+/*
+  The page must have used the forced colours (SEAT_COLORS): each portrait is
+  coloured by the page's own resolver, so its sampled accent shows whether it
+  did. A site that ignored or renamed the colour would otherwise give a video
+  whose "AI" word is red over pawns of another colour.
+*/
+for (const [playerId, color] of Object.entries(SEAT_COLORS(replay))) {
+  if (!COLOR_CHECK[color](accents[playerId])) {
+    throw new Error(
+      `${nameOf(Number(playerId))} should show ${color} but sampled rgb(${accents[playerId].join(",")}); the page did not use the forced seat colour`,
     );
   }
 }
@@ -1208,42 +1328,23 @@ const AUDIO_DIR = join(REPO, "frontend/public/audio");
 const SITE_VOLUMES = { pawn: 0.9, wall: 0.5, gameStart: 0.7, gameEnd: 0.7 };
 
 /**
- * The meme sounds, for the daily look (Nil, 2026-10-25: the trending
- * ones, the "FUAHHH" and the famous shotgun, as the WallzGame Short does).
- *
- * THEY ARE NOT IN THE REPOSITORY. They are other people's clips from public
- * meme sound sites, and this repository is public; the files live in the
- * gitignored assets/meme-sounds/, named by the keys below, and the page each
- * came from is in scripts/game-video/meme-sounds.md. Agents cannot hear, so
- * there are several candidates per sound and Nil picks by ear.
- *
- * `gain` levels every clip to the same loudness, -16 LUFS at its loudest
- * 400 ms (ffmpeg ebur128 momentary max, measured 2026-10-26), because the
- * uploads differ by 22 dB: one is boosted until it clips. In the mix that puts
- * a meme sound about 11 dB over a move click and 6 dB over the old capture
- * sting, which is the point of it.
+ * The meme sounds of the daily look: the files of the keys in
+ * meme-sounds.mjs, which also says where they come from and why they are not
+ * in the repository. The EDL names its sound cues by these keys.
  */
 const MEME_DIR = join(REPO, "assets/meme-sounds");
-const MEME_SOUNDS = {
-  "fuahhh-1": { file: join(MEME_DIR, "fuahhh-1.mp3"), gain: 2.16 },
-  "fuahhh-2": { file: join(MEME_DIR, "fuahhh-2.mp3"), gain: 0.98 },
-  "fuahhh-3": { file: join(MEME_DIR, "fuahhh-3.mp3"), gain: 0.45 },
-  "shotgun-1": { file: join(MEME_DIR, "shotgun-1.mp3"), gain: 0.16 },
-  "shotgun-2": { file: join(MEME_DIR, "shotgun-2.mp3"), gain: 0.7 },
-  "shotgun-3": { file: join(MEME_DIR, "shotgun-3.mp3"), gain: 1.38 },
-  "shotgun-4": { file: join(MEME_DIR, "shotgun-4.mp3"), gain: 0.79 },
-  "win-1": { file: join(MEME_DIR, "win-1.mp3"), gain: 0.35 },
-  "win-2": { file: join(MEME_DIR, "win-2.mp3"), gain: 0.83 },
-};
 const meme = (name) => {
-  const hit = MEME_SOUNDS[name];
-  if (!hit) {
+  if (!(name in MEME_SOUND_GAINS)) {
     console.error(
-      `meme sound ${name} is not known. Known: ${Object.keys(MEME_SOUNDS).join(", ")}`,
+      `meme sound ${name} is not known. Known: ${Object.keys(MEME_SOUND_GAINS).join(", ")}`,
     );
     process.exit(2);
   }
-  return { name, ...hit };
+  return {
+    name,
+    file: join(MEME_DIR, `${name}.mp3`),
+    gain: MEME_SOUND_GAINS[name],
+  };
 };
 
 /**
@@ -1265,8 +1366,10 @@ const meme = (name) => {
  *             the overlay has no time for its 1.6 s lead-in)
  *   shake     lands on the winning capture, under the screen shake (current)
  *   win       lands with the end card (current)
- *   swing     lands on each swing move, with the punch-in (daily)
+ *   vsMeme    lands on the punch of the VS overlay (daily)
  *   finish    lands on the impact of the ending (daily)
+ *
+ * Every other daily sound is a cue in the EDL.
  */
 const PIXEL_PACK = join(REPO, "assets/audio/pixel_game_essentials");
 const STING_DIR = join(REPO, "assets/stings");
@@ -1294,22 +1397,21 @@ const SOUNDS = {
     gain: WIN_GAIN,
   },
   vsMeme: meme("shotgun-2"),
-  swing: meme("fuahhh-1"),
   finish: meme("shotgun-1"),
 };
 
 /**
  * Audition plumbing, so one capture can carry a different candidate per
- * style: `--sounds swing=fuahhh-2` for every style, or `daily:gg:finish=shotgun-4`
+ * style: `--sounds finish=shotgun-4` for every style, or `daily:finish=shotgun-4`
  * for one. Only the meme slots take a candidate.
  */
 const soundsFor = (styleName) => {
   const picked = { ...SOUNDS };
   for (const entry of String(arg("sounds", "")).split(",").filter(Boolean)) {
-    const m = entry.match(/^(?:([a-z:]+):)?(swing|finish|vsMeme)=([\w-]+)$/);
+    const m = entry.match(/^(?:([a-z]+):)?(finish|vsMeme)=([\w-]+)$/);
     if (!m) {
       console.error(
-        `--sounds entry "${entry}" is not [style:]swing|finish|vsMeme=<candidate>`,
+        `--sounds entry "${entry}" is not [style:]finish|vsMeme=<candidate>`,
       );
       process.exit(2);
     }
@@ -1452,6 +1554,15 @@ const side = (playerId) => {
 };
 
 /**
+ * A side as the daily VS overlay shows it: no name, only which side is the
+ * AI and which the human (Nil, 2026-10-26), drawn in the side's colour.
+ */
+const overlaySide = (playerId) => ({
+  ...side(playerId),
+  word: seatLabel(playerId) === "bot" ? "🤖 AI" : "🧑 Human",
+});
+
+/**
  * Where a cell sits on the captured board image, as fractions of its width
  * and height.
  *
@@ -1491,11 +1602,70 @@ const cellOfPly = (plyIndex) => {
   return (pawn && parse(pawn)) ?? (terms[0] ? parse(terms[0]) : null);
 };
 
-for (const ply of SWING_PLIES) {
-  if (ply >= history.length) {
-    console.error(
-      `--swing-plies ${ply} is past the last move (the game has ${history.length} plies, 0-based)`,
-    );
+/**
+ * An EDL cell or wall as the box it covers, in cells: [top, left, bottom,
+ * right], with row 0 at the top. A cell is its square; a wall is a thin strip
+ * on the cell's edge: ^h4 on the top edge of h4, >h4 on its right edge
+ * (shared/domain/standard-notation.ts).
+ */
+const termBox = (term) => {
+  const m = term.match(/^([>^]?)([a-z])(\d+)$/);
+  const row = GRID.rows - Number(m[3]);
+  const col = m[2].charCodeAt(0) - "a".charCodeAt(0);
+  if (m[1] === "^") return [row - 0.1, col, row + 0.1, col + 1];
+  if (m[1] === ">") return [row, col + 0.9, row + 1, col + 1.1];
+  return [row, col, row + 1, col + 1];
+};
+
+/** The centre of an EDL cell on the board image (0..1), for the mouse overlays. */
+const cellAtTerm = (term) => {
+  const [top, left] = termBox(term);
+  return cellAt([top, left]);
+};
+
+/**
+ * The punch-in that frames every term of a zoom: the scale, at most
+ * `maxScale`, at which their box plus ZOOM_MARGIN cells fills the frame, and
+ * the transform origin that puts the box's centre in the middle of it.
+ *
+ * With origin O and scale s, the image point p shows at O + s(p - O), so the
+ * visible window is [O - O/s, O + (1 - O)/s] and its centre is the box's
+ * centre C when O = (sC - 0.5) / (s - 1). O is kept inside the board, which
+ * keeps every edge of the magnified board outside the frame.
+ */
+const ZOOM_MARGIN = 0.75;
+const frameZoom = (terms, maxScale) => {
+  const boxes = terms.map(termBox);
+  const top = Math.min(...boxes.map((b) => b[0])) - ZOOM_MARGIN;
+  const left = Math.min(...boxes.map((b) => b[1])) - ZOOM_MARGIN;
+  const bottom = Math.max(...boxes.map((b) => b[2])) + ZOOM_MARGIN;
+  const right = Math.max(...boxes.map((b) => b[3])) + ZOOM_MARGIN;
+  const span = 1 - 2 * GRID.pad;
+  const w = ((right - left) / GRID.cols) * span;
+  const h = ((bottom - top) / GRID.rows) * span;
+  const scale = Math.max(1.05, Math.min(maxScale, 1 / Math.max(w, h)));
+  const centre = {
+    x: GRID.pad + ((left + right) / 2 / GRID.cols) * span,
+    y: GRID.pad + ((top + bottom) / 2 / GRID.rows) * span,
+  };
+  const origin = (c) =>
+    Math.max(0, Math.min(1, (scale * c - 0.5) / (scale - 1)));
+  return { scale, x: origin(centre.x), y: origin(centre.y) };
+};
+
+if (EDL) {
+  if (EDL.gameId !== GAME_ID) {
+    console.error(`the EDL is for game ${EDL.gameId}, not ${GAME_ID}`);
+    await browser.close();
+    process.exit(2);
+  }
+  const problems = checkEdlAgainstGame(EDL, {
+    notations: history.map((h) => h.notation),
+    cols: GRID.cols,
+    rows: GRID.rows,
+  });
+  if (problems.length > 0) {
+    console.error(`the EDL does not fit the game:\n  ${problems.join("\n  ")}`);
     await browser.close();
     process.exit(2);
   }
@@ -1519,30 +1689,96 @@ const easeOut = (x) => 1 - Math.pow(1 - x, 3);
 const easeInOut = (x) =>
   x < 0.5 ? 4 * x * x * x : 1 - Math.pow(-2 * x + 2, 3) / 2;
 
-/** The camera scale at `t` seconds into a swing beat. See the constants. */
-const zoomAt = (t) => {
+/**
+ * The camera scale at `t` seconds into a punch-in to `scale` that holds for
+ * `hold`. It drifts in a little during the hold, so the frame never freezes.
+ */
+const zoomAt = (t, scale, hold) => {
   const drift = 0.04;
-  if (t < ZOOM_IN) return 1 + (ZOOM_SCALE - 1) * easeOut(t / ZOOM_IN);
-  if (t < ZOOM_HOLD_END)
-    return ZOOM_SCALE + (drift * (t - ZOOM_IN)) / (ZOOM_HOLD_END - ZOOM_IN);
-  const back = Math.min(
-    1,
-    (t - ZOOM_HOLD_END) / (ZOOM_OUT_END - ZOOM_HOLD_END),
-  );
-  return ZOOM_SCALE + drift - (ZOOM_SCALE + drift - 1) * easeInOut(back);
+  if (t < ZOOM_IN) return 1 + (scale - 1) * easeOut(t / ZOOM_IN);
+  if (t < ZOOM_IN + hold) return scale + (drift * (t - ZOOM_IN)) / hold;
+  const back = Math.min(1, (t - ZOOM_IN - hold) / ZOOM_OUT);
+  return scale + drift - (scale + drift - 1) * easeInOut(back);
 };
 
 const sha256Of = (file) =>
   createHash("sha256").update(readFileSync(file)).digest("hex");
 
 /**
+ * The contact sheet of a daily render: its stills side by side, each labelled
+ * with its ply, its event and its sound, written next to the mp4 as
+ * <name>-sheet.png. It comes from the same capture as the video, so it costs
+ * the game no view, and the director checks it before Nil sees anything.
+ *
+ * The labels are laid out by the browser, not drawn by ffmpeg: the ffmpeg on
+ * some boxes has no drawtext.
+ */
+const SHEET_TILE_WIDTH = 360;
+const writeContactSheet = async (stills, out) => {
+  if (stills.length === 0) return null;
+  const png = out.replace(/(\.mp4)?$/, "-sheet.png");
+  const tiles = stills.map((st) => ({
+    src: `data:image/png;base64,${readFileSync(st.file).toString("base64")}`,
+    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""} - ${st.at.toFixed(1)}s`,
+  }));
+  const page = await browser.newPage({
+    viewport: { width: 400, height: 400 },
+    deviceScaleFactor: 1,
+  });
+  await page.setContent(
+    `<body style="margin:0;background:#111;font:600 16px sans-serif;color:#eee">
+       <div id="g" style="display:grid;gap:12px;padding:12px;
+         grid-template-columns:repeat(${Math.min(4, tiles.length)},${SHEET_TILE_WIDTH}px)"></div>
+     </body>`,
+  );
+  await page.evaluate((list) => {
+    for (const t of list) {
+      const cell = document.createElement("div");
+      const img = document.createElement("img");
+      img.src = t.src;
+      img.style.width = "100%";
+      img.style.display = "block";
+      const cap = document.createElement("div");
+      cap.textContent = t.label;
+      cap.style.padding = "6px 2px";
+      cell.append(img, cap);
+      document.getElementById("g").append(cell);
+    }
+  }, tiles);
+  await page.evaluate(() =>
+    Promise.all([...document.images].map((i) => i.decode())),
+  );
+  await page.screenshot({ path: png, fullPage: true });
+  await page.close();
+  return {
+    png,
+    sha256: sha256Of(png),
+    stills: stills.map(({ ply, kind, sound }) => ({ ply, kind, sound })),
+  };
+};
+
+/**
  * Compose, mix, encode and verify one style from the board captures above.
  * Returns what the RESULT line reports.
  */
 const renderStyle = async (styleName) => {
-  const style = styleOf(styleName);
-  const wallz = style.look === "wallz";
+  const wallz = STYLES[styleName].look === "wallz";
+  const style = wallz
+    ? { ...STYLES[styleName], ending: EDL.ending }
+    : STYLES[styleName];
   const pace = PACE_OVERRIDE ? Number(PACE_OVERRIDE) : style.secondsPerMove;
+  /**
+   * Seconds per move at a ply: the EDL's pace where it sets one (daily),
+   * rounded to whole frames, so a move lasts the same inside the VS overlay
+   * (which splits it into single frames) as outside it.
+   */
+  const paceAt = (plyIndex) =>
+    Math.round(
+      ((wallz &&
+        EDL.pace.find((r) => r.fromPly <= plyIndex && plyIndex <= r.toPly)
+          ?.secondsPerMove) ||
+        pace) * FPS,
+    ) / FPS;
   const layout = wallz ? WALLZ_LAYOUT : LAYOUT;
   const sounds = soundsFor(styleName);
   const out = outFor(styleName);
@@ -1552,7 +1788,7 @@ const renderStyle = async (styleName) => {
   log(
     `style ${styleName}: ${layout.width}x${layout.height}, ${pace}s per move` +
       (wallz
-        ? `, swings at plies ${SWING_PLIES.join(",") || "(none)"}, ending ${style.ending}, sounds swing=${sounds.swing.name} finish=${sounds.finish.name}`
+        ? `, ${EVENTS.length} EDL events, ending ${EDL.ending}, finish word ${FINISH_WORD ?? "(none)"}`
         : ""),
   );
 
@@ -1679,12 +1915,24 @@ const renderStyle = async (styleName) => {
     return { differing, maxDelta, pixels: a.length / 3 };
   };
 
+  /**
+   * The contact sheet's stills: one frame per EDL event that has a sound or
+   * a zoom, so the director can check, before anyone watches the video, that
+   * each cue lands on the right move and each zoom has the right wall in
+   * frame. `stillNext` marks the next frame shot as the still of an event.
+   */
+  const stills = [];
+  let stillNext = null;
   let frameNo = 0;
   const shoot = async (state, seconds, meta) => {
     const file = join(work, `f-${String(frameNo++).padStart(5, "0")}.png`);
     await stage.evaluate((s) => window.__stage(s), state);
     await stage.screenshot({ path: file });
     timeline.push({ file, seconds, ...meta });
+    if (stillNext) {
+      stills.push({ ...stillNext, file, at: elapsed });
+      stillNext = null;
+    }
     elapsed += seconds;
   };
 
@@ -1715,7 +1963,11 @@ const renderStyle = async (styleName) => {
       await shoot(
         {
           ...state,
-          vsOverlay: { t: elapsed, a: side(seats.top), b: side(seats.bottom) },
+          vsOverlay: {
+            t: elapsed,
+            a: overlaySide(seats.top),
+            b: overlaySide(seats.bottom),
+          },
         },
         1 / FPS,
         { ...meta, kind: "vs-overlay" },
@@ -1792,9 +2044,79 @@ const renderStyle = async (styleName) => {
     });
   const encodedBoardRect = await boardRectNow();
 
+  /**
+   * The EDL events of one ply, in list order, as the move lands; then the
+   * plain position rests. Each effect runs frame by frame and is its own
+   * kind, because the encode check classifies "move" frames by the board
+   * under them. Like the shake, every effect must give the board back exactly
+   * as it found it, so the box is read again afterwards and must match.
+   */
+  const playEvents = async (ply, plyIndex) => {
+    for (const ev of eventsAt(plyIndex)) {
+      const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
+      if (ev.sound) cue(meme(ev.sound));
+      if (ev.kind === "sound") {
+        stillNext = label;
+        continue;
+      }
+      if (ev.kind === "zoom") {
+        const z = frameZoom(ev.frame, ev.scale);
+        const frames = Math.round((ZOOM_IN + ev.holdSeconds + ZOOM_OUT) * FPS);
+        const mid = Math.round((ZOOM_IN + ev.holdSeconds / 2) * FPS);
+        for (let i = 0; i < frames; i += 1) {
+          if (i === mid) stillNext = label;
+          await emit(
+            playState(ply, {
+              zoom: { ...z, scale: zoomAt(i / FPS, z.scale, ev.holdSeconds) },
+            }),
+            1 / FPS,
+            { kind: "swing-zoom", ply: plyIndex },
+          );
+        }
+        continue;
+      }
+      const seconds = {
+        scared: SCARED_SECONDS,
+        laugh: LAUGH_SECONDS,
+        stamp: STAMP_SECONDS,
+      }[ev.kind];
+      const frames = Math.round(seconds * FPS);
+      for (let i = 0; i < frames; i += 1) {
+        if (i === Math.round(frames / 2)) stillNext = label;
+        const t = i / FPS;
+        const extra =
+          ev.kind === "stamp"
+            ? { midStamp: { text: ev.text, t, seconds } }
+            : {
+                beat: {
+                  kind: ev.kind,
+                  t,
+                  board: fileUrl(boardFrames[ply]),
+                  cell: cellAtTerm(ev.cell),
+                  size: (1 - 2 * GRID.pad) / GRID.cols,
+                },
+              };
+        await emit(playState(ply, extra), 1 / FPS, {
+          kind: `beat-${ev.kind}`,
+          ply: plyIndex,
+        });
+      }
+    }
+    await emit(playState(ply), EFFECT_REST_SECONDS, {
+      kind: "move",
+      ply: plyIndex,
+    });
+    const after = await boardRectNow();
+    if (JSON.stringify(after) !== JSON.stringify(encodedBoardRect)) {
+      throw new Error(
+        `the effects on ply ${plyIndex} did not give the board back - before ${JSON.stringify(encodedBoardRect)} after ${JSON.stringify(after)}`,
+      );
+    }
+  };
+
   // The starting position gets one beat of its own, so the first move is a
   // change the eye can catch rather than the first thing it ever sees.
-  await emit(playState(0), pace, { kind: "initial", ply: -1 });
+  await emit(playState(0), paceAt(0), { kind: "initial", ply: -1 });
 
   /** The site's own click for a turn: one sound per turn, wall wins. */
   const moveClick = (plyIndex) => {
@@ -1820,12 +2142,19 @@ const renderStyle = async (styleName) => {
 
     if (wallz && isLast) {
       /*
-        The last move lands and holds one beat, and then the ending plays over
-        the final screenshot. Ending frames are their own kind: the encode
-        check classifies "move" frames by the board under them, and an ending
-        frame is not a plain position of the game.
+        The last move lands and holds one beat (or plays its EDL events), and
+        then the ending plays over the final screenshot. Ending frames are
+        their own kind: the encode check classifies "move" frames by the board
+        under them, and an ending frame is not a plain position of the game.
       */
-      await emit(playState(ply), pace, { kind: "move", ply: plyIndex });
+      if (eventsAt(plyIndex).length > 0) {
+        await playEvents(ply, plyIndex);
+      } else {
+        await emit(playState(ply), paceAt(plyIndex), {
+          kind: "move",
+          ply: plyIndex,
+        });
+      }
       musicEndAt = elapsed;
       if (winnerId) {
         const timing = endingTimings[style.ending];
@@ -1837,8 +2166,8 @@ const renderStyle = async (styleName) => {
           ),
           cell: (1 - 2 * GRID.pad) / GRID.cols,
           before: fileUrl(boardFrames[ply - 1]),
-          stamp: outcome.reason === "capture" ? "CAUGHT" : "GG",
-          how: `wins ${REASON_WORDS[outcome.reason] ?? outcome.reason}`,
+          stamp: FINISH_WORD,
+          how: `wins ${FINISH_WORD === "HOME" ? "by reaching home" : (REASON_WORDS[outcome.reason] ?? outcome.reason)}`,
           winner: side(winnerId),
           loser: side(winnerId === 1 ? 2 : 1),
         });
@@ -1861,35 +2190,8 @@ const renderStyle = async (styleName) => {
           ply: plyIndex,
         });
       }
-    } else if (wallz && SWING_PLIES.includes(plyIndex)) {
-      /*
-        A swing move: the camera punches in on the cell the move is about,
-        holds, and lets go, with the swing sound on the punch. Like the shake,
-        the zoom must give the board back exactly as it found it, so the box
-        is read again once it is over and must match the one before.
-      */
-      cue(sounds.swing);
-      const at = cellAt(
-        cellOfPly(plyIndex) ?? [GRID.rows / 2 - 0.5, GRID.cols / 2 - 0.5],
-      );
-      const zoomFrames = Math.round(ZOOM_OUT_END * FPS);
-      for (let i = 0; i < zoomFrames; i += 1) {
-        await emit(
-          playState(ply, { zoom: { scale: zoomAt(i / FPS), ...at } }),
-          1 / FPS,
-          { kind: "swing-zoom", ply: plyIndex },
-        );
-      }
-      await emit(playState(ply), SWING_SECONDS - ZOOM_OUT_END, {
-        kind: "move",
-        ply: plyIndex,
-      });
-      const after = await boardRectNow();
-      if (JSON.stringify(after) !== JSON.stringify(encodedBoardRect)) {
-        throw new Error(
-          `the punch-in on ply ${plyIndex} did not give the board back - before ${JSON.stringify(encodedBoardRect)} after ${JSON.stringify(after)}`,
-        );
-      }
+    } else if (wallz && eventsAt(plyIndex).length > 0) {
+      await playEvents(ply, plyIndex);
     } else if (isLast && CAPTURE_SHAKE) {
       /*
         The winning move lands, then the frame shakes and settles.
@@ -1965,10 +2267,14 @@ const renderStyle = async (styleName) => {
         `board box identical after (${after.rect.w}x${after.rect.h} at ${after.rect.x},${after.rect.y}), ` +
         `pixel residue ${residue.differing}/${residue.pixels} px, worst ${residue.maxDelta}/765`;
     } else {
-      await emit(playState(ply), isLast ? pace + FINAL_HOLD_SECONDS : pace, {
-        kind: "move",
-        ply: plyIndex,
-      });
+      await emit(
+        playState(ply),
+        isLast ? paceAt(plyIndex) + FINAL_HOLD_SECONDS : paceAt(plyIndex),
+        {
+          kind: "move",
+          ply: plyIndex,
+        },
+      );
     }
     if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
   }
@@ -2108,6 +2414,7 @@ const renderStyle = async (styleName) => {
     JSON.stringify(encodedReport, null, 2),
   );
 
+  const sheet = wallz ? await writeContactSheet(stills, out) : null;
   for (const f of readdirSync(work)) {
     if (/^f-\d+\.png$/.test(f)) unlinkSync(join(work, f));
   }
@@ -2126,14 +2433,13 @@ const renderStyle = async (styleName) => {
     durationSeconds: Number((encodedFrame / FPS).toFixed(3)),
     effect: styleName,
     sound: wallz
-      ? [
-          style.vsSound && `vs=${sounds[style.vsSound].name}`,
-          `swing=${sounds.swing.name}`,
-          `finish=${sounds.finish.name}`,
-        ]
-          .filter(Boolean)
-          .join(",")
+      ? `vs=${sounds[style.vsSound].name},finish=${sounds.finish.name}`
       : `shake=${sounds.shake.name},win=${sounds.win.name}`,
+    /*
+      The daily app checks the played ending against its pick, and the EDL
+      hash against the EDL it approved; the sheet is for the director.
+    */
+    ...(wallz && { ending: style.ending, edlSha256: EDL_SHA256, sheet }),
   };
 };
 
@@ -2146,6 +2452,10 @@ for (const styleName of STYLE_NAMES) {
   );
 }
 await browser.close();
+log(`replay requests over the whole run: ${replayRequests()}`);
+if (replayRequests() !== 1) {
+  log(`WARNING: expected one replay request, saw ${replayRequests()}`);
+}
 
 for (const f of readdirSync(WORK)) {
   if (/^board-\d+\.png$/.test(f)) unlinkSync(join(WORK, f));

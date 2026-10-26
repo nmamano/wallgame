@@ -39,6 +39,8 @@ rsync -a --relative \
   scripts/game-video/verify-encoded-video.mjs \
   scripts/game-video/timeline-frames.mjs \
   scripts/game-video/make-stings.mjs \
+  scripts/game-video/edl.mjs \
+  scripts/game-video/meme-sounds.mjs \
   frontend/public/audio/pawn.wav \
   frontend/public/audio/wall.wav \
   frontend/public/audio/game_start.mp3 \
