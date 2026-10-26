@@ -28,8 +28,8 @@ already has a cycle, finish it or stop: do not start another. `pick
    titles" below.
 3. `storyboard`, then open the PNG it names. It has one tile per position
    (ply N = the position after ply N, 0-based as in the EDL), in the video's
-   colours. Yellow marks that ply's walls and pawn move. DANGER, SAVE,
-   RELIEF and JUMP badges mark the picked plies. Choose the plies, cells and
+   colours. Yellow marks that ply's walls and pawn move. DANGER, SAVE
+   and JUMP badges mark the picked plies. Choose the plies, cells and
    walls that you frame from what you see.
 4. `direct --edl <edl.json>`
    Your EDL (below). `status` shows the default ending.
@@ -82,9 +82,9 @@ already has a cycle, finish it or stop: do not start another. `pick
 - When `facts` list a second close call and the mouse gets away (its fact
   does not say that the hunter still wins within 10 moves of the save, the
   limit `direct` uses for a laugh), mark that escape
-  with one sound only: a `sound` event on its save ply. Use a "gets away"
-  sound once that family exists in `crew.mjs sounds`; until then, an
-  `ooh-N`. No second zoom and no second FAHHH.
+  with one sound only: a `sound` event on its save ply. Use a `seeya-N`
+  ("the prey gets away") that `crew.mjs sounds` lists; if it lists none,
+  an `ooh-N`. No second zoom and no second FAHHH.
 - If the game has no close call, put the FAHHH and the zoom on the largest
   wall jump. Frame them on its `*` walls and on the pawn whose walk jumped,
   so the viewer sees whom the wall stops.
@@ -208,7 +208,7 @@ or which wall changed that.
 | Close call: the cat gets 1-2 squares from the mouse                                      | `scared`                                      | danger ply, the mouse's cell                                                                |
 | The wall that saves it (`save ply walls ...*`)                                           | `zoom` + a FAHHH, or `freeze`                 | save ply: zoom frame = the `*` walls and both pawns; freeze = the same ply, before it lands |
 | The mouse is safe again                                                                  | `laugh`                                       | save ply, after the zoom in the list; the mouse's cell                                      |
-| A second close call, and the mouse gets away                                             | `sound` (a "gets away" sound, or `ooh-N`)     | its save ply; no zoom                                                                       |
+| A second close call, and the mouse gets away                                             | `sound` (a `seeya-N`, or `ooh-N`)             | its save ply; no zoom                                                                       |
 | The largest wall jump (`wall jump: ply N`, the first one listed)                         | `trap`, or `zoom` when there is no close call | jump ply, `walls` = its `*` walls                                                           |
 | A walk jumps on one move (the save, or a jump)                                           | `race`                                        | that ply; no fields. The counter itself shows all video long, this flashes it               |
 | The move that let the cat in (the storyboard shows the mouse's side gave up a wall line) | `blunder`                                     | that ply, the mover's pawn                                                                  |
