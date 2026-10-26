@@ -441,6 +441,11 @@ interface Candidate {
    * edit list against it before it renders, without loading the game again.
    */
   moves: string[];
+  /**
+   * The stored start position (config_parameters.initialState): with `moves`
+   * it replays the game through replayDistances, with no production view.
+   */
+  initialState: GameInitialState;
   seats: { playerOrder: number; kind: SeatKind; name: string }[];
   /** Before each move, and after the last: movesCount + 1 entries. */
   distances: RaceDistances[];
@@ -542,6 +547,7 @@ const main = async () => {
           boardHeight: game.boardHeight,
           movesCount: game.movesCount,
           moves,
+          initialState,
           seats: [...game.seats]
             .sort((a, b) => a.playerOrder - b.playerOrder)
             .map((s, i) => ({
