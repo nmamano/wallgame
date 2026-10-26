@@ -1,15 +1,15 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MarkdownPage } from "@/components/markdown-page";
-import { DISCORD_INVITE_URL } from "@/lib/external-links";
+import { contactMarkdown } from "@/lib/external-links";
 import { isEmbedded } from "@/lib/embedded-mode";
 
 export const Route = createFileRoute("/terms")({
   component: Terms,
 });
 
-/** In a portal frame the page loses the link that leaves the site. */
+/** In a portal frame the page loses its links to other sites. */
 const termsContent = (embedded: boolean) => `
-_Last updated: October 26, 2026_
+_Last updated: October 27, 2026_
 
 These terms apply when you use Wall Game at wallgame.io. When you use the site, you agree to them.
 
@@ -49,7 +49,7 @@ When we change these terms, we update this page and the date at the top. If you 
 
 ## Contact
 
-Write to us on the ${embedded ? "Wall Game Discord" : `[Wall Game Discord](${DISCORD_INVITE_URL})`}.
+${contactMarkdown(embedded)}
 `;
 
 function Terms() {

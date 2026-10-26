@@ -1,6 +1,6 @@
 import { createFileRoute } from "@tanstack/react-router";
 import { MarkdownPage } from "@/components/markdown-page";
-import { DISCORD_INVITE_URL } from "@/lib/external-links";
+import { contactMarkdown } from "@/lib/external-links";
 import { isEmbedded } from "@/lib/embedded-mode";
 
 export const Route = createFileRoute("/privacy")({
@@ -11,10 +11,10 @@ export const Route = createFileRoute("/privacy")({
  * Each claim here was checked against the code that it describes. When that
  * code changes (what the database keeps, the cookies, the analytics settings
  * in index.html), change this page too. In a portal frame the page keeps
- * its words and loses the link that leaves the site (lib/embedded-mode.ts).
+ * its words and loses its links to other sites (lib/embedded-mode.ts).
  */
 const privacyContent = (embedded: boolean) => `
-_Last updated: October 26, 2026_
+_Last updated: October 27, 2026_
 
 Wall Game is a free board game website at wallgame.io, made by Nil Mamano. This page tells you what data the site keeps, why it keeps it, and who else gets it.
 
@@ -83,7 +83,7 @@ When we change this policy, we update this page and the date at the top.
 
 <h2 id="contact">Contact</h2>
 
-Write to us on the ${embedded ? "Wall Game Discord" : `[Wall Game Discord](${DISCORD_INVITE_URL})`}.
+${contactMarkdown(embedded)}
 `;
 
 function Privacy() {
