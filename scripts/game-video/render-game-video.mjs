@@ -2546,6 +2546,21 @@ const renderStyle = async (styleName) => {
   }
 
   /**
+   * Each caption beat's measured line count and text width (stage.html
+   * __captionText), for the RESULT line, keyed like its box: the daily
+   * check fails a beat that wraps. Measured at rest, like the boxes, in the
+   * same CSS px: not in the frame loop, where a shake or zoom scales them.
+   */
+  const captionText = wallz
+    ? await stage
+        .evaluate((c) => window.__captionText(c), CAPTIONS)
+        .then(([caption, payoff]) => ({
+          ...(caption && { caption }),
+          ...(payoff && { payoff }),
+        }))
+    : null;
+
+  /**
    * Where each stamp and trap word lands (stampSpot) and how much it shrinks
    * to fit (STAMP_MAX_WIDTH), keyed by its event.
    */
@@ -3156,7 +3171,7 @@ const renderStyle = async (styleName) => {
       ending: style.ending,
       edlSha256: EDL_SHA256,
       sheet,
-      layout: { frame: DAILY_FRAME, boxes: layoutBoxes },
+      layout: { frame: DAILY_FRAME, boxes: layoutBoxes, captionText },
     }),
   };
 };

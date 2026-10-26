@@ -1455,6 +1455,49 @@
       };
 
       /**
+       * Each caption beat as the page wraps it: { lines, width } with the
+       * width of its widest line in px, MEASURED from the text's own line
+       * boxes (emoji widths vary, so a character count cannot tell). Text
+       * runs in two fonts on one line can sit at different heights, so a
+       * run joins a line when their middles are within half a run's height.
+       */
+      window.__captionText = (captions) => {
+        const el = $("caption");
+        const out = captions.map((text) => {
+          el.textContent = text;
+          const range = document.createRange();
+          range.selectNodeContents(el);
+          const lines = [];
+          for (const r of range.getClientRects()) {
+            if (r.width === 0) continue;
+            const mid = r.top + r.height / 2;
+            const line = lines.find(
+              (l) => Math.abs(l.mid - mid) < Math.min(l.height, r.height) / 2,
+            );
+            if (line) {
+              line.left = Math.min(line.left, r.left);
+              line.right = Math.max(line.right, r.right);
+            } else {
+              lines.push({
+                mid,
+                height: r.height,
+                left: r.left,
+                right: r.right,
+              });
+            }
+          }
+          return {
+            lines: lines.length,
+            width: Math.ceil(
+              Math.max(0, ...lines.map((l) => l.right - l.left)),
+            ),
+          };
+        });
+        el.textContent = captions[0] ?? "";
+        return out;
+      };
+
+      /**
        * A freeze before a move lands: the position before it in grey, and a
        * pause mark. The renderer pushes the camera in (s.zoom).
        *   f = { t: seconds into it }
