@@ -49,6 +49,24 @@
  *     laugh   the mouse on `cell` laughs, a 😂 over it.
  *     stamp   `text` stamps onto the middle of the board, and fades.
  *     sound   only the sound, as the move lands.
+ *     blunder the board flashes red and shakes, and "??" pops on `cell`.
+ *             For the move that threw the game away (often the ply before
+ *             a DANGER, on the mover's pawn).
+ *     brilliant  a burst and "!!" on `cell`. For the move that wins the
+ *             race: a SAVE, or the winner's largest JUMP.
+ *     trap    the `walls` (1..6, as in a zoom frame) light up, then `text`
+ *             (default TRAPPED) stamps on. For the `*` walls of a JUMP.
+ *     race    a counter under the board: each side's steps to its target,
+ *             in the side's colour, for `plies` positions (default 4, or to
+ *             the last move), ticking as they change. The renderer reads
+ *             the numbers from the game (race-replay.ts); the EDL never
+ *             sets them. At most one race at a time.
+ *     freeze  BEFORE the move lands: the position before it freezes in
+ *             grey, the camera pushes in on the move's cell and holds for
+ *             `holdSeconds` (default 0.9), then the move lands. Its sound
+ *             plays as the freeze starts. For a SAVE or the winning move.
+ *     react   `emoji` (skull, mind-blown, fire, moai, clown, eyes) pops on
+ *             `cell` and floats up.
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
@@ -82,13 +100,59 @@ export const dailySeatColors = (isBot) => {
     : { 1: "red", 2: "blue" };
 };
 export const ENDINGS = ["replay", "gg", "ko"];
-export const EVENT_KINDS = ["zoom", "scared", "laugh", "stamp", "sound"];
+export const EVENT_KINDS = [
+  "zoom",
+  "scared",
+  "laugh",
+  "stamp",
+  "sound",
+  "blunder",
+  "brilliant",
+  "trap",
+  "race",
+  "freeze",
+  "react",
+];
+
+/** The fields each kind takes, besides ply, kind and sound. */
+const KIND_FIELDS = {
+  zoom: ["frame", "scale", "holdSeconds"],
+  scared: ["cell"],
+  laugh: ["cell"],
+  stamp: ["text"],
+  sound: [],
+  blunder: ["cell"],
+  brilliant: ["cell"],
+  trap: ["walls", "text"],
+  race: ["plies"],
+  freeze: ["holdSeconds"],
+  react: ["cell", "emoji"],
+};
+/** The kinds that name one cell, which must be on the board. */
+const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react"];
+
+/**
+ * The reactions a `react` event can pop, by name. They are drawn with the
+ * Noto Color Emoji font, which the render kit requires (sync-render-kit.sh).
+ */
+export const REACTIONS = {
+  skull: "💀",
+  "mind-blown": "🤯",
+  fire: "🔥",
+  moai: "🗿",
+  clown: "🤡",
+  eyes: "👀",
+};
 
 /** Seconds per move where the EDL sets no pace. Proposed 2026-10-26. */
 export const DEFAULT_SECONDS_PER_MOVE = 0.8;
 /** The zoom's most scale and its hold, where the EDL sets none. */
 export const DEFAULT_ZOOM_SCALE = 1.5;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
+/** A race counter's length in positions, and a freeze's hold. */
+export const DEFAULT_RACE_PLIES = 4;
+export const DEFAULT_FREEZE_HOLD_SECONDS = 0.9;
+export const DEFAULT_TRAP_TEXT = "TRAPPED";
 
 export const EDL_LIMITS = {
   captionWords: 6,
@@ -98,6 +162,8 @@ export const EDL_LIMITS = {
   zoomScale: [1.1, 3],
   zoomHoldSeconds: [0.2, 3],
   frameTerms: 6,
+  racePlies: [2, 12],
+  freezeHoldSeconds: [0.4, 2],
   events: 40,
 };
 
@@ -221,14 +287,7 @@ export const validateEdl = (raw) => {
           `${where}: kind must be one of ${EVENT_KINDS.join(", ")}, got ${JSON.stringify(ev.kind)}`,
         );
       }
-      const fields = {
-        zoom: ["frame", "scale", "holdSeconds"],
-        scared: ["cell"],
-        laugh: ["cell"],
-        stamp: ["text"],
-        sound: [],
-      }[ev.kind];
-      unknown(ev, ["ply", "kind", "sound", ...fields], where);
+      unknown(ev, ["ply", "kind", "sound", ...KIND_FIELDS[ev.kind]], where);
       if (!isPly(ev.ply)) fail(`${where}: ply must be a 0-based ply`);
       if (ev.kind === "sound" && ev.sound === undefined) {
         fail(`${where}: a sound event needs "sound"`);
@@ -263,25 +322,75 @@ export const validateEdl = (raw) => {
         }
       }
       if (
-        (ev.kind === "scared" || ev.kind === "laugh") &&
+        CELL_KINDS.includes(ev.kind) &&
         !(typeof ev.cell === "string" && CELL.test(ev.cell))
       ) {
         fail(`${where}: cell must be a cell in standard notation (g4)`);
       }
+      if (ev.kind === "trap") out.text = ev.text ?? DEFAULT_TRAP_TEXT;
       if (
-        ev.kind === "stamp" &&
+        (ev.kind === "stamp" || ev.kind === "trap") &&
         !(
-          typeof ev.text === "string" &&
-          STAMP.test(ev.text) &&
-          graphemes(ev.text) <= EDL_LIMITS.stampChars
+          typeof out.text === "string" &&
+          STAMP.test(out.text) &&
+          graphemes(out.text) <= EDL_LIMITS.stampChars
         )
       ) {
         fail(
           `${where}: text must be 1..${EDL_LIMITS.stampChars} of A-Z, 0-9, space, ! and ?`,
         );
       }
+      if (
+        ev.kind === "trap" &&
+        !(
+          Array.isArray(ev.walls) &&
+          ev.walls.length > 0 &&
+          ev.walls.length <= EDL_LIMITS.frameTerms &&
+          ev.walls.every((t) => typeof t === "string" && WALL.test(t))
+        )
+      ) {
+        fail(
+          `${where}: walls must list 1..${EDL_LIMITS.frameTerms} walls (^h4, >h4)`,
+        );
+      }
+      if (ev.kind === "race") {
+        out.plies = ev.plies ?? DEFAULT_RACE_PLIES;
+        const [lo, hi] = EDL_LIMITS.racePlies;
+        if (!Number.isInteger(out.plies) || out.plies < lo || out.plies > hi) {
+          fail(`${where}: plies must be a whole number ${lo}..${hi}`);
+        }
+      }
+      if (ev.kind === "freeze") {
+        out.holdSeconds = ev.holdSeconds ?? DEFAULT_FREEZE_HOLD_SECONDS;
+        if (!isNumberIn(out.holdSeconds, EDL_LIMITS.freezeHoldSeconds)) {
+          fail(
+            `${where}: holdSeconds must be ${EDL_LIMITS.freezeHoldSeconds.join("..")}`,
+          );
+        }
+      }
+      if (ev.kind === "react" && !Object.hasOwn(REACTIONS, ev.emoji)) {
+        fail(
+          `${where}: emoji must be one of ${Object.keys(REACTIONS).join(", ")}, got ${JSON.stringify(ev.emoji)}`,
+        );
+      }
       filled.push(out);
     });
+  }
+
+  // One race counter at a time, and one freeze per move.
+  const races = filled
+    .filter((e) => e.kind === "race" && isPly(e.ply))
+    .sort((a, b) => a.ply - b.ply);
+  for (let i = 1; i < races.length; i += 1) {
+    if (races[i].ply < races[i - 1].ply + races[i - 1].plies) {
+      fail(
+        `the races on plies ${races[i - 1].ply} and ${races[i].ply} overlap; one race shows at a time`,
+      );
+    }
+  }
+  const freezes = filled.filter((e) => e.kind === "freeze").map((e) => e.ply);
+  if (new Set(freezes).size !== freezes.length) {
+    fail("a ply has two freeze events; one move freezes once");
   }
 
   if (errors.length > 0) return { ok: false, errors };
@@ -301,7 +410,8 @@ export const validateEdl = (raw) => {
 
 /**
  * Check a valid EDL against its game: every ply exists, every cell is on the
- * board, and every wall a zoom frames is on the board by that ply.
+ * board, and every wall a zoom frames or a trap lights is on the board by
+ * that ply.
  *
  * `notations` is the game's move list (one notation per ply, e.g.
  * "^a4.^h4"); `cols` and `rows` are the board size. Returns error lines.
@@ -326,7 +436,14 @@ export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
     }
   }
   edl.events.forEach((ev, i) => {
-    const terms = ev.kind === "zoom" ? ev.frame : ev.cell ? [ev.cell] : [];
+    const terms =
+      ev.kind === "zoom"
+        ? ev.frame
+        : ev.kind === "trap"
+          ? ev.walls
+          : ev.cell
+            ? [ev.cell]
+            : [];
     for (const term of terms) {
       if (!onBoard(term)) {
         errors.push(`events[${i}]: ${term} is off the ${cols}x${rows} board`);

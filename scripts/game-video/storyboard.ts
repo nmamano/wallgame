@@ -4,6 +4,7 @@
  * 2026-10-26, through Wall Game PM).
  *
  *   bun scripts/game-video/storyboard.ts --candidate <file.json> --out <file.png>
+ *       [--edl <edl.json>]
  *
  * The candidate is one ranked entry of pick-daily-candidates.ts (gameId,
  * variant, boardWidth, boardHeight, initialState, moves, seats, picks,
@@ -16,6 +17,13 @@
  * today's GameState (replayDistances, the picker's own replay), and the tiles
  * are drawn here with the site's own pawn art and colour filters, then shot
  * by the local Chrome. Nothing loads wallgame.io.
+ *
+ * With --edl, the storyboard is also the EDL's check before any render: it
+ * validates the EDL against the game (edl.mjs, as `direct` and the renderer
+ * do) and marks each event on its ply's tile, with its kind, its cell or
+ * walls, and the race counter's numbers over the race's positions. One tile
+ * per event's ply, so the Director sees every event's still before a render
+ * costs the game a view.
  *
  * stdout carries one line, `RESULT {"png", "sha256", "plies", "width",
  * "height"}`; errors go to stderr with a non-zero exit.
@@ -32,8 +40,9 @@ import type {
 } from "../../shared/domain/game-types";
 import { DEFAULT_PAWN_STYLES } from "../../shared/domain/pawn-styles";
 import { boardPawns } from "../../shared/domain/pawns";
-import { replayDistances, type SeatKind } from "./daily-candidates";
-import { dailySeatColors } from "./edl.mjs";
+import type { SeatKind } from "./daily-candidates";
+import { replayDistances } from "./race-replay";
+import { checkEdlAgainstGame, dailySeatColors, validateEdl } from "./edl.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 const REPO = resolve(HERE, "../..");
@@ -72,9 +81,10 @@ const arg = (name: string) => {
 };
 const candidatePath = arg("candidate");
 const outPath = arg("out");
+const edlPath = arg("edl");
 if (!candidatePath || !outPath) {
   console.error(
-    "usage: storyboard.ts --candidate <ranked entry json> --out <png>",
+    "usage: storyboard.ts --candidate <ranked entry json> --out <png> [--edl <edl json>]",
   );
   process.exit(2);
 }
@@ -100,6 +110,7 @@ const colorOf = (() => {
   return (id: PlayerId) => colors[id];
 })();
 const word = (id: PlayerId) => (isBot(id) ? "AI" : "Human");
+const redSeat: PlayerId = colorOf(1) === "red" ? 1 : 2;
 
 const replay = replayDistances(game);
 
@@ -114,6 +125,81 @@ game.beats.forEach((b, i) => {
   mark(b.relief.ply, `RELIEF${tag}`);
 });
 for (const p of game.picks) mark(p.ply, `JUMP +${p.size}`);
+
+/** One EDL event as the storyboard draws it, by kind. */
+interface EdlEvent {
+  ply: number;
+  kind: string;
+  cell?: string;
+  walls?: string[];
+  frame?: string[];
+  emoji?: string;
+  text?: string;
+  plies?: number;
+  sound?: string;
+}
+/** What the EDL draws on a ply's board: cells ringed, walls lit. */
+const edlCells = new Map<number, { cell: string; color: string }[]>();
+const edlWalls = new Map<number, string[]>();
+const KIND_HEX: Record<string, string> = {
+  scared: "#f59e0b",
+  laugh: "#22c55e",
+  blunder: "#ef4444",
+  brilliant: "#2dd4bf",
+  react: "#e879f9",
+};
+if (edlPath) {
+  const checked = validateEdl(JSON.parse(readFileSync(edlPath, "utf8")));
+  const errors = checked.edl
+    ? checked.edl.gameId === game.gameId
+      ? checkEdlAgainstGame(checked.edl, {
+          notations: game.moves,
+          cols: game.boardWidth,
+          rows: game.boardHeight,
+        })
+      : [`the EDL is for game ${checked.edl.gameId}, not ${game.gameId}`]
+    : (checked.errors ?? []);
+  if (errors.length > 0 || !checked.edl) {
+    console.error(`--edl ${edlPath} is not valid:\n  ${errors.join("\n  ")}`);
+    process.exit(2);
+  }
+  for (const ev of checked.edl.events as EdlEvent[]) {
+    const sound = ev.sound ? ` + ${ev.sound}` : "";
+    const what =
+      ev.kind === "react"
+        ? `${ev.emoji} ${ev.cell}`
+        : ev.kind === "trap"
+          ? `${ev.walls!.join(" ")} ${ev.text}`
+          : ev.kind === "zoom"
+            ? ev.frame!.join(" ")
+            : ev.kind === "stamp"
+              ? ev.text!
+              : (ev.cell ?? "");
+    if (ev.kind === "race") {
+      // Over each position the counter shows, the numbers it will show.
+      const last = Math.min(ev.ply + ev.plies!, game.moves.length);
+      for (let index = ev.ply + 1; index <= last; index += 1) {
+        const d = replay.distances[index];
+        mark(
+          index - 1,
+          `RACE red ${d[redSeat]} blue ${d[redSeat === 1 ? 2 : 1]}${index === ev.ply + 1 ? sound : ""}`,
+        );
+      }
+      continue;
+    }
+    mark(ev.ply, `${ev.kind.toUpperCase()} ${what}${sound}`.trim());
+    if (ev.cell && KIND_HEX[ev.kind]) {
+      edlCells.set(ev.ply, [
+        ...(edlCells.get(ev.ply) ?? []),
+        { cell: ev.cell, color: KIND_HEX[ev.kind] },
+      ]);
+    }
+    const walls = ev.kind === "trap" ? ev.walls! : [];
+    if (walls.length > 0) {
+      edlWalls.set(ev.ply, [...(edlWalls.get(ev.ply) ?? []), ...walls]);
+    }
+  }
+}
 
 /**
  * The site's pawn art, inlined so the page needs no server. A style is used
@@ -199,6 +285,24 @@ const boardSvg = (index: number) => {
       `<image href="${art(p.type, p.pawnStyle)}" x="${c * cell + pad}" y="${r * cell + pad}" width="${cell - 2 * pad}" height="${cell - 2 * pad}" style="filter:${colorFilterMap[colorOf(p.playerId)]}"/>`,
     );
   }
+  // The EDL's marks on this ply: a ringed cell per cell event, lit walls.
+  for (const m of edlCells.get(index - 1) ?? []) {
+    const c = m.cell.charCodeAt(0) - 97;
+    const r = H - Number(m.cell.slice(1));
+    parts.push(
+      `<rect x="${c * cell + 2}" y="${r * cell + 2}" width="${cell - 4}" height="${cell - 4}" rx="5" fill="none" stroke="${m.color}" stroke-width="4"/>`,
+    );
+  }
+  for (const term of edlWalls.get(index - 1) ?? []) {
+    const c = term.charCodeAt(1) - 97;
+    const r = H - Number(term.slice(2));
+    const [x1, y1, x2, y2] = term.startsWith(">")
+      ? [(c + 1) * cell, r * cell, (c + 1) * cell, (r + 1) * cell]
+      : [c * cell, r * cell, (c + 1) * cell, r * cell];
+    parts.push(
+      `<line x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}" stroke="#fef08a" stroke-width="${cell * 0.2}" stroke-linecap="round" opacity="0.7"/>`,
+    );
+  }
   for (let c = 0; c < W; c += 1) {
     parts.push(
       `<text x="${(c + 0.5) * cell}" y="${boardHeight - 3}" font-size="10" fill="#94a3b8" text-anchor="middle">${String.fromCharCode(97 + c)}</text>`,
@@ -240,13 +344,18 @@ const html = `<!doctype html><html><head><meta charset="utf-8"><style>
   .tile { background: #111a2e; border: 2px solid #1e293b; border-radius: 8px; padding: 6px; }
   .tile.marked { border-color: #fde047; }
   .head { margin: 0 0 5px; white-space: nowrap; overflow: hidden; width: ${TILE_BOARD}px; }
-  .badges { min-height: 22px; margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; }
+  .badges { min-height: 22px; margin-top: 5px; display: flex; gap: 4px; flex-wrap: wrap; width: ${TILE_BOARD}px; }
   .badge { padding: 2px 6px; border-radius: 4px; font-size: 12px; background: #334155; }
   .badge.danger { background: #b91c1c; } .badge.save { background: #15803d; }
   .badge.relief { background: #a16207; } .badge.jump { background: #6d28d9; }
+  .badge.zoom, .badge.stamp, .badge.sound, .badge.freeze { background: #0369a1; }
+  .badge.scared { background: #b45309; } .badge.laugh { background: #15803d; }
+  .badge.blunder { background: #dc2626; } .badge.brilliant { background: #0d9488; }
+  .badge.trap { background: #a16207; } .badge.race { background: #475569; }
+  .badge.react { background: #a21caf; }
 </style></head><body>
 <h1>${esc(game.gameId)} · ${esc(game.variant)} · ${game.moves.length} plies · ${seatTitle(1)} vs ${seatTitle(2)}</h1>
-<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Marked: close-call DANGER / SAVE / RELIEF and JUMP plies.</div>
+<div class="legend">Each tile is the position after its ply (0-based, as in the edit list). Yellow: the walls and the pawn move of that ply. Marked: close-call DANGER / SAVE / RELIEF and JUMP plies${edlPath ? ", and each EDL event (a freeze plays before its ply lands)" : ""}.</div>
 <div class="grid">${tiles.join("")}</div></body></html>`;
 
 const browser = await chromium.launch({ executablePath: CHROME });

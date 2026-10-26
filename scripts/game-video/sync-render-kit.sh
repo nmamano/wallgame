@@ -4,7 +4,9 @@
 # Nil, 2026-10-25: all video renders run on the 4090. The box keeps a small
 # render kit, not a checkout: the renderer, the stage, the sounds it mixes,
 # and playwright-core with its Chromium. The kit mirrors the repo's paths, so
-# the renderer finds its assets exactly as it does in a checkout.
+# the renderer finds its assets exactly as it does in a checkout. It also
+# carries shared/domain and race-replay.ts, which the race counter replays
+# the game with.
 #
 #   scripts/game-video/sync-render-kit.sh <ssh target of the 4090's WSL>
 #
@@ -42,6 +44,8 @@ rsync -a --relative \
   scripts/game-video/edl.mjs \
   scripts/game-video/meme-sounds.mjs \
   scripts/game-video/music-tracks.mjs \
+  scripts/game-video/race-replay.ts \
+  shared/domain \
   frontend/public/audio/pawn.wav \
   frontend/public/audio/wall.wav \
   frontend/public/audio/game_start.mp3 \

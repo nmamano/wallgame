@@ -308,6 +308,132 @@
         white-space: nowrap;
       }
 
+      /* ---------- the moment effects (daily look) ---------- */
+      /*
+        Nil, 2026-10-26: "more meme effects and animations, to be used
+        contextually by the director". Each one is a layer over the real
+        screenshot, nothing of the game is redrawn, and each stays inside the
+        board's square (#boardWrap clips it), so no effect reaches the parts
+        of a 9:16 frame that TikTok and Shorts paint over.
+      */
+      #cellFx {
+        position: absolute;
+      }
+      #cellRing {
+        position: absolute;
+        inset: -6%;
+        border-radius: 24%;
+        border-style: solid;
+      }
+      #cellBurst {
+        position: absolute;
+        left: -150%;
+        top: -150%;
+        width: 400%;
+        height: 400%;
+        overflow: visible;
+      }
+      #cellBadge {
+        position: absolute;
+        display: flex;
+        align-items: center;
+        justify-content: center;
+        border-radius: 999px;
+        border: 0.06em solid #10182c;
+        box-shadow: 0 0.08em 0 #10182c;
+        color: #fff;
+        font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
+        font-weight: 900;
+        font-style: italic;
+        letter-spacing: -0.04em;
+        line-height: 1;
+        white-space: nowrap;
+      }
+      .cellEmoji {
+        position: absolute;
+        left: 50%;
+        top: 50%;
+        font-family: "Noto Color Emoji", sans-serif;
+        line-height: 1;
+      }
+      #fxFlash {
+        position: absolute;
+        inset: 0;
+        background: #ef4444;
+      }
+      #trapSvg {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+      }
+      #freezeBadge {
+        position: absolute;
+        right: 4%;
+        top: 4%;
+        display: flex;
+        gap: 0.22em;
+        padding: 0.32em 0.42em;
+        border-radius: 0.3em;
+        background: rgba(18, 26, 46, 0.9);
+        font-size: calc(var(--board) * 0.07);
+      }
+      #freezeBadge div {
+        width: 0.26em;
+        height: 0.9em;
+        border-radius: 0.06em;
+        background: #fff;
+      }
+      /*
+        The race counter sits under the board, where the brand line is, and
+        the brand steps aside while it shows. Under the board and not over it,
+        so the encode check, which reads the board's square, sees only the
+        game.
+      */
+      #race {
+        position: absolute;
+        left: 0;
+        right: 0;
+        top: calc(50% + var(--board) / 2 + var(--caption-gap) * 0.5);
+        display: flex;
+        justify-content: center;
+        align-items: center;
+        gap: calc(var(--board) * 0.035);
+        font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
+        font-weight: 900;
+      }
+      #race .side {
+        display: flex;
+        align-items: baseline;
+        gap: 0.3em;
+      }
+      #race .n {
+        display: inline-block;
+        min-width: 1.2em;
+        text-align: center;
+        font-size: calc(var(--board) * 0.085);
+        line-height: 1;
+        -webkit-text-stroke: 0.04em #000;
+        paint-order: stroke fill;
+      }
+      #race .w {
+        font-size: calc(var(--board) * 0.04);
+        letter-spacing: 0.08em;
+      }
+      #race .vs {
+        font-size: calc(var(--board) * 0.04);
+        color: #e2e8f0;
+        letter-spacing: 0.08em;
+        text-align: center;
+        line-height: 1.1;
+      }
+      #race .vs small {
+        display: block;
+        font-size: 0.55em;
+        color: #94a3b8;
+        letter-spacing: 0.12em;
+      }
+
       /* ---------- the endings (wallz look) ---------- */
       /*
         Three endings of our own, each a layer over the frozen final
@@ -610,6 +736,26 @@
               <div id="pawnSweat">💦</div>
               <div id="pawnBubble"></div>
             </div>
+            <svg
+              id="trapSvg"
+              class="hidden"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+            ></svg>
+            <div id="cellFx" class="hidden">
+              <div id="cellRing"></div>
+              <svg id="cellBurst" viewBox="-200 -200 400 400"></svg>
+              <div class="cellEmoji" id="cellEmoji0"></div>
+              <div class="cellEmoji" id="cellEmoji1"></div>
+              <div class="cellEmoji" id="cellEmoji2"></div>
+              <div class="cellEmoji" id="cellEmoji3"></div>
+              <div id="cellBadge"></div>
+            </div>
+          </div>
+          <div id="fxFlash" class="hidden"></div>
+          <div id="freezeBadge" class="hidden">
+            <div></div>
+            <div></div>
           </div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
           <div id="replayBadge" class="hidden">
@@ -663,6 +809,15 @@
         for it - the filename carries it now.
       -->
       <div id="brand" class="hidden">wallgame.io</div>
+      <div id="race" class="hidden">
+        <div class="side">
+          <span class="w" id="raceWa"></span><span class="n" id="raceNa"></span>
+        </div>
+        <div class="vs">VS<small>STEPS</small></div>
+        <div class="side">
+          <span class="n" id="raceNb"></span><span class="w" id="raceWb"></span>
+        </div>
+      </div>
     </div>
 
     <script>
@@ -886,6 +1041,230 @@
           ")";
       };
 
+      /**
+       * Place a bubble next to a cell-sized box, on the side the renderer
+       * measured to be clear (as the mouse beat's bubble), popped by `pop`.
+       */
+      const placeBubble = (el, side, pop) => {
+        const across = side === "left" || side === "right";
+        el.style.top = side === "down" ? "105%" : across ? "50%" : "auto";
+        el.style.bottom = side === "up" ? "105%" : "auto";
+        el.style.left = side === "right" ? "105%" : across ? "auto" : "50%";
+        el.style.right = side === "left" ? "105%" : "auto";
+        el.style.transform =
+          (across ? "translateY(-50%)" : "translateX(-50%)") +
+          " scale(" +
+          pop +
+          ")";
+      };
+
+      /** Rays out of the middle of a 400x400 box, from fixed formulas. */
+      const burstRays = (n, inner, outer, width, color) => {
+        let out = "";
+        for (let i = 0; i < n; i += 1) {
+          const a = (i / n) * Math.PI * 2 + Math.sin(i * 7.31) * 0.12;
+          const long = i % 2 === 0 ? 1 : 0.7;
+          const x1 = Math.cos(a) * inner;
+          const y1 = Math.sin(a) * inner;
+          const x2 = Math.cos(a) * outer * long;
+          const y2 = Math.sin(a) * outer * long;
+          out +=
+            '<line x1="' +
+            x1 +
+            '" y1="' +
+            y1 +
+            '" x2="' +
+            x2 +
+            '" y2="' +
+            y2 +
+            '" stroke="' +
+            color +
+            '" stroke-width="' +
+            width +
+            '" stroke-linecap="round"/>';
+        }
+        return out;
+      };
+
+      /**
+       * A moment on one cell, one frame at a time.
+       *
+       *   blunder    a red ring and a "??" bubble. The renderer adds the red
+       *              flash (fxFlash) and the shake (s.shake).
+       *   brilliant  a burst of rays and a ring out of the cell, and a "!!"
+       *              bubble.
+       *   react      an emoji pops on the cell and floats up, and three small
+       *              copies rise and fade.
+       *
+       * c = { kind, t: seconds into it, cell: {x, y} the cell centre in the
+       *       board image (0..1), size: one cell's width (0..1), side: where
+       *       the bubble goes, emoji: the react's character }
+       */
+      const paintCellFx = (c) => {
+        const fx = $("cellFx");
+        show(fx, !!c);
+        if (!c) return;
+        const W = $("boardWrap").clientWidth;
+        const px = c.size * W;
+        fx.style.left = (c.cell.x - c.size / 2) * W + "px";
+        fx.style.top = (c.cell.y - c.size / 2) * W + "px";
+        fx.style.width = px + "px";
+        fx.style.height = px + "px";
+        const ring = $("cellRing");
+        const badge = $("cellBadge");
+        const burst = $("cellBurst");
+        const emojis = [0, 1, 2, 3].map((i) => $("cellEmoji" + i));
+        show(ring, c.kind !== "react");
+        show(badge, c.kind !== "react");
+        show(burst, c.kind === "brilliant");
+        for (const e of emojis) show(e, c.kind === "react");
+        badge.style.fontSize = px * 0.6 + "px";
+        badge.style.padding = "0.12em 0.36em 0.12em 0.3em";
+        const pop = punch(span(c.t, 0, 0.2));
+
+        if (c.kind === "blunder") {
+          ring.style.borderWidth = px * 0.09 + "px";
+          ring.style.borderColor = "#ef4444";
+          ring.style.boxShadow = "0 0 " + px * 0.25 + "px #ef4444";
+          ring.style.opacity = 1;
+          ring.style.transform = "scale(" + pop + ")";
+          badge.textContent = "??";
+          badge.style.background = "#dc2626";
+          placeBubble(badge, c.side, pop);
+        }
+
+        if (c.kind === "brilliant") {
+          const out = easeOut3(span(c.t, 0, 0.55));
+          ring.style.borderWidth = px * 0.07 + "px";
+          ring.style.borderColor = "#2dd4bf";
+          ring.style.boxShadow = "0 0 " + px * 0.3 + "px #2dd4bf";
+          ring.style.transform = "scale(" + (1 + 1.3 * out) + ")";
+          ring.style.opacity = 1 - out;
+          burst.innerHTML = burstRays(
+            14,
+            60 + 70 * out,
+            80 + 120 * out,
+            10,
+            "#5eead4",
+          );
+          burst.style.opacity = 1 - span(c.t, 0.45, 0.9);
+          badge.textContent = "!!";
+          badge.style.background = "#0d9488";
+          placeBubble(badge, c.side, pop);
+        }
+
+        if (c.kind === "react") {
+          const big = emojis[0];
+          big.textContent = c.emoji;
+          big.style.fontSize = px * 1.05 + "px";
+          const rise = easeOut3(span(c.t, 0.15, 1.2)) * 0.35;
+          big.style.transform =
+            "translate(-50%, " +
+            (-50 - rise * 100) +
+            "%) rotate(" +
+            Math.sin(c.t * 9) * 8 +
+            "deg) scale(" +
+            pop +
+            ")";
+          big.style.opacity = 1 - span(c.t, 1.0, 1.2);
+          // Three small copies rise at their own pace and fade.
+          [1, 2, 3].forEach((i) => {
+            const e = emojis[i];
+            const p = span(c.t, 0.1 * i, 0.1 * i + 0.9);
+            e.textContent = c.emoji;
+            e.style.fontSize = px * 0.42 + "px";
+            e.style.opacity = p > 0 ? 1 - p : 0;
+            e.style.transform =
+              "translate(" +
+              (-50 + (i - 2) * 120 + Math.sin(p * 6 + i) * 25) +
+              "%, " +
+              (-50 - p * 260) +
+              "%)";
+          });
+        }
+      };
+
+      /**
+       * A trap: the walls that shut a pawn in light up, pulse, and stay lit
+       * while the renderer stamps its word over them.
+       *   tr = { t: seconds into it, walls: [[x1, y1, x2, y2]] in the board
+       *          image (0..1) }
+       */
+      const paintTrap = (tr) => {
+        const svg = $("trapSvg");
+        show(svg, !!tr);
+        if (!tr) return;
+        const on = easeOut3(span(tr.t, 0, 0.15));
+        const pulse = 0.65 + 0.35 * Math.cos(tr.t * Math.PI * 4);
+        svg.innerHTML = tr.walls
+          .map(([x1, y1, x2, y2]) => {
+            const pts =
+              'x1="' +
+              x1 * 1000 +
+              '" y1="' +
+              y1 * 1000 +
+              '" x2="' +
+              x2 * 1000 +
+              '" y2="' +
+              y2 * 1000 +
+              '"';
+            return (
+              "<line " +
+              pts +
+              ' stroke="#facc15" stroke-opacity="' +
+              0.6 * on * pulse +
+              '" stroke-width="64" stroke-linecap="round"/>' +
+              "<line " +
+              pts +
+              ' stroke="#fef08a" stroke-opacity="' +
+              on +
+              '" stroke-width="22" stroke-linecap="round"/>'
+            );
+          })
+          .join("");
+      };
+
+      /**
+       * The race counter: each side's steps to its target, in its colour.
+       * A number that changed on this move pops.
+       *   r = { a: {word, hex, n, changed}, b: {...}, t: seconds since the
+       *         move landed, intro: true on the move it first shows }
+       */
+      const paintRace = (r) => {
+        show($("race"), !!r);
+        if (!r) return;
+        const intro = r.intro ? easeOut3(span(r.t, 0, 0.3)) : 1;
+        $("race").style.opacity = intro;
+        $("race").style.transform = "translateY(" + (1 - intro) * 30 + "px)";
+        for (const [k, p] of [
+          ["a", r.a],
+          ["b", r.b],
+        ]) {
+          const n = $("raceN" + k);
+          const w = $("raceW" + k);
+          n.textContent = String(p.n);
+          n.style.color = p.hex;
+          w.textContent = p.word;
+          w.style.color = p.hex;
+          const bump = p.changed ? punch(span(r.t, 0, 0.3)) : 1;
+          n.style.transform = "scale(" + bump + ")";
+        }
+      };
+
+      /**
+       * A freeze before a move lands: the position before it in grey, and a
+       * pause mark. The renderer pushes the camera in (s.zoom).
+       *   f = { t: seconds into it }
+       */
+      const paintFreeze = (f) => {
+        show($("freezeBadge"), !!f);
+        if (!f) return;
+        const g = easeOut3(span(f.t, 0, 0.12));
+        $("boardImg").style.filter =
+          "grayscale(" + g + ") contrast(" + (1 + 0.15 * g) + ")";
+        $("freezeBadge").style.opacity = g;
+      };
+
       const paintEnding = (e) => {
         for (const id of [
           "boardPrev",
@@ -1072,7 +1451,8 @@
         show($("vs"), s.segment === "vs");
         show($("play"), s.segment === "play");
         show($("end"), s.segment === "end");
-        show($("brand"), s.segment === "play");
+        show($("brand"), s.segment === "play" && !s.race);
+        if (s.segment !== "play") show($("race"), false);
         $("root").classList.toggle("wallz", s.look === "wallz");
         $("vs").style.transform = "";
 
@@ -1129,6 +1509,12 @@
           paintBeat(s.beat);
           paintMidStamp(s.midStamp);
           paintEnding(s.ending);
+          paintCellFx(s.cellFx);
+          paintTrap(s.trap);
+          paintRace(s.race);
+          paintFreeze(s.freeze);
+          show($("fxFlash"), !!s.flash);
+          $("fxFlash").style.opacity = s.flash ?? 0;
           $("pAvT").src = s.top.portrait;
           $("pAvB").src = s.bottom.portrait;
           $("pNameT").textContent = s.top.name;

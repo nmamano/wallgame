@@ -5,10 +5,13 @@
  * real replay page in real Chrome, and writes an mp4 sized for a phone feed:
  * a VS screen, the moves at a chosen pace, and a winner card.
  *
- *   node scripts/game-video/render-game-video.mjs --game https://wallgame.io/game/v5P09s6K
- *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --seconds-per-move 0.5
- *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --aspect square
- *   node scripts/game-video/render-game-video.mjs --game v5P09s6K --music a-legend
+ *   bun scripts/game-video/render-game-video.mjs --game https://wallgame.io/game/v5P09s6K
+ *   bun scripts/game-video/render-game-video.mjs --game v5P09s6K --seconds-per-move 0.5
+ *   bun scripts/game-video/render-game-video.mjs --game v5P09s6K --aspect square
+ *   bun scripts/game-video/render-game-video.mjs --game v5P09s6K --music a-legend
+ *
+ * Bun, not Node: the race counter imports race-replay.ts and shared/domain,
+ * which are TypeScript.
  *
  * IT IS NOT READ-ONLY, AND AN EARLIER VERSION OF THIS COMMENT CLAIMED IT WAS.
  * GET /api/games/:id runs `UPDATE games SET views = views + 1`
@@ -80,7 +83,9 @@ import {
   checkEdlAgainstGame,
   DEFAULT_SECONDS_PER_MOVE,
   dailySeatColors,
+  REACTIONS,
 } from "./edl.mjs";
+import { replayDistances } from "./race-replay.ts";
 import { MEME_SOUNDS, memeGain } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
 import { verifyEncodedVideo } from "./verify-encoded-video.mjs";
@@ -253,6 +258,13 @@ for (const [flagName, field] of [
 const CAPTION = EDL?.caption ?? "";
 const EVENTS = EDL?.events ?? [];
 const eventsAt = (plyIndex) => EVENTS.filter((e) => e.ply === plyIndex);
+/**
+ * The events that play after their move lands, in list order. A freeze
+ * plays before the move, and a race counter shows as the move lands; both
+ * are placed by the move loop itself.
+ */
+const landingEventsAt = (plyIndex) =>
+  eventsAt(plyIndex).filter((e) => e.kind !== "freeze" && e.kind !== "race");
 
 /**
  * Which browser draws the frames. `chromium` is the one Playwright downloads
@@ -466,6 +478,29 @@ const STAMP_SECONDS = 1.0;
 const EFFECT_REST_SECONDS = 0.3;
 const ZOOM_IN = 0.12;
 const ZOOM_OUT = 0.25;
+/**
+ * The moment effects (edl.mjs: blunder, brilliant, react, trap, freeze,
+ * race), in seconds. The trap's word lands TRAP_STAMP_AT into it; the
+ * blunder shakes over its first BLUNDER_SHAKE_SECONDS and flashes over its
+ * first BLUNDER_FLASH_SECONDS; a freeze pushes in over FREEZE_PUSH to
+ * FREEZE_SCALE before its hold; a race number that changes pops over
+ * RACE_TICK_SECONDS, added to the move.
+ */
+const BLUNDER_SECONDS = 1.2;
+const BLUNDER_SHAKE_SECONDS = 0.5;
+const BLUNDER_FLASH_SECONDS = 0.3;
+const BRILLIANT_SECONDS = 1.3;
+const REACT_SECONDS = 1.2;
+const TRAP_SECONDS = 1.6;
+const TRAP_STAMP_AT = 0.55;
+const FREEZE_PUSH = 0.25;
+const FREEZE_SCALE = 1.6;
+const RACE_TICK_SECONDS = 0.3;
+/**
+ * How far a shake may scale the composition: it must not, so this only
+ * absorbs float noise in the matrix read. See the winning shake below.
+ */
+const SCALE_TOLERANCE = 0.001;
 /** How long a wallz video holds its last position when nobody won. */
 const DRAW_HOLD_SECONDS = 1.3;
 
@@ -1698,6 +1733,26 @@ const cellAtTerm = (term) => {
   return cellAt([top, left]);
 };
 
+/** A 0-based [row from the top, column] as an EDL cell: [7, 6] is g1 on 8 rows. */
+const termOfCell = ([row, col]) =>
+  `${String.fromCharCode(97 + col)}${GRID.rows - row}`;
+
+/**
+ * An EDL wall as the line it draws on the board image, [x1, y1, x2, y2] in
+ * 0..1: ^h4 is the top edge of h4, >h4 its right edge.
+ */
+const wallLine = (term) => {
+  const m = term.match(/^([>^])([a-z])(\d+)$/);
+  const row = GRID.rows - Number(m[3]);
+  const col = m[2].charCodeAt(0) - "a".charCodeAt(0);
+  const span = 1 - 2 * GRID.pad;
+  const x = (c) => GRID.pad + (c / GRID.cols) * span;
+  const y = (r) => GRID.pad + (r / GRID.rows) * span;
+  return m[1] === "^"
+    ? [x(col), y(row), x(col + 1), y(row)]
+    : [x(col + 1), y(row), x(col + 1), y(row + 1)];
+};
+
 /**
  * The punch-in that frames every term of a zoom: the scale, at most
  * `maxScale`, at which their box plus ZOOM_MARGIN cells fills the frame, and
@@ -1744,6 +1799,42 @@ if (EDL) {
     await browser.close();
     process.exit(2);
   }
+}
+
+/** The race event whose counter shows at a position (board index), if any. */
+const raceEventAt = (boardIndex) =>
+  EVENTS.find(
+    (e) =>
+      e.kind === "race" &&
+      e.ply + 1 <= boardIndex &&
+      boardIndex <= e.ply + e.plies,
+  );
+
+/**
+ * Each player's steps to their target at every position, from the game
+ * record through shared/domain (race-replay.ts), the same numbers the
+ * daily picker ranks by. Read only when the EDL shows a race, and a race
+ * over a position where a side hunts nothing (Survival) stops the render.
+ */
+const RACE_DISTANCES = EVENTS.some((e) => e.kind === "race")
+  ? replayDistances({
+      variant: replay.state.config.variant,
+      boardWidth: GRID.cols,
+      boardHeight: GRID.rows,
+      initialState: replay.state.initialState,
+      moves: history.map((h) => h.notation),
+    }).distances
+  : null;
+const raceGap =
+  RACE_DISTANCES?.findIndex(
+    (d, i) => raceEventAt(i) && (d[1] === null || d[2] === null),
+  ) ?? -1;
+if (raceGap !== -1) {
+  console.error(
+    `the race on position ${raceGap} has no count for one side: ${replay.state.config.variant} gives a side nothing to hunt`,
+  );
+  await browser.close();
+  process.exit(2);
 }
 
 /** The 9:16 frame of the wallz look: the board as wide as the frame. */
@@ -1991,10 +2082,10 @@ const renderStyle = async (styleName) => {
   };
 
   /**
-   * The contact sheet's stills: one frame per EDL event that has a sound or
-   * a zoom, so the director can check, before anyone watches the video, that
-   * each cue lands on the right move and each zoom has the right wall in
-   * frame. `stillNext` marks the next frame shot as the still of an event.
+   * The contact sheet's stills: one frame per EDL event, so the director can
+   * check, before anyone watches the video, that each cue lands on the right
+   * move and each effect is on the right cell, wall or zoom. `stillNext`
+   * marks the next frame shot as the still of an event.
    */
   const stills = [];
   let stillNext = null;
@@ -2101,6 +2192,28 @@ const renderStyle = async (styleName) => {
   const musicStart = elapsed;
 
   // --- the moves
+  const seatColors = wallz ? SEAT_COLORS(replay) : null;
+  /**
+   * The race counter at a position (edl.mjs `race`), or null outside every
+   * race: red on the left, blue on the right, each with its steps. `t` is
+   * the seconds since the move landed; the counter is settled from
+   * RACE_TICK_SECONDS on.
+   */
+  const raceHud = (boardIndex, t = RACE_TICK_SECONDS) => {
+    const ev = wallz ? raceEventAt(boardIndex) : null;
+    if (!ev) return null;
+    const now = RACE_DISTANCES[boardIndex];
+    const before = RACE_DISTANCES[boardIndex - 1];
+    const intro = boardIndex === ev.ply + 1;
+    const seat = (id) => ({
+      word: seatColors[id].toUpperCase(),
+      hex: side(id).hex,
+      n: now[id],
+      changed: !intro && now[id] !== before[id],
+    });
+    const [red, blue] = seatColors[1] === "red" ? [1, 2] : [2, 1];
+    return { a: seat(red), b: seat(blue), t, intro };
+  };
   const playState = (boardIndex, extra = {}) => ({
     segment: "play",
     look: style.look,
@@ -2108,6 +2221,7 @@ const renderStyle = async (styleName) => {
     board: fileUrl(boardFrames[boardIndex]),
     top: side(seats.top),
     bottom: side(seats.bottom),
+    race: raceHud(boardIndex),
     ...extra,
   });
   await stage.evaluate((state) => window.__stage(state), playState(0));
@@ -2124,6 +2238,111 @@ const renderStyle = async (styleName) => {
   const encodedBoardRect = await boardRectNow();
 
   /**
+   * One frame of an after-landing EDL effect, `t` seconds (frame `i`) into
+   * its `seconds`, as the stage state it adds to the position.
+   */
+  const momentState = (ev, ply, t, seconds, i) => {
+    if (ev.kind === "stamp") return { midStamp: { text: ev.text, t, seconds } };
+    if (ev.kind === "trap") {
+      return {
+        trap: { t, walls: ev.walls.map(wallLine) },
+        midStamp:
+          t >= TRAP_STAMP_AT
+            ? {
+                text: ev.text,
+                t: t - TRAP_STAMP_AT,
+                seconds: seconds - TRAP_STAMP_AT,
+              }
+            : undefined,
+      };
+    }
+    const at = cellAtTerm(ev.cell);
+    const size = (1 - 2 * GRID.pad) / GRID.cols;
+    if (ev.kind === "scared" || ev.kind === "laugh") {
+      return {
+        beat: {
+          kind: ev.kind,
+          t,
+          board: fileUrl(boardFrames[ply]),
+          cell: at,
+          size,
+          side: bubbleSide(ply, at),
+        },
+      };
+    }
+    const cellFx = {
+      kind: ev.kind,
+      t,
+      cell: at,
+      size,
+      side: bubbleSide(ply, at),
+      emoji: ev.kind === "react" ? REACTIONS[ev.emoji] : undefined,
+    };
+    if (ev.kind !== "blunder") return { cellFx };
+    const shake = Math.max(0, 1 - t / BLUNDER_SHAKE_SECONDS);
+    return {
+      cellFx,
+      flash: 0.5 * Math.max(0, 1 - t / BLUNDER_FLASH_SECONDS),
+      shake: 0.8 * shake * shake,
+      shakePhase: i,
+    };
+  };
+
+  /**
+   * A freeze (edl.mjs), BEFORE the move of `plyIndex` lands: the position
+   * before it goes grey and the camera pushes in on the move's cell, holds,
+   * and the move then cuts in at full size. Its sound starts with it.
+   */
+  const playFreeze = async (ply, plyIndex) => {
+    const ev = eventsAt(plyIndex).find((e) => e.kind === "freeze");
+    if (!ev) return;
+    const at = cellOfPly(plyIndex);
+    if (!at) {
+      throw new Error(`ply ${plyIndex} names no cell for its freeze to frame`);
+    }
+    if (ev.sound) cue(meme(ev.sound));
+    const z = frameZoom([termOfCell(at)], FREEZE_SCALE);
+    const frames = Math.round((FREEZE_PUSH + ev.holdSeconds) * FPS);
+    const mid = Math.round((FREEZE_PUSH + ev.holdSeconds / 2) * FPS);
+    for (let i = 0; i < frames; i += 1) {
+      if (i === mid) {
+        stillNext = { ply: plyIndex, kind: "freeze", sound: ev.sound ?? null };
+      }
+      const t = i / FPS;
+      const scale = 1 + (z.scale - 1) * easeOut(Math.min(1, t / FREEZE_PUSH));
+      await emit(
+        playState(ply - 1, { zoom: { ...z, scale }, freeze: { t } }),
+        1 / FPS,
+        { kind: "freeze", ply: plyIndex },
+      );
+    }
+  };
+
+  /**
+   * As a move lands inside a race (edl.mjs), the counter comes in, or the
+   * numbers that changed pop. Under the board, so these frames show the
+   * position itself; they are their own kind all the same, because a frame
+   * of a moving counter is not a plain position.
+   */
+  const playRaceTick = async (ply, plyIndex) => {
+    const hud = raceHud(ply);
+    if (!hud || !(hud.intro || hud.a.changed || hud.b.changed)) return;
+    const ev = raceEventAt(ply);
+    if (hud.intro && ev.sound) cue(meme(ev.sound));
+    const frames = Math.round(RACE_TICK_SECONDS * FPS);
+    for (let i = 0; i < frames; i += 1) {
+      // The race's still is its settled counter, as it first shows.
+      if (hud.intro && i === frames - 1) {
+        stillNext = { ply: ev.ply, kind: "race", sound: ev.sound ?? null };
+      }
+      await emit(playState(ply, { race: raceHud(ply, i / FPS) }), 1 / FPS, {
+        kind: "race-tick",
+        ply: plyIndex,
+      });
+    }
+  };
+
+  /**
    * The EDL events of one ply, in list order, as the move lands; then the
    * plain position rests. Each effect runs frame by frame and is its own
    * kind, because the encode check classifies "move" frames by the board
@@ -2131,7 +2350,7 @@ const renderStyle = async (styleName) => {
    * as it found it, so the box is read again afterwards and must match.
    */
   const playEvents = async (ply, plyIndex) => {
-    for (const ev of eventsAt(plyIndex)) {
+    for (const ev of landingEventsAt(plyIndex)) {
       const label = { ply: plyIndex, kind: ev.kind, sound: ev.sound ?? null };
       if (ev.sound) {
         const sound = meme(ev.sound);
@@ -2164,28 +2383,39 @@ const renderStyle = async (styleName) => {
         scared: SCARED_SECONDS,
         laugh: LAUGH_SECONDS,
         stamp: STAMP_SECONDS,
+        blunder: BLUNDER_SECONDS,
+        brilliant: BRILLIANT_SECONDS,
+        react: REACT_SECONDS,
+        trap: TRAP_SECONDS,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
+      // A trap's still shows its word; the others are judged mid-effect.
+      const stillAt =
+        ev.kind === "trap"
+          ? Math.round((TRAP_STAMP_AT + 0.4) * FPS)
+          : Math.round(frames / 2);
       for (let i = 0; i < frames; i += 1) {
-        if (i === Math.round(frames / 2)) stillNext = label;
-        const t = i / FPS;
-        const extra =
-          ev.kind === "stamp"
-            ? { midStamp: { text: ev.text, t, seconds } }
-            : {
-                beat: {
-                  kind: ev.kind,
-                  t,
-                  board: fileUrl(boardFrames[ply]),
-                  cell: cellAtTerm(ev.cell),
-                  size: (1 - 2 * GRID.pad) / GRID.cols,
-                  side: bubbleSide(ply, cellAtTerm(ev.cell)),
-                },
-              };
+        if (i === stillAt) stillNext = label;
+        const extra = momentState(ev, ply, i / FPS, seconds, i);
         await emit(playState(ply, extra), 1 / FPS, {
           kind: `beat-${ev.kind}`,
           ply: plyIndex,
         });
+        /*
+          The blunder shakes like the winning move, so it is held to the same
+          guard: translation and rotation only, read on every shaking frame.
+        */
+        if (extra.shake > 0) {
+          const sc = await shakeScaleFactors();
+          if (
+            Math.abs(sc.x - 1) > SCALE_TOLERANCE ||
+            Math.abs(sc.y - 1) > SCALE_TOLERANCE
+          ) {
+            throw new Error(
+              `the blunder shake on ply ${plyIndex} SCALED the composition (x ${sc.x.toFixed(4)}, y ${sc.y.toFixed(4)}). Translation and rotation only.`,
+            );
+          }
+        }
       }
     }
     await emit(playState(ply), EFFECT_REST_SECONDS, {
@@ -2233,7 +2463,9 @@ const renderStyle = async (styleName) => {
   for (let ply = 1; ply <= history.length; ply += 1) {
     const plyIndex = ply - 1;
     const isLast = ply === history.length;
+    if (wallz) await playFreeze(ply, plyIndex);
     cue(moveClick(plyIndex));
+    if (wallz) await playRaceTick(ply, plyIndex);
 
     if (wallz && isLast) {
       /*
@@ -2242,7 +2474,7 @@ const renderStyle = async (styleName) => {
         their own kind: the encode check classifies "move" frames by the board
         under them, and an ending frame is not a plain position of the game.
       */
-      if (eventsAt(plyIndex).length > 0) {
+      if (landingEventsAt(plyIndex).length > 0) {
         await playEvents(ply, plyIndex);
       } else {
         await emit(playState(ply), paceAt(plyIndex), {
@@ -2285,7 +2517,7 @@ const renderStyle = async (styleName) => {
           ply: plyIndex,
         });
       }
-    } else if (wallz && eventsAt(plyIndex).length > 0) {
+    } else if (wallz && landingEventsAt(plyIndex).length > 0) {
       await playEvents(ply, plyIndex);
     } else if (isLast && CAPTURE_SHAKE) {
       /*
@@ -2341,7 +2573,6 @@ const renderStyle = async (styleName) => {
         recorded a sentence and carried on, so a broken shake would have been
         reported in a log line nobody reads and shipped anyway.
       */
-      const SCALE_TOLERANCE = 0.001;
       const scaled =
         Math.abs(worstScale.x - 1) > SCALE_TOLERANCE ||
         Math.abs(worstScale.y - 1) > SCALE_TOLERANCE;
