@@ -251,7 +251,10 @@ const commands = {
     console.log(summary(await state()));
   },
 
-  /** Each family's moment and sounds: kept, then not heard yet. */
+  /**
+   * Each family's moment and sounds: kept, then not heard yet. A source note
+   * (a claim risk, a weaker source) follows its key in brackets.
+   */
   async sounds() {
     const sounds = await app("GET", "/api/daily/sounds");
     for (const family of new Set(sounds.map((x) => x.family))) {
@@ -259,10 +262,15 @@ const commands = {
       const names = (choice) =>
         members
           .filter((x) => x.choice === choice)
-          .map((x) => x.key)
-          .join(" ") || "-";
+          .map((x) => (x.note ? `${x.key} [${x.note}]` : x.key))
+          .join(", ") || "-";
       console.log(
         `${family} (${members[0].moment ?? "no moment"}): kept ${names("keep")}; not heard yet ${names(null)}`,
+      );
+    }
+    for (const x of sounds.filter((s) => s.fixed)) {
+      console.log(
+        `${x.key} plays on ${x.fixed} in every video, whatever the list says`,
       );
     }
   },

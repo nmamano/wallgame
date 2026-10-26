@@ -11,6 +11,12 @@
  * The choices are one file in the app's data dir, daily/sound-picks.json. A
  * sound with no choice is "not heard yet". The director uses kept sounds, and
  * POST /api/daily/direct refuses a list that names a dropped one (routes.mjs).
+ *
+ * TWO SOUNDS ARE NOT THE DIRECTOR'S. The renderer plays a fixed sound on the
+ * VS card and on the finish (SOUNDS in render-game-video.mjs), whatever the
+ * list says. A Drop there would change nothing, so the page labels those
+ * rows and refuses the Drop: a swap is a code change. The slots are read
+ * from the renderer's source, so this file keeps no copy of them.
  */
 import { existsSync, readFileSync } from "node:fs";
 import { join, resolve, dirname } from "node:path";
@@ -18,6 +24,7 @@ import { fileURLToPath } from "node:url";
 import {
   MEME_SOUNDS,
   MEME_FAMILIES,
+  MEME_SOURCE_NOTES,
   memeFamily,
   memeGain,
   memeLevel,
@@ -26,6 +33,24 @@ import { writeAtomic, StepRefused } from "./store.mjs";
 
 const HERE = dirname(fileURLToPath(import.meta.url));
 export const MEME_DIR = resolve(HERE, "../../../assets/meme-sounds");
+export const RENDERER = resolve(HERE, "../render-game-video.mjs");
+
+/** What the page calls each fixed slot of the renderer's SOUNDS. */
+const SLOT_NAMES = { vsMeme: "the VS card", finish: "the finish" };
+
+/**
+ * key -> the slot that plays it in every video, from the renderer's
+ * `  <slot>: meme("<key>"),` lines (daily/sounds.test.ts checks that both
+ * slots are found).
+ */
+export const fixedSlots = (renderer = RENDERER) =>
+  Object.fromEntries(
+    [
+      ...readFileSync(renderer, "utf8").matchAll(
+        /^ {2}(\w+): meme\("([\w-]+)"\),$/gm,
+      ),
+    ].map(([, slot, key]) => [key, SLOT_NAMES[slot] ?? slot]),
+  );
 
 export const CHOICES = ["keep", "drop"];
 
@@ -35,7 +60,10 @@ const known = (key) => Object.hasOwn(MEME_SOUNDS, key);
 export const openSoundPicks = (root) => {
   const path = join(root, "sound-picks.json");
 
-  /** key -> {choice, at}. A key no longer in the table is left out. */
+  /**
+   * key -> {choice, at}. A key no longer in the table is left out.
+   * @returns {Record<string, { choice: string, at: string }>}
+   */
   const read = () => {
     if (!existsSync(path)) return {};
     const all = JSON.parse(readFileSync(path, "utf8"));
@@ -43,12 +71,17 @@ export const openSoundPicks = (root) => {
   };
 
   /** Set a choice, or clear it with null (back to "not heard yet"). */
-  const set = (key, choice) => {
+  const set = (key, choice, fixed = fixedSlots()) => {
     if (typeof key !== "string" || !known(key)) {
       throw new StepRefused(`sound ${JSON.stringify(key)} is not known`);
     }
     if (choice !== null && !CHOICES.includes(choice)) {
       throw new StepRefused(`a choice is ${CHOICES.join(", ")} or null`);
+    }
+    if (choice === "drop" && fixed[key]) {
+      throw new StepRefused(
+        `${key} plays on ${fixed[key]} in every video, so a drop would change nothing; swapping it is a code change (SOUNDS in render-game-video.mjs)`,
+      );
     }
     const picks = read();
     if (choice === null) delete picks[key];
@@ -65,8 +98,11 @@ export const openSoundPicks = (root) => {
   return { path, read, set, dropped };
 };
 
-/** Every sound, in table order, with its level in a video and its choice. */
-export const soundList = (picks, dir = MEME_DIR) =>
+/**
+ * Every sound, in table order, with its level in a video, its choice, its
+ * source note and the fixed slot that plays it, if any.
+ */
+export const soundList = (picks, dir = MEME_DIR, fixed = fixedSlots()) =>
   Object.entries(MEME_SOUNDS).map(([key, { lufs, truePeak }]) => {
     const family = memeFamily(key);
     return {
@@ -78,6 +114,8 @@ export const soundList = (picks, dir = MEME_DIR) =>
       gain: memeGain(key),
       level: memeLevel(key),
       choice: picks[key]?.choice ?? null,
+      note: MEME_SOURCE_NOTES[key] ?? null,
+      fixed: fixed[key] ?? null,
       file: existsSync(join(dir, `${key}.mp3`)),
     };
   });
@@ -108,6 +146,9 @@ export const SOUNDS_PAGE = `<!doctype html>
   button.keep.on { background: #166534; border-color: #22c55e; }
   button.drop.on { background: #7f1d1d; border-color: #ef4444; }
   .err { color: #fca5a5; font-size: 12px; }
+  .note { display: block; font-size: 12px; color: #fbbf24; }
+  .fixed { display: block; font-size: 12px; color: #93c5fd; }
+  button[disabled] { opacity: .4; cursor: default; }
   a { color: #ff8c42; } .muted { color: #64748b; font-size: 12px; }
 </style></head>
 <body><main>
@@ -135,7 +176,8 @@ export const SOUNDS_PAGE = `<!doctype html>
     if (!buf) {
       const r = await fetch("/api/daily/sounds/file?key=" + encodeURIComponent(s.key));
       if (!r.ok) { button.textContent = "missing"; return; }
-      buf = await ctx.decodeAudioData(await r.arrayBuffer());
+      try { buf = await ctx.decodeAudioData(await r.arrayBuffer()); }
+      catch { button.textContent = "error"; return; }
       buffers.set(s.key, buf);
     }
     const src = ctx.createBufferSource(); src.buffer = buf;
@@ -169,10 +211,13 @@ export const SOUNDS_PAGE = `<!doctype html>
         p.onclick = () => play(s, p);
         const db = 20 * Math.log10(s.gain);
         const lvl = el("span", "lvl", s.level.toFixed(1) + " LUFS (gain " + (db >= 0 ? "+" : "") + db.toFixed(1) + " dB)");
+        if (s.fixed) lvl.append(el("span", "fixed", "Fixed: plays on " + s.fixed + " in every video. A swap is a code change."));
+        if (s.note) lvl.append(el("span", "note", s.note));
         const keep = el("button", "keep" + (s.choice === "keep" ? " on" : ""), "Keep");
         keep.onclick = () => choose(s.key, s.choice === "keep" ? null : "keep");
         const drop = el("button", "drop" + (s.choice === "drop" ? " on" : ""), "Drop");
         drop.onclick = () => choose(s.key, s.choice === "drop" ? null : "drop");
+        drop.disabled = Boolean(s.fixed) && s.choice !== "drop";
         row.append(p, el("span", "key", s.key), lvl, keep, drop);
         box.append(row);
       }

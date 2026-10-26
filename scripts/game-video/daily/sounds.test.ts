@@ -12,13 +12,20 @@ import { join } from "node:path";
 import {
   MEME_SOUNDS,
   MEME_FAMILIES,
+  MEME_SOURCE_NOTES,
   MEME_TARGET_LUFS,
   MEME_TRUE_PEAK_CEILING,
   memeFamily,
   memeGain,
   memeLevel,
 } from "../meme-sounds.mjs";
-import { openSoundPicks, soundFile, soundList, MEME_DIR } from "./sounds.mjs";
+import {
+  openSoundPicks,
+  soundFile,
+  soundList,
+  fixedSlots,
+  MEME_DIR,
+} from "./sounds.mjs";
 import { createDaily, droppedSoundProblems } from "./routes.mjs";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "meme-sounds-test-"));
@@ -33,6 +40,12 @@ describe("the sound table", () => {
     expect(new Set(keys.map(memeFamily))).toEqual(
       new Set(Object.keys(MEME_FAMILIES)),
     );
+  });
+
+  test("every source note is for a key of the table", () => {
+    for (const key of Object.keys(MEME_SOURCE_NOTES)) {
+      expect(MEME_SOUNDS).toHaveProperty(key);
+    }
   });
 
   test("the level is the target, or lower where the true peak limits it", () => {
@@ -70,6 +83,22 @@ describe("keep or drop", () => {
     expect(() => picks.set("toString", "keep")).toThrow("not known");
   });
 
+  test("the renderer's fixed sounds are found, and a drop of one is refused", () => {
+    const fixed = fixedSlots();
+    // Both slots of SOUNDS in render-game-video.mjs, each a table key.
+    expect(Object.values(fixed).sort()).toEqual(["the VS card", "the finish"]);
+    for (const key of Object.keys(fixed))
+      expect(MEME_SOUNDS).toHaveProperty(key);
+
+    const picks = openSoundPicks(tempDir());
+    const [finish] = Object.entries(fixed).find(([, s]) => s === "the finish")!;
+    expect(() => picks.set(finish, "drop")).toThrow("a code change");
+    picks.set(finish, "keep");
+    expect(picks.read()[finish].choice).toBe("keep");
+    const row = soundList(picks.read()).find((s) => s.key === finish);
+    expect(row?.fixed).toBe("the finish");
+  });
+
   test("the list carries each sound's choice, family and level", () => {
     const list = soundList({ "ding-2": { choice: "keep", at: "x" } });
     expect(list.map((s) => s.key)).toEqual(keys);
@@ -79,6 +108,11 @@ describe("keep or drop", () => {
     expect(ding?.moment).toBe(MEME_FAMILIES.ding);
     expect(ding?.level).toBe(memeLevel("ding-2"));
     expect(list.find((s) => s.key === "ding-1")?.choice).toBeNull();
+    expect(list.find((s) => s.key === "bruh-1")?.note).toBe(
+      MEME_SOURCE_NOTES["bruh-1"],
+    );
+    expect(ding?.note).toBeNull();
+    expect(ding?.fixed).toBeNull();
   });
 
   test("a file path is only ever a table key's own file", () => {
@@ -127,6 +161,8 @@ describe("the page's routes", () => {
         });
       expect((await post({ key: "sting-2", choice: "keep" })).status).toBe(200);
       expect((await post({ key: "nope-1", choice: "keep" })).status).toBe(409);
+      // A missing choice is refused, not read as a clear.
+      expect((await post({ key: "sting-2" })).status).toBe(409);
       const list = (await (await fetch(`${base}/api/daily/sounds`)).json()) as {
         key: string;
         choice: string | null;

@@ -779,7 +779,9 @@ export const createDaily = ({
     /** {key, choice: "keep" | "drop" | null} - null is "not heard yet". */
     "POST /api/daily/sounds": async (req, res) => {
       const body = await readJson(req);
-      soundPicks.set(body.key, body.choice ?? null);
+      // An explicit null clears; a missing field is a mistake, not a clear.
+      if (!("choice" in body)) throw new StepRefused("a choice is needed");
+      soundPicks.set(body.key, body.choice);
       json(res, 200, soundList(soundPicks.read()));
     },
 

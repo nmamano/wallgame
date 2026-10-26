@@ -96,6 +96,28 @@ export const MEME_FAMILIES = {
   ooh: "a close call",
 };
 
+/**
+ * What a listener should weigh besides the sound: the clips that
+ * meme-sounds.md rates as a high claim risk, and the WEAKER rows, whose page
+ * does not say how the sound was made. The listening page and `crew.mjs
+ * sounds` show these.
+ * @type {Record<string, string>}
+ */
+export const MEME_SOURCE_NOTES = {
+  "win-2": "high claim risk: a Rockstar Games music sting",
+  "shotgun-1": "high claim risk: names Fortnite (Epic Games)",
+  "shotgun-4": "high claim risk: probably the Fortnite blast",
+  "laugh-1": "high claim risk: a clip of The Simpsons",
+  "boom-2": "weaker source: the page does not say how it was made",
+  "bruh-1": "weaker source: may copy the famous bruh clip",
+  "bruh-2": "weaker source: the page does not say how it was made",
+  "scratch-3": "weaker source: built from sounds the page does not name",
+  "airhorn-1": "weaker source: the page does not say how it was made",
+  "airhorn-2": "weaker source: the page does not say how it was made",
+  "ooh-2": "weaker source: the page does not say how it was made",
+  "ooh-3": "weaker source: the page does not say how it was made",
+};
+
 /** "boom-2" -> "boom". @type {(key: string) => string} */
 export const memeFamily = (key) => key.replace(/-\d+$/, "");
 
