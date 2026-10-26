@@ -77,6 +77,9 @@ export const edlSummary = (edl) => [
   ...(edl.coldOpenPly != null
     ? [`cold open: the position after ply ${edl.coldOpenPly}`]
     : []),
+  ...(edl.payoff
+    ? [`from ply ${edl.payoff.ply}: video caption "${edl.payoff.text}"`]
+    : []),
   ...(edl.pace ?? []).map(
     (p) => `plies ${p.fromPly}-${p.toPly}: ${p.secondsPerMove} s per move`,
   ),

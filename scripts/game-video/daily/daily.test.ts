@@ -417,12 +417,13 @@ describe("the director checks the contact sheet before the ask", () => {
   });
 });
 
-test("the edit list summary names the start, the cold open and a race flash", () => {
+test("the edit list summary names the start, the cold open, the payoff and a race flash", () => {
   expect(
     edlSummary({
       ending: "gg",
       music: "skippy",
-      caption: "",
+      caption: "Red is 2 steps from winning",
+      payoff: { ply: 22, text: "one wall later: 12" },
       vsSound: "shotgun-2",
       finishSound: "shotgun-2",
       startPly: 6,
@@ -431,10 +432,11 @@ test("the edit list summary names the start, the cold open and a race flash", ()
       events: [{ ply: 22, kind: "race", sound: null }],
     }),
   ).toEqual([
-    "ending gg, music skippy, no video caption",
+    'ending gg, music skippy, video caption "Red is 2 steps from winning"',
     "VS sound shotgun-2, finish sound shotgun-2",
     "starts at ply 6",
     "cold open: the position after ply 22",
+    'from ply 22: video caption "one wall later: 12"',
     "ply 22: race counter flash",
   ]);
 });

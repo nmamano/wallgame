@@ -58,6 +58,16 @@ already has a cycle, finish it or stop: do not start another. `pick
   Blue, not names. The renderer shows an AI in red and a human in blue; in a
   human vs human game, seat 1 is red and seat 2 is blue. `facts` gives each
   seat's colour.
+- `payoff` (`{"ply": N, "text": "..."}`) is a second caption beat: from the
+  move of ply N on, its text replaces the caption. Use it in most videos:
+  whenever the game has one key wall (the save, or the largest jump in
+  `facts`). Put N on that wall's ply. The caption sets up the stakes, and
+  the payoff says what the wall did. Use a number from the race counter
+  when it helps, for example "Red is 3 steps from winning", then "now it's
+  11". With no single key wall, keep one caption. Same limits as the
+  caption, Red and Blue, not names. Keep each beat to one line: a two-line
+  beat makes the board smaller for the whole video (measured 2026-10-26:
+  720 px against 785 px).
 - `ending`: use the default from `status` unless the game needs another one.
 - `music`: always name a track, and vary it. Do not use the last track,
   which `status` shows (posted, or waiting for an answer on another day).
@@ -104,9 +114,10 @@ Rules:
 - `brilliant` and `blunder` judge a move. Use them only when the storyboard
   shows it: a save that walks the cat from 2 to 12 is brilliant; a wall that
   costs 4 squares is not.
-- A `stamp` or a `trap` text lands on the middle of the board. If the pawns
-  of the moment stand in the middle rows, the text hides them: use `react`
-  or the caption instead.
+- A `stamp` or a `trap` word lands 0.3 s after the move, in the band of the
+  board (top, middle or bottom) where it hides the least of the move, and a
+  long word shrinks to fit. Still check its still: if it hides a pawn of the
+  moment, use `react` or the caption instead.
 - The race counter (each side's steps, over the board) is on for the whole
   video. `race` flashes it: use it on the ply where a number changes a lot
   (for example 2 to 12). If it changes by 1 or 2, leave it out.
