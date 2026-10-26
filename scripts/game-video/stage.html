@@ -484,7 +484,13 @@
         top: 50%;
         font-size: calc(var(--board) * 0.14);
       }
-      #replayBadge {
+      /*
+        The fast-forward tag (edl.mjs fastForward, audit item 5): the replay
+        badge's pill in the other top corner, small, so a quiet stretch reads
+        as sped up and not as the game's real pace.
+      */
+      #replayBadge,
+      #ffBadge {
         position: absolute;
         left: 4%;
         top: 4%;
@@ -498,6 +504,11 @@
         font-size: calc(var(--board) * 0.04);
         font-weight: 800;
         letter-spacing: 0.18em;
+      }
+      #ffBadge {
+        left: auto;
+        right: 4%;
+        color: #e2e8f0;
       }
       #replayBadge .dot {
         width: 0.7em;
@@ -826,6 +837,7 @@
             <div></div>
           </div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
+          <div id="ffBadge" class="hidden"></div>
           <div id="replayBadge" class="hidden">
             <div class="dot"></div>
             REPLAY
@@ -1718,6 +1730,9 @@
           paintTrap(s.trap);
           paintHud(s.race, goalNow);
           paintFreeze(s.freeze);
+          show($("ffBadge"), !!s.fastForward);
+          if (s.fastForward)
+            $("ffBadge").textContent = "▶\uFE0E▶\uFE0E " + s.fastForward;
           // The loop tail: a white flash fading into the first frame.
           if (s.rewind) {
             show($("flash"), true);

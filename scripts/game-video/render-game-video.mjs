@@ -82,6 +82,7 @@ import {
   validateEdl,
   checkEdlAgainstGame,
   DEFAULT_SECONDS_PER_MOVE,
+  fastForwardTag,
   dailySeatColors,
   DEFAULT_SLOT_SOUNDS,
   FRAME as DAILY_FRAME,
@@ -2134,6 +2135,21 @@ const renderStyle = async (styleName) => {
           ?.secondsPerMove) ||
         pace) * FPS,
     ) / FPS;
+  /**
+   * The speed tag over the position a move of a fastForward range (edl.mjs)
+   * led to, or null.
+   */
+  const fastForwardAt = (boardIndex) => {
+    const r =
+      wallz &&
+      EDL.pace.find(
+        (p) =>
+          p.fastForward &&
+          p.fromPly <= boardIndex - 1 &&
+          boardIndex - 1 <= p.toPly,
+      );
+    return r ? fastForwardTag(r.secondsPerMove) : null;
+  };
   const layout = wallz ? WALLZ_LAYOUT : LAYOUT;
   const sounds = soundsFor(styleName);
   const out = outFor(styleName);
@@ -2379,6 +2395,7 @@ const renderStyle = async (styleName) => {
     bottom: side(seats.bottom),
     race: raceHud(boardIndex),
     goal: wallz ? GOAL_LINE : null,
+    fastForward: fastForwardAt(boardIndex),
     ...extra,
   });
 
@@ -2635,8 +2652,14 @@ const renderStyle = async (styleName) => {
       }
       const t = i / FPS;
       const scale = 1 + (z.scale - 1) * easeOut(Math.min(1, t / FREEZE_PUSH));
+      // The position before the move can close a fastForward range; the
+      // freeze is a slow moment all the same, so it shows no speed tag.
       await emit(
-        playState(ply - 1, { zoom: { ...z, scale }, freeze: { t } }),
+        playState(ply - 1, {
+          zoom: { ...z, scale },
+          freeze: { t },
+          fastForward: null,
+        }),
         1 / FPS,
         { kind: "freeze", ply: plyIndex },
       );

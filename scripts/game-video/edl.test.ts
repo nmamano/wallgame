@@ -6,6 +6,7 @@ import {
   DEFAULT_SLOT_SOUNDS,
   DEFAULT_TRAP_TEXT,
   DEFAULT_ZOOM_SCALE,
+  fastForwardTag,
   FRAME,
   SAFE_AREA,
   validateEdl,
@@ -250,6 +251,52 @@ describe("the payoff caption beat", () => {
       );
     expect(at(2)).toEqual([]);
     expect(at(3)).toHaveLength(1);
+  });
+});
+
+describe("fastForward pace ranges", () => {
+  const ff = { fromPly: 1, toPly: 3, secondsPerMove: 0.2, fastForward: true };
+  test("run at 0.2-0.3 s a move, tagged by how much faster they are", () => {
+    expect(accept({ ...base, pace: [ff] }).pace).toEqual([ff]);
+    const plain = { fromPly: 0, toPly: 1, secondsPerMove: 1 };
+    expect(accept({ ...base, pace: [plain] }).pace).toEqual([
+      { ...plain, fastForward: false },
+    ]);
+    const refused = (raw: object) => validateEdl({ ...base, ...raw }).ok;
+    expect(refused({ pace: [{ ...ff, secondsPerMove: 0.4 }] })).toBe(false);
+    expect(refused({ pace: [{ ...ff, fastForward: "yes" }] })).toBe(false);
+    expect(fastForwardTag(0.2)).toBe("x4");
+    expect(fastForwardTag(0.3)).toBe("x3");
+  });
+
+  test("hold no moment and no cold open, and end before the last move", () => {
+    const refused = (raw: object) => validateEdl({ ...base, ...raw }).ok;
+    expect(
+      refused({
+        pace: [ff],
+        events: [{ ply: 2, kind: "stamp", text: "NOPE" }],
+      }),
+    ).toBe(false);
+    expect(refused({ pace: [ff], coldOpenPly: 3 })).toBe(false);
+    expect(
+      refused({ pace: [ff], events: [{ ply: 4, kind: "stamp", text: "OK" }] }),
+    ).toBe(true);
+    const game = {
+      notations: ["Ce7", "Cf7", "Ce6", "Cf6", "^a4.^h4"],
+      cols: 8,
+      rows: 8,
+    };
+    expect(checkEdlAgainstGame(accept({ ...base, pace: [ff] }), game)).toEqual(
+      [],
+    );
+    expect(
+      checkEdlAgainstGame(
+        accept({ ...base, pace: [{ ...ff, toPly: 4 }] }),
+        game,
+      ),
+    ).toEqual([
+      "pace[0] fast-forwards to ply 4; a fastForward range ends before the last move (4)",
+    ]);
   });
 });
 

@@ -57,6 +57,11 @@
  *            ending's impact. Absent means DEFAULT_SLOT_SOUNDS.
  *   pace     optional: seconds per move over a range of plies (inclusive);
  *            the plies outside every range use DEFAULT_SECONDS_PER_MOVE.
+ *            A range with "fastForward": true (audit item 5) runs a quiet
+ *            stretch at 0.2-0.3 s per move with a small speed tag
+ *            (fastForwardTag); it holds no events, the cold open is not in
+ *            it, and it ends before the last move (the ending plays at
+ *            normal speed).
  *   events   optional; the events of one ply play in list order, after the
  *            move lands. `sound` is optional on every kind but "sound" and
  *            lands as its event starts.
@@ -192,6 +197,12 @@ export const REACTIONS = {
 
 /** Seconds per move where the EDL sets no pace. Proposed 2026-10-26. */
 export const DEFAULT_SECONDS_PER_MOVE = 0.8;
+/**
+ * The speed tag of a fastForward range: how many times faster than the
+ * default pace it runs, "x4" at 0.2 s per move.
+ */
+export const fastForwardTag = (secondsPerMove) =>
+  `x${Math.round(DEFAULT_SECONDS_PER_MOVE / secondsPerMove)}`;
 /** The zoom's most scale and its hold, where the EDL sets none. */
 export const DEFAULT_ZOOM_SCALE = 1.5;
 export const DEFAULT_ZOOM_HOLD_SECONDS = 0.73;
@@ -204,6 +215,7 @@ export const EDL_LIMITS = {
   captionChars: 32,
   stampChars: 12,
   secondsPerMove: [0.2, 3],
+  fastForwardSecondsPerMove: [0.2, 0.3],
   zoomScale: [1.1, 3],
   zoomHoldSeconds: [0.2, 3],
   frameTerms: 6,
@@ -348,13 +360,28 @@ export const validateEdl = (raw) => {
       const where = `pace[${i}]`;
       if (!seg || typeof seg !== "object")
         return fail(`${where}: not an object`);
-      unknown(seg, ["fromPly", "toPly", "secondsPerMove"], where);
+      unknown(
+        seg,
+        ["fromPly", "toPly", "secondsPerMove", "fastForward"],
+        where,
+      );
       if (!isPly(seg.fromPly) || !isPly(seg.toPly) || seg.toPly < seg.fromPly) {
         fail(`${where}: fromPly and toPly must be plies with fromPly <= toPly`);
       }
       if (!isNumberIn(seg.secondsPerMove, EDL_LIMITS.secondsPerMove)) {
         fail(
           `${where}: secondsPerMove must be ${EDL_LIMITS.secondsPerMove.join("..")}`,
+        );
+      }
+      const ff = seg.fastForward ?? false;
+      if (typeof ff !== "boolean") {
+        fail(`${where}: fastForward must be true or false`);
+      } else if (
+        ff &&
+        !isNumberIn(seg.secondsPerMove, EDL_LIMITS.fastForwardSecondsPerMove)
+      ) {
+        fail(
+          `${where}: a fastForward range runs at ${EDL_LIMITS.fastForwardSecondsPerMove.join("..")} secondsPerMove`,
         );
       }
     });
@@ -468,6 +495,24 @@ export const validateEdl = (raw) => {
     });
   }
 
+  // A fast-forward stretch is quiet: no moment, and no cold open, in it.
+  const fastRanges = Array.isArray(pace)
+    ? pace.filter((s) => s?.fastForward === true)
+    : [];
+  const fastRangeOf = (ply) =>
+    fastRanges.find((r) => r.fromPly <= ply && ply <= r.toPly);
+  filled.forEach((e, i) => {
+    const r = fastRangeOf(e.ply);
+    if (r) {
+      fail(
+        `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments`,
+      );
+    }
+  });
+  if (coldOpenPly !== null && fastRangeOf(coldOpenPly)) {
+    fail(`coldOpenPly ${coldOpenPly} is inside a fastForward range`);
+  }
+
   // One freeze per move.
   const freezes = filled.filter((e) => e.kind === "freeze").map((e) => e.ply);
   if (new Set(freezes).size !== freezes.length) {
@@ -487,7 +532,7 @@ export const validateEdl = (raw) => {
       startPly,
       coldOpenPly,
       ...slots,
-      pace,
+      pace: pace.map((s) => ({ ...s, fastForward: s.fastForward ?? false })),
       events: filled,
     },
   };
@@ -528,6 +573,14 @@ export const checkEdlAgainstGame = (edl, { notations, cols, rows }) => {
     if (e.ply < edl.startPly) {
       errors.push(
         `events[${i}] is on ply ${e.ply}, before startPly ${edl.startPly}`,
+      );
+    }
+  });
+  // The ending plays at normal speed.
+  edl.pace.forEach((s, i) => {
+    if (s.fastForward && s.toPly >= notations.length - 1) {
+      errors.push(
+        `pace[${i}] fast-forwards to ply ${s.toPly}; a fastForward range ends before the last move (${notations.length - 1})`,
       );
     }
   });
