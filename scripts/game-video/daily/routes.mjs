@@ -171,6 +171,9 @@ export const RENDER_4090 = resolve(HERE, "render-4090.mjs");
  */
 const DEFAULT_RENDER_DEADLINE_MS = 15 * 60 * 1000;
 
+/** How long the capture question may take: two ssh calls of 20 s at most. */
+const CAPTURE_PROBE_MS = 60 * 1000;
+
 /** Time the adapter gets to stop the remote render before it is killed. */
 const KILL_GRACE_MS = 30 * 1000;
 
@@ -294,6 +297,14 @@ export const createDaily = ({
   /** jobId -> latest progress line, for the dashboard. */
   const progress = new Map();
 
+  // Only what the render step needs. Once the posting keys exist they are
+  // in the app's env, and the render path has no use for them.
+  const renderEnv = Object.fromEntries(
+    ["PATH", "HOME", "USER", "SSH_AUTH_SOCK", "WALLGAME_GPU_HOST"]
+      .filter((k) => env[k] !== undefined)
+      .map((k) => [k, env[k]]),
+  );
+
   /**
    * Run the 4090 adapter (render-4090.mjs) for one job of the queue, the
    * app's only child, so a stopping app can stop it. Resolves {result}, the
@@ -307,13 +318,6 @@ export const createDaily = ({
         done(outcome);
       };
 
-      // Only what the render step needs. Once the posting keys exist they are
-      // in the app's env, and the render path has no use for them.
-      const renderEnv = Object.fromEntries(
-        ["PATH", "HOME", "USER", "SSH_AUTH_SOCK", "WALLGAME_GPU_HOST"]
-          .filter((k) => env[k] !== undefined)
-          .map((k) => [k, env[k]]),
-      );
       const child = spawn(process.execPath, [renderer, ...args], {
         env: renderEnv,
         detached: true,
@@ -551,6 +555,37 @@ export const createDaily = ({
       });
     }
   };
+
+  /**
+   * Null when the 4090 has the game's capture, else why not: the adapter's
+   * --has-capture, one ssh line, so a preview without a capture is refused
+   * before it is queued.
+   */
+  const missingCapture = (gameId) =>
+    new Promise((done) => {
+      const child = spawn(
+        process.execPath,
+        [renderer, "--has-capture", gameId],
+        { env: renderEnv },
+      );
+      let stdout = "";
+      let stderr = "";
+      const timer = setTimeout(() => child.kill("SIGKILL"), CAPTURE_PROBE_MS);
+      child.stdout.on("data", (c) => (stdout += c));
+      child.stderr.on("data", (c) => (stderr += c));
+      child.on("error", (err) => {
+        clearTimeout(timer);
+        done(`could not ask the 4090 for the capture: ${err.message}`);
+      });
+      child.on("close", (code) => {
+        clearTimeout(timer);
+        if (code === 0 && stdout.trim() === "cached") return done(null);
+        done(
+          stderr.trim().split("\n").slice(-3).join("\n") ||
+            `could not ask the 4090 for the capture (exit ${code})`,
+        );
+      });
+    });
 
   /** Forget the oldest finished previews over PREVIEWS_KEPT, with their MP4s. */
   const prunePreviews = () => {
@@ -1084,6 +1119,8 @@ export const createDaily = ({
           `the preview ends at ply ${span.to}, after the game's last ply ${lastPly}`,
         );
       }
+      const missing = await missingCapture(edl.gameId);
+      if (missing) throw new StepRefused(missing);
       const jobId = `${day}-${cycle.candidate.gameId}-p${Date.now().toString(36)}`;
       previews.set(jobId, {
         day,

@@ -2475,19 +2475,23 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(state?.cycle.render?.error).toMatch(/music elevator-jazz/);
 }, 20_000);
 
-/** A stand-in for render-4090.mjs --plies: a preview, or no capture. */
+/** A stand-in for render-4090.mjs --has-capture and --plies. */
 const STUB_PREVIEW = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
+if (process.argv.includes("--has-capture")) {
+  if (existsSync(__dirname + "/no-capture")) {
+    console.error("the 4090 has no capture of game " + at("has-capture") + " yet");
+    process.exit(1);
+  }
+  console.log("cached");
+  process.exit(0);
+}
 const edl = JSON.parse(readFileSync(at("edl"), "utf8"));
 writeFileSync(__dirname + "/last-plies", at("plies") + " " + edl.events.length);
-if (existsSync(__dirname + "/no-capture")) {
-  console.error("the 4090 has no capture of game " + edl.gameId + " yet");
-  process.exit(1);
-}
 execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
   "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
   "-c:v", "mpeg4", at("out")]);
@@ -2582,11 +2586,15 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
     409,
   );
 
-  // The adapter refuses a game with no capture on the 4090.
+  // A game with no capture on the 4090 is refused before a job exists.
   writeFileSync(join(dir, "no-capture"), "");
-  const refused = await finished({ day, plies: "20..23" });
-  expect(refused.state).toBe("failed");
-  expect(refused.error).toContain("has no capture of game TESTGAME1");
+  const refused = await call("/api/daily/preview", { day, plies: "20..23" });
+  expect(refused.status).toBe(409);
+  expect(refused.body.error).toContain("has no capture of game TESTGAME1");
+  expect(
+    (await call<{ renders: unknown[] }>("/api/daily/busy")).body.renders,
+  ).toEqual([]);
+  expect(existsSync(join(dir, "last-plies"))).toBe(false);
   unlinkSync(join(dir, "no-capture"));
 
   const before = (await call(`/api/daily/state?day=${day}`)).body;

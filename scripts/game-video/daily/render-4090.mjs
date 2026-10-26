@@ -52,6 +52,13 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --edl <edl.json> --job-id <id> --out <out.mp4> --plies FROM..TO
  *
+ * The app asks first, so a preview of a game with no capture is refused
+ * before it is queued. This prints "cached" and exits 0 only when the 4090
+ * has the game's capture:
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --has-capture <gameId>
+ *
  * WALLGAME_GPU_HOST is an env var only because the repo is public; the value
  * is in ops-private/wallgamer-agent-notes.md (the same variable the step-1
  * candidate script reads). The app gets it on its registered command line.
@@ -147,15 +154,38 @@ const fail = (message) => {
 const tail = (text) => text.trim().split("\n").slice(-10).join("\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
+/**
+ * Fail unless the 4090 has the game's capture; `ssh` runs one command there.
+ * One short line comes back.
+ */
+const requireCapture = async (ssh, cache, gameId) => {
+  if (!GAME_ID.test(String(gameId))) fail(`not a game id: ${gameId}`);
+  const probe = await ssh(
+    `if test -f ${cache}/${gameId}/capture.json; then echo cached; else echo none; fi`,
+  );
+  const answer = probe.stdout.trim();
+  if (answer === "none") {
+    fail(
+      `the 4090 has no capture of game ${gameId} yet: a preview reads the capture that the game's full render saves, so render the day's video first`,
+    );
+  }
+  if (answer !== "cached") {
+    fail(
+      `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
+    );
+  }
+};
+
 const main = async () => {
   const edlPath = arg("edl");
   const jobId = arg("job-id");
   const out = arg("out");
   const plies = arg("plies");
+  const hasCapture = arg("has-capture");
   const host = process.env.WALLGAME_GPU_HOST;
-  if (!edlPath || !jobId || !out) {
+  if (hasCapture === undefined && (!edlPath || !jobId || !out)) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4>",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--plies FROM..TO], or --has-capture <gameId>",
     );
   }
   if (!host) {
@@ -163,38 +193,39 @@ const main = async () => {
       "WALLGAME_GPU_HOST is not set (see ops-private/wallgamer-agent-notes.md)",
     );
   }
-  if (!existsSync(DESKTOP_RUN)) fail(`${DESKTOP_RUN} is missing`);
+  const ssh = (command) => run("ssh", [...SSH_OPTIONS, host, command]);
+  const readHome = async () => {
+    const path = (await ssh('printf %s "$HOME"')).stdout.trim();
+    if (!path.startsWith("/")) fail("could not read the 4090's home folder");
+    return path;
+  };
 
+  if (hasCapture !== undefined) {
+    await requireCapture(
+      ssh,
+      `${await readHome()}/${CAPTURE_CACHE}`,
+      hasCapture,
+    );
+    console.log("cached");
+    return;
+  }
+
+  if (!existsSync(DESKTOP_RUN)) fail(`${DESKTOP_RUN} is missing`);
   if (!JOB_ID.test(jobId)) fail(`not a job id: ${jobId}`);
   const span = plies === undefined ? null : PLIES.exec(plies);
   if (plies !== undefined && !span)
     fail(`--plies must be FROM..TO, got ${plies}`);
-  const ssh = (command) => run("ssh", [...SSH_OPTIONS, host, command]);
 
-  const home = (await ssh('printf %s "$HOME"')).stdout.trim();
-  if (!home.startsWith("/")) fail("could not read the 4090's home folder");
+  const home = await readHome();
   const dir = `${home}/${REMOTE_JOBS}/${jobId}`;
   const cache = `${home}/${CAPTURE_CACHE}`;
 
-  // A preview needs the game's capture; without it the renderer would fail
-  // after desktop-run started it. One short line comes back.
+  // The app asked already (--has-capture), but this adapter also runs by
+  // hand, and without the capture the renderer would fail after desktop-run
+  // started it.
   if (span) {
     const gameId = JSON.parse(readFileSync(edlPath, "utf8")).gameId;
-    if (!GAME_ID.test(String(gameId))) fail(`not a game id: ${gameId}`);
-    const probe = await ssh(
-      `if test -f ${cache}/${gameId}/capture.json; then echo cached; else echo none; fi`,
-    );
-    const answer = probe.stdout.trim();
-    if (answer === "none") {
-      fail(
-        `the 4090 has no capture of game ${gameId} yet: a preview reads the capture that the game's full render saves, so render the day's video first`,
-      );
-    }
-    if (answer !== "cached") {
-      fail(
-        `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
-      );
-    }
+    await requireCapture(ssh, cache, gameId);
   }
 
   console.log("[render] sending the job to the 4090");
