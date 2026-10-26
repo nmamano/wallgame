@@ -1,45 +1,35 @@
 /**
- * From one entry of the step-1 candidate report to the day's candidate and
- * its captions.
+ * From one entry of the step-1 candidate report to the day's candidate, and
+ * the checks on the text that the video and its posts show.
  *
  * The report is the JSON that scripts/game-video/pick-daily-candidates.ts
  * writes (kind "daily-video-candidates"). This file reads that JSON only, so
  * the pipeline does not depend on how the report is made.
  *
- * THE CREW LEAD WRITES THE CAPTION (Nil, 2026-10-26: "something silly and
- * probably llm generated. like 'lmao he thought he'd sneak through'"). The crew
- * lead is an agent: it reads the candidate's facts (crew.mjs facts), writes two
- * or three captions, and passes the one it picks to crew.mjs pick. There is no
- * template and no separate model call here. Nil approves each post for the
- * first two weeks.
+ * THE DIRECTOR WRITES THE ON-VIDEO CAPTION in its edit list, from the
+ * candidate's facts (crew.mjs facts). Wall Game Growth writes the post text
+ * (copy.mjs). Nil approves each post for the first two weeks.
  *
  * NO GAME ID IN ANYTHING POSTED (Nil, 2026-10-26: "that's noise").
- * captionProblems refuses a caption that holds it.
+ * textProblems refuses a text that holds it.
  *
  * PLAYER NAMES ARE UNTRUSTED TEXT that would go out under the Wall Game
  * account. Step 1 admits only guests (random animal names), Nil and official
- * bots, but a caption is still refused when a name holds anything beyond
+ * bots, but a candidate is still refused when a name holds anything beyond
  * letters, digits, spaces and . ' - _ , so a change upstream cannot put a link
  * or a mention in a post.
  */
 import { ENDINGS, fastForwardTag } from "../edl.mjs";
 
-/** Where the YouTube description sends people (measurement plan, 2026-10-25). */
-export const YOUTUBE_LINK =
-  "https://wallgame.io/?utm_source=youtube&utm_medium=social&utm_campaign=daily-video";
-
 /**
- * The caption and title style that DIRECTOR.md's "Captions and titles"
- * section teaches. Each cycle keeps the version its caption was written
- * under, and every post-log row carries it, so Wall Game Growth can compare
- * the posts before and after a change (Wall Game PM, 2026-10-26). Bump it
- * whenever those rules change, and name the new value in DIRECTOR.md.
+ * The on-video caption style that DIRECTOR.md's "On-video caption" section
+ * teaches. Each cycle keeps the version at pick time, and every post-log row
+ * carries it, so Wall Game Growth can compare the posts before and after a
+ * change (Wall Game PM, 2026-10-26). Bump it whenever those rules change, and
+ * name the new value in DIRECTOR.md. The post text has its own version, from
+ * Growth (copy.mjs).
  */
 export const CAPTION_STYLE_VERSION = "wallz-lingo-1";
-
-/** X counts every character as one here; the limit for a free account. */
-export const X_MAX_CHARS = 280;
-export const YOUTUBE_TITLE_MAX_CHARS = 100;
 
 /**
  * The renderer's daily look (Wall Game Worker 2, 2026-10-26): the WallzGame
@@ -433,41 +423,6 @@ export const candidateFromReport = (report, rank = 1) => {
 };
 
 /**
- * The three posted texts, from the one caption the crew lead wrote. X gets the
- * caption alone (no link: a link raises the price); YouTube gets it as the
- * title, unless the crew lead wrote a separate one, and in the description
- * above the tracked link.
- *
- * A title too long for YouTube loses the end of its teaser, never its
- * hashtags (the ones at the end) or #Shorts. When the hashtags alone do not
- * fit, the title stays too long and captionProblems refuses it.
- */
-export const captionFrom = (text, title) => {
-  const caption = String(text ?? "").trim();
-  const head = String(title ?? caption).trim();
-  const [, teaser, tagText] = head.match(/^(.*?)((?:\s+#[\p{L}\p{N}_]+)*)$/su);
-  const tags = tagText
-    .split(/\s+/)
-    .filter((t) => t && t.toLowerCase() !== "#shorts");
-  const tail = [...tags, "#Shorts"].join(" ");
-  const room = YOUTUBE_TITLE_MAX_CHARS - [...tail].length - 1;
-  const chars = [...teaser];
-  // Cut at the last word that fits, or mid-word when one word is too long.
-  const keep = Math.max(room - 1, 0);
-  const kept = chars.slice(0, keep).join("");
-  const atWord = /\s/.test(chars[keep] ?? "")
-    ? kept
-    : kept.slice(0, Math.max(0, kept.search(/\s\S*$/)));
-  const cut =
-    chars.length > room ? (atWord || kept).trimEnd() + "\u2026" : teaser;
-  return {
-    x: caption,
-    youtubeTitle: `${cut} ${tail}`.trim(),
-    youtubeDescription: `${caption}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
-  };
-};
-
-/**
  * The names of the people who played: every seat but an official bot. A
  * post calls a player "bro", never by name (Nil, 2026-10-26, through Wall
  * Game PM); the bot is ours, and its name can be roasted.
@@ -478,8 +433,8 @@ export const playerNames = (candidate) =>
   candidate.seats.filter((s) => s.kind !== "official bot").map((s) => s.name);
 
 /**
- * Reasons any published text cannot go out: the posted caption, and the
- * caption, payoff and stamps burned into the video. `texts` maps a name to
+ * Reasons any published text cannot go out: Growth's copy block (copy.mjs),
+ * and the caption, payoff and stamps burned into the video. `texts` maps a name to
  * its text; `players` are playerNames of the game.
  */
 export const textProblems = (texts, gameId, players = []) => {
@@ -516,39 +471,6 @@ export const textProblems = (texts, gameId, players = []) => {
     if (/[<>]/.test(String(text))) {
       problems.push(`${field} must not hold < or >`);
     }
-  }
-  return problems;
-};
-
-/** Reasons a caption cannot go out, or an empty list. */
-export const captionProblems = (caption, gameId, players = []) => {
-  const problems = textProblems(caption, gameId, players);
-  if (/\n/.test(caption?.youtubeTitle ?? "")) {
-    problems.push("youtubeTitle must be one line");
-  }
-  if (!caption?.x) problems.push("no X text");
-  if (caption?.x && [...caption.x].length > X_MAX_CHARS) {
-    problems.push(`X text is over ${X_MAX_CHARS} characters`);
-  }
-  // A URL in the text makes an X post cost $0.20 instead of $0.015 (task
-  // e8d26610, Nil's decision of 2026-10-25), and X also reads bare domains.
-  if (
-    caption?.x &&
-    /https?:\/\/|www\.|\.(io|com|gg|net|org)\b/i.test(caption.x)
-  ) {
-    problems.push("X text must not hold a link");
-  }
-  if (!caption?.youtubeTitle) problems.push("no YouTube title");
-  if (
-    caption?.youtubeTitle &&
-    [...caption.youtubeTitle].length > YOUTUBE_TITLE_MAX_CHARS
-  ) {
-    problems.push(
-      `YouTube title is over ${YOUTUBE_TITLE_MAX_CHARS} characters`,
-    );
-  }
-  if (!caption?.youtubeDescription?.includes(YOUTUBE_LINK)) {
-    problems.push("YouTube description must hold the tracked wallgame.io link");
   }
   return problems;
 };

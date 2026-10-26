@@ -16,8 +16,6 @@ import { join, resolve } from "node:path";
 import { openStore, readPostLog } from "./store.mjs";
 import {
   candidateFromReport,
-  captionProblems,
-  captionFrom,
   nextEnding,
   edlSummary,
   saveFrameProblems,
@@ -25,8 +23,15 @@ import {
   playerNames,
   CAPTION_STYLE_VERSION,
   textProblems,
-  YOUTUBE_LINK,
 } from "./candidate.mjs";
+import {
+  copyLines,
+  copyProblems,
+  copySha256,
+  parseCopy,
+  postTexts,
+  YOUTUBE_LINK,
+} from "./copy.mjs";
 import type {
   DescribedCloseCall,
   DescribedEscape,
@@ -52,7 +57,7 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import { askText } from "./crew.mjs";
+import { approvedPackage, askText } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import {
@@ -141,7 +146,17 @@ const ESCAPE: DescribedEscape = {
     "Ruby's cat is 1 square from Guest Tuatara's mouse. The mouse runs to f4 and places a wall, and the cat must walk 4 (move 15).",
 };
 
-const CAPTION = "lmao Ruby thought it could just walk home";
+/** Wall Game Growth's copy block for TESTGAME1 (copy.mjs). */
+const BLOCK = [
+  "X: bro thought he could just walk home 😭🙏 #wallgame",
+  "YouTube title: bro thought he was safe... #wallgame #gaming #boardgames",
+  `YouTube description: bro thought he could just walk home 😭🙏 Play Wall Game: ${YOUTUBE_LINK}`,
+  "TikTok: bro thought he could just walk home 😭🙏 #wallgame #gaming #boardgames",
+  "Instagram: bro thought he could just walk home 😭🙏 #wallgame #gaming #boardgames",
+].join("\n");
+const COPY_VERSION = "growth-copy-1";
+const COPY = { ...parseCopy(BLOCK).copy!, version: COPY_VERSION };
+const COPY_SHA = copySha256(COPY);
 
 const REPORT = {
   kind: "daily-video-candidates",
@@ -174,7 +189,8 @@ interface Cycle {
   day: string;
   state: string;
   candidate: { gameId: string };
-  caption: { x: string };
+  copy: Record<string, string> | null;
+  approval: { copy: Record<string, string> | null } | null;
   render: {
     error: string | null;
     effect: string | null;
@@ -194,7 +210,9 @@ interface DailyState {
 
 interface LogRow {
   platform: string;
+  caption: string;
   styleVersion: string | null;
+  copyVersion: string;
 }
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "daily-video-test-"));
@@ -207,11 +225,11 @@ const pickToday = (
   const candidate = candidateFromReport(REPORT, 1);
   store.pick(day, {
     candidate,
-    caption: captionFrom(CAPTION),
     style: "daily",
     styleVersion: CAPTION_STYLE_VERSION,
     replace,
   });
+  store.recordCopy(day, COPY);
 };
 
 const DRY = {
@@ -299,6 +317,7 @@ const approved = (
     askId: "ask1",
     modes: DRY,
     videoSha256: (store.read(day) as Cycle).render?.video?.sha256,
+    copySha256: COPY_SHA,
     currentModes: DRY,
   });
   store.recordAnswer(day, {
@@ -318,6 +337,7 @@ describe("an ask opened again for the right member", () => {
       askId: "old",
       modes: DRY,
       videoSha256: "aa",
+      copySha256: COPY_SHA,
       currentModes: DRY,
     });
     return store;
@@ -330,6 +350,7 @@ describe("an ask opened again for the right member", () => {
       askId: "new",
       modes: DRY,
       videoSha256: "aa",
+      copySha256: COPY_SHA,
       currentModes: DRY,
       replacesAskId,
     });
@@ -383,12 +404,41 @@ describe("the ask must show what the approval will cover", () => {
     return store;
   };
 
+  test("a new block replaces the old one, and the ask must show the stored one", () => {
+    const store = openStore(tempDir());
+    const candidate = candidateFromReport(REPORT, 1);
+    store.pick(day, {
+      candidate,
+      style: "daily",
+      styleVersion: CAPTION_STYLE_VERSION,
+    });
+    store.recordCopy(day, { ...COPY, x: "first draft" });
+    // A new block replaces the old one until the ask.
+    store.recordCopy(day, COPY);
+    expect((store.read(day) as Cycle).events.at(-1)?.what).toBe(
+      `copy block replaced (${COPY_VERSION})`,
+    );
+    const ask = (copySha256: string) => {
+      rendered().recordAsk(day, {
+        askId: "a",
+        modes: DRY,
+        videoSha256: "aa",
+        copySha256,
+        currentModes: DRY,
+      });
+    };
+    expect(() => {
+      ask(copySha256({ ...COPY, x: "first draft" }));
+    }).toThrow(/another copy block than the stored one/);
+  });
+
   test("an ask that showed another video is refused", () => {
     expect(() => {
       rendered().recordAsk(day, {
         askId: "a",
         modes: DRY,
         videoSha256: "bb",
+        copySha256: COPY_SHA,
         currentModes: DRY,
       });
     }).toThrow(/another video/);
@@ -400,6 +450,7 @@ describe("the ask must show what the approval will cover", () => {
         askId: "a",
         modes: DRY,
         videoSha256: "aa",
+        copySha256: COPY_SHA,
         currentModes: {
           x: "live",
           youtube: "dry-run",
@@ -426,6 +477,7 @@ describe("the director checks the contact sheet before the ask", () => {
       askId: "a",
       modes: DRY,
       videoSha256: "aa",
+      copySha256: COPY_SHA,
       currentModes: DRY,
     });
   };
@@ -699,6 +751,7 @@ describe("a post that may exist is not posted again", () => {
       askId: "a",
       modes: DRY,
       videoSha256: sha256(readFileSync(video)),
+      copySha256: COPY_SHA,
       currentModes: DRY,
     });
     store.recordAnswer(day, {
@@ -756,6 +809,7 @@ describe("an approval covers one video in one mode", () => {
       askId: "ask1",
       modes: DRY,
       videoSha256: (store.read(day) as Cycle).render?.video?.sha256,
+      copySha256: COPY_SHA,
       currentModes: DRY,
     });
     expect(() => {
@@ -774,6 +828,61 @@ describe("an approval covers one video in one mode", () => {
     expect(() =>
       store.checkPost(day, { modes: DRY, videoSha256: "bb" }),
     ).toThrow(/not the one that was approved/);
+  });
+
+  /** Change the stored cycle by hand, as a bad edit or an old record would. */
+  interface Stored {
+    copy: Record<string, string>;
+    approval: { copy?: Record<string, string> };
+  }
+  const edit = (
+    store: ReturnType<typeof openStore>,
+    change: (c: Stored) => void,
+  ) => {
+    const path = join(store.dirs.cycles, `${day}.json`);
+    const cycle = JSON.parse(readFileSync(path, "utf8")) as Stored;
+    change(cycle);
+    writeFileSync(path, JSON.stringify(cycle));
+  };
+
+  test("a copy block that is not the approved one is refused", () => {
+    const store = openStore(tempDir());
+    approved(store, day, "aa");
+    edit(store, (c) => {
+      c.copy.x = "something else";
+    });
+    expect(() =>
+      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
+    ).toThrow(/the copy block is not the one that was approved/);
+  });
+
+  test("an approval from before the copy block posts nothing", () => {
+    const store = openStore(tempDir());
+    approved(store, day, "aa");
+    edit(store, (c) => {
+      delete c.approval.copy;
+    });
+    expect(() =>
+      store.checkPost(day, { modes: DRY, videoSha256: "aa" }),
+    ).toThrow(/this approval has no copy block/);
+  });
+
+  test("the approved package names the video and the block as approved", () => {
+    const store = openStore(tempDir());
+    approved(store, day, "aa");
+    const lines = approvedPackage(store.read(day)).split("\n");
+    expect(lines.slice(0, 4)).toEqual([
+      `APPROVED PACKAGE, day ${day}`,
+      "Video: /nowhere.mp4",
+      "Video sha256: aa",
+      `Copy block as approved (${COPY_VERSION}, copy sha256 ${COPY_SHA}):`,
+    ]);
+    expect(lines.slice(4, 9).join("\n")).toBe(BLOCK);
+    expect(lines[9]).toMatch(/^Ask: ask1, approved by Nil at \d{4}-/);
+    expect(lines[10]).toBe("Nil's reply, verbatim: Approve");
+    expect(lines[11]).toMatch(
+      new RegExp(`^Post it with: node /.*/crew\\.mjs post --day ${day}$`),
+    );
   });
 
   test("keys that arrived after the ask do not turn a dry-run approval live", () => {
@@ -799,6 +908,7 @@ describe("an approval covers one video in one mode", () => {
       askId: "ask1",
       modes: DRY,
       videoSha256: (store.read(day) as Cycle).render?.video?.sha256,
+      copySha256: COPY_SHA,
       currentModes: DRY,
     });
     expect(() => {
@@ -860,14 +970,75 @@ describe("each render is one production view", () => {
   });
 });
 
-describe("captions", () => {
-  test("the crew lead's caption goes out as is on X, and above the tracked link on YouTube", () => {
-    const caption = captionFrom(CAPTION);
-    expect(captionProblems(caption, "TESTGAME1")).toEqual([]);
-    expect(caption.x).toBe(CAPTION);
-    expect(caption.youtubeTitle).toBe(`${CAPTION} #Shorts`);
-    expect(caption.youtubeDescription).toBe(
-      `${CAPTION}\n\nPlay Wall Game: ${YOUTUBE_LINK}`,
+/** COPY with one text changed. */
+const withText = (field: string, text: string) => ({ ...COPY, [field]: text });
+
+describe("Growth's copy block", () => {
+  test("the five lines are the texts that post; the app adds only #Shorts", () => {
+    const players = playerNames(candidateFromReport(REPORT, 1));
+    expect(parseCopy(BLOCK).problems).toEqual([]);
+    expect(copyProblems(COPY, "TESTGAME1", players)).toEqual([]);
+    expect(copyLines(COPY).join("\n")).toBe(BLOCK);
+    const texts = postTexts(COPY);
+    expect(texts.x).toBe(COPY.x);
+    expect(texts.youtubeTitle).toBe(`${COPY.youtubeTitle} #Shorts`);
+    expect(texts.youtubeDescription).toBe(COPY.youtubeDescription);
+    expect(texts.instagram).toBe(COPY.instagram);
+    // Blank lines and indentation (as in Growth's playbook) do not count.
+    const indented = `\n${BLOCK.split("\n")
+      .map((l) => `    ${l}`)
+      .join("\n\n")}\n`;
+    expect(parseCopy(indented).copy).toEqual(parseCopy(BLOCK).copy);
+  });
+
+  test("a block that is not exactly the five labelled lines is refused", () => {
+    const lines = BLOCK.split("\n");
+    expect(parseCopy(lines.slice(1).join("\n")).problems).toEqual([
+      'no "X:" line',
+    ]);
+    expect(parseCopy([...lines, lines[0]].join("\n")).problems).toEqual([
+      'line 6: "X" comes twice',
+    ]);
+    expect(parseCopy([...lines, "Facebook: hi"].join("\n")).problems).toEqual([
+      'line 6 does not start with one of "X:", "YouTube title:", "YouTube description:", "TikTok:", "Instagram:"',
+    ]);
+    expect(
+      parseCopy([...lines.slice(0, 4), "Instagram:  "].join("\n")).problems,
+    ).toEqual(['the "Instagram:" line is empty']);
+    expect(parseCopy(undefined).copy).toBeNull();
+  });
+
+  test("every platform limit is checked when the block comes in", () => {
+    const problems = (field: string, text: string) =>
+      copyProblems(withText(field, text), "TESTGAME1");
+    expect(problems("x", "a".repeat(281))).toEqual([
+      "X is over 280 characters",
+    ]);
+    expect(problems("youtubeTitle", "bro... #wallgame #Shorts")).toEqual([
+      "YouTube title must not hold #Shorts: the app adds it",
+    ]);
+    // 93 characters + " #Shorts" is 101.
+    expect(problems("youtubeTitle", "b".repeat(93))).toEqual([
+      'YouTube title is over 100 characters with the "#Shorts" the app adds',
+    ]);
+    expect(problems("youtubeTitle", "b".repeat(92))).toEqual([]);
+    expect(problems("youtubeDescription", "bro 😭 Play Wall Game")).toEqual([
+      `YouTube description must hold the tracked link ${YOUTUBE_LINK}`,
+    ]);
+    expect(problems("tiktok", "a".repeat(2201))).toEqual([
+      "TikTok is over 2200 characters",
+    ]);
+    expect(problems("instagram", "bro #a #b #c #d #e #f")).toEqual([
+      "Instagram has 6 hashtags; at most 5 are allowed",
+    ]);
+    expect(problems("instagram", "bro #a #b #c #d #e")).toEqual([]);
+  });
+
+  test("the copy hash covers the five texts and the version", () => {
+    expect(copySha256({ ...COPY })).toBe(COPY_SHA);
+    expect(copySha256(withText("tiktok", "other"))).not.toBe(COPY_SHA);
+    expect(copySha256({ ...COPY, version: "growth-copy-2" })).not.toBe(
+      COPY_SHA,
     );
   });
 
@@ -881,37 +1052,10 @@ describe("captions", () => {
     );
   });
 
-  test("a long title loses the end of its teaser, never its hashtags", () => {
-    const tags = "#wallgame #gaming #boardgames";
-    const teaser =
-      "bro really thought the bot would never find the one gap in his wall and then it walked right through it";
-    const { youtubeTitle } = captionFrom(CAPTION, `${teaser} ${tags}`);
-    expect(youtubeTitle).toBe(
-      `bro really thought the bot would never find the one gap in\u2026 ${tags} #Shorts`,
-    );
-    expect([...youtubeTitle].length).toBeLessThanOrEqual(100);
-    // A #Shorts that the crew lead wrote is not doubled.
-    expect(captionFrom(CAPTION, "bro... #wallgame #Shorts").youtubeTitle).toBe(
-      "bro... #wallgame #Shorts",
-    );
-    // Hashtags that cannot fit are refused, not cut.
-    const tooMany = captionFrom(
-      CAPTION,
-      `bro ${Array.from({ length: 12 }, (_, i) => `#boardgames${i}`).join(" ")}`,
-    );
-    expect(captionProblems(tooMany, "TESTGAME1")).toContain(
-      "YouTube title is over 100 characters",
-    );
-  });
-
   test("no game id in anything posted", () => {
     expect(
-      captionProblems(captionFrom("see testgame1 lol"), "TESTGAME1"),
-    ).toEqual([
-      "x must not hold the game id",
-      "youtubeTitle must not hold the game id",
-      "youtubeDescription must not hold the game id",
-    ]);
+      copyProblems(withText("tiktok", "see testgame1 lol"), "TESTGAME1"),
+    ).toEqual(["TikTok must not hold the game id"]);
   });
 
   test("the facts are the picker's own sentences, with the move number", () => {
@@ -1074,37 +1218,37 @@ describe("captions", () => {
   });
 
   test("no @mention, no < or >, in anything posted", () => {
-    const problems = captionProblems(
-      captionFrom("@ruby you ok? <3"),
-      "TESTGAME1",
-    );
-    expect(problems).toContain("x must not mention anyone (@)");
-    expect(problems).toContain("youtubeTitle must not hold < or >");
+    expect(
+      copyProblems(withText("x", "@ruby you ok? <3"), "TESTGAME1"),
+    ).toEqual(["X must not mention anyone (@)", "X must not hold < or >"]);
+    expect(
+      copyProblems(withText("youtubeTitle", "bro <3..."), "TESTGAME1"),
+    ).toEqual(["YouTube title must not hold < or >"]);
     // An address-like @ inside a word is not a mention.
-    expect(captionProblems(captionFrom("ruby@home"), "TESTGAME1")).toEqual([]);
+    expect(copyProblems(withText("x", "ruby@home"), "TESTGAME1")).toEqual([]);
   });
 
   test("a player is bro, never a name; the bot can be named; no #wallz", () => {
     const players = playerNames(candidateFromReport(REPORT, 1));
     expect(players).toEqual(["Guest Tuatara"]);
-    const problems = captionProblems(
-      captionFrom(
-        "guest tuatara walled himself in 😭🙏",
-        "ruby got humbled... #wallz",
-      ),
+    const problems = copyProblems(
+      {
+        ...withText("x", "guest tuatara walled himself in 😭🙏"),
+        youtubeTitle: "ruby got humbled... #wallz",
+      },
       "TESTGAME1",
       players,
     );
-    expect(problems).toContain(
-      "x must not name the player Guest Tuatara: say bro",
-    );
-    expect(problems).toContain("youtubeTitle must not hold #wallz");
+    expect(problems).toEqual([
+      "X must not name the player Guest Tuatara: say bro",
+      "YouTube title must not hold #wallz",
+    ]);
     expect(
-      captionProblems(
-        captionFrom(
-          "bro walled himself in 😭🙏 #wallgame",
-          "ruby did not miss... #wallgame #gaming #boardgames",
-        ),
+      copyProblems(
+        {
+          ...withText("x", "bro walled himself in 😭🙏 #wallgame"),
+          youtubeTitle: "ruby did not miss... #wallgame #gaming #boardgames",
+        },
         "TESTGAME1",
         players,
       ),
@@ -1116,10 +1260,9 @@ describe("captions", () => {
   });
 
   test("a link in the X text is refused, bare domain included", () => {
-    const caption = captionFrom(CAPTION);
-    expect(captionProblems({ ...caption, x: "play at wallgame.io" })).toContain(
-      "X text must not hold a link",
-    );
+    expect(
+      copyProblems(withText("x", "play at wallgame.io"), "TESTGAME1"),
+    ).toEqual(["X must not hold a link"]);
   });
 
   test("a player name that could carry a link or a mention is refused", () => {
@@ -1291,14 +1434,10 @@ describe("TikTok", () => {
     expect(String(err)).toMatch(/HTTP 429.*may exist/);
   });
 
-  test("the ask shows the TikTok caption on its own line only when live", () => {
+  test("the ask shows the stored block word for word, and the TikTok step only when live", () => {
     const c = {
       day: "2026-10-26",
-      caption: {
-        x: "Red walls in Blue",
-        youtubeTitle: "t",
-        youtubeDescription: "d",
-      },
+      copy: COPY,
       candidate: {
         seats: [{ name: "A" }, { name: "B" }],
         movesCount: 9,
@@ -1313,11 +1452,12 @@ describe("TikTok", () => {
       { x: "live", youtube: "live", tiktok: "live", instagram: "live" },
       "0".repeat(64),
     ).split("\n");
-    const at = live.indexOf("TikTok caption:");
-    expect(live.slice(at, at + 3)).toEqual([
-      "TikTok caption:",
-      "Red walls in Blue",
-      "Open the TikTok inbox draft, paste, tap Post.",
+    const at = live.indexOf(`Post text (by Growth, ${COPY_VERSION}):`);
+    expect(at).toBeGreaterThan(-1);
+    expect(live.slice(at + 1, at + 6).join("\n")).toBe(BLOCK);
+    expect(live.slice(at + 6, at + 8)).toEqual([
+      'The app adds "#Shorts" to the YouTube title.',
+      "TikTok: open the inbox draft, paste the TikTok line, tap Post.",
     ]);
     const dry = askText(
       c,
@@ -1325,7 +1465,7 @@ describe("TikTok", () => {
       "0".repeat(64),
     );
     expect(dry).toContain("TikTok: dry run, no draft.");
-    expect(dry).not.toContain("TikTok caption:");
+    expect(dry).not.toContain("paste the TikTok line");
   });
 });
 
@@ -1613,13 +1753,19 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   };
   const day = "2026-10-26";
 
-  expect((await call("/api/daily/pick", { day, report: REPORT })).status).toBe(
-    409,
+  // Post text is Growth's copy block, not the pick's.
+  const withCaption = await call("/api/daily/pick", {
+    day,
+    report: REPORT,
+    caption: "lmao",
+  });
+  expect(withCaption.status).toBe(409);
+  expect(JSON.stringify(withCaption.body)).toContain(
+    "pick takes no caption or title",
   );
-  expect(
-    (await call("/api/daily/pick", { day, report: REPORT, caption: CAPTION }))
-      .status,
-  ).toBe(200);
+  expect((await call("/api/daily/pick", { day, report: REPORT })).status).toBe(
+    200,
+  );
   expect((await call("/api/daily/post", { day })).status).toBe(409);
   // No render without the director's list.
   expect((await call("/api/daily/render", { day })).status).toBe(409);
@@ -1761,16 +1907,43 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   ).toBe("checked");
 
   const videoSha256 = state?.cycle.render?.video?.sha256;
+  const ask = (copySha256: string) =>
+    call("/api/daily/ask", {
+      day,
+      askId: "ask-xyz",
+      modes: DRY,
+      videoSha256,
+      copySha256,
+    });
+  // No ask before Growth's copy block.
+  const noCopy = await ask(COPY_SHA);
+  expect(noCopy.status).toBe(409);
+  expect(JSON.stringify(noCopy.body)).toContain("crew.mjs copy");
+  const copy = (body: object) =>
+    call<DailyState["cycle"]>("/api/daily/copy", { day, ...body });
   expect(
     (
-      await call("/api/daily/ask", {
-        day,
-        askId: "ask-xyz",
-        modes: DRY,
-        videoSha256,
+      await copy({
+        text: BLOCK.split("\n").slice(1).join("\n"),
+        copyVersion: COPY_VERSION,
       })
     ).status,
-  ).toBe(200);
+  ).toBe(409);
+  expect((await copy({ text: BLOCK })).status).toBe(409);
+  const long = await copy({
+    text: BLOCK.replace("X: ", `X: ${"a".repeat(280)}`),
+    copyVersion: COPY_VERSION,
+  });
+  expect(JSON.stringify(long.body)).toContain("X is over 280 characters");
+  const stored = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
+  expect(stored.status).toBe(200);
+  expect(stored.body.copy).toEqual(COPY);
+  // The ask must show the stored block, and then the block cannot change.
+  expect((await ask("0".repeat(64))).status).toBe(409);
+  expect((await ask(COPY_SHA)).status).toBe(200);
+  const late = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
+  expect(late.status).toBe(409);
+  expect(JSON.stringify(late.body)).toContain("copy needs the cycle in");
   // An approval with no reply text is not evidence of one.
   expect(
     (
@@ -1802,8 +1975,10 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "/2/media/upload/DRY-RUN-MEDIA-ID/finalize",
     "/2/tweets",
   ]);
-  expect(xPlan[3].body.text).toBe(state?.cycle.caption.x);
+  // Each platform posts the approved block's own line.
+  expect(xPlan[3].body.text).toBe(COPY.x);
   const ytPlan = readFileSync(posted.body.posts.youtube.requestsFile, "utf8");
+  expect(ytPlan).toContain(JSON.stringify(`${COPY.youtubeTitle} #Shorts`));
   expect(ytPlan).toContain(
     "utm_source=youtube&utm_medium=social&utm_campaign=daily-video",
   );
@@ -1817,10 +1992,17 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     "tiktok",
     "instagram",
   ]);
-  // Each row names the caption style its caption was written under.
+  // Each row names the on-video caption style and Growth's copy style.
   expect(log.map((r) => r.styleVersion)).toEqual(
     log.map(() => CAPTION_STYLE_VERSION),
   );
+  expect(log.map((r) => r.copyVersion)).toEqual(log.map(() => COPY_VERSION));
+  expect(log.map((r) => r.caption)).toEqual([
+    COPY.x,
+    `${COPY.youtubeTitle} #Shorts\n\n${COPY.youtubeDescription}`,
+    COPY.tiktok,
+    COPY.instagram,
+  ]);
   // TikTok: a draft in Nil's inbox, one chunk, no caption in the API.
   expect(posted.body.posts.tiktok.postId).toBe("DRY-RUN-PUBLISH-ID");
   const tiktokPlan = JSON.parse(
@@ -1843,7 +2025,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(tiktokPlan[2].headers["content-range"]).toMatch(/^bytes 0-\d+\/\d+$/);
   expect(log[2]).toMatchObject({
     platform: "tiktok",
-    caption: state?.cycle.caption.x,
     tiktokStatus: "SEND_TO_USER_INBOX",
   });
   const instagramPlan = JSON.parse(
@@ -1864,14 +2045,13 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(instagramPlan[0].body).toEqual({
     media_type: "REELS",
     upload_type: "resumable",
-    caption: state?.cycle.caption.x,
+    caption: COPY.instagram,
   });
   expect(instagramPlan[1].headers.file_size).toBe(
     String((instagramPlan[1].body as { bytes: number }).bytes),
   );
   expect(log[3]).toMatchObject({
     platform: "instagram",
-    caption: state?.cycle.caption.x,
     postId: "DRY-RUN-MEDIA-ID",
     url: "https://www.instagram.com/reel/DRY-RUN/",
   });
@@ -1895,7 +2075,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   await call("/api/daily/pick", {
     day: next,
     report: REPORT,
-    caption: CAPTION,
   });
   // The director sees the last posted track, to pick another.
   expect(
@@ -1917,7 +2096,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   await call("/api/daily/pick", {
     day: third,
     report: REPORT,
-    caption: CAPTION,
   });
   // A list with no event has no still to check, so it is refused.
   expect(
@@ -1982,7 +2160,6 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   await call("/api/daily/pick", {
     day: fourth,
     report: REPORT,
-    caption: CAPTION,
   });
   await direct(fourth, "a-legend");
   await renderWith("tea-for-two");

@@ -5,7 +5,12 @@ the edit decision list (EDL) for its video, checks the render, and asks Nil.
 Nil asked for this on 2026-10-26: an agent decides where each sound and zoom
 goes, instead of fixed rules.
 
-When you change the rules of "Captions and titles", bump
+You own the video and its on-video caption. Wall Game Growth
+(agent-1792966148239-zvmt) writes all post text (X, YouTube, TikTok,
+Instagram) and posts (Nil, 2026-10-26, through Wall Game PM). Its rules are
+in `~/nil/growth/posting/wallgame.md`, not here.
+
+When you change the rules of "On-video caption", bump
 `CAPTION_STYLE_VERSION` in `candidate.mjs` and name the new value in that
 section. Every post-log row carries it, for before and after reads.
 
@@ -21,11 +26,8 @@ already has a cycle, finish it or stop: do not start another. `pick
    The timer writes the day's report at 11:30 UTC. Read the top games. The
    `director` lines give the 0-based plies, the cells and the walls (`*` =
    the wall that made the jump).
-2. `pick --report <same file> --rank N --caption "<post text>" --title "<title>"`
-   The caption is the X text and the start of the YouTube description.
-   `--title` is the YouTube title (the app adds #Shorts); without it, the
-   caption is the title too. Write both in the style of "Captions and
-   titles" below.
+2. `pick --report <same file> --rank N`
+   It takes no post text: Growth writes that in step 7.
 3. `storyboard`, then open the PNG it names. It has one tile per position
    (ply N = the position after ply N, 0-based as in the EDL), in the video's
    colours. Yellow marks that ply's walls and pawn move. DANGER, SAVE
@@ -56,13 +58,32 @@ already has a cycle, finish it or stop: do not start another. `pick
    - `safeArea` names a part of the frame that the apps would cover: that
      is a renderer fault, not your list, so skip the day and tell Wall Game
      Worker 2.
-7. `ask --agent <your agent id>`
-   This opens Nil's ask with the video and the sheet. When he answers, run
-   `answer` (the rule is in the crew.mjs header), and then run `post --day <day>`.
-   The ask opens for Nil, not for your manager, and `ask` prints who it
-   opened for. If an open ask went to anyone else, run
+7. Send Wall Game Growth (agent-1792966148239-zvmt) a COPY REQUEST, as one
+   message:
+   - the video's path and sha256 (from `status`),
+   - the game id,
+   - the on-video caption and payoff, as in the EDL,
+   - one plain line on the game (what happens, who wins).
+
+   Growth writes the copy block (five lines: X, YouTube title, YouTube
+   description, TikTok, Instagram) and gives it to the app with
+   `crew.mjs copy`. The app checks every limit when the block comes in.
+   `status` shows the stored block. You do not write or change post text.
+
+8. `ask --agent <your agent id>`
+   This opens Nil's ask with the video, the sheet and the stored block,
+   word for word, under "Post text (by Growth)". `ask` refuses without a
+   block. The ask opens for Nil, not for your manager, and `ask` prints who
+   it opened for. If an open ask went to anyone else, run
    `ask --agent <your agent id> --reopen`: it opens the same ask for Nil and
-   withdraws the old one.
+   withdraws the old one. After the ask opens, the block cannot change.
+9. When Nil answers, run `answer` (the rule is in the crew.mjs header). On
+   an approval, `answer` prints the APPROVED PACKAGE: the day, the video's
+   path and sha256, the block as approved, the ask id and Nil's reply word
+   for word. Send it to Growth as it is.
+10. Growth posts that package with `crew.mjs post --day <day>`. The app
+    posts only the approved video and block; it refuses when either one
+    differs from what the ask showed. You do not post.
 
 ## A good EDL
 
@@ -101,7 +122,7 @@ already has a cycle, finish it or stop: do not start another. `pick
   so the viewer sees whom the wall stops.
 - Use few effects. One FAHHH per video unless two moves are equally strong.
 - The video caption has 6 words and 32 characters at most. Write it in
-  the style of "Captions and titles" below: "bro" for the human, "the bot"
+  the style of "On-video caption" below: "bro" for the human, "the bot"
   for the AI, never a player's name. The renderer shows an AI in red and a
   human in blue; in a human vs human game, seat 1 is red and seat 2 is
   blue, and `facts` gives each seat's colour. Use Red and Blue only when
@@ -154,7 +175,7 @@ already has a cycle, finish it or stop: do not start another. `pick
   `direct` refuses it. `--claim-risk-ok <key>` accepts one on purpose, only
   when Nil asks for that sound.
 
-## Captions and titles
+## On-video caption
 
 Style version: `wallz-lingo-1` (`CAPTION_STYLE_VERSION`).
 
@@ -165,16 +186,12 @@ their lines word for word.
 
 How Wallz writes:
 
-- The on-video text and the title are two different lines. The on-video
-  line says what happens ("bro fell for the trap 😭🙏"); the title teases
-  it ("bro tried his best at least...").
+- The on-video line says what happens ("bro fell for the trap 😭🙏").
+  Growth's post text teases or punches it; it is not the same line.
 - All lowercase (108 of 127 titles), 5 words in the middle (24
   characters), no player names. The target is "bro"; "he" and "i" are rare.
 - The on-video line ends with two emoji: 😭💔, 😭🙏, 😳🤯, 😈🤯, 😭🥀,
-  💀. The title has no emoji (16 of 127 have one) and ends with "..."
-  (74 of 127) or a question.
-- The title ends with 3 hashtags: their own game's tag, #gaming,
-  #boardgames.
+  💀.
 - The words: bro, pov:, ts (this), atp (at this point), rn, cook
   ("who let bro cook?"), fumble, outplayed, outsmarted, humbled, aura
   ("bro lost all his aura"), karma, uno reversed, trapped himself,
@@ -188,32 +205,31 @@ How Wallz writes:
 
 Our surfaces:
 
-| Surface               | What                                                                       | Limits                                                        |
-| --------------------- | -------------------------------------------------------------------------- | ------------------------------------------------------------- |
-| Video caption (setup) | the stakes, in lingo, with an emoji pair                                   | 6 words, 32 characters; an emoji pair after a space is a word |
-| Video payoff          | what the key wall did: the punchline                                       | the same                                                      |
-| `--caption` (X text)  | the punchline line, lowercase, emoji pair, then #wallgame                  | no link, no @, 280 characters                                 |
-| `--title` (YouTube)   | a teaser that ends with "..." or "?", then `#wallgame #gaming #boardgames` | 100 characters with " #Shorts"                                |
+| Surface               | What                                     | Limits                                                        |
+| --------------------- | ---------------------------------------- | ------------------------------------------------------------- |
+| Video caption (setup) | the stakes, in lingo, with an emoji pair | 6 words, 32 characters; an emoji pair after a space is a word |
+| Video payoff          | what the key wall did: the punchline     | the same                                                      |
 
 - "bro" is the human. "the bot" is the AI, and it can be roasted; its
   name ("superhuman bot") is fine too. A human player's name is never
-  posted: `pick` and `direct` refuse it, and they refuse #wallz.
+  posted: `direct` refuses it in the video, `copy` refuses it in Growth's
+  block, and both refuse #wallz.
 - A number is optional. When a line has one, the counter rule above holds.
 - The renderer draws emoji with Noto Color Emoji. An emoji is wider than
   a letter, so check that the caption still fits on one line in the sheet.
 
 Our lines by moment (examples; write new ones each day):
 
-| Moment (from `facts` and the storyboard)          | Video caption / payoff                                        | YouTube title                         |
-| ------------------------------------------------- | ------------------------------------------------------------- | ------------------------------------- |
-| A wall jump closes a box on bro                   | "bro walked into the box 😭🙏", "bro got boxed in 💀💔"       | "he did not see that wall coming..."  |
-| Bro's own walls made the box (the bot added one)  | "bro walled himself in 😭🙏", "bro built the trap himself 💀" | "bro helped the bot win..."           |
-| A blunder: bro's move opened the way              | "how did bro fumble this 😭💔", "bro opened the door 💀🙏"    | "one move ruined everything..."       |
-| A close call that bro saved, and bro won          | setup "the bot is almost there 😳", payoff "bro said no 😭🙏" | "bro locked in at the last second..." |
-| A save that only delayed the loss                 | setup "bro thinks he's safe 😭", payoff "he was not 💀💔"     | "bro was safe... for a moment"        |
-| The bot's wall jump wins it (bot wins)            | "never let the bot cook 😭💔", "the bot did not miss 😈🤯"    | "the bot was cooking..."              |
-| Bro beats the bot                                 | "the bot got humbled 😭🙏", "bro outplayed the bot 😳🤯"      | "bro vs the bot... who wins?"         |
-| A comeback: the losing side's wall turns the race | "bro got the uno reverse 😭💔", "karma came fast 😈🤯"        | "plot twist at the end..."            |
+| Moment (from `facts` and the storyboard)          | Video caption / payoff                                        |
+| ------------------------------------------------- | ------------------------------------------------------------- |
+| A wall jump closes a box on bro                   | "bro walked into the box 😭🙏", "bro got boxed in 💀💔"       |
+| Bro's own walls made the box (the bot added one)  | "bro walled himself in 😭🙏", "bro built the trap himself 💀" |
+| A blunder: bro's move opened the way              | "how did bro fumble this 😭💔", "bro opened the door 💀🙏"    |
+| A close call that bro saved, and bro won          | setup "the bot is almost there 😳", payoff "bro said no 😭🙏" |
+| A save that only delayed the loss                 | setup "bro thinks he's safe 😭", payoff "he was not 💀💔"     |
+| The bot's wall jump wins it (bot wins)            | "never let the bot cook 😭💔", "the bot did not miss 😈🤯"    |
+| Bro beats the bot                                 | "the bot got humbled 😭🙏", "bro outplayed the bot 😳🤯"      |
+| A comeback: the losing side's wall turns the race | "bro got the uno reverse 😭💔", "karma came fast 😈🤯"        |
 
 ## Which effect for which fact
 

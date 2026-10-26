@@ -14,8 +14,10 @@
  *
  * THREE RULES THAT KEEP AN APPROVAL HONEST.
  *
- * 1. An approval names the video by sha256. A re-render after the ask makes a
- *    different file, and post refuses it: Nil approved the bytes he saw.
+ * 1. An approval names the video by sha256 and Growth's copy block by its
+ *    copySha256 (copy.mjs). A re-render after the ask makes a different
+ *    file, and post refuses it; post also refuses a block that is not the
+ *    one the ask showed: Nil approved the bytes and the text he saw.
  * 2. An approval names the posting mode (dry-run or live, per platform) that
  *    the ask told Nil about. If keys arrive between the ask and the post, the
  *    post refuses, so a "yes" to a dry run never becomes a real post.
@@ -40,6 +42,7 @@ import {
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
+import { copySha256 } from "./copy.mjs";
 
 export const STATES = [
   "picked",
@@ -148,7 +151,7 @@ export const openStore = (dataDir) => {
      * (Wall Game PM, 2026-10-26). Replacing is allowed until the ask is open:
      * after that the ask names this video, and the way out is an answer.
      */
-    pick(day, { candidate, caption, style, styleVersion, replace = false }) {
+    pick(day, { candidate, style, styleVersion, replace = false }) {
       const old = read(day);
       if (old && !replace) {
         refuse(
@@ -176,10 +179,11 @@ export const openStore = (dataDir) => {
         createdAt: now,
         updatedAt: now,
         candidate,
-        caption,
         style,
-        // The caption style the caption was written under (candidate.mjs).
+        // The on-video caption style at pick time (candidate.mjs).
         styleVersion,
+        // Wall Game Growth's post text (copy.mjs), until the ask.
+        copy: null,
         edl: null,
         render: null,
         check: null,
@@ -359,17 +363,54 @@ export const openStore = (dataDir) => {
     },
 
     /**
-     * The crew lead opened an Isomux ask about this video. `modes` and
-     * `videoSha256` are what the ask SHOWED; `currentModes` is what the app
-     * would post with now. They must agree, or the approval would name bytes
-     * or a mode that the member did not see. `replacesAskId`: the same ask
+     * Wall Game Growth's copy block for the day's posts, checked by copy.mjs.
+     * A new block replaces the old one until the ask opens; from then on the
+     * ask and the approval name the block, so it cannot change.
+     */
+    recordCopy(day, copy) {
+      const cycle = need(day);
+      expect(
+        cycle,
+        [
+          "picked",
+          "directed",
+          "rendering",
+          "rendered",
+          "render-failed",
+          "checked",
+        ],
+        "copy",
+      );
+      const replaced = Boolean(cycle.copy);
+      cycle.copy = copy;
+      return save(
+        cycle,
+        `${replaced ? "copy block replaced" : "copy block"} (${copy.version})`,
+      );
+    },
+
+    /**
+     * The crew lead opened an Isomux ask about this video. `modes`,
+     * `videoSha256` and `copySha256` are what the ask SHOWED; `currentModes`
+     * is what the app would post with now. They must agree, or the approval
+     * would name bytes, text or a mode that the member did not see. `replacesAskId`: the same ask
      * opened again (crew.mjs ask --reopen) while the old one is unanswered;
      * from then on only the new id's answer counts.
      * @param {string} day
-     * @param {{ askId: any, modes: any, videoSha256: any, currentModes: any,
-     *   replacesAskId?: string }} ask
+     * @param {{ askId: any, modes: any, videoSha256: any, copySha256: any,
+     *   currentModes: any, replacesAskId?: string }} ask
      */
-    recordAsk(day, { askId, modes, videoSha256, currentModes, replacesAskId }) {
+    recordAsk(
+      day,
+      {
+        askId,
+        modes,
+        videoSha256,
+        copySha256: shown,
+        currentModes,
+        replacesAskId,
+      },
+    ) {
       const cycle = need(day);
       if (replacesAskId) {
         expect(cycle, ["asked"], "reopen the ask");
@@ -384,6 +425,14 @@ export const openStore = (dataDir) => {
       if (videoSha256 !== cycle.render.video.sha256) {
         refuse("the ask shows another video than the current render");
       }
+      if (!cycle.copy) {
+        refuse(
+          "the ask needs Wall Game Growth's copy block first (crew.mjs copy)",
+        );
+      }
+      if (shown !== copySha256(cycle.copy)) {
+        refuse("the ask shows another copy block than the stored one");
+      }
       for (const platform of PLATFORMS) {
         if (modes?.[platform] !== currentModes[platform]) {
           refuse(
@@ -397,7 +446,7 @@ export const openStore = (dataDir) => {
         askedAt: new Date().toISOString(),
         modes,
         videoSha256,
-        caption: cycle.caption,
+        copy: cycle.copy,
         decision: null,
         approver: null,
         answeredAt: null,
@@ -454,6 +503,16 @@ export const openStore = (dataDir) => {
       if (videoSha256 !== cycle.approval.videoSha256) {
         refuse(
           "the video on disk is not the one that was approved; render and ask again",
+        );
+      }
+      if (!cycle.approval.copy) {
+        refuse(
+          "this approval has no copy block (an ask from before Growth wrote the post text); ask again with Growth's block",
+        );
+      }
+      if (copySha256(cycle.copy) !== copySha256(cycle.approval.copy)) {
+        refuse(
+          "the copy block is not the one that was approved; ask again with it",
         );
       }
       for (const platform of PLATFORMS) {

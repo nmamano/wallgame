@@ -6,15 +6,14 @@
  *   node scripts/game-video/daily/crew.mjs <command> [--day YYYY-MM-DD]
  *
  *   status                         where today's cycle is
- *   facts --report F [--top N]     the candidates' facts, to write a caption from
- *   pick --report F [--rank N] --caption T [--title T] [--style S] [--replace]
- *                                  today's candidate and the crew lead's caption:
- *                                  silly, short, no game id, no link (X gets it
- *                                  as is; YouTube gets it as title and above
- *                                  the tracked link; --title overrides the title).
- *                                  A day has one cycle: --replace starts over a
- *                                  day that has one (only on purpose, e.g.
- *                                  after the member rejected its video)
+ *   facts --report F [--top N]     the candidates' facts, to write the on-video
+ *                                  caption from
+ *   pick --report F [--rank N] [--style S] [--replace]
+ *                                  today's candidate. No post text: Wall Game
+ *                                  Growth writes it (copy). A day has one
+ *                                  cycle: --replace starts over a day that has
+ *                                  one (only on purpose, e.g. after the member
+ *                                  rejected its video)
  *   storyboard [--edl F]           one image of every position of the picked
  *                                  game (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
@@ -50,17 +49,29 @@
  *                                  the still shows what the cue is for (a FAHHH
  *                                  or zoom shows the save wall). The ask needs
  *                                  every still ok.
+ *   copy --day D --file F --copy-version V
+ *                                  Wall Game Growth's copy block for the day:
+ *                                  five lines, "X:", "YouTube title:",
+ *                                  "YouTube description:", "TikTok:",
+ *                                  "Instagram:", each the exact text that
+ *                                  posts (copy.mjs). V names Growth's copy
+ *                                  style (e.g. growth-copy-1). Allowed until
+ *                                  the ask opens; a new block replaces the old
  *   ask --agent <your agent id> [--reopen]
- *                                  open the Isomux ask with the MP4 and caption
- *                                  for APPROVER_MEMBER; --reopen opens the
+ *                                  open the Isomux ask with the MP4 and the
+ *                                  stored copy block for APPROVER_MEMBER
+ *                                  (it refuses without a block); --reopen opens the
  *                                  day's open ask again for that member, gives
  *                                  the app the new id and withdraws the old one
  *   answer --agent <id> --ask <askId> --decision approve|reject
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
- *                                  cycle is found by the ask, so no --day
+ *                                  cycle is found by the ask, so no --day. An
+ *                                  approval prints the APPROVED PACKAGE that
+ *                                  the director sends to Wall Game Growth
  *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram]
- *                                  post X, YouTube, the TikTok draft and the
+ *                                  (Wall Game Growth) post the approved block:
+ *                                  X, YouTube, the TikTok draft and the
  *                                  Instagram Reel (dry-run without keys)
  *   log [--dry-run]                the post log
  *   ship --to <hash>               release a commit that is on main: run
@@ -108,8 +119,11 @@ import { candidateFromReport } from "./candidate.mjs";
 import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
+import { SHORTS_TAG, copyLines, copySha256 } from "./copy.mjs";
 
 const OFFICE = "http://localhost:4000";
+/** This file, for the commands that another agent runs from its own cwd. */
+const CREW = fileURLToPath(import.meta.url);
 const STORYBOARD = resolve(
   dirname(fileURLToPath(import.meta.url)),
   "../storyboard.ts",
@@ -213,7 +227,12 @@ const summary = (s) => {
   lines.push(
     `game ${k.gameId}: ${k.seats.map((x) => x.name).join(" vs ")}, ${k.movesCount} plies`,
     ...k.facts,
-    `X text: ${c.caption.x}`,
+    ...(c.copy
+      ? [
+          `copy block (${c.copy.version}):`,
+          ...copyLines(c.copy).map((l) => `  ${l}`),
+        ]
+      : ["no copy block from Wall Game Growth yet"]),
   );
   if (c.edl) {
     lines.push(
@@ -264,18 +283,13 @@ export const askText = (c, modes, videoSha256) => {
   return [
     `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
     "",
-    "WHAT GOES OUT (the video is attached):",
-    `X: ${c.caption.x}`,
-    `YouTube title: ${c.caption.youtubeTitle}`,
-    `YouTube description: ${c.caption.youtubeDescription}`,
-    ...(modes.tiktok === "live"
-      ? [
-          "TikTok caption:",
-          c.caption.x,
-          "Open the TikTok inbox draft, paste, tap Post.",
-        ]
-      : ["TikTok: dry run, no draft."]),
-    `Instagram Reel: the X text as its caption.`,
+    "WHAT GOES OUT (the video is attached).",
+    `Post text (by Growth, ${c.copy.version}):`,
+    ...copyLines(c.copy),
+    `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
+    modes.tiktok === "live"
+      ? "TikTok: open the inbox draft, paste the TikTok line, tap Post."
+      : "TikTok: dry run, no draft.",
     "",
     "FOR YOU ONLY, NOT POSTED:",
     `Posting mode: X ${modes.x}, YouTube ${modes.youtube}, TikTok ${modes.tiktok}, Instagram ${modes.instagram}.`,
@@ -287,6 +301,25 @@ export const askText = (c, modes, videoSha256) => {
     ...c.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
     "",
     "Approve to post it as shown. Reject, and say what to change, to stop it.",
+  ].join("\n");
+};
+
+/**
+ * What the director forwards to Wall Game Growth after Nil's yes: Growth
+ * posts exactly this. Everything comes from the app's record of the
+ * approval, not from the director's memory.
+ */
+export const approvedPackage = (c) => {
+  const a = c.approval;
+  return [
+    `APPROVED PACKAGE, day ${c.day}`,
+    `Video: ${c.render.video.path}`,
+    `Video sha256: ${a.videoSha256}`,
+    `Copy block as approved (${a.copy.version}, copy sha256 ${copySha256(a.copy)}):`,
+    ...copyLines(a.copy),
+    `Ask: ${a.askId}, approved by ${a.approver} at ${a.answeredAt}`,
+    `${a.approver}'s reply, verbatim: ${a.reply}`,
+    `Post it with: node ${CREW} post --day ${c.day}`,
   ].join("\n");
 };
 
@@ -379,6 +412,11 @@ const commands = {
   },
 
   async pick() {
+    if (has("caption") || has("title")) {
+      die(
+        "pick takes no --caption or --title: Wall Game Growth writes the post text (copy)",
+      );
+    }
     const path = flag("report") ?? die("pick needs --report <file>");
     const report = readReport(path);
     const rank = Number(flag("rank") ?? 1);
@@ -393,10 +431,25 @@ const commands = {
       report: slim,
       rank,
       style: flag("style"),
-      caption:
-        flag("caption") ?? die("pick needs --caption: write it from `facts`"),
-      title: flag("title"),
       replace: has("replace"),
+    });
+    console.log(summary(await state()));
+  },
+
+  /** Run by Wall Game Growth: its copy block for the day's posts. */
+  async copy() {
+    if (!day) die("copy needs --day: the cycle's day");
+    const path = flag("file") ?? die("copy needs --file <the copy block>");
+    const copyVersion =
+      flag("copy-version") ??
+      die(
+        "copy needs --copy-version <Growth's copy style, e.g. growth-copy-1>",
+      );
+    if (!existsSync(path)) die(`copy: no file ${resolve(path)}`);
+    await app("POST", "/api/daily/copy", {
+      day,
+      text: readFileSync(path, "utf8"),
+      copyVersion,
     });
     console.log(summary(await state()));
   },
@@ -549,6 +602,10 @@ const commands = {
       die(
         `ask needs a rendered video whose contact sheet the director checked; the cycle is ${c?.state ?? "missing"}`,
       );
+    if (!c.copy)
+      die(
+        "ask needs Wall Game Growth's copy block: send Growth the copy request, and Growth runs crew.mjs copy",
+      );
     // The hash of the bytes that the ask attaches, not of the record.
     const videoSha256 = createHash("sha256")
       .update(readFileSync(c.render.video.path))
@@ -574,6 +631,8 @@ const commands = {
       askId: opened.body.id,
       modes: s.modes,
       videoSha256,
+      // The block that askText printed, from the same state.
+      copySha256: copySha256(c.copy),
       ...(replaces && { replacesAskId: replaces }),
     });
     if (!recorded.ok) {
@@ -623,6 +682,11 @@ const commands = {
       reply,
     });
     console.log(summary(await app("GET", `/api/daily/state?day=${cycle.day}`)));
+    if (cycle.state === "approved") {
+      console.log(
+        `\nSend this to Wall Game Growth as it is:\n\n${approvedPackage(cycle)}`,
+      );
+    }
   },
 
   async post() {

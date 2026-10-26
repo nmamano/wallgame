@@ -5,8 +5,8 @@
  * Board task e8d26610, step 3. The app keeps the record and talks to the
  * outside; the crew lead decides. One cycle a day:
  *
- *   crew.mjs facts   -> what the crew lead writes the caption from
- *   crew.mjs pick    -> POST /api/daily/pick     today's candidate + caption
+ *   crew.mjs facts   -> what the director writes the on-video caption from
+ *   crew.mjs pick    -> POST /api/daily/pick     today's candidate
  *   crew.mjs direct  -> POST /api/daily/direct   the director's edit decision
  *                       list (scripts/game-video/edl.mjs); the ending posted
  *                       least recently is its default (nextEnding)
@@ -15,10 +15,13 @@
  *   crew.mjs check   -> POST /api/daily/check    the director's verdict on each
  *                       still of the sheet; the ask needs every one ok, and
  *                       every measure the app took of the render (quality.mjs)
- *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4,
- *                       then POST /api/daily/ask records its id
+ *   crew.mjs copy    -> POST /api/daily/copy     Wall Game Growth's copy block:
+ *                       the text each platform posts (copy.mjs)
+ *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4 and
+ *                       the block, then POST /api/daily/ask records its id
  *   crew.mjs answer  -> POST /api/daily/answer   the member's reply
- *   crew.mjs post    -> POST /api/daily/post     each platform in turn, and the log
+ *   crew.mjs post    -> POST /api/daily/post     Growth posts the approved
+ *                       block on each platform in turn, and the log
  *
  * THE APP CANNOT OPEN THE ASK ITSELF: an Isomux app token is refused on the
  * asks routes. So the agent opens it and hands the id and, later, the answer
@@ -55,9 +58,7 @@ import {
 } from "./store.mjs";
 import {
   candidateFromReport,
-  captionFrom,
   CAPTION_STYLE_VERSION,
-  captionProblems,
   playerNames,
   textProblems,
   DEFAULT_STYLE,
@@ -81,6 +82,7 @@ import {
   safeAreaVerdict,
   captionLinesVerdict,
 } from "./quality.mjs";
+import { COPY_VERSION, copyProblems, parseCopy, postTexts } from "./copy.mjs";
 import {
   claimRisk,
   openSoundPicks,
@@ -429,12 +431,14 @@ export const createDaily = ({
     if (!cycle.render?.video) throw new StepRefused(`${day} has no video`);
     const modes = postingModes(env);
     const video = readFileSync(cycle.render.video.path);
+    // checkPost refuses a block that is not the approved one.
     const todo = store.checkPost(day, {
       modes,
       videoSha256: sha256(video),
       confirmedNotPosted,
     });
 
+    const texts = postTexts(cycle.approval.copy);
     for (const platform of todo) {
       const transport =
         modes[platform] === "live"
@@ -453,7 +457,7 @@ export const createDaily = ({
         x: () =>
           postToX({
             video,
-            text: cycle.approval.caption.x,
+            text: texts.x,
             transport,
             sign: live ? (req) => oauth1Header(req, env) : dryRunSigner,
             sleep,
@@ -462,7 +466,7 @@ export const createDaily = ({
         youtube: () =>
           postToYoutube({
             video,
-            caption: cycle.approval.caption,
+            caption: texts,
             transport,
             creds: live ? env : DRY_RUN_CREDS,
             beforeCommit,
@@ -490,7 +494,7 @@ export const createDaily = ({
         instagram: () =>
           postToInstagram({
             video,
-            caption: cycle.approval.caption.x,
+            caption: texts.instagram,
             transport,
             creds: live ? env : DRY_RUN_INSTAGRAM,
             sleep,
@@ -604,7 +608,7 @@ export const createDaily = ({
         posting,
       }),
 
-    /** {day?, report: {kind, createdAt, ranked}, rank?, style?, caption?, replace?} */
+    /** {day?, report: {kind, createdAt, ranked}, rank?, style?, replace?} */
     "POST /api/daily/pick": async (req, res) => {
       const body = await readJson(req, 4 * 1024 * 1024);
       const day = dayOf(body.day);
@@ -614,16 +618,12 @@ export const createDaily = ({
       } catch (err) {
         throw new StepRefused(err.message);
       }
-      if (typeof body.caption !== "string" || !body.caption.trim()) {
-        throw new StepRefused("pick needs the crew lead's caption");
+      // Post text is Growth's copy block now (POST /api/daily/copy).
+      if ("caption" in body || "title" in body) {
+        throw new StepRefused(
+          "pick takes no caption or title: Wall Game Growth writes the post text (crew.mjs copy)",
+        );
       }
-      const caption = captionFrom(body.caption, body.title);
-      const problems = captionProblems(
-        caption,
-        candidate.gameId,
-        playerNames(candidate),
-      );
-      if (problems.length) throw new StepRefused(problems.join("; "));
       const style = body.style ?? DEFAULT_STYLE;
       if (!STYLES.includes(style)) {
         throw new StepRefused(`style is one of ${STYLES.join(", ")}`);
@@ -633,7 +633,6 @@ export const createDaily = ({
         200,
         store.pick(day, {
           candidate,
-          caption,
           style,
           styleVersion: CAPTION_STYLE_VERSION,
           replace: body.replace === true,
@@ -735,6 +734,37 @@ export const createDaily = ({
       );
     },
 
+    /**
+     * {day, text, copyVersion}: Wall Game Growth's copy block, as the five
+     * lines of copy.mjs. Every limit is checked here, so the ask never shows
+     * a text that cannot post. The day is required, as for post.
+     */
+    "POST /api/daily/copy": async (req, res) => {
+      const body = await readJson(req);
+      if (!body.day) throw new StepRefused("copy needs the day of the cycle");
+      const day = dayOf(body.day);
+      const cycle = store.read(day);
+      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      if (!COPY_VERSION.test(body.copyVersion ?? "")) {
+        throw new StepRefused(
+          "copy needs copyVersion, the name of Growth's copy style (e.g. growth-copy-1)",
+        );
+      }
+      const { copy, problems } = parseCopy(body.text);
+      if (!copy) throw new StepRefused(problems.join("; "));
+      const bad = copyProblems(
+        copy,
+        cycle.candidate.gameId,
+        playerNames(cycle.candidate),
+      );
+      if (bad.length) throw new StepRefused(bad.join("; "));
+      json(
+        res,
+        200,
+        store.recordCopy(day, { ...copy, version: body.copyVersion }),
+      );
+    },
+
     /** {day?, sheetSha256, stills: [{ply, kind, ok, note}]} */
     "POST /api/daily/check": async (req, res) => {
       const body = await readJson(req);
@@ -761,8 +791,10 @@ export const createDaily = ({
       json(res, 200, { day, jobId });
     },
 
-    /** {day?, askId} - the crew lead opened the ask. */
-    /** {day?, askId, modes, videoSha256, replacesAskId?} - what the ask showed. */
+    /**
+     * {day?, askId, modes, videoSha256, copySha256, replacesAskId?} - what
+     * the ask showed.
+     */
     "POST /api/daily/ask": async (req, res) => {
       const body = await readJson(req);
       const id = /^[A-Za-z0-9_-]{1,80}$/;
@@ -780,6 +812,7 @@ export const createDaily = ({
           askId: body.askId,
           modes: body.modes,
           videoSha256: body.videoSha256,
+          copySha256: body.copySha256,
           currentModes: postingModes(env),
           replacesAskId: body.replacesAskId,
         }),
@@ -970,8 +1003,8 @@ export const dislikedSoundNotes = (edl, disliked) => [
 
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted
- * 2026-10-25): UTC time, game id, platform, post id + URL, caption,
- * effect/sound variant, swing size, approver. The variant includes the
+ * 2026-10-25): UTC time, game id, platform, post id + URL, the text it
+ * posted, effect/sound variant, swing size, approver. The variant includes the
  * ending since 2026-10-26, and the next render reads it to rotate them.
  */
 export const logRow = (cycle, platform, result) => ({
@@ -982,15 +1015,17 @@ export const logRow = (cycle, platform, result) => ({
   mode: result.mode,
   postId: result.postId,
   url: result.url,
-  // TikTok takes no caption through the API: Nil pastes the X text there.
-  // Instagram gets the X text as its caption.
-  caption:
+  // The approved block's text for the platform. TikTok takes no caption
+  // through the API: Nil pastes its line in the inbox draft.
+  caption: ((t) =>
     platform === "youtube"
-      ? `${cycle.approval.caption.youtubeTitle}\n\n${cycle.approval.caption.youtubeDescription}`
-      : cycle.approval.caption.x,
+      ? `${t.youtubeTitle}\n\n${t.youtubeDescription}`
+      : t[platform])(postTexts(cycle.approval.copy)),
+  // Growth's copy style for the block (copy.mjs).
+  copyVersion: cycle.approval.copy.version,
   style: cycle.style,
-  // The caption style (candidate.mjs CAPTION_STYLE_VERSION) at pick time;
-  // null for a cycle picked before the field existed.
+  // The on-video caption style (candidate.mjs CAPTION_STYLE_VERSION) at pick
+  // time; null for a cycle picked before the field existed.
   styleVersion: cycle.styleVersion ?? null,
   effect: cycle.render.effect,
   ending: cycle.render.ending,
@@ -1034,7 +1069,7 @@ const DASHBOARD = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game daily video</h1>
-  <p class="sub">One game a day to X and YouTube. The crew lead runs each step; this page shows where it is.
+  <p class="sub">One game a day to X, YouTube, TikTok and Instagram. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
     <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a></p>
   <div id="top"></div>
   <h2>Candidate</h2><div id="cand" class="box"></div>
@@ -1073,9 +1108,12 @@ const DASHBOARD = `<!doctype html>
         line(el("b", null, k.seats.map((x) => x.name).join(" vs ")), el("span", null, "  "), game,
              el("span", "muted", "  " + k.variant + ", " + k.movesCount + " plies")),
         ...k.facts.map((f) => el("div", null, f)),
-        el("div", "muted", "X text"), el("div", "cap", c.caption.x),
-        el("div", "muted", "YouTube title"), el("div", "cap", c.caption.youtubeTitle),
-        el("div", "muted", "YouTube description"), el("div", "cap", c.caption.youtubeDescription),
+        ...(c.copy
+          ? [el("div", "muted", "Post text by Wall Game Growth (" + c.copy.version + ")"),
+             ...[["X", "x"], ["YouTube title (the app adds #Shorts)", "youtubeTitle"], ["YouTube description", "youtubeDescription"],
+                 ["TikTok", "tiktok"], ["Instagram", "instagram"]]
+               .flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", c.copy[f])])]
+          : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
         el("div", "muted", "style: " + c.style),
         el("div", "muted", c.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
         ...(c.edl ? c.edl.summary.map((l) => el("div", null, l)) : []));
