@@ -1,19 +1,9 @@
-import { createFileRoute, useNavigate } from "@tanstack/react-router";
+import { createFileRoute, Link, useNavigate } from "@tanstack/react-router";
 import { useQuery } from "@tanstack/react-query";
 import { settingsQueryOptions, userQueryOptions } from "@/lib/api";
 import { Button } from "@/components/ui/button";
 import { Card, CardContent, CardHeader, CardTitle } from "@/components/ui/card";
 import { Alert, AlertDescription } from "@/components/ui/alert";
-import {
-  Dialog,
-  DialogClose,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-  DialogTrigger,
-} from "@/components/ui/dialog";
 
 export const Route = createFileRoute("/profile")({
   component: Profile,
@@ -191,36 +181,21 @@ function Profile() {
             <CardHeader>
               <CardTitle className="text-2xl font-serif">Account</CardTitle>
             </CardHeader>
-            <CardContent className="flex flex-wrap gap-3 justify-around">
+            <CardContent className="flex flex-col items-center gap-4">
               <Button variant="outline" asChild className="w-40">
                 <a href="/api/logout">Log out</a>
               </Button>
-              <Dialog>
-                <DialogTrigger asChild>
-                  <Button variant="destructive" className="w-40">
-                    Delete account
-                  </Button>
-                </DialogTrigger>
-                <DialogContent>
-                  <DialogHeader>
-                    <DialogTitle>Delete account?</DialogTitle>
-                    <DialogDescription>
-                      Your email will be deleted from the DB and all games you
-                      played will appear as &apos;Deleted User&apos; and you
-                      won&apos;t be able to play again with this account. Are
-                      you sure?
-                    </DialogDescription>
-                  </DialogHeader>
-                  <DialogFooter>
-                    <DialogClose asChild>
-                      <Button variant="outline">Cancel</Button>
-                    </DialogClose>
-                    <DialogClose asChild>
-                      <Button variant="destructive">Delete account</Button>
-                    </DialogClose>
-                  </DialogFooter>
-                </DialogContent>
-              </Dialog>
+              <p className="text-sm text-muted-foreground">
+                To delete your account,{" "}
+                <Link
+                  to="/privacy"
+                  hash="contact"
+                  className="text-primary underline hover:text-primary/80"
+                >
+                  contact us
+                </Link>
+                .
+              </p>
             </CardContent>
           </Card>
         </div>

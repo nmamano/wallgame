@@ -81,7 +81,7 @@ Wall Game makes short videos of games played on the site and posts them to Wall 
 
 When we change this policy, we update this page and the date at the top.
 
-## Contact
+<h2 id="contact">Contact</h2>
 
 Write to us on the ${embedded ? "Wall Game Discord" : `[Wall Game Discord](${DISCORD_INVITE_URL})`}.
 `;
