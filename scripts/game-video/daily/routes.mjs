@@ -489,14 +489,15 @@ export const createDaily = ({
    * be checked, asked or posted. The app forgets it when it restarts.
    */
   const previews = new Map();
+  // The app forgets every preview when it restarts, so their MP4s go too.
   const previewDir = join(dirs.root, "previews");
+  rmSync(previewDir, { recursive: true, force: true });
   mkdirSync(previewDir, { recursive: true });
   /** How many finished previews (and their MP4s) the app keeps. */
   const PREVIEWS_KEPT = 20;
 
-  const runPreview = async ({ jobId }) => {
-    const p = previews.get(jobId);
-    p.state = "running";
+  /** One preview on the 4090: {state: "done", video} or {state: "failed", error}. */
+  const previewOutcome = async (jobId, p) => {
     const work = join(dirs.work, jobId);
     mkdirSync(work, { recursive: true });
     const edlPath = join(work, "edl.json");
@@ -512,7 +513,7 @@ export const createDaily = ({
       "--plies",
       `${p.from}..${p.to}`,
     ]);
-    const failed = (why) => Object.assign(p, { state: "failed", error: why });
+    const failed = (why) => ({ state: "failed", error: why });
     if (error) return failed(error);
     if (
       result.preview?.from !== p.from ||
@@ -534,7 +535,21 @@ export const createDaily = ({
       durationSeconds: result.durationSeconds ?? null,
     };
     renameSync(scratch, video.path);
-    Object.assign(p, { state: "done", video });
+    return { state: "done", video };
+  };
+
+  const runPreview = async ({ jobId }) => {
+    const p = previews.get(jobId);
+    p.state = "running";
+    // A file step that throws ends the preview; it must not stay running.
+    try {
+      Object.assign(p, await previewOutcome(jobId, p));
+    } catch (err) {
+      Object.assign(p, {
+        state: "failed",
+        error: `the preview step failed: ${err.message}`,
+      });
+    }
   };
 
   /** Forget the oldest finished previews over PREVIEWS_KEPT, with their MP4s. */

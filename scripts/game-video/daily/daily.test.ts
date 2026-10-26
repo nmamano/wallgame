@@ -18,6 +18,7 @@ import {
   writeFileSync,
   existsSync,
   unlinkSync,
+  rmSync,
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
@@ -2632,4 +2633,17 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
   // Nothing in the cycle moved: the previews are not the day's video.
   expect((await call(`/api/daily/state?day=${day}`)).body).toEqual(before);
   expect((await call("/api/daily/preview?id=nope")).status).toBe(404);
+  // A file step that throws ends the preview as failed, not running.
+  rmSync(join(dir, "daily", "previews"), { recursive: true });
+  const lost = await finished({ day, plies: "20..23" });
+  expect(lost.state).toBe("failed");
+  expect(lost.error).toContain("the preview step failed: ENOENT");
 }, 30_000);
+
+test("a new app start removes the previews that the last one forgot", () => {
+  const dir = tempDir();
+  const old = join(createDaily({ dataDir: dir }).store.dirs.root, "previews");
+  writeFileSync(join(old, "2026-10-26-TESTGAME1-pold.mp4"), "x");
+  createDaily({ dataDir: dir });
+  expect(readdirSync(old)).toEqual([]);
+});
