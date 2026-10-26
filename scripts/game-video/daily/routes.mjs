@@ -75,6 +75,7 @@ import {
   SAFE_AREA,
 } from "../edl.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
+import { timelineOf } from "./strips.mjs";
 import {
   loudnessVerdict,
   safeAreaVerdict,
@@ -359,6 +360,7 @@ export const createDaily = ({
           effect: result.effect ?? null,
           music: result.music,
           sound: result.sound ?? null,
+          timeline: timelineOf(result.timeline),
           quality: {
             loudness: loudnessVerdict(result.loudness),
             safeArea: safeAreaVerdict(result.layout, FRAME, SAFE_AREA),

@@ -283,6 +283,8 @@ export const openStore = (dataDir) => {
       cycle.render.sound = outcome.sound;
       cycle.render.music = outcome.music;
       cycle.render.quality = outcome.quality;
+      // When and what plays (strips.mjs); null from a kit without it.
+      cycle.render.timeline = outcome.timeline ?? null;
       return save(cycle, `render ${jobId} done`);
     },
 

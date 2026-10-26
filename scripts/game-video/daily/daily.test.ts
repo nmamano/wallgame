@@ -1571,7 +1571,12 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     captionText: edl.caption ? { caption: { lines: 1, width: 640 } } : {} },
   loudness: { memes: [{ key: "shotgun-2", at: 0.9, loudestAt: 0.9,
     memeLufs: -24, bedLufs: -33.7, overLU: 9.7, truePeakDbtp: -14.3 }] },
-  sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills } }));
+  sheet: { png: at("out") + "-sheet.png", sha256: hash(png), stills },
+  timeline: {
+    moves: edl.events.map((e) => ({ ply: e.ply, at: 10 })),
+    events: edl.events.map((e, index) => ({ index, ply: e.ply, kind: e.kind,
+      start: 10, end: 11, extra: "dropped" })),
+    sounds: [{ name: "pawn", role: "move", start: 10, event: null }] } }));
 `;
 
 test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
@@ -1706,6 +1711,17 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   }
   expect(state?.cycle.state).toBe("rendered");
   expect((await call<Busy>("/api/daily/busy")).body.renders).toEqual([]);
+  // The renderer's timeline is kept for the event strips, without extras.
+  const timeline = (
+    state?.cycle.render as { timeline: { events: object[] } } | undefined
+  )?.timeline;
+  expect(timeline?.events[0]).toEqual({
+    index: 0,
+    ply: EDL.events[0].ply,
+    kind: EDL.events[0].kind,
+    start: 10,
+    end: 11,
+  });
   expect(state?.cycle.render?.effect).toBe("daily");
   expect(state?.cycle.render?.ending).toBe("replay");
   expect(state?.cycle.render?.quality?.loudness?.ok).toBe(true);

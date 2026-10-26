@@ -33,7 +33,11 @@
  *                                  --force: each render adds one view to the
  *                                  real game.
  *   sheet                          the contact sheet's path and its stills, in
- *                                  order: look at the PNG before `check`
+ *                                  order: look at the PNG before `check`.
+ *                                  Also the event strips (strips.mjs): each
+ *                                  event's sounds against its move's
+ *                                  landing, and a PNG of four frames per
+ *                                  event (in /tmp/daily-strips)
  *   check --sheet SHA --verdicts F the director's verdict on each still, as
  *                                  [{"ply","kind","ok","note"}]: ok only when
  *                                  the still shows what the cue is for (a FAHHH
@@ -82,7 +86,13 @@
  * given with --app http://127.0.0.1:<port>.
  */
 import { spawnSync } from "node:child_process";
-import { existsSync, mkdtempSync, readFileSync, writeFileSync } from "node:fs";
+import {
+  existsSync,
+  mkdirSync,
+  mkdtempSync,
+  readFileSync,
+  writeFileSync,
+} from "node:fs";
 import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
@@ -90,6 +100,7 @@ import { createHash } from "node:crypto";
 import { candidateFromReport } from "./candidate.mjs";
 import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
+import { stripPlan, writeStrips } from "./strips.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(
@@ -462,6 +473,23 @@ const commands = {
         `  still ${i + 1}: ply ${x.ply} ${x.kind}${x.sound ? ` + ${x.sound}` : ""}`,
       ),
     );
+    // The event strips: when each sound starts against its move's landing,
+    // and four frames around each event (strips.mjs). Made once per render.
+    const timeline = c.render.timeline;
+    if (!timeline) {
+      console.log("event strips: none (this render has no timeline)");
+    } else {
+      const plan = stripPlan(timeline, c.render.video.durationSeconds ?? 0);
+      for (const row of plan) {
+        for (const line of row.lines) console.log(`  ${line}`);
+      }
+      const out = join(tmpdir(), "daily-strips", `${c.render.jobId}.png`);
+      if (!existsSync(out)) {
+        mkdirSync(dirname(out), { recursive: true });
+        await writeStrips({ mp4: c.render.video.path, plan, out });
+      }
+      console.log(`event strips: ${out} (open it with the sheet)`);
+    }
     // A failed measure fails the check whatever the stills show, so the
     // director sees it before writing verdicts.
     for (const l of measureLines(c.render.quality)) console.log(l);
