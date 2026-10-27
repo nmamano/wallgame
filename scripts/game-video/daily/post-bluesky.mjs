@@ -31,8 +31,9 @@
  * bytes of the text. The poster adds one for each http(s) URL. The facet is
  * the only thing the poster adds: the text stays exactly as approved.
  *
- * SECRETS. BLUESKY_HANDLE and BLUESKY_APP_PASSWORD (an app password, not the
- * account password) are Isomux secrets in the app's environment. The app
+ * SECRETS. BLUESKY_APP_PASSWORD (an app password, not the account password)
+ * is an Isomux secret in the app's environment. The account is named by
+ * BLUESKY_IDENTIFIER, its DID, a constant in public-ids.mjs. The app
  * password is only in the createSession body, which is marked secretBody so
  * the live transport keeps no copy; the session and service tokens are only
  * in Authorization headers. No bot label (Wall Game PM, 2026-10-26).
@@ -47,7 +48,7 @@
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
 import { blueskyLength, findUrls, textLimitProblems } from "./post-limits.mjs";
 
-export const BLUESKY_SECRETS = ["BLUESKY_HANDLE", "BLUESKY_APP_PASSWORD"];
+export const BLUESKY_SECRETS = ["BLUESKY_APP_PASSWORD"];
 
 export const BSKY_ENTRYWAY = "https://bsky.social";
 export const BSKY_VIDEO = "https://video.bsky.app";
@@ -57,7 +58,7 @@ const JOB_POLL_MS = 2_000;
 const JOB_POLLS = 150;
 
 export const DRY_RUN_BLUESKY = {
-  BLUESKY_HANDLE: "<BLUESKY_HANDLE>",
+  BLUESKY_IDENTIFIER: "<BLUESKY_IDENTIFIER>",
   BLUESKY_APP_PASSWORD: "<BLUESKY_APP_PASSWORD>",
 };
 
@@ -264,7 +265,7 @@ export const postToBluesky = async ({
     method: "POST",
     url: `${BSKY_ENTRYWAY}/xrpc/com.atproto.server.createSession`,
     ...json({
-      identifier: creds.BLUESKY_HANDLE,
+      identifier: creds.BLUESKY_IDENTIFIER,
       password: creds.BLUESKY_APP_PASSWORD,
     }),
     secretBody: true,

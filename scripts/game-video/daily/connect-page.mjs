@@ -64,14 +64,14 @@ const connectionLines = (status) => {
 };
 
 /**
- * @param {{ platform: string, status: any, missing: string[] }[]} platforms
+ * @param {{ platform: string, status: any, missing: string[], notInCode: string[] }[]} platforms
  * @param {{ connected?: string | null, meta?: { lines: string[], ok: boolean } | null }} o
  */
 export const connectPage = (
   platforms,
   { connected = null, meta = null } = {},
 ) => {
-  const sections = platforms.map(({ platform, status, missing }) => {
+  const sections = platforms.map(({ platform, status, missing, notInCode }) => {
     const name = NAMES[platform] ?? platform;
     let state;
     if (status?.error) {
@@ -83,9 +83,11 @@ export const connectPage = (
     } else {
       state = `<p class="no">Not connected</p>`;
     }
-    const button = missing.length
-      ? `<p class="no">Connect needs the app secrets ${missing.map((m) => `<code>${escapeHtml(m)}</code>`).join(", ")}.</p>`
-      : `<form method="post" action="/daily/connect/${escapeHtml(platform)}/start"><button>${status && !status.error ? "Connect again" : "Connect"}</button></form>`;
+    const button = notInCode.length
+      ? notInCode.map((r) => `<p class="no">${escapeHtml(r)}.</p>`).join("")
+      : missing.length
+        ? `<p class="no">Connect needs the app secrets ${missing.map((m) => `<code>${escapeHtml(m)}</code>`).join(", ")}.</p>`
+        : `<form method="post" action="/daily/connect/${escapeHtml(platform)}/start"><button>${status && !status.error ? "Connect again" : "Connect"}</button></form>`;
     return `<section><h2>${escapeHtml(name)}</h2>${state}${button}</section>`;
   });
   const metaSection = meta

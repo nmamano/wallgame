@@ -20,15 +20,16 @@
  * file, and #Shorts in the title is a hint only.
  *
  * Auth: OAuth 2.0 with a refresh token for the channel, scope
- * https://www.googleapis.com/auth/youtube.upload. The app's environment holds
- * YOUTUBE_CLIENT_ID and YOUTUBE_CLIENT_SECRET as Isomux secrets; the refresh
+ * https://www.googleapis.com/auth/youtube.upload. YOUTUBE_CLIENT_ID is a
+ * constant in public-ids.mjs; the app's environment holds only the Isomux
+ * secret YOUTUBE_CLIENT_SECRET; the refresh
  * token comes from /daily/connect (connect.mjs) and lives in the token store.
  * A Google OAuth app left in "Testing" status expires its refresh tokens
  * after 7 days, so the consent screen must be "In production".
  */
 import { PostFailed, ok, sha256 } from "./transport.mjs";
 
-export const YOUTUBE_SECRETS = ["YOUTUBE_CLIENT_ID", "YOUTUBE_CLIENT_SECRET"];
+export const YOUTUBE_SECRETS = ["YOUTUBE_CLIENT_SECRET"];
 export const GOOGLE_TOKEN_URL = "https://oauth2.googleapis.com/token";
 export const YOUTUBE_UPLOAD_URL =
   "https://www.googleapis.com/upload/youtube/v3/videos?uploadType=resumable&part=snippet%2Cstatus";

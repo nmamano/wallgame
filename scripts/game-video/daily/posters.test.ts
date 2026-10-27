@@ -311,7 +311,7 @@ describe("Facebook", () => {
 
 describe("Bluesky", () => {
   const live = {
-    BLUESKY_HANDLE: "wallgame.io",
+    BLUESKY_IDENTIFIER: "did:plc:test",
     BLUESKY_APP_PASSWORD: "SECRET-PW",
   };
   const at = () => new Date("2026-10-27T12:00:00Z");
@@ -381,6 +381,12 @@ describe("Bluesky", () => {
     );
     expect(String(err)).toMatch(/bluesky session: no pds/);
     expect(String(err)).not.toContain("SECRET");
+    // The session names the account by its identifier (the DID in code).
+    const session = transport.sent[0];
+    expect(session.secretBody).toBe(true);
+    expect(
+      (JSON.parse(String(session.body)) as { identifier: string }).identifier,
+    ).toBe("did:plc:test");
   });
 
   test("session, service token, upload, job, then the post with the text as given", async () => {

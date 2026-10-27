@@ -32,7 +32,7 @@
  * before each post, and the app also calls it once a day, so a week with no
  * post does not let the token lapse. The first long-lived token and the user
  * id come from /daily/connect (connect.mjs); the app's environment holds
- * only THREADS_APP_ID and THREADS_APP_SECRET.
+ * only THREADS_APP_SECRET (THREADS_APP_ID is a constant in public-ids.mjs).
  *
  * The token goes only in the Authorization header. The pages' examples put
  * access_token in the query string and do not say that a Bearer header is
@@ -68,7 +68,7 @@ import {
 import { textLimitProblems } from "./post-limits.mjs";
 import { R2_HOST_SUFFIX, r2DryRunReply } from "./public-url-r2.mjs";
 
-export const THREADS_SECRETS = ["THREADS_APP_ID", "THREADS_APP_SECRET"];
+export const THREADS_SECRETS = ["THREADS_APP_SECRET"];
 
 export const THREADS_GRAPH = "https://graph.threads.com/v1.0";
 export const THREADS_REFRESH_URL =

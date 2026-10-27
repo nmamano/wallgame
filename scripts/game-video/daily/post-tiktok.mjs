@@ -26,11 +26,12 @@
  * THE REFRESH TOKEN ROTATES. It lasts 365 days, and a refresh "may" return a
  * new one, which must be used from then on. The first refresh token comes
  * from /daily/connect (connect.mjs); the token store keeps the newest one.
- * The app's environment holds only TIKTOK_CLIENT_KEY and TIKTOK_CLIENT_SECRET.
+ * The app's environment holds only TIKTOK_CLIENT_SECRET; TIKTOK_CLIENT_KEY is
+ * a constant in public-ids.mjs.
  */
 import { NotPosted, PostFailed, ok, sha256 } from "./transport.mjs";
 
-export const TIKTOK_SECRETS = ["TIKTOK_CLIENT_KEY", "TIKTOK_CLIENT_SECRET"];
+export const TIKTOK_SECRETS = ["TIKTOK_CLIENT_SECRET"];
 export const TIKTOK_TOKEN_URL = "https://open.tiktokapis.com/v2/oauth/token/";
 export const TIKTOK_INIT_URL =
   "https://open.tiktokapis.com/v2/post/publish/inbox/video/init/";

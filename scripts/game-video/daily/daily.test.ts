@@ -23,6 +23,8 @@ import {
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
 import { openStore, readPostLog } from "./store.mjs";
+import { openTokenStore } from "./token-store.mjs";
+import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
   candidateFromReport,
   nextEnding,
@@ -920,6 +922,66 @@ describe("a post that may exist is not posted again", () => {
     expect(daily.post(day)).rejects.toThrow(/x may already have this post/);
     const second = (await daily.post(day, ["x"])) as Cycle;
     expect(second.state).toBe("posted");
+  });
+});
+
+describe("the TikTok refresh after a connect", () => {
+  test("carries the client key from code and the stored refresh token; an env var of the key's name has no effect", async () => {
+    const dir = tempDir();
+    const video = join(dir, "v.mp4");
+    writeFileSync(video, "bytes");
+    const day = "2026-10-26";
+    const store = openStore(dir);
+    checkedToday(store, day, {
+      path: video,
+      bytes: 5,
+      sha256: sha256(readFileSync(video)),
+      durationSeconds: 30,
+    });
+    // TikTok connected, as /daily/connect stores it.
+    openTokenStore(join(store.dirs.root, "tokens")).write("tiktok", {
+      connectedAt: "2026-10-26T20:00:00.000Z",
+      connectedBy: "Nil",
+      scopes: ["video.upload"],
+      account: { id: null, name: null },
+      refreshToken: "stored-refresh",
+    });
+    const modes = { ...DRY, tiktok: "live" };
+    store.recordAsk(day, {
+      askId: "a",
+      modes,
+      videoSha256: sha256(readFileSync(video)),
+      copySha256: COPY_SHA,
+      currentModes: modes,
+    });
+    store.recordAnswer(day, {
+      askId: "a",
+      decision: "approve",
+      approver: "Nil",
+      reply: "Approve",
+    });
+    const sent: { url: string; body?: unknown }[] = [];
+    const daily = createDaily({
+      dataDir: dir,
+      // The old secret of the key's name is still in the environment.
+      env: { TIKTOK_CLIENT_KEY: "old-env-key", TIKTOK_CLIENT_SECRET: "s" },
+      live: () => ({
+        mode: "live",
+        sent,
+        request: (req: { url: string; body?: unknown }) => {
+          sent.push(req);
+          return Promise.resolve(tiktokDryRunReply(req));
+        },
+      }),
+    });
+    const cycle = (await daily.post(day)) as Cycle;
+    expect(cycle.state).toBe("posted");
+    const refresh = sent.find((r) => r.url === TIKTOK_TOKEN_URL);
+    const body = new URLSearchParams(String(refresh?.body));
+    expect(body.get("client_key")).toBe(PUBLIC_IDS.TIKTOK_CLIENT_KEY);
+    expect(body.get("client_key")).toBe("sbawgnt7vpik5zdozp");
+    expect(body.get("grant_type")).toBe("refresh_token");
+    expect(body.get("refresh_token")).toBe("stored-refresh");
   });
 });
 

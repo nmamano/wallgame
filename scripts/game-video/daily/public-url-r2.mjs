@@ -34,11 +34,8 @@
 import { createHash, createHmac, randomBytes } from "node:crypto";
 import { ok, PostFailed } from "./transport.mjs";
 
-export const R2_SECRETS = [
-  "R2_ACCOUNT_ID",
-  "R2_ACCESS_KEY_ID",
-  "R2_SECRET_ACCESS_KEY",
-];
+/** R2_ACCOUNT_ID is not secret: it is a constant in public-ids.mjs. */
+export const R2_SECRETS = ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"];
 
 export const R2_BUCKET = "wallgame-threads-video";
 
@@ -215,7 +212,8 @@ export const presignedUrl = ({
 // ---- The provider ------------------------------------------------------------
 
 /**
- * A PublicUrl (post-threads.mjs) backed by R2. `env` holds R2_SECRETS. Each
+ * A PublicUrl (post-threads.mjs) backed by R2. `env` holds R2_SECRETS and
+ * R2_ACCOUNT_ID (public-ids.mjs). Each
  * call stores the video under a new random 128-bit name: no game id or date
  * is in it, so the URL tells nothing about the post before it is made.
  */

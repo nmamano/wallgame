@@ -149,6 +149,12 @@ import {
   THREADS_SECRETS,
 } from "./post-threads.mjs";
 import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
+import {
+  idsNotSet,
+  PLATFORM_IDS,
+  PUBLIC_IDS,
+  withPublicIds,
+} from "./public-ids.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { connectStates, ConnectRefused } from "./connect-state.mjs";
 import {
@@ -193,15 +199,19 @@ const SECRETS = {
 export const POSTING_SECRETS = Object.values(SECRETS).flat();
 
 /**
- * live when every secret of the platform is set and, for a platform with
- * Connect (connect.mjs), `connected` has it; else dry-run.
+ * live when every secret and every public id (public-ids.mjs) of the
+ * platform is set and, for a platform with Connect (connect.mjs),
+ * `connected` has it; else dry-run. `env` has the public ids over it
+ * (withPublicIds).
  * @param {Set<string>} connected
  */
 export const postingModes = (env, connected = new Set()) =>
   Object.fromEntries(
     PLATFORMS.map((p) => [
       p,
-      SECRETS[p].every((name) => Boolean(env[name])) &&
+      [...SECRETS[p], ...(PLATFORM_IDS[p] ?? [])].every((name) =>
+        Boolean(env[name]),
+      ) &&
       (!CONNECT_PLATFORMS.includes(p) || connected.has(p))
         ? "live"
         : "dry-run",
@@ -252,7 +262,9 @@ export const createDaily = ({
   dataDir,
   renderer = RENDER_4090,
   deadlineMs = DEFAULT_RENDER_DEADLINE_MS,
-  env = process.env,
+  env: rawEnv = process.env,
+  // The public ids (public-ids.mjs); a test gives its own.
+  ids = PUBLIC_IDS,
   sleep = (ms) => new Promise((r) => setTimeout(r, ms)),
   dryRunReplies: replyOverrides = {},
   // Every live request goes through this; a test gives canned replies.
@@ -260,6 +272,9 @@ export const createDaily = ({
     liveTransport
   ),
 }) => {
+  // The secrets from the environment, the public ids from code: an env var
+  // with a public id's name has no effect (Nil, 2026-10-27).
+  const env = withPublicIds(rawEnv, ids);
   // A test may replace the canned replies of one platform; the rest keep
   // their own.
   const dryRunReplies = { ...DRY_RUN_REPLIES, ...replyOverrides };
@@ -1407,6 +1422,7 @@ export const createDaily = ({
             platform,
             status: tokens.status(platform),
             missing: missingClientSecrets(platform, env),
+            notInCode: idsNotSet(platform, env),
           })),
           {
             connected: CONNECT_PLATFORMS.includes(connected) ? connected : null,
@@ -1435,6 +1451,14 @@ export const createDaily = ({
                   platform,
                   `the app needs the secrets ${missing.join(", ")} first`,
                 ),
+              );
+            }
+            const notInCode = idsNotSet(platform, env);
+            if (notInCode.length) {
+              return html(
+                res,
+                409,
+                connectRefusedPage(platform, notInCode.join("; ")),
               );
             }
             const { state, verifier } = states.create(platform, member.id);

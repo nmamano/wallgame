@@ -12,6 +12,7 @@ import { join } from "node:path";
 import { openTokenStore } from "./token-store.mjs";
 import { connectPage } from "./connect-page.mjs";
 import { CONNECT_MEMBER_ID, createDaily } from "./routes.mjs";
+import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
   connectStates,
   ConnectRefused,
@@ -180,7 +181,9 @@ describe("token store", () => {
       const status = store.status(platform);
       expect(status?.error).toMatch(`connect ${platform} again`);
       expect(JSON.stringify(status)).not.toContain("SECRET");
-      const html = connectPage([{ platform, status, missing: [] }]);
+      const html = connectPage([
+        { platform, status, missing: [], notInCode: [] },
+      ]);
       expect(html).not.toContain("Connected");
       expect(html).not.toContain("Connect again");
       expect(html).toContain("from before Connect");
@@ -230,6 +233,13 @@ const ENV = {
   TIKTOK_CLIENT_SECRET: "SECRET-TT-CLIENT",
   THREADS_APP_ID: "th-app",
   THREADS_APP_SECRET: "SECRET-TH-APP",
+};
+/** The public ids that the tests' Connect uses; ENV holds the same ones. */
+const IDS = {
+  ...PUBLIC_IDS,
+  YOUTUBE_CLIENT_ID: "yt-client",
+  TIKTOK_CLIENT_KEY: "tt-key",
+  THREADS_APP_ID: "th-app",
 };
 const at = () => new Date("2026-10-26T22:00:00Z");
 /** A reply body that holds tokens, as an error body could. */
@@ -287,13 +297,10 @@ describe("authorize URLs", () => {
 
   test("the client secrets each Connect needs", () => {
     expect(missingClientSecrets("youtube", {})).toEqual([
-      "YOUTUBE_CLIENT_ID",
       "YOUTUBE_CLIENT_SECRET",
     ]);
     expect(missingClientSecrets("tiktok", ENV)).toEqual([]);
-    expect(missingClientSecrets("threads", { THREADS_APP_ID: "x" })).toEqual([
-      "THREADS_APP_SECRET",
-    ]);
+    expect(missingClientSecrets("threads", {})).toEqual(["THREADS_APP_SECRET"]);
   });
 });
 
@@ -571,6 +578,7 @@ describe("/daily/connect through the app", () => {
     const daily = createDaily({
       dataDir: dir,
       env: ENV,
+      ids: IDS,
       live: () => fakeLive((req) => answer(req)),
     });
     const app = await serve(daily);
@@ -724,7 +732,8 @@ describe("/daily/connect through the app", () => {
   test("a platform without its client secrets has no Connect button, and start is refused", async () => {
     const daily = createDaily({
       dataDir: tempDir(),
-      env: { YOUTUBE_CLIENT_ID: "x" },
+      env: {},
+      ids: IDS,
       live: () => fakeLive(() => ({ status: 500 })),
     });
     const app = await serve(daily);
@@ -743,6 +752,46 @@ describe("/daily/connect through the app", () => {
     } finally {
       app.close();
     }
+  });
+
+  test("a null id keeps the platform dry-run with a plain reason; an env var of its name has no effect", async () => {
+    const daily = createDaily({
+      dataDir: tempDir(),
+      // The secret is set, and so is an env var with the id's name.
+      env: { YOUTUBE_CLIENT_ID: "from-env", YOUTUBE_CLIENT_SECRET: "s" },
+      ids: { ...PUBLIC_IDS, YOUTUBE_CLIENT_ID: null },
+      live: () => fakeLive(() => ({ status: 500 })),
+    });
+    const app = await serve(daily);
+    try {
+      const page = await app.call("/daily/connect");
+      expect(page.text).toContain("YouTube client id not set in code.");
+      expect(page.text).not.toContain('action="/daily/connect/youtube/start"');
+      const start = await app.call("/daily/connect/youtube/start", {
+        method: "POST",
+        member: CONNECT_MEMBER_ID,
+      });
+      expect(start.status).toBe(409);
+      expect(start.text).toContain("YouTube client id not set in code");
+      const modes = (
+        JSON.parse((await app.call("/api/daily/state")).text) as {
+          modes: Record<string, string>;
+        }
+      ).modes;
+      expect(modes.youtube).toBe("dry-run");
+    } finally {
+      app.close();
+    }
+  });
+
+  test("the ids in code: the Bluesky DID, the TikTok, Threads and R2 ids; YouTube not yet", () => {
+    expect(PUBLIC_IDS).toEqual({
+      BLUESKY_IDENTIFIER: "did:plc:7hk4ouyq7rfod3qatg2pbjln",
+      YOUTUBE_CLIENT_ID: null,
+      TIKTOK_CLIENT_KEY: "sbawgnt7vpik5zdozp",
+      THREADS_APP_ID: "2049959042384724",
+      R2_ACCOUNT_ID: "1f1a89fa2a45aeb655275b923202a800",
+    });
   });
 });
 
