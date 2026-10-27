@@ -919,17 +919,29 @@ const commands = {
     if (Object.keys(shas).length !== labels.length)
       die(`--cands takes labels among ${LABELS.join(",")}`);
     // The office refuses a longer text, after the app wrote the notes.
-    // --recommend X --why "...": the director's pick, marked in the ask.
+    // --recommend X --why "...": the director's pick, marked in the ask. A
+    // reopened ask keeps the open ask's recommendation unless it names one.
     const recommended = flag("recommend")
       ? { label: flag("recommend"), why: flag("why") ?? "" }
-      : null;
+      : reopen
+        ? (c.approval.recommended ?? null)
+        : null;
     if (recommended) {
-      if (!shas[recommended.label])
+      if (
+        !LABELS.includes(recommended.label) ||
+        !Object.hasOwn(shas, recommended.label)
+      )
         die(
           `--recommend names an offered candidate: ${Object.keys(shas).join(", ")}`,
         );
-      if (!recommended.why.trim() || recommended.why.length > WHY_MAX)
-        die(`--recommend needs --why "<reason>", 1 to ${WHY_MAX} characters`);
+      if (
+        !recommended.why.trim() ||
+        recommended.why.length > WHY_MAX ||
+        /[\r\n]/.test(recommended.why)
+      )
+        die(
+          `--recommend needs --why "<reason>", 1 to ${WHY_MAX} characters on one line`,
+        );
     } else if (has("why")) die("--why goes with --recommend");
     const text = askText(c, s.modes, shas, recommended);
     if (text.length > ASK_TEXT_LIMIT)

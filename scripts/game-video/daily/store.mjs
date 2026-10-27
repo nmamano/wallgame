@@ -564,15 +564,20 @@ export const openStore = (dataDir) => {
         };
       }
       if (recommended !== null) {
-        if (!shown[recommended?.label]) {
-          refuse(
-            `the ask recommends ${recommended?.label}, which it does not offer`,
-          );
+        const label = recommended?.label;
+        // Own labels only: a plain object also "has" constructor.
+        if (!LABELS.includes(label) || !Object.hasOwn(shown, label)) {
+          refuse(`the ask recommends ${label}, which it does not offer`);
         }
         const why = recommended.why;
-        if (typeof why !== "string" || !why.trim() || why.length > WHY_MAX) {
+        if (
+          typeof why !== "string" ||
+          !why.trim() ||
+          why.length > WHY_MAX ||
+          /[\r\n]/.test(why)
+        ) {
           refuse(
-            `a recommendation needs a reason of 1 to ${WHY_MAX} characters`,
+            `a recommendation needs a reason of 1 to ${WHY_MAX} characters on one line`,
           );
         }
       }
@@ -658,7 +663,10 @@ export const openStore = (dataDir) => {
         reply: null,
         ...(replacesAskId && { replacesAskId }),
         ...(modeChangeOf && { modeChangeOf }),
-        recommended,
+        recommended: recommended && {
+          label: recommended.label,
+          why: recommended.why,
+        },
       };
       return save(
         record,

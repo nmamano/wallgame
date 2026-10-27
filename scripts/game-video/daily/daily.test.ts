@@ -615,7 +615,12 @@ describe("the director's recommendation", () => {
     expect(at).toBeLessThan(
       text.indexOf("CANDIDATE A: video A and sheet A are attached."),
     );
-    ask(store, rec);
+    // Only the label and the reason are kept.
+    ask(store, { ...rec, extra: "dropped" } as typeof rec);
+    expect(
+      (store.read(day) as { approval: { recommended: unknown } }).approval
+        .recommended,
+    ).toEqual(rec);
     store.recordAnswer(day, {
       askId: "ask1",
       pick: "A",
@@ -644,12 +649,23 @@ describe("the director's recommendation", () => {
     expect(() => {
       ask(checked(), { label: "B", why: "better" });
     }).toThrow(/the ask recommends B, which it does not offer/);
+    // A plain object "has" constructor; only an offered label counts.
+    expect(() => {
+      ask(checked(), { label: "constructor", why: "better" });
+    }).toThrow(/the ask recommends constructor, which it does not offer/);
+    expect(() => {
+      ask(checked(), { label: "A", why: "two\nlines" });
+    }).toThrow(/on one line/);
     expect(() => {
       ask(checked(), { label: "A", why: " " });
-    }).toThrow(/a recommendation needs a reason of 1 to 100 characters/);
+    }).toThrow(
+      /a recommendation needs a reason of 1 to 100 characters on one line/,
+    );
     expect(() => {
       ask(checked(), { label: "A", why: "x".repeat(101) });
-    }).toThrow(/a recommendation needs a reason of 1 to 100 characters/);
+    }).toThrow(
+      /a recommendation needs a reason of 1 to 100 characters on one line/,
+    );
   });
 });
 
@@ -3733,7 +3749,9 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
   ).toContain("--recommend names an offered candidate: A, B");
   expect(
     crew("ask", "--day", day, "--agent", "agent-x", "--recommend", "A").err,
-  ).toContain('--recommend needs --why "<reason>", 1 to 100 characters');
+  ).toContain(
+    '--recommend needs --why "<reason>", 1 to 100 characters on one line',
+  );
   const over = crew("ask", "--day", day, "--agent", "agent-x");
   expect(over.err).toMatch(
     /^the ask text has \d+ characters, over the office's 4000: offer fewer candidates \(--cands\), or ask Growth for shorter lines/,
