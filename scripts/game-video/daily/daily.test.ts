@@ -255,6 +255,7 @@ interface FeedbackRow {
   approver: string;
   picked: string | null;
   reply: string | null;
+  recommended: { label: string; why: string } | null;
   offered: { label: string; gameId: string; videoSha256: string }[];
 }
 
@@ -577,6 +578,75 @@ describe("an ask opened again for the right member", () => {
     expect(() => {
       reopen(answered, "old");
     }).toThrow(/reopen the ask needs the day asked/);
+  });
+});
+
+describe("the director's recommendation", () => {
+  const day = "2026-10-27";
+  const ask = (
+    store: ReturnType<typeof openStore>,
+    recommended: { label: string; why: string } | null,
+  ) => {
+    store.recordAsk(day, {
+      askId: "ask1",
+      modes: DRY,
+      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
+      currentModes: DRY,
+      recommended,
+    });
+  };
+  const checked = () => {
+    const store = openStore(tempDir());
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
+    return store;
+  };
+
+  test("the ask keeps it, and the feedback log says whether Nil agreed", () => {
+    const store = checked();
+    const rec = { label: "A", why: "the save and the bye both land" };
+    const text = askText(store.read(day), DRY, { A: "aa" }, rec).split("\n");
+    const at = text.indexOf(
+      "Director recommends A: the save and the bye both land",
+    );
+    expect(at).toBeGreaterThan(0);
+    expect(at).toBeLessThan(
+      text.indexOf("CANDIDATE A: video A and sheet A are attached."),
+    );
+    ask(store, rec);
+    store.recordAnswer(day, {
+      askId: "ask1",
+      pick: "A",
+      approver: "Nil",
+      reply: "Post A",
+    });
+    const [row] = readPostLog(store.feedbackLog) as FeedbackRow[];
+    expect([row.recommended, row.picked]).toEqual([rec, "A"]);
+  });
+
+  test("without one, the log says null", () => {
+    const store = checked();
+    ask(store, null);
+    store.recordAnswer(day, {
+      askId: "ask1",
+      pick: null,
+      approver: "Nil",
+      reply: "no",
+    });
+    expect(
+      (readPostLog(store.feedbackLog) as FeedbackRow[])[0].recommended,
+    ).toBe(null);
+  });
+
+  test("it names an offered candidate and gives a short reason", () => {
+    expect(() => {
+      ask(checked(), { label: "B", why: "better" });
+    }).toThrow(/the ask recommends B, which it does not offer/);
+    expect(() => {
+      ask(checked(), { label: "A", why: " " });
+    }).toThrow(/a recommendation needs a reason of 1 to 100 characters/);
+    expect(() => {
+      ask(checked(), { label: "A", why: "x".repeat(101) });
+    }).toThrow(/a recommendation needs a reason of 1 to 100 characters/);
   });
 });
 
@@ -3495,6 +3565,23 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
     ),
     copyVersion: COPY_VERSION,
   });
+  // A recommendation names an offered candidate, with a reason.
+  expect(
+    crew(
+      "ask",
+      "--day",
+      day,
+      "--agent",
+      "agent-x",
+      "--recommend",
+      "C",
+      "--why",
+      "x",
+    ).err,
+  ).toContain("--recommend names an offered candidate: A, B");
+  expect(
+    crew("ask", "--day", day, "--agent", "agent-x", "--recommend", "A").err,
+  ).toContain('--recommend needs --why "<reason>", 1 to 100 characters');
   const over = crew("ask", "--day", day, "--agent", "agent-x");
   expect(over.err).toMatch(
     /^the ask text has \d+ characters, over the office's 4000: offer fewer candidates \(--cands\), or ask Growth for shorter lines/,
@@ -3516,6 +3603,7 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
       A: { videoSha256: video("A").sha256, copySha256: COPY_SHA },
       B: { videoSha256: video("B").sha256, copySha256: copySha256(COPY_B) },
     },
+    recommended: { label: "A", why: "A's zoom lands on the save" },
   });
   const notes = "Post B. A: the zoom comes too late, try it one move earlier";
   const answered = await ok("/api/daily/answer", {
@@ -3550,6 +3638,9 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
   const feedback = crew("feedback", "--last", "5");
   expect(feedback.code).toBe(0);
   expect(feedback.out).toContain(`${day} ask ask-two: B picked by Nil`);
+  expect(feedback.out).toContain(
+    "  you recommended A: A's zoom lands on the save",
+  );
   expect(feedback.out).toContain("  A: game TESTGAME1, edit list");
   expect(feedback.out).toContain("  B: game CARRYOVR1, edit list");
   expect(feedback.out).toContain(`  reply, verbatim: ${JSON.stringify(notes)}`);

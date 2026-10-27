@@ -1431,7 +1431,8 @@ export const createDaily = ({
 
     /**
      * {day?, askId, modes, offered: {A: {videoSha256, copySha256}, ...},
-     * replacesAskId?, modeChange?} - what the ask showed.
+     * replacesAskId?, modeChange?, recommended?: {label, why}} - what the
+     * ask showed.
      */
     "POST /api/daily/ask": async (req, res) => {
       const body = await readJson(req);
@@ -1456,6 +1457,7 @@ export const createDaily = ({
           currentModes: modesNow(),
           replacesAskId: body.replacesAskId,
           modeChange: body.modeChange,
+          recommended: body.recommended ?? null,
         }),
       );
     },

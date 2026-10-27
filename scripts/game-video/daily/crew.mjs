@@ -85,6 +85,7 @@
  *                                  stale. Allowed until the ask opens; a new
  *                                  block replaces the old
  *   ask --agent <your agent id> [--cands A,B] [--reopen | --mode-change]
+ *       [--recommend X --why "<reason>"]
  *                                  open the day's one Isomux ask for
  *                                  APPROVER_MEMBER: each checked candidate (or
  *                                  the ones --cands names) with its MP4, its
@@ -102,7 +103,11 @@
  *                                  went live), so the approval does not cover
  *                                  a post; asks again for the approved video
  *                                  and block with the new modes. Only before
- *                                  any platform posts
+ *                                  any platform posts. --recommend X marks
+ *                                  "Post X" as your pick in the ask, with
+ *                                  one line "Director recommends X: <why>"
+ *                                  (WHY_MAX characters); the feedback log
+ *                                  keeps it
  *   answer --agent <id> --ask <askId> --pick A|B|C|none
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
@@ -167,7 +172,7 @@ import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { SHORTS_TAG, copyLines, copySha256, postTexts } from "./copy.mjs";
-import { LABELS } from "./store.mjs";
+import { LABELS, WHY_MAX } from "./store.mjs";
 
 const OFFICE = "http://localhost:4000";
 /** This file's place in a checkout, for the commands another agent runs. */
@@ -409,8 +414,12 @@ const earlierAsk = (c) =>
  * that the ask attaches. `c` is the day's record and `shas` the sha256 of
  * each offered candidate's MP4 bytes, by label, in the order the ask shows
  * them.
+ * @param {any} c
+ * @param {Record<string, string>} modes
+ * @param {Record<string, string>} shas
+ * @param {{ label: string, why: string } | null} [recommended]
  */
-export const askText = (c, modes, shas) => {
+export const askText = (c, modes, shas, recommended = null) => {
   const dry = Object.values(modes).every((m) => m === "dry-run");
   const live = PLATFORM_NAMES.filter(([p]) => modes[p] === "live").map(
     ([, name]) => name,
@@ -454,6 +463,9 @@ export const askText = (c, modes, shas) => {
                 : `: "${reply}"`
           }.`,
         ]
+      : []),
+    ...(recommended
+      ? [`Director recommends ${recommended.label}: ${recommended.why}`]
       : []),
     ...labels.flatMap((label) => {
       const k = c.cands[label];
@@ -894,7 +906,19 @@ const commands = {
     if (Object.keys(shas).length !== labels.length)
       die(`--cands takes labels among ${LABELS.join(",")}`);
     // The office refuses a longer text, after the app wrote the notes.
-    const text = askText(c, s.modes, shas);
+    // --recommend X --why "...": the director's pick, marked in the ask.
+    const recommended = flag("recommend")
+      ? { label: flag("recommend"), why: flag("why") ?? "" }
+      : null;
+    if (recommended) {
+      if (!shas[recommended.label])
+        die(
+          `--recommend names an offered candidate: ${Object.keys(shas).join(", ")}`,
+        );
+      if (!recommended.why.trim() || recommended.why.length > WHY_MAX)
+        die(`--recommend needs --why "<reason>", 1 to ${WHY_MAX} characters`);
+    } else if (has("why")) die("--why goes with --recommend");
+    const text = askText(c, s.modes, shas, recommended);
     if (text.length > ASK_TEXT_LIMIT)
       die(
         `the ask text has ${text.length} characters, over the office's ${ASK_TEXT_LIMIT}: offer fewer candidates (--cands), or ask Growth for shorter lines`,
@@ -909,6 +933,7 @@ const commands = {
         text,
         member: APPROVER_MEMBER,
         options: askOptions(Object.keys(shas)),
+        ...(recommended && { recommended: `Post ${recommended.label}` }),
         readFiles: [
           ...Object.keys(shas).flatMap((l) => [
             c.cands[l].render.video.path,
@@ -935,6 +960,7 @@ const commands = {
       ),
       ...(replaces && { replacesAskId: replaces }),
       ...(modeChange && { modeChange: true }),
+      ...(recommended && { recommended }),
     });
     if (!recorded.ok) {
       // The ask shows something the app no longer agrees with: withdraw it.
@@ -1008,6 +1034,11 @@ const commands = {
       console.log(
         `${r.day} ask ${r.askId}: ${r.picked ? `${r.picked} picked` : "none picked"} by ${r.approver} at ${r.utc}`,
       );
+      if (r.recommended) {
+        console.log(
+          `  you recommended ${r.recommended.label}: ${r.recommended.why}`,
+        );
+      }
       for (const o of r.offered) {
         console.log(
           `  ${o.label}: game ${o.gameId}, edit list ${String(o.edlSha256).slice(0, 12)}, video ${String(o.videoSha256).slice(0, 12)}, caption ${JSON.stringify(o.caption)}`,

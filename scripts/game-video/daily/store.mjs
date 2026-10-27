@@ -68,6 +68,8 @@ export const VERSION = 2;
 
 /** A day's candidates, in the order the ask shows them. */
 export const LABELS = ["A", "B", "C"];
+/** The longest reason of a recommendation in the ask (one line). */
+export const WHY_MAX = 100;
 
 export const CANDIDATE_STATES = [
   "picked",
@@ -487,14 +489,24 @@ export const openStore = (dataDir) => {
      * only the new id's answer counts. `modeChange`: the app's posting modes
      * changed after the approval (e.g. a platform went live), so the
      * approval no longer covers a post; the same video and block are asked
-     * again with the new modes, before any platform posts.
+     * again with the new modes, before any platform posts. `recommended`:
+     * the crew lead's pick, {label, why}, as the ask showed it, or null.
      * @param {string} day
      * @param {{ askId: any, modes: any, offered: any, currentModes: any,
-     *   replacesAskId?: string, modeChange?: boolean }} ask
+     *   replacesAskId?: string, modeChange?: boolean,
+     *   recommended?: { label: string, why: string } | null }} ask
      */
     recordAsk(
       day,
-      { askId, modes, offered, currentModes, replacesAskId, modeChange },
+      {
+        askId,
+        modes,
+        offered,
+        currentModes,
+        replacesAskId,
+        modeChange,
+        recommended = null,
+      },
     ) {
       const record = need(day);
       if (replacesAskId && modeChange) {
@@ -550,6 +562,19 @@ export const openStore = (dataDir) => {
           edlSha256: cand.edl.sha256,
           caption: cand.edl.doc.caption ?? null,
         };
+      }
+      if (recommended !== null) {
+        if (!shown[recommended?.label]) {
+          refuse(
+            `the ask recommends ${recommended?.label}, which it does not offer`,
+          );
+        }
+        const why = recommended.why;
+        if (typeof why !== "string" || !why.trim() || why.length > WHY_MAX) {
+          refuse(
+            `a recommendation needs a reason of 1 to ${WHY_MAX} characters`,
+          );
+        }
       }
       for (const platform of PLATFORMS) {
         if (modes?.[platform] !== currentModes[platform]) {
@@ -615,6 +640,7 @@ export const openStore = (dataDir) => {
         reply: null,
         ...(replacesAskId && { replacesAskId }),
         ...(modeChangeOf && { modeChangeOf }),
+        recommended,
       };
       return save(
         record,
@@ -662,6 +688,7 @@ export const openStore = (dataDir) => {
           askId,
           approver,
           picked: pick,
+          recommended: a.recommended ?? null,
           reply: a.reply,
           offered: Object.entries(a.offered).map(([label, o]) => ({
             label,
