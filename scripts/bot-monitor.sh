@@ -30,6 +30,11 @@ CONFIG_FILE="${WALLGAME_MONITOR_CONFIG:-$HOME/.wallgame-monitor.env}"
 # Discord webhook. Without it, alerts go to stdout (and the systemd journal).
 WEBHOOK="${DISCORD_WEBHOOK_URL:-}"
 
+# Isomux webhook that wakes an agent on each alert (URL and the file that holds
+# its secret). Leave either empty to send no Isomux message.
+ISOMUX_HOOK_URL="${WALLGAME_MONITOR_ISOMUX_HOOK_URL:-}"
+ISOMUX_HOOK_SECRET_FILE="${WALLGAME_MONITOR_ISOMUX_HOOK_SECRET_FILE:-}"
+
 # Public site to poll.
 API_BASE="${WALLGAME_API_BASE:-https://wallgame.io}"
 
@@ -60,9 +65,23 @@ BOTS=(
 
 send_discord() {
   local msg="$1"
+  send_isomux "$msg"
   if [ -z "$WEBHOOK" ]; then echo "[warn] no webhook; would send: $msg"; return; fi
   curl -s -m 15 -H "Content-Type: application/json" \
     -d "{\"content\":\"$msg\"}" "$WEBHOOK" >/dev/null
+}
+
+# Every alert also wakes an agent through an Isomux webhook (HMAC-SHA256 over
+# the body, secret in its own 0600 file), so an outage does not wait for a
+# human to read Discord. Off when either value is unset.
+send_isomux() {
+  local msg="$1" body sig
+  if [ -z "$ISOMUX_HOOK_URL" ] || [ ! -r "$ISOMUX_HOOK_SECRET_FILE" ]; then return; fi
+  body="$(jq -cn --arg text "$msg" '{kind: "bot-monitor", text: $text}')"
+  sig="$(printf '%s' "$body" | openssl dgst -sha256 -hmac "$(cat "$ISOMUX_HOOK_SECRET_FILE")" -r | cut -d' ' -f1)"
+  curl -s -m 15 -o /dev/null -w "[isomux hook] HTTP %{http_code}\n" \
+    -H "Content-Type: application/json" -H "x-bot-monitor-event: bot-monitor" \
+    -H "x-bot-monitor-signature: sha256=$sig" -d "$body" "$ISOMUX_HOOK_URL"
 }
 
 mkdir -p "$(dirname "$STATE_FILE")"
