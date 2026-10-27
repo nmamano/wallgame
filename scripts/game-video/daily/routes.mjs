@@ -1450,7 +1450,8 @@ export const createDaily = ({
             platform,
             status: tokens.status(platform),
             reasons: reasons[platform],
-            // Connect itself needs the client secrets and ids, not R2.
+            // Connect needs the client secrets and the public ids (for
+            // Threads also R2_ACCOUNT_ID, set in code), not the R2 secrets.
             canConnect:
               !missingClientSecrets(platform, env).length &&
               !idsNotSet(platform, env).length,
