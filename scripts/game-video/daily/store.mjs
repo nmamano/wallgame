@@ -589,12 +589,30 @@ export const openStore = (dataDir) => {
       ) {
         refuse("a reopened ask must offer what the open ask offered");
       }
-      // After "None today", a new ask must offer something new.
+      // After "None today", a new ask must offer at least one video and
+      // block that Nil has not refused today: "None" refuses every pair
+      // that its ask offered (Director, 2026-10-27).
       const rejected = record.state === "rejected" ? record.approval : null;
-      if (rejected && offerKey(shown) === offerKey(rejected.offered)) {
-        refuse(
-          `the ask offers what ask ${rejected.askId} offered, which Nil answered with none: change a candidate, its video or its block first`,
+      if (rejected) {
+        const refusals = [...record.earlierAsks, rejected].filter(
+          (a) => a.decision === "none",
         );
+        const refusedIn = (o) =>
+          refusals
+            .filter((a) =>
+              Object.values(a.offered ?? {}).some(
+                (r) =>
+                  r.videoSha256 === o.videoSha256 &&
+                  r.copySha256 === o.copySha256,
+              ),
+            )
+            .map((a) => a.askId);
+        const found = Object.values(shown).map(refusedIn);
+        if (found.every((ids) => ids.length > 0)) {
+          refuse(
+            `every candidate in this ask was offered in ask ${[...new Set(found.flat())].join(" or ")}, which Nil answered with none: change a candidate, its video or its block first`,
+          );
+        }
       }
       // A mode change asks again for exactly what was approved.
       const approvedAsk = modeChange ? record.approval : null;

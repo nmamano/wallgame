@@ -432,7 +432,9 @@ describe("after None today: a new ask must offer something new", () => {
   test("the same offer cannot be asked again", () => {
     expect(() => {
       ask(rejected(), "ask2", COPY);
-    }).toThrow(/the ask offers what ask ask1 offered/);
+    }).toThrow(
+      /every candidate in this ask was offered in ask ask1, which Nil answered with none/,
+    );
   });
 
   test("a new block for the same video opens a new ask, and it can post", () => {
@@ -772,7 +774,7 @@ describe("a mode change after the approval asks again", () => {
     );
   });
 
-  test("an answer of none leaves the day open to a new ask", () => {
+  test("an answer of none rejects the day, so it posts nothing", () => {
     const store = openStore(tempDir());
     approved(store, day);
     askAgain(store);
@@ -1507,6 +1509,33 @@ describe("a day has up to three candidates", () => {
     checked(store, "C", "cc", COPY_C);
     return store;
   };
+
+  test("after None today, an ask needs a video and block that Nil has not refused today", () => {
+    const store = three();
+    const none = (askId: string) => {
+      store.recordAnswer(day, {
+        askId,
+        pick: null,
+        approver: "Nil",
+        reply: "no",
+      });
+    };
+    ask(store, ["A", "B"]);
+    none("ask1");
+    // A alone was in ask1, with the same video and block.
+    expect(() => {
+      ask(store, ["A"], "ask2");
+    }).toThrow(
+      /every candidate in this ask was offered in ask ask1, which Nil answered with none/,
+    );
+    ask(store, ["A", "C"], "ask2");
+    none("ask2");
+    // Each of B and C was refused, in different asks: both count.
+    expect(() => {
+      ask(store, ["B", "C"], "ask3");
+    }).toThrow(/every candidate in this ask was offered in ask ask1 or ask2,/);
+    expect((store.read(day) as Day).state).toBe("rejected");
+  });
 
   test("each label is picked once; a second pick of a label needs replace", () => {
     const store = openStore(tempDir());
@@ -3613,6 +3642,12 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
     reply: notes,
   });
   expect(answered.state).toBe("approved");
+  // ask --mode-change stops before the office when no mode changed.
+  expect(
+    crew("ask", "--day", day, "--agent", "agent-x", "--mode-change").err,
+  ).toContain(
+    "the posting modes are the ones of ask ask-two: no mode change to ask for",
+  );
   expect(answered.approval).toMatchObject({
     picked: "B",
     videoSha256: video("B").sha256,

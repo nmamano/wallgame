@@ -868,6 +868,19 @@ const commands = {
         die(
           `ask --mode-change needs the day approved (or post-failed); it is ${c.state}`,
         );
+      // The app refuses these too, but only after the ask is open for Nil.
+      const out = PLATFORM_NAMES.map(([p]) => p).filter((p) => {
+        const post = c.posts?.[p];
+        return post?.ok === true || post?.pending || post?.uncertain;
+      });
+      if (out.length)
+        die(
+          `${out.join(", ")} posted (or may have): a mode change is asked only before any platform posts`,
+        );
+      if (PLATFORM_NAMES.every(([p]) => s.modes[p] === c.approval.modes[p]))
+        die(
+          `the posting modes are the ones of ask ${c.approval.askId}: no mode change to ask for`,
+        );
     } else if (c.state !== "open" && c.state !== "rejected")
       die(`ask needs the day open (or after "None today"); it is ${c.state}`);
     // The ask offers the checked candidates, or the ones --cands names; a
