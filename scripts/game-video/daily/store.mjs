@@ -309,26 +309,29 @@ export const openStore = (dataDir) => {
     },
 
     /**
-     * Each render loads the game's replay page once, which adds one view to
-     * the real game (GET /api/games/:id). A second render of the same game on
-     * the same day is therefore refused unless it is asked for by name.
+     * A live render loads the game's replay page once, which adds one view
+     * to the real game (GET /api/games/:id). A second live render of the
+     * same game on the same day is therefore refused unless it is asked for
+     * by name. A render `fromCache` reads the capture that a live render
+     * saved on the 4090: no view, so no count and no refusal.
      */
-    startRender(day, label, jobId, { force = false } = {}) {
+    startRender(day, label, jobId, { force = false, fromCache = false } = {}) {
       const record = need(day);
       expectOpen(record, "render");
       const cand = needCand(record, label);
       const gameId = cand.candidate.gameId;
       const before = record.renders[gameId] ?? 0;
-      if (before > 0 && !force) {
+      if (!fromCache && before > 0 && !force) {
         refuse(
           `${gameId} was already rendered ${before} time(s) today, and each render adds one view to the real game; pass force to render it again`,
         );
       }
       expectCand(cand, ["directed", "render-failed"], "render");
-      record.renders[gameId] = before + 1;
+      if (!fromCache) record.renders[gameId] = before + 1;
       cand.state = "rendering";
       cand.render = {
         jobId,
+        fromCache,
         requestedAt: new Date().toISOString(),
         finishedAt: null,
         error: null,
@@ -342,7 +345,10 @@ export const openStore = (dataDir) => {
         music: null,
         quality: null,
       };
-      return save(record, `${label}: render ${jobId} queued`);
+      return save(
+        record,
+        `${label}: render ${jobId} queued (${fromCache ? "from the capture" : "live capture"})`,
+      );
     },
 
     /**
@@ -357,6 +363,12 @@ export const openStore = (dataDir) => {
         refuse(`render ${jobId} is not the current one (${cand.render.jobId})`);
       }
       cand.render.finishedAt = new Date().toISOString();
+      // A render asked from the capture that loaded the replay page after
+      // all (`viewed`): its view is counted here.
+      if (outcome.viewed && cand.render.fromCache) {
+        const gameId = cand.candidate.gameId;
+        record.renders[gameId] = (record.renders[gameId] ?? 0) + 1;
+      }
       if (outcome.error) {
         cand.state = "render-failed";
         cand.render.error = outcome.error;

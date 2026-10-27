@@ -42,11 +42,16 @@
  *                                  --claim-risk-ok accepts those sounds with
  *                                  a high claim risk on purpose (only when
  *                                  Nil asks for one)
- *   render --cand X [--wait] [--force]
+ *   render --cand X [--wait] [--force] [--live]
  *                                  a 4090 render of X's list; --wait polls
- *                                  until it ends. A second render of a game
- *                                  the same day needs --force: each render
- *                                  adds one view to the real game.
+ *                                  until it ends. When the 4090 has the
+ *                                  game's capture the render reads it: no
+ *                                  view. Otherwise (or with --live) it
+ *                                  captures live, which adds one view to the
+ *                                  real game, so a second live render of a
+ *                                  game the same day needs --force. Use
+ *                                  --live when the renderer cannot use the
+ *                                  capture (its line says so).
  *   preview --cand X --plies FROM..TO [--edl F]
  *                                  a few seconds of the video: those plies of
  *                                  X's edit list (or of F, a list for X's
@@ -672,6 +677,7 @@ const commands = {
       day,
       cand,
       force: has("force"),
+      live: has("live"),
     });
     console.log(`render ${jobId} queued`);
     if (!has("wait")) return;

@@ -52,9 +52,27 @@
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --edl <edl.json> --job-id <id> --out <out.mp4> --plies FROM..TO
  *
+ * A FULL RENDER FROM THE CACHE (--from-cache, no --plies) renders the whole
+ * list from the capture, with no view either; the renderer's output is the
+ * same bytes as a live render of the same list (renderer editor,
+ * 2026-10-27). Without --from-cache a full render captures live, which adds
+ * one view and saves the capture. The app chooses, before it counts the
+ * view, and the RESULT must agree (fromCache):
+ *
+ *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
+ *     --edl <edl.json> --job-id <id> --out <out.mp4> --from-cache
+ *
+ * A cache that the renderer cannot use (an old version, other capture
+ * inputs, a changed file) fails the render with the renderer's line; it is
+ * never captured again silently, as that would be a view nobody counted.
+ * A renderer older than --from-cache ignores the flag and captures live:
+ * this then prints a WARNING on stderr and still exits 0 with RESULT, so
+ * that the app counts the view. Run by hand, read the WARNING: that
+ * render was one view of the game that nothing counted.
+ *
  * The app asks first, so a preview of a game with no capture is refused
- * before it is queued. This prints "cached" and exits 0 only when the 4090
- * has the game's capture:
+ * before it is queued. This prints "cached" or "none" and exits 0, or
+ * fails when it cannot look:
  *
  *   WALLGAME_GPU_HOST=<user@host> node scripts/game-video/daily/render-4090.mjs \
  *     --has-capture <gameId>
@@ -155,23 +173,28 @@ const tail = (text) => text.trim().split("\n").slice(-10).join("\n");
 const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
 
 /**
- * Fail unless the 4090 has the game's capture; `ssh` runs one command there.
- * One short line comes back.
+ * "cached" or "none": whether the 4090 has the game's capture. It fails when
+ * it cannot look. `ssh` runs one command there; one short line comes back.
  */
-const requireCapture = async (ssh, cache, gameId) => {
+const captureOf = async (ssh, cache, gameId) => {
   if (!GAME_ID.test(String(gameId))) fail(`not a game id: ${gameId}`);
   const probe = await ssh(
     `if test -f ${cache}/${gameId}/capture.json; then echo cached; else echo none; fi`,
   );
   const answer = probe.stdout.trim();
-  if (answer === "none") {
-    fail(
-      `the 4090 has no capture of game ${gameId} yet: a preview reads the capture that the game's full render saves, so render the day's video first`,
-    );
-  }
-  if (answer !== "cached") {
+  if (answer !== "cached" && answer !== "none") {
     fail(
       `could not look for the game's capture on the 4090: ${tail(probe.stderr)}`,
+    );
+  }
+  return answer;
+};
+
+/** Fail unless the 4090 has the game's capture. */
+const requireCapture = async (ssh, cache, gameId) => {
+  if ((await captureOf(ssh, cache, gameId)) === "none") {
+    fail(
+      `the 4090 has no capture of game ${gameId} yet: render from the cache needs the capture that a live render of the game saves`,
     );
   }
 };
@@ -185,7 +208,7 @@ const main = async () => {
   const host = process.env.WALLGAME_GPU_HOST;
   if (hasCapture === undefined && (!edlPath || !jobId || !out)) {
     fail(
-      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--plies FROM..TO], or --has-capture <gameId>",
+      "usage: render-4090.mjs --edl <edl.json> --job-id <id> --out <out.mp4> [--from-cache | --plies FROM..TO], or --has-capture <gameId>",
     );
   }
   if (!host) {
@@ -201,12 +224,9 @@ const main = async () => {
   };
 
   if (hasCapture !== undefined) {
-    await requireCapture(
-      ssh,
-      `${await readHome()}/${CAPTURE_CACHE}`,
-      hasCapture,
+    console.log(
+      await captureOf(ssh, `${await readHome()}/${CAPTURE_CACHE}`, hasCapture),
     );
-    console.log("cached");
     return;
   }
 
@@ -215,6 +235,9 @@ const main = async () => {
   const span = plies === undefined ? null : PLIES.exec(plies);
   if (plies !== undefined && !span)
     fail(`--plies must be FROM..TO, got ${plies}`);
+  // A preview always reads the cache; a full render reads it when asked.
+  const fullFromCache = process.argv.includes("--from-cache");
+  if (span && fullFromCache) fail("--plies reads the cache already");
 
   const home = await readHome();
   const dir = `${home}/${REMOTE_JOBS}/${jobId}`;
@@ -223,7 +246,7 @@ const main = async () => {
   // The app asked already (--has-capture), but this adapter also runs by
   // hand, and without the capture the renderer would fail after desktop-run
   // started it.
-  if (span) {
+  if (span || fullFromCache) {
     const gameId = JSON.parse(readFileSync(edlPath, "utf8")).gameId;
     await requireCapture(ssh, cache, gameId);
   }
@@ -255,6 +278,7 @@ const main = async () => {
     "--cache",
     cache,
     ...(span ? ["--from-cache", "--plies", plies] : []),
+    ...(fullFromCache ? ["--from-cache"] : []),
   ]);
   const unit = DESKTOP_JOB.exec(started.stdout)?.[1];
   if (started.code !== 0 || !unit) {
@@ -269,7 +293,9 @@ const main = async () => {
     void ssh(`systemctl --user stop job-${unit}`).then(() => process.exit(1));
   });
 
-  console.log(`[render] rendering on the 4090 (job-${unit})`);
+  console.log(
+    `[render] rendering on the 4090 (job-${unit}), ${span || fullFromCache ? "from the game's capture: no view" : "with a live capture: one view of the game"}`,
+  );
   let exit = null;
   for (;;) {
     await sleep(POLL_MS);
@@ -320,8 +346,13 @@ const main = async () => {
   }
   if (exit !== 0 || !result) {
     const why = await ssh(`tail -n 5 ${dir}/render.log | cut -c1-180`);
+    // Exit 4 also has other causes, so the renderer's line says which.
+    const hint =
+      fullFromCache && exit === 4
+        ? "; if the capture cannot be used, render again live (one view of the game)"
+        : "";
     fail(
-      `the 4090 render failed (exit ${exit}): ${tail(why.stdout) || "no RESULT line"}`,
+      `the 4090 render failed (exit ${exit}): ${tail(why.stdout) || "no RESULT line"}${hint}`,
     );
   }
 
@@ -335,6 +366,14 @@ const main = async () => {
       result.edlSha256 !== null)
   ) {
     fail(`the 4090 render is not the preview of plies ${plies} from the cache`);
+  }
+  // A renderer older than --from-cache ignores it and captures live: a
+  // view happened. RESULT still comes back, so that the app can count the
+  // view and fail the job; a run by hand sees this warning.
+  if (!span && (result.fromCache === true) !== fullFromCache) {
+    console.error(
+      `WARNING: the 4090 render was ${result.fromCache === true ? "" : "not "}from the cache, but this job asked for ${fullFromCache ? "the cache: a live capture added one view of the game" : "a live capture"}`,
+    );
   }
 
   // The sheet must sit in this job's folder, the only place cleaned below.

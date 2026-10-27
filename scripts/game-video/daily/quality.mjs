@@ -146,6 +146,6 @@ export const captionLinesVerdict = (layout) => {
     ? { ok: true, note: entries.map(said).join("; ") }
     : {
         ok: false,
-        note: `${bad.map(said).join("; ")}: each beat must be one line inside its box; shorten it, direct again and render --force`,
+        note: `${bad.map(said).join("; ")}: each beat must be one line inside its box; shorten it, direct again and render`,
       };
 };

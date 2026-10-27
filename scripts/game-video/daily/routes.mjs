@@ -388,8 +388,7 @@ export const createDaily = ({
     for (const cand of Object.values(store.read(day).cands)) {
       if (cand.state === "rendering") {
         store.finishRender(day, cand.label, cand.render.jobId, {
-          error:
-            "the app restarted during this render; render again with --force (one more view of the game)",
+          error: "the app restarted during this render; render again",
         });
       }
     }
@@ -506,6 +505,7 @@ export const createDaily = ({
       }
     };
 
+    const fromCache = cand.render.fromCache;
     const { result, error } = await runAdapter(jobId, [
       "--edl",
       edlPath,
@@ -513,8 +513,21 @@ export const createDaily = ({
       jobId,
       "--out",
       scratch,
+      ...(fromCache ? ["--from-cache"] : []),
     ]);
     if (error) return finish({ error });
+    // The render must be what the app counted. A renderer older than
+    // --from-cache ignores it and captures live, which is a view: it is
+    // counted now. A counted render that read the capture is an overcount,
+    // which is safe.
+    if ((result.fromCache === true) !== fromCache) {
+      return finish({
+        error: fromCache
+          ? "the renderer captured the game live, but the app asked for its capture: one view of the game, now counted; the 4090 kit may be older than --from-cache, so sync it"
+          : "the render was from the capture, but the app asked for a live capture",
+        viewed: fromCache,
+      });
+    }
     // The video must be the one the list asked for, or the post log and
     // the ask would describe a video nobody made.
     if (result.edlSha256 !== cand.edl.sha256) {
@@ -664,11 +677,12 @@ export const createDaily = ({
   };
 
   /**
-   * Null when the 4090 has the game's capture, else why not: the adapter's
-   * --has-capture, one ssh line, so a preview without a capture is refused
-   * before it is queued.
+   * {cached: true|false}, or {error} when the app could not ask: the
+   * adapter's --has-capture, one ssh line. A preview without a capture is
+   * refused before it is queued, and a full render reads the capture when
+   * there is one, so it adds no view.
    */
-  const missingCapture = (gameId) =>
+  const captureOf = (gameId) =>
     new Promise((done) => {
       const child = spawn(
         process.execPath,
@@ -682,15 +696,21 @@ export const createDaily = ({
       child.stderr.on("data", (c) => (stderr += c));
       child.on("error", (err) => {
         clearTimeout(timer);
-        done(`could not ask the 4090 for the capture: ${err.message}`);
+        done({
+          error: `could not ask the 4090 for the capture: ${err.message}`,
+        });
       });
       child.on("close", (code) => {
         clearTimeout(timer);
-        if (code === 0 && stdout.trim() === "cached") return done(null);
-        done(
-          stderr.trim().split("\n").slice(-3).join("\n") ||
+        const answer = stdout.trim();
+        if (code === 0 && (answer === "cached" || answer === "none")) {
+          return done({ cached: answer === "cached" });
+        }
+        done({
+          error:
+            stderr.trim().split("\n").slice(-3).join("\n") ||
             `could not ask the 4090 for the capture (exit ${code})`,
-        );
+        });
       });
     });
 
@@ -1175,6 +1195,14 @@ export const createDaily = ({
         ...saveFrameProblems(edl, cand.candidate.beats),
         ...storyProblems(edl, cand.candidate),
         ...risk.problems,
+        // Without a named track the renderer picks one at random, so a
+        // second render of the list (from the capture) could play another
+        // song.
+        ...(edl.music
+          ? []
+          : [
+              `name a music track ("music"): a list without one gets a random track, so a second render of it can play another song`,
+            ]),
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
         ...(edl.coldOpenPly === null
@@ -1262,13 +1290,29 @@ export const createDaily = ({
       );
     },
 
-    /** {day?, force?} */
+    /** {day?, cand, force?, live?} */
     "POST /api/daily/render": async (req, res) => {
       const body = await readJson(req);
       const day = dayOf(body.day);
       const cand = candOf(day, body.cand);
       const jobId = `${day}-${cand.label}-${cand.candidate.gameId}-${Date.now().toString(36)}`;
-      store.startRender(day, cand.label, jobId, { force: body.force === true });
+      // With the game's capture on the 4090 the render reads it and adds no
+      // view; `live` captures again on purpose (one view), for example when
+      // the renderer cannot use the cached capture.
+      let fromCache = false;
+      if (body.live !== true) {
+        const capture = await captureOf(cand.candidate.gameId);
+        if (capture.error) {
+          throw new StepRefused(
+            `${capture.error}; the app must know whether the 4090 has the game's capture before it renders, so try again`,
+          );
+        }
+        fromCache = capture.cached;
+      }
+      store.startRender(day, cand.label, jobId, {
+        force: body.force === true,
+        fromCache,
+      });
       queue.push({ day, label: cand.label, jobId });
       pump();
       json(res, 200, { day, jobId });
@@ -1323,8 +1367,13 @@ export const createDaily = ({
           `the preview ends at ply ${span.to}, after the game's last ply ${lastPly}`,
         );
       }
-      const missing = await missingCapture(edl.gameId);
-      if (missing) throw new StepRefused(missing);
+      const capture = await captureOf(edl.gameId);
+      if (capture.error) throw new StepRefused(capture.error);
+      if (!capture.cached) {
+        throw new StepRefused(
+          `the 4090 has no capture of game ${edl.gameId} yet: a preview reads the capture that the game's full render saves, so render the day's video first`,
+        );
+      }
       const jobId = `${day}-${cand.label}-${cand.candidate.gameId}-p${Date.now().toString(36)}`;
       previews.set(jobId, {
         day,

@@ -210,7 +210,9 @@ interface Cand {
   copy: Record<string, string> | null;
   copyFor: string | null;
   render: {
+    jobId: string;
     error: string | null;
+    fromCache: boolean;
     effect: string | null;
     ending: string;
     sheet: { sha256: string; stills: unknown[] } | null;
@@ -236,6 +238,7 @@ interface Day {
   } | null;
   events: { what: string }[];
   posts: Record<string, { postId: string; requestsFile: string }>;
+  renders: Record<string, number>;
 }
 
 /** The picked candidate as posting reads it (store.picked). */
@@ -304,6 +307,7 @@ const EDL = {
   version: 1,
   gameId: "TESTGAME1",
   ending: "replay",
+  music: "skippy",
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
@@ -1058,7 +1062,7 @@ describe("the app's measures of a render", () => {
       ),
     ).toEqual({
       ok: false,
-      note: "payoff 2 lines, 882 of 918 px: each beat must be one line inside its box; shorten it, direct again and render --force",
+      note: "payoff 2 lines, 882 of 918 px: each beat must be one line inside its box; shorten it, direct again and render",
     });
     // One long word cannot wrap: one line, but past the box.
     expect(
@@ -2553,15 +2557,35 @@ afterEach(() => {
   while (stops.length) stops.pop()!();
 });
 
-/** A stand-in for render-4090.mjs that follows the same contract. */
+/**
+ * A stand-in for render-4090.mjs that follows the same contract. A live
+ * render saves the game's capture (a file "captured-<game>"), which
+ * --has-capture reports and --from-cache needs; the file "probe-fails"
+ * makes --has-capture fail as an unreachable 4090 would.
+ */
 const STUB_RENDER = `
 const { existsSync, readFileSync, writeFileSync } = require("node:fs");
 const { execFileSync } = require("node:child_process");
 const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
+const captured = (game) => __dirname + "/captured-" + game;
+if (process.argv.includes("--has-capture")) {
+  if (existsSync(__dirname + "/probe-fails")) {
+    console.error("ssh: connect to host desktop: Connection timed out");
+    process.exit(1);
+  }
+  console.log(existsSync(captured(at("has-capture"))) ? "cached" : "none");
+  process.exit(0);
+}
 const raw = readFileSync(at("edl"));
 const edl = JSON.parse(raw);
+const fromCache = process.argv.includes("--from-cache");
+if (fromCache && !existsSync(captured(edl.gameId))) {
+  console.error("the 4090 render failed (exit 4): ERROR no capture cache");
+  process.exit(1);
+}
+if (!fromCache) writeFileSync(captured(edl.gameId), "");
 // A real one-second MP4 (a steady tone).
 execFileSync("ffmpeg", ["-hide_banner", "-loglevel", "error", "-y",
   "-f", "lavfi", "-i", "color=c=black:s=64x64:d=1",
@@ -2579,6 +2603,7 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
     ? readFileSync(__dirname + "/music-override", "utf8")
     : (edl.music ?? "skippy"),
   ending: edl.ending, edlSha256: hash(raw),
+  fromCache: existsSync(__dirname + "/lie-about-cache") ? !fromCache : fromCache,
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
     board: { x: 81, y: 380, w: 918, h: 852 },
     caption: { x: 81, y: 285, w: 918, h: 60 } },
@@ -2592,6 +2617,132 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
       start: 10, end: 11, extra: "dropped" })),
     sounds: [{ name: "pawn", role: "move", start: 10, event: null }] } }));
 `;
+
+test("a render reads the game's capture when the 4090 has one: no view", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const port = await freePort();
+  const child = Bun.spawn(["node", SERVER, "--daily-renderer", stub], {
+    env: {
+      PATH: process.env.PATH!,
+      PORT: String(port),
+      ISOMUX_APP_DATA_DIR: dir,
+    },
+    stdout: "pipe",
+    stderr: "pipe",
+  });
+  stops.push(() => child.kill());
+  const base = `http://127.0.0.1:${port}`;
+  for (let i = 0; i < 50; i++) {
+    try {
+      await fetch(`${base}/api/daily/state`);
+      break;
+    } catch {
+      await Bun.sleep(100);
+    }
+  }
+  const day = "2026-10-26";
+  const call = async <T = Day>(path: string, body: object) => {
+    const res = await fetch(`${base}${path}`, {
+      method: "POST",
+      headers: { "content-type": "application/json" },
+      body: JSON.stringify({ day, cand: "A", ...body }),
+    });
+    return { status: res.status, body: (await res.json()) as T };
+  };
+  const cycle = async () =>
+    (
+      (await (
+        await fetch(`${base}/api/daily/state?day=${day}`)
+      ).json()) as DailyState
+    ).cycle;
+  /** Render (or be refused) and wait for the end; the day's record. */
+  const render = async (body: object = {}) => {
+    const started = await call<{ error?: string }>("/api/daily/render", body);
+    for (let i = 0; i < 50; i++) {
+      const c = await cycle();
+      if (c.cands.A.state !== "rendering") return { started, c };
+      await Bun.sleep(100);
+    }
+    throw new Error("the render did not end");
+  };
+  const direct = async (edl: object) => {
+    const { suggestedEnding } = (await (
+      await fetch(`${base}/api/daily/state?day=${day}`)
+    ).json()) as { suggestedEnding: string };
+    return call<{ error?: string }>("/api/daily/direct", {
+      edl: { ...EDL, ending: suggestedEnding, ...edl },
+    });
+  };
+
+  expect((await call("/api/daily/pick", { report: REPORT })).status).toBe(200);
+  // Without a named track a second render could play another song.
+  const unnamed = await direct({ music: undefined });
+  expect(unnamed.status).toBe(409);
+  expect(unnamed.body.error).toContain(
+    'name a music track ("music"): a list without one gets a random track',
+  );
+  expect((await direct({})).status).toBe(200);
+
+  // The game's first render captures it live: one view.
+  let { c } = await render();
+  expect(c.cands.A.state).toBe("rendered");
+  expect(c.cands.A.render?.fromCache).toBe(false);
+  expect(c.renders).toEqual({ TESTGAME1: 1 });
+  const live = c.cands.A.render?.video?.sha256;
+
+  // A new list renders from the capture: no view, no --force.
+  expect((await direct({ music: "tea-for-two" })).status).toBe(200);
+  ({ c } = await render());
+  expect(c.cands.A.state).toBe("rendered");
+  expect(c.cands.A.render?.fromCache).toBe(true);
+  expect(c.renders).toEqual({ TESTGAME1: 1 });
+  expect(c.events.map((e) => e.what)).toContain(
+    `A: render ${c.cands.A.render?.jobId} queued (from the capture)`,
+  );
+  expect(c.cands.A.render?.video?.sha256).not.toBe(live);
+
+  // A live capture on purpose is one more view, so it needs force.
+  expect((await direct({ music: "a-legend" })).status).toBe(200);
+  const refused = await render({ live: true });
+  expect(refused.started.status).toBe(409);
+  expect(refused.started.body.error).toContain(
+    "TESTGAME1 was already rendered 1 time(s) today",
+  );
+  ({ c } = await render({ live: true, force: true }));
+  expect(c.cands.A.render?.fromCache).toBe(false);
+  expect(c.renders).toEqual({ TESTGAME1: 2 });
+
+  // When the app cannot ask the 4090, it does not guess (a live render
+  // would be a view nobody counted): nothing starts.
+  expect((await direct({ music: "deja-vus" })).status).toBe(200);
+  writeFileSync(join(dir, "probe-fails"), "");
+  const unknown = await render();
+  expect(unknown.started.status).toBe(409);
+  expect(unknown.started.body.error).toContain(
+    "Connection timed out; the app must know whether the 4090 has the game's capture before it renders, so try again",
+  );
+  expect(unknown.c.cands.A.state).toBe("directed");
+  unlinkSync(join(dir, "probe-fails"));
+
+  // A render that was not what the app asked for fails.
+  writeFileSync(join(dir, "lie-about-cache"), "");
+  ({ c } = await render());
+  expect(c.cands.A.state).toBe("render-failed");
+  // A renderer that ignores --from-cache captured live: that view counts.
+  expect(c.cands.A.render?.error).toBe(
+    "the renderer captured the game live, but the app asked for its capture: one view of the game, now counted; the 4090 kit may be older than --from-cache, so sync it",
+  );
+  expect(c.renders).toEqual({ TESTGAME1: 3 });
+  // The other way: counted as live but read from the capture; it stays
+  // counted (an overcount is safe).
+  ({ c } = await render({ live: true, force: true }));
+  expect(c.cands.A.render?.error).toBe(
+    "the render was from the capture, but the app asked for a live capture",
+  );
+  expect(c.renders).toEqual({ TESTGAME1: 4 });
+}, 30_000);
 
 test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   const dir = tempDir();
@@ -3154,7 +3305,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(state?.cycle.cands.A.render?.ending).toBe("ko");
   expect(state?.cycle.cands.A.render?.sheet?.stills).toHaveLength(40);
   // Day 2's picked video waits to post, so its track is the last one.
-  // (Day 2's list named none: the stub played its stand-in.)
+  // (Day 2's list named skippy.)
   expect(
     (await call<{ lastMusic: string }>(`/api/daily/state?day=${third}`)).body
       .lastMusic,
@@ -3412,11 +3563,7 @@ const { createHash } = require("node:crypto");
 const at = (n) => process.argv[process.argv.indexOf("--" + n) + 1];
 const hash = (b) => createHash("sha256").update(b).digest("hex");
 if (process.argv.includes("--has-capture")) {
-  if (existsSync(__dirname + "/no-capture")) {
-    console.error("the 4090 has no capture of game " + at("has-capture") + " yet");
-    process.exit(1);
-  }
-  console.log("cached");
+  console.log(existsSync(__dirname + "/no-capture") ? "none" : "cached");
   process.exit(0);
 }
 const edl = JSON.parse(readFileSync(at("edl"), "utf8"));
@@ -3533,7 +3680,9 @@ test("a preview: a few plies from the capture, and the cycle does not change", a
     plies: "20..23",
   });
   expect(refused.status).toBe(409);
-  expect(refused.body.error).toContain("has no capture of game TESTGAME1");
+  expect(refused.body.error).toBe(
+    "the 4090 has no capture of game TESTGAME1 yet: a preview reads the capture that the game's full render saves, so render the day's video first",
+  );
   expect(
     (await call<{ renders: unknown[] }>("/api/daily/busy")).body.renders,
   ).toEqual([]);
