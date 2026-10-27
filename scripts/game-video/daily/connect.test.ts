@@ -182,7 +182,7 @@ describe("token store", () => {
       expect(status?.error).toMatch(`connect ${platform} again`);
       expect(JSON.stringify(status)).not.toContain("SECRET");
       const html = connectPage([
-        { platform, status, missing: [], notInCode: [] },
+        { platform, status, reasons: ["not connected"], canConnect: true },
       ]);
       expect(html).not.toContain("Connected");
       expect(html).not.toContain("Connect again");
@@ -721,7 +721,9 @@ describe("/daily/connect through the app", () => {
       ).toBe("SECRET-RT");
 
       for (const text of [...app.seen, ...logged]) {
-        expect(text).not.toContain("SECRET");
+        // Every fake value starts "SECRET-"; secret NAMES (such as
+        // R2_SECRET_ACCESS_KEY) may show in a dry-run reason.
+        expect(text).not.toContain("SECRET-");
       }
     } finally {
       app.close();
@@ -740,7 +742,7 @@ describe("/daily/connect through the app", () => {
     try {
       const page = await app.call("/daily/connect");
       expect(page.text).toContain(
-        "Connect needs the app secrets <code>YOUTUBE_CLIENT_SECRET</code>.",
+        "Posts are dry runs: secrets missing: YOUTUBE_CLIENT_SECRET; not connected.",
       );
       expect(page.text).not.toContain('action="/daily/connect/youtube/start"');
       const start = await app.call("/daily/connect/youtube/start", {
@@ -758,14 +760,21 @@ describe("/daily/connect through the app", () => {
     const daily = createDaily({
       dataDir: tempDir(),
       // The secret is set, and so is an env var with the id's name.
-      env: { YOUTUBE_CLIENT_ID: "from-env", YOUTUBE_CLIENT_SECRET: "s" },
+      env: {
+        YOUTUBE_CLIENT_ID: "from-env",
+        YOUTUBE_CLIENT_SECRET: "SECRET-YT",
+        BLUESKY_APP_PASSWORD: "SECRET-BSKY",
+        R2_ACCESS_KEY_ID: "SECRET-R2-ID",
+      },
       ids: { ...PUBLIC_IDS, YOUTUBE_CLIENT_ID: null },
       live: () => fakeLive(() => ({ status: 500 })),
     });
     const app = await serve(daily);
     try {
       const page = await app.call("/daily/connect");
-      expect(page.text).toContain("YouTube client id not set in code.");
+      expect(page.text).toContain(
+        "Posts are dry runs: YouTube client id not set in code; not connected.",
+      );
       expect(page.text).not.toContain('action="/daily/connect/youtube/start"');
       const start = await app.call("/daily/connect/youtube/start", {
         method: "POST",
@@ -773,12 +782,31 @@ describe("/daily/connect through the app", () => {
       });
       expect(start.status).toBe(409);
       expect(start.text).toContain("YouTube client id not set in code");
-      const modes = (
-        JSON.parse((await app.call("/api/daily/state")).text) as {
-          modes: Record<string, string>;
-        }
-      ).modes;
+      const stateText = (await app.call("/api/daily/state")).text;
+      const { modes, modeReasons } = JSON.parse(stateText) as {
+        modes: Record<string, string>;
+        modeReasons: Record<string, string[]>;
+      };
       expect(modes.youtube).toBe("dry-run");
+      // The same reasons as the page, for each dry-run platform only.
+      expect(modeReasons.youtube).toEqual([
+        "YouTube client id not set in code",
+        "not connected",
+      ]);
+      expect(modeReasons.threads).toEqual([
+        "secrets missing: THREADS_APP_SECRET",
+        "R2 secrets missing: R2_SECRET_ACCESS_KEY",
+        "not connected",
+      ]);
+      expect(modes.bluesky).toBe("live");
+      expect(modeReasons).not.toHaveProperty("bluesky");
+      expect(page.text).toContain(
+        "Posts are dry runs: secrets missing: THREADS_APP_SECRET; R2 secrets missing: R2_SECRET_ACCESS_KEY; not connected.",
+      );
+      // Names only: no value of a set secret, not even a part of one.
+      for (const text of [stateText, page.text]) {
+        expect(text).not.toContain("SECRET-");
+      }
     } finally {
       app.close();
     }
@@ -855,7 +883,7 @@ describe("/daily/connect shows what the Meta token finds", () => {
     expect(two.text).not.toContain("SECRET-");
     const none = await show({}, [page("Wall Game")]);
     expect(none.text).toContain(
-      "Not set up: the app needs the secret META_SYSTEM_USER_TOKEN",
+      "Posts are dry runs: secrets missing: META_SYSTEM_USER_TOKEN",
     );
     expect(none.sent).toHaveLength(0);
   });

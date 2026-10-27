@@ -64,32 +64,36 @@ const connectionLines = (status) => {
 };
 
 /**
- * @param {{ platform: string, status: any, missing: string[], notInCode: string[] }[]} platforms
+ * @param {{ platform: string, status: any, reasons: string[], canConnect: boolean }[]} platforms
+ *   `reasons`: why the platform posts dry runs (routes.mjs modeReasons).
  * @param {{ connected?: string | null, meta?: { lines: string[], ok: boolean } | null }} o
  */
 export const connectPage = (
   platforms,
   { connected = null, meta = null } = {},
 ) => {
-  const sections = platforms.map(({ platform, status, missing, notInCode }) => {
-    const name = NAMES[platform] ?? platform;
-    let state;
-    if (status?.error) {
-      state = `<p class="err">${escapeHtml(status.error)}</p>`;
-    } else if (status) {
-      state = `<p class="ok">Connected</p><ul>${connectionLines(status)
-        .map((l) => `<li>${l}</li>`)
-        .join("")}</ul>`;
-    } else {
-      state = `<p class="no">Not connected</p>`;
-    }
-    const button = notInCode.length
-      ? notInCode.map((r) => `<p class="no">${escapeHtml(r)}.</p>`).join("")
-      : missing.length
-        ? `<p class="no">Connect needs the app secrets ${missing.map((m) => `<code>${escapeHtml(m)}</code>`).join(", ")}.</p>`
-        : `<form method="post" action="/daily/connect/${escapeHtml(platform)}/start"><button>${status && !status.error ? "Connect again" : "Connect"}</button></form>`;
-    return `<section><h2>${escapeHtml(name)}</h2>${state}${button}</section>`;
-  });
+  const sections = platforms.map(
+    ({ platform, status, reasons, canConnect }) => {
+      const name = NAMES[platform] ?? platform;
+      let state;
+      if (status?.error) {
+        state = `<p class="err">${escapeHtml(status.error)}</p>`;
+      } else if (status) {
+        state = `<p class="ok">Connected</p><ul>${connectionLines(status)
+          .map((l) => `<li>${l}</li>`)
+          .join("")}</ul>`;
+      } else {
+        state = `<p class="no">Not connected</p>`;
+      }
+      const posts = reasons.length
+        ? `<p class="no">Posts are dry runs: ${escapeHtml(reasons.join("; "))}.</p>`
+        : `<p class="ok">Posts are live.</p>`;
+      const button = canConnect
+        ? `<form method="post" action="/daily/connect/${escapeHtml(platform)}/start"><button>${status && !status.error ? "Connect again" : "Connect"}</button></form>`
+        : "";
+      return `<section><h2>${escapeHtml(name)}</h2>${state}${posts}${button}</section>`;
+    },
+  );
   const metaSection = meta
     ? `<section><h2>Facebook and Instagram (Meta)</h2><ul>${meta.lines
         .map(

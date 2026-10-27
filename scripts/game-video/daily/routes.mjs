@@ -149,12 +149,7 @@ import {
   THREADS_SECRETS,
 } from "./post-threads.mjs";
 import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
-import {
-  idsNotSet,
-  PLATFORM_IDS,
-  PUBLIC_IDS,
-  withPublicIds,
-} from "./public-ids.mjs";
+import { idsNotSet, PUBLIC_IDS, withPublicIds } from "./public-ids.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { connectStates, ConnectRefused } from "./connect-state.mjs";
 import {
@@ -182,41 +177,69 @@ const CAPTURE_PROBE_MS = 60 * 1000;
 /** Time the adapter gets to stop the remote render before it is killed. */
 const KILL_GRACE_MS = 30 * 1000;
 
-const SECRETS = {
-  x: X_SECRETS,
-  youtube: YOUTUBE_SECRETS,
-  tiktok: TIKTOK_SECRETS,
+/**
+ * The secrets each platform posts with, in named groups, so that a reason can
+ * say which part is missing.
+ */
+const SECRET_GROUPS = {
+  x: [{ label: "secrets", names: X_SECRETS }],
+  youtube: [{ label: "secrets", names: YOUTUBE_SECRETS }],
+  tiktok: [{ label: "secrets", names: TIKTOK_SECRETS }],
   // One system-user token finds the Page and Instagram (meta.mjs).
-  instagram: META_SECRETS,
-  facebook: META_SECRETS,
-  bluesky: BLUESKY_SECRETS,
+  instagram: [{ label: "secrets", names: META_SECRETS }],
+  facebook: [{ label: "secrets", names: META_SECRETS }],
+  bluesky: [{ label: "secrets", names: BLUESKY_SECRETS }],
   // Threads fetches the video from R2 (public-url-r2.mjs), so it is live
   // only when the R2 secrets exist too (Wall Game PM, 2026-10-26).
-  threads: [...THREADS_SECRETS, ...R2_SECRETS],
+  threads: [
+    { label: "secrets", names: THREADS_SECRETS },
+    { label: "R2 secrets", names: R2_SECRETS },
+  ],
 };
 
 /** Every secret a poster reads; a test strips them so it cannot post. */
-export const POSTING_SECRETS = Object.values(SECRETS).flat();
+export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
+  groups.flatMap((g) => g.names),
+);
 
 /**
- * live when every secret and every public id (public-ids.mjs) of the
- * platform is set and, for a platform with Connect (connect.mjs),
- * `connected` has it; else dry-run. `env` has the public ids over it
- * (withPublicIds).
+ * Why each platform cannot post live; an empty list means live. A reason
+ * names what is missing (secret NAMES, an id not set in code, no Connect),
+ * never a value. `env` has the public ids over it (withPublicIds).
  * @param {Set<string>} connected
+ * @returns {Record<string, string[]>}
  */
-export const postingModes = (env, connected = new Set()) =>
+export const modeReasons = (env, connected = new Set()) =>
   Object.fromEntries(
     PLATFORMS.map((p) => [
       p,
-      [...SECRETS[p], ...(PLATFORM_IDS[p] ?? [])].every((name) =>
-        Boolean(env[name]),
-      ) &&
-      (!CONNECT_PLATFORMS.includes(p) || connected.has(p))
-        ? "live"
-        : "dry-run",
+      [
+        ...SECRET_GROUPS[p].flatMap(({ label, names }) => {
+          const missing = names.filter((name) => !env[name]);
+          return missing.length
+            ? [`${label} missing: ${missing.join(", ")}`]
+            : [];
+        }),
+        ...idsNotSet(p, env),
+        ...(CONNECT_PLATFORMS.includes(p) && !connected.has(p)
+          ? ["not connected"]
+          : []),
+      ],
     ]),
   );
+
+/** live when a platform has no reason (modeReasons); else dry-run. */
+const modesOf = (reasons) =>
+  Object.fromEntries(
+    Object.entries(reasons).map(([p, why]) => [
+      p,
+      why.length ? "dry-run" : "live",
+    ]),
+  );
+
+/** @param {Set<string>} connected */
+export const postingModes = (env, connected = new Set()) =>
+  modesOf(modeReasons(env, connected));
 
 /** The canned replies of each platform's dry run. */
 const DRY_RUN_REPLIES = {
@@ -284,7 +307,8 @@ export const createDaily = ({
   const tokens = openTokenStore(join(dirs.root, "tokens"));
   const connectedNow = () =>
     new Set(CONNECT_PLATFORMS.filter((p) => tokens.connected(p)));
-  const modesNow = () => postingModes(env, connectedNow());
+  const reasonsNow = () => modeReasons(env, connectedNow());
+  const modesNow = () => modesOf(reasonsNow());
   const states = connectStates();
 
   /**
@@ -293,12 +317,10 @@ export const createDaily = ({
    * Meta), or why they are not found. Never the Page token.
    */
   const metaStatus = async () => {
-    const missing = META_SECRETS.filter((name) => !env[name]);
-    if (missing.length) {
-      return {
-        ok: false,
-        lines: [`Not set up: the app needs the secret ${missing.join(", ")}`],
-      };
+    // Facebook and Instagram have the same reasons (one Meta secret).
+    const why = reasonsNow().facebook;
+    if (why.length) {
+      return { ok: false, lines: [`Posts are dry runs: ${why.join("; ")}`] };
     }
     try {
       const found = await discoverMeta({
@@ -975,10 +997,15 @@ export const createDaily = ({
 
   const state = (day) => {
     const cycle = store.read(day);
+    const reasons = reasonsNow();
     return {
       day,
       today: utcDay(),
-      modes: modesNow(),
+      modes: modesOf(reasons),
+      // Why each dry-run platform is not live: names only, never a value.
+      modeReasons: Object.fromEntries(
+        Object.entries(reasons).filter(([, why]) => why.length),
+      ),
       cycle,
       renderProgress: cycle?.render
         ? (progress.get(cycle.render.jobId) ?? null)
@@ -1414,6 +1441,7 @@ export const createDaily = ({
     "GET /daily/connect": async (req, res, url) => {
       const connected = url.searchParams.get("connected");
       const meta = await metaStatus();
+      const reasons = reasonsNow();
       html(
         res,
         200,
@@ -1421,8 +1449,11 @@ export const createDaily = ({
           CONNECT_PLATFORMS.map((platform) => ({
             platform,
             status: tokens.status(platform),
-            missing: missingClientSecrets(platform, env),
-            notInCode: idsNotSet(platform, env),
+            reasons: reasons[platform],
+            // Connect itself needs the client secrets and ids, not R2.
+            canConnect:
+              !missingClientSecrets(platform, env).length &&
+              !idsNotSet(platform, env).length,
           })),
           {
             connected: CONNECT_PLATFORMS.includes(connected) ? connected : null,
