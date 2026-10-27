@@ -926,7 +926,13 @@ describe("a post that may exist is not posted again", () => {
 });
 
 describe("the TikTok refresh after a connect", () => {
-  test("carries the client key from code and the stored refresh token; an env var of the key's name has no effect", async () => {
+  /**
+   * An approved day with TikTok connected and live, while the env still
+   * holds an old TIKTOK_CLIENT_KEY. `token` answers the refresh request.
+   */
+  const postWithTiktokLive = async (
+    token: (req: { url: string }) => unknown,
+  ) => {
     const dir = tempDir();
     const video = join(dir, "v.mp4");
     writeFileSync(video, "bytes");
@@ -970,11 +976,20 @@ describe("the TikTok refresh after a connect", () => {
         sent,
         request: (req: { url: string; body?: unknown }) => {
           sent.push(req);
-          return Promise.resolve(tiktokDryRunReply(req));
+          return Promise.resolve(
+            req.url === TIKTOK_TOKEN_URL ? token(req) : tiktokDryRunReply(req),
+          );
         },
       }),
     });
-    const cycle = (await daily.post(day)) as Cycle;
+    const cycle = (await daily.post(day)) as Cycle & {
+      posts: Record<string, { error?: string; uncertain?: boolean }>;
+    };
+    return { cycle, sent };
+  };
+
+  test("carries the client key from code and the stored refresh token; an env var of the key's name has no effect", async () => {
+    const { cycle, sent } = await postWithTiktokLive(tiktokDryRunReply);
     expect(cycle.state).toBe("posted");
     const refresh = sent.find((r) => r.url === TIKTOK_TOKEN_URL);
     const body = new URLSearchParams(String(refresh?.body));
@@ -982,6 +997,19 @@ describe("the TikTok refresh after a connect", () => {
     expect(body.get("client_key")).toBe("sbawgnt7vpik5zdozp");
     expect(body.get("grant_type")).toBe("refresh_token");
     expect(body.get("refresh_token")).toBe("stored-refresh");
+  });
+
+  test("a refused refresh is a plain TikTok error, not a silent dry run", async () => {
+    const { cycle } = await postWithTiktokLive(() => ({
+      status: 400,
+      json: { error: "invalid_client" },
+    }));
+    expect(cycle.state).toBe("post-failed");
+    expect(cycle.posts.tiktok.error).toMatch(
+      /^tiktok token: HTTP 400 .*invalid_client/,
+    );
+    // A 4xx before the upload: nothing was made, so a retry is safe.
+    expect(cycle.posts.tiktok.uncertain).toBe(false);
   });
 });
 
