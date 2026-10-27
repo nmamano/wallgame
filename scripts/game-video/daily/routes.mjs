@@ -61,6 +61,7 @@ import {
   StepRefused,
   PLATFORMS,
   LABELS,
+  writeAtomic,
 } from "./store.mjs";
 import {
   candidateFromReport,
@@ -1357,6 +1358,26 @@ export const createDaily = ({
         video: p.video,
         error: p.error,
       });
+    },
+
+    /**
+     * {day?, text}: the ask's notes (crew.mjs askNotes), written into the
+     * app's folder so that the ask can attach them. The file is named by
+     * the text's hash, so the same notes are one file. Returns {path}.
+     */
+    "POST /api/daily/ask-notes": async (req, res) => {
+      const body = await readJson(req);
+      const day = dayOf(body.day);
+      if (!store.read(day))
+        throw new StepRefused(`there is no cycle for ${day}`);
+      if (typeof body.text !== "string" || body.text.length === 0) {
+        throw new StepRefused("the notes are a text");
+      }
+      const dir = join(dirs.root, "ask-notes");
+      mkdirSync(dir, { recursive: true });
+      const path = join(dir, `${day}-${sha256(body.text).slice(0, 12)}.txt`);
+      writeAtomic(path, body.text);
+      json(res, 200, { path });
     },
 
     /**

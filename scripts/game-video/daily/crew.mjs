@@ -83,7 +83,9 @@
  *                                  open the day's one Isomux ask for
  *                                  APPROVER_MEMBER: each checked candidate (or
  *                                  the ones --cands names) with its MP4, its
- *                                  sheet and its copy block, and the options
+ *                                  sheet and its copy block, one notes file
+ *                                  (each edit list, sheet check and video
+ *                                  details), and the options
  *                                  "Post A", ... and "None today". After
  *                                  "None today", `ask` again offers a new
  *                                  set (a new candidate, video or block; the
@@ -372,10 +374,29 @@ export const postedTexts = (c) => {
   });
 };
 
+/** The office takes an ask's text up to this many characters. */
+export const ASK_TEXT_LIMIT = 4000;
+/** Nil's earlier reply is quoted in the text up to this many characters. */
+const REPLY_QUOTED = 300;
+
 /**
- * The ask's text: everything Nil needs to decide without opening anything.
- * `c` is the day's record and `shas` the sha256 of each offered candidate's
- * MP4 bytes, by label, in the order the ask shows them.
+ * The ask that Nil answered with none: the current approval until the new
+ * ask is recorded, or the last earlier ask when this one is opened again.
+ */
+const earlierNone = (c) =>
+  c.state === "rejected"
+    ? c.approval
+    : c.state === "asked"
+      ? (c.earlierAsks?.at(-1) ?? null)
+      : null;
+
+/**
+ * The ask's text: what Nil decides on, the posting modes and, per
+ * candidate, what the video says and the exact post text. The office takes
+ * at most ASK_TEXT_LIMIT characters, so the rest goes in askNotes, a file
+ * that the ask attaches. `c` is the day's record and `shas` the sha256 of
+ * each offered candidate's MP4 bytes, by label, in the order the ask shows
+ * them.
  */
 export const askText = (c, modes, shas) => {
   const dry = Object.values(modes).every((m) => m === "dry-run");
@@ -383,15 +404,8 @@ export const askText = (c, modes, shas) => {
     ([, name]) => name,
   );
   const labels = Object.keys(shas);
-  // The ask that Nil answered with none: the current approval until the
-  // new ask is recorded, or the last earlier ask when this one is opened
-  // again.
-  const earlier =
-    c.state === "rejected"
-      ? c.approval
-      : c.state === "asked"
-        ? (c.earlierAsks?.at(-1) ?? null)
-        : null;
+  const earlier = earlierNone(c);
+  const reply = earlier?.reply ?? null;
   const sameAs = (label) =>
     earlier?.offered?.[label]?.videoSha256 === shas[label]
       ? ` (the same video as in ask ${earlier.askId})`
@@ -409,7 +423,13 @@ export const askText = (c, modes, shas) => {
     `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
     ...(earlier
       ? [
-          `After ask ${earlier.askId}, where you picked none${earlier.reply === null ? " without a reply" : `: "${earlier.reply}"`}.`,
+          `After ask ${earlier.askId}, where you picked none${
+            reply === null
+              ? " without a reply"
+              : reply.length > REPLY_QUOTED
+                ? `: "${[...reply].slice(0, REPLY_QUOTED).join("")}..." (all of it in the notes)`
+                : `: "${reply}"`
+          }.`,
         ]
       : []),
     ...labels.flatMap((label) => {
@@ -417,21 +437,47 @@ export const askText = (c, modes, shas) => {
       return [
         "",
         `CANDIDATE ${label}${sameAs(label)}: video ${label} and sheet ${label} are attached.`,
+        `For you only, not posted: ${k.candidate.seats.map((x) => x.name).join(" vs ")}, ${k.candidate.movesCount} plies.`,
         `On the video: ${JSON.stringify(k.edl.doc.caption ?? "")}${k.edl.doc.payoff ? `, then ${JSON.stringify(k.edl.doc.payoff.text)}` : ""}.`,
         `Post text (by Growth, ${k.copy.version}):`,
         ...copyLines(k.copy),
-        "For you only, not posted:",
-        `${k.candidate.seats.map((x) => x.name).join(" vs ")}, ${k.candidate.movesCount} plies, game ${k.candidate.gameId}.`,
-        `Video: ${(k.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${shas[label].slice(0, 12)}, style ${k.render.effect ?? "-"}, ending ${k.render.ending}, sounds ${k.render.sound ?? "-"}, music ${k.render.music ?? "-"}.`,
-        "Director's edit list:",
-        ...k.edl.summary.map((l) => `- ${l}`),
-        "Contact sheet, checked by the director:",
-        ...k.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
       ];
     }),
     "",
+    "The attached notes give each candidate's edit list, the director's check of its contact sheet and its video details.",
     `Pick the one to post (${labels.map((l) => `Post ${l}`).join(", ")}), or None today. Add notes on any candidate in your reply: they go to the director's feedback log.`,
   ].join("\n");
+};
+
+/**
+ * The ask's notes, a text file that the ask attaches: per candidate, the
+ * game, the video's details, the director's edit list and the check of
+ * the contact sheet, and Nil's earlier reply in full. Same arguments as
+ * askText.
+ */
+export const askNotes = (c, shas) => {
+  const earlier = earlierNone(c);
+  return (
+    [
+      `Daily Wall Game video for ${c.day}: notes for the ask. For you only, not posted.`,
+      ...(earlier?.reply
+        ? ["", `Your reply to ask ${earlier.askId}, in full:`, earlier.reply]
+        : []),
+      ...Object.keys(shas).flatMap((label) => {
+        const k = c.cands[label];
+        return [
+          "",
+          `CANDIDATE ${label}`,
+          `${k.candidate.seats.map((x) => x.name).join(" vs ")}, ${k.candidate.movesCount} plies, game ${k.candidate.gameId}.`,
+          `Video: ${(k.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${shas[label].slice(0, 12)}, style ${k.render.effect ?? "-"}, ending ${k.render.ending}, sounds ${k.render.sound ?? "-"}, music ${k.render.music ?? "-"}.`,
+          "Director's edit list:",
+          ...k.edl.summary.map((l) => `- ${l}`),
+          "Contact sheet, checked by the director:",
+          ...k.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
+        ];
+      }),
+    ].join("\n") + "\n"
+  );
 };
 
 /** The ask's options: one per offered candidate, then "None today". */
@@ -813,16 +859,29 @@ const commands = {
     }
     if (Object.keys(shas).length !== labels.length)
       die(`--cands takes labels among ${LABELS.join(",")}`);
+    // The office refuses a longer text, after the app wrote the notes.
+    const text = askText(c, s.modes, shas);
+    if (text.length > ASK_TEXT_LIMIT)
+      die(
+        `the ask text has ${text.length} characters, over the office's ${ASK_TEXT_LIMIT}: offer fewer candidates (--cands), or ask Growth for shorter lines`,
+      );
+    const notes = await app("POST", "/api/daily/ask-notes", {
+      day: c.day,
+      text: askNotes(c, shas),
+    });
     const opened = await office("POST", `/api/agents/${agent}/asks`, {
       type: "application/json",
       body: JSON.stringify({
-        text: askText(c, s.modes, shas),
+        text,
         member: APPROVER_MEMBER,
         options: askOptions(Object.keys(shas)),
-        readFiles: Object.keys(shas).flatMap((l) => [
-          c.cands[l].render.video.path,
-          c.cands[l].render.sheet.path,
-        ]),
+        readFiles: [
+          ...Object.keys(shas).flatMap((l) => [
+            c.cands[l].render.video.path,
+            c.cands[l].render.sheet.path,
+          ]),
+          notes.path,
+        ],
       }),
     });
     if (opened.status !== 201)

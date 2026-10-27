@@ -22,7 +22,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { openStore, readPostLog } from "./store.mjs";
+import { migrateV1, openStore, readPostLog } from "./store.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
@@ -64,7 +64,14 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import { approvedPackage, askOptions, askText, postedTexts } from "./crew.mjs";
+import {
+  ASK_TEXT_LIMIT,
+  approvedPackage,
+  askNotes,
+  askOptions,
+  askText,
+  postedTexts,
+} from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import {
@@ -2073,6 +2080,40 @@ describe("TikTok", () => {
     expect(none.split("Posting mode:").length).toBe(2);
   });
 
+  test("three real candidates fit the office's ask; the details go in the notes", () => {
+    // The real 2026-10-27 record: its block, 13 edit-list lines, 5 checks.
+    const real = migrateV1(
+      JSON.parse(
+        readFileSync(
+          join(import.meta.dir, "fixtures", "v1-2026-10-27.json"),
+          "utf8",
+        ),
+      ),
+    ) as { day: string; cands: { A: { edl: { summary: string[] } } } };
+    const A = real.cands.A;
+    const reply = "the X line is cringe, try again. ".repeat(20);
+    const c = {
+      ...real,
+      state: "rejected",
+      approval: { askId: "ask0", reply, offered: {} },
+      cands: { A, B: A, C: A },
+    };
+    const shas = { A: "a".repeat(64), B: "b".repeat(64), C: "c".repeat(64) };
+    const text = askText(c, { ...DRY, youtube: "live", tiktok: "live" }, shas);
+    expect(text.length).toBeLessThanOrEqual(ASK_TEXT_LIMIT);
+    expect(text).not.toContain("Director's edit list:");
+    expect(text).toContain(
+      `picked none: "${reply.slice(0, 300)}..." (all of it in the notes).`,
+    );
+    const notes = askNotes(c, shas);
+    expect(notes).toContain(`Your reply to ask ask0, in full:\n${reply}\n`);
+    expect(notes.split("Director's edit list:")).toHaveLength(4);
+    expect(notes.split("Contact sheet, checked by the director:")).toHaveLength(
+      4,
+    );
+    for (const line of A.edl.summary) expect(notes).toContain(`- ${line}`);
+  });
+
   test("the ask shows each offered candidate, and options for each and none", () => {
     const cand = (label: string, x: string) => ({
       copy: { ...COPY, x },
@@ -3119,6 +3160,41 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
   const status = crew("status", "--day", day);
   expect(status.out).toContain("CANDIDATE A: checked");
   expect(status.out).toContain("CANDIDATE B: checked");
+
+  // ask measures its text before it calls the office. This test has no
+  // office token, so a text that fits stops at the office call, after the
+  // app wrote the notes that the ask attaches.
+  const notesDir = join(dir, "daily", "ask-notes");
+  const fits = crew("ask", "--day", day, "--agent", "agent-x");
+  expect(fits.err).toContain("ISOMUX_AGENT_TOKEN is not set");
+  const written = readdirSync(notesDir);
+  expect(written).toHaveLength(1);
+  expect(readFileSync(join(notesDir, written[0]), "utf8")).toContain(
+    "CANDIDATE B\nGuest Tuatara vs Ruby, 41 plies, game CARRYOVR1.",
+  );
+  // A long line (inside YouTube's own limit) makes the text too long: no
+  // notes, no office call.
+  const long = `${"bro humbled the bot with one wall 😭🥀 ".repeat(90)}Play Wall Game: ${YOUTUBE_LINK}`;
+  await ok("/api/daily/copy", {
+    day,
+    cand: "B",
+    text: BLOCK.replace(
+      /^YouTube description: .*$/m,
+      `YouTube description: ${long}`,
+    ),
+    copyVersion: COPY_VERSION,
+  });
+  const over = crew("ask", "--day", day, "--agent", "agent-x");
+  expect(over.err).toMatch(
+    /^the ask text has \d+ characters, over the office's 4000: offer fewer candidates \(--cands\), or ask Growth for shorter lines/,
+  );
+  expect(readdirSync(notesDir)).toEqual(written);
+  await ok("/api/daily/copy", {
+    day,
+    cand: "B",
+    text: BLOCK.replace(`X: ${COPY.x}`, `X: ${COPY_B.x}`),
+    copyVersion: COPY_VERSION,
+  });
 
   // The ask as crew.mjs records it (no real ask to Nil in a test).
   await ok("/api/daily/ask", {
