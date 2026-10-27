@@ -209,6 +209,8 @@ describe("ship", () => {
         renders: [] as { day: string; jobId: string; state: string }[],
         restarts: 0,
         hashExit: 0,
+        /** What the restarted app's record looks like, if it changes. */
+        afterRestart: null as Record<string, string> | null,
       };
       const server = Bun.serve({
         port: 0,
@@ -225,7 +227,10 @@ describe("ship", () => {
         },
       });
       const office = (method: string, path: string) => {
-        if (method === "POST" && path.endsWith("/restart")) app.restarts++;
+        if (method === "POST" && path.endsWith("/restart")) {
+          app.restarts++;
+          if (app.afterRestart) app.cycle = app.afterRestart;
+        }
         return Promise.resolve({
           status: 200,
           body: { cwd, command: "env WALLGAME_GPU_HOST=u@box node x.mjs" },
@@ -312,6 +317,39 @@ describe("ship", () => {
       expect(git(release, "rev-parse", "HEAD")).toBe(second);
       expect(fake.calls).toEqual(["sync", "hashes", "help"]);
       expect(fake.app.restarts).toBe(1);
+      void fake.server.stop();
+      rmSync(root, { recursive: true });
+    });
+
+    test("a restart that rewrites the record's format, but not the record, passes", async () => {
+      const { root, release, second } = repos();
+      const fake = fakeApp(release);
+      // store.mjs migrateV1: the same record, with a version 2 state name.
+      fake.app.afterRestart = {
+        day: "2026-10-26",
+        state: "open",
+        updatedAt: "t1",
+      };
+      const { passed, lines } = await go(release, second, fake);
+      expect(passed).toBe(true);
+      expect(lines.at(-1)).toMatch(/^ship 7\/7 state/);
+      void fake.server.stop();
+      rmSync(root, { recursive: true });
+    });
+
+    test("a record that changed across the restart fails the state step", async () => {
+      const { root, release, second } = repos();
+      const fake = fakeApp(release);
+      fake.app.afterRestart = {
+        day: "2026-10-26",
+        state: "rendered",
+        updatedAt: "t2",
+      };
+      const { passed, lines } = await go(release, second, fake);
+      expect(passed).toBe(false);
+      expect(lines.at(-1)).toContain(
+        "the day's cycle changed: before 2026-10-26 t1, after 2026-10-26 t2",
+      );
       void fake.server.stop();
       rmSync(root, { recursive: true });
     });

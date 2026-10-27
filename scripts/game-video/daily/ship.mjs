@@ -403,9 +403,11 @@ export const ship = async ({
   }
   ok("page", "/daily 200");
 
-  // 7. state
+  // 7. state. Every save moves updatedAt, so the same day and updatedAt is
+  // the same record. The state name is left out: a restart may rewrite an
+  // old file in a new format (store.mjs migrateV1) without changing it.
   const after = await get("/api/daily/state").catch(noAnswer);
-  const same = (c) => (c ? `${c.day} ${c.state} ${c.updatedAt}` : "none");
+  const same = (c) => (c ? `${c.day} ${c.updatedAt}` : "none");
   if (!after.ok || !after.json) {
     return fail("state", `GET /api/daily/state: HTTP ${after.status}`);
   }

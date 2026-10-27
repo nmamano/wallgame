@@ -1,21 +1,29 @@
 /**
- * The crew lead's commands for one daily video. Each one is a step of the
- * cycle in routes.mjs; the app keeps the record and refuses a step out of
- * order, so a session that starts cold can run `status` and go on.
+ * The crew lead's commands for one daily video. A day has up to three
+ * candidates, A, B and C (store.mjs): each is a game, an edit list, a render
+ * and a check, and Nil picks one to post in the day's one ask. Each command
+ * is a step in routes.mjs; the app keeps the record and refuses a step out
+ * of order, so a session that starts cold can run `status` and go on.
  *
  *   node scripts/game-video/daily/crew.mjs <command> [--day YYYY-MM-DD]
  *
- *   status                         where today's cycle is
+ * Every production command names its candidate with --cand A|B|C.
+ *
+ *   status                         where the day and each candidate are
+ *   feedback [--last N]            Nil's last N answers (default 10): what
+ *                                  he picked and his reply, verbatim. Read
+ *                                  it before you direct
  *   facts --report F [--top N]     the candidates' facts, to write the on-video
  *                                  caption from
- *   pick --report F [--rank N] [--style S] [--replace]
- *                                  today's candidate. No post text: Wall Game
- *                                  Growth writes it (copy). A day has one
- *                                  cycle: --replace starts over a day that has
- *                                  one (only on purpose, e.g. after the member
- *                                  rejected its video)
- *   storyboard [--edl F]           one image of every position of the picked
- *                                  game (scripts/game-video/storyboard.ts, on
+ *   pick --cand X --report F [--rank N | --game ID] [--style S] [--replace]
+ *                                  candidate X's game: by rank in report F,
+ *                                  or by id (--game) from any day's report,
+ *                                  e.g. a candidate Nil did not pick, offered
+ *                                  again. No post text: Wall Game Growth
+ *                                  writes it (copy). --replace starts X over
+ *                                  (only on purpose)
+ *   storyboard --cand X [--edl F]  one image of every position of X's game
+ *                                  (scripts/game-video/storyboard.ts, on
  *                                  this box: no 4090, no view of the game).
  *                                  Open it before you write the edit list.
  *                                  With --edl, it checks the list against the
@@ -27,67 +35,74 @@
  *                                  allows a disliked one and names it. A
  *                                  sound with a high claim risk is listed
  *                                  last, and `direct` refuses it
- *   direct --edl F [--claim-risk-ok K,K]
- *                                  the director's edit decision list for the
- *                                  picked game (scripts/game-video/edl.mjs);
+ *   direct --cand X --edl F [--claim-risk-ok K,K]
+ *                                  the director's edit decision list for X's
+ *                                  game (scripts/game-video/edl.mjs);
  *                                  `status` names the default ending.
  *                                  --claim-risk-ok accepts those sounds with
  *                                  a high claim risk on purpose (only when
  *                                  Nil asks for one)
- *   render [--wait] [--force]      a 4090 render of the list; --wait polls until
- *                                  it ends. A second render of a game needs
- *                                  --force: each render adds one view to the
- *                                  real game.
- *   preview --plies FROM..TO [--edl F]
+ *   render --cand X [--wait] [--force]
+ *                                  a 4090 render of X's list; --wait polls
+ *                                  until it ends. A second render of a game
+ *                                  the same day needs --force: each render
+ *                                  adds one view to the real game.
+ *   preview --cand X --plies FROM..TO [--edl F]
  *                                  a few seconds of the video: those plies of
- *                                  the day's edit list (or of F, a list for
- *                                  the day's game), rendered on the 4090 from
- *                                  the game's capture, so no view. It needs
- *                                  the game's first render (which saves the
+ *                                  X's edit list (or of F, a list for X's
+ *                                  game), rendered on the 4090 from the
+ *                                  game's capture, so no view. It needs the
+ *                                  game's first render (which saves the
  *                                  capture). Prints the MP4's path. A preview
  *                                  changes nothing in the cycle and can never
  *                                  be checked, asked or posted. For the
  *                                  PICTURE only: its music starts at its first
  *                                  frame
- *   sheet                          the contact sheet's path and its stills, in
+ *   sheet --cand X                 X's contact sheet's path and its stills, in
  *                                  order: look at the PNG before `check`.
  *                                  Also the event strips (strips.mjs): each
  *                                  event's sounds against its move's
  *                                  landing, and a PNG of four frames per
  *                                  event (in /tmp/daily-strips)
- *   check --sheet SHA --verdicts F the director's verdict on each still, as
+ *   check --cand X --sheet SHA --verdicts F
+ *                                  the director's verdict on each still, as
  *                                  [{"ply","kind","ok","note"}]: ok only when
  *                                  the still shows what the cue is for (a FAHHH
- *                                  or zoom shows the save wall). The ask needs
- *                                  every still ok.
- *   copy --day D --file F --copy-version V
- *                                  Wall Game Growth's copy block for the day:
- *                                  five lines, "X:", "YouTube title:",
- *                                  "YouTube description:", "TikTok:",
- *                                  "Instagram:", each the exact text that
- *                                  posts (copy.mjs). V names Growth's copy
- *                                  style (e.g. growth-copy-1). Allowed until
- *                                  the ask opens; a new block replaces the old
- *   ask --agent <your agent id> [--reopen]
- *                                  open the Isomux ask with the MP4 and the
- *                                  stored copy block for APPROVER_MEMBER
- *                                  (it refuses without a block). After a
- *                                  rejection of the text only, a new block
- *                                  and `ask` again: the same video, no new
- *                                  render; --reopen opens the
+ *                                  or zoom shows the save wall). Only a
+ *                                  candidate with every still ok can be offered
+ *   copy --day D --cand X --file F --copy-version V
+ *                                  (Wall Game Growth) the copy block for X's
+ *                                  video: one line per platform, each the
+ *                                  exact text that posts (copy.mjs). V names
+ *                                  Growth's copy style (e.g. growth-copy-1).
+ *                                  The block is for X's current video: a
+ *                                  render that makes other bytes leaves it
+ *                                  stale. Allowed until the ask opens; a new
+ *                                  block replaces the old
+ *   ask --agent <your agent id> [--cands A,B] [--reopen]
+ *                                  open the day's one Isomux ask for
+ *                                  APPROVER_MEMBER: each checked candidate (or
+ *                                  the ones --cands names) with its MP4, its
+ *                                  sheet and its copy block, and the options
+ *                                  "Post A", ... and "None today". After
+ *                                  "None today", `ask` again offers a new
+ *                                  set (a new candidate, video or block; the
+ *                                  same set is refused). --reopen opens the
  *                                  day's open ask again for that member, gives
  *                                  the app the new id and withdraws the old one
- *   answer --agent <id> --ask <askId> --decision approve|reject
+ *   answer --agent <id> --ask <askId> --pick A|B|C|none
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
- *                                  cycle is found by the ask, so no --day. An
- *                                  approval prints the APPROVED PACKAGE that
- *                                  the director sends to Wall Game Growth
+ *                                  day is found by the ask, so no --day. Every
+ *                                  answer goes to the feedback log. A pick
+ *                                  prints the APPROVED PACKAGE (that
+ *                                  candidate only) that the director sends to
+ *                                  Wall Game Growth
  *   post --day D [--confirm-not-posted x|youtube|tiktok|instagram|facebook|
  *                 bluesky|threads]
- *                                  (Wall Game Growth) post the approved block:
- *                                  X, YouTube, the TikTok draft and the
- *                                  Instagram Reel (dry-run without keys)
+ *                                  (Wall Game Growth) post the picked
+ *                                  candidate's video and block on each
+ *                                  platform (dry-run without keys)
  *   log [--dry-run]                the post log
  *   ship --to <hash>               release a commit that is on main: run
  *                                  from the release checkout, it moves that
@@ -98,17 +113,21 @@
  *
  * The ask goes to APPROVER_MEMBER. Only an agent can open one (an app
  * token is refused there), which is why this runs as the crew lead and uses
- * ISOMUX_AGENT_TOKEN. `ask` sends the app the video hash and posting modes
- * that the ask shows, and withdraws the ask if the app no longer agrees.
+ * ISOMUX_AGENT_TOKEN. `ask` sends the app each offered video's hash, its
+ * block's hash and the posting modes that the ask shows, and withdraws the
+ * ask if the app no longer agrees.
  *
  * READING THE ANSWER (the crew lead's rule). The office closes an ask in three
- * ways, and only one is an approval:
- *   "[Reply to your ask <id>: ...]" whose text is the Approve option
- *        -> answer --decision approve --reply "<that text>"
- *   any other reply text                    -> --decision reject, reply as given
- *   "Dismissed your ask" or "is now task"   -> --decision reject
- * `answer` checks that the ask is closed, but a closed ask is not proof of a
- * yes: the decision is the crew lead's reading of the member's message.
+ * ways, and only one picks a video:
+ *   "[Reply to your ask <id>: ...]" whose text picks one candidate (the
+ *        "Post B" option, or words that clearly say to post B)
+ *        -> answer --pick B --reply "<that text>"
+ *   any other reply text ("None today", notes only, two picks, a doubt)
+ *        -> --pick none, reply as given
+ *   "Dismissed your ask" or "is now task"   -> --pick none
+ * The reply goes to the feedback log word for word either way. `answer`
+ * checks that the ask is closed, but a closed ask is not proof of a pick:
+ * the pick is the crew lead's reading of the member's message.
  *
  * AFTER AN UNCERTAIN POST. If a platform's final request got no clear answer,
  * `post` refuses that platform. Look at the account (X profile, YouTube Studio,
@@ -135,6 +154,7 @@ import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { SHORTS_TAG, copyLines, copySha256, postTexts } from "./copy.mjs";
+import { LABELS } from "./store.mjs";
 
 const OFFICE = "http://localhost:4000";
 /** This file's place in a checkout, for the commands another agent runs. */
@@ -207,6 +227,22 @@ const app = async (method, path, body) => {
 
 const day = flag("day");
 
+/** The candidate a production command works on: --cand A, B or C. */
+const candFlag = () => {
+  const label = flag("cand");
+  if (!LABELS.includes(label)) {
+    die(`name the candidate: --cand ${LABELS.join("|")}`);
+  }
+  return label;
+};
+
+/** A day's candidates in label order. */
+const candsOf = (c) => LABELS.map((l) => c.cands[l]).filter(Boolean);
+
+/** Candidate `label` of the state's day, or stop. */
+const candIn = (s, label) =>
+  s.cycle?.cands?.[label] ?? die(`${s.day} has no candidate ${label}`);
+
 /**
  * The day's candidate report. The timer writes <day>.json, or <day>.skip with
  * the reason it found no candidates (nightly-candidates.sh).
@@ -237,49 +273,64 @@ const summary = (s) => {
       .join(" ")}`,
   ];
   if (!c) return lines.join("\n");
-  const k = c.candidate;
-
   lines.push(
-    `game ${k.gameId}: ${k.seats.map((x) => x.name).join(" vs ")}, ${k.movesCount} plies`,
-    ...k.facts,
-    ...(c.copy
-      ? [
-          `copy block (${c.copy.version}):`,
-          ...copyLines(c.copy).map((l) => `  ${l}`),
-        ]
-      : ["no copy block from Wall Game Growth yet"]),
+    `default ending ${s.suggestedEnding}; last posted music ${s.lastMusic ?? "none"}`,
   );
-  if (c.edl) {
+  for (const k of candsOf(c)) {
+    const g = k.candidate;
     lines.push(
-      `edit list ${c.edl.sha256.slice(0, 12)}:`,
-      ...c.edl.summary.map((l) => `  ${l}`),
+      "",
+      `CANDIDATE ${k.label}: ${k.state}`,
+      `game ${g.gameId}: ${g.seats.map((x) => x.name).join(" vs ")}, ${g.movesCount} plies`,
+      ...g.facts,
     );
-  } else {
+    if (k.edl) {
+      lines.push(
+        `edit list ${k.edl.sha256.slice(0, 12)}:`,
+        ...k.edl.summary.map((l) => `  ${l}`),
+      );
+    } else {
+      lines.push("no edit list yet");
+    }
+    if (k.render) {
+      lines.push(
+        k.render.error
+          ? `render ${k.render.jobId}: FAILED ${k.render.error}`
+          : k.render.video
+            ? `render ${k.render.jobId}: ${k.render.video.path} (${k.render.video.bytes} bytes, sha256 ${k.render.video.sha256.slice(0, 12)}), sheet ${k.render.sheet.path}`
+            : `render ${k.render.jobId}: running - ${s.renderProgress[k.label] ?? "queued"}`,
+        ...measureLines(k.render.quality),
+      );
+    }
+    if (k.check) {
+      lines.push(
+        `contact sheet check: ${k.check.ok ? "all ok" : "FAILED"}`,
+        ...k.check.verdicts.map(
+          (v) => `  ply ${v.ply} ${v.kind}: ${v.ok ? "ok" : "BAD"} - ${v.note}`,
+        ),
+      );
+    }
+    const stale = s.staleCopy[k.label];
     lines.push(
-      `no edit list yet; default ending ${s.suggestedEnding}; last posted music ${s.lastMusic ?? "none"}`,
+      ...(k.copy
+        ? [
+            `copy block (${k.copy.version})${stale ? `: STALE - ${stale}` : ""}:`,
+            ...copyLines(k.copy).map((l) => `  ${l}`),
+          ]
+        : ["no copy block from Wall Game Growth yet"]),
     );
   }
-  if (c.render) {
+  const a = c.approval;
+  if (a) {
     lines.push(
-      c.render.error
-        ? `render ${c.render.jobId}: FAILED ${c.render.error}`
-        : c.render.video
-          ? `render ${c.render.jobId}: ${c.render.video.path} (${c.render.video.bytes} bytes, sha256 ${c.render.video.sha256.slice(0, 12)}), sheet ${c.render.sheet.path}`
-          : `render ${c.render.jobId}: running - ${s.renderProgress ?? "queued"}`,
-      ...measureLines(c.render.quality),
-    );
-  }
-  if (c.check) {
-    lines.push(
-      `contact sheet check: ${c.check.ok ? "all ok" : "FAILED"}`,
-      ...c.check.verdicts.map(
-        (v) => `  ply ${v.ply} ${v.kind}: ${v.ok ? "ok" : "BAD"} - ${v.note}`,
-      ),
-    );
-  }
-  if (c.approval) {
-    lines.push(
-      `ask ${c.approval.askId}: ${c.approval.decision ? `${c.approval.decision === "approve" ? "approved" : "rejected"} by ${c.approval.approver}` : "waiting"}`,
+      "",
+      `ask ${a.askId} (offers ${Object.keys(a.offered).join(", ")}): ${
+        a.decision === "pick"
+          ? `${a.picked} picked by ${a.approver}`
+          : a.decision === "none"
+            ? `none picked by ${a.approver}`
+            : "waiting"
+      }`,
     );
   }
   for (const [p, r] of Object.entries(c.posts)) {
@@ -321,53 +372,73 @@ export const postedTexts = (c) => {
   });
 };
 
-/** The ask's text: everything Nil needs to decide without opening anything. */
-export const askText = (c, modes, videoSha256) => {
+/**
+ * The ask's text: everything Nil needs to decide without opening anything.
+ * `c` is the day's record and `shas` the sha256 of each offered candidate's
+ * MP4 bytes, by label, in the order the ask shows them.
+ */
+export const askText = (c, modes, shas) => {
   const dry = Object.values(modes).every((m) => m === "dry-run");
   const live = PLATFORM_NAMES.filter(([p]) => modes[p] === "live").map(
     ([, name]) => name,
   );
-  // A new block after a text-only rejection: the ask Nil rejected, which
-  // is the current approval until the new ask is recorded, or the last
-  // earlier ask when this one is opened again.
+  const labels = Object.keys(shas);
+  // The ask that Nil answered with none: the current approval until the
+  // new ask is recorded, or the last earlier ask when this one is opened
+  // again.
   const earlier =
     c.state === "rejected"
       ? c.approval
-      : c.approval?.sameVideoAs
-        ? c.earlierAsks?.at(-1)
+      : c.state === "asked"
+        ? (c.earlierAsks?.at(-1) ?? null)
         : null;
+  const sameAs = (label) =>
+    earlier?.offered?.[label]?.videoSha256 === shas[label]
+      ? ` (the same video as in ask ${earlier.askId})`
+      : "";
   return [
-    `Daily Wall Game video for ${c.day}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
-    ...(earlier
-      ? [
-          `SAME VIDEO as ask ${earlier.askId} (sha256 ${earlier.videoSha256.slice(0, 12)}), ${earlier.reply === null ? "which you dismissed without a reply" : `which you rejected with: "${earlier.reply}"`}. Only the post text is new.`,
-        ]
-      : []),
-    "",
-    "WHAT GOES OUT (the video is attached).",
-    `Post text (by Growth, ${c.copy.version}):`,
-    ...copyLines(c.copy),
-    `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
-    // Whether it goes out for real is the main fact of the approval.
+    `Daily Wall Game video for ${c.day}: ${labels.length === 1 ? "one candidate" : `${labels.length} candidates`}, ${labels.join(", ")}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
+    // Whether it goes out for real is the main fact of the answer.
     ...(live.length
-      ? [`LIVE on ${live.join(", ")}: this posts for real on approval.`]
+      ? [`LIVE on ${live.join(", ")}: the candidate you pick posts for real.`]
       : []),
     `Posting mode: ${PLATFORM_NAMES.map(([p, name]) => `${name} ${modes[p]}`).join(", ")}.`,
     modes.tiktok === "live"
       ? "TikTok: open the inbox draft, paste the TikTok line, tap Post."
       : "TikTok: dry run, no draft.",
+    `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
+    ...(earlier
+      ? [
+          `After ask ${earlier.askId}, where you picked none${earlier.reply === null ? " without a reply" : `: "${earlier.reply}"`}.`,
+        ]
+      : []),
+    ...labels.flatMap((label) => {
+      const k = c.cands[label];
+      return [
+        "",
+        `CANDIDATE ${label}${sameAs(label)}: video ${label} and sheet ${label} are attached.`,
+        `On the video: ${JSON.stringify(k.edl.doc.caption ?? "")}${k.edl.doc.payoff ? `, then ${JSON.stringify(k.edl.doc.payoff.text)}` : ""}.`,
+        `Post text (by Growth, ${k.copy.version}):`,
+        ...copyLines(k.copy),
+        "For you only, not posted:",
+        `${k.candidate.seats.map((x) => x.name).join(" vs ")}, ${k.candidate.movesCount} plies, game ${k.candidate.gameId}.`,
+        `Video: ${(k.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${shas[label].slice(0, 12)}, style ${k.render.effect ?? "-"}, ending ${k.render.ending}, sounds ${k.render.sound ?? "-"}, music ${k.render.music ?? "-"}.`,
+        "Director's edit list:",
+        ...k.edl.summary.map((l) => `- ${l}`),
+        "Contact sheet, checked by the director:",
+        ...k.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
+      ];
+    }),
     "",
-    "FOR YOU ONLY, NOT POSTED:",
-    `${c.candidate.seats.map((x) => x.name).join(" vs ")}, ${c.candidate.movesCount} plies, game ${c.candidate.gameId}.`,
-    `Video: ${(c.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${videoSha256.slice(0, 12)}, style ${c.render.effect ?? "-"}, ending ${c.render.ending}, sounds ${c.render.sound ?? "-"}, music ${c.render.music ?? "-"}.`,
-    "Director's edit list:",
-    ...c.edl.summary.map((l) => `- ${l}`),
-    `Contact sheet (attached), checked by the director:`,
-    ...c.check.verdicts.map((v) => `- ply ${v.ply} ${v.kind}: ${v.note}`),
-    "",
-    "Approve to post it as shown. Reject, and say what to change, to stop it.",
+    `Pick the one to post (${labels.map((l) => `Post ${l}`).join(", ")}), or None today. Add notes on any candidate in your reply: they go to the director's feedback log.`,
   ].join("\n");
 };
+
+/** The ask's options: one per offered candidate, then "None today". */
+export const askOptions = (labels) => [
+  ...labels.map((l) => `Post ${l}`),
+  "None today",
+];
 
 /**
  * What the director forwards to Wall Game Growth after Nil's yes: Growth
@@ -378,9 +449,11 @@ export const askText = (c, modes, videoSha256) => {
  */
 export const approvedPackage = (c, releaseCrew) => {
   const a = c.approval;
+  // Only the candidate Nil picked: its video and its block.
+  const k = c.cands[a.picked];
   return [
     `APPROVED PACKAGE, day ${c.day}`,
-    `Video: ${c.render.video.path}`,
+    `Video: ${k.render.video.path}`,
     `Video sha256: ${a.videoSha256}`,
     `Copy block as approved (${a.copy.version}, copy sha256 ${copySha256(a.copy)}):`,
     ...copyLines(a.copy),
@@ -484,19 +557,26 @@ const commands = {
         "pick takes no --caption or --title: Wall Game Growth writes the post text (copy)",
       );
     }
+    const cand = candFlag();
     const path = flag("report") ?? die("pick needs --report <file>");
     const report = readReport(path);
+    const gameId = flag("game");
+    if (gameId && flag("rank")) die("pick takes --rank or --game, not both");
     const rank = Number(flag("rank") ?? 1);
-    // Send only the chosen entry: the full report holds every position's score.
+    // Send only the chosen entry: the full report holds every position's
+    // score. --game takes a game by id, from any day's report.
     const slim = {
       kind: report.kind,
       createdAt: report.createdAt,
-      ranked: report.ranked?.slice(0, rank),
+      ranked: gameId
+        ? (report.ranked ?? []).filter((e) => e.gameId === gameId)
+        : report.ranked?.slice(0, rank),
     };
     await app("POST", "/api/daily/pick", {
       day,
+      cand,
       report: slim,
-      rank,
+      ...(gameId ? { gameId } : { rank }),
       style: flag("style"),
       replace: has("replace"),
     });
@@ -515,6 +595,7 @@ const commands = {
     if (!existsSync(path)) die(`copy: no file ${resolve(path)}`);
     await app("POST", "/api/daily/copy", {
       day,
+      cand: candFlag(),
       text: readFileSync(path, "utf8"),
       copyVersion,
     });
@@ -522,8 +603,10 @@ const commands = {
   },
 
   async render() {
+    const cand = candFlag();
     const { jobId } = await app("POST", "/api/daily/render", {
       day,
+      cand,
       force: has("force"),
     });
     console.log(`render ${jobId} queued`);
@@ -531,7 +614,7 @@ const commands = {
     for (;;) {
       await new Promise((r) => setTimeout(r, 5000));
       const s = await state();
-      if (s.cycle.state !== "rendering") return console.log(summary(s));
+      if (candIn(s, cand).state !== "rendering") return console.log(summary(s));
     }
   },
 
@@ -540,6 +623,7 @@ const commands = {
     const path = flag("edl");
     const { previewId } = await app("POST", "/api/daily/preview", {
       day,
+      cand: candFlag(),
       plies,
       ...(path && { edl: JSON.parse(readFileSync(path, "utf8")) }),
     });
@@ -563,6 +647,7 @@ const commands = {
     const path = flag("edl") ?? die("direct needs --edl <edl.json>");
     await app("POST", "/api/daily/direct", {
       day,
+      cand: candFlag(),
       edl: JSON.parse(readFileSync(path, "utf8")),
       claimRiskOk: flag("claim-risk-ok")?.split(",") ?? [],
     });
@@ -570,9 +655,12 @@ const commands = {
   },
 
   async storyboard() {
-    const c = (await state()).cycle ?? die("pick a game first");
+    const s = await state();
+    const c = candIn(s, candFlag());
     // A new folder per run: nothing that exists is written over.
-    const dir = mkdtempSync(join(tmpdir(), `wallgame-storyboard-${c.day}-`));
+    const dir = mkdtempSync(
+      join(tmpdir(), `wallgame-storyboard-${s.day}-${c.label}-`),
+    );
     const candidate = join(dir, "candidate.json");
     writeFileSync(candidate, JSON.stringify(c.candidate));
     const run = spawnSync(
@@ -620,8 +708,9 @@ const commands = {
   },
 
   async sheet() {
-    const c = (await state()).cycle;
-    const sheet = c?.render?.sheet ?? die("there is no contact sheet yet");
+    const c = candIn(await state(), candFlag());
+    const sheet =
+      c.render?.sheet ?? die(`candidate ${c.label} has no contact sheet yet`);
     console.log(`contact sheet: ${sheet.path}`);
     console.log(`  sha256 ${sheet.sha256} (give it to check --sheet)`);
     sheet.stills.forEach((x, i) =>
@@ -658,9 +747,11 @@ const commands = {
     // refuses the check if the current render has another sheet.
     const sheetSha256 =
       flag("sheet") ?? die("check needs --sheet <sha256 that `sheet` printed>");
-    const c = (await state()).cycle;
+    const s = await state();
+    const c = candIn(s, candFlag());
     await app("POST", "/api/daily/check", {
-      day: c?.day ?? die("there is no cycle"),
+      day: s.day,
+      cand: c.label,
       sheetSha256,
       stills: JSON.parse(readFileSync(path, "utf8")),
     });
@@ -671,15 +762,13 @@ const commands = {
     const agent = flag("agent") ?? die("ask needs --agent <your agent id>");
     const reopen = has("reopen");
     const s = await state();
-    const c = s.cycle;
+    const c = s.cycle ?? die(`there is no cycle for ${s.day}`);
     // --reopen: the day's ask is open but went to the wrong inbox; the same
     // ask opens again for APPROVER_MEMBER, and the app takes its id.
-    const replaces = reopen ? c?.approval?.askId : undefined;
+    const replaces = reopen ? c.approval?.askId : undefined;
     if (reopen) {
-      if (c?.state !== "asked" || !replaces)
-        die(
-          `ask --reopen needs an open ask; the cycle is ${c?.state ?? "missing"}`,
-        );
+      if (c.state !== "asked" || !replaces)
+        die(`ask --reopen needs an open ask; the day is ${c.state}`);
       const old = await office("GET", `/api/agents/${agent}/asks/${replaces}`);
       if (old.status === 404)
         die(
@@ -689,28 +778,51 @@ const commands = {
         die(
           `cannot read ask ${replaces} (HTTP ${old.status}): only the agent that opened it can reopen it, with its own token and --agent`,
         );
-    } else if (c?.state !== "checked" && c?.state !== "rejected")
-      die(
-        `ask needs a rendered video whose contact sheet the director checked, or a rejected ask and a new copy block; the cycle is ${c?.state ?? "missing"}`,
-      );
-    if (!c.copy)
-      die(
-        "ask needs Wall Game Growth's copy block: send Growth the copy request, and Growth runs crew.mjs copy",
-      );
-    // The hash of the bytes that the ask attaches, not of the record.
-    const videoSha256 = createHash("sha256")
-      .update(readFileSync(c.render.video.path))
-      .digest("hex");
-    if (videoSha256 !== c.render.video.sha256) {
-      die("the video file does not match its record; render again");
+    } else if (c.state !== "open" && c.state !== "rejected")
+      die(`ask needs the day open (or after "None today"); it is ${c.state}`);
+    // The ask offers the checked candidates, or the ones --cands names; a
+    // reopened ask offers what the open one offered.
+    const labels = reopen
+      ? Object.keys(c.approval.offered)
+      : flag("cands")
+        ? flag("cands").split(",")
+        : candsOf(c)
+            .filter((k) => k.state === "checked")
+            .map((k) => k.label);
+    if (labels.length === 0)
+      die("no candidate is checked: the ask offers only checked candidates");
+    const shas = {};
+    for (const label of LABELS.filter((l) => labels.includes(l))) {
+      const k = candIn(s, label);
+      if (k.state !== "checked")
+        die(
+          `candidate ${label} is ${k.state}; only a checked candidate goes in the ask`,
+        );
+      if (s.staleCopy[label] || !k.copy)
+        die(
+          s.staleCopy[label] ??
+            `candidate ${label} has no copy block: send Growth the copy request, and Growth runs crew.mjs copy --cand ${label}`,
+        );
+      // The hash of the bytes that the ask attaches, not of the record.
+      shas[label] = createHash("sha256")
+        .update(readFileSync(k.render.video.path))
+        .digest("hex");
+      if (shas[label] !== k.render.video.sha256) {
+        die(`candidate ${label}'s video file does not match its record`);
+      }
     }
+    if (Object.keys(shas).length !== labels.length)
+      die(`--cands takes labels among ${LABELS.join(",")}`);
     const opened = await office("POST", `/api/agents/${agent}/asks`, {
       type: "application/json",
       body: JSON.stringify({
-        text: askText(c, s.modes, videoSha256),
+        text: askText(c, s.modes, shas),
         member: APPROVER_MEMBER,
-        options: ["Approve", "Reject"],
-        readFiles: [c.render.video.path, c.render.sheet.path],
+        options: askOptions(Object.keys(shas)),
+        readFiles: Object.keys(shas).flatMap((l) => [
+          c.cands[l].render.video.path,
+          c.cands[l].render.sheet.path,
+        ]),
       }),
     });
     if (opened.status !== 201)
@@ -721,9 +833,13 @@ const commands = {
       day: c.day,
       askId: opened.body.id,
       modes: s.modes,
-      videoSha256,
-      // The block that askText printed, from the same state.
-      copySha256: copySha256(c.copy),
+      // What askText printed, from the same state.
+      offered: Object.fromEntries(
+        Object.entries(shas).map(([l, videoSha256]) => [
+          l,
+          { videoSha256, copySha256: copySha256(c.cands[l].copy) },
+        ]),
+      ),
       ...(replaces && { replacesAskId: replaces }),
     });
     if (!recorded.ok) {
@@ -732,7 +848,7 @@ const commands = {
       die(`ask withdrawn: ${recorded.json.error}`);
     }
     console.log(
-      `ask ${opened.body.id} opened for ${opened.body.member ?? "the manager"}`,
+      `ask ${opened.body.id} opened for ${opened.body.member ?? "the manager"}: ${Object.keys(shas).join(", ")}`,
     );
     if (replaces) {
       // The app now answers only to the new id, so the old ask is noise.
@@ -751,30 +867,33 @@ const commands = {
   async answer() {
     const agent = flag("agent") ?? die("answer needs --agent <your agent id>");
     const askId = flag("ask") ?? die("answer needs --ask <askId>");
-    const decision = flag("decision");
-    if (decision !== "approve" && decision !== "reject")
-      die("--decision is approve or reject");
+    const picked = flag("pick");
+    if (picked !== "none" && !LABELS.includes(picked))
+      die(`--pick is ${LABELS.join(", ")} or none`);
+    const pick = picked === "none" ? null : picked;
     const approver =
       flag("approver") ?? die("answer needs --approver <member name>");
     const reply = flag("reply");
-    if (decision === "approve" && !reply) {
-      die("an approval needs --reply with the member's reply, verbatim");
+    if (pick && !reply) {
+      die("a pick needs --reply with the member's reply, verbatim");
     }
-    // The package names the app's own checkout; find it before the answer
-    // changes anything.
-    const registered = await office("GET", `/api/apps/${APP_NAME}`);
-    if (registered.status !== 200)
-      die(`cannot find the ${APP_NAME} app (HTTP ${registered.status})`);
-    const releaseCrew = join(registered.body.cwd, CREW_IN_CHECKOUT);
     // An open ask has no answer yet; 404 is how the office says it closed.
     const open = await office("GET", `/api/agents/${agent}/asks/${askId}`);
     if (open.status === 200)
       die(`ask ${askId} is still open; wait for the member's reply`);
     if (open.status !== 404)
       die(`cannot check ask ${askId}: HTTP ${open.status}`);
+    // The package names the app's own checkout (only a pick needs it).
+    let releaseCrew = null;
+    if (pick) {
+      const registered = await office("GET", `/api/apps/${APP_NAME}`);
+      if (registered.status !== 200)
+        die(`cannot find the ${APP_NAME} app (HTTP ${registered.status})`);
+      releaseCrew = join(registered.body.cwd, CREW_IN_CHECKOUT);
+    }
     const cycle = await app("POST", "/api/daily/answer", {
       askId,
-      decision,
+      pick,
       approver,
       reply,
     });
@@ -782,6 +901,26 @@ const commands = {
     if (cycle.state === "approved") {
       console.log(
         `\nSend this to Wall Game Growth as it is:\n\n${approvedPackage(cycle, releaseCrew)}`,
+      );
+    }
+  },
+
+  /** Nil's answers, oldest first: read the recent ones before you direct. */
+  async feedback() {
+    const last = Number(flag("last") ?? 10);
+    const rows = await app("GET", `/api/daily/feedback?last=${last}`);
+    if (rows.length === 0) return console.log("no feedback yet");
+    for (const r of rows) {
+      console.log(
+        `${r.day} ask ${r.askId}: ${r.picked ? `${r.picked} picked` : "none picked"} by ${r.approver} at ${r.utc}`,
+      );
+      for (const o of r.offered) {
+        console.log(
+          `  ${o.label}: game ${o.gameId}, edit list ${String(o.edlSha256).slice(0, 12)}, video ${String(o.videoSha256).slice(0, 12)}, caption ${JSON.stringify(o.caption)}`,
+        );
+      }
+      console.log(
+        `  reply, verbatim: ${r.reply === null ? "(none)" : JSON.stringify(r.reply)}`,
       );
     }
   },

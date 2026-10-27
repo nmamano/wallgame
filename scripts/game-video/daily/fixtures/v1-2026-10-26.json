@@ -1,0 +1,1186 @@
+{
+  "day": "2026-10-26",
+  "state": "posted",
+  "createdAt": "2026-10-26T18:42:58.614Z",
+  "updatedAt": "2026-10-26T19:23:14.706Z",
+  "candidate": {
+    "gameId": "VoSWbMDd",
+    "variant": "standard",
+    "boardWidth": 8,
+    "boardHeight": 8,
+    "movesCount": 55,
+    "startedAt": "2026-10-26T10:10:52.899+00:00",
+    "seats": [
+      {
+        "playerOrder": 1,
+        "name": "Guest Ferret",
+        "kind": "guest"
+      },
+      {
+        "playerOrder": 2,
+        "name": "Normal Bot",
+        "kind": "official bot"
+      }
+    ],
+    "picks": [
+      {
+        "ply": 34,
+        "moveNumber": 35,
+        "mover": 1,
+        "notation": ">b3.Cg5",
+        "ownBefore": 6,
+        "ownAfter": 5,
+        "opponentBefore": 2,
+        "opponentAfter": 12,
+        "jump": 11,
+        "size": 11,
+        "pawns": [
+          {
+            "player": 1,
+            "type": "cat",
+            "before": "g6",
+            "after": "g5"
+          },
+          {
+            "player": 1,
+            "type": "mouse",
+            "before": "a3",
+            "after": "a3"
+          },
+          {
+            "player": 2,
+            "type": "cat",
+            "before": "c3",
+            "after": "c3"
+          },
+          {
+            "player": 2,
+            "type": "mouse",
+            "before": "h1",
+            "after": "h1"
+          }
+        ],
+        "walls": [
+          {
+            "notation": ">b3",
+            "between": ["b3", "c3"],
+            "alone": 10,
+            "cause": true
+          }
+        ],
+        "wallsChange": 10,
+        "together": false,
+        "description": "Guest Ferret's wall makes Normal Bot walk 10 extra squares (2 to 12)."
+      },
+      {
+        "ply": 10,
+        "moveNumber": 11,
+        "mover": 1,
+        "notation": ">f5.>f4",
+        "ownBefore": 12,
+        "ownAfter": 12,
+        "opponentBefore": 12,
+        "opponentAfter": 16,
+        "jump": 4,
+        "size": 4,
+        "pawns": [
+          {
+            "player": 1,
+            "type": "cat",
+            "before": "c4",
+            "after": "c4"
+          },
+          {
+            "player": 1,
+            "type": "mouse",
+            "before": "a3",
+            "after": "a3"
+          },
+          {
+            "player": 2,
+            "type": "cat",
+            "before": "f4",
+            "after": "f4"
+          },
+          {
+            "player": 2,
+            "type": "mouse",
+            "before": "h3",
+            "after": "h3"
+          }
+        ],
+        "walls": [
+          {
+            "notation": ">f5",
+            "between": ["f5", "g5"],
+            "alone": 0,
+            "cause": true
+          },
+          {
+            "notation": ">f4",
+            "between": ["f4", "g4"],
+            "alone": 2,
+            "cause": true
+          }
+        ],
+        "wallsChange": 4,
+        "together": true,
+        "description": "Guest Ferret's walls make Normal Bot walk 4 extra squares (12 to 16)."
+      },
+      {
+        "ply": 19,
+        "moveNumber": 20,
+        "mover": 2,
+        "notation": ">e8.^e7",
+        "ownBefore": 14,
+        "ownAfter": 14,
+        "opponentBefore": 10,
+        "opponentAfter": 14,
+        "jump": 4,
+        "size": 4,
+        "pawns": [
+          {
+            "player": 1,
+            "type": "cat",
+            "before": "e8",
+            "after": "e8"
+          },
+          {
+            "player": 1,
+            "type": "mouse",
+            "before": "a3",
+            "after": "a3"
+          },
+          {
+            "player": 2,
+            "type": "cat",
+            "before": "h6",
+            "after": "h6"
+          },
+          {
+            "player": 2,
+            "type": "mouse",
+            "before": "h3",
+            "after": "h3"
+          }
+        ],
+        "walls": [
+          {
+            "notation": ">e8",
+            "between": ["e8", "f8"],
+            "alone": 2,
+            "cause": true
+          },
+          {
+            "notation": "^e7",
+            "between": ["e8", "e7"],
+            "alone": 0,
+            "cause": true
+          }
+        ],
+        "wallsChange": 4,
+        "together": true,
+        "description": "Normal Bot's walls make Guest Ferret walk 4 extra squares (10 to 14)."
+      }
+    ],
+    "beats": [
+      {
+        "hunter": {
+          "player": 2,
+          "type": "cat"
+        },
+        "prey": {
+          "player": 1,
+          "type": "mouse"
+        },
+        "danger": {
+          "ply": 33,
+          "moveNumber": 34,
+          "notation": "Cc3",
+          "walk": 2,
+          "hunterCell": "c3",
+          "preyCell": "a3",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "g6",
+              "after": "g6"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "e3",
+              "after": "c3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "h1",
+              "after": "h1"
+            }
+          ]
+        },
+        "save": {
+          "ply": 34,
+          "moveNumber": 35,
+          "notation": ">b3.Cg5",
+          "walk": 12,
+          "hunterCell": "c3",
+          "preyCell": "a3",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "g6",
+              "after": "g5"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "c3",
+              "after": "c3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "h1",
+              "after": "h1"
+            }
+          ],
+          "walls": [
+            {
+              "notation": ">b3",
+              "between": ["b3", "c3"],
+              "alone": 10,
+              "cause": true
+            }
+          ],
+          "wallsChange": 10,
+          "together": false,
+          "walkBefore": 2
+        },
+        "relief": {
+          "ply": 35,
+          "moveNumber": 36,
+          "notation": ">g3.Mg1",
+          "walk": 12,
+          "hunterCell": "c3",
+          "preyCell": "a3",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "g5",
+              "after": "g5"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "c3",
+              "after": "c3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "h1",
+              "after": "g1"
+            }
+          ]
+        },
+        "size": 10,
+        "description": "Normal Bot's cat gets 2 squares from Guest Ferret's mouse. A wall makes it walk 12 (move 35), and the mouse is safe."
+      },
+      {
+        "hunter": {
+          "player": 1,
+          "type": "cat"
+        },
+        "prey": {
+          "player": 2,
+          "type": "mouse"
+        },
+        "danger": {
+          "ply": 42,
+          "moveNumber": 43,
+          "notation": "Cf1",
+          "walk": 2,
+          "hunterCell": "f1",
+          "preyCell": "e2",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "h1",
+              "after": "f1"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "e3",
+              "after": "e3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "e2",
+              "after": "e2"
+            }
+          ]
+        },
+        "save": {
+          "ply": 43,
+          "moveNumber": 44,
+          "notation": "^d1.^e1",
+          "walk": 6,
+          "hunterCell": "f1",
+          "preyCell": "e2",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "f1",
+              "after": "f1"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "e3",
+              "after": "e3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "e2",
+              "after": "e2"
+            }
+          ],
+          "walls": [
+            {
+              "notation": "^d1",
+              "between": ["d2", "d1"],
+              "alone": 0,
+              "cause": true
+            },
+            {
+              "notation": "^e1",
+              "between": ["e2", "e1"],
+              "alone": 2,
+              "cause": true
+            }
+          ],
+          "wallsChange": 4,
+          "together": true,
+          "walkBefore": 2
+        },
+        "relief": {
+          "ply": 44,
+          "moveNumber": 45,
+          "notation": "Cd1",
+          "walk": 4,
+          "hunterCell": "d1",
+          "preyCell": "e2",
+          "pawns": [
+            {
+              "player": 1,
+              "type": "cat",
+              "before": "f1",
+              "after": "d1"
+            },
+            {
+              "player": 1,
+              "type": "mouse",
+              "before": "a3",
+              "after": "a3"
+            },
+            {
+              "player": 2,
+              "type": "cat",
+              "before": "e3",
+              "after": "e3"
+            },
+            {
+              "player": 2,
+              "type": "mouse",
+              "before": "e2",
+              "after": "e2"
+            }
+          ]
+        },
+        "size": 4,
+        "description": "Guest Ferret's cat gets 2 squares from Normal Bot's mouse. Walls make it walk 6 (move 44), and the mouse is safe."
+      }
+    ],
+    "moves": [
+      "Cc6",
+      "Cg5",
+      "Cc4",
+      "Cg3",
+      ">f3.>f2",
+      "Cf4",
+      ">e4.^f3",
+      ">c4.^c3",
+      ">e6.>e5",
+      "^a3.^b3",
+      ">f5.>f4",
+      "Cf6",
+      ">f7.>f6",
+      "Cf8",
+      "Cc6",
+      "Ch8",
+      "Cd7",
+      "Ch6",
+      "Ce8",
+      ">e8.^e7",
+      "Cd7",
+      "Cg5",
+      "Cf7",
+      "Mh1",
+      "Cg8",
+      "Cg3",
+      "Ch7",
+      "Cg1",
+      "Cg6",
+      "Cf2",
+      ">e2.^e2",
+      "Ce3",
+      "^c2.^d2",
+      "Cc3",
+      ">b3.Cg5",
+      ">g3.Mg1",
+      "Cg4.^h3",
+      "Ce3",
+      "Cg2",
+      "^g1.Mf1",
+      "Ch1",
+      "Me2",
+      "Cf1",
+      "^d1.^e1",
+      "Cd1",
+      "^b1.^c1",
+      "Cb1",
+      ">a2.Cf3",
+      "Ca2",
+      "Cf1",
+      "Cb3",
+      "Cd1",
+      "Cc2",
+      "Cb1",
+      "Ce2"
+    ],
+    "initialState": {
+      "pawns": {
+        "p1": {
+          "cat": [2, 0],
+          "mouse": [5, 0]
+        },
+        "p2": {
+          "cat": [2, 7],
+          "mouse": [5, 7]
+        }
+      },
+      "walls": [
+        {
+          "cell": [1, 1],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [1, 6],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [3, 0],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [3, 7],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [4, 3],
+          "orientation": "horizontal"
+        },
+        {
+          "cell": [4, 4],
+          "orientation": "horizontal"
+        }
+      ]
+    },
+    "distances": [
+      {
+        "1": 10,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 8
+      },
+      {
+        "1": 6,
+        "2": 8
+      },
+      {
+        "1": 6,
+        "2": 6
+      },
+      {
+        "1": 6,
+        "2": 8
+      },
+      {
+        "1": 6,
+        "2": 6
+      },
+      {
+        "1": 8,
+        "2": 8
+      },
+      {
+        "1": 8,
+        "2": 8
+      },
+      {
+        "1": 12,
+        "2": 12
+      },
+      {
+        "1": 12,
+        "2": 12
+      },
+      {
+        "1": 12,
+        "2": 16
+      },
+      {
+        "1": 12,
+        "2": 14
+      },
+      {
+        "1": 16,
+        "2": 20
+      },
+      {
+        "1": 16,
+        "2": 18
+      },
+      {
+        "1": 14,
+        "2": 18
+      },
+      {
+        "1": 14,
+        "2": 16
+      },
+      {
+        "1": 12,
+        "2": 16
+      },
+      {
+        "1": 12,
+        "2": 14
+      },
+      {
+        "1": 10,
+        "2": 14
+      },
+      {
+        "1": 14,
+        "2": 14
+      },
+      {
+        "1": 12,
+        "2": 14
+      },
+      {
+        "1": 12,
+        "2": 12
+      },
+      {
+        "1": 10,
+        "2": 12
+      },
+      {
+        "1": 12,
+        "2": 12
+      },
+      {
+        "1": 10,
+        "2": 12
+      },
+      {
+        "1": 10,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 8
+      },
+      {
+        "1": 6,
+        "2": 8
+      },
+      {
+        "1": 6,
+        "2": 6
+      },
+      {
+        "1": 6,
+        "2": 6
+      },
+      {
+        "1": 6,
+        "2": 4
+      },
+      {
+        "1": 6,
+        "2": 4
+      },
+      {
+        "1": 6,
+        "2": 2
+      },
+      {
+        "1": 5,
+        "2": 12
+      },
+      {
+        "1": 4,
+        "2": 12
+      },
+      {
+        "1": 3,
+        "2": 12
+      },
+      {
+        "1": 3,
+        "2": 10
+      },
+      {
+        "1": 1,
+        "2": 10
+      },
+      {
+        "1": 4,
+        "2": 10
+      },
+      {
+        "1": 2,
+        "2": 10
+      },
+      {
+        "1": 4,
+        "2": 10
+      },
+      {
+        "1": 2,
+        "2": 10
+      },
+      {
+        "1": 6,
+        "2": 10
+      },
+      {
+        "1": 4,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 10
+      },
+      {
+        "1": 6,
+        "2": 10
+      },
+      {
+        "1": 8,
+        "2": 9
+      },
+      {
+        "1": 6,
+        "2": 9
+      },
+      {
+        "1": 6,
+        "2": 7
+      },
+      {
+        "1": 4,
+        "2": 7
+      },
+      {
+        "1": 4,
+        "2": 5
+      },
+      {
+        "1": 2,
+        "2": 5
+      },
+      {
+        "1": 2,
+        "2": 3
+      },
+      {
+        "1": 0,
+        "2": 3
+      }
+    ],
+    "source": {
+      "reportCreatedAt": "2026-10-26T11:41:18.843Z",
+      "rank": 1
+    },
+    "facts": [
+      "Move 35: Normal Bot's cat gets 2 squares from Guest Ferret's mouse. A wall makes it walk 12 (move 35), and the mouse is safe. Guest Ferret wins at move 55.",
+      "Move 44: Guest Ferret's cat gets 2 squares from Normal Bot's mouse. Walls make it walk 6 (move 44), and the mouse is safe. Guest Ferret still wins at move 55, 11 moves after the save.",
+      "Move 35: Guest Ferret's wall makes Normal Bot walk 10 extra squares (2 to 12).",
+      "Move 11: Guest Ferret's walls make Normal Bot walk 4 extra squares (12 to 16).",
+      "Move 20: Normal Bot's walls make Guest Ferret walk 4 extra squares (10 to 14)."
+    ]
+  },
+  "caption": {
+    "x": "the bot was 2 steps away. one wall later it's 12 😭🙏 #wallgame",
+    "youtubeTitle": "the bot thought it had this... #wallgame #gaming #boardgames #Shorts",
+    "youtubeDescription": "the bot was 2 steps away. one wall later it's 12 😭🙏 #wallgame\n\nPlay Wall Game: https://wallgame.io/?utm_source=youtube&utm_medium=social&utm_campaign=daily-video"
+  },
+  "style": "daily",
+  "styleVersion": "wallz-lingo-1",
+  "edl": {
+    "doc": {
+      "version": 1,
+      "gameId": "VoSWbMDd",
+      "caption": "bot thinks it's winning 😈🤯",
+      "payoff": {
+        "ply": 34,
+        "text": "one wall. 2 to 12 😭🙏"
+      },
+      "ending": "replay",
+      "music": "tea-for-two",
+      "startPly": 0,
+      "coldOpenPly": null,
+      "vsSound": "boom-1",
+      "finishSound": "letsgo-1",
+      "pace": [
+        {
+          "fromPly": 0,
+          "toPly": 29,
+          "secondsPerMove": 0.3,
+          "fastForward": true
+        },
+        {
+          "fromPly": 30,
+          "toPly": 36,
+          "secondsPerMove": 1.2,
+          "fastForward": false
+        },
+        {
+          "fromPly": 37,
+          "toPly": 40,
+          "secondsPerMove": 1,
+          "fastForward": false
+        },
+        {
+          "fromPly": 41,
+          "toPly": 49,
+          "secondsPerMove": 0.45,
+          "fastForward": false
+        },
+        {
+          "fromPly": 50,
+          "toPly": 54,
+          "secondsPerMove": 0.9,
+          "fastForward": false
+        }
+      ],
+      "events": [
+        {
+          "ply": 33,
+          "kind": "scared",
+          "cell": "a3",
+          "sound": "scared-2"
+        },
+        {
+          "ply": 34,
+          "kind": "zoom",
+          "frame": [">b3", "c3", "a3"],
+          "sound": "fuahhh-1",
+          "scale": 1.5,
+          "holdSeconds": 0.73,
+          "lead": false
+        },
+        {
+          "ply": 34,
+          "kind": "laugh",
+          "cell": "a3",
+          "sound": "laugh-2"
+        },
+        {
+          "ply": 34,
+          "kind": "race"
+        },
+        {
+          "ply": 39,
+          "kind": "zoom",
+          "lead": true,
+          "frame": ["g2", "g1", "f1"],
+          "sound": "seeya-3",
+          "scale": 1.5,
+          "holdSeconds": 0.73
+        }
+      ]
+    },
+    "text": "{\n  \"version\": 1,\n  \"gameId\": \"VoSWbMDd\",\n  \"caption\": \"bot thinks it's winning 😈🤯\",\n  \"payoff\": {\n    \"ply\": 34,\n    \"text\": \"one wall. 2 to 12 😭🙏\"\n  },\n  \"ending\": \"replay\",\n  \"music\": \"tea-for-two\",\n  \"startPly\": 0,\n  \"coldOpenPly\": null,\n  \"vsSound\": \"boom-1\",\n  \"finishSound\": \"letsgo-1\",\n  \"pace\": [\n    {\n      \"fromPly\": 0,\n      \"toPly\": 29,\n      \"secondsPerMove\": 0.3,\n      \"fastForward\": true\n    },\n    {\n      \"fromPly\": 30,\n      \"toPly\": 36,\n      \"secondsPerMove\": 1.2,\n      \"fastForward\": false\n    },\n    {\n      \"fromPly\": 37,\n      \"toPly\": 40,\n      \"secondsPerMove\": 1,\n      \"fastForward\": false\n    },\n    {\n      \"fromPly\": 41,\n      \"toPly\": 49,\n      \"secondsPerMove\": 0.45,\n      \"fastForward\": false\n    },\n    {\n      \"fromPly\": 50,\n      \"toPly\": 54,\n      \"secondsPerMove\": 0.9,\n      \"fastForward\": false\n    }\n  ],\n  \"events\": [\n    {\n      \"ply\": 33,\n      \"kind\": \"scared\",\n      \"cell\": \"a3\",\n      \"sound\": \"scared-2\"\n    },\n    {\n      \"ply\": 34,\n      \"kind\": \"zoom\",\n      \"frame\": [\n        \">b3\",\n        \"c3\",\n        \"a3\"\n      ],\n      \"sound\": \"fuahhh-1\",\n      \"scale\": 1.5,\n      \"holdSeconds\": 0.73,\n      \"lead\": false\n    },\n    {\n      \"ply\": 34,\n      \"kind\": \"laugh\",\n      \"cell\": \"a3\",\n      \"sound\": \"laugh-2\"\n    },\n    {\n      \"ply\": 34,\n      \"kind\": \"race\"\n    },\n    {\n      \"ply\": 39,\n      \"kind\": \"zoom\",\n      \"lead\": true,\n      \"frame\": [\n        \"g2\",\n        \"g1\",\n        \"f1\"\n      ],\n      \"sound\": \"seeya-3\",\n      \"scale\": 1.5,\n      \"holdSeconds\": 0.73\n    }\n  ]\n}\n",
+    "sha256": "da601524aa6d7b6f460d4eef4f6ed0cbf3f167e5c5b5fc594468bfdca213697c",
+    "summary": [
+      "ending replay, music tea-for-two, video caption \"bot thinks it's winning 😈🤯\"",
+      "VS sound boom-1, finish sound letsgo-1",
+      "from ply 34: video caption \"one wall. 2 to 12 😭🙏\"",
+      "plies 0-29: 0.3 s per move, fast-forward x3",
+      "plies 30-36: 1.2 s per move",
+      "plies 37-40: 1 s per move",
+      "plies 41-49: 0.45 s per move",
+      "plies 50-54: 0.9 s per move",
+      "ply 33: scared at a3 + scared-2",
+      "ply 34: zoom on >b3 c3 a3 + fuahhh-1",
+      "ply 34: laugh at a3 + laugh-2",
+      "ply 34: race counter flash",
+      "ply 39: zoom on g2 g1 f1 + seeya-3"
+    ],
+    "directedAt": "2026-10-26T19:13:07.806Z"
+  },
+  "render": {
+    "jobId": "2026-10-26-VoSWbMDd-mvpmwkjl",
+    "requestedAt": "2026-10-26T19:13:08.098Z",
+    "finishedAt": "2026-10-26T19:16:44.477Z",
+    "error": null,
+    "ending": "replay",
+    "edlSha256": "da601524aa6d7b6f460d4eef4f6ed0cbf3f167e5c5b5fc594468bfdca213697c",
+    "video": {
+      "path": "/data/game-video/daily/videos/2026-10-26-VoSWbMDd-mvpmwkjl.mp4",
+      "bytes": 5217154,
+      "sha256": "1f8d1d756b7d3d6df655d0493c6e2832f4c6c2ceb7bd2aad8ba875745b74632b",
+      "durationSeconds": 42.733
+    },
+    "sheet": {
+      "path": "/data/game-video/daily/videos/2026-10-26-VoSWbMDd-mvpmwkjl-sheet.png",
+      "sha256": "de2492f47a9b023509862b26477d64d862b85695aca935d90d553f920a8cb287",
+      "stills": [
+        {
+          "ply": 33,
+          "kind": "scared",
+          "sound": "scared-2"
+        },
+        {
+          "ply": 34,
+          "kind": "zoom",
+          "sound": "fuahhh-1"
+        },
+        {
+          "ply": 34,
+          "kind": "laugh",
+          "sound": "laugh-2"
+        },
+        {
+          "ply": 34,
+          "kind": "race",
+          "sound": null
+        },
+        {
+          "ply": 39,
+          "kind": "zoom",
+          "sound": "seeya-3"
+        }
+      ]
+    },
+    "effect": "daily",
+    "sound": "vs=boom-1,finish=letsgo-1",
+    "music": "tea-for-two",
+    "quality": {
+      "loudness": {
+        "ok": true,
+        "note": "boom-1 at 0.9 s: -24 LUFS, 8.2 LU over the bed (-32.2 LUFS), true peak -14.8 dBTP; scared-2 at 16.9 s: -24 LUFS, 17 LU over the bed (-41 LUFS), true peak -19.1 dBTP; fuahhh-1 at 18.7 s: -21 LUFS, 28.9 LU over the bed (-49.9 LUFS), true peak -13.4 dBTP; laugh-2 at 19.8 s: -21 LUFS, 36.7 LU over the bed (-57.7 LUFS), true peak -19.1 dBTP; seeya-3 at 27 s: -21.1 LUFS, 9.2 LU over the bed (-30.3 LUFS), true peak -13.9 dBTP; letsgo-1 at 40.3 s: -23.4 LUFS, 19.9 LU over the bed (-43.3 LUFS), true peak -13 dBTP"
+      },
+      "safeArea": {
+        "ok": true,
+        "note": "board, caption, payoff, race, goalLine inside the safe area"
+      },
+      "captionLines": {
+        "ok": true,
+        "note": "caption 1 line, 706 of 918 px; payoff 1 line, 559 of 918 px"
+      }
+    }
+  },
+  "check": {
+    "sheetSha256": "de2492f47a9b023509862b26477d64d862b85695aca935d90d553f920a8cb287",
+    "ok": true,
+    "verdicts": [
+      {
+        "ply": 33,
+        "kind": "scared",
+        "sound": "scared-2",
+        "ok": true,
+        "note": "ply 33: red cat arrives c3; blue mouse a3 trembles, sweat on its right; counter red 2 blue 6. Frames: banner gone before the first move"
+      },
+      {
+        "ply": 34,
+        "kind": "zoom",
+        "sound": "fuahhh-1",
+        "ok": true,
+        "note": "ply 34: zoom on blue wall >b3 between mouse a3 and cat c3; glow on the wall; both pawns in frame"
+      },
+      {
+        "ply": 34,
+        "kind": "laugh",
+        "sound": "laugh-2",
+        "ok": true,
+        "note": "ply 34: laugh on Blue's save move, after the zoom; bubble on mouse a3, covers no pawn"
+      },
+      {
+        "ply": 34,
+        "kind": "race",
+        "sound": null,
+        "ok": true,
+        "note": "ply 34: counter red 12 blue 5 swells and glows; matches facts (2 to 12)"
+      },
+      {
+        "ply": 39,
+        "kind": "zoom",
+        "sound": "seeya-3",
+        "ok": true,
+        "note": "ply 39 lead zoom: camera pushes in on cat g2 + mouse g1 at 26.7 s (distance 1, before the move); the mouse lands on f1 inside the zoom at 27.0 s with seeya-3; red wall ^g1 glows on its wall; counter blue 1 to 4; mouse fully in frame. Ending: replay, CAUGHT on e2"
+      }
+    ],
+    "quality": {
+      "loudness": {
+        "ok": true,
+        "note": "boom-1 at 0.9 s: -24 LUFS, 8.2 LU over the bed (-32.2 LUFS), true peak -14.8 dBTP; scared-2 at 16.9 s: -24 LUFS, 17 LU over the bed (-41 LUFS), true peak -19.1 dBTP; fuahhh-1 at 18.7 s: -21 LUFS, 28.9 LU over the bed (-49.9 LUFS), true peak -13.4 dBTP; laugh-2 at 19.8 s: -21 LUFS, 36.7 LU over the bed (-57.7 LUFS), true peak -19.1 dBTP; seeya-3 at 27 s: -21.1 LUFS, 9.2 LU over the bed (-30.3 LUFS), true peak -13.9 dBTP; letsgo-1 at 40.3 s: -23.4 LUFS, 19.9 LU over the bed (-43.3 LUFS), true peak -13 dBTP"
+      },
+      "safeArea": {
+        "ok": true,
+        "note": "board, caption, payoff, race, goalLine inside the safe area"
+      },
+      "captionLines": {
+        "ok": true,
+        "note": "caption 1 line, 706 of 918 px; payoff 1 line, 559 of 918 px"
+      }
+    },
+    "checkedAt": "2026-10-26T19:17:16.152Z"
+  },
+  "approval": {
+    "askId": "8c230526",
+    "askedAt": "2026-10-26T19:17:16.678Z",
+    "modes": {
+      "x": "dry-run",
+      "youtube": "dry-run",
+      "tiktok": "dry-run",
+      "instagram": "dry-run"
+    },
+    "videoSha256": "1f8d1d756b7d3d6df655d0493c6e2832f4c6c2ceb7bd2aad8ba875745b74632b",
+    "caption": {
+      "x": "the bot was 2 steps away. one wall later it's 12 😭🙏 #wallgame",
+      "youtubeTitle": "the bot thought it had this... #wallgame #gaming #boardgames #Shorts",
+      "youtubeDescription": "the bot was 2 steps away. one wall later it's 12 😭🙏 #wallgame\n\nPlay Wall Game: https://wallgame.io/?utm_source=youtube&utm_medium=social&utm_campaign=daily-video"
+    },
+    "decision": "approve",
+    "approver": "Nil",
+    "answeredAt": "2026-10-26T19:23:06.952Z",
+    "reply": "Approve"
+  },
+  "posts": {
+    "x": {
+      "ok": true,
+      "mode": "dry-run",
+      "at": "2026-10-26T19:23:14.655Z",
+      "postId": "DRY-RUN-POST-ID",
+      "url": "https://x.com/i/web/status/DRY-RUN-POST-ID",
+      "mediaId": "DRY-RUN-MEDIA-ID",
+      "requestsFile": "/data/game-video/daily/requests/2026-10-26.x.dry-run.2026-10-26T192314655Z.json"
+    },
+    "youtube": {
+      "ok": true,
+      "mode": "dry-run",
+      "at": "2026-10-26T19:23:14.680Z",
+      "postId": "DRY-RUN-VIDEO-ID",
+      "url": "https://www.youtube.com/shorts/DRY-RUN-VIDEO-ID",
+      "privacyStatus": "public",
+      "uploadStatus": "uploaded",
+      "requestsFile": "/data/game-video/daily/requests/2026-10-26.youtube.dry-run.2026-10-26T192314680Z.json"
+    },
+    "tiktok": {
+      "ok": true,
+      "mode": "dry-run",
+      "at": "2026-10-26T19:23:14.689Z",
+      "postId": "DRY-RUN-PUBLISH-ID",
+      "url": null,
+      "tiktokStatus": "SEND_TO_USER_INBOX",
+      "requestsFile": "/data/game-video/daily/requests/2026-10-26.tiktok.dry-run.2026-10-26T192314689Z.json"
+    },
+    "instagram": {
+      "ok": true,
+      "mode": "dry-run",
+      "at": "2026-10-26T19:23:14.699Z",
+      "postId": "DRY-RUN-MEDIA-ID",
+      "url": "https://www.instagram.com/reel/DRY-RUN/",
+      "requestsFile": "/data/game-video/daily/requests/2026-10-26.instagram.dry-run.2026-10-26T192314699Z.json"
+    }
+  },
+  "renders": {
+    "N42PHQnw": 1,
+    "VoSWbMDd": 10
+  },
+  "replaced": [
+    {
+      "gameId": "N42PHQnw",
+      "state": "rejected",
+      "updatedAt": "2026-10-26T02:23:05.863Z"
+    },
+    {
+      "gameId": "VoSWbMDd",
+      "state": "rejected",
+      "updatedAt": "2026-10-26T16:08:18.070Z"
+    },
+    {
+      "gameId": "VoSWbMDd",
+      "state": "rejected",
+      "updatedAt": "2026-10-26T16:47:07.638Z"
+    },
+    {
+      "gameId": "VoSWbMDd",
+      "state": "rejected",
+      "updatedAt": "2026-10-26T18:13:28.229Z"
+    },
+    {
+      "gameId": "VoSWbMDd",
+      "state": "rejected",
+      "updatedAt": "2026-10-26T18:42:44.704Z"
+    }
+  ],
+  "events": [
+    {
+      "at": "2026-10-26T18:42:58.614Z",
+      "state": "picked",
+      "what": "picked VoSWbMDd"
+    },
+    {
+      "at": "2026-10-26T18:43:17.514Z",
+      "state": "directed",
+      "what": "directed (edl 6cef3123be14)"
+    },
+    {
+      "at": "2026-10-26T18:43:17.874Z",
+      "state": "rendering",
+      "what": "render 2026-10-26-VoSWbMDd-mvplu776 queued"
+    },
+    {
+      "at": "2026-10-26T18:46:43.997Z",
+      "state": "rendered",
+      "what": "render 2026-10-26-VoSWbMDd-mvplu776 done"
+    },
+    {
+      "at": "2026-10-26T19:13:07.806Z",
+      "state": "directed",
+      "what": "directed (edl da601524aa6d)"
+    },
+    {
+      "at": "2026-10-26T19:13:08.098Z",
+      "state": "rendering",
+      "what": "render 2026-10-26-VoSWbMDd-mvpmwkjl queued"
+    },
+    {
+      "at": "2026-10-26T19:16:44.477Z",
+      "state": "rendered",
+      "what": "render 2026-10-26-VoSWbMDd-mvpmwkjl done"
+    },
+    {
+      "at": "2026-10-26T19:17:16.152Z",
+      "state": "checked",
+      "what": "contact sheet checked: 5 stills ok"
+    },
+    {
+      "at": "2026-10-26T19:17:16.678Z",
+      "state": "asked",
+      "what": "ask 8c230526 opened"
+    },
+    {
+      "at": "2026-10-26T19:23:06.952Z",
+      "state": "approved",
+      "what": "approved by Nil"
+    },
+    {
+      "at": "2026-10-26T19:23:14.672Z",
+      "state": "approved",
+      "what": "x final request sent"
+    },
+    {
+      "at": "2026-10-26T19:23:14.679Z",
+      "state": "approved",
+      "what": "x posted (dry-run)"
+    },
+    {
+      "at": "2026-10-26T19:23:14.682Z",
+      "state": "approved",
+      "what": "youtube final request sent"
+    },
+    {
+      "at": "2026-10-26T19:23:14.688Z",
+      "state": "approved",
+      "what": "youtube posted (dry-run)"
+    },
+    {
+      "at": "2026-10-26T19:23:14.691Z",
+      "state": "approved",
+      "what": "tiktok final request sent"
+    },
+    {
+      "at": "2026-10-26T19:23:14.698Z",
+      "state": "approved",
+      "what": "tiktok posted (dry-run)"
+    },
+    {
+      "at": "2026-10-26T19:23:14.704Z",
+      "state": "approved",
+      "what": "instagram final request sent"
+    },
+    {
+      "at": "2026-10-26T19:23:14.706Z",
+      "state": "posted",
+      "what": "instagram posted (dry-run)"
+    }
+  ]
+}

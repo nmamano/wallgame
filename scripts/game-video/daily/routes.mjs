@@ -3,10 +3,12 @@
  * and the /api/daily/* routes that the crew lead drives with crew.mjs.
  *
  * Board task e8d26610, step 3. The app keeps the record and talks to the
- * outside; the crew lead decides. One cycle a day:
+ * outside; the crew lead decides. A day has up to three candidates, A, B
+ * and C (store.mjs); each production step names one with `cand`:
  *
  *   crew.mjs facts   -> what the director writes the on-video caption from
- *   crew.mjs pick    -> POST /api/daily/pick     today's candidate
+ *   crew.mjs pick    -> POST /api/daily/pick     a candidate's game, by rank
+ *                       or by id from any day's report
  *   crew.mjs direct  -> POST /api/daily/direct   the director's edit decision
  *                       list (scripts/game-video/edl.mjs); the ending posted
  *                       least recently is its default (nextEnding)
@@ -15,13 +17,15 @@
  *   crew.mjs check   -> POST /api/daily/check    the director's verdict on each
  *                       still of the sheet; the ask needs every one ok, and
  *                       every measure the app took of the render (quality.mjs)
- *   crew.mjs copy    -> POST /api/daily/copy     Wall Game Growth's copy block:
- *                       the text each platform posts (copy.mjs)
- *   crew.mjs ask     -> the crew lead opens an Isomux ask with the MP4 and
- *                       the block, then POST /api/daily/ask records its id
- *   crew.mjs answer  -> POST /api/daily/answer   the member's reply
- *   crew.mjs post    -> POST /api/daily/post     Growth posts the approved
- *                       block on each platform in turn, and the log
+ *   crew.mjs copy    -> POST /api/daily/copy     Wall Game Growth's copy block
+ *                       for one candidate's video (copy.mjs)
+ *   crew.mjs ask     -> the crew lead opens ONE Isomux ask with every offered
+ *                       candidate's MP4 and block, then POST /api/daily/ask
+ *                       records what it showed
+ *   crew.mjs answer  -> POST /api/daily/answer   which candidate Nil picked,
+ *                       or none, and his reply; both go to the feedback log
+ *   crew.mjs post    -> POST /api/daily/post     Growth posts the picked
+ *                       candidate's block on each platform in turn, and the log
  *
  * THE APP CANNOT OPEN THE ASK ITSELF: an Isomux app token is refused on the
  * asks routes. So the agent opens it and hands the id and, later, the answer
@@ -56,6 +60,7 @@ import {
   utcDay,
   StepRefused,
   PLATFORMS,
+  LABELS,
 } from "./store.mjs";
 import {
   candidateFromReport,
@@ -271,15 +276,8 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const MUSIC_SLUGS = MUSIC_TRACKS.map((t) => t.slug);
 
-/** Cycle states whose video may still be posted. */
-const OPEN_STATES = [
-  "rendering",
-  "rendered",
-  "checked",
-  "asked",
-  "approved",
-  "post-failed",
-];
+/** Day states whose picked video may still be posted. */
+const WAITING_STATES = ["approved", "post-failed"];
 
 export const createDaily = ({
   dataDir,
@@ -382,16 +380,17 @@ export const createDaily = ({
   // Nil's preference for each meme sound (/daily/sounds).
   const soundPicks = openSoundPicks(dirs.root);
 
-  // The render queue lives in memory. A cycle that was rendering when the app
-  // stopped has no child any more, and no step leaves "rendering" except the
-  // child's result, so it is closed here or it would be stuck for the day.
+  // The render queue lives in memory. A candidate that was rendering when
+  // the app stopped has no child any more, and no step leaves "rendering"
+  // except the child's result, so it is closed here or it would be stuck.
   for (const day of store.days()) {
-    const cycle = store.read(day);
-    if (cycle.state === "rendering") {
-      store.finishRender(day, cycle.render.jobId, {
-        error:
-          "the app restarted during this render; render again with --force (one more view of the game)",
-      });
+    for (const cand of Object.values(store.read(day).cands)) {
+      if (cand.state === "rendering") {
+        store.finishRender(day, cand.label, cand.render.jobId, {
+          error:
+            "the app restarted during this render; render again with --force (one more view of the game)",
+        });
+      }
     }
   }
 
@@ -487,19 +486,19 @@ export const createDaily = ({
       });
     });
 
-  const runJob = async ({ day, jobId }) => {
-    const cycle = store.read(day);
+  const runJob = async ({ day, label, jobId }) => {
+    const cand = store.read(day).cands[label];
     const work = join(dirs.work, jobId);
     mkdirSync(work, { recursive: true });
     // The exact bytes the director's list was approved as; the renderer
     // reports their hash back.
     const edlPath = join(work, "edl.json");
     const scratch = join(work, "out.mp4");
-    writeFileSync(edlPath, cycle.edl.text);
+    writeFileSync(edlPath, cand.edl.text);
 
     const finish = (outcome) => {
       try {
-        store.finishRender(day, jobId, outcome);
+        store.finishRender(day, label, jobId, outcome);
       } catch (err) {
         // A newer pick or render replaced this one; its result is dropped.
         console.warn(`render ${jobId}: ${err.message}`);
@@ -517,12 +516,12 @@ export const createDaily = ({
     if (error) return finish({ error });
     // The video must be the one the list asked for, or the post log and
     // the ask would describe a video nobody made.
-    if (result.edlSha256 !== cycle.edl.sha256) {
+    if (result.edlSha256 !== cand.edl.sha256) {
       return finish({
-        error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cycle.edl.sha256.slice(0, 12)})`,
+        error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cand.edl.sha256.slice(0, 12)})`,
       });
     }
-    const music = cycle.edl.doc.music ?? null;
+    const music = cand.edl.doc.music ?? null;
     if (
       !MUSIC_SLUGS.includes(result.music) ||
       (music && result.music !== music)
@@ -531,9 +530,9 @@ export const createDaily = ({
         error: `the render played the music ${result.music}, not ${music ?? "a named track"}`,
       });
     }
-    if (result.ending !== cycle.render.ending) {
+    if (result.ending !== cand.render.ending) {
       return finish({
-        error: `the render played the ${result.ending} ending, not ${cycle.render.ending}`,
+        error: `the render played the ${result.ending} ending, not ${cand.render.ending}`,
       });
     }
     if (!existsSync(scratch) || statSync(scratch).size === 0) {
@@ -719,16 +718,16 @@ export const createDaily = ({
   };
 
   /**
-   * Other days' videos that may still post, as post-log rows dated at their
-   * render. Nil can answer a day's ask after the next day renders, and the
-   * two must not get the same ending. A rejected day is not here.
+   * Other days' picked videos that have not posted yet. A posted one is in
+   * the post log; an unpicked candidate never counts (Nil picks one video a
+   * day, and only that one goes out).
    */
   const openRenders = (day) =>
     store
       .days()
       .filter((d) => d !== day)
-      .map((d) => store.read(d))
-      .filter((c) => OPEN_STATES.includes(c.state) && c.render);
+      .map((d) => store.picked(d))
+      .filter((c) => c && WAITING_STATES.includes(c.state) && c.render);
   const openEndings = (day) =>
     openRenders(day)
       .filter((c) => c.render.ending)
@@ -760,8 +759,10 @@ export const createDaily = ({
   let posting = false;
 
   const post = async (day, confirmedNotPosted = []) => {
-    const cycle = store.read(day);
-    if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+    // Only the candidate Nil picked, as one flat cycle (store.picked).
+    const cycle = store.picked(day);
+    if (!cycle)
+      throw new StepRefused(`${day} has no candidate that Nil picked`);
     if (!cycle.render?.video) throw new StepRefused(`${day} has no video`);
     const modes = modesNow();
     const video = readFileSync(cycle.render.video.path);
@@ -995,8 +996,32 @@ export const createDaily = ({
     return day;
   };
 
+  /** The label a request names; every candidate step needs one. */
+  const labelOf = (value) => {
+    if (!LABELS.includes(value)) {
+      throw new StepRefused(`name the candidate: cand is ${LABELS.join(", ")}`);
+    }
+    return value;
+  };
+
+  /** The day's candidate `label`, or a refusal that says what is missing. */
+  const candOf = (day, label) => {
+    const record = store.read(day);
+    if (!record) throw new StepRefused(`there is no cycle for ${day}`);
+    return (
+      record.cands[labelOf(label)] ??
+      (() => {
+        throw new StepRefused(
+          `${day} has no candidate ${label} (pick it with --cand ${label})`,
+        );
+      })()
+    );
+  };
+
   const state = (day) => {
     const cycle = store.read(day);
+    const running = (cand) =>
+      cand.render ? (progress.get(cand.render.jobId) ?? null) : null;
     const reasons = reasonsNow();
     return {
       day,
@@ -1007,9 +1032,17 @@ export const createDaily = ({
         Object.entries(reasons).filter(([, why]) => why.length),
       ),
       cycle,
-      renderProgress: cycle?.render
-        ? (progress.get(cycle.render.jobId) ?? null)
-        : null,
+      // Each candidate's running render, by label.
+      renderProgress: Object.fromEntries(
+        Object.values(cycle?.cands ?? {}).map((c) => [c.label, running(c)]),
+      ),
+      // Why each candidate's copy block cannot go in the ask, or null.
+      staleCopy: Object.fromEntries(
+        Object.values(cycle?.cands ?? {}).map((c) => [
+          c.label,
+          c.render?.video ? store.staleCopy(c) : null,
+        ]),
+      ),
       days: store.days().slice(-14),
       postLog: store.postLog,
       // The director's default: the ending posted least recently.
@@ -1046,9 +1079,24 @@ export const createDaily = ({
     "POST /api/daily/pick": async (req, res) => {
       const body = await readJson(req, 4 * 1024 * 1024);
       const day = dayOf(body.day);
+      const label = labelOf(body.cand);
+      // A game by id from any day's report (a candidate offered again), or
+      // by rank.
+      let rank = body.rank ?? 1;
+      if (body.gameId !== undefined) {
+        const at = (body.report?.ranked ?? []).findIndex(
+          (e) => e?.gameId === body.gameId,
+        );
+        if (at === -1) {
+          throw new StepRefused(
+            `the report has no game ${body.gameId}; take a report that ranks it`,
+          );
+        }
+        rank = at + 1;
+      }
       let candidate;
       try {
-        candidate = candidateFromReport(body.report, body.rank ?? 1);
+        candidate = candidateFromReport(body.report, rank);
       } catch (err) {
         throw new StepRefused(err.message);
       }
@@ -1065,7 +1113,7 @@ export const createDaily = ({
       json(
         res,
         200,
-        store.pick(day, {
+        store.pick(day, label, {
           candidate,
           style,
           styleVersion: CAPTION_STYLE_VERSION,
@@ -1083,8 +1131,7 @@ export const createDaily = ({
     "POST /api/daily/direct": async (req, res) => {
       const body = await readJson(req);
       const day = dayOf(body.day);
-      const cycle = store.read(day);
-      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      const cand = candOf(day, body.cand);
       const checked = validateEdl(body.edl);
       if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
       const { edl } = checked;
@@ -1095,17 +1142,17 @@ export const createDaily = ({
         );
       }
       const risk = claimRiskLines(edl, claimRiskOk);
-      if (edl.gameId !== cycle.candidate.gameId) {
+      if (edl.gameId !== cand.candidate.gameId) {
         throw new StepRefused(
-          `the list is for ${edl.gameId}, but the day's game is ${cycle.candidate.gameId}`,
+          `the list is for ${edl.gameId}, but candidate ${cand.label}'s game is ${cand.candidate.gameId}`,
         );
       }
-      if (!cycle.candidate.moves) {
+      if (!cand.candidate.moves) {
         throw new StepRefused(
           "the candidate report has no move list, so the list cannot be checked; pick from a newer report",
         );
       }
-      if (!cycle.candidate.distances) {
+      if (!cand.candidate.distances) {
         throw new StepRefused(
           "the candidate has no race counts, so the captions cannot be checked against the counter; pick from a newer report, or pick again with --replace",
         );
@@ -1119,13 +1166,13 @@ export const createDaily = ({
       }
       const errors = [
         ...checkEdlAgainstGame(edl, {
-          notations: cycle.candidate.moves,
-          cols: cycle.candidate.boardWidth,
-          rows: cycle.candidate.boardHeight,
-          initialState: cycle.candidate.initialState,
+          notations: cand.candidate.moves,
+          cols: cand.candidate.boardWidth,
+          rows: cand.candidate.boardHeight,
+          initialState: cand.candidate.initialState,
         }),
-        ...saveFrameProblems(edl, cycle.candidate.beats),
-        ...storyProblems(edl, cycle.candidate),
+        ...saveFrameProblems(edl, cand.candidate.beats),
+        ...storyProblems(edl, cand.candidate),
         ...risk.problems,
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
@@ -1148,15 +1195,15 @@ export const createDaily = ({
       );
       const problems = textProblems(
         shown,
-        cycle.candidate.gameId,
-        playerNames(cycle.candidate),
+        cand.candidate.gameId,
+        playerNames(cand.candidate),
       );
       if (problems.length) throw new StepRefused(problems.join("; "));
       const text = JSON.stringify(edl, null, 2) + "\n";
       json(
         res,
         200,
-        store.direct(day, {
+        store.direct(day, cand.label, {
           edl,
           text,
           summary: [
@@ -1177,8 +1224,7 @@ export const createDaily = ({
       const body = await readJson(req);
       if (!body.day) throw new StepRefused("copy needs the day of the cycle");
       const day = dayOf(body.day);
-      const cycle = store.read(day);
-      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      const cand = candOf(day, body.cand);
       if (!COPY_VERSION.test(body.copyVersion ?? "")) {
         throw new StepRefused(
           "copy needs copyVersion, the name of Growth's copy style (e.g. growth-copy-1)",
@@ -1188,14 +1234,17 @@ export const createDaily = ({
       if (!copy) throw new StepRefused(problems.join("; "));
       const bad = copyProblems(
         copy,
-        cycle.candidate.gameId,
-        playerNames(cycle.candidate),
+        cand.candidate.gameId,
+        playerNames(cand.candidate),
       );
       if (bad.length) throw new StepRefused(bad.join("; "));
       json(
         res,
         200,
-        store.recordCopy(day, { ...copy, version: body.copyVersion }),
+        store.recordCopy(day, cand.label, {
+          ...copy,
+          version: body.copyVersion,
+        }),
       );
     },
 
@@ -1205,7 +1254,7 @@ export const createDaily = ({
       json(
         res,
         200,
-        store.recordCheck(dayOf(body.day), {
+        store.recordCheck(dayOf(body.day), labelOf(body.cand), {
           sheetSha256: body.sheetSha256,
           stills: body.stills,
         }),
@@ -1216,11 +1265,10 @@ export const createDaily = ({
     "POST /api/daily/render": async (req, res) => {
       const body = await readJson(req);
       const day = dayOf(body.day);
-      const cycle = store.read(day);
-      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
-      const jobId = `${day}-${cycle.candidate.gameId}-${Date.now().toString(36)}`;
-      store.startRender(day, jobId, { force: body.force === true });
-      queue.push({ day, jobId });
+      const cand = candOf(day, body.cand);
+      const jobId = `${day}-${cand.label}-${cand.candidate.gameId}-${Date.now().toString(36)}`;
+      store.startRender(day, cand.label, jobId, { force: body.force === true });
+      queue.push({ day, label: cand.label, jobId });
       pump();
       json(res, 200, { day, jobId });
     },
@@ -1234,34 +1282,33 @@ export const createDaily = ({
     "POST /api/daily/preview": async (req, res) => {
       const body = await readJson(req);
       const day = dayOf(body.day);
-      const cycle = store.read(day);
-      if (!cycle) throw new StepRefused(`there is no cycle for ${day}`);
+      const cand = candOf(day, body.cand);
       let edl;
       let edlText;
       if (body.edl === undefined) {
-        if (!cycle.edl) {
+        if (!cand.edl) {
           throw new StepRefused(
-            `${day} has no edit list yet: run direct, or give preview an --edl`,
+            `${day} candidate ${cand.label} has no edit list yet: run direct, or give preview an --edl`,
           );
         }
-        edl = cycle.edl.doc;
-        edlText = cycle.edl.text;
+        edl = cand.edl.doc;
+        edlText = cand.edl.text;
       } else {
         const checked = validateEdl(body.edl);
         if (!checked.ok) throw new StepRefused(checked.errors.join("; "));
         edl = checked.edl;
-        if (edl.gameId !== cycle.candidate.gameId) {
+        if (edl.gameId !== cand.candidate.gameId) {
           throw new StepRefused(
-            `the list is for ${edl.gameId}, but the day's game is ${cycle.candidate.gameId}`,
+            `the list is for ${edl.gameId}, but candidate ${cand.label}'s game is ${cand.candidate.gameId}`,
           );
         }
         // A list that does not fit the game would fail on the 4090.
-        const errors = cycle.candidate.moves
+        const errors = cand.candidate.moves
           ? checkEdlAgainstGame(edl, {
-              notations: cycle.candidate.moves,
-              cols: cycle.candidate.boardWidth,
-              rows: cycle.candidate.boardHeight,
-              initialState: cycle.candidate.initialState,
+              notations: cand.candidate.moves,
+              cols: cand.candidate.boardWidth,
+              rows: cand.candidate.boardHeight,
+              initialState: cand.candidate.initialState,
             })
           : [];
         if (errors.length) throw new StepRefused(errors.join("; "));
@@ -1269,7 +1316,7 @@ export const createDaily = ({
       }
       const span = parsePlyWindow(body.plies, edl.startPly ?? 0);
       if (!span.ok) throw new StepRefused(span.error);
-      const lastPly = cycle.candidate.movesCount - 1;
+      const lastPly = cand.candidate.movesCount - 1;
       if (span.to > lastPly) {
         throw new StepRefused(
           `the preview ends at ply ${span.to}, after the game's last ply ${lastPly}`,
@@ -1277,7 +1324,7 @@ export const createDaily = ({
       }
       const missing = await missingCapture(edl.gameId);
       if (missing) throw new StepRefused(missing);
-      const jobId = `${day}-${cycle.candidate.gameId}-p${Date.now().toString(36)}`;
+      const jobId = `${day}-${cand.label}-${cand.candidate.gameId}-p${Date.now().toString(36)}`;
       previews.set(jobId, {
         day,
         from: span.from,
@@ -1313,8 +1360,8 @@ export const createDaily = ({
     },
 
     /**
-     * {day?, askId, modes, videoSha256, copySha256, replacesAskId?} - what
-     * the ask showed.
+     * {day?, askId, modes, offered: {A: {videoSha256, copySha256}, ...},
+     * replacesAskId?} - what the ask showed.
      */
     "POST /api/daily/ask": async (req, res) => {
       const body = await readJson(req);
@@ -1332,8 +1379,7 @@ export const createDaily = ({
         store.recordAsk(day, {
           askId: body.askId,
           modes: body.modes,
-          videoSha256: body.videoSha256,
-          copySha256: body.copySha256,
+          offered: body.offered,
           currentModes: modesNow(),
           replacesAskId: body.replacesAskId,
         }),
@@ -1341,28 +1387,39 @@ export const createDaily = ({
     },
 
     /**
-     * {askId, decision, approver, reply}. The cycle is found by its ask: an
-     * answer often comes on a later UTC day (UTC midnight is 5 pm in
-     * California). An approval must carry the member's reply as evidence.
+     * {askId, pick: "A"|"B"|"C"|null, approver, reply}. The day is found by
+     * its ask: an answer often comes on a later UTC day (UTC midnight is 5 pm
+     * in California). A pick must carry the member's reply as evidence;
+     * "None today" is pick null.
      */
     "POST /api/daily/answer": async (req, res) => {
       const body = await readJson(req);
       const day = store.dayOfAsk(String(body.askId ?? ""));
       if (!day) throw new StepRefused(`no cycle has ask ${body.askId}`);
-      if (body.decision === "approve" && !body.reply) {
-        throw new StepRefused("an approval needs the member's reply text");
+      const pick = body.pick === null ? null : labelOf(body.pick);
+      if (pick !== null && !body.reply) {
+        throw new StepRefused("a pick needs the member's reply text");
       }
       json(
         res,
         200,
         store.recordAnswer(day, {
           askId: body.askId,
-          decision: body.decision,
+          pick,
           approver: body.approver,
           reply:
-            typeof body.reply === "string" ? body.reply.slice(0, 2000) : null,
+            typeof body.reply === "string" ? body.reply.slice(0, 4000) : null,
         }),
       );
+    },
+
+    /** The last `last` answers (default 10), oldest first. */
+    "GET /api/daily/feedback": (req, res, url) => {
+      const last = Number(url.searchParams.get("last") ?? 10);
+      if (!Number.isInteger(last) || last < 1 || last > 1000) {
+        throw new StepRefused("last is a whole number from 1 to 1000");
+      }
+      json(res, 200, readPostLog(store.feedbackLog).slice(-last));
     },
 
     /** {day, confirmNotPosted?: ["x"|"youtube"]} - the day is required. */
@@ -1383,8 +1440,10 @@ export const createDaily = ({
     },
 
     "GET /api/daily/video": (req, res, url) => {
-      const cycle = store.read(dayOf(url.searchParams.get("day")));
-      const path = cycle?.render?.video?.path;
+      const cand = store.read(dayOf(url.searchParams.get("day")))?.cands?.[
+        url.searchParams.get("cand") ?? ""
+      ];
+      const path = cand?.render?.video?.path;
       if (!path || !existsSync(path))
         return json(res, 404, { error: "no video for that day" });
       res.writeHead(200, {
@@ -1395,8 +1454,10 @@ export const createDaily = ({
     },
 
     "GET /api/daily/sheet": (req, res, url) => {
-      const cycle = store.read(dayOf(url.searchParams.get("day")));
-      const path = cycle?.render?.sheet?.path;
+      const cand = store.read(dayOf(url.searchParams.get("day")))?.cands?.[
+        url.searchParams.get("cand") ?? ""
+      ];
+      const path = cand?.render?.sheet?.path;
       if (!path || !existsSync(path))
         return json(res, 404, { error: "no contact sheet for that day" });
       res.writeHead(200, {
@@ -1714,11 +1775,10 @@ const DASHBOARD = `<!doctype html>
 </style></head>
 <body><main>
   <h1>Wall Game daily video</h1>
-  <p class="sub">One game a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes the video, Wall Game Growth writes the post text and posts; this page shows where the day is.
+  <p class="sub">One video a day to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes up to three candidates, Nil picks one, Wall Game Growth writes the post text and posts; this page shows where the day is.
     <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
-  <h2>Candidate</h2><div id="cand" class="box"></div>
-  <h2>Video</h2><div id="vid" class="box"></div>
+  <h2>Candidates</h2><div id="cands"></div>
   <h2>Approval</h2><div id="appr" class="box"></div>
   <h2>Posts</h2><div id="posts" class="box"></div>
   <h2>Post log</h2><div id="log" class="box"></div>
@@ -1743,50 +1803,57 @@ const DASHBOARD = `<!doctype html>
     top.append(line(pick, el("span", null, "  "), el("span", "pill state", s.cycle ? s.cycle.state : "no cycle yet"), modes));
 
     const c = s.cycle;
-    $("cand").replaceChildren(); $("vid").replaceChildren(); $("appr").replaceChildren(); $("posts").replaceChildren();
-    if (!c) { $("cand").append(el("span", "muted", "Nothing picked for this day.")); }
+    $("cands").replaceChildren(); $("appr").replaceChildren(); $("posts").replaceChildren();
+    if (!c) { $("cands").append(el("div", "box muted", "Nothing picked for this day.")); }
     else {
-      const k = c.candidate;
-      const game = el("a", null, k.gameId); game.href = "https://wallgame.io/game/" + encodeURIComponent(k.gameId);
-      game.target = "_blank"; game.rel = "noopener";
-      $("cand").append(
-        line(el("b", null, k.seats.map((x) => x.name).join(" vs ")), el("span", null, "  "), game,
-             el("span", "muted", "  " + k.variant + ", " + k.movesCount + " plies")),
-        ...k.facts.map((f) => el("div", null, f)),
-        ...(c.copy
-          ? [el("div", "muted", "Post text by Wall Game Growth (" + c.copy.version + ")"),
-             ...[["X", "x"], ["YouTube title (the app adds #Shorts)", "youtubeTitle"], ["YouTube description", "youtubeDescription"],
-                 ["TikTok", "tiktok"], ["Instagram", "instagram"], ["Facebook", "facebook"],
-                 ["Bluesky", "bluesky"], ["Threads", "threads"]]
-               .flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", c.copy[f])])]
-          : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
-        el("div", "muted", "style: " + c.style),
-        el("div", "muted", c.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
-        ...(c.edl ? c.edl.summary.map((l) => el("div", null, l)) : []));
-      const r = c.render;
-      if (!r) $("vid").append(el("span", "muted", "No render requested."));
-      else if (r.error) $("vid").append(el("div", "err", r.error));
-      else if (!r.video) $("vid").append(el("span", null, "Rendering on the 4090 - " + (s.renderProgress || "queued")));
-      else {
-        const v = el("video"); v.controls = true; v.playsInline = true;
-        v.src = "/api/daily/video?day=" + encodeURIComponent(c.day);
-        $("vid").append(v, el("div", "muted", (r.video.bytes / 1e6).toFixed(1) + " MB, effect " + (r.effect || "-") + ", ending " + (r.ending || "-") +
-          ", sound " + (r.sound || "-") + ", sha256 " + r.video.sha256.slice(0, 12)));
-        if (r.sheet) {
-          const img = el("img"); img.src = "/api/daily/sheet?day=" + encodeURIComponent(c.day); img.style.maxWidth = "100%";
-          $("vid").append(el("div", "muted", "Contact sheet"), img);
+      for (const k of Object.values(c.cands)) {
+        const box = el("div", "box");
+        const g = k.candidate;
+        const game = el("a", null, g.gameId); game.href = "https://wallgame.io/game/" + encodeURIComponent(g.gameId);
+        game.target = "_blank"; game.rel = "noopener";
+        box.append(
+          line(el("b", null, k.label + "  "), el("span", "pill state", k.state), el("span", null, "  "),
+               el("b", null, g.seats.map((x) => x.name).join(" vs ")), el("span", null, "  "), game,
+               el("span", "muted", "  " + g.variant + ", " + g.movesCount + " plies")),
+          ...g.facts.map((f) => el("div", null, f)),
+          ...(k.copy
+            ? [el("div", s.staleCopy[k.label] ? "err" : "muted",
+                  "Post text by Wall Game Growth (" + k.copy.version + ")" + (s.staleCopy[k.label] ? ": " + s.staleCopy[k.label] : "")),
+               ...[["X", "x"], ["YouTube title (the app adds #Shorts)", "youtubeTitle"], ["YouTube description", "youtubeDescription"],
+                   ["TikTok", "tiktok"], ["Instagram", "instagram"], ["Facebook", "facebook"],
+                   ["Bluesky", "bluesky"], ["Threads", "threads"]]
+                 .flatMap(([label, f]) => [el("div", "muted", label), el("div", "cap", k.copy[f])])]
+            : [el("div", "muted", "No copy block from Wall Game Growth yet.")]),
+          el("div", "muted", "style: " + k.style),
+          el("div", "muted", k.edl ? "Director's edit list" : "No edit list yet; default ending " + s.suggestedEnding),
+          ...(k.edl ? k.edl.summary.map((l) => el("div", null, l)) : []));
+        const r = k.render;
+        const q = "?day=" + encodeURIComponent(c.day) + "&cand=" + k.label;
+        if (!r) box.append(el("div", "muted", "No render requested."));
+        else if (r.error) box.append(el("div", "err", r.error));
+        else if (!r.video) box.append(el("div", null, "Rendering on the 4090 - " + (s.renderProgress[k.label] || "queued")));
+        else {
+          const v = el("video"); v.controls = true; v.playsInline = true;
+          v.src = "/api/daily/video" + q;
+          box.append(v, el("div", "muted", (r.video.bytes / 1e6).toFixed(1) + " MB, effect " + (r.effect || "-") + ", ending " + (r.ending || "-") +
+            ", sound " + (r.sound || "-") + ", sha256 " + r.video.sha256.slice(0, 12)));
+          if (r.sheet) {
+            const img = el("img"); img.src = "/api/daily/sheet" + q; img.style.maxWidth = "100%";
+            box.append(el("div", "muted", "Contact sheet"), img);
+          }
+          if (k.check) {
+            box.append(el("div", k.check.ok ? "muted" : "err", "Director's check: " + (k.check.ok ? "all stills ok" : "failed")),
+              ...k.check.verdicts.map((v) => el("div", null, "ply " + v.ply + " " + v.kind + ": " + (v.ok ? "ok" : "BAD") + " - " + v.note)));
+          }
         }
-        if (c.check) {
-          $("vid").append(el("div", c.check.ok ? "muted" : "err", "Director's check: " + (c.check.ok ? "all stills ok" : "failed")),
-            ...c.check.verdicts.map((v) => el("div", null, "ply " + v.ply + " " + v.kind + ": " + (v.ok ? "ok" : "BAD") + " - " + v.note)));
-        }
+        $("cands").append(box);
       }
       const a = c.approval;
       if (!a) $("appr").append(el("span", "muted", "No ask open."));
       else {
-        $("appr").append(line(el("span", null, "Ask " + a.askId + " opened " + a.askedAt)),
-          line(el("span", null, "Modes at ask time: x " + a.modes.x + ", youtube " + a.modes.youtube)),
-          line(el("b", null, a.decision ? (a.decision === "approve" ? "approved" : "rejected") + " by " + a.approver + " at " + a.answeredAt : "Waiting for the answer")));
+        $("appr").append(line(el("span", null, "Ask " + a.askId + " opened " + a.askedAt + ", offers " + Object.keys(a.offered).join(", "))),
+          line(el("span", null, "Modes at ask time: " + Object.entries(a.modes).map(([p, m]) => p + " " + m).join(", "))),
+          line(el("b", null, a.decision ? (a.decision === "pick" ? a.picked + " picked" : "none picked") + " by " + a.approver + " at " + a.answeredAt : "Waiting for the answer")));
         if (a.reply) $("appr").append(el("div", "cap", a.reply));
       }
       const ps = Object.entries(c.posts);
