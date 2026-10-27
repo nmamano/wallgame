@@ -1382,7 +1382,7 @@ export const createDaily = ({
 
     /**
      * {day?, askId, modes, offered: {A: {videoSha256, copySha256}, ...},
-     * replacesAskId?} - what the ask showed.
+     * replacesAskId?, modeChange?} - what the ask showed.
      */
     "POST /api/daily/ask": async (req, res) => {
       const body = await readJson(req);
@@ -1392,6 +1392,9 @@ export const createDaily = ({
       }
       if (body.replacesAskId !== undefined && !id.test(body.replacesAskId)) {
         throw new StepRefused("replacesAskId is not an ask id");
+      }
+      if (body.modeChange !== undefined && body.modeChange !== true) {
+        throw new StepRefused("modeChange is true or absent");
       }
       const day = dayOf(body.day);
       json(
@@ -1403,6 +1406,7 @@ export const createDaily = ({
           offered: body.offered,
           currentModes: modesNow(),
           replacesAskId: body.replacesAskId,
+          modeChange: body.modeChange,
         }),
       );
     },

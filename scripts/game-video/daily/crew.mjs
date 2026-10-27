@@ -79,7 +79,7 @@
  *                                  render that makes other bytes leaves it
  *                                  stale. Allowed until the ask opens; a new
  *                                  block replaces the old
- *   ask --agent <your agent id> [--cands A,B] [--reopen]
+ *   ask --agent <your agent id> [--cands A,B] [--reopen | --mode-change]
  *                                  open the day's one Isomux ask for
  *                                  APPROVER_MEMBER: each checked candidate (or
  *                                  the ones --cands names) with its MP4, its
@@ -91,7 +91,13 @@
  *                                  set (a new candidate, video or block; the
  *                                  same set is refused). --reopen opens the
  *                                  day's open ask again for that member, gives
- *                                  the app the new id and withdraws the old one
+ *                                  the app the new id and withdraws the old one.
+ *                                  --mode-change: the app's posting modes
+ *                                  changed after the approval (a platform
+ *                                  went live), so the approval does not cover
+ *                                  a post; asks again for the approved video
+ *                                  and block with the new modes. Only before
+ *                                  any platform posts
  *   answer --agent <id> --ask <askId> --pick A|B|C|none
  *          --approver <member> --reply <the member's reply, verbatim>
  *                                  pass the member's answer to the app; the
@@ -380,14 +386,15 @@ export const ASK_TEXT_LIMIT = 4000;
 const REPLY_QUOTED = 300;
 
 /**
- * The ask that Nil answered with none: the current approval until the new
- * ask is recorded, or the last earlier ask when this one is opened again.
+ * The ask before this one: answered with none, or approved before a mode
+ * change. It is the current approval until the new ask is recorded, or the
+ * last earlier ask when this one is opened again.
  */
-const earlierNone = (c) =>
-  c.state === "rejected"
-    ? c.approval
-    : c.state === "asked"
-      ? (c.earlierAsks?.at(-1) ?? null)
+const earlierAsk = (c) =>
+  c.state === "asked"
+    ? (c.earlierAsks?.at(-1) ?? null)
+    : c.approval?.decision
+      ? c.approval
       : null;
 
 /**
@@ -404,14 +411,25 @@ export const askText = (c, modes, shas) => {
     ([, name]) => name,
   );
   const labels = Object.keys(shas);
-  const earlier = earlierNone(c);
+  const earlier = earlierAsk(c);
   const reply = earlier?.reply ?? null;
+  const changed =
+    earlier?.decision === "pick"
+      ? PLATFORM_NAMES.filter(([p]) => modes[p] !== earlier.modes[p]).map(
+          ([p, name]) => `${name} is now ${modes[p]} (was ${earlier.modes[p]})`,
+        )
+      : [];
   const sameAs = (label) =>
     earlier?.offered?.[label]?.videoSha256 === shas[label]
       ? ` (the same video as in ask ${earlier.askId})`
       : "";
   return [
     `Daily Wall Game video for ${c.day}: ${labels.length === 1 ? "one candidate" : `${labels.length} candidates`}, ${labels.join(", ")}.${dry ? " DRY RUN: nothing will be posted." : ""}`,
+    ...(changed.length
+      ? [
+          `ASKED AGAIN: ${changed.join(", ")}. Same video, same post text as ask ${earlier.askId}, where you picked ${earlier.picked}. Your earlier approval does not cover the new posting mode.`,
+        ]
+      : []),
     // Whether it goes out for real is the main fact of the answer.
     ...(live.length
       ? [`LIVE on ${live.join(", ")}: the candidate you pick posts for real.`]
@@ -421,7 +439,7 @@ export const askText = (c, modes, shas) => {
       ? "TikTok: open the inbox draft, paste the TikTok line, tap Post."
       : "TikTok: dry run, no draft.",
     `The app adds "${SHORTS_TAG.trim()}" to the YouTube title.`,
-    ...(earlier
+    ...(earlier?.decision === "none"
       ? [
           `After ask ${earlier.askId}, where you picked none${
             reply === null
@@ -456,7 +474,7 @@ export const askText = (c, modes, shas) => {
  * askText.
  */
 export const askNotes = (c, shas) => {
-  const earlier = earlierNone(c);
+  const earlier = earlierAsk(c);
   return (
     [
       `Daily Wall Game video for ${c.day}: notes for the ask. For you only, not posted.`,
@@ -807,6 +825,9 @@ const commands = {
   async ask() {
     const agent = flag("agent") ?? die("ask needs --agent <your agent id>");
     const reopen = has("reopen");
+    const modeChange = has("mode-change");
+    if (reopen && modeChange)
+      die("ask takes --reopen or --mode-change, not both");
     const s = await state();
     const c = s.cycle ?? die(`there is no cycle for ${s.day}`);
     // --reopen: the day's ask is open but went to the wrong inbox; the same
@@ -824,17 +845,24 @@ const commands = {
         die(
           `cannot read ask ${replaces} (HTTP ${old.status}): only the agent that opened it can reopen it, with its own token and --agent`,
         );
+    } else if (modeChange) {
+      if (c.state !== "approved" && c.state !== "post-failed")
+        die(
+          `ask --mode-change needs the day approved (or post-failed); it is ${c.state}`,
+        );
     } else if (c.state !== "open" && c.state !== "rejected")
       die(`ask needs the day open (or after "None today"); it is ${c.state}`);
     // The ask offers the checked candidates, or the ones --cands names; a
     // reopened ask offers what the open one offered.
     const labels = reopen
       ? Object.keys(c.approval.offered)
-      : flag("cands")
-        ? flag("cands").split(",")
-        : candsOf(c)
-            .filter((k) => k.state === "checked")
-            .map((k) => k.label);
+      : modeChange
+        ? [c.approval.picked]
+        : flag("cands")
+          ? flag("cands").split(",")
+          : candsOf(c)
+              .filter((k) => k.state === "checked")
+              .map((k) => k.label);
     if (labels.length === 0)
       die("no candidate is checked: the ask offers only checked candidates");
     const shas = {};
@@ -900,6 +928,7 @@ const commands = {
         ]),
       ),
       ...(replaces && { replacesAskId: replaces }),
+      ...(modeChange && { modeChange: true }),
     });
     if (!recorded.ok) {
       // The ask shows something the app no longer agrees with: withdraw it.

@@ -576,6 +576,166 @@ describe("an ask opened again for the right member", () => {
   });
 });
 
+describe("a mode change after the approval asks again", () => {
+  const day = "2026-10-27";
+  const LIVE_YT = { ...DRY, youtube: "live" };
+  const askAgain = (
+    store: ReturnType<typeof openStore>,
+    over: { modes?: object; sha?: string; askId?: string } = {},
+  ) => {
+    store.recordAsk(day, {
+      askId: over.askId ?? "ask2",
+      modes: over.modes ?? LIVE_YT,
+      offered: {
+        A: { videoSha256: over.sha ?? "aa", copySha256: COPY_SHA },
+      },
+      currentModes: over.modes ?? LIVE_YT,
+      modeChange: true,
+    });
+  };
+  const fail = (store: ReturnType<typeof openStore>, platform: string) => {
+    store.recordPost(
+      day,
+      platform,
+      { ok: false, mode: "dry-run", error: "boom" },
+      null,
+    );
+  };
+
+  test("the same video and block go back to Nil, and the new answer posts", () => {
+    const store = openStore(tempDir());
+    approved(store, day);
+    expect(() =>
+      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
+    ).toThrow(/approval was for dry-run; ask again/);
+    const text = askText(store.read(day), LIVE_YT, { A: "aa" }).split("\n");
+    expect(text[1]).toBe(
+      "ASKED AGAIN: YouTube is now live (was dry-run). Same video, same post text as ask ask1, where you picked A. Your earlier approval does not cover the new posting mode.",
+    );
+    expect(text).toContain(
+      "CANDIDATE A (the same video as in ask ask1): video A and sheet A are attached.",
+    );
+    askAgain(store);
+    const cycle = store.read(day) as Day & {
+      earlierAsks: { askId: string; decision: string }[];
+      approval: { modeChangeOf: string };
+    };
+    expect(cycle.state).toBe("asked");
+    expect(cycle.approval.modeChangeOf).toBe("ask1");
+    expect(Object.keys(cycle.approval.offered)).toEqual(["A"]);
+    expect(cycle.earlierAsks.map((a) => [a.askId, a.decision])).toEqual([
+      ["ask1", "pick"],
+    ]);
+    expect(cycle.events.at(-1)?.what).toBe(
+      "ask ask2 opened for a mode change (was ask1): A",
+    );
+    store.recordAnswer(day, {
+      askId: "ask2",
+      pick: "A",
+      approver: "Nil",
+      reply: "Post A",
+    });
+    expect(
+      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
+    ).toHaveLength(7);
+  });
+
+  test("a failed post with nothing out may ask again", () => {
+    const store = openStore(tempDir());
+    approved(store, day);
+    fail(store, "x");
+    expect((store.read(day) as Day).state).toBe("post-failed");
+    askAgain(store);
+    expect((store.read(day) as Day).state).toBe("asked");
+  });
+
+  test("once a platform posted, or may have, the modes cannot change", () => {
+    const posted = openStore(tempDir());
+    approved(posted, day);
+    // A dry-run post counts: that platform cannot post the day again.
+    posted.recordPost(
+      day,
+      "x",
+      { ok: true, mode: "dry-run", postId: "p" },
+      null,
+    );
+    fail(posted, "youtube");
+    expect(() => askAgain(posted)).toThrow(
+      /x posted \(or may have\): a mode change is asked only before any platform posts/,
+    );
+    const pending = openStore(tempDir());
+    approved(pending, day);
+    pending.markPending(day, "threads", "dry-run");
+    expect(() => askAgain(pending)).toThrow(/threads posted \(or may have\)/);
+  });
+
+  test("it asks for exactly what was approved, in new modes", () => {
+    const store = openStore(tempDir());
+    approved(store, day);
+    expect(() => askAgain(store, { modes: DRY })).toThrow(
+      /the posting modes are the ones of ask ask1: no mode change to ask for/,
+    );
+    expect(() => askAgain(store, { sha: "bb" })).toThrow(
+      /the ask shows another video for A than its render/,
+    );
+    expect(() => {
+      store.recordAsk(day, {
+        askId: "ask2",
+        modes: LIVE_YT,
+        offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
+        currentModes: DRY,
+        modeChange: true,
+      });
+    }).toThrow(/the ask says youtube live, but the app would post dry-run/);
+    expect((store.read(day) as Day).state).toBe("approved");
+  });
+
+  test("only an approved day asks for a mode change", () => {
+    const store = openStore(tempDir());
+    checkedToday(store, day, { path: "/x", bytes: 1, sha256: "aa" });
+    expect(() => askAgain(store)).toThrow(
+      /ask for a mode change needs the day approved or post-failed, but 2026-10-27 is open/,
+    );
+  });
+
+  test("an answer of none leaves the day open to a new ask", () => {
+    const store = openStore(tempDir());
+    approved(store, day);
+    askAgain(store);
+    store.recordAnswer(day, {
+      askId: "ask2",
+      pick: null,
+      approver: "Nil",
+      reply: "not live yet",
+    });
+    expect((store.read(day) as Day).state).toBe("rejected");
+    expect(() =>
+      store.checkPost(day, { modes: LIVE_YT, videoSha256: "aa" }),
+    ).toThrow(/post needs the day approved/);
+  });
+
+  test("a mode-change ask opened again is still one", () => {
+    const store = openStore(tempDir());
+    approved(store, day);
+    askAgain(store);
+    store.recordAsk(day, {
+      askId: "ask3",
+      modes: LIVE_YT,
+      offered: { A: { videoSha256: "aa", copySha256: COPY_SHA } },
+      currentModes: LIVE_YT,
+      replacesAskId: "ask2",
+    });
+    const cycle = store.read(day) as Day & {
+      approval: { modeChangeOf: string };
+    };
+    expect(cycle.approval.modeChangeOf).toBe("ask1");
+    // The text still says what changed, not "you picked none".
+    expect(askText(cycle, LIVE_YT, { A: "aa" }).split("\n")[1]).toMatch(
+      /^ASKED AGAIN: YouTube is now live \(was dry-run\)/,
+    );
+  });
+});
+
 describe("the ask must show what the approval will cover", () => {
   const day = "2026-10-26";
   const rendered = () => {
@@ -2095,7 +2255,7 @@ describe("TikTok", () => {
     const c = {
       ...real,
       state: "rejected",
-      approval: { askId: "ask0", reply, offered: {} },
+      approval: { askId: "ask0", decision: "none", reply, offered: {} },
       cands: { A, B: A, C: A },
     };
     const shas = { A: "a".repeat(64), B: "b".repeat(64), C: "c".repeat(64) };

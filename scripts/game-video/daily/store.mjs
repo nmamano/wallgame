@@ -472,14 +472,38 @@ export const openStore = (dataDir) => {
      * agree, or the approval would name bytes, text or a mode that the
      * member did not see. `replacesAskId`: the same ask opened again
      * (crew.mjs ask --reopen) while the old one is unanswered; from then on
-     * only the new id's answer counts.
+     * only the new id's answer counts. `modeChange`: the app's posting modes
+     * changed after the approval (e.g. a platform went live), so the
+     * approval no longer covers a post; the same video and block are asked
+     * again with the new modes, before any platform posts.
      * @param {string} day
      * @param {{ askId: any, modes: any, offered: any, currentModes: any,
-     *   replacesAskId?: string }} ask
+     *   replacesAskId?: string, modeChange?: boolean }} ask
      */
-    recordAsk(day, { askId, modes, offered, currentModes, replacesAskId }) {
+    recordAsk(
+      day,
+      { askId, modes, offered, currentModes, replacesAskId, modeChange },
+    ) {
       const record = need(day);
-      if (replacesAskId) {
+      if (replacesAskId && modeChange) {
+        refuse("an ask is opened again or asked for a mode change, not both");
+      }
+      if (modeChange) {
+        expect(record, ["approved", "post-failed"], "ask for a mode change");
+        // An ok, pending or uncertain post is (or may be) public already.
+        const out = PLATFORMS.filter((p) => {
+          const post = record.posts[p];
+          return post?.ok === true || post?.pending || post?.uncertain;
+        });
+        if (out.length) {
+          refuse(
+            `${out.join(", ")} posted (or may have): a mode change is asked only before any platform posts`,
+          );
+        }
+        if (!record.approval.copy) {
+          refuse("the approval has no copy block; ask with Growth's block");
+        }
+      } else if (replacesAskId) {
         expect(record, ["asked"], "reopen the ask");
         if (record.approval.askId !== replacesAskId) {
           refuse(
@@ -535,9 +559,35 @@ export const openStore = (dataDir) => {
           `the ask offers what ask ${rejected.askId} offered, which Nil answered with none: change a candidate, its video or its block first`,
         );
       }
+      // A mode change asks again for exactly what was approved.
+      const approvedAsk = modeChange ? record.approval : null;
+      // A reopened mode-change ask is still one.
+      const modeChangeOf =
+        approvedAsk?.askId ??
+        (replacesAskId ? record.approval.modeChangeOf : undefined);
+      if (approvedAsk) {
+        const was = approvedAsk.picked;
+        const key = offerKey({
+          [was]: {
+            videoSha256: approvedAsk.videoSha256,
+            copySha256: copySha256(approvedAsk.copy),
+          },
+        });
+        if (offerKey(shown) !== key) {
+          refuse(
+            `a mode-change ask offers only ${was}, with the video and the block of ask ${approvedAsk.askId}`,
+          );
+        }
+        if (PLATFORMS.every((p) => modes[p] === approvedAsk.modes[p])) {
+          refuse(
+            `the posting modes are the ones of ask ${approvedAsk.askId}: no mode change to ask for`,
+          );
+        }
+      }
       record.state = "asked";
-      // The rejected ask stays on the record.
-      if (rejected) record.earlierAsks = [...record.earlierAsks, rejected];
+      // The rejected or approved ask stays on the record.
+      const earlier = rejected ?? approvedAsk;
+      if (earlier) record.earlierAsks = [...record.earlierAsks, earlier];
       record.approval = {
         askId,
         askedAt: new Date().toISOString(),
@@ -552,12 +602,15 @@ export const openStore = (dataDir) => {
         answeredAt: null,
         reply: null,
         ...(replacesAskId && { replacesAskId }),
+        ...(modeChangeOf && { modeChangeOf }),
       };
       return save(
         record,
         replacesAskId
           ? `ask ${askId} opened again (was ${replacesAskId})`
-          : `ask ${askId} opened: ${Object.keys(shown).join(", ")}`,
+          : approvedAsk
+            ? `ask ${askId} opened for a mode change (was ${approvedAsk.askId}): ${Object.keys(shown).join(", ")}`
+            : `ask ${askId} opened: ${Object.keys(shown).join(", ")}`,
       );
     },
 
