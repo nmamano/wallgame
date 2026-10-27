@@ -244,7 +244,8 @@ interface Day {
 /** The picked candidate as posting reads it (store.picked). */
 interface PickedView {
   label: string;
-  render: { video: { sha256: string } };
+  approval: { copy: Record<string, string> };
+  render: { video: { sha256: string; path: string } };
   copy: Record<string, string>;
 }
 
@@ -1535,6 +1536,128 @@ describe("a day has up to three candidates", () => {
       ask(store, ["B", "C"], "ask3");
     }).toThrow(/every candidate in this ask was offered in ask ask1 or ask2,/);
     expect((store.read(day) as Day).state).toBe("rejected");
+  });
+
+  // Wall Game Worker 1, poster-side check of 2026-10-27.
+  test("after B is approved nothing moves B, a late C render cannot reach the post, and a mode-change re-ask keeps B", () => {
+    const store = openStore(tempDir());
+    checked(store, "A", "aa");
+    checked(store, "B", "bb", COPY_B);
+    // C is still rendering when the ask opens; the ask does not offer it.
+    store.pick(day, "C", {
+      candidate: candidateFromReport(REPORT, 1),
+      style: "daily",
+      styleVersion: CAPTION_STYLE_VERSION,
+    });
+    store.direct(day, "C", {
+      edl: EDL,
+      text: JSON.stringify(EDL) + "C",
+      summary: [],
+    });
+    store.startRender(day, "C", "job-C", { force: true });
+    ask(store, ["A", "B"]);
+    store.recordAnswer(day, {
+      askId: "ask1",
+      pick: "B",
+      approver: "Nil",
+      reply: "B",
+    });
+    for (const label of ["A", "B", "C"]) {
+      expect(() => {
+        store.recordCopy(day, label, COPY_C);
+      }).toThrow(/needs the day open/);
+      expect(() => {
+        store.direct(day, label, { edl: EDL, text: "x" + label, summary: [] });
+      }).toThrow(/needs the day open/);
+      expect(() => {
+        store.startRender(day, label, "j2", { force: true });
+      }).toThrow(/needs the day open/);
+      expect(() => {
+        store.recordCheck(day, label, { sheetSha256: "ss", stills: [ZOOM_OK] });
+      }).toThrow(/needs the day open/);
+      expect(() => {
+        store.pick(day, label, {
+          candidate: candidateFromReport(REPORT, 1),
+          style: "daily",
+          styleVersion: CAPTION_STYLE_VERSION,
+          replace: true,
+        });
+      }).toThrow(/needs the day open/);
+    }
+    // The late render of C lands; it changes only C.
+    store.finishRender(day, "C", "job-C", {
+      video: { path: "/C.mp4", bytes: 1, sha256: "cc" },
+      sheet: SHEET,
+      quality: MEASURED,
+    });
+    const view = store.picked(day) as PickedView;
+    expect([
+      view.label,
+      view.render.video.sha256,
+      view.render.video.path,
+    ]).toEqual(["B", "bb", "/B.mp4"]);
+    expect(view.approval.copy).toEqual(COPY_B);
+    expect(
+      store.checkPost(day, { modes: DRY, videoSha256: "bb" }),
+    ).toHaveLength(7);
+    for (const sha of ["aa", "cc"]) {
+      expect(() => {
+        store.checkPost(day, { modes: DRY, videoSha256: sha });
+      }).toThrow(/not the one that was approved/);
+    }
+    // A mode-change re-ask may offer only B with B's video and block.
+    const LIVE_X = { ...DRY, x: "live" };
+    expect(() => {
+      store.recordAsk(day, {
+        askId: "ask2",
+        modes: LIVE_X,
+        offered: offer(store, ["A"]),
+        currentModes: LIVE_X,
+        modeChange: true,
+      });
+    }).toThrow(/offers only B/);
+    expect(() => {
+      store.recordAsk(day, {
+        askId: "ask2",
+        modes: LIVE_X,
+        offered: offer(store, ["A", "B"]),
+        currentModes: LIVE_X,
+        modeChange: true,
+      });
+    }).toThrow(/offers only B/);
+    store.recordAsk(day, {
+      askId: "ask2",
+      modes: LIVE_X,
+      offered: offer(store, ["B"]),
+      currentModes: LIVE_X,
+      modeChange: true,
+    });
+    expect(() => {
+      store.recordAnswer(day, {
+        askId: "ask2",
+        pick: "A",
+        approver: "Nil",
+        reply: "A",
+      });
+    }).toThrow(/not A/);
+    store.recordAnswer(day, {
+      askId: "ask2",
+      pick: "B",
+      approver: "Nil",
+      reply: "B",
+    });
+    const after = store.read(day) as Day;
+    expect(after.approval).toMatchObject({
+      picked: "B",
+      videoSha256: "bb",
+      copy: COPY_B,
+    });
+    expect(() => {
+      store.checkPost(day, { modes: DRY, videoSha256: "bb" });
+    }).toThrow(/approval was for live/);
+    expect(
+      store.checkPost(day, { modes: LIVE_X, videoSha256: "bb" }),
+    ).toHaveLength(7);
   });
 
   test("each label is picked once; a second pick of a label needs replace", () => {
