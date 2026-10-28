@@ -6,6 +6,7 @@ import {
   coveredBy,
   loadingPercent,
   overlayPlaces,
+  placeName,
   placeOverlay,
 } from "./overlays.mjs";
 
@@ -95,6 +96,36 @@ describe("overlays", () => {
     expect(
       placeOverlay(clip, [cell(0.5, 0.875), cell(0.5, 0)])?.where,
     ).toBeUndefined();
+  });
+
+  test("a cut-out with a small size tries it only when no big corner is free", () => {
+    const reactor = OVERLAYS["reactor-shock"];
+    expect(reactor.small!.w).toBeLessThan(reactor.size!.w);
+    expect(reactor.small!.h).toBeLessThan(reactor.size!.h);
+    const big = placeOverlay(reactor, [])!;
+    expect([big.where, big.scale, placeName(big)]).toEqual([
+      "bottom-right",
+      1,
+      "bottom-right",
+    ]);
+    // A pawn just inside each big corner, outside each small one: the
+    // corner itself, small, with its content scaled down with it.
+    const edge = 0.025 + 0.4;
+    const pawns = [
+      cell(edge, edge),
+      cell(1 - edge - 0.125, edge),
+      cell(edge, 1 - edge - 0.125),
+      cell(1 - edge - 0.125, 1 - edge - 0.125),
+    ];
+    const small = placeOverlay(reactor, pawns)!;
+    expect(placeName(small)).toBe("bottom-right, small");
+    expect(small.scale).toBeCloseTo(0.36 / 0.46);
+    // A clip with no small size stops there.
+    expect(placeOverlay(OVERLAYS["chat-toast"], [cell(0, 0, 1)])).toBeNull();
+    // The bottom half busy too: the next small corner, in the same order.
+    expect(placeName(placeOverlay(reactor, [...pawns, cell(0, 0.6, 1)])!)).toBe(
+      "top-right, small",
+    );
   });
 
   test("coveredBy gives the boxes a place overlaps", () => {

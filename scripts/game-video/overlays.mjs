@@ -67,6 +67,8 @@
  *            decides, as the loading bar does).
  *   size     a clip's box, or a panel's band, as fractions of the board's
  *            width and height.
+ *   small    a clip's smaller box, tried in the four corners when none is
+ *            free at `size` (overlayPlaces).
  *   sequence a "sequence" draw's frames: their folder in assets/overlays,
  *            fps, count, and the sha256 of the manifest that
  *            prepare-overlay-clip.mjs printed (the render stops if the
@@ -91,6 +93,7 @@ export const OVERLAY_FORMS = ["clip", "panel", "bar"];
  *   line?: string,
  *   seconds: number | null,
  *   size?: { w: number, h: number },
+ *   small?: { w: number, h: number },
  *   sequence?: { dir: string, fps: number, frames: number, sha256: string },
  *   source: string,
  *   claim: string,
@@ -141,6 +144,7 @@ export const OVERLAYS = {
     chars: 28,
     seconds: 1.4,
     size: { w: 0.46, h: 0.42 },
+    small: { w: 0.36, h: 0.34 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -154,6 +158,7 @@ export const OVERLAYS = {
     chars: 28,
     seconds: 1.4,
     size: { w: 0.46, h: 0.42 },
+    small: { w: 0.36, h: 0.34 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -167,6 +172,7 @@ export const OVERLAYS = {
     chars: 28,
     seconds: 1.8,
     size: { w: 0.46, h: 0.42 },
+    small: { w: 0.36, h: 0.34 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -192,6 +198,7 @@ export const OVERLAYS = {
     line: "c'mon, do something...",
     seconds: 1.8,
     size: { w: 0.46, h: 0.42 },
+    small: { w: 0.36, h: 0.34 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -215,11 +222,15 @@ const INSET = 0.025;
 
 /**
  * The places an overlay may go, in the order they are tried, each as a box
- * in the board (0..1): a bar's two strips and a panel's two halves (top
- * first: the eye starts there), a clip's four corners (bottom right first,
- * where the model video puts its reactors).
- * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
- * @returns {{ where: string, x: number, y: number, w: number, h: number }[]}
+ * in the board (0..1) with the scale its content is drawn at: a bar's or a
+ * panel's band (the top first: the eye starts there; then the bottom, then
+ * every height), a clip's four corners (bottom right first, where the model
+ * video puts its reactors). A clip with a `small` size then tries its four
+ * corners at that size, its content scaled down with it (Wall Game
+ * Director, 2026-10-29: the big cut-out reads best on a phone, and the
+ * small one saves a late-game moment that no big corner fits).
+ * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number }, small?: { w: number, h: number } }} asset
+ * @returns {{ where: string, x: number, y: number, w: number, h: number, scale: number }[]}
  */
 export const overlayPlaces = (asset) => {
   if (asset.form === "bar" || asset.form === "panel") {
@@ -237,26 +248,34 @@ export const overlayPlaces = (asset) => {
         y: 0.05 * k,
         w,
         h,
+        scale: 1,
       });
     }
     return [
-      { where: "top", x, y: INSET, w, h },
-      { where: "bottom", x, y: 1 - INSET - h, w, h },
+      { where: "top", x, y: INSET, w, h, scale: 1 },
+      { where: "bottom", x, y: 1 - INSET - h, w, h, scale: 1 },
       ...bands,
     ];
   }
-  const { w, h } = asset.size;
-  const left = INSET;
-  const right = 1 - INSET - w;
-  const top = INSET;
-  const bottom = 1 - INSET - h;
-  return [
-    { where: "bottom-right", x: right, y: bottom, w, h },
-    { where: "bottom-left", x: left, y: bottom, w, h },
-    { where: "top-right", x: right, y: top, w, h },
-    { where: "top-left", x: left, y: top, w, h },
-  ];
+  const corners = (/** @type {{ w: number, h: number }} */ { w, h }) => {
+    const scale = w / asset.size.w;
+    const left = INSET;
+    const right = 1 - INSET - w;
+    const top = INSET;
+    const bottom = 1 - INSET - h;
+    return [
+      { where: "bottom-right", x: right, y: bottom, w, h, scale },
+      { where: "bottom-left", x: left, y: bottom, w, h, scale },
+      { where: "top-right", x: right, y: top, w, h, scale },
+      { where: "top-left", x: left, y: top, w, h, scale },
+    ];
+  };
+  return [...corners(asset.size), ...(asset.small ? corners(asset.small) : [])];
 };
+
+/** A place in words: its corner or band, and "small" at the small size. */
+export const placeName = (/** @type {{ where: string, scale: number }} */ p) =>
+  p.scale < 1 ? `${p.where}, small` : p.where;
 
 /**
  * A box in the board as the camera shows it: scaled by z.scale about the

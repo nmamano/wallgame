@@ -101,6 +101,7 @@ import {
   coveredBy,
   loadingPercent,
   overlayPlaces,
+  placeName,
   placeOverlay,
 } from "./overlays.mjs";
 import { pawnCell } from "../../shared/domain/pawns.ts";
@@ -2800,7 +2801,7 @@ const writeContactSheet = async (stills, out) => {
   const png = out.replace(/(\.mp4)?$/, "-sheet.png");
   const tiles = stills.map((st) => ({
     src: `data:image/png;base64,${readFileSync(st.file).toString("base64")}`,
-    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${st.place.where}` : ""} - ${st.at.toFixed(1)}s`,
+    label: `ply ${st.ply} (move ${st.ply + 1}) - ${st.kind}${st.sound ? ` - ${st.sound}` : ""}${st.place ? ` - ${placeName(st.place)}` : ""} - ${st.at.toFixed(1)}s`,
   }));
   const page = await browser.newPage({
     viewport: { width: 400, height: 400 },
@@ -2838,7 +2839,7 @@ const writeContactSheet = async (stills, out) => {
       ply,
       kind,
       sound,
-      place: place ?? null,
+      place: place ? { where: place.where, small: place.scale < 1 } : null,
     })),
   };
 };
@@ -3386,14 +3387,14 @@ const renderStyle = async (styleName) => {
         // overlay to a ply where one place is free.
         const under = overlayPlaces(w.asset).map(
           (p) =>
-            `${p.where}: ${[...new Set(coveredBy(p, busy).map((b) => b.what))].join(", ")}`,
+            `${placeName(p)}: ${[...new Set(coveredBy(p, busy).map((b) => b.what))].join(", ")}`,
         );
         throw new Error(
           `${where} has no free place while it shows (${(w.end - w.start).toFixed(1)} s); under each place:\n  ${under.join("\n  ")}`,
         );
       }
       Object.assign(w.place, place);
-      log(`${where}: ${place.where}`);
+      log(`${where}: ${placeName(place)}`);
       for (const f of w.frames) {
         f.o.alpha = Math.max(
           0,
@@ -3448,7 +3449,7 @@ const renderStyle = async (styleName) => {
           ply: w.ev.ply,
           kind: "overlay",
           sound: w.ev.sound ?? null,
-          place: { where: place.where },
+          place: { where: place.where, scale: place.scale },
           file: timeline[mid.image].file,
           at: mid.at,
         });
