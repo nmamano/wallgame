@@ -269,13 +269,13 @@ describe("authorize URLs", () => {
     });
   });
 
-  test("TikTok: video.upload, user.info.basic and user.info.stats, no PKCE on the web", () => {
+  test("TikTok: video.upload and user.info.basic, no PKCE on the web", () => {
     const url = new URL(
       authorizeUrl("tiktok", ENV, { state: "S2", verifier: "unused" }),
     );
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_key: "tt-key",
-      scope: "user.info.basic,video.upload,user.info.stats",
+      scope: "user.info.basic,video.upload",
       response_type: "code",
       redirect_uri:
         "https://game-video.office.nilmamano.com/daily/connect/tiktok/callback",
@@ -283,7 +283,7 @@ describe("authorize URLs", () => {
     });
   });
 
-  test("Threads: threads.com, basic, content_publish and manage_insights", () => {
+  test("Threads: threads.com, basic and content_publish", () => {
     const url = new URL(
       authorizeUrl("threads", ENV, { state: "S3", verifier: "unused" }),
     );
@@ -292,7 +292,7 @@ describe("authorize URLs", () => {
     );
     expect(url.searchParams.get("client_id")).toBe("th-app");
     expect(url.searchParams.get("scope")).toBe(
-      "threads_basic,threads_content_publish,threads_manage_insights",
+      "threads_basic,threads_content_publish",
     );
     expect(url.searchParams.get("state")).toBe("S3");
   });
@@ -416,7 +416,7 @@ describe("code exchange", () => {
               open_id: "OID",
               refresh_token: "SECRET-RT",
               refresh_expires_in: 31536000,
-              scope: "user.info.basic,video.upload,user.info.stats",
+              scope: "user.info.basic,video.upload",
               token_type: "Bearer",
             },
           },
@@ -429,7 +429,7 @@ describe("code exchange", () => {
       now: at,
     });
     expect(record).toEqual({
-      scopes: ["user.info.basic", "video.upload", "user.info.stats"],
+      scopes: ["user.info.basic", "video.upload"],
       account: { id: "OID", name: "wallgame.io" },
       refreshToken: "SECRET-RT",
       refreshExpiresAt: "2027-10-26T22:00:00.000Z",
@@ -491,11 +491,7 @@ describe("code exchange", () => {
       now: at,
     });
     expect(record).toEqual({
-      scopes: [
-        "threads_basic",
-        "threads_content_publish",
-        "threads_manage_insights",
-      ],
+      scopes: ["threads_basic", "threads_content_publish"],
       account: { id: "17841405793187218", name: "wallgameio" },
       accessToken: "SECRET-LONG",
       accessExpiresAt: "2026-12-25T22:00:00.000Z",
