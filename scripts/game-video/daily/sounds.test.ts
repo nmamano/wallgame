@@ -27,7 +27,12 @@ import {
   defaultSlots,
   MEME_DIR,
 } from "./sounds.mjs";
-import { claimRiskLines, createDaily, dislikedSoundNotes } from "./routes.mjs";
+import {
+  claimRiskLines,
+  createDaily,
+  dislikedSoundNotes,
+  lastMoveSoundNotes,
+} from "./routes.mjs";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "meme-sounds-test-"));
 const keys = Object.keys(MEME_SOUNDS) as (keyof typeof MEME_SOUNDS)[];
@@ -168,6 +173,54 @@ describe("best, ok or disliked", () => {
     expect(dislikedSoundNotes(edl, ["shotgun-2"])).toEqual([
       "finishSound uses disliked shotgun-2: Nil's preference, allowed",
     ]);
+  });
+});
+
+describe("a sound on the last move (the capture)", () => {
+  test("a warning, not a refusal, when no event on the last move has a sound", () => {
+    const warning =
+      "WARNING: no sound lands on the last move (ply 40): give it a lead zoom with its sound, or a sound event";
+    // 41 moves: the last is ply 40. A sound on ply 39 does not count, and
+    // neither does a sound-less event on ply 40.
+    expect(
+      lastMoveSoundNotes(
+        {
+          finishSound: "win-1",
+          events: [
+            { ply: 39, kind: "sound", sound: "boom-1" },
+            { ply: 40, kind: "laugh" },
+          ],
+        },
+        41,
+      ),
+    ).toEqual([warning]);
+    // The ending's caption bar opens on the impact, after the capture: its
+    // sound does not count.
+    expect(
+      lastMoveSoundNotes(
+        {
+          events: [
+            {
+              ply: 40,
+              kind: "overlay",
+              form: "bar",
+              asset: "ending-caption",
+              text: "gg",
+              sound: "boom-2",
+            },
+          ],
+        },
+        41,
+      ),
+    ).toEqual([warning]);
+    for (const ev of [
+      { ply: 40, kind: "zoom", lead: true, sound: "seeya-3" },
+      { ply: 40, kind: "sound", sound: "boom-1" },
+      { ply: 40, kind: "overlay", form: "clip", sound: "ooh-1" },
+      { ply: 40, kind: "freeze", sound: "scratch-1" },
+    ]) {
+      expect(lastMoveSoundNotes({ events: [ev] }, 41)).toEqual([]);
+    }
   });
 });
 

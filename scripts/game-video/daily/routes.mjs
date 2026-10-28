@@ -1473,6 +1473,7 @@ export const createDaily = ({
             ...edlSummary(edl),
             ...dislikedSoundNotes(edl, soundPicks.disliked()),
             ...risk.notes,
+            ...lastMoveSoundNotes(edl, item.candidate.movesCount),
           ],
         }),
       );
@@ -2081,6 +2082,27 @@ export const dislikedSoundNotes = (edl, disliked) =>
       ([where, key]) =>
         `${where} uses disliked ${key}: Nil's preference, allowed`,
     );
+
+/**
+ * A warning when no event on the last move carries a sound (Nil,
+ * 2026-10-28, on the capture: "there could be some sound effect right
+ * before or as the mouse is captured, it feels a bit anticlimactic"). Any
+ * event's sound counts (a lead zoom, a `sound` event, a freeze's just
+ * before the move, an overlay's), except the ending's caption bar's: the
+ * bar opens on the ending's impact, as the finish sound plays, after the
+ * capture (Video Reviewer 2, 2026-10-28). A warning
+ * in the list's summary, not a refusal (Wall Game Director, 2026-10-28).
+ */
+export const lastMoveSoundNotes = (edl, movesCount) => {
+  const last = movesCount - 1;
+  return edl.events.some(
+    (e) => e.ply === last && e.sound !== undefined && e.form !== "bar",
+  )
+    ? []
+    : [
+        `WARNING: no sound lands on the last move (ply ${last}): give it a lead zoom with its sound, or a sound event`,
+      ];
+};
 
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted

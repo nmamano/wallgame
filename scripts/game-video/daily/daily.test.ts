@@ -2244,6 +2244,10 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
   expect(JSON.stringify(allowed.body)).toMatch(
     /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
   );
+  // No sound on the last move: allowed, with a warning in the summary.
+  expect(JSON.stringify(allowed.body)).toMatch(
+    /WARNING: no sound lands on the last move \(ply \d+\)/,
+  );
   expect((await pickSound("ok")).status).toBe(200);
   // A sound with a high claim risk is refused whatever Nil's level, and
   // allowed only on purpose; the summary then names it.
