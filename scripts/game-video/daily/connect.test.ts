@@ -269,13 +269,13 @@ describe("authorize URLs", () => {
     });
   });
 
-  test("TikTok: video.upload and user.info.basic, no PKCE on the web", () => {
+  test("TikTok: video.upload, user.info.basic and user.info.stats, no PKCE on the web", () => {
     const url = new URL(
       authorizeUrl("tiktok", ENV, { state: "S2", verifier: "unused" }),
     );
     expect(Object.fromEntries(url.searchParams)).toEqual({
       client_key: "tt-key",
-      scope: "user.info.basic,video.upload",
+      scope: "user.info.basic,video.upload,user.info.stats",
       response_type: "code",
       redirect_uri:
         "https://game-video.office.nilmamano.com/daily/connect/tiktok/callback",
@@ -283,7 +283,7 @@ describe("authorize URLs", () => {
     });
   });
 
-  test("Threads: threads.com, basic and content_publish", () => {
+  test("Threads: threads.com, basic, content_publish and manage_insights", () => {
     const url = new URL(
       authorizeUrl("threads", ENV, { state: "S3", verifier: "unused" }),
     );
@@ -292,7 +292,7 @@ describe("authorize URLs", () => {
     );
     expect(url.searchParams.get("client_id")).toBe("th-app");
     expect(url.searchParams.get("scope")).toBe(
-      "threads_basic,threads_content_publish",
+      "threads_basic,threads_content_publish,threads_manage_insights",
     );
     expect(url.searchParams.get("state")).toBe("S3");
   });
@@ -416,7 +416,7 @@ describe("code exchange", () => {
               open_id: "OID",
               refresh_token: "SECRET-RT",
               refresh_expires_in: 31536000,
-              scope: "user.info.basic,video.upload",
+              scope: "user.info.basic,video.upload,user.info.stats",
               token_type: "Bearer",
             },
           },
@@ -429,13 +429,30 @@ describe("code exchange", () => {
       now: at,
     });
     expect(record).toEqual({
-      scopes: ["user.info.basic", "video.upload"],
+      scopes: ["user.info.basic", "video.upload", "user.info.stats"],
       account: { id: "OID", name: "wallgame.io" },
       refreshToken: "SECRET-RT",
       refreshExpiresAt: "2027-10-26T22:00:00.000Z",
     });
     expect(transport.sent[0].secretBody).toBe(true);
     expect(transport.sent[1].headers?.authorization).toBe("Bearer SECRET-AT");
+
+    // Without the stats scope the token still posts: only upload is needed.
+    const noStats = await exchangeCode("tiktok", {
+      transport: fakeLive(() => ({
+        status: 200,
+        json: {
+          open_id: "OID",
+          refresh_token: "SECRET-RT",
+          scope: "user.info.basic,video.upload",
+        },
+      })),
+      env: ENV,
+      code: "c",
+      verifier: "",
+      now: at,
+    });
+    expect(noStats.scopes).toEqual(["user.info.basic", "video.upload"]);
 
     const narrow = fakeLive(() => ({
       status: 200,
@@ -491,7 +508,11 @@ describe("code exchange", () => {
       now: at,
     });
     expect(record).toEqual({
-      scopes: ["threads_basic", "threads_content_publish"],
+      scopes: [
+        "threads_basic",
+        "threads_content_publish",
+        "threads_manage_insights",
+      ],
       account: { id: "17841405793187218", name: "wallgameio" },
       accessToken: "SECRET-LONG",
       accessExpiresAt: "2026-12-25T22:00:00.000Z",

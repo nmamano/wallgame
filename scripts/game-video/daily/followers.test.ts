@@ -21,6 +21,7 @@ import {
 } from "./followers.mjs";
 import { META_ACCOUNTS_URL } from "./meta.mjs";
 import { openTokenStore } from "./token-store.mjs";
+import { THREADS_SCOPES, TIKTOK_SCOPES } from "./connect.mjs";
 import { createDaily } from "./routes.mjs";
 import { TIKTOK_TOKEN_URL } from "./post-tiktok.mjs";
 import { GOOGLE_TOKEN_URL } from "./post-youtube.mjs";
@@ -66,7 +67,7 @@ const CONNECTED = {
   connectedAt: "2026-10-28T05:00:00.000Z",
   connectedBy: "Nil",
 };
-/** Every Connect with its read scope. */
+/** Every Connect with its read scope: the lists a Connect stores now. */
 const RECORDS = {
   x: {
     ...CONNECTED,
@@ -77,11 +78,7 @@ const RECORDS = {
   },
   threads: {
     ...CONNECTED,
-    scopes: [
-      "threads_basic",
-      "threads_content_publish",
-      "threads_manage_insights",
-    ],
+    scopes: THREADS_SCOPES,
     account: { id: "TH1", name: "wallgame.io" },
     accessToken: "SECRET-THREADS",
   },
@@ -96,7 +93,7 @@ const RECORDS = {
   },
   tiktok: {
     ...CONNECTED,
-    scopes: ["user.info.basic", "video.upload", "user.info.stats"],
+    scopes: TIKTOK_SCOPES,
     account: { id: "OID", name: "wallgame.io" },
     refreshToken: "SECRET-TT-RT",
   },

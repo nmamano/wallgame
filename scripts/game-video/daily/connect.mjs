@@ -91,27 +91,38 @@ export const CLIENT_SECRETS = {
 };
 
 /**
- * YouTube's Connect asks for the posting scope and a read scope for the
- * follower count (followers.mjs; Wall Game PM, 2026-10-28). A grant check requires
+ * Connect asks for the posting scope and a read scope for the follower
+ * count (followers.mjs; Wall Game PM, 2026-10-28). A grant check requires
  * only the posting scope: a token without the read scope still posts, and
- * its count is null with "needs reconnect".
+ * its count is null with "needs reconnect". A read scope must be enabled in
+ * the app's portal (YouTube: the consent screen) before it is asked for
+ * here: TikTok and Meta refuse the whole authorize request for a scope the
+ * portal lacks. Wall Game Growth's PA enabled user.info.stats and
+ * threads_manage_insights on 2026-10-28.
  */
 export const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
 export const YOUTUBE_READ_SCOPE =
   "https://www.googleapis.com/auth/youtube.readonly";
 /**
- * The follower-count read scopes of TikTok and Threads are NOT asked for
- * yet: TikTok and Meta refuse the whole authorize request for a scope that
- * the app's portal has not enabled, and Wall Game Growth's PA has not
- * confirmed them (Wall Game PM, 2026-10-28). Until they are added here, the
- * TikTok and Threads counts are null with "needs reconnect".
+ * video.upload: the inbox draft post-tiktok.mjs makes; basic: the name;
+ * stats: the follower count.
  */
 export const TIKTOK_STATS_SCOPE = "user.info.stats";
+export const TIKTOK_SCOPES = [
+  "user.info.basic",
+  "video.upload",
+  TIKTOK_STATS_SCOPE,
+];
+/**
+ * Threads sends no granted list back, so a connection stores this list:
+ * a token from before the insights scope has the old list stored.
+ */
 export const THREADS_INSIGHTS_SCOPE = "threads_manage_insights";
-/** video.upload: the inbox draft post-tiktok.mjs makes; basic: the name. */
-export const TIKTOK_SCOPES = ["user.info.basic", "video.upload"];
-/** Threads sends no granted list back, so a connection stores this list. */
-export const THREADS_SCOPES = ["threads_basic", "threads_content_publish"];
+export const THREADS_SCOPES = [
+  "threads_basic",
+  "threads_content_publish",
+  THREADS_INSIGHTS_SCOPE,
+];
 
 const GOOGLE_AUTHORIZE = "https://accounts.google.com/o/oauth2/v2/auth";
 const TIKTOK_AUTHORIZE = "https://www.tiktok.com/v2/auth/authorize/";
