@@ -18,8 +18,8 @@
  *                    may not play until Nil answers the open question in
  *                    MUSIC-LICENSES.md
  *
- * The renderer refuses a track that may not play; the daily app's direct does
- * not yet.
+ * The renderer refuses a track that may not play, and so does the daily
+ * app's direct (routes.mjs).
  */
 export const MUSIC_TRACKS = [
   {

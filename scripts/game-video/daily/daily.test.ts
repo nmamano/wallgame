@@ -310,7 +310,7 @@ const EDL = {
   version: 1,
   gameId: "TESTGAME1",
   ending: "replay",
-  music: "skippy",
+  music: "deja-vus",
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
@@ -2862,7 +2862,7 @@ console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
   music: existsSync(__dirname + "/music-override")
     ? readFileSync(__dirname + "/music-override", "utf8")
-    : (edl.music ?? "skippy"),
+    : (edl.music ?? "deja-vus"),
   ending: edl.ending, edlSha256: hash(raw),
   fromCache: existsSync(__dirname + "/lie-about-cache") ? !fromCache : fromCache,
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
@@ -2944,6 +2944,13 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect(unnamed.body.error).toContain(
     'name a music track ("music"): a list without one gets a random track',
   );
+  // A track whose license does not let a video play it is refused here,
+  // before a render (music-tracks.mjs; only deja-vus may play today).
+  const blocked = await direct({ music: "skippy" });
+  expect(blocked.status).toBe(409);
+  expect(blocked.body.error).toContain(
+    "music skippy may not play in a video (license blocked-until-nil; see scripts/game-video/MUSIC-LICENSES.md); use ",
+  );
   expect((await direct({})).status).toBe(200);
 
   // The game's first render captures it live: one view.
@@ -2954,7 +2961,7 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   const live = c.cands.A.render?.video?.sha256;
 
   // A new list renders from the capture: no view, no --force.
-  expect((await direct({ music: "tea-for-two" })).status).toBe(200);
+  expect((await direct({ caption: "a new list" })).status).toBe(200);
   ({ c } = await render());
   expect(c.cands.A.state).toBe("rendered");
   expect(c.cands.A.render?.fromCache).toBe(true);
@@ -2965,7 +2972,7 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   expect(c.cands.A.render?.video?.sha256).not.toBe(live);
 
   // A live capture on purpose is one more view, so it needs force.
-  expect((await direct({ music: "a-legend" })).status).toBe(200);
+  expect((await direct({ caption: "another list" })).status).toBe(200);
   const refused = await render({ live: true });
   expect(refused.started.status).toBe(409);
   expect(refused.started.body.error).toContain(
@@ -3086,7 +3093,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   const pickSound = (choice: string) =>
     call("/api/daily/sounds", { key: "fuahhh-1", choice });
   expect((await pickSound("disliked")).status).toBe(200);
-  const allowed = await direct(day, "a-legend");
+  const allowed = await direct(day, "deja-vus");
   expect(allowed.status).toBe(200);
   expect(JSON.stringify(allowed.body)).toMatch(
     /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
@@ -3147,7 +3154,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     ],
   });
   expect(zoomThenLaugh.status).toBe(200);
-  expect((await direct(day, "a-legend")).status).toBe(200);
+  expect((await direct(day, "deja-vus")).status).toBe(200);
   // What a restart would cut (crew.mjs ship refuses while any is busy).
   interface Busy {
     renders: { day: string; label: string; jobId: string; state: string }[];
@@ -3441,7 +3448,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     approver: "Nil",
     effect: "daily",
     ending: "replay",
-    music: "a-legend",
+    music: "deja-vus",
     sound: "shotgun",
     swingMove: 23,
   });
@@ -3460,7 +3467,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(
     (await call<{ lastMusic: string }>(`/api/daily/state?day=${next}`)).body
       .lastMusic,
-  ).toBe("a-legend");
+  ).toBe("deja-vus");
   await direct(next);
   await call("/api/daily/render", { day: next });
   for (let i = 0; i < 50; i++) {
@@ -3568,11 +3575,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect(state?.cycle.cands.A.render?.ending).toBe("ko");
   expect(state?.cycle.cands.A.render?.sheet?.stills).toHaveLength(40);
   // Day 2's picked video waits to post, so its track is the last one.
-  // (Day 2's list named skippy.)
+  // (Day 2's list named deja-vus.)
   expect(
     (await call<{ lastMusic: string }>(`/api/daily/state?day=${third}`)).body
       .lastMusic,
-  ).toBe("skippy");
+  ).toBe("deja-vus");
 
   // The music the video played must be the one the list named, and a
   // track the site has.
@@ -3590,11 +3597,11 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     day: fourth,
     report: REPORT,
   });
-  await direct(fourth, "a-legend");
+  await direct(fourth);
   await renderWith("tea-for-two");
   expect(state?.cycle.cands.A.state).toBe("render-failed");
   expect(state?.cycle.cands.A.render?.error).toMatch(
-    /music tea-for-two, not a-legend/,
+    /music tea-for-two, not deja-vus/,
   );
   await direct(fourth);
   await renderWith("elevator-jazz", true);

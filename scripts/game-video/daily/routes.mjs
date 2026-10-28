@@ -83,7 +83,7 @@ import {
   FRAME,
   SAFE_AREA,
 } from "../edl.mjs";
-import { MUSIC_TRACKS } from "../music-tracks.mjs";
+import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
 import {
   loudnessVerdict,
@@ -291,6 +291,22 @@ const THREADS_REFRESH_EVERY_MS = 6 * 60 * 60 * 1000;
 const DAY = /^\d{4}-\d{2}-\d{2}$/;
 
 const MUSIC_SLUGS = MUSIC_TRACKS.map((t) => t.slug);
+
+/**
+ * The problem when a list names a track whose license does not let a video
+ * play it (music-tracks.mjs `license`; the sources are in
+ * MUSIC-LICENSES.md). parseEdl already refused a slug that is not a track.
+ * @param {string | null} slug
+ * @returns {string[]}
+ */
+const blockedMusic = (slug) => {
+  const track = MUSIC_TRACKS.find((t) => t.slug === slug);
+  if (!track || mayPlay(track)) return [];
+  const playable = MUSIC_TRACKS.filter(mayPlay).map((t) => t.slug);
+  return [
+    `music ${slug} may not play in a video (license ${track.license}; see scripts/game-video/MUSIC-LICENSES.md); use ${playable.join(", ") || "none: no track may play, so tell Nil before you render"}`,
+  ];
+};
 
 /** Day states whose picked video may still be posted. */
 const WAITING_STATES = ["approved", "post-failed"];
@@ -1248,6 +1264,9 @@ export const createDaily = ({
           : [
               `name a music track ("music"): a list without one gets a random track, so a second render of it can play another song`,
             ]),
+        // The renderer refuses the track too; direct says it while the list
+        // is still being written.
+        ...blockedMusic(edl.music),
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
         ...(edl.coldOpenPly === null
