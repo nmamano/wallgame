@@ -3091,6 +3091,7 @@ const renderStyle = async (styleName) => {
     const facts = OVERLAY_FACTS.get(w.ev);
     if (w.asset.draw === "loading" && w.end === null && b >= facts.rise) {
       w.end = elapsed + LOADING_ERROR_SECONDS;
+      w.errorAt = elapsed;
     }
     const other = REPLAYED.movers[w.ev.ply] === 1 ? 2 : 1;
     const o = {
@@ -3106,8 +3107,12 @@ const renderStyle = async (styleName) => {
       ...(w.asset.draw === "loading"
         ? {
             hex: side(facts.player).hex,
-            percent: loadingPercent(RACE_DISTANCES[b][facts.player]),
-            error: b >= facts.rise,
+            // After the save, the last percent before it, which the ERROR
+            // drains; `error.t` is the seconds since the save showed.
+            percent: loadingPercent(
+              RACE_DISTANCES[Math.min(b, facts.rise - 1)][facts.player],
+            ),
+            error: b >= facts.rise ? { t: elapsed - w.errorAt } : null,
           }
         : {}),
       ...(w.asset.draw === "compare"

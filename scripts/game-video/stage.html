@@ -1607,6 +1607,7 @@
        * 0.15 s and fades by o.alpha. With no place yet (the renderer places
        * an overlay once its window closes), nothing shows.
        */
+      const ERROR_HIT_SECONDS = 0.3;
       const paintOverlay = (o) => {
         const el = $("overlay");
         show(el, !!o && o.place.where !== undefined);
@@ -1619,7 +1620,15 @@
         el.style.height = p.h * 100 + "%";
         const pop = easeOut3(span(o.t, 0, 0.15));
         el.style.opacity = pop * o.alpha;
-        el.style.transform = "scale(" + (0.85 + 0.15 * pop) + ")";
+        // The save hits the loading bar: over ERROR_HIT_SECONDS the panel
+        // shakes side to side, dying out, and the bar drains (Wall Game
+        // Director, 2026-10-28: the save lands on screen, not only in text).
+        const hit = o.error ? span(o.error.t, 0, ERROR_HIT_SECONDS) : 0;
+        const shake = o.error
+          ? 3 * (1 - hit) * Math.sin(o.error.t * Math.PI * 2 * 14)
+          : 0;
+        el.style.transform =
+          "translateX(" + shake + "%) scale(" + (0.85 + 0.15 * pop) + ")";
         el.style.fontSize = "";
         const esc = (v) =>
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
@@ -1641,7 +1650,7 @@
               ? "ERROR: CAPTURE FAILED"
               : "CAPTURE LOADING " + o.percent + "%") +
             '</div><div class="bar"><div class="fill" style="width:' +
-            (o.error ? 100 : o.percent) +
+            o.percent * (1 - easeOut3(hit)) +
             "%;background:" +
             (o.error ? "#ef4444" : esc(o.hex)) +
             '"></div></div>';
