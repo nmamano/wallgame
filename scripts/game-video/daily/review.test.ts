@@ -12,7 +12,7 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { copySha256, parseCopy, trackedLink, YOUTUBE_LINK } from "./copy.mjs";
 import { ITEM_VERSION, openStore, readPostLog, reviewState } from "./store.mjs";
-import { createDaily } from "./routes.mjs";
+import { byteRange, createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { feedbackLines } from "./crew.mjs";
 import {
@@ -628,6 +628,30 @@ describe("the review page's view", () => {
     expect(REVIEW_PAGE).toContain('"Uses " + key + ": a claim is possible."');
   });
 
+  test("byteRange: one range of the file, the whole file, or unsatisfiable", () => {
+    expect(byteRange(undefined, 10)).toBeNull();
+    expect(byteRange("bytes=0-1", 10)).toEqual({ start: 0, end: 1 });
+    expect(byteRange("bytes=4-", 10)).toEqual({ start: 4, end: 9 });
+    expect(byteRange("bytes=2-99", 10)).toEqual({ start: 2, end: 9 });
+    expect(byteRange("bytes=-3", 10)).toEqual({ start: 7, end: 9 });
+    expect(byteRange("bytes=-30", 10)).toEqual({ start: 0, end: 9 });
+    // Several ranges, or a form this does not read: the whole file.
+    expect(byteRange("bytes=0-1,4-5", 10)).toBeNull();
+    expect(byteRange("items=0-1", 10)).toBeNull();
+    expect(byteRange("bytes=-", 10)).toBeNull();
+    for (const h of ["bytes=10-", "bytes=5-3", "bytes=-0"]) {
+      expect(byteRange(h, 10)).toBe("unsatisfiable");
+    }
+    expect(byteRange("bytes=0-", 0)).toBe("unsatisfiable");
+  });
+
+  test("the page puts no untrusted text in innerHTML", () => {
+    // The page's own rule names innerHTML, so this looks for a write.
+    expect(REVIEW_PAGE).not.toMatch(
+      /(inner|outer)HTML\s*\+?=|insertAdjacentHTML|document\.write/,
+    );
+  });
+
   test("the review target is a whole number from 1 to 50, 3 until set", () => {
     const { store } = withItemInReview();
     expect(store.queue()).toEqual({ reviewTarget: 3 });
@@ -677,12 +701,19 @@ describe("the review routes", () => {
         method = "GET",
         member,
         body,
-      }: { method?: string; member?: string; body?: object } = {},
+        range,
+      }: {
+        method?: string;
+        member?: string;
+        body?: object;
+        range?: string;
+      } = {},
     ) => {
       const res = await fetch(`${base}${path}`, {
         method,
         headers: {
           ...(body && { "content-type": "application/json" }),
+          ...(range && { range }),
           ...(member && {
             "x-isomux-member-id": member,
             "x-isomux-member-name": encodeURIComponent("Nil"),
@@ -691,7 +722,7 @@ describe("the review routes", () => {
         body: body ? JSON.stringify(body) : undefined,
       });
       const text = await res.text();
-      return { status: res.status, text };
+      return { status: res.status, text, headers: res.headers };
     };
     return { call, sent };
   };
@@ -729,6 +760,27 @@ describe("the review routes", () => {
       (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
     ) as { canReview: boolean };
     expect(nil.canReview).toBe(true);
+  });
+
+  test("the video answers byte ranges: iPhone Safari plays a <video> only from a 206", async () => {
+    const { dir } = withItemInReview();
+    const { call } = await serve(dir);
+    const path = "/api/daily/video?item=v-2026-10-28-1";
+    const whole = await call(path);
+    expect([whole.status, whole.text]).toEqual([
+      200,
+      "video of v-2026-10-28-1",
+    ]);
+    expect(whole.headers.get("accept-ranges")).toBe("bytes");
+    // Safari's first request.
+    const first = await call(path, { range: "bytes=0-1" });
+    expect([first.status, first.text]).toEqual([206, "vi"]);
+    expect(first.headers.get("content-range")).toBe("bytes 0-1/23");
+    const tail = await call(path, { range: "bytes=9-" });
+    expect([tail.status, tail.text]).toEqual([206, "v-2026-10-28-1"]);
+    const out = await call(path, { range: "bytes=23-" });
+    expect(out.status).toBe(416);
+    expect(out.headers.get("content-range")).toBe("bytes */23");
   });
 
   test("each action goes to the director at once: item, action, game, notes verbatim, video", async () => {

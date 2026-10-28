@@ -1092,6 +1092,28 @@ export const createDaily = ({
     res.end(JSON.stringify(body));
   };
 
+  /**
+   * A file, with byte ranges: iPhone Safari plays a <video> only from a
+   * server that answers a Range request with 206 (and "#t=0.5" seeks).
+   */
+  const sendFile = (req, res, path, type) => {
+    const size = statSync(path).size;
+    const range = byteRange(req.headers.range, size);
+    if (range === "unsatisfiable") {
+      res.writeHead(416, { "content-range": `bytes */${size}` });
+      return res.end();
+    }
+    const { start, end } = range ?? { start: 0, end: size - 1 };
+    res.writeHead(range ? 206 : 200, {
+      "content-type": type,
+      "content-length": end - start + 1,
+      "accept-ranges": "bytes",
+      ...(range && { "content-range": `bytes ${start}-${end}/${size}` }),
+    });
+    if (size === 0) return res.end();
+    createReadStream(path, { start, end }).pipe(res);
+  };
+
   const html = (res, code, body) => {
     res.writeHead(code, {
       "content-type": "text/html; charset=utf-8",
@@ -1632,22 +1654,14 @@ export const createDaily = ({
       const path = itemOf(url.searchParams.get("item")).render?.video?.path;
       if (!path || !existsSync(path))
         return json(res, 404, { error: "no video for that item" });
-      res.writeHead(200, {
-        "content-type": "video/mp4",
-        "content-length": statSync(path).size,
-      });
-      createReadStream(path).pipe(res);
+      sendFile(req, res, path, "video/mp4");
     },
 
     "GET /api/daily/sheet": (req, res, url) => {
       const path = itemOf(url.searchParams.get("item")).render?.sheet?.path;
       if (!path || !existsSync(path))
         return json(res, 404, { error: "no contact sheet for that item" });
-      res.writeHead(200, {
-        "content-type": "image/png",
-        "content-length": statSync(path).size,
-      });
-      createReadStream(path).pipe(res);
+      sendFile(req, res, path, "image/png");
     },
 
     "GET /daily/sounds": (req, res) => {
@@ -1671,11 +1685,7 @@ export const createDaily = ({
       const path = soundFile(url.searchParams.get("key"));
       if (!path || !existsSync(path))
         return json(res, 404, { error: "no such sound file" });
-      res.writeHead(200, {
-        "content-type": "audio/mpeg",
-        "content-length": statSync(path).size,
-      });
-      createReadStream(path).pipe(res);
+      sendFile(req, res, path, "audio/mpeg");
     },
 
     // One-click Connect (connect.mjs). The office sends the member's id and
@@ -2003,6 +2013,26 @@ export const createDaily = ({
     isPosting: () => posting,
     scheduler,
   };
+};
+
+/**
+ * The one byte range that a Range header asks for in a file of `size`
+ * bytes: {start, end} (both inclusive), null to send the whole file (no
+ * header, a header this does not read, or several ranges), or
+ * "unsatisfiable" (416). Forms: "bytes=a-b", "bytes=a-", "bytes=-n".
+ */
+export const byteRange = (header, size) => {
+  const m = /^bytes=(\d*)-(\d*)$/.exec(header?.trim() ?? "");
+  if (!m || (m[1] === "" && m[2] === "")) return null;
+  if (m[1] === "") {
+    const n = Number(m[2]);
+    return n === 0 || size === 0
+      ? "unsatisfiable"
+      : { start: Math.max(0, size - n), end: size - 1 };
+  }
+  const start = Number(m[1]);
+  const end = m[2] === "" ? size - 1 : Math.min(Number(m[2]), size - 1);
+  return start >= size || end < start ? "unsatisfiable" : { start, end };
 };
 
 /**

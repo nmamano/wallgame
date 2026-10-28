@@ -54,9 +54,10 @@ export const REVIEW_ACTION_PATH =
   /^\/api\/review\/(v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+)\/(approve|discard|revise|withdraw)$/;
 
 /**
- * The caption Nil reads: the post's own text, one line. Growth writes the
- * same text on every platform's line, so the X line stands for all of them,
- * without the music credit that Growth puts after " · music:".
+ * The caption Nil reads: the post's text on X, one line, without the music
+ * credit that Growth puts after " · music:". The other platforms' lines
+ * may differ (the YouTube title is its own text; Bluesky adds a link,
+ * TikTok and Instagram add hashtags), and Approve binds the whole block.
  * @param {Record<string, string>} block Growth's copy block (copy.mjs)
  */
 export const postCaption = (block) =>
@@ -206,12 +207,20 @@ export const REVIEW_PAGE = `<!doctype html>
   const el = (tag, cls, text) => { const n = document.createElement(tag);
     if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = String(text); return n; };
 
+  const LOST = "No answer from the app: reload the page.";
+
+  /** null when the action is stored, or {error, retry}: no retry when the
+   * answer was lost, because the action may be stored. */
   const post = async (id, action, body) => {
-    const res = await fetch("/api/review/" + encodeURIComponent(id) + "/" + action, {
-      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
-    });
-    const out = await res.json().catch(() => ({ error: "HTTP " + res.status }));
-    return res.ok ? null : out.error || "HTTP " + res.status;
+    let res;
+    try {
+      res = await fetch("/api/review/" + encodeURIComponent(id) + "/" + action, {
+        method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+      });
+    } catch { return { error: LOST, retry: false }; }
+    if (res.ok) return null;
+    const out = await res.json().catch(() => ({}));
+    return { error: out.error || "HTTP " + res.status, retry: true };
   };
 
   const card = (it, canReview) => {
@@ -228,9 +237,9 @@ export const REVIEW_PAGE = `<!doctype html>
       b.onclick = async () => {
         buttons.forEach((x) => (x.disabled = true));
         why.textContent = "";
-        const error = await post(it.id, action,
+        const failed = await post(it.id, action,
           { notes: notes.value, videoSha256: it.videoSha256, copySha256: it.copySha256 });
-        if (error) { why.textContent = error; buttons.forEach((x) => (x.disabled = false)); return; }
+        if (failed) { why.textContent = failed.error; if (failed.retry) buttons.forEach((x) => (x.disabled = false)); return; }
         done(box, it, action);
       };
       row.append(b); return b;
@@ -251,8 +260,8 @@ export const REVIEW_PAGE = `<!doctype html>
       const undo = el("button", "undo", "Undo");
       undo.onclick = async () => {
         undo.disabled = true;
-        const error = await post(it.id, "withdraw", { notes: "" });
-        if (error) { why.textContent = error; undo.disabled = false; return; }
+        const failed = await post(it.id, "withdraw", { notes: "" });
+        if (failed) { why.textContent = failed.error; undo.disabled = !failed.retry; return; }
         load();
       };
       line.append(undo);
@@ -262,7 +271,9 @@ export const REVIEW_PAGE = `<!doctype html>
 
   const load = async () => {
     const list = document.getElementById("list");
-    const v = await (await fetch("/api/review/queue")).json();
+    let v;
+    try { v = await (await fetch("/api/review/queue")).json(); }
+    catch { list.replaceChildren(el("p", "quiet", LOST)); return; }
     list.replaceChildren();
     if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
     if (!v.items.length) { list.append(el("p", "quiet", "Nothing to review.")); return; }
