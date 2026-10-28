@@ -537,6 +537,106 @@
         border-radius: 50%;
         background: #ef4444;
       }
+      /*
+        An EDL overlay (overlays.mjs): over the board, not on the camera, so
+        a zoom does not move it; the badges and stamps paint over it. The
+        renderer gives its box in the board (0..1) once it has placed it.
+      */
+      #overlay {
+        position: absolute;
+        display: flex;
+        box-sizing: border-box;
+        font-family: "TikTok Sans", "DejaVu Sans", sans-serif;
+        transform-origin: 50% 50%;
+      }
+      #overlay.toast {
+        align-items: center;
+        gap: 0.6em;
+        padding: 0 1em;
+        border-radius: 0.6em;
+        background: rgba(15, 20, 36, 0.94);
+        border: 2px solid rgba(148, 163, 184, 0.3);
+        box-shadow: 0 0.3em 1.2em rgba(0, 0, 0, 0.5);
+        color: #fde68a;
+        font-size: calc(var(--board) * 0.052);
+        font-weight: 700;
+        white-space: nowrap;
+      }
+      #overlay.toast .dot {
+        flex: none;
+        width: 0.7em;
+        height: 0.7em;
+        border-radius: 50%;
+        background: #facc15;
+      }
+      #overlay.meme {
+        align-items: center;
+        gap: 4%;
+        padding: 0 5%;
+        background: #fff;
+        border: 3px solid #111;
+        color: #111;
+        font-size: calc(var(--board) * 0.08);
+        font-weight: 500;
+      }
+      #overlay.meme img {
+        flex: none;
+        height: 78%;
+        aspect-ratio: 1;
+        object-fit: contain;
+      }
+      #overlay.loading {
+        flex-direction: column;
+        justify-content: center;
+        gap: 0.5em;
+        padding: 0 7%;
+        border-radius: 0.5em;
+        background: rgba(10, 12, 20, 0.95);
+        border: 3px solid #e2e8f0;
+        color: #f8fafc;
+        font-size: calc(var(--board) * 0.068);
+        font-weight: 900;
+        letter-spacing: 0.06em;
+      }
+      #overlay.loading .bar {
+        height: 1.2em;
+        border: 3px solid #f8fafc;
+        padding: 3px;
+      }
+      #overlay.loading .fill {
+        height: 100%;
+      }
+      #overlay.loading.error {
+        color: #ef4444;
+        border-color: #ef4444;
+      }
+      #overlay.compare {
+        align-items: stretch;
+        background: #000;
+        border: 3px solid #f8fafc;
+        color: #fff;
+        font-size: calc(var(--board) * 0.06);
+        font-weight: 900;
+      }
+      #overlay.compare .side {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: center;
+        font-size: 0.75em;
+        letter-spacing: 0.08em;
+      }
+      #overlay.compare .n {
+        font-size: 3.2em;
+        line-height: 1;
+        letter-spacing: 0;
+      }
+      #overlay.compare .vs {
+        align-self: center;
+        font-size: 1.15em;
+        font-style: italic;
+      }
       #crack {
         position: absolute;
         inset: 0;
@@ -916,6 +1016,7 @@
             <div></div>
             <div></div>
           </div>
+          <div id="overlay" class="hidden"></div>
           <svg id="crack" class="hidden" viewBox="0 0 1000 1000"></svg>
           <div id="ffBadge" class="hidden"></div>
           <div id="replayBadge" class="hidden">
@@ -1497,6 +1598,80 @@
             );
           })
           .join("");
+      };
+
+      /**
+       * An EDL overlay (overlays.mjs, render-game-video.mjs overlayFrame):
+       * drawn from o.draw and the facts the renderer put in, at the box it
+       * placed (o.place, 0..1 of the board). It pops in over its first
+       * 0.15 s and fades by o.alpha. With no place yet (the renderer places
+       * an overlay once its window closes), nothing shows.
+       */
+      const paintOverlay = (o) => {
+        const el = $("overlay");
+        show(el, !!o && o.place.where !== undefined);
+        if (!o || o.place.where === undefined) return;
+        const p = o.place;
+        el.className = o.draw;
+        el.style.left = p.x * 100 + "%";
+        el.style.top = p.y * 100 + "%";
+        el.style.width = p.w * 100 + "%";
+        el.style.height = p.h * 100 + "%";
+        const pop = easeOut3(span(o.t, 0, 0.15));
+        el.style.opacity = pop * o.alpha;
+        el.style.transform = "scale(" + (0.85 + 0.15 * pop) + ")";
+        el.style.fontSize = "";
+        const esc = (v) =>
+          String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
+        if (o.draw === "toast") {
+          el.innerHTML =
+            '<div class="dot"></div><div>' + esc(o.text) + "</div>";
+        } else if (o.draw === "meme") {
+          el.innerHTML =
+            '<img src="' +
+            esc(o.portrait) +
+            '" /><div>' +
+            esc(o.text) +
+            "</div>";
+        } else if (o.draw === "loading") {
+          el.className = "loading" + (o.error ? " error" : "");
+          el.innerHTML =
+            "<div>" +
+            (o.error
+              ? "ERROR: CAPTURE FAILED"
+              : "CAPTURE LOADING " + o.percent + "%") +
+            '</div><div class="bar"><div class="fill" style="width:' +
+            (o.error ? 100 : o.percent) +
+            "%;background:" +
+            (o.error ? "#ef4444" : esc(o.hex)) +
+            '"></div></div>';
+        } else if (o.draw === "compare") {
+          const side = (word, n) =>
+            '<div class="side"><div>' +
+            word +
+            '</div><div class="n" style="color:' +
+            esc(o.hex) +
+            '">' +
+            n +
+            "</div><div>" +
+            esc(o.label) +
+            "</div></div>";
+          el.innerHTML =
+            side("BEFORE", o.before) +
+            '<div class="vs">vs</div>' +
+            side("AFTER", o.after);
+        }
+        // A line that does not fit its box shrinks until it does (a long
+        // seat name), measured.
+        let size = parseFloat(getComputedStyle(el).fontSize);
+        while (
+          (el.scrollWidth > el.clientWidth ||
+            el.scrollHeight > el.clientHeight) &&
+          size > 8
+        ) {
+          size -= 1;
+          el.style.fontSize = size + "px";
+        }
       };
 
       const paintTrap = (tr) => {
@@ -2114,6 +2289,7 @@
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
           paintPath(s.path);
+          paintOverlay(s.overlay);
           paintHud(s.race, goalNow, s.credit);
           paintFreeze(s.freeze);
           show($("ffBadge"), !!s.fastForward);

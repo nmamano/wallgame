@@ -137,6 +137,7 @@ interface EdlEvent {
   emoji?: string;
   text?: string;
   sound?: string;
+  asset?: string;
 }
 /** What the EDL draws on a ply's board: cells ringed, walls lit. */
 const edlCells = new Map<number, { cell: string; color: string }[]>();
@@ -183,7 +184,9 @@ if (edlPath) {
             ? `${ev.frame!.join(" ")}${ev.lead ? " (in before the move)" : ""}`
             : ev.kind === "stamp"
               ? ev.text!
-              : (ev.cell ?? "");
+              : ev.kind === "overlay"
+                ? `${ev.asset}${ev.text ? ` "${ev.text}"` : ""}`
+                : (ev.cell ?? "");
     mark(ev.ply, `${ev.kind.toUpperCase()} ${what}${sound}`.trim());
     if (ev.cell && KIND_HEX[ev.kind]) {
       edlCells.set(ev.ply, [

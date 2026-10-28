@@ -94,6 +94,13 @@ import {
   parsePlyWindow,
 } from "./edl.mjs";
 import { huntPath, huntsFor, replayDistances } from "./race-replay.ts";
+import {
+  OVERLAYS,
+  boxOnScreen,
+  loadingPercent,
+  placeOverlay,
+  quietestPlace,
+} from "./overlays.mjs";
 import { pawnCell } from "../../shared/domain/pawns.ts";
 import {
   helpRulesFor,
@@ -331,11 +338,15 @@ const START_PLY = PLY_WINDOW?.from ?? EDL?.startPly ?? 0;
 const PLAYS_OPENING = START_PLY === (EDL?.startPly ?? 0);
 /**
  * The events that play after their move lands, in list order. A freeze and
- * a lead zoom start before the move; the move loop places them.
+ * a lead zoom start before the move; the move loop places them. An overlay
+ * takes no time of its own: it rides over the frames after its move lands.
  */
 const landingEventsAt = (plyIndex) =>
   eventsAt(plyIndex).filter(
-    (e) => e.kind !== "freeze" && !(e.kind === "zoom" && e.lead),
+    (e) =>
+      e.kind !== "freeze" &&
+      e.kind !== "overlay" &&
+      !(e.kind === "zoom" && e.lead),
   );
 /** The ply's lead zoom (edl.mjs "lead": true), if it has one. */
 const leadZoomAt = (plyIndex) =>
@@ -700,6 +711,13 @@ const pathSeconds = (ev) =>
   PATH_DRAW_SECONDS +
   ev.holdSeconds +
   PATH_FADE_SECONDS;
+/**
+ * An overlay (edl.mjs "overlay") fades out over its last
+ * OVERLAY_FADE_SECONDS; the capture loading bar holds its ERROR for
+ * LOADING_ERROR_SECONDS after the save lands, then closes.
+ */
+const OVERLAY_FADE_SECONDS = 0.2;
+const LOADING_ERROR_SECONDS = 0.9;
 const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
 const FREEZE_SCALE = 1.6;
@@ -2485,6 +2503,83 @@ if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
 }
 
 /**
+ * The facts each overlay event reads from the game (overlays.mjs), keyed by
+ * the event, so a render that cannot draw one stops before any frame:
+ *   loading  the player whose hunter is closest after the move (the mover
+ *            on a tie), and the board where its steps first rise (the save).
+ *   compare  the player whose steps rose most with the move: before, after.
+ */
+const OVERLAY_FACTS = new Map();
+for (const ev of EVENTS.filter((e) => e.kind === "overlay")) {
+  const draw = OVERLAYS[ev.asset].draw;
+  if ((draw === "loading" || draw === "compare") && !RACE_DISTANCES) {
+    console.error(
+      `the ${ev.asset} overlay on ply ${ev.ply} reads the race counter, and ${replay.state.config.variant} shows none`,
+    );
+    await browser.close();
+    process.exit(2);
+  }
+  const at = ev.ply + 1;
+  if (draw === "loading") {
+    const d = RACE_DISTANCES[at];
+    const mover = REPLAYED.movers[ev.ply];
+    const other = mover === 1 ? 2 : 1;
+    const player = d[other] < d[mover] ? other : mover;
+    let rise = null;
+    for (let b = at + 1; b < RACE_DISTANCES.length && rise === null; b += 1) {
+      if (RACE_DISTANCES[b][player] > RACE_DISTANCES[b - 1][player]) rise = b;
+    }
+    if (rise === null) {
+      console.error(
+        `the capture loading bar on ply ${ev.ply} waits for a save, and the steps of the closest hunter never rise after it`,
+      );
+      await browser.close();
+      process.exit(2);
+    }
+    OVERLAY_FACTS.set(ev, { player, rise });
+  }
+  if (draw === "compare") {
+    const [before, after] = [RACE_DISTANCES[ev.ply], RACE_DISTANCES[at]];
+    const player = [1, 2]
+      .filter((id) => after[id] > before[id])
+      .sort((a, b) => after[b] - before[b] - (after[a] - before[a]))[0];
+    if (player === undefined) {
+      console.error(
+        `the path-compare overlay on ply ${ev.ply} compares a walk that grew, and no side's steps rose with that move`,
+      );
+      await browser.close();
+      process.exit(2);
+    }
+    OVERLAY_FACTS.set(ev, {
+      player,
+      before: before[player],
+      after: after[player],
+    });
+  }
+}
+
+/**
+ * The hunter's and the target's cells of the closest hunt at a board, as
+ * [row, col]: the race's moment, which an overlay must not hide. None in a
+ * variant where nothing hunts.
+ */
+const closestHunts = new Map();
+const closestHuntAt = (boardIndex) => {
+  if (!closestHunts.has(boardIndex)) {
+    const st = REPLAYED.states[boardIndex];
+    const walks = huntsFor(st.config.variant).map((h) =>
+      huntPath(st.grid, st.pawns, h),
+    );
+    const best = walks.reduce(
+      (a, w) => (a === null || w.length < a.length ? w : a),
+      null,
+    );
+    closestHunts.set(boardIndex, best ? [best[0], best.at(-1)] : []);
+  }
+  return closestHunts.get(boardIndex);
+};
+
+/**
  * The variant's goal in one line, from the rules guide's own sentence
  * (shared/domain/variant-rules.ts), for the daily VS card. Null when the
  * variant has no rules guide.
@@ -2925,26 +3020,231 @@ const renderStyle = async (styleName) => {
   const inOverlay = () =>
     elapsed >= overlayStart - 1e-6 &&
     elapsed < overlayStart + overlay.seconds - 1e-6;
+  /*
+    The EDL's overlays (edl.mjs "overlay", overlays.mjs) work the same way:
+    an overlay opens a window as its move lands (openOverlay), and every play
+    image while it is live is split into single frames that carry it. A plain
+    position under an overlay is not one the encode check can read, so those
+    frames are kind "overlay"; an effect's frames keep their own kind.
+
+    Where an overlay goes is known only once its window closes: the frames
+    it covered decide it (placeOverlay). The screenshots come after the whole
+    video is composed (shootAll), so placeOverlays then writes the place,
+    and the fade of the last frames, into the states those frames hold. Until
+    then the stage paints an overlay without a place as nothing.
+  */
+  const boardIndexOf = new Map(boardFrames.map((f, i) => [fileUrl(f), i]));
+  const overlayWindows = [];
+  /** The overlay on screen now, or null. */
+  const liveOverlay = () => {
+    const w = overlayWindows.at(-1);
+    return w && (w.end === null || elapsed < w.end - 1e-6) ? w : null;
+  };
+  /** An overlay's line, with the seats' names put in (dailySeatName). */
+  const overlayText = (ev) =>
+    (ev.text ?? OVERLAYS[ev.asset].line ?? "")
+      .replace("{red}", stripSide(redSeat).name)
+      .replace("{blue}", stripSide(blueSeat).name);
+  /**
+   * Open the overlay `ev` as its move lands. It closes after its seconds;
+   * the loading bar after the save (overlayFrame); a fast-forward's panel
+   * when the move after its range lands; any of them when the ending starts.
+   */
+  const openOverlay = (ev) => {
+    const live = liveOverlay();
+    if (live) {
+      throw new Error(
+        `the ${ev.asset} overlay on ply ${ev.ply} opens while the ${live.ev.asset} overlay of ply ${live.ev.ply} still shows; one overlay at a time`,
+      );
+    }
+    const fast = fastRangeOf(ev.ply);
+    overlayWindows.push({
+      ev,
+      asset: OVERLAYS[ev.asset],
+      start: elapsed,
+      end: ev.seconds === null ? null : elapsed + ev.seconds,
+      // The board the move after the fast-forward range leads to.
+      closesOnBoard: fast ? fast.toPly + 2 : null,
+      place: {},
+      frames: [],
+    });
+    if (ev.sound) cueEvent(meme(ev.sound), ev);
+  };
+  /** Close the live overlay now (the ending, or the end of a preview). */
+  const closeOverlay = () => {
+    const live = liveOverlay();
+    if (live) live.end = elapsed;
+  };
+  /**
+   * The overlay a play frame carries, or null: what to draw, from the facts
+   * of the board the frame shows. The frame is recorded with its window, so
+   * placeOverlays can see what it shows.
+   */
+  const overlayFrame = (state) => {
+    const w = liveOverlay();
+    if (!w) return null;
+    const b = boardIndexOf.get(state.board);
+    if (w.closesOnBoard !== null && b >= w.closesOnBoard) {
+      w.end = elapsed;
+      return null;
+    }
+    const facts = OVERLAY_FACTS.get(w.ev);
+    if (w.asset.draw === "loading" && w.end === null && b >= facts.rise) {
+      w.end = elapsed + LOADING_ERROR_SECONDS;
+    }
+    const other = REPLAYED.movers[w.ev.ply] === 1 ? 2 : 1;
+    const o = {
+      draw: w.asset.draw,
+      form: w.asset.form,
+      t: elapsed - w.start,
+      alpha: 1,
+      place: w.place,
+      ...(w.asset.draw === "toast" ? { text: overlayText(w.ev) } : {}),
+      ...(w.asset.draw === "meme"
+        ? { text: overlayText(w.ev), portrait: side(other).portrait }
+        : {}),
+      ...(w.asset.draw === "loading"
+        ? {
+            hex: side(facts.player).hex,
+            percent: loadingPercent(RACE_DISTANCES[b][facts.player]),
+            error: b >= facts.rise,
+          }
+        : {}),
+      ...(w.asset.draw === "compare"
+        ? {
+            hex: side(facts.player).hex,
+            label: RACE_LABEL,
+            before: facts.before,
+            after: facts.after,
+          }
+        : {}),
+    };
+    w.frames.push({ o, state, at: elapsed, image: timeline.length });
+    return o;
+  };
+  /**
+   * What a frame shows in play, as boxes in the board as the camera shows
+   * it: the cells the last move's pawns left and reached, its walls, the
+   * closest hunt's hunter and target, a path's cells and a cell effect's
+   * cell. With `everyPawn`, every pawn's cell instead of the moved ones.
+   */
+  const inPlay = (state, everyPawn) => {
+    const b = boardIndexOf.get(state.board);
+    const spots = (i) => pawnSpots.get(i) ?? [];
+    const same = (p, q) =>
+      Math.abs(p.x - q.x) < 1e-3 && Math.abs(p.y - q.y) < 1e-3;
+    const notIn = (list) => (p) => !list.some((q) => same(p, q));
+    const pawns = everyPawn
+      ? spots(b)
+      : b > 0
+        ? [
+            ...spots(b).filter(notIn(spots(b - 1))),
+            ...spots(b - 1).filter(notIn(spots(b))),
+          ]
+        : [];
+    const around = (p) => ({
+      x0: p.x - GRID.pitchX / 2,
+      y0: p.y - GRID.pitchY / 2,
+      x1: p.x + GRID.pitchX / 2,
+      y1: p.y + GRID.pitchY / 2,
+    });
+    const walls = String(history[b - 1]?.notation ?? "")
+      .split(".")
+      .filter((t) => t.startsWith(">") || t.startsWith("^"))
+      .map((t) => {
+        const [top, left, bottom, right] = termBox(t);
+        return {
+          x0: GRID.x(left),
+          y0: GRID.y(top),
+          x1: GRID.x(right),
+          y1: GRID.y(bottom),
+        };
+      });
+    return [
+      ...pawns.map(around),
+      ...closestHuntAt(b).map((c) => around(cellAt(c))),
+      ...walls,
+      ...(state.path?.lines ?? []).flatMap((l) => l.points.map(around)),
+      ...(state.cellFx ? [around(state.cellFx.cell)] : []),
+    ]
+      .map((box) => boxOnScreen(box, state.zoom))
+      .filter(Boolean);
+  };
+  /**
+   * Once the video is composed: each overlay's place, where it hides nothing
+   * in play on any frame it covered (or the render stops), its fade, its
+   * span in RESULT.timeline and its still on the contact sheet.
+   */
+  const placeOverlays = () => {
+    for (const w of overlayWindows) {
+      const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
+      const fast = w.closesOnBoard !== null;
+      const busy = w.frames.flatMap((f) => inPlay(f.state, fast));
+      const place = fast
+        ? quietestPlace(w.asset, busy)
+        : placeOverlay(w.asset, busy);
+      if (!place) {
+        throw new Error(
+          `${where} has no free place: every ${w.asset.form === "panel" ? "half" : "corner"} of the board holds a moved pawn, a new wall, the closest hunt or an effect while it shows`,
+        );
+      }
+      Object.assign(w.place, place);
+      for (const f of w.frames) {
+        f.o.alpha = Math.max(
+          0,
+          Math.min(1, (w.end - f.at) / OVERLAY_FADE_SECONDS),
+        );
+      }
+      eventSpans.push({
+        index: EVENTS.indexOf(w.ev),
+        ply: w.ev.ply,
+        kind: "overlay",
+        start: w.start,
+        end: w.end,
+      });
+      const mid = w.frames[Math.floor(w.frames.length / 2)];
+      if (mid) {
+        stills.push({
+          ply: w.ev.ply,
+          kind: "overlay",
+          sound: w.ev.sound ?? null,
+          file: timeline[mid.image].file,
+          at: mid.at,
+        });
+      }
+    }
+    stills.sort((a, b) => a.at - b.at);
+  };
+
   const emit = async (state, seconds, meta = {}) => {
-    if (!overlay || state.segment !== "play" || !inOverlay()) {
+    const vs = () => overlay && state.segment === "play" && inOverlay();
+    const overlaid = () => state.segment === "play" && liveOverlay() !== null;
+    if (!vs() && !overlaid()) {
       await shoot(state, seconds, meta);
       return;
     }
     const frames = Math.round(seconds * FPS);
     let used = 0;
-    for (; used < frames && inOverlay(); used += 1) {
-      await shoot(
-        {
-          ...state,
+    for (; used < frames && (vs() || overlaid()); used += 1) {
+      let s = state;
+      let kind = meta.kind;
+      if (vs()) {
+        s = {
+          ...s,
           vsOverlay: {
             t: elapsed - overlayStart,
             a: overlaySide(seats.top),
             b: overlaySide(seats.bottom),
           },
-        },
-        1 / FPS,
-        { ...meta, kind: "vs-overlay" },
-      );
+        };
+        kind = "vs-overlay";
+      }
+      const o = overlayFrame(s);
+      if (o) {
+        s = { ...s, overlay: o };
+        if (kind === "move" || kind === "initial") kind = "overlay";
+      }
+      await shoot(s, 1 / FPS, { ...meta, kind });
     }
     if (used < frames) await shoot(state, (frames - used) / FPS, meta);
   };
@@ -3560,6 +3860,16 @@ const renderStyle = async (styleName) => {
     const lead = wallz ? leadZoomAt(plyIndex) : undefined;
     if (lead) await playLeadZoom(ply, plyIndex, lead);
     else land(plyIndex);
+    if (wallz) {
+      // A fast-forward's panel closes as the move after its range lands.
+      const live = liveOverlay();
+      if (live && live.closesOnBoard !== null && ply >= live.closesOnBoard) {
+        closeOverlay();
+      }
+      eventsAt(plyIndex)
+        .filter((e) => e.kind === "overlay")
+        .forEach(openOverlay);
+    }
     /*
       The tick takes its time from a plain move's hold, leaving that hold
       one frame at least; a move with effects keeps all of its own.
@@ -3591,6 +3901,8 @@ const renderStyle = async (styleName) => {
         });
       }
       musicEndAt = elapsed;
+      // The ending covers the board: an overlay still open closes here.
+      closeOverlay();
       if (winnerId) {
         const timing = endingTimings[style.ending];
         const ending = (t) => ({
@@ -3751,6 +4063,9 @@ const renderStyle = async (styleName) => {
     }
     if (ply % 10 === 0) log(`  ${ply}/${history.length} plies composed`);
   }
+  // A preview can stop before an overlay closes.
+  closeOverlay();
+  placeOverlays();
 
   // --- the end card, in the current look only: wallz has its own endings.
   if (!wallz && LAST_BOARD === history.length) {
@@ -3786,6 +4101,16 @@ const renderStyle = async (styleName) => {
     part's images first, and paints the image before its part, so its first
     frame follows the same frame as in a serial run.
   */
+  // Every overlay was placed (placeOverlays): a frame composed after that
+  // with an overlay would be drawn without it, silently.
+  const unplaced = shots.findIndex(
+    (s) => s.state.overlay && s.state.overlay.place.where === undefined,
+  );
+  if (unplaced !== -1) {
+    throw new Error(
+      `image ${unplaced} carries an overlay that was never placed: it was composed after placeOverlays()`,
+    );
+  }
   const shotStart = Date.now();
   // A part starts at a plain position, never inside an effect.
   const parts = partsOf(shots.length, WORKERS, (i) => shots[i].rest);

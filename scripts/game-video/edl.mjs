@@ -115,12 +115,31 @@
  *             ESCAPE) it first shows the walk BEFORE the move, then the
  *             walk after it, so the wall's effect shows (2, then 12).
  *             `holdSeconds` (default 0.8) holds the last walk.
+ *     overlay a meme over the board while the game goes on under it
+ *             (overlays.mjs): `asset` names it and `form` repeats its form
+ *             ("clip": a small thing in a free corner; "panel": the top or
+ *             bottom half). It opens as the move lands and shows for
+ *             `seconds` (default the asset's; the capture loading bar lasts
+ *             until the save and takes none). `text` is the asset's line,
+ *             where it takes one; {red} and {blue} in it become the seats'
+ *             names. The renderer puts it where it hides nothing in play on
+ *             any frame it covers, or stops. One overlay at a time, and the
+ *             ending cuts one still open. In a fastForward range the only
+ *             event allowed is one panel on the range's first ply, with no
+ *             seconds: it lasts the range, which must be on screen for
+ *             EDL_LIMITS.overlayFastSeconds at least.
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
  */
 import { MEME_SOUNDS } from "./meme-sounds.mjs";
 import { MUSIC_TRACKS } from "./music-tracks.mjs";
+import {
+  OVERLAYS,
+  OVERLAY_FORMS,
+  OVERLAY_NAME_TOKENS,
+  OVERLAY_TEXT_CHARS,
+} from "./overlays.mjs";
 
 export const EDL_VERSION = 1;
 
@@ -233,6 +252,7 @@ export const EVENT_KINDS = [
   "freeze",
   "react",
   "path",
+  "overlay",
 ];
 
 /** The fields each kind takes, besides ply, kind and sound. */
@@ -249,6 +269,7 @@ const KIND_FIELDS = {
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
+  overlay: ["form", "asset", "text", "seconds"],
 };
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
@@ -294,6 +315,9 @@ export const EDL_LIMITS = {
   frameTerms: 6,
   freezeHoldSeconds: [0.4, 2],
   pathHoldSeconds: [0.3, 2],
+  overlaySeconds: [0.6, 4],
+  /** A fast-forward's panel must be on screen this long to be read. */
+  overlayFastSeconds: 1,
   events: 40,
   musicCues: 3,
   /** Each different track gets a credit line in the head row; two fit. */
@@ -304,6 +328,12 @@ const CELL = /^[a-z][1-9]\d?$/;
 const WALL = /^[>^][a-z][1-9]\d?$/;
 const GAME_ID = /^[A-Za-z0-9_-]{4,40}$/;
 const STAMP = /^[A-Z0-9 !?]+$/;
+
+/**
+ * What a seat name counts for in an overlay's text: "Guest Ferret" and
+ * "Normal Bot" fit; a longer name makes the stage shrink the line.
+ */
+const NAME_CHARS = 12;
 
 /** Characters as a reader counts them: 💀 is one, not two. */
 const graphemes = (s) =>
@@ -521,6 +551,67 @@ export const validateEdl = (raw) => {
     }
   }
 
+  /** An overlay event's asset, form, text and seconds (overlays.mjs). */
+  const checkOverlay = (ev, out, where) => {
+    if (!Object.hasOwn(OVERLAYS, ev.asset)) {
+      return fail(
+        `${where}: asset must be one of ${Object.keys(OVERLAYS).join(", ")}, got ${JSON.stringify(ev.asset)}`,
+      );
+    }
+    const asset = OVERLAYS[ev.asset];
+    if (!OVERLAY_FORMS.includes(ev.form) || ev.form !== asset.form) {
+      fail(
+        `${where}: ${ev.asset} is a ${asset.form}; form must be "${asset.form}"`,
+      );
+    }
+    if (asset.text === "none" && ev.text !== undefined) {
+      fail(`${where}: ${ev.asset} shows no text`);
+    } else if (asset.text === "required" && ev.text === undefined) {
+      fail(`${where}: ${ev.asset} needs "text"`);
+    } else if (ev.text !== undefined) {
+      checkOverlayText(ev.text, where);
+    }
+    if (asset.seconds === null && ev.seconds !== undefined) {
+      fail(
+        `${where}: ${ev.asset} lasts as long as its moment; it takes no seconds`,
+      );
+    }
+    out.seconds = ev.seconds ?? asset.seconds;
+    if (
+      out.seconds !== null &&
+      !isNumberIn(out.seconds, EDL_LIMITS.overlaySeconds)
+    ) {
+      fail(`${where}: seconds must be ${EDL_LIMITS.overlaySeconds.join("..")}`);
+    }
+  };
+  /**
+   * An overlay's line: one line of at most OVERLAY_TEXT_CHARS characters,
+   * each seat name counted as NAME_CHARS, and no {token} but a name.
+   */
+  const checkOverlayText = (text, where) => {
+    if (typeof text !== "string" || text.trim() === "") {
+      return fail(`${where}: text must be a line of text`);
+    }
+    if (/[\r\n]/.test(text)) fail(`${where}: text must be one line`);
+    const tokens = text.match(/\{[^}]*\}/g) ?? [];
+    for (const t of new Set(tokens)) {
+      if (!OVERLAY_NAME_TOKENS.includes(t)) {
+        fail(
+          `${where}: ${t} is not a name; use ${OVERLAY_NAME_TOKENS.join(" or ")}`,
+        );
+      } else if (tokens.filter((x) => x === t).length > 1) {
+        fail(`${where}: ${t} may show once`);
+      }
+    }
+    const length =
+      graphemes(text.replace(/\{[^}]*\}/g, "")) + tokens.length * NAME_CHARS;
+    if (length > OVERLAY_TEXT_CHARS) {
+      fail(
+        `${where}: text is ${length} characters long (a name counts as ${NAME_CHARS}); at most ${OVERLAY_TEXT_CHARS} are allowed`,
+      );
+    }
+  };
+
   const events = raw.events ?? [];
   const filled = [];
   if (!Array.isArray(events)) {
@@ -626,6 +717,7 @@ export const validateEdl = (raw) => {
           );
         }
       }
+      if (ev.kind === "overlay") checkOverlay(ev, out, where);
       if (ev.kind === "react" && !Object.hasOwn(REACTIONS, ev.emoji)) {
         fail(
           `${where}: emoji must be one of ${Object.keys(REACTIONS).join(", ")}, got ${JSON.stringify(ev.emoji)}`,
@@ -635,19 +727,43 @@ export const validateEdl = (raw) => {
     });
   }
 
-  // A fast-forward stretch is quiet: no moment, and no cold open, in it.
+  // A fast-forward stretch is quiet: no moment, and no cold open, in it,
+  // but one panel on its first ply, which lasts the range.
   const fastRanges = Array.isArray(pace)
     ? pace.filter((s) => s?.fastForward === true)
     : [];
   const fastRangeOf = (ply) =>
     fastRanges.find((r) => r.fromPly <= ply && ply <= r.toPly);
+  const isFastPanel = (e, r) =>
+    e.kind === "overlay" && e.form === "panel" && e.ply === r.fromPly;
   filled.forEach((e, i) => {
     const r = fastRangeOf(e.ply);
-    if (r) {
-      fail(
-        `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments`,
+    if (!r) return;
+    if (!isFastPanel(e, r)) {
+      return fail(
+        `events[${i}] is on ply ${e.ply}, inside the fastForward range ${r.fromPly}-${r.toPly}; a fast-forward plays no moments, only one panel on its first ply`,
       );
     }
+    if (filled.findIndex((x) => isFastPanel(x, r)) !== i) {
+      return fail(
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} has a panel already; it shows one`,
+      );
+    }
+    if (
+      events[i].seconds !== undefined ||
+      OVERLAYS[e.asset]?.seconds === null
+    ) {
+      fail(
+        `events[${i}]: a fast-forward's panel lasts the range, so it takes no seconds, and ${e.asset} cannot`,
+      );
+    }
+    const onScreen = (r.toPly - r.fromPly + 1) * r.secondsPerMove;
+    if (onScreen < EDL_LIMITS.overlayFastSeconds) {
+      fail(
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; a panel needs ${EDL_LIMITS.overlayFastSeconds} s to be read`,
+      );
+    }
+    e.seconds = null;
   });
   if (coldOpenPly !== null && fastRangeOf(coldOpenPly)) {
     fail(`coldOpenPly ${coldOpenPly} is inside a fastForward range`);

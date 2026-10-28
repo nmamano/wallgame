@@ -145,6 +145,17 @@ describe("isRestShot: no part starts inside any effect", () => {
         state: { ...plain, path: { hex: "#f00", cell: 0.1, lines: [] } },
       },
     ],
+    // An overlay rides over the frames after its move: a plain position
+    // under it is relabelled "overlay"; an effect's frame keeps its kind.
+    overlay: [
+      {
+        kind: "overlay",
+        state: {
+          ...plain,
+          overlay: { draw: "toast", form: "clip", t: 0.3, alpha: 1, place: {} },
+        },
+      },
+    ],
   };
   // The images that are not EDL events.
   const OTHER_IMAGES: Record<string, { kind: string; state: object }> = {

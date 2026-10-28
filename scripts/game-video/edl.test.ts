@@ -667,3 +667,95 @@ describe("the path event", () => {
     ]);
   });
 });
+
+describe("the overlay event", () => {
+  const overlay = (more: object, pace: object[] = []) => ({
+    ...base,
+    pace,
+    events: [{ ply: 3, kind: "overlay", ...more }],
+  });
+  const toast = { form: "clip", asset: "chat-toast", text: "{blue} left" };
+  const errorsOf = (raw: object): string[] =>
+    (validateEdl(raw).errors as string[] | undefined) ?? [];
+
+  test("names an asset of its form, and fills the asset's seconds", () => {
+    expect(accept(overlay(toast)).events[0]).toMatchObject({ seconds: 1.8 });
+    expect(
+      accept(overlay({ form: "panel", asset: "capture-loading" })).events[0],
+    ).toMatchObject({ seconds: null });
+    expect(errorsOf(overlay({ ...toast, form: "panel" }))).toEqual([
+      'events[0]: chat-toast is a clip; form must be "clip"',
+    ]);
+    expect(errorsOf(overlay({ ...toast, asset: "nope" }))[0]).toContain(
+      "asset must be one of",
+    );
+    expect(errorsOf(overlay({ ...toast, seconds: 9 }))).toEqual([
+      "events[0]: seconds must be 0.6..4",
+    ]);
+    expect(
+      errorsOf(
+        overlay({ form: "panel", asset: "capture-loading", seconds: 2 }),
+      ),
+    ).toEqual([
+      "events[0]: capture-loading lasts as long as its moment; it takes no seconds",
+    ]);
+  });
+
+  test("takes text where its asset does, with the seats' names only", () => {
+    expect(errorsOf(overlay({ ...toast, text: undefined }))).toEqual([
+      'events[0]: chat-toast needs "text"',
+    ]);
+    expect(
+      errorsOf(overlay({ form: "panel", asset: "path-compare", text: "x" })),
+    ).toEqual(["events[0]: path-compare shows no text"]);
+    expect(errorsOf(overlay({ ...toast, text: "{me}{red}{red}" }))).toEqual([
+      "events[0]: {me} is not a name; use {red} or {blue}",
+      "events[0]: {red} may show once",
+    ]);
+    // A name counts as 12 characters: 29 + 12 = 41.
+    expect(
+      errorsOf(
+        overlay({ ...toast, text: "{red} has left the game, sadly, ok" }),
+      ),
+    ).toEqual([
+      "events[0]: text is 41 characters long (a name counts as 12); at most 40 are allowed",
+    ]);
+  });
+
+  test("in a fast-forward, one panel on its first ply that lasts the range", () => {
+    const ff = (fromPly: number, toPly: number) => [
+      { fromPly, toPly, secondsPerMove: 0.2, fastForward: true },
+    ];
+    const panel = { form: "panel", asset: "do-something" };
+    expect(accept(overlay(panel, ff(3, 8))).events[0]).toMatchObject({
+      seconds: null,
+    });
+    expect(errorsOf(overlay(panel, ff(2, 8)))[0]).toContain(
+      "only one panel on its first ply",
+    );
+    expect(errorsOf(overlay(toast, ff(3, 8)))[0]).toContain(
+      "only one panel on its first ply",
+    );
+    expect(errorsOf(overlay({ ...panel, seconds: 2 }, ff(3, 8)))[0]).toContain(
+      "lasts the range",
+    );
+    expect(
+      errorsOf(
+        overlay({ form: "panel", asset: "capture-loading" }, ff(3, 8)),
+      )[0],
+    ).toContain("lasts the range");
+    expect(errorsOf(overlay(panel, ff(3, 6)))).toEqual([
+      "events[0]: the fastForward range 3-6 is on screen 0.80 s; a panel needs 1 s to be read",
+    ]);
+    const two = {
+      ...overlay(panel, ff(3, 8)),
+      events: [
+        { ply: 3, kind: "overlay", ...panel },
+        { ply: 3, kind: "overlay", form: "panel", asset: "do-something" },
+      ],
+    };
+    expect(errorsOf(two)).toEqual([
+      "events[1]: the fastForward range 3-8 has a panel already; it shows one",
+    ]);
+  });
+});
