@@ -81,6 +81,15 @@ import {
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { timelineOf } from "./strips.mjs";
 import {
+  REVIEW_ACTION_PATH,
+  REVIEW_PAGE,
+  REVIEWER_MEMBER_ID,
+  ReviewRefused,
+  reviewAction,
+  reviewView,
+} from "./review.mjs";
+import { appMessenger } from "./office.mjs";
+import {
   loudnessVerdict,
   safeAreaVerdict,
   captionLinesVerdict,
@@ -315,10 +324,15 @@ export const createDaily = ({
   live: makeLiveTransport = /** @type {() => { mode: string, sent: any[], request: (req: any) => Promise<any> }} */ (
     liveTransport
   ),
+  // The app's messages to agents (office.mjs); a test gives its own.
+  send = /** @type {((targetAgentId: string, text: string) => Promise<void>) | null} */ (
+    null
+  ),
 }) => {
   // The secrets from the environment, the public ids from code: an env var
   // with a public id's name has no effect (Nil, 2026-10-27).
   const env = withPublicIds(rawEnv, ids);
+  const sendMessage = send ?? appMessenger({ env: rawEnv });
   // A test may replace the canned replies of one platform; the rest keep
   // their own.
   const dryRunReplies = { ...DRY_RUN_REPLIES, ...replyOverrides };
@@ -1118,6 +1132,8 @@ export const createDaily = ({
         Object.entries(reasons).filter(([, why]) => why.length),
       ),
       counts: store.counts(),
+      // How many items Growth wants in review (crew.mjs queue).
+      reviewTarget: store.queue().reviewTarget,
       // Each item that is not over, oldest first, with what is derived.
       items: active.map((it) => ({
         ...it,
@@ -1150,6 +1166,10 @@ export const createDaily = ({
     };
   };
 
+  /** A new item, with the other live items of its game (store.sameGame). */
+  const picked = (res, item) =>
+    json(res, 200, { ...item, sameGame: store.sameGame(item) });
+
   const routes = {
     "GET /daily": (req, res) => {
       res.writeHead(200, { "content-type": "text/html; charset=utf-8" });
@@ -1157,6 +1177,24 @@ export const createDaily = ({
     },
 
     "GET /api/daily/state": (req, res) => json(res, 200, state()),
+
+    // Nil's review queue (review.mjs).
+    "GET /review": (req, res) => html(res, 200, REVIEW_PAGE),
+
+    /** The oldest item in review, the counts, and who may act. */
+    "GET /api/review/queue": (req, res) => {
+      const member = memberOf(req);
+      json(res, 200, {
+        ...reviewView(store, { modes: modesNow(), nowMs: Date.now() }),
+        canReview: member?.id === REVIEWER_MEMBER_ID,
+      });
+    },
+
+    /** {reviewTarget}: how many items Growth wants in review. */
+    "POST /api/daily/queue": async (req, res) => {
+      const body = await readJson(req);
+      json(res, 200, store.setReviewTarget(body.reviewTarget));
+    },
 
     /** ?id=<item>: one item, whatever its state. */
     "GET /api/daily/item": (req, res, url) =>
@@ -1197,9 +1235,8 @@ export const createDaily = ({
           throw new StepRefused("pick takes a report or carriedFrom, not both");
         }
         const old = itemOf(body.carriedFrom);
-        return json(
+        return picked(
           res,
-          200,
           store.pick({
             candidate: old.candidate,
             style,
@@ -1227,9 +1264,8 @@ export const createDaily = ({
       } catch (err) {
         throw new StepRefused(err.message);
       }
-      json(
+      picked(
         res,
-        200,
         store.pick({
           candidate,
           style,
@@ -1843,14 +1879,35 @@ export const createDaily = ({
   };
 
   /** True when the request was a daily one and has been answered. */
+  /** POST /api/review/<id>/<action>: Nil's review (review.mjs). */
+  const review = async (req, res, [, id, action]) => {
+    const body = await readJson(req);
+    const { item, directorTold } = await reviewAction({
+      store,
+      member: memberOf(req),
+      id,
+      action,
+      body,
+      send: sendMessage,
+    });
+    json(res, 200, { id: item.id, state: item.state, directorTold });
+  };
+
   const handle = async (req, res, url) => {
-    const route = routes[`${req.method} ${url.pathname}`];
+    const action =
+      req.method === "POST" ? REVIEW_ACTION_PATH.exec(url.pathname) : null;
+    const route = action
+      ? (rq, rs) => review(rq, rs, action)
+      : routes[`${req.method} ${url.pathname}`];
     if (!route) return false;
     try {
       await route(req, res, url);
     } catch (err) {
-      if (err instanceof StepRefused) json(res, 409, { error: err.message });
-      else json(res, 500, { error: String(err?.message ?? err) });
+      if (err instanceof ReviewRefused) {
+        json(res, err.status, { error: err.message });
+      } else if (err instanceof StepRefused) {
+        json(res, 409, { error: err.message });
+      } else json(res, 500, { error: String(err?.message ?? err) });
     }
     return true;
   };

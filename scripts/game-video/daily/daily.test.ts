@@ -2629,6 +2629,43 @@ test("two music cues: direct takes them, and the render must play both from thei
   }
 });
 
+test("two items in the render queue: each render finishes on its own item", async () => {
+  const dir = tempDir();
+  const stub = join(dir, "stub-render.cjs");
+  writeFileSync(stub, STUB_RENDER);
+  const { base } = await serveHere(dir, stub);
+  const entry = REPORT.ranked[0];
+  const report = {
+    ...REPORT,
+    ranked: [entry, { ...entry, gameId: "TESTGAME2" }],
+  };
+  const ids: string[] = [];
+  for (const rank of [1, 2]) {
+    const picked = await call(base, "/api/daily/pick", { report, rank });
+    expect(picked.status).toBe(200);
+    ids.push(picked.body.id);
+  }
+  const games = ["TESTGAME1", "TESTGAME2"];
+  for (const [i, id] of ids.entries()) {
+    expect((await directOver(base, id, { gameId: games[i] })).status).toBe(200);
+  }
+  // Both queued before either ends: the queue runs them one after the
+  // other, and each result lands on its own item.
+  for (const id of ids) {
+    expect((await call(base, "/api/daily/render", { item: id })).status).toBe(
+      200,
+    );
+  }
+  const done = [await rendered(base, ids[0]), await rendered(base, ids[1])];
+  expect(done.map((it) => stage(it))).toEqual(["rendered", "rendered"]);
+  expect(done.map((it) => it.render?.error)).toEqual([null, null]);
+  expect(done[0].render?.video?.sha256).not.toBe(done[1].render?.video?.sha256);
+  expect(done.map((it) => it.render?.jobId.startsWith(it.id))).toEqual([
+    true,
+    true,
+  ]);
+});
+
 test("a carry-over: a new item with the game of one that was dropped", async () => {
   const dir = tempDir();
   const stub = join(dir, "stub-render.cjs");

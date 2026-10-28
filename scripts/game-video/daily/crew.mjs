@@ -92,6 +92,10 @@
  *                                  stop an item Nil has not reviewed (a game
  *                                  that does not make a video): discarded,
  *                                  with your reason
+ *   queue --review-target N        (Growth or the director) how many items
+ *                                  Growth wants in review (Growth,
+ *                                  2026-10-28: 3, growing to 10); the
+ *                                  review page and `status` show it
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
@@ -282,7 +286,7 @@ const summary = (s) => {
     `modes ${Object.entries(s.modes)
       .map(([p, m]) => `${p}=${m}`)
       .join(" ")}`,
-    `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview}, waiting for copy ${c.waitingCopy}, approved ${c.approved}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
+    `items: draft ${c.draft}, revise ${c.revise}, in review ${c.inReview} (target ${s.reviewTarget}), waiting for copy ${c.waitingCopy}, approved ${c.approved}, posting ${c.posting}, post failed ${c.postFailed}, posted ${c.posted}, discarded ${c.discarded}`,
     `default ending ${s.suggestedEnding}; last posted music ${s.lastMusic?.join(", ") ?? "none"}`,
     ...s.items.flatMap((k) => itemLines(k, k.renderProgress)),
   ].join("\n");
@@ -296,6 +300,28 @@ const itemSummary = async (id) => {
   const k = s.items.find((x) => x.id === id) ?? (await itemNamed(id));
   return itemLines(k, k.renderProgress).join("\n");
 };
+
+/**
+ * One row of Nil's feedback, in lines: a review action, or (before the
+ * review queue) his answer to a daily ask.
+ */
+export const feedbackLines = (r) =>
+  r.itemId
+    ? [
+        `${r.itemId} (game ${r.gameId}): ${r.action} by ${r.by} at ${r.utc}, video ${String(r.videoSha256).slice(0, 12)}, edit list ${String(r.edlSha256).slice(0, 12)}`,
+        `  notes, verbatim: ${r.notes ? JSON.stringify(r.notes) : "(none)"}`,
+      ]
+    : [
+        `${r.day} ask ${r.askId}: ${r.picked ? `${r.picked} picked` : "none picked"} by ${r.approver} at ${r.utc}`,
+        ...(r.recommended
+          ? [`  you recommended ${r.recommended.label}: ${r.recommended.why}`]
+          : []),
+        ...r.offered.map(
+          (o) =>
+            `  ${o.label}: game ${o.gameId}, edit list ${String(o.edlSha256).slice(0, 12)}, video ${String(o.videoSha256).slice(0, 12)}, caption ${JSON.stringify(o.caption)}`,
+        ),
+        `  reply, verbatim: ${r.reply === null ? "(none)" : JSON.stringify(r.reply)}`,
+      ];
 
 const commands = {
   async status() {
@@ -423,6 +449,11 @@ const commands = {
       });
     }
     console.log(`picked: ${item.id}`);
+    for (const o of item.sameGame) {
+      console.log(
+        `NOTE: another video of this game is ${o.id} (${o.state}); Nil could approve both`,
+      );
+    }
     console.log(await itemSummary(item.id));
   },
 
@@ -495,6 +526,13 @@ const commands = {
       claimRiskOk: flag("claim-risk-ok")?.split(",") ?? [],
     });
     console.log(await itemSummary(id));
+  },
+
+  async queue() {
+    const n = Number(flag("review-target"));
+    if (!Number.isInteger(n)) die("queue needs --review-target <N>");
+    const q = await app("POST", "/api/daily/queue", { reviewTarget: n });
+    console.log(`review target: ${q.reviewTarget}`);
   },
 
   async drop() {
@@ -611,33 +649,7 @@ const commands = {
     const last = Number(flag("last") ?? 10);
     const rows = await app("GET", `/api/daily/feedback?last=${last}`);
     if (rows.length === 0) return console.log("no feedback yet");
-    for (const r of rows) {
-      if (r.itemId) {
-        console.log(
-          `${r.itemId} (game ${r.gameId}): ${r.action} by ${r.by} at ${r.utc}, video ${String(r.videoSha256).slice(0, 12)}, edit list ${String(r.edlSha256).slice(0, 12)}`,
-        );
-        console.log(
-          `  notes, verbatim: ${r.notes ? JSON.stringify(r.notes) : "(none)"}`,
-        );
-        continue;
-      }
-      console.log(
-        `${r.day} ask ${r.askId}: ${r.picked ? `${r.picked} picked` : "none picked"} by ${r.approver} at ${r.utc}`,
-      );
-      if (r.recommended) {
-        console.log(
-          `  you recommended ${r.recommended.label}: ${r.recommended.why}`,
-        );
-      }
-      for (const o of r.offered) {
-        console.log(
-          `  ${o.label}: game ${o.gameId}, edit list ${String(o.edlSha256).slice(0, 12)}, video ${String(o.videoSha256).slice(0, 12)}, caption ${JSON.stringify(o.caption)}`,
-        );
-      }
-      console.log(
-        `  reply, verbatim: ${r.reply === null ? "(none)" : JSON.stringify(r.reply)}`,
-      );
-    }
+    for (const r of rows) console.log(feedbackLines(r).join("\n"));
   },
 
   async log() {

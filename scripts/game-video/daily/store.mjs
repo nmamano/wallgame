@@ -46,6 +46,7 @@ import {
   renameSync,
   existsSync,
   readdirSync,
+  appendFileSync,
 } from "node:fs";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -206,6 +207,26 @@ export const writeAtomic = (path, text) => {
 /** The stages a new list may replace, and an item may be dropped in. */
 const SETTLED = ["picked", "directed", "rendered", "render-failed", "checked"];
 
+/** Nil's review actions (review.mjs), and the state each one leaves. */
+export const REVIEW_ACTIONS = ["approve", "discard", "revise"];
+const AFTER_REVIEW = {
+  approve: "approved",
+  discard: "discarded",
+  revise: "draft",
+};
+/** Nil's notes on one action, at most. */
+const NOTES_MAX = 4000;
+/** The review target when queue.json sets none (Growth, 2026-10-28). */
+export const DEFAULT_REVIEW_TARGET = 3;
+const REVIEW_TARGET_MAX = 50;
+
+/** copy.mjs's hash of a block (review() names its argument copySha256). */
+const blockSha256 = copySha256;
+
+/** The sha256 of a file's bytes. */
+const fileSha256 = (path) =>
+  createHash("sha256").update(readFileSync(path)).digest("hex");
+
 /** The states of an item whose game another item may carry over. */
 const CARRY_FROM = ["discarded", "posted"];
 
@@ -233,7 +254,10 @@ export const openStore = (dataDir) => {
     live: join(root, "post-log.jsonl"),
     dryRun: join(root, "post-log.dry-run.jsonl"),
   };
-  /** One line per answer: what Nil picked and what he said (readFeedback). */
+  /**
+   * Nil's feedback, one line each: his review actions (review()), and
+   * before them his answers to the daily asks.
+   */
   const feedbackLog = join(root, "feedback.jsonl");
 
   const cyclePath = (day) => {
@@ -336,6 +360,15 @@ export const openStore = (dataDir) => {
     if (!existsSync(path)) return null;
     return JSON.parse(readFileSync(path, "utf8"));
   };
+
+  /** The queue's settings: {reviewTarget}. */
+  const queueFile = join(root, "queue.json");
+  const readQueue = () => ({
+    reviewTarget: DEFAULT_REVIEW_TARGET,
+    ...(existsSync(queueFile)
+      ? JSON.parse(readFileSync(queueFile, "utf8"))
+      : {}),
+  });
 
   const needItem = (id) => readItem(id) ?? refuse(`there is no item ${id}`);
 
@@ -467,6 +500,133 @@ export const openStore = (dataDir) => {
       };
     },
     staleCopy,
+
+    /**
+     * The other items of the same game that are not discarded: two videos
+     * of one game could both be approved and post (Video Reviewer 2,
+     * 2026-10-28), so pick and the review page name them.
+     */
+    sameGame: (item) =>
+      items()
+        .filter(
+          (o) =>
+            o.gameId === item.gameId &&
+            o.id !== item.id &&
+            o.state !== "discarded",
+        )
+        .map((o) => ({ id: o.id, state: o.state })),
+
+    /** Items in review, oldest first: the order Nil reviews them in. */
+    inReview: () =>
+      items({ states: ["finished"] }).filter(
+        (it) => reviewState(it) === "in-review",
+      ),
+
+    /** Nil's newest review action over every item ({...review, itemId}), or null. */
+    lastReview: () =>
+      items()
+        .flatMap((it) => it.reviews.map((r) => ({ ...r, itemId: it.id })))
+        .sort((a, b) => (a.at < b.at ? -1 : a.at > b.at ? 1 : 0))
+        .at(-1) ?? null,
+
+    /** The queue's settings (queue.json): {reviewTarget}. */
+    queue: readQueue,
+
+    /**
+     * How many items Growth wants in review (Growth, 2026-10-28: it starts
+     * at 3 and grows to 10). Set by Growth or the director with crew.mjs
+     * queue --review-target N; no code change retunes it.
+     */
+    setReviewTarget(n) {
+      if (!Number.isInteger(n) || n < 1 || n > REVIEW_TARGET_MAX) {
+        refuse(
+          `the review target is a whole number from 1 to ${REVIEW_TARGET_MAX}`,
+        );
+      }
+      writeAtomic(
+        queueFile,
+        JSON.stringify({ ...readQueue(), reviewTarget: n }, null, 2),
+      );
+      return readQueue();
+    },
+
+    /**
+     * One of Nil's review actions on an item in review. `videoSha256` and
+     * `copySha256` are what his page showed: the action is refused unless
+     * they are the item's video and block now, so he never approves a newer
+     * render or block than he saw. Discard and revise need notes. Approve
+     * binds the content (the video's and the block's hashes), not the
+     * posting modes: the platforms are the ones live at its slot. Every
+     * action is a feedback row, notes word for word. Only the states
+     * approved, discarded and draft are written here; the poster's states
+     * and posts{} never are.
+     */
+    review(id, { action, notes, videoSha256, copySha256, by, memberId }) {
+      if (!REVIEW_ACTIONS.includes(action)) {
+        refuse(`a review action is ${REVIEW_ACTIONS.join(", ")}`);
+      }
+      if (typeof notes !== "string" || notes.length > NOTES_MAX) {
+        refuse(`the notes are a text of at most ${NOTES_MAX} characters`);
+      }
+      if (action !== "approve" && !notes.trim()) {
+        refuse(
+          `${action} needs notes: tell the director ${action === "revise" ? "what to change" : "why"}`,
+        );
+      }
+      let row = null;
+      const item = updateItem(
+        id,
+        ["finished"],
+        (it) => {
+          if (reviewState(it) !== "in-review") {
+            refuse(`${id} is not in review: ${staleCopy(it)}`);
+          }
+          if (videoSha256 !== it.render.video.sha256) {
+            refuse(
+              `${id} has a new video since the page showed it; reload the page`,
+            );
+          }
+          if (copySha256 !== blockSha256(it.copy.block)) {
+            refuse(
+              `${id} has a new copy block since the page showed it; reload the page`,
+            );
+          }
+          // The bytes Nil approves are the bytes that post: the file must
+          // still be the record's video.
+          if (
+            action === "approve" &&
+            fileSha256(it.render.video.path) !== videoSha256
+          ) {
+            refuse(
+              `${id}'s video file is not the one in its record; tell the director`,
+            );
+          }
+          const at = new Date().toISOString();
+          it.reviews = [
+            ...it.reviews,
+            { action, notes, by, memberId, at, videoSha256, copySha256 },
+          ];
+          it.state = AFTER_REVIEW[action];
+          if (action === "approve") {
+            it.approval = { videoSha256, copySha256, by, at };
+          }
+          row = {
+            utc: at,
+            itemId: id,
+            gameId: it.gameId,
+            edlSha256: it.edl.sha256,
+            videoSha256,
+            copySha256,
+            action,
+            notes,
+            by,
+          };
+        },
+        `${action} by ${by}`,
+      );
+      appendFileSync(feedbackLog, JSON.stringify(row) + "\n");
+      return item;
+    },
 
     /**
      * A new item for the director: a game from a candidate report, or the
