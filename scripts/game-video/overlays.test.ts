@@ -8,6 +8,8 @@ import {
   overlayPlaces,
   placeName,
   placeOverlay,
+  overlayWords,
+  readingSeconds,
 } from "./overlays.mjs";
 
 const cell = (x: number, y: number, size = 0.125) => ({
@@ -126,6 +128,18 @@ describe("overlays", () => {
     expect(placeName(placeOverlay(reactor, [...pawns, cell(0, 0.6, 1)])!)).toBe(
       "top-right, small",
     );
+  });
+
+  test("the reading time counts words, numbers and names, not emoji", () => {
+    const toast = OVERLAYS["chat-toast"];
+    expect(overlayWords(toast, "bro's heart rate rn")).toBe(4);
+    expect(readingSeconds(toast, "bro's heart rate rn")).toBe(2.4);
+    expect(overlayWords(toast, "{red} -> {blue} 💀 12")).toBe(5);
+    expect(readingSeconds(toast, "💀 🙏")).toBe(0);
+    expect(readingSeconds(toast, undefined)).toBe(0);
+    // The words the stage draws count too.
+    expect(readingSeconds(OVERLAYS["path-compare"], undefined)).toBe(2.7);
+    expect(readingSeconds(OVERLAYS["capture-loading"], undefined)).toBe(2.1);
   });
 
   test("coveredBy gives the boxes a place overlaps", () => {

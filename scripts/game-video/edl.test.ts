@@ -711,7 +711,9 @@ describe("the overlay event", () => {
     (validateEdl(raw).errors as string[] | undefined) ?? [];
 
   test("names an asset of its form, and fills the asset's seconds", () => {
-    expect(accept(overlay(toast)).events[0]).toMatchObject({ seconds: 1.8 });
+    // "{blue} left": a name (2 words) and 1 word read in 2.1 s, more than
+    // the asset's 1.8.
+    expect(accept(overlay(toast)).events[0]).toMatchObject({ seconds: 2.1 });
     expect(
       accept(overlay({ form: "panel", asset: "capture-loading" })).events[0],
     ).toMatchObject({ seconds: null });
@@ -730,6 +732,34 @@ describe("the overlay event", () => {
       ),
     ).toEqual([
       "events[0]: capture-loading lasts as long as its moment; it takes no seconds",
+    ]);
+  });
+
+  test("shows its words at least their reading time", () => {
+    // Nil, 2026-10-28: the compare card "goes away before i can read it".
+    // path-compare draws 5 words ("2 12 STEPS TO CATCH"): 1.2 + 5 x 0.3.
+    expect(
+      accept(overlay({ form: "clip", asset: "path-compare" })).events[0],
+    ).toMatchObject({ seconds: 2.7 });
+    expect(
+      errorsOf(overlay({ form: "clip", asset: "path-compare", seconds: 1.6 })),
+    ).toEqual([
+      "events[0]: 1.6 s is too short to read its 5 words: it needs 2.7 s (1.2 s + 0.3 s a word)",
+    ]);
+    // An emoji is no word; a longer seconds stays.
+    expect(
+      accept(overlay({ ...toast, text: "gg 💀💀", seconds: 3 })).events[0],
+    ).toMatchObject({ seconds: 3 });
+    // 10 words do not fit in 4 s.
+    expect(
+      errorsOf(
+        overlay({
+          ...toast,
+          text: "a b c d e f g h i j",
+        }),
+      ),
+    ).toEqual([
+      "events[0]: its 10 words take 4.2 s to read (1.2 s + 0.3 s a word); at most 9 fit in 4 s",
     ]);
   });
 
@@ -761,12 +791,16 @@ describe("the overlay event", () => {
     // do-something is a cut-out clip since 2026-10-29; a clip or a panel
     // may cover the range.
     const clip = { form: "clip", asset: "do-something", seat: "blue" };
-    expect(accept(overlay(clip, ff(3, 8))).events[0]).toMatchObject({
+    // Its line reads in 2.1 s: 11 plies at 0.2 s.
+    expect(accept(overlay(clip, ff(3, 13))).events[0]).toMatchObject({
       seconds: null,
     });
-    expect(accept(overlay(toast, ff(3, 8))).events[0]).toMatchObject({
+    expect(accept(overlay(toast, ff(3, 13))).events[0]).toMatchObject({
       seconds: null,
     });
+    expect(errorsOf(overlay(clip, ff(3, 8)))).toEqual([
+      "events[0]: the fastForward range 3-8 is on screen 1.20 s; do-something needs 2.1 s to be read",
+    ]);
     expect(errorsOf(overlay(clip, ff(2, 8)))[0]).toContain(
       "only one overlay on its first ply",
     );
@@ -777,7 +811,7 @@ describe("the overlay event", () => {
         events: [{ ply: 3, kind: "scared", cell: "e7" }],
       })[0],
     ).toContain("only one overlay on its first ply");
-    expect(errorsOf(overlay({ ...clip, seconds: 2 }, ff(3, 8)))[0]).toContain(
+    expect(errorsOf(overlay({ ...clip, seconds: 3 }, ff(3, 13)))[0]).toContain(
       "lasts the range",
     );
     expect(
@@ -785,18 +819,15 @@ describe("the overlay event", () => {
         overlay({ form: "panel", asset: "capture-loading" }, ff(3, 8)),
       )[0],
     ).toContain("lasts the range");
-    expect(errorsOf(overlay(clip, ff(3, 6)))).toEqual([
-      "events[0]: the fastForward range 3-6 is on screen 0.80 s; an overlay needs 1 s to be read",
-    ]);
     const two = {
-      ...overlay(clip, ff(3, 8)),
+      ...overlay(clip, ff(3, 13)),
       events: [
         { ply: 3, kind: "overlay", ...clip },
         { ply: 3, kind: "overlay", ...toast },
       ],
     };
     expect(errorsOf(two)).toEqual([
-      "events[1]: the fastForward range 3-8 has an overlay already; it shows one",
+      "events[1]: the fastForward range 3-13 has an overlay already; it shows one",
     ]);
   });
 
@@ -838,7 +869,7 @@ describe("the overlay event's seat", () => {
     expect(
       accept(ev({ asset: "reactor-shock", seat: "red", text: "brain cell" }))
         .events[0],
-    ).toMatchObject({ seat: "red", seconds: 1.4 });
+    ).toMatchObject({ seat: "red", seconds: 1.8 });
     expect(
       validateEdl(ev({ asset: "reactor-laugh", seat: "green" })).errors,
     ).toEqual([

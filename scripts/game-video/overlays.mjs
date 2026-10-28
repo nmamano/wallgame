@@ -63,8 +63,12 @@
  *   chars    the most characters its text may have, where the EDL gives
  *            one (default OVERLAY_TEXT_CHARS): a reactor's label is one
  *            line under the portrait, so it is shorter.
+ *   shows    the words the stage draws besides the EDL's text, as a
+ *            sample with as many words ("2 12 STEPS TO CATCH"), for the
+ *            reading time (readingSeconds).
  *   seconds  how long it shows where the EDL sets none (null: the asset
- *            decides, as the loading bar does).
+ *            decides, as the loading bar does). The EDL's default is this
+ *            or the text's reading time, whichever is longer.
  *   size     a clip's box, or a panel's band, as fractions of the board's
  *            width and height.
  *   small    a clip's smaller box, tried in the four corners when none is
@@ -91,6 +95,7 @@ export const OVERLAY_FORMS = ["clip", "panel", "bar"];
  *   chars?: number,
  *   text: "required" | "optional" | "none",
  *   line?: string,
+ *   shows?: string,
  *   seconds: number | null,
  *   size?: { w: number, h: number },
  *   small?: { w: number, h: number },
@@ -118,6 +123,7 @@ export const OVERLAYS = {
     form: "panel",
     draw: "loading",
     text: "none",
+    shows: "CAPTURE LOADING 99%",
     seconds: null,
     size: { w: 0.95, h: 0.28 },
     source: "drawn by us (stage.html)",
@@ -129,6 +135,7 @@ export const OVERLAYS = {
     form: "clip",
     draw: "compare",
     text: "none",
+    shows: "2 12 STEPS TO CATCH",
     seconds: 1.8,
     size: { w: 0.5, h: 0.3 },
     source: "drawn by us (stage.html)",
@@ -213,6 +220,48 @@ export const PORTRAIT_DRAWS = ["reactor"];
 export const OVERLAY_TEXT_CHARS = 40;
 /** The seat names a text may hold: {red} and {blue}, each at most once. */
 export const OVERLAY_NAME_TOKENS = ["{red}", "{blue}"];
+
+/**
+ * THE READING TIME of an overlay's words (Nil, 2026-10-28, on the "BEFORE
+ * 2 vs AFTER 12 steps to catch" card: "too much text, goes away before i
+ * can read it. Add some rules ... the reasonable amount of showing time
+ * based on the amount of text"). An overlay with words shows at least
+ * READ_BASE_SECONDS to find them, plus READ_WORD_SECONDS for each word:
+ * about 200 words a minute, the pace of a normal reader. A number counts
+ * as a word, an emoji or a symbol (->) does not, and a seat's name
+ * ({red}, {blue}) counts as NAME_WORDS ("Guest Jackal").
+ */
+export const READ_BASE_SECONDS = 1.2;
+export const READ_WORD_SECONDS = 0.3;
+const NAME_WORDS = 2;
+
+/**
+ * How many words an overlay shows: the words its stage draws (`shows`)
+ * and its line.
+ * @param {{ shows?: string }} asset
+ * @param {string | undefined} text the EDL's text, or the asset's line
+ */
+export const overlayWords = (asset, text) => {
+  const all = `${asset.shows ?? ""} ${text ?? ""}`;
+  const names = (all.match(/\{(?:red|blue)\}/g) ?? []).length;
+  const words = all
+    .replace(/\{(?:red|blue)\}/g, " ")
+    .split(/\s+/)
+    .filter((w) => /[\p{L}\p{N}]/u.test(w)).length;
+  return words + names * NAME_WORDS;
+};
+
+/**
+ * The seconds an overlay must show to be read, to 0.1 s; 0 with no words.
+ * @param {{ shows?: string }} asset
+ * @param {string | undefined} text
+ */
+export const readingSeconds = (asset, text) => {
+  const words = overlayWords(asset, text);
+  return words === 0
+    ? 0
+    : Math.round((READ_BASE_SECONDS + READ_WORD_SECONDS * words) * 10) / 10;
+};
 
 /**
  * The gap between an overlay and the board's edge, as a fraction of the

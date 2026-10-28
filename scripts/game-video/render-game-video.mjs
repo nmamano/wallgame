@@ -103,6 +103,10 @@ import {
   overlayPlaces,
   placeName,
   placeOverlay,
+  READ_BASE_SECONDS,
+  READ_WORD_SECONDS,
+  overlayWords,
+  readingSeconds,
 } from "./overlays.mjs";
 import { pawnCell } from "../../shared/domain/pawns.ts";
 import {
@@ -3360,6 +3364,21 @@ const renderStyle = async (styleName) => {
   const placeOverlays = async () => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
+      /*
+        Its words stay up long enough to be read (overlays.mjs
+        readingSeconds; Nil, 2026-10-28: "goes away before i can read it").
+        validateEdl holds `seconds` to that; here the ending, the end of a
+        fast-forward or the save may close it sooner. No automatic stretch:
+        the director gives it time (Wall Game Director, 2026-10-29).
+      */
+      const text = w.ev.text ?? w.asset.line;
+      const read = readingSeconds(w.asset, text);
+      const showsFor = w.end - w.start;
+      if (showsFor + 0.5 / FPS < read) {
+        throw new Error(
+          `${where} shows ${showsFor.toFixed(1)} s, and its ${overlayWords(w.asset, text)} words need ${read} s to be read (${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word): ${w.asset.form === "bar" ? "the ending shows it that long; use fewer words" : `open it earlier or slow its plies with pace${w.asset.text === "none" ? "" : ", or use fewer words"}`}`,
+        );
+      }
       /*
         A bar avoids what the ending draws; on a replay ending also the
         pawns and walls in play, because the replay shows the capture again

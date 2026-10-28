@@ -119,8 +119,13 @@
  *             (overlays.mjs): `asset` names it and `form` repeats its form
  *             ("clip": a cut-out or a toast in a free corner; "panel": a
  *             band across the board). It opens as the move lands and shows for
- *             `seconds` (default the asset's; the capture loading bar lasts
- *             until the save and takes none). `text` is the asset's line,
+ *             `seconds` (default the asset's, or its words' reading time
+ *             if longer; the capture loading bar lasts until the save and
+ *             takes none). An overlay with words shows at least their
+ *             reading time, READ_BASE_SECONDS + READ_WORD_SECONDS a word
+ *             (overlays.mjs readingSeconds): a shorter `seconds` is
+ *             refused, and the renderer stops if the ending, a
+ *             fast-forward's end or the save closes it sooner. `text` is the asset's line,
  *             where it takes one; {red} and {blue} in it become the seats'
  *             names. `seat` ("red" or "blue") is required on an asset that
  *             shows a seat's portrait: who reacts is the story. The renderer puts it where it hides no pawn and
@@ -144,6 +149,10 @@ import {
   OVERLAY_NAME_TOKENS,
   OVERLAY_TEXT_CHARS,
   PORTRAIT_DRAWS,
+  READ_BASE_SECONDS,
+  READ_WORD_SECONDS,
+  overlayWords,
+  readingSeconds,
 } from "./overlays.mjs";
 
 export const EDL_VERSION = 1;
@@ -344,6 +353,9 @@ export const EDL_LIMITS = {
   /** Each different track gets a credit line in the head row; two fit. */
   musicTracks: 2,
 };
+
+/** The reading rule in words, for the messages. */
+const READING = `${READ_BASE_SECONDS} s + ${READ_WORD_SECONDS} s a word`;
 
 const CELL = /^[a-z][1-9]\d?$/;
 const WALL = /^[>^][a-z][1-9]\d?$/;
@@ -608,7 +620,28 @@ export const validateEdl = (raw) => {
         `${where}: ${ev.asset} lasts as long as its moment; it takes no seconds`,
       );
     }
-    out.seconds = seconds ?? asset.seconds;
+    // Its words must be readable before it goes (readingSeconds), so its
+    // default is at least their reading time, and a shorter one is refused.
+    const words = overlayWords(asset, ev.text ?? asset.line);
+    const read = readingSeconds(asset, ev.text ?? asset.line);
+    const most = EDL_LIMITS.overlaySeconds[1];
+    if (read > most) {
+      fail(
+        `${where}: its ${words} words take ${read} s to read (${READING}); at most ${Math.floor((most - READ_BASE_SECONDS) / READ_WORD_SECONDS + 1e-9)} fit in ${most} s`,
+      );
+    }
+    // An asset that takes no seconds is refused one above; the default is
+    // capped at the most, so a text refused for its length gets one error.
+    if (asset.seconds !== null && seconds !== undefined && seconds < read) {
+      fail(
+        `${where}: ${seconds} s is too short to read its ${words} words: it needs ${read} s (${READING})`,
+      );
+    }
+    out.seconds =
+      seconds ??
+      (asset.seconds === null
+        ? null
+        : Math.max(asset.seconds, Math.min(read, most)));
     if (
       out.seconds !== null &&
       !isNumberIn(out.seconds, EDL_LIMITS.overlaySeconds)
@@ -797,9 +830,14 @@ export const validateEdl = (raw) => {
       );
     }
     const onScreen = (r.toPly - r.fromPly + 1) * r.secondsPerMove;
-    if (onScreen < EDL_LIMITS.overlayFastSeconds) {
+    const asset = OVERLAYS[e.asset];
+    const needs = Math.max(
+      EDL_LIMITS.overlayFastSeconds,
+      readingSeconds(asset, e.text ?? asset.line),
+    );
+    if (onScreen < needs) {
       fail(
-        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; an overlay needs ${EDL_LIMITS.overlayFastSeconds} s to be read`,
+        `events[${i}]: the fastForward range ${r.fromPly}-${r.toPly} is on screen ${onScreen.toFixed(2)} s; ${e.asset} needs ${needs} s to be read`,
       );
     }
     e.seconds = null;
