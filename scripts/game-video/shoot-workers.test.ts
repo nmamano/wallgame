@@ -139,6 +139,12 @@ describe("isRestShot: no part starts inside any effect", () => {
       },
     ],
     react: [{ kind: "beat-react", state: { ...plain, ...cell } }],
+    path: [
+      {
+        kind: "beat-path",
+        state: { ...plain, path: { hex: "#f00", cell: 0.1, lines: [] } },
+      },
+    ],
   };
   // The images that are not EDL events.
   const OTHER_IMAGES: Record<string, { kind: string; state: object }> = {

@@ -9,6 +9,7 @@
  */
 import { GameState } from "../../shared/domain/game-state";
 import type {
+  Cell,
   GameConfiguration,
   GameInitialState,
   GamePawns,
@@ -55,6 +56,39 @@ export const walksOn = (
     if (walk < 0) throw new Error("a hunter cannot reach its target");
     return walk;
   });
+
+/**
+ * One shortest walk of a hunt, as the cells from its hunter to its target,
+ * both included: the breadth-first search grid.distance runs (same
+ * neighbours, same order), keeping each cell's parent. So its length less
+ * one is the walk the race counter shows, and the same position always gives
+ * the same path. A viewer sees it drawn (the EDL's "path" event).
+ */
+export const huntPath = (grid: Grid, pawns: GamePawns, hunt: Hunt): Cell[] => {
+  const start = pawnCell(pawns, hunt.hunter.player, hunt.hunter.type);
+  const target = pawnCell(pawns, hunt.target.player, hunt.target.type);
+  if (!start || !target) throw new Error("a hunt names a missing pawn");
+  const key = (c: Cell) => `${c[0]},${c[1]}`;
+  const parent = new Map<string, Cell | null>([[key(start), null]]);
+  const queue: Cell[] = [start];
+  // for-of also visits the cells pushed while it runs: a queue.
+  for (const at of queue) {
+    if (at[0] === target[0] && at[1] === target[1]) {
+      const path: Cell[] = [];
+      for (let c: Cell | null = at; c; c = parent.get(key(c)) ?? null) {
+        path.unshift(c);
+      }
+      return path;
+    }
+    for (const next of grid.accessibleNeighbors(at)) {
+      if (!parent.has(key(next))) {
+        parent.set(key(next), at);
+        queue.push(next);
+      }
+    }
+  }
+  throw new Error("a hunter cannot reach its target");
+};
 
 /** Each player's shortest walk over their own hunts. */
 export const raceFromWalks = (

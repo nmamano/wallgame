@@ -361,7 +361,8 @@
         inset: 0;
         background: #ef4444;
       }
-      #trapSvg {
+      #trapSvg,
+      #pathSvg {
         position: absolute;
         inset: 0;
         width: 100%;
@@ -897,6 +898,12 @@
               viewBox="0 0 1000 1000"
               preserveAspectRatio="none"
             ></svg>
+            <svg
+              id="pathSvg"
+              class="hidden"
+              viewBox="0 0 1000 1000"
+              preserveAspectRatio="none"
+            ></svg>
             <div id="cellFx" class="hidden">
               <div id="cellRing"></div>
               <svg id="cellBurst" viewBox="-200 -200 400 400"></svg>
@@ -1380,6 +1387,118 @@
        *          image (0..1), lit: true to skip the light-up (the cold
        *          open cuts in on walls that are already lit) }
        */
+      /**
+       * A hunter's walk (edl.mjs "path"): p = { hex, cell, lines: [{
+       * points, steps, drawn, alpha }] }, points and the cell's size as
+       * fractions of the board, from the hunter to its target. Each line is
+       * a dotted trail in the hunter's colour, drawn from the hunter up to
+       * `drawn` of its length; once whole it shows its steps in a disc half
+       * a cell beside the target: across the walk's last step (towards the
+       * board's middle first), or else ahead of it, on the first side that
+       * is on the board and off the walk, so the disc covers neither the
+       * target nor the walk.
+       */
+      const paintPath = (p) => {
+        const svg = $("pathSvg");
+        show(svg, !!p);
+        if (!p) return;
+        const k = (v) => (v * 1000).toFixed(1);
+        svg.innerHTML = p.lines
+          .filter((l) => l.alpha > 0 && l.drawn > 0)
+          .map((l) => {
+            const seg = l.points.slice(1).map((q, i) => {
+              const a = l.points[i];
+              return Math.hypot(q.x - a.x, q.y - a.y);
+            });
+            let left = seg.reduce((x, y) => x + y, 0) * l.drawn;
+            const pts = [l.points[0]];
+            for (let i = 0; i < seg.length && left > 0; i++) {
+              const a = l.points[i];
+              const q = l.points[i + 1];
+              const f = Math.min(1, left / seg[i]);
+              pts.push({ x: a.x + (q.x - a.x) * f, y: a.y + (q.y - a.y) * f });
+              left -= seg[i];
+            }
+            const d = pts.map((q) => k(q.x) + "," + k(q.y)).join(" ");
+            const tip = l.points[l.points.length - 1];
+            const prev = l.points[l.points.length - 2] ?? tip;
+            const vertical =
+              Math.abs(tip.y - prev.y) > Math.abs(tip.x - prev.x);
+            const toMid = (v) => (v < 0.5 ? 1 : -1);
+            const ahead = {
+              x: Math.sign(tip.x - prev.x),
+              y: Math.sign(tip.y - prev.y),
+            };
+            // Across the last step (towards the middle first), then ahead.
+            const sides = (
+              vertical
+                ? [
+                    { x: toMid(tip.x), y: 0 },
+                    { x: -toMid(tip.x), y: 0 },
+                  ]
+                : [
+                    { x: 0, y: toMid(tip.y) },
+                    { x: 0, y: -toMid(tip.y) },
+                  ]
+            ).concat([ahead]);
+            const free = (d) => {
+              const c = { x: tip.x + d.x * p.cell, y: tip.y + d.y * p.cell };
+              return (
+                c.x > 0 &&
+                c.x < 1 &&
+                c.y > 0 &&
+                c.y < 1 &&
+                l.points.every(
+                  (q) => Math.hypot(q.x - c.x, q.y - c.y) > 0.3 * p.cell,
+                )
+              );
+            };
+            const side = sides.find(free) ?? sides[0];
+            const end = {
+              x: tip.x + 0.55 * side.x * p.cell,
+              y: tip.y + 0.55 * side.y * p.cell,
+            };
+            const r = (0.3 * p.cell * 1000).toFixed(1);
+            const disc =
+              l.drawn < 1
+                ? ""
+                : '<circle cx="' +
+                  k(end.x) +
+                  '" cy="' +
+                  k(end.y) +
+                  '" r="' +
+                  r +
+                  '" fill="' +
+                  p.hex +
+                  '" stroke="#0b0f1c" stroke-width="8"/>' +
+                  '<text x="' +
+                  k(end.x) +
+                  '" y="' +
+                  k(end.y) +
+                  '" dy="0.35em" text-anchor="middle" font-family="TikTok Sans, DejaVu Sans, sans-serif" font-weight="900" font-size="' +
+                  (r * 1.1).toFixed(1) +
+                  '" fill="#fff">' +
+                  l.steps +
+                  "</text>";
+            return (
+              '<g opacity="' +
+              l.alpha +
+              '">' +
+              '<polyline points="' +
+              d +
+              '" fill="none" stroke="#0b0f1c" stroke-width="40" stroke-linecap="round" stroke-dasharray="0 52"/>' +
+              '<polyline points="' +
+              d +
+              '" fill="none" stroke="' +
+              p.hex +
+              '" stroke-width="27" stroke-linecap="round" stroke-dasharray="0 52"/>' +
+              disc +
+              "</g>"
+            );
+          })
+          .join("");
+      };
+
       const paintTrap = (tr) => {
         const svg = $("trapSvg");
         show(svg, !!tr);
@@ -1994,6 +2113,7 @@
           paintEnding(s.ending);
           paintCellFx(s.cellFx);
           paintTrap(s.trap);
+          paintPath(s.path);
           paintHud(s.race, goalNow, s.credit);
           paintFreeze(s.freeze);
           show($("ffBadge"), !!s.fastForward);

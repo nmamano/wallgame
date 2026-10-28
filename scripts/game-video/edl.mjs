@@ -106,6 +106,15 @@
  *             plays as the freeze starts. For a SAVE or the winning move.
  *     react   `emoji` (skull, mind-blown, fire, moai, clown, eyes) pops on
  *             `cell` and floats up.
+ *     path    the hunter on `cell` (after the move) shows its shortest walk
+ *             to its target as a dotted line in its colour, with the steps
+ *             at its end (the race counter's number), then fades (Nil,
+ *             2026-10-28: newcomers must see what is happening). The
+ *             renderer computes the walk from the position; the EDL only
+ *             names the hunter. With "compare": true (a SAVE or an
+ *             ESCAPE) it first shows the walk BEFORE the move, then the
+ *             walk after it, so the wall's effect shows (2, then 12).
+ *             `holdSeconds` (default 0.8) holds the last walk.
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
@@ -223,6 +232,7 @@ export const EVENT_KINDS = [
   "race",
   "freeze",
   "react",
+  "path",
 ];
 
 /** The fields each kind takes, besides ply, kind and sound. */
@@ -238,9 +248,12 @@ const KIND_FIELDS = {
   race: [],
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
+  path: ["cell", "compare", "holdSeconds"],
 };
 /** The kinds that name one cell, which must be on the board. */
-const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react"];
+const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
+/** How long a path event holds its (last) path, by default. */
+export const DEFAULT_PATH_HOLD_SECONDS = 0.8;
 
 /**
  * The reactions a `react` event can pop, by name. They are drawn with the
@@ -280,6 +293,7 @@ export const EDL_LIMITS = {
   zoomHoldSeconds: [0.2, 3],
   frameTerms: 6,
   freezeHoldSeconds: [0.4, 2],
+  pathHoldSeconds: [0.3, 2],
   events: 40,
   musicCues: 3,
   /** Each different track gets a credit line in the head row; two fit. */
@@ -600,6 +614,18 @@ export const validateEdl = (raw) => {
           );
         }
       }
+      if (ev.kind === "path") {
+        out.compare = ev.compare ?? false;
+        out.holdSeconds = ev.holdSeconds ?? DEFAULT_PATH_HOLD_SECONDS;
+        if (typeof out.compare !== "boolean") {
+          fail(`${where}: compare must be true or false`);
+        }
+        if (!isNumberIn(out.holdSeconds, EDL_LIMITS.pathHoldSeconds)) {
+          fail(
+            `${where}: holdSeconds must be ${EDL_LIMITS.pathHoldSeconds.join("..")}`,
+          );
+        }
+      }
       if (ev.kind === "react" && !Object.hasOwn(REACTIONS, ev.emoji)) {
         fail(
           `${where}: emoji must be one of ${Object.keys(REACTIONS).join(", ")}, got ${JSON.stringify(ev.emoji)}`,
@@ -824,6 +850,39 @@ export const checkEdlAgainstGame = (
         }
       }
     });
+  }
+  // A path is drawn from a hunter, so its cell holds a pawn after the move.
+  const paths = edl.events
+    .map((ev, i) => ({ ev, i }))
+    .filter(({ ev }) => ev.kind === "path" && ev.ply < notations.length);
+  if (paths.length > 0 && !initialState) {
+    errors.push(
+      "a path needs the start position, and this game has none (an older report); make a new report",
+    );
+  } else if (paths.length > 0) {
+    const moved = pawnMovesOf({ initialState, notations, rows });
+    const cell = ([row, col]) =>
+      `${String.fromCharCode(97 + col)}${rows - row}`;
+    const occupied = new Set(
+      Object.values(initialState.pawns)
+        .flatMap((side) => Object.values(side))
+        .filter(Boolean)
+        .map(cell),
+    );
+    const after = moved.map((moves) => {
+      for (const { from, to } of moves) {
+        if (from) occupied.delete(from);
+        occupied.add(to);
+      }
+      return new Set(occupied);
+    });
+    for (const { ev, i } of paths) {
+      if (!after[ev.ply].has(ev.cell)) {
+        errors.push(
+          `events[${i}]: a path starts from a hunter, and no pawn stands on ${ev.cell} after ply ${ev.ply}`,
+        );
+      }
+    }
   }
   return errors;
 };

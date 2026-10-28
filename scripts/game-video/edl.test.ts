@@ -4,6 +4,7 @@ import {
   dailySeatColors,
   dailySeatName,
   DEFAULT_FREEZE_HOLD_SECONDS,
+  DEFAULT_PATH_HOLD_SECONDS,
   DEFAULT_SLOT_SOUNDS,
   DEFAULT_TRAP_TEXT,
   DEFAULT_ZOOM_SCALE,
@@ -621,5 +622,48 @@ describe("STRIP_AREA", () => {
     expect(areaOf("strip")).toBe(STRIP_AREA);
     expect(areaOf("board")).toBe(SAFE_AREA);
     expect(areaOf("credit")).toBe(SAFE_AREA);
+  });
+});
+
+describe("the path event", () => {
+  const path = (more: object) => ({
+    ...base,
+    events: [{ ply: 0, kind: "path", cell: "e7", ...more }],
+  });
+
+  test("names a cell, and fills compare and holdSeconds", () => {
+    expect(accept(path({})).events[0]).toMatchObject({
+      compare: false,
+      holdSeconds: DEFAULT_PATH_HOLD_SECONDS,
+    });
+    expect(
+      accept(path({ compare: true, holdSeconds: 1.2 })).events[0],
+    ).toMatchObject({
+      compare: true,
+      holdSeconds: 1.2,
+    });
+    expect(validateEdl(path({ cell: undefined })).ok).toBe(false);
+    expect(validateEdl(path({ compare: "yes" })).ok).toBe(false);
+    expect(validateEdl(path({ holdSeconds: 5 })).ok).toBe(false);
+    expect(validateEdl(path({ frame: ["e7"] })).ok).toBe(false);
+  });
+
+  test("needs a pawn on its cell after the move", () => {
+    const game = {
+      notations: ["Ce7", "Cf7", "^a4.^h4"],
+      cols: 8,
+      rows: 8,
+      initialState: START_8,
+    };
+    // Ply 0 moves player 1's cat from a8 to e7.
+    expect(checkEdlAgainstGame(accept(path({})), game)).toEqual([]);
+    expect(checkEdlAgainstGame(accept(path({ cell: "a8" })), game)).toEqual([
+      "events[0]: a path starts from a hunter, and no pawn stands on a8 after ply 0",
+    ]);
+    expect(
+      checkEdlAgainstGame(accept(path({})), { ...game, initialState: null }),
+    ).toEqual([
+      "a path needs the start position, and this game has none (an older report); make a new report",
+    ]);
   });
 });

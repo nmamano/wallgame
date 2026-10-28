@@ -93,7 +93,8 @@ import {
   STRIP_AREA,
   parsePlyWindow,
 } from "./edl.mjs";
-import { replayDistances } from "./race-replay.ts";
+import { huntPath, huntsFor, replayDistances } from "./race-replay.ts";
+import { pawnCell } from "../../shared/domain/pawns.ts";
 import {
   helpRulesFor,
   helpVariantFor,
@@ -685,6 +686,20 @@ const BLUNDER_FLASH_SECONDS = 0.3;
 const BRILLIANT_SECONDS = 1.3;
 const REACT_SECONDS = 1.2;
 const TRAP_SECONDS = 1.6;
+/**
+ * A path event (edl.mjs "path"): each walk draws itself from the hunter in
+ * PATH_DRAW_SECONDS; with `compare` the walk before the move then holds for
+ * PATH_BEFORE_SECONDS and fades as the walk after it draws; the last walk
+ * holds for the event's holdSeconds and fades in PATH_FADE_SECONDS.
+ */
+const PATH_DRAW_SECONDS = 0.45;
+const PATH_BEFORE_SECONDS = 0.45;
+const PATH_FADE_SECONDS = 0.3;
+const pathSeconds = (ev) =>
+  (ev.compare ? PATH_DRAW_SECONDS + PATH_BEFORE_SECONDS : 0) +
+  PATH_DRAW_SECONDS +
+  ev.holdSeconds +
+  PATH_FADE_SECONDS;
 const TRAP_STAMP_AT = 0.55;
 const FREEZE_PUSH = 0.25;
 const FREEZE_SCALE = 1.6;
@@ -2412,19 +2427,55 @@ const CREDIT_FADE_SECONDS = 0.3;
  * item 1); a variant where a side hunts nothing (Survival) shows no counter,
  * and an EDL that flashes the counter there is refused.
  */
-const RACE_DISTANCES = (() => {
-  if (!EDL) return null;
-  const { distances } = replayDistances({
-    variant: replay.state.config.variant,
-    boardWidth: GRID.cols,
-    boardHeight: GRID.rows,
-    initialState: replay.state.initialState,
-    moves: history.map((h) => h.notation),
-  });
-  return distances.every((d) => d[1] !== null && d[2] !== null)
-    ? distances
+/** The game replayed from its moves: each position's state and walks. */
+const REPLAYED = EDL
+  ? replayDistances({
+      variant: replay.state.config.variant,
+      boardWidth: GRID.cols,
+      boardHeight: GRID.rows,
+      initialState: replay.state.initialState,
+      moves: history.map((h) => h.notation),
+    })
+  : null;
+const RACE_DISTANCES =
+  REPLAYED && REPLAYED.distances.every((d) => d[1] !== null && d[2] !== null)
+    ? REPLAYED.distances
     : null;
-})();
+
+/**
+ * Each path event's walks (edl.mjs "path"), keyed by the event: the hunt
+ * whose hunter stands on its cell after the move, its walk in the position
+ * after the move, and with `compare` its walk in the position before it.
+ * huntPath walks as grid.distance does, so the steps drawn are the counter's.
+ */
+const PATHS = new Map();
+for (const ev of EVENTS.filter((e) => e.kind === "path")) {
+  const [row, col] = [
+    GRID.rows - Number(ev.cell.slice(1)),
+    ev.cell.charCodeAt(0) - "a".charCodeAt(0),
+  ];
+  const after = REPLAYED.states[ev.ply + 1];
+  const hunt = huntsFor(after.config.variant).find((h) => {
+    const at = pawnCell(after.pawns, h.hunter.player, h.hunter.type);
+    return at && at[0] === row && at[1] === col;
+  });
+  if (!hunt) {
+    console.error(
+      `the path event on ply ${ev.ply} names ${ev.cell}, and no hunter stands there after the move`,
+    );
+    await browser.close();
+    process.exit(2);
+  }
+  const walk = (state) =>
+    huntPath(state.grid, state.pawns, hunt).map(([r, c]) => cellAt([r, c]));
+  PATHS.set(ev, {
+    player: hunt.hunter.player,
+    walks: [
+      ...(ev.compare ? [walk(REPLAYED.states[ev.ply])] : []),
+      walk(after),
+    ],
+  });
+}
 if (EDL && !RACE_DISTANCES && EVENTS.some((e) => e.kind === "race")) {
   console.error(
     `the EDL flashes the race counter, but ${replay.state.config.variant} gives a side nothing to hunt, so the video shows no counter`,
@@ -3196,6 +3247,28 @@ const renderStyle = async (styleName) => {
           };
     }
     if (ev.kind === "race") return { race: { ...raceHud(ply), flash: t } };
+    if (ev.kind === "path") {
+      const { player, walks } = PATHS.get(ev);
+      const lastFrom = ev.compare ? PATH_DRAW_SECONDS + PATH_BEFORE_SECONDS : 0;
+      const span01 = (x) => Math.max(0, Math.min(1, x));
+      return {
+        path: {
+          hex: side(player).hex,
+          cell: GRID.pitchX,
+          lines: walks.map((points, k) => {
+            const last = k === walks.length - 1;
+            const from = last ? lastFrom : 0;
+            const fadeAt = last ? seconds - PATH_FADE_SECONDS : lastFrom;
+            return {
+              points,
+              steps: points.length - 1,
+              drawn: span01((t - from) / PATH_DRAW_SECONDS),
+              alpha: 1 - span01((t - fadeAt) / PATH_FADE_SECONDS),
+            };
+          }),
+        },
+      };
+    }
     if (ev.kind === "trap") {
       return {
         trap: { t, walls: ev.walls.map((w) => litWallLine(w, ply)) },
@@ -3400,6 +3473,7 @@ const renderStyle = async (styleName) => {
         react: REACT_SECONDS,
         trap: TRAP_SECONDS,
         race: RACE_FLASH_SECONDS,
+        path: ev.kind === "path" ? pathSeconds(ev) : 0,
       }[ev.kind];
       const frames = Math.round(seconds * FPS);
       // A stamp's or trap's still shows its word; a race flash's shows the
