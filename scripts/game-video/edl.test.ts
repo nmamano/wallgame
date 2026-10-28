@@ -801,3 +801,34 @@ describe("the overlay event's seat", () => {
     ).toEqual(["events[0]: chat-toast shows no seat"]);
   });
 });
+
+describe("the ending's caption bar", () => {
+  test("is on the last move only, with a line and no seconds", () => {
+    const ev = (more: object) => ({
+      ...base,
+      events: [
+        { kind: "overlay", form: "bar", asset: "ending-caption", ...more },
+      ],
+    });
+    const game = {
+      notations: ["a1", "a2", "a3"],
+      cols: 8,
+      rows: 8,
+      initialState: null,
+    };
+    expect(
+      checkEdlAgainstGame(accept(ev({ ply: 2, text: "gg" })), game),
+    ).toEqual([]);
+    expect(
+      checkEdlAgainstGame(accept(ev({ ply: 1, text: "gg" })), game),
+    ).toEqual([
+      "events[0]: ending-caption captions the ending, so it is on the last move (ply 2), not ply 1",
+    ]);
+    expect(validateEdl(ev({ ply: 2 })).errors).toEqual([
+      'events[0]: ending-caption needs "text"',
+    ]);
+    expect(validateEdl(ev({ ply: 2, text: "gg", seconds: 2 })).errors).toEqual([
+      "events[0]: ending-caption lasts as long as its moment; it takes no seconds",
+    ]);
+  });
+});

@@ -644,6 +644,24 @@
            and the fit would shrink the label to nothing (measured). */
         line-height: 1.25;
       }
+      /* The ending's caption: black on a white bar, the model video's last
+         beat. One line, fitted. */
+      #overlay.whitebar {
+        /* Over the gg crack (Wall Game Director, 2026-10-28: the crack is
+           the board's; the caption is a layer on top). Its place avoids the
+           ending's card, banner, pawn, badge and stamp, so it covers none. */
+        z-index: 1;
+        align-items: center;
+        justify-content: center;
+        padding: 0 3%;
+        background: #fff;
+        color: #000;
+        box-shadow: 0 0.2em 0.8em rgba(0, 0, 0, 0.5);
+        font-size: calc(var(--board) * 0.055);
+        font-weight: 800;
+        white-space: nowrap;
+        line-height: 1.25;
+      }
       #overlay.loading {
         flex-direction: column;
         justify-content: center;
@@ -1695,7 +1713,9 @@
         let faceMove = null;
         const esc = (v) =>
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
-        if (o.draw === "toast") {
+        if (o.draw === "whitebar") {
+          el.innerHTML = "<div>" + esc(o.text) + "</div>";
+        } else if (o.draw === "toast") {
           el.innerHTML =
             '<div class="dot"></div><div>' + esc(o.text) + "</div>";
         } else if (o.draw === "meme") {
@@ -1782,7 +1802,13 @@
           size -= 1;
           el.style.fontSize = size + "px";
         }
-        window.__overlayFit = { fits: !over(), size, floor };
+        window.__overlayFit = {
+          fits: !over(),
+          size,
+          floor,
+          needs: [el.scrollWidth, el.scrollHeight],
+          has: [el.clientWidth, el.clientHeight],
+        };
         if (faceMove) el.querySelector(".face").style.transform = faceMove;
       };
 

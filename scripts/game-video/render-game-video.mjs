@@ -3065,6 +3065,8 @@ const renderStyle = async (styleName) => {
       end: ev.seconds === null ? null : elapsed + ev.seconds,
       // The board the move after the fast-forward range leads to.
       closesOnBoard: fast ? fast.toPly + 2 : null,
+      // A bar's: the boxes the ending draws, measured (endingBoxes).
+      avoid: [],
       place: {},
       frames: [],
     });
@@ -3101,7 +3103,9 @@ const renderStyle = async (styleName) => {
       t: elapsed - w.start,
       alpha: 1,
       place: w.place,
-      ...(w.asset.draw === "toast" ? { text: overlayText(w.ev) } : {}),
+      ...(w.asset.draw === "toast" || w.asset.draw === "whitebar"
+        ? { text: overlayText(w.ev) }
+        : {}),
       ...(w.asset.draw === "meme" || w.asset.draw === "reactor"
         ? {
             text: overlayText(w.ev),
@@ -3181,6 +3185,28 @@ const renderStyle = async (styleName) => {
       .filter(Boolean);
   };
   /**
+   * The boxes the ending draws over the board now (the main page shows the
+   * frame just composed), in the board (0..1): its card, banner, pawn,
+   * badge and stamp, where shown.
+   */
+  const endingBoxes = () =>
+    stage.evaluate(() => {
+      const wrap = document.getElementById("boardWrap").getBoundingClientRect();
+      return ["ggCard", "koBanner", "koPawn", "replayBadge", "stamp"]
+        .map((id) => document.getElementById(id))
+        .filter((el) => el && !el.classList.contains("hidden"))
+        .map((el) => {
+          const r = el.getBoundingClientRect();
+          return {
+            x0: (r.left - wrap.left) / wrap.width,
+            y0: (r.top - wrap.top) / wrap.height,
+            x1: (r.right - wrap.left) / wrap.width,
+            y1: (r.bottom - wrap.top) / wrap.height,
+          };
+        });
+    });
+
+  /**
    * Once the video is composed: each overlay's place, where it hides nothing
    * in play on any frame it covered (or the render stops), its fade, the
    * fit of its line (or the render stops), its span in RESULT.timeline and
@@ -3190,10 +3216,21 @@ const renderStyle = async (styleName) => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
       const fast = w.closesOnBoard !== null;
-      const busy = w.frames.flatMap((f) => inPlay(f.state, fast));
+      const busy =
+        w.asset.form === "bar"
+          ? w.avoid
+          : w.frames.flatMap((f) => inPlay(f.state, fast));
       const place = fast
         ? quietestPlace(w.asset, busy)
         : placeOverlay(w.asset, busy);
+      if (!place && w.asset.form === "bar") {
+        const boxes = w.avoid.map((b) =>
+          [b.x0, b.y0, b.x1, b.y1].map((v) => v.toFixed(2)).join(","),
+        );
+        throw new Error(
+          `${where} has no free place: the ending covers both strips of the board (its boxes, 0..1: ${boxes.join(" ")})`,
+        );
+      }
       if (!place) {
         throw new Error(
           `${where} has no free place: every ${w.asset.form === "panel" ? "half" : "corner"} of the board holds a moved pawn, a new wall, the closest hunt or an effect while it shows`,
@@ -3213,23 +3250,40 @@ const renderStyle = async (styleName) => {
         start: w.start,
         end: w.end,
       });
-      const mid = w.frames[Math.floor(w.frames.length / 2)];
-      // Its line fits its box (stage.html paintOverlay shrinks it, down to
-      // a floor): painted once at its place, as the shots will paint it.
-      if (mid) {
+      /*
+        Its lines fit its box (stage.html paintOverlay shrinks one, down to
+        a floor): each different thing it shows painted once at its place,
+        as the shots will paint it. Video Reviewer 1 (review 29): the
+        loading bar shows two texts in one window, so one frame is not
+        enough.
+      */
+      const shown = new Map();
+      for (const f of w.frames) {
+        // What it shows, without its time, fade and place.
+        const key = JSON.stringify({
+          ...f.o,
+          t: 0,
+          alpha: 0,
+          place: 0,
+          error: Boolean(f.o.error),
+        });
+        if (!shown.has(key)) shown.set(key, f);
+      }
+      for (const f of shown.values()) {
         const fit = await stage.evaluate(
           (st) => {
             window.__stage(st);
             return window.__overlayFit;
           },
-          { ...mid.state, overlay: mid.o },
+          { ...f.state, overlay: f.o },
         );
         if (!fit.fits) {
           throw new Error(
-            `${where}: its text does not fit its box even at ${fit.floor.toFixed(0)} px; shorten it`,
+            `${where}: its text does not fit its box even at ${fit.floor.toFixed(0)} px (it needs ${fit.needs.join("x")} px, the box has ${fit.has.join("x")}); shorten it`,
           );
         }
       }
+      const mid = w.frames[Math.floor(w.frames.length / 2)];
       if (mid) {
         stills.push({
           ply: w.ev.ply,
@@ -3894,7 +3948,7 @@ const renderStyle = async (styleName) => {
         closeOverlay();
       }
       eventsAt(plyIndex)
-        .filter((e) => e.kind === "overlay")
+        .filter((e) => e.kind === "overlay" && e.form !== "bar")
         .forEach(openOverlay);
     }
     /*
@@ -3930,8 +3984,14 @@ const renderStyle = async (styleName) => {
       musicEndAt = elapsed;
       // The ending covers the board: an overlay still open closes here.
       closeOverlay();
+      // The ending's caption bar (overlays.mjs "bar") opens at its impact,
+      // or as a draw's hold starts, and closes before the loop tail.
+      const bar = eventsAt(plyIndex).find(
+        (e) => e.kind === "overlay" && e.form === "bar",
+      );
       if (winnerId) {
         const timing = endingTimings[style.ending];
+        const impactFrame = Math.round(timing.impact * FPS);
         const ending = (t) => ({
           kind: style.ending,
           t,
@@ -3948,6 +4008,7 @@ const renderStyle = async (styleName) => {
         cue(sounds.finish, "finish", { at: elapsed + timing.impact });
         const endingFrames = Math.round(timing.seconds * FPS);
         for (let i = 0; i < endingFrames; i += 1) {
+          if (bar && i === impactFrame) openOverlay(bar);
           await emit(
             playState(ply, {
               ending: ending(i / FPS),
@@ -3956,6 +4017,11 @@ const renderStyle = async (styleName) => {
             1 / FPS,
             { kind: "ending", ply: plyIndex },
           );
+          // What the ending draws, at its impact and at rest: the bar
+          // goes where none of it is.
+          if (bar && (i === impactFrame || i === endingFrames - 1)) {
+            liveOverlay().avoid.push(...(await endingBoxes()));
+          }
         }
         await emit(
           playState(ply, {
@@ -3971,6 +4037,7 @@ const renderStyle = async (styleName) => {
           frame by frame, then held. Not "move" frames: a plain position
           has no credit over it.
         */
+        if (bar) openOverlay(bar);
         const fade = Math.round(CREDIT_FADE_SECONDS * FPS);
         for (let i = 0; i < fade; i += 1) {
           await emit(playState(ply, { credit: creditAt(i / FPS) }), 1 / FPS, {
@@ -3984,11 +4051,13 @@ const renderStyle = async (styleName) => {
           { kind: "ending-hold", ply: plyIndex },
         );
       } else {
+        if (bar) openOverlay(bar);
         await emit(playState(ply), DRAW_HOLD_SECONDS, {
           kind: "move",
           ply: plyIndex,
         });
       }
+      closeOverlay();
       /*
         The loop tail (audit item 6): a white flash that fades into the
         video's own first frame, so the feed's loop cuts from a frame to

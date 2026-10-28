@@ -6,6 +6,11 @@
  *
  *   clip   a small thing in a free corner of the board (a reactor, a toast).
  *   panel  a still panel over the top or bottom half of the board.
+ *   bar    the ending's white caption bar (the model video's last beat):
+ *          on the last move only, from the ending's impact to its end, in
+ *          the top or bottom strip of the board, or else the highest band,
+ *          that the ending's own card, banner, pawn and badge leave free
+ *          (measured).
  *
  * An overlay rides over the board while the game goes on under it: it opens
  * as its ply's move lands and closes after its seconds (or as its asset
@@ -37,6 +42,8 @@
  *                     shock shakes and punches in, laugh bounces, stare
  *                     creeps in), with the EDL's `text` as its label under
  *                     it, if any ("the bot's last brain cell").
+ *            whitebar black text on a white bar, the EDL's `text`. (Not
+ *                     "caption": stage.html's #play .caption would win.)
  *            The seat of a portrait is the EDL's `seat` ("red" or
  *            "blue"), which it must give: who reacts is the story, and a
  *            default once made the stopped hunter laugh at the save
@@ -50,12 +57,12 @@
  *            decides, as the loading bar does).
  *   size     a clip's box, as fractions of the board's width and height.
  */
-export const OVERLAY_FORMS = ["clip", "panel"];
+export const OVERLAY_FORMS = ["clip", "panel", "bar"];
 
 /**
  * @typedef {{
- *   form: "clip" | "panel",
- *   draw: "toast" | "loading" | "compare" | "meme" | "reactor",
+ *   form: "clip" | "panel" | "bar",
+ *   draw: "toast" | "loading" | "compare" | "meme" | "reactor" | "whitebar",
  *   motion?: "shock" | "laugh" | "stare",
  *   chars?: number,
  *   text: "required" | "optional" | "none",
@@ -140,6 +147,17 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  "ending-caption": {
+    form: "bar",
+    draw: "whitebar",
+    text: "required",
+    chars: 34,
+    seconds: null,
+    source: "drawn by us (stage.html)",
+    claim: "None",
+    likeness: "None",
+    rating: null,
+  },
   "do-something": {
     form: "panel",
     draw: "meme",
@@ -169,13 +187,34 @@ const INSET = 0.025;
 
 /**
  * The places an overlay may go, in the order they are tried, each as a box
- * in the board (0..1): a panel's two halves (top first: the eye starts
- * there), a clip's four corners (bottom right first, where the model video
- * puts its reactors).
- * @param {{ form: "clip" | "panel", size?: { w: number, h: number } }} asset
+ * in the board (0..1): a bar's two strips and a panel's two halves (top
+ * first: the eye starts there), a clip's four corners (bottom right first,
+ * where the model video puts its reactors).
+ * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @returns {{ where: string, x: number, y: number, w: number, h: number }[]}
  */
 export const overlayPlaces = (asset) => {
+  if (asset.form === "bar") {
+    // The edges first; then, for an ending that covers both (ko: its pawn
+    // on top, its banner below), every band from the top down.
+    const h = 0.13;
+    const w = 1 - 2 * INSET;
+    const bands = [];
+    for (let k = 1; 0.05 * k + h < 1 - INSET; k += 1) {
+      bands.push({
+        where: `band ${(0.05 * k).toFixed(2)}`,
+        x: INSET,
+        y: 0.05 * k,
+        w,
+        h,
+      });
+    }
+    return [
+      { where: "top", x: INSET, y: INSET, w, h },
+      { where: "bottom", x: INSET, y: 1 - INSET - h, w, h },
+      ...bands,
+    ];
+  }
   if (asset.form === "panel") {
     const w = 1 - 2 * INSET;
     const h = 0.5 - 1.5 * INSET;
@@ -224,7 +263,7 @@ const hidden = (p, busy) =>
 /**
  * The first place for `asset` that overlaps none of the `busy` boxes (in
  * the board as shown, 0..1), or null when every place hides something.
- * @param {{ form: "clip" | "panel", size?: { w: number, h: number } }} asset
+ * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  */
 export const placeOverlay = (asset, busy) =>
@@ -234,7 +273,7 @@ export const placeOverlay = (asset, busy) =>
  * The place for `asset` that overlaps the fewest `busy` boxes, the earlier
  * on a tie: for a fast-forward's panel, whose purpose is to cover a quiet
  * stretch, so it hides the least of it and never stops the render.
- * @param {{ form: "clip" | "panel", size?: { w: number, h: number } }} asset
+ * @param {{ form: "clip" | "panel" | "bar", size?: { w: number, h: number } }} asset
  * @param {{ x0: number, y0: number, x1: number, y1: number }[]} busy
  */
 export const quietestPlace = (asset, busy) =>

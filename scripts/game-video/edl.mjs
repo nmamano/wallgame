@@ -128,7 +128,9 @@
  *             ending cuts one still open. In a fastForward range the only
  *             event allowed is one panel on the range's first ply, with no
  *             seconds: it lasts the range, which must be on screen for
- *             EDL_LIMITS.overlayFastSeconds at least.
+ *             EDL_LIMITS.overlayFastSeconds at least. A "bar" (the ending's
+ *             caption) is on the last move only and shows from the ending's
+ *             impact to its end, so it takes no seconds.
  *
  * Unknown fields are errors, not ignored: a typo in a field name must not
  * turn into a video without the effect the director asked for.
@@ -976,6 +978,18 @@ export const checkEdlAgainstGame = (
       }
     });
   }
+  // The ending's caption bar plays over the ending, after the last move.
+  edl.events.forEach((ev, i) => {
+    if (
+      ev.kind === "overlay" &&
+      ev.form === "bar" &&
+      ev.ply !== notations.length - 1
+    ) {
+      errors.push(
+        `events[${i}]: ${ev.asset} captions the ending, so it is on the last move (ply ${notations.length - 1}), not ply ${ev.ply}`,
+      );
+    }
+  });
   // A path is drawn from a hunter, so its cell holds a pawn after the move.
   const paths = edl.events
     .map((ev, i) => ({ ev, i }))

@@ -53,6 +53,26 @@ describe("overlays", () => {
     expect(quietestPlace(panel, busy.slice(1)).where).toBe("top");
   });
 
+  test("the ending's bar takes the strip the ending leaves free", () => {
+    const bar = OVERLAYS["ending-caption"];
+    expect(placeOverlay(bar, [])?.where).toBe("top");
+    // The GG card: the middle of the board.
+    expect(
+      placeOverlay(bar, [{ x0: 0.2, y0: 0.2, x1: 0.8, y1: 0.8 }])?.where,
+    ).toBe("top");
+    expect(
+      placeOverlay(bar, [{ x0: 0.2, y0: 0.1, x1: 0.8, y1: 0.8 }])?.where,
+    ).toBe("bottom");
+    // The ko ending, measured 2026-10-28: its pawn on top, its banner below.
+    expect(
+      placeOverlay(bar, [
+        { x0: 0.5, y0: 0.01, x1: 0.62, y1: 0.13 },
+        { x0: -0.35, y0: 0.52, x1: 1.35, y1: 1.02 },
+      ])?.where,
+    ).toBe("band 0.15");
+    expect(placeOverlay(bar, [{ x0: 0, y0: 0.1, x1: 1, y1: 0.9 }])).toBeNull();
+  });
+
   test("a clip takes the first free corner, bottom right first", () => {
     const clip = OVERLAYS["chat-toast"];
     expect(placeOverlay(clip, [])?.where).toBe("bottom-right");
