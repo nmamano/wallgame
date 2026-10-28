@@ -164,6 +164,7 @@ import {
 } from "./post-threads.mjs";
 import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
 import { idsNotSet, PUBLIC_IDS, withPublicIds } from "./public-ids.mjs";
+import { FOLLOWERS_MAX_AGE_MS, readFollowers } from "./followers.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { connectStates, ConnectRefused } from "./connect-state.mjs";
 import {
@@ -360,6 +361,20 @@ export const createDaily = ({
   };
 
   /** A stored field of a connected platform, for a live post. */
+  /**
+   * Keep a refresh token that a platform rotated (YouTube, TikTok), for
+   * the posters and the follower counts alike.
+   */
+  const keepRefreshToken = (platform, refreshToken, expiresInSeconds) =>
+    tokens.update(platform, {
+      refreshToken,
+      ...(platform === "tiktok" && {
+        refreshExpiresAt: Number.isFinite(expiresInSeconds)
+          ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
+          : null,
+      }),
+    });
+
   const stored = (platform, pick) => {
     const record = tokens.read(platform);
     if (!record) {
@@ -792,6 +807,18 @@ export const createDaily = ({
   /* -------------------------------------------------------------- post -- */
 
   let posting = false;
+  /** The follower read under way, if any (GET /api/daily/followers). */
+  let followersRun = null;
+  const followersCachePath = join(dirs.root, "followers.json");
+  /** The last follower counts {at, counts}, or null. */
+  const readFollowersCache = () => {
+    try {
+      const c = JSON.parse(readFileSync(followersCachePath, "utf8"));
+      return typeof c?.at === "string" && c.counts ? c : null;
+    } catch {
+      return null;
+    }
+  };
 
   const post = async (day, confirmedNotPosted = []) => {
     // Only the candidate Nil picked, as one flat cycle (store.picked).
@@ -865,7 +892,7 @@ export const createDaily = ({
                 }
               : DRY_RUN_CREDS,
             onRefreshToken: (refreshToken) =>
-              tokens.update("youtube", { refreshToken }),
+              keepRefreshToken("youtube", refreshToken),
             beforeCommit,
           }),
         tiktok: () =>
@@ -881,12 +908,7 @@ export const createDaily = ({
               : DRY_RUN_TIKTOK,
             // TikTok rotates refresh tokens: the newest one is kept.
             onRefreshToken: (refreshToken, expiresInSeconds) =>
-              tokens.update("tiktok", {
-                refreshToken,
-                refreshExpiresAt: Number.isFinite(expiresInSeconds)
-                  ? new Date(Date.now() + expiresInSeconds * 1000).toISOString()
-                  : null,
-              }),
+              keepRefreshToken("tiktok", refreshToken, expiresInSeconds),
             sleep,
             beforeCommit,
           }),
@@ -1532,6 +1554,10 @@ export const createDaily = ({
       if (posting) throw new StepRefused("a post is already running");
       posting = true;
       try {
+        // A follower read may refresh the TikTok or YouTube token; the
+        // post refreshes it too, so it waits for that read to end. No new
+        // read starts while `posting` is set.
+        await followersRun?.catch(() => {});
         json(res, 200, await post(day, confirmed));
       } finally {
         posting = false;
@@ -1807,6 +1833,42 @@ export const createDaily = ({
         }
       }
       json(res, 200, { platform, missing, ...shape, result });
+    },
+
+    /**
+     * READ-ONLY: {<platform>: {followers, at, error}} for Growth's
+     * dashboard (followers.mjs). The counts are read at most once an hour
+     * (X reads are paid) and the last result is kept in the app's data, so
+     * an older result comes back until the hour is over. While a post runs
+     * no read starts: the last result comes back, or a refusal.
+     */
+    "GET /api/daily/followers": async (req, res) => {
+      const cached = readFollowersCache();
+      if (cached && Date.now() - Date.parse(cached.at) < FOLLOWERS_MAX_AGE_MS) {
+        return json(res, 200, cached.counts);
+      }
+      if (posting) {
+        if (cached) return json(res, 200, cached.counts);
+        throw new StepRefused("a post is running: ask again in a few minutes");
+      }
+      followersRun ??= (async () => {
+        try {
+          const counts = await readFollowers({
+            transport: makeLiveTransport(),
+            env,
+            tokens,
+            keepRefreshToken,
+          });
+          writeFileSync(
+            followersCachePath,
+            JSON.stringify({ at: new Date().toISOString(), counts }),
+          );
+          return counts;
+        } finally {
+          followersRun = null;
+        }
+      })();
+      json(res, 200, await followersRun);
     },
 
     "GET /api/daily/post-log": (req, res, url) =>

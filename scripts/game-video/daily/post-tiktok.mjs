@@ -82,29 +82,16 @@ export const tiktokDryRunReply = (req) => {
 };
 
 /**
- * Upload `video` (a Buffer) as a draft in the creator's inbox. `creds` holds
- * TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET and refreshToken (live), or
- * DRY_RUN_TIKTOK. `onRefreshToken(token, expiresInSeconds)` keeps a rotated
- * refresh token; it runs before any other request, so a failed post still
- * keeps it.
- * Returns {postId, url: null, tiktokStatus}.
- *
- * `beforeCommit` runs just before the PUT of the bytes: an init without
- * bytes makes no draft.
+ * An access token from the stored refresh token (TIKTOK_CLIENT_KEY,
+ * TIKTOK_CLIENT_SECRET and refreshToken in `creds`). A refresh "may" return
+ * a new refresh token: it goes to `onRefreshToken`, which must keep it.
+ * Throws PostFailed("tiktok token", reply).
  */
-export const postToTiktok = async ({
-  video,
+export const tiktokAccessToken = async ({
   transport,
   creds,
   onRefreshToken,
-  sleep,
-  beforeCommit,
 }) => {
-  if (video.length > MAX_ONE_CHUNK) {
-    throw new Error(
-      `the video is ${video.length} bytes; one TikTok chunk holds 64 MB at most`,
-    );
-  }
   const dry = transport.mode === "dry-run";
   const token = await transport.request({
     method: "POST",
@@ -131,9 +118,42 @@ export const postToTiktok = async ({
   ) {
     onRefreshToken(rotated, token.json.refresh_expires_in);
   }
+  return token.json.access_token;
+};
+
+/**
+ * Upload `video` (a Buffer) as a draft in the creator's inbox. `creds` holds
+ * TIKTOK_CLIENT_KEY, TIKTOK_CLIENT_SECRET and refreshToken (live), or
+ * DRY_RUN_TIKTOK. `onRefreshToken(token, expiresInSeconds)` keeps a rotated
+ * refresh token; it runs before any other request, so a failed post still
+ * keeps it.
+ * Returns {postId, url: null, tiktokStatus}.
+ *
+ * `beforeCommit` runs just before the PUT of the bytes: an init without
+ * bytes makes no draft.
+ */
+export const postToTiktok = async ({
+  video,
+  transport,
+  creds,
+  onRefreshToken,
+  sleep,
+  beforeCommit,
+}) => {
+  if (video.length > MAX_ONE_CHUNK) {
+    throw new Error(
+      `the video is ${video.length} bytes; one TikTok chunk holds 64 MB at most`,
+    );
+  }
+  const dry = transport.mode === "dry-run";
+  const accessToken = await tiktokAccessToken({
+    transport,
+    creds,
+    onRefreshToken,
+  });
   const bearer = dry
     ? "Bearer <access token from the step above>"
-    : `Bearer ${token.json.access_token}`;
+    : `Bearer ${accessToken}`;
   const api = (url, body) =>
     transport.request({
       method: "POST",

@@ -79,6 +79,34 @@ export const youtubeDryRunReply = (req) => {
 };
 
 /**
+ * An access token from the stored refresh token. Google may return a new
+ * refresh token: it goes to `onRefreshToken`. Throws PostFailed("youtube
+ * token", reply).
+ */
+export const youtubeAccessToken = async ({
+  transport,
+  creds,
+  onRefreshToken = () => {},
+}) => {
+  const dry = transport.mode === "dry-run";
+  const token = await transport.request({
+    method: "POST",
+    url: GOOGLE_TOKEN_URL,
+    headers: { "content-type": "application/x-www-form-urlencoded" },
+    body: tokenBody(creds),
+    secretBody: !dry,
+  });
+  if (!ok(token) || !token.json?.access_token) {
+    throw new PostFailed("youtube token", token);
+  }
+  const rotated = token.json.refresh_token;
+  if (!dry && typeof rotated === "string" && rotated !== creds.refreshToken) {
+    onRefreshToken(rotated);
+  }
+  return token.json.access_token;
+};
+
+/**
  * Upload `video` (a Buffer). `caption` has youtubeTitle and youtubeDescription.
  * `creds` is the client id and secret and the stored `refreshToken`, or
  * DRY_RUN_CREDS for a dry run. `onRefreshToken` gets a new refresh token if
@@ -98,23 +126,14 @@ export const postToYoutube = async ({
   beforeCommit,
 }) => {
   const dry = transport.mode === "dry-run";
-  const token = await transport.request({
-    method: "POST",
-    url: GOOGLE_TOKEN_URL,
-    headers: { "content-type": "application/x-www-form-urlencoded" },
-    body: tokenBody(creds),
-    secretBody: !dry,
+  const accessToken = await youtubeAccessToken({
+    transport,
+    creds,
+    onRefreshToken,
   });
-  if (!ok(token) || !token.json?.access_token) {
-    throw new PostFailed("youtube token", token);
-  }
-  const rotated = token.json.refresh_token;
-  if (!dry && typeof rotated === "string" && rotated !== creds.refreshToken) {
-    onRefreshToken(rotated);
-  }
   const bearer = dry
     ? "Bearer <access token from the step above>"
-    : `Bearer ${token.json.access_token}`;
+    : `Bearer ${accessToken}`;
 
   const metadata = {
     snippet: {
