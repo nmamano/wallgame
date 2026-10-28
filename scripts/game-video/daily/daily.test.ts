@@ -1013,6 +1013,31 @@ describe("postPlatform posts an approved item in the platform's mode", () => {
     ).toBe("the approved copy block of v-2026-10-20-A has no Threads line");
   });
 
+  test("a track that may not play posts nothing, even when approved (its license can change after)", () => {
+    const item = {
+      id: "v-2026-10-20-A",
+      state: "approved",
+      approval: {
+        videoSha256: "v",
+        copySha256: copySha256(COPY),
+        by: "Nil",
+        at: "t",
+      },
+      copy: { block: COPY },
+      render: { music: [{ fromPly: 0, track: "a-legend" }] },
+      posts: {},
+    };
+    expect(
+      postProblem(item, "x", { videoSha256: "v", confirmedNotPosted: false }),
+    ).toBe(
+      "the music a-legend has the license blocked-until-nil: v-2026-10-20-A may not post",
+    );
+    item.render.music = [{ fromPly: 0, track: "deja-vus" }];
+    expect(
+      postProblem(item, "x", { videoSha256: "v", confirmedNotPosted: false }),
+    ).toBeNull();
+  });
+
   test("the app stopped during the final request (pending): no post until a person confirms", () => {
     const item = {
       id: "v-2026-10-20-A",

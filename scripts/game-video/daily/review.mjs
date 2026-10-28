@@ -15,8 +15,10 @@
  *   Withdraw -> in review again (Nil's notes optional): Approve is one tap,
  *               so a mis-tap is undone without a confirm dialog
  *
- * Only one video of a game posts: Approve is refused while another item of
- * the game is approved, posting, posted or post-failed (ONE_POST_STATES).
+ * Approve is refused, and the page disables it with the reason, while
+ * another item of the game is approved, posting, posted or post-failed
+ * (only one video of a game posts), or while the render plays a track that
+ * may not play (store.mjs approveProblem).
  *
  * POST /api/review/<id>/approve|discard|revise takes {notes, videoSha256,
  * copySha256}: the hashes of what the page showed, so Nil approves what he
@@ -36,8 +38,8 @@
  * The review never writes posting, posted, post-failed or posts{}: those
  * are the poster's.
  */
-import { copyLines } from "./copy.mjs";
-import { MUSIC_TRACKS } from "../music-tracks.mjs";
+import { copyLines, copySha256 } from "./copy.mjs";
+import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 import { StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 
@@ -85,6 +87,9 @@ const musicOf = (render) =>
       fromPly: cue.fromPly,
       credit: track?.license === "ok-with-credit" ? track.credit : null,
       title: track?.title ?? cue.track,
+      // A track that may not play blocks Approve (store approveProblem).
+      license: track?.license ?? "unknown",
+      mayPlay: track ? mayPlay(track) : false,
     };
   });
 
@@ -109,7 +114,9 @@ export const reviewView = (store, { modes, nowMs }) => {
       directorNote: next.directorNote?.text ?? null,
       payoff: next.payoff?.text ?? null,
       videoSha256: next.render.video.sha256,
-      copySha256: next.copy.sha256,
+      // Recomputed, as store.review compares it: a stored hash from an
+      // older definition would refuse every action on the item.
+      copySha256: copySha256(next.copy.block),
       copyVersion: next.copy.block.version,
       // Growth's block, word for word, as it posts.
       copy: copyLines(next.copy.block),
@@ -117,6 +124,8 @@ export const reviewView = (store, { modes, nowMs }) => {
       durationSeconds: next.render.video.durationSeconds ?? null,
       // Other videos of this game that are not discarded.
       sameGame: store.sameGame(next),
+      // Why Approve cannot work now, or null: the page disables it.
+      approveProblem: store.approveProblem(next),
       // Earlier review actions on this item (after a revise).
       reviews: next.reviews.map((r) => ({
         action: r.action,
@@ -295,7 +304,9 @@ export const REVIEW_PAGE = `<!doctype html>
     head.append(el("div", null, it.id + ": " + it.players.join(" vs ")));
     if (it.caption) head.append(el("div", null, "On the video: " + it.caption));
     if (it.payoff) head.append(el("div", null, "Payoff: " + it.payoff));
-    for (const m of it.music) head.append(el("div", "muted", "Music: " + m.title + (m.credit ? " (credit: " + m.credit + ")" : "")));
+    for (const m of it.music) head.append(m.mayPlay
+      ? el("div", "muted", "Music: " + m.title + (m.credit ? " (credit: " + m.credit + ")" : ""))
+      : el("div", "err", "Music: " + m.title + " (license: " + m.license + ", cannot be approved)"));
     for (const r of it.reviews) head.append(el("div", "muted", "Your " + r.action + " at " + r.at + (r.notes ? ": " + r.notes : "")));
     for (const o of it.sameGame) head.append(el("div", "err", "Another video of this game: " + o.id + " (" + o.state + ")"));
     const video = el("video"); video.controls = true; video.playsInline = true;
@@ -319,6 +330,13 @@ export const REVIEW_PAGE = `<!doctype html>
       act.append(el("div", "muted", "Only Nil reviews videos; you can watch."));
     }
     act.append(row);
+    // Approve cannot work: the reason takes its place; Revise and Discard stay.
+    if (it.approveProblem) {
+      const approve = buttons[0];
+      approve.disabled = true;
+      approve.textContent = "Cannot approve";
+      act.append(el("div", "err", it.approveProblem));
+    }
     box.append(video, head, copy, act);
   };
 
@@ -328,6 +346,8 @@ export const REVIEW_PAGE = `<!doctype html>
     box.append(el("h2", null, "Ready to post (oldest first)"));
     const notes = el("textarea"); notes.placeholder = "Notes for the director (optional for Withdraw)";
     notes.style.minHeight = "40px";
+    // Above the list, so Nil writes before he taps.
+    box.append(notes);
     const buttons = [];
     for (const r of v.ready.items) {
       const row = el("div", "box ready");
@@ -337,7 +357,6 @@ export const REVIEW_PAGE = `<!doctype html>
       b.onclick = () => send(r, "withdraw", notes.value, buttons);
       buttons.push(b); row.append(b); box.append(row);
     }
-    box.append(notes);
   };
 
   const send = async (it, action, notes, buttons) => {

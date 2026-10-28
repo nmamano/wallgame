@@ -1,8 +1,13 @@
 /**
  * The app's own messages to office agents (the Isomux apps reference): POST
  * /api/app/message on the office with the app's token, from the server
- * only. While the app's owner agent (the Wall Game Director) is live, the
- * token may message any agent that agent could, by `targetAgentId`.
+ * only. With no `targetAgentId` the office sends to the app's own agent,
+ * which for this app is the Wall Game Director that made it (GET
+ * /api/apps: createdByAgentId). With `targetAgentId` it also checks that
+ * the app's owner has a live agent that may reach the target, and refuses
+ * (403) otherwise (isomux server/routes/handlers/apps.ts). So a message to
+ * the Director names no target: it arrives even when that check fails
+ * (Video Reviewer 2, 2026-10-28).
  *
  * The token never leaves this process: it is read from the environment
  * that the office gives the app, sent only to the office on this box, and
@@ -34,7 +39,11 @@ export const appMessenger = ({ env, fetch = globalThis.fetch }) => {
           authorization: `Bearer ${token}`,
           "content-type": "application/json",
         },
-        body: JSON.stringify({ text, targetAgentId }),
+        body: JSON.stringify(
+          targetAgentId === DIRECTOR_AGENT_ID
+            ? { text }
+            : { text, targetAgentId },
+        ),
       });
     } catch (err) {
       throw new Error(

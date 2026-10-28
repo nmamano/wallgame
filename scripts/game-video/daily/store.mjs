@@ -52,6 +52,7 @@ import {
 import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { COPY_LINES, copySha256 } from "./copy.mjs";
+import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
 
 /**
  * A day file's format. migrateV1 turns a version 1 file into version 2, and
@@ -109,6 +110,26 @@ export const reviewState = (item) => {
  */
 export const ONE_POST_STATES = ["approved", "posting", "posted", "post-failed"];
 
+/**
+ * The tracks of an item's render that may not play now ({track, license};
+ * an unknown track has the license "unknown"). `direct` and the renderer
+ * refuse such a track for a new list, but a render made before that gate
+ * (or a license that changed later) can still carry one (Video Reviewer 2,
+ * 2026-10-28), so approve and post check it again.
+ */
+export const blockedMusic = (item) =>
+  (item.render?.music ?? []).flatMap(({ track }) => {
+    const known = MUSIC_TRACKS.find((t) => t.slug === track);
+    return known && mayPlay(known)
+      ? []
+      : [{ track, license: known?.license ?? "unknown" }];
+  });
+
+const musicProblem = (item) => {
+  const [bad] = blockedMusic(item);
+  return bad && `the music ${bad.track} has the license ${bad.license}`;
+};
+
 /** Item states that a post may come from: the poster's own steps. */
 const POSTABLE = ["approved", "posting"];
 
@@ -142,6 +163,8 @@ export const postProblem = (
   if (!item.copy || copySha256(item.copy.block) !== a.copySha256) {
     return `the copy block is not the one Nil approved for ${item.id}`;
   }
+  const music = musicProblem(item);
+  if (music) return `${music}: ${item.id} may not post`;
   const missing = COPY_LINES.filter(
     ([, field]) => typeof item.copy.block[field] !== "string",
   ).map(([label]) => label);
@@ -481,6 +504,21 @@ export const openStore = (dataDir) => {
   const postOfGame = (item) =>
     sameGame(item).find((o) => ONE_POST_STATES.includes(o.state)) ?? null;
 
+  /**
+   * Why Nil may not approve the item as it is, or null: another video of
+   * its game posts, or its render plays a track that may not play. The
+   * review page disables Approve with this text; review() refuses with it.
+   */
+  const approveProblem = (item) => {
+    const other = postOfGame(item);
+    if (other) {
+      return `another video of this game is ${other.state} (${other.id}): ${other.state === "approved" ? "withdraw it, or discard this one" : "only one video of a game posts; discard this one"}`;
+    }
+    const music = musicProblem(item);
+    if (music) return `${music}: re-direct with a track that may play`;
+    return null;
+  };
+
   return {
     dirs,
     postLog,
@@ -536,6 +574,7 @@ export const openStore = (dataDir) => {
      * review page name them. Only one of them may post (ONE_POST_STATES).
      */
     sameGame,
+    approveProblem,
 
     /** Items in review, oldest first: the order Nil reviews them in. */
     inReview: () =>
@@ -612,13 +651,10 @@ export const openStore = (dataDir) => {
               `${id} has a new copy block since the page showed it; reload the page`,
             );
           }
-          // Only one video of a game posts.
-          const other = action === "approve" ? postOfGame(it) : null;
-          if (other) {
-            refuse(
-              `another video of this game is ${other.state} (${other.id}): ${other.state === "approved" ? "withdraw and discard it first" : "only one video of a game posts; discard this one"}`,
-            );
-          }
+          // Only one video of a game posts, and only with music that may
+          // play.
+          const problem = action === "approve" ? approveProblem(it) : null;
+          if (problem) refuse(problem);
           // The bytes Nil approves are the bytes that post: the file must
           // still be the record's video.
           if (

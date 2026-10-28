@@ -6,7 +6,7 @@
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
-import { mkdtempSync, readFileSync, readdirSync, writeFileSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { createHash } from "node:crypto";
@@ -72,8 +72,15 @@ interface View {
     videoSha256: string;
     copySha256: string;
     copy: string[];
-    music: { track: string; credit: string | null }[];
+    music: {
+      track: string;
+      credit: string | null;
+      license: string;
+      mayPlay: boolean;
+    }[];
     directorNote: string | null;
+    approveProblem: string | null;
+    sameGame: { id: string; state: string }[];
   } | null;
   review: { count: number; target: number };
   ready: { count: number; days: number; items: { id: string }[] };
@@ -326,7 +333,7 @@ const approveAs = (
 describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () => {
   test("approve is refused while another item of the game is approved, posting, posted or post-failed; nothing is written", () => {
     for (const [state, why] of [
-      ["approved", "withdraw and discard it first"],
+      ["approved", "withdraw it, or discard this one"],
       ["posting", "only one video of a game posts; discard this one"],
       ["posted", "only one video of a game posts; discard this one"],
       ["post-failed", "only one video of a game posts; discard this one"],
@@ -344,6 +351,23 @@ describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () =
       ]);
       expect(feedbackOf(store)).toEqual([]);
     }
+  });
+
+  test("the page disables Approve with the reason, and names the other video", () => {
+    const { store } = withItemInReview();
+    sameGameItem(store, "v-2026-10-27-2", "approved");
+    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
+    expect(v.item?.sameGame).toEqual([
+      { id: "v-2026-10-27-2", state: "approved" },
+    ]);
+    expect(v.item?.approveProblem).toBe(
+      "another video of this game is approved (v-2026-10-27-2): withdraw it, or discard this one",
+    );
+    // Withdrawn, the other one no longer blocks it.
+    store.withdraw("v-2026-10-27-2", { notes: "", by: "Nil", memberId: "x" });
+    expect(
+      viewOf(store, { modes: {}, nowMs: Date.now() }).item?.approveProblem,
+    ).toBeNull();
   });
 
   test("two videos of a game may be in work or in review together, and one of them is approved", () => {
@@ -392,6 +416,65 @@ describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () =
         source: { carriedFrom: "v-2026-10-27-3" },
       }),
     ).toThrow("another video of GAME1 is posted (v-2026-10-27-3)");
+  });
+});
+
+describe("music that may not play is never approved (Video Reviewer 2, 2026-10-28)", () => {
+  test("approve is refused, the page marks the track and disables Approve", () => {
+    const { store, video, block } = withItemInReview();
+    const it = store.item("v-2026-10-28-1") as Item;
+    writeFileSync(
+      join(store.dirs.items, "v-2026-10-28-1.json"),
+      JSON.stringify({
+        ...it,
+        render: {
+          ...it.render,
+          music: [
+            { fromPly: 0, track: "deja-vus" },
+            { fromPly: 10, track: "tea-for-two" },
+          ],
+        },
+      }),
+    );
+    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
+    expect(v.item?.music.map((m) => [m.track, m.license, m.mayPlay])).toEqual([
+      ["deja-vus", "ok-with-credit", true],
+      ["tea-for-two", "blocked-until-nil", false],
+    ]);
+    const why =
+      "the music tea-for-two has the license blocked-until-nil: re-direct with a track that may play";
+    expect(v.item?.approveProblem).toBe(why);
+    expect(() => approveAs(store, video, block)).toThrow(why);
+    expect((store.item("v-2026-10-28-1") as Item).state).toBe("finished");
+    expect(feedbackOf(store)).toEqual([]);
+    // Revise and discard still work.
+    expect(
+      (
+        store.review("v-2026-10-28-1", {
+          action: "revise",
+          notes: "another track",
+          videoSha256: video,
+          copySha256: block,
+          by: "Nil",
+          memberId: REVIEWER_MEMBER_ID,
+        }) as Item
+      ).state,
+    ).toBe("draft");
+  });
+
+  test("a track that is not in the table is refused too", () => {
+    const { store, video, block } = withItemInReview();
+    const it = store.item("v-2026-10-28-1") as Item;
+    writeFileSync(
+      join(store.dirs.items, "v-2026-10-28-1.json"),
+      JSON.stringify({
+        ...it,
+        render: { ...it.render, music: [{ fromPly: 0, track: "nope" }] },
+      }),
+    );
+    expect(() => approveAs(store, video, block)).toThrow(
+      "the music nope has the license unknown",
+    );
   });
 });
 
@@ -611,7 +694,7 @@ describe("the review routes", () => {
   };
 
   test("only Nil, through the office, acts; anyone may look", async () => {
-    const { dir, video, block } = withItemInReview();
+    const { dir, store, video, block } = withItemInReview();
     const { call, sent } = await serve(dir);
     const body = { notes: "", videoSha256: video, copySha256: block };
     const path = "/api/review/v-2026-10-28-1/approve";
@@ -629,7 +712,9 @@ describe("the review routes", () => {
       "only Nil reviews videos",
     );
     expect(sent).toEqual([]);
-    expect(readdirSync(dir)).toBeDefined();
+    // Nothing was written.
+    expect((store.item("v-2026-10-28-1") as Item).state).toBe("finished");
+    expect(feedbackOf(store)).toEqual([]);
     const page = await call("/review", { member: "someone-else" });
     expect(page.status).toBe(200);
     const view = JSON.parse(
