@@ -124,7 +124,9 @@ import {
 } from "./post-tiktok.mjs";
 import {
   postToX,
+  xAppCheck,
   xAuthCheck,
+  xCreds,
   xSecretShape,
   oauth1Header,
   dryRunSigner,
@@ -168,6 +170,7 @@ import {
   CONNECT_PLATFORMS,
   authorizeUrl,
   exchangeCode,
+  xRequestToken,
   missingClientSecrets,
 } from "./connect.mjs";
 import { connectPage, connectRefusedPage } from "./connect-page.mjs";
@@ -832,15 +835,23 @@ export const createDaily = ({
       };
       const live = modes[platform] === "live";
       const posters = {
-        x: () =>
-          postToX({
+        x: () => {
+          // The key pair from the env, the token from Connect, read once.
+          const creds = live
+            ? xCreds(
+                env,
+                stored("x", (r) => r),
+              )
+            : null;
+          return postToX({
             video,
             text: texts.x,
             transport,
-            sign: live ? (req) => oauth1Header(req, env) : dryRunSigner,
+            sign: creds ? (req) => oauth1Header(req, creds) : dryRunSigner,
             sleep,
             beforeCommit,
-          }),
+          });
+        },
         youtube: () =>
           postToYoutube({
             video,
@@ -1617,7 +1628,7 @@ export const createDaily = ({
       CONNECT_PLATFORMS.flatMap((platform) => [
         [
           `POST /daily/connect/${platform}/start`,
-          (req, res) => {
+          async (req, res) => {
             const member = memberOf(req);
             const refusal = connectRefusal(member);
             if (refusal) {
@@ -1642,7 +1653,29 @@ export const createDaily = ({
                 connectRefusedPage(platform, notInCode.join("; ")),
               );
             }
-            const { state, verifier } = states.create(platform, member.id);
+            // X (OAuth 1.0a) asks for a request token first; it is the
+            // state, and its secret waits in memory for the callback.
+            let given;
+            if (platform === "x") {
+              try {
+                const rt = await xRequestToken({
+                  transport: makeLiveTransport(),
+                  env,
+                });
+                given = { state: rt.token, verifier: rt.secret };
+              } catch (err) {
+                const message =
+                  err instanceof ConnectRefused
+                    ? err.message
+                    : `x did not answer the request token step (${err?.name ?? "error"}); click Connect again`;
+                return html(res, 502, connectRefusedPage(platform, message));
+              }
+            }
+            const { state, verifier } = states.create(
+              platform,
+              member.id,
+              given,
+            );
             res.writeHead(303, {
               location: authorizeUrl(platform, env, { state, verifier }),
               "cache-control": "no-store",
@@ -1662,24 +1695,32 @@ export const createDaily = ({
             try {
               // The state is checked first, also when the platform reports
               // an error, so a stray callback cannot show a message here.
-              const { verifier } = states.take(
-                q.get("state"),
-                platform,
-                member.id,
-              );
+              // X sends its request token back (or, on Cancel, `denied`
+              // with it) instead of a state, and oauth_verifier as the code.
+              const x = platform === "x";
+              const state = x
+                ? (q.get("oauth_token") ?? q.get("denied"))
+                : q.get("state");
+              const { verifier } = states.take(state, platform, member.id);
+              if (x && q.has("denied")) {
+                throw new ConnectRefused(
+                  "x: the authorization was cancelled: nothing was connected",
+                );
+              }
               const error = q.get("error");
               if (error) {
                 throw new ConnectRefused(
                   `${platform} answered ${/^[\w.-]{1,64}$/.test(error) ? error : "with an error"}: nothing was connected`,
                 );
               }
-              const code = q.get("code");
+              const code = q.get(x ? "oauth_verifier" : "code");
               if (!code) throw new ConnectRefused(`${platform} sent no code`);
               const record = await exchangeCode(platform, {
                 transport: makeLiveTransport(),
                 env,
                 code,
                 verifier,
+                state,
               });
               tokens.write(platform, {
                 ...record,
@@ -1708,8 +1749,10 @@ export const createDaily = ({
 
     /**
      * READ-ONLY: does the platform accept the app's credentials? ?platform=x
-     * reads GET /2/users/me, ?platform=instagram finds the account as a post
-     * does and reads its username. Nothing is posted and no file is written.
+     * checks the consumer key pair alone (oauth2/token, status only), then
+     * reads GET /2/users/me with the connected account's token;
+     * ?platform=instagram finds the account as a post does and reads its
+     * username. Nothing is posted and no file is written.
      * The reply names secrets, never a value: for X also yes/no shape facts.
      * A platform whose own secrets are missing is not called.
      */
@@ -1730,9 +1773,21 @@ export const createDaily = ({
       const transport = makeLiveTransport();
       let result;
       if (platform === "x") {
-        result = await xAuthCheck({
-          transport,
-          sign: (r) => oauth1Header(r, env),
+        // The key pair alone, then the connected account's token.
+        const app = await xAppCheck({ transport, env });
+        const record = tokens.connected("x") ? tokens.read("x") : null;
+        const user = record
+          ? await xAuthCheck({
+              transport,
+              sign: (r) => oauth1Header(r, xCreds(env, record)),
+            })
+          : { ok: false, error: "not connected (/daily/connect)" };
+        return json(res, 200, {
+          platform,
+          missing,
+          ...shape,
+          app,
+          result: user,
         });
       } else {
         try {

@@ -11,23 +11,20 @@
  *   POST /2/tweets                         {text, media: {media_ids: [id]}}
  *
  * AUTH IS OAUTH 1.0A USER CONTEXT. The upload endpoints accept it ("UserToken",
- * scheme OAuth) as well as OAuth 2.0 user tokens. OAuth 1.0a access tokens do
- * not expire, so the app holds four fixed secrets and never has to store a
- * rotated refresh token. The four are the app's environment variables
- * X_API_KEY, X_API_SECRET, X_ACCESS_TOKEN, X_ACCESS_TOKEN_SECRET, given to the
- * app as Isomux secrets. JSON and multipart bodies are not part of an OAuth
- * 1.0a signature; only the query string is.
+ * scheme OAuth) as well as OAuth 2.0 user tokens. The app's consumer key pair,
+ * X_API_KEY and X_API_SECRET, is in its environment (Isomux secrets). The
+ * access token and its secret come from /daily/connect (connect.mjs, OAuth
+ * 1.0a 3-legged; Nil, 2026-10-28: typing token secrets is "too annoying"),
+ * so they belong to the account that authorized, not to the developer app's
+ * owner. They do not expire. JSON and multipart bodies are not part of an
+ * OAuth 1.0a signature; only the query string is.
  */
 import { createHmac, randomBytes } from "node:crypto";
 import { PostFailed, ok, sha256 } from "./transport.mjs";
 
 export const X_API = "https://api.x.com";
-export const X_SECRETS = [
-  "X_API_KEY",
-  "X_API_SECRET",
-  "X_ACCESS_TOKEN",
-  "X_ACCESS_TOKEN_SECRET",
-];
+/** The consumer key pair; the access token comes from Connect. */
+export const X_SECRETS = ["X_API_KEY", "X_API_SECRET"];
 
 /** At or below the documented 5 MB per chunk. */
 const CHUNK_BYTES = 4 * 1024 * 1024;
@@ -42,22 +39,42 @@ const enc = (s) =>
   );
 
 /**
+ * The signing credentials of a post: the app's consumer key pair (env) and
+ * the access token that Connect stored (`record`, tokens/x.json).
+ * @returns {{ consumerKey: string, consumerSecret: string, token: string, tokenSecret: string }}
+ */
+export const xCreds = (env, record) => ({
+  consumerKey: env.X_API_KEY,
+  consumerSecret: env.X_API_SECRET,
+  token: record.accessToken,
+  tokenSecret: record.accessTokenSecret,
+});
+
+/**
  * The live signer: an OAuth 1.0a HMAC-SHA1 Authorization header for one
- * request. `now` and `nonce` are arguments so a test can pin them.
+ * request. `creds` is {consumerKey, consumerSecret, token?, tokenSecret?}:
+ * the request-token step of Connect has no token yet. `extra` holds more
+ * signed oauth_* parameters (oauth_callback, oauth_verifier). `now` and
+ * `nonce` are arguments so a test can pin them.
+ * @param {{ method: string, url: string }} req
+ * @param {{ consumerKey: string, consumerSecret: string, token?: string, tokenSecret?: string }} creds
+ * @param {Record<string, string>} [extra]
  */
 export const oauth1Header = (
   { method, url },
   creds,
+  extra = {},
   now = Math.floor(Date.now() / 1000),
   nonce = randomBytes(16).toString("hex"),
 ) => {
   const u = new URL(url);
   const oauth = {
-    oauth_consumer_key: creds.X_API_KEY,
+    ...extra,
+    oauth_consumer_key: creds.consumerKey,
     oauth_nonce: nonce,
     oauth_signature_method: "HMAC-SHA1",
     oauth_timestamp: String(now),
-    oauth_token: creds.X_ACCESS_TOKEN,
+    ...(creds.token ? { oauth_token: creds.token } : {}),
     oauth_version: "1.0",
   };
   const params = [...u.searchParams.entries(), ...Object.entries(oauth)]
@@ -72,7 +89,7 @@ export const oauth1Header = (
     enc(`${u.origin}${u.pathname}`),
     enc(params),
   ].join("&");
-  const key = `${enc(creds.X_API_SECRET)}&${enc(creds.X_ACCESS_TOKEN_SECRET)}`;
+  const key = `${enc(creds.consumerSecret)}&${enc(creds.tokenSecret ?? "")}`;
   const signature = createHmac("sha1", key).update(base).digest("base64");
   const header = { ...oauth, oauth_signature: signature };
   return (
@@ -87,8 +104,8 @@ export const oauth1Header = (
 export const dryRunSigner = () =>
   'OAuth oauth_consumer_key="<X_API_KEY>", oauth_nonce="<random>", ' +
   'oauth_signature_method="HMAC-SHA1", oauth_timestamp="<unix time>", ' +
-  'oauth_token="<X_ACCESS_TOKEN>", oauth_version="1.0", ' +
-  'oauth_signature="<HMAC-SHA1 with X_API_SECRET and X_ACCESS_TOKEN_SECRET>"';
+  'oauth_token="<access token from /daily/connect>", oauth_version="1.0", ' +
+  'oauth_signature="<HMAC-SHA1 with X_API_SECRET and the access token secret>"';
 
 /** The canned replies a dry run gets, shaped like X's. */
 export const xDryRunReply = (req) => {
@@ -207,15 +224,14 @@ export const postToX = async ({
 export const X_ME_URL = `${X_API}/2/users/me`;
 
 /**
- * Yes/no facts about the four values that do not show any part of them: is
- * each set, and does it have whitespace at an end (a pasted line break makes
- * every signature wrong). An access token from the developer portal has the
- * form "<user id>-<characters>".
+ * Yes/no facts about the consumer key pair that do not show any part of it:
+ * is each set, and does it have whitespace at an end (a pasted line break
+ * makes every signature wrong).
  * @param {Record<string, string | undefined>} env
- * @returns {Record<string, { set: boolean, whitespaceAtAnEnd: boolean } | boolean>}
+ * @returns {Record<string, { set: boolean, whitespaceAtAnEnd: boolean }>}
  */
-export const xSecretShape = (env) => ({
-  ...Object.fromEntries(
+export const xSecretShape = (env) =>
+  Object.fromEntries(
     X_SECRETS.map((name) => {
       const value = env[name];
       return [
@@ -227,9 +243,32 @@ export const xSecretShape = (env) => ({
         },
       ];
     }),
-  ),
-  accessTokenHasUserIdForm: /^\d+-\S+$/.test(env.X_ACCESS_TOKEN ?? ""),
-});
+  );
+
+/** App-only auth (docs.x.com "Bearer tokens", read 2026-10-28). */
+export const X_APP_TOKEN_URL = `${X_API}/oauth2/token`;
+
+/**
+ * READ-ONLY: does X accept the consumer key pair alone? POST oauth2/token
+ * with grant_type=client_credentials and Basic key:secret answers 200 when
+ * the pair is valid. Only the status is kept: the bearer token in the reply
+ * is never returned, and nothing calls invalidate_token.
+ */
+export const xAppCheck = async ({ transport, env }) => {
+  const basic = Buffer.from(
+    `${encodeURIComponent(env.X_API_KEY)}:${encodeURIComponent(env.X_API_SECRET)}`,
+  ).toString("base64");
+  const reply = await transport.request({
+    method: "POST",
+    url: X_APP_TOKEN_URL,
+    headers: {
+      authorization: `Basic ${basic}`,
+      "content-type": "application/x-www-form-urlencoded;charset=UTF-8",
+    },
+    body: "grant_type=client_credentials",
+  });
+  return { status: reply.status, ok: ok(reply) };
+};
 
 /**
  * READ-ONLY: GET /2/users/me signed as a post is. It posts nothing. Returns

@@ -1,7 +1,7 @@
 /**
  * One-click Connect for the platforms that need a person's consent: YouTube,
  * TikTok and Threads (Wall Game PM, 2026-10-26; Nil: "make it as easy as
- * possible for me"). /daily/connect sends the browser to the platform's
+ * possible for me"), and X (Wall Game PM, 2026-10-28). /daily/connect sends the browser to the platform's
  * authorize URL with a state (connect-state.mjs); the platform sends it back
  * to /daily/connect/<platform>/callback with a code; the app exchanges the
  * code here, server side, and keeps the tokens in the token store
@@ -48,14 +48,34 @@
  *   GET /v1.0/me?fields=id,username. No PKCE is documented. user_id comes as
  *   a JSON number over 2^53, which JSON.parse rounds, so the id is read from
  *   /me, where it is a string.
+ *
+ * X is OAuth 1.0a 3-legged, read on docs.x.com 2026-10-28 ("Obtaining user
+ * access tokens", "Authentication API reference", "Developer apps"; pages
+ * modified 2026-07-24/25): POST https://api.x.com/oauth/request_token with
+ * oauth_callback in the signed header ("Always send an oauth_callback on
+ * this step") -> oauth_token, oauth_token_secret, oauth_callback_confirmed
+ * ("should verify that oauth_callback_confirmed is true"); the browser goes
+ * to https://api.x.com/oauth/authorize?oauth_token=... with force_login
+ * ("Forces the user to enter their credentials to ensure the correct users
+ * account is authorized"); the callback gets oauth_token and oauth_verifier
+ * ("verify that the token matches the request token"); POST
+ * https://api.x.com/oauth/access_token with oauth_verifier ("applications
+ * not using the oauth_verifier will fail") -> oauth_token,
+ * oauth_token_secret, user_id, screen_name. Replies are form encoded. "These
+ * tokens do not expire". The callback URL must be in the developer app's
+ * settings and "must match exactly"; "Changing permissions requires users to
+ * re-authorize your app". The token acts for the account that authorized,
+ * not for the developer app's owner. OAuth 1.0a has no state parameter, so
+ * the request token is the state (connect-state.mjs).
  */
 import { ConnectRefused, s256 } from "./connect-state.mjs";
 import { ok } from "./transport.mjs";
 import { YOUTUBE_SECRETS, GOOGLE_TOKEN_URL } from "./post-youtube.mjs";
 import { TIKTOK_SECRETS, TIKTOK_TOKEN_URL } from "./post-tiktok.mjs";
 import { THREADS_SECRETS } from "./post-threads.mjs";
+import { X_API, X_SECRETS, oauth1Header } from "./post-x.mjs";
 
-export const CONNECT_PLATFORMS = ["youtube", "tiktok", "threads"];
+export const CONNECT_PLATFORMS = ["youtube", "tiktok", "threads", "x"];
 
 /** Where the app is; the callbacks below are registered with each platform. */
 export const CONNECT_ORIGIN = "https://game-video.office.nilmamano.com";
@@ -67,6 +87,7 @@ export const CLIENT_SECRETS = {
   youtube: YOUTUBE_SECRETS,
   tiktok: TIKTOK_SECRETS,
   threads: THREADS_SECRETS,
+  x: X_SECRETS,
 };
 
 export const YOUTUBE_SCOPE = "https://www.googleapis.com/auth/youtube.upload";
@@ -83,6 +104,9 @@ export const THREADS_CODE_URL = "https://graph.threads.com/oauth/access_token";
 export const THREADS_EXCHANGE_URL = "https://graph.threads.com/access_token";
 export const THREADS_ME =
   "https://graph.threads.com/v1.0/me?fields=id,username";
+export const X_REQUEST_TOKEN_URL = `${X_API}/oauth/request_token`;
+const X_AUTHORIZE = `${X_API}/oauth/authorize`;
+export const X_ACCESS_TOKEN_URL = `${X_API}/oauth/access_token`;
 
 /** The client secrets that are missing for `platform`. */
 export const missingClientSecrets = (platform, env) =>
@@ -122,7 +146,49 @@ export const authorizeUrl = (platform, env, { state, verifier }) => {
       state,
     })}`;
   }
+  if (platform === "x") {
+    // The state is the request token (xRequestToken).
+    return `${X_AUTHORIZE}?${new URLSearchParams({
+      oauth_token: state,
+      force_login: "true",
+    })}`;
+  }
   throw new ConnectRefused(`no Connect for ${platform}`);
+};
+
+/** The fields of a form-encoded reply (X's OAuth 1.0a replies). */
+const formFields = (reply) =>
+  Object.fromEntries(new URLSearchParams(String(reply.text ?? "")));
+
+/**
+ * X's first step, server side: a request token for the browser to
+ * authorize. Its secret signs the exchange in the callback, so it stays in
+ * memory with the state. Refuses unless X confirms the callback.
+ * @returns {Promise<{ token: string, secret: string }>}
+ */
+export const xRequestToken = async ({ transport, env }) => {
+  const req = { method: "POST", url: X_REQUEST_TOKEN_URL };
+  const reply = await transport.request({
+    ...req,
+    headers: {
+      authorization: oauth1Header(
+        req,
+        { consumerKey: env.X_API_KEY, consumerSecret: env.X_API_SECRET },
+        { oauth_callback: callbackUrl("x") },
+      ),
+    },
+  });
+  if (!ok(reply)) throw refused("x", "request token", reply);
+  const f = formFields(reply);
+  if (f.oauth_callback_confirmed !== "true") {
+    throw new ConnectRefused(
+      "x did not confirm the callback URL: it must be in the X app's settings exactly",
+    );
+  }
+  if (!f.oauth_token || !f.oauth_token_secret) {
+    throw new ConnectRefused("x sent no request token");
+  }
+  return { token: f.oauth_token, secret: f.oauth_token_secret };
 };
 
 /**
@@ -160,12 +226,16 @@ const form = (fields) => ({
 
 /**
  * Exchange `code` for tokens. Returns the record to store, without
- * connectedAt and connectedBy (the caller adds them).
+ * connectedAt and connectedBy (the caller adds them). For X, `code` is the
+ * oauth_verifier, `state` the request token and `verifier` its secret.
+ * @param {string} platform
+ * @param {{ transport: any, env: any, code: string, verifier: string,
+ *   state?: string, now?: () => Date }} o
  * @returns {Promise<Omit<import("./token-store.mjs").TokenRecord, "connectedAt" | "connectedBy">>}
  */
 export const exchangeCode = async (
   platform,
-  { transport, env, code, verifier, now = () => new Date() },
+  { transport, env, code, verifier, state, now = () => new Date() },
 ) => {
   const at = now();
   const redirect_uri = callbackUrl(platform);
@@ -305,6 +375,43 @@ export const exchangeCode = async (
       // A long-lived token can be refreshed once it is a day old.
       refreshedAt: at.toISOString(),
       triedAt: at.toISOString(),
+    };
+  }
+
+  if (platform === "x") {
+    // `state` is the request token and `verifier` its secret; `code` is
+    // X's oauth_verifier.
+    const req = { method: "POST", url: X_ACCESS_TOKEN_URL };
+    const reply = await transport.request({
+      ...req,
+      headers: {
+        authorization: oauth1Header(
+          req,
+          {
+            consumerKey: env.X_API_KEY,
+            consumerSecret: env.X_API_SECRET,
+            token: state,
+            tokenSecret: verifier,
+          },
+          { oauth_verifier: code },
+        ),
+      },
+    });
+    if (!ok(reply)) throw refused("x", "token exchange", reply);
+    const f = formFields(reply);
+    if (!f.oauth_token || !f.oauth_token_secret) {
+      throw new ConnectRefused("x sent no access token");
+    }
+    return {
+      scopes: [],
+      account: {
+        id: /^\d{1,20}$/.test(f.user_id ?? "") ? f.user_id : null,
+        name: /^\w{1,15}$/.test(f.screen_name ?? "")
+          ? `@${f.screen_name}`
+          : null,
+      },
+      accessToken: f.oauth_token,
+      accessTokenSecret: f.oauth_token_secret,
     };
   }
 

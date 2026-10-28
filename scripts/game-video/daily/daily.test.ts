@@ -2669,11 +2669,12 @@ describe("X signing", () => {
           ),
       },
       {
-        X_API_KEY: "xvz1evFS4wEEPTGEFPHBog",
-        X_API_SECRET: "kAcSOqF21Fu85e7zjz7ZN2U4ZRhfV3WpwPAoE3Z7kBw",
-        X_ACCESS_TOKEN: "370773112-GmHxMAgYyLbNEtIKZeRNFsMKPR9EyMZeS9weJAEb",
-        X_ACCESS_TOKEN_SECRET: "LswwdoUaIvS8ltyTt5jkRh4J50vUPVVHtR2YPi5kE",
+        consumerKey: "xvz1evFS4wEEPTGEFPHBog",
+        consumerSecret: "kAcSOqF21Fu85e7zjz7ZN2U4ZRhfV3WpwPAoE3Z7kBw",
+        token: "370773112-GmHxMAgYyLbNEtIKZeRNFsMKPR9EyMZeS9weJAEb",
+        tokenSecret: "LswwdoUaIvS8ltyTt5jkRh4J50vUPVVHtR2YPi5kE",
       },
+      {},
       1318622958,
       "kYjzVBB8Y0ZFabxSWbWovY3uYSQ2pTgmZeNu2VS4cg",
     );
@@ -2684,10 +2685,14 @@ describe("X signing", () => {
 
   test("a platform goes live only with every one of its keys", () => {
     expect(postingModes({})).toEqual(DRY);
+    expect(postingModes({ X_API_KEY: "k" }).x).toBe("dry-run");
+    // X: the key pair AND a Connect (the access token is not an env var).
+    expect(postingModes({ X_API_KEY: "k", X_API_SECRET: "s" }).x).toBe(
+      "dry-run",
+    );
     expect(
-      postingModes({ X_API_KEY: "k", X_API_SECRET: "s", X_ACCESS_TOKEN: "t" })
-        .x,
-    ).toBe("dry-run");
+      postingModes({ X_API_KEY: "k", X_API_SECRET: "s" }, new Set(["x"])).x,
+    ).toBe("live");
   });
 
   test("YouTube, TikTok and Threads go live only with their client keys AND a Connect", () => {

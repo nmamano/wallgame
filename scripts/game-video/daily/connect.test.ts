@@ -23,6 +23,7 @@ import {
   authorizeUrl,
   exchangeCode,
   missingClientSecrets,
+  xRequestToken,
 } from "./connect.mjs";
 
 const tempDir = () => mkdtempSync(join(tmpdir(), "connect-test-"));
@@ -512,6 +513,115 @@ describe("code exchange", () => {
   });
 });
 
+describe("X Connect (OAuth 1.0a 3-legged)", () => {
+  const X_ENV = { X_API_KEY: "x-key", X_API_SECRET: "SECRET-X-KEY" };
+  /** The signed oauth_* fields of an Authorization header. */
+  const oauthFields = (header: string | undefined) =>
+    Object.fromEntries(
+      [...String(header).matchAll(/(\w+)="([^"]*)"/g)].map(([, k, v]) => [
+        k,
+        decodeURIComponent(v),
+      ]),
+    );
+
+  test("the request token step signs oauth_callback with the key pair only, and needs the callback confirmed", async () => {
+    const transport = fakeLive(() => ({
+      status: 200,
+      text: "oauth_token=RT&oauth_token_secret=SECRET-RTS&oauth_callback_confirmed=true",
+    }));
+    expect(await xRequestToken({ transport, env: X_ENV })).toEqual({
+      token: "RT",
+      secret: "SECRET-RTS",
+    });
+    const [req] = transport.sent;
+    expect(req).toMatchObject({
+      method: "POST",
+      url: "https://api.x.com/oauth/request_token",
+    });
+    const f = oauthFields(req.headers?.authorization);
+    expect(f.oauth_callback).toBe(
+      "https://game-video.office.nilmamano.com/daily/connect/x/callback",
+    );
+    expect(f.oauth_consumer_key).toBe("x-key");
+    expect(f).not.toHaveProperty("oauth_token");
+
+    const unconfirmed = fakeLive(() => ({
+      status: 200,
+      text: "oauth_token=RT&oauth_token_secret=S&oauth_callback_confirmed=false",
+    }));
+    expect(
+      String(
+        await rejected(xRequestToken({ transport: unconfirmed, env: X_ENV })),
+      ),
+    ).toContain("did not confirm the callback URL");
+    const refusedReply = fakeLive(() => ({
+      status: 401,
+      json: { errors: [{ code: 32 }] },
+      text: "SECRET-IN-BODY",
+    }));
+    expect(
+      String(
+        await rejected(xRequestToken({ transport: refusedReply, env: X_ENV })),
+      ),
+    ).toBe("ConnectRefused: x request token failed: HTTP 401");
+  });
+
+  test("authorize goes to api.x.com with the request token and force_login", () => {
+    const url = new URL(
+      authorizeUrl("x", X_ENV, { state: "RT", verifier: "SECRET-RTS" }),
+    );
+    expect(`${url.origin}${url.pathname}`).toBe(
+      "https://api.x.com/oauth/authorize",
+    );
+    expect(Object.fromEntries(url.searchParams)).toEqual({
+      oauth_token: "RT",
+      force_login: "true",
+    });
+  });
+
+  test("the exchange signs oauth_verifier with the request token, and stores the token pair and the @handle", async () => {
+    const transport = fakeLive(() => ({
+      status: 200,
+      text: "oauth_token=123-SECRET-AT&oauth_token_secret=SECRET-ATS&user_id=123&screen_name=wallgameio",
+    }));
+    const record = await exchangeCode("x", {
+      transport,
+      env: X_ENV,
+      code: "VERIFIER",
+      verifier: "SECRET-RTS",
+      state: "RT",
+      now: at,
+    });
+    expect(record).toEqual({
+      scopes: [],
+      account: { id: "123", name: "@wallgameio" },
+      accessToken: "123-SECRET-AT",
+      accessTokenSecret: "SECRET-ATS",
+    });
+    const [req] = transport.sent;
+    expect(req.url).toBe("https://api.x.com/oauth/access_token");
+    const f = oauthFields(req.headers?.authorization);
+    expect(f.oauth_token).toBe("RT");
+    expect(f.oauth_verifier).toBe("VERIFIER");
+
+    const odd = fakeLive(() => ({
+      status: 200,
+      text: "oauth_token=T&oauth_token_secret=S&user_id=12x&screen_name=<b>",
+    }));
+    expect(
+      (
+        await exchangeCode("x", {
+          transport: odd,
+          env: X_ENV,
+          code: "V",
+          verifier: "S",
+          state: "RT",
+        })
+      ).account,
+    ).toEqual({ id: null, name: null });
+  });
+});
+
 describe("/daily/connect through the app", () => {
   /** A server for `daily`, and every response it gave, headers included. */
   const serve = async (daily: {
@@ -566,6 +676,101 @@ describe("/daily/connect through the app", () => {
     },
   };
 
+  test("connect X: request token, authorize as the right account, token pair stored 0600, @handle shown, no secret in any response", async () => {
+    const dir = tempDir();
+    const env = { ...ENV, X_API_KEY: "x-key", X_API_SECRET: "SECRET-X-KEY" };
+    const transport = fakeLive((req) =>
+      req.url.endsWith("/oauth/request_token")
+        ? {
+            status: 200,
+            text: "oauth_token=RT1&oauth_token_secret=SECRET-RTS&oauth_callback_confirmed=true",
+          }
+        : {
+            status: 200,
+            text: "oauth_token=123-SECRET-AT&oauth_token_secret=SECRET-ATS&user_id=123&screen_name=wallgameio",
+          },
+    );
+    const daily = createDaily({
+      dataDir: dir,
+      env,
+      ids: IDS,
+      live: () => transport,
+    });
+    const app = await serve(daily);
+    try {
+      const start = await app.call("/daily/connect/x/start", {
+        method: "POST",
+        member: NIL,
+      });
+      expect(start.status).toBe(303);
+      expect(start.location).toBe(
+        "https://api.x.com/oauth/authorize?oauth_token=RT1&force_login=true",
+      );
+      // A callback with a token nobody here asked for is refused.
+      const stray = await app.call(
+        "/daily/connect/x/callback?oauth_token=OTHER&oauth_verifier=V",
+        { member: NIL },
+      );
+      expect(stray.status).toBe(400);
+      const done = await app.call(
+        "/daily/connect/x/callback?oauth_token=RT1&oauth_verifier=V1",
+        { member: NIL },
+      );
+      expect(done.status).toBe(303);
+      expect(done.location).toBe("/daily/connect?connected=x");
+      const file = join(dir, "daily", "tokens", "x.json");
+      expect(statSync(file).mode & 0o777).toBe(0o600);
+      expect(JSON.parse(readFileSync(file, "utf8"))).toMatchObject({
+        accessToken: "123-SECRET-AT",
+        accessTokenSecret: "SECRET-ATS",
+        account: { id: "123", name: "@wallgameio" },
+      });
+      const page = await app.call("/daily/connect?connected=x");
+      expect(page.text).toContain("X is connected.");
+      expect(page.text).toContain("Account: @wallgameio");
+      const modes = (
+        JSON.parse((await app.call("/api/daily/state")).text) as {
+          modes: Record<string, string>;
+        }
+      ).modes;
+      expect(modes.x).toBe("live");
+      // The same request token again: refused.
+      expect(
+        (
+          await app.call(
+            "/daily/connect/x/callback?oauth_token=RT1&oauth_verifier=V1",
+            { member: NIL },
+          )
+        ).text,
+      ).toContain("already used");
+
+      // Cancel on X: `denied` carries the request token; nothing connects.
+      const again = await app.call("/daily/connect/x/start", {
+        method: "POST",
+        member: NIL,
+      });
+      expect(again.status).toBe(303);
+      const denied = await app.call("/daily/connect/x/callback?denied=RT1", {
+        member: NIL,
+      });
+      expect(denied.status).toBe(400);
+      expect(denied.text).toContain("cancelled");
+
+      for (const text of app.seen) {
+        for (const secret of [
+          "SECRET-X-KEY",
+          "SECRET-RTS",
+          "123-SECRET-AT",
+          "SECRET-ATS",
+        ]) {
+          expect(text).not.toContain(secret);
+        }
+      }
+    } finally {
+      app.close();
+    }
+  });
+
   test("connect YouTube: state checked, tokens stored 0600, and no token in any response or log", async () => {
     const dir = tempDir();
     let answer: (req: Req) => Reply = () => googleReply;
@@ -585,7 +790,7 @@ describe("/daily/connect through the app", () => {
     try {
       const page = await app.call("/daily/connect");
       expect(page.status).toBe(200);
-      expect(page.text.match(/Not connected/g)).toHaveLength(3);
+      expect(page.text.match(/Not connected/g)).toHaveLength(4);
 
       // No office member: refused.
       expect(

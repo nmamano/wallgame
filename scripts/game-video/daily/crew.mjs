@@ -124,11 +124,13 @@
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
- *                                  app's credentials? X: GET /2/users/me,
- *                                  with yes/no facts on each secret's shape
- *                                  and X's access level. Instagram: the
- *                                  account a post would go to. Posts
- *                                  nothing and prints no secret value
+ *                                  app's credentials? X: the key pair alone
+ *                                  (status only), yes/no facts on each
+ *                                  key's shape, then GET /2/users/me with
+ *                                  the connected account (handle, access
+ *                                  level). Instagram: the account a post
+ *                                  would go to. Posts nothing and prints
+ *                                  no secret value
  *   ship --to <hash>               release a commit that is on main: run
  *                                  from the release checkout, it moves that
  *                                  checkout to <hash>, syncs and checks the
@@ -1118,12 +1120,15 @@ const commands = {
     if (r.missing.length) console.log(`missing: ${r.missing.join(", ")}`);
     if (r.shape) {
       for (const [name, f] of Object.entries(r.shape)) {
-        if (typeof f === "boolean") console.log(`${name}: ${f ? "yes" : "no"}`);
-        else
-          console.log(
-            `${name}: ${f.set ? "set" : "NOT SET"}${f.whitespaceAtAnEnd ? ", WHITESPACE AT AN END" : ""}`,
-          );
+        console.log(
+          `${name}: ${f.set ? "set" : "NOT SET"}${f.whitespaceAtAnEnd ? ", WHITESPACE AT AN END" : ""}`,
+        );
       }
+    }
+    if (r.app) {
+      console.log(
+        `x key pair: HTTP ${r.app.status} (${r.app.ok ? "valid" : "NOT accepted"})`,
+      );
     }
     if (!r.result) {
       console.log(`${platform}: not called (its own secrets are missing)`);

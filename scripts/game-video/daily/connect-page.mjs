@@ -5,7 +5,12 @@
  * result.
  */
 
-const NAMES = { youtube: "YouTube", tiktok: "TikTok", threads: "Threads" };
+const NAMES = {
+  youtube: "YouTube",
+  tiktok: "TikTok",
+  threads: "Threads",
+  x: "X",
+};
 
 export const escapeHtml = (text) =>
   String(text)

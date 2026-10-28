@@ -49,7 +49,13 @@ import {
   instagramDryRunReply,
   postToInstagram,
 } from "./post-instagram.mjs";
-import { X_ME_URL, oauth1Header, xAuthCheck, xSecretShape } from "./post-x.mjs";
+import {
+  X_ME_URL,
+  oauth1Header,
+  xAppCheck,
+  xAuthCheck,
+  xSecretShape,
+} from "./post-x.mjs";
 import { createDaily } from "./routes.mjs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
@@ -939,27 +945,49 @@ describe("read-only auth checks", () => {
   const X_ENV = {
     X_API_KEY: "SECRET-KEY",
     X_API_SECRET: "SECRET-KEY-SECRET",
-    X_ACCESS_TOKEN: "12345-SECRET-TOKEN",
-    X_ACCESS_TOKEN_SECRET: "SECRET-TOKEN-SECRET",
   };
-  const ALL_SECRETS = Object.values(X_ENV);
+  /** What Connect stores for X (tokens/x.json). */
+  const X_RECORD = {
+    connectedAt: "2026-10-28T05:00:00.000Z",
+    connectedBy: "Nil",
+    scopes: [],
+    account: { id: "123", name: "@wallgameio" },
+    accessToken: "123-SECRET-TOKEN",
+    accessTokenSecret: "SECRET-TOKEN-SECRET",
+  };
+  const ALL_SECRETS = [
+    ...Object.values(X_ENV),
+    X_RECORD.accessToken,
+    X_RECORD.accessTokenSecret,
+  ];
 
-  test("xSecretShape says yes or no and holds no part of a value", () => {
-    const shape = xSecretShape({
-      ...X_ENV,
-      X_API_SECRET: "SECRET-KEY-SECRET\n",
-      X_ACCESS_TOKEN_SECRET: "",
-    });
-    expect(shape).toEqual({
-      X_API_KEY: { set: true, whitespaceAtAnEnd: false },
+  test("xSecretShape says yes or no for the key pair and holds no part of a value", () => {
+    expect(
+      xSecretShape({ X_API_KEY: "", X_API_SECRET: "SECRET-KEY-SECRET\n" }),
+    ).toEqual({
+      X_API_KEY: { set: false, whitespaceAtAnEnd: false },
       X_API_SECRET: { set: true, whitespaceAtAnEnd: true },
-      X_ACCESS_TOKEN: { set: true, whitespaceAtAnEnd: false },
-      X_ACCESS_TOKEN_SECRET: { set: false, whitespaceAtAnEnd: false },
-      accessTokenHasUserIdForm: true,
     });
-    expect(xSecretShape({ ...X_ENV, X_ACCESS_TOKEN: "abc" })).toMatchObject({
-      accessTokenHasUserIdForm: false,
+  });
+
+  test("xAppCheck posts client_credentials with Basic key:secret and keeps only the status", async () => {
+    const transport = fakeLive(() => ({
+      status: 200,
+      json: { token_type: "bearer", access_token: "SECRET-BEARER" },
+    }));
+    const r = await xAppCheck({ transport, env: X_ENV });
+    expect(r).toEqual({ status: 200, ok: true });
+    expect(JSON.stringify(r)).not.toContain("SECRET-BEARER");
+    expect(transport.sent).toHaveLength(1);
+    const [req] = transport.sent;
+    expect(req).toMatchObject({
+      method: "POST",
+      url: "https://api.x.com/oauth2/token",
+      body: "grant_type=client_credentials",
     });
+    expect(req.headers?.authorization).toBe(
+      `Basic ${Buffer.from("SECRET-KEY:SECRET-KEY-SECRET").toString("base64")}`,
+    );
   });
 
   test("xAuthCheck sends one signed GET of /2/users/me and reports the access level, or X's error", async () => {
@@ -968,7 +996,13 @@ describe("read-only auth checks", () => {
       headers: { "x-access-level": "read-write" },
       json: { data: { id: "1", username: "wallgameio" } },
     }));
-    const sign = (r: { method: string; url: string }) => oauth1Header(r, X_ENV);
+    const sign = (r: { method: string; url: string }) =>
+      oauth1Header(r, {
+        consumerKey: "k",
+        consumerSecret: "s",
+        token: "t",
+        tokenSecret: "ts",
+      });
     expect(await xAuthCheck({ transport: ok, sign })).toEqual({
       status: 200,
       ok: true,
@@ -1026,6 +1060,7 @@ describe("read-only auth checks", () => {
     env: Record<string, string>,
     platform: string,
     answer: Answer = () => ({ status: 200, json: {} }),
+    connected: Record<string, object> = {},
   ) => {
     const transport = fakeLive(answer);
     const daily = createDaily({
@@ -1033,6 +1068,10 @@ describe("read-only auth checks", () => {
       env,
       live: () => transport,
     });
+    const tokenStore = openTokenStore(join(daily.store.dirs.root, "tokens"));
+    for (const [p, record] of Object.entries(connected)) {
+      tokenStore.write(p, record as Parameters<typeof tokenStore.write>[1]);
+    }
     const server: Server = createServer((req, res) => {
       void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
     });
@@ -1053,22 +1092,37 @@ describe("read-only auth checks", () => {
     }
   };
 
-  test("the route calls X once, read-only, and its reply names no secret value", async () => {
+  test("the route checks the key pair, then /2/users/me with the connected token, read-only, and names no secret value", async () => {
+    const answer: Answer = (req) =>
+      req.url.endsWith("/oauth2/token")
+        ? { status: 200, json: { access_token: "SECRET-BEARER" } }
+        : {
+            status: 401,
+            json: {
+              title: "Unauthorized",
+              status: 401,
+              detail: "Unauthorized",
+            },
+          };
     const { status, text, sent } = await authCheck(
       { ...X_ENV, X_API_SECRET: "SECRET-KEY-SECRET\n" },
       "x",
-      () => ({
-        status: 401,
-        json: { title: "Unauthorized", status: 401, detail: "Unauthorized" },
-      }),
+      answer,
+      { x: X_RECORD },
     );
     expect(status).toBe(200);
     expect(sent.map((r) => `${r.method} ${r.url}`)).toEqual([
+      "POST https://api.x.com/oauth2/token",
       `GET ${X_ME_URL}`,
     ]);
+    // The user call is signed with the stored token, not an env var.
+    expect(sent[1].headers?.authorization).toContain(
+      'oauth_token="123-SECRET-TOKEN"',
+    );
     const reply = JSON.parse(text) as {
       missing: string[];
       shape: Record<string, unknown>;
+      app: unknown;
       result: unknown;
     };
     expect(reply.missing).toEqual([]);
@@ -1076,15 +1130,28 @@ describe("read-only auth checks", () => {
       set: true,
       whitespaceAtAnEnd: true,
     });
+    expect(reply.app).toEqual({ status: 200, ok: true });
     expect(reply.result).toMatchObject({ status: 401, ok: false });
-    for (const secret of ALL_SECRETS) expect(text).not.toContain(secret);
+    for (const secret of [...ALL_SECRETS, "SECRET-BEARER"]) {
+      expect(text).not.toContain(secret);
+    }
+
+    // Not connected: the key pair only.
+    const alone = await authCheck(X_ENV, "x", answer);
+    expect(alone.sent.map((r) => r.url)).toEqual([
+      "https://api.x.com/oauth2/token",
+    ]);
+    expect(JSON.parse(alone.text)).toMatchObject({
+      app: { status: 200, ok: true },
+      result: { ok: false, error: "not connected (/daily/connect)" },
+    });
   });
 
   test("the route does not call a platform whose own secrets are missing; R2 alone does not stop the Instagram read", async () => {
     const x = await authCheck({ X_API_KEY: "SECRET-KEY" }, "x");
     expect(x.sent).toHaveLength(0);
     expect(JSON.parse(x.text)).toMatchObject({
-      missing: ["X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
+      missing: ["X_API_SECRET"],
       result: null,
     });
     const ig = await authCheck({}, "instagram");

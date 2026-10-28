@@ -36,11 +36,17 @@ export const connectStates = ({ now = () => Date.now() } = {}) => {
     /**
      * A new state for `platform`, started by `memberId`. `verifier` is the
      * PKCE code verifier (RFC 7636: 43 to 128 characters; 64 here).
+     * OAuth 1.0a (X) has no state parameter: X sends the request token back
+     * to the callback, so `given` makes the request token the state and its
+     * secret the verifier. Both stay in memory only, as every state does.
+     * @param {string} platform
+     * @param {string} memberId
+     * @param {{ state: string, verifier: string }} [given]
      */
-    create(platform, memberId) {
+    create(platform, memberId, given) {
       forget();
-      const state = randomBytes(32).toString("base64url");
-      const verifier = randomBytes(48).toString("base64url");
+      const state = given?.state ?? randomBytes(32).toString("base64url");
+      const verifier = given?.verifier ?? randomBytes(48).toString("base64url");
       states.set(state, {
         platform,
         memberId,

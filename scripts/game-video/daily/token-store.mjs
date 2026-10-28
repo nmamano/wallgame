@@ -25,6 +25,7 @@ import { join } from "node:path";
  *   scopes: string[],
  *   account: { id: string | null, name: string | null },
  *   accessToken?: string,
+ *   accessTokenSecret?: string,
  *   accessExpiresAt?: string | null,
  *   refreshToken?: string,
  *   refreshExpiresAt?: string | null,
