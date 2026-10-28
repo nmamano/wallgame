@@ -32,8 +32,14 @@
  *            compare  the comparison meme: a side's steps before the move vs
  *                     after it ("2 vs 12"), the side whose steps rose most;
  *            meme     a white panel with a black line (the EDL's `text`, or
- *                     the asset's) and the portrait of the seat on the
- *                     move's other side, waiting.
+ *                     the asset's) and a seat's portrait, waiting.
+ *            reactor  a seat's portrait reacting in a corner (`motion`:
+ *                     shock shakes and punches in, laugh bounces, stare
+ *                     creeps in), with the EDL's `text` as its label under
+ *                     it, if any ("the bot's last brain cell").
+ *            The seat of a portrait is the EDL's `seat` ("red" or
+ *            "blue"), else the one that did not make the move: the one
+ *            the move happened to.
  *   text     "required", "optional" (the asset's own line if absent) or
  *            "none".
  *   seconds  how long it shows where the EDL sets none (null: the asset
@@ -45,7 +51,8 @@ export const OVERLAY_FORMS = ["clip", "panel"];
 /**
  * @typedef {{
  *   form: "clip" | "panel",
- *   draw: "toast" | "loading" | "compare" | "meme",
+ *   draw: "toast" | "loading" | "compare" | "meme" | "reactor",
+ *   motion?: "shock" | "laugh" | "stare",
  *   text: "required" | "optional" | "none",
  *   line?: string,
  *   seconds: number | null,
@@ -89,6 +96,42 @@ export const OVERLAYS = {
     likeness: "None",
     rating: null,
   },
+  "reactor-shock": {
+    form: "clip",
+    draw: "reactor",
+    motion: "shock",
+    text: "optional",
+    seconds: 1.4,
+    size: { w: 0.32, h: 0.4 },
+    source: "drawn by us (stage.html), our seat portrait",
+    claim: "None",
+    likeness: "None",
+    rating: null,
+  },
+  "reactor-laugh": {
+    form: "clip",
+    draw: "reactor",
+    motion: "laugh",
+    text: "optional",
+    seconds: 1.4,
+    size: { w: 0.32, h: 0.4 },
+    source: "drawn by us (stage.html), our seat portrait",
+    claim: "None",
+    likeness: "None",
+    rating: null,
+  },
+  "reactor-stare": {
+    form: "clip",
+    draw: "reactor",
+    motion: "stare",
+    text: "optional",
+    seconds: 1.8,
+    size: { w: 0.32, h: 0.4 },
+    source: "drawn by us (stage.html), our seat portrait",
+    claim: "None",
+    likeness: "None",
+    rating: null,
+  },
   "do-something": {
     form: "panel",
     draw: "meme",
@@ -101,6 +144,9 @@ export const OVERLAYS = {
     rating: null,
   },
 };
+
+/** The draws that show a seat's portrait, so an EDL may name the seat. */
+export const PORTRAIT_DRAWS = ["meme", "reactor"];
 
 /** An overlay's text: at most this many characters, names put in. */
 export const OVERLAY_TEXT_CHARS = 40;

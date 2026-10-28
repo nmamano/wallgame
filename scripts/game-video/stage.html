@@ -585,6 +585,52 @@
         aspect-ratio: 1;
         object-fit: contain;
       }
+      #overlay.reactor {
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-end;
+        font-size: calc(var(--board) * 0.046);
+        font-weight: 900;
+        color: #fff;
+        text-align: center;
+        text-shadow:
+          -2px -2px 0 #000,
+          2px -2px 0 #000,
+          -2px 2px 0 #000,
+          2px 2px 0 #000,
+          0 0 0.3em #000;
+      }
+      /* The face takes the room the label leaves; its image adds no size of
+         its own (absolute), so the box never overflows. */
+      #overlay.reactor .face {
+        position: relative;
+        flex: 1 1 0;
+        min-height: 0;
+        width: 100%;
+      }
+      #overlay.reactor .face img {
+        position: absolute;
+        inset: 0;
+        width: 100%;
+        height: 100%;
+        object-fit: contain;
+        filter: drop-shadow(0 0.15em 0.4em rgba(0, 0, 0, 0.7));
+      }
+      #overlay.reactor .emo {
+        position: absolute;
+        right: 4%;
+        top: 0;
+        font-family: "Noto Color Emoji", sans-serif;
+        font-size: 1.6em;
+        text-shadow: none;
+      }
+      #overlay.reactor .label {
+        flex: none;
+        max-width: 100%;
+        /* Not under 1.25: a glyph taller than its line counts as overflow,
+           and the fit would shrink the label to nothing (measured). */
+        line-height: 1.25;
+      }
       #overlay.loading {
         flex-direction: column;
         justify-content: center;
@@ -1630,6 +1676,9 @@
         el.style.transform =
           "translateX(" + shake + "%) scale(" + (0.85 + 0.15 * pop) + ")";
         el.style.fontSize = "";
+        // A reactor's motion goes on after the fit is measured: a transform
+        // counts in the box's overflow, and the shake would shrink the line.
+        let faceMove = null;
         const esc = (v) =>
           String(v).replace(/[&<>"]/g, (c) => "&#" + c.charCodeAt(0) + ";");
         if (o.draw === "toast") {
@@ -1642,6 +1691,43 @@
             '" /><div>' +
             esc(o.text) +
             "</div>";
+        } else if (o.draw === "reactor") {
+          /*
+            Each motion is a pure function of t, so a frame is the same
+            whenever it is drawn: shock shakes and punches in, dying out;
+            laugh bounces; stare creeps in for the whole clip.
+          */
+          const t = o.t;
+          let move = "";
+          let emo = "";
+          if (o.motion === "shock") {
+            const die = 1 - span(t, 0, 0.7);
+            move =
+              "translateX(" +
+              5 * die * Math.sin(t * Math.PI * 2 * 11) +
+              "%) scale(" +
+              (1 + 0.18 * easeOut3(span(t, 0, 0.12)) * (0.6 + 0.4 * die)) +
+              ")";
+            emo = "💦";
+          } else if (o.motion === "laugh") {
+            move =
+              "translateY(" +
+              -9 * Math.abs(Math.sin(t * Math.PI * 3.2)) +
+              "%) rotate(" +
+              6 * Math.sin(t * Math.PI * 3.2) +
+              "deg)";
+            emo = "😂";
+          } else {
+            move = "scale(" + (1 + 0.35 * span(t, 0, 2)) + ")";
+          }
+          faceMove = move;
+          el.innerHTML =
+            '<div class="face"><img src="' +
+            esc(o.portrait) +
+            '" />' +
+            (emo ? '<div class="emo">' + emo + "</div>" : "") +
+            "</div>" +
+            (o.text ? '<div class="label">' + esc(o.text) + "</div>" : "");
         } else if (o.draw === "loading") {
           el.className = "loading" + (o.error ? " error" : "");
           el.innerHTML =
@@ -1681,6 +1767,7 @@
           size -= 1;
           el.style.fontSize = size + "px";
         }
+        if (faceMove) el.querySelector(".face").style.transform = faceMove;
       };
 
       const paintTrap = (tr) => {

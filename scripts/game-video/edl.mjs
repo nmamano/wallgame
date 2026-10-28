@@ -122,7 +122,9 @@
  *             `seconds` (default the asset's; the capture loading bar lasts
  *             until the save and takes none). `text` is the asset's line,
  *             where it takes one; {red} and {blue} in it become the seats'
- *             names. The renderer puts it where it hides nothing in play on
+ *             names. `seat` ("red" or "blue") picks the portrait of an
+ *             asset that shows one (default: the seat the move happened
+ *             to, not the mover). The renderer puts it where it hides nothing in play on
  *             any frame it covers, or stops. One overlay at a time, and the
  *             ending cuts one still open. In a fastForward range the only
  *             event allowed is one panel on the range's first ply, with no
@@ -139,6 +141,7 @@ import {
   OVERLAY_FORMS,
   OVERLAY_NAME_TOKENS,
   OVERLAY_TEXT_CHARS,
+  PORTRAIT_DRAWS,
 } from "./overlays.mjs";
 
 export const EDL_VERSION = 1;
@@ -269,7 +272,7 @@ const KIND_FIELDS = {
   freeze: ["holdSeconds"],
   react: ["cell", "emoji"],
   path: ["cell", "compare", "holdSeconds"],
-  overlay: ["form", "asset", "text", "seconds"],
+  overlay: ["form", "asset", "text", "seconds", "seat"],
 };
 /** The kinds that name one cell, which must be on the board. */
 const CELL_KINDS = ["scared", "laugh", "blunder", "brilliant", "react", "path"];
@@ -570,6 +573,13 @@ export const validateEdl = (raw) => {
       fail(`${where}: ${ev.asset} needs "text"`);
     } else if (ev.text !== undefined) {
       checkOverlayText(ev.text, where);
+    }
+    if (ev.seat !== undefined) {
+      if (!PORTRAIT_DRAWS.includes(asset.draw)) {
+        fail(`${where}: ${ev.asset} shows no seat`);
+      } else if (ev.seat !== "red" && ev.seat !== "blue") {
+        fail(`${where}: seat must be "red" or "blue"`);
+      }
     }
     if (asset.seconds === null && ev.seconds !== undefined) {
       fail(

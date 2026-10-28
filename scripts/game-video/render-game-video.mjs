@@ -3094,6 +3094,8 @@ const renderStyle = async (styleName) => {
       w.errorAt = elapsed;
     }
     const other = REPLAYED.movers[w.ev.ply] === 1 ? 2 : 1;
+    const seat =
+      w.ev.seat === "red" ? redSeat : w.ev.seat === "blue" ? blueSeat : other;
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
@@ -3101,8 +3103,12 @@ const renderStyle = async (styleName) => {
       alpha: 1,
       place: w.place,
       ...(w.asset.draw === "toast" ? { text: overlayText(w.ev) } : {}),
-      ...(w.asset.draw === "meme"
-        ? { text: overlayText(w.ev), portrait: side(other).portrait }
+      ...(w.asset.draw === "meme" || w.asset.draw === "reactor"
+        ? {
+            text: overlayText(w.ev),
+            portrait: side(seat).portrait,
+            motion: w.asset.motion ?? null,
+          }
         : {}),
       ...(w.asset.draw === "loading"
         ? {

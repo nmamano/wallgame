@@ -759,3 +759,22 @@ describe("the overlay event", () => {
     ]);
   });
 });
+
+describe("the overlay event's seat", () => {
+  const ev = (more: object) => ({
+    ...base,
+    events: [{ ply: 3, kind: "overlay", form: "clip", ...more }],
+  });
+  test("names the portrait's seat, on an asset that shows one", () => {
+    expect(
+      accept(ev({ asset: "reactor-shock", seat: "red", text: "brain cell" }))
+        .events[0],
+    ).toMatchObject({ seat: "red", seconds: 1.4 });
+    expect(
+      validateEdl(ev({ asset: "reactor-laugh", seat: "green" })).errors,
+    ).toEqual(['events[0]: seat must be "red" or "blue"']);
+    expect(
+      validateEdl(ev({ asset: "chat-toast", text: "hi", seat: "red" })).errors,
+    ).toEqual(["events[0]: chat-toast shows no seat"]);
+  });
+});
