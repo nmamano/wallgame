@@ -136,11 +136,91 @@ const REPO = resolve(HERE, "../..");
 
 /* ------------------------------------------------------------------ args -- */
 
+/**
+ * The first line is a contract: ship.mjs (step "help") and the release
+ * runbook check that `--help` prints a line that starts with it.
+ */
+const USAGE =
+  "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
+  "       [--seconds-per-move S] [--aspect fit|square|9x16]\n" +
+  "   or: render-game-video.mjs --edl FILE   (the daily look; see edl.mjs)\n" +
+  "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
+  "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
+  "  plumbing, for the app rather than for a person:\n" +
+  "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
+  "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
+  "       [--from-cache] [--cache DIR] [--plies FROM..TO]";
+
+/**
+ * Every flag the renderer takes: "value" (--name VALUE) or "switch". The
+ * readers below (cliArg, arg, flag) ask for these names only, and any other
+ * word on the command line stops the render here, before the browser
+ * starts. Without it a kit older than a flag ignores the flag: a kit
+ * without --from-cache captured the game live, which counts a real view
+ * (Video Reviewer 1, 2026-10-27).
+ */
+const FLAGS = {
+  help: "switch",
+  aspect: "value",
+  "board-theme": "value",
+  browser: "value",
+  cache: "value",
+  edl: "value",
+  encoder: "value",
+  ffmpeg: "value",
+  "from-cache": "switch",
+  game: "value",
+  log: "value",
+  music: "value",
+  "no-music": "switch",
+  out: "value",
+  plies: "value",
+  "seconds-per-move": "value",
+  sounds: "value",
+  style: "value",
+  work: "value",
+  workers: "value",
+};
 const argv = process.argv.slice(2);
+{
+  const problems = [];
+  for (let i = 0; i < argv.length; i += 1) {
+    const name = argv[i].startsWith("--") ? argv[i].slice(2) : null;
+    if (name === null || !Object.hasOwn(FLAGS, name)) {
+      problems.push(`${argv[i]} is not a flag of this renderer`);
+    } else if (FLAGS[name] === "value") {
+      if (i + 1 === argv.length || argv[i + 1].startsWith("--")) {
+        problems.push(`--${name} needs a value`);
+      } else {
+        i += 1;
+      }
+    }
+  }
+  if (problems.length > 0) {
+    console.error(
+      `${problems.join("\n")}\nKnown: ${Object.keys(FLAGS)
+        .map((f) => `--${f}`)
+        .join(" ")}`,
+    );
+    process.exit(2);
+  }
+}
+/** A reader's name must be in FLAGS, or the check above would refuse it. */
+const listed = (name) => {
+  if (!Object.hasOwn(FLAGS, name)) {
+    throw new Error(`the renderer reads --${name}, which FLAGS does not list`);
+  }
+  return name;
+};
 const cliArg = (name) => {
-  const i = argv.indexOf(`--${name}`);
+  const i = argv.indexOf(`--${listed(name)}`);
   return i === -1 ? undefined : argv[i + 1];
 };
+const flag = (name) => argv.includes(`--${listed(name)}`);
+if (flag("help")) {
+  console.log(USAGE);
+  process.exit(0);
+}
 
 /**
  * The edit decision list of a daily video (edl.mjs), written by the director
@@ -180,7 +260,6 @@ const fromEdl = {
   style: EDL ? "daily" : undefined,
 };
 const arg = (name, fallback) => cliArg(name) ?? fromEdl[name] ?? fallback;
-const flag = (name) => argv.includes(`--${name}`);
 
 /**
  * With --log, every progress line goes to that file and stdout carries only
@@ -213,17 +292,7 @@ if (LOG_FILE) {
 
 const rawGame = arg("game");
 if (!rawGame) {
-  console.error(
-    "usage: render-game-video.mjs --game <wallgame.io game url or id>\n" +
-      "       [--seconds-per-move S] [--aspect fit|square|9x16]\n" +
-      "   or: render-game-video.mjs --edl FILE   (the daily look; see edl.mjs)\n" +
-      "       [--music deja-vus|tea-for-two|a-legend|skippy] [--no-music]\n" +
-      "       [--sounds vsMeme=shotgun-2,finish=shotgun-4] [--board-theme crisp|default] [--out FILE]\n" +
-      "  plumbing, for the app rather than for a person:\n" +
-      "       [--log FILE] [--work DIR] [--ffmpeg PATH]\n" +
-      "       [--browser chromium|chrome] [--encoder x264|nvenc] [--workers N]\n" +
-      "       [--from-cache] [--cache DIR] [--plies FROM..TO]",
-  );
+  console.error(USAGE);
   process.exit(2);
 }
 /** Accepts a full share URL or a bare id, because a person will paste either. */
@@ -291,7 +360,7 @@ for (const [flagName, field] of [
   ["no-music", "music"],
   ["sounds", "vsSound and finishSound"],
 ]) {
-  if (EDL && argv.includes(`--${flagName}`)) {
+  if (EDL && flag(flagName)) {
     console.error(`--${flagName} does not apply to an EDL; set its ${field}`);
     process.exit(2);
   }
