@@ -149,9 +149,12 @@ describe("each day's candidates become items at start-up", () => {
       approval: Record<string, unknown>;
     } & Record<string, unknown>;
     const A = real.cands.A;
-    const offer = (sha: string) => ({
+    // A's offer binds A's real video and block, as an ask does.
+    const aVideo = A.copyFor as string;
+    const aBlock = copySha256(A.copy as never);
+    const offer = (sha: string, copySha = `copy-${sha}`) => ({
       videoSha256: sha,
-      copySha256: `copy-${sha}`,
+      copySha256: copySha,
       copy: null,
       gameId: "G",
       edlSha256: "e",
@@ -174,8 +177,8 @@ describe("each day's candidates become items at start-up", () => {
         approver: "Nil",
         answeredAt: "2026-10-27T21:00:00.000Z",
         reply: "A, the save reads best",
-        offered: { A: offer("aa"), B: offer("bb") },
-        videoSha256: "aa",
+        offered: { A: offer(aVideo, aBlock), B: offer("bb") },
+        videoSha256: aVideo,
       },
       posts: { x: { ok: true, mode: "live" } },
     };
@@ -188,8 +191,8 @@ describe("each day's candidates become items at start-up", () => {
     );
     expect(A.state).toBe("approved");
     expect(A.approval).toEqual({
-      videoSha256: "aa",
-      copySha256: "copy-aa",
+      videoSha256: record.cands.A.copyFor as string,
+      copySha256: copySha256(record.cands.A.copy as never),
       by: "Nil",
       at: "2026-10-27T21:00:00.000Z",
     });
@@ -234,6 +237,36 @@ describe("each day's candidates become items at start-up", () => {
     expect(["A", "B"].map((l) => (itemFromDay(none, l) as Item).state)).toEqual(
       ["discarded", "discarded"],
     );
+  });
+
+  test("an approval still to post that binds another block or video stops it", () => {
+    const record = day();
+    const offered = record.approval.offered as Record<string, object>;
+    for (const wrong of [
+      { copySha256: "another block" },
+      { videoSha256: "another video" },
+    ]) {
+      const bad = {
+        ...record,
+        approval: {
+          ...record.approval,
+          offered: { ...offered, A: { ...offered.A, ...wrong } },
+        },
+      };
+      expect(() => itemFromDay(bad, "A")).toThrow(
+        /2026-10-27 candidate A: the approval binds video/,
+      );
+    }
+    // A posted day is history: it migrates as it is.
+    const posted = {
+      ...record,
+      state: "posted",
+      approval: {
+        ...record.approval,
+        offered: { ...offered, A: { ...offered.A, copySha256: "old" } },
+      },
+    };
+    expect((itemFromDay(posted, "A") as Item).state).toBe("posted");
   });
 
   test("a candidate field the migration does not know stops it", () => {
@@ -300,6 +333,41 @@ describe("the store API the poster builds on", () => {
     expect(out.state).toBe("posting");
     expect(out.events.map((e) => e.what)).toEqual(["slot 09:00 took it"]);
     expect((store.item("v-2026-10-28-1") as Item).state).toBe("posting");
+  });
+
+  test("updateItem writes nothing when the change leaves an unknown state or another id", () => {
+    const store = storeWith([item("v-2026-10-28-1", approved("t"))]);
+    const before = readFileSync(
+      join(store.dirs.items, "v-2026-10-28-1.json"),
+      "utf8",
+    );
+    expect(() => {
+      store.updateItem(
+        "v-2026-10-28-1",
+        ["approved"],
+        (it: Item) => {
+          it.state = "post_failed";
+        },
+        "slot 09:00 failed",
+      );
+    }).toThrow(
+      "slot 09:00 failed left v-2026-10-28-1 in an unknown state: post_failed",
+    );
+    expect(() => {
+      store.updateItem(
+        "v-2026-10-28-1",
+        ["approved"],
+        (it: Item) => {
+          it.id = "v-2026-10-28-2";
+        },
+        "rename",
+      );
+    }).toThrow("rename changed the item's id to v-2026-10-28-2");
+    expect(
+      readFileSync(join(store.dirs.items, "v-2026-10-28-1.json"), "utf8"),
+    ).toBe(before);
+    expect(readdirSync(store.dirs.items)).toEqual(["v-2026-10-28-1.json"]);
+    expect(store.counts().approved).toBe(1);
   });
 
   test("the queue is approved items, oldest approval first; post-failed items are listed apart", () => {

@@ -107,7 +107,7 @@ export const reviewState = (item) => {
   const revise = item.reviews.filter((r) => r.action === "revise").at(-1);
   const afterRevise =
     !revise ||
-    (item.render.finishedAt > revise.at && item.copy?.storedAt > revise.at);
+    (item.render?.finishedAt > revise.at && item.copy?.storedAt > revise.at);
   return fresh && afterRevise ? "in-review" : "waiting-copy";
 };
 
@@ -381,6 +381,13 @@ export const openStore = (dataDir) => {
         );
       }
       mutate(item);
+      // A typo in a state would write an item that no list, count or queue
+      // shows, and a changed id would write a second file (Video Reviewer
+      // 2, 2026-10-28): refused, and nothing is written.
+      if (!ITEM_STATES.includes(item.state)) {
+        refuse(`${what} left ${id} in an unknown state: ${item.state}`);
+      }
+      if (item.id !== id) refuse(`${what} changed the item's id to ${item.id}`);
       const utc = new Date().toISOString();
       item.updatedAt = utc;
       item.events = [...item.events, { utc, what }];
@@ -1305,6 +1312,20 @@ export const itemFromDay = (record, label) => {
           storedAt: null,
         }
       : null;
+  // An approval that still has to post must bind the block and the video
+  // the item carries, or the poster would refuse it for ever (Video
+  // Reviewer 2, 2026-10-28): a day like that stops the start-up.
+  if (state === "approved" || state === "post-failed") {
+    const a = approved.offered[label];
+    if (
+      copy?.sha256 !== a.copySha256 ||
+      copy.forVideoSha256 !== a.videoSha256
+    ) {
+      throw new Error(
+        `${record.day} candidate ${label}: the approval binds video ${String(a.videoSha256).slice(0, 12)} and block ${String(a.copySha256).slice(0, 12)}, but the candidate carries video ${String(copy?.forVideoSha256).slice(0, 12)} and block ${String(copy?.sha256).slice(0, 12)}`,
+      );
+    }
+  }
   return {
     version: ITEM_VERSION,
     id: itemId(record.day, label),
