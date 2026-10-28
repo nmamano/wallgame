@@ -2,6 +2,7 @@ import { describe, expect, test } from "bun:test";
 import {
   checkEdlAgainstGame,
   dailySeatColors,
+  dailySeatName,
   DEFAULT_FREEZE_HOLD_SECONDS,
   DEFAULT_SLOT_SOUNDS,
   DEFAULT_TRAP_TEXT,
@@ -11,6 +12,8 @@ import {
   parsePlyWindow,
   pawnMovesOf,
   SAFE_AREA,
+  STRIP_AREA,
+  areaOf,
   validateEdl,
 } from "./edl.mjs";
 import { goalSentenceFor } from "../../shared/domain/variant-rules";
@@ -584,5 +587,39 @@ describe("parsePlyWindow", () => {
     for (const bad of ["12-18", "12..", "..18", "-1..4", "1.5..4", ""]) {
       expect(parsePlyWindow(bad, 0).ok).toBe(false);
     }
+  });
+});
+
+describe("dailySeatName", () => {
+  test("shows a bot's or a guest's name, and no signed-in person's", () => {
+    const seat = (configType: string, displayName: string) => ({
+      configType,
+      displayName,
+    });
+    expect(dailySeatName(seat("bot", "Normal Bot"))).toBe("Normal Bot");
+    expect(dailySeatName(seat("human", "Guest Ibex"))).toBe("Guest Ibex");
+    expect(dailySeatName(seat("human", "Guest Ibex 2"))).toBe("Guest Ibex 2");
+    expect(dailySeatName(seat("human", "nilmamano"))).toBe("Human");
+    expect(dailySeatName(seat("human", "Guestbook Fan"))).toBe("Human");
+    expect(dailySeatName(seat("human", "Guest ibex"))).toBe("Human");
+    expect(dailySeatName(seat("custom", "Guest Ibex"))).toBe("Human");
+    expect(dailySeatName({})).toBe("Human");
+  });
+});
+
+describe("STRIP_AREA", () => {
+  test("runs from SAFE_AREA's bottom to above every organic overlay", () => {
+    expect(STRIP_AREA).toEqual({ x: 140, y: 1248, w: 800, h: 188 });
+    expect(STRIP_AREA.y).toBe(SAFE_AREA.y + SAFE_AREA.h);
+    // The caption, user and sound start 484 px above the frame's bottom,
+    // and the buttons take the right 140 px (presets read 2026-10-28).
+    expect(STRIP_AREA.y + STRIP_AREA.h).toBe(FRAME.h - 484);
+    expect(STRIP_AREA.x + STRIP_AREA.w).toBe(FRAME.w - 140);
+  });
+
+  test("holds the strip box, and every other box to SAFE_AREA", () => {
+    expect(areaOf("strip")).toBe(STRIP_AREA);
+    expect(areaOf("board")).toBe(SAFE_AREA);
+    expect(areaOf("credit")).toBe(SAFE_AREA);
   });
 });

@@ -83,11 +83,14 @@ import {
   checkEdlAgainstGame,
   DEFAULT_SECONDS_PER_MOVE,
   fastForwardTag,
+  areaOf,
   dailySeatColors,
+  dailySeatName,
   DEFAULT_SLOT_SOUNDS,
   FRAME as DAILY_FRAME,
   REACTIONS,
   SAFE_AREA,
+  STRIP_AREA,
   parsePlyWindow,
 } from "./edl.mjs";
 import { replayDistances } from "./race-replay.ts";
@@ -2454,6 +2457,8 @@ const WALLZ_LAYOUT = {
     "--safe-left": `${SAFE_AREA.x}px`,
     "--safe-right": `${DAILY_FRAME.w - SAFE_AREA.x - SAFE_AREA.w}px`,
     "--safe-bottom": `${DAILY_FRAME.h - SAFE_AREA.y - SAFE_AREA.h}px`,
+    "--strip-w": `${STRIP_AREA.w}px`,
+    "--strip-area-top": `${STRIP_AREA.y}px`,
   },
 };
 
@@ -2582,6 +2587,22 @@ const renderStyle = async (styleName) => {
    * worker open it this same way, so they paint a state the same way.
    * Returns the page and the daily board's size (null in the current look).
    */
+  const seatColors = wallz ? SEAT_COLORS(replay) : null;
+  /** The seats as the daily look orders them: red on the left, blue on the right. */
+  const [redSeat, blueSeat] = seatColors?.[1] === "blue" ? [2, 1] : [1, 2];
+  /**
+   * The players strip under the daily board (stage.html #strip): each side's
+   * portrait and name in its colour, the name from the record only
+   * (edl.mjs dailySeatName: a bot's or a guest's, else "Human").
+   */
+  const stripSide = (id) => ({
+    name: dailySeatName(apiPlayers.find((p) => p.playerId === id) ?? {}),
+    portrait: side(id).portrait,
+    hex: side(id).hex,
+  });
+  const strip = wallz
+    ? { a: stripSide(redSeat), b: stripSide(blueSeat) }
+    : null;
   const openStage = async (owner) => {
     const page = await owner.newPage({
       viewport: { width: layout.width, height: layout.height },
@@ -2607,6 +2628,7 @@ const renderStyle = async (styleName) => {
           hud: Boolean(RACE_DISTANCES || GOAL_LINE),
           goal: GOAL_LINE,
           credit: CREDIT_LINES,
+          strip,
         })
       : null;
     return { page, board };
@@ -2834,7 +2856,6 @@ const renderStyle = async (styleName) => {
    * The playing state of a position: the board, the caption, the race
    * counter and the goal line. Effects add to it through `extra`.
    */
-  const seatColors = wallz ? SEAT_COLORS(replay) : null;
   /**
    * The race counter at a position (board index), or null when the video
    * shows none: red on the left, blue on the right, each with its steps,
@@ -2852,8 +2873,7 @@ const renderStyle = async (styleName) => {
       n: now[id],
       changed: now[id] !== before[id],
     });
-    const [red, blue] = seatColors[1] === "red" ? [1, 2] : [2, 1];
-    return { a: seat(red), b: seat(blue), t };
+    return { a: seat(redSeat), b: seat(blueSeat), t };
   };
   const playState = (boardIndex, extra = {}) => ({
     segment: "play",
@@ -3011,19 +3031,32 @@ const renderStyle = async (styleName) => {
         race: Boolean(RACE_DISTANCES),
         goal: Boolean(GOAL_LINE),
         credit: Boolean(CREDIT),
+        strip: Boolean(strip),
       })
     : null;
   for (const [name, b] of Object.entries(layoutBoxes ?? {})) {
+    const area = areaOf(name);
     if (
-      b.x < SAFE_AREA.x ||
-      b.y < SAFE_AREA.y ||
-      b.x + b.w > SAFE_AREA.x + SAFE_AREA.w ||
-      b.y + b.h > SAFE_AREA.y + SAFE_AREA.h
+      b.x < area.x ||
+      b.y < area.y ||
+      b.x + b.w > area.x + area.w ||
+      b.y + b.h > area.y + area.h
     ) {
       throw new Error(
-        `the ${name} box ${JSON.stringify(b)} is outside the safe area ${JSON.stringify(SAFE_AREA)}`,
+        `the ${name} box ${JSON.stringify(b)} is outside its area ${JSON.stringify(area)}`,
       );
     }
+  }
+  if (strip) {
+    const fit = await stage.evaluate(() => window.__stripFit());
+    if (!fit.fits) {
+      throw new Error(
+        `the players strip does not fit one line at its smallest size: ${strip.a.name} vs ${strip.b.name}`,
+      );
+    }
+    log(
+      `players strip: ${strip.a.name} vs ${strip.b.name}, ${fit.size}px, box ${JSON.stringify(layoutBoxes.strip)}`,
+    );
   }
 
   /**

@@ -141,6 +141,26 @@ export const dailySeatColors = (isBot) => {
 export const ENDINGS = ["replay", "gg", "ko"];
 
 /**
+ * A guest's seat name (server/games/guest-names.ts): "Guest " and an animal,
+ * and a number when two guests share the animal. An account name may not
+ * contain "guest", so only a guest can have a name of this form.
+ */
+const GUEST_NAME = /^Guest [A-Z][a-z]+(?: \d+)?$/;
+
+/**
+ * The name the daily video shows for a seat (the players strip): a bot's
+ * name, or a guest's, from the replay's record of the seat. Any other seat
+ * is a signed-in person, whose account name a video never shows: "Human",
+ * as the VS overlay says.
+ * @param {{ configType?: string, displayName?: string }} seat
+ */
+export const dailySeatName = (seat) =>
+  seat.configType === "bot" ||
+  (seat.configType === "human" && GUEST_NAME.test(seat.displayName ?? ""))
+    ? (seat.displayName ?? "Human")
+    : "Human";
+
+/**
  * The daily video's frame, and the part of it that the apps do not paint
  * over. Meta, Instagram Reels video ad spec, read 2026-10-26: "Consider
  * leaving at least 14% of the top, 35% of the bottom, and 6% on each side
@@ -156,6 +176,29 @@ export const SAFE_AREA = {
   w: FRAME.w - 2 * Math.round(FRAME.w * 0.06),
   h: Math.round(FRAME.h * (1 - 0.35)) - Math.round(FRAME.h * 0.14),
 };
+
+/**
+ * The band under SAFE_AREA where the players strip goes (Wall Game Director,
+ * 2026-10-28: the lower third was empty on desktop). The official guides keep
+ * the bottom third free for key elements (Reels 35%, Shorts 672 px, TikTok's
+ * in-feed template 660 px), but on organic posts every app's overlay starts
+ * lower: the deepest of the presets read on 2026-10-28 keeps the bottom
+ * 484 px for the caption, user and sound, and the right 140 px for the
+ * buttons (ezugc.ai, revid.ai, uplads.com). So the band runs from SAFE_AREA's
+ * bottom to 484 px above the frame's, 140 px in from both sides (the strip
+ * is centred). The strip holds the players and the site: nothing a viewer
+ * needs to follow the game, so the key elements stay in SAFE_AREA.
+ */
+export const STRIP_AREA = {
+  x: 140,
+  y: SAFE_AREA.y + SAFE_AREA.h,
+  w: FRAME.w - 2 * 140,
+  h: FRAME.h - 484 - (SAFE_AREA.y + SAFE_AREA.h),
+};
+
+/** The area a measured layout box must lie in: the strip's, or SAFE_AREA. */
+export const areaOf = (boxName) =>
+  boxName === "strip" ? STRIP_AREA : SAFE_AREA;
 
 /**
  * The sounds of the VS punch and the finish where the EDL names none. Wall
