@@ -177,10 +177,12 @@ describe("claim risk", () => {
     expect(risky.sort()).toEqual([
       "alert-1",
       "bell-1",
+      "bell-2",
       "fail-1",
       "horn-1",
       "laugh-1",
       "pointing-1",
+      "pointing-2",
       "reveal-1",
       "shotgun-1",
       "shotgun-4",

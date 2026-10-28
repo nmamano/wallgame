@@ -152,6 +152,27 @@ claimed.
 | violin-1    | Sad violin phrase ("the meme one").                        | 4.6 s  | 3,423,188  | https://www.myinstants.com/en/instant/sad-violin-the-meme-one/                | Know Your Meme: "Sad Violin" is "Sad Romance" by Ji Pyeong-keyon, from the 2003 Korean TV drama "Over the Green Fields". The file name is "tf_nemesis.mp3". This can mean a Team Fortress 2 (Valve) asset. Not confirmed. | High (TV drama soundtrack or game audio)             |
 | ambulance-1 | "Call an ambulance! ... But not for me."                   | 5.0 s  | 15,287     | https://www.myinstants.com/en/instant/call-an-ambulance-but-not-for-me-55557/ | 2018 ad for Silver Series Self-Defense (a Las Vegas class for people 65 and older). Facebook page "Las Vegas Gunfights" posted it on 30 Aug 2018 (Know Your Meme).                                                        | Medium (ad of a small company)                       |
 
+Nil rated the 16 clips by ear on the numbered reel `sound-reel-3.mp4`
+(through the Wall Game Director's ask 26bdf770, 2026-10-28): "all the sound
+reel are good". He keeps all 16, so each is "ok" on `/daily/sounds` (a sound
+with no choice). His keep does not change the claim risk: a High one still
+needs `claimRiskOk` in its list.
+
+### Short cuts (bell-2, pointing-2)
+
+pointing-1 is 12.4 s and bell-1 is 4.2 s, too long for a video of about
+27 s, and an edit list cannot shorten a sound. Wall Game Director,
+2026-10-28: cut a short one of each. The cuts are ours, made from the same
+upload, so they keep their source's claim risk (High). The cut points come
+from the clip's loudness per 100 ms: pointing-2 ends in the dip after the
+second "Spider-Man" (2.6 to 2.8 s); bell-2 keeps the hit and its first decay,
+down about 10 dB from the hit at 2.2 s.
+
+| Key        | Made from  | Length | Command (ffmpeg, from `assets/meme-sounds`)                                                                |
+| ---------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------- |
+| pointing-2 | pointing-1 | 2.8 s  | `-i pointing-1.mp3 -af "atrim=0:2.8,afade=t=out:st=2.55:d=0.25" -c:a libmp3lame -b:a 128k -ar 44100 -ac 2` |
+| bell-2     | bell-1     | 2.2 s  | `-i bell-1.mp3 -af "atrim=0:2.2,afade=t=out:st=1.4:d=0.8" -c:a libmp3lame -b:a 128k -ar 44100 -ac 2`       |
+
 Findings that change the research file: the "GET OUT" voice is not from
 Breaking Bad (Know Your Meme: a GTA 5 roleplay streamer who sounds like
 Tuco, 2023); the vine boom comes from a commercial sound library (Bluezone,
