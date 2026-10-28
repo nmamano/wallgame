@@ -58,6 +58,7 @@ import {
   TIKTOK_TOKEN_URL,
 } from "./post-tiktok.mjs";
 import { instagramDryRunReply, postToInstagram } from "./post-instagram.mjs";
+import { dryRunPublicUrl } from "./public-url-r2.mjs";
 import {
   dryRunTransport,
   NotPosted,
@@ -2563,6 +2564,7 @@ describe("Instagram", () => {
     return postToInstagram({
       video: Buffer.from("v"),
       caption: "c",
+      publicUrl: dryRunPublicUrl,
       transport,
       creds: {
         igUserId: "DRY-RUN-IG-USER-ID",
@@ -2629,11 +2631,13 @@ describe("Instagram", () => {
         : instagramDryRunReply(req),
     );
     expect(r).toEqual({ postId: "DRY-RUN-MEDIA-ID", url: null });
-    expect(steps.slice(-3)).toEqual([
+    // The R2 copy is deleted last.
+    expect(steps.slice(-4, -1)).toEqual([
       "COMMIT",
       "media_publish",
       "DRY-RUN-MEDIA-ID?fields=permalink",
     ]);
+    expect(steps.at(-1)).toMatch(/^[0-9a-f]{32}\.mp4$/);
   });
 });
 
@@ -3380,29 +3384,31 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     body: unknown;
     headers: Record<string, string>;
   }[];
+  const igObject = instagramPlan.find((r) => r.method === "PUT")?.url ?? "";
+  expect(igObject).toMatch(/\/wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
   // The Page and its Instagram account come from the one Meta secret first.
   expect(instagramPlan.map((r) => `${r.method} ${r.url}`)).toEqual([
     "GET https://graph.facebook.com/v26.0/me/accounts?fields=id,name,access_token",
     "GET https://graph.facebook.com/v26.0/DRY-RUN-PAGE-ID?fields=instagram_business_account",
+    `PUT ${igObject}`,
     "POST https://graph.facebook.com/v26.0/DRY-RUN-IG-USER-ID/media",
-    "POST https://rupload.facebook.com/ig-api-upload/v26.0/DRY-RUN-CONTAINER",
-    "GET https://graph.facebook.com/v26.0/DRY-RUN-CONTAINER?fields=status_code",
+    "GET https://graph.facebook.com/v26.0/DRY-RUN-CONTAINER?fields=status_code,status",
     "POST https://graph.facebook.com/v26.0/DRY-RUN-IG-USER-ID/media_publish",
     "GET https://graph.facebook.com/v26.0/DRY-RUN-MEDIA-ID?fields=permalink",
+    `DELETE ${igObject}`,
   ]);
-  expect(instagramPlan[2].body).toEqual({
+  // Instagram fetches the video from R2 (no resumable upload); the plan
+  // names the object, never the signed URL.
+  expect(instagramPlan[3].body).toEqual({
     media_type: "REELS",
-    upload_type: "resumable",
+    video_url: `<signed URL of ${igObject.split("/").slice(-2).join("/")}>`,
     caption: COPY.instagram,
   });
-  expect(instagramPlan[3].headers.file_size).toBe(
-    String((instagramPlan[3].body as { bytes: number }).bytes),
-  );
   // Discovery uses the system user token; the post uses the Page token.
   expect(instagramPlan[0].headers.authorization).toBe(
     "Bearer <META_SYSTEM_USER_TOKEN>",
   );
-  expect(instagramPlan[2].headers.authorization).toBe(
+  expect(instagramPlan[3].headers.authorization).toBe(
     "Bearer <Page token from /me/accounts>",
   );
   expect(log[3]).toMatchObject({

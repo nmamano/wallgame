@@ -202,3 +202,59 @@ export const postToX = async ({
   if (!postId) throw new PostFailed("x post: no post id", post);
   return { postId, url: `https://x.com/i/web/status/${postId}`, mediaId };
 };
+
+/** The read-only request of the auth check: who the four values sign as. */
+export const X_ME_URL = `${X_API}/2/users/me`;
+
+/**
+ * Yes/no facts about the four values that do not show any part of them: is
+ * each set, and does it have whitespace at an end (a pasted line break makes
+ * every signature wrong). An access token from the developer portal has the
+ * form "<user id>-<characters>".
+ * @param {Record<string, string | undefined>} env
+ * @returns {Record<string, { set: boolean, whitespaceAtAnEnd: boolean } | boolean>}
+ */
+export const xSecretShape = (env) => ({
+  ...Object.fromEntries(
+    X_SECRETS.map((name) => {
+      const value = env[name];
+      return [
+        name,
+        {
+          set: typeof value === "string" && value.length > 0,
+          whitespaceAtAnEnd:
+            typeof value === "string" && value.trim() !== value,
+        },
+      ];
+    }),
+  ),
+  accessTokenHasUserIdForm: /^\d+-\S+$/.test(env.X_ACCESS_TOKEN ?? ""),
+});
+
+/**
+ * READ-ONLY: GET /2/users/me signed as a post is. It posts nothing. Returns
+ * the HTTP status; on success the account's public handle and the
+ * x-access-level header that X sends on OAuth 1.0a replies ("read",
+ * "read-write", ...); on failure X's error title and detail. A 200 also
+ * shows that the app is in a Project, which every v2 endpoint needs.
+ */
+export const xAuthCheck = async ({ transport, sign }) => {
+  const req = { method: "GET", url: X_ME_URL };
+  const reply = await transport.request({
+    ...req,
+    headers: { authorization: sign(req) },
+  });
+  return ok(reply)
+    ? {
+        status: reply.status,
+        ok: true,
+        username: reply.json?.data?.username ?? null,
+        accessLevel: reply.headers?.["x-access-level"] ?? null,
+      }
+    : {
+        status: reply.status,
+        ok: false,
+        title: reply.json?.title ?? null,
+        detail: reply.json?.detail ?? null,
+      };
+};

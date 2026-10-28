@@ -122,6 +122,13 @@
  *                                  candidate's video and block on each
  *                                  platform (dry-run without keys)
  *   log [--dry-run]                the post log
+ *   auth-check --platform x|instagram
+ *                                  READ-ONLY: does the platform accept the
+ *                                  app's credentials? X: GET /2/users/me,
+ *                                  with yes/no facts on each secret's shape
+ *                                  and X's access level. Instagram: the
+ *                                  account a post would go to. Posts
+ *                                  nothing and prints no secret value
  *   ship --to <hash>               release a commit that is on main: run
  *                                  from the release checkout, it moves that
  *                                  checkout to <hash>, syncs and checks the
@@ -1095,6 +1102,31 @@ const commands = {
     );
     for (const r of rows) console.log(JSON.stringify(r));
     if (!rows.length) console.log("(empty)");
+  },
+
+  async "auth-check"() {
+    const platform = flag("platform");
+    if (platform !== "x" && platform !== "instagram")
+      die("auth-check needs --platform x|instagram");
+    const r = await app(
+      "GET",
+      `/api/daily/auth-check?platform=${encodeURIComponent(platform)}`,
+    );
+    if (r.missing.length) console.log(`missing: ${r.missing.join(", ")}`);
+    if (r.shape) {
+      for (const [name, f] of Object.entries(r.shape)) {
+        if (typeof f === "boolean") console.log(`${name}: ${f ? "yes" : "no"}`);
+        else
+          console.log(
+            `${name}: ${f.set ? "set" : "NOT SET"}${f.whitespaceAtAnEnd ? ", WHITESPACE AT AN END" : ""}`,
+          );
+      }
+    }
+    if (!r.result) {
+      console.log(`${platform}: not called (its own secrets are missing)`);
+      return;
+    }
+    console.log(`${platform}: ${JSON.stringify(r.result)}`);
   },
 };
 

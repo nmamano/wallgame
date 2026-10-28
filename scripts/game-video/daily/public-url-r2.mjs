@@ -1,9 +1,11 @@
 /**
- * The public copy of the video that Threads fetches (post-threads.mjs), kept
- * in Cloudflare R2 (Nil, ask eb46a7d2, 2026-10-26).
+ * The public copy of the video that Threads and Instagram fetch
+ * (post-threads.mjs, post-instagram.mjs), kept in Cloudflare R2 (Nil, ask
+ * eb46a7d2, 2026-10-26; Instagram since Wall Game PM, 2026-10-28). The
+ * bucket keeps its first name, wallgame-threads-video.
  *
- * The bucket is PRIVATE. The video goes in under a random name, Threads gets
- * a presigned GET URL that works for 15 minutes, and remove() deletes the
+ * The bucket is PRIVATE. The video goes in under a random name, the platform
+ * gets a presigned GET URL that works for 15 minutes, and remove() deletes the
  * object once the post attempt ends, also when it fails. Nil's backstop for
  * what a crash leaves behind is a 1-day lifecycle rule on the bucket (to set
  * before the first live post; see the checklist in post-threads.mjs); the
@@ -27,7 +29,8 @@
  * transport redacts.
  *
  * THE GET URL IS A BEARER LINK for 15 minutes: whoever has it can fetch the
- * video (Warden, via Wall Game PM, 2026-10-26). Only Threads gets it. Logs,
+ * video (Warden, via Wall Game PM, 2026-10-26). Only the platform that
+ * posts gets it (Threads or Instagram). Logs,
  * the post log, the cycle record, plans and error messages name the object
  * by `key` instead (post-threads.mjs).
  */
@@ -58,7 +61,10 @@ export const r2DryRunReply = (req) =>
     ? { status: 204, json: null }
     : { status: 200, json: null };
 
-/** How long Threads may fetch the video. It fetches within the first minutes. */
+/**
+ * How long the platform may fetch the video. Threads fetches it within the
+ * first minutes; Instagram within its 5 minutes of status checks.
+ */
 export const GET_URL_SECONDS = 15 * 60;
 
 const R2_REGION = "auto";

@@ -44,6 +44,15 @@ import {
 } from "./post-threads.mjs";
 import { dryRunPublicUrl, r2PublicUrl, DRY_RUN_R2 } from "./public-url-r2.mjs";
 import { openTokenStore } from "./token-store.mjs";
+import {
+  instagramAuthCheck,
+  instagramDryRunReply,
+  postToInstagram,
+} from "./post-instagram.mjs";
+import { X_ME_URL, oauth1Header, xAuthCheck, xSecretShape } from "./post-x.mjs";
+import { createDaily } from "./routes.mjs";
+import { createServer, type Server } from "node:http";
+import type { AddressInfo } from "node:net";
 
 interface Req {
   method: string;
@@ -54,6 +63,7 @@ interface Req {
 }
 interface Reply {
   status: number;
+  headers?: Record<string, string>;
   json?: unknown;
   text?: string;
 }
@@ -830,5 +840,286 @@ describe("Threads", () => {
     expect(withoutSignedUrl(url.toUpperCase(), url, "<k>")).not.toContain(
       "ABC123",
     );
+  });
+});
+
+describe("Instagram fetches the video from R2", () => {
+  const CREDS = { igUserId: "IG1", pageToken: "SECRET-PAGE" };
+  const post = (
+    transport: ReturnType<typeof fakeLive>,
+    sleep: (ms: number) => Promise<void> = noSleep,
+    beforeCommit = noSleep,
+  ) =>
+    postToInstagram({
+      video: VIDEO,
+      caption: "c",
+      publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
+      transport,
+      creds: CREDS,
+      sleep,
+      beforeCommit,
+    });
+
+  test("a Reel by video_url: no rupload, the commit is media_publish, and the copy is deleted after it", async () => {
+    const transport = fakeLive(instagramDryRunReply);
+    const probe = commitProbe(transport);
+    expect(await post(transport, noSleep, probe.beforeCommit)).toEqual({
+      postId: "DRY-RUN-MEDIA-ID",
+      url: "https://www.instagram.com/reel/DRY-RUN/",
+    });
+    const sent = transport.sent;
+    expect(sent.some((r) => r.url.includes("rupload"))).toBe(false);
+    const put = sent.find((r) => r.method === "PUT");
+    const container = sent.find((r) => r.url.endsWith("/IG1/media"));
+    const body = bodyOf(container!);
+    expect(body).toMatchObject({ media_type: "REELS", caption: "c" });
+    expect(body).not.toHaveProperty("upload_type");
+    // Instagram gets the signed GET of the object that was put.
+    const signed = new URL(String(body?.video_url));
+    expect(`${signed.origin}${signed.pathname}`).toBe(String(put?.url));
+    expect(signed.searchParams.get("X-Amz-Signature")).toMatch(/^[0-9a-f]+$/);
+    expect(sent[probe.at].url).toMatch(/\/IG1\/media_publish$/);
+    expect(sent.at(-1)).toMatchObject({ method: "DELETE", url: put?.url });
+    expectNoSecretInUrls(sent, ["SECRET-PAGE"]);
+  });
+
+  test("processing that ends in ERROR is not posted, the copy is still removed, and the error holds no signed URL", async () => {
+    const signedUrl = () =>
+      String(
+        bodyOf(transport.sent.find((r) => r.url.endsWith("/IG1/media"))!)
+          ?.video_url,
+      );
+    const transport = fakeLive((req) =>
+      req.url.includes("fields=status_code")
+        ? {
+            status: 200,
+            json: {
+              status_code: "ERROR",
+              status: `Error: could not fetch ${signedUrl()}`,
+            },
+          }
+        : instagramDryRunReply(req),
+    );
+    const err = await failure(post(transport));
+    expect(err).toBeInstanceOf(NotPosted);
+    expect(String(err)).toMatch(
+      /ERROR \(Error: could not fetch <signed URL of wallgame-threads-video\/[0-9a-f]{32}\.mp4>\)/,
+    );
+    expect(String(err)).not.toContain("X-Amz-Signature");
+    expect(transport.sent.at(-1)?.method).toBe("DELETE");
+    expect(transport.sent.some((r) => r.url.includes("media_publish"))).toBe(
+      false,
+    );
+  });
+
+  test("a video still IN_PROGRESS after 5 minutes is not posted; each read waits a minute, inside the URL's 15 minutes", async () => {
+    const waits: number[] = [];
+    const transport = fakeLive((req) =>
+      req.url.includes("fields=status_code")
+        ? { status: 200, json: { status_code: "IN_PROGRESS" } }
+        : instagramDryRunReply(req),
+    );
+    const err = await failure(
+      post(transport, (ms) => {
+        waits.push(ms);
+        return Promise.resolve();
+      }),
+    );
+    expect(err).toBeInstanceOf(NotPosted);
+    expect(String(err)).toMatch(/not processed after 300 s/);
+    expect(waits).toEqual([60_000, 60_000, 60_000, 60_000, 60_000]);
+    expect(transport.sent.at(-1)?.method).toBe("DELETE");
+    expect(transport.sent.some((r) => r.url.includes("media_publish"))).toBe(
+      false,
+    );
+  });
+});
+
+describe("read-only auth checks", () => {
+  const X_ENV = {
+    X_API_KEY: "SECRET-KEY",
+    X_API_SECRET: "SECRET-KEY-SECRET",
+    X_ACCESS_TOKEN: "12345-SECRET-TOKEN",
+    X_ACCESS_TOKEN_SECRET: "SECRET-TOKEN-SECRET",
+  };
+  const ALL_SECRETS = Object.values(X_ENV);
+
+  test("xSecretShape says yes or no and holds no part of a value", () => {
+    const shape = xSecretShape({
+      ...X_ENV,
+      X_API_SECRET: "SECRET-KEY-SECRET\n",
+      X_ACCESS_TOKEN_SECRET: "",
+    });
+    expect(shape).toEqual({
+      X_API_KEY: { set: true, whitespaceAtAnEnd: false },
+      X_API_SECRET: { set: true, whitespaceAtAnEnd: true },
+      X_ACCESS_TOKEN: { set: true, whitespaceAtAnEnd: false },
+      X_ACCESS_TOKEN_SECRET: { set: false, whitespaceAtAnEnd: false },
+      accessTokenHasUserIdForm: true,
+    });
+    expect(xSecretShape({ ...X_ENV, X_ACCESS_TOKEN: "abc" })).toMatchObject({
+      accessTokenHasUserIdForm: false,
+    });
+  });
+
+  test("xAuthCheck sends one signed GET of /2/users/me and reports the access level, or X's error", async () => {
+    const ok = fakeLive(() => ({
+      status: 200,
+      headers: { "x-access-level": "read-write" },
+      json: { data: { id: "1", username: "wallgameio" } },
+    }));
+    const sign = (r: { method: string; url: string }) => oauth1Header(r, X_ENV);
+    expect(await xAuthCheck({ transport: ok, sign })).toEqual({
+      status: 200,
+      ok: true,
+      username: "wallgameio",
+      accessLevel: "read-write",
+    });
+    expect(ok.sent).toHaveLength(1);
+    expect(ok.sent[0]).toMatchObject({ method: "GET", url: X_ME_URL });
+    expect(ok.sent[0].headers?.authorization).toMatch(/^OAuth /);
+
+    const refused = fakeLive(() => ({
+      status: 401,
+      json: { title: "Unauthorized", status: 401, detail: "Unauthorized" },
+    }));
+    expect(await xAuthCheck({ transport: refused, sign })).toEqual({
+      status: 401,
+      ok: false,
+      title: "Unauthorized",
+      detail: "Unauthorized",
+    });
+  });
+
+  test("instagramAuthCheck reads the account with the Page token, and reports only Graph error codes", async () => {
+    const creds = { igUserId: "IG1", pageToken: "SECRET-PAGE" };
+    const ok = fakeLive(() => ({
+      status: 200,
+      json: { username: "wallgame.io" },
+    }));
+    expect(await instagramAuthCheck({ transport: ok, creds })).toEqual({
+      status: 200,
+      ok: true,
+      username: "wallgame.io",
+    });
+    expect(ok.sent[0]).toMatchObject({
+      method: "GET",
+      url: "https://graph.facebook.com/v26.0/IG1?fields=username",
+    });
+    expect(ok.sent[0].headers?.authorization).toBe("Bearer SECRET-PAGE");
+    const refused = fakeLive(() => ({
+      status: 400,
+      json: {
+        error: {
+          message: "token SECRET-PAGE is bad",
+          type: "OAuthException",
+          code: 190,
+        },
+      },
+    }));
+    const r = await instagramAuthCheck({ transport: refused, creds });
+    expect(r).toEqual({ status: 400, ok: false, error: "OAuthException 190" });
+  });
+
+  /** GET /api/daily/auth-check on an app with `env`; its reply and requests. */
+  const authCheck = async (
+    env: Record<string, string>,
+    platform: string,
+    answer: Answer = () => ({ status: 200, json: {} }),
+  ) => {
+    const transport = fakeLive(answer);
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env,
+      live: () => transport,
+    });
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const res = await fetch(
+        `http://127.0.0.1:${port}/api/daily/auth-check?platform=${platform}`,
+      );
+      return {
+        status: res.status,
+        text: await res.text(),
+        sent: transport.sent,
+      };
+    } finally {
+      daily.stop();
+      server.close();
+    }
+  };
+
+  test("the route calls X once, read-only, and its reply names no secret value", async () => {
+    const { status, text, sent } = await authCheck(
+      { ...X_ENV, X_API_SECRET: "SECRET-KEY-SECRET\n" },
+      "x",
+      () => ({
+        status: 401,
+        json: { title: "Unauthorized", status: 401, detail: "Unauthorized" },
+      }),
+    );
+    expect(status).toBe(200);
+    expect(sent.map((r) => `${r.method} ${r.url}`)).toEqual([
+      `GET ${X_ME_URL}`,
+    ]);
+    const reply = JSON.parse(text) as {
+      missing: string[];
+      shape: Record<string, unknown>;
+      result: unknown;
+    };
+    expect(reply.missing).toEqual([]);
+    expect(reply.shape.X_API_SECRET).toEqual({
+      set: true,
+      whitespaceAtAnEnd: true,
+    });
+    expect(reply.result).toMatchObject({ status: 401, ok: false });
+    for (const secret of ALL_SECRETS) expect(text).not.toContain(secret);
+  });
+
+  test("the route does not call a platform whose own secrets are missing; R2 alone does not stop the Instagram read", async () => {
+    const x = await authCheck({ X_API_KEY: "SECRET-KEY" }, "x");
+    expect(x.sent).toHaveLength(0);
+    expect(JSON.parse(x.text)).toMatchObject({
+      missing: ["X_API_SECRET", "X_ACCESS_TOKEN", "X_ACCESS_TOKEN_SECRET"],
+      result: null,
+    });
+    const ig = await authCheck({}, "instagram");
+    expect(ig.sent).toHaveLength(0);
+    const withMeta = await authCheck(
+      { META_SYSTEM_USER_TOKEN: "SECRET-SU" },
+      "instagram",
+      (req) =>
+        req.url.includes("/me/accounts")
+          ? {
+              status: 200,
+              json: {
+                data: [
+                  { id: "P1", name: "Wall Game", access_token: "SECRET-PAGE" },
+                ],
+              },
+            }
+          : req.url.includes("fields=instagram_business_account")
+            ? {
+                status: 200,
+                json: { instagram_business_account: { id: "IG1" } },
+              }
+            : { status: 200, json: { username: "wallgame.io" } },
+    );
+    expect(withMeta.sent.every((r) => r.method === "GET")).toBe(true);
+    expect(JSON.parse(withMeta.text)).toMatchObject({
+      missing: ["R2_ACCESS_KEY_ID", "R2_SECRET_ACCESS_KEY"],
+      result: { status: 200, ok: true, username: "wallgame.io" },
+    });
+    for (const secret of ["SECRET-SU", "SECRET-PAGE"]) {
+      expect(withMeta.text).not.toContain(secret);
+    }
+  });
+
+  test("an unknown platform is refused", async () => {
+    expect((await authCheck({}, "tiktok")).status).toBe(409);
   });
 });

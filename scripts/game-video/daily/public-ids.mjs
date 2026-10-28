@@ -37,8 +37,9 @@ export const PUBLIC_IDS = Object.freeze({
 export const PLATFORM_IDS = {
   youtube: ["YOUTUBE_CLIENT_ID"],
   tiktok: ["TIKTOK_CLIENT_KEY"],
-  // Threads fetches the video from R2 (public-url-r2.mjs).
+  // Threads and Instagram fetch the video from R2 (public-url-r2.mjs).
   threads: ["THREADS_APP_ID", "R2_ACCOUNT_ID"],
+  instagram: ["R2_ACCOUNT_ID"],
   bluesky: ["BLUESKY_IDENTIFIER"],
 };
 

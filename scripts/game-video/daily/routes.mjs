@@ -111,7 +111,11 @@ import {
   NotPosted,
   PostFailed,
 } from "./transport.mjs";
-import { postToInstagram, instagramDryRunReply } from "./post-instagram.mjs";
+import {
+  postToInstagram,
+  instagramAuthCheck,
+  instagramDryRunReply,
+} from "./post-instagram.mjs";
 import {
   postToTiktok,
   tiktokDryRunReply,
@@ -120,6 +124,8 @@ import {
 } from "./post-tiktok.mjs";
 import {
   postToX,
+  xAuthCheck,
+  xSecretShape,
   oauth1Header,
   dryRunSigner,
   xDryRunReply,
@@ -192,7 +198,12 @@ const SECRET_GROUPS = {
   youtube: [{ label: "secrets", names: YOUTUBE_SECRETS }],
   tiktok: [{ label: "secrets", names: TIKTOK_SECRETS }],
   // One system-user token finds the Page and Instagram (meta.mjs).
-  instagram: [{ label: "secrets", names: META_SECRETS }],
+  // Instagram fetches the video from R2 too, as Threads does (Wall Game
+  // PM, 2026-10-28).
+  instagram: [
+    { label: "secrets", names: META_SECRETS },
+    { label: "R2 secrets", names: R2_SECRETS },
+  ],
   facebook: [{ label: "secrets", names: META_SECRETS }],
   bluesky: [{ label: "secrets", names: BLUESKY_SECRETS }],
   // Threads fetches the video from R2 (public-url-r2.mjs), so it is live
@@ -877,6 +888,7 @@ export const createDaily = ({
           return postToInstagram({
             video,
             caption: texts.instagram,
+            publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
             transport,
             creds: { igUserId: meta.igUserId, pageToken: meta.pageToken },
             sleep,
@@ -1693,6 +1705,49 @@ export const createDaily = ({
         ],
       ]),
     ),
+
+    /**
+     * READ-ONLY: does the platform accept the app's credentials? ?platform=x
+     * reads GET /2/users/me, ?platform=instagram finds the account as a post
+     * does and reads its username. Nothing is posted and no file is written.
+     * The reply names secrets, never a value: for X also yes/no shape facts.
+     * A platform whose own secrets are missing is not called.
+     */
+    "GET /api/daily/auth-check": async (req, res, url) => {
+      const platform = url.searchParams.get("platform");
+      if (platform !== "x" && platform !== "instagram") {
+        throw new StepRefused("auth-check takes platform=x or instagram");
+      }
+      const missing = SECRET_GROUPS[platform]
+        .flatMap((g) => g.names)
+        .filter((name) => !env[name]);
+      const shape = platform === "x" ? { shape: xSecretShape(env) } : {};
+      // The call needs the platform's own secrets; R2 is only for a post.
+      const own = SECRET_GROUPS[platform].find((g) => g.label === "secrets");
+      if (own.names.some((name) => !env[name])) {
+        return json(res, 200, { platform, missing, ...shape, result: null });
+      }
+      const transport = makeLiveTransport();
+      let result;
+      if (platform === "x") {
+        result = await xAuthCheck({
+          transport,
+          sign: (r) => oauth1Header(r, env),
+        });
+      } else {
+        try {
+          const meta = await discoverMeta({
+            transport,
+            token: env.META_SYSTEM_USER_TOKEN,
+            instagram: "id",
+          });
+          result = await instagramAuthCheck({ transport, creds: meta });
+        } catch (err) {
+          result = { ok: false, error: err.message };
+        }
+      }
+      json(res, 200, { platform, missing, ...shape, result });
+    },
 
     "GET /api/daily/post-log": (req, res, url) =>
       json(
