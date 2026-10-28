@@ -1,31 +1,34 @@
 /**
- * Nil's review queue (Nil, via Wall Game Growth, 2026-10-28): the /review
- * page of the game-video app. It shows the oldest item in review (store.mjs
- * reviewState) with everything that will post, and three actions:
+ * Nil's review queue (Nil, via Wall Game Growth, 2026-10-28): the page the
+ * game-video app opens on (/, and /review). Nil, 2026-10-28: "I literally
+ * only need to see the videos and captions. Everything else is context i
+ * don't need." So it shows every item in review (store.mjs reviewState),
+ * oldest first, each with ONLY its video, its caption (the post's text, one
+ * line: postCaption), one red line for each sound with a high claim risk
+ * that the video plays (Wall Game Director, 2026-10-28: the director kept
+ * it on purpose, so Nil sees the risk) and three actions:
  *
  *   Approve  -> approved: the item posts at the next slot (Wall Game Worker
  *               1's scheduler), bound to this video and this block
- *   Discard  -> discarded, with Nil's notes (required)
  *   Revise   -> back to the director as a draft, same id, with Nil's notes
  *               (required); it is in review again only with a new render
  *               AND a new block
+ *   Discard  -> discarded, with Nil's notes (required)
  *
- * Below it, the READY items (approved, no slot took them yet), each with
- *
- *   Withdraw -> in review again (Nil's notes optional): Approve is one tap,
- *               so a mis-tap is undone without a confirm dialog
- *
- * Approve is refused, and the page disables it with the reason, while
- * another item of the game is approved, posting, posted or post-failed
- * (only one video of a game posts), or while the render plays a track that
- * may not play (store.mjs approveProblem).
+ * Right after an Approve, the card offers Undo (withdraw: in review again),
+ * so a mis-tap on a phone is undone without a confirm dialog. A reason shows
+ * only when an action cannot work: a refusal, or Approve disabled while
+ * another video of the game posts or the render's music may not play
+ * (store.mjs approveProblem). No counts, ids, slots or copy-block details:
+ * the agents read those from crew.mjs and /api/review/status.
  *
  * POST /api/review/<id>/approve|discard|revise takes {notes, videoSha256,
  * copySha256}: the hashes of what the page showed, so Nil approves what he
- * saw, not a newer render. POST /api/review/<id>/withdraw takes {notes}. Every action goes to the feedback log, and the
- * app tells the director AT ONCE (Nil, 2026-10-28: "the feedback i enter in
- * the app should go straight to director"). A failed message does not undo
- * the action: the row is stored and the page says "Director not told".
+ * saw, not a newer render. POST /api/review/<id>/withdraw takes {notes}.
+ * Every action goes to the feedback log, and the app tells the director AT
+ * ONCE (Nil, 2026-10-28: "the feedback i enter in the app should go
+ * straight to director"). A failed message does not undo the action: the
+ * row is stored and a warning is logged.
  *
  * ONLY NIL REVIEWS. The office sets X-Isomux-Member-Id on each request
  * through the app's address and removes any X-Isomux-* header that the
@@ -38,10 +41,10 @@
  * The review never writes posting, posted, post-failed or posts{}: those
  * are the poster's.
  */
-import { copyLines, copySha256 } from "./copy.mjs";
-import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
+import { copySha256 } from "./copy.mjs";
 import { StepRefused } from "./store.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
+import { claimRisk, soundUses } from "./sounds.mjs";
 
 /** The office member who reviews: Nil (his id in the office's users.json). */
 export const REVIEWER_MEMBER_ID = "6f26107a";
@@ -50,111 +53,42 @@ export const REVIEWER_MEMBER_ID = "6f26107a";
 export const REVIEW_ACTION_PATH =
   /^\/api\/review\/(v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+)\/(approve|discard|revise|withdraw)$/;
 
-/** One post every 24 h (Growth's cadence), so n approved items are n days. */
-const POSTS_PER_DAY = 1;
-/** Nil's last review is marked when it is older than this. */
-export const REVIEW_STALE_HOURS = 48;
-
-const PLATFORM_NAMES = {
-  x: "X",
-  youtube: "YouTube",
-  tiktok: "TikTok draft",
-  instagram: "Instagram",
-  facebook: "Facebook",
-  bluesky: "Bluesky",
-  threads: "Threads",
-};
-
 /**
- * The line next to Approve: where an approved item goes. The slot fixes the
- * platforms (the ones live then), so the line names no time and says what
- * is live now. TikTok posts as an inbox draft that Nil finishes.
- * @param {Record<string, string>} modes platform -> "live" | "dry-run"
+ * The caption Nil reads: the post's own text, one line. Growth writes the
+ * same text on every platform's line, so the X line stands for all of them,
+ * without the music credit that Growth puts after " · music:".
+ * @param {Record<string, string>} block Growth's copy block (copy.mjs)
  */
-export const approveLine = (modes) => {
-  const live = Object.keys(PLATFORM_NAMES)
-    .filter((p) => modes[p] === "live")
-    .map((p) => PLATFORM_NAMES[p]);
-  return `Posts at the next slot to every platform that is live then; now: ${live.length ? live.join(", ") : "none (a dry run posts nothing)"}.`;
-};
-
-/** The credit line of each track the video plays, in order. */
-const musicOf = (render) =>
-  (render.music ?? []).map((cue) => {
-    const track = MUSIC_TRACKS.find((t) => t.slug === cue.track);
-    return {
-      track: cue.track,
-      fromPly: cue.fromPly,
-      credit: track?.license === "ok-with-credit" ? track.credit : null,
-      title: track?.title ?? cue.track,
-      // A track that may not play blocks Approve (store approveProblem).
-      license: track?.license ?? "unknown",
-      mayPlay: track ? mayPlay(track) : false,
-    };
-  });
+export const postCaption = (block) =>
+  (block.x ?? "").split(/\s+·\s+music:/i)[0].trim();
 
 /**
- * What the page shows: the oldest item in review (or null) and the queue's
- * counts.
+ * What the page shows: every item in review, oldest first, with only what
+ * Nil sees and what his actions send back.
  * @param {ReturnType<import("./store.mjs").openStore>} store
- * @param {{ modes: Record<string, string>, nowMs: number }} at
  */
-export const reviewView = (store, { modes, nowMs }) => {
-  const counts = store.counts();
-  const next = store.inReview()[0] ?? null;
-  const last = store.lastReview();
-  const ageHours = last ? (nowMs - Date.parse(last.at)) / 3_600_000 : null;
-  return {
-    item: next && {
-      id: next.id,
-      gameId: next.gameId,
-      players: next.candidate.seats.map((s) => s.name),
-      caption: next.caption,
-      // The director's one line to Nil (store.setNote), frozen in review.
-      directorNote: next.directorNote?.text ?? null,
-      payoff: next.payoff?.text ?? null,
-      videoSha256: next.render.video.sha256,
-      // Recomputed, as store.review compares it: a stored hash from an
-      // older definition would refuse every action on the item.
-      copySha256: copySha256(next.copy.block),
-      copyVersion: next.copy.block.version,
-      // Growth's block, word for word, as it posts.
-      copy: copyLines(next.copy.block),
-      music: musicOf(next.render),
-      durationSeconds: next.render.video.durationSeconds ?? null,
-      // Other videos of this game that are not discarded.
-      sameGame: store.sameGame(next),
-      // Why Approve cannot work now, or null: the page disables it.
-      approveProblem: store.approveProblem(next),
-      // Earlier review actions on this item (after a revise).
-      reviews: next.reviews.map((r) => ({
-        action: r.action,
-        notes: r.notes,
-        at: r.at,
-      })),
-    },
-    review: { count: counts.inReview, target: store.queue().reviewTarget },
-    ready: {
-      count: counts.approved,
-      days: counts.approved / POSTS_PER_DAY,
-      // In the order they post; each one Nil may withdraw.
-      items: store.approvedQueue().map((it) => ({
-        id: it.id,
-        players: it.candidate.seats.map((s) => s.name),
-        caption: it.caption,
-        approvedAt: it.approval.at,
-      })),
-    },
-    lastReview: last && {
-      at: last.at,
-      itemId: last.itemId,
-      action: last.action,
-      ageHours: Math.floor(ageHours),
-      stale: ageHours > REVIEW_STALE_HOURS,
-    },
-    approveLine: approveLine(modes),
-  };
-};
+export const reviewView = (store) => ({
+  items: store.inReview().map((it) => ({
+    // For the action's address and the video's; the page does not show it.
+    id: it.id,
+    videoSha256: it.render.video.sha256,
+    // Recomputed, as store.review compares it: a stored hash from an
+    // older definition would refuse every action on the item.
+    copySha256: copySha256(it.copy.block),
+    caption: postCaption(it.copy.block),
+    // Why Approve cannot work now, or null: the page disables it.
+    approveProblem: store.approveProblem(it),
+    // Each sound with a high claim risk that the video plays, once: the
+    // director kept it on purpose, and Nil must see the risk.
+    claimRiskSounds: [
+      ...new Set(
+        soundUses(it.edl.doc)
+          .map(([, key]) => key)
+          .filter((key) => claimRisk(key)),
+      ),
+    ],
+  })),
+});
 
 /** The director's message about one review action: everything to act on. */
 export const directorText = (item, action, notes) =>
@@ -245,141 +179,94 @@ export const reviewAction = async ({
 export const REVIEW_PAGE = `<!doctype html>
 <html lang="en"><head><meta charset="utf-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1" />
-<title>Wall Game: review</title>
+<title>Wall Game videos</title>
 <style>
   body { font-family: system-ui, sans-serif; background: #0b0f1c; color: #e2e8f0;
-         margin: 0; padding: 20px 14px; display: flex; justify-content: center; }
-  main { width: 100%; max-width: 560px; }
-  h1 { font-size: 20px; margin: 0 0 10px; }
-  .counts { display: flex; flex-wrap: wrap; gap: 8px; margin-bottom: 14px; }
-  .pill { padding: 3px 10px; border-radius: 999px; font-size: 13px; font-weight: 700; background: #1e293b; }
-  .warn { background: #7f1d1d; }
-  .box { padding: 12px 14px; border-radius: 8px; background: #121a2e; border: 1px solid #334155;
-         font-size: 14px; line-height: 1.5; margin-bottom: 12px; overflow-wrap: anywhere; }
-  .muted { color: #94a3b8; font-size: 13px; }
-  .cap { white-space: pre-wrap; overflow-wrap: anywhere; background: #0b1222; padding: 6px 8px; border-radius: 6px; margin: 3px 0; }
-  .err { color: #fca5a5; white-space: pre-wrap; }
-  .ok { color: #86efac; }
-  video { display: block; max-width: 100%; max-height: 75vh; margin: 0 auto 10px; border-radius: 8px; background: #000; }
-  textarea { width: 100%; box-sizing: border-box; min-height: 80px; background: #0b1222; color: #e2e8f0;
-             border: 1px solid #334155; border-radius: 6px; padding: 8px; font: inherit; }
-  .actions { display: flex; gap: 8px; margin-top: 10px; }
-  button { flex: 1; padding: 10px; border-radius: 8px; border: 0; font-weight: 700; font-size: 15px; cursor: pointer; }
-  button:disabled { opacity: 0.5; cursor: default; }
+         margin: 0; padding: 16px 12px 40px; display: flex; justify-content: center; }
+  main { width: 100%; max-width: 520px; }
+  .card { margin-bottom: 28px; }
+  video { display: block; width: 100%; max-height: 78vh; border-radius: 10px; background: #000; }
+  .caption { font-size: 17px; line-height: 1.4; margin: 10px 2px; white-space: pre-wrap; overflow-wrap: anywhere; }
+  textarea { width: 100%; box-sizing: border-box; min-height: 44px; background: #0b1222; color: #e2e8f0;
+             border: 1px solid #334155; border-radius: 8px; padding: 8px; font: inherit; font-size: 15px; }
+  .actions { display: flex; gap: 8px; margin-top: 8px; }
+  button { flex: 1; padding: 12px; border-radius: 8px; border: 0; font-weight: 700; font-size: 15px; cursor: pointer; }
+  button:disabled { opacity: 0.45; cursor: default; }
   .approve { background: #16a34a; color: #fff; } .revise { background: #ca8a04; color: #1a1005; }
   .discard { background: #475569; color: #fff; }
-  .note { background: #1e3a5f; border-color: #3b82f6; font-weight: 600; }
-  h2 { font-size: 16px; margin: 18px 0 8px; }
-  .ready { display: flex; align-items: center; gap: 10px; }
-  .ready div { flex: 1; }
-  .withdraw { flex: 0 0 auto; padding: 8px 12px; font-size: 14px; background: #334155; color: #fff; }
+  .undo { flex: 0 0 auto; padding: 8px 14px; background: #334155; color: #fff; font-size: 14px; }
+  .done { display: flex; align-items: center; gap: 12px; margin-top: 8px; font-size: 15px; }
+  .risk { color: #f87171; font-size: 15px; font-weight: 700; margin: 0 2px 10px; }
+  .why { color: #fca5a5; font-size: 14px; margin-top: 6px; white-space: pre-wrap; }
+  .quiet { color: #94a3b8; text-align: center; margin-top: 40px; }
 </style></head>
-<body><main>
-  <h1>Wall Game videos: review</h1>
-  <div id="counts" class="counts"></div>
-  <div id="result"></div>
-  <div id="item"></div>
-  <div id="ready"></div>
+<body><main id="list"></main>
 <script>
-  // NOTHING HERE MAY USE innerHTML: player names, captions and notes are untrusted.
-  const $ = (id) => document.getElementById(id);
+  // NOTHING HERE MAY USE innerHTML: captions and refusals are untrusted text.
   const el = (tag, cls, text) => { const n = document.createElement(tag);
     if (cls) n.className = cls; if (text !== undefined && text !== null) n.textContent = String(text); return n; };
 
-  const showCounts = (v) => {
-    const c = $("counts"); c.replaceChildren();
-    c.append(el("span", "pill" + (v.review.count < v.review.target ? " warn" : ""),
-      "REVIEW " + v.review.count + " of " + v.review.target));
-    c.append(el("span", "pill", "READY " + v.ready.count + " = " + v.ready.days + " day" + (v.ready.days === 1 ? "" : "s") + " of posts"));
-    const last = v.lastReview;
-    c.append(el("span", "pill" + (last && last.stale ? " warn" : ""),
-      last ? "Your last review: " + last.ageHours + " h ago" + (last.stale ? " (over 48 h)" : "") : "No review yet"));
+  const post = async (id, action, body) => {
+    const res = await fetch("/api/review/" + encodeURIComponent(id) + "/" + action, {
+      method: "POST", headers: { "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const out = await res.json().catch(() => ({ error: "HTTP " + res.status }));
+    return res.ok ? null : out.error || "HTTP " + res.status;
   };
 
-  const showItem = (v) => {
-    const box = $("item"); box.replaceChildren();
-    const it = v.item;
-    if (!it) { box.append(el("div", "box muted", "Nothing to review now.")); return; }
-    const head = el("div", "box");
-    head.append(el("div", null, it.id + ": " + it.players.join(" vs ")));
-    if (it.caption) head.append(el("div", null, "On the video: " + it.caption));
-    if (it.payoff) head.append(el("div", null, "Payoff: " + it.payoff));
-    for (const m of it.music) head.append(m.mayPlay
-      ? el("div", "muted", "Music: " + m.title + (m.credit ? " (credit: " + m.credit + ")" : ""))
-      : el("div", "err", "Music: " + m.title + " (license: " + m.license + ", cannot be approved)"));
-    for (const r of it.reviews) head.append(el("div", "muted", "Your " + r.action + " at " + r.at + (r.notes ? ": " + r.notes : "")));
-    for (const o of it.sameGame) head.append(el("div", "err", "Another video of this game: " + o.id + " (" + o.state + ")"));
-    const video = el("video"); video.controls = true; video.playsInline = true;
-    video.src = "/api/daily/video?item=" + encodeURIComponent(it.id);
-    if (it.directorNote) box.append(el("div", "box note", "Director: " + it.directorNote));
-    const copy = el("div", "box");
-    copy.append(el("div", "muted", "Post text by Wall Game Growth (" + it.copyVersion + "), word for word:"));
-    for (const l of it.copy) copy.append(el("div", "cap", l));
-    const act = el("div", "box");
-    act.append(el("div", "muted", v.approveLine));
-    const notes = el("textarea"); notes.placeholder = "Notes for the director (needed for Discard and Revise)";
-    act.append(notes);
+  const card = (it, canReview) => {
+    const box = el("section", "card");
+    const video = el("video"); video.controls = true; video.playsInline = true; video.preload = "metadata";
+    // "#t=0.5": a phone shows that frame before play, not a black box.
+    video.src = "/api/daily/video?item=" + encodeURIComponent(it.id) + "#t=0.5";
+    const notes = el("textarea"); notes.placeholder = "Notes (needed to revise or discard)";
+    const why = el("div", "why");
     const row = el("div", "actions");
     const buttons = [["approve", "Approve"], ["revise", "Revise"], ["discard", "Discard"]].map(([action, label]) => {
       const b = el("button", action, label);
-      b.onclick = () => send(it, action, notes.value, buttons);
+      b.disabled = !canReview;
+      b.onclick = async () => {
+        buttons.forEach((x) => (x.disabled = true));
+        why.textContent = "";
+        const error = await post(it.id, action,
+          { notes: notes.value, videoSha256: it.videoSha256, copySha256: it.copySha256 });
+        if (error) { why.textContent = error; buttons.forEach((x) => (x.disabled = false)); return; }
+        done(box, it, action);
+      };
       row.append(b); return b;
     });
-    if (!v.canReview) {
-      buttons.forEach((b) => (b.disabled = true));
-      act.append(el("div", "muted", "Only Nil reviews videos; you can watch."));
-    }
-    act.append(row);
-    // Approve cannot work: the reason takes its place; Revise and Discard stay.
-    if (it.approveProblem) {
-      const approve = buttons[0];
-      approve.disabled = true;
-      approve.textContent = "Cannot approve";
-      act.append(el("div", "err", it.approveProblem));
-    }
-    box.append(video, head, copy, act);
+    if (it.approveProblem) { buttons[0].disabled = true; why.textContent = it.approveProblem; }
+    box.append(video, el("div", "caption", it.caption));
+    for (const key of it.claimRiskSounds) box.append(el("div", "risk", "Uses " + key + ": a claim is possible."));
+    box.append(notes, row, why);
+    return box;
   };
 
-  const showReady = (v) => {
-    const box = $("ready"); box.replaceChildren();
-    if (!v.ready.items.length) return;
-    box.append(el("h2", null, "Ready to post (oldest first)"));
-    const notes = el("textarea"); notes.placeholder = "Notes for the director (optional for Withdraw)";
-    notes.style.minHeight = "40px";
-    // Above the list, so Nil writes before he taps.
-    box.append(notes);
-    const buttons = [];
-    for (const r of v.ready.items) {
-      const row = el("div", "box ready");
-      row.append(el("div", null, r.id + ": " + r.players.join(" vs ") + (r.caption ? " / " + r.caption : "")));
-      const b = el("button", "withdraw", "Withdraw");
-      b.disabled = !v.canReview;
-      b.onclick = () => send(r, "withdraw", notes.value, buttons);
-      buttons.push(b); row.append(b); box.append(row);
+  /** The card after an action: one line, and Undo right after an Approve. */
+  const done = (box, it, action) => {
+    const line = el("div", "done");
+    line.append(el("span", null, { approve: "Approved.", revise: "Sent back to the director.", discard: "Discarded." }[action]));
+    const why = el("div", "why");
+    if (action === "approve") {
+      const undo = el("button", "undo", "Undo");
+      undo.onclick = async () => {
+        undo.disabled = true;
+        const error = await post(it.id, "withdraw", { notes: "" });
+        if (error) { why.textContent = error; undo.disabled = false; return; }
+        load();
+      };
+      line.append(undo);
     }
-  };
-
-  const send = async (it, action, notes, buttons) => {
-    buttons.forEach((b) => (b.disabled = true));
-    const res = await fetch("/api/review/" + encodeURIComponent(it.id) + "/" + action, {
-      method: "POST", headers: { "content-type": "application/json" },
-      body: JSON.stringify({ notes, videoSha256: it.videoSha256, copySha256: it.copySha256 }),
-    });
-    const out = await res.json().catch(() => ({ error: "HTTP " + res.status }));
-    const r = $("result"); r.replaceChildren();
-    if (!res.ok) {
-      r.append(el("div", "box err", out.error || "HTTP " + res.status));
-      buttons.forEach((b) => (b.disabled = false));
-      return;
-    }
-    r.append(el("div", "box " + (out.directorTold ? "ok" : "err"),
-      it.id + ": " + action + " saved. " + (out.directorTold ? "The director was told." : "Director not told (the action counts; the director reads the log).")));
-    load();
+    box.replaceChildren(el("div", "caption", it.caption), line, why);
   };
 
   const load = async () => {
+    const list = document.getElementById("list");
     const v = await (await fetch("/api/review/queue")).json();
-    showCounts(v); showItem(v); showReady(v);
+    list.replaceChildren();
+    if (!v.canReview) list.append(el("p", "quiet", "Only Nil reviews these videos; you can watch."));
+    if (!v.items.length) { list.append(el("p", "quiet", "Nothing to review.")); return; }
+    for (const it of v.items) list.append(card(it, v.canReview));
   };
   load();
-</script></main></body></html>`;
+</script></body></html>`;

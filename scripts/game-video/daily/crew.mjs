@@ -95,10 +95,11 @@
  *                                  stop an item Nil has not reviewed (a game
  *                                  that does not make a video): discarded,
  *                                  with your reason
- *   note --item ID --text "<line>" your one line to Nil above the video on
- *                                  /review (at most 100 characters, e.g.
- *                                  "watch the save at 0:18"). Set it before
- *                                  the item is in review: it is frozen there
+ *   note --item ID --text "<line>" one line on the item for the agents
+ *                                  (at most 100 characters; `status` shows
+ *                                  it). The review page does not show it
+ *                                  (Nil, 2026-10-28). Set it before the
+ *                                  item is in review: it is frozen there
  *   queue --review-target N        (Growth or the director) how many items
  *                                  Growth wants in review (Growth,
  *                                  2026-10-28: 3, growing to 10); the
@@ -287,7 +288,8 @@ const itemLines = (k, progress = null) => {
         ]
       : ["no copy block from Wall Game Growth yet"]),
   );
-  if (k.directorNote) lines.push(`your note to Nil: ${k.directorNote.text}`);
+  if (k.directorNote)
+    lines.push(`your note (not on the review page): ${k.directorNote.text}`);
   for (const [p, r] of Object.entries(k.posts)) {
     lines.push(
       `${p}: ${r.ok ? `${r.mode} ${r.postId} ${r.url}` : `FAILED ${r.error ?? "pending"}`}`,

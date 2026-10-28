@@ -752,11 +752,12 @@ export const openStore = (dataDir) => {
     },
 
     /**
-     * The director's note to Nil on an item, shown above its video on
-     * /review (Wall Game Director, 2026-10-28; e.g. "watch the save at
-     * 0:18"): one line of at most DIRECTOR_NOTE_MAX characters. Production
-     * may set it until the item is in review; it is frozen after that, so
-     * Nil reviews what he reads. A revise opens it again.
+     * The director's note on an item (Wall Game Director, 2026-10-28;
+     * e.g. "watch the save at 0:18"): one line of at most
+     * DIRECTOR_NOTE_MAX characters. Only the agents read it (`status`): the
+     * review page shows Nil only the video and its caption (Nil,
+     * 2026-10-28). Production may set it until the item is in review; it
+     * is frozen after that. A revise opens it again.
      */
     setNote(id, text) {
       const line = typeof text === "string" ? text.trim() : "";

@@ -81,7 +81,6 @@ import {
   validateEdl,
   checkEdlAgainstGame,
   parsePlyWindow,
-  DEFAULT_SLOT_SOUNDS,
   FRAME,
 } from "../edl.mjs";
 import { MUSIC_TRACKS, mayPlay } from "../music-tracks.mjs";
@@ -108,6 +107,7 @@ import {
   openSoundPicks,
   soundList,
   soundFile,
+  soundUses,
   SOUNDS_PAGE,
 } from "./sounds.mjs";
 import {
@@ -1210,14 +1210,16 @@ export const createDaily = ({
 
     "GET /api/daily/state": (req, res) => json(res, 200, state()),
 
-    // Nil's review queue (review.mjs).
+    // Nil's review queue (review.mjs): the page the app opens on (Nil,
+    // 2026-10-28), and its first address, which links already carry.
+    "GET /": (req, res) => html(res, 200, REVIEW_PAGE),
     "GET /review": (req, res) => html(res, 200, REVIEW_PAGE),
 
-    /** The oldest item in review, the counts, and who may act. */
+    /** Every item in review (what the page shows), and who may act. */
     "GET /api/review/queue": (req, res) => {
       const member = memberOf(req);
       json(res, 200, {
-        ...reviewView(store, { modes: modesNow(), nowMs: Date.now() }),
+        ...reviewView(store),
         canReview: member?.id === REVIEWER_MEMBER_ID,
       });
     },
@@ -2009,12 +2011,7 @@ export const createDaily = ({
  * for the summary. A key in `ok` that the list does not use is a problem.
  */
 export const claimRiskLines = (edl, ok) => {
-  const uses = [
-    ...Object.keys(DEFAULT_SLOT_SOUNDS).map((slot) => [slot, edl[slot]]),
-    ...edl.events
-      .filter((e) => e.sound !== undefined)
-      .map((e) => [`ply ${e.ply}`, e.sound]),
-  ].filter(([, key]) => claimRisk(key));
+  const uses = soundUses(edl).filter(([, key]) => claimRisk(key));
   return {
     problems: [
       ...uses
@@ -2040,18 +2037,13 @@ export const claimRiskLines = (edl, ok) => {
  * allowed; the line goes in the list's summary, so the director and the review page
  * show it.
  */
-export const dislikedSoundNotes = (edl, disliked) => [
-  ...Object.keys(DEFAULT_SLOT_SOUNDS)
-    .filter((slot) => disliked.includes(edl[slot]))
+export const dislikedSoundNotes = (edl, disliked) =>
+  soundUses(edl)
+    .filter(([, key]) => disliked.includes(key))
     .map(
-      (slot) => `${slot} uses disliked ${edl[slot]}: Nil's preference, allowed`,
-    ),
-  ...edl.events
-    .filter((e) => e.sound !== undefined && disliked.includes(e.sound))
-    .map(
-      (e) => `ply ${e.ply} uses disliked ${e.sound}: Nil's preference, allowed`,
-    ),
-];
+      ([where, key]) =>
+        `${where} uses disliked ${key}: Nil's preference, allowed`,
+    );
 
 /**
  * One post-log row (measurement plan, Wall Game Growth proposal 1, accepted
@@ -2125,7 +2117,7 @@ const DASHBOARD = `<!doctype html>
 <body><main>
   <h1>Wall Game daily video</h1>
   <p class="sub">Videos to X, YouTube, TikTok, Instagram, Facebook, Bluesky and Threads. The director makes each video as an item, Wall Game Growth writes its post text, Nil reviews it on the review page, and an approved video posts at the next slot. This page shows where each item is.
-    <a href="/">Make a video by hand</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
+    <a href="/">Review</a> · <a href="/daily/sounds">Meme sounds</a> · <a href="/daily/connect">Connect platforms</a></p>
   <div id="top"></div>
   <h2>Items</h2><div id="items"></div>
   <h2>Posted or discarded</h2><div id="over" class="box"></div>

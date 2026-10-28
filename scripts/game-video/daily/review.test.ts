@@ -16,8 +16,9 @@ import { createDaily } from "./routes.mjs";
 import { DIRECTOR_AGENT_ID } from "./office.mjs";
 import { feedbackLines } from "./crew.mjs";
 import {
+  REVIEW_PAGE,
   REVIEWER_MEMBER_ID,
-  approveLine,
+  postCaption,
   directorText,
   reviewView,
 } from "./review.mjs";
@@ -65,26 +66,16 @@ interface FeedbackRow {
   by: string;
 }
 
-/** What reviewView gives the page (the parts these tests read). */
+/** What reviewView gives the page. */
 interface View {
-  item: {
+  items: {
     id: string;
     videoSha256: string;
     copySha256: string;
-    copy: string[];
-    music: {
-      track: string;
-      credit: string | null;
-      license: string;
-      mayPlay: boolean;
-    }[];
-    directorNote: string | null;
+    caption: string;
     approveProblem: string | null;
-    sameGame: { id: string; state: string }[];
-  } | null;
-  review: { count: number; target: number };
-  ready: { count: number; days: number; items: { id: string }[] };
-  lastReview: { stale: boolean; action: string } | null;
+    claimRiskSounds: string[];
+  }[];
 }
 const viewOf = (...a: Parameters<typeof reviewView>) =>
   reviewView(...a) as unknown as View;
@@ -118,7 +109,12 @@ const withItemInReview = (id = "v-2026-10-28-1") => {
     },
     style: "daily",
     styleVersion: "caption-1",
-    edl: { sha256: "edl1", doc: {}, text: "{}", summary: [] },
+    edl: {
+      sha256: "edl1",
+      doc: { vsSound: "shotgun-2", finishSound: "trombone-1", events: [] },
+      text: "{}",
+      summary: [],
+    },
     render: {
       jobId: "j1",
       finishedAt: "2026-10-27T09:00:00.000Z",
@@ -353,21 +349,16 @@ describe("only one video of a game posts (Wall Game Director, 2026-10-28)", () =
     }
   });
 
-  test("the page disables Approve with the reason, and names the other video", () => {
+  test("the page disables Approve with the reason, which names the other video", () => {
     const { store } = withItemInReview();
     sameGameItem(store, "v-2026-10-27-2", "approved");
-    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
-    expect(v.item?.sameGame).toEqual([
-      { id: "v-2026-10-27-2", state: "approved" },
-    ]);
-    expect(v.item?.approveProblem).toBe(
+    const v = viewOf(store);
+    expect(v.items[0].approveProblem).toBe(
       "another video of this game is approved (v-2026-10-27-2): withdraw it, or discard this one",
     );
     // Withdrawn, the other one no longer blocks it.
     store.withdraw("v-2026-10-27-2", { notes: "", by: "Nil", memberId: "x" });
-    expect(
-      viewOf(store, { modes: {}, nowMs: Date.now() }).item?.approveProblem,
-    ).toBeNull();
+    expect(viewOf(store).items[0].approveProblem).toBeNull();
   });
 
   test("two videos of a game may be in work or in review together, and one of them is approved", () => {
@@ -436,14 +427,10 @@ describe("music that may not play is never approved (Video Reviewer 2, 2026-10-2
         },
       }),
     );
-    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
-    expect(v.item?.music.map((m) => [m.track, m.license, m.mayPlay])).toEqual([
-      ["deja-vus", "ok-with-credit", true],
-      ["tea-for-two", "blocked-until-nil", false],
-    ]);
+    const v = viewOf(store);
     const why =
       "the music tea-for-two has the license blocked-until-nil: re-direct with a track that may play";
-    expect(v.item?.approveProblem).toBe(why);
+    expect(v.items[0].approveProblem).toBe(why);
     expect(() => approveAs(store, video, block)).toThrow(why);
     expect((store.item("v-2026-10-28-1") as Item).state).toBe("finished");
     expect(feedbackOf(store)).toEqual([]);
@@ -530,7 +517,7 @@ describe("withdraw: Nil takes back an approval that no slot took", () => {
 });
 
 describe("the director's note", () => {
-  test("one line of at most 100 characters, set in production, shown above the video, frozen in review", () => {
+  test("one line of at most 100 characters, set in production, frozen in review; not on Nil's page", () => {
     const { store } = withItemInReview();
     const id = "v-2026-10-28-1";
     // The fixture is in review: frozen.
@@ -557,72 +544,88 @@ describe("the director's note", () => {
       join(store.dirs.items, `${id}.json`),
       JSON.stringify({ ...out, state: "finished" }),
     );
-    const v = viewOf(store, { modes: {}, nowMs: Date.now() });
-    expect(v.item?.directorNote).toBe("watch the save at 0:18");
+    // Nil, 2026-10-28: the page shows only the video and its caption.
+    expect(Object.keys(viewOf(store).items[0]).sort()).toEqual([
+      "approveProblem",
+      "caption",
+      "claimRiskSounds",
+      "copySha256",
+      "id",
+      "videoSha256",
+    ]);
   });
 });
 
 describe("the review page's view", () => {
-  test("the line next to Approve names what is live now, not a slot time", () => {
-    const dry = {
-      x: "dry-run",
-      youtube: "dry-run",
-      tiktok: "dry-run",
-      instagram: "dry-run",
-      facebook: "dry-run",
-      bluesky: "dry-run",
-      threads: "dry-run",
+  test("every item in review, oldest first, with its caption: the post's X line without the music credit", () => {
+    const { store } = withItemInReview("v-2026-10-28-2");
+    // A second item in review, older, whose block carries a music credit.
+    const it = store.item("v-2026-10-28-2") as Item & {
+      copy: { block: Record<string, string> };
     };
-    expect(approveLine(dry)).toBe(
-      "Posts at the next slot to every platform that is live then; now: none (a dry run posts nothing).",
-    );
-    expect(approveLine({ ...dry, x: "live", tiktok: "live" })).toBe(
-      "Posts at the next slot to every platform that is live then; now: X, TikTok draft.",
-    );
-  });
-
-  test("the oldest item in review, its block word for word, the counts and the age of the last review", () => {
-    const { store } = withItemInReview();
-    store.setReviewTarget(5);
-    const nowMs = Date.parse("2026-10-31T09:00:00.000Z");
-    const v = viewOf(store, { modes: {}, nowMs });
-    expect(v.item?.id).toBe("v-2026-10-28-1");
-    expect(v.item?.copy[0]).toBe(
-      "X: bro thought he could just walk home 😭🙏 #wallgame",
-    );
-    expect(v.item?.music).toEqual([
-      expect.objectContaining({
-        track: "deja-vus",
-        credit: "Deja Vus by YannZ (CC BY 4.0)",
+    const credited = {
+      ...it.copy.block,
+      x: "bro was free 😭💀 #wallgame · music: Deja Vus by YannZ (CC BY 4.0)",
+    };
+    writeFileSync(
+      join(store.dirs.items, "v-2026-10-28-1.json"),
+      JSON.stringify({
+        ...it,
+        id: "v-2026-10-28-1",
+        createdAt: "2026-10-27T07:00:00.000Z",
+        copy: { ...it.copy, block: credited },
       }),
+    );
+    const v = viewOf(store);
+    expect(v.items.map((x) => [x.id, x.caption])).toEqual([
+      ["v-2026-10-28-1", "bro was free 😭💀 #wallgame"],
+      ["v-2026-10-28-2", "bro thought he could just walk home 😭🙏 #wallgame"],
     ]);
-    expect(v.review).toEqual({ count: 1, target: 5 });
-    expect(v.ready).toEqual({ count: 0, days: 0, items: [] });
-    expect(v.lastReview).toBeNull();
-    store.review("v-2026-10-28-1", {
+    expect(v.items[1].copySha256).toBe(copySha256(COPY));
+    store.review("v-2026-10-28-2", {
       action: "approve",
       notes: "",
-      videoSha256: v.item!.videoSha256,
-      copySha256: v.item!.copySha256,
+      videoSha256: v.items[1].videoSha256,
+      copySha256: v.items[1].copySha256,
       by: "Nil",
       memberId: REVIEWER_MEMBER_ID,
     });
-    const after = viewOf(store, { modes: {}, nowMs });
-    expect(after.item).toBeNull();
-    expect(after.ready).toMatchObject({
-      count: 1,
-      days: 1,
-      items: [
-        {
-          id: "v-2026-10-28-1",
-          players: ["Guest Tuatara", "Ruby"],
-          caption: "bro thought he was safe",
+    expect(viewOf(store).items.map((x) => x.id)).toEqual(["v-2026-10-28-1"]);
+    expect(postCaption({ x: "no credit here #wallgame" })).toBe(
+      "no credit here #wallgame",
+    );
+  });
+
+  test("a sound with a high claim risk that the video plays: named once, from the slots and the events", () => {
+    const { store } = withItemInReview();
+    expect(viewOf(store).items[0].claimRiskSounds).toEqual([]);
+    const it = store.item("v-2026-10-28-1") as Item & {
+      edl: { doc: Record<string, unknown> };
+    };
+    writeFileSync(
+      join(store.dirs.items, "v-2026-10-28-1.json"),
+      JSON.stringify({
+        ...it,
+        edl: {
+          ...it.edl,
+          doc: {
+            vsSound: "shotgun-1",
+            finishSound: "trombone-1",
+            events: [
+              { ply: 4, kind: "laugh", sound: "laugh-1" },
+              { ply: 6, kind: "zoom" },
+              { ply: 9, kind: "scared", sound: "scared-1" },
+              { ply: 12, kind: "laugh", sound: "laugh-1" },
+            ],
+          },
         },
-      ],
-    });
-    // Today's review, read three days later: over 48 h, marked.
-    expect(after.lastReview?.stale).toBe(true);
-    expect(after.lastReview?.action).toBe("approve");
+      }),
+    );
+    expect(viewOf(store).items[0].claimRiskSounds).toEqual([
+      "shotgun-1",
+      "laugh-1",
+    ]);
+    expect(REVIEW_PAGE).toContain('"Uses " + key + ": a claim is possible."');
   });
 
   test("the review target is a whole number from 1 to 50, 3 until set", () => {
@@ -721,7 +724,7 @@ describe("the review routes", () => {
       (await call("/api/review/queue", { member: "someone-else" })).text,
     ) as View & { canReview: boolean };
     expect(view.canReview).toBe(false);
-    expect(view.item?.id).toBe("v-2026-10-28-1");
+    expect(view.items.map((it) => it.id)).toEqual(["v-2026-10-28-1"]);
     const nil = JSON.parse(
       (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
     ) as { canReview: boolean };
@@ -774,15 +777,14 @@ describe("the review routes", () => {
     expect(readPostLog(store.feedbackLog)).toHaveLength(1);
   });
 
-  test("Withdraw on a READY item: only Nil, back in review, the director told; the page lists the READY items", async () => {
+  test("Undo after an Approve (withdraw): only Nil, back in review, the director told", async () => {
     const { dir, store, video, block } = withItemInReview();
     const { call, sent } = await serve(dir);
     approveAs(store, video, block);
     const view = JSON.parse(
       (await call("/api/review/queue", { member: REVIEWER_MEMBER_ID })).text,
     ) as View;
-    expect(view.item).toBeNull();
-    expect(view.ready.items.map((r) => r.id)).toEqual(["v-2026-10-28-1"]);
+    expect(view.items).toEqual([]);
     const path = "/api/review/v-2026-10-28-1/withdraw";
     const other = await call(path, {
       method: "POST",
@@ -879,16 +881,13 @@ describe("what the director reads", () => {
     ]);
   });
 
-  test("another live video of the same game is named, so Nil does not approve both", () => {
+  test("another live video of the same game blocks Approve; a discarded one does not", () => {
     const { store } = withItemInReview("v-2026-10-28-1");
-    sameGameItem(store, "v-2026-10-28-2", "approved");
     sameGameItem(store, "v-2026-10-28-3", "discarded");
-    const v = reviewView(store, { modes: {}, nowMs: Date.now() }) as {
-      item: { id: string; sameGame: { id: string; state: string }[] };
-    };
-    expect(v.item.id).toBe("v-2026-10-28-1");
-    expect(v.item.sameGame).toEqual([
-      { id: "v-2026-10-28-2", state: "approved" },
-    ]);
+    expect(viewOf(store).items[0].approveProblem).toBeNull();
+    sameGameItem(store, "v-2026-10-28-2", "approved");
+    expect(viewOf(store).items[0].approveProblem).toBe(
+      "another video of this game is approved (v-2026-10-28-2): withdraw it, or discard this one",
+    );
   });
 });

@@ -79,6 +79,17 @@ export const claimRisk = (key) => {
   return note?.startsWith("high claim risk") ? note : null;
 };
 
+/**
+ * Where a validated edit decision list plays a sound: [where, key] for each
+ * slot of DEFAULT_SLOT_SOUNDS and for each event with a sound.
+ */
+export const soundUses = (edl) => [
+  ...Object.keys(DEFAULT_SLOT_SOUNDS).map((slot) => [slot, edl[slot]]),
+  ...edl.events
+    .filter((e) => e.sound !== undefined)
+    .map((e) => [`ply ${e.ply}`, e.sound]),
+];
+
 /** The choices, kept in `<root>/sound-picks.json`. */
 export const openSoundPicks = (root) => {
   const path = join(root, "sound-picks.json");
