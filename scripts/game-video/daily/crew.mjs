@@ -143,6 +143,7 @@ import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
 import { copyLines } from "./copy.mjs";
+import { quoteLines } from "./review.mjs";
 
 const OFFICE = "http://localhost:4000";
 const STORYBOARD = resolve(
@@ -244,10 +245,10 @@ const itemLines = (k, progress = null) => {
     `ITEM ${k.id}: ${k.state}${k.reviewState ? ` (${k.reviewState})` : ""}, ${k.stage ?? ""}`,
     `game ${g.gameId}: ${g.seats.map((x) => x.name).join(" vs ")}, ${g.movesCount} plies`,
     ...g.facts,
-    ...k.reviews.map(
-      (r) =>
-        `Nil ${r.action} at ${r.at}${r.notes ? `: ${JSON.stringify(r.notes)}` : ""}`,
-    ),
+    ...k.reviews.flatMap((r) => [
+      `Nil ${r.action} at ${r.at}${r.notes ? ", notes verbatim:" : ""}`,
+      ...(r.notes ? quoteLines(r.notes, "  ") : []),
+    ]),
   ];
   if (k.edl) {
     lines.push(
@@ -320,7 +321,9 @@ export const feedbackLines = (r) =>
   r.itemId
     ? [
         `${r.itemId} (game ${r.gameId}): ${r.action} by ${r.by} at ${r.utc}, video ${String(r.videoSha256).slice(0, 12)}, edit list ${String(r.edlSha256).slice(0, 12)}`,
-        `  notes, verbatim: ${r.notes ? JSON.stringify(r.notes) : "(none)"}`,
+        ...(r.notes
+          ? ["  notes, verbatim:", ...quoteLines(r.notes, "  ")]
+          : ["  notes: (none)"]),
       ]
     : [
         `${r.day} ask ${r.askId}: ${r.picked ? `${r.picked} picked` : "none picked"} by ${r.approver} at ${r.utc}`,
@@ -331,7 +334,9 @@ export const feedbackLines = (r) =>
           (o) =>
             `  ${o.label}: game ${o.gameId}, edit list ${String(o.edlSha256).slice(0, 12)}, video ${String(o.videoSha256).slice(0, 12)}, caption ${JSON.stringify(o.caption)}`,
         ),
-        `  reply, verbatim: ${r.reply === null ? "(none)" : JSON.stringify(r.reply)}`,
+        ...(r.reply === null
+          ? ["  reply: (none)"]
+          : ["  reply, verbatim:", ...quoteLines(r.reply, "  ")]),
       ];
 
 const commands = {

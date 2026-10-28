@@ -104,11 +104,19 @@ export const reviewView = (store) => ({
   })),
 });
 
+/**
+ * Text as quote lines, word for word: "> " before each of its lines (an
+ * empty line is "> "), so a message shows Nil's paragraphs as he wrote
+ * them (Nil, 2026-10-28: "I'm seeing a bunch of "\n" right now").
+ */
+export const quoteLines = (text, indent = "") =>
+  text.split("\n").map((line) => `${indent}> ${line}`);
+
 /** The director's message about one review action: everything to act on. */
 export const directorText = (item, action, notes) =>
   [
     `REVIEW: Nil chose ${action.toUpperCase()} on ${item.id} (game ${item.gameId}).`,
-    `Notes, verbatim: ${notes ? JSON.stringify(notes) : "(none)"}`,
+    ...(notes ? ["Notes, verbatim:", ...quoteLines(notes)] : ["Notes: (none)"]),
     `Video: ${item.render.video.path}`,
     {
       revise: `It is a draft again: make a new render, then get a new block from Wall Game Growth (both after this revise).`,

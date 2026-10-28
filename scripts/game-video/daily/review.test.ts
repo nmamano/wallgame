@@ -20,6 +20,7 @@ import {
   REVIEWER_MEMBER_ID,
   postCaption,
   directorText,
+  quoteLines,
   reviewView,
 } from "./review.mjs";
 
@@ -793,7 +794,11 @@ describe("the review routes", () => {
     expect(sent).toHaveLength(1);
     expect(sent[0].to).toBe(DIRECTOR_AGENT_ID);
     expect(sent[0].text).toContain("DISCARD on v-2026-10-28-1 (game GAME1)");
-    expect(sent[0].text).toContain(`Notes, verbatim: ${JSON.stringify(notes)}`);
+    expect(sent[0].text).toContain(
+      ["Notes, verbatim:", ...notes.split("\n").map((l) => `> ${l}`)].join(
+        "\n",
+      ),
+    );
     expect(sent[0].text).toContain(`Video: ${path}`);
     // A stale page: refused, and nothing is sent.
     const again = await call("/api/review/v-2026-10-28-1/approve", {
@@ -849,7 +854,7 @@ describe("the review routes", () => {
     });
     expect(sent).toHaveLength(1);
     expect(sent[0].text).toContain("WITHDRAW on v-2026-10-28-1");
-    expect(sent[0].text).toContain('Notes, verbatim: "mis-tap"');
+    expect(sent[0].text).toContain("Notes, verbatim:\n> mis-tap\n");
     expect(sent[0].text).toContain("in review again");
     // Twice: refused, nothing more is sent.
     const again = await call(path, {
@@ -873,9 +878,24 @@ describe("the review routes", () => {
     expect(directorText(item, "revise", "x")).toContain(
       "make a new render, then get a new block",
     );
-    expect(directorText(item, "approve", "")).toContain(
-      "Notes, verbatim: (none)",
-    );
+    expect(directorText(item, "approve", "")).toContain("Notes: (none)");
+  });
+
+  test('Nil\'s notes reach the director as lines, word for word (Nil, 2026-10-28: no "\\n")', () => {
+    const { store } = withItemInReview();
+    const item = store.item("v-2026-10-28-1") as Item;
+    const notes =
+      'this is the best of the 3.\n\nthe cat  saying "c\'mon" makes no sense\n  keep this indent ';
+    const text = directorText(item, "revise", notes);
+    expect(text).not.toContain("\\n");
+    expect(text.split("\n").slice(1, 6)).toEqual([
+      "Notes, verbatim:",
+      "> this is the best of the 3.",
+      "> ",
+      '> the cat  saying "c\'mon" makes no sense',
+      ">   keep this indent ",
+    ]);
+    expect(quoteLines("a\n\nb", "  ")).toEqual(["  > a", "  > ", "  > b"]);
   });
 });
 
@@ -890,12 +910,15 @@ describe("what the director reads", () => {
         videoSha256: "v".repeat(64),
         copySha256: "c".repeat(64),
         action: "revise",
-        notes: 'cut the "bro" line',
+        notes: 'cut the "bro" line\n\nand the laugh',
         by: "Nil",
       }),
     ).toEqual([
       "v-2026-10-29-1 (game GAME1): revise by Nil at 2026-10-29T17:00:00.000Z, video vvvvvvvvvvvv, edit list eeeeeeeeeeee",
-      '  notes, verbatim: "cut the \\"bro\\" line"',
+      "  notes, verbatim:",
+      '  > cut the "bro" line',
+      "  > ",
+      "  > and the laugh",
     ]);
     // The rows from before the review queue stay in the log.
     expect(
@@ -921,7 +944,8 @@ describe("what the director reads", () => {
       "2026-10-27 ask ask-two: B picked by Nil at 2026-10-27T21:00:00.000Z",
       "  you recommended A: the cleaner save",
       '  A: game G1, edit list aaaaaaaaaaaa, video bbbbbbbbbbbb, caption "bro thought"',
-      '  reply, verbatim: "B, the save reads best"',
+      "  reply, verbatim:",
+      "  > B, the save reads best",
     ]);
   });
 
