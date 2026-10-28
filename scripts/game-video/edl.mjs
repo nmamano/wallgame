@@ -122,9 +122,8 @@
  *             `seconds` (default the asset's; the capture loading bar lasts
  *             until the save and takes none). `text` is the asset's line,
  *             where it takes one; {red} and {blue} in it become the seats'
- *             names. `seat` ("red" or "blue") picks the portrait of an
- *             asset that shows one (default: the seat the move happened
- *             to, not the mover). The renderer puts it where it hides nothing in play on
+ *             names. `seat` ("red" or "blue") is required on an asset that
+ *             shows a seat's portrait: who reacts is the story. The renderer puts it where it hides nothing in play on
  *             any frame it covers, or stops. One overlay at a time, and the
  *             ending cuts one still open. In a fastForward range the only
  *             event allowed is one panel on the range's first ply, with no
@@ -572,14 +571,14 @@ export const validateEdl = (raw) => {
     } else if (asset.text === "required" && ev.text === undefined) {
       fail(`${where}: ${ev.asset} needs "text"`);
     } else if (ev.text !== undefined) {
-      checkOverlayText(ev.text, where);
+      checkOverlayText(ev.text, where, asset.chars ?? OVERLAY_TEXT_CHARS);
     }
-    if (ev.seat !== undefined) {
-      if (!PORTRAIT_DRAWS.includes(asset.draw)) {
-        fail(`${where}: ${ev.asset} shows no seat`);
-      } else if (ev.seat !== "red" && ev.seat !== "blue") {
-        fail(`${where}: seat must be "red" or "blue"`);
-      }
+    if (!PORTRAIT_DRAWS.includes(asset.draw)) {
+      if (ev.seat !== undefined) fail(`${where}: ${ev.asset} shows no seat`);
+    } else if (ev.seat !== "red" && ev.seat !== "blue") {
+      fail(
+        `${where}: ${ev.asset} shows a seat's portrait; seat must be "red" or "blue" (who reacts)`,
+      );
     }
     if (asset.seconds === null && ev.seconds !== undefined) {
       fail(
@@ -595,10 +594,10 @@ export const validateEdl = (raw) => {
     }
   };
   /**
-   * An overlay's line: one line of at most OVERLAY_TEXT_CHARS characters,
-   * each seat name counted as NAME_CHARS, and no {token} but a name.
+   * An overlay's line: one line of at most `chars` characters, each seat
+   * name counted as NAME_CHARS, and no {token} but a name.
    */
-  const checkOverlayText = (text, where) => {
+  const checkOverlayText = (text, where, chars) => {
     if (typeof text !== "string" || text.trim() === "") {
       return fail(`${where}: text must be a line of text`);
     }
@@ -615,9 +614,9 @@ export const validateEdl = (raw) => {
     }
     const length =
       graphemes(text.replace(/\{[^}]*\}/g, "")) + tokens.length * NAME_CHARS;
-    if (length > OVERLAY_TEXT_CHARS) {
+    if (length > chars) {
       fail(
-        `${where}: text is ${length} characters long (a name counts as ${NAME_CHARS}); at most ${OVERLAY_TEXT_CHARS} are allowed`,
+        `${where}: text is ${length} characters long (a name counts as ${NAME_CHARS}); at most ${chars} are allowed`,
       );
     }
   };

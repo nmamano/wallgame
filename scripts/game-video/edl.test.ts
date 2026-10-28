@@ -726,7 +726,7 @@ describe("the overlay event", () => {
     const ff = (fromPly: number, toPly: number) => [
       { fromPly, toPly, secondsPerMove: 0.2, fastForward: true },
     ];
-    const panel = { form: "panel", asset: "do-something" };
+    const panel = { form: "panel", asset: "do-something", seat: "blue" };
     expect(accept(overlay(panel, ff(3, 8))).events[0]).toMatchObject({
       seconds: null,
     });
@@ -751,7 +751,13 @@ describe("the overlay event", () => {
       ...overlay(panel, ff(3, 8)),
       events: [
         { ply: 3, kind: "overlay", ...panel },
-        { ply: 3, kind: "overlay", form: "panel", asset: "do-something" },
+        {
+          ply: 3,
+          kind: "overlay",
+          form: "panel",
+          asset: "do-something",
+          seat: "red",
+        },
       ],
     };
     expect(errorsOf(two)).toEqual([
@@ -765,14 +771,31 @@ describe("the overlay event's seat", () => {
     ...base,
     events: [{ ply: 3, kind: "overlay", form: "clip", ...more }],
   });
-  test("names the portrait's seat, on an asset that shows one", () => {
+  test("names the portrait's seat, required on an asset that shows one", () => {
     expect(
       accept(ev({ asset: "reactor-shock", seat: "red", text: "brain cell" }))
         .events[0],
     ).toMatchObject({ seat: "red", seconds: 1.4 });
     expect(
       validateEdl(ev({ asset: "reactor-laugh", seat: "green" })).errors,
-    ).toEqual(['events[0]: seat must be "red" or "blue"']);
+    ).toEqual([
+      'events[0]: reactor-laugh shows a seat\'s portrait; seat must be "red" or "blue" (who reacts)',
+    ]);
+    expect(validateEdl(ev({ asset: "reactor-stare" })).errors).toEqual([
+      'events[0]: reactor-stare shows a seat\'s portrait; seat must be "red" or "blue" (who reacts)',
+    ]);
+    // A reactor's label is one line: 28 characters, a name counting 12.
+    expect(
+      validateEdl(
+        ev({
+          asset: "reactor-shock",
+          seat: "blue",
+          text: "{blue}'s last brain cell",
+        }),
+      ).errors,
+    ).toEqual([
+      "events[0]: text is 30 characters long (a name counts as 12); at most 28 are allowed",
+    ]);
     expect(
       validateEdl(ev({ asset: "chat-toast", text: "hi", seat: "red" })).errors,
     ).toEqual(["events[0]: chat-toast shows no seat"]);

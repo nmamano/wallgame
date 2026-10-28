@@ -3093,9 +3093,8 @@ const renderStyle = async (styleName) => {
       w.end = elapsed + LOADING_ERROR_SECONDS;
       w.errorAt = elapsed;
     }
-    const other = REPLAYED.movers[w.ev.ply] === 1 ? 2 : 1;
-    const seat =
-      w.ev.seat === "red" ? redSeat : w.ev.seat === "blue" ? blueSeat : other;
+    // edl.mjs requires `seat` on every asset that shows a portrait.
+    const seat = w.ev.seat === "red" ? redSeat : blueSeat;
     const o = {
       draw: w.asset.draw,
       form: w.asset.form,
@@ -3183,10 +3182,11 @@ const renderStyle = async (styleName) => {
   };
   /**
    * Once the video is composed: each overlay's place, where it hides nothing
-   * in play on any frame it covered (or the render stops), its fade, its
-   * span in RESULT.timeline and its still on the contact sheet.
+   * in play on any frame it covered (or the render stops), its fade, the
+   * fit of its line (or the render stops), its span in RESULT.timeline and
+   * its still on the contact sheet.
    */
-  const placeOverlays = () => {
+  const placeOverlays = async () => {
     for (const w of overlayWindows) {
       const where = `the ${w.ev.asset} overlay on ply ${w.ev.ply}`;
       const fast = w.closesOnBoard !== null;
@@ -3214,6 +3214,22 @@ const renderStyle = async (styleName) => {
         end: w.end,
       });
       const mid = w.frames[Math.floor(w.frames.length / 2)];
+      // Its line fits its box (stage.html paintOverlay shrinks it, down to
+      // a floor): painted once at its place, as the shots will paint it.
+      if (mid) {
+        const fit = await stage.evaluate(
+          (st) => {
+            window.__stage(st);
+            return window.__overlayFit;
+          },
+          { ...mid.state, overlay: mid.o },
+        );
+        if (!fit.fits) {
+          throw new Error(
+            `${where}: its text does not fit its box even at ${fit.floor.toFixed(0)} px; shorten it`,
+          );
+        }
+      }
       if (mid) {
         stills.push({
           ply: w.ev.ply,
@@ -4076,7 +4092,7 @@ const renderStyle = async (styleName) => {
   }
   // A preview can stop before an overlay closes.
   closeOverlay();
-  placeOverlays();
+  await placeOverlays();
 
   // --- the end card, in the current look only: wallz has its own endings.
   if (!wallz && LAST_BOARD === history.length) {

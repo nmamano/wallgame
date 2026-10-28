@@ -38,10 +38,14 @@
  *                     creeps in), with the EDL's `text` as its label under
  *                     it, if any ("the bot's last brain cell").
  *            The seat of a portrait is the EDL's `seat` ("red" or
- *            "blue"), else the one that did not make the move: the one
- *            the move happened to.
+ *            "blue"), which it must give: who reacts is the story, and a
+ *            default once made the stopped hunter laugh at the save
+ *            (Wall Game Director, 2026-10-28).
  *   text     "required", "optional" (the asset's own line if absent) or
  *            "none".
+ *   chars    the most characters its text may have, where the EDL gives
+ *            one (default OVERLAY_TEXT_CHARS): a reactor's label is one
+ *            line under the portrait, so it is shorter.
  *   seconds  how long it shows where the EDL sets none (null: the asset
  *            decides, as the loading bar does).
  *   size     a clip's box, as fractions of the board's width and height.
@@ -53,6 +57,7 @@ export const OVERLAY_FORMS = ["clip", "panel"];
  *   form: "clip" | "panel",
  *   draw: "toast" | "loading" | "compare" | "meme" | "reactor",
  *   motion?: "shock" | "laugh" | "stare",
+ *   chars?: number,
  *   text: "required" | "optional" | "none",
  *   line?: string,
  *   seconds: number | null,
@@ -101,8 +106,9 @@ export const OVERLAYS = {
     draw: "reactor",
     motion: "shock",
     text: "optional",
+    chars: 28,
     seconds: 1.4,
-    size: { w: 0.32, h: 0.4 },
+    size: { w: 0.46, h: 0.42 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -113,8 +119,9 @@ export const OVERLAYS = {
     draw: "reactor",
     motion: "laugh",
     text: "optional",
+    chars: 28,
     seconds: 1.4,
-    size: { w: 0.32, h: 0.4 },
+    size: { w: 0.46, h: 0.42 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",
@@ -125,8 +132,9 @@ export const OVERLAYS = {
     draw: "reactor",
     motion: "stare",
     text: "optional",
+    chars: 28,
     seconds: 1.8,
-    size: { w: 0.32, h: 0.4 },
+    size: { w: 0.46, h: 0.42 },
     source: "drawn by us (stage.html), our seat portrait",
     claim: "None",
     likeness: "None",

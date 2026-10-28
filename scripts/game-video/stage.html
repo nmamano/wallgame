@@ -607,6 +607,8 @@
         flex: 1 1 0;
         min-height: 0;
         width: 100%;
+        /* A punch-in grows up and out, never down over the label. */
+        transform-origin: 50% 100%;
       }
       #overlay.reactor .face img {
         position: absolute;
@@ -624,9 +626,20 @@
         font-size: 1.6em;
         text-shadow: none;
       }
+      /* One line on a dark pill, as the chat toast (Wall Game Director,
+         2026-10-28: white text over the portrait did not read). */
       #overlay.reactor .label {
         flex: none;
         max-width: 100%;
+        box-sizing: border-box;
+        margin-top: 0.15em;
+        padding: 0.05em 0.55em;
+        border-radius: 0.5em;
+        background: rgba(15, 20, 36, 0.94);
+        border: 2px solid rgba(148, 163, 184, 0.3);
+        white-space: nowrap;
+        text-shadow: none;
+        font-weight: 800;
         /* Not under 1.25: a glyph taller than its line counts as overflow,
            and the fit would shrink the label to nothing (measured). */
         line-height: 1.25;
@@ -1654,6 +1667,7 @@
        * an overlay once its window closes), nothing shows.
        */
       const ERROR_HIT_SECONDS = 0.3;
+      const OVERLAY_FIT_FLOOR = 0.6;
       const paintOverlay = (o) => {
         const el = $("overlay");
         show(el, !!o && o.place.where !== undefined);
@@ -1757,16 +1771,18 @@
             side("AFTER", o.after);
         }
         // A line that does not fit its box shrinks until it does (a long
-        // seat name), measured.
+        // seat name), measured, down to OVERLAY_FIT_FLOOR of its size; one
+        // that still does not fit is reported in __overlayFit, and the
+        // renderer stops (placeOverlays) rather than draw it cut.
+        const over = () =>
+          el.scrollWidth > el.clientWidth || el.scrollHeight > el.clientHeight;
         let size = parseFloat(getComputedStyle(el).fontSize);
-        while (
-          (el.scrollWidth > el.clientWidth ||
-            el.scrollHeight > el.clientHeight) &&
-          size > 8
-        ) {
+        const floor = size * OVERLAY_FIT_FLOOR;
+        while (over() && size - 1 >= floor) {
           size -= 1;
           el.style.fontSize = size + "px";
         }
+        window.__overlayFit = { fits: !over(), size, floor };
         if (faceMove) el.querySelector(".face").style.transform = faceMove;
       };
 
