@@ -3772,6 +3772,14 @@ test("a dry run with two candidates: B is a carry-over, Nil picks B, only B post
   ).toContain(
     '--recommend needs --why "<reason>", 1 to 100 characters on one line',
   );
+  // A reason without its label is refused, also on --reopen, before any
+  // office call.
+  for (const extra of [[], ["--reopen"]]) {
+    expect(
+      crew("ask", "--day", day, "--agent", "agent-x", ...extra, "--why", "x")
+        .err,
+    ).toContain("--why goes with --recommend X");
+  }
   const over = crew("ask", "--day", day, "--agent", "agent-x");
   expect(over.err).toMatch(
     /^the ask text has \d+ characters, over the office's 4000: offer fewer candidates \(--cands\), or ask Growth for shorter lines/,

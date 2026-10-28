@@ -851,6 +851,9 @@ const commands = {
     const agent = flag("agent") ?? die("ask needs --agent <your agent id>");
     const reopen = has("reopen");
     const modeChange = has("mode-change");
+    // A reason names its candidate, also on --reopen, where an ask keeps
+    // the open ask's recommendation: a new --why alone would be dropped.
+    if (has("why") && !has("recommend")) die("--why goes with --recommend X");
     if (reopen && modeChange)
       die("ask takes --reopen or --mode-change, not both");
     const s = await state();
@@ -949,7 +952,7 @@ const commands = {
         die(
           `--recommend needs --why "<reason>", 1 to ${WHY_MAX} characters on one line`,
         );
-    } else if (has("why")) die("--why goes with --recommend");
+    }
     const text = askText(c, s.modes, shas, recommended);
     if (text.length > ASK_TEXT_LIMIT)
       die(
