@@ -1,17 +1,22 @@
 /**
  * The follower counts (followers.mjs) and GET /api/daily/followers: each
  * platform's read, "needs reconnect" for a token without the read scope,
- * safe reasons, and the one-hour cache.
+ * safe reasons, and the cache: an X count for 24 hours, any other result
+ * for an hour.
  */
 import { describe, expect, test } from "bun:test";
-import { mkdtempSync } from "node:fs";
+import { mkdtempSync, readFileSync, writeFileSync } from "node:fs";
 import { createServer, type Server } from "node:http";
 import type { AddressInfo } from "node:net";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import {
   FOLLOWER_PLATFORMS,
+  FOLLOWERS_MAX_AGE_MS,
   NEEDS_RECONNECT,
+  X_CREDITS_DEPLETED,
+  X_FOLLOWERS_MAX_AGE_MS,
+  followersDue,
   readFollowers,
 } from "./followers.mjs";
 import { META_ACCOUNTS_URL } from "./meta.mjs";
@@ -325,10 +330,45 @@ describe("follower counts", () => {
     expect(counts.facebook.followers).toBe(12);
     expect(JSON.stringify(counts)).not.toContain("SECRET-IN-BODY");
   });
+
+  test("a 402 from X says the X credits are depleted", async () => {
+    const { counts } = await run(RECORDS, (req) =>
+      req.url.startsWith("https://api.x.com/2/users/me")
+        ? { status: 402, json: { title: "CreditsDepleted" } }
+        : answers(req),
+    );
+    expect(counts.x).toMatchObject({
+      followers: null,
+      error: X_CREDITS_DEPLETED,
+    });
+    expect(counts.facebook.followers).toBe(12);
+  });
+
+  test("due: an X count after 24 hours, a failed X read or any other result after an hour", () => {
+    const now = Date.parse("2026-10-28T06:00:00.000Z");
+    const ago = (ms: number) => new Date(now - ms).toISOString();
+    const all = (at: string) =>
+      Object.fromEntries(
+        FOLLOWER_PLATFORMS.map((p) => [p, { followers: 1, at, error: null }]),
+      );
+    expect(followersDue(null, now)).toEqual(FOLLOWER_PLATFORMS);
+    expect(followersDue(all(ago(FOLLOWERS_MAX_AGE_MS - 1)), now)).toEqual([]);
+    expect(followersDue(all(ago(FOLLOWERS_MAX_AGE_MS)), now)).toEqual(
+      FOLLOWER_PLATFORMS.filter((p) => p !== "x"),
+    );
+    expect(followersDue(all(ago(X_FOLLOWERS_MAX_AGE_MS)), now)).toEqual(
+      FOLLOWER_PLATFORMS,
+    );
+    const failedX = {
+      ...all(ago(0)),
+      x: { followers: null, at: ago(FOLLOWERS_MAX_AGE_MS), error: "e" },
+    };
+    expect(followersDue(failedX, now)).toEqual(["x"]);
+  });
 });
 
 describe("GET /api/daily/followers", () => {
-  test("reads once, keeps the result in the app's data, and answers from it for an hour", async () => {
+  test("reads once, keeps the result in the app's data, and answers from it inside the hour", async () => {
     const transport = fakeLive(answers);
     const dir = tempDir();
     const daily = createDaily({
@@ -366,6 +406,59 @@ describe("GET /api/daily/followers", () => {
       // No new request inside the hour: X reads are paid.
       expect(transport.sent.length).toBe(calls);
       for (const secret of SECRETS) expect(first.text).not.toContain(secret);
+    } finally {
+      daily.stop();
+      server.close();
+    }
+  });
+
+  test("after an hour every platform but X is read again; the X count is kept for 24 hours", async () => {
+    const transport = fakeLive(answers);
+    const daily = createDaily({
+      dataDir: tempDir(),
+      env: ENV,
+      live: () => transport,
+    });
+    const tokens = openTokenStore(join(daily.store.dirs.root, "tokens"));
+    for (const [p, r] of Object.entries(RECORDS)) {
+      tokens.write(p, r as Parameters<typeof tokens.write>[1]);
+    }
+    const cachePath = join(daily.store.dirs.root, "followers.json");
+    const twoHoursAgo = new Date(Date.now() - 2 * 3600_000).toISOString();
+    writeFileSync(
+      cachePath,
+      JSON.stringify({
+        counts: Object.fromEntries(
+          FOLLOWER_PLATFORMS.map((p) => [
+            p,
+            { followers: 7, at: twoHoursAgo, error: null },
+          ]),
+        ),
+      }),
+    );
+    const server: Server = createServer((req, res) => {
+      void daily.handle(req, res, new URL(req.url ?? "/", "http://localhost"));
+    });
+    await new Promise<void>((r) => server.listen(0, "127.0.0.1", r));
+    try {
+      const port = (server.address() as AddressInfo).port;
+      const counts = (await fetch(
+        `http://127.0.0.1:${port}/api/daily/followers`,
+      ).then((r) => r.json())) as Record<
+        string,
+        { followers: number | null; at: string }
+      >;
+      expect(Object.keys(counts)).toEqual(FOLLOWER_PLATFORMS);
+      expect(counts.x).toMatchObject({ followers: 7, at: twoHoursAgo });
+      expect(counts.facebook.followers).toBe(12);
+      expect(counts.tiktok.followers).toBe(345);
+      expect(transport.sent.some((r) => r.url.includes("api.x.com"))).toBe(
+        false,
+      );
+      const kept = JSON.parse(readFileSync(cachePath, "utf8")) as {
+        counts: typeof counts;
+      };
+      expect(kept.counts).toEqual(counts);
     } finally {
       daily.stop();
       server.close();

@@ -165,7 +165,11 @@ import {
 } from "./post-threads.mjs";
 import { r2PublicUrl, dryRunPublicUrl, R2_SECRETS } from "./public-url-r2.mjs";
 import { idsNotSet, PUBLIC_IDS, withPublicIds } from "./public-ids.mjs";
-import { FOLLOWERS_MAX_AGE_MS, readFollowers } from "./followers.mjs";
+import {
+  FOLLOWER_PLATFORMS,
+  followersDue,
+  readFollowers,
+} from "./followers.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { connectStates, ConnectRefused } from "./connect-state.mjs";
 import {
@@ -838,11 +842,11 @@ export const createDaily = ({
   /** The follower read under way, if any (GET /api/daily/followers). */
   let followersRun = null;
   const followersCachePath = join(dirs.root, "followers.json");
-  /** The last follower counts {at, counts}, or null. */
+  /** The last result of each platform {followers, at, error}, or null. */
   const readFollowersCache = () => {
     try {
       const c = JSON.parse(readFileSync(followersCachePath, "utf8"));
-      return typeof c?.at === "string" && c.counts ? c : null;
+      return c?.counts && typeof c.counts === "object" ? c.counts : null;
     } catch {
       return null;
     }
@@ -1868,35 +1872,33 @@ export const createDaily = ({
 
     /**
      * READ-ONLY: {<platform>: {followers, at, error}} for Growth's
-     * dashboard (followers.mjs). The counts are read at most once an hour
-     * (X reads are paid) and the last result is kept in the app's data, so
-     * an older result comes back until the hour is over. While a post runs
-     * no read starts: the last result comes back, or a refusal.
+     * dashboard (followers.mjs). Each platform's last result is kept in the
+     * app's data and comes back until it is too old (followersDue: an X
+     * count after 24 hours, as X reads are paid; any other result after an
+     * hour); then only the platforms that are due are read again. While a
+     * post runs no read starts: the last result comes back, or a refusal.
      */
     "GET /api/daily/followers": async (req, res) => {
       const cached = readFollowersCache();
-      if (cached && Date.now() - Date.parse(cached.at) < FOLLOWERS_MAX_AGE_MS) {
-        return json(res, 200, cached.counts);
-      }
+      const due = followersDue(cached, Date.now());
+      if (!due.length) return json(res, 200, cached);
       if (posting) {
-        if (cached) return json(res, 200, cached.counts);
+        if (cached) return json(res, 200, cached);
         throw new StepRefused("a post is running: ask again in a few minutes");
       }
       followersRun ??= (async () => {
         try {
-          const counts = await readFollowers({
-            transport: makeLiveTransport(),
-            env,
-            tokens,
-            keepRefreshToken,
-          });
+          const fresh = await readFollowers(
+            { transport: makeLiveTransport(), env, tokens, keepRefreshToken },
+            due,
+          );
+          const counts = Object.fromEntries(
+            FOLLOWER_PLATFORMS.map((p) => [p, fresh[p] ?? cached[p]]),
+          );
           // A read where no platform gave a count (a short network loss)
           // is not kept, so the next request tries again (Reviewer 1).
-          if (Object.values(counts).some((c) => c.followers !== null)) {
-            writeFileSync(
-              followersCachePath,
-              JSON.stringify({ at: new Date().toISOString(), counts }),
-            );
+          if (Object.values(fresh).some((c) => c.followers !== null)) {
+            writeFileSync(followersCachePath, JSON.stringify({ counts }));
           }
           return counts;
         } finally {

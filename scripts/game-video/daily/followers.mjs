@@ -9,8 +9,10 @@
  * - X: GET https://api.x.com/2/users/me?user.fields=public_metrics ->
  *   data.public_metrics.followers_count ("Number of Users who follow this
  *   User"); OAuth 1.0a User Context is accepted (v2 authentication mapping).
- *   "User: Read | $0.010 per resource" on pay-per-use, so the cache below
- *   reads it at most once an hour.
+ *   "User: Read | $0.010 per resource" on pay-per-use, so an X count is
+ *   read at most once in 24 hours (Growth via Wall Game PM, 2026-10-28).
+ *   The developer account can run out of credits (2026-10-27: HTTP 402
+ *   "credits depleted" at media finalize); a 402 shows as X_CREDITS_DEPLETED.
  * - Facebook: Page node, followers_count ("Number of page followers"),
  *   pages_read_engagement; read with the Page token.
  * - Instagram: IG User node, followers_count ("Total number of Instagram
@@ -55,8 +57,12 @@ export const FOLLOWER_PLATFORMS = [
   "tiktok",
 ];
 
-/** A count is read at most once in this time (X reads are paid). */
+/** A count is read at most once in this time. */
 export const FOLLOWERS_MAX_AGE_MS = 60 * 60 * 1000;
+/** An X count is read at most once in this time: X reads are paid. */
+export const X_FOLLOWERS_MAX_AGE_MS = 24 * 60 * 60 * 1000;
+
+export const X_CREDITS_DEPLETED = "X credits depleted";
 
 export const NEEDS_RECONNECT = "needs reconnect";
 
@@ -72,10 +78,15 @@ class NoCount extends Error {}
 
 const bearer = (token) => ({ authorization: `Bearer ${token}` });
 
-/** The reply's JSON, or NoCount with the step and the status only. */
-const read = async (transport, step, req) => {
+/**
+ * The reply's JSON, or NoCount with the step and the status only, or with
+ * the reason that `reasons` gives for the status.
+ */
+const read = async (transport, step, req, reasons = {}) => {
   const reply = await transport.request({ method: "GET", ...req });
-  if (!ok(reply)) throw new NoCount(`${step}: HTTP ${reply.status}`);
+  if (!ok(reply)) {
+    throw new NoCount(reasons[reply.status] ?? `${step}: HTTP ${reply.status}`);
+  }
   return reply.json;
 };
 
@@ -118,15 +129,20 @@ const READERS = {
     needSecrets(env, X_SECRETS);
     const record = needConnected(tokens, "x");
     const url = `${X_API}/2/users/me?user.fields=public_metrics`;
-    const json = await read(transport, "x users/me", {
-      url,
-      headers: {
-        authorization: oauth1Header(
-          { method: "GET", url },
-          xCreds(env, record),
-        ),
+    const json = await read(
+      transport,
+      "x users/me",
+      {
+        url,
+        headers: {
+          authorization: oauth1Header(
+            { method: "GET", url },
+            xCreds(env, record),
+          ),
+        },
       },
-    });
+      { 402: X_CREDITS_DEPLETED },
+    );
     return asCount(json?.data?.public_metrics?.followers_count, "x");
   },
 
@@ -234,14 +250,35 @@ const reasonOf = (err) => {
 };
 
 /**
- * Every platform's count, read now, one platform after the other.
+ * The platforms whose last result in `counts` is too old: an X count after
+ * 24 hours, any other result after an hour. A failed X read has no count
+ * to keep (and X bills per resource it returns), so it is tried again after
+ * an hour, not 24.
+ * @param {Record<string, { followers: number | null, at: string }> | null} counts
+ * @param {number} nowMs
+ */
+export const followersDue = (counts, nowMs) =>
+  FOLLOWER_PLATFORMS.filter((platform) => {
+    const last = counts?.[platform];
+    const at = Date.parse(last?.at ?? "");
+    if (!Number.isFinite(at)) return true;
+    const maxAge =
+      platform === "x" && last.followers !== null
+        ? X_FOLLOWERS_MAX_AGE_MS
+        : FOLLOWERS_MAX_AGE_MS;
+    return nowMs - at >= maxAge;
+  });
+
+/**
+ * The count of each platform in `platforms` (all of them by default), read
+ * now, one platform after the other.
  * @returns {Promise<Record<string, { followers: number | null, at: string, error: string | null }>>}
  */
-export const readFollowers = async (ctx) => {
+export const readFollowers = async (ctx, platforms = FOLLOWER_PLATFORMS) => {
   const now = ctx.now ?? (() => new Date());
   /** @type {Record<string, { followers: number | null, at: string, error: string | null }>} */
   const out = {};
-  for (const platform of FOLLOWER_PLATFORMS) {
+  for (const platform of platforms) {
     try {
       const followers = await READERS[platform](ctx);
       out[platform] = { followers, at: now().toISOString(), error: null };
