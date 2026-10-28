@@ -70,6 +70,47 @@ import { copySha256 } from "./copy.mjs";
  */
 export const VERSION = 3;
 
+/** A video item's file format (the review queue; day files are history). */
+export const ITEM_VERSION = 4;
+
+/**
+ * A video item's states, as stored. "In review" is not one: it is derived
+ * on a finished item (reviewState). The poster alone writes posting,
+ * posted and post-failed.
+ */
+export const ITEM_STATES = [
+  "draft",
+  "finished",
+  "approved",
+  "discarded",
+  "posting",
+  "posted",
+  "post-failed",
+];
+
+/** An item id: v-<UTC day it was picked>-<label or number>. */
+export const ITEM_ID = /^v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/;
+export const itemId = (day, label) => `v-${day}-${label}`;
+
+/**
+ * Where a finished item stands: "in-review" when Growth's block is for its
+ * current video and, after a revise, both the render and the block came
+ * later than Nil's revise (Growth's rule, 2026-10-28: a revised item is in
+ * review again only with a new render AND a new block); else
+ * "waiting-copy". Null for any other state.
+ */
+export const reviewState = (item) => {
+  if (item.state !== "finished") return null;
+  const fresh =
+    item.copy !== null &&
+    item.copy.forVideoSha256 === item.render?.video?.sha256;
+  const revise = item.reviews.filter((r) => r.action === "revise").at(-1);
+  const afterRevise =
+    !revise ||
+    (item.render.finishedAt > revise.at && item.copy?.storedAt > revise.at);
+  return fresh && afterRevise ? "in-review" : "waiting-copy";
+};
+
 /** A day's candidates, in the order the ask shows them. */
 export const LABELS = ["A", "B", "C"];
 /** The longest reason of a recommendation in the ask (one line). */
@@ -137,8 +178,12 @@ export const openStore = (dataDir) => {
     videos: join(root, "videos"),
     requests: join(root, "requests"),
     work: join(root, "work"),
+    // One file per video item (the review queue).
+    items: join(root, "items"),
   };
   for (const dir of Object.values(dirs)) mkdirSync(dir, { recursive: true });
+  /** Live captures per UTC day and game: each one is a production view. */
+  const rendersFile = join(root, "renders.json");
 
   /**
    * The post log. Wall Game Growth reads the live file; a dry run writes the
@@ -194,6 +239,58 @@ export const openStore = (dataDir) => {
         .join("\n") + "\n",
     );
   }
+
+  const itemPath = (id) => {
+    if (!ITEM_ID.test(id)) refuse(`not an item id: ${id}`);
+    return join(dirs.items, `${id}.json`);
+  };
+  const readItem = (id) => {
+    const path = itemPath(id);
+    return existsSync(path) ? JSON.parse(readFileSync(path, "utf8")) : null;
+  };
+  const writeItem = (item) =>
+    writeAtomic(itemPath(item.id), JSON.stringify(item, null, 2));
+
+  // Once, at start-up: each candidate of each day file becomes a video item
+  // (itemFromDay). The day files stay as they are, as history. An item that
+  // exists is never written again here, so a second start changes nothing.
+  for (const day of days()) {
+    const record = JSON.parse(readFileSync(cyclePath(day), "utf8"));
+    for (const label of Object.keys(record.cands)) {
+      if (!existsSync(itemPath(itemId(day, label)))) {
+        writeItem(itemFromDay(record, label));
+      }
+    }
+  }
+  // The day files' view counts start the per-day count file.
+  {
+    const counts = existsSync(rendersFile)
+      ? JSON.parse(readFileSync(rendersFile, "utf8"))
+      : {};
+    const missing = days().filter((d) => counts[d] === undefined);
+    for (const day of missing) {
+      counts[day] = JSON.parse(readFileSync(cyclePath(day), "utf8")).renders;
+    }
+    if (missing.length || !existsSync(rendersFile)) {
+      writeAtomic(rendersFile, JSON.stringify(counts, null, 2));
+    }
+  }
+
+  /** Every item, or those in `states`; oldest createdAt first, then id. */
+  const items = ({ states } = {}) =>
+    readdirSync(dirs.items)
+      .filter((f) => f.endsWith(".json"))
+      .map((f) => JSON.parse(readFileSync(join(dirs.items, f), "utf8")))
+      .filter((it) => !states || states.includes(it.state))
+      .sort((a, b) =>
+        a.createdAt === b.createdAt
+          ? a.id < b.id
+            ? -1
+            : 1
+          : a.createdAt < b.createdAt
+            ? -1
+            : 1,
+      );
 
   const read = (day) => {
     const path = cyclePath(day);
@@ -256,8 +353,74 @@ export const openStore = (dataDir) => {
     dirs,
     postLog,
     feedbackLog,
+    rendersFile,
     read,
     days,
+
+    /** One item, or null. */
+    item: readItem,
+    items,
+
+    /**
+     * The one way to change an item: refuses unless its state is one of
+     * `expectStates`, then `mutate(item)` changes it in place; the change is
+     * stamped, logged as the event `what` and written atomically. The
+     * poster's transitions (posting, posted, post-failed, posts{}) use it
+     * from their own module; the review routes never write those.
+     * @param {string} id
+     * @param {string[]} expectStates
+     * @param {(item: any) => void} mutate
+     * @param {string} what
+     */
+    updateItem(id, expectStates, mutate, what) {
+      const item = readItem(id);
+      if (!item) refuse(`no item ${id}`);
+      if (!expectStates.includes(item.state)) {
+        refuse(
+          `${id} is ${item.state}; ${what} needs ${expectStates.join(" or ")}`,
+        );
+      }
+      mutate(item);
+      const utc = new Date().toISOString();
+      item.updatedAt = utc;
+      item.events = [...item.events, { utc, what }];
+      writeItem(item);
+      return item;
+    },
+
+    /** Approved items, oldest approval first (then id): the post queue. */
+    approvedQueue: () =>
+      items({ states: ["approved"] }).sort((a, b) =>
+        a.approval.at === b.approval.at
+          ? a.id < b.id
+            ? -1
+            : 1
+          : a.approval.at < b.approval.at
+            ? -1
+            : 1,
+      ),
+
+    /** Items whose post failed; Growth retries them by hand. */
+    postFailed: () => items({ states: ["post-failed"] }),
+
+    /** How many items are in each state (and in review), for the status. */
+    counts: () => {
+      const all = items();
+      const n = (pred) => all.filter(pred).length;
+      const lastAction = (it) => it.reviews.at(-1)?.action;
+      return {
+        draft: n((it) => it.state === "draft" && lastAction(it) !== "revise"),
+        revise: n((it) => it.state === "draft" && lastAction(it) === "revise"),
+        finished: n((it) => it.state === "finished"),
+        inReview: n((it) => reviewState(it) === "in-review"),
+        waitingCopy: n((it) => reviewState(it) === "waiting-copy"),
+        approved: n((it) => it.state === "approved"),
+        posting: n((it) => it.state === "posting"),
+        postFailed: n((it) => it.state === "post-failed"),
+        posted: n((it) => it.state === "posted"),
+        discarded: n((it) => it.state === "discarded"),
+      };
+    },
     staleCopy,
 
     /**
@@ -1057,6 +1220,133 @@ export const migrateV2 = (v2) => {
     cands: Object.fromEntries(
       Object.entries(v2.cands).map(([label, c]) => [label, cand(c)]),
     ),
+  };
+};
+
+/** Every field a version 3 candidate may have. */
+const CAND_FIELDS = [
+  "label",
+  "state",
+  "pickedAt",
+  "candidate",
+  "style",
+  "styleVersion",
+  "edl",
+  "render",
+  "check",
+  "copy",
+  "copyFor",
+  "replaced",
+  "caption",
+];
+
+/**
+ * One candidate of a version 3 day file as a video item (the review queue,
+ * 2026-10-28). The day file stays as history; the item names it. Its state:
+ * - the picked candidate of an approved day: approved, posted or
+ *   post-failed as the day was, with the day's posts and the approval's
+ *   video and block (no modes: an item posts where it is live at its slot);
+ * - a candidate an answered ask offered and Nil did not pick: discarded,
+ *   with that answer's words as its note;
+ * - any other: finished when its check passed, else draft.
+ * Nil's answers become review rows marked with their ask. A field that a
+ * candidate never had stops the migration, so it is seen, not lost.
+ */
+export const itemFromDay = (record, label) => {
+  const cand = record.cands[label];
+  const unknown = Object.keys(cand).filter((k) => !CAND_FIELDS.includes(k));
+  if (unknown.length) {
+    throw new Error(
+      `${record.day} ${label}: a candidate has no field ${unknown.join(", ")}; the migration would lose it`,
+    );
+  }
+  const answered = [
+    ...(record.earlierAsks ?? []),
+    ...(record.approval ? [record.approval] : []),
+  ].filter((a) => a.decision !== null);
+  const review = (a, action) => ({
+    action,
+    notes: a.reply ?? "",
+    by: a.approver,
+    memberId: null,
+    at: a.answeredAt,
+    videoSha256: a.offered[label].videoSha256,
+    copySha256: a.offered[label].copySha256,
+    migratedFromAsk: a.askId,
+  });
+  const approval = record.approval;
+  const approved =
+    approval?.decision === "pick" && approval.picked === label
+      ? approval
+      : null;
+  const passed = answered.filter((a) => a.offered[label] && a.picked !== label);
+  const state = approved
+    ? record.state === "posted" || record.state === "post-failed"
+      ? record.state
+      : "approved"
+    : passed.length
+      ? "discarded"
+      : cand.state === "checked"
+        ? "finished"
+        : "draft";
+  // The block: Growth's, or (before Growth) the one the approval bound.
+  const copy = cand.copy
+    ? {
+        block: cand.copy,
+        sha256: copySha256(cand.copy),
+        forVideoSha256: cand.copyFor,
+        storedAt: null,
+      }
+    : approved?.copy
+      ? {
+          block: approved.copy,
+          sha256: approved.offered[label].copySha256,
+          forVideoSha256: approved.videoSha256,
+          storedAt: null,
+        }
+      : null;
+  return {
+    version: ITEM_VERSION,
+    id: itemId(record.day, label),
+    createdAt: cand.pickedAt ?? record.createdAt,
+    updatedAt: record.updatedAt,
+    gameId: cand.candidate?.gameId ?? null,
+    source: {
+      migratedFrom: {
+        day: record.day,
+        label,
+        replaced: cand.replaced ?? [],
+        ...(cand.caption !== undefined && { postCaption: cand.caption }),
+      },
+    },
+    candidate: cand.candidate,
+    style: cand.style ?? null,
+    styleVersion: cand.styleVersion ?? null,
+    edl: cand.edl ?? null,
+    render: cand.render ?? null,
+    check: cand.check ?? null,
+    caption: cand.edl?.doc?.caption ?? null,
+    payoff: cand.edl?.doc?.payoff ?? null,
+    copy,
+    state,
+    reviews: approved
+      ? [review(approved, "approve")]
+      : passed.length
+        ? [review(passed.at(-1), "discard")]
+        : [],
+    approval: approved && {
+      videoSha256: approved.videoSha256,
+      copySha256: approved.offered[label].copySha256,
+      by: approved.approver,
+      at: approved.answeredAt,
+    },
+    posts: approved ? (record.posts ?? {}) : {},
+    events: [
+      {
+        utc: record.updatedAt,
+        what: `migrated from day ${record.day}, candidate ${label} (${cand.state})`,
+      },
+    ],
   };
 };
 
