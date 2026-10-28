@@ -2977,3 +2977,79 @@ test("a new app start removes the previews that the last one forgot", () => {
   createDaily({ dataDir: dir });
   expect(readdirSync(old)).toEqual([]);
 });
+
+describe("the approved queue in the app (review-post.mjs, scheduler.mjs)", () => {
+  test("status: counts and the next slot, no path; the timer keeps its state on disk", async () => {
+    const dir = tempDir();
+    const store = openStore(dir);
+    approveItem(store, finishItem(store));
+    const { base } = await serveHere(dir, "unused");
+    const { status, body } = await call<{
+      counts: { approved: number; postedToday: number };
+      nextSlot: { at: string; pacific: string; willPost: boolean };
+      livePlatforms: string[];
+      postFailed: unknown[];
+    }>(base, "/api/review/status");
+    expect(status).toBe(200);
+    expect(body.counts).toMatchObject({ approved: 1, postedToday: 0 });
+    expect(body.nextSlot.willPost).toBe(true);
+    expect(body.nextSlot.pacific).toMatch(/ (09|16):00 PT$/);
+    // No key in the test env: nothing is live, so a slot would skip.
+    expect(body.livePlatforms).toEqual([]);
+    expect(JSON.stringify(body)).not.toContain(dir);
+    // The first tick of the timer recorded its start.
+    const schedule = join(store.dirs.root, "schedule.json");
+    for (let i = 0; i < 50 && !existsSync(schedule); i++) {
+      await new Promise((r) => setTimeout(r, 10));
+    }
+    expect(
+      (JSON.parse(readFileSync(schedule, "utf8")) as { lastSlotAt: unknown })
+        .lastSlotAt,
+    ).toBeString();
+  });
+
+  test("Growth's retry: only a post-failed item, and never a platform that is not live", async () => {
+    const dir = tempDir();
+    const path = join(dir, "v.mp4");
+    writeFileSync(path, "bytes");
+    const store = openStore(dir);
+    const id = finishItem(store, {
+      path,
+      bytes: 5,
+      sha256: sha256(readFileSync(path)),
+      durationSeconds: 30,
+    });
+    approveItem(store, id);
+    const { base } = await serveHere(dir, "unused");
+    const early = await call(base, "/api/daily/post", { itemId: id });
+    expect(early.status).toBe(409);
+    expect(early.body.error).toContain("only a post-failed item is retried");
+    // As a slot leaves it: bluesky refused (a clear failure), x posted.
+    store.updateItem(
+      id,
+      ["approved"],
+      (it: Item & { posting?: object; posts?: object }) => {
+        it.state = "post-failed";
+        it.posting = {
+          slotAt: "2026-10-29T16:00:00.000Z",
+          at: "2026-10-29T16:00:01.000Z",
+          platforms: ["x", "bluesky"],
+        };
+        it.posts = {
+          x: { ok: true, mode: "dry-run", at: "2026-10-29T16:00:02.000Z" },
+          bluesky: { ok: false, uncertain: false, error: "bluesky: HTTP 400" },
+        };
+      },
+      "a slot (test)",
+    );
+    // Bluesky is not live in the test env: a retry would post a dry run,
+    // so it is refused before any request and nothing counts as posted.
+    const retry = await call(base, "/api/daily/post", { itemId: id });
+    expect(retry.status).toBe(409);
+    expect(retry.body.error).toBe(
+      "bluesky is not live now: connect it (/daily/connect), then retry",
+    );
+    expect(readPostLog(store.postLog.dryRun)).toEqual([]);
+    expect(itemOf(store, id).state).toBe("post-failed");
+  });
+});

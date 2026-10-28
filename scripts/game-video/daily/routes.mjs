@@ -26,7 +26,11 @@
  *
  * A finished item with a fresh block is in review: Nil approves, discards
  * or revises it on /review. An approved item posts at a slot (Wall Game
- * Worker 1's review-post.mjs and scheduler.mjs, through postPlatform here).
+ * Worker 1's review-post.mjs and scheduler.mjs, through postPlatform here),
+ * to the platforms that are live at that time only:
+ *   GET /api/review/status  -> counts, the next slot and the last one
+ *   crew.mjs post   -> POST /api/daily/post   Growth's retry of a
+ *                       post-failed item (the platforms of its slot)
  *
  * POSTING IS DRY-RUN UNTIL THE KEYS EXIST. A platform posts live only when
  * every one of its secrets is in the app's environment (Nil gives them to the
@@ -91,6 +95,8 @@ import {
   reviewView,
 } from "./review.mjs";
 import { appMessenger } from "./office.mjs";
+import { createItemPoster } from "./review-post.mjs";
+import { createScheduler, GROWTH_AGENT_ID } from "./scheduler.mjs";
 import {
   loudnessVerdict,
   safeAreaVerdict,
@@ -330,6 +336,8 @@ export const createDaily = ({
   send = /** @type {((targetAgentId: string, text: string) => Promise<void>) | null} */ (
     null
   ),
+  // The slot timer (scheduler.mjs); a test that drives it by hand sets false.
+  schedule = true,
 }) => {
   // The secrets from the environment, the public ids from code: an env var
   // with a public id's name has no effect (Nil, 2026-10-27).
@@ -1055,6 +1063,28 @@ export const createDaily = ({
       JSON.stringify(logRow(item, platform, result)) + "\n",
     );
 
+  // The slot post and Growth's retry (review-post.mjs), and the slot timer
+  // (scheduler.mjs), whose state is <data>/daily/schedule.json. Every post
+  // runs as THE post (asThePost); the timer waits a tick while one runs.
+  const itemPoster = createItemPoster({
+    store,
+    livePlatforms,
+    readVideo: (path) => readFileSync(path),
+    postPlatform,
+    logPost,
+  });
+  const scheduler = createScheduler({
+    statePath: join(dirs.root, "schedule.json"),
+    store,
+    livePlatforms,
+    // A post, or a follower read that a post would wait for (asThePost).
+    busy: () => posting || followersRun !== null,
+    postItem: (slot) => asThePost(() => itemPoster.postNext(slot)),
+    recover: itemPoster.recover,
+    send: (text) => sendMessage(GROWTH_AGENT_ID, text),
+  });
+  const stopSchedule = schedule ? scheduler.start() : () => {};
+
   /* ------------------------------------------------------------ routes -- */
 
   const json = (res, code, body) => {
@@ -1201,6 +1231,31 @@ export const createDaily = ({
     /** ?id=<item>: one item, whatever its state. */
     "GET /api/daily/item": (req, res, url) =>
       json(res, 200, itemOf(url.searchParams.get("id"))),
+
+    /** Counts, the next slot and the last one (scheduler.mjs status). */
+    "GET /api/review/status": (req, res) => json(res, 200, scheduler.status()),
+
+    /**
+     * {itemId, confirmNotPosted?: [platform]}: Growth's retry of a
+     * post-failed item, after the cause is fixed. It posts only the
+     * platforms of the item's slot that did not post, and uses no slot.
+     */
+    "POST /api/daily/post": async (req, res) => {
+      const body = await readJson(req);
+      if (typeof body.itemId !== "string") {
+        throw new StepRefused("post needs the itemId of a post-failed item");
+      }
+      const confirmNotPosted = Array.isArray(body.confirmNotPosted)
+        ? body.confirmNotPosted.filter((p) => PLATFORMS.includes(p))
+        : [];
+      json(
+        res,
+        200,
+        await asThePost(() =>
+          itemPoster.retry(body.itemId, { confirmNotPosted }),
+        ),
+      );
+    },
 
     /**
      * What a restart would cut: every render queued or running (on the 4090)
@@ -1923,6 +1978,7 @@ export const createDaily = ({
   /** Stop a running render (and so its 4090 unit) when the app stops. */
   const stop = () => {
     if (threadsTimer) clearInterval(threadsTimer);
+    stopSchedule();
     if (!currentChild) return;
     try {
       process.kill(-currentChild.pid, "SIGTERM");
@@ -1943,6 +1999,7 @@ export const createDaily = ({
     asThePost,
     /** Whether a post runs now: a caller checks it in the same step as asThePost. */
     isPosting: () => posting,
+    scheduler,
   };
 };
 

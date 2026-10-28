@@ -103,6 +103,14 @@
  *                                  Growth wants in review (Growth,
  *                                  2026-10-28: 3, growing to 10); the
  *                                  review page and `status` show it
+ *   post --item ID [--confirm-not-posted x,bluesky]
+ *                                  (Growth) retry a post-failed item after
+ *                                  the cause is fixed: only the platforms of
+ *                                  its slot that did not post. A platform
+ *                                  whose post may exist needs a check of the
+ *                                  account, then --confirm-not-posted. Slots
+ *                                  post approved items on their own; a retry
+ *                                  uses no slot
  *   log [--dry-run]                the post log
  *   auth-check --platform x|instagram
  *                                  READ-ONLY: does the platform accept the
@@ -541,6 +549,22 @@ const commands = {
     if (!Number.isInteger(n)) die("queue needs --review-target <N>");
     const q = await app("POST", "/api/daily/queue", { reviewTarget: n });
     console.log(`review target: ${q.reviewTarget}`);
+  },
+
+  async post() {
+    const id = itemFlag();
+    const confirmNotPosted = flag("confirm-not-posted")?.split(",") ?? [];
+    const r = await app("POST", "/api/daily/post", {
+      itemId: id,
+      confirmNotPosted,
+    });
+    console.log(`${id}: ${r.kind}`);
+    for (const p of r.platforms) {
+      const x = r.posts[p];
+      console.log(
+        `  ${p}: ${x?.ok ? `posted ${x.url ?? x.postId ?? ""}`.trim() : x?.uncertain || x?.pending ? `UNCERTAIN (${x.error ?? "no answer"})` : `failed (${x?.error ?? "not tried"})`}`,
+      );
+    }
   },
 
   async drop() {
