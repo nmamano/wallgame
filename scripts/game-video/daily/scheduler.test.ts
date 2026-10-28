@@ -65,6 +65,7 @@ const world = (opts: { ready?: number; liveNow?: string[] } = {}) => {
     slotAt: string;
     posts: object;
     platforms: string[];
+    notApplicable?: Record<string, string> | null;
   }[] = [];
   const make = () =>
     createScheduler({
@@ -243,6 +244,31 @@ describe("scheduler", () => {
     ).toEqual(["threads"]);
   });
 
+  test("a Story that does not apply is a line, not a failure, and not 'live but not in this slot'", async () => {
+    const live = ["instagram", "instagram-story"];
+    const why = "instagram story: the video is 72 s; a Story takes 3-60 s";
+    const w = world({ ready: 1, liveNow: live });
+    w.setOutcome(() => ({
+      kind: "posted",
+      platforms: ["instagram"],
+      notApplicable: { "instagram-story": why },
+      posts: { instagram: { ok: true, url: "https://instagram/1" } },
+    }));
+    const s = w.make();
+    await s.tick();
+    w.setTime(OCT29_0900);
+    await s.tick();
+    const m = w.sent[0];
+    expect(m).toContain("POSTED v-2026-10-28-1.");
+    expect(m).toContain(
+      `- instagram-story: not applicable, nothing to retry (${why})`,
+    );
+    expect(m).not.toContain("Live now but not in this slot");
+    expect(
+      (s.status() as { lastSlot: { notInSlot: string[] } }).lastSlot.notInSlot,
+    ).toEqual([]);
+  });
+
   test("an error after the item was taken: the 6 h gap still holds", async () => {
     const w = world({ ready: 1 });
     w.setOutcome(() => {
@@ -355,6 +381,85 @@ describe("scheduler", () => {
       "the app stopped as the post of v-2026-10-28-1 ended; it is posted.",
     );
     expect(w.sent[0]).toContain("- x: posted https://x.example/1");
+  });
+
+  test("both recoveries keep a Story that does not apply: a line, and not 'not in this slot'", async () => {
+    const why = "instagram story: the video is 72 s; a Story takes 3-60 s";
+    const live = ["instagram", "instagram-story"];
+    const slotAt = new Date(OCT29_0900).toISOString();
+    const posting = (prev: string | null) =>
+      JSON.stringify({
+        lastSlotAt: slotAt,
+        lastPostAt: slotAt,
+        lastSlot: {
+          slotAt,
+          firedAt: slotAt,
+          itemId: null,
+          outcome: "posting",
+          platforms: null,
+          folded: 0,
+          prevPostAt: prev,
+        },
+        outbox: [],
+      });
+    const started = async (w: ReturnType<typeof world>) => {
+      w.setTime(OCT29_0900 + 60_000);
+      const s = w.make();
+      const stop = s.start(60_000);
+      stop();
+      await new Promise((r) => setTimeout(r, 20));
+      return s;
+    };
+    const notInSlot = (s: ReturnType<ReturnType<typeof world>["make"]>) =>
+      (s.status() as { lastSlot: { notInSlot: string[] } }).lastSlot.notInSlot;
+
+    // A hard kill as the post ended: the item that the slot took.
+    const w = world({ ready: 1, liveNow: live });
+    Object.assign(w.items[0], {
+      state: "posted",
+      posting: {
+        at: slotAt,
+        slotAt,
+        platforms: ["instagram"],
+        notApplicable: { "instagram-story": why },
+      },
+      posts: { instagram: { ok: true, url: "https://instagram.example/1" } },
+    });
+    mkdirSync(dirname(w.statePath), { recursive: true });
+    writeFileSync(w.statePath, posting(null));
+    const s = await started(w);
+    expect(readState(w.statePath).lastSlot).toMatchObject({
+      outcome: "posted",
+      notApplicable: { "instagram-story": why },
+    });
+    expect(w.sent[0]).toContain(
+      `- instagram-story: not applicable, nothing to retry (${why})`,
+    );
+    expect(notInSlot(s)).toEqual([]);
+
+    // A stop during the post: recover() reports the item.
+    const w2 = world({ ready: 0, liveNow: live });
+    mkdirSync(dirname(w2.statePath), { recursive: true });
+    writeFileSync(w2.statePath, posting(null));
+    w2.leavePosting([
+      {
+        id: "v-2026-10-28-1",
+        slotAt,
+        platforms: ["instagram"],
+        notApplicable: { "instagram-story": why },
+        posts: { instagram: { ok: null, pending: true, at: slotAt } },
+      },
+    ]);
+    const s2 = await started(w2);
+    expect(readState(w2.statePath).lastSlot).toMatchObject({
+      outcome: "interrupted",
+      notApplicable: { "instagram-story": why },
+    });
+    expect(w2.sent[0]).toContain("- instagram: UNCERTAIN");
+    expect(w2.sent[0]).toContain(
+      `- instagram-story: not applicable, nothing to retry (${why})`,
+    );
+    expect(notInSlot(s2)).toEqual([]);
   });
 
   test("a damaged state file is moved aside; the timer starts again and says so", async () => {

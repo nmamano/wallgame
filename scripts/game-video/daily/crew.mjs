@@ -565,6 +565,9 @@ const commands = {
         `  ${p}: ${x?.ok ? `posted ${x.url ?? x.postId ?? ""}`.trim() : x?.uncertain || x?.pending ? `UNCERTAIN (${x.error ?? "no answer"})` : `failed (${x?.error ?? "not tried"})`}`,
       );
     }
+    for (const [p, why] of Object.entries(r.notApplicable ?? {})) {
+      console.log(`  ${p}: not applicable (${why})`);
+    }
   },
 
   async drop() {

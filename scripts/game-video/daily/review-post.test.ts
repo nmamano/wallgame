@@ -36,7 +36,10 @@ interface Post {
 interface Item {
   id: string;
   state: string;
-  render: { video: { path: string }; music?: { track: string }[] };
+  render: {
+    video: { path: string; durationSeconds: number };
+    music?: { track: string }[];
+  };
   copy: { block: typeof COPY; sha256: string };
   approval: {
     videoSha256: string;
@@ -45,7 +48,12 @@ interface Item {
     at: string;
   } | null;
   posts: Record<string, Post>;
-  posting?: { slotAt: string; at: string; platforms: string[] };
+  posting?: {
+    slotAt: string;
+    at: string;
+    platforms: string[];
+    notApplicable?: Record<string, string>;
+  };
   events: string[];
 }
 
@@ -54,6 +62,7 @@ interface Outcome {
   kind: string;
   itemId?: string;
   platforms: string[];
+  notApplicable?: Record<string, string>;
   posts: Record<string, Post>;
   refused?: { itemId: string; error: string }[];
 }
@@ -73,7 +82,7 @@ const world = (live: string[]) => {
   items.set("v-2026-10-28-1", {
     id: "v-2026-10-28-1",
     state: "approved",
-    render: { video: { path: "/videos/1.mp4" } },
+    render: { video: { path: "/videos/1.mp4", durationSeconds: 30 } },
     copy: { block: { ...COPY }, sha256: copySha256(COPY) },
     approval: {
       videoSha256: sha256(VIDEO),
@@ -332,6 +341,42 @@ describe("post(itemId)", () => {
     expect(w2.logged).toEqual(["instagram-story"]);
   });
 
+  test("a video outside the Story limits posts no Story: not applicable, not a failure, never retried", async () => {
+    const w = world(["instagram", "instagram-story"]);
+    w.get().render.video.durationSeconds = 72;
+    const r = await w.post(SLOT);
+    const why = "instagram story: the video is 72 s; a Story takes 3-60 s";
+    expect(r).toMatchObject({
+      kind: "posted",
+      platforms: ["instagram"],
+      notApplicable: { "instagram-story": why },
+    });
+    expect(w.get().posting).toMatchObject({
+      platforms: ["instagram"],
+      notApplicable: { "instagram-story": why },
+    });
+    expect(w.get().posts).not.toHaveProperty("instagram-story");
+    expect(w.logged).toEqual(["instagram"]);
+    // A later retry of another failure never tries the Story.
+    const w2 = world(["instagram", "instagram-story"]);
+    w2.get().render.video.durationSeconds = 72;
+    w2.replies.instagram = () => ({
+      ok: false,
+      uncertain: false,
+      mode: "live",
+      at: "t",
+      error: "instagram container: HTTP 400",
+    });
+    expect((await w2.post(SLOT)).kind).toBe("post-failed");
+    delete w2.replies.instagram;
+    const again = await w2.retry("v-2026-10-28-1");
+    expect(again).toMatchObject({ kind: "posted", platforms: ["instagram"] });
+    expect(w2.confirmedSeen.map(([p]) => p)).toEqual([
+      "instagram",
+      "instagram",
+    ]);
+  });
+
   test("an uncertain platform needs confirmNotPosted before a retry", async () => {
     const w = world(["x"]);
     w.replies.x = (commit) => {
@@ -401,6 +446,7 @@ describe("post(itemId)", () => {
         id: "v-2026-10-28-1",
         slotAt: SLOT.slotAt,
         platforms: ["x"],
+        notApplicable: null,
         posts: {
           x: { ok: null, pending: true, mode: "live", at: out[0].posts.x.at },
         },

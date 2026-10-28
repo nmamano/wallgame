@@ -9,6 +9,10 @@
  * - The item posts to the platforms that are live when its slot takes it,
  *   and that set is fixed on the item (posting.platforms). A platform that
  *   goes live later never gets an old item (Wall Game PM, 2026-10-28).
+ * - A platform that does not apply to the video (an Instagram Story of a
+ *   video over 60 s) leaves the set at slot time, with its reason in
+ *   posting.notApplicable: no failure and no retry (Wall Game Director and
+ *   Wall Game Growth, 2026-10-29).
  * - A retry is by hand (Growth): it posts only the platforms of the set that
  *   did not post. A platform whose last attempt may have made the post
  *   (pending: the app stopped during its final request; uncertain: no clear
@@ -22,6 +26,29 @@
 import { StepRefused, blockedMusic } from "./store.mjs";
 import { copySha256 } from "./copy.mjs";
 import { sha256 } from "./transport.mjs";
+import { storyProblem } from "./post-instagram.mjs";
+
+/**
+ * Why a platform does not apply to an item's video, or null. Nil wants every
+ * Instagram post on Stories (2026-10-29), and the render check keeps daily
+ * videos inside the Story limits; this is the poster's safety net for a
+ * video outside them, which would otherwise fail at every retry.
+ */
+const NOT_APPLICABLE = {
+  "instagram-story": (item, video) =>
+    storyProblem({
+      video,
+      durationSeconds: item.render?.video?.durationSeconds,
+    }),
+};
+
+/** {platform: reason} of the platforms that do not apply to the video. */
+const notApplicableTo = (item, video, platforms) =>
+  Object.fromEntries(
+    platforms
+      .map((p) => [p, NOT_APPLICABLE[p]?.(item, video) ?? null])
+      .filter(([, why]) => why),
+  );
 
 /**
  * @param {object} deps
@@ -148,6 +175,7 @@ export const createItemPoster = ({
     return {
       kind: done.state,
       platforms: done.posting.platforms,
+      notApplicable: done.posting.notApplicable ?? {},
       posts: done.posts,
     };
   };
@@ -184,8 +212,16 @@ export const createItemPoster = ({
             problem = video
               ? contentProblem(i, video)
               : "the approved video file cannot be read";
+            const skipped = problem ? {} : notApplicableTo(i, video, platforms);
             i.posts ??= {};
-            i.posting = { slotAt, at: iso(), platforms };
+            i.posting = {
+              slotAt,
+              at: iso(),
+              platforms: platforms.filter((p) => !(p in skipped)),
+              ...(Object.keys(skipped).length
+                ? { notApplicable: skipped }
+                : {}),
+            };
             if (problem) i.posting.error = problem;
             i.state = problem ? "post-failed" : "posting";
           },
@@ -206,7 +242,9 @@ export const createItemPoster = ({
         ...(await run(
           item.id,
           video,
-          platforms.filter((p) => item.posts[p]?.ok !== true),
+          // The item's own set: the live platforms less those that do not
+          // apply to its video.
+          item.posting.platforms.filter((p) => item.posts[p]?.ok !== true),
         )),
       };
     }
@@ -288,6 +326,7 @@ export const createItemPoster = ({
         id: saved.id,
         slotAt: saved.posting.slotAt,
         platforms: saved.posting.platforms,
+        notApplicable: saved.posting.notApplicable ?? null,
         posts: saved.posts,
       };
     });

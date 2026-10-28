@@ -10,8 +10,9 @@
  *   { lastSlotAt, lastPostAt, lastSlot, outbox }
  * - lastSlotAt: the newest slot time that was handled (slots.mjs).
  * - lastPostAt: when the last slot post started; the 6 h gap counts from it.
- * - lastSlot: { slotAt, firedAt, itemId, outcome, platforms, folded } of the
- *   last slot that posted or was skipped.
+ * - lastSlot: { slotAt, firedAt, itemId, outcome, platforms, notApplicable,
+ *   folded } of the last slot that posted or was skipped; notApplicable is
+ *   {platform: reason} of the live platforms that the video does not suit.
  * - outbox: messages to Wall Game Growth not yet sent; each tick tries them
  *   again, so an office that is down loses no message.
  *
@@ -68,6 +69,16 @@ const resultLine = (platform, r) => {
 };
 
 /**
+ * The lines of the platforms that do not apply to an item's video
+ * (posting.notApplicable, review-post.mjs): not a failure, so no retry.
+ * @param {Record<string, string> | null | undefined} notApplicable
+ */
+const notApplicableLines = (notApplicable) =>
+  Object.entries(notApplicable ?? {}).map(
+    ([p, why]) => `- ${p}: not applicable, nothing to retry (${why})`,
+  );
+
+/**
  * @param {object} deps
  * @param {string} deps.statePath
  * @param {() => number} [deps.now]
@@ -81,7 +92,7 @@ const resultLine = (platform, r) => {
  *   kind "posted" | "post-failed" | "refused" (the item failed its checks
  *   and went to post-failed) | "no-live" (nothing was touched) | "empty"
  * @param {() => Array<{ id: string, slotAt: string, posts: object,
- *   platforms: string[] }>}
+ *   platforms: string[], notApplicable: Record<string, string> | null }>}
  *   deps.recover items left in "posting" by a stop, now post-failed
  * @param {(text: string) => Promise<void>} deps.send throws when not sent
  * @param {{ warn: (m: string) => void }} [deps.log]
@@ -171,7 +182,11 @@ export const createScheduler = ({
         // Platforms that are live now but were not live at that slot: the
         // item keeps its slot's set, so they never get it.
         notInSlot: last.platforms
-          ? live.filter((p) => !last.platforms.includes(p))
+          ? live.filter(
+              (p) =>
+                !last.platforms.includes(p) &&
+                !(p in (last.notApplicable ?? {})),
+            )
           : [],
       },
     };
@@ -257,6 +272,7 @@ export const createScheduler = ({
         itemId: result.itemId ?? null,
         outcome: result.kind,
         platforms: result.platforms ?? null,
+        notApplicable: result.notApplicable ?? null,
       },
     });
     const head = slotHead(d.slot, firedAt, d.folded);
@@ -274,12 +290,14 @@ export const createScheduler = ({
         `${head}: SKIPPED, the approved queue is empty (withdrawn before the slot took an item).`,
       ]);
     } else if (result.kind === "posted" || result.kind === "post-failed") {
+      const skipped = result.notApplicable ?? {};
       const notLive = livePlatforms().filter(
-        (p) => !result.platforms.includes(p),
+        (p) => !result.platforms.includes(p) && !(p in skipped),
       );
       queueMessage([
         `${head}: ${result.kind === "posted" ? "POSTED" : "POST FAILED"} ${id}.`,
         ...result.platforms.map((p) => resultLine(p, result.posts[p])),
+        ...notApplicableLines(skipped),
         ...(refusedLines.length
           ? ["Passed over before it:", ...refusedLines]
           : []),
@@ -362,12 +380,14 @@ export const createScheduler = ({
             itemId: item.id,
             outcome: "interrupted",
             platforms: item.platforms,
+            notApplicable: item.notApplicable,
           },
         });
       }
       queueMessage([
         `The app stopped while ${item.id} was posting; it is post-failed now.`,
         ...item.platforms.map((p) => resultLine(p, item.posts[p])),
+        ...notApplicableLines(item.notApplicable),
         `Check each UNCERTAIN account, then retry by hand: crew.mjs post --item ${item.id} (with --confirm-not-posted for a checked platform).`,
       ]);
     }
@@ -394,11 +414,13 @@ export const createScheduler = ({
           itemId: taken.id,
           outcome: taken.state,
           platforms: taken.posting.platforms,
+          notApplicable: taken.posting.notApplicable ?? null,
         },
       });
       queueMessage([
         `Slot ${pacificLabel(Date.parse(state.lastSlot.slotAt))}: the app stopped as the post of ${taken.id} ended; it is ${taken.state}.`,
         ...taken.posting.platforms.map((p) => resultLine(p, taken.posts?.[p])),
+        ...notApplicableLines(taken.posting.notApplicable),
       ]);
     } else if (state.lastSlot?.outcome === "posting") {
       write({
