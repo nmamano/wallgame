@@ -168,7 +168,7 @@ export const MEME_SOURCE_NOTES = {
   "pointing-1":
     "high claim risk: a Spider-Man theme song (Marvel); 12.4 s long",
   "pointing-2":
-    "high claim risk: a Spider-Man theme song (Marvel); pointing-1's first 2.8 s",
+    "high claim risk: a Spider-Man theme song (Marvel); pointing-1's first 2.8 s, may end mid-word",
   "violin-1": "high claim risk: a TV drama theme, or a Team Fortress 2 sound",
   "boom-4": "medium claim risk: a Bluezone library effect (the real vine boom)",
   "bruh-3": "medium claim risk: a creator's voice (the real bruh clip)",

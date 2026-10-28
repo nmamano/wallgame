@@ -164,9 +164,17 @@ pointing-1 is 12.4 s and bell-1 is 4.2 s, too long for a video of about
 27 s, and an edit list cannot shorten a sound. Wall Game Director,
 2026-10-28: cut a short one of each. The cuts are ours, made from the same
 upload, so they keep their source's claim risk (High). The cut points come
-from the clip's loudness per 100 ms: pointing-2 ends in the dip after the
-second "Spider-Man" (2.6 to 2.8 s); bell-2 keeps the hit and its first decay,
-down about 10 dB from the hit at 2.2 s.
+from the clip's loudness per 100 ms, not from listening:
+
+- bell-2 keeps the hit and the start of its natural decay, about 10 dB
+  under the hit at 2.2 s, then a fade. Wall Game Director, 2026-10-28: OK
+  to use.
+- pointing-2 is NOT a clean cut. pointing-1 has no gap between words:
+  nowhere in its first 8 s is it under -30 dB for 0.1 s (measured
+  2026-10-28; its quietest 100 ms after the start, at 4.18 s, peaks at
+  -23.5 dB). At 2.5 to 2.8 s it is -15 to -14 dB, so pointing-2 is a
+  0.25 s fade over sung music and may cut a word. Wall Game Director,
+  2026-10-28: not used until Nil hears it.
 
 | Key        | Made from  | Length | Command (ffmpeg, from `assets/meme-sounds`)                                                                |
 | ---------- | ---------- | ------ | ---------------------------------------------------------------------------------------------------------- |
