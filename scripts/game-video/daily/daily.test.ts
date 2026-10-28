@@ -10,6 +10,7 @@
  */
 import { afterEach, describe, expect, test } from "bun:test";
 import { createServer } from "node:net";
+import { createServer as createHttpServer } from "node:http";
 import {
   mkdtempSync,
   readFileSync,
@@ -22,7 +23,7 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
-import { migrateV1, openStore, readPostLog } from "./store.mjs";
+import { migrateV1, migrateV2, openStore, readPostLog } from "./store.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import { PUBLIC_IDS } from "./public-ids.mjs";
 import {
@@ -75,6 +76,7 @@ import {
 } from "./crew.mjs";
 import { postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
+import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
   loudnessVerdict,
   safeAreaVerdict,
@@ -310,7 +312,7 @@ const EDL = {
   version: 1,
   gameId: "TESTGAME1",
   ending: "replay",
-  music: "deja-vus",
+  music: [{ fromPly: 0, track: "deja-vus" }],
   events: [{ ply: 22, kind: "zoom", frame: ["e4", "e5"], sound: "fuahhh-1" }],
 };
 
@@ -328,6 +330,9 @@ const directToday = (
 };
 
 /** The contact sheet of a render of EDL: one still, the zoom. */
+/** The music a render played: the shared list's one cue (EDL below). */
+const PLAYED = [{ fromPly: 0, track: "deja-vus", at: 0 }];
+
 const SHEET = {
   path: "/nowhere-sheet.png",
   sha256: "ss",
@@ -364,6 +369,7 @@ const checkedToday = (
   store.finishRender(day, "A", "job-00000001", {
     video,
     sheet: SHEET,
+    music: PLAYED,
     quality: MEASURED,
   });
   store.recordCopy(day, "A", COPY);
@@ -381,6 +387,7 @@ const approved = (
   store.finishRender(day, "A", "job-00000001", {
     video: { path: "/nowhere.mp4", bytes: 1, sha256: sha },
     sheet: SHEET,
+    music: PLAYED,
     effect: "zoom",
     sound: "shotgun",
     quality: MEASURED,
@@ -897,6 +904,7 @@ describe("the director checks the contact sheet before the ask", () => {
     store.finishRender(day, "A", "job-00000001", {
       video,
       sheet: SHEET,
+      music: PLAYED,
       quality,
     });
     store.recordCopy(day, "A", COPY);
@@ -1003,7 +1011,10 @@ test("the edit list summary names the start, the cold open, the payoff, a race f
   expect(
     edlSummary({
       ending: "gg",
-      music: "skippy",
+      music: [
+        { fromPly: 0, track: "skippy" },
+        { fromPly: 31, track: "deja-vus" },
+      ],
       caption: "Red is 2 steps from winning",
       payoff: { ply: 22, text: "one wall later: 12" },
       vsSound: "shotgun-2",
@@ -1027,7 +1038,7 @@ test("the edit list summary names the start, the cold open, the payoff, a race f
       ],
     }),
   ).toEqual([
-    'ending gg, music skippy, video caption "Red is 2 steps from winning"',
+    'ending gg, music skippy, then deja-vus from ply 31, video caption "Red is 2 steps from winning"',
     "VS sound shotgun-2, finish sound shotgun-2",
     "starts at ply 6",
     "cold open: the position after ply 22",
@@ -1488,6 +1499,7 @@ describe("a day has up to three candidates", () => {
     store.finishRender(day, label, `job-${label}-${sha}`, {
       video: { path: `/${label}.mp4`, bytes: 1, sha256: sha },
       sheet: SHEET,
+      music: PLAYED,
       quality: MEASURED,
     });
     store.recordCopy(day, label, copy);
@@ -1605,6 +1617,7 @@ describe("a day has up to three candidates", () => {
     store.finishRender(day, "C", "job-C", {
       video: { path: "/C.mp4", bytes: 1, sha256: "cc" },
       sheet: SHEET,
+      music: PLAYED,
       quality: MEASURED,
     });
     const view = store.picked(day) as PickedView;
@@ -1712,6 +1725,7 @@ describe("a day has up to three candidates", () => {
     store.finishRender(day, "B", "job-B-dd", {
       video: { path: "/B2.mp4", bytes: 1, sha256: "dd" },
       sheet: SHEET,
+      music: PLAYED,
       quality: MEASURED,
     });
     store.recordCheck(day, "B", { sheetSha256: "ss", stills: [ZOOM_OK] });
@@ -1746,6 +1760,7 @@ describe("a day has up to three candidates", () => {
     store.finishRender(day, "B", "job-B-bb2", {
       video: { path: "/B2.mp4", bytes: 1, sha256: "bb" },
       sheet: SHEET,
+      music: PLAYED,
       quality: MEASURED,
     });
     expect(store.staleCopy(candOf(store, day, "B"))).toBeNull();
@@ -1885,6 +1900,7 @@ describe("a day has up to three candidates", () => {
     store.finishRender(day, "C", "job-C-ee", {
       video: { path: "/C2.mp4", bytes: 1, sha256: "ee" },
       sheet: SHEET,
+      music: PLAYED,
       quality: MEASURED,
     });
     store.recordCopy(day, "C", COPY_C);
@@ -2485,11 +2501,13 @@ describe("TikTok", () => {
 
   test("three real candidates fit the office's ask; the details go in the notes", () => {
     // The real 2026-10-27 record: its block, 13 edit-list lines, 5 checks.
-    const real = migrateV1(
-      JSON.parse(
-        readFileSync(
-          join(import.meta.dir, "fixtures", "v1-2026-10-27.json"),
-          "utf8",
+    const real = migrateV2(
+      migrateV1(
+        JSON.parse(
+          readFileSync(
+            join(import.meta.dir, "fixtures", "v1-2026-10-27.json"),
+            "utf8",
+          ),
         ),
       ),
     ) as { day: string; cands: { A: { edl: { summary: string[] } } } };
@@ -2861,8 +2879,9 @@ console.log("[render] rendering on the 4090");
 console.log("RESULT " + JSON.stringify({ mp4: at("out"), bytes: bytes.length,
   sha256: hash(bytes), durationSeconds: 30, effect: "daily", sound: "shotgun",
   music: existsSync(__dirname + "/music-override")
-    ? readFileSync(__dirname + "/music-override", "utf8")
-    : (edl.music ?? "deja-vus"),
+    ? JSON.parse(readFileSync(__dirname + "/music-override", "utf8"))
+    : (edl.music ?? [{ fromPly: 0, track: "deja-vus" }]).map((c, i) =>
+        ({ ...c, at: i === 0 ? 0 : 10 })),
   ending: edl.ending, edlSha256: hash(raw),
   fromCache: existsSync(__dirname + "/lie-about-cache") ? !fromCache : fromCache,
   layout: { frame: { w: 1080, h: 1920 }, boxes: {
@@ -2946,7 +2965,12 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
   );
   // A track whose license does not let a video play it is refused here,
   // before a render (music-tracks.mjs; only deja-vus may play today).
-  const blocked = await direct({ music: "skippy" });
+  const blocked = await direct({
+    music: [
+      { fromPly: 0, track: "deja-vus" },
+      { fromPly: 10, track: "skippy" },
+    ],
+  });
   expect(blocked.status).toBe(409);
   expect(blocked.body.error).toContain(
     "music skippy may not play in a video (license blocked-until-nil; see scripts/game-video/MUSIC-LICENSES.md); use ",
@@ -2984,7 +3008,7 @@ test("a render reads the game's capture when the 4090 has one: no view", async (
 
   // When the app cannot ask the 4090, it does not guess (a live render
   // would be a view nobody counted): nothing starts.
-  expect((await direct({ music: "deja-vus" })).status).toBe(200);
+  expect((await direct({ caption: "a third list" })).status).toBe(200);
   writeFileSync(join(dir, "probe-fails"), "");
   const unknown = await render();
   expect(unknown.started.status).toBe(409);
@@ -3069,7 +3093,10 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   expect((await call("/api/daily/post", { day })).status).toBe(409);
   // No render without the director's list.
   expect((await call("/api/daily/render", { day })).status).toBe(409);
-  const direct = async (d: string, music?: string) => {
+  const direct = async (
+    d: string,
+    music?: { fromPly: number; track: string }[],
+  ) => {
     const { suggestedEnding } = (
       await call<DailyState & { suggestedEnding: string }>(
         `/api/daily/state?day=${d}`,
@@ -3093,7 +3120,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   const pickSound = (choice: string) =>
     call("/api/daily/sounds", { key: "fuahhh-1", choice });
   expect((await pickSound("disliked")).status).toBe(200);
-  const allowed = await direct(day, "deja-vus");
+  const allowed = await direct(day);
   expect(allowed.status).toBe(200);
   expect(JSON.stringify(allowed.body)).toMatch(
     /ply \d+ uses disliked fuahhh-1: Nil's preference, allowed/,
@@ -3154,7 +3181,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     ],
   });
   expect(zoomThenLaugh.status).toBe(200);
-  expect((await direct(day, "deja-vus")).status).toBe(200);
+  expect((await direct(day)).status).toBe(200);
   // What a restart would cut (crew.mjs ship refuses while any is busy).
   interface Busy {
     renders: { day: string; label: string; jobId: string; state: string }[];
@@ -3448,7 +3475,7 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     approver: "Nil",
     effect: "daily",
     ending: "replay",
-    music: "deja-vus",
+    music: ["deja-vus"],
     sound: "shotgun",
     swingMove: 23,
   });
@@ -3465,9 +3492,9 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   });
   // The director sees the last posted track, to pick another.
   expect(
-    (await call<{ lastMusic: string }>(`/api/daily/state?day=${next}`)).body
+    (await call<{ lastMusic: string[] }>(`/api/daily/state?day=${next}`)).body
       .lastMusic,
-  ).toBe("deja-vus");
+  ).toEqual(["deja-vus"]);
   await direct(next);
   await call("/api/daily/render", { day: next });
   for (let i = 0; i < 50; i++) {
@@ -3577,15 +3604,20 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
   // Day 2's picked video waits to post, so its track is the last one.
   // (Day 2's list named deja-vus.)
   expect(
-    (await call<{ lastMusic: string }>(`/api/daily/state?day=${third}`)).body
+    (await call<{ lastMusic: string[] }>(`/api/daily/state?day=${third}`)).body
       .lastMusic,
-  ).toBe("deja-vus");
+  ).toEqual(["deja-vus"]);
 
-  // The music the video played must be the one the list named, and a
-  // track the site has.
+  // The music the video played must be the list's cues, each a track the
+  // site has.
   const fourth = "2026-10-29";
-  const renderWith = async (played: string, force = false) => {
-    writeFileSync(join(dir, "music-override"), played);
+  const renderWith = async (
+    played: { fromPly: number; track: string; at: number }[] | null,
+    force = false,
+  ) => {
+    const override = join(dir, "music-override");
+    if (played) writeFileSync(override, JSON.stringify(played));
+    else rmSync(override, { force: true });
     await call("/api/daily/render", { day: fourth, force });
     for (let i = 0; i < 50; i++) {
       state = (await call<DailyState>(`/api/daily/state?day=${fourth}`)).body;
@@ -3597,16 +3629,116 @@ test("one dry-run cycle: pick, render, ask, approve, post, log", async () => {
     day: fourth,
     report: REPORT,
   });
+  const one = (track: string) => [{ fromPly: 0, track, at: 0 }];
   await direct(fourth);
-  await renderWith("tea-for-two");
+  await renderWith(one("tea-for-two"));
   expect(state?.cycle.cands.A.state).toBe("render-failed");
   expect(state?.cycle.cands.A.render?.error).toMatch(
     /music tea-for-two, not deja-vus/,
   );
   await direct(fourth);
-  await renderWith("elevator-jazz", true);
+  await renderWith(one("elevator-jazz"), true);
   expect(state?.cycle.cands.A.render?.error).toMatch(/music elevator-jazz/);
 }, 20_000);
+
+test("two music cues: direct takes them, and the render must play both from their plies", async () => {
+  // Two cues need two tracks that may play; only deja-vus may today. The app
+  // runs in this process here, so the test clears skippy and puts it back.
+  const cleared = MUSIC_TRACKS.filter((t) => t.slug === "skippy");
+  const licenses = cleared.map((t) => t.license);
+  for (const t of cleared) t.license = "ok";
+  try {
+    const dir = tempDir();
+    const stub = join(dir, "stub-render.cjs");
+    writeFileSync(stub, STUB_RENDER);
+    const daily = createDaily({ dataDir: dir, renderer: stub, env: {} });
+    const server = createHttpServer((req, res) => {
+      void daily
+        .handle(req, res, new URL(req.url ?? "/", "http://localhost"))
+        .then((done: boolean) => {
+          if (!done) res.writeHead(404).end();
+        });
+    });
+    await new Promise<void>((ok) => server.listen(0, "127.0.0.1", ok));
+    stops.push(() => {
+      server.close();
+      daily.stop();
+    });
+    const { port } = server.address() as { port: number };
+    const day = "2026-10-26";
+    const call = async <T = Day>(path: string, body: object) => {
+      const res = await fetch(`http://127.0.0.1:${port}${path}`, {
+        method: "POST",
+        headers: { "content-type": "application/json" },
+        body: JSON.stringify({ day, cand: "A", ...body }),
+      });
+      return { status: res.status, body: (await res.json()) as T };
+    };
+    const rendered = async (played?: object[]) => {
+      const override = join(dir, "music-override");
+      if (played) writeFileSync(override, JSON.stringify(played));
+      else rmSync(override, { force: true });
+      await call("/api/daily/render", { force: true });
+      for (let i = 0; i < 50; i++) {
+        const res = await fetch(
+          `http://127.0.0.1:${port}/api/daily/state?day=${day}`,
+        );
+        const c = ((await res.json()) as { cycle: Day }).cycle.cands.A;
+        if (c.state !== "rendering") return c;
+        await Bun.sleep(100);
+      }
+      throw new Error("the render did not finish");
+    };
+    expect((await call("/api/daily/pick", { report: REPORT })).status).toBe(
+      200,
+    );
+    const cues = [
+      { fromPly: 0, track: "deja-vus" },
+      { fromPly: 10, track: "skippy" },
+    ];
+    const direct = () =>
+      call("/api/daily/direct", { edl: { ...EDL, music: cues } });
+    expect((await direct()).status).toBe(200);
+
+    // The stub plays the list's cues, the second from second 10.
+    let c = await rendered();
+    expect(c.state).toBe("rendered");
+    expect((c.render as unknown as { music: object[] } | null)?.music).toEqual([
+      { ...cues[0], at: 0 },
+      { ...cues[1], at: 10 },
+    ]);
+
+    // A cue that starts on another ply is another video.
+    expect((await direct()).status).toBe(200);
+    c = await rendered([
+      { ...cues[0], at: 0 },
+      { ...cues[1], fromPly: 12, at: 11 },
+    ]);
+    expect(c.state).toBe("render-failed");
+    expect(c.render?.error).toBe(
+      "the render played the music deja-vus, then skippy from ply 12, not deja-vus, then skippy from ply 10",
+    );
+
+    // At most 2 different tracks fit the credit (edl.mjs), and a track may
+    // come back in a later cue.
+    const third = await call<{ error: string }>("/api/daily/direct", {
+      edl: { ...EDL, music: [...cues, { fromPly: 20, track: "a-legend" }] },
+    });
+    expect(third.status).toBe(409);
+    expect(third.body.error).toContain(
+      "music plays 3 different tracks; at most 2 fit the credit",
+    );
+    expect(
+      (
+        await call("/api/daily/direct", {
+          edl: { ...EDL, music: [...cues, { fromPly: 20, track: "deja-vus" }] },
+        })
+      ).status,
+    ).toBe(200);
+  } finally {
+    cleared.forEach((t, i) => (t.license = licenses[i]));
+  }
+});
 
 test("a dry run with two candidates: B is a carry-over, Nil picks B, only B posts", async () => {
   const dir = tempDir();

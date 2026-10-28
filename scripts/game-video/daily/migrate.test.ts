@@ -1,8 +1,10 @@
 /**
- * The one-time rewrite of a version 1 day file (one game a day) as version 2
- * (candidates), on copies of the real 2026-10-26 and 2026-10-27 files (the
+ * The one-time rewrites of a day file at start-up: version 1 (one game a
+ * day) as version 2 (candidates), and version 2 as version 3 (music cue
+ * lists), on copies of the real 2026-10-26 and 2026-10-27 files (the
  * Director's condition, 2026-10-27). Only the data dir in their paths is
- * changed, to /data, because the repo is public.
+ * changed, to /data, because the repo is public. The live version 2 files
+ * were made from them by migrateV1.
  */
 import { describe, expect, test } from "bun:test";
 import {
@@ -11,11 +13,13 @@ import {
   mkdtempSync,
   readFileSync,
   readdirSync,
+  writeFileSync,
 } from "node:fs";
+import { createHash } from "node:crypto";
 import { tmpdir } from "node:os";
 import { join } from "node:path";
 import { copySha256 } from "./copy.mjs";
-import { migrateV1, openStore } from "./store.mjs";
+import { migrateV1, migrateV2, openStore, VERSION } from "./store.mjs";
 
 const FIXTURES = join(import.meta.dir, "fixtures");
 
@@ -102,8 +106,11 @@ describe("a version 1 day file becomes candidate A", () => {
       const v1 = JSON.parse(readFileSync(source, "utf8")) as Obj;
 
       const store = openStore(dir);
-      const v2 = store.read(day) as Obj;
-      // The old bytes are kept next to it, and the store lists the day once.
+      const v2 = migrateV1(v1) as Obj;
+      expect(v2.version).toBe(2);
+      // At start-up it goes on to the current version; the old bytes are
+      // kept next to it, and the store lists the day once.
+      expect(store.read(day)).toEqual(migrateV2(v2));
       expect(readFileSync(join(cycles, `${day}.v1.json`), "utf8")).toBe(
         readFileSync(source, "utf8"),
       );
@@ -176,5 +183,107 @@ describe("a version 1 day file becomes candidate A", () => {
     expect(() => migrateV1({ ...v1, surprise: 1 })).toThrow(
       /version 1 has no field surprise; the migration would lose it/,
     );
+  });
+});
+
+/** A version 2 field that version 3 rewrites: the music and the list's text. */
+const CUE_PATHS = [
+  ["edl", "doc", "music"],
+  ["edl", "text"],
+  ["edl", "sha256"],
+  ["render", "music"],
+];
+const rewritten = (path: string[]) =>
+  path[0] === "cands" &&
+  CUE_PATHS.some((p) => p.every((k, i) => path[i + 2] === k));
+
+describe("a version 2 day file gets music cue lists", () => {
+  for (const day of ["2026-10-26", "2026-10-27"]) {
+    test(`${day}: the one track becomes one cue, and the rest reads the same`, () => {
+      const dir = mkdtempSync(join(tmpdir(), "daily-migrate-test-"));
+      const cycles = join(dir, "daily", "cycles");
+      mkdirSync(cycles, { recursive: true });
+      const v1 = JSON.parse(
+        readFileSync(join(FIXTURES, `v1-${day}.json`), "utf8"),
+      ) as Obj;
+      const v2Text = JSON.stringify(migrateV1(v1), null, 2);
+      writeFileSync(join(cycles, `${day}.json`), v2Text);
+      const v2 = JSON.parse(v2Text) as Obj;
+
+      const store = openStore(dir);
+      const v3 = store.read(day) as Obj;
+      expect(v3.version).toBe(VERSION);
+      expect(readFileSync(join(cycles, `${day}.v2.json`), "utf8")).toBe(v2Text);
+
+      let checked = 0;
+      for (const [path, value] of leaves(v2)) {
+        if (path[0] === "version" || rewritten(path)) continue;
+        expect([path.join("."), at(v3, path)]).toEqual([path.join("."), value]);
+        checked++;
+      }
+      expect(checked).toBeGreaterThan(100);
+
+      // Both live days played tea-for-two from ply 0.
+      const A = ["cands", "A"];
+      const cue = [{ fromPly: 0, track: "tea-for-two" }];
+      expect(at(v2, [...A, "edl", "doc", "music"])).toBe("tea-for-two");
+      expect(at(v3, [...A, "edl", "doc", "music"])).toEqual(cue);
+      expect(at(v3, [...A, "render", "music"])).toEqual([{ ...cue[0], at: 0 }]);
+      // The text a render sends to the 4090 has the cue, and its sha256
+      // follows it; the rest of the list is the same.
+      const text = at(v3, [...A, "edl", "text"]) as string;
+      expect(JSON.parse(text)).toEqual({
+        ...JSON.parse(at(v2, [...A, "edl", "text"]) as string),
+        music: cue,
+      });
+      expect(at(v3, [...A, "edl", "sha256"])).toBe(
+        createHash("sha256").update(text).digest("hex"),
+      );
+      // What the renderer read stays recorded as it was.
+      expect(at(v3, [...A, "render", "edlSha256"])).toBe(
+        at(v2, [...A, "render", "edlSha256"]) as string,
+      );
+      // The video and its block are the same bytes, so an approval and a
+      // copy block stay good: the approved 2026-10-27 day can still post.
+      if (at(v3, [...A, "copyFor"]) !== null) {
+        expect(at(v3, [...A, "copyFor"])).toBe(
+          at(v3, [...A, "render", "video", "sha256"]) as string,
+        );
+      }
+
+      // A second start changes nothing.
+      const once = readFileSync(join(cycles, `${day}.json`), "utf8");
+      openStore(dir);
+      expect(readFileSync(join(cycles, `${day}.json`), "utf8")).toBe(once);
+      expect(readdirSync(cycles).sort()).toEqual([
+        `${day}.json`,
+        `${day}.v2.json`,
+      ]);
+    });
+  }
+
+  test("the post log's rows name their tracks as a list", () => {
+    const dir = mkdtempSync(join(tmpdir(), "daily-migrate-test-"));
+    const root = join(dir, "daily");
+    mkdirSync(root, { recursive: true });
+    const old = [
+      { day: "2026-10-27", platform: "tiktok", music: "tea-for-two" },
+      { day: "2026-10-28", platform: "x", music: ["deja-vus", "skippy"] },
+    ];
+    const oldText = old.map((r) => JSON.stringify(r)).join("\n") + "\n";
+    writeFileSync(join(root, "post-log.jsonl"), oldText);
+
+    const store = openStore(dir);
+    const rows = readFileSync(store.postLog.live, "utf8")
+      .split("\n")
+      .filter(Boolean)
+      .map((l) => JSON.parse(l) as Obj);
+    expect(rows).toEqual([{ ...old[0], music: ["tea-for-two"] }, old[1]]);
+    expect(readFileSync(join(root, "post-log.v2.jsonl"), "utf8")).toBe(oldText);
+    // No dry-run log: nothing is made.
+    expect(readdirSync(root).filter((f) => f.startsWith("post-log"))).toEqual([
+      "post-log.jsonl",
+      "post-log.v2.jsonl",
+    ]);
   });
 });

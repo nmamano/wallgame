@@ -176,7 +176,7 @@ import { homedir, tmpdir } from "node:os";
 import { basename, dirname, join, resolve } from "node:path";
 import { fileURLToPath } from "node:url";
 import { createHash } from "node:crypto";
-import { candidateFromReport } from "./candidate.mjs";
+import { candidateFromReport, musicText } from "./candidate.mjs";
 import { dailySeatColors } from "../edl.mjs";
 import { ship } from "./ship.mjs";
 import { stripPlan, writeStrips } from "./strips.mjs";
@@ -301,7 +301,7 @@ const summary = (s) => {
   ];
   if (!c) return lines.join("\n");
   lines.push(
-    `default ending ${s.suggestedEnding}; last posted music ${s.lastMusic ?? "none"}`,
+    `default ending ${s.suggestedEnding}; last posted music ${s.lastMusic?.join(", ") ?? "none"}`,
   );
   for (const k of candsOf(c)) {
     const g = k.candidate;
@@ -513,7 +513,7 @@ export const askNotes = (c, shas) => {
           "",
           `CANDIDATE ${label}`,
           `${k.candidate.seats.map((x) => x.name).join(" vs ")}, ${k.candidate.movesCount} plies, game ${k.candidate.gameId}.`,
-          `Video: ${(k.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${shas[label].slice(0, 12)}, style ${k.render.effect ?? "-"}, ending ${k.render.ending}, sounds ${k.render.sound ?? "-"}, music ${k.render.music ?? "-"}.`,
+          `Video: ${(k.render.video.bytes / 1e6).toFixed(1)} MB, sha256 ${shas[label].slice(0, 12)}, style ${k.render.effect ?? "-"}, ending ${k.render.ending}, sounds ${k.render.sound ?? "-"}, music ${k.render.music ? musicText(k.render.music) : "-"}.`,
           "Director's edit list:",
           ...k.edl.summary.map((l) => `- ${l}`),
           "Contact sheet, checked by the director:",

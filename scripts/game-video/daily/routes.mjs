@@ -72,6 +72,7 @@ import {
   STYLES,
   nextEnding,
   edlSummary,
+  musicText,
   saveFrameProblems,
   storyProblems,
 } from "./candidate.mjs";
@@ -293,10 +294,10 @@ const DAY = /^\d{4}-\d{2}-\d{2}$/;
 const MUSIC_SLUGS = MUSIC_TRACKS.map((t) => t.slug);
 
 /**
- * The problem when a list names a track whose license does not let a video
- * play it (music-tracks.mjs `license`; the sources are in
- * MUSIC-LICENSES.md). parseEdl already refused a slug that is not a track.
- * @param {string | null} slug
+ * The problem when a list's cue names a track whose license does not let a
+ * video play it (music-tracks.mjs `license`; the sources are in
+ * MUSIC-LICENSES.md). validateEdl already refused a slug that is not a track.
+ * @param {string} slug
  * @returns {string[]}
  */
 const blockedMusic = (slug) => {
@@ -580,13 +581,21 @@ export const createDaily = ({
         error: `the render read another edit list (${String(result.edlSha256).slice(0, 12)}, not ${cand.edl.sha256.slice(0, 12)})`,
       });
     }
-    const music = cand.edl.doc.music ?? null;
+    // The tracks the video played, and from which plies, must be the
+    // list's cues (direct requires them).
+    const music = cand.edl.doc.music;
+    const played = Array.isArray(result.music) ? result.music : [];
     if (
-      !MUSIC_SLUGS.includes(result.music) ||
-      (music && result.music !== music)
+      played.length !== music.length ||
+      played.some(
+        (c, i) =>
+          !MUSIC_SLUGS.includes(c.track) ||
+          c.track !== music[i].track ||
+          c.fromPly !== music[i].fromPly,
+      )
     ) {
       return finish({
-        error: `the render played the music ${result.music}, not ${music ?? "a named track"}`,
+        error: `the render played the music ${played.length ? musicText(played) : JSON.stringify(result.music)}, not ${musicText(music)}`,
       });
     }
     if (result.ending !== cand.render.ending) {
@@ -799,14 +808,17 @@ export const createDaily = ({
       .filter((c) => c.render.ending)
       .map((c) => ({ utc: c.render.requestedAt, ending: c.render.ending }));
 
-  /** The latest track posted or waiting to post on another day. */
+  /**
+   * The tracks of the latest video posted or waiting to post on another day,
+   * in the order it played them.
+   */
   const lastMusic = (day) =>
     [
       ...readPostLog(store.postLog.live),
       ...readPostLog(store.postLog.dryRun),
       ...openRenders(day).map((c) => ({
         utc: c.render.requestedAt,
-        music: c.render.music,
+        music: c.render.music?.map((cue) => cue.track) ?? null,
       })),
     ]
       .filter((r) => r.music)
@@ -1266,7 +1278,7 @@ export const createDaily = ({
             ]),
         // The renderer refuses the track too; direct says it while the list
         // is still being written.
-        ...blockedMusic(edl.music),
+        ...(edl.music ?? []).flatMap((cue) => blockedMusic(cue.track)),
         // The daily video has no cold open; edl.mjs keeps the field for a
         // hand render.
         ...(edl.coldOpenPly === null
@@ -2012,7 +2024,8 @@ export const logRow = (cycle, platform, result) => ({
   effect: cycle.render.effect,
   ending: cycle.render.ending,
   sound: cycle.render.sound,
-  music: cycle.render.music,
+  // The tracks the video played, in order.
+  music: cycle.render.music.map((cue) => cue.track),
   edlSha256: cycle.render.edlSha256,
   // Since 2026-10-26 the swing is the largest walking-distance jump, in steps.
   swingSize: cycle.candidate.picks[0].size,

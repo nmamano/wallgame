@@ -16,8 +16,9 @@
  *   With --log its stdout is one line,
  *     RESULT {"mp4","bytes","sha256","durationSeconds","effect","sound",
  *             "music","ending","edlSha256","sheet":{"png","sha256","stills"}}
- *   The list picks the music (edl.music); with none the renderer picks a
- *   track at random and RESULT names it.
+ *   The list picks the music (edl.music, a cue list); with none the
+ *   renderer picks one track that may play at random. RESULT.music is the
+ *   cue list it played, each cue with `at` (its second in the video).
  *   The sheet is the contact sheet from the same capture: one still per
  *   event of the list. It comes back with the MP4.
  *   which desktop-run appends to the job's log. desktop-run appends exit=N to

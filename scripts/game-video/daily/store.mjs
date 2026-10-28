@@ -47,8 +47,9 @@
  *
  * Every write goes to a scratch file first and is renamed into place, so a
  * crash never leaves half a record. A day file from before the candidates
- * (version 1) is rewritten once at start-up as candidate A, and the old file
- * is kept next to it as <day>.v1.json (migrateV1).
+ * (version 1) is rewritten once at start-up as candidate A (migrateV1), and
+ * one from before the music cues (version 2) gets cue lists (migrateV2). The
+ * old file is kept next to it as <day>.v1.json or <day>.v2.json.
  */
 import {
   mkdirSync,
@@ -63,8 +64,11 @@ import { join } from "node:path";
 import { createHash } from "node:crypto";
 import { copySha256 } from "./copy.mjs";
 
-/** The record's format; migrateV1 turns a version 1 file into this one. */
-export const VERSION = 2;
+/**
+ * The record's format. migrateV1 turns a version 1 file into version 2, and
+ * migrateV2 a version 2 file into this one.
+ */
+export const VERSION = 3;
 
 /** A day's candidates, in the order the ask shows them. */
 export const LABELS = ["A", "B", "C"];
@@ -160,14 +164,35 @@ export const openStore = (dataDir) => {
       .filter((d) => DAY.test(d))
       .sort();
 
-  // Once, at start-up: a version 1 file becomes candidate A.
+  // Once, at start-up: a version 1 file becomes candidate A, and a version
+  // 2 file gets music cue lists.
   for (const day of days()) {
     const path = cyclePath(day);
     const old = JSON.parse(readFileSync(path, "utf8"));
     if (old.version === VERSION) continue;
-    const kept = join(dirs.cycles, `${day}.v1.json`);
+    const from = old.version === 2 ? 2 : 1;
+    const kept = join(dirs.cycles, `${day}.v${from}.json`);
     if (!existsSync(kept)) writeAtomic(kept, readFileSync(path, "utf8"));
-    writeAtomic(path, JSON.stringify(migrateV1(old), null, 2));
+    const v2 = from === 2 ? old : migrateV1(old);
+    writeAtomic(path, JSON.stringify(migrateV2(v2), null, 2));
+  }
+  // The post log's rows name the tracks the video played, in order; a row
+  // from before the cues names one track as a string.
+  for (const file of Object.values(postLog)) {
+    const rows = readPostLog(file);
+    if (!rows.some((r) => typeof r.music === "string")) continue;
+    const kept = file.replace(/\.jsonl$/, ".v2.jsonl");
+    if (!existsSync(kept)) writeAtomic(kept, readFileSync(file, "utf8"));
+    writeAtomic(
+      file,
+      rows
+        .map((r) =>
+          JSON.stringify(
+            typeof r.music === "string" ? { ...r, music: [r.music] } : r,
+          ),
+        )
+        .join("\n") + "\n",
+    );
   }
 
   const read = (day) => {
@@ -947,7 +972,7 @@ export const migrateV1 = (v1) => {
   };
   const production = V1_PRODUCTION.includes(v1.state);
   return {
-    version: VERSION,
+    version: 2,
     day: v1.day,
     state: production ? "open" : v1.state,
     createdAt: v1.createdAt,
@@ -976,6 +1001,62 @@ export const migrateV1 = (v1) => {
     posts: v1.posts ?? {},
     renders: v1.renders ?? {},
     events: v1.events ?? [],
+  };
+};
+
+/** A track played from the video's first ply (startPly) to its end. */
+const oneCue = (track, startPly) => [{ fromPly: startPly, track }];
+
+/**
+ * A version 2 day file as version 3: a list's "music" and a render's music
+ * become cue lists (edl.mjs). A version 2 string named the one track the
+ * whole video played, so it becomes one cue from the video's first ply, and
+ * a render's cue starts at second 0. The list's text is rewritten with it,
+ * because a render sends the text to the 4090, and its sha256 follows the
+ * text. What a render or an ask recorded (render.edlSha256, the offers'
+ * edlSha256) stays: it is what the renderer read. Approvals and copy blocks
+ * bind the video's sha256, which does not change.
+ */
+export const migrateV2 = (v2) => {
+  const cand = (c) => {
+    const music = c.edl?.doc?.music;
+    if (typeof music !== "string" && typeof c.render?.music !== "string") {
+      return c;
+    }
+    const startPly = c.edl?.doc?.startPly ?? 0;
+    const edl =
+      typeof music === "string"
+        ? (() => {
+            // As direct writes it (routes.mjs).
+            const text =
+              JSON.stringify(
+                { ...JSON.parse(c.edl.text), music: oneCue(music, startPly) },
+                null,
+                2,
+              ) + "\n";
+            return {
+              ...c.edl,
+              doc: { ...c.edl.doc, music: oneCue(music, startPly) },
+              text,
+              sha256: createHash("sha256").update(text).digest("hex"),
+            };
+          })()
+        : c.edl;
+    const render =
+      typeof c.render?.music === "string"
+        ? {
+            ...c.render,
+            music: [{ fromPly: startPly, track: c.render.music, at: 0 }],
+          }
+        : c.render;
+    return { ...c, edl, render };
+  };
+  return {
+    ...v2,
+    version: VERSION,
+    cands: Object.fromEntries(
+      Object.entries(v2.cands).map(([label, c]) => [label, cand(c)]),
+    ),
   };
 };
 
