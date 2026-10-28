@@ -305,6 +305,33 @@ describe("post(itemId)", () => {
     expect(w.logged).toEqual(["bluesky", "x"]);
   });
 
+  test("the Instagram Story is its own result: its failure never fails the Reel, and it is tried when the Reel fails", async () => {
+    const failed = (error: string) => () => ({
+      ok: false,
+      uncertain: false,
+      mode: "live",
+      at: "t",
+      error,
+    });
+    const w = world(["instagram", "instagram-story"]);
+    w.replies["instagram-story"] = failed(
+      "instagram story container: HTTP 400",
+    );
+    expect((await w.post(SLOT)).kind).toBe("post-failed");
+    expect(w.get().posts.instagram.ok).toBe(true);
+    expect(w.get().posts["instagram-story"].ok).toBe(false);
+    delete w.replies["instagram-story"];
+    const r = await w.retry("v-2026-10-28-1");
+    expect(r.kind).toBe("posted");
+    expect(w.logged).toEqual(["instagram", "instagram-story"]);
+
+    // A failed Reel does not hold back the Story (Wall Game PM, 2026-10-29).
+    const w2 = world(["instagram", "instagram-story"]);
+    w2.replies.instagram = failed("instagram container: HTTP 400");
+    expect((await w2.post(SLOT)).kind).toBe("post-failed");
+    expect(w2.logged).toEqual(["instagram-story"]);
+  });
+
   test("an uncertain platform needs confirmNotPosted before a retry", async () => {
     const w = world(["x"]);
     w.replies.x = (commit) => {

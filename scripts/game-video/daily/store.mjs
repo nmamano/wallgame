@@ -204,11 +204,18 @@ export const stage = (item) =>
             ? "checked"
             : "rendered";
 
+/**
+ * Every place a video posts to, in the order a slot posts them.
+ * "instagram-story" is the same Instagram account as "instagram" and goes
+ * right after the Reel (Nil, 2026-10-29, via Wall Game Growth): it is its
+ * own result, so a failed Story never fails the Reel.
+ */
 export const PLATFORMS = [
   "x",
   "youtube",
   "tiktok",
   "instagram",
+  "instagram-story",
   "facebook",
   "bluesky",
   "threads",

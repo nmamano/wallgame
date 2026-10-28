@@ -1,5 +1,6 @@
 /**
- * Post one video to Instagram as a Reel through the Instagram Graph API.
+ * Post one video to Instagram as a Reel or as a Story through the Instagram
+ * Graph API.
  * Instagram fetches the video from a public HTTPS URL: the caller gives a
  * `publicUrl` function that makes one (public-url-r2.mjs, as for Threads).
  *
@@ -53,6 +54,23 @@
  * status decides, read SETTLE_READS times (Reviewer 3, 2026-10-26; Reviewer
  * 1, 2026-10-28): see postToInstagram.
  *
+ * STORIES (Nil, 2026-10-29, via Wall Game Growth: every Instagram post also
+ * goes to Stories). The same steps with media_type STORIES and no caption.
+ * Read on developers.facebook.com 2026-10-29 (Content Publishing; IG User
+ * Media reference; IG Media reference; the pages carry no update date):
+ *   - a Story container is {media_type: STORIES, video_url}; the Story
+ *     examples send no caption and the page names none for a Story;
+ *   - the same permissions as a Reel (instagram_basic,
+ *     instagram_content_publish, pages_read_engagement), the same status
+ *     codes and polls, and the same 100 posts in 24 hours;
+ *   - "Story Video Specifications": duration 3 seconds minimum, 60 seconds
+ *     maximum; file size 100MB maximum (a Reel: 15 minutes, 300MB);
+ *     aspect ratio 0.1:1 to 10:1, 9:16 recommended;
+ *   - permalink: no exception for Stories.
+ * A video outside the Story limits is refused before any request.
+ * routes.mjs posts the Story as its own platform, "instagram-story", with
+ * its own R2 copy, after the Reel.
+ *
  * NEXT LIVE POST CHECKLIST (for Wall Game Growth):
  * - If the container status ends in ERROR, the cycle record has the reason
  *   in the error; report it to the code owner.
@@ -76,6 +94,34 @@ const STATUS_POLLS = 5;
 /** Reads of the container after a failed media_publish, 60 s apart. */
 const SETTLE_READS = 3;
 
+/** Story Video Specifications (IG User Media reference, read 2026-10-29). */
+export const STORY_MIN_SECONDS = 3;
+export const STORY_MAX_SECONDS = 60;
+// "100MB": read as 100e6 bytes, the smaller of the two readings.
+export const STORY_MAX_BYTES = 100e6;
+
+const MEDIA_TYPE = { reel: "REELS", story: "STORIES" };
+
+/**
+ * Why `video` cannot be a Story, or null.
+ * @param {{ video: Buffer, durationSeconds: number }} o
+ */
+export const storyProblem = ({ video, durationSeconds }) => {
+  if (!Number.isFinite(durationSeconds)) {
+    return "instagram story: the video has no known duration";
+  }
+  if (
+    durationSeconds < STORY_MIN_SECONDS ||
+    durationSeconds > STORY_MAX_SECONDS
+  ) {
+    return `instagram story: the video is ${durationSeconds} s; a Story takes ${STORY_MIN_SECONDS}-${STORY_MAX_SECONDS} s`;
+  }
+  if (video.length > STORY_MAX_BYTES) {
+    return `instagram story: the video is ${video.length} bytes; a Story takes ${STORY_MAX_BYTES} at most`;
+  }
+  return null;
+};
+
 export const instagramDryRunReply = (req) => {
   const path = req.url.split("?")[0];
   if (path.endsWith("/media")) {
@@ -98,7 +144,9 @@ export const instagramDryRunReply = (req) => {
 };
 
 /**
- * Post `video` (a Buffer) as a Reel with `caption`. `publicUrl({video,
+ * Post `video` (a Buffer) as a Reel with `caption`, or with surface "story"
+ * as a Story (no caption; `durationSeconds` is checked against the Story
+ * limits before any request). `publicUrl({video,
  * sha256, transport})` makes the video reachable at a public HTTPS URL and
  * returns {url, key, remove} (post-threads.mjs PublicUrl); the poster calls
  * remove once Instagram no longer needs the file. `creds` is {igUserId,
@@ -107,7 +155,9 @@ export const instagramDryRunReply = (req) => {
  */
 export const postToInstagram = async ({
   video,
+  surface = "reel",
   caption,
+  durationSeconds,
   publicUrl,
   transport,
   creds,
@@ -131,21 +181,32 @@ export const postToInstagram = async ({
   const containerStatus = (containerId) =>
     graph("GET", `${GRAPH}/${containerId}?fields=status_code,status`);
 
+  const mediaType = MEDIA_TYPE[surface];
+  if (!mediaType) throw new NotPosted(`instagram: no surface ${surface}`);
+  const story = surface === "story";
+  if (story) {
+    const problem = storyProblem({ video, durationSeconds });
+    if (problem) throw new NotPosted(problem);
+  }
+  // A Story is its own platform in the post log ("instagram-story").
+  const name = story ? "instagram story" : "instagram";
+
   const hosted = await publicUrl({ video, sha256: sha256(video), transport });
   const inPlaceOfUrl = `<signed URL of ${hosted.key}>`;
   try {
     if (!/^https:\/\//.test(hosted?.url ?? "")) {
-      throw new NotPosted("instagram: the video needs a public https URL");
+      throw new NotPosted(`${name}: the video needs a public https URL`);
     }
+    const fields = story ? {} : { caption };
     const container = await graph(
       "POST",
       `${GRAPH}/${user}/media`,
-      { media_type: "REELS", video_url: hosted.url, caption },
-      { media_type: "REELS", video_url: inPlaceOfUrl, caption },
+      { media_type: mediaType, video_url: hosted.url, ...fields },
+      { media_type: mediaType, video_url: inPlaceOfUrl, ...fields },
     );
     const containerId = container.json?.id;
     if (!ok(container) || !containerId) {
-      throw new PostFailed("instagram container", container);
+      throw new PostFailed(`${name} container`, container);
     }
 
     // Instagram fetches and processes the video before it can be published.
@@ -155,18 +216,18 @@ export const postToInstagram = async ({
     for (let i = 0; i < STATUS_POLLS && !finished; i++) {
       if (!dry) await sleep(STATUS_POLL_MS);
       const status = await containerStatus(containerId);
-      if (!ok(status)) throw new PostFailed("instagram status", status);
+      if (!ok(status)) throw new PostFailed(`${name} status`, status);
       const code = status.json?.status_code;
       if (code === "ERROR" || code === "EXPIRED") {
         throw new NotPosted(
-          `instagram processing ended in ${code} (${status.json?.status ?? "no reason"})`,
+          `${name} processing ended in ${code} (${status.json?.status ?? "no reason"})`,
         );
       }
       finished = code === "FINISHED";
     }
     if (!finished) {
       throw new NotPosted(
-        `instagram: the video was not processed after ${(STATUS_POLLS * STATUS_POLL_MS) / 1000} s; nothing was published`,
+        `${name}: the video was not processed after ${(STATUS_POLLS * STATUS_POLL_MS) / 1000} s; nothing was published`,
       );
     }
 
@@ -181,11 +242,11 @@ export const postToInstagram = async ({
       // and an accepted publish can show FINISHED for a moment, so one read
       // cannot prove "not posted": read the container for SETTLE_READS polls
       // (Reviewer 1, 2026-10-28, as for Facebook and Threads).
-      const failed = new PostFailed("instagram publish", published);
+      const failed = new PostFailed(`${name} publish`, published);
       const { outcome, state } = await settleAfterFailedCommit({
         read: async () => {
           const status = await containerStatus(containerId);
-          if (!ok(status)) throw new PostFailed("instagram status", status);
+          if (!ok(status)) throw new PostFailed(`${name} status`, status);
           return status.json ?? {};
         },
         classify: ({ status_code: code }) =>
@@ -216,7 +277,7 @@ export const postToInstagram = async ({
         url = link.json.permalink;
       }
     } catch {
-      /* the Reel is posted; only its link is unknown */
+      /* the Reel or Story is posted; only its link is unknown */
     }
     return { postId: mediaId, url };
   } catch (err) {
@@ -232,7 +293,7 @@ export const postToInstagram = async ({
     } catch (err) {
       // The post's own result matters more; the copy is short-lived anyway.
       console.warn(
-        `instagram: the public copy was not removed: ${err?.message ?? err}`,
+        `${name}: the public copy was not removed: ${err?.message ?? err}`,
       );
     }
   }

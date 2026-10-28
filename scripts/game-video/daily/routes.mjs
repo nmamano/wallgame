@@ -227,6 +227,14 @@ const SECRET_GROUPS = {
   ],
 };
 
+/**
+ * A platform that posts to another platform's account: it has no secret, id
+ * or Connect of its own, so it is live exactly when that platform is live,
+ * for the same reasons (Wall Game PM, 2026-10-29).
+ */
+const ACCOUNT_OF = { "instagram-story": "instagram" };
+const accountOf = (platform) => ACCOUNT_OF[platform] ?? platform;
+
 /** Every secret a poster reads; a test strips them so it cannot post. */
 export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
   groups.flatMap((g) => g.names),
@@ -241,22 +249,20 @@ export const POSTING_SECRETS = Object.values(SECRET_GROUPS).flatMap((groups) =>
  */
 export const modeReasons = (env, connected = new Set()) =>
   Object.fromEntries(
-    PLATFORMS.map((p) => [
-      p,
-      [
-        ...SECRET_GROUPS[p].flatMap(({ label, names }) => {
-          const missing = names.filter((name) => !env[name]);
-          return missing.length
-            ? [`${label} missing: ${missing.join(", ")}`]
-            : [];
-        }),
-        ...idsNotSet(p, env),
-        ...(CONNECT_PLATFORMS.includes(p) && !connected.has(p)
-          ? ["not connected"]
-          : []),
-      ],
-    ]),
+    PLATFORMS.map((p) => [p, platformReasons(accountOf(p), env, connected)]),
   );
+
+/** Why one platform with its own account cannot post live (modeReasons). */
+const platformReasons = (p, env, connected) => [
+  ...SECRET_GROUPS[p].flatMap(({ label, names }) => {
+    const missing = names.filter((name) => !env[name]);
+    return missing.length ? [`${label} missing: ${missing.join(", ")}`] : [];
+  }),
+  ...idsNotSet(p, env),
+  ...(CONNECT_PLATFORMS.includes(p) && !connected.has(p)
+    ? ["not connected"]
+    : []),
+];
 
 /** live when a platform has no reason (modeReasons); else dry-run. */
 const modesOf = (reasons) =>
@@ -277,6 +283,7 @@ const DRY_RUN_REPLIES = {
   youtube: youtubeDryRunReply,
   tiktok: tiktokDryRunReply,
   instagram: (req) => metaDryRunReply(req) ?? instagramDryRunReply(req),
+  "instagram-story": (req) => DRY_RUN_REPLIES.instagram(req),
   facebook: (req) => metaDryRunReply(req) ?? facebookDryRunReply(req),
   bluesky: blueskyDryRunReply,
   threads: threadsDryRunReply,
@@ -920,6 +927,24 @@ export const createDaily = ({
       committing = true;
       beforeCommit();
     };
+    const instagram = async ({ surface }) => {
+      const meta = await discoverMeta({
+        transport,
+        token: (live ? env : DRY_RUN_META).META_SYSTEM_USER_TOKEN,
+        instagram: "id",
+      });
+      return postToInstagram({
+        video,
+        surface,
+        caption: surface === "reel" ? texts.instagram : undefined,
+        durationSeconds: item.render.video.durationSeconds,
+        publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
+        transport,
+        creds: { igUserId: meta.igUserId, pageToken: meta.pageToken },
+        sleep,
+        beforeCommit: markCommit,
+      });
+    };
     const posters = {
       x: () => {
         // The key pair from the env, the token from Connect, read once.
@@ -971,22 +996,9 @@ export const createDaily = ({
           sleep,
           beforeCommit: markCommit,
         }),
-      instagram: async () => {
-        const meta = await discoverMeta({
-          transport,
-          token: (live ? env : DRY_RUN_META).META_SYSTEM_USER_TOKEN,
-          instagram: "id",
-        });
-        return postToInstagram({
-          video,
-          caption: texts.instagram,
-          publicUrl: live ? r2PublicUrl({ env }) : dryRunPublicUrl,
-          transport,
-          creds: { igUserId: meta.igUserId, pageToken: meta.pageToken },
-          sleep,
-          beforeCommit: markCommit,
-        });
-      },
+      instagram: () => instagram({ surface: "reel" }),
+      // The same video as a Story: its own R2 copy, no caption.
+      "instagram-story": () => instagram({ surface: "story" }),
       facebook: async () => {
         const meta = await discoverMeta({
           transport,
@@ -2087,11 +2099,14 @@ export const logRow = (item, platform, result) => ({
   postId: result.postId,
   url: result.url,
   // The approved block's text for the platform. TikTok takes no caption
-  // through the API: Nil pastes its line in the inbox draft.
+  // through the API: Nil pastes its line in the inbox draft. A Story has
+  // no caption.
   caption: ((t) =>
     platform === "youtube"
       ? `${t.youtubeTitle}\n\n${t.youtubeDescription}`
-      : t[platform])(postTexts(item.copy.block)),
+      : platform === "instagram-story"
+        ? null
+        : t[platform])(postTexts(item.copy.block)),
   // Growth's copy style for the block (copy.mjs).
   copyVersion: item.copy.block.version,
   style: item.style,

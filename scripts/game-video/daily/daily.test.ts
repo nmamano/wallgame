@@ -78,7 +78,7 @@ import {
   PostFailed,
   sha256,
 } from "./transport.mjs";
-import { postingModes, createDaily } from "./routes.mjs";
+import { modeReasons, postingModes, createDaily } from "./routes.mjs";
 import { parseResult } from "./render-4090.mjs";
 import { MUSIC_TRACKS } from "../music-tracks.mjs";
 import {
@@ -298,6 +298,7 @@ const DRY = {
   youtube: "dry-run",
   tiktok: "dry-run",
   instagram: "dry-run",
+  "instagram-story": "dry-run",
   facebook: "dry-run",
   bluesky: "dry-run",
   threads: "dry-run",
@@ -1827,6 +1828,29 @@ describe("X signing", () => {
   });
 });
 
+test("the Instagram Story is live exactly when Instagram is, for the same reasons", () => {
+  const meta = { META_SYSTEM_USER_TOKEN: "t" };
+  const r2 = {
+    R2_ACCOUNT_ID: "a",
+    R2_ACCESS_KEY_ID: "k",
+    R2_SECRET_ACCESS_KEY: "s",
+  };
+  for (const env of [{}, meta, r2, { ...meta, ...r2 }]) {
+    const reasons = modeReasons(env);
+    expect(reasons["instagram-story"]).toEqual(reasons.instagram);
+  }
+  expect(modeReasons(meta)["instagram-story"]).toEqual([
+    "R2 secrets missing: R2_ACCESS_KEY_ID, R2_SECRET_ACCESS_KEY",
+    "R2 account id not set in code",
+  ]);
+  expect(postingModes({ ...meta, ...r2 })).toEqual({
+    ...DRY,
+    instagram: "live",
+    "instagram-story": "live",
+    facebook: "live",
+  });
+});
+
 describe("the ending rotates", () => {
   const row = (utc: string, ending: string) => ({ utc, ending });
 
@@ -2475,6 +2499,7 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     `${COPY.youtubeTitle} #Shorts\n\n${COPY.youtubeDescription}`,
     COPY.tiktok,
     COPY.instagram,
+    null, // a Story has no caption
     COPY.facebook,
     COPY.bluesky,
     COPY.threads,
@@ -2529,6 +2554,26 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     postId: "DRY-RUN-MEDIA-ID",
     url: "https://www.instagram.com/reel/DRY-RUN/",
   });
+  // The Story: the same steps on the same account, with its OWN R2 copy
+  // (put and deleted in its own attempt), media_type STORIES, no caption.
+  const storyPlan = planOf("instagram-story");
+  const storyObject = storyPlan.find((r) => r.method === "PUT")?.url ?? "";
+  expect(storyObject).toMatch(/\/wallgame-threads-video\/[0-9a-f]{32}\.mp4$/);
+  expect(storyObject).not.toBe(igObject);
+  expect(storyPlan.map((r) => `${r.method} ${r.url}`)).toEqual(
+    instagramPlan
+      .map((r) => `${r.method} ${r.url}`)
+      .map((line) => line.replace(igObject, storyObject)),
+  );
+  expect(storyPlan.find((r) => r.url.endsWith("/media"))?.body).toEqual({
+    media_type: "STORIES",
+    video_url: `<signed URL of ${storyObject.split("/").slice(-2).join("/")}>`,
+  });
+  expect(log[4]).toMatchObject({
+    platform: "instagram-story",
+    postId: "DRY-RUN-MEDIA-ID",
+    caption: null,
+  });
   expect(log[0]).toMatchObject({
     itemId: id,
     // The UTC day of the post.
@@ -2544,7 +2589,9 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     swingMove: 23,
   });
   expect((await call<LogRow[]>(base, "/api/daily/post-log")).body).toEqual([]);
-  expect(readPostLog(daily.store.postLog.dryRun)).toHaveLength(7);
+  expect(readPostLog(daily.store.postLog.dryRun)).toHaveLength(
+    PLATFORMS.length,
+  );
 
   // A game posts once (Wall Game Director, 2026-10-28): it is not picked
   // again, and each item from here on has its own game. (No poster runs

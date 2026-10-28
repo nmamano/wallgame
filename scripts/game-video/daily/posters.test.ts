@@ -45,9 +45,11 @@ import {
 import { dryRunPublicUrl, r2PublicUrl, DRY_RUN_R2 } from "./public-url-r2.mjs";
 import { openTokenStore } from "./token-store.mjs";
 import {
+  STORY_MAX_BYTES,
   instagramAuthCheck,
   instagramDryRunReply,
   postToInstagram,
+  storyProblem,
 } from "./post-instagram.mjs";
 import {
   X_ME_URL,
@@ -887,6 +889,63 @@ describe("Instagram fetches the video from R2", () => {
     expect(sent[probe.at].url).toMatch(/\/IG1\/media_publish$/);
     expect(sent.at(-1)).toMatchObject({ method: "DELETE", url: put?.url });
     expectNoSecretInUrls(sent, ["SECRET-PAGE"]);
+  });
+
+  test("a Story: media_type STORIES, no caption, its own copy, deleted after it", async () => {
+    const transport = fakeLive(instagramDryRunReply);
+    const probe = commitProbe(transport);
+    const result = await postToInstagram({
+      video: VIDEO,
+      surface: "story",
+      durationSeconds: 30,
+      publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
+      transport,
+      creds: CREDS,
+      sleep: noSleep,
+      beforeCommit: probe.beforeCommit,
+    });
+    expect(result.postId).toBe("DRY-RUN-MEDIA-ID");
+    const sent = transport.sent;
+    const put = sent.find((r) => r.method === "PUT");
+    const body = bodyOf(sent.find((r) => r.url.endsWith("/IG1/media"))!);
+    expect(Object.keys(body ?? {}).sort()).toEqual(["media_type", "video_url"]);
+    expect(body?.media_type).toBe("STORIES");
+    expect(sent[probe.at].url).toMatch(/\/IG1\/media_publish$/);
+    expect(sent.at(-1)).toMatchObject({ method: "DELETE", url: put?.url });
+    expectNoSecretInUrls(sent, ["SECRET-PAGE"]);
+  });
+
+  test("a video outside the Story limits is refused before any request", async () => {
+    const story = (video: Buffer, durationSeconds: number) => {
+      const transport = fakeLive(instagramDryRunReply);
+      return failure(
+        postToInstagram({
+          video,
+          surface: "story",
+          durationSeconds,
+          publicUrl: r2PublicUrl({ env: DRY_RUN_R2 }),
+          transport,
+          creds: CREDS,
+          sleep: noSleep,
+          beforeCommit: noSleep,
+        }),
+      ).then((err) => ({ err, sent: transport.sent.length }));
+    };
+    const long = await story(VIDEO, 60.5);
+    expect(long.err).toBeInstanceOf(NotPosted);
+    expect(String(long.err)).toContain(
+      "instagram story: the video is 60.5 s; a Story takes 3-60 s",
+    );
+    expect(long.sent).toBe(0);
+    expect(String((await story(VIDEO, 2.9)).err)).toContain("is 2.9 s");
+    const big = await story(Buffer.alloc(STORY_MAX_BYTES + 1), 30);
+    expect(String(big.err)).toContain(
+      `a Story takes ${STORY_MAX_BYTES} at most`,
+    );
+    expect(big.sent).toBe(0);
+    // The limits are inclusive.
+    expect(storyProblem({ video: VIDEO, durationSeconds: 60 })).toBeNull();
+    expect(storyProblem({ video: VIDEO, durationSeconds: 3 })).toBeNull();
   });
 
   test("processing that ends in ERROR is not posted, the copy is still removed, and the error holds no signed URL", async () => {
