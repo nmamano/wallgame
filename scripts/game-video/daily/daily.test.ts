@@ -27,9 +27,11 @@ import {
 } from "node:fs";
 import { tmpdir } from "node:os";
 import { join, resolve } from "node:path";
+import { createHash } from "node:crypto";
 import {
   ITEM_ID,
   PLATFORMS,
+  currentVet,
   openStore,
   postProblem,
   readPostLog,
@@ -217,6 +219,15 @@ interface Video {
 }
 
 /** The parts of a video item (store.mjs) that these tests read. */
+/** One independent review of an item's final video (store.recordVet). */
+interface Vet {
+  at: string;
+  reviewer: string;
+  verdict: string;
+  notes: string;
+  videoSha256: string;
+}
+
 interface Item {
   id: string;
   state: string;
@@ -243,6 +254,8 @@ interface Item {
     timeline: { events: object[] } | null;
   } | null;
   check: { ok: boolean } | null;
+  // Absent on an item from before vets.
+  vets?: Vet[];
   approval: {
     videoSha256: string;
     copySha256: string;
@@ -257,6 +270,7 @@ interface ItemView extends Item {
   stage: string;
   reviewState: string | null;
   staleCopy: string | null;
+  vet: Vet | null;
 }
 
 interface DailyState {
@@ -385,6 +399,31 @@ const renderItem = (
   });
 };
 
+/**
+ * A passing independent review (vet) of the item's current video, seeded
+ * as approveItem seeds an approval: the fixture videos have no file, and
+ * store.recordVet hashes the file (its own tests use a real one).
+ */
+const vetItem = (store: Store, id: string) => {
+  store.updateItem(
+    id,
+    ["draft", "finished"],
+    (it: Item) => {
+      it.vets = [
+        ...(it.vets ?? []),
+        {
+          at: new Date().toISOString(),
+          reviewer: "a fresh subagent",
+          verdict: "pass",
+          notes: "ok",
+          videoSha256: it.render!.video!.sha256,
+        },
+      ];
+    },
+    "vet pass (test)",
+  );
+};
+
 /** A new item rendered as `video`, checked, with Growth's block: in review. */
 const finishItem = (
   store: Store,
@@ -395,6 +434,7 @@ const finishItem = (
   const id = directItem(store);
   renderItem(store, id, video, { force });
   store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+  vetItem(store, id);
   store.recordCopy(id, copy);
   return id;
 };
@@ -427,6 +467,7 @@ describe("the director checks the contact sheet before the review", () => {
     const store = openStore(tempDir());
     const id = directItem(store);
     renderItem(store, id, VIDEO, { quality });
+    vetItem(store, id);
     store.recordCopy(id, COPY);
     return { store, id };
   };
@@ -513,6 +554,71 @@ describe("the director checks the contact sheet before the review", () => {
   });
 });
 
+describe("the independent review of the final video (vet)", () => {
+  /** A finished item whose video is a real file; and that file's video. */
+  const finishedWithFile = () => {
+    const store = openStore(tempDir());
+    const path = join(tempDir(), "v.mp4");
+    writeFileSync(path, "the final bytes");
+    const video = {
+      path,
+      bytes: 15,
+      sha256: createHash("sha256").update("the final bytes").digest("hex"),
+    };
+    const id = directItem(store);
+    renderItem(store, id, video);
+    return { store, id, video };
+  };
+  const pass = (videoSha256: string) => ({
+    videoSha256,
+    reviewer: "Video Reviewer 1",
+    verdict: "pass",
+    notes: "ok",
+  });
+
+  test("only a finished item, only its current video, whose file is still those bytes", () => {
+    const { store, id, video } = finishedWithFile();
+    // Before the check passes, the video is not final.
+    expect(() => void store.recordVet(id, pass(video.sha256))).toThrow(
+      `${id} is draft; vet pass by Video Reviewer 1 needs finished`,
+    );
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    expect(() => void store.recordVet(id, pass("c".repeat(64)))).toThrow(
+      "review the current video",
+    );
+    writeFileSync(video.path, "other bytes");
+    expect(() => void store.recordVet(id, pass(video.sha256))).toThrow(
+      `${id}'s video file is not the one in its record`,
+    );
+    writeFileSync(video.path, "the final bytes");
+    const out = store.recordVet(id, pass(video.sha256)) as Item;
+    expect(currentVet(out)).toMatchObject({
+      verdict: "pass",
+      reviewer: "Video Reviewer 1",
+      videoSha256: video.sha256,
+    });
+    expect(out.events.at(-1)?.what).toBe("vet pass by Video Reviewer 1");
+  });
+
+  test("copy needs the LATEST vet of the CURRENT video to pass; an item from before vets has none", () => {
+    const { store, id, video } = finishedWithFile();
+    store.recordCheck(id, { sheetSha256: "ss", stills: [ZOOM_OK] });
+    store.recordVet(id, pass(video.sha256));
+    store.recordVet(id, { ...pass(video.sha256), verdict: "fail" });
+    expect(() => void store.recordCopy(id, COPY)).toThrow(
+      `${id}: no passing independent review of video ${video.sha256.slice(0, 12)}`,
+    );
+    store.recordVet(id, pass(video.sha256));
+    store.recordCopy(id, COPY);
+    // A new render is a new video: its old vet does not count.
+    const fresh = { ...itemOf(store, id) };
+    fresh.render = { ...fresh.render!, video: { ...video, sha256: "dd" } };
+    expect(currentVet(fresh)).toBeNull();
+    delete fresh.vets;
+    expect(currentVet(fresh)).toBeNull();
+  });
+});
+
 describe("an item's production", () => {
   const COPY_B = { ...COPY, x: "B's own X line #wallgame" };
   const COPY_C = { ...COPY, x: "C's own X line #wallgame" };
@@ -590,14 +696,19 @@ describe("an item's production", () => {
     // Finished, but its block is for the old video: not for Nil.
     expect(itemOf(store, b).state).toBe("finished");
     expect(reviewState(itemOf(store, b))).toBe("waiting-copy");
+    // The new video needs its vet first, then a block of its own.
     expect(store.staleCopy(itemOf(store, b))).toContain(
-      `${b}'s copy block was written for another video (bb, now dd)`,
+      `${b}'s video has no independent review (crew.mjs vet --item ${b})`,
     );
     for (const other of [a, c]) {
       expect(store.staleCopy(itemOf(store, other))).toBeNull();
       expect(reviewState(itemOf(store, other))).toBe("in-review");
     }
-    // A block for the new video puts it back in review.
+    vetItem(store, b);
+    expect(store.staleCopy(itemOf(store, b))).toContain(
+      `${b}'s copy block was written for another video (bb, now dd)`,
+    );
+    // A block for the new video (after its vet) puts it back in review.
     store.recordCopy(b, COPY_B);
     expect(reviewState(itemOf(store, b))).toBe("in-review");
   });
@@ -2351,8 +2462,57 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     stage: "checked",
     reviewState: "waiting-copy",
   });
-  expect((await viewOf())?.staleCopy).toContain(`crew.mjs copy --item ${id}`);
+  expect((await viewOf())?.staleCopy).toContain(`crew.mjs vet --item ${id}`);
   const copy = (body: object) => post("copy", { item: id, ...body });
+
+  // The independent review of the final video comes first (R10): copy
+  // refuses the item until the latest vet of its current video passes.
+  const sha = (await viewOf())!.render!.video!.sha256;
+  expect(await viewOf()).toMatchObject({ vet: null });
+  const unvetted = await copy({ text: BLOCK, copyVersion: COPY_VERSION });
+  expect(unvetted.status).toBe(409);
+  expect(unvetted.body.error).toContain(
+    `${id}: no passing independent review of video ${sha.slice(0, 12)}; the director runs crew.mjs vet`,
+  );
+  const vet = (body: object) =>
+    post("vet", {
+      item: id,
+      videoSha256: sha,
+      reviewer: "a fresh subagent",
+      verdict: "pass",
+      notes: "every overlay frame clear; the capture has its sound",
+      ...body,
+    });
+  expect((await vet({ videoSha256: "b".repeat(64) })).body.error).toContain(
+    "review the current video",
+  );
+  expect((await vet({ verdict: "maybe" })).body.error).toContain(
+    "pass or fail",
+  );
+  expect((await vet({ notes: " " })).body.error).toContain("vet needs notes");
+  expect((await vet({ reviewer: "two\nlines" })).body.error).toContain(
+    "vet needs the reviewer",
+  );
+  expect(
+    (await vet({ verdict: "fail", notes: "a pawn under the panel" })).status,
+  ).toBe(200);
+  expect((await viewOf())?.vet).toMatchObject({ verdict: "fail" });
+  expect((await viewOf())?.staleCopy).toContain("a fresh subagent");
+  expect((await copy({ text: BLOCK, copyVersion: COPY_VERSION })).status).toBe(
+    409,
+  );
+  const passed = await vet({});
+  expect(passed.status).toBe(200);
+  expect((await viewOf())?.staleCopy).toContain(`crew.mjs copy --item ${id}`);
+  expect((passed.body.vets ?? []).map((v: Vet) => v.verdict)).toEqual([
+    "fail",
+    "pass",
+  ]);
+  expect((await viewOf())?.vet).toMatchObject({
+    verdict: "pass",
+    reviewer: "a fresh subagent",
+    videoSha256: sha,
+  });
   expect(
     (
       await copy({
@@ -2627,6 +2787,17 @@ test("one dry-run cycle: pick, direct, render, check, copy, review, post, log", 
     ).status,
   ).toBe(200);
   expect(
+    (
+      await post("vet", {
+        item: next,
+        videoSha256: second.render?.video?.sha256,
+        reviewer: "a fresh subagent",
+        verdict: "pass",
+        notes: "ok",
+      })
+    ).status,
+  ).toBe(200);
+  expect(
     (await post("copy", { item: next, text: BLOCK, copyVersion: COPY_VERSION }))
       .status,
   ).toBe(200);
@@ -2840,6 +3011,44 @@ test("a carry-over: a new item with the game of one that was dropped", async () 
     sheetSha256: it.render?.sheet?.sha256,
     stills: [ZOOM_OK],
   });
+  // The independent review, through crew.mjs: the record, with the length
+  // and counts its notes are checked against.
+  expect(crew(base, "status").out).toContain(
+    "independent review: none for this video (copy refuses)",
+  );
+  const vetted = crew(
+    base,
+    "vet",
+    "--item",
+    first,
+    "--video",
+    it.render!.video!.sha256,
+    "--reviewer",
+    "a fresh subagent",
+    "--verdict",
+    "pass",
+    "--notes",
+    "zoom clear\n\nno pawn hidden",
+  );
+  expect(vetted.err).toBe("");
+  const counts = Object.entries(
+    EDL.events.reduce<Record<string, number>>(
+      (n, e) => ({ ...n, [e.kind]: (n[e.kind] ?? 0) + 1 }),
+      {},
+    ),
+  )
+    .map(([k, n]) => `${k} ${n}`)
+    .join(", ");
+  expect(vetted.out).toContain(`${first}: vet PASS by a fresh subagent at `);
+  expect(vetted.out).toContain(`  effects: ${counts}`);
+  expect(vetted.out).toContain("  overlays: none");
+  expect(vetted.out).toContain(
+    "  notes:\n  > zoom clear\n  > \n  > no pawn hidden",
+  );
+  expect(vetted.out).toMatch(/ {2}video length: [\d.?]+ s/);
+  expect(crew(base, "status").out).toContain(
+    `independent review: PASS by a fresh subagent at `,
+  );
   await ok("/api/daily/copy", {
     item: first,
     text: BLOCK,

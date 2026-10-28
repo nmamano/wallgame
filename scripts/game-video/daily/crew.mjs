@@ -82,6 +82,18 @@
  *                                  the still shows what the cue is for (a FAHHH
  *                                  or zoom shows the save wall). Every still
  *                                  ok (and every measure) finishes the item
+ *   vet --item ID --video SHA --reviewer "<who>" --verdict pass|fail
+ *       (--notes "<text>" | --notes-file F)
+ *                                  the independent review of the item's
+ *                                  FINAL video, after its check passed: a
+ *                                  fresh reviewer that did not make it
+ *                                  (Wall Game Director, 2026-10-28). SHA is
+ *                                  the video the reviewer watched (the
+ *                                  current one). `copy` refuses the item
+ *                                  until the latest vet of its current
+ *                                  video passes. Prints the record with the
+ *                                  video's length and its effect and
+ *                                  overlay counts. Sends no message
  *   copy --item ID --file F --copy-version V
  *                                  (Wall Game Growth) the copy block for the
  *                                  item's video: one line per platform, each
@@ -276,6 +288,13 @@ const itemLines = (k, progress = null) => {
       ),
     );
   }
+  if (k.vet !== undefined && k.render?.video) {
+    lines.push(
+      k.vet
+        ? `independent review: ${k.vet.verdict.toUpperCase()} by ${k.vet.reviewer} at ${k.vet.at} (video ${k.vet.videoSha256.slice(0, 12)})${k.vet.verdict === "pass" ? "" : " (copy refuses)"}`
+        : `independent review: none for this video (copy refuses)`,
+    );
+  }
   lines.push(
     ...(k.copy
       ? [
@@ -311,6 +330,28 @@ const itemSummary = async (id) => {
   const s = await state();
   const k = s.items.find((x) => x.id === id) ?? (await itemNamed(id));
   return itemLines(k, k.renderProgress).join("\n");
+};
+
+/**
+ * An item's latest vet, with what its notes can be checked against: the
+ * video's length and how many of each effect kind and overlay asset the
+ * edit list has (Wall Game Director, 2026-10-28).
+ */
+export const vetLines = (item) => {
+  const v = item.vets.at(-1);
+  const count = (keys) =>
+    Object.entries(keys.reduce((n, k) => ({ ...n, [k]: (n[k] ?? 0) + 1 }), {}))
+      .map(([k, n]) => `${k} ${n}`)
+      .join(", ") || "none";
+  const events = item.edl.doc.events;
+  return [
+    `${item.id}: vet ${v.verdict.toUpperCase()} by ${v.reviewer} at ${v.at}, video ${v.videoSha256.slice(0, 12)}`,
+    `  video length: ${item.render.video.durationSeconds ?? "?"} s`,
+    `  effects: ${count(events.filter((e) => e.kind !== "overlay").map((e) => e.kind))}`,
+    `  overlays: ${count(events.filter((e) => e.kind === "overlay").map((e) => e.asset))}`,
+    "  notes:",
+    ...quoteLines(v.notes, "  "),
+  ];
 };
 
 /**
@@ -471,6 +512,32 @@ const commands = {
       );
     }
     console.log(await itemSummary(item.id));
+  },
+
+  /**
+   * The director records the independent review of the item's final video:
+   * who, pass or fail, and the notes. `copy` and review need a pass.
+   */
+  async vet() {
+    const id = itemFlag();
+    const videoSha256 =
+      flag("video") ?? die("vet needs --video <sha256 of the MP4 reviewed>");
+    const reviewer =
+      flag("reviewer") ?? die('vet needs --reviewer "<who reviewed it>"');
+    const verdict = flag("verdict") ?? die("vet needs --verdict pass|fail");
+    const file = flag("notes-file");
+    if (file && !existsSync(file)) die(`vet: no file ${resolve(file)}`);
+    const notes =
+      (file ? readFileSync(file, "utf8") : flag("notes")) ??
+      die('vet needs --notes "<text>" or --notes-file <file>');
+    const item = await app("POST", "/api/daily/vet", {
+      item: id,
+      videoSha256,
+      reviewer,
+      verdict,
+      notes,
+    });
+    console.log(vetLines(item).join("\n"));
   },
 
   /** Run by Wall Game Growth: its copy block for an item's video. */

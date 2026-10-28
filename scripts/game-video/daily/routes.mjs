@@ -62,6 +62,7 @@ import {
   postProblem,
   stage,
   reviewState,
+  currentVet,
 } from "./store.mjs";
 import {
   candidateFromReport,
@@ -1208,6 +1209,8 @@ export const createDaily = ({
         reviewState: reviewState(it),
         // Why its copy block cannot go to review, or null.
         staleCopy: it.render?.video ? store.staleCopy(it) : null,
+        // The latest independent review of its current video, or null.
+        vet: currentVet(it),
         renderProgress: it.render
           ? (progress.get(it.render.jobId) ?? null)
           : null,
@@ -1506,6 +1509,24 @@ export const createDaily = ({
         store.recordCopy(item.id, {
           ...copy,
           version: body.copyVersion,
+        }),
+      );
+    },
+
+    /**
+     * {item, videoSha256, reviewer, verdict, notes}: the independent review
+     * of the item's final video (store.recordVet). It sends no message.
+     */
+    "POST /api/daily/vet": async (req, res) => {
+      const body = await readJson(req);
+      json(
+        res,
+        200,
+        store.recordVet(itemOf(body.item).id, {
+          videoSha256: body.videoSha256,
+          reviewer: body.reviewer,
+          verdict: body.verdict,
+          notes: body.notes,
         }),
       );
     },

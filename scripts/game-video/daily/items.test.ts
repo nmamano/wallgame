@@ -48,6 +48,7 @@ interface Item {
     forVideoSha256: string | null;
     storedAt: string | null;
   } | null;
+  vets?: { videoSha256: string; verdict: string }[];
   reviews: Review[];
   approval: {
     videoSha256: string;
@@ -403,14 +404,28 @@ describe("the store API the poster builds on", () => {
       by: "Nil",
       at: "2026-10-28T12:00:00.000Z",
     };
+    const pass = { videoSha256: "v2", verdict: "pass" };
     const finished = (over: Partial<Item>) =>
       item("v-2026-10-28-1", {
         state: "finished",
         render: render("2026-10-28T11:00:00.000Z"),
         copy: copy("v2", "2026-10-28T11:30:00.000Z"),
+        vets: [pass],
         ...over,
       });
     expect(reviewState(finished({}))).toBe("in-review");
+    // Rule R10: the latest vet of the current video must pass. A fail
+    // recorded after the block takes the item out of review; a pass of
+    // another video does not count.
+    expect(reviewState(finished({ vets: [] }))).toBe("waiting-copy");
+    expect(
+      reviewState(
+        finished({ vets: [pass, { videoSha256: "v2", verdict: "fail" }] }),
+      ),
+    ).toBe("waiting-copy");
+    expect(
+      reviewState(finished({ vets: [{ videoSha256: "v1", verdict: "pass" }] })),
+    ).toBe("waiting-copy");
     expect(reviewState(finished({ copy: copy("v1", null) }))).toBe(
       "waiting-copy",
     );
@@ -449,6 +464,7 @@ describe("the store API the poster builds on", () => {
         state: "finished",
         render: { finishedAt: "t", video: { sha256: "v" } },
         copy: { block: {}, sha256: "c", forVideoSha256: "v", storedAt: null },
+        vets: [{ videoSha256: "v", verdict: "pass" }],
       }),
       item("v-2026-10-28-4", { state: "finished" }),
       item("v-2026-10-28-5", approved("t")),

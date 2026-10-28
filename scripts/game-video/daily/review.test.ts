@@ -132,6 +132,15 @@ const withItemInReview = (id = "v-2026-10-28-1") => {
       forVideoSha256: video,
       storedAt: "2026-10-27T09:10:00.000Z",
     },
+    vets: [
+      {
+        videoSha256: video,
+        reviewer: "Video Reviewer 2",
+        verdict: "pass",
+        notes: "ok",
+        at: "2026-10-27T09:05:00.000Z",
+      },
+    ],
     state: "finished",
     reviews: [],
     approval: null,
@@ -175,6 +184,32 @@ describe("store.review: Nil's action on an item in review", () => {
       notes: "",
       by: "Nil",
     });
+  });
+
+  test("a vet that fails after Growth's block takes the item out of review; approve is refused", () => {
+    const { store, video, block } = withItemInReview();
+    store.recordVet("v-2026-10-28-1", {
+      videoSha256: video,
+      reviewer: "Video Reviewer 1",
+      verdict: "fail",
+      notes: "a pawn under the panel",
+    });
+    expect(reviewState(store.item("v-2026-10-28-1"))).toBe("waiting-copy");
+    expect(store.inReview()).toEqual([]);
+    expect(() => {
+      store.review("v-2026-10-28-1", {
+        action: "approve",
+        notes: "",
+        videoSha256: video,
+        copySha256: block,
+        by: "Nil",
+        memberId: REVIEWER_MEMBER_ID,
+      });
+    }).toThrow(
+      /v-2026-10-28-1 is not in review: the independent review of v-2026-10-28-1's video by Video Reviewer 1 at .* failed; re-direct, or vet the video again/,
+    );
+    expect((store.item("v-2026-10-28-1") as Item).state).toBe("finished");
+    expect(feedbackOf(store)).toEqual([]);
   });
 
   test("discard and revise need notes; the notes are kept word for word", () => {

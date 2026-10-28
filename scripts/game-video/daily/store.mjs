@@ -83,14 +83,18 @@ export const ITEM_ID = /^v-\d{4}-\d{2}-\d{2}-[A-Za-z0-9]+$/;
 export const itemId = (day, label) => `v-${day}-${label}`;
 
 /**
- * Where a finished item stands: "in-review" when Growth's block is for its
- * current video and, after a revise, both the render and the block came
- * later than Nil's revise (Growth's rule, 2026-10-28: a revised item is in
- * review again only with a new render AND a new block); else
- * "waiting-copy". Null for any other state.
+ * Where a finished item stands: "in-review" when the latest independent
+ * review of its current video passed (rule R10: a fail recorded later
+ * takes the item out of review, Video Reviewer 2, 2026-10-28), Growth's
+ * block is for that video and, after a revise, both the render and the
+ * block came later than Nil's revise (Growth's rule, 2026-10-28: a revised
+ * item is in review again only with a new render AND a new block); else
+ * "waiting-copy" (the vet and the copy come before review). Null for any
+ * other state.
  */
 export const reviewState = (item) => {
   if (item.state !== "finished") return null;
+  const vetted = currentVet(item)?.verdict === "pass";
   const fresh =
     item.copy !== null &&
     item.copy.forVideoSha256 === item.render?.video?.sha256;
@@ -98,7 +102,7 @@ export const reviewState = (item) => {
   const afterRevise =
     !revise ||
     (item.render?.finishedAt > revise.at && item.copy?.storedAt > revise.at);
-  return fresh && afterRevise ? "in-review" : "waiting-copy";
+  return vetted && fresh && afterRevise ? "in-review" : "waiting-copy";
 };
 
 /**
@@ -266,6 +270,18 @@ const blockSha256 = copySha256;
 /** The sha256 of a file's bytes. */
 const fileSha256 = (path) =>
   createHash("sha256").update(readFileSync(path)).digest("hex");
+
+/** A vet's reviewer, at most (one line). */
+const VET_REVIEWER_MAX = 100;
+
+/**
+ * The latest independent review (`vet`) of the item's current video, or
+ * null. An item from before vets has no `vets` field: none.
+ */
+export const currentVet = (item) =>
+  (item.vets ?? []).findLast(
+    (v) => v.videoSha256 === item.render?.video?.sha256,
+  ) ?? null;
 
 /**
  * The states of an item whose game another item may carry over: a posted
@@ -481,6 +497,12 @@ export const openStore = (dataDir) => {
 
   /** Why the item's block cannot go to review, or null. */
   const staleCopy = (item) => {
+    const vet = currentVet(item);
+    if (vet?.verdict !== "pass") {
+      return vet
+        ? `the independent review of ${item.id}'s video by ${vet.reviewer} at ${vet.at} failed; re-direct, or vet the video again`
+        : `${item.id}'s video has no independent review (crew.mjs vet --item ${item.id})`;
+    }
     if (!item.copy) {
       return `${item.id} has no copy block from Wall Game Growth (crew.mjs copy --item ${item.id})`;
     }
@@ -1007,6 +1029,13 @@ export const openStore = (dataDir) => {
         ["draft", "finished"],
         (item) => {
           expectStage(item, ["rendered", "checked"], "copy");
+          // The final video passed a fresh reviewer first (Wall Game
+          // Director, 2026-10-28, rule R10).
+          if (currentVet(item)?.verdict !== "pass") {
+            refuse(
+              `${id}: no passing independent review of video ${String(item.render.video.sha256).slice(0, 12)}; the director runs crew.mjs vet`,
+            );
+          }
           item.copy = {
             block: copy,
             sha256: copySha256(copy),
@@ -1015,6 +1044,63 @@ export const openStore = (dataDir) => {
           };
         },
         `copy block (${copy.version})`,
+      );
+    },
+
+    /**
+     * The independent review of the FINAL video (Wall Game Director,
+     * 2026-10-28, rule R10): a fresh reviewer judged the MP4, and the
+     * director records who, the verdict and the notes, bound to the video
+     * (`copy` needs the latest one for the current video to pass). Only a
+     * finished item (its check passed), and only its current video, whose
+     * file must still be those bytes. A record, not a message: a fail is
+     * the director's working note.
+     */
+    recordVet(id, { videoSha256, reviewer, verdict, notes }) {
+      const who = typeof reviewer === "string" ? reviewer.trim() : "";
+      if (!who || /[\r\n]/.test(who) || who.length > VET_REVIEWER_MAX) {
+        refuse(
+          `vet needs the reviewer: one line of 1 to ${VET_REVIEWER_MAX} characters`,
+        );
+      }
+      if (verdict !== "pass" && verdict !== "fail") {
+        refuse("vet needs the verdict: pass or fail");
+      }
+      if (
+        typeof notes !== "string" ||
+        !notes.trim() ||
+        notes.length > NOTES_MAX
+      ) {
+        refuse(
+          `vet needs notes: what the reviewer checked and found, 1 to ${NOTES_MAX} characters`,
+        );
+      }
+      return updateItem(
+        id,
+        ["finished"],
+        (item) => {
+          if (videoSha256 !== item.render.video.sha256) {
+            refuse(
+              `${id}'s current video is ${item.render.video.sha256.slice(0, 12)}, not ${String(videoSha256).slice(0, 12)}: review the current video`,
+            );
+          }
+          if (fileSha256(item.render.video.path) !== videoSha256) {
+            refuse(
+              `${id}'s video file is not the one in its record; tell Video Editor (daily app)`,
+            );
+          }
+          item.vets = [
+            ...(item.vets ?? []),
+            {
+              at: new Date().toISOString(),
+              reviewer: who,
+              verdict,
+              notes,
+              videoSha256,
+            },
+          ];
+        },
+        `vet ${verdict} by ${who}`,
       );
     },
 
